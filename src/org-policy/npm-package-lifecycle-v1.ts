@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { lstatSync, opendirSync, readdirSync } from "node:fs";
-import { relative, resolve, sep } from "node:path";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 import { canonicalStrictJsonBytesV1, parseStrictJsonObjectV1 } from "../contract/strict-json-v1.js";
 import { type Cli, SUPPORTED_CLIS } from "../internals/clis.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
@@ -18,6 +18,8 @@ import {
   npmPackageObservationHandoffForLifecycleV1,
   observeNpmPackageV1,
 } from "./npm-package-observer-v1.js";
+import { validateCurrentSupportedCustodyV2 } from "./supported-admin-v2.js";
+import type { VerifiedAihSupportedCustodyBindingV2 } from "./supported-qualification-receipt-v2.js";
 import {
   parseUpstreamObservationReceiptV1,
   type UpstreamObservationReceiptV1,
@@ -125,6 +127,14 @@ interface Prepared {
     lineage: Lineage;
     recordPath: string;
     recordText: string;
+    /** Branded support-custody assertions kept internal to the observation handoff. */
+    supportedCustodyAssertions?: readonly WriteAction[];
+    /** Opaque production facts kept only for final full-custody validation. */
+    supportedCustody?: Readonly<{
+      binding: VerifiedAihSupportedCustodyBindingV2;
+      platform: "win32" | "darwin" | "linux";
+      posture: "enterprise" | "vibe";
+    }>;
   };
   readonly result: NpmPackageLifecycleResultV1;
 }
@@ -147,6 +157,14 @@ type CurrentAuthorityRevocation =
       readonly revocation: GovernanceDecisionRevocationV2;
     };
 
+/** Hermetic seam for the final post-transaction custody re-observation. */
+let beforeLifecycleResultForInternalTest: (() => void) | undefined;
+
+/** @internal Test-only hook; no caller input or package surface reaches this seam. */
+export function __setNpmPackageLifecycleInternalTestHookV1(hook: (() => void) | undefined): void {
+  beforeLifecycleResultForInternalTest = hook;
+}
+
 function hash(bytes: Buffer | string): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
@@ -167,22 +185,27 @@ function option(ctx: PlanContext, key: string): string | undefined {
 
 function input(
   ctx: PlanContext,
-): { decision: string; digest: string; evidence: string; target: Cli } | undefined {
+): { decision: string; digest: string; evidence?: string; target: Cli } | undefined {
   const decision = option(ctx, "decision");
   const decisionDigest = option(ctx, "decisionDigest");
   const evidence = option(ctx, "evidence");
   const target = option(ctx, "target");
+  if (ctx.options.evidence !== undefined && evidence === undefined) return undefined;
   if (
     decision === undefined ||
     !ID.test(decision) ||
     decisionDigest === undefined ||
     !SHA256.test(decisionDigest) ||
-    evidence === undefined ||
     target === undefined ||
     !SUPPORTED_CLIS.includes(target as Cli)
   )
     return undefined;
-  return { decision, digest: decisionDigest, evidence, target: target as Cli };
+  return {
+    decision,
+    digest: decisionDigest,
+    target: target as Cli,
+    ...(evidence === undefined ? {} : { evidence }),
+  };
 }
 
 function lstat(path: string) {
@@ -301,6 +324,52 @@ function refused(reason: LifecycleReason, outcome: "partial" | "refused" = "refu
   };
 }
 
+function assertionCurrent(root: string, action: WriteAction): boolean {
+  if (
+    !action.assertUnchanged ||
+    action.expect === undefined ||
+    "absent" in action.expect ||
+    action.contents === undefined
+  )
+    return false;
+  const base = action.external ? action.trustedBase : root;
+  if (base === undefined || (action.external && !isAbsolute(action.path))) return false;
+  const path = action.external ? action.path : resolve(root, action.path);
+  const rel = relative(base, path);
+  if (!safeRelativePath(base, path)) return false;
+  const contained = safeStorePath(base, ...rel.split(sep));
+  if (contained === undefined) return false;
+  const opened = readRegularFileWithStats(contained, { maxBytes: MAX_STORE_FILE_BYTES });
+  return (
+    opened !== undefined &&
+    opened.stats.nlink === 1 &&
+    hash(opened.contents) === action.expect.sha256 &&
+    opened.contents.equals(Buffer.from(action.contents, "utf8"))
+  );
+}
+
+function supportedCustodyCurrent(
+  root: string,
+  supportedCustody: NonNullable<NonNullable<Prepared["postcondition"]>["supportedCustody"]>,
+): boolean {
+  return (
+    validateCurrentSupportedCustodyV2({
+      root,
+      binding: supportedCustody.binding,
+      platform: supportedCustody.platform,
+      posture: supportedCustody.posture,
+    }).state === "verified"
+  );
+}
+
+/** @internal Test-only external-custody assertion seam; never routed through Commander. */
+export function __isNpmPackageLifecycleAssertionCurrentForInternalTestV1(
+  root: string,
+  action: WriteAction,
+): boolean {
+  return assertionCurrent(root, action);
+}
+
 function persisted(root: string, postcondition: NonNullable<Prepared["postcondition"]>): boolean {
   const binding = readCanonicalStoreFile(root, ...postcondition.bindingPath.split("/"));
   const capacity = readCanonicalStoreFile(root, ...postcondition.capacityPath.split("/"));
@@ -324,12 +393,17 @@ function persisted(root: string, postcondition: NonNullable<Prepared["postcondit
     parsedBinding !== undefined &&
     canonicalText(parsedBinding) === canonicalText(postcondition.lineage) &&
     parsedHead !== undefined &&
+    (postcondition.supportedCustodyAssertions === undefined ||
+      postcondition.supportedCustodyAssertions.every((action) => assertionCurrent(root, action))) &&
+    (postcondition.supportedCustody === undefined ||
+      supportedCustodyCurrent(root, postcondition.supportedCustody)) &&
     verifyHistory(root, parsedHead, postcondition.lineage) &&
     hasOnlyExpectedSuccessor(root, parsedHead, postcondition.lineage)
   );
 }
 
 function reportedResult(ctx: PlanContext, prepared: Prepared): NpmPackageLifecycleResultV1 {
+  beforeLifecycleResultForInternalTest?.();
   if (
     ctx.apply &&
     prepared.postcondition !== undefined &&
@@ -1375,10 +1449,16 @@ function lifecycleActions(
   handoff: {
     authorityReceiptDigest: string;
     custody: readonly { path: string; sha256: string }[];
+    custodyAssertions?: readonly WriteAction[];
+    supportedCustody?: Readonly<{
+      binding: VerifiedAihSupportedCustodyBindingV2;
+      platform: "win32" | "darwin" | "linux";
+      posture: "enterprise" | "vibe";
+    }>;
     decision: GovernanceDecisionV2;
     receipt: UpstreamObservationReceiptV1;
   },
-  requested: { evidence: string; target: string },
+  requested: { target: string },
 ): Prepared {
   const { receipt } = handoff;
   const lineage = lineageFromDecision(handoff.decision, requested.target, receipt.integration);
@@ -1485,6 +1565,7 @@ function lifecycleActions(
       aggregate.existing,
       "advance npm lifecycle aggregate capacity",
     ),
+    ...(handoff.custodyAssertions ?? []),
     ...custody,
     claim === "absent"
       ? staged(
@@ -1526,6 +1607,12 @@ function lifecycleActions(
       lineage,
       recordPath: recordParts.join("/"),
       recordText,
+      ...(handoff.custodyAssertions === undefined
+        ? {}
+        : { supportedCustodyAssertions: handoff.custodyAssertions }),
+      ...(handoff.supportedCustody === undefined
+        ? {}
+        : { supportedCustody: handoff.supportedCustody }),
     },
     result: {
       applied: ctx.apply,
@@ -1854,7 +1941,8 @@ export const npmPackageLifecycleCommand: CommandSpec = {
     { flags: "--target <cli>", description: "exact supported target (required)" },
     {
       flags: "--evidence <path>",
-      description: "root-relative organization evidence path (required)",
+      description:
+        "root-relative organization evidence path (required for organization-qualified decisions)",
     },
   ],
   plan: npmPackageLifecyclePlan,

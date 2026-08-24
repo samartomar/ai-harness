@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -44,11 +45,30 @@ import {
 } from "../../src/verification/index.js";
 import { isWellFormedUtf16 } from "../../src/verification/validation.js";
 
+const externalLockFsRace = vi.hoisted(() => ({ lstat: false, realpath: false }));
+
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  return {
+    ...actual,
+    lstatSync: (...args: Parameters<typeof actual.lstatSync>) => {
+      if (externalLockFsRace.lstat) throw new Error("lstat race");
+      return actual.lstatSync(...args);
+    },
+    realpathSync: (...args: Parameters<typeof actual.realpathSync>) => {
+      if (externalLockFsRace.realpath) throw new Error("realpath race");
+      return actual.realpathSync(...args);
+    },
+  };
+});
+
 let dir: string;
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "aih-exec-"));
 });
 afterEach(() => {
+  externalLockFsRace.lstat = false;
+  externalLockFsRace.realpath = false;
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -67,6 +87,131 @@ function ctx(over: Partial<PlanContext> = {}): PlanContext {
     ...over,
   };
 }
+
+describe("external shared commit locks", () => {
+  it("accepts only a contained, non-linked absolute external lock shared by different target roots", async () => {
+    const trustedBase = join(dir, "shared-admin-store");
+    const firstRoot = join(dir, "one");
+    const secondRoot = join(dir, "two");
+    mkdirSync(trustedBase, { recursive: true });
+    // macOS may expose tmpdir() lexically under /var while realpathSync resolves
+    // it to /private/var. Build both paths from the canonical existing base so
+    // this valid fixture remains inside the production containment boundary.
+    const canonicalTrustedBase = realpathSync(trustedBase);
+    const lock = join(canonicalTrustedBase, "locks", "commit.lock");
+    const external = { external: true, path: lock, trustedBase: canonicalTrustedBase };
+    const planWith = (capability: string): Plan => ({
+      capability,
+      actions: [],
+      commitLock: external as unknown as string,
+    });
+    await expect(
+      executePlan(planWith("first"), ctx({ root: firstRoot, apply: true })),
+    ).resolves.toBeDefined();
+    await expect(
+      executePlan(planWith("second"), ctx({ root: secondRoot, apply: true })),
+    ).resolves.toBeDefined();
+  });
+
+  it("rejects relative, escaping, unknown, and symlinked external lock specifications", async () => {
+    const trustedBase = join(dir, "trusted");
+    mkdirSync(trustedBase, { recursive: true });
+    const fileBase = join(dir, "not-a-directory");
+    writeFileSync(fileBase, "not a directory");
+    const linkedBase = join(dir, "linked-trusted");
+    try {
+      symlinkSync(trustedBase, linkedBase, "dir");
+    } catch {
+      // Some Windows environments do not permit symlink creation for ordinary users.
+    }
+    const planWith = (commitLock: unknown): Plan => ({
+      capability: "bad",
+      actions: [],
+      commitLock: commitLock as string,
+    });
+    for (const lock of [
+      { external: true, path: "relative.lock", trustedBase },
+      { external: true, path: join(trustedBase, "..", "escape.lock"), trustedBase },
+      { external: true, path: join(trustedBase, "x.lock"), trustedBase: join(dir, "missing") },
+      { external: false, path: join(trustedBase, "x.lock"), trustedBase },
+      { external: true, path: join(trustedBase, "x.lock"), trustedBase, unexpected: true },
+      { external: true, path: join(fileBase, "x.lock"), trustedBase: fileBase },
+      ...(existsSync(linkedBase)
+        ? [{ external: true, path: join(linkedBase, "x.lock"), trustedBase: linkedBase }]
+        : []),
+    ])
+      await expect(executePlan(planWith(lock), ctx({ apply: true }))).rejects.toThrow(
+        /commit lock/i,
+      );
+  });
+
+  it("accepts only enumerable own data properties on an Object.prototype record", async () => {
+    const trustedBase = join(dir, "trusted");
+    const path = join(trustedBase, "locks", "commit.lock");
+    mkdirSync(trustedBase, { recursive: true });
+    const planWith = (commitLock: unknown): Plan => ({
+      capability: "bad-shape",
+      actions: [],
+      commitLock: commitLock as string,
+    });
+    const record = (): Record<string | symbol, unknown> => ({ external: true, path, trustedBase });
+    const customPrototype = Object.assign(Object.create({}), record());
+    const nullPrototype = Object.assign(Object.create(null), record());
+    const symbol = record();
+    symbol[Symbol("extra")] = true;
+    const nonEnumerable = record();
+    Object.defineProperty(nonEnumerable, "path", { enumerable: false, value: path });
+    const accessor = record();
+    Object.defineProperty(accessor, "trustedBase", {
+      enumerable: true,
+      get: () => {
+        throw new Error("must not call untrusted commit-lock accessors");
+      },
+    });
+    const symlinkedParent = join(trustedBase, "symlinked-parent");
+    try {
+      symlinkSync(dir, symlinkedParent, "dir");
+    } catch {
+      // Some Windows environments do not permit symlink creation for ordinary users.
+    }
+
+    for (const lock of [
+      customPrototype,
+      nullPrototype,
+      symbol,
+      nonEnumerable,
+      accessor,
+      ...(existsSync(symlinkedParent)
+        ? [{ external: true, path: join(symlinkedParent, "commit.lock"), trustedBase }]
+        : []),
+    ]) {
+      await expect(executePlan(planWith(lock), ctx({ apply: true }))).rejects.toMatchObject({
+        code: "AIH_CONFIG",
+        message: "invalid plan commit lock",
+      });
+    }
+  });
+
+  it("maps external lock filesystem validation races to AIH_CONFIG", async () => {
+    const trustedBase = join(dir, "trusted");
+    const path = join(trustedBase, "locks", "commit.lock");
+    mkdirSync(trustedBase, { recursive: true });
+    const planWith = (): Plan => ({
+      capability: "raced-lock",
+      actions: [],
+      commitLock: { external: true, path, trustedBase } as unknown as string,
+    });
+
+    for (const race of ["lstat", "realpath"] as const) {
+      externalLockFsRace[race] = true;
+      await expect(executePlan(planWith(), ctx({ apply: true }))).rejects.toMatchObject({
+        code: "AIH_CONFIG",
+        message: "invalid plan commit lock",
+      });
+      externalLockFsRace[race] = false;
+    }
+  });
+});
 
 function treeSnapshot(root: string): Map<string, string> {
   const out = new Map<string, string>();

@@ -27,15 +27,15 @@ export * from "./internals/verify.js";
 export * from "./org-policy/governance-decision-v2.js";
 export {
   AIH_SUPPORTED_QUALIFICATION_RECEIPT_PATH,
-  type AihSupportedQualificationArtifactVerificationV1,
-  type AihSupportedQualificationReceiptV1,
-  AihSupportedQualificationReceiptV1Schema,
-  canonicalAihSupportedQualificationReceiptV1,
-  MAX_AIH_SUPPORTED_QUALIFICATION_RECEIPT_BYTES_V1,
-  parseAihSupportedQualificationReceiptV1Bytes,
-  type VerifyAihSupportedQualificationArtifactV1Input,
-  verifyAihSupportedQualificationArtifactV1,
-} from "./org-policy/supported-qualification-receipt-v1.js";
+  type AihSupportedQualificationArtifactVerificationV2,
+  type AihSupportedQualificationReceiptV2,
+  AihSupportedQualificationReceiptV2Schema,
+  canonicalAihSupportedQualificationReceiptV2,
+  MAX_AIH_SUPPORTED_QUALIFICATION_RECEIPT_BYTES_V2,
+  parseAihSupportedQualificationReceiptV2Bytes,
+  type VerifyAihSupportedQualificationArtifactV2Input,
+  verifyAihSupportedQualificationArtifactV2,
+} from "./org-policy/supported-qualification-receipt-v2.js";
 export {
   canonicalUpstreamObservationReceiptV1,
   MAX_UPSTREAM_OBSERVATION_WINDOW_MS,

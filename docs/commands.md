@@ -690,7 +690,9 @@ parsed `--root` and `AIH_ROOT` compatibility inputs are ignored; the current dir
 `--out` path. Its one optional positional is an administrator root rather than a target repository — see
 "Administrator catalog consumption" below. The remaining `policy`
 subcommands are repo-scoped and accept the conventional optional `[root]` positional — `aih policy validate .` works exactly
-like `aih init .` (`--root` and `AIH_ROOT` still apply).
+like `aih init .` (`--root` and `AIH_ROOT` still apply). The `policy supported accept|inspect`
+administrator commands use `--root <target>` instead of a positional root so their input surface
+contains only the exact decision binding and code-owned target.
 
 `generate --apply` writes `aih-policy-workbench.html` (or `--out <path>`). The workbench authors and downloads the actual
 `aih-org-policy.json` schema, with schema-backed audit references for ECC or Superpowers agents, skills, and commands.
@@ -919,7 +921,7 @@ conditionally accepted decision from that receipt. Missing, rejected,
 revoked, stale, partial, refused, drifted, unknown, or mismatched inputs remain explicitly
 non-effective. This slice mints organization-qualified capabilities only from a closed
 `OrganizationEvidenceEnvelopeV1`, and `aih-supported` capabilities only from the
-separately rooted, closed `AihSupportedQualificationReceiptV1` contract. Core reads its fixed
+separately rooted, closed `AihSupportedQualificationReceiptV2` contract. Core reads its fixed
 `.aih/aih-supported-qualification-receipt.json` transport through a bounded regular-file and
 non-linked-parent boundary, copies the exact bytes into owner-only temporary custody, and runs an
 absolute external `gh attestation verify` against both
@@ -928,12 +930,13 @@ absolute external `gh attestation verify` against both
 inside the opaque organization authority. Only after attestation succeeds does Core parse the exact
 copied canonical bytes, require `organizationAdmission: "not-authoritative"`, and
 exact-match the full Decision V2 subject plus catalog signer, catalog, head, member, subject kind,
-subject digest, and qualification kind, and require the receipt validity window to stay wholly
-inside the current decision window. Raw, cloned, expired, substituted, or differently scoped
-receipts cannot mint the process-local qualification capability. The portable schema is shipped at
-`@aihq/harness/schemas/aih-supported-qualification-receipt-v1.schema.json`.
+subject digest, and qualification kind. Receipt V2 also binds the entry id, signer key, sequence,
+predecessor, replay identity, and head validity ceiling; Receipt V1 is unsupported. Raw, cloned,
+expired, substituted, replayed, rolled-back, or differently scoped receipts cannot mint the
+process-local qualification capability. The portable schema is shipped at
+`@aihq/harness/schemas/aih-supported-qualification-receipt-v2.schema.json`.
 
-A packed consumer may call `verifyAihSupportedQualificationArtifactV1` with only the target root,
+A packed consumer may call `verifyAihSupportedQualificationArtifactV2` with only the target root,
 the exact expected decision id/digest, and the exact expected subject. The package resolves the
 root, constructs its production process runner from the live process environment, verifies the
 organization authority before the separately rooted supported receipt, and takes a fresh UTC time
@@ -943,6 +946,34 @@ decision for the same subject makes the result `unverified`. The package root do
 authority-bearing verifier and this call returns no
 authority, receipt bytes, qualification capability, effect, or reusable evidence. A fake external
 `gh` in a disposable test proves the process path only; it is not a public attestation.
+
+`aih policy supported accept --root <target> --decision <id> --decision-digest <sha256>
+--target <id> --apply` is the durable administrator step for the supported route. Before any
+custody write, Core verifies the fixed Receipt V2 bytes against the dedicated support
+repository/workflow root and verifies the separate current V3 organization decision. The command
+derives continuity only from the attested receipt. It writes bounded, canonical signer, replay,
+head, and head-scoped member records under the posture-owned custody root using a fixed cooperative
+lock, immutable slots, exact-original preconditions, and a head compare-and-swap. Genesis requires
+sequence zero and the zero predecessor; a successor requires the exact current head and sequence
+plus one. Same exact acceptance is zero-write. Gaps, rollback, replay reuse, signer-key mismatch,
+removed members, linked paths, foreign records, capacity overflow, races, and partial state fail
+closed.
+
+At Enterprise posture, custody is held below the fixed OS administrator base; at Vibe posture it is
+held below `<target>/.aih/supported-qualification/v2/`.
+`aih policy supported inspect --root <target> --json` is strictly read-only and returns only a
+deterministic, path-scrubbed list of members bound to current heads. Its `memberRecords` object
+reports the fixed physical member-record `limit`, exact `occupied` count, and `remaining` capacity.
+That count includes immutable records retained from superseded heads even though those stale members
+are omitted from the current-head `members` list. Retained member records preserve replay and audit
+truth, continue to consume the 4,096-record capacity, and are not pruned by this command or by
+acceptance. At capacity, further member acceptance fails closed. Store migration or archival then
+requires a separately authorized administrator incident-reconciliation procedure; AIH does not
+silently delete or reuse the retained evidence. Inspect reports no receipt bytes, verifier output,
+credentials, or
+reusable capability. Catalog membership remains provenance; only the separately verified
+organization decision supplies admission. Simulated test attestations are not public evidence, and
+these commands perform no signing, release, or publication.
 
 `aih policy resolve [root] --decision <id> --decision-digest <sha256> --target <id>
 --effect <effect> --evidence <root-relative-file>` exposes the organization-evidence route as a
@@ -969,11 +1000,14 @@ performs no candidate scan or execution, installation, target-root mutation, or 
 and cannot satisfy or bypass the held ECC preview and executable-package closure work.
 
 `aih policy observe npm-package [root] --decision <id> --decision-digest <sha256> --target <id>
---evidence <root-relative-file>` is the first fixed upstream-observation route. It accepts no
-package or effect option: the exact current organization-qualified Decision V2 must name a
-`package` subject with an npm source, and the command always observes the `install` effect. It
-repeats the V3 authority and canonical organization-evidence verification above, then reads only
-`package-lock.json` and `node_modules/<decision-package>/package.json` under the target root. The
+[--evidence <root-relative-file>]` is the fixed upstream-observation route. It accepts no package or
+effect option: the exact current Decision V2 must name a `package` subject with an npm source, and
+the command always observes the `install` effect. The decision selects one mutually exclusive
+qualification route. `organization-qualified` requires the canonical `--evidence` envelope;
+`aih-supported` rejects `--evidence` and requires the current durable supported custody described
+above, then freshly re-verifies the fixed Receipt V2, its outer attestation, the authority,
+decision, validity, and current head-scoped member. Both routes then read only `package-lock.json`
+and `node_modules/<decision-package>/package.json` under the target root. The
 lockfile must be bounded strict JSON with a version 3 entry carrying the decision's exact name,
 version, and integrity; the installed manifest must repeat the exact name and version. Linked
 parents or files, npm link entries, malformed or ambiguous JSON, oversized files, and any byte or
@@ -984,14 +1018,15 @@ domain-separated canonical observation-receipt digest. The receipt itself and th
 qualification/observation capabilities never leave package-internal custody. Missing lockfile or
 manifest evidence reports non-effective `partial`; unsafe, changed, stale, rejected, revoked, and
 mismatched states refuse, and both classes exit nonzero. Apart from the fixed external GitHub
-authority-attestation check, the command starts no process. It does not write the target, append a
-run ledger, install, configure, execute, sign, publish, or make the subject projectable. This route
-does not observe AIH-supported qualifications, skills, MCP servers, remote endpoints, PyPI/OCI
-packages, or generic executable closures.
+authority attestation and, on the supported branch, the separate support-receipt attestation, the
+command starts no process. It does not write the target, append a run ledger, install, configure,
+execute, sign, publish, or make the subject projectable. This route does not observe skills, MCP
+servers, remote endpoints, PyPI/OCI packages, or generic executable closures.
 
 `aih policy lifecycle npm-package [root] --decision <id> --decision-digest <sha256> --target <id>
---evidence <root-relative-file>` repeats the fixed observation route and can persist its result as
-governance history. It is preview-only unless `--apply` is explicit:
+[--evidence <root-relative-file>]` repeats the decision-selected observation route and can persist
+its result as governance history. Organization-qualified decisions require `--evidence`;
+AIH-supported decisions reject it. The command is preview-only unless `--apply` is explicit:
 
 ```bash
 aih policy lifecycle npm-package <root> \
@@ -1005,9 +1040,11 @@ aih policy lifecycle npm-package <root> \
   --decision <exact-decision-id> \
   --decision-digest sha256:<exact-decision-digest> \
   --target <code-owned-cli-id> \
-  --evidence <root-relative-canonical-envelope> \
   --apply --json
 ```
+
+The first example is the organization-qualified route. The second is the AIH-supported route after
+`aih policy supported accept --apply`; it deliberately omits `--evidence`.
 
 Preview performs the complete fresh verification but writes nothing. `--apply` appends a canonical
 content-addressed record and advances the matching subject head in
@@ -1020,10 +1057,11 @@ current head. That records governance state; it does not remove, stop, update, o
 package. The durable append is reported truthfully, but revocation removes permission rather than
 establishing an effect, so verification and the command exit remain failing and nonzero.
 
-Apply re-verifies authority, evidence, installed custody, and observation before constructing the
-transaction, pins every authorizing file, and gives the prepared write at most 60 seconds—shorter
-when an authority, decision, review, or observation deadline arrives first. It refuses after that deadline,
-serializes cooperative lifecycle writers with one fixed store-wide lease, advances a strict canonical
+Apply re-verifies authority, the selected qualification route, installed custody, and observation
+before constructing the transaction, pins every authorizing file, and gives the prepared write at
+most 60 seconds—shorter when an authority, decision, review, or observation deadline arrives first.
+It refuses after that deadline, serializes cooperative lifecycle writers with one fixed store-wide
+lease, advances a strict canonical
 aggregate capacity guard with an exact-original transaction precondition, writes a durable immutable
 lineage claim before the ordinary binding and record, writes the record before the head, and reads the
 exact committed claim, binding, record, head, and bounded lineage before it reports success. The claim keeps
@@ -1034,7 +1072,9 @@ the read path independently derives the active-lineage and record counts. The wr
 observation, invalid or stale authority, linked store paths,
 substitution, a stale head whose canonical successor remains, forks, collisions, deadline expiry,
 content races, capacity exhaustion, and detached post-commit state refuse without a successful
-lifecycle claim. A
+lifecycle claim. On the supported route, commit also pins the exact fixed receipt and current
+signer/replay/member/head records, then performs a full bounded custody re-observation before it can
+report fulfilled. A
 non-effective result remains nonzero; no lifecycle record can make a failed observation effective.
 If an interrupted immutable-record rename leaves its private `.aih.tmp` scratch, a retry may consume
 it only when the exact candidate bytes still match, the file has single-link custody, and the
@@ -1073,10 +1113,10 @@ organization-controlled evidence and reconcile onto a newly governed target; do 
 the target-local audit chain to make the reader pass. These reads write no target or run-ledger state
 and perform no package effect.
 
-This remains the narrow organization-qualified root npm lifecycle, not a generic custom-source
-lifecycle. Neither the lifecycle command nor evaluate/report makes a candidate projectable, and the
-route does not cover skills, MCP servers, remote endpoints, non-npm packages, or the AIH-supported
-qualification route.
+This remains a narrow root npm lifecycle for organization-qualified or durably accepted
+AIH-supported decisions, not a generic custom-source lifecycle. Neither the lifecycle command nor
+evaluate/report makes a candidate projectable, and the route does not cover skills, MCP servers,
+remote endpoints, or non-npm packages.
 
 Approvals cover only a missing or failed **waivable** evidence record, require a non-empty signed reason,
 and last at most 90 days. Mandatory detector failures and every unwaivable danger code remain blocked even

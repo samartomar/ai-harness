@@ -460,9 +460,71 @@ function localTransactionRoot(ctx: PlanContext, absPath: string): string | undef
   return !rel.startsWith("..") && !isAbsolute(rel) ? ctx.root : undefined;
 }
 
-function resolveCommitLock(plan: Plan, ctx: PlanContext): string | undefined {
+function invalidPlanCommitLock(): never {
+  throw new AihError("invalid plan commit lock", "AIH_CONFIG");
+}
+
+function externalCommitLockFields(lock: object): { path: string; trustedBase: string } {
+  try {
+    const keys = Reflect.ownKeys(lock);
+    const descriptors = Object.getOwnPropertyDescriptors(lock);
+    if (
+      Object.getPrototypeOf(lock) !== Object.prototype ||
+      keys.length !== 3 ||
+      !keys.every((key) => key === "external" || key === "path" || key === "trustedBase")
+    )
+      invalidPlanCommitLock();
+    const external = descriptors.external;
+    const path = descriptors.path;
+    const trustedBase = descriptors.trustedBase;
+    if (
+      external === undefined ||
+      path === undefined ||
+      trustedBase === undefined ||
+      !external.enumerable ||
+      !path.enumerable ||
+      !trustedBase.enumerable ||
+      !("value" in external) ||
+      !("value" in path) ||
+      !("value" in trustedBase) ||
+      external.value !== true ||
+      typeof path.value !== "string" ||
+      typeof trustedBase.value !== "string"
+    )
+      invalidPlanCommitLock();
+    return { path: path.value, trustedBase: trustedBase.value };
+  } catch {
+    invalidPlanCommitLock();
+  }
+}
+
+function resolveCommitLock(
+  plan: Plan,
+  ctx: PlanContext,
+): { path: string; root: string } | undefined {
   const lock = plan.commitLock;
   if (lock === undefined) return undefined;
+  if (typeof lock === "object") {
+    const external = externalCommitLockFields(lock);
+    try {
+      if (
+        !isAbsolute(external.path) ||
+        !isAbsolute(external.trustedBase) ||
+        !existsSync(external.trustedBase)
+      )
+        invalidPlanCommitLock();
+      const baseInfo = lstatSync(external.trustedBase);
+      if (baseInfo.isSymbolicLink() || !baseInfo.isDirectory()) invalidPlanCommitLock();
+      const base = realpathSync(external.trustedBase);
+      const path = resolve(external.path);
+      const rel = relative(base, path);
+      if (rel === "" || rel.startsWith("..") || isAbsolute(rel)) invalidPlanCommitLock();
+      assertNoSymlinkParents(base, path, external.path);
+      return { path, root: base };
+    } catch {
+      invalidPlanCommitLock();
+    }
+  }
   if (
     typeof lock !== "string" ||
     !/^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/.test(lock) ||
@@ -473,7 +535,7 @@ function resolveCommitLock(plan: Plan, ctx: PlanContext): string | undefined {
   const absPath = resolvePath(ctx, lock);
   assertContained(ctx.root, absPath);
   assertNoSymlinkParents(ctx.root, absPath, lock);
-  return absPath;
+  return { path: absPath, root: ctx.root };
 }
 
 /** lstat kind (does not follow links) or `undefined` when the path is absent. */
@@ -828,7 +890,7 @@ export async function executePlan(
 
   const transactionOptions = {
     commitNotAfter,
-    ...(commitLock === undefined ? {} : { commitLock: { path: commitLock, root: ctx.root } }),
+    ...(commitLock === undefined ? {} : { commitLock }),
   };
   const txn = new FsTransaction(transactionOptions);
   const deferredTxn = new FsTransaction(transactionOptions);

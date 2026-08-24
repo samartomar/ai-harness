@@ -141,6 +141,7 @@ describe("CLI program", () => {
       "observe",
       "project",
       "resolve",
+      "supported",
       "validate",
       "verify",
     ]);
@@ -161,6 +162,11 @@ describe("CLI program", () => {
       }
       if (sub.name() === "observe" || sub.name() === "lifecycle") {
         expect(sub.commands.map((nested) => nested.name())).toEqual(["npm-package"]);
+        expect(sub.registeredArguments).toEqual([]);
+        continue;
+      }
+      if (sub.name() === "supported") {
+        expect(sub.commands.map((nested) => nested.name())).toEqual(["accept", "inspect"]);
         expect(sub.registeredArguments).toEqual([]);
         continue;
       }
@@ -260,6 +266,7 @@ describe("CLI program", () => {
       "ecc mcp",
       "policy observe",
       "policy lifecycle",
+      "policy supported",
     ]);
     const registeredPaths = (program: Command, parent: string[] = []): string[] =>
       program.commands.flatMap((cmd) => {

@@ -25,14 +25,14 @@ import {
   governanceDecisionSourceDigestV2,
   governanceDecisionSubjectDigestV2,
 } from "../../src/org-policy/governance-decision-v2.js";
-import * as supportedQualificationModule from "../../src/org-policy/supported-qualification-receipt-v1.js";
+import * as supportedQualificationModule from "../../src/org-policy/supported-qualification-receipt-v2.js";
 import {
-  AihSupportedQualificationReceiptV1Schema,
-  canonicalAihSupportedQualificationReceiptV1,
-  MAX_AIH_SUPPORTED_QUALIFICATION_RECEIPT_BYTES_V1,
-  parseAihSupportedQualificationReceiptV1Bytes,
-  verifyAihSupportedQualificationReceiptV1,
-} from "../../src/org-policy/supported-qualification-receipt-v1.js";
+  AihSupportedQualificationReceiptV2Schema,
+  canonicalAihSupportedQualificationReceiptV2,
+  MAX_AIH_SUPPORTED_QUALIFICATION_RECEIPT_BYTES_V2,
+  parseAihSupportedQualificationReceiptV2Bytes,
+  verifyAihSupportedQualificationReceiptV2,
+} from "../../src/org-policy/supported-qualification-receipt-v2.js";
 import {
   resolveObservedEffect,
   verifyUpstreamObservationV1,
@@ -47,7 +47,7 @@ let trustedSupportedGh: string;
 
 beforeEach(() => {
   vi.useFakeTimers();
-  vi.setSystemTime(new Date("2026-08-02T12:00:00+00:00"));
+  vi.setSystemTime(new Date("2026-08-02T12:00:00Z"));
   dir = mkdtempSync(join(tmpdir(), "aih-supported-qualification-"));
   authorityBin = mkdtempSync(join(tmpdir(), "aih-supported-authority-gh-"));
   supportedBin = mkdtempSync(join(tmpdir(), "aih-supported-receipt-gh-"));
@@ -102,7 +102,11 @@ function decision(overrides: Record<string, unknown> = {}) {
     subject,
     targets: ["claude"],
     allowedEffects: ["configure"],
-    policy: { id: "platform-policy", version: "2026.08", digest: `sha256:${"c".repeat(64)}` },
+    policy: {
+      id: "platform-policy",
+      version: "2026.08",
+      digest: `sha256:${"c".repeat(64)}`,
+    },
     control: { id: "review-control", digest: `sha256:${"d".repeat(64)}` },
     evidence: {
       id: "catalog-evidence",
@@ -112,9 +116,9 @@ function decision(overrides: Record<string, unknown> = {}) {
     issuer: "platform-security",
     actor: "security-admin",
     reason: "The exact catalog member is supported for this governed subject.",
-    issuedAt: "2026-08-01T00:00:00+00:00",
-    notBefore: "2026-08-01T00:00:00+00:00",
-    expiresAt: "2026-08-10T00:00:00+00:00",
+    issuedAt: "2026-08-01T00:00:00Z",
+    notBefore: "2026-08-01T00:00:00Z",
+    expiresAt: "2026-08-10T00:00:00Z",
     disposition: "approved" as const,
     acceptedFindings: [],
     acceptedGaps: [],
@@ -124,25 +128,96 @@ function decision(overrides: Record<string, unknown> = {}) {
 }
 
 function receipt(value: ReturnType<typeof decision>, overrides: Record<string, unknown> = {}) {
+  const catalogHeadDigest =
+    value.qualificationBasis.kind === "aih-supported"
+      ? value.qualificationBasis.catalogHeadDigest
+      : `sha256:${"4".repeat(64)}`;
   return {
     format: "aih-supported-qualification-receipt" as const,
-    version: 1 as const,
+    version: 2 as const,
     organizationAdmission: "not-authoritative" as const,
+    entryId: "platform-review-tool",
     subject: value.subject,
     qualificationBasis: value.qualificationBasis,
-    issuedAt: value.issuedAt,
-    notBefore: value.notBefore,
-    expiresAt: value.expiresAt,
+    catalogContinuity: {
+      catalogHeadDigest,
+      previousCatalogHeadDigest: `sha256:${"0".repeat(64)}`,
+      sequence: 0,
+      replayIdentity: `catalog-head:${catalogHeadDigest.slice(7)}:${"6".repeat(64)}`,
+      signerKeyId: `ed25519:${"7".repeat(64)}`,
+      headValidFrom: "2026-08-01T00:00:00Z",
+      headValidUntil: "2026-08-10T00:00:00Z",
+    },
+    issuedAt: "2026-08-01T00:00:00Z",
+    notBefore: "2026-08-01T00:00:00Z",
+    expiresAt: "2026-08-10T00:00:00Z",
     ...overrides,
   };
 }
 
 function canonicalBytes(value: ReturnType<typeof receipt>): Buffer {
-  return Buffer.from(canonicalAihSupportedQualificationReceiptV1(value as never), "utf8");
+  return Buffer.from(canonicalAihSupportedQualificationReceiptV2(value as never), "utf8");
+}
+
+/** The Supported producer's exact maximum: 4,096-byte remote source and 5,970-byte receipt. */
+function maximumReceiptV2(sourceBytes = 4_096) {
+  const digest = (character: string) => `sha256:${character.repeat(64)}`;
+  const sourceBase = {
+    type: "remote" as const,
+    endpoint: "https://a/",
+    contentDigest: digest("a"),
+  };
+  const endpoint = `https://a/${"x".repeat(sourceBytes - Buffer.byteLength(JSON.stringify(sourceBase)))}`;
+  const source = { ...sourceBase, endpoint };
+  const sourceDigest = governanceDecisionSourceDigestV2(source);
+  const id = `a${"b".repeat(63)}`;
+  const subject = {
+    kind: "package" as const,
+    id,
+    source,
+    sourceDigest,
+    subjectDigest: governanceDecisionSubjectDigestV2({
+      kind: "package",
+      id,
+      sourceDigest,
+    }),
+  };
+  const catalogHeadDigest = digest("4");
+  return {
+    format: "aih-supported-qualification-receipt" as const,
+    version: 2 as const,
+    organizationAdmission: "not-authoritative" as const,
+    entryId: id,
+    subject,
+    qualificationBasis: {
+      kind: "aih-supported" as const,
+      catalogSignerIdentity: `a${"b".repeat(255)}`,
+      catalogDigest: digest("3"),
+      catalogHeadDigest,
+      catalogMemberDigest: digest("5"),
+      subjectKind: "package" as const,
+      subjectDigest: subject.subjectDigest,
+    },
+    catalogContinuity: {
+      catalogHeadDigest,
+      previousCatalogHeadDigest: digest("2"),
+      sequence: Number.MAX_SAFE_INTEGER,
+      replayIdentity: `catalog-head:${catalogHeadDigest.slice(7)}:${"6".repeat(64)}`,
+      signerKeyId: `ed25519:${"7".repeat(64)}`,
+      headValidFrom: "2026-08-01T00:00:00Z",
+      headValidUntil: "2026-08-10T00:00:00Z",
+    },
+    issuedAt: "2026-08-01T00:00:00Z",
+    notBefore: "2026-08-01T00:00:00Z",
+    expiresAt: "2026-08-10T00:00:00Z",
+  };
 }
 
 function context(
-  handler: (argv: string[]) => { code?: number; spawnError?: boolean } = () => ({ code: 0 }),
+  handler: (argv: string[]) => {
+    code?: number;
+    spawnError?: boolean;
+  } = () => ({ code: 0 }),
   env: NodeJS.ProcessEnv = {},
 ): PlanContext {
   const run = fakeRunner((argv) => handler(argv));
@@ -177,8 +252,8 @@ function writeAuthorityReceipt(
       format: "aih-policy-authority-receipt",
       version: 3,
       issuerRepository: "acme/governance",
-      issuedAt: "2026-08-01T00:00:00+00:00",
-      expiresAt: "2026-08-10T00:00:00+00:00",
+      issuedAt: "2026-08-01T00:00:00Z",
+      expiresAt: "2026-08-10T00:00:00Z",
       trustedIssuers: [{ id: "platform-security", githubRepository: "acme/governance" }],
       targets: value.targets,
       decisions: [value],
@@ -220,7 +295,10 @@ function observation(value: ReturnType<typeof decision>) {
     format: "aih-upstream-observation-receipt" as const,
     version: 1 as const,
     id: "observation-platform-tool",
-    decision: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+    decision: {
+      id: value.id,
+      digest: governanceDecisionDigestV2(value as never),
+    },
     subject: {
       kind: value.subject.kind,
       id: value.subject.id,
@@ -229,20 +307,32 @@ function observation(value: ReturnType<typeof decision>) {
     },
     targets: ["claude"],
     allowedEffects: ["configure"],
-    integration: { mode: "upstream-managed" as const, owner: "upstream-admin", version: "1.0.0" },
-    installed: { id: "platform-review-tool", digest: `sha256:${"d".repeat(64)}` },
-    verifier: { id: "upstream-admin", version: "1.0.0", digest: `sha256:${"f".repeat(64)}` },
-    observedAt: "2026-08-02T00:00:00+00:00",
-    validUntil: "2026-08-03T00:00:00+00:00",
+    integration: {
+      mode: "upstream-managed" as const,
+      owner: "upstream-admin",
+      version: "1.0.0",
+    },
+    installed: {
+      id: "platform-review-tool",
+      digest: `sha256:${"d".repeat(64)}`,
+    },
+    verifier: {
+      id: "upstream-admin",
+      version: "1.0.0",
+      digest: `sha256:${"f".repeat(64)}`,
+    },
+    observedAt: "2026-08-02T00:00:00Z",
+    validUntil: "2026-08-03T00:00:00Z",
     outcome: "observed-success" as const,
   };
 }
 
-describe("AihSupportedQualificationReceiptV1", () => {
+describe("AihSupportedQualificationReceiptV2", () => {
   it("publishes only an inert supported qualification artifact verifier", async () => {
     const publicApi = packageApi as Record<string, unknown>;
-    expect(publicApi.verifyAihSupportedQualificationReceiptV1).toBeUndefined();
-    const verifier = publicApi.verifyAihSupportedQualificationArtifactV1;
+    expect(publicApi.verifyAihSupportedQualificationReceiptV2).toBeUndefined();
+    expect(publicApi.verifyAihSupportedQualificationArtifactV1).toBeUndefined();
+    const verifier = publicApi.verifyAihSupportedQualificationArtifactV2;
     expect(verifier).toEqual(expect.any(Function));
     if (typeof verifier !== "function") return;
     const value = decision();
@@ -254,7 +344,10 @@ describe("AihSupportedQualificationReceiptV1", () => {
       }) => Promise<Record<string, unknown>>
     )({
       root: dir,
-      decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+      decisionReference: {
+        id: value.id,
+        digest: governanceDecisionDigestV2(value as never),
+      },
       subject: value.subject,
     });
     expect(result).toEqual({
@@ -265,11 +358,14 @@ describe("AihSupportedQualificationReceiptV1", () => {
       verifier as (input: Record<string, unknown>) => Promise<Record<string, unknown>>
     )({
       root: dir,
-      decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+      decisionReference: {
+        id: value.id,
+        digest: governanceDecisionDigestV2(value as never),
+      },
       subject: value.subject,
       run: () => ({ code: 0 }),
       env: { AIH_SUPPORTED_QUALIFICATION_REPOSITORY: "forged/registry" },
-      now: "2099-01-01T00:00:00+00:00",
+      now: "2099-01-01T00:00:00Z",
       supportedTargets: ["forged-target"],
     });
     expect(forged).toEqual({
@@ -280,7 +376,7 @@ describe("AihSupportedQualificationReceiptV1", () => {
 
   it("uses an internal-only seam to verify the artifact without minting a capability", async () => {
     const internalApi = supportedQualificationModule as Record<string, unknown>;
-    const verifier = internalApi.verifyAihSupportedQualificationArtifactV1WithContext;
+    const verifier = internalApi.verifyAihSupportedQualificationArtifactV2WithContext;
     expect(verifier).toEqual(expect.any(Function));
     if (typeof verifier !== "function") return;
     const value = decision();
@@ -303,7 +399,10 @@ describe("AihSupportedQualificationReceiptV1", () => {
       }),
       {
         root: dir,
-        decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+        decisionReference: {
+          id: value.id,
+          digest: governanceDecisionDigestV2(value as never),
+        },
         subject: value.subject,
       },
     );
@@ -316,14 +415,17 @@ describe("AihSupportedQualificationReceiptV1", () => {
 
   it("fails closed in the artifact seam for roots, attestations, and exact bindings", async () => {
     const internalApi = supportedQualificationModule as Record<string, unknown>;
-    const verifier = internalApi.verifyAihSupportedQualificationArtifactV1WithContext;
+    const verifier = internalApi.verifyAihSupportedQualificationArtifactV2WithContext;
     expect(verifier).toEqual(expect.any(Function));
     if (typeof verifier !== "function") return;
     const value = decision();
     await authority(value);
     const input = {
       root: dir,
-      decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+      decisionReference: {
+        id: value.id,
+        digest: governanceDecisionDigestV2(value as never),
+      },
       subject: value.subject,
     };
     for (const receiptValue of [
@@ -333,12 +435,12 @@ describe("AihSupportedQualificationReceiptV1", () => {
           catalogDigest: `sha256:${"0".repeat(64)}`,
         },
       }),
-      receipt(value, { expiresAt: "2026-08-02T11:59:59+00:00" }),
+      receipt(value, { expiresAt: "2026-08-02T11:59:59Z" }),
       receipt(value, {
-        notBefore: "2026-08-02T12:00:01+00:00",
-        expiresAt: "2026-08-03T00:00:00+00:00",
+        notBefore: "2026-08-02T12:00:01Z",
+        expiresAt: "2026-08-03T00:00:00Z",
       }),
-      receipt(value, { expiresAt: "2026-08-10T00:00:01+00:00" }),
+      receipt(value, { expiresAt: "2026-08-10T00:00:01Z" }),
     ]) {
       writeReceipt(receiptValue);
       await expect(
@@ -352,10 +454,19 @@ describe("AihSupportedQualificationReceiptV1", () => {
     await expect(
       (verifier as (ctx: PlanContext, value: typeof input) => Promise<Record<string, unknown>>)(
         context(() => ({ code: 0 })),
-        { ...input, decisionReference: { ...input.decisionReference, id: "other-decision" } },
+        {
+          ...input,
+          decisionReference: {
+            ...input.decisionReference,
+            id: "other-decision",
+          },
+        },
       ),
     ).resolves.toMatchObject({ state: "unverified" });
-    const differentSource = { ...value.subject.source, repository: "acme/other-review-tool" };
+    const differentSource = {
+      ...value.subject.source,
+      repository: "acme/other-review-tool",
+    };
     const differentSourceDigest = governanceDecisionSourceDigestV2(differentSource);
     await expect(
       (verifier as (ctx: PlanContext, value: typeof input) => Promise<Record<string, unknown>>)(
@@ -406,7 +517,7 @@ describe("AihSupportedQualificationReceiptV1", () => {
 
   it("fails closed for future authority issuance and referenced-decision currency boundaries", async () => {
     const internalApi = supportedQualificationModule as Record<string, unknown>;
-    const verifier = internalApi.verifyAihSupportedQualificationArtifactV1WithContext;
+    const verifier = internalApi.verifyAihSupportedQualificationArtifactV2WithContext;
     expect(verifier).toEqual(expect.any(Function));
     if (typeof verifier !== "function") return;
     const verify = async (
@@ -428,13 +539,18 @@ describe("AihSupportedQualificationReceiptV1", () => {
         context(() => ({ code: 0 })),
         {
           root: dir,
-          decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+          decisionReference: {
+            id: value.id,
+            digest: governanceDecisionDigestV2(value as never),
+          },
           subject: value.subject,
         },
       );
     };
     const futureAuthority = decision();
-    writeAuthorityReceipt(futureAuthority, { issuedAt: "2026-08-02T12:00:01+00:00" });
+    writeAuthorityReceipt(futureAuthority, {
+      issuedAt: "2026-08-02T12:00:01Z",
+    });
     expect(
       PolicyAuthorityReceiptSchema.safeParse(
         JSON.parse(readFileSync(join(dir, ".aih", "policy-authority-receipt.json"), "utf8")),
@@ -464,15 +580,15 @@ describe("AihSupportedQualificationReceiptV1", () => {
       ),
     ).resolves.toMatchObject({ state: "unverified" });
     const invalidDecisions: Array<ReturnType<typeof decision>> = [
-      decision({ notBefore: "2026-08-02T12:00:01+00:00" }),
-      decision({ expiresAt: "2026-08-02T12:00:00+00:00" }),
+      decision({ notBefore: "2026-08-02T12:00:01Z" }),
+      decision({ expiresAt: "2026-08-02T12:00:00Z" }),
       decision({ disposition: "rejected" }),
       decision({
         disposition: "accepted-with-conditions",
         acceptedFindings: ["finding-1"],
         acceptedGaps: [],
         conditions: ["review-required"],
-        reviewBy: "2026-08-02T12:00:00+00:00",
+        reviewBy: "2026-08-02T12:00:00Z",
       }),
     ];
     for (const value of invalidDecisions) {
@@ -490,7 +606,7 @@ describe("AihSupportedQualificationReceiptV1", () => {
             version: 2,
             decisionDigest: governanceDecisionDigestV2(revoked as never),
             issuer: revoked.issuer,
-            revokedAt: "2026-08-01T00:00:00+00:00",
+            revokedAt: "2026-08-01T00:00:00Z",
             reason: "Withdrawn at the exact validity boundary.",
           },
         ],
@@ -500,11 +616,14 @@ describe("AihSupportedQualificationReceiptV1", () => {
 
   it("refuses a subject-wide current rejected decision even for an approved reference", async () => {
     const internalApi = supportedQualificationModule as Record<string, unknown>;
-    const verifier = internalApi.verifyAihSupportedQualificationArtifactV1WithContext;
+    const verifier = internalApi.verifyAihSupportedQualificationArtifactV2WithContext;
     expect(verifier).toEqual(expect.any(Function));
     if (typeof verifier !== "function") return;
     const approved = decision();
-    const rejected = decision({ id: "decision-rejected-tool", disposition: "rejected" });
+    const rejected = decision({
+      id: "decision-rejected-tool",
+      disposition: "rejected",
+    });
     writeAuthorityReceipt(approved, { decisions: [approved, rejected] });
     writeReceipt(receipt(approved));
     await expect(
@@ -529,13 +648,13 @@ describe("AihSupportedQualificationReceiptV1", () => {
         },
       ),
     ).resolves.toMatchObject({ state: "unverified" });
-    const subjectRejection = internalApi.isCurrentUnrevokedSubjectRejectionV1;
+    const subjectRejection = internalApi.isCurrentUnrevokedSubjectRejectionV2;
     expect(subjectRejection).toEqual(expect.any(Function));
     if (typeof subjectRejection !== "function") return;
     const base = {
       decisions: [approved, rejected],
       subjectDigest: approved.subject.subjectDigest,
-      now: "2026-08-02T12:00:00+00:00",
+      now: "2026-08-02T12:00:00Z",
     };
     expect(
       (subjectRejection as (input: Record<string, unknown>) => boolean)({
@@ -543,7 +662,7 @@ describe("AihSupportedQualificationReceiptV1", () => {
         decisionRevocations: [
           {
             decisionDigest: governanceDecisionDigestV2(rejected as never),
-            revokedAt: "2026-08-02T12:00:01+00:00",
+            revokedAt: "2026-08-02T12:00:01Z",
           },
         ],
       }),
@@ -554,7 +673,7 @@ describe("AihSupportedQualificationReceiptV1", () => {
         decisionRevocations: [
           {
             decisionDigest: governanceDecisionDigestV2(rejected as never),
-            revokedAt: "2026-08-02T12:00:00+00:00",
+            revokedAt: "2026-08-02T12:00:00Z",
           },
         ],
       }),
@@ -563,7 +682,7 @@ describe("AihSupportedQualificationReceiptV1", () => {
 
   it("returns the fixed inert failure for nonexistent and regular-file public roots", async () => {
     const publicApi = packageApi as Record<string, unknown>;
-    const verifier = publicApi.verifyAihSupportedQualificationArtifactV1;
+    const verifier = publicApi.verifyAihSupportedQualificationArtifactV2;
     expect(verifier).toEqual(expect.any(Function));
     if (typeof verifier !== "function") return;
     const value = decision();
@@ -579,7 +698,10 @@ describe("AihSupportedQualificationReceiptV1", () => {
           }) => Promise<unknown>
         )({
           root,
-          decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+          decisionReference: {
+            id: value.id,
+            digest: governanceDecisionDigestV2(value as never),
+          },
           subject: value.subject,
         }),
       ).resolves.toEqual({
@@ -592,7 +714,7 @@ describe("AihSupportedQualificationReceiptV1", () => {
   it("POSIX simulation: package root uses only its own default-runner attestation path", async () => {
     if (process.platform === "win32") return;
     const publicApi = packageApi as Record<string, unknown>;
-    const verifier = publicApi.verifyAihSupportedQualificationArtifactV1;
+    const verifier = publicApi.verifyAihSupportedQualificationArtifactV2;
     expect(verifier).toEqual(expect.any(Function));
     if (typeof verifier !== "function") return;
     const value = decision();
@@ -621,7 +743,10 @@ describe("AihSupportedQualificationReceiptV1", () => {
           }) => Promise<unknown>
         )({
           root: dir,
-          decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+          decisionReference: {
+            id: value.id,
+            digest: governanceDecisionDigestV2(value as never),
+          },
           subject: value.subject,
         }),
       ).resolves.toEqual({ state: "verified" });
@@ -645,7 +770,7 @@ describe("AihSupportedQualificationReceiptV1", () => {
   it("accepts only exact canonical UTF-8 receipt bytes and rejects malformed transport", () => {
     const value = receipt(decision());
     const bytes = canonicalBytes(value);
-    expect(parseAihSupportedQualificationReceiptV1Bytes(bytes)).toEqual(value);
+    expect(parseAihSupportedQualificationReceiptV2Bytes(bytes)).toEqual(value);
     for (const invalid of [
       Buffer.from(JSON.stringify(value)),
       Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), bytes]),
@@ -659,32 +784,111 @@ describe("AihSupportedQualificationReceiptV1", () => {
           ),
       ),
       canonicalBytes({ ...value, extra: true } as never),
-      canonicalBytes({ ...value, organizationAdmission: "authoritative" } as never),
+      canonicalBytes({ ...value, version: 1 } as never),
+      canonicalBytes({
+        ...value,
+        organizationAdmission: "authoritative",
+      } as never),
+      canonicalBytes({
+        ...value,
+        catalogContinuity: { ...value.catalogContinuity, unknown: true },
+      } as never),
       canonicalBytes({
         ...value,
         subject: { ...value.subject, sourceDigest: `sha256:${"0".repeat(64)}` },
       }),
       canonicalBytes({
         ...value,
-        subject: { ...value.subject, subjectDigest: `sha256:${"0".repeat(64)}` },
+        subject: {
+          ...value.subject,
+          subjectDigest: `sha256:${"0".repeat(64)}`,
+        },
         qualificationBasis: {
           ...value.qualificationBasis,
           subjectDigest: `sha256:${"0".repeat(64)}`,
         },
       }),
       canonicalBytes({ ...value, expiresAt: value.notBefore } as never),
-      canonicalBytes({ ...value, expiresAt: "2026-12-01T00:00:00+00:00" } as never),
-      Buffer.alloc(MAX_AIH_SUPPORTED_QUALIFICATION_RECEIPT_BYTES_V1 + 1),
+      canonicalBytes({ ...value, expiresAt: "2026-12-01T00:00:00Z" } as never),
+      canonicalBytes({
+        ...value,
+        catalogContinuity: {
+          ...value.catalogContinuity,
+          replayIdentity: `catalog-head:${"0".repeat(64)}:${"6".repeat(64)}`,
+        },
+      } as never),
+      canonicalBytes({
+        ...value,
+        catalogContinuity: {
+          ...value.catalogContinuity,
+          previousCatalogHeadDigest: value.catalogContinuity.catalogHeadDigest,
+        },
+      } as never),
+      canonicalBytes({
+        ...value,
+        catalogContinuity: { ...value.catalogContinuity, sequence: 1 },
+      } as never),
+      canonicalBytes({
+        ...value,
+        catalogContinuity: {
+          ...value.catalogContinuity,
+          headValidFrom: value.catalogContinuity.headValidUntil,
+        },
+      } as never),
+      Buffer.from(bytes.toString("utf8").replace('"sequence":0', '"sequence":-0')),
+      Buffer.from(bytes.toString("utf8").replace('"sequence":0', '"sequence":9007199254740992')),
+      ...(["issuedAt", "notBefore", "expiresAt"] as const).map((field) =>
+        canonicalBytes({ ...value, [field]: "2026-02-30T00:00:00Z" } as never),
+      ),
+      ...(["headValidFrom", "headValidUntil"] as const).map((field) =>
+        canonicalBytes({
+          ...value,
+          catalogContinuity: {
+            ...value.catalogContinuity,
+            [field]: "2026-02-30T00:00:00Z",
+          },
+        } as never),
+      ),
     ]) {
-      expect(parseAihSupportedQualificationReceiptV1Bytes(invalid)).toBeUndefined();
+      expect(parseAihSupportedQualificationReceiptV2Bytes(invalid)).toBeUndefined();
     }
+  });
+
+  it("accepts producer-canonical proleptic Gregorian years across receipt and head timestamps", () => {
+    for (const year of ["0000", "0099", "0100"]) {
+      const value = receipt(decision(), {
+        catalogContinuity: {
+          ...receipt(decision()).catalogContinuity,
+          headValidFrom: `${year}-01-01T00:00:00Z`,
+          headValidUntil: `${year}-01-02T00:00:00Z`,
+        },
+        issuedAt: `${year}-01-01T00:00:00Z`,
+        notBefore: `${year}-01-01T00:00:00Z`,
+        expiresAt: `${year}-01-02T00:00:00Z`,
+      });
+      expect(parseAihSupportedQualificationReceiptV2Bytes(canonicalBytes(value))).toEqual(value);
+    }
+  });
+
+  it("accepts the producer's exact 4,096-byte source and 5,970-byte receipt ceilings", () => {
+    const exact = maximumReceiptV2();
+    const exactBytes = Buffer.from(canonicalAihSupportedQualificationReceiptV2(exact), "utf8");
+    expect(Buffer.byteLength(JSON.stringify(exact.subject.source), "utf8")).toBe(4_096);
+    expect(exactBytes.byteLength).toBe(MAX_AIH_SUPPORTED_QUALIFICATION_RECEIPT_BYTES_V2);
+    expect(parseAihSupportedQualificationReceiptV2Bytes(exactBytes)).toEqual(exact);
+
+    const over = maximumReceiptV2(4_097);
+    const overBytes = Buffer.from(canonicalAihSupportedQualificationReceiptV2(over), "utf8");
+    expect(Buffer.byteLength(JSON.stringify(over.subject.source), "utf8")).toBe(4_097);
+    expect(overBytes.byteLength).toBe(MAX_AIH_SUPPORTED_QUALIFICATION_RECEIPT_BYTES_V2 + 1);
+    expect(parseAihSupportedQualificationReceiptV2Bytes(overBytes)).toBeUndefined();
   });
 
   it("ships a strict schema", () => {
     const schema = JSON.parse(
       // The committed schema test pins byte-for-byte generated output; this checks consumer validity.
       readFileSync(
-        join(process.cwd(), "schemas/aih-supported-qualification-receipt-v1.schema.json"),
+        join(process.cwd(), "schemas/aih-supported-qualification-receipt-v2.schema.json"),
         "utf8",
       ),
     );
@@ -692,7 +896,7 @@ describe("AihSupportedQualificationReceiptV1", () => {
     const value = receipt(decision());
     expect(validate(value), JSON.stringify(validate.errors)).toBe(true);
     expect(validate({ ...value, unexpected: true })).toBe(false);
-    expect(AihSupportedQualificationReceiptV1Schema.safeParse(value).success).toBe(true);
+    expect(AihSupportedQualificationReceiptV2Schema.safeParse(value).success).toBe(true);
   });
 
   it("requires dedicated roots, verifies an exact private copy, and mints no execution authority", async () => {
@@ -700,19 +904,22 @@ describe("AihSupportedQualificationReceiptV1", () => {
     const verifiedAuthority = await authority(value);
     writeReceipt(receipt(value));
     const argv: string[][] = [];
-    const result = await verifyAihSupportedQualificationReceiptV1(
+    const result = await verifyAihSupportedQualificationReceiptV2(
       context((actual) => {
         argv.push(actual);
         return actual[0] === trustedSupportedGh ? { code: 0 } : { code: 1 };
       }),
       {
         authority: verifiedAuthority,
-        decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+        decisionReference: {
+          id: value.id,
+          digest: governanceDecisionDigestV2(value as never),
+        },
         subject: value.subject,
         target: "claude",
         effect: "configure",
         supportedTargets: ["claude"],
-        now: "2026-08-02T12:00:00+00:00",
+        now: "2026-08-02T12:00:00Z",
       },
     );
     expect(result.problem).toBeUndefined();
@@ -737,22 +944,27 @@ describe("AihSupportedQualificationReceiptV1", () => {
     const localGh = join(dir, process.platform === "win32" ? "gh.exe" : "gh");
     writeFileSync(localGh, "untrusted local gh fixture\n", { mode: 0o755 });
     const calls: string[][] = [];
-    const result = await verifyAihSupportedQualificationReceiptV1(
+    const result = await verifyAihSupportedQualificationReceiptV2(
       context(
         (argv) => {
           calls.push(argv);
           return { code: argv[0] === trustedSupportedGh ? 0 : 1 };
         },
-        { PATH: `${dir}${process.platform === "win32" ? ";" : ":"}${supportedBin}` },
+        {
+          PATH: `${dir}${process.platform === "win32" ? ";" : ":"}${supportedBin}`,
+        },
       ),
       {
         authority: verifiedAuthority,
-        decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+        decisionReference: {
+          id: value.id,
+          digest: governanceDecisionDigestV2(value as never),
+        },
         subject: value.subject,
         target: "claude",
         effect: "configure",
         supportedTargets: ["claude"],
-        now: "2026-08-02T12:00:00+00:00",
+        now: "2026-08-02T12:00:00Z",
       },
     );
     expect(result.qualification).toBeDefined();
@@ -765,7 +977,7 @@ describe("AihSupportedQualificationReceiptV1", () => {
     const verifiedAuthority = await authority(value, "policy.yml");
     writeReceipt(receipt(value));
     const calls: string[][] = [];
-    const result = await verifyAihSupportedQualificationReceiptV1(
+    const result = await verifyAihSupportedQualificationReceiptV2(
       context(
         (argv) => {
           calls.push(argv);
@@ -780,12 +992,15 @@ describe("AihSupportedQualificationReceiptV1", () => {
       ),
       {
         authority: verifiedAuthority,
-        decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+        decisionReference: {
+          id: value.id,
+          digest: governanceDecisionDigestV2(value as never),
+        },
         subject: value.subject,
         target: "claude",
         effect: "configure",
         supportedTargets: ["claude"],
-        now: "2026-08-02T12:00:00+00:00",
+        now: "2026-08-02T12:00:00Z",
       },
     );
     expect(result.problem).toMatch(/reuses the organization authority root/);
@@ -797,7 +1012,7 @@ describe("AihSupportedQualificationReceiptV1", () => {
     const verifiedAuthority = await authority(value);
     writeReceipt(receipt(value));
     const calls: string[][] = [];
-    const result = await verifyAihSupportedQualificationReceiptV1(
+    const result = await verifyAihSupportedQualificationReceiptV2(
       context(
         (argv) => {
           calls.push(argv);
@@ -807,12 +1022,15 @@ describe("AihSupportedQualificationReceiptV1", () => {
       ),
       {
         authority: verifiedAuthority,
-        decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+        decisionReference: {
+          id: value.id,
+          digest: governanceDecisionDigestV2(value as never),
+        },
         subject: value.subject,
         target: "claude",
         effect: "configure",
         supportedTargets: ["claude"],
-        now: "2026-08-02T12:00:00+00:00",
+        now: "2026-08-02T12:00:00Z",
       },
     );
     expect(result.problem).toMatch(/reuses the organization authority root/);
@@ -824,21 +1042,29 @@ describe("AihSupportedQualificationReceiptV1", () => {
     const verifiedAuthority = await authority(value);
     writeReceipt(
       receipt(value, {
-        issuedAt: "2026-07-25T00:00:00+00:00",
-        notBefore: "2026-08-01T00:00:00+00:00",
-        expiresAt: "2026-08-02T13:00:00+00:00",
+        issuedAt: "2026-07-25T00:00:00Z",
+        notBefore: "2026-08-01T00:00:00Z",
+        expiresAt: "2026-08-02T13:00:00Z",
+        catalogContinuity: {
+          ...receipt(value).catalogContinuity,
+          headValidFrom: "2026-07-25T00:00:00Z",
+          headValidUntil: "2026-08-02T13:00:00Z",
+        },
       }),
     );
     const input = {
       authority: verifiedAuthority,
-      decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+      decisionReference: {
+        id: value.id,
+        digest: governanceDecisionDigestV2(value as never),
+      },
       subject: value.subject,
       target: "claude" as const,
       effect: "configure" as const,
       supportedTargets: ["claude"],
-      now: "2026-08-02T12:00:00+00:00",
+      now: "2026-08-02T12:00:00Z",
     };
-    const result = await verifyAihSupportedQualificationReceiptV1(
+    const result = await verifyAihSupportedQualificationReceiptV2(
       context((argv) => ({ code: argv[0] === trustedSupportedGh ? 0 : 1 })),
       input,
     );
@@ -864,7 +1090,7 @@ describe("AihSupportedQualificationReceiptV1", () => {
         expectedVerifier: currentObservation.verifier,
         expectedInstalled: currentObservation.installed,
         expectedIntegration: currentObservation.integration,
-        now: "2026-08-02T13:00:00+00:00",
+        now: "2026-08-02T13:00:00Z",
       }),
     ).toMatchObject({ state: "qualification-mismatch" });
   });
@@ -874,34 +1100,37 @@ describe("AihSupportedQualificationReceiptV1", () => {
     const verifiedAuthority = await authority(value);
     const input = {
       authority: verifiedAuthority,
-      decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+      decisionReference: {
+        id: value.id,
+        digest: governanceDecisionDigestV2(value as never),
+      },
       subject: value.subject,
       target: "claude" as const,
       effect: "configure" as const,
       supportedTargets: ["claude"],
-      now: "2026-08-02T12:00:00+00:00",
+      now: "2026-08-02T12:00:00Z",
     };
     const invalidReceipts: Array<[string, ReturnType<typeof receipt>]> = [
-      ["expires before now", receipt(value, { expiresAt: "2026-08-02T11:59:59+00:00" })],
+      ["expires before now", receipt(value, { expiresAt: "2026-08-02T11:59:59Z" })],
       [
         "notBefore is after now",
         receipt(value, {
-          notBefore: "2026-08-02T12:00:01+00:00",
-          expiresAt: "2026-08-03T00:00:00+00:00",
+          notBefore: "2026-08-02T12:00:01Z",
+          expiresAt: "2026-08-03T00:00:00Z",
         }),
       ],
       [
         "expired window precedes the current decision",
         receipt(value, {
-          issuedAt: "2026-07-20T00:00:00+00:00",
-          notBefore: "2026-07-20T00:00:00+00:00",
-          expiresAt: "2026-07-21T00:00:00+00:00",
+          issuedAt: "2026-07-20T00:00:00Z",
+          notBefore: "2026-07-20T00:00:00Z",
+          expiresAt: "2026-07-21T00:00:00Z",
         }),
       ],
     ];
     for (const [condition, invalidReceipt] of invalidReceipts) {
       writeReceipt(invalidReceipt);
-      const result = await verifyAihSupportedQualificationReceiptV1(
+      const result = await verifyAihSupportedQualificationReceiptV2(
         context((argv) => ({ code: argv[0] === trustedSupportedGh ? 0 : 1 })),
         input,
       );
@@ -915,29 +1144,29 @@ describe("AihSupportedQualificationReceiptV1", () => {
     const verifiedAuthority = await authority(value);
     const input = {
       authority: verifiedAuthority,
-      decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+      decisionReference: {
+        id: value.id,
+        digest: governanceDecisionDigestV2(value as never),
+      },
       subject: value.subject,
       target: "claude" as const,
       effect: "configure" as const,
       supportedTargets: ["claude"],
-      now: "2026-08-02T12:00:00+00:00",
+      now: "2026-08-02T12:00:00Z",
     };
     const outsideDecisionWindows: Array<[string, ReturnType<typeof receipt>]> = [
-      [
-        "expires after the current decision",
-        receipt(value, { expiresAt: "2026-08-10T00:00:01+00:00" }),
-      ],
+      ["expires after the current decision", receipt(value, { expiresAt: "2026-08-10T00:00:01Z" })],
       [
         "starts before the current decision",
         receipt(value, {
-          issuedAt: "2026-07-31T00:00:00+00:00",
-          notBefore: "2026-07-31T00:00:00+00:00",
+          issuedAt: "2026-07-31T00:00:00Z",
+          notBefore: "2026-07-31T00:00:00Z",
         }),
       ],
     ];
     for (const [condition, outsideDecisionWindow] of outsideDecisionWindows) {
       writeReceipt(outsideDecisionWindow);
-      const result = await verifyAihSupportedQualificationReceiptV1(
+      const result = await verifyAihSupportedQualificationReceiptV2(
         context((argv) => ({ code: argv[0] === trustedSupportedGh ? 0 : 1 })),
         input,
       );
@@ -953,24 +1182,36 @@ describe("AihSupportedQualificationReceiptV1", () => {
     writeReceipt(receipt(value));
     const input = {
       authority: verifiedAuthority,
-      decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+      decisionReference: {
+        id: value.id,
+        digest: governanceDecisionDigestV2(value as never),
+      },
       subject: value.subject,
       target: "claude" as const,
       effect: "configure" as const,
       supportedTargets: ["claude"],
-      now: "2026-08-02T12:00:00+00:00",
+      now: "2026-08-02T12:00:00Z",
     };
     for (const { authority: rootAuthority, env } of [
-      { authority: verifiedAuthority, env: { AIH_SUPPORTED_QUALIFICATION_REPOSITORY: "" } },
-      { authority: verifiedAuthority, env: { AIH_SUPPORTED_QUALIFICATION_WORKFLOW: "" } },
+      {
+        authority: verifiedAuthority,
+        env: { AIH_SUPPORTED_QUALIFICATION_REPOSITORY: "" },
+      },
+      {
+        authority: verifiedAuthority,
+        env: { AIH_SUPPORTED_QUALIFICATION_WORKFLOW: "" },
+      },
       {
         authority: verifiedAuthority,
         env: { AIH_SUPPORTED_QUALIFICATION_REPOSITORY: "acme/governance" },
       },
-      { authority: workflowAuthority, env: { AIH_SUPPORTED_QUALIFICATION_WORKFLOW: "policy.yml" } },
+      {
+        authority: workflowAuthority,
+        env: { AIH_SUPPORTED_QUALIFICATION_WORKFLOW: "policy.yml" },
+      },
     ]) {
       await expect(
-        verifyAihSupportedQualificationReceiptV1(
+        verifyAihSupportedQualificationReceiptV2(
           context(() => ({ code: 0 }), env),
           { ...input, authority: rootAuthority },
         ),
@@ -980,7 +1221,7 @@ describe("AihSupportedQualificationReceiptV1", () => {
     }
     const rootCalls: string[][] = [];
     await expect(
-      verifyAihSupportedQualificationReceiptV1(
+      verifyAihSupportedQualificationReceiptV2(
         context(
           (argv) => {
             rootCalls.push(argv);
@@ -995,7 +1236,7 @@ describe("AihSupportedQualificationReceiptV1", () => {
     writeFileSync(join(dir, ".aih", "aih-supported-qualification-receipt.json"), "{not-json");
     const malformedCalls: string[][] = [];
     await expect(
-      verifyAihSupportedQualificationReceiptV1(
+      verifyAihSupportedQualificationReceiptV2(
         context((argv) => {
           malformedCalls.push(argv);
           return { code: 0 };
@@ -1007,10 +1248,16 @@ describe("AihSupportedQualificationReceiptV1", () => {
     for (const changed of [
       receipt(value, { subject: { ...value.subject, id: "other-tool" } }),
       receipt(value, {
-        subject: { ...value.subject, source: { ...value.subject.source, path: "other.json" } },
+        subject: {
+          ...value.subject,
+          source: { ...value.subject.source, path: "other.json" },
+        },
       }),
       receipt(value, {
-        qualificationBasis: { ...value.qualificationBasis, catalogSignerIdentity: "other" },
+        qualificationBasis: {
+          ...value.qualificationBasis,
+          catalogSignerIdentity: "other",
+        },
       }),
       receipt(value, {
         qualificationBasis: {
@@ -1030,7 +1277,12 @@ describe("AihSupportedQualificationReceiptV1", () => {
           catalogMemberDigest: `sha256:${"0".repeat(64)}`,
         },
       }),
-      receipt(value, { qualificationBasis: { ...value.qualificationBasis, subjectKind: "skill" } }),
+      receipt(value, {
+        qualificationBasis: {
+          ...value.qualificationBasis,
+          subjectKind: "skill",
+        },
+      }),
       receipt(value, {
         qualificationBasis: {
           ...value.qualificationBasis,
@@ -1040,7 +1292,7 @@ describe("AihSupportedQualificationReceiptV1", () => {
     ]) {
       writeReceipt(changed);
       await expect(
-        verifyAihSupportedQualificationReceiptV1(
+        verifyAihSupportedQualificationReceiptV2(
           context((argv) => ({ code: argv[0] === trustedSupportedGh ? 0 : 1 })),
           input,
         ),
@@ -1050,13 +1302,13 @@ describe("AihSupportedQualificationReceiptV1", () => {
     }
     writeReceipt(receipt(value));
     await expect(
-      verifyAihSupportedQualificationReceiptV1(
+      verifyAihSupportedQualificationReceiptV2(
         context(() => ({ code: 1 })),
         input,
       ),
     ).resolves.toMatchObject({ problem: expect.any(String) });
     await expect(
-      verifyAihSupportedQualificationReceiptV1(
+      verifyAihSupportedQualificationReceiptV2(
         context(() => ({ code: 0, spawnError: true })),
         input,
       ),
@@ -1069,9 +1321,13 @@ describe("AihSupportedQualificationReceiptV1", () => {
       },
     });
     const organizationAuthority = await authority(organizationDecision);
-    writeReceipt(receipt(organizationDecision, { qualificationBasis: value.qualificationBasis }));
+    writeReceipt(
+      receipt(organizationDecision, {
+        qualificationBasis: value.qualificationBasis,
+      }),
+    );
     await expect(
-      verifyAihSupportedQualificationReceiptV1(
+      verifyAihSupportedQualificationReceiptV2(
         context((argv) => ({ code: argv[0] === trustedSupportedGh ? 0 : 1 })),
         {
           ...input,
@@ -1085,34 +1341,7 @@ describe("AihSupportedQualificationReceiptV1", () => {
     ).resolves.toMatchObject({ problem: expect.any(String) });
   });
 
-  it("fails if the externally invoked verifier mutates its exact private receipt copy", async () => {
-    const value = decision();
-    const verifiedAuthority = await authority(value);
-    writeReceipt(receipt(value));
-    const result = await verifyAihSupportedQualificationReceiptV1(
-      context((argv) => {
-        if (argv[0] === trustedSupportedGh) {
-          writeFileSync(argv[3] ?? "", "mutated");
-          return { code: 0 };
-        }
-        return { code: 1 };
-      }),
-      {
-        authority: verifiedAuthority,
-        decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
-        subject: value.subject,
-        target: "claude",
-        effect: "configure",
-        supportedTargets: ["claude"],
-        now: "2026-08-02T12:00:00+00:00",
-      },
-    );
-    expect(result).toMatchObject({
-      problem: "supported qualification receipt changed during verification",
-    });
-  });
-
-  it("resists source swaps and only admits the opaque supported capability to the resolver", async () => {
+  it("rejects whitespace-padded support roots before invoking GitHub", async () => {
     const value = decision();
     const verifiedAuthority = await authority(value);
     writeReceipt(receipt(value));
@@ -1123,16 +1352,104 @@ describe("AihSupportedQualificationReceiptV1", () => {
       target: "claude" as const,
       effect: "configure" as const,
       supportedTargets: ["claude"],
-      now: "2026-08-02T12:00:00+00:00",
+      now: "2026-08-02T12:00:00Z",
     };
-    const minted = await verifyAihSupportedQualificationReceiptV1(
+    for (const env of [
+      { AIH_SUPPORTED_QUALIFICATION_REPOSITORY: " aihq/supported-catalog" },
+      { AIH_SUPPORTED_QUALIFICATION_WORKFLOW: "qualification.yml " },
+    ]) {
+      const calls: string[][] = [];
+      await expect(
+        verifyAihSupportedQualificationReceiptV2(
+          context((argv) => {
+            calls.push(argv);
+            return { code: 0 };
+          }, env),
+          input,
+        ),
+      ).resolves.toMatchObject({ problem: expect.any(String) });
+      expect(calls).toEqual([]);
+    }
+  });
+
+  it("fails if the externally invoked verifier mutates its exact private receipt copy", async () => {
+    const value = decision();
+    const verifiedAuthority = await authority(value);
+    writeReceipt(receipt(value));
+    const result = await verifyAihSupportedQualificationReceiptV2(
       context((argv) => {
         if (argv[0] === trustedSupportedGh) {
-          writeFileSync(join(dir, ".aih", "aih-supported-qualification-receipt.json"), "not json");
+          writeFileSync(argv[3] ?? "", "mutated");
           return { code: 0 };
         }
         return { code: 1 };
       }),
+      {
+        authority: verifiedAuthority,
+        decisionReference: {
+          id: value.id,
+          digest: governanceDecisionDigestV2(value as never),
+        },
+        subject: value.subject,
+        target: "claude",
+        effect: "configure",
+        supportedTargets: ["claude"],
+        now: "2026-08-02T12:00:00Z",
+      },
+    );
+    expect(result).toMatchObject({
+      problem: "supported qualification receipt changed during verification",
+    });
+  });
+
+  it("re-reads the original fixed receipt after verification and rejects substitution", async () => {
+    const value = decision();
+    const verifiedAuthority = await authority(value);
+    writeReceipt(receipt(value));
+    const result = await verifyAihSupportedQualificationReceiptV2(
+      context((argv) => {
+        if (argv[0] === trustedSupportedGh) {
+          writeReceipt(receipt(value, { entryId: "substituted-entry" }));
+          return { code: 0 };
+        }
+        return { code: 1 };
+      }),
+      {
+        authority: verifiedAuthority,
+        decisionReference: {
+          id: value.id,
+          digest: governanceDecisionDigestV2(value as never),
+        },
+        subject: value.subject,
+        target: "claude",
+        effect: "configure",
+        supportedTargets: ["claude"],
+        now: "2026-08-02T12:00:00Z",
+      },
+    );
+    expect(result).toEqual({
+      problem: "supported qualification receipt changed during verification",
+    });
+  });
+
+  it("resists source swaps and only admits the opaque supported capability to the resolver", async () => {
+    const value = decision();
+    const verifiedAuthority = await authority(value);
+    writeReceipt(receipt(value));
+    const input = {
+      authority: verifiedAuthority,
+      decisionReference: {
+        id: value.id,
+        digest: governanceDecisionDigestV2(value as never),
+      },
+      subject: value.subject,
+      target: "claude" as const,
+      effect: "configure" as const,
+      supportedTargets: ["claude"],
+      now: "2026-08-02T12:00:00Z",
+    };
+    const minted = await verifyAihSupportedQualificationReceiptV2(
+      context((argv) => ({ code: argv[0] === trustedSupportedGh ? 0 : 1 })),
       input,
     );
     if (minted.qualification === undefined) throw new Error(minted.problem);
@@ -1158,7 +1475,10 @@ describe("AihSupportedQualificationReceiptV1", () => {
       expectedIntegration: currentObservation.integration,
     };
     expect(
-      resolveObservedEffect({ ...resolverInput, qualification: minted.qualification }),
+      resolveObservedEffect({
+        ...resolverInput,
+        qualification: minted.qualification,
+      }),
     ).toMatchObject({
       state: "observed-effective",
     });
@@ -1180,19 +1500,22 @@ describe("AihSupportedQualificationReceiptV1", () => {
     rmSync(join(dir, ".aih"), { recursive: true, force: true });
     symlinkSync(outside, join(dir, ".aih"), process.platform === "win32" ? "junction" : "dir");
     const calls: string[][] = [];
-    const result = await verifyAihSupportedQualificationReceiptV1(
+    const result = await verifyAihSupportedQualificationReceiptV2(
       context((argv) => {
         calls.push(argv);
         return { code: 0 };
       }),
       {
         authority: verifiedAuthority,
-        decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+        decisionReference: {
+          id: value.id,
+          digest: governanceDecisionDigestV2(value as never),
+        },
         subject: value.subject,
         target: "claude",
         effect: "configure",
         supportedTargets: ["claude"],
-        now: "2026-08-02T12:00:00+00:00",
+        now: "2026-08-02T12:00:00Z",
       },
     );
     expect(result.problem).toMatch(/symlinked parent/);
@@ -1208,19 +1531,22 @@ describe("AihSupportedQualificationReceiptV1", () => {
     writeFileSync(outsideReceipt, canonicalBytes(receipt(value)));
     symlinkSync(outsideReceipt, join(dir, ".aih", "aih-supported-qualification-receipt.json"));
     const calls: string[][] = [];
-    const result = await verifyAihSupportedQualificationReceiptV1(
+    const result = await verifyAihSupportedQualificationReceiptV2(
       context((argv) => {
         calls.push(argv);
         return { code: 0 };
       }),
       {
         authority: verifiedAuthority,
-        decisionReference: { id: value.id, digest: governanceDecisionDigestV2(value as never) },
+        decisionReference: {
+          id: value.id,
+          digest: governanceDecisionDigestV2(value as never),
+        },
         subject: value.subject,
         target: "claude",
         effect: "configure",
         supportedTargets: ["claude"],
-        now: "2026-08-02T12:00:00+00:00",
+        now: "2026-08-02T12:00:00Z",
       },
     );
     expect(result.problem).toMatch(/unsafe symlink/);

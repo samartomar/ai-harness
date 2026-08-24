@@ -75,31 +75,36 @@ to the TypeScript parser; graph metadata is never approval or evidence by itself
 
 <!-- aih:claim CM-86 -->
 The unreleased library surface also publishes Strict V2 organization-qualified,
-AIH-supported qualification, decision, and upstream-observation contracts, with matching JSON Schemas under
-`@aihq/harness/schemas/`. They let scanner and catalog producers share one exact
-GitHub/npm/PyPI/OCI/remote subject grammar, including canonical path-based registry and
-HTTPS endpoint identities. The TypeScript parser—not portable JSON Schema alone—enforces
-the domain-separated source and subject digest derivations. Organization evidence uses a
-separate closed, canonical, size-bounded envelope whose digest and issuer-claimed attestor
-must match the exact externally verified authority decision. Its subject digest, validity
-window, evidence record, payload, and artifact digests are checked before Core mints an
-opaque qualification capability. `aih policy resolve` makes the organization-evidence half of
-that boundary reachable as a zero-write administrator check: it verifies the externally attested
-V3 receipt, exact decision id/digest, code-owned target/effect, and one canonical root-relative
-evidence envelope. By itself it returns a non-effective `partial` result and a nonzero exit; it
-cannot claim success. For the narrower organization-qualified npm-package case,
-`aih policy observe npm-package` can now reverify the same authority and evidence, then observe
-the exact package name, version, and integrity from a regular npm v3 lockfile and the matching
-installed package manifest. The decision supplies the package and fixes the effect to `install`;
+AIH-supported qualification, decision, and upstream-observation contracts, with matching JSON
+Schemas under `@aihq/harness/schemas/`. They let organization evidence and supported-catalog
+producers share one exact GitHub/npm/PyPI/OCI/remote subject grammar without making catalog
+membership an organization admission. The organization-qualified route binds one canonical,
+size-bounded evidence envelope to an externally verified V3 authority decision. The supported
+route accepts only canonical Qualification Receipt V2 bytes after separate GitHub attestation,
+then records bounded signer, replay, head, and head-scoped member custody with
+`aih policy supported accept --apply`. `aih policy supported inspect` reports a deterministic,
+path-scrubbed view of current-head members plus the occupied and remaining retained-member-record
+capacity, and fails closed on partial, linked, raced, over-capacity, or foreign state. Superseded
+member records remain in custody for replay and audit truth and continue to count toward that fixed
+capacity; this route does not prune them automatically.
+Receipt V1 is unsupported.
+
+`aih policy observe npm-package` selects the qualification route from the exact current decision.
+An organization-qualified decision requires `--evidence`; an `aih-supported` decision rejects that
+option and instead requires current administrator custody plus the exact re-attested Receipt V2.
+Both routes then observe only the exact package name, version, and integrity from a regular npm v3
+lockfile and matching installed manifest. The decision fixes the package and `install` effect;
 callers cannot select an observer, verifier, runner, clock, receipt, package, or effect. A complete
-match returns `observed-effective` and the full canonical observation-receipt digest without
-installing or executing the package.
+match returns `observed-effective` and the canonical observation-receipt digest without installing
+or executing the package.
 
 <!-- aih:claim CM-87 -->
 `aih policy lifecycle npm-package` repeats that complete live
 check and can, only with `--apply`, append an immutable content-addressed observation record and
 advance its exact subject head under `.aih/governance/npm-package-lifecycle/v1/`. Preview is
-zero-write. A later exact version/integrity decision appends a bump instead of rewriting history;
+zero-write. For an AIH-supported decision, the transaction pins the fixed receipt and exact current
+custody records, then performs a full bounded custody re-observation before reporting success. A
+later exact version/integrity decision appends a bump instead of rewriting history;
 a current authenticated V3 revocation can append a revocation fact but remains non-effective with a
 failing, nonzero result and never claims that npm removed or stopped the package. Missing installed
 evidence is `partial`; unsafe, changed, stale, rejected,
@@ -141,17 +146,31 @@ the complete store as organization-controlled evidence and reconcile onto a newl
 rather than pruning target-local audit history.
 
 <!-- aih:claim CM-86 -->
-For an `aih-supported`
-basis, Core reads the fixed canonical receipt file, verifies its outer GitHub attestation against
-dedicated repository and workflow roots, and exact-matches its subject and all seven catalog-basis
-fields before minting the same opaque capability. The separate organization decision remains the
-only admission authority. This is not yet the complete cold-admin lifecycle: receipt V3,
-`policy resolve`, and the npm observe/lifecycle routes do not make a custom candidate projectable,
-install or configure it, or cover skills, MCP servers, remote endpoints, non-npm packages, or an
-`aih-supported` observation route. Catalog membership is provenance, not permission.
-Upstream observations also bind the
-named integration owner and exact integration version. Current custom stdio and remote policy
-rows remain blocked until the later command, adapter, and lifecycle work lands.
+For an `aih-supported` basis, the administrator first supplies the separately controlled support
+repository/workflow roots and applies the exact decision binding to durable custody:
+
+```bash
+aih policy supported accept \
+  --root <governed-target> \
+  --decision <exact-decision-id> \
+  --decision-digest sha256:<exact-decision-digest> \
+  --target <code-owned-cli-id> \
+  --apply --json
+
+aih policy supported inspect --root <governed-target> --json
+```
+
+The fixed receipt at `.aih/aih-supported-qualification-receipt.json` is evidence only after its
+outer attestation, exact decision/subject binding, validity, continuity, and durable head-scoped
+member state all pass. The separate organization decision remains the only admission authority.
+Inspection lists only members bound to current heads, but its `memberRecords` capacity object counts
+all retained member records, including superseded heads. At the fixed capacity, new acceptance fails
+closed; preserving and migrating or archiving that administrator store is a separately authorized
+operator incident-reconciliation action, not an automatic AIH prune.
+This route currently reaches the fixed npm observer/lifecycle; it does not make custom candidates
+projectable, install or configure anything, or cover skills, MCP servers, remote endpoints, or
+non-npm packages. Simulated test attestations are not public verification evidence, and no real
+attestation, release, or publication occurs without a separate authorized publication step.
 
 <!-- aih:claim CM-52 -->
 `buildPackageGraphIndex` retains every authority claim, preserves identical claims,

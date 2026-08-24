@@ -39,6 +39,8 @@ import {
 } from "../../src/org-policy/governance-decision-v2.js";
 import { resolveNpmPackageEffectiveStateV1 } from "../../src/org-policy/npm-package-effective-state-v1.js";
 import {
+  __isNpmPackageLifecycleAssertionCurrentForInternalTestV1,
+  __setNpmPackageLifecycleInternalTestHookV1,
   npmPackageLifecycleCommand,
   npmPackageLifecyclePlan,
   readNpmPackageLifecycleStoreV1,
@@ -50,6 +52,8 @@ import {
   organizationEvidenceEnvelopeDigestV1,
 } from "../../src/org-policy/qualification-v1.js";
 import { readOrgPolicy } from "../../src/org-policy/schema.js";
+import { supportedCustodyAcceptPlanV2 } from "../../src/org-policy/supported-admin-v2.js";
+import { canonicalAihSupportedQualificationReceiptV2 } from "../../src/org-policy/supported-qualification-receipt-v2.js";
 import { upstreamObservationReceiptDigestV1 } from "../../src/org-policy/upstream-observation-receipt-v1.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { buildProgram } from "../../src/program.js";
@@ -81,6 +85,14 @@ vi.mock("node:fs", async (importOriginal) => {
 });
 
 const INTEGRITY = `sha512-${Buffer.alloc(64, 3).toString("base64")}`;
+type NpmFixture = {
+  readonly decision: GovernanceDecisionV2 & {
+    readonly subject: GovernanceDecisionV2["subject"] & {
+      readonly source: Extract<GovernanceDecisionV2["subject"]["source"], { type: "npm" }>;
+    };
+  };
+  readonly evidence: ReturnType<typeof fixture>["evidence"];
+};
 const HARD_LINKS_AVAILABLE = (() => {
   const probe = mkdtempSync(join(tmpdir(), "aih-npm-lifecycle-hard-link-"));
   try {
@@ -111,6 +123,7 @@ beforeEach(() => {
 afterEach(() => {
   fsEvents.directoryRead = undefined;
   fsEvents.failRecordRename = undefined;
+  __setNpmPackageLifecycleInternalTestHookV1(undefined);
   vi.useRealTimers();
   rmSync(root, { recursive: true, force: true });
   rmSync(bin, { recursive: true, force: true });
@@ -186,6 +199,44 @@ function fixture(
   return { decision, evidence };
 }
 
+function supportedFixture() {
+  const value = fixture();
+  const catalogHeadDigest = `sha256:${"a".repeat(64)}`;
+  const receipt = {
+    format: "aih-supported-qualification-receipt" as const,
+    version: 2 as const,
+    organizationAdmission: "not-authoritative" as const,
+    entryId: "recipe.acme-widget",
+    subject: value.decision.subject,
+    qualificationBasis: {
+      kind: "aih-supported" as const,
+      catalogSignerIdentity: "administrator:aih-supported",
+      catalogDigest: `sha256:${"b".repeat(64)}`,
+      catalogHeadDigest,
+      catalogMemberDigest: `sha256:${"c".repeat(64)}`,
+      subjectKind: value.decision.subject.kind,
+      subjectDigest: value.decision.subject.subjectDigest,
+    },
+    catalogContinuity: {
+      catalogHeadDigest,
+      previousCatalogHeadDigest: `sha256:${"0".repeat(64)}`,
+      sequence: 0,
+      replayIdentity: `catalog-head:${"a".repeat(64)}:${"d".repeat(64)}`,
+      signerKeyId: `ed25519:${"e".repeat(64)}`,
+      headValidFrom: "2026-08-01T00:00:00Z",
+      headValidUntil: "2026-08-05T00:00:00Z",
+    },
+    issuedAt: "2026-08-02T00:00:00Z",
+    notBefore: "2026-08-02T00:00:00Z",
+    expiresAt: "2026-08-05T00:00:00Z",
+  };
+  return {
+    ...value,
+    decision: { ...value.decision, qualificationBasis: receipt.qualificationBasis },
+    receipt,
+  };
+}
+
 function writeAuthority(
   decision: GovernanceDecisionV2,
   decisionRevocations: readonly Record<string, unknown>[] = [],
@@ -208,7 +259,7 @@ function writeAuthority(
   );
 }
 
-function writeFixture(value = fixture()): void {
+function writeFixture(value: NpmFixture = fixture()): void {
   mkdirSync(join(root, ".aih"), { recursive: true });
   writeFileSync(
     join(root, "evidence.json"),
@@ -254,8 +305,17 @@ function writeGovernedPolicy(): void {
   );
 }
 
-function context(apply = false, decision: GovernanceDecisionV2 = fixture().decision): PlanContext {
-  const run = fakeRunner((argv) => (argv[0] === gh ? { code: 0 } : { code: 1 }));
+function context(
+  apply = false,
+  decision: GovernanceDecisionV2 = fixture().decision,
+  options: Record<string, unknown> = {},
+  env: Record<string, string> = {},
+  calls?: string[][],
+): PlanContext {
+  const run = fakeRunner((argv) => {
+    calls?.push([...argv]);
+    return argv[0] === gh ? { code: 0 } : { code: 1 };
+  });
   return {
     root,
     contextDir: "ai-coding",
@@ -264,12 +324,13 @@ function context(apply = false, decision: GovernanceDecisionV2 = fixture().decis
     json: true,
     run,
     host: makeHostAdapter({ platform: "linux", run, env: {} }),
-    env: { AIH_POLICY_AUTHORITY_REPOSITORY: "acme/governance", PATH: bin },
+    env: { AIH_POLICY_AUTHORITY_REPOSITORY: "acme/governance", PATH: bin, ...env },
     options: {
       decision: decision.id,
       decisionDigest: governanceDecisionDigestV2(decision),
       target: "claude",
       evidence: "evidence.json",
+      ...options,
     },
   };
 }
@@ -476,6 +537,184 @@ function command(argv: string[]): Command {
 }
 
 describe("npm package lifecycle V1", () => {
+  it("re-observes an enterprise-shaped external custody assertion inside its trusted base", () => {
+    const externalBase = join(root, "enterprise-custody");
+    mkdirSync(externalBase, { recursive: true });
+    const path = join(externalBase, "heads", "current.json");
+    mkdirSync(dirname(path), { recursive: true });
+    const contents = '{"current":true}\n';
+    writeFileSync(path, contents);
+    const action = {
+      kind: "write" as const,
+      path,
+      contents,
+      exactContents: true as const,
+      describe: "assert enterprise supported custody head unchanged",
+      assertUnchanged: true as const,
+      external: true as const,
+      trustedBase: externalBase,
+      expect: {
+        sha256: createHash("sha256").update(contents, "utf8").digest("hex"),
+      },
+    };
+
+    expect(__isNpmPackageLifecycleAssertionCurrentForInternalTestV1(root, action)).toBe(true);
+    writeFileSync(path, "tampered\n");
+    expect(__isNpmPackageLifecycleAssertionCurrentForInternalTestV1(root, action)).toBe(false);
+  });
+
+  it("delegates an evidence-free AIH-supported lifecycle request to the observer without preview or apply writes", async () => {
+    const value = supportedFixture();
+    writeFixture(value);
+    writeFileSync(
+      join(root, ".aih", "aih-supported-qualification-receipt.json"),
+      canonicalAihSupportedQualificationReceiptV2(value.receipt),
+    );
+    const calls: string[][] = [];
+    const ctx = context(
+      false,
+      value.decision,
+      { evidence: undefined },
+      {
+        AIH_SUPPORTED_QUALIFICATION_REPOSITORY: "aihq/supported-catalog",
+        AIH_SUPPORTED_QUALIFICATION_WORKFLOW: "qualification.yml",
+      },
+      calls,
+    );
+
+    const result = await execute(ctx);
+
+    expect(result.digests[0]?.data).toMatchObject({
+      applied: false,
+      outcome: "refused",
+      reason: "observation-unverified",
+    });
+    expect(calls).toHaveLength(2);
+    expect(lifecycleFiles()).toEqual([]);
+  });
+
+  it.each(["", " ", 7, null])(
+    "rejects a supplied invalid evidence value for an AIH-supported lifecycle before observation (%j)",
+    async (evidence) => {
+      const value = supportedFixture();
+      const calls: string[][] = [];
+
+      const result = await execute(context(false, value.decision, { evidence }, {}, calls));
+
+      expect(result.digests[0]?.data).toMatchObject({
+        applied: false,
+        outcome: "refused",
+        reason: "invalid-input",
+        state: "invalid-input",
+      });
+      expect(calls).toEqual([]);
+      expect(lifecycleFiles()).toEqual([]);
+    },
+  );
+
+  it("persists an evidence-free AIH-supported lifecycle only after the branded custody accept path", async () => {
+    const value = supportedFixture();
+    writeFixture(value);
+    writeFileSync(
+      join(root, ".aih", "aih-supported-qualification-receipt.json"),
+      canonicalAihSupportedQualificationReceiptV2(value.receipt),
+    );
+    const env = {
+      AIH_SUPPORTED_QUALIFICATION_REPOSITORY: "aihq/supported-catalog",
+      AIH_SUPPORTED_QUALIFICATION_WORKFLOW: "qualification.yml",
+    };
+    const accept = context(true, value.decision, { evidence: undefined }, env);
+    await executePlan(await supportedCustodyAcceptPlanV2(accept), accept, {
+      skipWorktreeGate: true,
+    });
+
+    const preview = await run(context(false, value.decision, { evidence: undefined }, env));
+    expect(preview).toMatchObject({
+      applied: false,
+      outcome: "reported-only",
+      state: "observed-effective",
+    });
+    expect(lifecycleFiles()).toEqual([]);
+
+    const applied = await run(context(true, value.decision, { evidence: undefined }, env));
+    expect(applied).toMatchObject({
+      applied: true,
+      outcome: "fulfilled",
+      state: "observed-effective",
+    });
+    expect(readNpmPackageLifecycleStoreV1(root)).toMatchObject({ kind: "complete" });
+  });
+
+  it("refuses a supported lifecycle when its fixed receipt changes after transaction assertions", async () => {
+    const value = supportedFixture();
+    writeFixture(value);
+    const receiptPath = join(root, ".aih", "aih-supported-qualification-receipt.json");
+    writeFileSync(receiptPath, canonicalAihSupportedQualificationReceiptV2(value.receipt));
+    const env = {
+      AIH_SUPPORTED_QUALIFICATION_REPOSITORY: "aihq/supported-catalog",
+      AIH_SUPPORTED_QUALIFICATION_WORKFLOW: "qualification.yml",
+    };
+    const accept = context(true, value.decision, { evidence: undefined }, env);
+    await executePlan(await supportedCustodyAcceptPlanV2(accept), accept, {
+      skipWorktreeGate: true,
+    });
+    const ctx = context(true, value.decision, { evidence: undefined }, env);
+    const planned = await npmPackageLifecyclePlan(ctx);
+    __setNpmPackageLifecycleInternalTestHookV1(() => writeFileSync(receiptPath, "tampered\n"));
+
+    const result = await executePlan(planned, ctx, { skipWorktreeGate: true });
+
+    expect(result.digests[0]?.data).toMatchObject({
+      applied: false,
+      outcome: "refused",
+      reason: "store-detached",
+      state: "store-detached",
+    });
+  });
+
+  it.each(["members", "signers"])(
+    "refuses a supported lifecycle when a foreign %s custody entry appears after transaction assertions",
+    async (directory) => {
+      const value = supportedFixture();
+      writeFixture(value);
+      writeFileSync(
+        join(root, ".aih", "aih-supported-qualification-receipt.json"),
+        canonicalAihSupportedQualificationReceiptV2(value.receipt),
+      );
+      const env = {
+        AIH_SUPPORTED_QUALIFICATION_REPOSITORY: "aihq/supported-catalog",
+        AIH_SUPPORTED_QUALIFICATION_WORKFLOW: "qualification.yml",
+      };
+      const accept = context(true, value.decision, { evidence: undefined }, env);
+      await executePlan(await supportedCustodyAcceptPlanV2(accept), accept, {
+        skipWorktreeGate: true,
+      });
+      const ctx = context(true, value.decision, { evidence: undefined }, env);
+      const planned = await npmPackageLifecyclePlan(ctx);
+      __setNpmPackageLifecycleInternalTestHookV1(() => {
+        const foreign = join(
+          root,
+          ".aih",
+          "supported-qualification",
+          "v2",
+          directory,
+          "foreign.json",
+        );
+        writeFileSync(foreign, "{}\n");
+      });
+
+      const result = await executePlan(planned, ctx, { skipWorktreeGate: true });
+
+      expect(result.digests[0]?.data).toMatchObject({
+        applied: false,
+        outcome: "refused",
+        reason: "store-detached",
+        state: "store-detached",
+      });
+      expect(readNpmPackageLifecycleStoreV1(root)).toMatchObject({ kind: "complete" });
+    },
+  );
+
   it("keeps preview zero-write, then appends immutable observation records before advancing a subject head", async () => {
     writeFixture();
     const planned = await npmPackageLifecyclePlan(context(true));

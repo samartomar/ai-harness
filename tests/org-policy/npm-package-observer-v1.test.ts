@@ -17,6 +17,7 @@ import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runCapability } from "../../src/commands/run.js";
 import { canonicalStrictJsonBytesV1 } from "../../src/contract/strict-json-v1.js";
+import { executePlan } from "../../src/internals/execute.js";
 import { readRegularFileWithStats } from "../../src/internals/fsxn.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
@@ -37,6 +38,12 @@ import {
   canonicalOrganizationEvidenceEnvelopeV1,
   organizationEvidenceEnvelopeDigestV1,
 } from "../../src/org-policy/qualification-v1.js";
+import * as supportedCustody from "../../src/org-policy/supported-admin-v2.js";
+import {
+  canonicalAihSupportedQualificationReceiptV2,
+  receiptDigestV2,
+  verifyAihSupportedCustodyBindingV2,
+} from "../../src/org-policy/supported-qualification-receipt-v2.js";
 import { upstreamObservationReceiptDigestV1 } from "../../src/org-policy/upstream-observation-receipt-v1.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { toFinding } from "../../src/support/findings.js";
@@ -134,6 +141,47 @@ function fixture() {
   };
 }
 
+function supportedFixture() {
+  const value = fixture();
+  const catalogHeadDigest = `sha256:${"a".repeat(64)}`;
+  const receipt = {
+    format: "aih-supported-qualification-receipt" as const,
+    version: 2 as const,
+    organizationAdmission: "not-authoritative" as const,
+    entryId: "recipe.acme-widget",
+    subject: value.decision.subject,
+    qualificationBasis: {
+      kind: "aih-supported" as const,
+      catalogSignerIdentity: "administrator:aih-supported",
+      catalogDigest: `sha256:${"b".repeat(64)}`,
+      catalogHeadDigest,
+      catalogMemberDigest: `sha256:${"c".repeat(64)}`,
+      subjectKind: value.decision.subject.kind,
+      subjectDigest: value.decision.subject.subjectDigest,
+    },
+    catalogContinuity: {
+      catalogHeadDigest,
+      previousCatalogHeadDigest: `sha256:${"0".repeat(64)}`,
+      sequence: 0,
+      replayIdentity: `catalog-head:${"a".repeat(64)}:${"d".repeat(64)}`,
+      signerKeyId: `ed25519:${"e".repeat(64)}`,
+      headValidFrom: "2026-08-01T00:00:00Z",
+      headValidUntil: "2026-08-05T00:00:00Z",
+    },
+    issuedAt: "2026-08-02T00:00:00Z",
+    notBefore: "2026-08-02T00:00:00Z",
+    expiresAt: "2026-08-05T00:00:00Z",
+  };
+  return {
+    ...value,
+    decision: {
+      ...value.decision,
+      qualificationBasis: receipt.qualificationBasis,
+    },
+    receipt,
+  };
+}
+
 function writeAuthority(
   decision: GovernanceDecisionV2,
   overrides: Record<string, unknown> = {},
@@ -175,7 +223,41 @@ function writeInstalledPackage(): void {
   );
 }
 
-function context(options: Record<string, unknown>, calls: string[][]): PlanContext {
+async function acceptSupportedCustody(value: ReturnType<typeof supportedFixture>): Promise<void> {
+  const receiptText = canonicalAihSupportedQualificationReceiptV2(value.receipt);
+  mkdirSync(join(root, ".aih"), { recursive: true });
+  writeFileSync(join(root, ".aih", "aih-supported-qualification-receipt.json"), receiptText);
+  const authorityReceipt = readFileSync(join(root, ".aih", "policy-authority-receipt.json"));
+  const rawSha256 = (bytes: Uint8Array) =>
+    `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+  const plan = supportedCustody.prepareSupportedCustodyAcceptV2({
+    root,
+    posture: "vibe",
+    candidate: {
+      receipt: value.receipt,
+      decision: {
+        id: value.decision.id,
+        digest: governanceDecisionDigestV2(value.decision as never),
+      },
+      target: "claude",
+      receiptDigest: receiptDigestV2(value.receipt),
+      receiptSha256: rawSha256(Buffer.from(receiptText, "utf8")),
+      authorityReceiptDigest: rawSha256(authorityReceipt),
+      repository: "aihq/supported-catalog",
+      workflow: "qualification.yml",
+      acceptedAt: "2026-08-02T12:00:00Z",
+      decisionNotBefore: "2026-08-01T00:00:00Z",
+      decisionExpiresAt: "2026-08-10T00:00:00Z",
+    },
+  });
+  await executePlan(plan, { ...context({}, []), posture: "vibe", apply: true, verify: false });
+}
+
+function context(
+  options: Record<string, unknown>,
+  calls: string[][],
+  extraEnv: Record<string, string> = {},
+): PlanContext {
   const run = fakeRunner((argv) => {
     calls.push([...argv]);
     return argv[0] === gh ? { code: 0 } : { code: 1 };
@@ -188,7 +270,7 @@ function context(options: Record<string, unknown>, calls: string[][]): PlanConte
     json: true,
     run,
     host: makeHostAdapter({ platform: "linux", run, env: {} }),
-    env: { AIH_POLICY_AUTHORITY_REPOSITORY: "acme/governance", PATH: bin },
+    env: { AIH_POLICY_AUTHORITY_REPOSITORY: "acme/governance", PATH: bin, ...extraEnv },
     options,
   };
 }
@@ -431,6 +513,444 @@ describe("npm package upstream observer V1", () => {
       "--evidence <path>",
     ]);
     expect(npmPackageObserveCommand.plan.toString()).not.toContain('"0".repeat(64)');
+  });
+
+  it("keeps verified authority phase-honest when organization evidence is missing, unsafe, or malformed", async () => {
+    const value = fixture();
+    const options = {
+      decision: value.decision.id,
+      decisionDigest: governanceDecisionDigestV2(value.decision as never),
+      target: "claude",
+    };
+
+    writeAuthority(value.decision);
+    const missingCalls: string[][] = [];
+    await expect(
+      observeNpmPackageV1(context({ ...options, evidence: "missing.json" }, missingCalls)),
+    ).resolves.toMatchObject({
+      authority: "verified",
+      qualification: "unqualified",
+      outcome: "refused",
+      reason: "evidence-unavailable",
+    });
+    expect(missingCalls).toHaveLength(1);
+
+    writeFileSync(join(root, "malformed.json"), "not-json", "utf8");
+    const malformedCalls: string[][] = [];
+    await expect(
+      observeNpmPackageV1(context({ ...options, evidence: "malformed.json" }, malformedCalls)),
+    ).resolves.toMatchObject({
+      authority: "verified",
+      qualification: "unqualified",
+      outcome: "refused",
+      reason: "qualification-unverified",
+    });
+    expect(malformedCalls).toHaveLength(1);
+
+    const external = mkdtempSync(join(tmpdir(), "aih-observer-evidence-parent-"));
+    const linkedParent = join(root, "linked-evidence");
+    try {
+      writeFileSync(join(external, "evidence.json"), value.evidenceBytes);
+      symlinkSync(external, linkedParent, process.platform === "win32" ? "junction" : "dir");
+      const unsafeCalls: string[][] = [];
+      await expect(
+        observeNpmPackageV1(
+          context({ ...options, evidence: "linked-evidence/evidence.json" }, unsafeCalls),
+        ),
+      ).resolves.toMatchObject({
+        authority: "verified",
+        qualification: "unqualified",
+        outcome: "refused",
+        reason: "unsafe-evidence-custody",
+      });
+      expect(unsafeCalls).toHaveLength(1);
+    } finally {
+      rmSync(external, { recursive: true, force: true });
+    }
+  });
+
+  it("routes an AIH-supported npm decision without organization evidence, then refuses absent durable custody", async () => {
+    const value = supportedFixture();
+    writeAuthority(value.decision);
+    writeInstalledPackage();
+    mkdirSync(join(root, ".aih"), { recursive: true });
+    writeFileSync(
+      join(root, ".aih", "aih-supported-qualification-receipt.json"),
+      canonicalAihSupportedQualificationReceiptV2(value.receipt),
+    );
+    const calls: string[][] = [];
+
+    const result = await observeNpmPackageV1(
+      context(
+        {
+          decision: value.decision.id,
+          decisionDigest: governanceDecisionDigestV2(value.decision as never),
+          target: "claude",
+        },
+        calls,
+        {
+          AIH_SUPPORTED_QUALIFICATION_REPOSITORY: "aihq/supported-catalog",
+          AIH_SUPPORTED_QUALIFICATION_WORKFLOW: "qualification.yml",
+        },
+      ),
+    );
+
+    expect(result).toMatchObject({
+      authority: "verified",
+      qualification: "unqualified",
+      outcome: "refused",
+      reason: "qualification-unverified",
+    });
+    expect(calls).toHaveLength(2);
+  });
+
+  it("keeps a current AIH-supported qualification truthful when installed npm evidence is unavailable", async () => {
+    const value = supportedFixture();
+    writeAuthority(value.decision);
+    await acceptSupportedCustody(value);
+    const calls: string[][] = [];
+
+    const result = await observeNpmPackageV1(
+      context(
+        {
+          decision: value.decision.id,
+          decisionDigest: governanceDecisionDigestV2(value.decision as never),
+          target: "claude",
+        },
+        calls,
+        {
+          AIH_SUPPORTED_QUALIFICATION_REPOSITORY: "aihq/supported-catalog",
+          AIH_SUPPORTED_QUALIFICATION_WORKFLOW: "qualification.yml",
+        },
+      ),
+    );
+
+    expect(result).toMatchObject({
+      authority: "verified",
+      qualification: "qualified",
+      effective: "observation-missing",
+      outcome: "partial",
+      reason: "installed-evidence-unavailable",
+    });
+    expect(calls).toHaveLength(2);
+  });
+
+  it("refuses unsafe installed npm custody without erasing a current AIH-supported qualification", async () => {
+    const value = supportedFixture();
+    writeAuthority(value.decision);
+    writeInstalledPackage();
+    await acceptSupportedCustody(value);
+    const target = mkdtempSync(join(tmpdir(), "aih-npm-observer-supported-linked-"));
+    const source = join(root, "node_modules");
+    const destination = join(target, "linked");
+    try {
+      mkdirSync(join(destination, "@acme", "widget"), { recursive: true });
+      writeFileSync(
+        join(destination, "@acme", "widget", "package.json"),
+        readFileSync(join(source, "@acme", "widget", "package.json")),
+      );
+      rmSync(source, { recursive: true });
+      symlinkSync(destination, source, process.platform === "win32" ? "junction" : "dir");
+      const calls: string[][] = [];
+
+      const result = await observeNpmPackageV1(
+        context(
+          {
+            decision: value.decision.id,
+            decisionDigest: governanceDecisionDigestV2(value.decision as never),
+            target: "claude",
+          },
+          calls,
+          {
+            AIH_SUPPORTED_QUALIFICATION_REPOSITORY: "aihq/supported-catalog",
+            AIH_SUPPORTED_QUALIFICATION_WORKFLOW: "qualification.yml",
+          },
+        ),
+      );
+
+      expect(result).toMatchObject({
+        authority: "verified",
+        qualification: "qualified",
+        outcome: "refused",
+        reason: "installed-evidence-unsafe",
+      });
+      expect(calls).toHaveLength(2);
+    } finally {
+      rmSync(target, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses when AIH-supported durable custody changes after installed evidence is read", async () => {
+    const value = supportedFixture();
+    writeAuthority(value.decision);
+    writeInstalledPackage();
+    await acceptSupportedCustody(value);
+    __setNpmPackageObserverInternalTestHookV1(() => {
+      rmSync(join(root, ".aih", "aih-supported-qualification-receipt.json"));
+    });
+    const calls: string[][] = [];
+
+    const result = await observeNpmPackageV1(
+      context(
+        {
+          decision: value.decision.id,
+          decisionDigest: governanceDecisionDigestV2(value.decision as never),
+          target: "claude",
+        },
+        calls,
+        {
+          AIH_SUPPORTED_QUALIFICATION_REPOSITORY: "aihq/supported-catalog",
+          AIH_SUPPORTED_QUALIFICATION_WORKFLOW: "qualification.yml",
+        },
+      ),
+    );
+
+    expect(result).toMatchObject({
+      authority: "verified",
+      qualification: "qualified",
+      outcome: "refused",
+      reason: "qualification-unverified",
+    });
+    expect(calls).toHaveLength(2);
+  });
+
+  it("observes a current AIH-supported package only with exact durable custody", async () => {
+    const value = supportedFixture();
+    writeAuthority(value.decision);
+    writeInstalledPackage();
+    await acceptSupportedCustody(value);
+    const calls: string[][] = [];
+
+    const result = await observeNpmPackageV1(
+      context(
+        {
+          decision: value.decision.id,
+          decisionDigest: governanceDecisionDigestV2(value.decision as never),
+          target: "claude",
+        },
+        calls,
+        {
+          AIH_SUPPORTED_QUALIFICATION_REPOSITORY: "aihq/supported-catalog",
+          AIH_SUPPORTED_QUALIFICATION_WORKFLOW: "qualification.yml",
+        },
+      ),
+    );
+
+    expect(result).toMatchObject({
+      authority: "verified",
+      qualification: "qualified",
+      effective: "observed-effective",
+      outcome: "observed-effective",
+    });
+    expect(npmPackageObservationHandoffForLifecycleV1(result)?.custodyAssertions).toHaveLength(5);
+    expect(calls).toHaveLength(2);
+  });
+
+  it("invalidates a branded supported receipt when its custody head is superseded", async () => {
+    const value = supportedFixture();
+    writeAuthority(value.decision);
+    writeInstalledPackage();
+    await acceptSupportedCustody(value);
+    const options = {
+      decision: value.decision.id,
+      decisionDigest: governanceDecisionDigestV2(value.decision as never),
+      target: "claude",
+    };
+    const env = {
+      AIH_SUPPORTED_QUALIFICATION_REPOSITORY: "aihq/supported-catalog",
+      AIH_SUPPORTED_QUALIFICATION_WORKFLOW: "qualification.yml",
+    };
+    const genesisBinding = await verifyAihSupportedCustodyBindingV2(
+      context(options, [], env),
+      options,
+    );
+    expect(genesisBinding).toBeDefined();
+    if (genesisBinding === undefined) throw new Error("expected production verifier binding");
+
+    const successorReceipt = {
+      ...value.receipt,
+      entryId: "recipe.acme-widget-successor",
+      qualificationBasis: {
+        ...value.receipt.qualificationBasis,
+        catalogHeadDigest: `sha256:${"f".repeat(64)}`,
+        catalogMemberDigest: `sha256:${"9".repeat(64)}`,
+      },
+      catalogContinuity: {
+        ...value.receipt.catalogContinuity,
+        catalogHeadDigest: `sha256:${"f".repeat(64)}`,
+        previousCatalogHeadDigest: value.receipt.catalogContinuity.catalogHeadDigest,
+        sequence: 1,
+        replayIdentity: `catalog-head:${"f".repeat(64)}:${"1".repeat(64)}`,
+      },
+    };
+    const successorDecision = {
+      ...value.decision,
+      qualificationBasis: successorReceipt.qualificationBasis,
+    };
+    const successorOptions = {
+      decision: successorDecision.id,
+      decisionDigest: governanceDecisionDigestV2(successorDecision as never),
+      target: "claude",
+    };
+    writeAuthority(successorDecision);
+    writeFileSync(
+      join(root, ".aih", "aih-supported-qualification-receipt.json"),
+      canonicalAihSupportedQualificationReceiptV2(successorReceipt),
+    );
+    const successorBinding = await verifyAihSupportedCustodyBindingV2(
+      context(successorOptions, [], env),
+      successorOptions,
+    );
+    expect(successorBinding).toBeDefined();
+    if (successorBinding === undefined)
+      throw new Error("expected successor production verifier binding");
+    await executePlan(
+      supportedCustody.prepareVerifiedSupportedCustodyAcceptV2({
+        root,
+        posture: "vibe",
+        binding: successorBinding,
+      }),
+      { ...context({}, [], env), posture: "vibe", apply: true, verify: false },
+    );
+
+    writeAuthority(value.decision);
+    writeFileSync(
+      join(root, ".aih", "aih-supported-qualification-receipt.json"),
+      canonicalAihSupportedQualificationReceiptV2(value.receipt),
+    );
+    expect(
+      supportedCustody.validateCurrentSupportedCustodyV2({
+        root,
+        posture: "vibe",
+        binding: genesisBinding,
+      }),
+    ).toMatchObject({ state: "unverified" });
+    expect(
+      supportedCustody.verifiedCurrentSupportedCustodyAssertionsV2({
+        root,
+        posture: "vibe",
+        binding: genesisBinding,
+      }),
+    ).toBeUndefined();
+    expect(supportedCustody.inspectSupportedCustodyV2({ root, posture: "vibe" }).members).toEqual([
+      expect.objectContaining({ entryId: successorReceipt.entryId }),
+    ]);
+
+    await expect(observeNpmPackageV1(context(options, [], env))).resolves.toMatchObject({
+      authority: "verified",
+      qualification: "unqualified",
+      outcome: "refused",
+      reason: "qualification-unverified",
+    });
+  });
+
+  it("rejects a caller evidence path for an AIH-supported decision before it can select a weaker branch", async () => {
+    const value = supportedFixture();
+    writeAuthority(value.decision);
+    writeFileSync(join(root, "evidence.json"), value.evidenceBytes);
+    const calls: string[][] = [];
+
+    const result = await observeNpmPackageV1(
+      context(
+        {
+          decision: value.decision.id,
+          decisionDigest: governanceDecisionDigestV2(value.decision as never),
+          target: "claude",
+          evidence: "evidence.json",
+        },
+        calls,
+      ),
+    );
+
+    expect(result).toMatchObject({
+      authority: "verified",
+      qualification: "unqualified",
+      outcome: "refused",
+      reason: "invalid-input",
+    });
+    expect(calls).toHaveLength(1);
+  });
+
+  it("rejects a hostile evidence symlink for an AIH-supported decision without reading it", async () => {
+    const value = supportedFixture();
+    writeAuthority(value.decision);
+    const hostile = join(root, "hostile-evidence.json");
+    symlinkSync(join(bin, "not-evidence.json"), hostile, "file");
+    const calls: string[][] = [];
+
+    const result = await observeNpmPackageV1(
+      context(
+        {
+          decision: value.decision.id,
+          decisionDigest: governanceDecisionDigestV2(value.decision as never),
+          target: "claude",
+          evidence: "hostile-evidence.json",
+        },
+        calls,
+      ),
+    );
+
+    expect(result).toMatchObject({
+      authority: "verified",
+      qualification: "unqualified",
+      outcome: "refused",
+      reason: "invalid-input",
+    });
+    expect(calls).toHaveLength(1);
+  });
+
+  it.each(["", " ", 7, null])(
+    "rejects a supplied invalid evidence value for an AIH-supported decision before attestation (%j)",
+    async (evidence) => {
+      const value = supportedFixture();
+      writeAuthority(value.decision);
+      const calls: string[][] = [];
+
+      const result = await observeNpmPackageV1(
+        context(
+          {
+            decision: value.decision.id,
+            decisionDigest: governanceDecisionDigestV2(value.decision as never),
+            target: "claude",
+            evidence,
+          },
+          calls,
+        ),
+      );
+
+      expect(result).toMatchObject({
+        authority: "unverified",
+        qualification: "unqualified",
+        outcome: "refused",
+        reason: "invalid-input",
+      });
+      expect(calls).toEqual([]);
+    },
+  );
+
+  it("resolves the exact authority decision before selecting an AIH-supported qualification branch", async () => {
+    const value = supportedFixture();
+    writeAuthority(value.decision);
+    const calls: string[][] = [];
+
+    const result = await observeNpmPackageV1(
+      context(
+        {
+          decision: value.decision.id,
+          decisionDigest: `sha256:${"f".repeat(64)}`,
+          target: "claude",
+        },
+        calls,
+      ),
+    );
+
+    expect(result).toMatchObject({
+      authority: "verified",
+      qualification: "unqualified",
+      outcome: "refused",
+      reason: "decision-missing-or-mismatch",
+    });
+    expect(calls).toHaveLength(1);
   });
 
   it("observes only the signed exact installed package without executing it", async () => {

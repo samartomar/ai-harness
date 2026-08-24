@@ -4,7 +4,7 @@ import { join, relative, resolve, sep } from "node:path";
 import { canonicalStrictJsonBytesV1, parseStrictJsonObjectV1 } from "../contract/strict-json-v1.js";
 import { type Cli, SUPPORTED_CLIS } from "../internals/clis.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
-import type { CommandSpec, Plan, PlanContext } from "../internals/plan.js";
+import type { CommandSpec, Plan, PlanContext, WriteAction } from "../internals/plan.js";
 import { dynamicDigest, plan, probe } from "../internals/plan.js";
 import type { Check, CheckCode } from "../internals/verify.js";
 import { POLICY_AUTHORITY_RECEIPT_PATH, verifyPolicyAuthorityReceipt } from "./authority.js";
@@ -17,6 +17,11 @@ import {
   parseOrganizationEvidenceEnvelopeV1Bytes,
   verifyOrganizationQualificationV1,
 } from "./qualification-v1.js";
+import { verifiedCurrentSupportedCustodyAssertionsV2 } from "./supported-admin-v2.js";
+import {
+  type VerifiedAihSupportedCustodyBindingV2,
+  verifyAihSupportedQualificationReceiptV2,
+} from "./supported-qualification-receipt-v2.js";
 import {
   MAX_UPSTREAM_OBSERVATION_WINDOW_MS,
   type ObservedEffectResolution,
@@ -89,6 +94,14 @@ export interface NpmPackageObservationLifecycleHandoffV1 {
     readonly path: string;
     readonly sha256: string;
   }[];
+  /** Opaque support-custody assertions prepared only by the branded V2 custody owner. */
+  readonly custodyAssertions?: readonly WriteAction[];
+  /** Opaque production facts retained only for the lifecycle's final custody re-observation. */
+  readonly supportedCustody?: Readonly<{
+    readonly binding: VerifiedAihSupportedCustodyBindingV2;
+    readonly platform: "win32" | "darwin" | "linux";
+    readonly posture: "enterprise" | "vibe";
+  }>;
   /** Exact decision verified in the same final observation that minted receipt. */
   readonly decision: GovernanceDecisionV2;
   readonly receipt: UpstreamObservationReceiptV1;
@@ -105,7 +118,28 @@ export function npmPackageObservationHandoffForLifecycleV1(
   result: NpmPackageObservationResultV1,
 ): NpmPackageObservationLifecycleHandoffV1 | undefined {
   const handoff = lifecycleObservationReceipts.get(result);
-  return handoff === undefined ? undefined : structuredClone(handoff);
+  if (handoff === undefined) return undefined;
+  const ordinary = structuredClone({
+    authorityReceiptDigest: handoff.authorityReceiptDigest,
+    custody: handoff.custody,
+    ...(handoff.custodyAssertions === undefined
+      ? {}
+      : { custodyAssertions: handoff.custodyAssertions }),
+    decision: handoff.decision,
+    receipt: handoff.receipt,
+  });
+  return handoff.supportedCustody === undefined
+    ? ordinary
+    : {
+        ...ordinary,
+        // The binding's WeakSet brand is deliberately process-local. Preserve only that
+        // opaque reference across this internal sibling handoff; callers never receive it.
+        supportedCustody: {
+          binding: handoff.supportedCustody.binding,
+          platform: handoff.supportedCustody.platform,
+          posture: handoff.supportedCustody.posture,
+        },
+      };
 }
 const CODE: Readonly<Record<Reason, CheckCode>> = {
   "invalid-input": "org-policy.observe-input-invalid",
@@ -180,19 +214,19 @@ function option(ctx: PlanContext, key: string): string | undefined {
 }
 function request(
   ctx: PlanContext,
-): { decision: string; digest: string; target: Cli; evidence: string } | undefined {
+): { decision: string; digest: string; target: Cli; evidence?: string } | undefined {
   const decision = option(ctx, "decision");
   const digest = option(ctx, "decisionDigest");
   const target = option(ctx, "target");
   const evidence = option(ctx, "evidence");
+  if (ctx.options.evidence !== undefined && evidence === undefined) return undefined;
   return decision !== undefined &&
     /^[a-z][a-z0-9-]{0,63}$/.test(decision) &&
     digest !== undefined &&
     SHA256.test(digest) &&
     target !== undefined &&
-    SUPPORTED_CLIS.includes(target as Cli) &&
-    evidence !== undefined
-    ? { decision, digest, target: target as Cli, evidence }
+    SUPPORTED_CLIS.includes(target as Cli)
+    ? { decision, digest, target: target as Cli, ...(evidence === undefined ? {} : { evidence }) }
     : undefined;
 }
 function decisionFor(
@@ -334,24 +368,227 @@ function installed(
   };
 }
 
+function supportedCustodyPosture(ctx: PlanContext): "enterprise" | "vibe" {
+  return ctx.posture === "enterprise" ? "enterprise" : "vibe";
+}
+
+function supportedCustodyPlatform(ctx: PlanContext): "win32" | "darwin" | "linux" {
+  return ctx.host.platform === "windows"
+    ? "win32"
+    : ctx.host.platform === "darwin"
+      ? "darwin"
+      : "linux";
+}
+
+async function observeAihSupportedNpmPackageV1(
+  ctx: PlanContext,
+  requested: { decision: string; digest: string; target: Cli },
+  verified: NonNullable<Awaited<ReturnType<typeof verifyPolicyAuthorityReceipt>>["authority"]>,
+  decision: GovernanceDecisionV2,
+): Promise<NpmPackageObservationResultV1> {
+  const expectedInstalled = npmInstalledIdentity(
+    decision.subject.source as Extract<GovernanceDecisionV2["subject"]["source"], { type: "npm" }>,
+  );
+  const initiallyObservedAt = new Date().toISOString();
+  const supported = await verifyAihSupportedQualificationReceiptV2(ctx, {
+    authority: verified,
+    decisionReference: { id: requested.decision, digest: requested.digest },
+    effect: "install",
+    now: initiallyObservedAt,
+    subject: decision.subject,
+    supportedTargets: SUPPORTED_CLIS,
+    target: requested.target,
+  });
+  if (supported.qualification === undefined || supported.custodyBinding === undefined)
+    return refusal("qualification-unverified", "verified");
+  const binding = supported.custodyBinding;
+  const currentCustodyAssertions = () =>
+    verifiedCurrentSupportedCustodyAssertionsV2({
+      root: ctx.root,
+      posture: supportedCustodyPosture(ctx),
+      platform: supportedCustodyPlatform(ctx),
+      binding,
+    });
+  if (currentCustodyAssertions() === undefined)
+    return refusal("qualification-unverified", "verified");
+  const initialCurrent = resolveObservedEffect({
+    authority: verified,
+    decisionReference: { id: requested.decision, digest: requested.digest },
+    qualification: supported.qualification,
+    subject: decision.subject,
+    target: requested.target,
+    effect: "install",
+    supportedTargets: SUPPORTED_CLIS,
+    expectedVerifier: OBSERVER,
+    expectedInstalled,
+    expectedIntegration: INTEGRATION,
+    now: initiallyObservedAt,
+  });
+  if (initialCurrent.state !== "observation-missing") return effectiveRefusal(initialCurrent.state);
+  const local = installed(ctx.root, decision);
+  if (typeof local === "string") {
+    afterInstalledReadForInternalTest?.();
+    const observedAt = new Date().toISOString();
+    if (currentCustodyAssertions() === undefined)
+      return refusalAfterQualified("qualification-unverified");
+    const effective = resolveObservedEffect({
+      authority: verified,
+      decisionReference: { id: requested.decision, digest: requested.digest },
+      qualification: supported.qualification,
+      subject: decision.subject,
+      target: requested.target,
+      effect: "install",
+      supportedTargets: SUPPORTED_CLIS,
+      expectedVerifier: OBSERVER,
+      expectedInstalled,
+      expectedIntegration: INTEGRATION,
+      now: observedAt,
+    });
+    if (effective.state !== "observation-missing")
+      return effectiveRefusal(effective.state, "qualified");
+    return local === "installed-evidence-unavailable"
+      ? {
+          authority: "verified",
+          qualification: "qualified",
+          effective: "observation-missing",
+          outcome: "partial",
+          reason: local,
+        }
+      : { ...refusal(local, "verified"), qualification: "qualified" };
+  }
+  afterInstalledReadForInternalTest?.();
+  if (!local.unchanged()) return refusalAfterQualified("installed-evidence-changed");
+  // GitHub's immutable attestation is verified once; re-read the receipt and every
+  // custody record immediately before minting the local observation and apply assertions.
+  const observedAt = new Date().toISOString();
+  const custodyAssertions = currentCustodyAssertions();
+  if (custodyAssertions === undefined) return refusalAfterQualified("qualification-unverified");
+  const effective = resolveObservedEffect({
+    authority: verified,
+    decisionReference: { id: requested.decision, digest: requested.digest },
+    qualification: supported.qualification,
+    subject: decision.subject,
+    target: requested.target,
+    effect: "install",
+    supportedTargets: SUPPORTED_CLIS,
+    expectedVerifier: OBSERVER,
+    expectedInstalled: local.installed,
+    expectedIntegration: INTEGRATION,
+    now: observedAt,
+  });
+  if (effective.state !== "observation-missing")
+    return effectiveRefusal(effective.state, "qualified");
+  const validUntil = new Date(
+    Math.min(
+      Date.parse(verified.receipt.expiresAt),
+      Date.parse(decision.expiresAt),
+      Date.parse(binding.receipt.expiresAt),
+      Date.parse(binding.receipt.catalogContinuity.headValidUntil),
+      decision.disposition === "accepted-with-conditions"
+        ? Date.parse(decision.reviewBy)
+        : Number.POSITIVE_INFINITY,
+      Date.parse(observedAt) + MAX_UPSTREAM_OBSERVATION_WINDOW_MS,
+    ),
+  ).toISOString();
+  const receipt = {
+    format: "aih-upstream-observation-receipt" as const,
+    version: 1 as const,
+    id: "observation-npm-package",
+    decision: { id: requested.decision, digest: requested.digest },
+    subject: {
+      kind: decision.subject.kind,
+      id: decision.subject.id,
+      sourceDigest: decision.subject.sourceDigest,
+      subjectDigest: decision.subject.subjectDigest,
+    },
+    targets: [requested.target],
+    allowedEffects: ["install" as const],
+    integration: INTEGRATION,
+    installed: local.installed,
+    verifier: OBSERVER,
+    observedAt,
+    validUntil,
+    outcome: "observed-success" as const,
+  };
+  const observation = verifyUpstreamObservationV1({
+    receipt,
+    expectedVerifier: OBSERVER,
+    expectedInstalled,
+    expectedIntegration: INTEGRATION,
+    subject: decision.subject,
+    target: requested.target,
+    effect: "install",
+    supportedTargets: SUPPORTED_CLIS,
+    now: observedAt,
+    verify: (candidate) =>
+      upstreamObservationReceiptDigestV1(candidate) === upstreamObservationReceiptDigestV1(receipt),
+  });
+  const resolved = resolveObservedEffect({
+    authority: verified,
+    decisionReference: { id: requested.decision, digest: requested.digest },
+    qualification: supported.qualification,
+    observation,
+    subject: decision.subject,
+    target: requested.target,
+    effect: "install",
+    supportedTargets: SUPPORTED_CLIS,
+    expectedVerifier: OBSERVER,
+    expectedInstalled: local.installed,
+    expectedIntegration: INTEGRATION,
+    now: observedAt,
+  });
+  if (resolved.state !== "observed-effective") return effectiveRefusal(resolved.state, "qualified");
+  const result: NpmPackageObservationResultV1 = {
+    authority: "verified",
+    qualification: "qualified",
+    effective: resolved.state,
+    outcome: "observed-effective",
+    observationDigest: upstreamObservationReceiptDigestV1(receipt),
+  };
+  const ordinaryHandoff = structuredClone({
+    authorityReceiptDigest: verified.receiptDigest,
+    custody: [
+      { path: POLICY_AUTHORITY_RECEIPT_PATH, sha256: verified.receiptDigest },
+      ...local.custody,
+    ],
+    custodyAssertions,
+    decision,
+    receipt,
+  });
+  lifecycleObservationReceipts.set(result, {
+    ...ordinaryHandoff,
+    supportedCustody: {
+      binding,
+      platform: supportedCustodyPlatform(ctx),
+      posture: supportedCustodyPosture(ctx),
+    },
+  });
+  return result;
+}
+
 /** Internal-only fixed npm observation path; caller controls neither package, effect, nor verifier. */
 export async function observeNpmPackageV1(
   ctx: PlanContext,
 ): Promise<NpmPackageObservationResultV1> {
   const requested = request(ctx);
   if (requested === undefined) return refusal("invalid-input");
-  const evidence = custodyOrganizationEvidenceV1(ctx.root, requested.evidence);
-  if ("problem" in evidence) return refusal(evidence.problem);
-  const evidenceEnvelope = parseOrganizationEvidenceEnvelopeV1Bytes(evidence.evidence.bytes);
-  if (evidenceEnvelope === undefined) return refusal("qualification-unverified");
   const verified = await verifyPolicyAuthorityReceipt(ctx);
   if (verified.authority === undefined) return refusal("authority-unverified");
   if (verified.authority.receipt.version !== 3) return refusal("authority-version", "verified");
-  if (!evidence.evidence.unchanged()) return refusal("evidence-changed", "verified");
   const decision = decisionFor(verified.authority, requested);
   if (decision === undefined) return refusal("decision-missing-or-mismatch", "verified");
   if (decision.subject.kind !== "package" || decision.subject.source.type !== "npm")
     return refusal("installed-identity-mismatch", "verified");
+  if (decision.qualificationBasis.kind === "aih-supported") {
+    if (requested.evidence !== undefined) return refusal("invalid-input", "verified");
+    return observeAihSupportedNpmPackageV1(ctx, requested, verified.authority, decision);
+  }
+  if (requested.evidence === undefined) return refusal("invalid-input", "verified");
+  const evidence = custodyOrganizationEvidenceV1(ctx.root, requested.evidence);
+  if ("problem" in evidence) return refusal(evidence.problem, "verified");
+  const evidenceEnvelope = parseOrganizationEvidenceEnvelopeV1Bytes(evidence.evidence.bytes);
+  if (evidenceEnvelope === undefined) return refusal("qualification-unverified", "verified");
+  if (!evidence.evidence.unchanged()) return refusal("evidence-changed", "verified");
   const expectedInstalled = npmInstalledIdentity(decision.subject.source);
   const qualificationInput = {
     authority: verified.authority,
@@ -575,7 +812,8 @@ export const npmPackageObserveCommand: CommandSpec = {
     { flags: "--target <cli>", description: "exact supported target (required)" },
     {
       flags: "--evidence <path>",
-      description: "root-relative organization evidence path (required)",
+      description:
+        "root-relative organization evidence path (required for organization-qualified decisions)",
     },
   ],
   plan: npmPackageObservePlan,

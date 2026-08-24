@@ -31,7 +31,7 @@ describe("committed JSON Schemas", () => {
       "schemas/aih-governance-decision-v2.schema.json",
       "schemas/aih-upstream-observation-receipt-v1.schema.json",
       "schemas/aih-organization-evidence-envelope-v1.schema.json",
-      "schemas/aih-supported-qualification-receipt-v1.schema.json",
+      "schemas/aih-supported-qualification-receipt-v2.schema.json",
       "schemas/aih-package-graph.schema.json",
       "schemas/aih-capability-package-manifest.schema.json",
     ]);
@@ -67,9 +67,15 @@ describe("committed JSON Schemas", () => {
     });
     expect(schemas[6]?.schema).toMatchObject({
       $schema: "https://json-schema.org/draft/2020-12/schema",
-      title: "aih-supported-qualification-receipt-v1.schema.json",
+      title: "aih-supported-qualification-receipt-v2.schema.json",
       type: "object",
     });
+    const supportSchema = schemas[6]?.schema as
+      | {
+          properties?: { catalogContinuity?: { properties?: { sequence?: { minimum?: number } } } };
+        }
+      | undefined;
+    expect(supportSchema?.properties?.catalogContinuity?.properties?.sequence?.minimum).toBe(0);
     expect(schemas[7]?.schema).toMatchObject({
       $schema: "https://json-schema.org/draft/2020-12/schema",
       $comment: expect.stringContaining("PackageGraphSchema.parse"),
