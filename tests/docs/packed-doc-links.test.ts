@@ -108,6 +108,8 @@ describe("packed Markdown link inspection", () => {
         "",
         "[named anchor](docs/commands.md#named-command)",
         "[duplicate heading](docs/commands.md#command-1)",
+        "[formatted heading](docs/commands.md#formatted-command)",
+        "[hostile-looking heading](docs/commands.md#safe)",
       ].join("\n"),
       "docs/commands.md": [
         "# Commands",
@@ -115,6 +117,8 @@ describe("packed Markdown link inspection", () => {
         '<a id="named-command"></a>',
         "## Command",
         "## Command",
+        "## <em>Formatted</em> command",
+        "## <<script>Safe</script>",
       ].join("\n"),
     });
 

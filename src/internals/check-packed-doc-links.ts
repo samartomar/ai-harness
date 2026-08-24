@@ -68,9 +68,28 @@ function decode(value: string): string | undefined {
   }
 }
 
+function withoutInlineHtmlTags(value: string): string {
+  const text: string[] = [];
+  let offset = 0;
+  while (offset < value.length) {
+    const opening = value.indexOf("<", offset);
+    if (opening < 0) {
+      text.push(value.slice(offset));
+      break;
+    }
+    text.push(value.slice(offset, opening));
+    const closing = value.indexOf(">", opening + 1);
+    if (closing < 0) {
+      text.push(value.slice(opening));
+      break;
+    }
+    offset = closing + 1;
+  }
+  return text.join("");
+}
+
 function markdownSlug(value: string): string {
-  return value
-    .replace(/<[^>]*>/gu, "")
+  return withoutInlineHtmlTags(value)
     .replace(/!\[([^\]]*)\]\([^)]*\)/gu, "$1")
     .replace(/\[([^\]]+)\]\([^)]*\)/gu, "$1")
     .replace(/[`*_~]/gu, "")
