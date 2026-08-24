@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import {
+  chmodSync,
   linkSync,
   mkdirSync,
   mkdtempSync,
@@ -7,6 +8,7 @@ import {
   readFileSync,
   realpathSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -49,6 +51,37 @@ import {
 } from "../../src/org-policy/upstream-artifact-observer-v1.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 
+const lifecycleFs = vi.hoisted(() => ({
+  deniedLstatPath: undefined as string | undefined,
+  denyAfterRename: undefined as
+    | { readonly deniedPath: string; readonly renamedPath: string }
+    | undefined,
+}));
+
+vi.mock("node:fs", async (importOriginal) => {
+  const original = await importOriginal<typeof import("node:fs")>();
+  return {
+    ...original,
+    lstatSync: ((...args: unknown[]) => {
+      if (String(args[0]) === lifecycleFs.deniedLstatPath) {
+        const error = Object.assign(new Error("injected lifecycle lstat denial"), {
+          code: "EACCES",
+        });
+        throw error;
+      }
+      return Reflect.apply(original.lstatSync, original, args);
+    }) as typeof original.lstatSync,
+    renameSync: ((from: string, to: string) => {
+      const result = original.renameSync(from, to);
+      const denial = lifecycleFs.denyAfterRename;
+      if (denial !== undefined && to === denial.renamedPath) {
+        lifecycleFs.deniedLstatPath = denial.deniedPath;
+      }
+      return result;
+    }) as typeof original.renameSync,
+  };
+});
+
 const sha = (bytes: Uint8Array | string) =>
   `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 
@@ -67,6 +100,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  lifecycleFs.deniedLstatPath = undefined;
+  lifecycleFs.denyAfterRename = undefined;
   __setUpstreamArtifactObserverInternalTestHookV1(undefined);
   vi.useRealTimers();
   rmSync(root, { recursive: true, force: true });
@@ -582,6 +617,174 @@ describe("upstream artifact observer V1", () => {
     }
     expect(upstreamArtifactLifecycleCommand.requireExplicitApply).toBe(true);
   });
+
+  it.each([
+    "lifecycle base",
+    "lifecycle ancestor",
+    "heads directory",
+    "capacity file",
+    "head file",
+    "stored record",
+    "head backup",
+  ] as const)("fails closed on an injected non-ENOENT stat error at the %s", async (location) => {
+    const value = fixture("skill");
+    writeFixture(value);
+    const applied = context(options(value), [], true);
+    await executePlan(await upstreamArtifactLifecyclePlan(applied), applied, {
+      skipWorktreeGate: true,
+    });
+    const base = join(root, ".aih", "governance", "upstream-artifact-lifecycle", "v1");
+    const headName = readdirSync(join(base, "heads")).find((name) =>
+      /^[0-9a-f]{64}\.json$/.test(name),
+    );
+    if (headName === undefined) throw new Error("expected lifecycle head");
+    const partition = headName.slice(0, -".json".length);
+    const recordName = readdirSync(join(base, "records", partition))[0];
+    if (recordName === undefined) throw new Error("expected lifecycle record");
+    const head = join(base, "heads", headName);
+    const denied = {
+      "lifecycle base": base,
+      "lifecycle ancestor": root,
+      "heads directory": join(base, "heads"),
+      "capacity file": join(base, "capacity.json"),
+      "head file": head,
+      "stored record": join(base, "records", partition, recordName),
+      "head backup": `${head}.aih.bak`,
+    }[location];
+
+    lifecycleFs.deniedLstatPath = denied;
+    try {
+      expect(readUpstreamArtifactLifecycleStoreV1(root)).toEqual({ kind: "unsafe" });
+      await expect(
+        resolveUpstreamArtifactEffectiveStateV1(context(options(value))),
+      ).resolves.toEqual([{ reason: "lifecycle-store-unsafe", state: "partial" }]);
+    } finally {
+      lifecycleFs.deniedLstatPath = undefined;
+    }
+  });
+
+  it("refuses an update when lstat denies the next immutable lifecycle record", async () => {
+    const first = fixture("skill", "v1");
+    writeFixture(first);
+    const initial = context(options(first), [], true);
+    await executePlan(await upstreamArtifactLifecyclePlan(initial), initial, {
+      skipWorktreeGate: true,
+    });
+
+    const next = fixture("skill", "v2");
+    writeFixture(next);
+    const preview = await upstreamArtifactLifecyclePlan(context(options(next), [], true));
+    const record = preview.actions.find(
+      (action) => action.kind === "write" && action.path.includes("/records/"),
+    );
+    if (record === undefined || record.kind !== "write")
+      throw new Error("expected next lifecycle record");
+    lifecycleFs.deniedLstatPath = join(root, ...record.path.split("/"));
+    try {
+      const refused = context(options(next), [], true);
+      const result = await executePlan(await upstreamArtifactLifecyclePlan(refused), refused, {
+        skipWorktreeGate: true,
+      });
+      expect(result.digests[0]?.data).toMatchObject({
+        applied: false,
+        outcome: "refused",
+        reason: "store-unsafe",
+      });
+    } finally {
+      lifecycleFs.deniedLstatPath = undefined;
+    }
+  });
+
+  it("refuses a revocation when lstat denies its next immutable lifecycle record", async () => {
+    const value = fixture("mcp");
+    writeFixture(value);
+    const initial = context(options(value), [], true);
+    await executePlan(await upstreamArtifactLifecyclePlan(initial), initial, {
+      skipWorktreeGate: true,
+    });
+    const revocation = {
+      format: "aih-governance-decision-revocation",
+      version: 2,
+      decisionDigest: governanceDecisionDigestV2(value.decision),
+      issuer: value.decision.issuer,
+      revokedAt: "2026-08-24T00:00:00Z",
+      reason: "The organization revoked this exact integration.",
+    };
+    writeFixture(value, [revocation]);
+    const preview = await upstreamArtifactLifecyclePlan(context(options(value), [], true));
+    const record = preview.actions.find(
+      (action) => action.kind === "write" && action.path.includes("/records/"),
+    );
+    if (record === undefined || record.kind !== "write")
+      throw new Error("expected revocation lifecycle record");
+    lifecycleFs.deniedLstatPath = join(root, ...record.path.split("/"));
+    try {
+      const refused = context(options(value), [], true);
+      const result = await executePlan(await upstreamArtifactLifecyclePlan(refused), refused, {
+        skipWorktreeGate: true,
+      });
+      expect(result.digests[0]?.data).toMatchObject({
+        applied: false,
+        outcome: "refused",
+        reason: "store-unsafe",
+      });
+    } finally {
+      lifecycleFs.deniedLstatPath = undefined;
+    }
+  });
+
+  it("fails closed when lstat denies a lifecycle read after its writes commit", async () => {
+    const value = fixture("package");
+    writeFixture(value);
+    const applied = context(options(value), [], true);
+    const planned = await upstreamArtifactLifecyclePlan(applied);
+    const head = planned.actions.find(
+      (action) => action.kind === "write" && action.path.includes("/heads/"),
+    );
+    const capacity = planned.actions.find(
+      (action) => action.kind === "write" && action.path.endsWith("/capacity.json"),
+    );
+    if (
+      head === undefined ||
+      head.kind !== "write" ||
+      capacity === undefined ||
+      capacity.kind !== "write"
+    )
+      throw new Error("expected lifecycle head and capacity writes");
+    lifecycleFs.denyAfterRename = {
+      deniedPath: join(root, ...head.path.split("/")),
+      renamedPath: join(root, ...capacity.path.split("/")),
+    };
+    const result = await executePlan(planned, applied, { skipWorktreeGate: true });
+    expect(result.digests[0]?.data).toMatchObject({
+      applied: false,
+      outcome: "refused",
+      reason: "store-unsafe",
+    });
+  });
+
+  it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+    "fails closed when POSIX permissions deny an existing lifecycle store",
+    async () => {
+      const value = fixture("skill");
+      writeFixture(value);
+      const applied = context(options(value), [], true);
+      await executePlan(await upstreamArtifactLifecyclePlan(applied), applied, {
+        skipWorktreeGate: true,
+      });
+      const base = join(root, ".aih", "governance", "upstream-artifact-lifecycle", "v1");
+      const mode = statSync(base).mode;
+      chmodSync(base, 0);
+      try {
+        expect(readUpstreamArtifactLifecycleStoreV1(root)).toEqual({ kind: "unsafe" });
+        await expect(
+          resolveUpstreamArtifactEffectiveStateV1(context(options(value))),
+        ).resolves.toEqual([{ reason: "lifecycle-store-unsafe", state: "partial" }]);
+      } finally {
+        chmodSync(base, mode);
+      }
+    },
+  );
 
   it("appends an exact version and source update and rejects a rollback", async () => {
     const first = fixture("tool", "v1");

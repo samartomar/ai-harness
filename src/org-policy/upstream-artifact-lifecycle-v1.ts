@@ -114,11 +114,17 @@ function rawSha256(bytes: Uint8Array | string): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-function safeLstat(path: string): ReturnType<typeof lstatSync> | undefined {
+function safeLstat(
+  path: string,
+): Exclude<ReturnType<typeof lstatSync>, undefined> | "absent" | "unsafe" {
   try {
-    return lstatSync(path);
-  } catch {
-    return undefined;
+    return lstatSync(path) ?? "unsafe";
+  } catch (error) {
+    return typeof error === "object" &&
+      error !== null &&
+      (error as { code?: unknown }).code === "ENOENT"
+      ? "absent"
+      : "unsafe";
   }
 }
 
@@ -162,16 +168,18 @@ function boundedDirectoryEntries(
   return result;
 }
 
-function safeParent(root: string, absolute: string): boolean {
+function safeParent(root: string, absolute: string): boolean | "unsafe" {
   const rootStat = safeLstat(root);
-  if (rootStat === undefined || rootStat.isSymbolicLink() || !rootStat.isDirectory()) return false;
+  if (rootStat === "unsafe") return "unsafe";
+  if (rootStat === "absent" || rootStat.isSymbolicLink() || !rootStat.isDirectory()) return false;
   const rel = relative(root, absolute);
   if (rel === "" || rel.startsWith("..") || /^[A-Za-z]:/.test(rel)) return false;
   let cursor = root;
   for (const segment of rel.split(sep).slice(0, -1)) {
     cursor = join(cursor, segment);
     const stat = safeLstat(cursor);
-    if (stat === undefined || stat.isSymbolicLink() || !stat.isDirectory()) return false;
+    if (stat === "unsafe") return "unsafe";
+    if (stat === "absent" || stat.isSymbolicLink() || !stat.isDirectory()) return false;
   }
   return true;
 }
@@ -179,11 +187,14 @@ function safeParent(root: string, absolute: string): boolean {
 function readStoreFile(
   root: string,
   parts: readonly string[],
-): Existing | "absent" | "unsafe" | "corrupt" {
+): Existing | "absent" | "stat-unsafe" | "unsafe" | "corrupt" {
   const absolute = resolve(root, ...parts);
   const stat = safeLstat(absolute);
-  if (stat === undefined) return "absent";
-  if (!safeParent(root, absolute) || stat.isSymbolicLink() || !stat.isFile()) return "unsafe";
+  if (stat === "absent") return "absent";
+  if (stat === "unsafe") return "stat-unsafe";
+  const parent = safeParent(root, absolute);
+  if (parent === "unsafe") return "stat-unsafe";
+  if (!parent || stat.isSymbolicLink() || !stat.isFile()) return "unsafe";
   const opened = readRegularFileWithStats(absolute, { maxBytes: MAX_STORE_FILE_BYTES });
   if (opened === undefined || opened.identity.nlink !== 1n) return "unsafe";
   const bytes = Buffer.from(opened.contents);
@@ -195,6 +206,10 @@ function readStoreFile(
   } catch {
     return "corrupt";
   }
+}
+
+function isStoreUnsafe(value: unknown): value is "stat-unsafe" | "unsafe" {
+  return value === "stat-unsafe" || value === "unsafe";
 }
 
 function parseObject(existing: Existing): Record<string, unknown> | undefined {
@@ -493,18 +508,18 @@ function verifyHistory(
   root: string,
   head: Head,
   lineage: Lineage,
-): UpstreamArtifactLifecycleStoredStateV1[] | undefined {
+): UpstreamArtifactLifecycleStoredStateV1[] | "unsafe" | undefined {
   const directory = resolve(root, ...STORE, "records", lineage.digest.slice("sha256:".length));
   const directoryStat = safeLstat(directory);
-  if (
-    directoryStat === undefined ||
-    directoryStat.isSymbolicLink() ||
-    !directoryStat.isDirectory() ||
-    !safeParent(root, join(directory, "entry"))
-  )
+  if (directoryStat === "unsafe") return "unsafe";
+  if (directoryStat === "absent" || directoryStat.isSymbolicLink() || !directoryStat.isDirectory())
     return undefined;
+  const parent = safeParent(root, join(directory, "entry"));
+  if (parent === "unsafe") return "unsafe";
+  if (!parent) return undefined;
   const entries = boundedDirectoryEntries(directory, MAX_RECORDS_PER_LINEAGE);
-  if (typeof entries === "string") return undefined;
+  if (entries === "unsafe") return "unsafe";
+  if (entries === "over-capacity") return undefined;
   if (
     entries.length === 0 ||
     entries.some((entry) => !entry.file || !/^[0-9a-f]{64}\.json$/.test(entry.name))
@@ -516,6 +531,7 @@ function verifyHistory(
   let sequence = head.sequence;
   for (let count = 0; count < MAX_RECORDS_PER_LINEAGE; count += 1) {
     const existing = readStoreFile(root, recordPath(lineage, digest));
+    if (existing === "stat-unsafe") return "unsafe";
     if (typeof existing === "string") return undefined;
     const record = parseRecord(existing, lineage, digest);
     if (record === undefined || record.sequence !== sequence) return undefined;
@@ -533,10 +549,11 @@ function historyAssertions(
   root: string,
   lineage: Lineage,
   history: readonly UpstreamArtifactLifecycleStoredStateV1[],
-): readonly FileAssertion[] | undefined {
+): readonly FileAssertion[] | "unsafe" | undefined {
   const assertions: FileAssertion[] = [];
   for (const record of history) {
     const existing = readStoreFile(root, recordPath(lineage, record.recordDigest));
+    if (existing === "stat-unsafe") return "unsafe";
     if (typeof existing === "string") return undefined;
     if (parseRecord(existing, lineage, record.recordDigest) === undefined) return undefined;
     assertions.push({
@@ -552,8 +569,13 @@ function historyAssertions(
 function listHeadFiles(root: string): readonly string[] | "absent" | "unsafe" | "over-capacity" {
   const directory = resolve(root, ...STORE, "heads");
   const stat = safeLstat(directory);
-  if (stat === undefined) return "absent";
-  if (!safeParent(root, join(directory, "entry")) || stat.isSymbolicLink() || !stat.isDirectory())
+  if (stat === "absent") return "absent";
+  if (stat === "unsafe") return "unsafe";
+  if (
+    safeParent(root, join(directory, "entry")) !== true ||
+    stat.isSymbolicLink() ||
+    !stat.isDirectory()
+  )
     return "unsafe";
   try {
     const entries = boundedDirectoryEntries(directory, MAX_HEADS * 2);
@@ -575,8 +597,13 @@ function listHeadFiles(root: string): readonly string[] | "absent" | "unsafe" | 
 function listClaimFiles(root: string): readonly string[] | "absent" | "unsafe" | "over-capacity" {
   const directory = resolve(root, ...STORE, "claims");
   const stat = safeLstat(directory);
-  if (stat === undefined) return "absent";
-  if (!safeParent(root, join(directory, "entry")) || stat.isSymbolicLink() || !stat.isDirectory())
+  if (stat === "absent") return "absent";
+  if (stat === "unsafe") return "unsafe";
+  if (
+    safeParent(root, join(directory, "entry")) !== true ||
+    stat.isSymbolicLink() ||
+    !stat.isDirectory()
+  )
     return "unsafe";
   try {
     const entries = boundedDirectoryEntries(directory, MAX_HEADS);
@@ -595,8 +622,13 @@ function listRecordPartitions(
 ): readonly string[] | "absent" | "unsafe" | "over-capacity" {
   const directory = resolve(root, ...STORE, "records");
   const stat = safeLstat(directory);
-  if (stat === undefined) return "absent";
-  if (!safeParent(root, join(directory, "entry")) || stat.isSymbolicLink() || !stat.isDirectory())
+  if (stat === "absent") return "absent";
+  if (stat === "unsafe") return "unsafe";
+  if (
+    safeParent(root, join(directory, "entry")) !== true ||
+    stat.isSymbolicLink() ||
+    !stat.isDirectory()
+  )
     return "unsafe";
   try {
     const entries = boundedDirectoryEntries(directory, MAX_HEADS);
@@ -616,9 +648,10 @@ function validHeadBackup(
   head: Head,
   lineage: Lineage,
   history: readonly UpstreamArtifactLifecycleStoredStateV1[],
-): boolean {
+): boolean | "unsafe" {
   const backup = readStoreFile(root, [...STORE, "heads", `${name}.aih.bak`]);
   if (backup === "absent") return true;
+  if (backup === "stat-unsafe") return "unsafe";
   if (typeof backup === "string") return false;
   const prior = parseHead(backup, lineage);
   const expected = history.at(-2);
@@ -649,10 +682,11 @@ function currentCapacity(root: string): Capacity | "unsafe" | "corrupt" | "over-
     const directory = resolve(root, ...STORE, "records", lineageHex);
     const stat = safeLstat(directory);
     if (
-      stat === undefined ||
+      stat === "unsafe" ||
+      stat === "absent" ||
       stat.isSymbolicLink() ||
       !stat.isDirectory() ||
-      !safeParent(root, join(directory, "entry"))
+      safeParent(root, join(directory, "entry")) !== true
     )
       return "unsafe";
     const entries = boundedDirectoryEntries(directory, MAX_RECORDS_PER_LINEAGE);
@@ -668,7 +702,7 @@ function currentCapacity(root: string): Capacity | "unsafe" | "corrupt" | "over-
   }
   const headCount = heads === "absent" ? 0 : heads.length;
   const capacity = readStoreFile(root, [...STORE, "capacity.json"]);
-  if (capacity === "unsafe") return "unsafe";
+  if (isStoreUnsafe(capacity)) return "unsafe";
   if (capacity === "corrupt") return "corrupt";
   if (capacity === "absent") {
     return headCount === 0 && recordCount === 0
@@ -693,11 +727,12 @@ export function readUpstreamArtifactLifecycleStoreV1(
 ): UpstreamArtifactLifecycleStoreReadV1 {
   const base = resolve(root, ...STORE);
   const baseStat = safeLstat(base);
-  if (baseStat === undefined) return { kind: "absent" };
+  if (baseStat === "absent") return { kind: "absent" };
+  if (baseStat === "unsafe") return { kind: "unsafe" };
   if (
     baseStat.isSymbolicLink() ||
     !baseStat.isDirectory() ||
-    !safeParent(root, join(base, "entry"))
+    safeParent(root, join(base, "entry")) !== true
   )
     return { kind: "unsafe" };
   const capacity = currentCapacity(root);
@@ -727,7 +762,7 @@ export function readUpstreamArtifactLifecycleStoreV1(
   for (const name of heads) {
     const existingHead = readStoreFile(root, [...STORE, "heads", name]);
     if (typeof existingHead === "string")
-      return { kind: existingHead === "unsafe" ? "unsafe" : "corrupt" };
+      return { kind: isStoreUnsafe(existingHead) ? "unsafe" : "corrupt" };
     const item = parseObject(existingHead);
     const lineageDigest = item?.lineageDigest;
     if (typeof lineageDigest !== "string" || !SHA256.test(lineageDigest))
@@ -735,7 +770,8 @@ export function readUpstreamArtifactLifecycleStoreV1(
     const recordDirectory = resolve(root, ...STORE, "records", lineageDigest.slice(7));
     const recordEntries = safeLstat(recordDirectory);
     if (
-      recordEntries === undefined ||
+      recordEntries === "unsafe" ||
+      recordEntries === "absent" ||
       recordEntries.isSymbolicLink() ||
       !recordEntries.isDirectory()
     )
@@ -755,15 +791,18 @@ export function readUpstreamArtifactLifecycleStoreV1(
       firstRecordFile.name,
     ]);
     if (typeof firstExisting === "string")
-      return { kind: firstExisting === "unsafe" ? "unsafe" : "corrupt" };
+      return { kind: isStoreUnsafe(firstExisting) ? "unsafe" : "corrupt" };
     const firstItem = parseObject(firstExisting);
     const lineage = parseLineage(firstItem?.lineage);
     if (lineage === undefined || lineage.digest !== lineageDigest) return { kind: "corrupt" };
     const head = parseHead(existingHead, lineage);
     if (head === undefined) return { kind: "corrupt" };
     const history = verifyHistory(root, head, lineage);
+    if (history === "unsafe") return { kind: "unsafe" };
     if (history === undefined) return { kind: "corrupt" };
-    if (!validHeadBackup(root, name, head, lineage, history)) return { kind: "corrupt" };
+    const backup = validHeadBackup(root, name, head, lineage, history);
+    if (backup === "unsafe") return { kind: "unsafe" };
+    if (!backup) return { kind: "corrupt" };
     const latest = history.at(-1);
     if (latest === undefined || latest.subjectDigest !== head.subjectDigest)
       return { kind: "corrupt" };
@@ -780,7 +819,8 @@ export function readUpstreamArtifactLifecycleStoreV1(
   if (canonical(claims) !== canonical(expectedClaims)) return { kind: "corrupt" };
   for (const record of records) {
     const existing = readStoreFile(root, claimPath(record.lineage));
-    if (typeof existing === "string") return { kind: existing === "unsafe" ? "unsafe" : "corrupt" };
+    if (typeof existing === "string")
+      return { kind: isStoreUnsafe(existing) ? "unsafe" : "corrupt" };
     const claim = parseClaim(existing);
     if (claim === undefined || canonical(claim) !== canonical(record.lineage))
       return { kind: "corrupt" };
@@ -919,7 +959,10 @@ async function prepareRevocation(ctx: PlanContext): Promise<Prepared> {
   const claimParts = claimPath(lineage);
   const claim = readStoreFile(ctx.root, claimParts);
   if (typeof claim === "string")
-    return { actions: [], result: refused(claim === "unsafe" ? "store-unsafe" : "store-corrupt") };
+    return {
+      actions: [],
+      result: refused(isStoreUnsafe(claim) ? "store-unsafe" : "store-corrupt"),
+    };
   const parsedClaim = parseClaim(claim);
   if (parsedClaim === undefined || canonical(parsedClaim) !== canonical(lineage))
     return { actions: [], result: refused("lineage-conflict") };
@@ -928,10 +971,11 @@ async function prepareRevocation(ctx: PlanContext): Promise<Prepared> {
   if (typeof existingHead === "string")
     return {
       actions: [],
-      result: refused(existingHead === "unsafe" ? "store-unsafe" : "head-conflict"),
+      result: refused(isStoreUnsafe(existingHead) ? "store-unsafe" : "head-conflict"),
     };
   const priorHead = parseHead(existingHead, lineage);
   const history = priorHead === undefined ? undefined : verifyHistory(ctx.root, priorHead, lineage);
+  if (history === "unsafe") return { actions: [], result: refused("store-unsafe") };
   if (
     priorHead === undefined ||
     history === undefined ||
@@ -940,6 +984,7 @@ async function prepareRevocation(ctx: PlanContext): Promise<Prepared> {
   )
     return { actions: [], result: refused("head-conflict") };
   const priorRecordAssertions = historyAssertions(ctx.root, lineage, history);
+  if (priorRecordAssertions === "unsafe") return { actions: [], result: refused("store-unsafe") };
   if (priorRecordAssertions === undefined) return { actions: [], result: refused("store-corrupt") };
   const sequence = priorHead.sequence + 1;
   const record = {
@@ -960,7 +1005,7 @@ async function prepareRevocation(ctx: PlanContext): Promise<Prepared> {
   if (existingRecord !== "absent")
     return {
       actions: [],
-      result: refused(existingRecord === "unsafe" ? "store-unsafe" : "head-conflict"),
+      result: refused(isStoreUnsafe(existingRecord) ? "store-unsafe" : "head-conflict"),
     };
   const recordText = canonical(record);
   const headText = canonical({
@@ -1036,6 +1081,7 @@ function preparedResult(
   const expected = prepared.expected;
   const head = readStoreFile(root, headPath(expected.lineage));
   const record = readStoreFile(root, recordPath(expected.lineage, expected.recordDigest));
+  if (head === "stat-unsafe" || record === "stat-unsafe") return refused("store-unsafe");
   const store = readUpstreamArtifactLifecycleStoreV1(root);
   if (store.kind !== "complete") {
     return refused(
@@ -1101,7 +1147,7 @@ async function prepare(ctx: PlanContext): Promise<Prepared> {
 
   const claimParts = claimPath(lineage);
   const claim = readStoreFile(ctx.root, claimParts);
-  if (claim === "unsafe") return { actions: [], result: refused("store-unsafe") };
+  if (isStoreUnsafe(claim)) return { actions: [], result: refused("store-unsafe") };
   if (claim === "corrupt") return { actions: [], result: refused("store-corrupt") };
   if (claim !== "absent") {
     const current = parseClaim(claim);
@@ -1110,14 +1156,16 @@ async function prepare(ctx: PlanContext): Promise<Prepared> {
   }
   const headParts = headPath(lineage);
   const existingHead = readStoreFile(ctx.root, headParts);
-  if (existingHead === "unsafe") return { actions: [], result: refused("store-unsafe") };
+  if (isStoreUnsafe(existingHead)) return { actions: [], result: refused("store-unsafe") };
   if (existingHead === "corrupt") return { actions: [], result: refused("store-corrupt") };
   const priorHead = existingHead === "absent" ? undefined : parseHead(existingHead, lineage);
   if (existingHead !== "absent" && priorHead === undefined)
     return { actions: [], result: refused("head-conflict") };
   const history = priorHead === undefined ? [] : verifyHistory(ctx.root, priorHead, lineage);
+  if (history === "unsafe") return { actions: [], result: refused("store-unsafe") };
   if (history === undefined) return { actions: [], result: refused("head-conflict") };
   const priorRecordAssertions = historyAssertions(ctx.root, lineage, history);
+  if (priorRecordAssertions === "unsafe") return { actions: [], result: refused("store-unsafe") };
   if (priorRecordAssertions === undefined) return { actions: [], result: refused("store-corrupt") };
   if (history.length >= MAX_RECORDS_PER_LINEAGE)
     return { actions: [], result: refused("store-over-capacity") };
@@ -1168,7 +1216,7 @@ async function prepare(ctx: PlanContext): Promise<Prepared> {
   const recordDigest = digestOf("aih-upstream-artifact-lifecycle-record/v1", record);
   const recordParts = recordPath(lineage, recordDigest);
   const existingRecord = readStoreFile(ctx.root, recordParts);
-  if (existingRecord === "unsafe") return { actions: [], result: refused("store-unsafe") };
+  if (isStoreUnsafe(existingRecord)) return { actions: [], result: refused("store-unsafe") };
   if (existingRecord === "corrupt") return { actions: [], result: refused("store-corrupt") };
   if (existingRecord !== "absent") return { actions: [], result: refused("head-conflict") };
   const recordText = canonical(record);
