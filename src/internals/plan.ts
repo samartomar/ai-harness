@@ -266,9 +266,26 @@ export type Action =
   | DigestAction
   | RemoveAction;
 
+/**
+ * A transaction-local, read-only pin for an externally verified input. The
+ * executor never rewrites this path; the filesystem transaction checks its
+ * bounded, no-follow, regular single-link bytes before and after effects.
+ */
+export interface FileAssertion {
+  /** Root-relative path of the verified input. */
+  path: string;
+  /** Lowercase SHA-256 digest of its exact bytes, without the `sha256:` prefix. */
+  sha256: string;
+  /** Maximum safe byte size for the no-follow descriptor read. */
+  maxBytes: number;
+  describe: string;
+}
+
 export interface Plan {
   capability: string;
   actions: Action[];
+  /** Read-only external-input pins checked inside every commit transaction. */
+  fileAssertions?: readonly FileAssertion[];
   /** Exact UTC ISO deadline after which an apply must not commit local mutations. */
   commitNotAfter?: string;
   /** Fixed root-relative lock path held while a transaction commits this plan. */

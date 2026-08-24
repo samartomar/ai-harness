@@ -894,6 +894,33 @@ export async function executePlan(
   };
   const txn = new FsTransaction(transactionOptions);
   const deferredTxn = new FsTransaction(transactionOptions);
+  for (const assertion of plan.fileAssertions ?? []) {
+    if (
+      !/^[a-f0-9]{64}$/.test(assertion.sha256) ||
+      !Number.isSafeInteger(assertion.maxBytes) ||
+      assertion.maxBytes < 0
+    )
+      throw new AihError("invalid transaction file assertion", "AIH_CONFIG");
+    const absPath = resolvePath(ctx, assertion.path);
+    assertContained(ctx.root, absPath);
+    assertNoSymlinkParents(ctx.root, absPath, assertion.path);
+    if (ctx.apply) {
+      txn.stageAssertion(
+        absPath,
+        assertion.sha256,
+        assertion.describe,
+        ctx.root,
+        assertion.maxBytes,
+      );
+      deferredTxn.stageAssertion(
+        absPath,
+        assertion.sha256,
+        assertion.describe,
+        ctx.root,
+        assertion.maxBytes,
+      );
+    }
+  }
   const sensitiveBackupTargets = new Set<string>();
   const writes: WriteSummary[] = [];
   const docs: PlanResult["docs"] = [];

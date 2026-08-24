@@ -3,8 +3,8 @@ import { lstatSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
-import { readRegularFile } from "../internals/fsxn.js";
-import type { PlanContext } from "../internals/plan.js";
+import { readRegularFileWithStats } from "../internals/fsxn.js";
+import type { FileAssertion, PlanContext } from "../internals/plan.js";
 import { findOnPath } from "../live/runner.js";
 import {
   GovernanceDecisionRevocationV1Schema,
@@ -649,6 +649,23 @@ export function isVerifiedPolicyAuthority(value: unknown): value is VerifiedPoli
   return typeof value === "object" && value !== null && verifiedAuthorities.has(value);
 }
 
+/** Read-only transaction pin for the exact no-follow authority receipt just verified. */
+export function verifiedPolicyAuthorityReceiptAssertionV1(
+  authority: VerifiedPolicyAuthority,
+): FileAssertion | undefined {
+  if (
+    !isVerifiedPolicyAuthority(authority) ||
+    !/^sha256:[0-9a-f]{64}$/.test(authority.receiptDigest)
+  )
+    return undefined;
+  return {
+    path: POLICY_AUTHORITY_RECEIPT_PATH,
+    sha256: authority.receiptDigest.slice("sha256:".length),
+    maxBytes: 1_000_000,
+    describe: "assert verified policy authority receipt remains exact",
+  };
+}
+
 export interface PolicyAuthorityVerification {
   authority?: VerifiedPolicyAuthority;
   /** Deliberately scrubbed: trust-verifier child output may contain credentials. */
@@ -687,6 +704,93 @@ function receiptHasSymlinkParent(root: string): boolean {
   return false;
 }
 
+interface CustodiedPathIdentity {
+  readonly dev: bigint;
+  readonly ino: bigint;
+}
+
+interface CustodiedAuthorityReceipt {
+  readonly contents: Buffer;
+  readonly root: CustodiedPathIdentity;
+  readonly parent: CustodiedPathIdentity;
+  readonly file: CustodiedPathIdentity;
+}
+
+function safeDirectoryIdentity(path: string): CustodiedPathIdentity | undefined {
+  try {
+    const stats = lstatSync(path, { bigint: true });
+    if (stats.isSymbolicLink() || !stats.isDirectory() || stats.dev === 0n || stats.ino === 0n) {
+      return undefined;
+    }
+    return { dev: stats.dev, ino: stats.ino };
+  } catch {
+    return undefined;
+  }
+}
+
+function sameCustodiedPath(left: CustodiedPathIdentity, right: CustodiedPathIdentity): boolean {
+  return left.dev === right.dev && left.ino === right.ino;
+}
+
+/**
+ * Capture the fixed receipt through one no-follow descriptor and pin every path
+ * component that makes those bytes reachable. The descriptor stats ensure a
+ * regular, single-link file; the path stat immediately after the read closes
+ * the path-replacement window before the external verifier consumes its copy.
+ */
+function readCustodiedAuthorityReceipt(
+  root: string,
+  path: string,
+): CustodiedAuthorityReceipt | undefined {
+  const rootIdentity = safeDirectoryIdentity(root);
+  const parentIdentity = safeDirectoryIdentity(join(root, ".aih"));
+  if (rootIdentity === undefined || parentIdentity === undefined) return undefined;
+
+  const read = readRegularFileWithStats(path, { maxBytes: 1_000_000 });
+  if (
+    read === undefined ||
+    read.identity.dev === 0n ||
+    read.identity.ino === 0n ||
+    read.identity.nlink !== 1n
+  ) {
+    return undefined;
+  }
+  try {
+    const current = lstatSync(path, { bigint: true });
+    if (
+      current.isSymbolicLink() ||
+      !current.isFile() ||
+      current.dev === 0n ||
+      current.ino === 0n ||
+      current.nlink !== 1n ||
+      current.dev !== read.identity.dev ||
+      current.ino !== read.identity.ino
+    ) {
+      return undefined;
+    }
+  } catch {
+    return undefined;
+  }
+  return {
+    contents: read.contents,
+    root: rootIdentity,
+    parent: parentIdentity,
+    file: { dev: read.identity.dev, ino: read.identity.ino },
+  };
+}
+
+function sameCustodiedAuthorityReceipt(
+  left: CustodiedAuthorityReceipt,
+  right: CustodiedAuthorityReceipt,
+): boolean {
+  return (
+    left.contents.equals(right.contents) &&
+    sameCustodiedPath(left.root, right.root) &&
+    sameCustodiedPath(left.parent, right.parent) &&
+    sameCustodiedPath(left.file, right.file)
+  );
+}
+
 /**
  * Verify the fixed authority receipt against an organization-admin registry set
  * outside the target checkout (`AIH_POLICY_AUTHORITY_REPOSITORY`, optionally
@@ -710,8 +814,8 @@ export async function verifyPolicyAuthorityReceipt(
       problem: `verified authority receipt ${POLICY_AUTHORITY_RECEIPT_PATH} has an unsafe symlinked parent`,
     };
   }
-  const contents = readRegularFile(path, { maxBytes: 1_000_000 });
-  if (contents === undefined) {
+  const observed = readCustodiedAuthorityReceipt(ctx.root, path);
+  if (observed === undefined) {
     try {
       if (lstatSync(path).isSymbolicLink()) {
         return {
@@ -727,7 +831,7 @@ export async function verifyPolicyAuthorityReceipt(
   }
   let receipt: PolicyAuthorityReceipt;
   try {
-    receipt = PolicyAuthorityReceiptSchema.parse(JSON.parse(contents.toString("utf8")));
+    receipt = PolicyAuthorityReceiptSchema.parse(JSON.parse(observed.contents.toString("utf8")));
   } catch {
     return { problem: `verified authority receipt ${POLICY_AUTHORITY_RECEIPT_PATH} is malformed` };
   }
@@ -748,7 +852,7 @@ export async function verifyPolicyAuthorityReceipt(
     // a live receipt path could otherwise be swapped between parse and `gh`.
     verifierDir = mkdtempSync(join(tmpdir(), "aih-policy-authority-"));
     const verifierPath = join(verifierDir, "receipt.json");
-    writeFileSync(verifierPath, contents, { flag: "wx", mode: 0o600 });
+    writeFileSync(verifierPath, observed.contents, { flag: "wx", mode: 0o600 });
     // Never let exec lookup fall back to the governed checkout's cwd. In
     // particular, Windows SearchPath would otherwise prefer a malicious
     // `gh.exe` planted at the repository root over the organization toolchain.
@@ -778,9 +882,13 @@ export async function verifyPolicyAuthorityReceipt(
   if (verified.spawnError || verified.code !== 0) {
     return { problem: "GitHub authority receipt attestation could not be verified" };
   }
+  const reobserved = readCustodiedAuthorityReceipt(ctx.root, path);
+  if (reobserved === undefined || !sameCustodiedAuthorityReceipt(observed, reobserved)) {
+    return { problem: "GitHub authority receipt attestation could not be verified" };
+  }
   const authority: VerifiedPolicyAuthority = Object.freeze({
     receipt: deepFreeze(structuredClone(receipt)) as PolicyAuthorityReceipt,
-    receiptDigest: `sha256:${createHash("sha256").update(contents).digest("hex")}`,
+    receiptDigest: `sha256:${createHash("sha256").update(observed.contents).digest("hex")}`,
     repository: root.repository,
     ...(root.workflow === undefined ? {} : { workflow: root.workflow }),
   });

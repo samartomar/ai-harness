@@ -2142,7 +2142,7 @@ describe("npm package lifecycle V1", () => {
     const originalRun = ctx.run;
     ctx.run = async (argv, options) => {
       const result = await originalRun(argv, options);
-      if (argv[0] === gh && ++attestations === 1) writeAuthority(value.decision);
+      if (argv[0] === gh && ++attestations === 2) writeAuthority(value.decision);
       return result;
     };
 

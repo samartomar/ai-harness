@@ -1,12 +1,16 @@
+import { createHash } from "node:crypto";
 import { lstatSync } from "node:fs";
 import { isAbsolute, relative, resolve, sep, win32 } from "node:path";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
+import type { FileAssertion } from "../internals/plan.js";
 
 /** The organization evidence envelope has the same fixed hostile-input ceiling as its parser. */
 export const MAX_POLICY_RESOLVE_EVIDENCE_BYTES_V1 = 4_096;
 
 export interface CustodiedEvidenceV1 {
   readonly bytes: Buffer;
+  /** Read-only transaction pin for these exact, root-contained evidence bytes. */
+  readonly assertion: FileAssertion;
   /** Re-read from the same non-symlinked path after an external verifier returns. */
   unchanged(): boolean;
 }
@@ -89,6 +93,12 @@ export function custodyOrganizationEvidenceV1(
   return {
     evidence: {
       bytes: original,
+      assertion: {
+        path: rel,
+        sha256: createHash("sha256").update(original).digest("hex"),
+        maxBytes: MAX_POLICY_RESOLVE_EVIDENCE_BYTES_V1,
+        describe: "assert qualified organization evidence remains exact",
+      },
       unchanged(): boolean {
         if (hasSymlinkedParent(root, path)) return false;
         const current = readRegularFileWithStats(path, {

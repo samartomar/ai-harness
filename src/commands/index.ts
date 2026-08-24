@@ -36,6 +36,12 @@ import { marketplaceBuildCommand } from "../marketplace/build.js";
 import { marketplacePublishCommand } from "../marketplace/publish.js";
 import { marketplaceValidateCommand } from "../marketplace/validate.js";
 import { command as mcp, mcpApproveCommand } from "../mcp/index.js";
+import {
+  executePolicyManagedUsageReconcileCommandV1,
+  policyManagedUsageDescribeCommandV1,
+  policyManagedUsageInspectCommandV1,
+  policyManagedUsageReconcileCommandV1,
+} from "../org-policy/aih-managed-usage-command-v1.js";
 import { policyGenerateCommand, runPolicyGenerate } from "../org-policy/generate.js";
 import { policyInitCommand } from "../org-policy/init.js";
 import { npmPackageLifecycleCommand } from "../org-policy/npm-package-lifecycle-v1.js";
@@ -244,6 +250,9 @@ export const ALL_COMMAND_SPECS: CommandSpec[] = [
   ...Object.values(GROUPED_COMMAND_SPECS).flat(),
   policySupportedAcceptCommandV2,
   policySupportedInspectCommandV2,
+  policyManagedUsageDescribeCommandV1,
+  policyManagedUsageReconcileCommandV1,
+  policyManagedUsageInspectCommandV1,
   ...CAPABILITY_PACKAGE_COMMAND_SPECS,
 ];
 
@@ -264,6 +273,9 @@ export const ALL_COMMAND_SPEC_PATHS: ReadonlyArray<readonly string[]> = [
   ),
   ["policy", "supported", policySupportedAcceptCommandV2.name] as const,
   ["policy", "supported", policySupportedInspectCommandV2.name] as const,
+  ["policy", "managed", "usage-metering", policyManagedUsageDescribeCommandV1.name] as const,
+  ["policy", "managed", "usage-metering", policyManagedUsageReconcileCommandV1.name] as const,
+  ["policy", "managed", "usage-metering", policyManagedUsageInspectCommandV1.name] as const,
   ...CAPABILITY_PACKAGE_COMMAND_SPECS.map((spec) => ["capability", "package", spec.name] as const),
 ];
 
@@ -946,6 +958,39 @@ export function registerCommands(
     sub.action(async (_options: Record<string, unknown>, command: Command) => {
       process.exitCode = await runCapability(spec, command, { positionalRoot: false });
     });
+  }
+  const policyManaged = policy
+    .command("managed")
+    .description("Closed code-owned AIH-managed governance adapters");
+  const policyManagedUsage = policyManaged
+    .command("usage-metering")
+    .description("Govern the fixed AIH usage-metering adapter");
+  const usageDescribe = policyManagedUsage
+    .command(policyManagedUsageDescribeCommandV1.name)
+    .description(policyManagedUsageDescribeCommandV1.summary);
+  addFlagsForSpec(usageDescribe, policyManagedUsageDescribeCommandV1);
+  addOptionsForSpec(usageDescribe, policyManagedUsageDescribeCommandV1);
+  usageDescribe.action(async (_options: Record<string, unknown>, command: Command) => {
+    process.exitCode = await runCapability(policyManagedUsageDescribeCommandV1, command, {
+      positionalRoot: false,
+    });
+  });
+  for (const spec of [policyManagedUsageReconcileCommandV1, policyManagedUsageInspectCommandV1]) {
+    const sub = policyManagedUsage
+      .command(spec.name)
+      .description(spec.summary)
+      .argument("[root]", "target repository root (defaults to --root or cwd)");
+    addFlagsForSpec(sub, spec);
+    addOptionsForSpec(sub, spec);
+    sub.action(
+      async (_rootArg: string | undefined, _options: Record<string, unknown>, command: Command) => {
+        process.exitCode = await runCapability(spec, command, {
+          ...(spec === policyManagedUsageReconcileCommandV1
+            ? { execute: executePolicyManagedUsageReconcileCommandV1 }
+            : {}),
+        });
+      },
+    );
   }
 
   // `evidence` mirrors the same options-only shape: `build` packages the

@@ -8,6 +8,26 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **A closed AIH-managed adapter governs the fixed usage-metering projection without admitting
+  arbitrary executable materialization.** `aih policy managed usage-metering describe` reports one
+  code-derived `tool/usage-metering` subject, adapter id/version/digest, `configure` effect, and
+  `claude|codex` target set. `reconcile` accepts only an exact externally verified V3 decision,
+  current canonical organization evidence, and one fixed target; preview is zero-write, and literal
+  `--apply` can write only the fixed recorder, host hook entry, ignore marker, and strict V4 ownership
+  receipt. Apply commits an exact durable claim before effects, re-observes authority,
+  qualification, ownership, and linked-path custody at the effect boundary, asserts exact outputs
+  before success, and retains bounded predecessor-linked audit state. Exact reconciliation is
+  zero-write. A current authenticated revocation can subtract only the exact code-derived recorder,
+  hook entry, and ignore marker after live output validation; host/ignore documents and non-AIH
+  content remain, because self-digested ownership metadata is never deletion authority. Revoked
+  custody makes no process-termination claim; drift preserves disputed bytes and reports
+  non-effective truth. Legacy V1-V3 receipts never satisfy this
+  route, and a future code-derived source change requires an explicit shipped predecessor migration.
+  The packed disposable-root proof currently establishes installed-byte discovery, clean
+  inspection, and fail-closed refusal without authority; successful configure/revoke remains
+  unclaimed until a genuine organization V3 receipt has a separately authorized public GitHub
+  attestation for the exact candidate. (#854)
+
 - **Policy resolution reports exact qualification provenance instead of the collapsed `qualified`
   state.** `aih policy resolve` emits `organization-qualified` only after canonical organization
   evidence is current and verified. `aih policy observe npm-package` emits the exact
