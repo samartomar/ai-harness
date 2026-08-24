@@ -225,6 +225,13 @@ export function governanceReviewView(input: GovernanceReviewInput): DigestAction
       return ordinalCompare(leftKey, rightKey);
     },
   );
+  const upstreamArtifactLifecycle = [...(input.effective.upstreamArtifactLifecycle ?? [])].sort(
+    (left, right) => {
+      const leftKey = `${left.subject?.kind ?? ""}\0${left.subject?.id ?? ""}\0${left.target ?? ""}\0${left.effect ?? ""}`;
+      const rightKey = `${right.subject?.kind ?? ""}\0${right.subject?.id ?? ""}\0${right.target ?? ""}\0${right.effect ?? ""}`;
+      return ordinalCompare(leftKey, rightKey);
+    },
+  );
   const subjects = candidates.map((candidate, index) => {
     const counts = attribution.bySubject.get(candidate.id);
     if (counts === undefined)
@@ -284,6 +291,15 @@ export function governanceReviewView(input: GovernanceReviewInput): DigestAction
       ...(item.decision === undefined ? {} : { decision: item.decision }),
       ...(item.recordDigest === undefined ? {} : { recordDigest: item.recordDigest }),
     })),
+    upstreamArtifactLifecycle: upstreamArtifactLifecycle.map((item) => ({
+      state: item.state,
+      reason: item.reason,
+      ...(item.subject === undefined ? {} : { subject: item.subject }),
+      ...(item.target === undefined ? {} : { target: item.target }),
+      ...(item.effect === undefined ? {} : { effect: item.effect }),
+      ...(item.decision === undefined ? {} : { decision: item.decision }),
+      ...(item.recordDigest === undefined ? {} : { recordDigest: item.recordDigest }),
+    })),
     subjects,
   };
   const body = lines(
@@ -292,6 +308,7 @@ export function governanceReviewView(input: GovernanceReviewInput): DigestAction
     "",
     `Capture: ${data.usage.state}; valid=${data.usage.validEvents}; malformed-excluded=${data.usage.malformedExcluded}; unknown-kind-excluded=${data.usage.unknownKindExcluded}; unmatched=${data.usage.unmatched}; non-subject=${data.usage.nonSubject}.`,
     `Observed npm lifecycle: ${npmPackageLifecycle.length === 0 ? "none" : npmPackageLifecycle.map((item) => `${item.subjectId ?? "store"}@${item.target ?? "none"}=${item.state}`).join(",")}. This is observed state only; it never configures or executes a package.`,
+    `Observed organization-managed artifact lifecycle: ${upstreamArtifactLifecycle.length === 0 ? "none" : upstreamArtifactLifecycle.map((item) => `${item.subject?.kind ?? "artifact"}:${item.subject?.id ?? "store"}@${item.target ?? "none"}=${item.state}`).join(",")}. This is observed state only; it never installs, configures, projects, or executes the artifact.`,
     "",
     "| # | Subject | Requested | Effective | Evidence / blockers | Decision / approval / revocation | Projector / receipt | Capture / attribution |",
     "|---:|---|---:|---:|---|---|---|---|",

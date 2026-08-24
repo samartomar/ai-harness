@@ -7,11 +7,11 @@ import {
 } from "./authority.js";
 import { type GovernanceDecisionV2, governanceDecisionDigestV2 } from "./governance-decision-v2.js";
 import {
-  type NpmPackageLifecycleStoredStateV1,
-  readNpmPackageLifecycleStoreV1,
-} from "./npm-package-lifecycle-v1.js";
+  readUpstreamArtifactLifecycleStoreV1,
+  type UpstreamArtifactLifecycleStoredStateV1,
+} from "./upstream-artifact-lifecycle-v1.js";
 
-export interface NpmPackageEffectiveStateV1 {
+export interface UpstreamArtifactEffectiveStateV1 {
   readonly state:
     | "observed-effective"
     | "partial"
@@ -22,15 +22,15 @@ export interface NpmPackageEffectiveStateV1 {
     | "withheld";
   readonly reason: string;
   readonly decision?: { readonly digest: string; readonly id: string };
+  readonly effect?: string;
   readonly recordDigest?: string;
-  readonly subjectId?: string;
+  readonly subject?: { readonly id: string; readonly kind: string };
   readonly target?: string;
 }
 
-/** One fresh verifier result is shared by runtime policy and lifecycle state. */
-export interface NpmPackageEffectiveStateResolutionV1 {
+export interface UpstreamArtifactEffectiveStateResolutionV1 {
   readonly authority: PolicyAuthorityVerification;
-  readonly states: readonly NpmPackageEffectiveStateV1[];
+  readonly states: readonly UpstreamArtifactEffectiveStateV1[];
 }
 
 function currentDecision(decision: GovernanceDecisionV2, now: number): boolean {
@@ -43,35 +43,42 @@ function currentDecision(decision: GovernanceDecisionV2, now: number): boolean {
 }
 
 function base(
-  record: NpmPackageLifecycleStoredStateV1,
-  state: NpmPackageEffectiveStateV1["state"],
+  record: UpstreamArtifactLifecycleStoredStateV1,
+  state: UpstreamArtifactEffectiveStateV1["state"],
   reason: string,
-): NpmPackageEffectiveStateV1 {
+): UpstreamArtifactEffectiveStateV1 {
   return {
     decision: record.decision,
-    recordDigest: record.recordDigest,
+    effect: record.lineage.effect,
     reason,
+    recordDigest: record.recordDigest,
     state,
-    subjectId: record.lineage.subjectId,
+    subject: record.lineage.subject,
     target: record.lineage.target,
   };
 }
 
+function sameIntegration(
+  left: { readonly mode: string; readonly owner: string },
+  right: UpstreamArtifactLifecycleStoredStateV1["lineage"]["integration"],
+): boolean {
+  return left.mode === right.mode && left.owner === right.owner;
+}
+
 function matchesRecord(
   decision: GovernanceDecisionV2,
-  record: NpmPackageLifecycleStoredStateV1,
+  record: UpstreamArtifactLifecycleStoredStateV1,
 ): boolean {
-  const source = decision.subject.source;
   const observation = record.observation;
   return (
-    decision.subject.kind === "package" &&
-    source.type === "npm" &&
-    source.registry === record.lineage.npm.registry &&
-    source.package === record.lineage.npm.package &&
-    decision.subject.id === record.lineage.subjectId &&
+    decision.qualificationBasis.kind === "organization-qualified" &&
+    decision.subject.kind === record.lineage.subject.kind &&
+    decision.subject.id === record.lineage.subject.id &&
     decision.subject.subjectDigest === record.subjectDigest &&
+    record.subject.kind === decision.subject.kind &&
+    record.subject.id === decision.subject.id &&
     decision.targets.includes(record.lineage.target as never) &&
-    decision.allowedEffects.includes("install") &&
+    decision.allowedEffects.includes(record.lineage.effect) &&
     (observation === undefined ||
       (observation.decision.id === record.decision.id &&
         observation.decision.digest === record.decision.digest &&
@@ -82,21 +89,19 @@ function matchesRecord(
         observation.targets.length === 1 &&
         observation.targets[0] === record.lineage.target &&
         observation.allowedEffects.length === 1 &&
-        observation.allowedEffects[0] === "install" &&
-        observation.integration.mode === record.lineage.integration.mode &&
-        observation.integration.owner === record.lineage.integration.owner &&
-        observation.integration.version === record.lineage.integration.version))
+        observation.allowedEffects[0] === record.lineage.effect &&
+        sameIntegration(observation.integration, record.lineage.integration)))
   );
 }
 
 function subjectWideRejection(
   decision: GovernanceDecisionV2,
   authority: VerifiedPolicyAuthority,
-  record: NpmPackageLifecycleStoredStateV1,
+  record: UpstreamArtifactLifecycleStoredStateV1,
   now: number,
 ): boolean {
+  if (authority.receipt.version !== 3) return false;
   const receipt = authority.receipt;
-  if (receipt.version !== 3) return false;
   return receipt.decisions.some((candidate) => {
     const digest = governanceDecisionDigestV2(candidate);
     return (
@@ -104,7 +109,7 @@ function subjectWideRejection(
       currentDecision(candidate, now) &&
       candidate.subject.subjectDigest === decision.subject.subjectDigest &&
       candidate.targets.includes(record.lineage.target as never) &&
-      candidate.allowedEffects.includes("install") &&
+      candidate.allowedEffects.includes(record.lineage.effect) &&
       !receipt.decisionRevocations.some(
         (revocation) =>
           revocation.decisionDigest === digest && Date.parse(revocation.revokedAt) <= now,
@@ -114,12 +119,12 @@ function subjectWideRejection(
 }
 
 function resolveRecord(
-  record: NpmPackageLifecycleStoredStateV1,
+  record: UpstreamArtifactLifecycleStoredStateV1,
   authority: PolicyAuthorityVerification["authority"],
   authorityProblem: string | undefined,
   now: number,
-): NpmPackageEffectiveStateV1 {
-  if (!isVerifiedPolicyAuthority(authority) || authority.receipt.version !== 3)
+): UpstreamArtifactEffectiveStateV1 {
+  if (!isVerifiedPolicyAuthority(authority) || authority.receipt.version !== 3) {
     return base(
       record,
       authorityProblem === "authority receipt is not currently valid" ? "stale" : "withheld",
@@ -127,6 +132,7 @@ function resolveRecord(
         ? "authority-not-current"
         : "authority-unverified",
     );
+  }
   if (
     now < Date.parse(authority.receipt.issuedAt) ||
     now >= Date.parse(authority.receipt.expiresAt)
@@ -150,49 +156,43 @@ function resolveRecord(
     return base(record, "drifted", "authority-receipt-drift");
   if (!currentDecision(decision, now)) return base(record, "stale", "decision-not-current");
   if (record.state === "decision-revoked") return base(record, "drifted", "revocation-drift");
-  if (record.observation === undefined || record.observation.outcome !== "observed-success")
+  const observation = record.observation;
+  if (observation === undefined || observation.outcome !== "observed-success")
     return base(record, "partial", "observation-partial");
-  if (Date.parse(record.observation.observedAt) > now)
-    return base(record, "drifted", "observation-drift");
-  if (now >= Date.parse(record.observation.validUntil))
-    return base(record, "stale", "observation-stale");
-  return base(record, "observed-effective", "current-exact-observation");
+  if (Date.parse(observation.observedAt) > now) return base(record, "drifted", "observation-drift");
+  if (now >= Date.parse(observation.validUntil)) return base(record, "stale", "observation-stale");
+  return base(record, "observed-effective", "current-exact-recorded-observation");
 }
 
-/**
- * Re-resolves persisted npm lifecycle records against freshly verified authority.
- * It only reads the fixed lifecycle store and authority receipt; it never
- * installs, configures, projects, or executes a package.
- */
-export function resolveNpmPackageEffectiveStateWithAuthorityV1(
+/** Resolve only the fixed durable store using one freshly verified authority result. */
+export function resolveUpstreamArtifactEffectiveStateWithAuthorityV1(
   root: string,
   authority: PolicyAuthorityVerification,
-): readonly NpmPackageEffectiveStateV1[] {
-  const store = readNpmPackageLifecycleStoreV1(root);
+): readonly UpstreamArtifactEffectiveStateV1[] {
+  const store = readUpstreamArtifactLifecycleStoreV1(root);
   if (store.kind === "absent") return [];
-  if (store.kind !== "complete") {
-    return [{ state: "partial", reason: `lifecycle-store-${store.kind}` as const }];
-  }
+  if (store.kind !== "complete")
+    return [{ state: "partial", reason: `lifecycle-store-${store.kind}` }];
   const now = Date.now();
   return store.records.map((record) =>
     resolveRecord(record, authority.authority, authority.problem, now),
   );
 }
 
-/** Re-verify authority once, then resolve only fixed durable lifecycle data. */
-export async function npmPackageEffectiveStateResolutionV1(
+/** Re-verify authority once, then resolve the fixed upstream-artifact lifecycle store. */
+export async function upstreamArtifactEffectiveStateResolutionV1(
   ctx: PlanContext,
-): Promise<NpmPackageEffectiveStateResolutionV1> {
+): Promise<UpstreamArtifactEffectiveStateResolutionV1> {
   const authority = await verifyPolicyAuthorityReceipt(ctx);
   return {
     authority,
-    states: resolveNpmPackageEffectiveStateWithAuthorityV1(ctx.root, authority),
+    states: resolveUpstreamArtifactEffectiveStateWithAuthorityV1(ctx.root, authority),
   };
 }
 
-/** Public read-only adapter; callers cannot inject a previously verified authority. */
-export async function resolveNpmPackageEffectiveStateV1(
+/** Public read-only adapter; callers cannot inject a self-described authority. */
+export async function resolveUpstreamArtifactEffectiveStateV1(
   ctx: PlanContext,
-): Promise<readonly NpmPackageEffectiveStateV1[]> {
-  return (await npmPackageEffectiveStateResolutionV1(ctx)).states;
+): Promise<readonly UpstreamArtifactEffectiveStateV1[]> {
+  return (await upstreamArtifactEffectiveStateResolutionV1(ctx)).states;
 }

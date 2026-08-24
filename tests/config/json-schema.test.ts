@@ -30,6 +30,7 @@ describe("committed JSON Schemas", () => {
       "schemas/aih-policy-authority-receipt.schema.json",
       "schemas/aih-governance-decision-v2.schema.json",
       "schemas/aih-upstream-observation-receipt-v1.schema.json",
+      "schemas/aih-upstream-artifact-manifest-v1.schema.json",
       "schemas/aih-organization-evidence-envelope-v1.schema.json",
       "schemas/aih-supported-qualification-receipt-v2.schema.json",
       "schemas/aih-package-graph.schema.json",
@@ -62,27 +63,45 @@ describe("committed JSON Schemas", () => {
     });
     expect(schemas[5]?.schema).toMatchObject({
       $schema: "https://json-schema.org/draft/2020-12/schema",
+      title: "aih-upstream-artifact-manifest-v1.schema.json",
+      type: "object",
+    });
+    const upstreamManifestSchema = schemas[5]?.schema as
+      | {
+          properties?: {
+            files?: {
+              items?: { properties?: { path?: { maxLength?: number; pattern?: string } } };
+            };
+          };
+        }
+      | undefined;
+    expect(upstreamManifestSchema?.properties?.files?.items?.properties?.path).toMatchObject({
+      maxLength: 500,
+      pattern: expect.stringContaining(".aih"),
+    });
+    expect(schemas[6]?.schema).toMatchObject({
+      $schema: "https://json-schema.org/draft/2020-12/schema",
       title: "aih-organization-evidence-envelope-v1.schema.json",
       type: "object",
     });
-    expect(schemas[6]?.schema).toMatchObject({
+    expect(schemas[7]?.schema).toMatchObject({
       $schema: "https://json-schema.org/draft/2020-12/schema",
       title: "aih-supported-qualification-receipt-v2.schema.json",
       type: "object",
     });
-    const supportSchema = schemas[6]?.schema as
+    const supportSchema = schemas[7]?.schema as
       | {
           properties?: { catalogContinuity?: { properties?: { sequence?: { minimum?: number } } } };
         }
       | undefined;
     expect(supportSchema?.properties?.catalogContinuity?.properties?.sequence?.minimum).toBe(0);
-    expect(schemas[7]?.schema).toMatchObject({
+    expect(schemas[8]?.schema).toMatchObject({
       $schema: "https://json-schema.org/draft/2020-12/schema",
       $comment: expect.stringContaining("PackageGraphSchema.parse"),
       title: "aih-package-graph.schema.json",
       type: "object",
     });
-    expect(schemas[8]?.schema).toMatchObject({
+    expect(schemas[9]?.schema).toMatchObject({
       $schema: "https://json-schema.org/draft/2020-12/schema",
       $comment: expect.stringContaining("CapabilityPackageManifestSchema.parse"),
       title: "aih-capability-package-manifest.schema.json",

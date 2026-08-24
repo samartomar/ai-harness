@@ -79,7 +79,13 @@ function requestedCandidateSummary(effective: EffectiveOrgPolicy): string {
         `${item.subjectId ?? "store"}@${item.target ?? "none"}{state=${item.state}; reason=${item.reason}}`,
     )
     .sort(ordinalCompare);
-  return `requested candidates: ${summaries.length === 0 ? "none" : summaries.join(" | ")}; npmLifecycle=${lifecycle.length === 0 ? "none" : lifecycle.join(" | ")}; policyDecisionBlockers=${publicPolicyDecisionBlockers(effective)}`;
+  const upstream = (effective.upstreamArtifactLifecycle ?? [])
+    .map(
+      (item) =>
+        `${item.subject?.kind ?? "artifact"}:${item.subject?.id ?? "store"}@${item.target ?? "none"}{effect=${item.effect ?? "none"}; state=${item.state}; reason=${item.reason}}`,
+    )
+    .sort(ordinalCompare);
+  return `requested candidates: ${summaries.length === 0 ? "none" : summaries.join(" | ")}; npmLifecycle=${lifecycle.length === 0 ? "none" : lifecycle.join(" | ")}; upstreamArtifactLifecycle=${upstream.length === 0 ? "none" : upstream.join(" | ")}; policyDecisionBlockers=${publicPolicyDecisionBlockers(effective)}`;
 }
 
 function withRequestedCandidateSummary(detail: string, effective: EffectiveOrgPolicy): string {
@@ -108,7 +114,14 @@ function blockedDetail(effective: EffectiveOrgPolicy): string {
         `${item.subjectId ?? "store"}@${item.target ?? "none"}: ${item.state}; reason=${item.reason}`,
     )
     .sort(ordinalCompare);
-  return [...(candidates.length === 0 ? [] : [candidates]), ...lifecycle].join("; ");
+  const upstream = (effective.upstreamArtifactLifecycle ?? [])
+    .filter((item) => item.state !== "observed-effective")
+    .map(
+      (item) =>
+        `${item.subject?.kind ?? "artifact"}:${item.subject?.id ?? "store"}@${item.target ?? "none"}: ${item.state}; reason=${item.reason}`,
+    )
+    .sort(ordinalCompare);
+  return [...(candidates.length === 0 ? [] : [candidates]), ...lifecycle, ...upstream].join("; ");
 }
 
 /** Read-only verdict used by doctor and policy evaluate; never trusts policy booleans as proof. */
@@ -157,11 +170,33 @@ export async function orgPolicyEffectiveCheck(ctx: PlanContext): Promise<Check> 
           fingerprint: `org-policy-hook-receipt:${hookReceipt.state}`,
         };
       }
-      return {
-        name: "org policy effective resolution",
-        verdict: "skip",
-        detail: "no governed candidate inventory is active in this repo",
-      };
+      if ((effective.upstreamArtifactLifecycle ?? []).length === 0) {
+        return {
+          name: "org policy effective resolution",
+          verdict: "skip",
+          detail: "no governed candidate inventory is active in this repo",
+        };
+      }
+      return effective.blocking
+        ? {
+            name: "org policy effective resolution",
+            verdict: "fail",
+            code: "org-policy.effective-blocked",
+            detail: withRequestedCandidateSummary(
+              `organization-managed artifact lifecycle is blocked: ${blockedDetail(effective)}`,
+              effective,
+            ),
+            location: { uri: ".aih/governance/upstream-artifact-lifecycle/v1" },
+            fingerprint: "upstream-artifact-lifecycle-blocked",
+          }
+        : {
+            name: "org policy effective resolution",
+            verdict: "pass",
+            detail: withRequestedCandidateSummary(
+              "organization-managed artifact lifecycle is currently observed",
+              effective,
+            ),
+          };
     }
     const requested = requestedCandidates(effective);
     if (hookReceipt.state !== "absent" && hookReceipt.state !== "active") {
@@ -239,14 +274,20 @@ export async function orgPolicyEffectiveDigest(
 ): Promise<DigestAction | undefined> {
   try {
     const policy = readOrgPolicy(ctx.root, ctx.env);
-    if (!governanceOwnsAihSurfaces(policy)) return undefined;
+    if (policy === undefined) return undefined;
     const effective = (await resolveRuntimeOrgPolicy(ctx, policy)).effective;
+    if (
+      !governanceOwnsAihSurfaces(policy) &&
+      (effective.upstreamArtifactLifecycle ?? []).length === 0
+    )
+      return undefined;
     const hookReceipt = orgPolicyHookReceiptState(ctx, effective);
     const mcpReceipt = orgPolicyMcpReceiptState(ctx, effective);
     const kiroMcpReceipt = orgPolicyKiroMcpReceiptState(ctx, effective);
     const hookRegistrar = hookRegistrarReport(ctx.root);
     const candidates = effective.candidates;
     const lifecycle = effective.npmPackageLifecycle ?? [];
+    const upstreamLifecycle = effective.upstreamArtifactLifecycle ?? [];
     const body = lines(
       "Requested vs effective governed candidates. A requested item is never active merely because",
       "it appears below: evidence/authority, immutable identity, safety, target, ownership, and projector",
@@ -317,6 +358,13 @@ export async function orgPolicyEffectiveDigest(
           `- ${item.subjectId ?? "store"}; target=${item.target ?? "none"}; state=${item.state}; reason=${item.reason}; decision=${item.decision?.id ?? "none"}; record=${item.recordDigest ?? "none"}`,
       ),
       ...(lifecycle.length === 0 ? ["- none"] : []),
+      "",
+      "Observed organization-managed artifact lifecycle (read-only; verifies files already placed by the organization and never installs, configures, projects, or executes them):",
+      ...upstreamLifecycle.map(
+        (item) =>
+          `- ${item.subject?.kind ?? "artifact"}:${item.subject?.id ?? "store"}; target=${item.target ?? "none"}; effect=${item.effect ?? "none"}; state=${item.state}; reason=${item.reason}; decision=${item.decision?.id ?? "none"}; record=${item.recordDigest ?? "none"}`,
+      ),
+      ...(upstreamLifecycle.length === 0 ? ["- none"] : []),
       ...(hookRegistrar.unowned.length === 0
         ? []
         : [
@@ -354,6 +402,7 @@ export async function orgPolicyEffectiveDigest(
         frameworkSelections: effective.frameworkSelections,
         externalCuration: effective.externalCuration,
         npmPackageLifecycle: lifecycle,
+        upstreamArtifactLifecycle: upstreamLifecycle,
         authority: effective.authority,
         hookReceipt,
         mcpReceipt,

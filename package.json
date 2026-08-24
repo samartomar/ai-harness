@@ -76,6 +76,7 @@
     "check:published-bin": "node dist/cli.js --version && node dist/cli.js --help",
     "check:published-library": "node -e \"import('@aihq/harness').then((m)=>{ if (typeof m.runSessionGuardrails !== 'function') throw new Error('missing library export'); })\"",
     "verify:cold-aih-managed-usage": "npm run build && node tools/verify-cold-aih-managed-usage.mjs",
+    "verify:cold-upstream-artifact-lifecycle": "npm run build && node tools/verify-cold-upstream-artifact-lifecycle.mjs",
     "verify:packed-admin-docs": "tsx tools/verify-packed-administrator-docs.mjs",
     "docs:lint": "tsx src/internals/check-repo-docs.ts",
     "lint": "biome check src tests",
@@ -83,7 +84,7 @@
     "lint:ci": "biome ci src tests",
     "format": "biome format --write src tests",
     "typecheck": "tsc --noEmit",
-    "verify": "npm run check:artifacts && npm run check:self-hosting-canon && npm run check:ecc-installer && npm run check:baseline-analyzers && npm run check:native-identity && npm run check:baseline-pins && npm run check:baseline-installable && npm run check:ai-runtime && npm run check:bugbounty-report && npm run docs:lint && npm run check:packed-doc-links && npm run typecheck && npm run lint:ci && npm run test:cov && npm run build && npm run check:published-bin && npm run check:published-library && npm run verify:packed-admin-docs"
+    "verify": "npm run check:artifacts && npm run check:self-hosting-canon && npm run check:ecc-installer && npm run check:baseline-analyzers && npm run check:native-identity && npm run check:baseline-pins && npm run check:baseline-installable && npm run check:ai-runtime && npm run check:bugbounty-report && npm run docs:lint && npm run check:packed-doc-links && npm run typecheck && npm run lint:ci && npm run test:cov && npm run build && npm run check:published-bin && npm run check:published-library && npm run verify:packed-admin-docs && node tools/verify-cold-upstream-artifact-lifecycle.mjs"
   },
   "keywords": [
     "ai",

@@ -51,6 +51,8 @@ import {
   policySupportedAcceptCommandV2,
   policySupportedInspectCommandV2,
 } from "../org-policy/supported-admin-command-v2.js";
+import { upstreamArtifactLifecycleCommand } from "../org-policy/upstream-artifact-lifecycle-v1.js";
+import { upstreamArtifactObserveCommand } from "../org-policy/upstream-artifact-observer-v1.js";
 import {
   policyEvaluateCommand,
   policyProjectCommand,
@@ -231,6 +233,8 @@ export const GROUPED_COMMAND_SPECS = {
     policyInitCommand,
     npmPackageLifecycleCommand,
     npmPackageObserveCommand,
+    upstreamArtifactLifecycleCommand,
+    upstreamArtifactObserveCommand,
     policyResolveCommand,
     policyEvaluateCommand,
     policyProjectCommand,
@@ -264,9 +268,9 @@ export const ALL_COMMAND_SPEC_PATHS: ReadonlyArray<readonly string[]> = [
   ["ecc", "mcp", eccMcpRemoveCommand.name] as const,
   ...Object.entries(GROUPED_COMMAND_SPECS).flatMap(([parent, specs]) =>
     specs.map((spec) =>
-      spec === npmPackageObserveCommand
+      spec === npmPackageObserveCommand || spec === upstreamArtifactObserveCommand
         ? ["policy", "observe", spec.name]
-        : spec === npmPackageLifecycleCommand
+        : spec === npmPackageLifecycleCommand || spec === upstreamArtifactLifecycleCommand
           ? ["policy", "lifecycle", spec.name]
           : ([parent, spec.name] as const),
     ),
@@ -923,31 +927,35 @@ export function registerCommands(
   const policyObserve = policy
     .command("observe")
     .description("Read-only upstream observations under current organization policy");
-  const npmPackage = policyObserve
-    .command(npmPackageObserveCommand.name)
-    .description(npmPackageObserveCommand.summary)
-    .argument("[root]", "target repository root (defaults to --root or cwd)");
-  addFlagsForSpec(npmPackage, npmPackageObserveCommand);
-  addOptionsForSpec(npmPackage, npmPackageObserveCommand);
-  npmPackage.action(
-    async (_rootArg: string | undefined, _options: Record<string, unknown>, command: Command) => {
-      process.exitCode = await runCapability(npmPackageObserveCommand, command);
-    },
-  );
+  for (const spec of [npmPackageObserveCommand, upstreamArtifactObserveCommand]) {
+    const sub = policyObserve
+      .command(spec.name)
+      .description(spec.summary)
+      .argument("[root]", "target repository root (defaults to --root or cwd)");
+    addFlagsForSpec(sub, spec);
+    addOptionsForSpec(sub, spec);
+    sub.action(
+      async (_rootArg: string | undefined, _options: Record<string, unknown>, command: Command) => {
+        process.exitCode = await runCapability(spec, command);
+      },
+    );
+  }
   const policyLifecycle = policy
     .command("lifecycle")
     .description("Durable governance lifecycle history under current organization policy");
-  const npmPackageLifecycle = policyLifecycle
-    .command(npmPackageLifecycleCommand.name)
-    .description(npmPackageLifecycleCommand.summary)
-    .argument("[root]", "target repository root (defaults to --root or cwd)");
-  addFlagsForSpec(npmPackageLifecycle, npmPackageLifecycleCommand);
-  addOptionsForSpec(npmPackageLifecycle, npmPackageLifecycleCommand);
-  npmPackageLifecycle.action(
-    async (_rootArg: string | undefined, _options: Record<string, unknown>, command: Command) => {
-      process.exitCode = await runCapability(npmPackageLifecycleCommand, command);
-    },
-  );
+  for (const spec of [npmPackageLifecycleCommand, upstreamArtifactLifecycleCommand]) {
+    const sub = policyLifecycle
+      .command(spec.name)
+      .description(spec.summary)
+      .argument("[root]", "target repository root (defaults to --root or cwd)");
+    addFlagsForSpec(sub, spec);
+    addOptionsForSpec(sub, spec);
+    sub.action(
+      async (_rootArg: string | undefined, _options: Record<string, unknown>, command: Command) => {
+        process.exitCode = await runCapability(spec, command);
+      },
+    );
+  }
   const policySupported = policy
     .command("supported")
     .description("Durable custody for externally attested AIH-supported decisions");

@@ -167,6 +167,7 @@ describe("packed Markdown link inspection", () => {
     expect(proof).toContain('resolve(consumer, "node_modules", "@aihq", "harness")');
     expect(proof).toContain("inspectPackedMarkdownLinks(installed, packageFiles)");
     expect(proof).toContain('args: ["policy", "lifecycle", "npm-package", "--help"]');
+    expect(proof).toContain('args: ["policy", "lifecycle", "upstream-artifact", "--help"]');
     expect(proof).toContain('args: ["report", "--help"]');
     expect(proof).toContain("packed-admin-docs-help:");
   });

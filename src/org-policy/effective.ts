@@ -7,6 +7,7 @@ import {
 import { type GovernanceDecisionV1, governanceDecisionDigestV1 } from "./governance-decision-v1.js";
 import type { NpmPackageEffectiveStateV1 } from "./npm-package-effective-state-v1.js";
 import { governanceOwnsAihSurfaces, type OrgPolicy } from "./schema.js";
+import type { UpstreamArtifactEffectiveStateV1 } from "./upstream-artifact-effective-state-v1.js";
 
 /**
  * Assertions a detector made about a completed scan. A severe label is
@@ -176,6 +177,8 @@ export interface EffectivePolicyContext {
   projectorFindings?: Readonly<Record<string, readonly PolicyDangerCode[]>>;
   /** Read-only, current-authority comparison of durable npm lifecycle state. */
   npmPackageLifecycle?: readonly NpmPackageEffectiveStateV1[];
+  /** Read-only, current-authority comparison of catalog-independent artifact state. */
+  upstreamArtifactLifecycle?: readonly UpstreamArtifactEffectiveStateV1[];
 }
 
 export interface CandidateProjectionState {
@@ -351,6 +354,8 @@ export interface EffectiveOrgPolicy {
   }>;
   /** Observed package state only; it is never a projector or runtime control. */
   npmPackageLifecycle?: readonly NpmPackageEffectiveStateV1[];
+  /** Observed organization-managed artifact state; it never installs or projects the artifact. */
+  upstreamArtifactLifecycle?: readonly UpstreamArtifactEffectiveStateV1[];
   decisionBlockers: PolicyDecisionBlocker[];
   /** Projection has a narrower lifecycle gate than evaluate/doctor. */
   projectionBlocking?: boolean;
@@ -375,6 +380,13 @@ function ordinalCompare(left: string, right: string): number {
 
 /** An aged observation fails evaluation but cannot freeze unrelated projection. */
 export function lifecycleStateBlocksProjection(item: NpmPackageEffectiveStateV1): boolean {
+  return !(
+    item.state === "observed-effective" ||
+    (item.state === "stale" && item.reason === "observation-stale")
+  );
+}
+
+function upstreamArtifactStateBlocksProjection(item: UpstreamArtifactEffectiveStateV1): boolean {
   return !(
     item.state === "observed-effective" ||
     (item.state === "stale" && item.reason === "observation-stale")
@@ -1294,11 +1306,16 @@ export function resolveEffectiveOrgPolicy(
       externalCuration: [],
       externalSelections: [],
       npmPackageLifecycle: [...(context.npmPackageLifecycle ?? [])],
+      upstreamArtifactLifecycle: [...(context.upstreamArtifactLifecycle ?? [])],
       decisionBlockers: [],
-      projectionBlocking: (context.npmPackageLifecycle ?? []).some(lifecycleStateBlocksProjection),
-      blocking: (context.npmPackageLifecycle ?? []).some(
-        (item) => item.state !== "observed-effective",
-      ),
+      projectionBlocking:
+        (context.npmPackageLifecycle ?? []).some(lifecycleStateBlocksProjection) ||
+        (context.upstreamArtifactLifecycle ?? []).some(upstreamArtifactStateBlocksProjection),
+      blocking:
+        (context.npmPackageLifecycle ?? []).some((item) => item.state !== "observed-effective") ||
+        (context.upstreamArtifactLifecycle ?? []).some(
+          (item) => item.state !== "observed-effective",
+        ),
       authority: {
         verified: authority !== undefined,
         ...(authority ? { receiptDigest: authority.receiptDigest } : {}),
@@ -1375,15 +1392,18 @@ export function resolveEffectiveOrgPolicy(
       status: "requested-evidence-needed" as const,
     })),
     npmPackageLifecycle: [...(context.npmPackageLifecycle ?? [])],
+    upstreamArtifactLifecycle: [...(context.upstreamArtifactLifecycle ?? [])],
     decisionBlockers,
     projectionBlocking:
       decisionBlockers.length > 0 ||
       candidates.some((candidate) => candidate.requested && !candidate.effective) ||
-      (context.npmPackageLifecycle ?? []).some(lifecycleStateBlocksProjection),
+      (context.npmPackageLifecycle ?? []).some(lifecycleStateBlocksProjection) ||
+      (context.upstreamArtifactLifecycle ?? []).some(upstreamArtifactStateBlocksProjection),
     blocking:
       decisionBlockers.length > 0 ||
       candidates.some((candidate) => candidate.requested && !candidate.effective) ||
-      (context.npmPackageLifecycle ?? []).some((item) => item.state !== "observed-effective"),
+      (context.npmPackageLifecycle ?? []).some((item) => item.state !== "observed-effective") ||
+      (context.upstreamArtifactLifecycle ?? []).some((item) => item.state !== "observed-effective"),
     authority: {
       verified: authority !== undefined,
       ...(authority === undefined
