@@ -9,6 +9,7 @@ import {
   OrgPolicySchema,
 } from "../org-policy/schema.js";
 import { AihSupportedQualificationReceiptV2Schema } from "../org-policy/supported-qualification-receipt-v2.js";
+import { UpstreamArtifactManifestV1Schema } from "../org-policy/upstream-artifact-manifest-v1.js";
 import { UpstreamObservationReceiptV1Schema } from "../org-policy/upstream-observation-receipt-v1.js";
 import { AihConfigSchema } from "./marker.js";
 
@@ -47,6 +48,13 @@ export function generatedConfigSchemas(): GeneratedConfigSchema[] {
       schema: schemaFor(
         "aih-upstream-observation-receipt-v1.schema.json",
         UpstreamObservationReceiptV1Schema,
+      ),
+    },
+    {
+      path: "schemas/aih-upstream-artifact-manifest-v1.schema.json",
+      schema: schemaFor(
+        "aih-upstream-artifact-manifest-v1.schema.json",
+        UpstreamArtifactManifestV1Schema,
       ),
     },
     {

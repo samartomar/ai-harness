@@ -75,8 +75,8 @@ to the TypeScript parser; graph metadata is never approval or evidence by itself
 
 <!-- aih:claim CM-86 -->
 The unreleased library surface also publishes Strict V2 organization-qualified,
-AIH-supported qualification, decision, and upstream-observation contracts, with matching JSON
-Schemas under `@aihq/harness/schemas/`. They let organization evidence and supported-catalog
+AIH-supported qualification, decision, upstream-artifact manifest, and upstream-observation
+contracts, with matching JSON Schemas under `@aihq/harness/schemas/`. They let organization evidence and supported-catalog
 producers share one exact GitHub/npm/PyPI/OCI/remote subject grammar without making catalog
 membership an organization admission. The organization-qualified route binds one canonical,
 size-bounded evidence envelope to an externally verified V3 authority decision. The supported
@@ -187,6 +187,30 @@ or remote MCP candidates projectable. A store beyond any lifecycle cap is report
 the complete store as organization-controlled evidence and reconcile onto a newly governed target
 rather than pruning target-local audit history.
 
+<!-- aih:claim CM-90 -->
+`aih policy observe upstream-artifact` extends exact observation to an organization-chosen
+tool, skill, MCP server, or package that is absent from AIH catalogs and whose files the
+organization has already placed in the governed root. A canonical, evidence-bound manifest names
+the exact Decision V2 id, subject/source digests, target/effect, accountable integration owner and
+contract version, and sorted root-relative file digests. The code-owned observer accepts no
+executable, callback, installer, projector, or network override. It validates evidence/manifest
+request paths before authority verification, requires single-link evidence custody, and rechecks
+authority, evidence, manifest, and every bounded regular file before success. Portable path rules
+reject case-fold duplicates, trailing-dot/space and Windows-device aliases, and repeated physical
+file identities.
+
+`aih policy lifecycle upstream-artifact` previews with zero writes and, only with `--apply`, appends
+content-addressed update or revocation history under
+`.aih/governance/upstream-artifact-lifecycle/v1/`. For each current observation record, evaluate and
+report reuse its exact evidence/manifest request only to run the fixed read-only observer again, then
+re-read the bounded lifecycle snapshot before exposing effective state. Missing or drifted live
+inputs and substituted stored identities remain non-effective. Revocation is durable but
+non-effective and nonzero. These commands govern exact observed files; they do not install, copy,
+configure, activate, remove, stop, or execute them. The packed proof uses installed package bytes and
+proves the public parser/schema/commands plus refusal without external authority. It does not claim
+successful production custody, which still requires genuine V3 organization authority and a
+separately authorized GitHub attestation.
+
 <!-- aih:claim CM-86 -->
 For an `aih-supported` basis, the administrator first supplies the separately controlled support
 repository/workflow roots and applies the exact decision binding to durable custody:
@@ -209,10 +233,11 @@ Inspection lists only members bound to current heads, but its `memberRecords` ca
 all retained member records, including superseded heads. At the fixed capacity, new acceptance fails
 closed; preserving and migrating or archiving that administrator store is a separately authorized
 operator incident-reconciliation action, not an automatic AIH prune.
-This route currently reaches the fixed npm observer/lifecycle; it does not make custom candidates
-projectable, install or configure anything, or cover skills, MCP servers, remote endpoints, or
-non-npm packages. Simulated test attestations are not public verification evidence, and no real
-attestation, release, or publication occurs without a separate authorized publication step.
+The supported-catalog route currently reaches the fixed npm observer/lifecycle. Organization-chosen
+tool, skill, MCP, and package files instead use the organization-qualified `upstream-artifact`
+observer/lifecycle above. Neither route makes custom candidates projectable or installs, configures,
+activates, or executes them. Simulated test attestations are not public verification evidence, and
+no real attestation, release, or publication occurs without a separate authorized publication step.
 
 <!-- aih:claim CM-52 -->
 `buildPackageGraphIndex` retains every authority claim, preserves identical claims,

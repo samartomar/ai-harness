@@ -164,7 +164,7 @@ function resolveRecord(
  * It only reads the fixed lifecycle store and authority receipt; it never
  * installs, configures, projects, or executes a package.
  */
-function resolveStore(
+export function resolveNpmPackageEffectiveStateWithAuthorityV1(
   root: string,
   authority: PolicyAuthorityVerification,
 ): readonly NpmPackageEffectiveStateV1[] {
@@ -184,7 +184,10 @@ export async function npmPackageEffectiveStateResolutionV1(
   ctx: PlanContext,
 ): Promise<NpmPackageEffectiveStateResolutionV1> {
   const authority = await verifyPolicyAuthorityReceipt(ctx);
-  return { authority, states: resolveStore(ctx.root, authority) };
+  return {
+    authority,
+    states: resolveNpmPackageEffectiveStateWithAuthorityV1(ctx.root, authority),
+  };
 }
 
 /** Public read-only adapter; callers cannot inject a previously verified authority. */

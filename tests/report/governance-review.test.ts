@@ -156,6 +156,41 @@ describe("governanceReviewView", () => {
     );
   });
 
+  it("surfaces catalog-independent artifact lifecycle without claiming installation or projection", () => {
+    const policy = effective([]);
+    policy.upstreamArtifactLifecycle = [
+      {
+        decision: { id: "decision-custom-mcp", digest: `sha256:${"e".repeat(64)}` },
+        effect: "configure",
+        recordDigest: `sha256:${"f".repeat(64)}`,
+        reason: "current-exact-recorded-observation",
+        state: "observed-effective",
+        subject: { id: "custom-mcp", kind: "mcp" },
+        target: "codex",
+      },
+    ];
+
+    const view = governanceReviewView({
+      effective: policy,
+      receipts: RECEIPTS,
+      usage: { events: [], malformed: 0, unknownKind: 0 },
+    });
+
+    expect(view.data).toMatchObject({
+      upstreamArtifactLifecycle: [
+        {
+          effect: "configure",
+          state: "observed-effective",
+          subject: { id: "custom-mcp", kind: "mcp" },
+          target: "codex",
+        },
+      ],
+    });
+    expect(view.text).toContain(
+      "This is observed state only; it never installs, configures, projects, or executes the artifact.",
+    );
+  });
+
   it("keeps all governed subjects in deterministic ordinal order and never includes raw unmatched names", () => {
     const ids = [
       "subject-12",

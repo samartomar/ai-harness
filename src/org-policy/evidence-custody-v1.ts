@@ -88,8 +88,14 @@ export function custodyOrganizationEvidenceV1(
       ? { problem: "unsafe-evidence-custody" }
       : { problem: "evidence-unavailable" };
   }
+  if (opened.identity.nlink !== 1n) return { problem: "unsafe-evidence-custody" };
   const original = Buffer.from(opened.contents);
-  const identity = { dev: opened.stats.dev, ino: opened.stats.ino, size: opened.stats.size };
+  const identity = {
+    dev: opened.identity.dev,
+    ino: opened.identity.ino,
+    nlink: opened.identity.nlink,
+    size: opened.stats.size,
+  };
   return {
     evidence: {
       bytes: original,
@@ -106,8 +112,10 @@ export function custodyOrganizationEvidenceV1(
         });
         return (
           current !== undefined &&
-          current.stats.dev === identity.dev &&
-          current.stats.ino === identity.ino &&
+          current.identity.nlink === 1n &&
+          current.identity.dev === identity.dev &&
+          current.identity.ino === identity.ino &&
+          current.identity.nlink === identity.nlink &&
           current.stats.size === identity.size &&
           current.contents.equals(original)
         );

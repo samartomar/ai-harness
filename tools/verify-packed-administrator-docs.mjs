@@ -39,6 +39,8 @@ const exactCommands = [
   "aih policy managed usage-metering inspect <root>",
   "aih policy observe npm-package <root>",
   "aih policy lifecycle npm-package <root>",
+  "aih policy observe upstream-artifact <root>",
+  "aih policy lifecycle upstream-artifact <root>",
   "aih policy evaluate <root> --no-log --json",
   "aih report <root> --no-log",
 ];
@@ -111,6 +113,29 @@ const helpSurfaces = [
       "--decision-digest <sha256>",
       "--target <cli>",
       "--evidence <path>",
+      "--apply",
+      "--json",
+    ],
+  },
+  {
+    args: ["policy", "observe", "upstream-artifact", "--help"],
+    required: [
+      "--decision <id>",
+      "--decision-digest <sha256>",
+      "--target <cli>",
+      "--evidence <path>",
+      "--manifest <path>",
+      "--json",
+    ],
+  },
+  {
+    args: ["policy", "lifecycle", "upstream-artifact", "--help"],
+    required: [
+      "--decision <id>",
+      "--decision-digest <sha256>",
+      "--target <cli>",
+      "--evidence <path>",
+      "--manifest <path>",
       "--apply",
       "--json",
     ],

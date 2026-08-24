@@ -162,7 +162,10 @@ describe("CLI program", () => {
         continue;
       }
       if (sub.name() === "observe" || sub.name() === "lifecycle") {
-        expect(sub.commands.map((nested) => nested.name())).toEqual(["npm-package"]);
+        expect(sub.commands.map((nested) => nested.name())).toEqual([
+          "npm-package",
+          "upstream-artifact",
+        ]);
         expect(sub.registeredArguments).toEqual([]);
         continue;
       }

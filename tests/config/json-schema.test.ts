@@ -30,6 +30,7 @@ describe("committed JSON Schemas", () => {
       "schemas/aih-policy-authority-receipt.schema.json",
       "schemas/aih-governance-decision-v2.schema.json",
       "schemas/aih-upstream-observation-receipt-v1.schema.json",
+      "schemas/aih-upstream-artifact-manifest-v1.schema.json",
       "schemas/aih-organization-evidence-envelope-v1.schema.json",
       "schemas/aih-supported-qualification-receipt-v2.schema.json",
       "schemas/aih-package-graph.schema.json",
@@ -62,27 +63,45 @@ describe("committed JSON Schemas", () => {
     });
     expect(schemas[5]?.schema).toMatchObject({
       $schema: "https://json-schema.org/draft/2020-12/schema",
+      title: "aih-upstream-artifact-manifest-v1.schema.json",
+      type: "object",
+    });
+    const upstreamManifestSchema = schemas[5]?.schema as
+      | {
+          properties?: {
+            files?: {
+              items?: { properties?: { path?: { maxLength?: number; pattern?: string } } };
+            };
+          };
+        }
+      | undefined;
+    expect(upstreamManifestSchema?.properties?.files?.items?.properties?.path).toMatchObject({
+      maxLength: 500,
+      pattern: expect.stringContaining("[aA][iI][hH]"),
+    });
+    expect(schemas[6]?.schema).toMatchObject({
+      $schema: "https://json-schema.org/draft/2020-12/schema",
       title: "aih-organization-evidence-envelope-v1.schema.json",
       type: "object",
     });
-    expect(schemas[6]?.schema).toMatchObject({
+    expect(schemas[7]?.schema).toMatchObject({
       $schema: "https://json-schema.org/draft/2020-12/schema",
       title: "aih-supported-qualification-receipt-v2.schema.json",
       type: "object",
     });
-    const supportSchema = schemas[6]?.schema as
+    const supportSchema = schemas[7]?.schema as
       | {
           properties?: { catalogContinuity?: { properties?: { sequence?: { minimum?: number } } } };
         }
       | undefined;
     expect(supportSchema?.properties?.catalogContinuity?.properties?.sequence?.minimum).toBe(0);
-    expect(schemas[7]?.schema).toMatchObject({
+    expect(schemas[8]?.schema).toMatchObject({
       $schema: "https://json-schema.org/draft/2020-12/schema",
       $comment: expect.stringContaining("PackageGraphSchema.parse"),
       title: "aih-package-graph.schema.json",
       type: "object",
     });
-    expect(schemas[8]?.schema).toMatchObject({
+    expect(schemas[9]?.schema).toMatchObject({
       $schema: "https://json-schema.org/draft/2020-12/schema",
       $comment: expect.stringContaining("CapabilityPackageManifestSchema.parse"),
       title: "aih-capability-package-manifest.schema.json",
@@ -95,6 +114,70 @@ describe("committed JSON Schemas", () => {
       const committed = JSON.parse(readFileSync(join(root, schema.path), "utf8"));
       expect(committed).toEqual(schema.schema);
     }
+  });
+
+  it("rejects portable aliases of the reserved AIH custody root", () => {
+    const manifest = {
+      format: "aih-upstream-artifact-manifest",
+      version: 1,
+      decisionId: "decision-custom-mcp",
+      subject: {
+        kind: "mcp",
+        id: "custom-mcp",
+        sourceDigest: `sha256:${"a".repeat(64)}`,
+        subjectDigest: `sha256:${"b".repeat(64)}`,
+      },
+      target: "codex",
+      effect: "configure",
+      integration: { owner: "organization-platform", version: "1.0.0" },
+      files: [{ path: "vendor/custom-mcp/package.json", sha256: `sha256:${"c".repeat(64)}` }],
+    };
+
+    for (const path of [
+      ".AIH/authority.json",
+      ".aih./authority.json",
+      ".aih /authority.json",
+      "AIH~1/authority.json",
+    ]) {
+      rejectCommittedSchema("schemas/aih-upstream-artifact-manifest-v1.schema.json", {
+        ...manifest,
+        files: [{ path, sha256: `sha256:${"c".repeat(64)}` }],
+      });
+    }
+  });
+
+  it("rejects portable Windows path aliases in upstream artifact manifests", () => {
+    const manifest = {
+      format: "aih-upstream-artifact-manifest",
+      version: 1,
+      decisionId: "decision-custom-mcp",
+      subject: {
+        kind: "mcp",
+        id: "custom-mcp",
+        sourceDigest: `sha256:${"a".repeat(64)}`,
+        subjectDigest: `sha256:${"b".repeat(64)}`,
+      },
+      target: "codex",
+      effect: "configure",
+      integration: { owner: "organization-platform", version: "1.0.0" },
+    };
+
+    for (const path of [
+      "vendor./file",
+      "vendor /file",
+      "vendor/con.json",
+      "vendor/file.txt:stream",
+      "vendor/file?.txt",
+    ]) {
+      rejectCommittedSchema("schemas/aih-upstream-artifact-manifest-v1.schema.json", {
+        ...manifest,
+        files: [{ path, sha256: `sha256:${"c".repeat(64)}` }],
+      });
+    }
+    validateCommittedSchema("schemas/aih-upstream-artifact-manifest-v1.schema.json", {
+      ...manifest,
+      files: [{ path: "vendor/Manifest.json", sha256: `sha256:${"c".repeat(64)}` }],
+    });
   });
 
   it("treats runtime-defaulted fields as optional editor inputs", () => {

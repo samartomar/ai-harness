@@ -37,6 +37,15 @@ export {
   verifyAihSupportedQualificationArtifactV2,
 } from "./org-policy/supported-qualification-receipt-v2.js";
 export {
+  canonicalUpstreamArtifactManifestV1,
+  MAX_UPSTREAM_ARTIFACT_FILES_V1,
+  MAX_UPSTREAM_ARTIFACT_MANIFEST_BYTES_V1,
+  parseUpstreamArtifactManifestV1Bytes,
+  type UpstreamArtifactManifestV1,
+  UpstreamArtifactManifestV1Schema,
+  upstreamArtifactManifestDigestV1,
+} from "./org-policy/upstream-artifact-manifest-v1.js";
+export {
   canonicalUpstreamObservationReceiptV1,
   MAX_UPSTREAM_OBSERVATION_WINDOW_MS,
   parseUpstreamObservationReceiptV1,

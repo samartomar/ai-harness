@@ -49,6 +49,8 @@ closed route selected by the exact decision; do not treat a command's reachabili
 | Discover, preview, apply, and inspect the fixed AIH-managed adapter | `aih policy managed usage-metering describe --json`; `aih policy managed usage-metering reconcile <root> --decision <id> --decision-digest sha256:<digest> --target <claude|codex> --evidence <file> [--apply] --json`; `aih policy managed usage-metering inspect <root> --json` |
 | Re-observe an upstream-managed exact npm package | `aih policy observe npm-package <root> --decision <id> --decision-digest sha256:<digest> --target <id> [--evidence <file>] --json` |
 | Persist observation, exact version update, or authenticated revocation | `aih policy lifecycle npm-package <root> --decision <id> --decision-digest sha256:<digest> --target <id> [--evidence <file>] [--apply] --json` |
+| Observe an organization-managed exact tool, skill, MCP server, or package absent from AIH catalogs | `aih policy observe upstream-artifact <root> --decision <id> --decision-digest sha256:<digest> --target <id> --evidence <file> --manifest <file> --json` |
+| Persist its observation, exact artifact update, or authenticated revocation | `aih policy lifecycle upstream-artifact <root> --decision <id> --decision-digest sha256:<digest> --target <id> --evidence <file> --manifest <file> [--apply] --json` |
 | Inspect durable effective-state and audit truth without adding inspection rows | `aih policy evaluate <root> --no-log --json`; `aih report <root> --no-log` (see the packed [`aih report` reference](../docs/commands.md#aih-report)) |
 
 A version update requires a newly authorized decision whose exact version/integrity and evidence
@@ -258,14 +260,60 @@ reported as `over-capacity`, not as corruption, and blocks both evaluation and p
 the complete store as organization-controlled evidence and reconcile onto a newly governed target;
 do not delete or prune target-local history to make the check pass.
 
-The broader custom-source journey is not complete. Scanner can produce attributable evidence for a
-catalog-absent exact detector through its one code-owned adapter, but the Scanner repository/package
-remain private and unpublished. Custom stdio and remote policy candidates remain non-projectable,
-and neither a V3 receipt, `policy resolve`, nor this fixed npm route can install, configure, or
-activate one. The observer also does not cover skills, MCP servers, remote endpoints, or non-npm
-packages. Do not tell developers that any other organization-chosen subject is governed-effective
-until its exact observer and adapter lifecycle exist and AIH has freshly observed the approved
-installed identity. Scanner and catalog publication are separate trust and release boundaries.
+For catalog-independent files already placed in the governed root by the organization, use the
+fixed `upstream-artifact` observer and lifecycle. The canonical manifest is shipped as
+`@aihq/harness/schemas/aih-upstream-artifact-manifest-v1.schema.json`; its public parser also rejects
+noncanonical or oversized bytes. It binds the exact organization-qualified Decision V2 id,
+tool/skill/MCP/package subject and digests, target, allowed effect, accountable integration owner,
+fixed integration-contract version, and one to 256 sorted root-relative file digests. The raw
+canonical manifest SHA-256 must appear in the organization evidence `artifactDigests`. The manifest
+uses the decision id rather than its digest because the decision binds the evidence digest and the
+evidence binds the manifest bytes; adding the decision digest to the manifest would create a digest
+cycle. Paths remain mixed-case capable but must be portable-case unique; every segment rejects
+trailing-dot/space and Windows-device aliases.
+
+```bash
+aih policy observe upstream-artifact <root> \
+  --decision <exact-decision-id> \
+  --decision-digest sha256:<exact-decision-digest> \
+  --target <code-owned-cli-id> \
+  --evidence <root-relative-canonical-envelope> \
+  --manifest <root-relative-canonical-manifest> \
+  --json
+
+aih policy lifecycle upstream-artifact <root> \
+  --decision <exact-decision-id> \
+  --decision-digest sha256:<exact-decision-digest> \
+  --target <code-owned-cli-id> \
+  --evidence <root-relative-canonical-envelope> \
+  --manifest <root-relative-canonical-manifest> \
+  --apply --json
+```
+
+The code-owned observer validates durable evidence/manifest request paths before authority
+verification, reads only single-link evidence and the named bounded regular files, rejects AIH's
+reserved `.aih/` custody tree, linked or ambiguous paths, and repeated physical file identities, and
+re-observes authority, evidence, manifest, and every file before returning `observed-effective`. It
+has no caller-selected command, callback, executable, network, installer, or projector. Lifecycle
+preview is zero-write; apply appends immutable history under
+`.aih/governance/upstream-artifact-lifecycle/v1/`, records an exact update without rewriting the
+prior record, and records a current authenticated revocation as failing/nonzero negative state.
+Neither command installs, copies, configures, activates, removes, stops, or executes an artifact.
+For every current observation record, `policy evaluate --no-log --json` and `report --no-log` use
+its stored exact request to repeat the same live read-only observation under one freshly verified
+authority result, then exact-compare a fresh bounded lifecycle snapshot before returning any
+effective state. Missing or drifted live inputs and substituted stored verifier/installed identities
+stay non-effective. After an external version or source change, run
+`policy observe upstream-artifact` and lifecycle apply with the newly authorized decision/evidence to
+append the new audit record.
+
+Scanner can produce attributable evidence for a catalog-absent exact detector through its one
+code-owned adapter, but the Scanner repository/package remain private and unpublished. Production
+success also still requires a genuine current V3 organization authority receipt and its separately
+authorized public attestation. The packed Core proof therefore demonstrates the public parser,
+schema, command surfaces, and honest fail-closed refusal only; it does not claim successful custody,
+configuration, activation, or revocation. Scanner publication and organization authority are
+separate trust and release boundaries.
 
 ## 2. Quickstart / Implementation Blueprint
 

@@ -8,6 +8,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Catalog-independent organization-managed artifact observation and lifecycle.**
+  `aih policy observe upstream-artifact` verifies an evidence-bound canonical manifest and exact
+  root-relative files for an organization-qualified tool, skill, MCP server, or package absent from
+  AIH catalogs. `aih policy lifecycle upstream-artifact --apply` appends immutable update or
+  authenticated revocation history without installing, configuring, activating, removing, or
+  executing the artifact. Observation validates the durable request-path grammar before authority
+  verification and requires single-link evidence custody. Evaluate and governance review freshly
+  re-observe every current recorded request and re-pin the lifecycle snapshot before exposing
+  effective state; missing or drifted live inputs and substituted stored identities remain
+  non-effective. Revocation stays non-effective and nonzero. The packed proof exercises public
+  parser/schema/command surfaces and honest authority refusal only; genuine production custody still
+  requires separately attested V3 organization authority. (#861)
+
 - **A closed AIH-managed adapter governs the fixed usage-metering projection without admitting
   arbitrary executable materialization.** `aih policy managed usage-metering describe` reports one
   code-derived `tool/usage-metering` subject, adapter id/version/digest, `configure` effect, and
