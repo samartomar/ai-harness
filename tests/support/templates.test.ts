@@ -70,6 +70,12 @@ describe("findings — routing", () => {
     }
   });
 
+  it("routes blocked org policy to the installed evaluation command", () => {
+    const finding = mustFind("org-policy.effective-blocked", "fail");
+    expect(finding.recommendedAction).toContain("aih policy evaluate <root> --no-log --json");
+    expect(finding.recommendedAction).not.toContain("aih policy evaluate --verify");
+  });
+
   it("dedupes by code, merges details, sorts most-urgent-first", () => {
     const findings = findingsFrom(
       [

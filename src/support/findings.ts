@@ -561,7 +561,7 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     failSeverity: "blocking",
     title: "requested org policy cannot be made effective safely",
     action:
-      "Run `aih policy evaluate --verify` to inspect requested versus effective candidates. Correct the exact identity, evidence or externally verified approval, target, ownership, or projector finding shown there; unwaivable danger codes cannot be approved. Do not use `aih policy project --apply` until evaluation passes.",
+      "Run `aih policy evaluate <root> --no-log --json` to inspect requested versus effective candidates. Correct the exact identity, evidence or externally verified approval, target, ownership, or projector finding shown there; unwaivable danger codes cannot be approved. Do not use `aih policy project --apply` until evaluation passes.",
   },
   "org-policy.observe-input-invalid": {
     audience: "developer",
