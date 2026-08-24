@@ -387,6 +387,47 @@ describe("SupportedQualificationCustodyV2 durable acceptance", { timeout: 15_000
     expect(plan.actions.at(-1)).toMatchObject({ kind: "digest" });
   });
 
+  it.each([
+    ["win32", "C:\\ProgramData\\aih\\supported-qualification\\v2", "\\", "C:\\ProgramData"],
+    [
+      "darwin",
+      "/Library/Application Support/aih/supported-qualification/v2",
+      "/",
+      "/Library/Application Support",
+    ],
+    ["linux", "/etc/aih/supported-qualification/v2", "/", "/etc"],
+  ] as const)(
+    "plans every enterprise %s custody write as an exact external admin path",
+    (platform, custodyRoot, separator, trustedBase) => {
+      const vibe = supported.planSupportedCustodyAcceptV2({
+        posture: "vibe",
+        root: "/disposable",
+        ...input,
+      });
+      const enterprise = supported.planSupportedCustodyAcceptV2({
+        posture: "enterprise",
+        platform,
+        root: "/disposable",
+        ...input,
+      });
+      expect(
+        writes(enterprise).map((action) => ({
+          path: action.path,
+          external: action.external,
+          trustedBase: action.trustedBase,
+        })),
+      ).toEqual(
+        writes(vibe).map((action) => ({
+          path: `${custodyRoot}${separator}${action.path
+            .slice(".aih/supported-qualification/v2/".length)
+            .replaceAll("/", separator)}`,
+          external: true,
+          trustedBase,
+        })),
+      );
+    },
+  );
+
   it("rejects acceptance outside the exact receipt and decision validity window", () => {
     expect(() =>
       supported.planSupportedCustodyAcceptV2({
@@ -656,6 +697,62 @@ describe("SupportedQualificationCustodyV2 durable acceptance", { timeout: 15_000
           )
         ).digests.at(-1)?.text,
       ).toBe("supported custody state verified");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("orders current-head members by ordinal keys, not ICU collation", async () => {
+    const subjectWithDigestPrefix = (prefix: string) => {
+      for (let nonce = 0; nonce < 4_096; nonce++) {
+        const source = {
+          type: "aih" as const,
+          release: `1.0.${nonce}`,
+          revision: `sha256:${"b".repeat(64)}`,
+        };
+        const sourceDigest = governanceDecisionSourceDigestV2(source);
+        const candidate = {
+          kind: "tool" as const,
+          id: `sort-tool-${nonce}`,
+          source,
+          sourceDigest,
+          subjectDigest: governanceDecisionSubjectDigestV2({
+            kind: "tool",
+            id: `sort-tool-${nonce}`,
+            sourceDigest,
+          }),
+        };
+        if (candidate.subjectDigest.slice("sha256:".length).startsWith(prefix)) return candidate;
+      }
+      throw new Error(`failed to find ${prefix} subject digest`);
+    };
+    const { root, context } = await applyGenesis();
+    try {
+      const abSubject = subjectWithDigestPrefix("0");
+      const aSubject = subjectWithDigestPrefix("f");
+      const receiptFor = (entryId: string, nextSubject: typeof subject, memberDigest: string) => ({
+        ...receipt,
+        entryId,
+        subject: nextSubject,
+        qualificationBasis: {
+          ...receipt.qualificationBasis,
+          catalogMemberDigest: memberDigest,
+          subjectDigest: nextSubject.subjectDigest,
+        },
+      });
+      await executePlan(
+        await prepare(root, candidateFor(receiptFor("ab", abSubject, `sha256:${"0".repeat(64)}`))),
+        context,
+      );
+      await executePlan(
+        await prepare(root, candidateFor(receiptFor("a", aSubject, `sha256:${"f".repeat(64)}`))),
+        context,
+      );
+      expect(supported.inspectSupportedCustodyV2({ root, posture: "vibe" }).members.map((member) => member.entryId)).toEqual([
+        "a",
+        "ab",
+        receipt.entryId,
+      ]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
