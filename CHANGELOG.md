@@ -38,7 +38,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   are unchanged. (#852)
 
 - **Governed evaluation and reports now consume the durable npm lifecycle as observed state.**
-  For a governance-owned target, `aih policy evaluate --verify` and the governed report path read
+  For a governance-owned target, `aih policy evaluate <root> --no-log --json` and the governed report path read
   only the fixed `.aih/governance/npm-package-lifecycle/v1/` store, validate each current head and
   its complete bounded history, and freshly verify the V3 authority receipt before classifying the
   exact package/target lineage. Current exact observations are `observed-effective` for at most 24
@@ -966,7 +966,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   blocked, and records ECC/Superpowers agent, skill, and command curation as pinned external
   guidance rather than an AIH installer or projector. Signed approval clarification is bound
   into the approval attestation digest and required when waiving an evidence gap.
-- `aih policy evaluate --verify` now provides a headless requested-versus-effective
+- `aih policy evaluate <root> --no-log --json` provides a headless requested-versus-effective
   governed-candidate gate. It resolves exact MCP and AIH-owned hook identities,
   receipt-verified external authority, targets, ownership, rollback/drift, and projector
   coverage; unsafe or unsupported requests remain blocked and visible in reports and doctor.
@@ -2350,7 +2350,7 @@ because the completed work landed as one verified mainline release train.
   evidence-grounded documentation skill shipped in-repo at
   `packs/docs-quality/betterdoc/` and installable via `aih pack install --pack
   docs-quality --apply`. Documented in
-  [docs/product/docs-quality-pack.md](docs/product/docs-quality-pack.md). (#166)
+  [docs/product/docs-quality-pack.md](https://github.com/samartomar/ai-harness/blob/main/docs/product/docs-quality-pack.md). (#166)
 - **CONTROL_MATRIX.md** maps public claims to implementation seams and regression
   tests, including posture grading and offline/no-default-phone-home boundaries.
   (#160)
@@ -2474,7 +2474,7 @@ The **stability** release: the CLI / JSON / SARIF output contract is now FROZEN 
 CI-enforced. An enterprise can pin the major (`@aihq/harness@^1`), consume `--json`
 output, SARIF, and exit codes in automation, and trust that no minor or patch release
 breaks any of it — every surface change now fails a committed-fixture test until it is
-made as a reviewed contract decision. See [STABILITY.md](STABILITY.md).
+made as a reviewed contract decision. See [STABILITY.md](https://github.com/samartomar/ai-harness/blob/main/STABILITY.md).
 
 ### Added
 
@@ -2790,11 +2790,11 @@ First-developer experience plus a documentation and licensing-posture pass.
 
 ### Docs
 
-- **Licensing / liability posture.** Added [`DISCLAIMER.md`](DISCLAIMER.md) (Apache-2.0, AS-IS,
+- **Licensing / liability posture.** Added [`DISCLAIMER.md`](https://github.com/samartomar/ai-harness/blob/main/DISCLAIMER.md) (Apache-2.0, AS-IS,
   no warranty/SLA/indemnity/paid support), softened assurance wording across README/SECURITY/SUPPORT
   (no "safe/secure/guaranteed/enterprise-ready/production-ready"), and added DCO sign-off +
-  contributor rules to [`CONTRIBUTING.md`](CONTRIBUTING.md).
-- **Public-docs hygiene.** Added [`PUBLIC_DOCS_POLICY.md`](PUBLIC_DOCS_POLICY.md) and a `docs/`
+  contributor rules to [`CONTRIBUTING.md`](https://github.com/samartomar/ai-harness/blob/main/CONTRIBUTING.md).
+- **Public-docs hygiene.** Added [`PUBLIC_DOCS_POLICY.md`](https://github.com/samartomar/ai-harness/blob/main/PUBLIC_DOCS_POLICY.md) and a `docs/`
   tree for product / workspace / security / roadmap design docs.
 
 [#35]: https://github.com/samartomar/ai-harness/issues/35

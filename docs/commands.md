@@ -504,7 +504,7 @@ user-authored identical one. A missing or unreadable manifest fails closed the s
 the npm targets install into home-scoped directories shared by every repo on the machine, so they
 declare no managed root and receive no ownership claim at all.
 
-See [Baseline Component Evidence](security/baseline-evidence.md) for posture behavior and org
+See [Baseline Component Evidence](https://github.com/samartomar/ai-harness/blob/main/docs/security/baseline-evidence.md) for posture behavior and org
 overrides. <!-- aih:claim CM-21 -->
 
 ## aih superpowers
@@ -872,7 +872,7 @@ owns AIH MCP and usage-hook projection: `aih mcp` and `aih usage` fail closed, `
 generic phases, workspace graph MCP registration is suppressed, and governed ECC materialization strips MCP and
 host-hook/runtime operations across core, platform, and full scope while retaining eligible agents, skills, and commands.
 Use
-`aih policy evaluate --verify` in CI and inspect the digest before `aih policy project --apply`.
+`aih policy evaluate <root> --no-log --json` in CI and inspect the digest before `aih policy project --apply`.
 
 Authority receipt V1 remains the legacy approval transport. Decision-bearing policy requires receipt
 V2, whose decision and revocation arrays are strict, bounded, sorted, namespace-disjoint from legacy
@@ -1179,7 +1179,7 @@ offline-revocation high-water primitive remains inert until Core has an administ
 trust-root loader and a fixed verifier/producer.
 
 The durable store also feeds the read-only governed-state surfaces. For a policy that owns AIH
-governance surfaces, `aih policy evaluate --verify` and the governed report read the fixed lifecycle
+governance surfaces, `aih policy evaluate <root> --no-log --json` and the governed report read the fixed lifecycle
 heads in deterministic order, validate canonical head/binding/claim custody plus the complete bounded
 history, and freshly verify current V3 authority. An exact current observation is reported as
 `observed-effective`; partial, withheld/refused, revoked, stale, and drifted states stay distinct and
@@ -1241,7 +1241,7 @@ instead of being treated as best effort. Re-check any copy with
 `aih verify-bundle --bundle <out> --require-signature`.
 Baseline reports are indexed as `baseline-evidence`; `build --sign gh --require-signature --apply`
 produces the attributable bundle consumed by `trust.baselineOverrides[]`. See
-[Baseline Component Evidence](security/baseline-evidence.md).
+[Baseline Component Evidence](https://github.com/samartomar/ai-harness/blob/main/docs/security/baseline-evidence.md).
 Strict typed Strix records placed under `.aih/security/strix/*.json` are indexed as
 `strix-security-evidence` only after a 32 MiB read cap plus fatal-UTF-8, whole-document
 validation. Evidence publication does not run Strix or claim the harness produced the record.

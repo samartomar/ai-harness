@@ -45,7 +45,7 @@ describe("public docs policy", () => {
     ]);
 
     for (const entry of publishedPublicDocs) {
-      const rootEntry = entry === "docs/assets" ? "docs" : entry;
+      const rootEntry = entry.startsWith("docs/") ? "docs" : entry;
       expect(scrubBlock).toContain(rootEntry);
     }
   });

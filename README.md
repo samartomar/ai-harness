@@ -24,13 +24,13 @@ command surface. On top of that setup it runs a governance loop for external
 agent skills — vet → approve → pack → marketplace → evidence — anchored in a
 committed approval lock (`aih-skills.lock.json`).
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the shipped architecture and
-current trust boundaries, and [docs/CONTROL_MATRIX.md](docs/CONTROL_MATRIX.md) for
+See [docs/ARCHITECTURE.md](https://github.com/samartomar/ai-harness/blob/main/docs/ARCHITECTURE.md) for the shipped architecture and
+current trust boundaries, and [docs/CONTROL_MATRIX.md](https://github.com/samartomar/ai-harness/blob/main/docs/CONTROL_MATRIX.md) for
 the claim -> implementation -> test proof map.
 
 > **Provided as open-source software under Apache-2.0 on an "AS IS" basis.** No warranty,
 > support obligation, SLA, indemnity, consulting, or professional advice is provided. `aih`
-> is dry-run by default — review the plan before running `--apply`. See [DISCLAIMER.md](DISCLAIMER.md).
+> is dry-run by default — review the plan before running `--apply`. See [DISCLAIMER.md](https://github.com/samartomar/ai-harness/blob/main/DISCLAIMER.md).
 
 ## The stable command contract
 
@@ -41,7 +41,7 @@ schema-pinned, and exit-code semantics are pinned — a surface change fails the
 until it ships as a reviewed contract decision. Renames ship as deprecated aliases
 (the old name keeps working, with a one-line warning) before a major removes them,
 and security fixes land on the latest minor — upgrading is the fix path. The full
-policy: [STABILITY.md](STABILITY.md).
+policy: [STABILITY.md](https://github.com/samartomar/ai-harness/blob/main/STABILITY.md).
 
 ## Design posture
 
@@ -88,6 +88,13 @@ capacity, and fails closed on partial, linked, raced, over-capacity, or foreign 
 member records remain in custody for replay and audit truth and continue to count toward that fixed
 capacity; this route does not prune them automatically.
 Receipt V1 is unsupported.
+
+Cold administrators can follow the packed
+[exact governance command map](guides/enterprise-admin-guide.md#exact-governance-command-map)
+from organization or supported evidence through approval, observation, version update, revocation,
+and durable audit inspection. The complete packaged syntax is in
+[`aih policy`](docs/commands.md#aih-policy). Catalog-absent Scanner evidence is covered separately in
+[Catalog-absent organization detector evidence](guides/enterprise-admin-guide.md#catalog-absent-organization-detector-evidence).
 
 <!-- aih:claim CM-89 -->
 The unreleased `aih policy managed usage-metering` route is one closed AIH-managed
@@ -165,7 +172,7 @@ qualification capability in addition to the opaque authority and a fresh matchin
 decision cannot assert its own qualification.
 
 <!-- aih:claim CM-88 -->
-For a governance-owned target, `aih policy evaluate --verify` and the governed report now consume
+For a governance-owned target, `aih policy evaluate <root> --no-log --json` and the governed report now consume
 that fixed lifecycle store as observed state. They validate canonical heads, bindings, and complete
 bounded history, then freshly verify current V3 authority before classifying each exact npm
 package/target lineage as `observed-effective`, `partial`, `withheld`, `refused`, `revoked`, `stale`,
@@ -354,7 +361,7 @@ paths must match the vendor lock shipped in the npm release or an attributable G
 bundle. Covered user seats verify hashes and signatures; they do not rerun the release analyzers.
 Missing/mismatched coverage warns without an authorization receipt at `vibe` and denies at
 `enterprise`. A signed `blocked` verdict denies at every posture and cannot be waived by org
-evidence for the same bytes. See [Baseline Component Evidence](docs/security/baseline-evidence.md)
+evidence for the same bytes. See [Baseline Component Evidence](https://github.com/samartomar/ai-harness/blob/main/docs/security/baseline-evidence.md)
 for the vet/sign/policy flow. <!-- aih:claim CM-20 -->
 
 ### Analytics & operations
@@ -388,7 +395,7 @@ name, never env- or config-selectable, so nothing can point the probe at other c
 is a reserved extension point; the open-source harness does not require it to be published. When installed,
 it contributes additive enterprise command capabilities through its `aihCommands` export
 (`CommandSpec[]`) as defined in the
-[enterprise extension point spec](docs/product/enterprise-extension-point.md). Those commands register
+[enterprise extension point spec](https://github.com/samartomar/ai-harness/blob/main/docs/product/enterprise-extension-point.md). Those commands register
 as native subcommands through the identical path as the built-ins: shared flags, posture resolution,
 the dirty-worktree gate, and the run ledger all apply unchanged. Not installed → zero output, fully
 local. `AIH_NO_PLUGINS=1` disables the
@@ -668,22 +675,22 @@ aih usage --rollup ../repo-a,../repo-b
 
 ## Releases & roadmap
 
-- **Roadmap** — [ROADMAP.md](ROADMAP.md), tracked as
+- **Roadmap** — [ROADMAP.md](https://github.com/samartomar/ai-harness/blob/main/ROADMAP.md), tracked as
   [GitHub Milestones](https://github.com/samartomar/ai-harness/milestones).
 - **Changelog** — [CHANGELOG.md](CHANGELOG.md); tagged builds on
   [Releases](https://github.com/samartomar/ai-harness/releases).
-- **Versioning & support** — [VERSIONING.md](VERSIONING.md). SemVer; security fixes
+- **Versioning & support** — [VERSIONING.md](https://github.com/samartomar/ai-harness/blob/main/VERSIONING.md). SemVer; security fixes
   land on the **latest minor** — upgrade to the latest release line to stay fixed.
 - **Supply chain** — the current release workflow publishes via npm **Trusted Publishing** with build
   **provenance** and ships an **SPDX SBOM**, a **SHA256 checksum**, its keyless **cosign
   signature bundle** (`SHA256SUMS.txt.sigstore.json`), and the Sigstore **build-provenance
   bundle** on the GitHub Release. Releases from `v0.6.0` onward include the sigstore/provenance
   assets; earlier historical tags have a narrower asset set. Tagged release artifacts claim
-  [SLSA Build L2](docs/security/release-slsa.md) under SLSA v1.2; no Build L3 claim is
+  [SLSA Build L2](https://github.com/samartomar/ai-harness/blob/main/docs/security/release-slsa.md) under SLSA v1.2; no Build L3 claim is
   made. Verify a published release with `aih verify-release [version]`; a skipped verification leg
   is incomplete evidence. Consumers with provenance-aware policy can also use `gh attestation verify`.
-- **Support** — [SUPPORT.md](SUPPORT.md) · **Security** — [SECURITY.md](SECURITY.md)
-  (private reporting) · **Contributing** — [CONTRIBUTING.md](CONTRIBUTING.md).
+- **Support** — [SUPPORT.md](https://github.com/samartomar/ai-harness/blob/main/SUPPORT.md) · **Security** — [SECURITY.md](https://github.com/samartomar/ai-harness/blob/main/SECURITY.md)
+  (private reporting) · **Contributing** — [CONTRIBUTING.md](https://github.com/samartomar/ai-harness/blob/main/CONTRIBUTING.md).
 
 ## Development
 
@@ -695,18 +702,18 @@ npm run build     # tsup → dist/
 ```
 
 Stack: TypeScript (ESM) · commander · zod · vitest · biome · tsup. Coverage floors
-are enforced in [vitest.config.ts](vitest.config.ts) — set just below the achieved
+are enforced in [vitest.config.ts](https://github.com/samartomar/ai-harness/blob/main/vitest.config.ts) — set just below the achieved
 levels so coverage only ratchets up; CI and releases fail on regression. See
-[CONTRIBUTING.md](CONTRIBUTING.md) for the contributor workflow.
+[CONTRIBUTING.md](https://github.com/samartomar/ai-harness/blob/main/CONTRIBUTING.md) for the contributor workflow.
 
 ### Stability
 
 The tests behind [the stable command contract](#the-stable-command-contract) live in
-[tests/contract/](tests/contract/): every command and option is snapshotted against a
-committed fixture ([command-surface.json](tests/contract/command-surface.json)), the
+[tests/contract/](https://github.com/samartomar/ai-harness/tree/main/tests/contract): every command and option is snapshotted against a
+committed fixture ([command-surface.json](https://github.com/samartomar/ai-harness/blob/main/tests/contract/command-surface.json)), the
 `--json` envelope is schema-pinned, and exit-code semantics are pinned. Additive changes
 regenerate the fixture in the same PR (label it `contract:additive`); removals or renames
-of anything pinned are breaking and ship in majors only, per [STABILITY.md](STABILITY.md).
+of anything pinned are breaking and ship in majors only, per [STABILITY.md](https://github.com/samartomar/ai-harness/blob/main/STABILITY.md).
 
 ## License
 

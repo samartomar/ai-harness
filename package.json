@@ -38,6 +38,8 @@
     "!packs/**/*.py[cod]",
     "guides",
     "docs/assets",
+    "docs/commands.md",
+    "!docs/README.md",
     "README.md",
     "CHANGELOG.md",
     "NOTICE"
@@ -65,6 +67,7 @@
     "check:baseline-pins": "tsx src/internals/check-baseline-pin-currency.ts",
     "baseline:native-identity": "tsx src/internals/check-native-identity.ts --write",
     "check:baseline-installable": "tsx src/internals/check-baseline-installable.ts",
+    "check:packed-doc-links": "tsx src/internals/check-packed-doc-links.ts",
     "check:lock-migration": "tsx src/internals/assert-identity-only-lock-migration.ts",
     "baseline:vet": "tsx src/baseline-evidence/generate.ts",
     "baseline:check": "tsx src/baseline-evidence/generate.ts --check",
@@ -73,13 +76,14 @@
     "check:published-bin": "node dist/cli.js --version && node dist/cli.js --help",
     "check:published-library": "node -e \"import('@aihq/harness').then((m)=>{ if (typeof m.runSessionGuardrails !== 'function') throw new Error('missing library export'); })\"",
     "verify:cold-aih-managed-usage": "npm run build && node tools/verify-cold-aih-managed-usage.mjs",
+    "verify:packed-admin-docs": "tsx tools/verify-packed-administrator-docs.mjs",
     "docs:lint": "tsx src/internals/check-repo-docs.ts",
     "lint": "biome check src tests",
     "lint:fix": "biome check --write src tests",
     "lint:ci": "biome ci src tests",
     "format": "biome format --write src tests",
     "typecheck": "tsc --noEmit",
-    "verify": "npm run check:artifacts && npm run check:self-hosting-canon && npm run check:ecc-installer && npm run check:baseline-analyzers && npm run check:native-identity && npm run check:baseline-pins && npm run check:baseline-installable && npm run check:ai-runtime && npm run check:bugbounty-report && npm run docs:lint && npm run typecheck && npm run lint:ci && npm run test:cov && npm run build && npm run check:published-bin && npm run check:published-library"
+    "verify": "npm run check:artifacts && npm run check:self-hosting-canon && npm run check:ecc-installer && npm run check:baseline-analyzers && npm run check:native-identity && npm run check:baseline-pins && npm run check:baseline-installable && npm run check:ai-runtime && npm run check:bugbounty-report && npm run docs:lint && npm run check:packed-doc-links && npm run typecheck && npm run lint:ci && npm run test:cov && npm run build && npm run check:published-bin && npm run check:published-library && npm run verify:packed-admin-docs"
   },
   "keywords": [
     "ai",

@@ -213,7 +213,7 @@ For hand-authored distributed policy, each `mcp.approvals[]` entry needs `server
 | Use case | Primary commands | When to use |
 |---|---|---|
 | Validate org policy | `aih policy validate` | A repo or distributed bundle has `aih-org-policy.json` or policy bundle input. |
-| Evaluate governed candidates | `aih policy evaluate --verify` | Before projection or in CI, show requested versus effective MCP/hook/framework state and fail on identity, evidence/authority, safety, target, or projector blockers. |
+| Evaluate governed candidates | `aih policy evaluate <root> --no-log --json` | Before projection or in CI, show requested versus effective MCP/hook/framework state and fail on identity, evidence/authority, safety, target, or projector blockers. |
 | Check policy drift | `aih policy verify --against <sha-or-bundle>` | Enterprise or CI needs to verify active policy against a trusted channel. |
 | Verify project truth | `aih truth verify` | A sidecar should fail closed on commit/version/claim/decision drift, acceptance blockers, or stale agent-evidence file claims. |
 | Stage a truth pack | `aih truth pack --token-budget <n> --apply` | Agent-proposed truth changes should stage outside the repo before explicit promotion. |
