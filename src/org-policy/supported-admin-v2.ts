@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { lstatSync, opendirSync } from "node:fs";
-import { basename, dirname, join, relative, win32 } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { z } from "zod";
 import { canonicalStrictJsonBytesV1, parseStrictJsonObjectV1 } from "../contract/strict-json-v1.js";
 import { AihError } from "../errors.js";
@@ -650,6 +650,7 @@ function assertNewCustodySlotCapacity(
   root: string,
   posture: "enterprise" | "vibe",
   action: WriteAction,
+  maximum = MAX_CUSTODY_MEMBERS,
 ): void {
   const directory = dirname(action.path);
   const boundary = custodyReadBoundary(root, posture, { ...action, path: directory });
@@ -658,12 +659,7 @@ function assertNewCustodySlotCapacity(
   if (before.state === "absent") return;
   if (before.state !== "present" || before.kind !== "directory")
     throw new AihError("supported custody state is invalid", "AIH_TRUST");
-  const entries = boundedMemberEntries(
-    before.realPath,
-    basename(directory) === "heads" || win32.basename(directory) === "heads"
-      ? MAX_CUSTODY_MEMBERS * 2
-      : MAX_CUSTODY_MEMBERS,
-  );
+  const entries = boundedMemberEntries(before.realPath, maximum);
   const activeEntries = entries.filter((entry) => /^[0-9a-f]{64}\.json$/.test(entry));
   if (activeEntries.length >= MAX_CUSTODY_MEMBERS)
     throw new AihError("supported custody state is at capacity", "AIH_TRUST");
@@ -978,7 +974,7 @@ export function prepareSupportedCustodyAcceptV2(input: {
     assertNewCustodySlotCapacity(input.root, parsed.posture, signer);
     assertNewCustodySlotCapacity(input.root, parsed.posture, replay);
     assertNewCustodySlotCapacity(input.root, parsed.posture, member);
-    assertNewCustodySlotCapacity(input.root, parsed.posture, head);
+    assertNewCustodySlotCapacity(input.root, parsed.posture, head, MAX_CUSTODY_MEMBERS * 2);
     return planned;
   }
   if (
