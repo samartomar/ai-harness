@@ -1383,7 +1383,7 @@ function currentAuthorityRevocation(
         kind:
           verified.problem === "authority receipt is not currently valid"
             ? "authority-not-current"
-            : "authority-unverified",
+            : "authority-drift",
       };
     if (authority.receipt.version !== 3) return { kind: "authority-unverified" };
     const receipt = authority.receipt;

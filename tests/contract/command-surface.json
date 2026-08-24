@@ -2520,6 +2520,113 @@
           ]
         },
         {
+          "name": "managed",
+          "hasDescription": true,
+          "arguments": [],
+          "options": [],
+          "commands": [
+            {
+              "name": "usage-metering",
+              "hasDescription": true,
+              "arguments": [],
+              "options": [],
+              "commands": [
+                {
+                  "name": "describe",
+                  "hasDescription": true,
+                  "arguments": [],
+                  "options": [
+                    {
+                      "flags": "--context-dir <dir>",
+                      "defaultValue": "ai-coding"
+                    },
+                    {
+                      "flags": "--json"
+                    },
+                    {
+                      "flags": "--posture <posture>",
+                      "defaultValue": "vibe"
+                    },
+                    {
+                      "flags": "--root <dir>"
+                    }
+                  ],
+                  "commands": []
+                },
+                {
+                  "name": "inspect",
+                  "hasDescription": true,
+                  "arguments": [
+                    {
+                      "name": "root",
+                      "required": false
+                    }
+                  ],
+                  "options": [
+                    {
+                      "flags": "--context-dir <dir>",
+                      "defaultValue": "ai-coding"
+                    },
+                    {
+                      "flags": "--json"
+                    },
+                    {
+                      "flags": "--posture <posture>",
+                      "defaultValue": "vibe"
+                    },
+                    {
+                      "flags": "--root <dir>"
+                    }
+                  ],
+                  "commands": []
+                },
+                {
+                  "name": "reconcile",
+                  "hasDescription": true,
+                  "arguments": [
+                    {
+                      "name": "root",
+                      "required": false
+                    }
+                  ],
+                  "options": [
+                    {
+                      "flags": "--apply"
+                    },
+                    {
+                      "flags": "--context-dir <dir>",
+                      "defaultValue": "ai-coding"
+                    },
+                    {
+                      "flags": "--decision <id>"
+                    },
+                    {
+                      "flags": "--decision-digest <sha256>"
+                    },
+                    {
+                      "flags": "--evidence <root-relative-file>"
+                    },
+                    {
+                      "flags": "--json"
+                    },
+                    {
+                      "flags": "--posture <posture>",
+                      "defaultValue": "vibe"
+                    },
+                    {
+                      "flags": "--root <dir>"
+                    },
+                    {
+                      "flags": "--target <id>"
+                    }
+                  ],
+                  "commands": []
+                }
+              ]
+            }
+          ]
+        },
+        {
           "name": "observe",
           "hasDescription": true,
           "arguments": [],

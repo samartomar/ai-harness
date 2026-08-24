@@ -1003,6 +1003,78 @@ its only transient write is owner-only authority-verification custody outside th
 performs no candidate scan or execution, installation, target-root mutation, or package planning
 and cannot satisfy or bypass the held ECC preview and executable-package closure work.
 
+### Fixed AIH-managed usage-metering adapter
+
+`aih policy managed usage-metering describe --json` is a read-only discovery
+surface for one code-owned adapter. It reports the exact current AIH
+`tool/usage-metering` subject and source revision, adapter id/version/digest,
+fixed `configure` effect, and the closed `claude|codex` target set. The command
+does not derive any descriptor field from the resolved root or posture and has no
+command, path, package, source, effect, adapter, or target selector.
+
+`aih policy managed usage-metering reconcile [root] --decision <id>
+--decision-digest <sha256> --target <claude|codex> --evidence <root-relative-file>`
+performs a qualified, non-effective preview. Literal `--apply` is required for
+configuration or revocation. The request must exact-match a current externally
+verified V3 decision for the descriptor and a current canonical organization
+evidence envelope. Absence from the AIH-supported catalog is not a denial. The
+caller cannot select or transport an executable: the adapter, effect, subject,
+recorder, hook commands, host paths, and ignore marker are all derived from the
+installed Core bytes. The authority stage still invokes the fixed absolute
+`gh attestation verify` boundary described above, and the generic worktree
+preflight may invoke read-only `git status`. The fixed materialization runs no
+candidate or helper process, performs no network request, and executes no
+candidate code.
+
+Before configuration, apply observes the root and fixed owned inputs and commits
+canonical V4 receipt state `claimed` durably. The following transaction asserts
+that exact claim while writing only `.aih/usage-record.mjs`, `.gitignore`, and
+the selected `.claude/settings.json` or `.codex/hooks.json` entry. Authority,
+qualification evidence, and ownership are freshly re-observed at the effect
+boundary. Finalization asserts the exact generated outputs and replaces the
+claim with `configured` custody. The receipt binds the authority-receipt digest,
+Decision V2 id/digest, qualification attestor/record/evidence digest, exact
+subject/source, target, adapter id/version/digest, configure effect, pre-existing
+ownership observation, and every output path/digest. Canonical self-digests and
+a bounded predecessor-linked history expose interrupted and refreshed states;
+they are integrity and recovery evidence, not independent authority.
+
+The generic dirty-worktree gate still protects a pre-existing administrator
+change to a host file or `.gitignore`. Only internal V4 receipt transitions and
+the authenticated exact-CAS subtraction of already validated code-owned output
+bypass that gate, so one configure or revoke invocation can complete without
+mistaking its own newly written custody files for unrelated administrator work.
+
+An exact configured reconciliation is zero-write. A current authenticated V3
+decision revocation first commits `revoking`, then subtracts only the exact
+code-derived recorder, fixed hook entry, and AIH ignore marker after live output
+validation, and finally retains `revoked` custody and its output identities. The
+host and ignore documents remain, with non-AIH fields and rules preserved;
+self-digested pre-existence metadata is never deletion authority. Missing,
+linked, malformed, substituted, replayed, stale, mismatched, expired, conflicting,
+or drifted state fails closed; disputed bytes are not overwritten or removed.
+Revocation records permission removal only: it does not claim that an already
+running process stopped or that previously recorded usage disappeared.
+
+`aih policy managed usage-metering inspect [root] --json` is read-only and reports
+`absent`, `claimed`, `configured`, `revoking`, `revoked`, `drifted`, or `invalid`.
+Transitional, drifted, and invalid custody exits nonzero. A V1, V2, or V3 policy
+hook receipt remains visible to legacy policy tooling but cannot satisfy this V4
+route. A future AIH source revision must ship an explicit code-owned predecessor
+descriptor and migration before it can update owned bytes; receipt data cannot
+nominate its own adapter or migration implementation.
+
+`npm run verify:cold-aih-managed-usage` builds and packs Core, installs that
+tarball into a disposable consumer, and uses only the installed CLI to prove the
+descriptor, an absent inspection, and nonzero refusal of explicit apply when the
+external organization authority is unavailable. This is the strongest safe
+prepublication proof currently present. It does not claim a successful configure
+or revoke. Completing the packed lifecycle requires a genuine organization V3
+authority receipt and a separately authorized public GitHub attestation naming
+the exact candidate SHA; the proof must then exercise qualified preview, apply,
+inspect, authenticated revocation, and final inspection without a fake `gh` or
+fabricated authority.
+
 `aih policy observe npm-package [root] --decision <id> --decision-digest <sha256> --target <id>
 [--evidence <root-relative-file>]` is the fixed upstream-observation route. It accepts no package or
 effect option: the exact current Decision V2 must name a `package` subject with an npm source, and

@@ -89,6 +89,39 @@ member records remain in custody for replay and audit truth and continue to coun
 capacity; this route does not prune them automatically.
 Receipt V1 is unsupported.
 
+<!-- aih:claim CM-89 -->
+The unreleased `aih policy managed usage-metering` route is one closed AIH-managed
+adapter, not a generic plugin registry. `describe` reports the code-derived
+`usage-metering` subject, AIH release/source revision, adapter identity, fixed
+`configure` effect, and the only supported targets (`claude` and `codex`).
+`reconcile [root]` accepts only an exact current V3 decision/digest, one canonical
+organization-evidence file, and a fixed target. Preview is non-effective and
+zero-write; literal `--apply` can write only the fixed recorder, the fixed host
+`PostToolUse` entry, the AIH ignore marker, and the strict V4 ownership receipt.
+The adapter executes no candidate code and accepts no caller-selected command,
+path, source, effect, or adapter. Authority verification remains the separately
+named, fixed external `gh attestation verify` boundary.
+
+The V4 receipt records an exact durable claim before configuration, then binds
+the verified authority and decision, qualification provenance, subject/source,
+target, adapter, effect, ownership observation, and every resulting output.
+`inspect` reports absent, transitional, configured, revoked, drifted, or invalid
+custody without applying an effect. A current authenticated decision revocation
+can subtract only the exact code-derived recorder, hook entry, and ignore marker
+after live output validation; the host and ignore documents remain, and their
+non-AIH fields and rules are preserved. The self-digested ownership observation
+is audit evidence, never deletion authority. Drift preserves disputed bytes, and
+revocation makes no process-termination claim. Legacy V1-V3 hook receipts cannot
+authorize this route. A later release
+whose code-derived source changes must ship an explicit code-owned predecessor
+migration; an arbitrary old receipt is never migration authority.
+
+The repository's packed prepublication proof installs the tarball in a disposable
+consumer and proves `describe`, clean `inspect`, and refusal without external
+authority. It does **not** prove successful configure or revocation. That final
+production proof still requires a genuine organization V3 authority receipt and
+its separately authorized public GitHub attestation for the exact candidate.
+
 `aih policy observe npm-package` selects the qualification route from the exact current decision.
 An organization-qualified decision requires `--evidence`; an `aih-supported` decision rejects that
 option and instead requires current administrator custody plus the exact re-attested Receipt V2.

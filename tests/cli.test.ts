@@ -138,6 +138,7 @@ describe("CLI program", () => {
       "generate",
       "init",
       "lifecycle",
+      "managed",
       "observe",
       "project",
       "resolve",
@@ -167,6 +168,11 @@ describe("CLI program", () => {
       }
       if (sub.name() === "supported") {
         expect(sub.commands.map((nested) => nested.name())).toEqual(["accept", "inspect"]);
+        expect(sub.registeredArguments).toEqual([]);
+        continue;
+      }
+      if (sub.name() === "managed") {
+        expect(sub.commands.map((nested) => nested.name())).toEqual(["usage-metering"]);
         expect(sub.registeredArguments).toEqual([]);
         continue;
       }
@@ -267,6 +273,8 @@ describe("CLI program", () => {
       "policy observe",
       "policy lifecycle",
       "policy supported",
+      "policy managed",
+      "policy managed usage-metering",
     ]);
     const registeredPaths = (program: Command, parent: string[] = []): string[] =>
       program.commands.flatMap((cmd) => {

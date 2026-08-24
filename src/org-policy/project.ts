@@ -5,14 +5,21 @@ import {
   type McpProjectionDecisionBindings,
   McpProjectionDecisionBindingsSchema,
 } from "../config/marker.js";
-import { readRegularFile } from "../internals/fsxn.js";
+import { readRegularFile, readRegularFileWithStats } from "../internals/fsxn.js";
 import {
   canAppendPolicyAihIgnore,
   policyAihIgnoreRollbackContents,
   policyAihIgnoreWrite,
 } from "../internals/gitignore.js";
 import { isPlainObject, parseJsoncText } from "../internals/merge.js";
-import { type Action, type PlanContext, remove, writeJson, writeText } from "../internals/plan.js";
+import {
+  type Action,
+  type PlanContext,
+  remove,
+  writeExactText,
+  writeJson,
+  writeText,
+} from "../internals/plan.js";
 import { managedMcpAllowlistSettings } from "../mcp/allowlist.js";
 import { managedMcpExample } from "../mcp/enterprise.js";
 import {
@@ -463,14 +470,13 @@ function readHookSlot(
   };
 }
 
-function expectedHostHook(
-  ctx: PlanContext,
-  target: "claude" | "codex",
-): {
+function expectedHostHook(target: "claude" | "codex"): {
   path: string;
   postToolUse: unknown;
 } {
-  const action = usageHookActions(ctx, [target]).find(
+  // Claude/Codex hook generation is a fixed code literal. It reads no context;
+  // this keeps receipt inspection bound to the same packed-code value.
+  const action = usageHookActions({} as PlanContext, [target]).find(
     (item): item is Extract<Action, { kind: "write" }> =>
       item.kind === "write" && item.json !== undefined,
   );
@@ -481,6 +487,14 @@ function expectedHostHook(
   if (postToolUse === undefined)
     throw new OrgPolicyError(`AIH host hook generator for ${target} is incomplete`);
   return { path: action.path, postToolUse };
+}
+
+/** Fixed packed-code hook identity, safe for receipt inspection. */
+export function aihManagedUsageExpectedHostHookV4(target: "claude" | "codex"): {
+  path: string;
+  postToolUse: unknown;
+} {
+  return expectedHostHook(target);
 }
 
 /** Persisted receipt metadata must retain the policy's authored text boundary. */
@@ -511,6 +525,15 @@ function parseHookReceipt(ctx: PlanContext): { receipt?: PolicyHookReceipt; raw?
     value.format !== "aih-org-policy-hook-receipt" ||
     (value.version !== 2 && value.version !== 3)
   ) {
+    if (
+      isPlainObject(value) &&
+      value.format === "aih-org-policy-hook-receipt" &&
+      value.version === 4
+    ) {
+      throw new OrgPolicyError(
+        `${ORG_POLICY_HOOK_RECEIPT_PATH} is owned by the V4 AIH-managed usage adapter; use policy managed usage-metering to inspect or reconcile it`,
+      );
+    }
     throw new OrgPolicyError(`${ORG_POLICY_HOOK_RECEIPT_PATH} is not an AIH policy hook receipt`);
   }
   const allowedTopLevel = new Set(
@@ -579,8 +602,7 @@ function parseHookReceipt(ctx: PlanContext): { receipt?: PolicyHookReceipt; raw?
       }
       const target = entry.path === ".claude/settings.json" ? "claude" : "codex";
       if (
-        stableJson(entry.expectedPostToolUse) !==
-        stableJson(expectedHostHook(ctx, target).postToolUse)
+        stableJson(entry.expectedPostToolUse) !== stableJson(expectedHostHook(target).postToolUse)
       ) {
         throw new OrgPolicyError(
           `${ORG_POLICY_HOOK_RECEIPT_PATH} does not match the AIH hook generator`,
@@ -676,11 +698,11 @@ function hookRegistrarClaimedPostToolUse(ctx: PlanContext): unknown {
 }
 
 function usagePostToolUseDescription(
-  ctx: PlanContext,
+  _ctx: PlanContext,
   target: "claude" | "codex",
   postToolUse: unknown,
 ): string {
-  return stableJson(postToolUse) === stableJson(expectedHostHook(ctx, target).postToolUse)
+  return stableJson(postToolUse) === stableJson(expectedHostHook(target).postToolUse)
     ? "matching PostToolUse"
     : "conflicting PostToolUse";
 }
@@ -1212,7 +1234,7 @@ function usageHookProjectionActions(ctx: PlanContext, effective: EffectiveOrgPol
   const hostActions: Action[] = [];
   const entries: PolicyHookReceiptEntry[] = [];
   for (const target of targets) {
-    const expected = expectedHostHook(ctx, target);
+    const expected = expectedHostHook(target);
     const raw = ownedText(ctx, expected.path);
     const slot = readHookSlot(raw, expected.path);
     if (slot.postToolUse !== undefined) {
@@ -1293,6 +1315,297 @@ function usageHookProjectionActions(ctx: PlanContext, effective: EffectiveOrgPol
     ...hostActions,
     hookReceiptAction(existing.raw, effective.policyVersion, hooks, entries, decisions),
   ];
+}
+
+/**
+ * Fixed-byte configure actions for the V4 usage-metering custody adapter. The
+ * V4 adapter owns its receipt, so it refuses the legacy receipt
+ * rather than allowing two independent ownership records to claim one host
+ * hook, recorder, or ignore marker. This function deliberately accepts only
+ * the two code-owned targets; it never transports a caller command or path.
+ */
+export interface AihManagedUsageOwnershipSnapshotV4 {
+  readonly entries: readonly {
+    readonly kind: "json-hook" | "text-file";
+    readonly path: string;
+    readonly preExisting: "absent" | "present";
+    readonly hooksPresent?: boolean;
+    readonly expectedPostToolUse?: unknown;
+    readonly expectedDigest?: string;
+  }[];
+}
+
+/** V4 custody never accepts a link-like or multiply-linked owned transport. */
+function v4OwnedText(ctx: PlanContext, path: string): string | undefined {
+  const parents: Array<{ path: string; dev: bigint; ino: bigint }> = [];
+  try {
+    let parent = ctx.root;
+    const root = lstatSync(parent, { bigint: true });
+    if (!root.isDirectory() || root.isSymbolicLink())
+      throw new OrgPolicyError("AIH-managed usage V4 refuses an unsafe project root");
+    parents.push({ path: parent, dev: root.dev, ino: root.ino });
+    for (const segment of path.split("/").slice(0, -1)) {
+      parent = join(parent, segment);
+      const parentInfo = lstatSync(parent, { bigint: true });
+      if (!parentInfo.isDirectory() || parentInfo.isSymbolicLink())
+        throw new OrgPolicyError(`AIH-managed usage V4 refuses unsafe parent ${path}`);
+      parents.push({ path: parent, dev: parentInfo.dev, ino: parentInfo.ino });
+    }
+    // This probe distinguishes an absent optional output from a present but
+    // unsafe one. The bytes below are still read only from the opened fd.
+    lstatSync(join(ctx.root, path), { bigint: true });
+    const opened = readRegularFileWithStats(join(ctx.root, path), {
+      maxBytes: path === ORG_POLICY_HOOK_RECEIPT_PATH ? 65_536 : 1_048_576,
+    });
+    if (opened === undefined || opened.identity.nlink !== 1n)
+      throw new OrgPolicyError(`AIH-managed usage V4 refuses unsafe owned path ${path}`);
+    for (const expected of parents) {
+      const current = lstatSync(expected.path, { bigint: true });
+      if (
+        !current.isDirectory() ||
+        current.isSymbolicLink() ||
+        current.dev !== expected.dev ||
+        current.ino !== expected.ino
+      )
+        throw new OrgPolicyError(`AIH-managed usage V4 parent changed while reading ${path}`);
+    }
+    return opened.contents.toString("utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    if (error instanceof OrgPolicyError) throw error;
+    throw new OrgPolicyError(`AIH-managed usage V4 cannot observe owned path ${path}`);
+  }
+}
+
+/** Fixed, pre-effect ownership observation for the V4 successor receipt. */
+export function observeAihManagedUsageOwnershipV4(
+  ctx: PlanContext,
+  target: "claude" | "codex",
+): AihManagedUsageOwnershipSnapshotV4 {
+  const host = expectedHostHook(target);
+  const raw = v4OwnedText(ctx, host.path);
+  const slot = readHookSlot(raw, host.path);
+  const recorder = v4OwnedText(ctx, ".aih/usage-record.mjs");
+  const ignore = v4OwnedText(ctx, ".gitignore");
+  if (slot.postToolUse !== undefined || recorder !== undefined || !canAppendPolicyAihIgnore(ignore))
+    throw new OrgPolicyError(
+      "AIH-managed usage V4 cannot claim ambiguous existing usage ownership",
+    );
+  const ignoreAction = policyAihIgnoreWrite(ctx.root);
+  const hostPreExisting: "absent" | "present" = slot.filePresent ? "present" : "absent";
+  const ignorePreExisting: "absent" | "present" = ignore === undefined ? "absent" : "present";
+  return {
+    entries: [
+      {
+        kind: "json-hook" as const,
+        path: host.path,
+        preExisting: hostPreExisting,
+        hooksPresent: slot.hooksPresent,
+        expectedPostToolUse: host.postToolUse,
+      },
+      {
+        kind: "text-file" as const,
+        path: ".aih/usage-record.mjs",
+        preExisting: "absent" as const,
+        expectedDigest: sha256(usageRecorderScript()),
+      },
+      {
+        kind: "text-file" as const,
+        path: ".gitignore",
+        preExisting: ignorePreExisting,
+        expectedDigest: sha256(ignoreAction.contents ?? ""),
+      },
+    ].sort((left, right) => ordinalCompare(left.path, right.path)),
+  };
+}
+
+/**
+ * Receipts transport only an observation; this binds that observation back to
+ * this build's fixed hook and recorder before any custody transition or effect.
+ */
+export function aihManagedUsageOwnershipMatchesCodeV4(
+  ctx: PlanContext,
+  target: "claude" | "codex",
+  snapshot: AihManagedUsageOwnershipSnapshotV4,
+): boolean {
+  void ctx;
+  return aihManagedUsageOwnershipIsCodeDerivedV4(target, snapshot);
+}
+
+/** Context-free packed-code binding used by inspection as well as effects. */
+export function aihManagedUsageOwnershipIsCodeDerivedV4(
+  target: "claude" | "codex",
+  snapshot: AihManagedUsageOwnershipSnapshotV4,
+): boolean {
+  const host = expectedHostHook(target);
+  const hostEntry = snapshot.entries.find((entry) => entry.path === host.path);
+  const recorder = snapshot.entries.find((entry) => entry.path === ".aih/usage-record.mjs");
+  return (
+    hostEntry?.kind === "json-hook" &&
+    stableJson(hostEntry.expectedPostToolUse) === stableJson(host.postToolUse) &&
+    recorder?.kind === "text-file" &&
+    recorder.expectedDigest === sha256(usageRecorderScript())
+  );
+}
+
+export function aihManagedUsageHookActionsV1(
+  ctx: PlanContext,
+  target: "claude" | "codex",
+  expectedV4Claim: string,
+  snapshot: AihManagedUsageOwnershipSnapshotV4,
+): Action[] {
+  const liveClaim = v4OwnedText(ctx, ORG_POLICY_HOOK_RECEIPT_PATH);
+  if (liveClaim !== expectedV4Claim)
+    throw new OrgPolicyError(
+      `${ORG_POLICY_HOOK_RECEIPT_PATH} is not the exact V4 claim just authorized; refusing configuration`,
+    );
+  const observed = observeAihManagedUsageOwnershipV4(ctx, target);
+  if (stableJson(observed) !== stableJson(snapshot))
+    throw new OrgPolicyError("AIH-managed usage V4 ownership observation changed after claim");
+  const expected = expectedHostHook(target);
+  const raw = v4OwnedText(ctx, expected.path);
+  const slot = readHookSlot(raw, expected.path);
+  if (slot.postToolUse !== undefined) {
+    throw new OrgPolicyError(
+      `${expected.path} already has PostToolUse hooks; refusing ownership conflict`,
+    );
+  }
+  const generated = usageHookActions(ctx, [target]).find(
+    (action): action is Extract<Action, { kind: "write" }> =>
+      action.kind === "write" && action.path === expected.path,
+  );
+  if (generated === undefined)
+    throw new OrgPolicyError(`AIH has no safe hook action for ${target}`);
+  const recorder = v4OwnedText(ctx, ".aih/usage-record.mjs");
+  if (recorder !== undefined)
+    throw new OrgPolicyError(
+      "AIH-managed usage recorder already exists without a V4 adapter ownership receipt",
+    );
+  const ignore = v4OwnedText(ctx, ".gitignore");
+  if (!canAppendPolicyAihIgnore(ignore)) {
+    throw new OrgPolicyError(
+      ".gitignore contains AIH-shaped rules with ambiguous usage-adapter ownership",
+    );
+  }
+  return [
+    withExpectedContents(
+      writeText(
+        ".aih/usage-record.mjs",
+        usageRecorderScript(),
+        "AIH-managed usage recorder selected by V4 adapter",
+        { mode: 0o755 },
+      ),
+      recorder,
+    ),
+    withExpectedContents(policyAihIgnoreWrite(ctx.root), ignore),
+    withExpectedContents(generated, raw),
+  ];
+}
+
+/**
+ * Closed, successor-receipt rollback for the V4 usage adapter. The caller can
+ * supply only the receipt's three fixed output digests; this never accepts a
+ * command, path, or arbitrary host mutation. It preserves a host file after
+ * subtracting only AIH's exact PostToolUse slot, because the configure action
+ * may have merged into administrator-owned JSON.
+ */
+export function aihManagedUsageHookRollbackActionsV1(
+  ctx: PlanContext,
+  target: "claude" | "codex",
+  expectedOutputs: readonly { path: string; sha256: string }[],
+  snapshot: AihManagedUsageOwnershipSnapshotV4,
+): Action[] {
+  const host = expectedHostHook(target);
+  const expectedPaths = [".aih/usage-record.mjs", ".gitignore", host.path].sort();
+  if (
+    expectedOutputs.length !== expectedPaths.length ||
+    expectedOutputs.some(
+      (output, index) =>
+        output.path !== expectedPaths[index] || !/^sha256:[0-9a-f]{64}$/.test(output.sha256),
+    )
+  )
+    throw new OrgPolicyError(
+      "AIH-managed usage rollback has an invalid successor receipt output set",
+    );
+  const expected = new Map(
+    expectedOutputs.map((output) => [output.path, output.sha256.slice("sha256:".length)]),
+  );
+  const expectedRecorder = expected.get(".aih/usage-record.mjs");
+  const expectedIgnore = expected.get(".gitignore");
+  const expectedHost = expected.get(host.path);
+  if (expectedRecorder === undefined || expectedIgnore === undefined || expectedHost === undefined)
+    throw new OrgPolicyError(
+      "AIH-managed usage rollback has an incomplete successor receipt output set",
+    );
+  const hostSnapshot = snapshot.entries.find((entry) => entry.path === host.path);
+  if (
+    hostSnapshot === undefined ||
+    hostSnapshot.kind !== "json-hook" ||
+    stableJson(hostSnapshot.expectedPostToolUse) !== stableJson(host.postToolUse)
+  )
+    throw new OrgPolicyError(
+      "AIH-managed usage rollback has an invalid successor ownership snapshot",
+    );
+  const recorder = v4OwnedText(ctx, ".aih/usage-record.mjs");
+  const ignore = v4OwnedText(ctx, ".gitignore");
+  const hostRaw = v4OwnedText(ctx, host.path);
+  if (
+    recorder === undefined ||
+    ignore === undefined ||
+    hostRaw === undefined ||
+    recorder !== usageRecorderScript() ||
+    sha256(recorder) !== expectedRecorder ||
+    sha256(ignore) !== expectedIgnore ||
+    sha256(hostRaw) !== expectedHost
+  )
+    throw new OrgPolicyError(
+      "AIH-managed usage rollback found drifted or missing successor-owned output",
+    );
+  const rollback = policyAihIgnoreRollbackContents(ignore);
+  if (rollback === undefined)
+    throw new OrgPolicyError("AIH-managed usage rollback found an unsafe .gitignore marker state");
+  const slot = readHookSlot(hostRaw, host.path);
+  if (stableJson(slot.postToolUse) !== stableJson(host.postToolUse))
+    throw new OrgPolicyError("AIH-managed usage rollback found a changed PostToolUse hook");
+  let parsed: unknown;
+  try {
+    parsed = parseJsoncText(hostRaw);
+  } catch {
+    throw new OrgPolicyError("AIH-managed usage rollback cannot parse the exact owned host output");
+  }
+  const root = isPlainObject(parsed) ? { ...parsed } : undefined;
+  const hooks = root !== undefined && isPlainObject(root.hooks) ? { ...root.hooks } : undefined;
+  if (root === undefined || hooks === undefined)
+    throw new OrgPolicyError("AIH-managed usage rollback cannot isolate its PostToolUse hook");
+  delete hooks.PostToolUse;
+  // Snapshot provenance is self-digested audit data, not deletion authority.
+  // Always retain the co-owned host document and a safe empty hooks wrapper.
+  root.hooks = hooks;
+  const hostAction = withExpectedContents(
+    writeJson(host.path, root, "subtract exact V4 AIH usage host hook"),
+    hostRaw,
+  );
+  const actions: Action[] = [
+    remove(".aih/usage-record.mjs", "remove unchanged V4 AIH usage recorder", {
+      expect: { sha256: expectedRecorder },
+    }),
+    hostAction,
+  ];
+  // Likewise, retain an empty ignore file rather than trusting receipt metadata
+  // to delete a potentially co-owned path.
+  actions.push(
+    withExpectedContents(
+      writeExactText(
+        ".gitignore",
+        rollback.contents === undefined || /^\r?\n?$/.test(rollback.contents)
+          ? ""
+          : rollback.contents,
+        "subtract exact V4 usage ignore marker",
+      ),
+      ignore,
+    ),
+  );
+  return actions;
 }
 
 function managedSettings(
