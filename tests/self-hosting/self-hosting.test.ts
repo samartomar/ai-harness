@@ -2,12 +2,14 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { parse as parseYaml } from "yaml";
 
 const root = process.cwd();
 const read = (path: string): string =>
   readFileSync(resolve(root, path), "utf8").replace(/\r\n/g, "\n");
 
 const hardRule = "Never run AIH against this checkout.";
+const githubExpression = (body: string): string => `\${{ ${body} }}`;
 
 function managedBody(text: string): string {
   const match = text.match(
@@ -64,6 +66,47 @@ describe("ai-harness self-hosting boundary", () => {
       expect(publicSurface, path).toContain("check:self-hosting-canon");
       expect(publicSurface, path).not.toContain("check:canon-drift");
     }
+  });
+
+  it("shards the complete Windows suite behind the fail-closed required context", () => {
+    const ci = read(".github/workflows/ci.yml");
+    const workflow = parseYaml(ci) as {
+      jobs: {
+        verify: { strategy: { matrix: { os: string[] } } };
+        windows_tests: {
+          name: string;
+          strategy: { matrix: { shard: number[] } };
+          "runs-on": string;
+          steps: Array<{ if?: string; run?: string }>;
+        };
+        windows_verify: {
+          name: string;
+          if: string;
+          needs: string;
+          steps: Array<{ env?: Record<string, string>; run?: string }>;
+        };
+      };
+    };
+    const windows = workflow.jobs.windows_tests;
+    const aggregate = workflow.jobs.windows_verify;
+
+    expect(workflow.jobs.verify.strategy.matrix.os).toEqual(["ubuntu-latest", "macos-latest"]);
+    expect(windows.name).toBe(`windows test (${githubExpression("matrix.shard")}/2)`);
+    expect(windows.strategy.matrix.shard).toEqual([1, 2]);
+    expect(windows["runs-on"]).toBe("windows-latest");
+    expect(windows.steps.map((step) => step.run)).toContain(
+      `npx vitest run --shard=${githubExpression("matrix.shard")}/2`,
+    );
+    expect(windows.steps.filter((step) => step.if === "matrix.shard == 1")).toHaveLength(5);
+
+    expect(aggregate.name).toBe("verify (windows-latest)");
+    expect(aggregate.if).toBe(githubExpression("always()"));
+    expect(aggregate.needs).toBe("windows_tests");
+    expect(aggregate.steps[0]?.env?.WINDOWS_SHARDS_RESULT).toBe(
+      githubExpression("needs.windows_tests.result"),
+    );
+    expect(aggregate.steps[0]?.run).toContain('if [ "$WINDOWS_SHARDS_RESULT" != "success" ]; then');
+    expect(ci).not.toContain("continue-on-error:");
   });
 
   it("keeps the manual contract mirror aligned with live repository facts", () => {
