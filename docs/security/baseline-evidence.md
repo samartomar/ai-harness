@@ -365,6 +365,16 @@ Every baseline evidence lock declares a `schemaVersion`. This build parses
 version 1, and it checks that declared version before it parses anything else in
 the artifact.
 
+Only the evidence-lock schema version approved by the latest aih release is
+supported. Producers and consumers upgrade together to that version. Older and
+newer schema versions fail closed; aih neither coerces their fields nor falls
+back to missing evidence. There is no N-1 evidence-schema compatibility
+commitment, recovery path for a superseded schema version, or obsolete-client
+test obligation.
+Revisit this policy only if unmanaged consumers are introduced or a maintainer
+explicitly commits to N-1 evidence-schema compatibility and first supplies the
+release lane, parser contract, and regression coverage needed to honor it.
+
 An attested bundle can carry a lock produced by a newer aih than the one reading
 it. Such a lock may name fields or component shapes this build's parser rejects.
 aih reports that case as `baseline.evidence-schema-unsupported`, naming the

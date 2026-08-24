@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { BASELINE_EVIDENCE_SCHEMA_VERSION } from "../../src/baseline-evidence/schema.js";
 import { classifyBaselineLockSkew } from "../../src/baseline-evidence/skew.js";
@@ -9,6 +11,22 @@ import { classifyBaselineLockSkew } from "../../src/baseline-evidence/skew.js";
  * rather than skipping the artifact and reporting the absence it caused.
  */
 describe("classifyBaselineLockSkew", () => {
+  it("publishes the latest-approved evidence-schema compatibility policy", () => {
+    const policy = readFileSync(resolve("docs/security/baseline-evidence.md"), "utf8").replace(
+      /\s+/g,
+      " ",
+    );
+
+    expect(policy).toContain(
+      "Only the evidence-lock schema version approved by the latest aih release is supported",
+    );
+    expect(policy).toContain("There is no N-1 evidence-schema compatibility commitment");
+    expect(policy).toContain("Older and newer schema versions fail closed");
+    expect(policy).toContain(
+      "Revisit this policy only if unmanaged consumers are introduced or a maintainer explicitly commits to N-1 evidence-schema compatibility",
+    );
+  });
+
   it("accepts a lock declaring the schema version this build parses", () => {
     const skew = classifyBaselineLockSkew({
       schemaVersion: BASELINE_EVIDENCE_SCHEMA_VERSION,
