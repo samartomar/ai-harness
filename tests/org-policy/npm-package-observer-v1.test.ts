@@ -352,7 +352,7 @@ describe("npm package upstream observer V1", () => {
       evidence?: typeof value.evidence;
       digest?: string;
       reason: string;
-      qualification: "qualified" | "unqualified";
+      qualification: "aih-supported" | "organization-qualified" | "unqualified";
     }> = [];
     cases.push({
       label: "wrong decision digest",
@@ -627,7 +627,7 @@ describe("npm package upstream observer V1", () => {
 
     expect(result).toMatchObject({
       authority: "verified",
-      qualification: "qualified",
+      qualification: "aih-supported",
       effective: "observation-missing",
       outcome: "partial",
       reason: "installed-evidence-unavailable",
@@ -670,7 +670,7 @@ describe("npm package upstream observer V1", () => {
 
       expect(result).toMatchObject({
         authority: "verified",
-        qualification: "qualified",
+        qualification: "aih-supported",
         outcome: "refused",
         reason: "installed-evidence-unsafe",
       });
@@ -707,7 +707,7 @@ describe("npm package upstream observer V1", () => {
 
     expect(result).toMatchObject({
       authority: "verified",
-      qualification: "qualified",
+      qualification: "aih-supported",
       outcome: "refused",
       reason: "qualification-unverified",
     });
@@ -738,7 +738,7 @@ describe("npm package upstream observer V1", () => {
 
     expect(result).toMatchObject({
       authority: "verified",
-      qualification: "qualified",
+      qualification: "aih-supported",
       effective: "observed-effective",
       outcome: "observed-effective",
     });
@@ -980,6 +980,7 @@ describe("npm package upstream observer V1", () => {
     );
 
     expect(result).toMatchObject({
+      qualification: "organization-qualified",
       outcome: "observed-effective",
       effective: "observed-effective",
     });
@@ -1145,11 +1146,14 @@ describe("npm package upstream observer V1", () => {
       applied: boolean;
       execs: unknown[];
       writes: unknown[];
-      digests: Array<{ data?: { outcome?: string } }>;
+      digests: Array<{ data?: { qualification?: string; outcome?: string } }>;
     };
     expect(code).toBe(0);
     expect(payload).toMatchObject({ applied: false, execs: [], writes: [] });
-    expect(payload.digests[0]?.data).toMatchObject({ outcome: "observed-effective" });
+    expect(payload.digests[0]?.data).toMatchObject({
+      qualification: "organization-qualified",
+      outcome: "observed-effective",
+    });
     expect(calls).toHaveLength(1);
     expect(calls[0]?.slice(0, 3)).toEqual([gh, "attestation", "verify"]);
     expect(calls[0]?.slice(-2)).toEqual(["--repo", "acme/governance"]);
@@ -1203,7 +1207,11 @@ describe("npm package upstream observer V1", () => {
     expect(first.out).not.toContain(root);
     expect(first.out).not.toContain(gh);
     expect(first.out).not.toContain("do-not-leak");
-    expect(JSON.parse(first.out)).toMatchObject({ writes: [], execs: [] });
+    expect(JSON.parse(first.out)).toMatchObject({
+      writes: [],
+      execs: [],
+      digests: [{ data: { qualification: "organization-qualified" } }],
+    });
     expect(existsSync(join(root, ".aih", "run-log.jsonl"))).toBe(false);
     expect(treeSnapshot(root)).toEqual(beforeTree);
   });
@@ -1429,7 +1437,7 @@ describe("npm package upstream observer V1", () => {
     );
     expect(result).toMatchObject({
       authority: "verified",
-      qualification: "qualified",
+      qualification: "organization-qualified",
       effective: "observation-missing",
       outcome: "partial",
       reason: "installed-evidence-unavailable",
@@ -1437,7 +1445,7 @@ describe("npm package upstream observer V1", () => {
     expect(calls).toHaveLength(1);
   });
 
-  it("does not report a qualified partial after the unavailable observation crosses a decision window", async () => {
+  it("does not report organization-qualified after the unavailable observation crosses a decision window", async () => {
     const value = fixture();
     value.decision.expiresAt = "2026-08-03T00:00:00+00:00";
     writeAuthority(value.decision);
@@ -1492,13 +1500,13 @@ describe("npm package upstream observer V1", () => {
 
     expect(result).toMatchObject({
       authority: "verified",
-      qualification: "qualified",
+      qualification: "organization-qualified",
       outcome: "refused",
       reason: "evidence-changed",
     });
   });
 
-  it("refuses a lock-or-manifest swap after qualification without erasing the qualified phase", async () => {
+  it("refuses a lock-or-manifest swap without erasing organization qualification provenance", async () => {
     const value = fixture();
     writeAuthority(value.decision);
     writeInstalledPackage();
@@ -1524,7 +1532,7 @@ describe("npm package upstream observer V1", () => {
 
     expect(result).toMatchObject({
       authority: "verified",
-      qualification: "qualified",
+      qualification: "organization-qualified",
       outcome: "refused",
       reason: "installed-evidence-changed",
     });
@@ -1779,7 +1787,7 @@ describe("npm package upstream observer V1", () => {
       );
       expect(result).toMatchObject({
         authority: "verified",
-        qualification: "qualified",
+        qualification: "organization-qualified",
         outcome: "refused",
         reason: "installed-evidence-unsafe",
       });
@@ -1828,7 +1836,7 @@ describe("npm package upstream observer V1", () => {
     );
     expect(oversizeResult).toMatchObject({
       authority: "verified",
-      qualification: "qualified",
+      qualification: "organization-qualified",
       outcome: "partial",
       reason: "installed-evidence-unavailable",
     });

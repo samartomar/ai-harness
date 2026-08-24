@@ -15,6 +15,7 @@ import {
 import { type GovernanceDecisionV2, governanceDecisionDigestV2 } from "./governance-decision-v2.js";
 import {
   parseOrganizationEvidenceEnvelopeV1Bytes,
+  type QualificationProvenanceV1,
   verifyOrganizationQualificationV1,
 } from "./qualification-v1.js";
 import { verifiedCurrentSupportedCustodyAssertionsV2 } from "./supported-admin-v2.js";
@@ -82,7 +83,7 @@ export type NpmPackageObservationEffectiveV1 =
   | ObservedEffectResolution["state"];
 export interface NpmPackageObservationResultV1 {
   readonly authority: "verified" | "unverified";
-  readonly qualification: "qualified" | "unqualified";
+  readonly qualification: QualificationProvenanceV1;
   readonly effective: NpmPackageObservationEffectiveV1;
   readonly outcome: "observed-effective" | "partial" | "refused";
   readonly reason?: Reason;
@@ -173,7 +174,7 @@ export function __setNpmPackageObserverInternalTestHookV1(hook: (() => void) | u
 
 function effectiveRefusal(
   state: ObservedEffectResolution["state"],
-  qualification: "qualified" | "unqualified" = "unqualified",
+  qualification: QualificationProvenanceV1 = "unqualified",
 ): NpmPackageObservationResultV1 {
   const reason: Reason =
     state === "authority-not-current" ||
@@ -202,9 +203,10 @@ function refusal(
 }
 function refusalAfterQualified(
   reason: Reason,
+  qualification: Exclude<QualificationProvenanceV1, "unqualified">,
   effective: NpmPackageObservationEffectiveV1 = reason,
 ): NpmPackageObservationResultV1 {
-  return { ...refusal(reason, "verified", effective), qualification: "qualified" };
+  return { ...refusal(reason, "verified", effective), qualification };
 }
 function option(ctx: PlanContext, key: string): string | undefined {
   const value = ctx.options[key];
@@ -411,6 +413,7 @@ async function observeAihSupportedNpmPackageV1(
     });
   if (currentCustodyAssertions() === undefined)
     return refusal("qualification-unverified", "verified");
+  const qualificationProvenance = "aih-supported" as const;
   const initialCurrent = resolveObservedEffect({
     authority: verified,
     decisionReference: { id: requested.decision, digest: requested.digest },
@@ -424,13 +427,14 @@ async function observeAihSupportedNpmPackageV1(
     expectedIntegration: INTEGRATION,
     now: initiallyObservedAt,
   });
-  if (initialCurrent.state !== "observation-missing") return effectiveRefusal(initialCurrent.state);
+  if (initialCurrent.state !== "observation-missing")
+    return effectiveRefusal(initialCurrent.state, qualificationProvenance);
   const local = installed(ctx.root, decision);
   if (typeof local === "string") {
     afterInstalledReadForInternalTest?.();
     const observedAt = new Date().toISOString();
     if (currentCustodyAssertions() === undefined)
-      return refusalAfterQualified("qualification-unverified");
+      return refusalAfterQualified("qualification-unverified", qualificationProvenance);
     const effective = resolveObservedEffect({
       authority: verified,
       decisionReference: { id: requested.decision, digest: requested.digest },
@@ -445,24 +449,26 @@ async function observeAihSupportedNpmPackageV1(
       now: observedAt,
     });
     if (effective.state !== "observation-missing")
-      return effectiveRefusal(effective.state, "qualified");
+      return effectiveRefusal(effective.state, qualificationProvenance);
     return local === "installed-evidence-unavailable"
       ? {
           authority: "verified",
-          qualification: "qualified",
+          qualification: qualificationProvenance,
           effective: "observation-missing",
           outcome: "partial",
           reason: local,
         }
-      : { ...refusal(local, "verified"), qualification: "qualified" };
+      : { ...refusal(local, "verified"), qualification: qualificationProvenance };
   }
   afterInstalledReadForInternalTest?.();
-  if (!local.unchanged()) return refusalAfterQualified("installed-evidence-changed");
+  if (!local.unchanged())
+    return refusalAfterQualified("installed-evidence-changed", qualificationProvenance);
   // GitHub's immutable attestation is verified once; re-read the receipt and every
   // custody record immediately before minting the local observation and apply assertions.
   const observedAt = new Date().toISOString();
   const custodyAssertions = currentCustodyAssertions();
-  if (custodyAssertions === undefined) return refusalAfterQualified("qualification-unverified");
+  if (custodyAssertions === undefined)
+    return refusalAfterQualified("qualification-unverified", qualificationProvenance);
   const effective = resolveObservedEffect({
     authority: verified,
     decisionReference: { id: requested.decision, digest: requested.digest },
@@ -477,7 +483,7 @@ async function observeAihSupportedNpmPackageV1(
     now: observedAt,
   });
   if (effective.state !== "observation-missing")
-    return effectiveRefusal(effective.state, "qualified");
+    return effectiveRefusal(effective.state, qualificationProvenance);
   const validUntil = new Date(
     Math.min(
       Date.parse(verified.receipt.expiresAt),
@@ -537,10 +543,11 @@ async function observeAihSupportedNpmPackageV1(
     expectedIntegration: INTEGRATION,
     now: observedAt,
   });
-  if (resolved.state !== "observed-effective") return effectiveRefusal(resolved.state, "qualified");
+  if (resolved.state !== "observed-effective")
+    return effectiveRefusal(resolved.state, qualificationProvenance);
   const result: NpmPackageObservationResultV1 = {
     authority: "verified",
-    qualification: "qualified",
+    qualification: qualificationProvenance,
     effective: resolved.state,
     outcome: "observed-effective",
     observationDigest: upstreamObservationReceiptDigestV1(receipt),
@@ -604,6 +611,7 @@ export async function observeNpmPackageV1(
     ...qualificationInput,
     now: initiallyObservedAt,
   });
+  const qualificationProvenance = "organization-qualified" as const;
   const initialCurrent = resolveObservedEffect({
     authority: verified.authority,
     decisionReference: { id: requested.decision, digest: requested.digest },
@@ -617,12 +625,17 @@ export async function observeNpmPackageV1(
     expectedIntegration: INTEGRATION,
     now: initiallyObservedAt,
   });
-  if (initialCurrent.state !== "observation-missing") return effectiveRefusal(initialCurrent.state);
+  if (initialCurrent.state !== "observation-missing")
+    return effectiveRefusal(
+      initialCurrent.state,
+      qualification === undefined ? "unqualified" : qualificationProvenance,
+    );
   const local = installed(ctx.root, decision);
   if (typeof local === "string") {
     if (local === "installed-evidence-unavailable") {
       afterInstalledReadForInternalTest?.();
-      if (!evidence.evidence.unchanged()) return refusalAfterQualified("evidence-changed");
+      if (!evidence.evidence.unchanged())
+        return refusalAfterQualified("evidence-changed", qualificationProvenance);
       const observedAt = new Date().toISOString();
       const currentQualification = verifyOrganizationQualificationV1({
         ...qualificationInput,
@@ -644,21 +657,23 @@ export async function observeNpmPackageV1(
       if (current.state !== "observation-missing")
         return effectiveRefusal(
           current.state,
-          currentQualification === undefined ? "unqualified" : "qualified",
+          currentQualification === undefined ? "unqualified" : qualificationProvenance,
         );
       return {
         authority: "verified",
-        qualification: "qualified",
+        qualification: qualificationProvenance,
         effective: "observation-missing",
         outcome: "partial",
         reason: local,
       };
     }
-    return { ...refusal(local, "verified"), qualification: "qualified" };
+    return { ...refusal(local, "verified"), qualification: qualificationProvenance };
   }
   afterInstalledReadForInternalTest?.();
-  if (!evidence.evidence.unchanged()) return refusalAfterQualified("evidence-changed");
-  if (!local.unchanged()) return refusalAfterQualified("installed-evidence-changed");
+  if (!evidence.evidence.unchanged())
+    return refusalAfterQualified("evidence-changed", qualificationProvenance);
+  if (!local.unchanged())
+    return refusalAfterQualified("installed-evidence-changed", qualificationProvenance);
   // The receipt's time begins only after every local read is re-proved stable.
   // Requalify and re-evaluate at that instant so no earlier authority/evidence
   // window can be carried across a slow or raced installed-artifact observation.
@@ -683,7 +698,7 @@ export async function observeNpmPackageV1(
   if (current.state !== "observation-missing")
     return effectiveRefusal(
       current.state,
-      currentQualification === undefined ? "unqualified" : "qualified",
+      currentQualification === undefined ? "unqualified" : qualificationProvenance,
     );
   const validUntil = new Date(
     Math.min(
@@ -744,10 +759,10 @@ export async function observeNpmPackageV1(
     now: observedAt,
   });
   if (effective.state !== "observed-effective")
-    return effectiveRefusal(effective.state, "qualified");
+    return effectiveRefusal(effective.state, qualificationProvenance);
   const result: NpmPackageObservationResultV1 = {
     authority: "verified",
-    qualification: "qualified",
+    qualification: qualificationProvenance,
     effective: effective.state,
     outcome: "observed-effective",
     observationDigest: upstreamObservationReceiptDigestV1(receipt),

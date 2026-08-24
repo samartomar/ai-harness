@@ -135,6 +135,9 @@ export interface VerifiedQualificationV1 {
   readonly [verifiedQualificationBrand]?: never;
 }
 
+/** Public phase provenance derived only from a verified qualification route. */
+export type QualificationProvenanceV1 = "aih-supported" | "organization-qualified" | "unqualified";
+
 interface QualificationBinding {
   readonly authorityReceiptDigest: string;
   readonly decisionDigest: string;

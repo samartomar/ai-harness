@@ -895,7 +895,9 @@ must reference either the decision's exact attributable organization evidence or
 exact catalog signer identity, head, catalog, member, subject kind, and subject digest.
 `aih-supported` and `organization-qualified` are derived qualification provenance, not
 administrator-set status labels; absence from the maintained catalog is not a schema denial, and
-`unqualified` is a non-effective resolver state rather than an approvable origin.
+`unqualified` is a non-effective resolver state rather than an approvable origin. Public policy
+resolver results use exactly those three values in their `qualification` field; the older collapsed
+`qualified` value is not emitted.
 
 Organization evidence travels in the closed, canonical
 `OrganizationEvidenceEnvelopeV1` contract. It binds the exact subject digest, a bounded
@@ -988,9 +990,11 @@ command line, policy JSON, or evidence file. JSON output uses closed reason valu
 verifier text or filesystem path.
 
 `aih policy resolve` intentionally supplies no upstream observation. A valid authority, decision,
-scope, and organization qualification therefore returns `outcome: "partial"`,
+scope, and organization qualification therefore returns
+`qualification: "organization-qualified"`, `outcome: "partial"`,
 `reason: "observation-missing"`, and a nonzero exit; every refusal is also nonzero. The command
-cannot report `observed-effective`, append a run ledger, return a qualification capability, or scan,
+reports `qualification: "unqualified"` when qualification was not established. It cannot report
+`observed-effective`, append a run ledger, return a qualification capability, or scan,
 install, configure, or execute the candidate. Policy evaluation does not treat a V3 decision alone
 as effective. Its only V3 package route is the separately persisted, freshly reverified npm lifecycle
 described below; custom stdio and remote candidates remain visible but non-projectable. The
@@ -1017,7 +1021,11 @@ An exact current match returns `outcome: "observed-effective"`, exits zero, and 
 domain-separated canonical observation-receipt digest. The receipt itself and the opaque
 qualification/observation capabilities never leave package-internal custody. Missing lockfile or
 manifest evidence reports non-effective `partial`; unsafe, changed, stale, rejected, revoked, and
-mismatched states refuse, and both classes exit nonzero. Apart from the fixed external GitHub
+mismatched states refuse, and both classes exit nonzero. JSON reports `qualification` as the exact
+verified route: `organization-qualified` or `aih-supported`. A later installed-state, observation,
+or custody refusal preserves that already-established provenance; a refusal before qualification
+succeeds reports `unqualified`. The field is derived from the sealed decision route, cannot be
+caller-selected, and is not authority or proof of an effect. Apart from the fixed external GitHub
 authority attestation and, on the supported branch, the separate support-receipt attestation, the
 command starts no process. It does not write the target, append a run ledger, install, configure,
 execute, sign, publish, or make the subject projectable. This route does not observe skills, MCP

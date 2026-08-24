@@ -5,7 +5,10 @@ import type { Check, CheckCode } from "../internals/verify.js";
 import { verifyPolicyAuthorityReceipt } from "./authority.js";
 import { custodyOrganizationEvidenceV1 } from "./evidence-custody-v1.js";
 import { type GovernanceDecisionV2, governanceDecisionDigestV2 } from "./governance-decision-v2.js";
-import { verifyOrganizationQualificationV1 } from "./qualification-v1.js";
+import {
+  type QualificationProvenanceV1,
+  verifyOrganizationQualificationV1,
+} from "./qualification-v1.js";
 import {
   type ObservedEffectResolution,
   resolveObservedEffect,
@@ -35,7 +38,7 @@ export type PolicyResolveReasonV1 =
 
 export interface PolicyResolveResultV1 {
   readonly authority: "verified" | "unverified";
-  readonly qualification: "qualified" | "unqualified";
+  readonly qualification: QualificationProvenanceV1;
   readonly observation: "missing";
   readonly effective: ObservedEffectResolution["state"] | "input-invalid";
   readonly outcome: "partial" | "refused";
@@ -203,7 +206,7 @@ export async function resolvePolicyEvidenceV1(ctx: PlanContext): Promise<PolicyR
         : "qualification-unverified";
   return {
     authority: "verified",
-    qualification: qualification === undefined ? "unqualified" : "qualified",
+    qualification: qualification === undefined ? "unqualified" : "organization-qualified",
     observation: "missing",
     effective: effective.state,
     outcome: effective.state === "observation-missing" ? "partial" : "refused",

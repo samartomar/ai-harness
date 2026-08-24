@@ -96,7 +96,9 @@ Both routes then observe only the exact package name, version, and integrity fro
 lockfile and matching installed manifest. The decision fixes the package and `install` effect;
 callers cannot select an observer, verifier, runner, clock, receipt, package, or effect. A complete
 match returns `observed-effective` and the canonical observation-receipt digest without installing
-or executing the package.
+or executing the package. Structured resolver output reports the exact derived `qualification` as
+`aih-supported`, `organization-qualified`, or `unqualified`; it never accepts that provenance from
+the caller, and the field does not itself authorize or prove an effect.
 
 <!-- aih:claim CM-87 -->
 `aih policy lifecycle npm-package` repeats that complete live
