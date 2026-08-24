@@ -1,11 +1,7 @@
 import { createHash } from "node:crypto";
 import { lstatSync, opendirSync } from "node:fs";
 import { join, relative, resolve, sep } from "node:path";
-import {
-  assertSafeRelativePosixPathV1,
-  canonicalStrictJsonBytesV1,
-  parseStrictJsonObjectV1,
-} from "../contract/strict-json-v1.js";
+import { canonicalStrictJsonBytesV1, parseStrictJsonObjectV1 } from "../contract/strict-json-v1.js";
 import { SUPPORTED_CLIS } from "../internals/clis.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
 import type {
@@ -21,12 +17,12 @@ import {
   verifiedPolicyAuthorityReceiptAssertionV1,
   verifyPolicyAuthorityReceipt,
 } from "./authority.js";
-import { isContainedEvidenceRelativePathV1 } from "./evidence-custody-v1.js";
 import {
   governanceDecisionDigestV2,
   parseGovernanceDecisionRevocationV2,
 } from "./governance-decision-v2.js";
 import {
+  isCanonicalUpstreamArtifactRequestPathV1,
   observeUpstreamArtifactV1,
   type UpstreamArtifactObservationRequestV1,
   type UpstreamArtifactObservationResultV1,
@@ -391,14 +387,11 @@ function parseStoredRequest(value: unknown): UpstreamArtifactObservationRequestV
     !SUPPORTED_CLIS.includes(item.target as (typeof SUPPORTED_CLIS)[number])
   )
     return undefined;
-  try {
-    for (const path of [item.evidence, item.manifest]) {
-      assertSafeRelativePosixPathV1(path, "stored upstream artifact request path");
-      if (path.length > 500 || !isContainedEvidenceRelativePathV1(path)) return undefined;
-    }
-  } catch {
+  if (
+    !isCanonicalUpstreamArtifactRequestPathV1(item.evidence) ||
+    !isCanonicalUpstreamArtifactRequestPathV1(item.manifest)
+  )
     return undefined;
-  }
   return {
     decision: item.decision,
     digest: item.digest,
@@ -877,6 +870,25 @@ export function readUpstreamArtifactLifecycleStoreV1(
       return { kind: "corrupt" };
   }
   return records.length === 0 ? { kind: "absent" } : { kind: "complete", records };
+}
+
+/** @internal
+ * Bounded identity for a complete lifecycle store. Each record digest commits
+ * its exact immutable record and history; the tuple also pins every live head.
+ */
+export function upstreamArtifactLifecycleStoreSnapshotDigestV1(
+  store: Extract<UpstreamArtifactLifecycleStoreReadV1, { readonly kind: "complete" }>,
+): string {
+  return digestOf(
+    "aih-upstream-artifact-lifecycle-store-snapshot/v1",
+    store.records.map((record) => ({
+      lineageDigest: record.lineage.digest,
+      recordDigest: record.recordDigest,
+      sequence: record.sequence,
+      state: record.state,
+      subjectDigest: record.subjectDigest,
+    })),
+  );
 }
 
 function pin(path: string, existing: Existing, describe: string): WriteAction {

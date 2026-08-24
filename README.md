@@ -193,20 +193,23 @@ tool, skill, MCP server, or package that is absent from AIH catalogs and whose f
 organization has already placed in the governed root. A canonical, evidence-bound manifest names
 the exact Decision V2 id, subject/source digests, target/effect, accountable integration owner and
 contract version, and sorted root-relative file digests. The code-owned observer accepts no
-executable, callback, installer, projector, or network override; it rechecks authority, evidence,
-manifest, and every bounded regular file before success. Portable path rules reject case-fold
-duplicates, trailing-dot/space and Windows-device aliases, and repeated physical file identities.
+executable, callback, installer, projector, or network override. It validates evidence/manifest
+request paths before authority verification, requires single-link evidence custody, and rechecks
+authority, evidence, manifest, and every bounded regular file before success. Portable path rules
+reject case-fold duplicates, trailing-dot/space and Windows-device aliases, and repeated physical
+file identities.
 
 `aih policy lifecycle upstream-artifact` previews with zero writes and, only with `--apply`, appends
 content-addressed update or revocation history under
 `.aih/governance/upstream-artifact-lifecycle/v1/`. For each current observation record, evaluate and
-report reuse its exact evidence/manifest request only to run the fixed read-only observer again;
-missing or drifted live inputs and substituted stored identities remain non-effective. Revocation is
-durable but non-effective and nonzero. These commands govern exact observed files; they do not install, copy, configure, activate,
-remove, stop, or execute them. The packed proof uses installed package bytes and proves the public
-parser/schema/commands plus refusal without external authority. It does not claim successful
-production custody, which still requires genuine V3 organization authority and a separately
-authorized GitHub attestation.
+report reuse its exact evidence/manifest request only to run the fixed read-only observer again, then
+re-read the bounded lifecycle snapshot before exposing effective state. Missing or drifted live
+inputs and substituted stored identities remain non-effective. Revocation is durable but
+non-effective and nonzero. These commands govern exact observed files; they do not install, copy,
+configure, activate, remove, stop, or execute them. The packed proof uses installed package bytes and
+proves the public parser/schema/commands plus refusal without external authority. It does not claim
+successful production custody, which still requires genuine V3 organization authority and a
+separately authorized GitHub attestation.
 
 <!-- aih:claim CM-86 -->
 For an `aih-supported` basis, the administrator first supplies the separately controlled support

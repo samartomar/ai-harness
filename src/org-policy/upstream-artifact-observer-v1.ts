@@ -179,6 +179,17 @@ export interface UpstreamArtifactObservationRequestV1 {
   readonly target: Cli;
 }
 
+/** Exact bounded grammar shared by live observation and durable lifecycle parsing. */
+export function isCanonicalUpstreamArtifactRequestPathV1(value: unknown): value is string {
+  if (typeof value !== "string" || value.length > 500 || value !== value.trim()) return false;
+  try {
+    assertSafeRelativePosixPathV1(value, "upstream artifact custody path");
+  } catch {
+    return false;
+  }
+  return isContainedEvidenceRelativePathV1(value);
+}
+
 function request(ctx: PlanContext): UpstreamArtifactObservationRequestV1 | undefined {
   const decision = option(ctx, "decision");
   const digest = option(ctx, "decisionDigest");
@@ -190,7 +201,9 @@ function request(ctx: PlanContext): UpstreamArtifactObservationRequestV1 | undef
     digest !== undefined &&
     SHA256.test(digest) &&
     evidence !== undefined &&
+    isCanonicalUpstreamArtifactRequestPathV1(evidence) &&
     manifest !== undefined &&
+    isCanonicalUpstreamArtifactRequestPathV1(manifest) &&
     target !== undefined &&
     SUPPORTED_CLIS.includes(target as Cli)
     ? { decision, digest, evidence, manifest, target: target as Cli }
@@ -219,12 +232,7 @@ function safeLstat(path: string): ReturnType<typeof lstatSync> | undefined {
 }
 
 function containedPath(root: string, path: string): string | undefined {
-  try {
-    assertSafeRelativePosixPathV1(path, "upstream artifact custody path");
-  } catch {
-    return undefined;
-  }
-  if (path.length > 500 || !isContainedEvidenceRelativePathV1(path)) return undefined;
+  if (!isCanonicalUpstreamArtifactRequestPathV1(path)) return undefined;
   const absolute = resolve(root, ...path.split("/"));
   return isContainedEvidenceRelativePathV1(relative(root, absolute)) ? absolute : undefined;
 }

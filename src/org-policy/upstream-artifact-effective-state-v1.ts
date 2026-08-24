@@ -9,6 +9,7 @@ import { type GovernanceDecisionV2, governanceDecisionDigestV2 } from "./governa
 import {
   readUpstreamArtifactLifecycleStoreV1,
   type UpstreamArtifactLifecycleStoredStateV1,
+  upstreamArtifactLifecycleStoreSnapshotDigestV1,
 } from "./upstream-artifact-lifecycle-v1.js";
 import {
   reobserveUpstreamArtifactWithAuthorityV1,
@@ -210,7 +211,18 @@ export async function resolveUpstreamArtifactEffectiveStateWithAuthorityV1(
   if (store.kind !== "complete")
     return [{ state: "partial", reason: `lifecycle-store-${store.kind}` }];
   const now = Date.now();
-  return Promise.all(store.records.map((record) => resolveRecord(record, ctx, authority, now)));
+  const snapshot = upstreamArtifactLifecycleStoreSnapshotDigestV1(store);
+  const states = await Promise.all(
+    store.records.map((record) => resolveRecord(record, ctx, authority, now)),
+  );
+  if (!states.some((state) => state.state === "observed-effective")) return states;
+  const current = readUpstreamArtifactLifecycleStoreV1(ctx.root);
+  if (
+    current.kind !== "complete" ||
+    upstreamArtifactLifecycleStoreSnapshotDigestV1(current) !== snapshot
+  )
+    return [{ state: "partial", reason: "lifecycle-store-changed-during-live-observation" }];
+  return states;
 }
 
 /** Re-verify authority once, then resolve the fixed upstream-artifact lifecycle store. */

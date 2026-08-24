@@ -1218,12 +1218,14 @@ at `@aihq/harness/schemas/aih-upstream-artifact-manifest-v1.schema.json` and the
 exports the strict canonical parser and serializer.
 
 The fixed observer accepts no caller-selected command, executable, callback, runner, clock,
-network source, installer, or projector. It reads each bounded regular single-link file, rejects
-AIH's reserved `.aih/` custody tree and absolute, traversing, backslash, linked-parent, linked-file,
-platform-aliased, repeated-identity, malformed, missing, oversized, or mismatched inputs, and
-rechecks authority, evidence, manifest, and every observed file after the initial read. A success is
-exact observed state only. It performs no installation, copy, configuration, activation, removal,
-process launch, endpoint reachability check, or candidate-code execution.
+network source, installer, or projector. It validates the same canonical evidence/manifest request
+path grammar used by durable history before authority verification. It reads only single-link
+evidence and bounded regular single-link artifact files, rejects AIH's reserved `.aih/` custody tree
+and absolute, traversing, backslash, linked-parent, linked-file, platform-aliased,
+repeated-identity, malformed, missing, oversized, or mismatched inputs, and rechecks authority,
+evidence, manifest, and every observed file after the initial read. A success is exact observed state
+only. It performs no installation, copy, configuration, activation, removal, process launch,
+endpoint reachability check, or candidate-code execution.
 
 `aih policy lifecycle upstream-artifact [root]` takes the same exact options. Preview performs the
 full fresh observation and writes nothing. Literal `--apply` appends an immutable
@@ -1241,11 +1243,12 @@ A current authenticated Decision V2 revocation can append negative history only 
 current lineage. The result remains non-effective, failing, and nonzero; it does not remove files or
 claim that a process stopped. `aih policy evaluate <root> --no-log --json` and
 `aih report <root> --no-log` freshly verify authority once and then repeat the fixed read-only
-observation for every current stored request before returning `observed-effective`. Missing or
-drifted live inputs and substituted stored verifier/installed identities remain non-effective. After
-an external file or version change, run `aih policy observe upstream-artifact`, then preview and apply
-lifecycle with the newly authorized decision/evidence to append the new audit record. Live file
-observation is still not installation, activation, endpoint reachability, or process-running proof.
+observation for every current stored request. They re-read and exact-compare the bounded lifecycle
+snapshot before returning any `observed-effective` state. Missing or drifted live inputs and
+substituted stored verifier/installed identities remain non-effective. After an external file or
+version change, run `aih policy observe upstream-artifact`, then preview and apply lifecycle with the
+newly authorized decision/evidence to append the new audit record. Live file observation is still
+not installation, activation, endpoint reachability, or process-running proof.
 
 `npm run verify:cold-upstream-artifact-lifecycle` builds and packs Core, installs only the tarball in
 a disposable consumer, exercises the public parser, packaged schema, and both installed CLI help

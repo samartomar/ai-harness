@@ -290,17 +290,19 @@ aih policy lifecycle upstream-artifact <root> \
   --apply --json
 ```
 
-The code-owned observer reads only the named bounded regular files, rejects AIH's reserved `.aih/`
-custody tree, linked or ambiguous paths, and repeated physical file identities, and re-observes
-authority, evidence, manifest, and every file before returning `observed-effective`. It has no
-caller-selected command, callback, executable, network, installer, or projector. Lifecycle preview
-is zero-write; apply appends immutable history under
+The code-owned observer validates durable evidence/manifest request paths before authority
+verification, reads only single-link evidence and the named bounded regular files, rejects AIH's
+reserved `.aih/` custody tree, linked or ambiguous paths, and repeated physical file identities, and
+re-observes authority, evidence, manifest, and every file before returning `observed-effective`. It
+has no caller-selected command, callback, executable, network, installer, or projector. Lifecycle
+preview is zero-write; apply appends immutable history under
 `.aih/governance/upstream-artifact-lifecycle/v1/`, records an exact update without rewriting the
 prior record, and records a current authenticated revocation as failing/nonzero negative state.
 Neither command installs, copies, configures, activates, removes, stops, or executes an artifact.
 For every current observation record, `policy evaluate --no-log --json` and `report --no-log` use
 its stored exact request to repeat the same live read-only observation under one freshly verified
-authority result. Missing or drifted live inputs and substituted stored verifier/installed identities
+authority result, then exact-compare a fresh bounded lifecycle snapshot before returning any
+effective state. Missing or drifted live inputs and substituted stored verifier/installed identities
 stay non-effective. After an external version or source change, run
 `policy observe upstream-artifact` and lifecycle apply with the newly authorized decision/evidence to
 append the new audit record.

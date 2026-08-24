@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   chmodSync,
+  cpSync,
   linkSync,
   mkdirSync,
   mkdtempSync,
@@ -389,6 +390,19 @@ describe("upstream artifact observer V1", () => {
       outcome: "refused",
       reason: "authority-unverified",
     });
+
+    resetRoot();
+    const evidenceLinkedDuringObservation = fixture();
+    writeFixture(evidenceLinkedDuringObservation);
+    __setUpstreamArtifactObserverInternalTestHookV1(() => {
+      linkSync(join(root, "evidence.json"), join(root, "evidence-linked.json"));
+    });
+    await expect(
+      observeUpstreamArtifactV1(context(options(evidenceLinkedDuringObservation))),
+    ).resolves.toMatchObject({
+      outcome: "refused",
+      reason: "evidence-changed",
+    });
   });
 
   it("rejects two manifest rows that resolve to one hard-linked file identity", async () => {
@@ -503,14 +517,21 @@ describe("upstream artifact observer V1", () => {
       rmSync(join(root, "manifest.json"));
       mkdirSync(join(root, "manifest.json"));
     }, "manifest-unsafe");
-    await expectReason(() => undefined, "manifest-unsafe", { manifest: "../manifest.json" });
-    await expectReason(() => undefined, "manifest-unsafe", { manifest: "a".repeat(501) });
+    await expectReason(() => undefined, "invalid-input", { manifest: "../manifest.json" });
+    await expectReason(() => undefined, "invalid-input", { manifest: "a".repeat(501) });
     await expectReason(
       () => {
         linkSync(join(root, "manifest.json"), join(root, "manifest-hardlink.json"));
       },
       "manifest-unsafe",
       { manifest: "manifest-hardlink.json" },
+    );
+    await expectReason(
+      () => {
+        linkSync(join(root, "evidence.json"), join(root, "evidence-hardlink.json"));
+      },
+      "unsafe-evidence-custody",
+      { evidence: "evidence-hardlink.json" },
     );
     await expectReason(
       () => {
@@ -542,6 +563,32 @@ describe("upstream artifact observer V1", () => {
     resetRoot();
     await expect(resolveUpstreamArtifactEffectiveStateV1(context({}))).resolves.toEqual([]);
   });
+
+  it.each([{ evidence: "evidence%2ejson" }, { manifest: "manifest:alternate.json" }])(
+    "rejects non-canonical request paths before verification or lifecycle writes",
+    async (override) => {
+      const value = fixture();
+      writeFixture(value);
+      const calls: string[][] = [];
+      const requested = { ...options(value), ...override };
+      await expect(observeUpstreamArtifactV1(context(requested, calls))).resolves.toMatchObject({
+        outcome: "refused",
+        reason: "invalid-input",
+      });
+      expect(calls).toEqual([]);
+
+      const applied = context(requested, [], true);
+      const lifecycle = await upstreamArtifactLifecyclePlan(applied);
+      expect(lifecycle.actions.filter((action) => action.kind === "write")).toEqual([]);
+      const execution = await executePlan(lifecycle, applied, { skipWorktreeGate: true });
+      expect(execution.digests[0]?.data).toMatchObject({
+        applied: false,
+        outcome: "refused",
+        reason: "invalid-input",
+      });
+      expect(readUpstreamArtifactLifecycleStoreV1(root)).toEqual({ kind: "absent" });
+    },
+  );
 
   it("keeps preview zero-write, then records immutable lifecycle history without changing observed files", async () => {
     const value = fixture("skill");
@@ -748,6 +795,72 @@ describe("upstream artifact observer V1", () => {
       resolveUpstreamArtifactEffectiveStateV1(context(options(value))),
     ).resolves.not.toEqual([expect.objectContaining({ state: "observed-effective" })]);
   });
+
+  it("withholds effective state after organization evidence gains a hard link", async () => {
+    const value = fixture("mcp");
+    writeFixture(value);
+    const applied = context(options(value), [], true);
+    await executePlan(await upstreamArtifactLifecyclePlan(applied), applied, {
+      skipWorktreeGate: true,
+    });
+
+    linkSync(join(root, "evidence.json"), join(root, "evidence-linked.json"));
+    await expect(resolveUpstreamArtifactEffectiveStateV1(context(options(value)))).resolves.toEqual(
+      [
+        expect.objectContaining({
+          reason: "live-observation-unsafe-evidence-custody",
+          state: "partial",
+        }),
+      ],
+    );
+  });
+
+  it.each(["delete", "corrupt", "substitute"] as const)(
+    "does not promote stale lifecycle state when the store is %s during live observation",
+    async (mutation) => {
+      const value = fixture("mcp");
+      writeFixture(value);
+      const applied = context(options(value), [], true);
+      await executePlan(await upstreamArtifactLifecyclePlan(applied), applied, {
+        skipWorktreeGate: true,
+      });
+      const lifecycleBase = join(root, ".aih", "governance", "upstream-artifact-lifecycle", "v1");
+      let donorRoot: string | undefined;
+      let donorStore: string | undefined;
+      if (mutation === "substitute") {
+        const originalRoot = root;
+        donorRoot = mkdtempSync(join(tmpdir(), "aih-upstream-artifact-donor-"));
+        root = donorRoot;
+        const donor = fixture("skill");
+        writeFixture(donor);
+        const donorContext = context(options(donor), [], true);
+        await executePlan(await upstreamArtifactLifecyclePlan(donorContext), donorContext, {
+          skipWorktreeGate: true,
+        });
+        donorStore = join(donorRoot, ".aih", "governance", "upstream-artifact-lifecycle", "v1");
+        root = originalRoot;
+      }
+      try {
+        __setUpstreamArtifactObserverInternalTestHookV1(() => {
+          if (mutation === "delete") {
+            rmSync(lifecycleBase, { recursive: true, force: true });
+          } else if (mutation === "corrupt") {
+            writeFileSync(join(lifecycleBase, "capacity.json"), "{}\n");
+          } else if (donorStore !== undefined) {
+            rmSync(lifecycleBase, { recursive: true, force: true });
+            cpSync(donorStore, lifecycleBase, { recursive: true });
+          }
+        });
+        await expect(
+          resolveUpstreamArtifactEffectiveStateV1(context(options(value))),
+        ).resolves.toEqual([
+          { reason: "lifecycle-store-changed-during-live-observation", state: "partial" },
+        ]);
+      } finally {
+        if (donorRoot !== undefined) rmSync(donorRoot, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("drifts a self-consistent stored verifier or installed identity from the fresh receipt", async () => {
     const value = fixture("mcp");
