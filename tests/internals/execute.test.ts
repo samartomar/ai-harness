@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -93,8 +94,12 @@ describe("external shared commit locks", () => {
     const firstRoot = join(dir, "one");
     const secondRoot = join(dir, "two");
     mkdirSync(trustedBase, { recursive: true });
-    const lock = join(trustedBase, "locks", "commit.lock");
-    const external = { external: true, path: lock, trustedBase };
+    // macOS may expose tmpdir() lexically under /var while realpathSync resolves
+    // it to /private/var. Build both paths from the canonical existing base so
+    // this valid fixture remains inside the production containment boundary.
+    const canonicalTrustedBase = realpathSync(trustedBase);
+    const lock = join(canonicalTrustedBase, "locks", "commit.lock");
+    const external = { external: true, path: lock, trustedBase: canonicalTrustedBase };
     const planWith = (capability: string): Plan => ({
       capability,
       actions: [],

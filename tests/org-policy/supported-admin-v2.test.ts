@@ -521,20 +521,23 @@ describe("SupportedQualificationCustodyV2 durable acceptance", { timeout: 15_000
       symlinkSync(target, join(root, ".aih", "supported-qualification"));
       const digest = plan.actions.at(-1);
       if (digest?.kind !== "digest" || digest.run === undefined) throw new Error("missing digest");
+      const runDigest = digest.run;
       const run = fakeRunner(() => undefined);
       await expect(
-        digest.run({
-          root,
-          contextDir: "ai-coding",
-          posture: "vibe",
-          apply: true,
-          verify: false,
-          json: false,
-          run,
-          host: makeHostAdapter({ platform: "linux", run, env: {} }),
-          env: {},
-          options: {},
-        }),
+        Promise.resolve().then(() =>
+          runDigest({
+            root,
+            contextDir: "ai-coding",
+            posture: "vibe",
+            apply: true,
+            verify: false,
+            json: false,
+            run,
+            host: makeHostAdapter({ platform: "linux", run, env: {} }),
+            env: {},
+            options: {},
+          }),
+        ),
       ).rejects.toMatchObject({ code: "AIH_TRUST" });
     } finally {
       rmSync(root, { recursive: true, force: true });
