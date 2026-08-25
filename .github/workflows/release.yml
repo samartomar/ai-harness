@@ -1,11 +1,13 @@
 # Release only an exact v-core-* tag on current main. Candidate verification,
 # build, pack, and smoke execution stay in a read-only job. The protected job
 # receives one digest-bound tarball and runs no package code before publishing
-# that same artifact through npm Trusted Publishing.
+# that same artifact. This temporary workflow revision permits only the initial
+# @aihq/core@0.1.0 bootstrap through an environment-scoped npm token. It must be
+# removed immediately after the package exists and Trusted Publishing is bound.
 #
 # Required @aihq/core Trusted Publisher config (npmjs.com): repository
 # samartomar/ai-harness, workflow .github/workflows/release.yml, environment
-# npm-publish. RELEASING.md keeps the package bootstrap as an owner-only gate.
+# npm-publish. RELEASING.md defines the one-use bootstrap and removal gates.
 name: release
 
 on:
@@ -28,6 +30,8 @@ jobs:
       artifact_id: ${{ steps.upload.outputs.artifact-id }}
       artifact_sha256: ${{ steps.upload.outputs.artifact-digest }}
     steps:
+      - name: Refuse every tag outside the temporary bootstrap boundary
+        run: test "$GITHUB_REF_NAME" = "v-core-0.1.0"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -102,6 +106,7 @@ jobs:
 
   npm-publish:
     needs: verify-and-pack
+    if: github.ref == 'refs/tags/v-core-0.1.0'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment:
@@ -129,6 +134,38 @@ jobs:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
           package-manager-cache: false
+      - name: Assert one-use bootstrap package is still absent
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "v-core-0.1.0"
+          set +e
+          registry_observation="$(npm view "@aihq/core" name --json --registry "https://registry.npmjs.org/" --loglevel silent 2>&1)"
+          registry_status=$?
+          set -e
+          if [ "$registry_status" -eq 0 ]; then
+            echo "::error::@aihq/core already exists; the bootstrap path cannot be reused"
+            exit 1
+          fi
+          if ! REGISTRY_OBSERVATION="$registry_observation" node --input-type=module <<'NODE'
+          const observation = JSON.parse(process.env.REGISTRY_OBSERVATION ?? "");
+          if (
+            typeof observation !== "object" ||
+            observation === null ||
+            Array.isArray(observation) ||
+            Object.keys(observation).length !== 1 ||
+            !Object.hasOwn(observation, "error") ||
+            typeof observation.error !== "object" ||
+            observation.error === null ||
+            Array.isArray(observation.error) ||
+            observation.error.code !== "E404"
+          ) {
+            process.exit(1);
+          }
+          NODE
+          then
+            echo "::error::the npm registry did not prove that @aihq/core is absent"
+            exit 1
+          fi
       - name: Verify immutable artifact custody
         env:
           GH_TOKEN: ${{ github.token }}
@@ -168,6 +205,17 @@ jobs:
           );
           if (manifest.name !== "@aihq/core" || manifest.version !== tag) {
             throw new Error(`packed manifest identity does not match ${tag}`);
+          }
+          const publishConfig = manifest.publishConfig;
+          if (
+            typeof publishConfig !== "object" ||
+            publishConfig === null ||
+            Array.isArray(publishConfig) ||
+            Object.keys(publishConfig).length !== 1 ||
+            !Object.hasOwn(publishConfig, "access") ||
+            publishConfig.access !== "public"
+          ) {
+            throw new Error("packed manifest publishConfig must be exactly { access: public }");
           }
           NODE
       - name: Verify exact tarball before SBOM
@@ -230,16 +278,54 @@ jobs:
           set -euo pipefail
           actual_sha256="$(sha256sum "$TARBALL" | awk '{print $1}')"
           test "$actual_sha256" = "$EXPECTED_TARBALL_SHA256"
-      - name: Publish exact tarball through npm trusted publishing
+      - name: Publish exact first tarball through the one-use npm bootstrap
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_BOOTSTRAP_TOKEN }}
         run: |
           set -euo pipefail
+          test "$GITHUB_REF_NAME" = "v-core-0.1.0"
+          if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
+            echo "::error::the protected NPM_BOOTSTRAP_TOKEN secret is required"
+            exit 1
+          fi
+          npm whoami --registry "https://registry.npmjs.org/" >/dev/null
+          set +e
+          registry_observation="$(npm view "@aihq/core" name --json --registry "https://registry.npmjs.org/" --loglevel silent 2>&1)"
+          registry_status=$?
+          set -e
+          if [ "$registry_status" -eq 0 ]; then
+            echo "::error::@aihq/core already exists; refusing bootstrap publication"
+            exit 1
+          fi
+          if ! REGISTRY_OBSERVATION="$registry_observation" node --input-type=module <<'NODE'
+          const observation = JSON.parse(process.env.REGISTRY_OBSERVATION ?? "");
+          if (
+            typeof observation !== "object" ||
+            observation === null ||
+            Array.isArray(observation) ||
+            Object.keys(observation).length !== 1 ||
+            !Object.hasOwn(observation, "error") ||
+            typeof observation.error !== "object" ||
+            observation.error === null ||
+            Array.isArray(observation.error) ||
+            observation.error.code !== "E404"
+          ) {
+            process.exit(1);
+          }
+          NODE
+          then
+            echo "::error::the npm registry did not prove that @aihq/core is absent"
+            exit 1
+          fi
+          actual_sha256="$(sha256sum "$TARBALL" | awk '{print $1}')"
+          test "$actual_sha256" = "$EXPECTED_TARBALL_SHA256"
           tarball="$TARBALL"
           tag="${GITHUB_REF_NAME#v-core-}"
           case "$tag" in
             *-*) dist_tag=next ;;
             *) dist_tag=latest ;;
           esac
-          npm publish "$tarball" --ignore-scripts --provenance --access public --tag "$dist_tag"
+          npm publish "$tarball" --ignore-scripts --provenance --access public --registry "https://registry.npmjs.org/" --tag "$dist_tag"
       - name: Verify exact tarball before GitHub release
         run: |
           set -euo pipefail

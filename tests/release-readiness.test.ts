@@ -1,4 +1,6 @@
-import { existsSync, readFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseDocument } from "yaml";
@@ -35,6 +37,17 @@ function expectPinnedAction(value: string | undefined, action: string): void {
   expect(value).toMatch(
     new RegExp(`^${action}@[a-f0-9]{40}(?:\\\\s+#\\\\s+v\\\\d+\\\\.\\\\d+\\\\.\\\\d+)?$`),
   );
+}
+
+function inlineModuleFollowing(workflow: string, marker: string): string {
+  const markerIndex = workflow.indexOf(marker);
+  expect(markerIndex).toBeGreaterThanOrEqual(0);
+  const delimiterIndex = workflow.indexOf("<<'NODE'\n", markerIndex);
+  expect(delimiterIndex).toBeGreaterThanOrEqual(0);
+  const bodyStart = delimiterIndex + "<<'NODE'\n".length;
+  const bodyEnd = workflow.indexOf("\n          NODE", bodyStart);
+  expect(bodyEnd).toBeGreaterThan(bodyStart);
+  return workflow.slice(bodyStart, bodyEnd).replace(/^ {10}/gmu, "");
 }
 
 describe("release readiness metadata", () => {
@@ -75,24 +88,98 @@ describe("release readiness metadata", () => {
     expect(release).toContain("format: spdx-json");
   });
 
-  it("publishes through npm trusted publishing instead of a long-lived token", () => {
+  it("constrains the temporary npm-token bootstrap to the first exact Core release", () => {
     const release = read(".github/workflows/release.yml");
     expect(parseDocument(release).errors).toEqual([]);
     expect(release).toContain("environment:");
     expect(release).toContain("name: npm-publish");
     expect(release).toMatch(/id-token:\s*write/);
     expect(release).toContain('registry-url: "https://registry.npmjs.org"');
+    expect(release).toContain("if: github.ref == 'refs/tags/v-core-0.1.0'");
+    expect(release).toContain('test "$GITHUB_REF_NAME" = "v-core-0.1.0"');
     expect(release).toContain(
-      'npm publish "$tarball" --ignore-scripts --provenance --access public',
+      'npm view "@aihq/core" name --json --registry "https://registry.npmjs.org/"',
+    );
+    expect(release.match(/npm view "@aihq\/core" name --json/gu)).toHaveLength(2);
+    expect(release.match(/--loglevel silent/gu)).toHaveLength(2);
+    expect(release.match(/REGISTRY_OBSERVATION=/gu)).toHaveLength(2);
+    expect(release).not.toContain("grep -Eq 'E404'");
+    expect(release).toContain("secrets.NPM_BOOTSTRAP_TOKEN");
+    expect(release.match(/secrets\.NPM_BOOTSTRAP_TOKEN/gu)).toHaveLength(1);
+    expect(release).toContain('npm whoami --registry "https://registry.npmjs.org/" >/dev/null');
+    expect(release).toContain(['if [ -z "$', '{NODE_AUTH_TOKEN:-}" ]; then'].join(""));
+    expect(release).toContain(
+      'npm publish "$tarball" --ignore-scripts --provenance --access public --registry "https://registry.npmjs.org/"',
     );
     expect(release).not.toContain("NPM_TOKEN");
-    expect(release).not.toContain("NODE_AUTH_TOKEN");
+
+    const verificationStart = release.indexOf("  verify-and-pack:\n");
+    const publishStart = release.indexOf("  npm-publish:\n");
+    const verification = release.slice(verificationStart, publishStart);
+    expect(verification).toContain("Refuse every tag outside the temporary bootstrap boundary");
+    expect(verification).toContain('run: test "$GITHUB_REF_NAME" = "v-core-0.1.0"');
+    expect(verification).not.toContain("NODE_AUTH_TOKEN");
+    expect(verification).not.toContain("NPM_BOOTSTRAP_TOKEN");
+
+    const releasing = read("RELEASING.md");
+    expect(releasing).toContain("**Bypass 2FA** enabled");
+    expect(releasing).toContain("delete the GitHub `NPM_BOOTSTRAP_TOKEN` secret");
+    expect(releasing).toContain("revoke the npm token");
+    expect(releasing).toMatch(/restores trusted-publisher-only\s+publication/u);
 
     const actions = [...release.matchAll(/^\s*(?:-\s*)?uses:\s*([^@\s]+)@([^\s#]+).*$/gmu)];
     expect(actions.length).toBeGreaterThanOrEqual(7);
     for (const [, action, revision] of actions) {
       expect(action).toMatch(/^[\w.-]+\/[\w.-]+$/u);
       expect(revision).toMatch(/^[0-9a-f]{40}$/u);
+    }
+  });
+
+  it("parses npm package-absence evidence as one exact JSON E404 error", () => {
+    const release = read(".github/workflows/release.yml");
+    const validator = inlineModuleFollowing(release, "REGISTRY_OBSERVATION=");
+    const validate = (observation: string) =>
+      spawnSync(process.execPath, ["--input-type=module", "-e", validator], {
+        env: { ...process.env, REGISTRY_OBSERVATION: observation },
+        encoding: "utf8",
+      });
+
+    expect(validate(JSON.stringify({ error: { code: "E404", summary: "missing" } })).status).toBe(
+      0,
+    );
+    expect(
+      validate(JSON.stringify({ error: { code: "E500", summary: "upstream mentioned E404" } }))
+        .status,
+    ).not.toBe(0);
+    expect(validate('npm ERR! code E500\n{"error":{"code":"E404"}}').status).not.toBe(0);
+  });
+
+  it("rejects a packed manifest that tries to redirect npm publication", () => {
+    const release = read(".github/workflows/release.yml");
+    const validator = inlineModuleFollowing(release, "Validate packed manifest identity");
+    const fixtureRoot = mkdtempSync(join(tmpdir(), "aih-release-manifest-"));
+    try {
+      const packageRoot = join(fixtureRoot, "package");
+      mkdirSync(packageRoot);
+      const validate = (publishConfig: Record<string, unknown>) => {
+        writeFileSync(
+          join(packageRoot, "package.json"),
+          JSON.stringify({ name: "@aihq/core", version: "0.1.0", publishConfig }),
+        );
+        execFileSync("tar", ["-czf", "candidate.tgz", "package"], { cwd: fixtureRoot });
+        return spawnSync(process.execPath, ["--input-type=module", "-", "candidate.tgz", "0.1.0"], {
+          cwd: fixtureRoot,
+          input: validator,
+          encoding: "utf8",
+        });
+      };
+
+      expect(validate({ access: "public" }).status).toBe(0);
+      expect(validate({ access: "public", registry: "https://attacker.invalid/" }).status).not.toBe(
+        0,
+      );
+    } finally {
+      rmSync(fixtureRoot, { recursive: true, force: true });
     }
   });
 
@@ -178,7 +265,7 @@ describe("release readiness metadata", () => {
     const attestIndex = publication.indexOf("Attest build provenance for the exact tarball");
     const signIndex = publication.indexOf("Sign trusted checksum and retain provenance bundle");
     const publishIndex = publication.indexOf(
-      "Publish exact tarball through npm trusted publishing",
+      "Publish exact first tarball through the one-use npm bootstrap",
     );
     const releaseIndex = publication.indexOf("Create immutable GitHub Release evidence");
     const verificationIndexes = [...publication.matchAll(/Verify exact tarball before/gmu)].map(
