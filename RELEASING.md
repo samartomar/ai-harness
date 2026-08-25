@@ -33,65 +33,39 @@ choose an RC for any other cut when extra observation would be useful.
 
 ## Package bootstrap state
 
-The historical `@aihq/harness` bootstrap is complete and its v6.1.0 release remains
-immutable. That legacy package is frozen; do not publish another version under it.
-The replacement `@aihq/core` package line starts at `0.1.0` and uses
-`v-core-X.Y.Z` GitHub tags. This bootstrap applies only while the registry returns
-one exact structured `E404` for `@aihq/core`. Once the package exists, never rerun
-this section: bind the trusted publisher and remove the bootstrap credential and
-source path.
+The historical `@aihq/harness@6.1.0` package is frozen; do not publish another
+version under that name. Core restarts package numbering at `0.1.0` and uses
+`v-core-X.Y.Z` GitHub tags. The immutable `v-core-0.1.0` attempt passed its
+read-only candidate job, but npm refused publication with `EOTP`. Preserve that
+tag and run as audit evidence; never delete, move, or reuse them.
 
-The immutable `v-core-0.1.0` attempt passed the read-only candidate job, but npm
-refused the protected publish with `EOTP` and the registry remained `E404`.
-Preserve that tag and run as audit evidence; never delete, move, or reuse the
-failed tag. The next eligible bootstrap candidate is the reviewed `0.1.1`
-fix-forward only while the package remains absent.
+The separately authorized `@aihq/core@0.1.1` fix-forward is now public on npm
+and has a matching GitHub Release. npm exposes provenance for the package, and
+the Release carries the exact tarball, checksum, checksum signature bundle,
+GitHub provenance bundle, and SPDX SBOM. The one-use package-creation path is
+spent. Its GitHub bootstrap secret is absent, and the workflow source rejects
+token credentials at the publication boundary. Never recreate that path.
 
-1. **Keep the existing scope controls.** The `@aihq` organization and maintainer account
-   retain 2FA. Do not create a throwaway package version or publish from a working tree.
-2. **Prepare the exact release candidate.** Complete the release PR, merge it, obtain the
-   full-SHA publication authorization in step 10 below, and verify the exact packed bytes.
-3. **Create the one-use bootstrap credential.** Because npm cannot bind a trusted publisher
-   until the package exists, an owner creates a short-lived granular npm access token with
-   **Bypass 2FA** enabled and read/write access limited to the `@aihq` scope, and stores it
-   only as the `NPM_BOOTSTRAP_TOKEN` secret in the protected `npm-publish` GitHub
-   environment. Do not put it in repository or organization variables, a working-tree
-   `.npmrc`, logs, or any read-only job. The temporary workflow accepts only
-   `v-core-0.1.1`, requires the public
-   registry and then the authenticated publish step to return one structured npm error whose
-   exact code is `E404` for the package name (including immediately before the effect), and
-   supplies the secret only to that exact step. It authenticates the token before trusting
-   the second observation. Mixed output, a successful package lookup, or any other registry
-   failure refuses publication. The packed manifest must retain exactly
-   `publishConfig: { "access": "public" }`, the publish command explicitly selects
-   `https://registry.npmjs.org/`, and npm's immutable package/version boundary remains the
-   final atomic collision guard.
-4. **Confirm the GitHub gate.** The `npm-publish` environment requires a reviewer. The
-   existing immutable `v*` tag ruleset covers Core tags, and the release workflow
-   narrows its trigger to `v-core-*`; its protected job is additionally restricted to
-   exactly `v-core-0.1.1` while the bootstrap revision exists. Candidate install,
-   verification, build, pack, and smoke execution stay in the read-only job. Only the
-   protected job has `id-token: write`; it runs no Core package code and publishes the
-   digest-bound tarball with public access and provenance.
-5. **Replace bootstrap authority as soon as npm confirms package existence, regardless of whether
-   the later GitHub Release succeeds.** First verify that npm serves exact
-   `@aihq/core@0.1.1` with the expected integrity and provenance. Then, using npm CLI
-   11.15.0 or later, an authenticated scope owner runs:
+The remaining owner transition is:
+
+1. Using npm CLI 11.15.0 or later and an interactive npm login that can satisfy
+   account 2FA, create and observe the exact publisher binding:
    ```bash
    npm trust github @aihq/core --file release.yml --repo samartomar/ai-harness --env npm-publish --allow-publish
    npm trust list @aihq/core
    ```
-   The binding must name repository `samartomar/ai-harness`, workflow `release.yml`,
-   environment `npm-publish`, and permission `npm publish`. After verifying that binding,
-   delete the GitHub `NPM_BOOTSTRAP_TOKEN` secret, revoke the npm token, and merge the
-   workflow cleanup that removes every token reference and restores trusted-publisher-only
-   publication before any later Core tag. Finally set the package's publishing access to
-   require 2FA and disallow tokens. Separately deprecate `@aihq/harness` only after the
-   replacement release is publicly installable and verified.
+2. Confirm the returned binding names repository `samartomar/ai-harness`,
+   workflow `release.yml`, environment `npm-publish`, and allowed action
+   `npm publish`.
+3. After observing the binding, revoke the short-lived npm token used for package
+   creation, then set package publishing access to require 2FA and disallow tokens.
 
-The npm package creation/trust action, GitHub environment approval, tag, release, legacy
-deprecation, and any temporary credential path are owner actions. Each requires the exact
-version and SHA named by the release tracker; source approval alone is not publication approval.
+Future Core tags remain blocked until that exact trust tuple is observed. The
+steady-state workflow has no token fallback: without a valid npm Trusted
+Publisher binding, `npm publish` must fail closed. Package trust configuration,
+GitHub environment approval, tag creation, publication, and legacy deprecation
+remain owner actions tied to the exact version and SHA in the release tracker;
+source approval alone is not publication approval.
 
 ## Cut a release
 
@@ -135,8 +109,7 @@ version and SHA named by the release tracker; source approval alone is not publi
    for example `npm run release:preflight -- --milestone v-core-X.Y.Z --intent <patch|minor|major>`;
    the new `next-release` milestone is the successor train and must not be swept into the cut.
 3. **Set the version** — use `npm version X.Y.Z --no-git-tag-version` when the
-   candidate does not already carry that exact version (the current fix-forward
-   already carries `0.1.1`) so
+   candidate does not already carry that exact version so
    `package.json` and `package-lock.json` stay coherent, then bump the hardcoded CLI
    constant. These places must match; see the check below:
    - `package.json` `version`
@@ -178,8 +151,8 @@ version and SHA named by the release tracker; source approval alone is not publi
    ```
 12. **Watch the workflow.** First confirm the read-only `verify-and-pack` job completes.
    The protected `npm-publish` job then rechecks artifact custody, live `main` and tag state,
-   and, for the one-use first release only, live package-name absence. It publishes to npm
-   and creates the GitHub Release. If the environment has a required
+   and tokenless npm Trusted Publishing immediately before the effect. It publishes to
+   npm and creates the GitHub Release. If the environment has a required
    reviewer, approve that job only after the read-only job is green.
 13. **Verify the published package:**
    ```bash
@@ -226,10 +199,10 @@ npm dist-tag add @aihq/core@X.Y.Z latest
 - If a tag was pushed by mistake or publication fails, do not delete, move, or reuse
   the protected tag. Preserve the failed run as lifecycle evidence, fix forward to a
   new version, and supersede any draft Release or milestone with an explicit failure note.
-- If npm publication succeeded before a later workflow step failed, package existence is
-  the cleanup trigger: complete bootstrap-authority replacement immediately before
-  repairing the missing GitHub Release evidence. Do not leave the credential or token
-  path active while repairing that evidence.
+- If npm publication succeeded before the GitHub Release step failed, preserve the
+  successful npm provenance and failed run, never retry that immutable npm version,
+  and repair the missing GitHub Release only under separate exact-SHA authorization
+  using the digest-bound artifacts from that run.
 
 ## Version coherence (guardrail)
 

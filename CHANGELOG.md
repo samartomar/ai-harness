@@ -6,6 +6,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security
+
+- Remove the spent one-use npm token bootstrap from the Core release workflow.
+  Future `v-core-*` publications reject token credentials and require the exact
+  protected-environment npm Trusted Publisher binding.
+
 ## [Core 0.1.1] - 2026-08-25
 
 ### Added

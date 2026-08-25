@@ -88,51 +88,42 @@ describe("release readiness metadata", () => {
     expect(release).toContain("format: spdx-json");
   });
 
-  it("constrains the temporary npm-token bootstrap to the exact Core fix-forward", () => {
+  it("uses tokenless npm Trusted Publishing after the first Core publication", () => {
     const release = read(".github/workflows/release.yml");
     expect(parseDocument(release).errors).toEqual([]);
     expect(release).toContain("environment:");
     expect(release).toContain("name: npm-publish");
     expect(release).toMatch(/id-token:\s*write/);
     expect(release).toContain('registry-url: "https://registry.npmjs.org"');
-    expect(release).toContain("if: github.ref == 'refs/tags/v-core-0.1.1'");
-    expect(release).toContain('test "$GITHUB_REF_NAME" = "v-core-0.1.1"');
+    expect(release).not.toContain("v-core-0.1.1");
+    expect(release).not.toContain("NPM_BOOTSTRAP_TOKEN");
+    expect(release).not.toContain("REGISTRY_OBSERVATION");
+    expect(release).not.toContain('npm view "@aihq/core"');
+    expect(release).not.toContain("npm whoami");
+    expect(release).toContain("Publish exact tarball through npm Trusted Publishing");
     expect(release).toContain(
-      'npm view "@aihq/core" name --json --registry "https://registry.npmjs.org/"',
+      ['if [ -n "$', '{NODE_AUTH_TOKEN:-}" ] || [ -n "$', '{NPM_TOKEN:-}" ]; then'].join(""),
     );
-    expect(release.match(/npm view "@aihq\/core" name --json/gu)).toHaveLength(2);
-    expect(release.match(/--loglevel silent/gu)).toHaveLength(2);
-    expect(release.match(/REGISTRY_OBSERVATION=/gu)).toHaveLength(2);
-    expect(release).not.toContain("grep -Eq 'E404'");
-    expect(release).toContain("secrets.NPM_BOOTSTRAP_TOKEN");
-    expect(release.match(/secrets\.NPM_BOOTSTRAP_TOKEN/gu)).toHaveLength(1);
-    expect(release).toContain('npm whoami --registry "https://registry.npmjs.org/" >/dev/null');
-    expect(release).toContain(['if [ -z "$', '{NODE_AUTH_TOKEN:-}" ]; then'].join(""));
     expect(release).toContain(
       'npm publish "$tarball" --ignore-scripts --provenance --access public --registry "https://registry.npmjs.org/"',
     );
-    expect(release).not.toContain("NPM_TOKEN");
 
     const verificationStart = release.indexOf("  verify-and-pack:\n");
     const publishStart = release.indexOf("  npm-publish:\n");
     const verification = release.slice(verificationStart, publishStart);
-    expect(verification).toContain("Refuse every tag outside the temporary bootstrap boundary");
-    expect(verification).toContain('run: test "$GITHUB_REF_NAME" = "v-core-0.1.1"');
     expect(verification).not.toContain("NODE_AUTH_TOKEN");
-    expect(verification).not.toContain("NPM_BOOTSTRAP_TOKEN");
+    expect(verification).not.toContain("NPM_TOKEN");
 
     const releasing = read("RELEASING.md");
-    expect(releasing).toContain("**Bypass 2FA** enabled");
-    expect(releasing).toContain("delete the GitHub `NPM_BOOTSTRAP_TOKEN` secret");
-    expect(releasing).toContain("revoke the npm token");
-    expect(releasing).toMatch(/npm\s+refused the protected publish with `EOTP`/u);
-    expect(releasing).toMatch(/never delete, move, or reuse the\s+failed tag/u);
-    expect(releasing).toMatch(/restores trusted-publisher-only\s+publication/u);
-    expect(releasing).toMatch(
-      /as soon as npm confirms package existence, regardless of whether\s+the later GitHub Release succeeds/u,
+    expect(releasing).toContain(
+      "npm trust github @aihq/core --file release.yml --repo samartomar/ai-harness --env npm-publish --allow-publish",
     );
-    expect(releasing).toContain("applies only while the registry returns");
-    expect(releasing).not.toContain("package is not yet present on npm");
+    expect(releasing).toContain("npm trust list @aihq/core");
+    expect(releasing).toContain("GitHub bootstrap secret is absent");
+    expect(releasing).toContain("revoke the short-lived npm token");
+    expect(releasing).toContain("Future Core tags remain blocked");
+    expect(releasing).not.toContain("**Bypass 2FA** enabled");
+    expect(releasing).not.toContain("NPM_BOOTSTRAP_TOKEN");
 
     const actions = [...release.matchAll(/^\s*(?:-\s*)?uses:\s*([^@\s]+)@([^\s#]+).*$/gmu)];
     expect(actions.length).toBeGreaterThanOrEqual(7);
@@ -140,25 +131,6 @@ describe("release readiness metadata", () => {
       expect(action).toMatch(/^[\w.-]+\/[\w.-]+$/u);
       expect(revision).toMatch(/^[0-9a-f]{40}$/u);
     }
-  });
-
-  it("parses npm package-absence evidence as one exact JSON E404 error", () => {
-    const release = read(".github/workflows/release.yml");
-    const validator = inlineModuleFollowing(release, "REGISTRY_OBSERVATION=");
-    const validate = (observation: string) =>
-      spawnSync(process.execPath, ["--input-type=module", "-e", validator], {
-        env: { ...process.env, REGISTRY_OBSERVATION: observation },
-        encoding: "utf8",
-      });
-
-    expect(validate(JSON.stringify({ error: { code: "E404", summary: "missing" } })).status).toBe(
-      0,
-    );
-    expect(
-      validate(JSON.stringify({ error: { code: "E500", summary: "upstream mentioned E404" } }))
-        .status,
-    ).not.toBe(0);
-    expect(validate('npm ERR! code E500\n{"error":{"code":"E404"}}').status).not.toBe(0);
   });
 
   it("rejects a packed manifest that tries to redirect npm publication", () => {
@@ -272,8 +244,9 @@ describe("release readiness metadata", () => {
     const sbomIndex = publication.indexOf("Generate tarball-scoped SPDX SBOM");
     const attestIndex = publication.indexOf("Attest build provenance for the exact tarball");
     const signIndex = publication.indexOf("Sign trusted checksum and retain provenance bundle");
+    const liveRefIndex = publication.indexOf("Revalidate current main and tag before publication");
     const publishIndex = publication.indexOf(
-      "Publish exact first tarball through the one-use npm bootstrap",
+      "Publish exact tarball through npm Trusted Publishing",
     );
     const releaseIndex = publication.indexOf("Create immutable GitHub Release evidence");
     const verificationIndexes = [...publication.matchAll(/Verify exact tarball before/gmu)].map(
@@ -286,18 +259,21 @@ describe("release readiness metadata", () => {
     expect(verificationIndexes[3]).toBeLessThan(publishIndex);
     expect(verificationIndexes[4]).toBeLessThan(releaseIndex);
 
-    const bootstrapStep = publication.slice(publishIndex, releaseIndex);
-    const authenticatedAbsenceIndex = bootstrapStep.indexOf('npm view "@aihq/core" name --json');
-    const liveRefIndex = bootstrapStep.indexOf(
-      "Revalidate live main and tag after authenticated registry observation",
+    expect(liveRefIndex).toBeGreaterThan(signIndex);
+    expect(publishIndex).toBeGreaterThan(liveRefIndex);
+
+    const trustedPublishStep = publication.slice(publishIndex, releaseIndex);
+    const finalLiveRefIndex = trustedPublishStep.indexOf(
+      "Revalidate live main and tag immediately before the effect",
     );
-    const finalHashIndex = bootstrapStep.indexOf('actual_sha256="$(sha256sum "$TARBALL"');
-    const effectIndex = bootstrapStep.indexOf('npm publish "$tarball"');
-    expect(authenticatedAbsenceIndex).toBeGreaterThanOrEqual(0);
-    expect(liveRefIndex).toBeGreaterThan(authenticatedAbsenceIndex);
-    expect(finalHashIndex).toBeGreaterThan(liveRefIndex);
+    const finalHashIndex = trustedPublishStep.indexOf('actual_sha256="$(sha256sum "$TARBALL"');
+    const effectIndex = trustedPublishStep.indexOf('npm publish "$tarball"');
+    expect(finalLiveRefIndex).toBeGreaterThanOrEqual(0);
+    expect(finalHashIndex).toBeGreaterThan(finalLiveRefIndex);
     expect(effectIndex).toBeGreaterThan(finalHashIndex);
-    expect(bootstrapStep).toContain("env -u NODE_AUTH_TOKEN git");
+    expect(trustedPublishStep).not.toContain("NPM_BOOTSTRAP_TOKEN");
+    expect(trustedPublishStep).not.toContain("secrets.");
+    expect(trustedPublishStep).not.toContain('npm view "@aihq/core"');
   });
 
   it("documents stable-direct as the default and names every required RC trigger", () => {
@@ -318,7 +294,8 @@ describe("release readiness metadata", () => {
     const doc = read("docs/security/release-slsa.md");
     expect(doc).toContain("SLSA v1.2");
     expect(doc).toContain("SLSA Build L2");
-    expect(doc).toContain("immutable `v-core-0.1.0` exists as failed audit evidence");
+    expect(doc).toContain("Immutable `v-core-0.1.0` remains failed audit evidence");
+    expect(doc).toContain("`v-core-0.1.1`\n> published the npm package");
     expect(doc).not.toContain("Core has not yet produced a tagged release");
     expect(doc).toContain("The `@aihq/core` tarball");
     expect(doc).toMatch(/not\s+themselves claimed as SLSA Build L2 subjects/u);
@@ -408,7 +385,16 @@ describe("release readiness metadata", () => {
     const readme = read("README.md");
     expect(readme).toContain(`published \`@aihq/harness@${legacyVersion}\` package is frozen`);
     expect(readme).toContain(`npm install -g @aihq/core@${coreVersion}`);
-    expect(readme).toContain("Until those exact artifacts exist");
+    expect(readme).toContain("`@aihq/core@0.1.1` is public on npm");
+    expect(readme).not.toContain("Until those exact artifacts exist");
+
+    for (const path of ["SUPPORT.md", "docs/commands.md", "guides/README.md"]) {
+      const installDoc = read(path);
+      expect(installDoc, path).toContain("@aihq/core@0.1.1");
+      expect(installDoc, path).not.toContain("@aihq/core@0.1.0");
+      expect(installDoc, path).not.toContain("pre-publication fallback");
+      expect(installDoc, path).not.toContain("only published install");
+    }
   });
 
   it("ships basic repository governance files for controlled rollout", () => {
