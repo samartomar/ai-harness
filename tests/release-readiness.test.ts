@@ -1,4 +1,6 @@
-import { existsSync, readFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseDocument } from "yaml";
@@ -35,6 +37,17 @@ function expectPinnedAction(value: string | undefined, action: string): void {
   expect(value).toMatch(
     new RegExp(`^${action}@[a-f0-9]{40}(?:\\\\s+#\\\\s+v\\\\d+\\\\.\\\\d+\\\\.\\\\d+)?$`),
   );
+}
+
+function inlineModuleFollowing(workflow: string, marker: string): string {
+  const markerIndex = workflow.indexOf(marker);
+  expect(markerIndex).toBeGreaterThanOrEqual(0);
+  const delimiterIndex = workflow.indexOf("<<'NODE'\n", markerIndex);
+  expect(delimiterIndex).toBeGreaterThanOrEqual(0);
+  const bodyStart = delimiterIndex + "<<'NODE'\n".length;
+  const bodyEnd = workflow.indexOf("\n          NODE", bodyStart);
+  expect(bodyEnd).toBeGreaterThan(bodyStart);
+  return workflow.slice(bodyStart, bodyEnd).replace(/^ {10}/gmu, "");
 }
 
 describe("release readiness metadata", () => {
@@ -88,13 +101,15 @@ describe("release readiness metadata", () => {
       'npm view "@aihq/core" name --json --registry "https://registry.npmjs.org/"',
     );
     expect(release.match(/npm view "@aihq\/core" name --json/gu)).toHaveLength(2);
-    expect(release).toContain("grep -Eq 'E404'");
+    expect(release.match(/--loglevel silent/gu)).toHaveLength(2);
+    expect(release.match(/REGISTRY_OBSERVATION=/gu)).toHaveLength(2);
+    expect(release).not.toContain("grep -Eq 'E404'");
     expect(release).toContain("secrets.NPM_BOOTSTRAP_TOKEN");
     expect(release.match(/secrets\.NPM_BOOTSTRAP_TOKEN/gu)).toHaveLength(1);
     expect(release).toContain('npm whoami --registry "https://registry.npmjs.org/" >/dev/null');
     expect(release).toContain(['if [ -z "$', '{NODE_AUTH_TOKEN:-}" ]; then'].join(""));
     expect(release).toContain(
-      'npm publish "$tarball" --ignore-scripts --provenance --access public',
+      'npm publish "$tarball" --ignore-scripts --provenance --access public --registry "https://registry.npmjs.org/"',
     );
     expect(release).not.toContain("NPM_TOKEN");
 
@@ -117,6 +132,54 @@ describe("release readiness metadata", () => {
     for (const [, action, revision] of actions) {
       expect(action).toMatch(/^[\w.-]+\/[\w.-]+$/u);
       expect(revision).toMatch(/^[0-9a-f]{40}$/u);
+    }
+  });
+
+  it("parses npm package-absence evidence as one exact JSON E404 error", () => {
+    const release = read(".github/workflows/release.yml");
+    const validator = inlineModuleFollowing(release, "REGISTRY_OBSERVATION=");
+    const validate = (observation: string) =>
+      spawnSync(process.execPath, ["--input-type=module", "-e", validator], {
+        env: { ...process.env, REGISTRY_OBSERVATION: observation },
+        encoding: "utf8",
+      });
+
+    expect(validate(JSON.stringify({ error: { code: "E404", summary: "missing" } })).status).toBe(
+      0,
+    );
+    expect(
+      validate(JSON.stringify({ error: { code: "E500", summary: "upstream mentioned E404" } }))
+        .status,
+    ).not.toBe(0);
+    expect(validate('npm ERR! code E500\n{"error":{"code":"E404"}}').status).not.toBe(0);
+  });
+
+  it("rejects a packed manifest that tries to redirect npm publication", () => {
+    const release = read(".github/workflows/release.yml");
+    const validator = inlineModuleFollowing(release, "Validate packed manifest identity");
+    const fixtureRoot = mkdtempSync(join(tmpdir(), "aih-release-manifest-"));
+    try {
+      const packageRoot = join(fixtureRoot, "package");
+      mkdirSync(packageRoot);
+      const validate = (publishConfig: Record<string, unknown>) => {
+        writeFileSync(
+          join(packageRoot, "package.json"),
+          JSON.stringify({ name: "@aihq/core", version: "0.1.0", publishConfig }),
+        );
+        execFileSync("tar", ["-czf", "candidate.tgz", "package"], { cwd: fixtureRoot });
+        return spawnSync(process.execPath, ["--input-type=module", "-", "candidate.tgz", "0.1.0"], {
+          cwd: fixtureRoot,
+          input: validator,
+          encoding: "utf8",
+        });
+      };
+
+      expect(validate({ access: "public" }).status).toBe(0);
+      expect(validate({ access: "public", registry: "https://attacker.invalid/" }).status).not.toBe(
+        0,
+      );
+    } finally {
+      rmSync(fixtureRoot, { recursive: true, force: true });
     }
   });
 

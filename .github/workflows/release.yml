@@ -139,14 +139,30 @@ jobs:
           set -euo pipefail
           test "$GITHUB_REF_NAME" = "v-core-0.1.0"
           set +e
-          registry_observation="$(npm view "@aihq/core" name --json --registry "https://registry.npmjs.org/" 2>&1)"
+          registry_observation="$(npm view "@aihq/core" name --json --registry "https://registry.npmjs.org/" --loglevel silent 2>&1)"
           registry_status=$?
           set -e
           if [ "$registry_status" -eq 0 ]; then
             echo "::error::@aihq/core already exists; the bootstrap path cannot be reused"
             exit 1
           fi
-          if ! printf '%s' "$registry_observation" | grep -Eq 'E404'; then
+          if ! REGISTRY_OBSERVATION="$registry_observation" node --input-type=module <<'NODE'
+          const observation = JSON.parse(process.env.REGISTRY_OBSERVATION ?? "");
+          if (
+            typeof observation !== "object" ||
+            observation === null ||
+            Array.isArray(observation) ||
+            Object.keys(observation).length !== 1 ||
+            !Object.hasOwn(observation, "error") ||
+            typeof observation.error !== "object" ||
+            observation.error === null ||
+            Array.isArray(observation.error) ||
+            observation.error.code !== "E404"
+          ) {
+            process.exit(1);
+          }
+          NODE
+          then
             echo "::error::the npm registry did not prove that @aihq/core is absent"
             exit 1
           fi
@@ -189,6 +205,17 @@ jobs:
           );
           if (manifest.name !== "@aihq/core" || manifest.version !== tag) {
             throw new Error(`packed manifest identity does not match ${tag}`);
+          }
+          const publishConfig = manifest.publishConfig;
+          if (
+            typeof publishConfig !== "object" ||
+            publishConfig === null ||
+            Array.isArray(publishConfig) ||
+            Object.keys(publishConfig).length !== 1 ||
+            !Object.hasOwn(publishConfig, "access") ||
+            publishConfig.access !== "public"
+          ) {
+            throw new Error("packed manifest publishConfig must be exactly { access: public }");
           }
           NODE
       - name: Verify exact tarball before SBOM
@@ -263,14 +290,30 @@ jobs:
           fi
           npm whoami --registry "https://registry.npmjs.org/" >/dev/null
           set +e
-          registry_observation="$(npm view "@aihq/core" name --json --registry "https://registry.npmjs.org/" 2>&1)"
+          registry_observation="$(npm view "@aihq/core" name --json --registry "https://registry.npmjs.org/" --loglevel silent 2>&1)"
           registry_status=$?
           set -e
           if [ "$registry_status" -eq 0 ]; then
             echo "::error::@aihq/core already exists; refusing bootstrap publication"
             exit 1
           fi
-          if ! printf '%s' "$registry_observation" | grep -Eq 'E404'; then
+          if ! REGISTRY_OBSERVATION="$registry_observation" node --input-type=module <<'NODE'
+          const observation = JSON.parse(process.env.REGISTRY_OBSERVATION ?? "");
+          if (
+            typeof observation !== "object" ||
+            observation === null ||
+            Array.isArray(observation) ||
+            Object.keys(observation).length !== 1 ||
+            !Object.hasOwn(observation, "error") ||
+            typeof observation.error !== "object" ||
+            observation.error === null ||
+            Array.isArray(observation.error) ||
+            observation.error.code !== "E404"
+          ) {
+            process.exit(1);
+          }
+          NODE
+          then
             echo "::error::the npm registry did not prove that @aihq/core is absent"
             exit 1
           fi
@@ -282,7 +325,7 @@ jobs:
             *-*) dist_tag=next ;;
             *) dist_tag=latest ;;
           esac
-          npm publish "$tarball" --ignore-scripts --provenance --access public --tag "$dist_tag"
+          npm publish "$tarball" --ignore-scripts --provenance --access public --registry "https://registry.npmjs.org/" --tag "$dist_tag"
       - name: Verify exact tarball before GitHub release
         run: |
           set -euo pipefail

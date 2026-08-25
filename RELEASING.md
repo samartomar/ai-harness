@@ -50,11 +50,14 @@ bootstrap gate.
    environment. Do not put it in repository or organization variables, a working-tree
    `.npmrc`, logs, or any read-only job. The temporary workflow accepts only
    `v-core-0.1.0`, requires the public
-   registry and then the authenticated publish step to report npm `E404` for the package
-   name (including immediately before the effect), and supplies the secret only to that
-   exact step. It authenticates the token before trusting the second observation. A
-   successful package lookup or any ambiguous registry failure refuses publication; npm's
-   immutable package/version boundary remains the final atomic collision guard.
+   registry and then the authenticated publish step to return one structured npm error whose
+   exact code is `E404` for the package name (including immediately before the effect), and
+   supplies the secret only to that exact step. It authenticates the token before trusting
+   the second observation. Mixed output, a successful package lookup, or any other registry
+   failure refuses publication. The packed manifest must retain exactly
+   `publishConfig: { "access": "public" }`, the publish command explicitly selects
+   `https://registry.npmjs.org/`, and npm's immutable package/version boundary remains the
+   final atomic collision guard.
 4. **Confirm the GitHub gate.** The `npm-publish` environment requires a reviewer. The
    existing immutable `v*` tag ruleset covers Core tags, and the release workflow
    narrows its trigger to `v-core-*`; its protected job is additionally restricted to

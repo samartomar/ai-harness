@@ -123,9 +123,10 @@ provenance. Candidate verification and execution run without publication authori
 the protected job accepts only a workflow-artifact- and tarball-digest-bound package,
 checks its packed identity, and re-observes the tag and `main` before publication.
 The single package-creation exception is `@aihq/core@0.1.0`: its temporary workflow
-also requires public and authenticated npm `E404` observations and exposes an
-environment-scoped bootstrap token only to the publish step. That path is removed after
-the package exists and the trusted publisher is bound; it is not a reusable release mode.
+also requires public and authenticated, structured npm errors whose exact code is `E404`,
+rejects packed publication overrides, explicitly fixes the npmjs registry, and exposes an
+environment-scoped bootstrap token only to the publish step. That path is removed after the
+package exists and the trusted publisher is bound; it is not a reusable release mode.
 The tagged Core tarball claims SLSA Build L2 under the SLSA v1.2 Build track;
 the checksum, signature, provenance bundle, and SBOM are supporting evidence,
 not additional L2 subjects. The evidence map and the Build L3 gap are documented
