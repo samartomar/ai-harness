@@ -8,8 +8,8 @@ GitHub workflow artifact. The protected `npm-publish` job downloads that artifac
 verifies GitHub's artifact digest plus the original tarball digest and packed package
 identity, and runs no Core package code. It then generates the tarball-scoped SPDX SBOM,
 attests build provenance, signs a checksum reconstructed from the trusted digest,
-re-observes the current `main` and tag, publishes the same tarball to npm via Trusted
-Publishing with `--provenance`, and creates the GitHub Release with generated notes and
+re-observes the current `main` and tag, publishes the same tarball to npm with
+`--provenance`, and creates the GitHub Release with generated notes and
 the artifacts attached: the tarball, `SHA256SUMS.txt` (+ its cosign signature bundle
 `SHA256SUMS.txt.sigstore.json`), `provenance.intoto.jsonl`, and `aih-sbom.spdx.json`.
 
@@ -43,24 +43,39 @@ bootstrap gate.
    retain 2FA. Do not create a throwaway package version or publish from a working tree.
 2. **Prepare the exact release candidate.** Complete the release PR, merge it, obtain the
    full-SHA publication authorization in step 10 below, and verify the exact packed bytes.
-3. **Configure trusted publishing with npm CLI 11.15.0 or later.** An authenticated scope
-   owner runs the following commands and verifies the returned binding before any tag:
+3. **Create the one-use bootstrap credential.** Because npm cannot bind a trusted publisher
+   until the package exists, an owner creates a short-lived granular npm access token with
+   **Bypass 2FA** enabled and read/write access limited to the `@aihq` scope, and stores it
+   only as the `NPM_BOOTSTRAP_TOKEN` secret in the protected `npm-publish` GitHub
+   environment. Do not put it in repository or organization variables, a working-tree
+   `.npmrc`, logs, or any read-only job. The temporary workflow accepts only
+   `v-core-0.1.0`, requires the public
+   registry and then the authenticated publish step to report npm `E404` for the package
+   name (including immediately before the effect), and supplies the secret only to that
+   exact step. It authenticates the token before trusting the second observation. A
+   successful package lookup or any ambiguous registry failure refuses publication; npm's
+   immutable package/version boundary remains the final atomic collision guard.
+4. **Confirm the GitHub gate.** The `npm-publish` environment requires a reviewer. The
+   existing immutable `v*` tag ruleset covers Core tags, and the release workflow
+   narrows its trigger to `v-core-*`; its protected job is additionally restricted to
+   exactly `v-core-0.1.0` while the bootstrap revision exists. Candidate install,
+   verification, build, pack, and smoke execution stay in the read-only job. Only the
+   protected job has `id-token: write`; it runs no Core package code and publishes the
+   digest-bound tarball with public access and provenance.
+5. **Replace bootstrap authority immediately after verified publication.** First verify
+   that npm serves exact `@aihq/core@0.1.0` with the expected integrity and provenance.
+   Then, using npm CLI 11.15.0 or later, an authenticated scope owner runs:
    ```bash
    npm trust github @aihq/core --file release.yml --repo samartomar/ai-harness --env npm-publish --allow-publish
    npm trust list @aihq/core
    ```
    The binding must name repository `samartomar/ai-harness`, workflow `release.yml`,
-   environment `npm-publish`, and permission `npm publish`. If npm refuses the binding
-   because the package does not yet exist, stop. Do not fall back to unprovenanced local
-   publication; define and separately approve an exact-SHA, one-use GitHub bootstrap path.
-4. **Confirm the GitHub gate.** The `npm-publish` environment requires a reviewer. The
-   existing immutable `v*` tag ruleset covers Core tags, and the release workflow
-   narrows its trigger to `v-core-*`. Candidate install, verification, build, pack, and
-   smoke execution stay in the read-only job. Only the protected job has `id-token: write`;
-   it runs no Core package code and publishes the digest-bound tarball with public access.
-5. **Lock down after the first verified release.** Confirm npm provenance, then set the
-   package's publishing access to require 2FA and disallow tokens. Separately deprecate
-   `@aihq/harness` only after the replacement release is publicly installable and verified.
+   environment `npm-publish`, and permission `npm publish`. After verifying that binding,
+   delete the GitHub `NPM_BOOTSTRAP_TOKEN` secret, revoke the npm token, and merge the
+   workflow cleanup that removes every token reference and restores trusted-publisher-only
+   publication before any later Core tag. Finally set the package's publishing access to
+   require 2FA and disallow tokens. Separately deprecate `@aihq/harness` only after the
+   replacement release is publicly installable and verified.
 
 The npm package creation/trust action, GitHub environment approval, tag, release, legacy
 deprecation, and any temporary credential path are owner actions. Each requires the exact
@@ -151,7 +166,8 @@ version and SHA named by the release tracker; source approval alone is not publi
    ```
 12. **Watch the workflow.** First confirm the read-only `verify-and-pack` job completes.
    The protected `npm-publish` job then rechecks artifact custody, live `main` and tag state,
-   publishes to npm, and creates the GitHub Release. If the environment has a required
+   and, for the one-use first release only, live package-name absence. It publishes to npm
+   and creates the GitHub Release. If the environment has a required
    reviewer, approve that job only after the read-only job is green.
 13. **Verify the published package:**
    ```bash

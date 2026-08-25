@@ -39,8 +39,8 @@ platform with stronger isolation controls for L3.
 | Producer chooses an appropriate build platform | `.github/workflows/release.yml` runs both release jobs on GitHub-hosted `ubuntu-latest` and publishes through the protected `npm-publish` environment. | Meets L1/L2 scope. |
 | Producer follows a consistent build process | The workflow runs only on `v-core-*` tags. Its read-only job verifies current `origin/main` and package/tag identity, runs `npm run verify`, packs once, records the tarball digest, and smoke-installs the exact tarball. The protected job verifies the workflow-artifact digest, original tarball digest, and packed identity; runs no Core package code; and re-observes `main` and the tag immediately before publication. | Meets L1/L2 scope. |
 | Producer distributes provenance | The workflow publishes npm provenance with `npm publish "$tarball" --ignore-scripts --provenance --access public`, generates GitHub build provenance with `actions/attest-build-provenance`, copies the bundle to `provenance.intoto.jsonl`, and attaches it to the GitHub Release. | Meets L1/L2 scope. |
-| Build platform generates provenance | `actions/attest-build-provenance` targets the exact digest-checked tarball, while npm Trusted Publishing emits registry provenance for the same published tarball. | Meets L1/L2 scope. |
-| Provenance is authentic | Only the protected publication job has `id-token: write` and `attestations: write`; it uses npm Trusted Publishing instead of an npm token and signs a checksum reconstructed from the carried tarball digest with GitHub OIDC. | Meets L2 scope. |
+| Build platform generates provenance | `actions/attest-build-provenance` targets the exact digest-checked tarball, while npm emits registry provenance for the same `--provenance` publication. Steady-state releases use Trusted Publishing; the exact `@aihq/core@0.1.0` package-creation exception uses a protected, one-use token path because the publisher binding cannot precede the package. | Meets L1/L2 scope. |
+| Provenance is authentic | Only the protected publication job has `id-token: write` and `attestations: write`; it signs a checksum reconstructed from the carried tarball digest with GitHub OIDC. The temporary `0.1.0` bootstrap restricts the token to the publish step, requires the exact tag plus public and authenticated npm `E404` observations, and is removed once Trusted Publishing is configured. | Meets L2 scope; token removal is a mandatory post-bootstrap gate. |
 | Hosted build platform | Both jobs use GitHub-hosted `ubuntu-latest`; artifacts are not produced on a developer workstation. | Meets L2 scope. |
 | Consumer verification path | `aih verify-release [version]` verifies npm signatures, GitHub release checksums, the cosign bundle over `SHA256SUMS.txt`, and the packed tarball hash. Consumers that enforce provenance policy can also verify the GitHub attestation for the tarball with `gh attestation verify`. | Supports L2 verification. |
 
@@ -60,7 +60,9 @@ The workflow is still intentionally hardened for an L2 claim:
 - the protected job verifies the GitHub artifact digest, original tarball digest, and
   packed identity, then rechecks the tarball before each custody effect;
 - the tag workflow fails closed unless current `main`, the tag, and the workflow SHA match;
-- publishing uses npm Trusted Publishing instead of `NPM_TOKEN`;
+- publishing uses npm Trusted Publishing after the exact `@aihq/core@0.1.0` package-creation
+  exception; that temporary path accepts only the first tag, refuses ambiguous registry
+  observations, and scopes `NPM_BOOTSTRAP_TOKEN` to the publish step;
 - keyless signing uses GitHub OIDC rather than a checked-in or long-lived key;
 - the tarball is smoke-installed in a disposable root before crossing into the protected job;
 - release consumers get a local verification command and the raw provenance
