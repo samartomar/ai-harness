@@ -133,6 +133,33 @@ describe("release readiness metadata", () => {
     }
   });
 
+  it("accepts only a stable unambiguous npm CLI version at the Trusted Publishing boundary", () => {
+    const release = read(".github/workflows/release.yml");
+    const validator = inlineModuleFollowing(release, 'npm_version="$(npm --version)"');
+    const validate = (version: string) =>
+      spawnSync(process.execPath, ["--input-type=module", "-", version], {
+        input: validator,
+        encoding: "utf8",
+      });
+
+    for (const accepted of ["11.5.1", "11.5.2", "11.6.0", "12.0.0"]) {
+      expect(validate(accepted).status, accepted).toBe(0);
+    }
+    for (const rejected of [
+      "11.5.0",
+      "10.99.99",
+      "11.5.1-beta.0",
+      "11.5.1+build.1",
+      "v11.5.1",
+      "11.5",
+      "011.5.1",
+      "999999999999999999999999.5.1",
+      "",
+    ]) {
+      expect(validate(rejected).status, rejected).not.toBe(0);
+    }
+  });
+
   it("rejects a packed manifest that tries to redirect npm publication", () => {
     const release = read(".github/workflows/release.yml");
     const validator = inlineModuleFollowing(release, "Validate packed manifest identity");

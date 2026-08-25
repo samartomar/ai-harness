@@ -251,9 +251,12 @@ jobs:
           fi
           npm_version="$(npm --version)"
           if ! node --input-type=module - "$npm_version" <<'NODE'
-          const match = /^(\d+)\.(\d+)\.(\d+)(?:-.+)?$/.exec(process.argv[2] ?? "");
+          const match = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.exec(
+            process.argv[2] ?? "",
+          );
           if (match === null) process.exit(1);
           const actual = match.slice(1, 4).map(Number);
+          if (!actual.every(Number.isSafeInteger)) process.exit(1);
           const minimum = [11, 5, 1];
           for (let index = 0; index < minimum.length; index += 1) {
             if (actual[index] > minimum[index]) process.exit(0);
