@@ -728,9 +728,10 @@ aih usage --rollup ../repo-a,../repo-b
   bundle** on the GitHub Release. Candidate build and smoke execution stay in a read-only job;
   the protected publication job verifies the workflow-artifact digest, original tarball digest,
   and packed identity without executing Core package code. Releases from `v0.6.0` onward include
-  the sigstore/provenance assets; earlier historical tags have a narrower asset set. Tagged release artifacts claim
-  [SLSA Build L2](https://github.com/samartomar/ai-harness/blob/main/docs/security/release-slsa.md) under SLSA v1.2; no Build L3 claim is
-  made. Verify a published release with `aih verify-release [version]`; a skipped verification leg
+  the sigstore/provenance assets; earlier historical tags have a narrower asset set. The tagged Core tarball
+  claims [SLSA Build L2](https://github.com/samartomar/ai-harness/blob/main/docs/security/release-slsa.md)
+  under SLSA v1.2; the other Release assets are supporting evidence, not additional L2 subjects,
+  and no Build L3 claim is made. Verify a published release with `aih verify-release [version]`; a skipped verification leg
   is incomplete evidence. Consumers with provenance-aware policy can also use `gh attestation verify`.
 - **Support** — [SUPPORT.md](https://github.com/samartomar/ai-harness/blob/main/SUPPORT.md) · **Security** — [SECURITY.md](https://github.com/samartomar/ai-harness/blob/main/SECURITY.md)
   (private reporting) · **Contributing** — [CONTRIBUTING.md](https://github.com/samartomar/ai-harness/blob/main/CONTRIBUTING.md).

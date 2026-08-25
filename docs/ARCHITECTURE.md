@@ -122,8 +122,10 @@ checksums, a keyless cosign bundle for `SHA256SUMS.txt`, and GitHub build
 provenance. Candidate verification and execution run without publication authority;
 the protected job accepts only a workflow-artifact- and tarball-digest-bound package,
 checks its packed identity, and re-observes the tag and `main` before publication.
-Tagged release artifacts claim SLSA Build L2 under the SLSA v1.2
-Build track; the evidence map and the Build L3 gap are documented in
+The tagged Core tarball claims SLSA Build L2 under the SLSA v1.2 Build track;
+the checksum, signature, provenance bundle, and SBOM are supporting evidence,
+not additional L2 subjects. The evidence map and the Build L3 gap are documented
+in
 [security/release-slsa.md](security/release-slsa.md). Operators can run
 `aih verify-release [version]` to verify npm signatures, the GitHub release
 cosign bundle, and the npm tarball hash, and can verify the release provenance

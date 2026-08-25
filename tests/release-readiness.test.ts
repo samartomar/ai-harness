@@ -206,10 +206,12 @@ describe("release readiness metadata", () => {
     expect(releasing).toContain("runs no Core package code");
   });
 
-  it("documents the SLSA Build L2 release claim and the Build L3 gap", () => {
+  it("scopes the SLSA Build L2 claim to the Core tarball and documents the Build L3 gap", () => {
     const doc = read("docs/security/release-slsa.md");
     expect(doc).toContain("SLSA v1.2");
     expect(doc).toContain("SLSA Build L2");
+    expect(doc).toContain("The `@aihq/core` tarball");
+    expect(doc).toMatch(/not\s+themselves claimed as SLSA Build L2 subjects/u);
     expect(doc).toContain("No Build L3 claim is made");
     expect(doc).toContain(".github/workflows/release.yml");
     expect(doc).toContain("actions/attest-build-provenance");
@@ -223,6 +225,8 @@ describe("release readiness metadata", () => {
     const architecture = read("docs/ARCHITECTURE.md");
     for (const text of [readme, architecture]) {
       expect(text).toContain("SLSA Build L2");
+      expect(text).toContain("tagged Core tarball");
+      expect(text).toMatch(/supporting evidence,?\s+not (?:additional )?L2 subjects/u);
       expect(text).not.toContain("meets SLSA Build L3");
       expect(text).not.toContain("SLSA v1 provenance material, but the project does not claim");
     }

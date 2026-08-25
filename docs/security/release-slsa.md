@@ -7,16 +7,18 @@
 
 ## Claim
 
-Tagged release artifacts produced by the release workflow meet **SLSA Build L2**
-when the workflow completes successfully.
+The `@aihq/core` tarball produced and published by the tagged release workflow
+meets **SLSA Build L2** when the workflow completes successfully.
 
 Scope:
 
 - the `@aihq/core` npm tarball published by the release workflow after its
   separately authorized package bootstrap;
-- the same packed tarball attached to the GitHub Release;
-- `SHA256SUMS.txt`, `SHA256SUMS.txt.sigstore.json`, `provenance.intoto.jsonl`,
-  and `aih-sbom.spdx.json` attached to the GitHub Release.
+- the same packed tarball attached to the GitHub Release.
+
+`SHA256SUMS.txt`, `SHA256SUMS.txt.sigstore.json`, `provenance.intoto.jsonl`, and
+`aih-sbom.spdx.json` are verification and supporting evidence. They are not
+themselves claimed as SLSA Build L2 subjects by this assessment.
 
 No Build L3 claim is made.
 
