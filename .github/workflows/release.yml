@@ -2,7 +2,7 @@
 # build, pack, and smoke execution stay in a read-only job. The protected job
 # receives one digest-bound tarball and runs no package code before publishing
 # that same artifact. This temporary workflow revision permits only the initial
-# @aihq/core@0.1.0 bootstrap through an environment-scoped npm token. It must be
+# @aihq/core@0.1.1 bootstrap through an environment-scoped npm token. It must be
 # removed immediately after the package exists and Trusted Publishing is bound.
 #
 # Required @aihq/core Trusted Publisher config (npmjs.com): repository
@@ -31,7 +31,7 @@ jobs:
       artifact_sha256: ${{ steps.upload.outputs.artifact-digest }}
     steps:
       - name: Refuse every tag outside the temporary bootstrap boundary
-        run: test "$GITHUB_REF_NAME" = "v-core-0.1.0"
+        run: test "$GITHUB_REF_NAME" = "v-core-0.1.1"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
@@ -106,7 +106,7 @@ jobs:
 
   npm-publish:
     needs: verify-and-pack
-    if: github.ref == 'refs/tags/v-core-0.1.0'
+    if: github.ref == 'refs/tags/v-core-0.1.1'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment:
@@ -137,7 +137,7 @@ jobs:
       - name: Assert one-use bootstrap package is still absent
         run: |
           set -euo pipefail
-          test "$GITHUB_REF_NAME" = "v-core-0.1.0"
+          test "$GITHUB_REF_NAME" = "v-core-0.1.1"
           set +e
           registry_observation="$(npm view "@aihq/core" name --json --registry "https://registry.npmjs.org/" --loglevel silent 2>&1)"
           registry_status=$?
@@ -283,7 +283,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_BOOTSTRAP_TOKEN }}
         run: |
           set -euo pipefail
-          test "$GITHUB_REF_NAME" = "v-core-0.1.0"
+          test "$GITHUB_REF_NAME" = "v-core-0.1.1"
           if [ -z "${NODE_AUTH_TOKEN:-}" ]; then
             echo "::error::the protected NPM_BOOTSTRAP_TOKEN secret is required"
             exit 1
@@ -352,6 +352,7 @@ jobs:
           set -euo pipefail
           notes="Curated release notes: [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/CHANGELOG.md)"
           gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
             --title "$GITHUB_REF_NAME" \
             --generate-notes \
             --notes "$notes" \

@@ -122,7 +122,7 @@ checksums, a keyless cosign bundle for `SHA256SUMS.txt`, and GitHub build
 provenance. Candidate verification and execution run without publication authority;
 the protected job accepts only a workflow-artifact- and tarball-digest-bound package,
 checks its packed identity, and re-observes the tag and `main` before publication.
-The single package-creation exception is `@aihq/core@0.1.0`: its temporary workflow
+The single package-creation exception is the `@aihq/core@0.1.1` fix-forward: its temporary workflow
 also requires public and authenticated, structured npm errors whose exact code is `E404`,
 rejects packed publication overrides, explicitly fixes the npmjs registry, and exposes an
 environment-scoped bootstrap token only to the publish step. That path is removed after the

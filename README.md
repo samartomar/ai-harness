@@ -8,7 +8,7 @@
 [![Node ≥20](https://img.shields.io/badge/node-%E2%89%A520-339933.svg)](package.json)
 
 <p align="center">
-<img src="docs/assets/aih-overview.svg" alt="aih v0.1.0 governed-readiness overview showing Environment, Context, Policy, Execution, and Evidence pillars plus truth verify and the docs-lint claim gate" width="100%">
+<img src="docs/assets/aih-overview.svg" alt="aih v0.1.1 governed-readiness overview showing Environment, Context, Policy, Execution, and Evidence pillars plus truth verify and the docs-lint claim gate" width="100%">
 </p>
 
 Use the coding agent that fits your workflow. `aih` is a cross-platform CLI that
@@ -63,12 +63,15 @@ policy: [STABILITY.md](https://github.com/samartomar/ai-harness/blob/main/STABIL
 
 ## Install
 
-When npm and the matching GitHub Release expose `@aihq/core@0.1.0`, install and verify
+The immutable `v-core-0.1.0` attempt passed its read-only verification but npm
+refused publication with `EOTP`; the registry remained `E404`. That tag and failed
+run are audit evidence and must never be deleted, moved, or reused. When npm and
+the matching GitHub Release expose `@aihq/core@0.1.1`, install and verify
 that exact active release:
 
 ```bash
-npm install -g @aihq/core@0.1.0         # then run: aih --help
-aih verify-release 0.1.0   # checks npm signatures, GitHub release sums, and cosign evidence
+npm install -g @aihq/core@0.1.1         # then run: aih --help
+aih verify-release 0.1.1   # checks npm signatures, GitHub release sums, and cosign evidence
 ```
 
 Until those exact artifacts exist, the frozen legacy release remains the only
@@ -87,7 +90,7 @@ Per-version release notes — what changed, and why — live in
 npm tarball too, so an evaluator can read the version history straight from the unpacked package.
 
 <!-- aih:claim CM-51 -->
-Core 0.1.0 library integrations import the strict Package Graph v1 TypeScript schema
+Core 0.1.1 library integrations import the strict Package Graph v1 TypeScript schema
 from `@aihq/core` and resolve its structural editor schema at
 `@aihq/core/schemas/aih-package-graph.schema.json`; no legacy compatibility wrapper is
 planned. Frozen v6 consumers retain the matching exports under `@aihq/harness`.
@@ -96,7 +99,7 @@ identity uniqueness, direct-member resolution, and evidence subject binding belo
 to the TypeScript parser; graph metadata is never approval or evidence by itself.
 
 <!-- aih:claim CM-86 -->
-Core 0.1.0 source and package export Strict V2 organization-qualified,
+Core 0.1.1 source and package export Strict V2 organization-qualified,
 AIH-supported qualification, decision, upstream-artifact manifest, and upstream-observation
 contracts, with matching JSON Schemas under `@aihq/core/schemas/`. They let organization evidence and supported-catalog
 producers share one exact GitHub/npm/PyPI/OCI/remote subject grammar without making catalog

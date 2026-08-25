@@ -88,15 +88,15 @@ describe("release readiness metadata", () => {
     expect(release).toContain("format: spdx-json");
   });
 
-  it("constrains the temporary npm-token bootstrap to the first exact Core release", () => {
+  it("constrains the temporary npm-token bootstrap to the exact Core fix-forward", () => {
     const release = read(".github/workflows/release.yml");
     expect(parseDocument(release).errors).toEqual([]);
     expect(release).toContain("environment:");
     expect(release).toContain("name: npm-publish");
     expect(release).toMatch(/id-token:\s*write/);
     expect(release).toContain('registry-url: "https://registry.npmjs.org"');
-    expect(release).toContain("if: github.ref == 'refs/tags/v-core-0.1.0'");
-    expect(release).toContain('test "$GITHUB_REF_NAME" = "v-core-0.1.0"');
+    expect(release).toContain("if: github.ref == 'refs/tags/v-core-0.1.1'");
+    expect(release).toContain('test "$GITHUB_REF_NAME" = "v-core-0.1.1"');
     expect(release).toContain(
       'npm view "@aihq/core" name --json --registry "https://registry.npmjs.org/"',
     );
@@ -117,7 +117,7 @@ describe("release readiness metadata", () => {
     const publishStart = release.indexOf("  npm-publish:\n");
     const verification = release.slice(verificationStart, publishStart);
     expect(verification).toContain("Refuse every tag outside the temporary bootstrap boundary");
-    expect(verification).toContain('run: test "$GITHUB_REF_NAME" = "v-core-0.1.0"');
+    expect(verification).toContain('run: test "$GITHUB_REF_NAME" = "v-core-0.1.1"');
     expect(verification).not.toContain("NODE_AUTH_TOKEN");
     expect(verification).not.toContain("NPM_BOOTSTRAP_TOKEN");
 
@@ -125,10 +125,14 @@ describe("release readiness metadata", () => {
     expect(releasing).toContain("**Bypass 2FA** enabled");
     expect(releasing).toContain("delete the GitHub `NPM_BOOTSTRAP_TOKEN` secret");
     expect(releasing).toContain("revoke the npm token");
+    expect(releasing).toMatch(/npm\s+refused the protected publish with `EOTP`/u);
+    expect(releasing).toMatch(/never delete, move, or reuse the\s+failed tag/u);
     expect(releasing).toMatch(/restores trusted-publisher-only\s+publication/u);
     expect(releasing).toMatch(
       /as soon as npm confirms package existence, regardless of whether\s+the later GitHub Release succeeds/u,
     );
+    expect(releasing).toContain("applies only while the registry returns");
+    expect(releasing).not.toContain("package is not yet present on npm");
 
     const actions = [...release.matchAll(/^\s*(?:-\s*)?uses:\s*([^@\s]+)@([^\s#]+).*$/gmu)];
     expect(actions.length).toBeGreaterThanOrEqual(7);
@@ -167,10 +171,10 @@ describe("release readiness metadata", () => {
       const validate = (publishConfig: Record<string, unknown>) => {
         writeFileSync(
           join(packageRoot, "package.json"),
-          JSON.stringify({ name: "@aihq/core", version: "0.1.0", publishConfig }),
+          JSON.stringify({ name: "@aihq/core", version: "0.1.1", publishConfig }),
         );
         execFileSync("tar", ["-czf", "candidate.tgz", "package"], { cwd: fixtureRoot });
-        return spawnSync(process.execPath, ["--input-type=module", "-", "candidate.tgz", "0.1.0"], {
+        return spawnSync(process.execPath, ["--input-type=module", "-", "candidate.tgz", "0.1.1"], {
           cwd: fixtureRoot,
           input: validator,
           encoding: "utf8",
@@ -263,6 +267,7 @@ describe("release readiness metadata", () => {
       'if [ "$GITHUB_SHA" != "$main_sha" ] || [ "$GITHUB_SHA" != "$tag_sha" ]; then',
     );
     expect(publication).toContain('test "$GITHUB_REF" = "refs/tags/$GITHUB_REF_NAME"');
+    expect(publication).toContain('--repo "$GITHUB_REPOSITORY"');
 
     const sbomIndex = publication.indexOf("Generate tarball-scoped SPDX SBOM");
     const attestIndex = publication.indexOf("Attest build provenance for the exact tarball");
@@ -313,6 +318,8 @@ describe("release readiness metadata", () => {
     const doc = read("docs/security/release-slsa.md");
     expect(doc).toContain("SLSA v1.2");
     expect(doc).toContain("SLSA Build L2");
+    expect(doc).toContain("immutable `v-core-0.1.0` exists as failed audit evidence");
+    expect(doc).not.toContain("Core has not yet produced a tagged release");
     expect(doc).toContain("The `@aihq/core` tarball");
     expect(doc).toMatch(/not\s+themselves claimed as SLSA Build L2 subjects/u);
     expect(doc).toContain("No Build L3 claim is made");
