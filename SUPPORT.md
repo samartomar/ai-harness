@@ -27,9 +27,8 @@ this project or filing an issue creates **no service relationship** of any kind.
 ## Before you file
 
 - Run `aih doctor` and include the output.
-- Confirm the exact supported release with `npm install -g @aihq/core@0.1.0`
-  followed by `aih verify-release 0.1.0`. Until npm and the matching GitHub
-  Release expose those exact artifacts, the frozen `@aihq/harness@6.1.0`
-  release remains the only published install.
+- Confirm the exact supported release with `npm install -g @aihq/core@0.1.1`
+  followed by `aih verify-release 0.1.1`. The npm package and matching GitHub
+  Release are public; a skipped verification leg is incomplete evidence.
 - Search [existing issues](https://github.com/samartomar/ai-harness/issues?q=is%3Aissue)
   first.

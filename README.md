@@ -64,18 +64,17 @@ policy: [STABILITY.md](https://github.com/samartomar/ai-harness/blob/main/STABIL
 ## Install
 
 The immutable `v-core-0.1.0` attempt passed its read-only verification but npm
-refused publication with `EOTP`; the registry remained `E404`. That tag and failed
-run are audit evidence and must never be deleted, moved, or reused. When npm and
-the matching GitHub Release expose `@aihq/core@0.1.1`, install and verify
-that exact active release:
+refused publication with `EOTP`; that tag and failed run are audit evidence and
+must never be deleted, moved, or reused. `@aihq/core@0.1.1` is public on npm
+with a matching GitHub Release. Install and verify that exact active release:
 
 ```bash
 npm install -g @aihq/core@0.1.1         # then run: aih --help
 aih verify-release 0.1.1   # checks npm signatures, GitHub release sums, and cosign evidence
 ```
 
-Until those exact artifacts exist, the frozen legacy release remains the only
-published install:
+The frozen legacy package remains available only for consumers that have not yet
+migrated; no later AIH release will be published under that name:
 
 ```bash
 npm install -g @aihq/harness@6.1.0      # then run: aih --help
@@ -736,7 +735,9 @@ aih usage --rollup ../repo-a,../repo-b
   signature bundle** (`SHA256SUMS.txt.sigstore.json`), and the Sigstore **build-provenance
   bundle** on the GitHub Release. Candidate build and smoke execution stay in a read-only job;
   the protected publication job verifies the workflow-artifact digest, original tarball digest,
-  and packed identity without executing Core package code. Releases from `v0.6.0` onward include
+  and packed identity without executing Core package code. The tokenless workflow source is ready,
+  but a future Core tag remains blocked until the owner configures and observes the exact npm
+  Trusted Publisher binding documented in [RELEASING.md](RELEASING.md). Releases from `v0.6.0` onward include
   the sigstore/provenance assets; earlier historical tags have a narrower asset set. The tagged Core tarball
   claims [SLSA Build L2](https://github.com/samartomar/ai-harness/blob/main/docs/security/release-slsa.md)
   under SLSA v1.2; the other Release assets are supporting evidence, not additional L2 subjects,

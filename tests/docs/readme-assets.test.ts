@@ -51,7 +51,8 @@ describe("README docs currency", () => {
     expect(readme).toContain("The active pre-1.0 package line is `@aihq/core`");
     expect(readme).toContain("published `@aihq/harness@6.1.0` package is frozen");
     expect(readme).toContain("npm install -g @aihq/core@0.1.1");
-    expect(readme).toContain("Until those exact artifacts exist");
+    expect(readme).toContain("`@aihq/core@0.1.1` is public on npm");
+    expect(readme).not.toContain("Until those exact artifacts exist");
   });
 
   it("keeps README image metadata aligned with the current release assets", () => {
