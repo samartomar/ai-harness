@@ -43,7 +43,7 @@ bootstrap gate.
    retain 2FA. Do not create a throwaway package version or publish from a working tree.
 2. **Prepare the exact release candidate.** Complete the release PR, merge it, obtain the
    full-SHA publication authorization in step 10 below, and verify the exact packed bytes.
-3. **Configure trusted publishing with npm CLI 11.5.1 or later.** An authenticated scope
+3. **Configure trusted publishing with npm CLI 11.15.0 or later.** An authenticated scope
    owner runs the following commands and verifies the returned binding before any tag:
    ```bash
    npm trust github @aihq/core --file release.yml --repo samartomar/ai-harness --env npm-publish --allow-publish
