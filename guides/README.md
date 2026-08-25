@@ -1,7 +1,7 @@
 ---
 status: guide
 owner: AI-Harness maintainers
-last_verified: 2026-07-09
+last_verified: 2026-08-25
 truth_home: true
 purpose: Entry point for AI-Harness guides by reader persona and workflow.
 ---
@@ -10,7 +10,7 @@ purpose: Entry point for AI-Harness guides by reader persona and workflow.
 
 Use this folder for human-facing guidance. These docs explain how different readers should use AI-Harness without mixing shipped behavior with unshipped plans.
 
-Published guide baseline: the frozen `@aihq/harness@6.1.0`. Use [docs/commands.md](../docs/commands.md) and `aih <command> --help` as syntax authorities; these guides explain reader workflows and identify unpublished Core behavior explicitly.
+Guide baseline: `@aihq/core@0.1.0`; install it only when npm and the matching GitHub Release expose the exact artifacts. The frozen `@aihq/harness@6.1.0` release remains the pre-publication fallback. Use [docs/commands.md](../docs/commands.md) and `aih <command> --help` as syntax authorities.
 
 ![AI-Harness guide map showing reader paths for vibe developers, shared repositories, enterprise admins, enterprise developers, and shared command references](../docs/assets/aih-guide-map.svg)
 

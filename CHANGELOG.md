@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [Core 0.1.0] - 2026-08-25
+
 ### Added
 
 - **Catalog-independent organization-managed artifact observation and lifecycle.**
@@ -368,7 +370,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- **Core's new npm identity starts at `@aihq/core@0.1.0`.** The unpublished candidate
+- **Core's active npm identity starts at `@aihq/core@0.1.0`.** The replacement line
   resets the package version independently from the frozen legacy line and uses
   protected `v-core-X.Y.Z` GitHub tags while the `aih` command, `.aih/`
   state root, public exports, schemas, receipt identifiers, check codes,
@@ -376,9 +378,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `@aihq/harness@6.1.0` package is frozen and receives no wrapper or alias package;
   new vendor baseline authorizations identify their issuer as `@aihq/core release`
   instead of attributing new evidence to the frozen package. The evidence shape is unchanged.
-  Its npm deprecation waits until an exact `@aihq/core` release is publicly
-  installable and verified. This source change does not publish or deprecate either
-  package. (#866)
+  Its npm deprecation remains a separate owner action after the exact `@aihq/core`
+  release is publicly installable and verified. (#866)
 
 ### Fixed
 
@@ -2928,7 +2929,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v6.1.0...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v-core-0.1.0...HEAD
+[Core 0.1.0]: https://github.com/samartomar/ai-harness/compare/v6.1.0...v-core-0.1.0
 [6.1.0]: https://github.com/samartomar/ai-harness/compare/v6.0.1...v6.1.0
 [6.0.1]: https://github.com/samartomar/ai-harness/compare/v5.4.0...v6.0.1
 [5.4.0]: https://github.com/samartomar/ai-harness/compare/v5.3.0...v5.4.0

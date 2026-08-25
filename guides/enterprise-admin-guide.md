@@ -20,12 +20,12 @@ The `enterprise` posture emphasizes least privilege, approval, auditability, and
 
 The enterprise examples in this public guide are intentionally limited to reviewed Figma, Jira/Atlassian, and AWS MCP paths. Additional service MCPs should follow the same policy and source-review pattern before appearing in public enterprise guidance.
 
-Release baseline covered by this guide: `@aihq/harness@6.1.0`. The scoped public security doc documents SLSA v1.2 Build L2 for tagged release artifacts; no Build L3 or formal compliance claim is made.
+Release baseline covered by this guide: `@aihq/core@0.1.0`; the frozen legacy evidence remains at `@aihq/harness@6.1.0`. The scoped public security doc documents SLSA v1.2 Build L2 for tagged Core tarballs; no Build L3 or formal compliance claim is made.
 
 ### Current organization-qualified boundary
 
 The maintained AIH catalog is intended to reduce administrator work; it is not the
-organization's permission boundary. The unreleased Strict V2 library/schema
+organization's permission boundary. The Strict V2 library/schema
 foundation can represent an exact organization-chosen tool, skill, MCP server,
 package, or profile, its attributable evidence and signed decision, and a separate
 upstream-managed installed-state observation that names the responsible integration
@@ -60,7 +60,7 @@ an audit fact and remains non-effective/nonzero; it does not claim that an upstr
 removed or stopped the package. The fixed AIH-managed route has its own authenticated reconcile and
 inspect lifecycle because it owns only its code-derived bytes.
 
-For an `aih-supported` basis, the unreleased library consumes the fixed
+For an `aih-supported` basis, Core consumes the fixed
 `.aih/aih-supported-qualification-receipt.json` file. The file must be canonical,
 no larger than 4 KiB, and externally attested by the independently configured
 `AIH_SUPPORTED_QUALIFICATION_REPOSITORY` and
@@ -128,12 +128,13 @@ annex files. Runtime/configuration substitution, unknown fields, duplicate IDs, 
 references, unsupported platforms, cross-detector evidence, source/request drift, and final
 caller-registration drift fail closed.
 
-Until `@aihq/scan` is separately published, install only a reviewed Scanner tarball into a
-disposable consumer. The repository remains private, so this is prepublication guidance rather than
-a claim that an outside administrator can obtain it from npm:
+When `@aihq/scan@0.1.0` is available with matching npm and GitHub Release evidence,
+install that exact version into a disposable consumer. Until then, use only a reviewed
+Scanner tarball from the public source repository; source visibility alone is not npm
+publication evidence:
 
 ```bash
-npm install --save-dev /reviewed/path/aihq-scan-1.0.0.tgz
+npm install --save-dev /reviewed/path/aihq-scan-0.1.0.tgz
 npx --no-install aih-scan capture --request <capture-request.json> --output <new-bundle>
 npx --no-install aih-scan sign --bundle <bundle> --signer <signer.json> --private-key <key.pem> --claims <claims.json> --output <evidence.json>
 npx --no-install aih-scan verify --evidence <evidence.json> --bundle <bundle> --roots <independent-roots.json> --expected <expected-claims.json>
@@ -149,7 +150,7 @@ matching Core observation/effect route. Place the projected canonical envelope b
 target only after preserving its custody, then use `aih policy resolve` or a supported observer from
 the command map above. Missing catalog membership is not a denial, but missing authority is.
 
-The unreleased `aih policy resolve` command now verifies the organization-evidence
+The `aih policy resolve` command verifies the organization-evidence
 half of that boundary from an administrator-selected target root:
 
 ```bash
@@ -323,7 +324,7 @@ separate trust and release boundaries.
 Prepare the admin workstation before authoring policy or bundles:
 
 - Node.js/npm for installing and verifying the current published AIH package. The
-  frozen v6 package is `@aihq/harness`; the new Core line starts at `@aihq/core@0.1.0`.
+  active Core line starts at `@aihq/core@0.1.0`; `@aihq/harness@6.1.0` is frozen.
 - Git for source pins, release checks, and admin-configuration commits.
 - Docker or a compatible container runtime when the organization requires containerized detectors such as SkillSpector, or when scanner images need to be built, pushed, and signed.
 - Cosign or the organization's selected signer when marketplace artifacts, bundles, evidence, or container images require signatures.
@@ -345,16 +346,16 @@ If Docker or cosign is not part of the organization's selected policy path, docu
 Verify the release before rollout:
 
 ```console
-npm install -g @aihq/harness@6.1.0
-aih verify-release 6.1.0
+npm install -g @aihq/core@0.1.0
+aih verify-release 0.1.0
 ```
 
 Full release verification requires local `npm`, `gh`, and `cosign`; proceed only when all three legs
 pass. A skipped leg is incomplete evidence, not a successful rollout gate.
 
 For a major-version upgrade, install the approved explicit version (currently
-`npm install -g @aihq/harness@6.1.0`); `npm update -g` may stay within the current major. Re-run
-`aih verify-release 6.1.0` after an upgrade. Use `--force` only
+`npm install -g @aihq/core@0.1.0`); `npm update -g` may stay within the current major. Re-run
+`aih verify-release 0.1.0` after an upgrade. Use `--force` only
 when replacing a broken global install after reviewing the npm prefix and approved package source.
 
 Bootstrap a governed repo with an enterprise posture:
@@ -531,8 +532,8 @@ Most writing commands refuse a dirty worktree unless `--force` is supplied. In g
 Min Configuration:
 
 ```powershell
-npm install -g @aihq/harness@6.1.0
-aih verify-release 6.1.0
+npm install -g @aihq/core@0.1.0
+aih verify-release 0.1.0
 aih policy validate
 aih init . --posture enterprise --mcp-mode offline --mcp-compliant
 aih init . --posture enterprise --mcp-mode offline --mcp-compliant --apply
@@ -768,7 +769,7 @@ uvx codebase-memory-mcp@0.10.5 --help
 Before handing configuration to developers, verify the admin package from the same repo or distribution location developers will use:
 
 ```powershell
-aih verify-release 6.1.0
+aih verify-release 0.1.0
 aih policy validate
 aih policy verify --against <trusted-policy-sha-or-bundle>
 aih pack validate --pack docs-quality

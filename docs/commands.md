@@ -38,9 +38,10 @@ MCP config where possible and emits chain-inspection guidance plus `NODE_EXTRA_C
 `SSL_CERT_FILE` remediation snippets for TLS-intercepting enterprise proxies. It does not contact
 repo-derived MCP endpoints during planning; live Node/Python endpoint TLS handshakes and CA-bundle
 comparisons require explicit `--probe-mcp-endpoints` and run as verification probes. For major
-AI-Harness upgrades during the package transition, keep the frozen published v6 install at
-`npm install -g @aihq/harness@6.1.0` until the release notes name an actually published
-`@aihq/core` version. Add `--force` only when replacing a broken global install after
+AI-Harness upgrades, install the exact active Core line with
+`npm install -g @aihq/core@0.1.0` only after its npm and GitHub Release evidence is
+available; otherwise keep the frozen `@aihq/harness@6.1.0` install. Add `--force`
+only when replacing a broken global install after
 reviewing the current workstation state. For the same bounded origins, it compares OS and
 Node TLS handshakes, tries system trust before a minimal set of matched OS roots, and persists a
 candidate locally only under `--apply` after it verifies. `--scope certs,npm,path,mcp,all`.
@@ -1342,7 +1343,7 @@ attestations.
 
 ## aih verify-release
 
-Pending Core `0.1.0` behavior: read-only release verification for published `@aihq/core`
+Core `0.1.0` behavior: read-only release verification for published `@aihq/core`
 versions. With no positional version,
 it resolves the latest package version from npm; with `aih verify-release <version>`, it checks that
 specific version. The command installs that exact package into a temporary prefix with scripts

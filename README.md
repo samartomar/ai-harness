@@ -20,8 +20,8 @@ The public product boundary is: **Core governs. Scan produces evidence. Catalog
 provides AIH qualification. The organization authorizes.** The package architecture
 is Core as `@aihq/core` with the `aih` command, Scanner as `@aihq/scan` with
 `aih-scan`, and the Supported Catalog as `@aihq/catalog`. Each repository must adopt
-that identity before its separately authorized npm publication. All local governance
-state remains under `.aih/`.
+that identity and pass its own exact-SHA publication gate. All local governance state
+remains under `.aih/`.
 
 It supports enterprise environments ranging from
 locked-down, TLS-intercepted networks to open ones. It extracts corporate trust,
@@ -41,10 +41,9 @@ the claim -> implementation -> test proof map.
 
 ## The stable command contract
 
-The current published v6 line remains `@aihq/harness@6.1.0`. That legacy package is
-frozen: no later AIH release will be published under that name. This repository now
-builds the new pre-1.0 package line as `@aihq/core`; `@aihq/core@0.1.0` has not been published
-to npm. The package move adds no wrapper or
+The active pre-1.0 package line is `@aihq/core`, starting at `0.1.0`. The previously
+published `@aihq/harness@6.1.0` package is frozen: no later AIH release will be
+published under that name. The package move adds no wrapper or
 alias package and does not rename `aih`, `.aih/`, environment variables, schemas,
 receipt identifiers, check codes, or durable state formats.
 
@@ -64,9 +63,16 @@ policy: [STABILITY.md](https://github.com/samartomar/ai-harness/blob/main/STABIL
 
 ## Install
 
-Until `@aihq/core` has an authorized published version, install and verify the frozen
-legacy release below. This release publishes npm provenance plus GitHub release
-checksums and a keyless cosign bundle:
+When npm and the matching GitHub Release expose `@aihq/core@0.1.0`, install and verify
+that exact active release:
+
+```bash
+npm install -g @aihq/core@0.1.0         # then run: aih --help
+aih verify-release 0.1.0   # checks npm signatures, GitHub release sums, and cosign evidence
+```
+
+Until those exact artifacts exist, the frozen legacy release remains the only
+published install:
 
 ```bash
 npm install -g @aihq/harness@6.1.0      # then run: aih --help
@@ -81,16 +87,16 @@ Per-version release notes — what changed, and why — live in
 npm tarball too, so an evaluator can read the version history straight from the unpacked package.
 
 <!-- aih:claim CM-51 -->
-Published v6 library integrations import the strict Package Graph v1 TypeScript schema
-from `@aihq/harness` and resolve its structural editor schema at
-`@aihq/harness/schemas/aih-package-graph.schema.json`. After the new Core line is
-published, the same root and schema exports move to `@aihq/core`; no compatibility
-wrapper is planned. Cross-record checks such as
+Core 0.1.0 library integrations import the strict Package Graph v1 TypeScript schema
+from `@aihq/core` and resolve its structural editor schema at
+`@aihq/core/schemas/aih-package-graph.schema.json`; no legacy compatibility wrapper is
+planned. Frozen v6 consumers retain the matching exports under `@aihq/harness`.
+Cross-record checks such as
 identity uniqueness, direct-member resolution, and evidence subject binding belong
 to the TypeScript parser; graph metadata is never approval or evidence by itself.
 
 <!-- aih:claim CM-86 -->
-The current source and packed Core candidate export Strict V2 organization-qualified,
+Core 0.1.0 source and package export Strict V2 organization-qualified,
 AIH-supported qualification, decision, upstream-artifact manifest, and upstream-observation
 contracts, with matching JSON Schemas under `@aihq/core/schemas/`. They let organization evidence and supported-catalog
 producers share one exact GitHub/npm/PyPI/OCI/remote subject grammar without making catalog
@@ -113,7 +119,7 @@ and durable audit inspection. The complete packaged syntax is in
 [Catalog-absent organization detector evidence](guides/enterprise-admin-guide.md#catalog-absent-organization-detector-evidence).
 
 <!-- aih:claim CM-89 -->
-The unreleased `aih policy managed usage-metering` route is one closed AIH-managed
+The `aih policy managed usage-metering` route is one closed AIH-managed
 adapter, not a generic plugin registry. `describe` reports the code-derived
 `usage-metering` subject, AIH release/source revision, adapter identity, fixed
 `configure` effect, and the only supported targets (`claude` and `codex`).
