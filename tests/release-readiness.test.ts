@@ -126,6 +126,9 @@ describe("release readiness metadata", () => {
     expect(releasing).toContain("delete the GitHub `NPM_BOOTSTRAP_TOKEN` secret");
     expect(releasing).toContain("revoke the npm token");
     expect(releasing).toMatch(/restores trusted-publisher-only\s+publication/u);
+    expect(releasing).toMatch(
+      /as soon as npm confirms package existence, regardless of whether\s+the later GitHub Release succeeds/u,
+    );
 
     const actions = [...release.matchAll(/^\s*(?:-\s*)?uses:\s*([^@\s]+)@([^\s#]+).*$/gmu)];
     expect(actions.length).toBeGreaterThanOrEqual(7);
@@ -277,6 +280,19 @@ describe("release readiness metadata", () => {
     expect(verificationIndexes[2]).toBeLessThan(signIndex);
     expect(verificationIndexes[3]).toBeLessThan(publishIndex);
     expect(verificationIndexes[4]).toBeLessThan(releaseIndex);
+
+    const bootstrapStep = publication.slice(publishIndex, releaseIndex);
+    const authenticatedAbsenceIndex = bootstrapStep.indexOf('npm view "@aihq/core" name --json');
+    const liveRefIndex = bootstrapStep.indexOf(
+      "Revalidate live main and tag after authenticated registry observation",
+    );
+    const finalHashIndex = bootstrapStep.indexOf('actual_sha256="$(sha256sum "$TARBALL"');
+    const effectIndex = bootstrapStep.indexOf('npm publish "$tarball"');
+    expect(authenticatedAbsenceIndex).toBeGreaterThanOrEqual(0);
+    expect(liveRefIndex).toBeGreaterThan(authenticatedAbsenceIndex);
+    expect(finalHashIndex).toBeGreaterThan(liveRefIndex);
+    expect(effectIndex).toBeGreaterThan(finalHashIndex);
+    expect(bootstrapStep).toContain("env -u NODE_AUTH_TOKEN git");
   });
 
   it("documents stable-direct as the default and names every required RC trigger", () => {

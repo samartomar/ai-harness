@@ -65,9 +65,10 @@ bootstrap gate.
    verification, build, pack, and smoke execution stay in the read-only job. Only the
    protected job has `id-token: write`; it runs no Core package code and publishes the
    digest-bound tarball with public access and provenance.
-5. **Replace bootstrap authority immediately after verified publication.** First verify
-   that npm serves exact `@aihq/core@0.1.0` with the expected integrity and provenance.
-   Then, using npm CLI 11.15.0 or later, an authenticated scope owner runs:
+5. **Replace bootstrap authority as soon as npm confirms package existence, regardless of whether
+   the later GitHub Release succeeds.** First verify that npm serves exact
+   `@aihq/core@0.1.0` with the expected integrity and provenance. Then, using npm CLI
+   11.15.0 or later, an authenticated scope owner runs:
    ```bash
    npm trust github @aihq/core --file release.yml --repo samartomar/ai-harness --env npm-publish --allow-publish
    npm trust list @aihq/core
@@ -217,6 +218,10 @@ npm dist-tag add @aihq/core@X.Y.Z latest
 - If a tag was pushed by mistake or publication fails, do not delete, move, or reuse
   the protected tag. Preserve the failed run as lifecycle evidence, fix forward to a
   new version, and supersede any draft Release or milestone with an explicit failure note.
+- If npm publication succeeded before a later workflow step failed, package existence is
+  the cleanup trigger: complete bootstrap-authority replacement immediately before
+  repairing the missing GitHub Release evidence. Do not leave the credential or token
+  path active while repairing that evidence.
 
 ## Version coherence (guardrail)
 
