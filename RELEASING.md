@@ -1,12 +1,17 @@
 # Releasing
 
 How a maintainer cuts a release. The heavy lifting is automated: pushing a `v-core-*` tag runs
-[`.github/workflows/release.yml`](.github/workflows/release.yml), which verifies the gates,
-packs a tarball + SHA256 checksum + SPDX SBOM, attests build provenance (keyless OIDC),
-signs the checksum file with keyless cosign, smoke-installs the tarball, publishes to npm
-via Trusted Publishing with `--provenance`, and creates the GitHub Release with generated
-notes and the artifacts attached: the tarball, `SHA256SUMS.txt` (+ its cosign signature
-bundle `SHA256SUMS.txt.sigstore.json`), `provenance.intoto.jsonl`, and `aih-sbom.spdx.json`.
+[`.github/workflows/release.yml`](.github/workflows/release.yml). A read-only
+`verify-and-pack` job verifies the gates, packs one tarball, records its SHA256 digest,
+smoke-installs that exact tarball in a disposable root, and uploads only the tarball as a
+GitHub workflow artifact. The protected `npm-publish` job downloads that artifact by ID,
+verifies GitHub's artifact digest plus the original tarball digest and packed package
+identity, and runs no Core package code. It then generates the tarball-scoped SPDX SBOM,
+attests build provenance, signs a checksum reconstructed from the trusted digest,
+re-observes the current `main` and tag, publishes the same tarball to npm via Trusted
+Publishing with `--provenance`, and creates the GitHub Release with generated notes and
+the artifacts attached: the tarball, `SHA256SUMS.txt` (+ its cosign signature bundle
+`SHA256SUMS.txt.sigstore.json`), `provenance.intoto.jsonl`, and `aih-sbom.spdx.json`.
 
 Your job is everything up to the tag.
 
@@ -50,8 +55,9 @@ bootstrap gate.
    publication; define and separately approve an exact-SHA, one-use GitHub bootstrap path.
 4. **Confirm the GitHub gate.** The `npm-publish` environment requires a reviewer. The
    existing immutable `v*` tag ruleset covers Core tags, and the release workflow
-   narrows its trigger to `v-core-*`. The workflow keeps `id-token: write`, uses a
-   GitHub-hosted runner, and publishes the exact packed tarball with public access.
+   narrows its trigger to `v-core-*`. Candidate install, verification, build, pack, and
+   smoke execution stay in the read-only job. Only the protected job has `id-token: write`;
+   it runs no Core package code and publishes the digest-bound tarball with public access.
 5. **Lock down after the first verified release.** Confirm npm provenance, then set the
    package's publishing access to require 2FA and disallow tokens. Separately deprecate
    `@aihq/harness` only after the replacement release is publicly installable and verified.
@@ -143,8 +149,10 @@ version and SHA named by the release tracker; source approval alone is not publi
    git tag v-core-X.Y.Z
    git push origin v-core-X.Y.Z
    ```
-12. **Watch the workflow.** The `release` run publishes to npm and creates the GitHub Release.
-   If the `npm-publish` environment has a required reviewer, approve it.
+12. **Watch the workflow.** First confirm the read-only `verify-and-pack` job completes.
+   The protected `npm-publish` job then rechecks artifact custody, live `main` and tag state,
+   publishes to npm, and creates the GitHub Release. If the environment has a required
+   reviewer, approve that job only after the read-only job is green.
 13. **Verify the published package:**
    ```bash
    npm view @aihq/core@X.Y.Z

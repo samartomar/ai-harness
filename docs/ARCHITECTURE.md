@@ -119,7 +119,10 @@ CLIs, and an uninstall failure blocks the dependent ledger transaction.
 
 Published releases use npm trusted publishing, GitHub release assets, SPDX SBOMs,
 checksums, a keyless cosign bundle for `SHA256SUMS.txt`, and GitHub build
-provenance. Tagged release artifacts claim SLSA Build L2 under the SLSA v1.2
+provenance. Candidate verification and execution run without publication authority;
+the protected job accepts only a workflow-artifact- and tarball-digest-bound package,
+checks its packed identity, and re-observes the tag and `main` before publication.
+Tagged release artifacts claim SLSA Build L2 under the SLSA v1.2
 Build track; the evidence map and the Build L3 gap are documented in
 [security/release-slsa.md](security/release-slsa.md). Operators can run
 `aih verify-release [version]` to verify npm signatures, the GitHub release

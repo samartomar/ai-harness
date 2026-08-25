@@ -722,11 +722,13 @@ aih usage --rollup ../repo-a,../repo-b
   [Releases](https://github.com/samartomar/ai-harness/releases).
 - **Versioning & support** — [VERSIONING.md](https://github.com/samartomar/ai-harness/blob/main/VERSIONING.md). SemVer; security fixes
   land on the **latest minor** — upgrade to the latest release line to stay fixed.
-- **Supply chain** — the current release workflow publishes via npm **Trusted Publishing** with build
+- **Supply chain** — the Core release workflow is configured to publish via npm **Trusted Publishing** with build
   **provenance** and ships an **SPDX SBOM**, a **SHA256 checksum**, its keyless **cosign
   signature bundle** (`SHA256SUMS.txt.sigstore.json`), and the Sigstore **build-provenance
-  bundle** on the GitHub Release. Releases from `v0.6.0` onward include the sigstore/provenance
-  assets; earlier historical tags have a narrower asset set. Tagged release artifacts claim
+  bundle** on the GitHub Release. Candidate build and smoke execution stay in a read-only job;
+  the protected publication job verifies the workflow-artifact digest, original tarball digest,
+  and packed identity without executing Core package code. Releases from `v0.6.0` onward include
+  the sigstore/provenance assets; earlier historical tags have a narrower asset set. Tagged release artifacts claim
   [SLSA Build L2](https://github.com/samartomar/ai-harness/blob/main/docs/security/release-slsa.md) under SLSA v1.2; no Build L3 claim is
   made. Verify a published release with `aih verify-release [version]`; a skipped verification leg
   is incomplete evidence. Consumers with provenance-aware policy can also use `gh attestation verify`.
