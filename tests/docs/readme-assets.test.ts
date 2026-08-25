@@ -43,15 +43,15 @@ function isCoveredByPackageFiles(assetPath: string, files: readonly string[]): b
 }
 
 describe("README docs currency", () => {
-  it("keeps the unpublished Core transition distinct from the frozen v6 package", () => {
+  it("keeps the active Core line distinct from the frozen v6 package", () => {
     const readme = read("README.md");
     const pkg = JSON.parse(read("package.json")) as { name: string; version: string };
 
     expect(pkg).toMatchObject({ name: "@aihq/core", version: "0.1.0" });
-    expect(readme).toContain("The current published v6 line remains `@aihq/harness@6.1.0`");
-    expect(readme).toContain("builds the new pre-1.0 package line as `@aihq/core`");
-    expect(readme).toContain("`@aihq/core@0.1.0` has not been published");
-    expect(readme).not.toContain("npm install -g @aihq/core@0.1.0");
+    expect(readme).toContain("The active pre-1.0 package line is `@aihq/core`");
+    expect(readme).toContain("published `@aihq/harness@6.1.0` package is frozen");
+    expect(readme).toContain("npm install -g @aihq/core@0.1.0");
+    expect(readme).toContain("Until those exact artifacts exist");
   });
 
   it("keeps README image metadata aligned with the current release assets", () => {
@@ -73,7 +73,7 @@ describe("README docs currency", () => {
       expect(existsSync(join(root, assetPath))).toBe(true);
       expect(isCoveredByPackageFiles(assetPath, pkg.files ?? [])).toBe(true);
     }
-    expect(overview).toContain(`v${pkg.version} overview`);
+    expect(overview).toContain(`v${pkg.version} Core overview`);
     expect(overview).toContain("Five governed-readiness pillars");
     expect(overview).toContain(`${surface.commands.length} commands`);
     expect(normalizedOverview).toContain("aih truth pack · verify · docs-lint claim gate");
@@ -82,9 +82,8 @@ describe("README docs currency", () => {
     expect(overview).not.toContain("staged &amp; signed");
     expect(overview).not.toContain("release-candidate");
     expect(overview).not.toContain("pending release");
-    // Before publication, the release-journey tip names the exact Core candidate
-    // without presenting it as shipped. The release cut changes both text and assertion.
-    expect(overview).toContain(`v${pkg.version} · candidate`);
+    expect(overview).toContain(`v${pkg.version} · Core`);
+    expect(overview).not.toContain("· candidate");
 
     const overviewAlt = imageAlt(readme, "docs/assets/aih-overview.svg").toLowerCase();
     expect(overviewAlt).toContain(`v${pkg.version}`);

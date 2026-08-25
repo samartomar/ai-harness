@@ -1,7 +1,7 @@
 ---
 status: guide
 owner: AI-Harness maintainers
-last_verified: 2026-07-07
+last_verified: 2026-08-25
 truth_home: true
 purpose: Persona guide for individual developers and evaluators using AI-Harness.
 ---
@@ -32,8 +32,8 @@ Think in six layers:
 Verify a published release when release integrity matters:
 
 ```console
-npm install -g @aihq/harness@6.1.0
-aih verify-release 6.1.0
+npm install -g @aihq/core@0.1.0
+aih verify-release 0.1.0
 ```
 
 Full release verification requires local `npm`, `gh`, and `cosign`; proceed only when all three legs

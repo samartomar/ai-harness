@@ -1,14 +1,14 @@
 ---
 status: guide
 owner: AI-Harness maintainers
-last_verified: 2026-07-07
+last_verified: 2026-08-25
 truth_home: true
 purpose: Use-case map for AI-Harness commands across developer, shared-repository, and enterprise workflows.
 ---
 
 # AI-Harness Command Use-Case Guide
 
-Use this guide when the question is "which `aih` command applies to this situation?" The public `docs/commands.md` page and `aih <command> --help` remain the syntax authorities. This guide maps common workflows across the frozen published `@aihq/harness@6.1.0` command surface; it does not replace the command reference or present unpublished Core behavior as shipped.
+Use this guide when the question is "which `aih` command applies to this situation?" The public `docs/commands.md` page and `aih <command> --help` remain the syntax authorities. This guide maps common workflows across the `@aihq/core@0.1.0` command surface; it does not replace the command reference.
 
 ## Command Rule
 
