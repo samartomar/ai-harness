@@ -39,7 +39,11 @@ const temp = mkdtempSync(join(tempBase, "aih-upstream-artifact-cold-"));
 try {
   const packed = runNode(root, [npmCli, "pack", "--json", "--pack-destination", temp]);
   const packManifest = JSON.parse(packed.stdout);
-  if (!Array.isArray(packManifest) || typeof packManifest[0]?.filename !== "string")
+  if (
+    !Array.isArray(packManifest) ||
+    packManifest[0]?.name !== "@aihq/core" ||
+    typeof packManifest[0]?.filename !== "string"
+  )
     throw new Error("cold-upstream-artifact-pack-manifest");
 
   const consumer = resolve(temp, "consumer");
@@ -56,7 +60,7 @@ try {
     resolve(temp, packManifest[0].filename),
   ]);
 
-  const installed = resolve(consumer, "node_modules", "@aihq", "harness");
+  const installed = resolve(consumer, "node_modules", "@aihq", "core");
   const cli = resolve(installed, "dist", "cli.js");
   const bin = resolve(consumer, "node_modules", ".bin", "aih");
   const schema = resolve(installed, "schemas", "aih-upstream-artifact-manifest-v1.schema.json");
@@ -66,7 +70,7 @@ try {
   writeFileSync(
     resolve(consumer, "verify-public.mjs"),
     [
-      'import { canonicalUpstreamArtifactManifestV1, parseUpstreamArtifactManifestV1Bytes } from "@aihq/harness";',
+      'import { canonicalUpstreamArtifactManifestV1, parseUpstreamArtifactManifestV1Bytes } from "@aihq/core";',
       'import { readFileSync } from "node:fs";',
       'import { createRequire } from "node:module";',
       'const sha = `sha256:${"a".repeat(64)}`;',
@@ -75,7 +79,7 @@ try {
       'if (parseUpstreamArtifactManifestV1Bytes(bytes)?.subject.id !== "custom-mcp") throw new Error("public parser rejected canonical manifest");',
       'if (parseUpstreamArtifactManifestV1Bytes(Buffer.from(`${bytes.toString("utf8")}\\n`)) !== undefined) throw new Error("public parser accepted noncanonical bytes");',
       "const require = createRequire(import.meta.url);",
-      'const schemaPath = require.resolve("@aihq/harness/schemas/aih-upstream-artifact-manifest-v1.schema.json");',
+      'const schemaPath = require.resolve("@aihq/core/schemas/aih-upstream-artifact-manifest-v1.schema.json");',
       'if (JSON.parse(readFileSync(schemaPath, "utf8")).title !== "aih-upstream-artifact-manifest-v1.schema.json") throw new Error("public schema unavailable");',
     ].join("\n"),
   );

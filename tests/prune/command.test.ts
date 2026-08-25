@@ -631,7 +631,7 @@ describe("aih prune ECC registration reconciliation", () => {
       pinnedSha: "a".repeat(40),
       treeSha256: "b".repeat(64),
       tier: "vendor",
-      issuer: "@aihq/harness release",
+      issuer: "@aihq/core release",
       evidenceSha256: "c".repeat(64),
     };
     writeFileSync(

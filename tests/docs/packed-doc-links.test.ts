@@ -164,7 +164,7 @@ describe("packed Markdown link inspection", () => {
     );
 
     const proof = readFileSync("tools/verify-packed-administrator-docs.mjs", "utf8");
-    expect(proof).toContain('resolve(consumer, "node_modules", "@aihq", "harness")');
+    expect(proof).toContain('resolve(consumer, "node_modules", "@aihq", "core")');
     expect(proof).toContain("inspectPackedMarkdownLinks(installed, packageFiles)");
     expect(proof).toContain('args: ["policy", "lifecycle", "npm-package", "--help"]');
     expect(proof).toContain('args: ["policy", "lifecycle", "upstream-artifact", "--help"]');

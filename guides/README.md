@@ -10,7 +10,7 @@ purpose: Entry point for AI-Harness guides by reader persona and workflow.
 
 Use this folder for human-facing guidance. These docs explain how different readers should use AI-Harness without mixing shipped behavior with unshipped plans.
 
-Guide baseline: `@aihq/harness@2.4.3`. Use [docs/commands.md](../docs/commands.md) and `aih <command> --help` as syntax authorities; these guides explain reader workflows.
+Published guide baseline: the frozen `@aihq/harness@6.1.0`. Use [docs/commands.md](../docs/commands.md) and `aih <command> --help` as syntax authorities; these guides explain reader workflows and identify unpublished Core behavior explicitly.
 
 ![AI-Harness guide map showing reader paths for vibe developers, shared repositories, enterprise admins, enterprise developers, and shared command references](../docs/assets/aih-guide-map.svg)
 

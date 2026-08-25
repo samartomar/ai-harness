@@ -942,7 +942,7 @@ function buildHero(digests: DigestAction[]): string {
 }
 
 /** The product brand shown in the sticky top bar (the report's fixed header). */
-const BRAND = "Enterprise AI Bootstrapping Harness Report";
+const BRAND = "AIH — AI Development Assurance Report";
 
 const KIND_LABEL: Record<string, string> = {
   escalation: "Escalation",

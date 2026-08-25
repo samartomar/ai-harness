@@ -54,14 +54,14 @@ function requirePackName(ctx: PlanContext): string {
   return packName;
 }
 
-function harnessPackageRoot(start = dirname(fileURLToPath(import.meta.url))): string {
+function corePackageRoot(start = dirname(fileURLToPath(import.meta.url))): string {
   let current = start;
   for (;;) {
     const pkgPath = join(current, "package.json");
     if (existsSync(pkgPath)) {
       try {
         const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as { name?: unknown };
-        if (pkg.name === "@aihq/harness") return current;
+        if (pkg.name === "@aihq/core") return current;
       } catch {
         // Keep walking; a malformed nearer package.json should not redirect the source root.
       }
@@ -70,11 +70,11 @@ function harnessPackageRoot(start = dirname(fileURLToPath(import.meta.url))): st
     if (parent === current) break;
     current = parent;
   }
-  throw refuse("cannot locate the @aihq/harness package root to read first-party packs");
+  throw refuse("cannot locate the @aihq/core package root to read first-party packs");
 }
 
 function firstPartyPacksRoot(): string {
-  const root = join(harnessPackageRoot(), FIRST_PARTY_PACKS_DIR);
+  const root = join(corePackageRoot(), FIRST_PARTY_PACKS_DIR);
   if (!existsSync(root)) {
     throw refuse(
       `first-party pack assets are missing from this install — ${FIRST_PARTY_PACKS_DIR}/ must be included in the package`,
@@ -146,7 +146,7 @@ function skillRefs(packName: string, packRoot: string): PackSkillRef[] {
 }
 
 function sourceMetadata(packName: string): Pack | undefined {
-  const root = harnessPackageRoot();
+  const root = corePackageRoot();
   if (readIfExists(join(root, AIH_PACKS_FILE)) === undefined) return undefined;
   return readPacksFile(root).packs.find((pack) => pack.name === packName);
 }

@@ -1,8 +1,8 @@
 /**
  * v1.0.0 exit-code contract (slice 1, issue #123).
  *
- * Pins the process exit codes a CI consumer can gate on under
- * `@aihq/harness@^1`, as implemented by runCapability (src/commands/run.ts):
+ * Pins the process exit codes carried from the published v1 contract into
+ * `@aihq/core`, as implemented by runCapability (src/commands/run.ts):
  *
  *   0 — success: dry-run plan computed, apply committed, and (when
  *       verification ran) every check passed or was SKIPPED — skip never

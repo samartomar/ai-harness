@@ -390,9 +390,9 @@ describe("aih capability resolve", () => {
   it("fails closed when the mandatory security-review capability is engine-incompatible", async () => {
     seedNodeRepo();
     vi.resetModules();
-    // A major ABOVE the catalog's `^6.0.0` engine range — the caret check pins the major,
-    // so this is the incompatible case. Bump alongside the catalog on every major.
-    vi.doMock("../../src/version.js", () => ({ VERSION: "7.0.0" }));
+    // In pre-1.0 SemVer, `^0.1.0` admits only 0.1.x. A later minor must review
+    // and deliberately advance the built-in catalog's Core engine contract.
+    vi.doMock("../../src/version.js", () => ({ VERSION: "0.2.0" }));
     try {
       const module = await import("../../src/capability/index.js");
       await expect(async () => {

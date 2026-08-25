@@ -227,7 +227,7 @@ function seed(options: { secondAgent?: boolean; secondSkill?: boolean; roots?: s
         pinnedSha: pkg.sourceDigest.value,
         treeSha256: surface.sourceDigest.value,
         tier: "vendor" as const,
-        issuer: "@aihq/harness release",
+        issuer: "@aihq/core release",
         evidenceSha256: baseline.authority.sourceDigest.value,
       },
       provenance: {
@@ -476,7 +476,7 @@ describe("mixed capability package coordinator", () => {
               pinnedSha: pkg.sourceDigest.value,
               treeSha256: surface.sourceDigest.value,
               tier: "vendor",
-              issuer: "@aihq/harness release",
+              issuer: "@aihq/core release",
               evidenceSha256: baseline.authority.sourceDigest.value,
             },
             provenance: {

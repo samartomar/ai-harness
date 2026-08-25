@@ -21,7 +21,7 @@ describe("Organization Evidence Envelope public package surface", () => {
     );
 
     const resolved = import.meta.resolve(
-      "@aihq/harness/schemas/aih-organization-evidence-envelope-v1.schema.json",
+      "@aihq/core/schemas/aih-organization-evidence-envelope-v1.schema.json",
     );
     expect(fileURLToPath(resolved)).toBe(
       join(root, "schemas/aih-organization-evidence-envelope-v1.schema.json"),

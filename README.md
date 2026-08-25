@@ -1,4 +1,4 @@
-# aih — Enterprise AI Bootstrapping Harness
+# AIH — AI Development Assurance
 
 [![CI](https://github.com/samartomar/ai-harness/actions/workflows/ci.yml/badge.svg)](https://github.com/samartomar/ai-harness/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/samartomar/ai-harness/actions/workflows/codeql.yml/badge.svg)](https://github.com/samartomar/ai-harness/actions/workflows/codeql.yml)
@@ -8,13 +8,20 @@
 [![Node ≥20](https://img.shields.io/badge/node-%E2%89%A520-339933.svg)](package.json)
 
 <p align="center">
-<img src="docs/assets/aih-overview.svg" alt="aih v6.1.0 governed-readiness overview showing Environment, Context, Policy, Execution, and Evidence pillars plus truth verify and the docs-lint claim gate" width="100%">
+<img src="docs/assets/aih-overview.svg" alt="aih v0.1.0 governed-readiness overview showing Environment, Context, Policy, Execution, and Evidence pillars plus truth verify and the docs-lint claim gate" width="100%">
 </p>
 
 Use the coding agent that fits your workflow. `aih` is a cross-platform CLI that
 prepares developer workstations and repositories for **reviewable, governed
 AI-assisted coding**, with repository-owned context, supported guardrails,
 governed capability workflows, and verification surfaces.
+
+The public product boundary is: **Core governs. Scan produces evidence. Catalog
+provides AIH qualification. The organization authorizes.** The package architecture
+is Core as `@aihq/core` with the `aih` command, Scanner as `@aihq/scan` with
+`aih-scan`, and the Supported Catalog as `@aihq/catalog`. Each repository must adopt
+that identity before its separately authorized npm publication. All local governance
+state remains under `.aih/`.
 
 It supports enterprise environments ranging from
 locked-down, TLS-intercepted networks to open ones. It extracts corporate trust,
@@ -34,11 +41,17 @@ the claim -> implementation -> test proof map.
 
 ## The stable command contract
 
-For the current v6 line, pin `@aihq/harness@^6` unless your organization pins an
-exact release for reproducible rollout. Every command, flag, and deprecated alias is
+The current published v6 line remains `@aihq/harness@6.1.0`. That legacy package is
+frozen: no later AIH release will be published under that name. This repository now
+builds the new pre-1.0 package line as `@aihq/core`; `@aihq/core@0.1.0` has not been published
+to npm. The package move adds no wrapper or
+alias package and does not rename `aih`, `.aih/`, environment variables, schemas,
+receipt identifiers, check codes, or durable state formats.
+
+Every command, flag, and deprecated command alias is
 snapshot-tested in CI against a committed fixture, the `--json` envelope is
 schema-pinned, and exit-code semantics are pinned — a surface change fails the build
-until it ships as a reviewed contract decision. Renames ship as deprecated aliases
+until it ships as a reviewed contract decision. Command renames ship as deprecated aliases
 (the old name keeps working, with a one-line warning) before a major removes them,
 and security fixes land on the latest minor — upgrading is the fix path. The full
 policy: [STABILITY.md](https://github.com/samartomar/ai-harness/blob/main/STABILITY.md).
@@ -51,7 +64,8 @@ policy: [STABILITY.md](https://github.com/samartomar/ai-harness/blob/main/STABIL
 
 ## Install
 
-Install and verify a published release. Current releases publish npm provenance plus GitHub release
+Until `@aihq/core` has an authorized published version, install and verify the frozen
+legacy release below. This release publishes npm provenance plus GitHub release
 checksums and a keyless cosign bundle:
 
 ```bash
@@ -67,16 +81,18 @@ Per-version release notes — what changed, and why — live in
 npm tarball too, so an evaluator can read the version history straight from the unpacked package.
 
 <!-- aih:claim CM-51 -->
-Library integrations can import the strict Package Graph v1 TypeScript schema from
-`@aihq/harness` and resolve its structural editor schema at
-`@aihq/harness/schemas/aih-package-graph.schema.json`. Cross-record checks such as
+Published v6 library integrations import the strict Package Graph v1 TypeScript schema
+from `@aihq/harness` and resolve its structural editor schema at
+`@aihq/harness/schemas/aih-package-graph.schema.json`. After the new Core line is
+published, the same root and schema exports move to `@aihq/core`; no compatibility
+wrapper is planned. Cross-record checks such as
 identity uniqueness, direct-member resolution, and evidence subject binding belong
 to the TypeScript parser; graph metadata is never approval or evidence by itself.
 
 <!-- aih:claim CM-86 -->
-The unreleased library surface also publishes Strict V2 organization-qualified,
+The current source and packed Core candidate export Strict V2 organization-qualified,
 AIH-supported qualification, decision, upstream-artifact manifest, and upstream-observation
-contracts, with matching JSON Schemas under `@aihq/harness/schemas/`. They let organization evidence and supported-catalog
+contracts, with matching JSON Schemas under `@aihq/core/schemas/`. They let organization evidence and supported-catalog
 producers share one exact GitHub/npm/PyPI/OCI/remote subject grammar without making catalog
 membership an organization admission. The organization-qualified route binds one canonical,
 size-bounded evidence envelope to an externally verified V3 authority decision. The supported

@@ -1,7 +1,13 @@
 # Stability
 
-`aih` 1.0 is a compatibility commitment: a consumer pinning `@aihq/harness@^1` can
-script against the surfaces below and take every minor and patch without breakage.
+The published `aih` v1–v6 compatibility commitment applies to
+`@aihq/harness`. That package is now frozen at v6.1.0; no compatibility wrapper or
+later release will be published under the legacy name. The new `@aihq/core` line
+restarts package numbering at `0.1.0` while retaining the `aih` command and the
+covered surfaces below. Consumers must change the package name when adopting Core;
+the lower package version does not roll back schema, receipt, state, or command
+contracts.
+
 The contract is not prose — every covered surface is pinned by a committed test in
 [tests/contract/](tests/contract/), and any drift fails CI (see
 [Enforcement](#enforcement)). This document claims only what those tests enforce.

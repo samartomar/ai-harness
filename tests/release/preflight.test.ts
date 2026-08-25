@@ -127,6 +127,19 @@ describe("runPreflight — clean cut", () => {
     expect(m.computedBump).toBe("minor");
     expect(m.nextVersion).toBe("2.6.0");
   });
+
+  it("records 0.1.0 as the one-time Core package-line bootstrap after legacy v6.1.0", () => {
+    const data = cleanData();
+    const manifest = runPreflight({
+      ...data,
+      previousTag: "v6.1.0",
+      packageVersion: "0.1.0",
+      versionConstant: "0.1.0",
+    });
+
+    expect(manifest.ok).toBe(true);
+    expect(manifest.nextVersion).toBe("0.1.0");
+  });
 });
 
 describe("runPreflight — declared intent checkpoint", () => {
@@ -1077,6 +1090,12 @@ describe("nextVersionFrom", () => {
     expect(nextVersionFrom("v2.5.1", "patch")).toBe("2.5.2");
     expect(nextVersionFrom("v2.5.1", "minor")).toBe("2.6.0");
     expect(nextVersionFrom("v2.5.1", "major")).toBe("3.0.0");
+  });
+
+  it("applies each class to a package-qualified Core tag", () => {
+    expect(nextVersionFrom("v-core-0.1.0", "patch")).toBe("0.1.1");
+    expect(nextVersionFrom("v-core-0.1.0", "minor")).toBe("0.2.0");
+    expect(nextVersionFrom("v-core-0.1.0", "major")).toBe("1.0.0");
   });
 
   it("returns undefined for a malformed tag", () => {

@@ -262,7 +262,8 @@ do not delete or prune target-local history to make the check pass.
 
 For catalog-independent files already placed in the governed root by the organization, use the
 fixed `upstream-artifact` observer and lifecycle. The canonical manifest is shipped as
-`@aihq/harness/schemas/aih-upstream-artifact-manifest-v1.schema.json`; its public parser also rejects
+`@aihq/core/schemas/aih-upstream-artifact-manifest-v1.schema.json` in the pending
+`0.1.0` Core package; its public parser also rejects
 noncanonical or oversized bytes. It binds the exact organization-qualified Decision V2 id,
 tool/skill/MCP/package subject and digests, target, allowed effect, accountable integration owner,
 fixed integration-contract version, and one to 256 sorted root-relative file digests. The raw
@@ -308,8 +309,8 @@ stay non-effective. After an external version or source change, run
 append the new audit record.
 
 Scanner can produce attributable evidence for a catalog-absent exact detector through its one
-code-owned adapter, but the Scanner repository/package remain private and unpublished. Production
-success also still requires a genuine current V3 organization authority receipt and its separately
+code-owned adapter. Its source repository is public, but its npm package remains unpublished.
+Production success also still requires a genuine current V3 organization authority receipt and its separately
 authorized public attestation. The packed Core proof therefore demonstrates the public parser,
 schema, command surfaces, and honest fail-closed refusal only; it does not claim successful custody,
 configuration, activation, or revocation. Scanner publication and organization authority are
@@ -321,7 +322,8 @@ separate trust and release boundaries.
 
 Prepare the admin workstation before authoring policy or bundles:
 
-- Node.js/npm for installing and verifying `@aihq/harness`.
+- Node.js/npm for installing and verifying the current published AIH package. The
+  frozen v6 package is `@aihq/harness`; the new Core line starts at `@aihq/core@0.1.0`.
 - Git for source pins, release checks, and admin-configuration commits.
 - Docker or a compatible container runtime when the organization requires containerized detectors such as SkillSpector, or when scanner images need to be built, pushed, and signed.
 - Cosign or the organization's selected signer when marketplace artifacts, bundles, evidence, or container images require signatures.

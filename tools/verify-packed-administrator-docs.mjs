@@ -154,6 +154,7 @@ try {
   const manifest = JSON.parse(packed.stdout);
   const entry = Array.isArray(manifest) ? manifest[0] : undefined;
   if (
+    entry?.name !== "@aihq/core" ||
     typeof entry?.filename !== "string" ||
     !Array.isArray(entry.files) ||
     entry.files.some((file) => typeof file?.path !== "string")
@@ -172,7 +173,7 @@ try {
     resolve(temp, entry.filename),
   ]);
 
-  const installed = resolve(consumer, "node_modules", "@aihq", "harness");
+  const installed = resolve(consumer, "node_modules", "@aihq", "core");
   const cli = resolve(installed, "dist", "cli.js");
   const packageFiles = entry.files.map((file) => file.path);
   for (const required of ["README.md", "guides/enterprise-admin-guide.md", "docs/commands.md"])

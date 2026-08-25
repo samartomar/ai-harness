@@ -472,6 +472,15 @@ describe("checkSuperpowersScanAcceptance", () => {
   });
 
   it("rejects the AI-Harness checkout and writes no report file", async () => {
+    initVendorCheckout({ "package.json": '{"name":"@aihq/core"}\n' });
+    const before = readdirSync(tempRoot).sort();
+    await expect(
+      checkSuperpowersScanAcceptance({ checkoutPath: checkout }, fixtureDeps(artifact([]))),
+    ).rejects.toBeInstanceOf(ScanAcceptanceCheckError);
+    expect(readdirSync(tempRoot).sort()).toEqual(before);
+  });
+
+  it("also rejects a frozen legacy AI-Harness checkout", async () => {
     initVendorCheckout({ "package.json": '{"name":"@aihq/harness"}\n' });
     const before = readdirSync(tempRoot).sort();
     await expect(

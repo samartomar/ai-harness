@@ -130,7 +130,7 @@ function authorization(
     pinnedSha: input.catalog.pinnedSha,
     treeSha256: actualHash,
     tier,
-    issuer: tier === "vendor" ? "@aihq/harness release" : (input.orgEvidence?.issuer ?? "org"),
+    issuer: tier === "vendor" ? "@aihq/core release" : (input.orgEvidence?.issuer ?? "org"),
     evidenceSha256:
       tier === "vendor" ? input.vendorLockSha256 : (input.orgEvidence?.evidenceSha256 ?? ""),
   };

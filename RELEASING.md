@@ -1,6 +1,6 @@
 # Releasing
 
-How a maintainer cuts a release. The heavy lifting is automated: pushing a `v*` tag runs
+How a maintainer cuts a release. The heavy lifting is automated: pushing a `v-core-*` tag runs
 [`.github/workflows/release.yml`](.github/workflows/release.yml), which verifies the gates,
 packs a tarball + SHA256 checksum + SPDX SBOM, attests build provenance (keyless OIDC),
 signs the checksum file with keyless cosign, smoke-installs the tarball, publishes to npm
@@ -26,33 +26,39 @@ rules as a stable cut. It publishes under `next` and never touches `latest`; pro
 to stable is a separate cut with its own exact-SHA approval. A maintainer may also
 choose an RC for any other cut when extra observation would be useful.
 
-## One-time setup (done — kept for reference)
+## Package bootstrap state
 
-This bootstrap is complete: `@aihq/harness` is live on npm and publishing is OIDC-only
-([#37](https://github.com/samartomar/ai-harness/issues/37), closed).
+The historical `@aihq/harness` bootstrap is complete and its v6.1.0 release remains
+immutable. That legacy package is frozen; do not publish another version under it.
+The replacement `@aihq/core` package is not yet present on npm. Its package line
+starts at `0.1.0`, uses `v-core-X.Y.Z` GitHub tags, and has an additional owner-only
+bootstrap gate.
 
-The package is scoped (`@aihq/harness`). A Trusted Publisher is configured under the package's
-npm settings, so the package has to exist first. Bootstrap it once, then every release after is
-tokenless.
-
-1. **Create the `@aihq` org** — npmjs.com → **Add Organization → `aihq`** → Free (unlimited
-   public packages). This claims the `@aihq` scope. Enable **2FA** on the account.
-2. **Create the package name** with a throwaway pre-release, kept off `latest`:
+1. **Keep the existing scope controls.** The `@aihq` organization and maintainer account
+   retain 2FA. Do not create a throwaway package version or publish from a working tree.
+2. **Prepare the exact release candidate.** Complete the release PR, merge it, obtain the
+   full-SHA publication authorization in step 10 below, and verify the exact packed bytes.
+3. **Configure trusted publishing with npm CLI 11.5.1 or later.** An authenticated scope
+   owner runs the following commands and verifies the returned binding before any tag:
    ```bash
-   npm login
-   npm version 0.2.0-rc.0 --no-git-tag-version
-   npm publish --tag next --access public   # enter OTP; creates @aihq/harness on `next`
-   git checkout -- package.json src/version.ts
+   npm trust github @aihq/core --file release.yml --repo samartomar/ai-harness --env npm-publish --allow-publish
+   npm trust list @aihq/core
    ```
-3. **Add the Trusted Publisher** — npmjs.com → **@aihq/harness → Settings → Trusted publishing
-   → Add** (GitHub Actions): organization/user `samartomar`, repository `ai-harness`, workflow
-   `release.yml`, environment `npm-publish`. Then **restrict token-based publishing** so only
-   OIDC can publish.
-4. The `npm-publish` environment already requires a reviewer (publish waits for approval) and
-   is restricted to `v*` tags — confirm under **repo Settings → Environments**.
+   The binding must name repository `samartomar/ai-harness`, workflow `release.yml`,
+   environment `npm-publish`, and permission `npm publish`. If npm refuses the binding
+   because the package does not yet exist, stop. Do not fall back to unprovenanced local
+   publication; define and separately approve an exact-SHA, one-use GitHub bootstrap path.
+4. **Confirm the GitHub gate.** The `npm-publish` environment requires a reviewer. The
+   existing immutable `v*` tag ruleset covers Core tags, and the release workflow
+   narrows its trigger to `v-core-*`. The workflow keeps `id-token: write`, uses a
+   GitHub-hosted runner, and publishes the exact packed tarball with public access.
+5. **Lock down after the first verified release.** Confirm npm provenance, then set the
+   package's publishing access to require 2FA and disallow tokens. Separately deprecate
+   `@aihq/harness` only after the replacement release is publicly installable and verified.
 
-Tracked in [#37](https://github.com/samartomar/ai-harness/issues/37) (closed). No npm token
-is ever stored; after the bootstrap, publish is OIDC-only.
+The npm package creation/trust action, GitHub environment approval, tag, release, legacy
+deprecation, and any temporary credential path are owner actions. Each requires the exact
+version and SHA named by the release tracker; source approval alone is not publication approval.
 
 ## Cut a release
 
@@ -75,7 +81,8 @@ is ever stored; after the bootstrap, publish is OIDC-only.
    A fully credentialed runner can still post this comment itself. The control creates
    public, timestamped, attributable evidence and removes an invisible
    self-acknowledgement flag; it is not automation-proof authorization. The cut set
-   is the merged PRs reachable from `main` since the previous tag —
+   is the merged PRs reachable from `main` since the previous Core tag — for the
+   first Core cut only, since the final legacy `v6.1.0` tag —
    open, deferred, or partial work never affects the version. Reconcile the open `next-release` train
    milestone ([Milestones](https://github.com/samartomar/ai-harness/milestones)) to that
    git truth: every merged PR since the last tag is in it and carries exactly one
@@ -85,20 +92,25 @@ is ever stored; after the bootstrap, publish is OIDC-only.
    PRs or behind flags, and regrets are reverted before the cut, not deferred.
 2. **Compute the bump and roll the train — atomically.** The bump is the highest
    `semver:*` class among the merged PRs (a merged revert pair cancels out; label
-   semantics in [VERSIONING.md](VERSIONING.md)). Then in one motion: rename the train
-   milestone to `vX.Y.Z`, create the successor `next-release`, and move all open items
+   semantics in [VERSIONING.md](VERSIONING.md)). For the first Core cut, preflight
+   preserves that risk class but reports the explicit new-line bootstrap version
+   `0.1.0`; later cuts compute from the preceding `v-core-*` tag. Then in one motion: rename the train
+   milestone to `v-core-X.Y.Z`, create the successor `next-release`, and move all open items
    across — no trainless window. Milestones are theme-named until this rename; a
    version number never appears on a milestone earlier than this.
    After the rollover, every later preflight must name the versioned cut milestone,
-   for example `npm run release:preflight -- --milestone vX.Y.Z --intent <patch|minor|major>`;
+   for example `npm run release:preflight -- --milestone v-core-X.Y.Z --intent <patch|minor|major>`;
    the new `next-release` milestone is the successor train and must not be swept into the cut.
-3. **Set the version** — use `npm version X.Y.Z --no-git-tag-version` so
+3. **Set the version** — use `npm version X.Y.Z --no-git-tag-version` when the
+   candidate does not already carry that exact version (the first Core candidate
+   already carries `0.1.0`) so
    `package.json` and `package-lock.json` stay coherent, then bump the hardcoded CLI
    constant. These places must match; see the check below:
    - `package.json` `version`
    - `package-lock.json` root/package version
    - `src/version.ts` `VERSION`
-4. **Update the CHANGELOG.** Move `[Unreleased]` items into a new `## [X.Y.Z] - YYYY-MM-DD`
+4. **Update the CHANGELOG.** Move `[Unreleased]` items into a new
+   `## [Core X.Y.Z] - YYYY-MM-DD`
    section under the right headings (Added / Changed / Deprecated / Removed / Fixed /
    Security). Update the compare links at the bottom (add the new version's link and
    repoint `[Unreleased]`).
@@ -112,30 +124,30 @@ is ever stored; after the bootstrap, publish is OIDC-only.
 6. **Verify locally:** `npm run verify` (typecheck · lint · test+coverage · build). Green
    only.
 7. **Confirm versions agree:** `aih --version` (from `npm run build` output) must equal the
-   `package.json` version and the tag you are about to push.
-8. **Open the release tracker issue** as the last open item in the `vX.Y.Z` milestone.
+   `package.json` version and the version suffix of the Core tag you are about to push.
+8. **Open the release tracker issue** as the last open item in the `v-core-X.Y.Z` milestone.
    Its checklist records: included PRs + labels, previous tag + candidate SHA, local/CI
-   verification (including `npm run release:preflight -- --milestone vX.Y.Z --intent <patch|minor|major>`), the publication authorization, tag/workflow, GitHub Release, npm
+   verification (including `npm run release:preflight -- --milestone v-core-X.Y.Z --intent <patch|minor|major>`), the publication authorization, tag/workflow, GitHub Release, npm
    publication, `aih verify-release`, and companion-docs reconciliation.
-9. **Open a release PR** (`release/vX.Y.Z`) that says `Refs #<tracker>` — never
+9. **Open a release PR** (`release/v-core-X.Y.Z`) that says `Refs #<tracker>` — never
    `Closes` — get it green in CI, and merge to `main`.
 10. **Obtain SHA-bound publication approval.** Publishing requires the maintainer's
     explicit
-    `Authorize publishing vX.Y.Z from <full-main-SHA> using the swept vX.Y.Z milestone.`
+    `Authorize publishing @aihq/core@X.Y.Z from <full-main-SHA> using the swept v-core-X.Y.Z milestone.`
     Merging the release PR is **not** permission to push the tag.
 11. **Tag and push** (scope is frozen from here — anything further is the next train's).
     The `release-tags` ruleset protects `v*` tags against update and deletion; publish
     itself waits at the `npm-publish` environment's human approval gate:
    ```bash
    git checkout main && git pull
-   git tag vX.Y.Z
-   git push origin vX.Y.Z
+   git tag v-core-X.Y.Z
+   git push origin v-core-X.Y.Z
    ```
 12. **Watch the workflow.** The `release` run publishes to npm and creates the GitHub Release.
    If the `npm-publish` environment has a required reviewer, approve it.
 13. **Verify the published package:**
    ```bash
-   npm view @aihq/harness@X.Y.Z
+   npm view @aihq/core@X.Y.Z
    npm audit signatures        # provenance + integrity
    aih verify-release X.Y.Z
    ```
@@ -146,7 +158,7 @@ is ever stored; after the bootstrap, publish is OIDC-only.
     Release exists, npm serves the exact version, and `aih verify-release X.Y.Z` passes
     with zero skipped legs (a skip is a prerequisite gap in the verifying environment,
     not a pass — equip it and re-run):
-    complete the tracker checklist, close the tracker, then close the `vX.Y.Z`
+    complete the tracker checklist, close the tracker, then close the `v-core-X.Y.Z`
     milestone. If publication fails permanently, never re-tag — fix forward to
     `X.Y.Z+1`, close the milestone as superseded-not-released with a note, and re-board
     its content on the successor train.
@@ -160,29 +172,30 @@ is ever stored; after the bootstrap, publish is OIDC-only.
 
 `release.yml` picks the dist-tag from the version: a **pre-release** (any version containing
 `-`, e.g. `X.Y.Z-rc.1`) publishes under `next` and never touches `latest`; a stable version
-publishes to `latest`. So tagging `vX.Y.Z-rc.1` ships a pilot build automatically. Dist-tags
+publishes to `latest`. So tagging `v-core-X.Y.Z-rc.1` ships a pilot build automatically. Dist-tags
 can also be moved by hand:
 
 ```bash
-npm dist-tag add @aihq/harness@X.Y.Z next     # or publish the rc with --tag next
+npm dist-tag add @aihq/core@X.Y.Z next     # or publish the rc with --tag next
 # after pilots pass:
-npm dist-tag add @aihq/harness@X.Y.Z latest
+npm dist-tag add @aihq/core@X.Y.Z latest
 ```
 
 ## If something goes wrong
 
 - **Never re-tag a published version.** npm and provenance treat `X.Y.Z` as immutable. Fix
   forward with `X.Y.Z+1`.
-- A bad `latest` can be pointed back with `npm dist-tag add @aihq/harness@<good> latest`; a
+- A bad `latest` can be pointed back with `npm dist-tag add @aihq/core@<good> latest`; a
   published version can be **deprecated** (`npm deprecate`) but not deleted.
-- If a tag was pushed by mistake before publish completed, delete the tag
-  (`git push origin :vX.Y.Z`) and the draft Release, fix, and re-tag.
+- If a tag was pushed by mistake or publication fails, do not delete, move, or reuse
+  the protected tag. Preserve the failed run as lifecycle evidence, fix forward to a
+  new version, and supersede any draft Release or milestone with an explicit failure note.
 
 ## Version coherence (guardrail)
 
 `src/version.ts` holds `VERSION` as a constant, separate from `package.json`, and
 `package-lock.json` also records the root package version. The four-way release check is:
-`version.ts VERSION === package.json version === package-lock root version === tag`.
+`version.ts VERSION === package.json version === package-lock root version === the version suffix of v-core-X.Y.Z`.
 `tests/version.test.ts` pins the first three values (a mismatch fails `npm run verify`,
 CI, and the release workflow's verify step), and the release workflow refuses a tag that
 does not match `package.json`. Steps 5–6 above catch any drift locally, before the tag

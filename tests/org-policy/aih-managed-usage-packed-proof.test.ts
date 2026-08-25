@@ -12,7 +12,7 @@ describe("packed AIH-managed usage proof contract", () => {
     );
 
     const proof = readFileSync(resolve("tools/verify-cold-aih-managed-usage.mjs"), "utf8");
-    expect(proof).toContain('resolve(consumer, "node_modules", "@aihq", "harness")');
+    expect(proof).toContain('resolve(consumer, "node_modules", "@aihq", "core")');
     expect(proof).toContain("cold-managed-usage-unauthorized-effect-accepted");
     expect(proof).toContain("cold-managed-usage-refusal-wrote-output");
     expect(proof).toContain("no successful configure or revocation is claimed");

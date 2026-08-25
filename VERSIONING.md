@@ -18,7 +18,12 @@ version is the contract between the CLI and the repos and workstations it manage
 | **MINOR** | New commands, flags, or artifacts. Backward compatible for existing use. |
 | **MAJOR** | A change that can break an existing invocation, script, or generated file. |
 
-At release time the bump is not chosen by hand: each **merged PR** carries exactly one
+The new `@aihq/core` package line starts at `0.1.0` and uses `v-core-X.Y.Z`
+GitHub tags. That one-time bootstrap version is explicit because the frozen
+`@aihq/harness` line ended at `6.1.0`; it is not a downgrade or a continuation of
+the legacy package's SemVer sequence.
+
+After `v-core-0.1.0`, the bump is not chosen by hand: each **merged PR** carries exactly one
 `semver:patch|minor|major` label (authoritative — issue-level labels are advisory
 planning hints, and issueless PRs such as dependency or docs updates are labeled
 directly), and the release cut takes the highest class among the PRs merged since the
@@ -33,7 +38,9 @@ The cut also declares an intent class with
 when the highest merged-PR class exceeds intent, preflight emits the full manifest and fails before
 the release PR opens. Proceeding requires the exact acknowledgement token emitted by the manifest;
 it binds candidate SHA, declared intent, and computed bump, records the scope decision, and never
-lowers or overrides the computed version.
+lowers or overrides the computed version. The first Core cut sweeps changes since
+the final legacy tag but records `0.1.0` as the new package-line bootstrap; later
+cuts compute from the preceding `v-core-*` tag.
 
 ### Pre-1.0 (0.x)
 

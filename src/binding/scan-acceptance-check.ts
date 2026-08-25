@@ -238,7 +238,7 @@ async function checkoutIdentity(checkoutPath: string, runner: Runner): Promise<C
     const packageJson = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as {
       name?: unknown;
     };
-    if (packageJson.name === "@aihq/harness")
+    if (packageJson.name === "@aihq/core" || packageJson.name === "@aihq/harness")
       fail("AI-Harness checkout cannot be scanned as Superpowers");
   } catch (error) {
     if (error instanceof ScanAcceptanceCheckError) throw error;

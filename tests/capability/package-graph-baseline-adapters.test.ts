@@ -117,7 +117,7 @@ function receipt(
           pinnedSha: PIN,
           treeSha256: SKILL_TREE,
           tier: "vendor",
-          issuer: "@aihq/harness release",
+          issuer: "@aihq/core release",
           evidenceSha256: baselineDocument().authority.sourceDigest.value,
           ...overrides.authorization,
         },

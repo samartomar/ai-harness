@@ -1,7 +1,8 @@
 # Disclaimer
 
-`aih` (`@aihq/harness`) is a personal, community open-source project, provided under the
-[Apache License 2.0](LICENSE).
+AIH Core (`@aihq/core`, command `aih`) is a personal, community open-source project,
+provided under the [Apache License 2.0](LICENSE). The previously published
+`@aihq/harness` package is the frozen legacy distribution.
 
 The software is provided **"AS IS", without warranty of any kind**, express or implied,
 including but not limited to the warranties of merchantability, fitness for a particular

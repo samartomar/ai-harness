@@ -38,9 +38,10 @@ MCP config where possible and emits chain-inspection guidance plus `NODE_EXTRA_C
 `SSL_CERT_FILE` remediation snippets for TLS-intercepting enterprise proxies. It does not contact
 repo-derived MCP endpoints during planning; live Node/Python endpoint TLS handshakes and CA-bundle
 comparisons require explicit `--probe-mcp-endpoints` and run as verification probes. For major
-AI-Harness upgrades, prefer
-`npm install -g @aihq/harness@latest`; add `--force` only when replacing a broken global install
-after reviewing the current workstation state. For the same bounded origins, it compares OS and
+AI-Harness upgrades during the package transition, keep the frozen published v6 install at
+`npm install -g @aihq/harness@6.1.0` until the release notes name an actually published
+`@aihq/core` version. Add `--force` only when replacing a broken global install after
+reviewing the current workstation state. For the same bounded origins, it compares OS and
 Node TLS handshakes, tries system trust before a minimal set of matched OS roots, and persists a
 candidate locally only under `--apply` after it verifies. `--scope certs,npm,path,mcp,all`.
 
@@ -936,7 +937,8 @@ subject digest, and qualification kind. Receipt V2 also binds the entry id, sign
 predecessor, replay identity, and head validity ceiling; Receipt V1 is unsupported. Raw, cloned,
 expired, substituted, replayed, rolled-back, or differently scoped receipts cannot mint the
 process-local qualification capability. The portable schema is shipped at
-`@aihq/harness/schemas/aih-supported-qualification-receipt-v2.schema.json`.
+`@aihq/core/schemas/aih-supported-qualification-receipt-v2.schema.json` in the
+pending `0.1.0` Core package.
 
 A packed consumer may call `verifyAihSupportedQualificationArtifactV2` with only the target root,
 the exact expected decision id/digest, and the exact expected subject. The package resolves the
@@ -1214,7 +1216,8 @@ integration-contract version. Its raw canonical SHA-256 must be present in the c
 organization evidence envelope's `artifactDigests`. The manifest binds the decision id rather than
 the decision digest because the decision already binds the evidence digest and the evidence binds
 the manifest bytes; a decision-digest field would create a digest cycle. The portable schema ships
-at `@aihq/harness/schemas/aih-upstream-artifact-manifest-v1.schema.json` and the public library
+at `@aihq/core/schemas/aih-upstream-artifact-manifest-v1.schema.json` in the pending
+`0.1.0` Core package, and the public library
 exports the strict canonical parser and serializer.
 
 The fixed observer accepts no caller-selected command, executable, callback, runner, clock,
@@ -1339,7 +1342,8 @@ attestations.
 
 ## aih verify-release
 
-Read-only release verification for published `@aihq/harness` versions. With no positional version,
+Pending Core `0.1.0` behavior: read-only release verification for published `@aihq/core`
+versions. With no positional version,
 it resolves the latest package version from npm; with `aih verify-release <version>`, it checks that
 specific version. The command installs that exact package into a temporary prefix with scripts
 disabled, runs `npm audit signatures --prefix <temp>`, downloads the GitHub Release checksum and

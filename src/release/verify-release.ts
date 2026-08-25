@@ -6,7 +6,7 @@ import { type CommandSpec, plan, probe } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
 import { redactText } from "../support/redact.js";
 import { execArgv } from "../tools/install.js";
-import { PACKAGE_NAME, REPO } from "../version.js";
+import { PACKAGE_NAME, REPO, releaseTag } from "../version.js";
 
 type ReleasePlanContext = Parameters<CommandSpec["plan"]>[0];
 type VersionResolver = (ctx: ReleasePlanContext) => Promise<string | undefined>;
@@ -114,7 +114,7 @@ async function releaseAssetsReady(
 ): Promise<ReleaseAssetsReadiness> {
   for (let attempt = 0; attempt <= RELEASE_ASSET_POLL_DELAYS_MS.length; attempt += 1) {
     const view = await ctx.run(
-      ["gh", "release", "view", `v${version}`, "--repo", REPO, "--json", "assets"],
+      ["gh", "release", "view", releaseTag(version), "--repo", REPO, "--json", "assets"],
       { timeoutMs: 60_000 },
     );
     if (view.spawnError) return { status: "skip", detail: "gh not found" };
@@ -128,7 +128,7 @@ async function releaseAssetsReady(
     if (names === undefined) {
       return {
         status: "fail",
-        detail: `gh release view returned malformed asset metadata for existing release v${version}`,
+        detail: `gh release view returned malformed asset metadata for existing release ${releaseTag(version)}`,
       };
     }
     const missing = RELEASE_ASSET_NAMES.filter((name) => !names.has(name));
@@ -139,13 +139,16 @@ async function releaseAssetsReady(
       return {
         status: "fail",
         detail:
-          `release v${version} exists but required checksum assets are still unavailable after ` +
+          `release ${releaseTag(version)} exists but required checksum assets are still unavailable after ` +
           `${waitedMs / 1_000}s: ${missing.join(", ")}`,
       };
     }
     await wait(delay);
   }
-  return { status: "fail", detail: `release v${version} asset polling exhausted unexpectedly` };
+  return {
+    status: "fail",
+    detail: `release ${releaseTag(version)} asset polling exhausted unexpectedly`,
+  };
 }
 
 async function npmSignaturesCheck(
@@ -198,7 +201,7 @@ async function npmSignaturesCheck(
 }
 
 function releaseIdentity(version: string): string {
-  return `https://github.com/${REPO}/.github/workflows/release.yml@refs/tags/v${version}`;
+  return `https://github.com/${REPO}/.github/workflows/release.yml@refs/tags/${releaseTag(version)}`;
 }
 
 async function withReleaseAssets(
@@ -222,7 +225,7 @@ async function withReleaseAssets(
         "gh",
         "release",
         "download",
-        `v${version}`,
+        releaseTag(version),
         "--repo",
         REPO,
         ...RELEASE_ASSET_NAMES.flatMap((asset) => ["--pattern", asset]),
