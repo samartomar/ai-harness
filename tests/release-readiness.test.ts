@@ -318,6 +318,8 @@ describe("release readiness metadata", () => {
     const doc = read("docs/security/release-slsa.md");
     expect(doc).toContain("SLSA v1.2");
     expect(doc).toContain("SLSA Build L2");
+    expect(doc).toContain("immutable `v-core-0.1.0` exists as failed audit evidence");
+    expect(doc).not.toContain("Core has not yet produced a tagged release");
     expect(doc).toContain("The `@aihq/core` tarball");
     expect(doc).toMatch(/not\s+themselves claimed as SLSA Build L2 subjects/u);
     expect(doc).toContain("No Build L3 claim is made");

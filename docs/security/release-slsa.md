@@ -1,9 +1,11 @@
 # Release SLSA assessment
 
 > Status: release-workflow assessment. Reassessed on 2026-08-25 against the
-> SLSA v1.2 Build track. Core has not yet produced a tagged release, so the
-> `@aihq/core` result remains conditional on a successful workflow. This document
-> does not claim a SLSA Source level.
+> SLSA v1.2 Build track. Core has not yet produced a successful tagged package
+> release: immutable `v-core-0.1.0` exists as failed audit evidence, but npm
+> refused publication and no GitHub Release was created. The `@aihq/core` result
+> therefore remains conditional on a successful workflow. This document does not
+> claim a SLSA Source level.
 
 ## Claim
 
