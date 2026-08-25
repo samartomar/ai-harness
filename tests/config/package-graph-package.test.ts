@@ -52,7 +52,7 @@ describe("Package Graph public package surface", () => {
       "schemas/aih-package-graph.schema.json",
     );
 
-    const resolved = import.meta.resolve("@aihq/harness/schemas/aih-package-graph.schema.json");
+    const resolved = import.meta.resolve("@aihq/core/schemas/aih-package-graph.schema.json");
     expect(fileURLToPath(resolved)).toBe(join(root, "schemas/aih-package-graph.schema.json"));
 
     const schema = JSON.parse(readFileSync(fileURLToPath(resolved), "utf8"));

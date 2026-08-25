@@ -88,7 +88,7 @@ describe("verifyBaselineComponents", () => {
         pinnedSha: "a".repeat(40),
         treeSha256: hashComponentTree(root, ["skills/clean"]).treeSha256,
         tier: "vendor",
-        issuer: "@aihq/harness release",
+        issuer: "@aihq/core release",
         evidenceSha256: "f".repeat(64),
       },
     ]);

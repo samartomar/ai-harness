@@ -12,7 +12,7 @@ const lock = JSON.parse(
 ) as { version: string; packages?: Record<string, { version?: string }> };
 
 // The CLI reports VERSION from a hardcoded constant, separate from package.json. A release
-// tags `vX.Y.Z` and publishes the package's version — if the constant drifts, `aih --version`
+// tags `v-core-X.Y.Z` and publishes the package's version — if the constant drifts, `aih --version`
 // lies. Keep the two locked; the release workflow additionally asserts the tag matches.
 describe("version coherence", () => {
   it("src/version.ts VERSION matches package.json version", () => {

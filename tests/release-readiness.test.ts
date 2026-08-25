@@ -137,7 +137,8 @@ describe("release readiness metadata", () => {
   });
 
   it("directs global-install verification through the release verifier", () => {
-    const currentVersion = JSON.parse(read("package.json")).version;
+    const coreCandidateVersion = JSON.parse(read("package.json")).version;
+    const legacyVersion = "6.1.0";
     const installDocs = [
       "README.md",
       "guides/vibe-developer-guide.md",
@@ -155,8 +156,8 @@ describe("release readiness metadata", () => {
       ).filter((block) => block.includes("npm install -g @aihq/harness"));
       expect(installBlocks.length).toBeGreaterThan(0);
       for (const block of installBlocks) {
-        const installCommand = `npm install -g @aihq/harness@${currentVersion}`;
-        const verifyCommand = `aih verify-release ${currentVersion}`;
+        const installCommand = `npm install -g @aihq/harness@${legacyVersion}`;
+        const verifyCommand = `aih verify-release ${legacyVersion}`;
         expect(block).toContain(installCommand);
         expect(block).toContain(verifyCommand);
         const lines = block.split(/\r?\n/gu);
@@ -179,29 +180,32 @@ describe("release readiness metadata", () => {
       expect(block).not.toContain("npm audit signatures");
     }
     expect(slsa).toContain("aih verify-release <version>");
-    // #506 F4: the onboarding runbook also carries an INLINE-code version pin in
-    // prose ("currently `npm install -g @aihq/harness@X`") OUTSIDE any fence. The
-    // fenced block is guarded above via the package.json-derived pin; this closes
-    // the inline-code gap so the prose pin can't silently rot after a version bump.
+    // The current published release remains the frozen legacy package until the
+    // separately authorized Core release exists. Guard both fenced and inline pins
+    // so the transition cannot present unpublished @aihq/core candidate bytes as installable.
     const onboarding = read("docs/ENTERPRISE_ONBOARDING.md");
     expect(onboarding).toContain("install the approved explicit version (currently");
-    expect(onboarding).toContain(`\`npm install -g @aihq/harness@${currentVersion}\`);`);
+    expect(onboarding).toContain(`\`npm install -g @aihq/harness@${legacyVersion}\`);`);
     for (const path of [
       "guides/enterprise-developer-guide.md",
       "guides/enterprise-admin-guide.md",
     ]) {
       const text = read(path);
       expect(text).toContain(
-        `Release baseline covered by this guide: \`@aihq/harness@${currentVersion}\`.`,
+        `Release baseline covered by this guide: \`@aihq/harness@${legacyVersion}\`.`,
       );
       expect(text).toContain(
-        `For a major-version upgrade, install the approved explicit version (currently\n\`npm install -g @aihq/harness@${currentVersion}\`); \`npm update -g\` may stay within the current major. Re-run\n\`aih verify-release ${currentVersion}\` after an upgrade.`,
+        `For a major-version upgrade, install the approved explicit version (currently\n\`npm install -g @aihq/harness@${legacyVersion}\`); \`npm update -g\` may stay within the current major. Re-run\n\`aih verify-release ${legacyVersion}\` after an upgrade.`,
       );
     }
     const postures = read("guides/postures.md");
     expect(postures).toContain(
-      `The current release baseline is \`@aihq/harness@${currentVersion}\`.`,
+      `The current release baseline is \`@aihq/harness@${legacyVersion}\`.`,
     );
+    const readme = read("README.md");
+    expect(readme).toContain("That legacy package is\nfrozen");
+    expect(readme).toContain(`\`@aihq/core@${coreCandidateVersion}\` has not been published`);
+    expect(readme).not.toContain(`npm install -g @aihq/core@${coreCandidateVersion}`);
   });
 
   it("ships basic repository governance files for controlled rollout", () => {

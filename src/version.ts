@@ -1,3 +1,8 @@
-export const PACKAGE_NAME = "@aihq/harness";
+export const PACKAGE_NAME = "@aihq/core";
 export const REPO = "samartomar/ai-harness";
-export const VERSION = "6.1.0";
+export const RELEASE_TAG_PREFIX = "v-core-";
+export const VERSION = "0.1.0";
+
+export function releaseTag(version: string): string {
+  return `${RELEASE_TAG_PREFIX}${version}`;
+}

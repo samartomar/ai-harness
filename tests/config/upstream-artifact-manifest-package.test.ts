@@ -21,7 +21,7 @@ describe("Upstream Artifact Manifest public package surface", () => {
     );
 
     const resolved = import.meta.resolve(
-      "@aihq/harness/schemas/aih-upstream-artifact-manifest-v1.schema.json",
+      "@aihq/core/schemas/aih-upstream-artifact-manifest-v1.schema.json",
     );
     expect(fileURLToPath(resolved)).toBe(
       join(root, "schemas/aih-upstream-artifact-manifest-v1.schema.json"),

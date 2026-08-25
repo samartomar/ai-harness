@@ -114,6 +114,8 @@ export interface Manifest {
 }
 
 const CLASSES: readonly SemverClass[] = ["patch", "minor", "major"];
+const CORE_INITIAL_VERSION = "0.1.0";
+const FINAL_LEGACY_TAG = "v6.1.0";
 
 function bumpOf(labels: string[]): SemverClass | undefined {
   const cls = labels[0]?.replace("semver:", "");
@@ -121,7 +123,7 @@ function bumpOf(labels: string[]): SemverClass | undefined {
 }
 
 export function nextVersionFrom(tag: string, bump: SemverClass): string | undefined {
-  const m = /^v?(\d+)\.(\d+)\.(\d+)$/.exec(tag);
+  const m = /^(?:v-core-|v?)(\d+)\.(\d+)\.(\d+)$/.exec(tag);
   if (!m) return undefined;
   const [major, minor, patch] = [Number(m[1]), Number(m[2]), Number(m[3])];
   if (bump === "major") return `${major + 1}.0.0`;
@@ -327,6 +329,11 @@ export function runPreflight(data: PreflightData): Manifest {
     });
   }
 
+  const corePackageLineBootstrap =
+    data.previousTag === FINAL_LEGACY_TAG &&
+    data.packageVersion === CORE_INITIAL_VERSION &&
+    data.versionConstant === CORE_INITIAL_VERSION;
+
   return {
     previousTag: data.previousTag,
     candidateSha: data.candidateSha,
@@ -341,7 +348,11 @@ export function runPreflight(data: PreflightData): Manifest {
     intentAcknowledged,
     intentAcknowledgementArtifact: acceptedIntentAcknowledgementArtifact,
     requiredIntentAcknowledgement,
-    nextVersion: computedBump ? nextVersionFrom(data.previousTag, computedBump) : undefined,
+    nextVersion: computedBump
+      ? corePackageLineBootstrap
+        ? CORE_INITIAL_VERSION
+        : nextVersionFrom(data.previousTag, computedBump)
+      : undefined,
     findings,
     ok: findings.length === 0,
   };

@@ -77,7 +77,7 @@ describe("reportHtml dashboard", () => {
     const html = reportHtml("aih report", RICH);
     expect(html).toContain("<!doctype html>");
     expect(html).toContain("<title>aih report</title>");
-    expect(html).toContain("<h1>Enterprise AI Bootstrapping Harness Report</h1>");
+    expect(html).toContain("<h1>AIH — AI Development Assurance Report</h1>");
     expect(html).toContain("</html>");
     expect(html).toContain("font-family:'Geist'"); // embedded display font (headings)
     expect(html).toContain("font-family:'Inter'"); // embedded body font

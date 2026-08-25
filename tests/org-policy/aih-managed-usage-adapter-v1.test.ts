@@ -217,7 +217,7 @@ describe("AIH-managed usage adapter V1", () => {
         id: "usage-metering",
         kind: "tool",
         source: {
-          release: "6.1.0",
+          release: "0.1.0",
           revision: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
           type: "aih",
         },

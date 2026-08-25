@@ -23,7 +23,7 @@ import type {
 import { fakeRunner } from "../../src/internals/proc.js";
 import { jsonFile } from "../../src/internals/render.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
-import { PACKAGE_NAME, VERSION } from "../../src/version.js";
+import { PACKAGE_NAME, releaseTag, VERSION } from "../../src/version.js";
 
 let dir: string;
 beforeEach(() => {
@@ -122,8 +122,9 @@ describe("evidence build — kind index", () => {
     expect(index.schemaVersion).toBe(1);
     expect(index.harness).toMatchObject({
       aihVersion: VERSION,
-      releaseTag: `v${VERSION}`,
+      releaseTag: `v-core-${VERSION}`,
       packageName: PACKAGE_NAME,
+      tarballSha256: expect.stringContaining(`aihq-core-${VERSION}.tgz`),
       verificationCommand: `aih verify-release ${VERSION}`,
       npmProvenance: "not-checked",
     });
@@ -182,7 +183,7 @@ describe("evidence build — kind index", () => {
     ]);
     const index = EvidenceBundleSchema.parse(out[".aih/evidence-bundle/evidence.json"]?.json);
     expect(index.artifacts).toEqual([]);
-    expect(index.harness?.checksumFile).toContain(`v${VERSION}/SHA256SUMS.txt`);
+    expect(index.harness?.checksumFile).toContain(`${releaseTag(VERSION)}/SHA256SUMS.txt`);
   });
 
   it("keeps older evidence indexes without a harness block valid", () => {

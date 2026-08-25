@@ -133,7 +133,7 @@ describe("coverage policy", () => {
     expect(pkg.scripts?.["check:published-bin"]).toBe(
       "node dist/cli.js --version && node dist/cli.js --help",
     );
-    expect(pkg.scripts?.["check:published-library"]).toContain("import('@aihq/harness')");
+    expect(pkg.scripts?.["check:published-library"]).toContain("import('@aihq/core')");
     expect(pkg.scripts?.verify).toContain(
       "npm run test:cov && npm run build && npm run check:published-bin && npm run check:published-library",
     );

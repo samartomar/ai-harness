@@ -28,7 +28,7 @@ import { skillCardsDir } from "../skill/card.js";
 import { AIH_SKILLS_LOCK_FILE } from "../skill/lockfile.js";
 import { TRUST_LOCK_FILE } from "../trust/lock.js";
 import { truthPackEvidenceSource } from "../truth/index.js";
-import { PACKAGE_NAME, REPO, VERSION } from "../version.js";
+import { PACKAGE_NAME, REPO, releaseTag, VERSION } from "../version.js";
 import {
   DEFAULT_EVIDENCE_OUT,
   EVIDENCE_FILE,
@@ -315,12 +315,12 @@ function checksumLine(path: string, contents: string): string {
 }
 
 function releaseUrl(version: string): string {
-  return `https://github.com/${REPO}/releases/download/v${version}`;
+  return `https://github.com/${REPO}/releases/download/${releaseTag(version)}`;
 }
 
 function harnessBlock(ctx: PlanContext): EvidenceHarness {
   const version = VERSION;
-  const tag = `v${version}`;
+  const tag = releaseTag(version);
   const base = releaseUrl(version);
   const releaseCommit =
     typeof ctx.env.GITHUB_SHA === "string" && ctx.env.GITHUB_SHA.trim().length > 0
@@ -331,7 +331,7 @@ function harnessBlock(ctx: PlanContext): EvidenceHarness {
     releaseTag: tag,
     releaseCommit,
     packageName: PACKAGE_NAME,
-    tarballSha256: `${base}/SHA256SUMS.txt entry for aihq-harness-${version}.tgz`,
+    tarballSha256: `${base}/SHA256SUMS.txt entry for aihq-core-${version}.tgz`,
     checksumFile: `${base}/SHA256SUMS.txt`,
     cosignBundle: `${base}/SHA256SUMS.txt.sigstore.json`,
     npmProvenance: "not-checked",

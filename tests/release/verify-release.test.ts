@@ -22,7 +22,7 @@ function ctx(run: Runner, options: Record<string, unknown> = {}): PlanContext {
 }
 
 describe("verify-release command", () => {
-  const tarball = "aihq-harness-1.0.1.tgz";
+  const tarball = "aihq-core-0.1.1.tgz";
   const tarballBody = "fake tarball bytes\n";
   const tarballHash = createHash("sha256").update(tarballBody).digest("hex");
 
@@ -55,8 +55,8 @@ describe("verify-release command", () => {
     const seen: string[][] = [];
     const run = fakeRunner((argv) => {
       seen.push(argv);
-      if (argv.slice(0, 4).join(" ") === "npm view @aihq/harness version") {
-        return { code: 0, stdout: "1.0.1\n" };
+      if (argv.slice(0, 4).join(" ") === "npm view @aihq/core version") {
+        return { code: 0, stdout: "0.1.1\n" };
       }
       if (argv[0] === "npm" && argv[1] === "install") return { code: 0, stdout: "installed" };
       if (argv.slice(0, 3).join(" ") === "npm audit signatures") return { code: 0, stdout: "ok" };
@@ -83,7 +83,7 @@ describe("verify-release command", () => {
     expect(result.report?.ok).toBe(true);
     expect(result.report?.checks.map((check) => check.verdict)).toEqual(["pass", "pass", "pass"]);
     expect(
-      seen.filter((argv) => argv.slice(0, 4).join(" ") === "npm view @aihq/harness version"),
+      seen.filter((argv) => argv.slice(0, 4).join(" ") === "npm view @aihq/core version"),
     ).toHaveLength(1);
     const install = seen.find((argv) => argv[0] === "npm" && argv[1] === "install");
     expect(install).toEqual(
@@ -92,18 +92,20 @@ describe("verify-release command", () => {
         "--audit=false",
         "--fund=false",
         "--prefix",
-        "@aihq/harness@1.0.1",
+        "@aihq/core@0.1.1",
       ]),
     );
     expect(seen.some((argv) => argv.join(" ").startsWith("npm audit signatures --prefix"))).toBe(
       true,
     );
-    expect(seen.some((argv) => argv.join(" ").includes("gh release download v1.0.1"))).toBe(true);
+    expect(seen.some((argv) => argv.join(" ").includes("gh release download v-core-0.1.1"))).toBe(
+      true,
+    );
     const cosign = seen.find((argv) => argv[0] === "cosign" && argv[1] === "verify-blob");
     expect(cosign).toEqual(
       expect.arrayContaining([
         "--certificate-identity",
-        "https://github.com/samartomar/ai-harness/.github/workflows/release.yml@refs/tags/v1.0.1",
+        "https://github.com/samartomar/ai-harness/.github/workflows/release.yml@refs/tags/v-core-0.1.1",
       ]),
     );
   });
@@ -183,7 +185,9 @@ describe("verify-release command", () => {
       expect(assetChecks).toHaveLength(2);
       expect(assetChecks?.every((check) => check.verdict === "fail")).toBe(true);
       expect(
-        assetChecks?.every((check) => check.detail?.includes("release v1.0.1 exists") === true),
+        assetChecks?.every(
+          (check) => check.detail?.includes("release v-core-1.0.1 exists") === true,
+        ),
       ).toBe(true);
       expect(releaseViews).toBe(6);
       expect(downloads).toBe(0);
@@ -216,7 +220,7 @@ describe("verify-release command", () => {
 
     expect(assetChecks?.every((check) => check.detail === "release not found")).toBe(true);
     expect(
-      assetChecks?.every((check) => check.detail?.includes("release v1.0.1 exists") !== true),
+      assetChecks?.every((check) => check.detail?.includes("release v-core-1.0.1 exists") !== true),
     ).toBe(true);
     expect(releaseViews).toBe(1);
     expect(downloads).toBe(0);

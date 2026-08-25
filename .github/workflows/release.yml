@@ -1,17 +1,18 @@
-# Cut a GitHub Release when a v* tag is pushed. Verifies the gates (typecheck,
+# Cut a GitHub Release when a v-core-* tag is pushed. Verifies the gates (typecheck,
 # lint, test+coverage, build), then PACKS a verifiable install artifact (tarball +
 # SHA256 checksum + SPDX SBOM), generates a GitHub build-provenance attestation
 # (keyless, via OIDC), smoke-installs it, publishes the same tarball to npm through
 # Trusted Publishing with provenance, and attaches everything to the Release.
 #
-# npm Trusted Publisher config (npmjs.com): repository samartomar/ai-harness,
-# workflow .github/workflows/release.yml, environment npm-publish.
+# Required @aihq/core Trusted Publisher config (npmjs.com): repository
+# samartomar/ai-harness, workflow .github/workflows/release.yml, environment
+# npm-publish. RELEASING.md keeps the package bootstrap as an owner-only gate.
 name: release
 
 on:
   push:
     tags:
-      - "v*"
+      - "v-core-*"
 
 permissions:
   contents: read
@@ -21,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: npm-publish
-      url: https://www.npmjs.com/package/@aihq/harness
+      url: https://www.npmjs.com/package/@aihq/core
     permissions:
       contents: write # create the GitHub Release for the tag
       id-token: write # keyless signing identity for the provenance attestation
@@ -50,7 +51,7 @@ jobs:
         run: |
           set -euo pipefail
           ver="$(node -p "require('./package.json').version")"
-          tag="${GITHUB_REF_NAME#v}"
+          tag="${GITHUB_REF_NAME#v-core-}"
           if [ "$ver" != "$tag" ]; then
             echo "::error::package.json version ($ver) does not match tag $GITHUB_REF_NAME"
             exit 1

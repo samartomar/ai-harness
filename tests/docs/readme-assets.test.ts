@@ -43,13 +43,15 @@ function isCoveredByPackageFiles(assetPath: string, files: readonly string[]): b
 }
 
 describe("README docs currency", () => {
-  it("keeps README major-version guidance aligned with the current package", () => {
+  it("keeps the unpublished Core transition distinct from the frozen v6 package", () => {
     const readme = read("README.md");
-    const pkg = JSON.parse(read("package.json")) as { version: string };
-    const major = pkg.version.split(".")[0];
+    const pkg = JSON.parse(read("package.json")) as { name: string; version: string };
 
-    expect(major).toMatch(/^\d+$/u);
-    expect(readme).toContain(`For the current v${major} line, pin \`@aihq/harness@^${major}\``);
+    expect(pkg).toMatchObject({ name: "@aihq/core", version: "0.1.0" });
+    expect(readme).toContain("The current published v6 line remains `@aihq/harness@6.1.0`");
+    expect(readme).toContain("builds the new pre-1.0 package line as `@aihq/core`");
+    expect(readme).toContain("`@aihq/core@0.1.0` has not been published");
+    expect(readme).not.toContain("npm install -g @aihq/core@0.1.0");
   });
 
   it("keeps README image metadata aligned with the current release assets", () => {
@@ -80,9 +82,9 @@ describe("README docs currency", () => {
     expect(overview).not.toContain("staged &amp; signed");
     expect(overview).not.toContain("release-candidate");
     expect(overview).not.toContain("pending release");
-    // The release-journey tip must name the current release (stale "2.4 AI-Canonical"
-    // shipped in 2.5.x/2.6.0 tarballs because this assertion pinned the old string).
-    expect(overview).toContain(`v${pkg.version} · shipped`);
+    // Before publication, the release-journey tip names the exact Core candidate
+    // without presenting it as shipped. The release cut changes both text and assertion.
+    expect(overview).toContain(`v${pkg.version} · candidate`);
 
     const overviewAlt = imageAlt(readme, "docs/assets/aih-overview.svg").toLowerCase();
     expect(overviewAlt).toContain(`v${pkg.version}`);

@@ -19,7 +19,7 @@ export function buildProgram(extra: CommandSpec[] = [], warnings?: string[]): Co
   program
     .name("aih")
     .description(
-      "Enterprise AI Bootstrapping Harness — governed AI coding setup for enterprise workstations and repos",
+      "AIH — AI Development Assurance governance for enterprise workstations and repositories",
     )
     .version(VERSION)
     .showHelpAfterError("(add --help for usage)");

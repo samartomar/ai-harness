@@ -6,8 +6,8 @@
  * plugins): every command and nested subcommand with its name, deprecated
  * aliases when present (old names still dispatched — aliases ARE contract),
  * description-presence, positional arguments (name + required), and options
- * (flags + string/boolean defaults). An enterprise pinning `@aihq/harness@^1`
- * relies on this surface not changing under a minor/patch — so ANY drift fails
+ * (flags + string/boolean defaults). The compatibility surface began with the
+ * published v1 package and is retained by `@aihq/core`; ANY drift fails
  * here and forces a conscious, reviewed decision.
  *
  * Regenerating after an INTENTIONAL, ADDITIVE change (new command/option/argument):
@@ -127,7 +127,7 @@ const REGEN = process.env.AIH_REGEN_CONTRACT === "1";
 
 const DRIFT_GUIDANCE = [
   "CLI surface drift: the live commander surface no longer matches tests/contract/command-surface.json.",
-  "That fixture is the @aihq/harness v1 CLI compatibility contract — enterprises pin ^1 against it.",
+  "That fixture is the AIH CLI compatibility contract; the @aihq/core package transition does not reset it.",
   "- ADDITIVE change (new command/subcommand/option/argument)? Regenerate the fixture IN THIS PR:",
   "    AIH_REGEN_CONTRACT=1 npx vitest run tests/contract/command-surface.test.ts",
   "  commit the fixture diff, and label the PR `contract:additive`.",

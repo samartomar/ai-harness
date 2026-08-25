@@ -57,7 +57,7 @@ function authorization(componentId: string, sourcePaths: readonly string[]): Bas
     pinnedSha: COMMIT,
     treeSha256: hashComponentTree(sourceRoot, sourcePaths).treeSha256,
     tier: "vendor",
-    issuer: "@aihq/harness release",
+    issuer: "@aihq/core release",
     evidenceSha256: EVIDENCE,
   };
 }

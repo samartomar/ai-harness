@@ -1,8 +1,9 @@
 # Release SLSA assessment
 
-> Status: shipped release-assurance claim. Assessed on 2026-07-07 against the
-> SLSA v1.2 Build track. This document covers tagged artifacts produced by
-> `.github/workflows/release.yml`; it does not claim a SLSA Source level.
+> Status: release-workflow assessment. Reassessed on 2026-08-24 against the
+> SLSA v1.2 Build track. Core has not yet produced a tagged release, so the
+> `@aihq/core` result remains conditional on a successful workflow. This document
+> does not claim a SLSA Source level.
 
 ## Claim
 
@@ -11,12 +12,19 @@ when the workflow completes successfully.
 
 Scope:
 
-- the `@aihq/harness` npm tarball published by the release workflow;
+- the `@aihq/core` npm tarball published by the release workflow after its
+  separately authorized package bootstrap;
 - the same packed tarball attached to the GitHub Release;
 - `SHA256SUMS.txt`, `SHA256SUMS.txt.sigstore.json`, `provenance.intoto.jsonl`,
   and `aih-sbom.spdx.json` attached to the GitHub Release.
 
 No Build L3 claim is made.
+
+Historical releases through v6.1.0 used the frozen `@aihq/harness` package name;
+their tag-pinned workflow and release evidence remain the authority for those
+immutable artifacts. Core restarts package numbering at `0.1.0` and uses
+`v-core-X.Y.Z` tags. This assessment does not claim that `@aihq/core` has already
+been published.
 
 ## Requirement assessment
 
@@ -27,7 +35,7 @@ platform with stronger isolation controls for L3.
 | SLSA v1.2 Build requirement | Repo evidence | Assessment |
 | --- | --- | --- |
 | Producer chooses an appropriate build platform | `.github/workflows/release.yml` runs the release job on `ubuntu-latest` and publishes through the `npm-publish` environment. | Meets L1/L2 scope. |
-| Producer follows a consistent build process | The workflow runs only on `v*` tags, asserts the tag commit matches `origin/main`, asserts `package.json` matches the tag, runs `npm run verify` (artifact guard, ECC installer check, docs-lint, typecheck, lint, coverage tests, and build), then pack, checksum, SBOM, provenance, smoke install, npm publish, and GitHub Release upload in one job. | Meets L1/L2 scope. |
+| Producer follows a consistent build process | The workflow runs only on `v-core-*` tags, asserts the tag commit matches `origin/main`, asserts `package.json` matches the package-qualified tag, runs `npm run verify` (artifact guard, ECC installer check, docs-lint, typecheck, lint, coverage tests, and build), then pack, checksum, SBOM, provenance, smoke install, npm publish, and GitHub Release upload in one job. | Meets L1/L2 scope. |
 | Producer distributes provenance | The workflow publishes npm provenance with `npm publish ./*.tgz --provenance --access public`, generates GitHub build provenance with `actions/attest-build-provenance`, copies the bundle to `provenance.intoto.jsonl`, and attaches it to the GitHub Release. | Meets L1/L2 scope. |
 | Build platform generates provenance | `actions/attest-build-provenance` targets `./*.tgz`, while npm Trusted Publishing emits registry provenance for the published package. | Meets L1/L2 scope. |
 | Provenance is authentic | The release job has `id-token: write` and `attestations: write`, uses npm Trusted Publishing instead of an npm token, and signs `SHA256SUMS.txt` keylessly with GitHub OIDC into `SHA256SUMS.txt.sigstore.json`. | Meets L2 scope. |

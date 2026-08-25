@@ -47,7 +47,7 @@ describe("Capability Package Manager public package surface", () => {
     );
 
     const resolved = import.meta.resolve(
-      "@aihq/harness/schemas/aih-capability-package-manifest.schema.json",
+      "@aihq/core/schemas/aih-capability-package-manifest.schema.json",
     );
     expect(fileURLToPath(resolved)).toBe(
       join(root, "schemas/aih-capability-package-manifest.schema.json"),

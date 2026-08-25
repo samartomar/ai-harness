@@ -37,7 +37,7 @@ import { TRUST_POLICY_VERSION } from "../trust/evidence.js";
 
 const POSTURES: readonly Posture[] = ["vibe", "enterprise"];
 const DEFAULT_CLI = "claude";
-const VENDOR_ISSUER = "@aihq/harness release";
+const VENDOR_ISSUER = "@aihq/core release";
 
 /**
  * Catalogs whose install machinery includes a runtime component that performs real filesystem

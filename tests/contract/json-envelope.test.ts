@@ -1,8 +1,8 @@
 /**
  * v1.0.0 `--json` envelope contract (slice 1, issue #123).
  *
- * Pins the machine-readable output shape a `--json` consumer can rely on under
- * `@aihq/harness@^1`, exercised through the REAL pipeline (runCapability →
+ * Pins the machine-readable output shape carried from the published v1 contract
+ * into `@aihq/core`, exercised through the REAL pipeline (runCapability →
  * loadSettings → executePlan → probes) with a captured writer — the same
  * invocation idiom as tests/commands/run.test.ts:
  *

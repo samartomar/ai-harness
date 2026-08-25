@@ -180,21 +180,21 @@ const UNAVAILABLE_STATES = ["adapter-unavailable", "profile-unavailable"] as con
 const POLICY_REVISION_DOMAIN = "aih.governance-doctor-command-policy-revision-v1";
 const PROTOCOL = "GovernanceDoctorPresentationV1";
 const CHECK_NAME = "governance-doctor-audit-guide";
-const HARNESS_PACKAGE_NAME = "@aihq/harness";
+const CORE_PACKAGE_NAME = "@aihq/core";
 
 /**
  * The package this module was loaded from. Resolution walks up from the module
  * itself, never from a caller-influenced working directory or root argument, so
  * the shipped artifact is located by installation layout alone.
  */
-function harnessPackageRoot(): string {
+function corePackageRoot(): string {
   let current = dirname(fileURLToPath(import.meta.url));
   for (;;) {
     try {
       const manifest = JSON.parse(readFileSync(join(current, "package.json"), "utf8")) as {
         name?: unknown;
       };
-      if (manifest.name === HARNESS_PACKAGE_NAME) return current;
+      if (manifest.name === CORE_PACKAGE_NAME) return current;
     } catch {
       // A missing or malformed nearer manifest must not redirect the package root.
     }
@@ -213,7 +213,7 @@ function harnessPackageRoot(): string {
  * filesystem location.
  */
 export function loadShippedGovernanceDoctorProfileV1(): GovernanceDoctorProfileV1 {
-  const target = join(harnessPackageRoot(), SHIPPED_GOVERNANCE_DOCTOR_PROFILE_RELATIVE_PATH_V1);
+  const target = join(corePackageRoot(), SHIPPED_GOVERNANCE_DOCTOR_PROFILE_RELATIVE_PATH_V1);
   const bytes = readRegularFile(target, {
     maxBytes: GOVERNANCE_DOCTOR_V1_LIMITS.maxTransportBytes,
   });

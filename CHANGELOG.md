@@ -366,6 +366,20 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   can resolve separately attested, signed supported-catalog material before rendering the local Policy Workbench;
   omitting `<admin-root>` retains the portable rootless artifact with no catalog acquisition.
 
+### Changed
+
+- **Core's new npm identity starts at `@aihq/core@0.1.0`.** The unpublished candidate
+  resets the package version independently from the frozen legacy line and uses
+  protected `v-core-X.Y.Z` GitHub tags while the `aih` command, `.aih/`
+  state root, public exports, schemas, receipt identifiers, check codes,
+  environment variables, and durable state formats are unchanged. The published
+  `@aihq/harness@6.1.0` package is frozen and receives no wrapper or alias package;
+  new vendor baseline authorizations identify their issuer as `@aihq/core release`
+  instead of attributing new evidence to the frozen package. The evidence shape is unchanged.
+  Its npm deprecation waits until an exact `@aihq/core` release is publicly
+  installable and verified. This source change does not publish or deprecate either
+  package. (#866)
+
 ### Fixed
 
 - **Verification evidence now fails closed instead of becoming ordinary drift or a partial

@@ -47,7 +47,11 @@ const temp = mkdtempSync(join(tempBase, "aih-managed-usage-cold-"));
 try {
   const packed = runNode(root, [npmCli, "pack", "--json", "--pack-destination", temp]);
   const packManifest = JSON.parse(packed.stdout);
-  if (!Array.isArray(packManifest) || typeof packManifest[0]?.filename !== "string")
+  if (
+    !Array.isArray(packManifest) ||
+    packManifest[0]?.name !== "@aihq/core" ||
+    typeof packManifest[0]?.filename !== "string"
+  )
     throw new Error("cold-managed-usage-pack-manifest");
 
   const consumer = resolve(temp, "consumer");
@@ -64,7 +68,7 @@ try {
     resolve(temp, packManifest[0].filename),
   ]);
 
-  const installed = resolve(consumer, "node_modules", "@aihq", "harness");
+  const installed = resolve(consumer, "node_modules", "@aihq", "core");
   const cli = resolve(installed, "dist", "cli.js");
   const bin = resolve(consumer, "node_modules", ".bin", "aih");
   if (!existsSync(cli) || !existsSync(bin)) throw new Error("cold-managed-usage-install");

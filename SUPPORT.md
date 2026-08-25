@@ -27,6 +27,9 @@ this project or filing an issue creates **no service relationship** of any kind.
 ## Before you file
 
 - Run `aih doctor` and include the output.
-- Confirm you are on the latest release (`npm install -g @aihq/harness@latest`).
+- Until `@aihq/core` is published, confirm you are on the frozen current release
+  (`npm install -g @aihq/harness@6.1.0`). Do not substitute the unpublished
+  `@aihq/core@0.1.0`; that candidate is not installable until its separately
+  authorized release completes.
 - Search [existing issues](https://github.com/samartomar/ai-harness/issues?q=is%3Aissue)
   first.

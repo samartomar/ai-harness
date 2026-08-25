@@ -139,7 +139,7 @@ describe("capability package live context", () => {
             pinnedSha: packageClaim.sourceDigest.value,
             treeSha256: surface.sourceDigest.value,
             tier: "vendor",
-            issuer: "@aihq/harness release",
+            issuer: "@aihq/core release",
             evidenceSha256: baseline.authority.sourceDigest.value,
           },
           provenance: {
