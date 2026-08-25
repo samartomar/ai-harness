@@ -317,6 +317,20 @@ jobs:
             echo "::error::the npm registry did not prove that @aihq/core is absent"
             exit 1
           fi
+          # Revalidate live main and tag after authenticated registry observation.
+          test "$GITHUB_REF" = "refs/tags/$GITHUB_REF_NAME"
+          observation_root="$(mktemp -d)"
+          env -u NODE_AUTH_TOKEN git -C "$observation_root" init --bare
+          env -u NODE_AUTH_TOKEN git -C "$observation_root" remote add origin "https://github.com/$GITHUB_REPOSITORY.git"
+          env -u NODE_AUTH_TOKEN git -C "$observation_root" fetch --no-tags origin \
+            "+refs/heads/main:refs/remotes/origin/main" \
+            "+refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+          main_sha="$(env -u NODE_AUTH_TOKEN git -C "$observation_root" rev-parse refs/remotes/origin/main)"
+          tag_sha="$(env -u NODE_AUTH_TOKEN git -C "$observation_root" rev-parse "refs/tags/$GITHUB_REF_NAME^{}")"
+          if [ "$GITHUB_SHA" != "$main_sha" ] || [ "$GITHUB_SHA" != "$tag_sha" ]; then
+            echo "::error::current main or tag no longer matches $GITHUB_SHA"
+            exit 1
+          fi
           actual_sha256="$(sha256sum "$TARBALL" | awk '{print $1}')"
           test "$actual_sha256" = "$EXPECTED_TARBALL_SHA256"
           tarball="$TARBALL"
