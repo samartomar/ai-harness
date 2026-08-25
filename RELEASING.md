@@ -35,9 +35,17 @@ choose an RC for any other cut when extra observation would be useful.
 
 The historical `@aihq/harness` bootstrap is complete and its v6.1.0 release remains
 immutable. That legacy package is frozen; do not publish another version under it.
-The replacement `@aihq/core` package is not yet present on npm. Its package line
-starts at `0.1.0`, uses `v-core-X.Y.Z` GitHub tags, and has an additional owner-only
-bootstrap gate.
+The replacement `@aihq/core` package line starts at `0.1.0` and uses
+`v-core-X.Y.Z` GitHub tags. This bootstrap applies only while the registry returns
+one exact structured `E404` for `@aihq/core`. Once the package exists, never rerun
+this section: bind the trusted publisher and remove the bootstrap credential and
+source path.
+
+The immutable `v-core-0.1.0` attempt passed the read-only candidate job, but npm
+refused the protected publish with `EOTP` and the registry remained `E404`.
+Preserve that tag and run as audit evidence; never delete, move, or reuse the
+failed tag. The next eligible bootstrap candidate is the reviewed `0.1.1`
+fix-forward only while the package remains absent.
 
 1. **Keep the existing scope controls.** The `@aihq` organization and maintainer account
    retain 2FA. Do not create a throwaway package version or publish from a working tree.
@@ -49,7 +57,7 @@ bootstrap gate.
    only as the `NPM_BOOTSTRAP_TOKEN` secret in the protected `npm-publish` GitHub
    environment. Do not put it in repository or organization variables, a working-tree
    `.npmrc`, logs, or any read-only job. The temporary workflow accepts only
-   `v-core-0.1.0`, requires the public
+   `v-core-0.1.1`, requires the public
    registry and then the authenticated publish step to return one structured npm error whose
    exact code is `E404` for the package name (including immediately before the effect), and
    supplies the secret only to that exact step. It authenticates the token before trusting
@@ -61,13 +69,13 @@ bootstrap gate.
 4. **Confirm the GitHub gate.** The `npm-publish` environment requires a reviewer. The
    existing immutable `v*` tag ruleset covers Core tags, and the release workflow
    narrows its trigger to `v-core-*`; its protected job is additionally restricted to
-   exactly `v-core-0.1.0` while the bootstrap revision exists. Candidate install,
+   exactly `v-core-0.1.1` while the bootstrap revision exists. Candidate install,
    verification, build, pack, and smoke execution stay in the read-only job. Only the
    protected job has `id-token: write`; it runs no Core package code and publishes the
    digest-bound tarball with public access and provenance.
 5. **Replace bootstrap authority as soon as npm confirms package existence, regardless of whether
    the later GitHub Release succeeds.** First verify that npm serves exact
-   `@aihq/core@0.1.0` with the expected integrity and provenance. Then, using npm CLI
+   `@aihq/core@0.1.1` with the expected integrity and provenance. Then, using npm CLI
    11.15.0 or later, an authenticated scope owner runs:
    ```bash
    npm trust github @aihq/core --file release.yml --repo samartomar/ai-harness --env npm-publish --allow-publish
@@ -127,8 +135,8 @@ version and SHA named by the release tracker; source approval alone is not publi
    for example `npm run release:preflight -- --milestone v-core-X.Y.Z --intent <patch|minor|major>`;
    the new `next-release` milestone is the successor train and must not be swept into the cut.
 3. **Set the version** — use `npm version X.Y.Z --no-git-tag-version` when the
-   candidate does not already carry that exact version (the first Core candidate
-   already carries `0.1.0`) so
+   candidate does not already carry that exact version (the current fix-forward
+   already carries `0.1.1`) so
    `package.json` and `package-lock.json` stay coherent, then bump the hardcoded CLI
    constant. These places must match; see the check below:
    - `package.json` `version`

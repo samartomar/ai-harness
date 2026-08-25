@@ -10,11 +10,11 @@ function read(path: string): string {
 }
 
 describe("Core package identity (#866)", () => {
-  it("starts @aihq/core at 0.1.0 without changing the command or exports", () => {
+  it("uses the immutable 0.1.1 fix-forward without changing the command or exports", () => {
     const manifest = JSON.parse(read("package.json")) as Record<string, unknown>;
 
     expect(manifest.name).toBe("@aihq/core");
-    expect(manifest.version).toBe("0.1.0");
+    expect(manifest.version).toBe("0.1.1");
     expect(manifest.bin).toEqual({ aih: "dist/cli.js" });
     expect(manifest.exports).toEqual({
       ".": {
@@ -61,10 +61,10 @@ describe("Core package identity (#866)", () => {
 
     expect(packed).toHaveLength(1);
     expect(packed[0]).toMatchObject({
-      filename: "aihq-core-0.1.0.tgz",
-      id: "@aihq/core@0.1.0",
+      filename: "aihq-core-0.1.1.tgz",
+      id: "@aihq/core@0.1.1",
       name: "@aihq/core",
-      version: "0.1.0",
+      version: "0.1.1",
     });
   });
 });

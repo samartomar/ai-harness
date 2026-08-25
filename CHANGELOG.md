@@ -6,7 +6,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [Core 0.1.0] - 2026-08-25
+## [Core 0.1.1] - 2026-08-25
 
 ### Added
 
@@ -382,6 +382,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   release is publicly installable and verified. (#866)
 
 ### Fixed
+
+- **The first Core package publication fixes forward on an immutable version.** The
+  `v-core-0.1.0` attempt passed read-only verification but npm refused the protected
+  publish with `EOTP`; no npm package or GitHub Release was created. The failed tag
+  and run remain audit evidence, while the package, workflow guard, and public
+  installation documentation advance together to `0.1.1`.
 
 - **Verification evidence now fails closed instead of becoming ordinary drift or a partial
   success.** Codex managed-server projections distinguish malformed `enabled_tools` data from a
@@ -2929,8 +2935,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v-core-0.1.0...HEAD
-[Core 0.1.0]: https://github.com/samartomar/ai-harness/compare/v6.1.0...v-core-0.1.0
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v-core-0.1.1...HEAD
+[Core 0.1.1]: https://github.com/samartomar/ai-harness/compare/v6.1.0...v-core-0.1.1
 [6.1.0]: https://github.com/samartomar/ai-harness/compare/v6.0.1...v6.1.0
 [6.0.1]: https://github.com/samartomar/ai-harness/compare/v5.4.0...v6.0.1
 [5.4.0]: https://github.com/samartomar/ai-harness/compare/v5.3.0...v5.4.0
