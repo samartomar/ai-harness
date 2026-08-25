@@ -1,22 +1,24 @@
 # Release SLSA assessment
 
-> Status: release-workflow assessment. Reassessed on 2026-08-24 against the
+> Status: release-workflow assessment. Reassessed on 2026-08-25 against the
 > SLSA v1.2 Build track. Core has not yet produced a tagged release, so the
 > `@aihq/core` result remains conditional on a successful workflow. This document
 > does not claim a SLSA Source level.
 
 ## Claim
 
-Tagged release artifacts produced by the release workflow meet **SLSA Build L2**
-when the workflow completes successfully.
+The `@aihq/core` tarball produced and published by the tagged release workflow
+meets **SLSA Build L2** when the workflow completes successfully.
 
 Scope:
 
 - the `@aihq/core` npm tarball published by the release workflow after its
   separately authorized package bootstrap;
-- the same packed tarball attached to the GitHub Release;
-- `SHA256SUMS.txt`, `SHA256SUMS.txt.sigstore.json`, `provenance.intoto.jsonl`,
-  and `aih-sbom.spdx.json` attached to the GitHub Release.
+- the same packed tarball attached to the GitHub Release.
+
+`SHA256SUMS.txt`, `SHA256SUMS.txt.sigstore.json`, `provenance.intoto.jsonl`, and
+`aih-sbom.spdx.json` are verification and supporting evidence. They are not
+themselves claimed as SLSA Build L2 subjects by this assessment.
 
 No Build L3 claim is made.
 
@@ -34,12 +36,12 @@ platform with stronger isolation controls for L3.
 
 | SLSA v1.2 Build requirement | Repo evidence | Assessment |
 | --- | --- | --- |
-| Producer chooses an appropriate build platform | `.github/workflows/release.yml` runs the release job on `ubuntu-latest` and publishes through the `npm-publish` environment. | Meets L1/L2 scope. |
-| Producer follows a consistent build process | The workflow runs only on `v-core-*` tags, asserts the tag commit matches `origin/main`, asserts `package.json` matches the package-qualified tag, runs `npm run verify` (artifact guard, ECC installer check, docs-lint, typecheck, lint, coverage tests, and build), then pack, checksum, SBOM, provenance, smoke install, npm publish, and GitHub Release upload in one job. | Meets L1/L2 scope. |
-| Producer distributes provenance | The workflow publishes npm provenance with `npm publish ./*.tgz --provenance --access public`, generates GitHub build provenance with `actions/attest-build-provenance`, copies the bundle to `provenance.intoto.jsonl`, and attaches it to the GitHub Release. | Meets L1/L2 scope. |
-| Build platform generates provenance | `actions/attest-build-provenance` targets `./*.tgz`, while npm Trusted Publishing emits registry provenance for the published package. | Meets L1/L2 scope. |
-| Provenance is authentic | The release job has `id-token: write` and `attestations: write`, uses npm Trusted Publishing instead of an npm token, and signs `SHA256SUMS.txt` keylessly with GitHub OIDC into `SHA256SUMS.txt.sigstore.json`. | Meets L2 scope. |
-| Hosted build platform | The release job uses GitHub-hosted `ubuntu-latest`; artifacts are not produced on a developer workstation. | Meets L2 scope. |
+| Producer chooses an appropriate build platform | `.github/workflows/release.yml` runs both release jobs on GitHub-hosted `ubuntu-latest` and publishes through the protected `npm-publish` environment. | Meets L1/L2 scope. |
+| Producer follows a consistent build process | The workflow runs only on `v-core-*` tags. Its read-only job verifies current `origin/main` and package/tag identity, runs `npm run verify`, packs once, records the tarball digest, and smoke-installs the exact tarball. The protected job verifies the workflow-artifact digest, original tarball digest, and packed identity; runs no Core package code; and re-observes `main` and the tag immediately before publication. | Meets L1/L2 scope. |
+| Producer distributes provenance | The workflow publishes npm provenance with `npm publish "$tarball" --ignore-scripts --provenance --access public`, generates GitHub build provenance with `actions/attest-build-provenance`, copies the bundle to `provenance.intoto.jsonl`, and attaches it to the GitHub Release. | Meets L1/L2 scope. |
+| Build platform generates provenance | `actions/attest-build-provenance` targets the exact digest-checked tarball, while npm Trusted Publishing emits registry provenance for the same published tarball. | Meets L1/L2 scope. |
+| Provenance is authentic | Only the protected publication job has `id-token: write` and `attestations: write`; it uses npm Trusted Publishing instead of an npm token and signs a checksum reconstructed from the carried tarball digest with GitHub OIDC. | Meets L2 scope. |
+| Hosted build platform | Both jobs use GitHub-hosted `ubuntu-latest`; artifacts are not produced on a developer workstation. | Meets L2 scope. |
 | Consumer verification path | `aih verify-release [version]` verifies npm signatures, GitHub release checksums, the cosign bundle over `SHA256SUMS.txt`, and the packed tarball hash. Consumers that enforce provenance policy can also verify the GitHub attestation for the tarball with `gh attestation verify`. | Supports L2 verification. |
 
 ## Remaining gaps
@@ -54,10 +56,13 @@ secret material used by the build platform to authenticate provenance.
 The workflow is still intentionally hardened for an L2 claim:
 
 - release actions are pinned by full commit SHA;
-- the tag workflow fails closed unless the tag commit matches `origin/main`;
+- candidate execution is isolated in a read-only job without publication authority;
+- the protected job verifies the GitHub artifact digest, original tarball digest, and
+  packed identity, then rechecks the tarball before each custody effect;
+- the tag workflow fails closed unless current `main`, the tag, and the workflow SHA match;
 - publishing uses npm Trusted Publishing instead of `NPM_TOKEN`;
 - keyless signing uses GitHub OIDC rather than a checked-in or long-lived key;
-- the tarball is smoke-installed before publish;
+- the tarball is smoke-installed in a disposable root before crossing into the protected job;
 - release consumers get a local verification command and the raw provenance
   artifacts needed for stricter external policy.
 

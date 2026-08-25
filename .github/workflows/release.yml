@@ -1,8 +1,7 @@
-# Cut a GitHub Release when a v-core-* tag is pushed. Verifies the gates (typecheck,
-# lint, test+coverage, build), then PACKS a verifiable install artifact (tarball +
-# SHA256 checksum + SPDX SBOM), generates a GitHub build-provenance attestation
-# (keyless, via OIDC), smoke-installs it, publishes the same tarball to npm through
-# Trusted Publishing with provenance, and attaches everything to the Release.
+# Release only an exact v-core-* tag on current main. Candidate verification,
+# build, pack, and smoke execution stay in a read-only job. The protected job
+# receives one digest-bound tarball and runs no package code before publishing
+# that same artifact through npm Trusted Publishing.
 #
 # Required @aihq/core Trusted Publisher config (npmjs.com): repository
 # samartomar/ai-harness, workflow .github/workflows/release.yml, environment
@@ -18,19 +17,21 @@ permissions:
   contents: read
 
 jobs:
-  release:
+  verify-and-pack:
     runs-on: ubuntu-latest
-    environment:
-      name: npm-publish
-      url: https://www.npmjs.com/package/@aihq/core
+    timeout-minutes: 60
     permissions:
-      contents: write # create the GitHub Release for the tag
-      id-token: write # keyless signing identity for the provenance attestation
-      attestations: write # record the build-provenance attestation
+      contents: read
+    outputs:
+      tarball: ${{ steps.pack.outputs.tarball }}
+      tarball_sha256: ${{ steps.pack.outputs.tarball_sha256 }}
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      artifact_sha256: ${{ steps.upload.outputs.artifact-digest }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Assert tag commit is current main
         run: |
           set -euo pipefail
@@ -40,13 +41,12 @@ jobs:
             echo "::error::tag commit $GITHUB_SHA does not match origin/main ($main_sha)"
             exit 1
           fi
-          echo "tag commit $GITHUB_SHA matches origin/main"
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
-          cache: npm
-      - run: npm ci
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
       - name: Assert package version matches the tag
         run: |
           set -euo pipefail
@@ -56,74 +56,207 @@ jobs:
             echo "::error::package.json version ($ver) does not match tag $GITHUB_REF_NAME"
             exit 1
           fi
-          echo "version $ver matches tag $GITHUB_REF_NAME"
-      - name: Verify
+      - name: Verify exact source candidate
         run: npm run verify
       - name: Check required baseline analyzer receipts
         run: npm run check:baseline-analyzers
       - name: Check installable baseline
         run: npm run check:baseline-installable
-      - name: Pack tarball + SHA256 checksum
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+      - name: Pack exact release tarball and checksum
+        id: pack
         run: |
           set -euo pipefail
-          npm pack
-          sha256sum ./*.tgz | tee SHA256SUMS.txt
-      - name: Generate SPDX SBOM
-        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
-        with:
-          artifact-name: aih-sbom.spdx.json
-          format: spdx-json
-          output-file: aih-sbom.spdx.json
-      - name: Attest build provenance for the tarball
-        id: attest
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-path: "./*.tgz"
-      # Attach VERIFIABLE signature files to the Release itself (not only the
-      # attestation store): a keyless cosign SIGNATURE BUNDLE over SHA256SUMS.txt
-      # (cosign v3 new-bundle-format — one .sigstore.json carrying signature +
-      # certificate; the v2 --output-signature/--output-certificate flags are
-      # deprecated no-ops there and broke the v0.6.0 run) plus the build-provenance
-      # bundle. Consumers verify with
-      #   cosign verify-blob --bundle SHA256SUMS.txt.sigstore.json \
-      #     --certificate-identity-regexp 'github.com/samartomar/ai-harness' \
-      #     --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-      #     SHA256SUMS.txt
-      # (also what OpenSSF Scorecard's Signed-Releases check looks for).
-      - name: Install cosign
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-      - name: Sign SHA256SUMS (keyless, GitHub OIDC)
-        run: |
-          set -euo pipefail
-          cosign sign-blob --yes \
-            --bundle SHA256SUMS.txt.sigstore.json \
-            SHA256SUMS.txt
-          cp "${{ steps.attest.outputs.bundle-path }}" provenance.intoto.jsonl
-      - name: Smoke-install the packed tarball
-        run: |
-          set -euo pipefail
-          tarball="$(ls "$GITHUB_WORKSPACE"/*.tgz)"
-          work="$(mktemp -d)"; cd "$work"; npm init -y >/dev/null
-          npm install "$tarball"
-          npx aih --version
-          npx aih --help | head -n 3
-      - name: Publish to npm with trusted publishing
-        run: |
-          set -euo pipefail
+          npm pack --ignore-scripts --json > npm-pack.json
+          tarball="$(node -e 'const fs=require("node:fs"); const value=JSON.parse(fs.readFileSync("npm-pack.json","utf8")); if(value.length!==1||typeof value[0]?.filename!=="string") process.exit(1); process.stdout.write(value[0].filename)')"
           ver="$(node -p "require('./package.json').version")"
-          case "$ver" in
-            *-*) tag=next ;;   # prerelease (e.g. 0.3.0-rc.1) → next, never latest
-            *)   tag=latest ;;
-          esac
-          echo "publishing $ver to dist-tag $tag"
-          npm publish ./*.tgz --provenance --access public --tag "$tag"
-      - name: Create GitHub Release (with verifiable artifacts)
+          test "$tarball" = "aihq-core-$ver.tgz"
+          test -f "$tarball"
+          tarball_sha256="$(sha256sum "$tarball" | awk '{print $1}')"
+          if ! [[ "$tarball_sha256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::invalid tarball SHA-256"
+            exit 1
+          fi
+          printf 'tarball=%s\n' "$tarball" >> "$GITHUB_OUTPUT"
+          printf 'tarball_sha256=%s\n' "$tarball_sha256" >> "$GITHUB_OUTPUT"
+          printf '%s  %s\n' "$tarball_sha256" "$tarball" > SHA256SUMS.txt
+      - name: Smoke-install the exact packed tarball
+        run: |
+          set -euo pipefail
+          sha256sum -c SHA256SUMS.txt
+          tarball="$GITHUB_WORKSPACE/${{ steps.pack.outputs.tarball }}"
+          consumer="$(mktemp -d)"
+          npm install --prefix "$consumer" --ignore-scripts --no-audit --no-fund "$tarball"
+          "$consumer/node_modules/.bin/aih" --version
+          "$consumer/node_modules/.bin/aih" --help | head -n 3
+      - name: Upload immutable exact release candidate
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: core-release-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.pack.outputs.tarball }}
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+  npm-publish:
+    needs: verify-and-pack
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: npm-publish
+      url: https://www.npmjs.com/package/@aihq/core
+    permissions:
+      actions: read
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      TARBALL: ${{ needs.verify-and-pack.outputs.tarball }}
+      EXPECTED_TARBALL_SHA256: ${{ needs.verify-and-pack.outputs.tarball_sha256 }}
+      EXPECTED_ARTIFACT_ID: ${{ needs.verify-and-pack.outputs.artifact_id }}
+      EXPECTED_ARTIFACT_SHA256: ${{ needs.verify-and-pack.outputs.artifact_sha256 }}
+    steps:
+      - name: Download immutable exact release candidate
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          artifact-ids: ${{ needs.verify-and-pack.outputs.artifact_id }}
+          path: .
+          digest-mismatch: error
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
+      - name: Verify immutable artifact custody
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Lead with the curated changelog, then let GitHub append its PR list. The
-          # link is pinned to this tag so it can never drift or 404 (#563).
+          set -euo pipefail
+          if ! [[ "$EXPECTED_TARBALL_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::invalid expected tarball SHA-256"
+            exit 1
+          fi
+          case "$EXPECTED_ARTIFACT_ID" in
+            ''|*[!0-9]*) echo "::error::invalid artifact id"; exit 1 ;;
+          esac
+          if ! [[ "$EXPECTED_ARTIFACT_SHA256" =~ ^[0-9a-f]{64}$ ]]; then
+            echo "::error::invalid expected artifact SHA-256"
+            exit 1
+          fi
+          tag="${GITHUB_REF_NAME#v-core-}"
+          if [ "$TARBALL" != "aihq-core-$tag.tgz" ]; then
+            echo "::error::unexpected tarball path"
+            exit 1
+          fi
+          test -f "$TARBALL"
+          api_digest="$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$EXPECTED_ARTIFACT_ID" --jq .digest)"
+          test "$api_digest" = "sha256:${EXPECTED_ARTIFACT_SHA256}"
+          actual_sha256="$(sha256sum "$TARBALL" | awk '{print $1}')"
+          test "$actual_sha256" = "$EXPECTED_TARBALL_SHA256"
+      - name: Validate packed manifest identity
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v-core-}"
+          node --input-type=module - "$TARBALL" "$tag" <<'NODE'
+          import { execFileSync } from "node:child_process";
+
+          const [tarball, tag] = process.argv.slice(2);
+          const manifest = JSON.parse(
+            execFileSync("tar", ["-xOf", tarball, "package/package.json"], { encoding: "utf8" }),
+          );
+          if (manifest.name !== "@aihq/core" || manifest.version !== tag) {
+            throw new Error(`packed manifest identity does not match ${tag}`);
+          }
+          NODE
+      - name: Verify exact tarball before SBOM
+        run: |
+          set -euo pipefail
+          actual_sha256="$(sha256sum "$TARBALL" | awk '{print $1}')"
+          test "$actual_sha256" = "$EXPECTED_TARBALL_SHA256"
+      - name: Generate tarball-scoped SPDX SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          artifact-name: aih-sbom.spdx.json
+          file: "${{ env.TARBALL }}"
+          format: spdx-json
+          output-file: aih-sbom.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Verify exact tarball before attestation
+        run: |
+          set -euo pipefail
+          actual_sha256="$(sha256sum "$TARBALL" | awk '{print $1}')"
+          test "$actual_sha256" = "$EXPECTED_TARBALL_SHA256"
+      - name: Attest build provenance for the exact tarball
+        id: attest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: "${{ env.TARBALL }}"
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: Verify exact tarball before signing
+        run: |
+          set -euo pipefail
+          actual_sha256="$(sha256sum "$TARBALL" | awk '{print $1}')"
+          test "$actual_sha256" = "$EXPECTED_TARBALL_SHA256"
+      - name: Sign trusted checksum and retain provenance bundle
+        run: |
+          set -euo pipefail
+          printf '%s  %s\n' "$EXPECTED_TARBALL_SHA256" "$(basename "$TARBALL")" > SHA256SUMS.txt
+          cosign sign-blob --yes --bundle SHA256SUMS.txt.sigstore.json SHA256SUMS.txt
+          cp "${{ steps.attest.outputs.bundle-path }}" provenance.intoto.jsonl
+      - name: Revalidate current main and tag before publication
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/tags/$GITHUB_REF_NAME"
+          mkdir release-observation
+          pushd release-observation
+          git init --bare
+          git remote add origin "https://github.com/$GITHUB_REPOSITORY.git"
+          git fetch --no-tags origin \
+            "+refs/heads/main:refs/remotes/origin/main" \
+            "+refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+          main_sha="$(git rev-parse refs/remotes/origin/main)"
+          tag_sha="$(git rev-parse "refs/tags/$GITHUB_REF_NAME^{}")"
+          if [ "$GITHUB_SHA" != "$main_sha" ] || [ "$GITHUB_SHA" != "$tag_sha" ]; then
+            echo "::error::current main or tag no longer matches $GITHUB_SHA"
+            exit 1
+          fi
+          popd
+      - name: Verify exact tarball before publication
+        run: |
+          set -euo pipefail
+          actual_sha256="$(sha256sum "$TARBALL" | awk '{print $1}')"
+          test "$actual_sha256" = "$EXPECTED_TARBALL_SHA256"
+      - name: Publish exact tarball through npm trusted publishing
+        run: |
+          set -euo pipefail
+          tarball="$TARBALL"
+          tag="${GITHUB_REF_NAME#v-core-}"
+          case "$tag" in
+            *-*) dist_tag=next ;;
+            *) dist_tag=latest ;;
+          esac
+          npm publish "$tarball" --ignore-scripts --provenance --access public --tag "$dist_tag"
+      - name: Verify exact tarball before GitHub release
+        run: |
+          set -euo pipefail
+          actual_sha256="$(sha256sum "$TARBALL" | awk '{print $1}')"
+          test "$actual_sha256" = "$EXPECTED_TARBALL_SHA256"
+      - name: Create immutable GitHub Release evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
           notes="Curated release notes: [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/CHANGELOG.md)"
-          gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes --notes "$notes" \
-            ./*.tgz SHA256SUMS.txt SHA256SUMS.txt.sigstore.json \
-            provenance.intoto.jsonl aih-sbom.spdx.json
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            --notes "$notes" \
+            "$TARBALL" \
+            SHA256SUMS.txt \
+            SHA256SUMS.txt.sigstore.json \
+            provenance.intoto.jsonl \
+            aih-sbom.spdx.json
