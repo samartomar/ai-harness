@@ -23,9 +23,10 @@ themselves claimed as SLSA Build L2 subjects by this assessment.
 
 No Build L3 claim is made.
 
-Historical releases through v6.1.0 used the frozen `@aihq/harness` package name;
-their tag-pinned workflow and release evidence remain the authority for those
-immutable artifacts. Core restarts package numbering at `0.1.0`, uses
+Historical releases through v6.1.0 used the frozen, npm-deprecated
+`@aihq/harness` package name; their tag-pinned workflow and release evidence
+remain the authority for those immutable artifacts. Current consumers use
+`@aihq/core`. Core restarts package numbering at `0.1.0`, uses
 `v-core-X.Y.Z` tags, and is public from `@aihq/core@0.1.1`.
 
 ## Requirement assessment

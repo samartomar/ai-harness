@@ -33,8 +33,9 @@ choose an RC for any other cut when extra observation would be useful.
 
 ## Package bootstrap state
 
-The historical `@aihq/harness@6.1.0` package is frozen; do not publish another
-version under that name. Core restarts package numbering at `0.1.0` and uses
+The historical `@aihq/harness@6.1.0` package is frozen and npm-deprecated; do not
+publish another version under that name. Direct consumers to `@aihq/core`.
+Core restarts package numbering at `0.1.0` and uses
 `v-core-X.Y.Z` GitHub tags. The immutable `v-core-0.1.0` attempt passed its
 read-only candidate job, but npm refused publication with `EOTP`. Preserve that
 tag and run as audit evidence; never delete, move, or reuse them.

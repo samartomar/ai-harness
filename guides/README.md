@@ -11,8 +11,9 @@ purpose: Entry point for AI-Harness guides by reader persona and workflow.
 Use this folder for human-facing guidance. These docs explain how different readers should use AI-Harness without mixing shipped behavior with unshipped plans.
 
 Guide baseline: `@aihq/core@0.1.1`; its npm package and matching GitHub Release
-are public. The frozen `@aihq/harness@6.1.0` package remains available only for
-consumers that have not migrated. Use [docs/commands.md](../docs/commands.md) and
+are public. The frozen `@aihq/harness@6.1.0` package is npm-deprecated and
+remains available only for existing consumers that have not migrated; new
+installations use `@aihq/core`. Use [docs/commands.md](../docs/commands.md) and
 `aih <command> --help` as syntax authorities.
 
 ![AI-Harness guide map showing reader paths for vibe developers, shared repositories, enterprise admins, enterprise developers, and shared command references](../docs/assets/aih-guide-map.svg)

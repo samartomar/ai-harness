@@ -20,7 +20,11 @@ The `enterprise` posture emphasizes least privilege, approval, auditability, and
 
 The enterprise examples in this public guide are intentionally limited to reviewed Figma, Jira/Atlassian, and AWS MCP paths. Additional service MCPs should follow the same policy and source-review pattern before appearing in public enterprise guidance.
 
-Release baseline covered by this guide: `@aihq/core@0.1.1`; the frozen legacy evidence remains at `@aihq/harness@6.1.0`. The scoped public security doc documents SLSA v1.2 Build L2 for tagged Core tarballs; no Build L3 or formal compliance claim is made.
+Release baseline covered by this guide: `@aihq/core@0.1.1`; the frozen,
+npm-deprecated legacy evidence remains at `@aihq/harness@6.1.0`, but new
+installations use `@aihq/core`. The scoped public security doc documents SLSA
+v1.2 Build L2 for tagged Core tarballs; no Build L3 or formal compliance claim
+is made.
 
 ### Current organization-qualified boundary
 
@@ -324,7 +328,8 @@ separate trust and release boundaries.
 Prepare the admin workstation before authoring policy or bundles:
 
 - Node.js/npm for installing and verifying the current published AIH package. The
-  active Core line starts at `@aihq/core@0.1.0`; `@aihq/harness@6.1.0` is frozen.
+  active Core line starts at `@aihq/core@0.1.0`; `@aihq/harness@6.1.0` is frozen
+  and npm-deprecated.
 - Git for source pins, release checks, and admin-configuration commits.
 - Docker or a compatible container runtime when the organization requires containerized detectors such as SkillSpector, or when scanner images need to be built, pushed, and signed.
 - Cosign or the organization's selected signer when marketplace artifacts, bundles, evidence, or container images require signatures.

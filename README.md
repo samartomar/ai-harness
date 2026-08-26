@@ -42,8 +42,9 @@ the claim -> implementation -> test proof map.
 ## The stable command contract
 
 The active pre-1.0 package line is `@aihq/core`, starting at `0.1.0`. The previously
-published `@aihq/harness@6.1.0` package is frozen: no later AIH release will be
-published under that name. The package move adds no wrapper or
+published `@aihq/harness@6.1.0` package is frozen and npm-deprecated: use
+`@aihq/core` for current AIH. No later AIH release will be published under the
+legacy name. The package move adds no wrapper or
 alias package and does not rename `aih`, `.aih/`, environment variables, schemas,
 receipt identifiers, check codes, or durable state formats.
 
@@ -73,11 +74,12 @@ npm install -g @aihq/core@0.1.1         # then run: aih --help
 aih verify-release 0.1.1   # checks npm signatures, GitHub release sums, and cosign evidence
 ```
 
-The frozen legacy package remains available only for consumers that have not yet
-migrated; no later AIH release will be published under that name:
+The frozen legacy package is npm-deprecated and remains installable only for
+existing consumers that have not yet migrated. npm warns those consumers to use
+`@aihq/core` instead; new installations should use the active Core line above:
 
 ```bash
-npm install -g @aihq/harness@6.1.0      # then run: aih --help
+npm install -g @aihq/harness@6.1.0      # deprecated legacy recovery only
 aih verify-release 6.1.0   # checks npm signatures, GitHub release sums, and cosign evidence for 6.1.0
 ```
 
@@ -92,7 +94,8 @@ npm tarball too, so an evaluator can read the version history straight from the 
 Core 0.1.1 library integrations import the strict Package Graph v1 TypeScript schema
 from `@aihq/core` and resolve its structural editor schema at
 `@aihq/core/schemas/aih-package-graph.schema.json`; no legacy compatibility wrapper is
-planned. Frozen v6 consumers retain the matching exports under `@aihq/harness`.
+planned. Existing v6 consumers retain the matching exports under the
+npm-deprecated `@aihq/harness` package.
 Cross-record checks such as
 identity uniqueness, direct-member resolution, and evidence subject binding belong
 to the TypeScript parser; graph metadata is never approval or evidence by itself.

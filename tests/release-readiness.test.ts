@@ -420,10 +420,27 @@ describe("release readiness metadata", () => {
     const postures = read("guides/postures.md");
     expect(postures).toContain(`The current release baseline is \`@aihq/core@${coreVersion}\`.`);
     const readme = read("README.md");
-    expect(readme).toContain(`published \`@aihq/harness@${legacyVersion}\` package is frozen`);
+    expect(readme).toContain(
+      `published \`@aihq/harness@${legacyVersion}\` package is frozen and npm-deprecated`,
+    );
     expect(readme).toContain(`npm install -g @aihq/core@${coreVersion}`);
     expect(readme).toContain("`@aihq/core@0.1.1` is public on npm");
     expect(readme).not.toContain("Until those exact artifacts exist");
+
+    for (const path of [
+      "README.md",
+      "RELEASING.md",
+      "STABILITY.md",
+      "VERSIONING.md",
+      "docs/commands.md",
+      "docs/security/release-slsa.md",
+      "guides/README.md",
+      "guides/enterprise-admin-guide.md",
+    ]) {
+      const text = read(path);
+      expect(text, path).toContain("npm-deprecated");
+      expect(text, path).toContain("@aihq/core");
+    }
 
     const adminGuide = read("guides/enterprise-admin-guide.md");
     const commands = read("docs/commands.md");

@@ -1,8 +1,9 @@
 # Stability
 
 The published `aih` v1–v6 compatibility commitment applies to
-`@aihq/harness`. That package is now frozen at v6.1.0; no compatibility wrapper or
-later release will be published under the legacy name. The new `@aihq/core` line
+`@aihq/harness`. That package is now frozen at v6.1.0 and npm-deprecated; use
+`@aihq/core` for current AIH. No compatibility wrapper or later release will be
+published under the legacy name. The new `@aihq/core` line
 restarts package numbering at `0.1.0` while retaining the `aih` command and the
 covered surfaces below. Consumers must change the package name when adopting Core;
 the lower package version does not roll back schema, receipt, state, or command

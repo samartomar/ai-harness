@@ -40,8 +40,9 @@ repo-derived MCP endpoints during planning; live Node/Python endpoint TLS handsh
 comparisons require explicit `--probe-mcp-endpoints` and run as verification probes. For major
 AI-Harness upgrades, install the exact active Core line with
 `npm install -g @aihq/core@0.1.1`; its npm package and matching GitHub Release
-evidence are public. The frozen `@aihq/harness@6.1.0` package remains available
-only for consumers that have not migrated. Add `--force` only when replacing a
+evidence are public. The frozen `@aihq/harness@6.1.0` package is npm-deprecated
+and remains available only for existing consumers that have not migrated; new
+installations use `@aihq/core`. Add `--force` only when replacing a
 broken global install after reviewing the current workstation state. For the
 same bounded origins, it compares OS and
 Node TLS handshakes, tries system trust before a minimal set of matched OS roots, and persists a
