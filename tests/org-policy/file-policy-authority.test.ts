@@ -3,6 +3,7 @@ import {
   linkSync,
   mkdirSync,
   mkdtempSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -59,7 +60,9 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-08-26T12:00:00Z"));
   targetRoot = mkdtempSync(join(tmpdir(), "aih-file-authority-target-"));
-  adminRoot = mkdtempSync(join(tmpdir(), "aih-file-authority-admin-"));
+  adminRoot = realpathSync.native(
+    mkdtempSync(join(realpathSync.native(tmpdir()), "aih-file-authority-admin-")),
+  );
   policyPath = join(adminRoot, "policy-bundle.json");
   writeFileSync(policyPath, authorityBundle());
 });

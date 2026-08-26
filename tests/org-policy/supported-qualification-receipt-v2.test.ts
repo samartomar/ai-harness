@@ -49,7 +49,9 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-08-02T12:00:00Z"));
   dir = mkdtempSync(join(tmpdir(), "aih-supported-qualification-"));
-  authorityBin = mkdtempSync(join(tmpdir(), "aih-supported-authority-gh-"));
+  authorityBin = realpathSync.native(
+    mkdtempSync(join(realpathSync.native(tmpdir()), "aih-supported-authority-gh-")),
+  );
   supportedBin = mkdtempSync(join(tmpdir(), "aih-supported-receipt-gh-"));
   const filename = process.platform === "win32" ? "gh.exe" : "gh";
   const authorityGh = join(authorityBin, filename);

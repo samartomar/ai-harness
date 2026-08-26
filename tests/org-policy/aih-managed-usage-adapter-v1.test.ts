@@ -61,7 +61,9 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-08-24T12:00:00Z"));
   root = mkdtempSync(join(tmpdir(), "aih-managed-usage-adapter-"));
-  bin = mkdtempSync(join(tmpdir(), "aih-managed-usage-gh-"));
+  bin = realpathSync.native(
+    mkdtempSync(join(realpathSync.native(tmpdir()), "aih-managed-usage-gh-")),
+  );
   const executable = join(bin, process.platform === "win32" ? "gh.exe" : "gh");
   writeFileSync(executable, "trusted gh fixture\n", { mode: 0o755 });
   gh = realpathSync.native(executable);

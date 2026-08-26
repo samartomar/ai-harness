@@ -322,7 +322,9 @@ describe("upstream artifact observer V1", () => {
     const value = fixture("tool");
     writeFixture(value);
     rmSync(join(root, ".aih", "policy-authority-receipt.json"));
-    const adminRoot = mkdtempSync(join(tmpdir(), "aih-upstream-artifact-policy-"));
+    const adminRoot = realpathSync.native(
+      mkdtempSync(join(realpathSync.native(tmpdir()), "aih-upstream-artifact-policy-")),
+    );
     const policyPath = join(adminRoot, "policy-bundle.json");
     writeFileSync(
       policyPath,

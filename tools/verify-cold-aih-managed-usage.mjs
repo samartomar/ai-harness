@@ -1,6 +1,14 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -45,8 +53,8 @@ function runInstalledCli(cwd, cli, bin, args, allowFailure = false, extraEnv = {
   return result;
 }
 
-const tempBase = resolve(tmpdir());
-const temp = mkdtempSync(join(tempBase, "aih-managed-usage-cold-"));
+const tempBase = realpathSync(resolve(tmpdir()));
+const temp = realpathSync(mkdtempSync(join(tempBase, "aih-managed-usage-cold-")));
 try {
   const packed = runNode(root, [npmCli, "pack", "--json", "--pack-destination", temp]);
   const packManifest = JSON.parse(packed.stdout);
