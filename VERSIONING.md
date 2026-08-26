@@ -55,7 +55,7 @@ A **patch** (`0.2.0 → 0.2.1`) never breaks.
 
 - the CLI surface and generated-artifact shape are stable enough to pin against —
   the enforced contract (surfaces, tests, what each bump may change) is
-  [STABILITY.md](STABILITY.md);
+  [STABILITY.md](https://github.com/samartomar/ai-harness/blob/main/STABILITY.md);
 - a maintenance-release lane exists, if N-1 support is committed at that point (see below);
 - the deprecation policy below is in force.
 
@@ -69,7 +69,8 @@ Support is latest-minor-only: security and bug fixes land on the latest minor, a
 fix path is upgrading to it. An N-1 backport commitment requires a maintenance-release
 lane (releases cut from the previous tag's line) that does not exist yet; if that lane
 is built, this policy will be re-amended **first** — the promise follows the mechanism,
-never the other way around. Security reporting is in [SECURITY.md](SECURITY.md).
+never the other way around. Security reporting is in
+[SECURITY.md](https://github.com/samartomar/ai-harness/blob/main/SECURITY.md).
 
 ## Deprecation policy
 
@@ -84,7 +85,8 @@ We do not remove or repurpose a flag or behavior without warning.
 
 For a command rename, steps 1–2 are built in: the old name ships as a deprecated
 alias of the new command — same flags, same behavior, one stderr notice — until the
-removing major (mechanics in [STABILITY.md](STABILITY.md#deprecation-alias-before-removal)).
+removing major (mechanics in
+[STABILITY.md](https://github.com/samartomar/ai-harness/blob/main/STABILITY.md#deprecation-alias-before-removal)).
 
 ## Node.js support
 

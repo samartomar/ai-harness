@@ -42,6 +42,8 @@
     "!docs/README.md",
     "README.md",
     "CHANGELOG.md",
+    "RELEASING.md",
+    "VERSIONING.md",
     "NOTICE"
   ],
   "engines": {

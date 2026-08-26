@@ -76,9 +76,9 @@ const NO_CODE_CHANGES = "No project code changes are required.";
 const OBSERVE_PLATFORM: Omit<CodeMeta, "title"> = {
   audience: "dev-platform",
   failSeverity: "blocking",
-  affectedArea: "organization policy authority / npm observation boundary",
+  affectedArea: "organization policy authority / governed artifact observation boundary",
   evidence:
-    "The sealed npm installation observation could not establish a current policy-authorized result for the exact installed package.",
+    "The sealed observation could not establish a current policy-authorized result for the exact governed artifact.",
   action:
     "Please investigate the current V3 authority receipt, referenced decision, qualification, and CLI observer boundary. Preserve rejected and revoked decisions as closed outcomes; issue a separately reviewed successor when policy must change.",
   acceptance: [
@@ -586,7 +586,7 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
   },
   "org-policy.observe-authority-unverified": {
     ...OBSERVE_PLATFORM,
-    title: "npm observation authority is unverified",
+    title: "governed artifact observation authority is unverified",
   },
   "org-policy.observe-authority-not-current": {
     ...OBSERVE_PLATFORM,
@@ -665,7 +665,7 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
   },
   "org-policy.lifecycle-observation-invalid": {
     ...OBSERVE_PLATFORM,
-    title: "npm lifecycle observation is incomplete or invalid",
+    title: "governed artifact lifecycle observation is incomplete or invalid",
   },
   "org-policy.lifecycle-store-invalid": {
     audience: "developer",
