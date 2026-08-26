@@ -9,9 +9,8 @@ import { dynamicDigest, plan, probe } from "../internals/plan.js";
 import type { Check, CheckCode } from "../internals/verify.js";
 import {
   isVerifiedPolicyAuthority,
-  POLICY_AUTHORITY_RECEIPT_PATH,
   type PolicyAuthorityVerification,
-  verifiedPolicyAuthorityReceiptAssertionV1,
+  verifiedPolicyAuthoritySourceCustodyV1,
   verifyPolicyAuthorityReceipt,
 } from "./authority.js";
 import {
@@ -40,7 +39,6 @@ import {
 } from "./upstream-observation-receipt-v1.js";
 
 const SHA256 = /^sha256:[0-9a-f]{64}$/;
-const MAX_AUTHORITY_RECEIPT_BYTES = 1_000_000;
 const MAX_OBSERVED_FILE_BYTES = 4 * 1024 * 1024;
 const MAX_OBSERVED_TOTAL_BYTES = 64 * 1024 * 1024;
 const OBSERVER_CONTRACT = Object.freeze({
@@ -379,8 +377,8 @@ export async function observeUpstreamArtifactV1(
 }
 
 /**
- * Re-observe a stored exact request using one already externally verified authority.
- * This still custodies the current authority receipt and every local input before
+ * Re-observe a stored exact request using one already verified authority.
+ * This still custodies the current authority source and every local input before
  * reporting an observed effect.
  */
 export async function reobserveUpstreamArtifactWithAuthorityV1(
@@ -390,21 +388,8 @@ export async function reobserveUpstreamArtifactWithAuthorityV1(
 ): Promise<UpstreamArtifactObservationResultV1> {
   if (!isVerifiedPolicyAuthority(verified.authority)) return refusal("authority-unverified");
   if (verified.authority.receipt.version !== 3) return refusal("authority-version", "verified");
-  const authorityFile = custodyFile(
-    ctx.root,
-    POLICY_AUTHORITY_RECEIPT_PATH,
-    MAX_AUTHORITY_RECEIPT_BYTES,
-    "assert verified policy authority receipt remains exact",
-  );
-  const authorityAssertion = verifiedPolicyAuthorityReceiptAssertionV1(verified.authority);
-  if (
-    typeof authorityFile === "string" ||
-    authorityAssertion === undefined ||
-    authorityFile.identity.nlink !== 1n ||
-    authorityFile.rawDigest !== verified.authority.receiptDigest ||
-    authorityFile.assertion.sha256 !== authorityAssertion.sha256
-  )
-    return refusal("authority-unverified");
+  const authorityFile = verifiedPolicyAuthoritySourceCustodyV1(ctx, verified.authority);
+  if (authorityFile === undefined) return refusal("authority-unverified");
   const decision = decisionFor(verified.authority, requested);
   if (decision === undefined) return refusal("decision-missing-or-mismatch", "verified");
 
@@ -604,7 +589,13 @@ export async function reobserveUpstreamArtifactWithAuthorityV1(
     custody: [
       { path: requested.evidence, sha256: `sha256:${evidence.evidence.assertion.sha256}` },
       { path: requested.manifest, sha256: manifestFile.rawDigest },
-      { path: POLICY_AUTHORITY_RECEIPT_PATH, sha256: verified.authority.receiptDigest },
+      {
+        path:
+          authorityFile.assertion.external === true
+            ? "external-policy-bundle"
+            : authorityFile.assertion.path,
+        sha256: verified.authority.receiptDigest,
+      },
       ...observedFiles.map((file) => ({ path: file.assertion.path, sha256: file.rawDigest })),
     ],
     fileAssertions,

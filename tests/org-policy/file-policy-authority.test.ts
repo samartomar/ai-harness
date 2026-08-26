@@ -18,7 +18,7 @@ import {
   verifiedPolicyAuthorityReceiptAssertionV1,
   verifyPolicyAuthorityReceipt,
 } from "../../src/org-policy/authority.js";
-import { readOrgPolicy } from "../../src/org-policy/policy-source.js";
+import { readOrgPolicy } from "../../src/org-policy/schema.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 
 let targetRoot: string;
@@ -35,6 +35,11 @@ function authorityBundle(expiresAt = "2026-09-01T00:00:00Z"): string {
       schemaVersion: 2,
       minimumPosture: "enterprise",
       references: { repoContract: "ai-coding/project.json" },
+      governance: {
+        policyVersion: "2026.08",
+        catalog: { reviewed: [], custom: [] },
+        supportedClis: ["claude"],
+      },
     },
     authorityReceipt: {
       format: "aih-policy-authority-receipt",
@@ -156,6 +161,74 @@ describe("administrator-protected policy-file authority", () => {
     }
   });
 
+  it("rejects ambiguous and oversized policy bytes before authority fallback", async () => {
+    const duplicateKey = authorityBundle().replace(
+      '"schemaVersion":2',
+      '"schemaVersion":2,"schema\\u0056ersion":2',
+    );
+    writeFileSync(policyPath, duplicateKey);
+    const duplicate = context();
+    expect(() => readOrgPolicy(duplicate.ctx.root, duplicate.ctx.env)).toThrow(/duplicate JSON/);
+    await expect(verifyPolicyAuthorityReceipt(duplicate.ctx)).resolves.toEqual({
+      problem: "protected policy bundle authority is malformed",
+    });
+    expect(duplicate.calls).toEqual([]);
+
+    writeFileSync(
+      policyPath,
+      Buffer.concat([
+        Buffer.from(authorityBundle().slice(0, -1), "utf8"),
+        Buffer.from([0xc3, 0x28]),
+        Buffer.from("}", "utf8"),
+      ]),
+    );
+    const invalidUtf8 = context();
+    expect(() => readOrgPolicy(invalidUtf8.ctx.root, invalidUtf8.ctx.env)).toThrow(
+      /not valid UTF-8/,
+    );
+    await expect(verifyPolicyAuthorityReceipt(invalidUtf8.ctx)).resolves.toEqual({
+      problem: "protected policy bundle authority is malformed",
+    });
+    expect(invalidUtf8.calls).toEqual([]);
+
+    writeFileSync(
+      policyPath,
+      authorityBundle().replace(/}$/, `,"padding":"${"x".repeat(1_000_000)}"}`),
+    );
+    const oversized = context();
+    expect(() => readOrgPolicy(oversized.ctx.root, oversized.ctx.env)).toThrow(
+      /1,000,000-byte safety limit/,
+    );
+    await expect(verifyPolicyAuthorityReceipt(oversized.ctx)).resolves.toEqual({
+      problem: "protected policy bundle authority exceeds the 1,000,000-byte safety limit",
+    });
+    expect(oversized.calls).toEqual([]);
+  });
+
+  it("rejects non-canonical Unicode, negative zero, and non-object policy roots", () => {
+    writeFileSync(policyPath, authorityBundle().replace("Acme platform security", "Acme 😀"));
+    expect(readOrgPolicy(targetRoot, { AIH_ORG_POLICY: policyPath })?.minimumPosture).toBe(
+      "enterprise",
+    );
+
+    for (const invalidIssuer of ["\\ud800", "\\udc00", "Café"]) {
+      writeFileSync(policyPath, authorityBundle().replace("Acme platform security", invalidIssuer));
+      expect(() => readOrgPolicy(targetRoot, { AIH_ORG_POLICY: policyPath })).toThrow(
+        /malformed Unicode|already be NFC/,
+      );
+    }
+
+    writeFileSync(policyPath, authorityBundle().replace(/}$/, ',"padding":-0}'));
+    expect(() => readOrgPolicy(targetRoot, { AIH_ORG_POLICY: policyPath })).toThrow(
+      /negative zero/,
+    );
+
+    writeFileSync(policyPath, "[]");
+    expect(() => readOrgPolicy(targetRoot, { AIH_ORG_POLICY: policyPath })).toThrow(
+      /JSON root must be an object/,
+    );
+  });
+
   it("pins the exact external file inside a mutating transaction", async () => {
     const { ctx } = context();
     const verified = await verifyPolicyAuthorityReceipt(ctx);
@@ -172,10 +245,12 @@ describe("administrator-protected policy-file authority", () => {
         {
           ...plan("file-authority-effect", writeText("effect.txt", "applied", "apply effect")),
           fileAssertions: [assertion],
+          commitLock: ".aih/file-authority/commit-lock",
         },
         { ...ctx, apply: true, options: { force: true } },
       ),
     ).rejects.toThrow(/verified policy authority .* changed before commit/);
     expect(existsSync(join(targetRoot, "effect.txt"))).toBe(false);
+    expect(existsSync(join(targetRoot, ".aih"))).toBe(false);
   });
 });

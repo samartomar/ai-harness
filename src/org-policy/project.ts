@@ -72,7 +72,7 @@ function commandPolicyFor(composed: ReturnType<typeof composeOrgPolicy>): Record
 }
 
 /**
- * Blocking codes whose remediation actually reads the external authority registry —
+ * Blocking codes whose remediation actually reads the organization authority source —
  * evidence and approval verification. Everything else (target coverage, projector
  * availability, posture) resolves without it.
  */
@@ -1912,12 +1912,12 @@ export async function verifiedOrgPolicyProjectionActions(
 /**
  * Legacy internal projection seam retained for pre-governance callers/tests.
  * It refuses governance inventories so a synchronous caller cannot accidentally
- * bypass external authority verification.
+ * bypass organization authority verification.
  */
 export function orgPolicyProjectionActions(ctx: PlanContext, policy: OrgPolicy): Action[] {
   if (governanceOwnsAihSurfaces(policy)) {
     throw new OrgPolicyError(
-      "governed policy projection requires externally verified authority; use the verified policy projector",
+      "governed policy projection requires verified organization authority; use the verified policy projector",
     );
   }
   const catalog = mcpServers(

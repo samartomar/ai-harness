@@ -4,10 +4,19 @@ import { join, relative, resolve, sep } from "node:path";
 import { canonicalStrictJsonBytesV1, parseStrictJsonObjectV1 } from "../contract/strict-json-v1.js";
 import { type Cli, SUPPORTED_CLIS } from "../internals/clis.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
-import type { CommandSpec, Plan, PlanContext, WriteAction } from "../internals/plan.js";
+import type {
+  CommandSpec,
+  FileAssertion,
+  Plan,
+  PlanContext,
+  WriteAction,
+} from "../internals/plan.js";
 import { dynamicDigest, plan, probe } from "../internals/plan.js";
 import type { Check, CheckCode } from "../internals/verify.js";
-import { POLICY_AUTHORITY_RECEIPT_PATH, verifyPolicyAuthorityReceipt } from "./authority.js";
+import {
+  verifiedPolicyAuthoritySourceCustodyV1,
+  verifyPolicyAuthorityReceipt,
+} from "./authority.js";
 import {
   custodyOrganizationEvidenceV1,
   isContainedEvidenceRelativePathV1,
@@ -95,6 +104,7 @@ export interface NpmPackageObservationLifecycleHandoffV1 {
     readonly path: string;
     readonly sha256: string;
   }[];
+  readonly fileAssertions?: readonly FileAssertion[];
   /** Opaque support-custody assertions prepared only by the branded V2 custody owner. */
   readonly custodyAssertions?: readonly WriteAction[];
   /** Opaque production facts retained only for the lifecycle's final custody re-observation. */
@@ -123,6 +133,7 @@ export function npmPackageObservationHandoffForLifecycleV1(
   const ordinary = structuredClone({
     authorityReceiptDigest: handoff.authorityReceiptDigest,
     custody: handoff.custody,
+    ...(handoff.fileAssertions === undefined ? {} : { fileAssertions: handoff.fileAssertions }),
     ...(handoff.custodyAssertions === undefined
       ? {}
       : { custodyAssertions: handoff.custodyAssertions }),
@@ -388,6 +399,8 @@ async function observeAihSupportedNpmPackageV1(
   verified: NonNullable<Awaited<ReturnType<typeof verifyPolicyAuthorityReceipt>>["authority"]>,
   decision: GovernanceDecisionV2,
 ): Promise<NpmPackageObservationResultV1> {
+  const authoritySource = verifiedPolicyAuthoritySourceCustodyV1(ctx, verified);
+  if (authoritySource === undefined) return refusal("authority-unverified");
   const expectedInstalled = npmInstalledIdentity(
     decision.subject.source as Extract<GovernanceDecisionV2["subject"]["source"], { type: "npm" }>,
   );
@@ -405,12 +418,14 @@ async function observeAihSupportedNpmPackageV1(
     return refusal("qualification-unverified", "verified");
   const binding = supported.custodyBinding;
   const currentCustodyAssertions = () =>
-    verifiedCurrentSupportedCustodyAssertionsV2({
-      root: ctx.root,
-      posture: supportedCustodyPosture(ctx),
-      platform: supportedCustodyPlatform(ctx),
-      binding,
-    });
+    authoritySource.unchanged()
+      ? verifiedCurrentSupportedCustodyAssertionsV2({
+          root: ctx.root,
+          posture: supportedCustodyPosture(ctx),
+          platform: supportedCustodyPlatform(ctx),
+          binding,
+        })
+      : undefined;
   if (currentCustodyAssertions() === undefined)
     return refusal("qualification-unverified", "verified");
   const qualificationProvenance = "aih-supported" as const;
@@ -554,10 +569,8 @@ async function observeAihSupportedNpmPackageV1(
   };
   const ordinaryHandoff = structuredClone({
     authorityReceiptDigest: verified.receiptDigest,
-    custody: [
-      { path: POLICY_AUTHORITY_RECEIPT_PATH, sha256: verified.receiptDigest },
-      ...local.custody,
-    ],
+    custody: local.custody,
+    fileAssertions: [authoritySource.assertion],
     custodyAssertions,
     decision,
     receipt,
@@ -582,6 +595,8 @@ export async function observeNpmPackageV1(
   const verified = await verifyPolicyAuthorityReceipt(ctx);
   if (verified.authority === undefined) return refusal("authority-unverified");
   if (verified.authority.receipt.version !== 3) return refusal("authority-version", "verified");
+  const authoritySource = verifiedPolicyAuthoritySourceCustodyV1(ctx, verified.authority);
+  if (authoritySource === undefined) return refusal("authority-unverified");
   const decision = decisionFor(verified.authority, requested);
   if (decision === undefined) return refusal("decision-missing-or-mismatch", "verified");
   if (decision.subject.kind !== "package" || decision.subject.source.type !== "npm")
@@ -595,6 +610,7 @@ export async function observeNpmPackageV1(
   if ("problem" in evidence) return refusal(evidence.problem, "verified");
   const evidenceEnvelope = parseOrganizationEvidenceEnvelopeV1Bytes(evidence.evidence.bytes);
   if (evidenceEnvelope === undefined) return refusal("qualification-unverified", "verified");
+  if (!authoritySource.unchanged()) return refusal("authority-unverified");
   if (!evidence.evidence.unchanged()) return refusal("evidence-changed", "verified");
   const expectedInstalled = npmInstalledIdentity(decision.subject.source);
   const qualificationInput = {
@@ -634,6 +650,7 @@ export async function observeNpmPackageV1(
   if (typeof local === "string") {
     if (local === "installed-evidence-unavailable") {
       afterInstalledReadForInternalTest?.();
+      if (!authoritySource.unchanged()) return refusal("authority-unverified");
       if (!evidence.evidence.unchanged())
         return refusalAfterQualified("evidence-changed", qualificationProvenance);
       const observedAt = new Date().toISOString();
@@ -670,6 +687,7 @@ export async function observeNpmPackageV1(
     return { ...refusal(local, "verified"), qualification: qualificationProvenance };
   }
   afterInstalledReadForInternalTest?.();
+  if (!authoritySource.unchanged()) return refusal("authority-unverified");
   if (!evidence.evidence.unchanged())
     return refusalAfterQualified("evidence-changed", qualificationProvenance);
   if (!local.unchanged())
@@ -776,9 +794,9 @@ export async function observeNpmPackageV1(
           path: requested.evidence,
           sha256: `sha256:${createHash("sha256").update(evidence.evidence.bytes).digest("hex")}`,
         },
-        { path: POLICY_AUTHORITY_RECEIPT_PATH, sha256: verified.authority.receiptDigest },
         ...local.custody,
       ],
+      fileAssertions: [authoritySource.assertion],
       decision,
       receipt,
     }),

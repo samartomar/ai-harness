@@ -1160,7 +1160,11 @@ export function prepareVerifiedSupportedCustodyAcceptV2(input: {
   );
   if (!Number.isFinite(deadline.getTime()) || deadline.getTime() <= Date.now())
     throw new AihError("supported custody verification failed", "AIH_TRUST");
-  return { ...planned, commitNotAfter: deadline.toISOString() };
+  return {
+    ...planned,
+    commitNotAfter: deadline.toISOString(),
+    fileAssertions: [input.binding.authorityAssertion],
+  };
 }
 
 /**

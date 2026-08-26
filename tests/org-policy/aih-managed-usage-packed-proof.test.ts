@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 describe("packed AIH-managed usage proof contract", () => {
-  it("uses installed packed bytes and proves refusal without fabricating authority", () => {
+  it("uses installed packed bytes for protected-file configure and revoke without fake authority", () => {
     const packageJson = JSON.parse(readFileSync(resolve("package.json"), "utf8")) as {
       scripts: Record<string, string>;
     };
@@ -15,8 +15,11 @@ describe("packed AIH-managed usage proof contract", () => {
     expect(proof).toContain('resolve(consumer, "node_modules", "@aihq", "core")');
     expect(proof).toContain("cold-managed-usage-unauthorized-effect-accepted");
     expect(proof).toContain("cold-managed-usage-refusal-wrote-output");
-    expect(proof).toContain("no successful configure or revocation is claimed");
+    expect(proof).toContain("cold-managed-usage-malformed-authority-accepted");
+    expect(proof).toContain("cold-managed-usage-revocation-left-recorder");
+    expect(proof).toContain("protected PolicyBundle V2 configured, inspected, and revoked");
     expect(proof).toContain("delete env.AIH_POLICY_AUTHORITY_REPOSITORY");
+    expect(proof).toContain("AIH_ORG_POLICY: policyPath");
     expect(proof).not.toMatch(/writeFileSync\([^\n]+(?:gh|attestation)/i);
   });
 });

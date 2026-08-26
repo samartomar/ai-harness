@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { parsePolicyBundle as parsePublishedPolicyBundle } from "../../src/index.js";
 import { PolicyBundleSchema, parsePolicyBundle } from "../../src/org-policy/bundle.js";
 
 /** A minimal valid embedded org policy (the local `aih-org-policy.json` shape). */
@@ -26,6 +27,14 @@ function authorityBundle(overrides: Record<string, unknown> = {}): Record<string
   return {
     ...bundle(),
     schemaVersion: 2,
+    policy: policy({
+      minimumPosture: "enterprise",
+      governance: {
+        policyVersion: "2026.08",
+        catalog: { reviewed: [], custom: [] },
+        supportedClis: ["claude"],
+      },
+    }),
     authorityReceipt: {
       format: "aih-policy-authority-receipt",
       version: 3,
@@ -42,6 +51,10 @@ function authorityBundle(overrides: Record<string, unknown> = {}): Record<string
 }
 
 describe("PolicyBundleSchema", () => {
+  it("publishes the exact PolicyBundle parser from the Core package surface", () => {
+    expect(parsePublishedPolicyBundle(authorityBundle())).toMatchObject({ ok: true });
+  });
+
   it("parses a valid envelope embedding the org-policy shape", () => {
     const result = parsePolicyBundle(bundle({ rings: [{ name: "canary" }] }));
     expect(result.ok).toBe(true);

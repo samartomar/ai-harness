@@ -895,28 +895,39 @@ export async function executePlan(
   const txn = new FsTransaction(transactionOptions);
   const deferredTxn = new FsTransaction(transactionOptions);
   for (const assertion of plan.fileAssertions ?? []) {
+    const external = assertion.external === true;
     if (
       !/^[a-f0-9]{64}$/.test(assertion.sha256) ||
       !Number.isSafeInteger(assertion.maxBytes) ||
-      assertion.maxBytes < 0
+      assertion.maxBytes < 0 ||
+      (external &&
+        (!isAbsolute(assertion.path) ||
+          typeof assertion.trustedBase !== "string" ||
+          !isAbsolute(assertion.trustedBase))) ||
+      (!external && assertion.trustedBase !== undefined)
     )
       throw new AihError("invalid transaction file assertion", "AIH_CONFIG");
     const absPath = resolvePath(ctx, assertion.path);
-    assertContained(ctx.root, absPath);
-    assertNoSymlinkParents(ctx.root, absPath, assertion.path);
+    const assertionRoot = external ? resolve(assertion.trustedBase as string) : ctx.root;
+    if (external) {
+      assertTrustedExternalPath(assertionRoot, absPath, assertion.path);
+    } else {
+      assertContained(ctx.root, absPath);
+      assertNoSymlinkParents(ctx.root, absPath, assertion.path);
+    }
     if (ctx.apply) {
       txn.stageAssertion(
         absPath,
         assertion.sha256,
         assertion.describe,
-        ctx.root,
+        assertionRoot,
         assertion.maxBytes,
       );
       deferredTxn.stageAssertion(
         absPath,
         assertion.sha256,
         assertion.describe,
-        ctx.root,
+        assertionRoot,
         assertion.maxBytes,
       );
     }

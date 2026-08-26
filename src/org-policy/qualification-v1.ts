@@ -275,7 +275,7 @@ function mintVerifiedQualificationV1(binding: QualificationBinding): VerifiedQua
 
 /**
  * Creates a capability only for canonical evidence bound to a current,
- * externally verified V3 organization-qualified decision. No scanner output,
+ * freshly verified V3 organization-qualified decision. No scanner output,
  * caller callback, or raw envelope can authorize an observed effect on its own.
  */
 export function verifyOrganizationQualificationV1(

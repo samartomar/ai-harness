@@ -5,13 +5,14 @@ import { join, resolve } from "node:path";
 import { z } from "zod";
 import { type Cli, SUPPORTED_CLIS } from "../internals/clis.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
-import type { PlanContext } from "../internals/plan.js";
+import type { FileAssertion, PlanContext } from "../internals/plan.js";
 import { defaultRunner } from "../internals/proc.js";
 import { findOnPath } from "../live/runner.js";
 import { makeHostAdapter } from "../platform/detect.js";
 import {
   isVerifiedPolicyAuthority,
   type VerifiedPolicyAuthority,
+  verifiedPolicyAuthorityReceiptAssertionV1,
   verifyPolicyAuthorityReceipt,
 } from "./authority.js";
 import {
@@ -572,6 +573,7 @@ export interface VerifiedAihSupportedCustodyBindingV2 {
   readonly receiptDigest: string;
   readonly receiptSha256: string;
   readonly authorityReceiptDigest: string;
+  readonly authorityAssertion: FileAssertion;
   readonly repository: string;
   readonly workflow: string;
   readonly decision: Readonly<{
@@ -621,6 +623,7 @@ function mintVerifiedCustodyBinding(input: {
       : undefined;
   };
   const authorityExpiresAt = canonicalUtcSecond(input.authority.receipt.expiresAt);
+  const authorityAssertion = verifiedPolicyAuthorityReceiptAssertionV1(input.authority);
   const decisionNotBefore = canonicalUtcSecond(input.decision.notBefore);
   const decisionExpiresAt = canonicalUtcSecond(input.decision.expiresAt);
   const acceptedAt = canonicalUtcSecond(input.now);
@@ -630,6 +633,7 @@ function mintVerifiedCustodyBinding(input: {
       : undefined;
   if (
     authorityExpiresAt === undefined ||
+    authorityAssertion === undefined ||
     decisionNotBefore === undefined ||
     decisionExpiresAt === undefined ||
     acceptedAt === undefined ||
@@ -643,6 +647,7 @@ function mintVerifiedCustodyBinding(input: {
     receiptDigest: receiptDigestV2(input.receipt),
     receiptSha256: input.receiptSha256,
     authorityReceiptDigest: input.authority.receiptDigest,
+    authorityAssertion: Object.freeze({ ...authorityAssertion }),
     authorityExpiresAt,
     repository: input.repository.repository,
     workflow: input.repository.workflow,

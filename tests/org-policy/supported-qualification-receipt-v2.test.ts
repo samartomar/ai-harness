@@ -263,6 +263,41 @@ function writeAuthorityReceipt(
   );
 }
 
+function writeProtectedPolicyAuthority(value: ReturnType<typeof decision>): string {
+  const path = join(authorityBin, "protected-policy-bundle.json");
+  writeFileSync(
+    path,
+    JSON.stringify({
+      schemaVersion: 2,
+      bundleVersion: "2026.08.1",
+      issuer: "Acme platform security",
+      issuedAt: "2026-08-01T00:00:00Z",
+      policy: {
+        schemaVersion: 2,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        governance: {
+          policyVersion: "2026.08",
+          catalog: { reviewed: [], custom: [] },
+          supportedClis: ["claude"],
+        },
+      },
+      authorityReceipt: {
+        format: "aih-policy-authority-receipt",
+        version: 3,
+        issuerRepository: "acme/governance",
+        issuedAt: "2026-08-01T00:00:00Z",
+        expiresAt: "2026-08-10T00:00:00Z",
+        trustedIssuers: [{ id: "platform-security", githubRepository: "acme/governance" }],
+        targets: value.targets,
+        decisions: [value],
+        decisionRevocations: [],
+      },
+    }),
+  );
+  return path;
+}
+
 async function authority(
   value: ReturnType<typeof decision>,
   workflow?: string,
@@ -935,6 +970,44 @@ describe("AihSupportedQualificationReceiptV2", () => {
       "--signer-workflow",
       "qualification.yml",
     ]);
+  });
+
+  it("combines protected-file organization authority with the separate support attestation root", async () => {
+    const value = decision();
+    const policyPath = writeProtectedPolicyAuthority(value);
+    writeReceipt(receipt(value));
+    const argv: string[][] = [];
+    const ctx = context(
+      (actual) => {
+        argv.push(actual);
+        return actual[0] === trustedSupportedGh ? { code: 0 } : { code: 1 };
+      },
+      {
+        AIH_ORG_POLICY: policyPath,
+        AIH_POLICY_AUTHORITY_REPOSITORY: undefined,
+      },
+    );
+    const verified = await verifyPolicyAuthorityReceipt(ctx);
+    expect(verified.authority).toMatchObject({ source: "policy-file" });
+    if (verified.authority === undefined) throw new Error(verified.problem);
+
+    const result = await verifyAihSupportedQualificationReceiptV2(ctx, {
+      authority: verified.authority,
+      decisionReference: {
+        id: value.id,
+        digest: governanceDecisionDigestV2(value as never),
+      },
+      subject: value.subject,
+      target: "claude",
+      effect: "configure",
+      supportedTargets: ["claude"],
+      now: "2026-08-02T12:00:00Z",
+    });
+
+    expect(result.problem).toBeUndefined();
+    expect(result.qualification).toBeDefined();
+    expect(argv).toHaveLength(1);
+    expect(argv[0]?.[0]).toBe(trustedSupportedGh);
   });
 
   it("selects only an external native gh and never the governed checkout binary", async () => {

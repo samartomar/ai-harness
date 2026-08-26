@@ -1,11 +1,14 @@
 import { createHash } from "node:crypto";
+import { lstatSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { z } from "zod";
+import { parseNativeStrictJsonObjectV1 } from "../contract/native-strict-json-object-v1.js";
 import { AihError } from "../errors.js";
 import { SUPPORTED_CLIS } from "../internals/clis.js";
-import { readIfExists } from "../internals/fsxn.js";
+import { readRegularFileWithStats } from "../internals/fsxn.js";
 import type { PlanContext } from "../internals/plan.js";
 import { STRIX_INVOCATION_LIMITS } from "../security/detectors/types.js";
+import { PolicyAuthorityReceiptV3Schema } from "./authority-v3.js";
 import { AIH_ORG_POLICY_FILE } from "./constants.js";
 import {
   canonicalEccDisabledHookIds,
@@ -17,6 +20,9 @@ import { ECC_MCP_CATALOG_PROVENANCE } from "./ecc-mcp-catalog.js";
 import { GovernanceDecisionIdSchema } from "./governance-decision-v1.js";
 
 const PostureSchema = z.enum(["vibe", "enterprise"]);
+
+/** Bounded before decoding or parsing, including explicitly selected policy bundles. */
+export const MAX_ORG_POLICY_BYTES = 1_000_000;
 
 const CommandRuleSchema = z
   .object({
@@ -1069,12 +1075,12 @@ const GovernedPolicyGovernanceSchema = z
     authority: z
       .object({
         /**
-         * These are activation references, not authority. The independently
-         * GitHub-attested authority receipt supplies issuers and revocations and
-         * must contain byte-for-byte equivalent approval subjects.
+         * These are activation references, not authority. Freshly verified
+         * organization authority supplies issuers and revocations and must
+         * contain byte-for-byte equivalent approval subjects.
          */
         approvals: z.array(PolicyApprovalSchema).default([]),
-        /** Untrusted decision references; only a verified receipt v2 can carry the exact artifacts. */
+        /** Untrusted decision references; only verified organization authority carries the artifacts. */
         decisions: PolicyDecisionReferencesSchema.default([]),
       })
       .strict()
@@ -1481,6 +1487,84 @@ export type OrgPolicy = Omit<ParsedOrgPolicy, "governance"> & {
   governance?: z.infer<typeof GovernedPolicyGovernanceSchema>;
 };
 
+const PolicyRingSchema = z
+  .object({
+    name: z.string().min(1),
+    description: z.string().min(1).optional(),
+  })
+  .strict();
+
+const PolicyBundleCommonShape = {
+  bundleVersion: z.string().min(1),
+  issuer: z.string().min(1),
+  issuedAt: z.iso.datetime({ offset: true }),
+  policy: OrgPolicySchema,
+  rings: z.array(PolicyRingSchema).optional(),
+};
+
+const PolicyBundleV1Schema = z
+  .object({ schemaVersion: z.literal(1), ...PolicyBundleCommonShape })
+  .strict();
+
+const PolicyBundleV2Schema = z
+  .object({
+    schemaVersion: z.literal(2),
+    ...PolicyBundleCommonShape,
+    authorityReceipt: PolicyAuthorityReceiptV3Schema,
+  })
+  .strict()
+  .superRefine((bundle, ctx) => {
+    if (bundle.policy.minimumPosture !== "enterprise") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["policy", "minimumPosture"],
+        message: "authority-bearing policy bundles require enterprise posture",
+      });
+    }
+    if (Date.parse(bundle.issuedAt) !== Date.parse(bundle.authorityReceipt.issuedAt)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["issuedAt"],
+        message: "bundle and authority receipt must have the same issuance instant",
+      });
+    }
+  });
+
+/**
+ * V1 remains a validate/compare envelope. V2 is the same policy document plus
+ * the exact Decision V2 authority payload used by protected-file mode.
+ */
+export const PolicyBundleSchema = z.discriminatedUnion("schemaVersion", [
+  PolicyBundleV1Schema,
+  PolicyBundleV2Schema,
+]);
+
+export type PolicyBundle = z.infer<typeof PolicyBundleSchema>;
+export type PolicyRing = z.infer<typeof PolicyRingSchema>;
+export type PolicyBundleParse = { ok: true; bundle: PolicyBundle } | { ok: false; error: string };
+
+function describePolicyBundleIssue(issue: {
+  readonly path: ReadonlyArray<PropertyKey>;
+  readonly message: string;
+}): string {
+  return `${issue.path.map(String).join(".") || "(root)"} — ${issue.message}`;
+}
+
+export function parsePolicyBundle(value: unknown): PolicyBundleParse {
+  const result = PolicyBundleSchema.safeParse(value);
+  if (result.success) return { ok: true, bundle: result.data };
+  const envelope = result.error.issues
+    .filter((issue) => issue.path[0] !== "policy")
+    .map(describePolicyBundleIssue);
+  const policy = result.error.issues
+    .filter((issue) => issue.path[0] === "policy")
+    .map(describePolicyBundleIssue);
+  const parts: string[] = [];
+  if (envelope.length > 0) parts.push(`bundle envelope is invalid: ${envelope.join("; ")}`);
+  if (policy.length > 0) parts.push(`embedded org policy is invalid: ${policy.join("; ")}`);
+  return { ok: false, error: parts.join(" · ") };
+}
+
 type GovernedOrgPolicy = OrgPolicy & { governance: NonNullable<OrgPolicy["governance"]> };
 
 /**
@@ -1581,8 +1665,21 @@ export function hasExplicitOrgPolicySource(env: NodeJS.ProcessEnv): boolean {
 
 export function readOrgPolicy(root: string, env: NodeJS.ProcessEnv): OrgPolicy | undefined {
   const path = orgPolicyPath(root, env);
-  const raw = readIfExists(path);
-  if (raw === undefined) {
+  const opened = readRegularFileWithStats(path, { maxBytes: MAX_ORG_POLICY_BYTES });
+  if (opened === undefined) {
+    let pathExists = false;
+    try {
+      lstatSync(path);
+      pathExists = true;
+    } catch {
+      // The missing-path behavior below remains distinct from unsafe custody.
+    }
+    if (pathExists) {
+      throw new OrgPolicyError(
+        `aih-org-policy at ${path} is not a safe regular file within the ` +
+          `${MAX_ORG_POLICY_BYTES.toLocaleString("en-US")}-byte safety limit`,
+      );
+    }
     // Absence of the DEFAULT repo file is optional harness state — vibe repos carry no
     // org policy — so it stays an honest `undefined` that callers report as a skip. An
     // explicit AIH_ORG_POLICY is a different claim: the operator named a file and
@@ -1599,8 +1696,27 @@ export function readOrgPolicy(root: string, env: NodeJS.ProcessEnv): OrgPolicy |
     }
     return undefined;
   }
+  let raw: string;
   try {
-    return parseOrgPolicy(JSON.parse(raw));
+    raw = new TextDecoder("utf-8", { fatal: true }).decode(opened.contents);
+  } catch {
+    throw new OrgPolicyError(`aih-org-policy at ${path} is not valid UTF-8`);
+  }
+  try {
+    const parsed: unknown = parseNativeStrictJsonObjectV1(raw, "organization policy");
+    const bundleLike =
+      parsed !== null &&
+      typeof parsed === "object" &&
+      !Array.isArray(parsed) &&
+      (Object.hasOwn(parsed, "bundleVersion") || Object.hasOwn(parsed, "policy"));
+    if (bundleLike) {
+      const bundle = parsePolicyBundle(parsed);
+      if (!bundle.ok) {
+        throw new OrgPolicyError(`active policy bundle is invalid: ${bundle.error}`);
+      }
+      return bundle.bundle.policy as OrgPolicy;
+    }
+    return parseOrgPolicy(parsed);
   } catch (err) {
     if (err instanceof OrgPolicyError) throw err;
     const moduleMessage = modulePolicyFormatMessage(path, raw);

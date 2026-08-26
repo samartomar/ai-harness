@@ -889,6 +889,12 @@ export class FsTransaction {
     let lockIdentity: OwnedCommitLease | undefined;
     let failed = false;
     try {
+      // Refuse an already-stale external input before lock acquisition can
+      // create even the durable lock anchor. Re-check under the acquired lock
+      // below so a swap during acquisition still cannot reach an effect.
+      this.assertCommitDeadline();
+      for (const assertion of assertions) this.guardParents(assertion.path, assertion.root, false);
+      validateAssertions(assertions);
       lockIdentity = this.acquireCommitLock();
       this.assertCommitDeadline();
       for (const assertion of assertions) this.guardParents(assertion.path, assertion.root, false);

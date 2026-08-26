@@ -3716,7 +3716,7 @@ describe("governed candidate projection", () => {
     });
     expect(orgPolicyHookReceiptState(applied, effective)).toMatchObject({ state: "active" });
     expect(() => orgPolicyProjectionActions(applied, policy)).toThrow(
-      /requires externally verified authority/,
+      /requires verified organization authority/,
     );
   });
 

@@ -162,7 +162,7 @@ export interface RuntimeHookIdentity {
 
 export interface EffectivePolicyContext {
   now?: Date;
-  /** Branded only after the fixed receipt passes `gh attestation verify`. */
+  /** Branded only after a protected file or optional GitHub receipt passes verification. */
   authority?: VerifiedPolicyAuthority;
   /** Actual adapter target set for this invocation; omitted means Claude's leaf-command default. */
   targets?: readonly string[];
@@ -1279,7 +1279,7 @@ function resolveCandidate(
   };
 }
 
-/** Resolve requested candidates against externally verified authority and live adapters. */
+/** Resolve requested candidates against freshly verified authority and live adapters. */
 export function resolveEffectiveOrgPolicy(
   policy: OrgPolicy,
   context: EffectivePolicyContext = {},
@@ -1407,7 +1407,7 @@ export function resolveEffectiveOrgPolicy(
     authority: {
       verified: authority !== undefined,
       ...(authority === undefined
-        ? { problem: "authority receipt has not been externally verified" }
+        ? { problem: "organization authority has not been verified" }
         : { receiptDigest: authority.receiptDigest }),
     },
   };
@@ -1486,7 +1486,7 @@ const AUTHORITY_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
   "approvals.*.github.repository": "authority resolver: trusted issuer repository binding",
   "approvals.*.github.subjectDigest": "authority resolver: full canonical approval subject digest",
   "approvals.*.id": "authority resolver: exact receipt and revocation lookup",
-  "approvals.*.issuer": "authority resolver: externally verified issuer registry lookup",
+  "approvals.*.issuer": "authority resolver: verified issuer registry lookup",
   "approvals.*.kind": "authority resolver: candidate kind binding",
   "approvals.*.notBefore": "authority resolver: not-before and maximum-lifetime gate",
   "approvals.*.policyVersion": "authority resolver: policy-version binding",
