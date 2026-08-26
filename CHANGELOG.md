@@ -12,6 +12,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Future `v-core-*` publications reject token credentials and require the exact
   protected-environment npm Trusted Publisher binding.
 
+### Fixed
+
+- Reconcile administrator-facing release truth after publication: the enterprise
+  guide selects current Scanner `0.1.2`, Core `0.1.1` schemas are described as
+  published, and shared organization-observation support tickets use governed-
+  artifact wording that remains accurate for both npm packages and catalog-
+  independent files. The package now also ships the release and versioning
+  guides linked from its README, so clean npm installs do not contain broken
+  documentation links.
+  Authorization, effects, exit codes, and lifecycle behavior are unchanged.
+  (#876)
+
 ## [Core 0.1.1] - 2026-08-25
 
 ### Added

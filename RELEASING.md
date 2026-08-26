@@ -1,7 +1,7 @@
 # Releasing
 
 How a maintainer cuts a release. The heavy lifting is automated: pushing a `v-core-*` tag runs
-[`.github/workflows/release.yml`](.github/workflows/release.yml). A read-only
+[`release.yml`](https://github.com/samartomar/ai-harness/blob/main/.github/workflows/release.yml). A read-only
 `verify-and-pack` job verifies the gates, packs one tarball, records its SHA256 digest,
 smoke-installs that exact tarball in a disposable root, and uploads only the tarball as a
 GitHub workflow artifact. The protected `npm-publish` job downloads that artifact by ID,

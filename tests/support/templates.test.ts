@@ -76,6 +76,19 @@ describe("findings — routing", () => {
     expect(finding.recommendedAction).not.toContain("aih policy evaluate --verify");
   });
 
+  it("keeps shared organization observation support wording artifact-neutral", () => {
+    for (const code of [
+      "org-policy.observe-authority-unverified",
+      "org-policy.lifecycle-observation-invalid",
+    ] as const) {
+      const finding = mustFind(code, "fail");
+      expect(finding.title).toContain("governed artifact");
+      expect(finding.title).not.toContain("npm");
+      expect(finding.evidence).toContain("exact governed artifact");
+      expect(finding.affectedArea).toContain("governed artifact observation boundary");
+    }
+  });
+
   it("dedupes by code, merges details, sorts most-urgent-first", () => {
     const findings = findingsFrom(
       [

@@ -128,13 +128,11 @@ annex files. Runtime/configuration substitution, unknown fields, duplicate IDs, 
 references, unsupported platforms, cross-detector evidence, source/request drift, and final
 caller-registration drift fail closed.
 
-When `@aihq/scan@0.1.1` is available with matching npm and GitHub Release evidence,
-install that exact version into a disposable consumer. Until then, use only a reviewed
-Scanner tarball from the public source repository; source visibility alone is not npm
-publication evidence:
+`@aihq/scan@0.1.2` is public with matching npm, GitHub Release, and provenance
+evidence. Install that exact version into a disposable consumer:
 
 ```bash
-npm install --save-dev /reviewed/path/aihq-scan-0.1.1.tgz
+npm install --save-dev /reviewed/path/aihq-scan-0.1.2.tgz
 npx --no-install aih-scan capture --request <capture-request.json> --output <new-bundle>
 npx --no-install aih-scan sign --bundle <bundle> --signer <signer.json> --private-key <key.pem> --claims <claims.json> --output <evidence.json>
 npx --no-install aih-scan verify --evidence <evidence.json> --bundle <bundle> --roots <independent-roots.json> --expected <expected-claims.json>
@@ -263,7 +261,7 @@ do not delete or prune target-local history to make the check pass.
 
 For catalog-independent files already placed in the governed root by the organization, use the
 fixed `upstream-artifact` observer and lifecycle. The canonical manifest is shipped as
-`@aihq/core/schemas/aih-upstream-artifact-manifest-v1.schema.json` in the pending
+`@aihq/core/schemas/aih-upstream-artifact-manifest-v1.schema.json` in the published
 `0.1.1` Core package; its public parser also rejects
 noncanonical or oversized bytes. It binds the exact organization-qualified Decision V2 id,
 tool/skill/MCP/package subject and digests, target, allowed effect, accountable integration owner,
@@ -310,7 +308,7 @@ stay non-effective. After an external version or source change, run
 append the new audit record.
 
 Scanner can produce attributable evidence for a catalog-absent exact detector through its one
-code-owned adapter. Its source repository and exact `@aihq/scan@0.1.1` npm package are public.
+code-owned adapter. Its source repository and exact `@aihq/scan@0.1.2` npm package are public.
 Observe npm package provenance and GitHub Release evidence independently; success at one boundary
 does not prove the other.
 Production success also still requires a genuine current V3 organization authority receipt and its separately

@@ -940,7 +940,7 @@ predecessor, replay identity, and head validity ceiling; Receipt V1 is unsupport
 expired, substituted, replayed, rolled-back, or differently scoped receipts cannot mint the
 process-local qualification capability. The portable schema is shipped at
 `@aihq/core/schemas/aih-supported-qualification-receipt-v2.schema.json` in the
-pending `0.1.1` Core package.
+published `0.1.1` Core package.
 
 A packed consumer may call `verifyAihSupportedQualificationArtifactV2` with only the target root,
 the exact expected decision id/digest, and the exact expected subject. The package resolves the
@@ -1218,7 +1218,7 @@ integration-contract version. Its raw canonical SHA-256 must be present in the c
 organization evidence envelope's `artifactDigests`. The manifest binds the decision id rather than
 the decision digest because the decision already binds the evidence digest and the evidence binds
 the manifest bytes; a decision-digest field would create a digest cycle. The portable schema ships
-at `@aihq/core/schemas/aih-upstream-artifact-manifest-v1.schema.json` in the pending
+at `@aihq/core/schemas/aih-upstream-artifact-manifest-v1.schema.json` in the published
 `0.1.1` Core package, and the public library
 exports the strict canonical parser and serializer.
 

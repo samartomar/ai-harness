@@ -81,6 +81,16 @@ describe("release readiness metadata", () => {
     );
   });
 
+  it("ships the release guide linked from the package README", () => {
+    const pkg = JSON.parse(read("package.json")) as { files: string[] };
+    expect(pkg.files).toContain("RELEASING.md");
+    expect(pkg.files).toContain("VERSIONING.md");
+    expect(read("README.md")).toContain("[RELEASING.md](RELEASING.md)");
+    expect(read("RELEASING.md")).toContain(
+      "https://github.com/samartomar/ai-harness/blob/main/.github/workflows/release.yml",
+    );
+  });
+
   it("names release SBOM artifacts by their actual format", () => {
     const release = read(".github/workflows/release.yml");
     expect(release).toContain("SPDX SBOM");
@@ -414,6 +424,17 @@ describe("release readiness metadata", () => {
     expect(readme).toContain(`npm install -g @aihq/core@${coreVersion}`);
     expect(readme).toContain("`@aihq/core@0.1.1` is public on npm");
     expect(readme).not.toContain("Until those exact artifacts exist");
+
+    const adminGuide = read("guides/enterprise-admin-guide.md");
+    const commands = read("docs/commands.md");
+    for (const [path, text] of [
+      ["guides/enterprise-admin-guide.md", adminGuide],
+      ["docs/commands.md", commands],
+    ] as const) {
+      expect(text, path).not.toContain("pending `0.1.1` Core package");
+    }
+    expect(adminGuide).toContain("@aihq/scan@0.1.2");
+    expect(adminGuide).not.toContain("@aihq/scan@0.1.1");
 
     for (const path of ["SUPPORT.md", "docs/commands.md", "guides/README.md"]) {
       const installDoc = read(path);
