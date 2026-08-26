@@ -20,8 +20,9 @@ version is the contract between the CLI and the repos and workstations it manage
 
 The new `@aihq/core` package line starts at `0.1.0` and uses `v-core-X.Y.Z`
 GitHub tags. That one-time bootstrap version is explicit because the frozen
-`@aihq/harness` line ended at `6.1.0`; it is not a downgrade or a continuation of
-the legacy package's SemVer sequence.
+npm-deprecated `@aihq/harness` line ended at `6.1.0`; use `@aihq/core` for
+current AIH. The lower Core version is not a downgrade or a continuation of the
+legacy package's SemVer sequence.
 
 After `v-core-0.1.0`, the bump is not chosen by hand: each **merged PR** carries exactly one
 `semver:patch|minor|major` label (authoritative — issue-level labels are advisory

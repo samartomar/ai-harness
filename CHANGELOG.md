@@ -393,11 +393,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   protected `v-core-X.Y.Z` GitHub tags while the `aih` command, `.aih/`
   state root, public exports, schemas, receipt identifiers, check codes,
   environment variables, and durable state formats are unchanged. The published
-  `@aihq/harness@6.1.0` package is frozen and receives no wrapper or alias package;
+  `@aihq/harness@6.1.0` package is frozen and npm-deprecated with the migration
+  message `@aihq/harness is frozen and deprecated. Use @aihq/core instead.`; it
+  receives no wrapper or alias package;
   new vendor baseline authorizations identify their issuer as `@aihq/core release`
   instead of attributing new evidence to the frozen package. The evidence shape is unchanged.
-  Its npm deprecation remains a separate owner action after the exact `@aihq/core`
-  release is publicly installable and verified. (#866)
+  The deprecation was applied only after Core, Scanner, and Catalog were publicly
+  installable and independently verified. (#866, #869)
 
 ### Fixed
 
