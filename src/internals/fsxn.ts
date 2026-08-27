@@ -115,6 +115,16 @@ interface StagedAssertion {
   maxBytes?: number;
   describe: string;
   root?: string;
+  externalCustody?: ExternalFileCustody;
+}
+
+interface ExternalFileCustody {
+  readonly file: { readonly dev: string; readonly ino: string };
+  readonly parents: readonly {
+    readonly path: string;
+    readonly dev: string;
+    readonly ino: string;
+  }[];
 }
 
 interface DirectoryIdentity {
@@ -235,8 +245,9 @@ export class FsTransaction {
     describe: string,
     root?: string,
     maxBytes?: number,
+    externalCustody?: ExternalFileCustody,
   ): void {
-    this.stagedAssertions.push({ path, sha256, describe, root, maxBytes });
+    this.stagedAssertions.push({ path, sha256, describe, root, maxBytes, externalCustody });
   }
 
   preview(): ReadonlyArray<StagedWrite> {
@@ -1070,12 +1081,36 @@ function validateAssertions(assertions: StagedAssertion[]): void {
       ...(assertion.maxBytes === undefined ? {} : { maxBytes: assertion.maxBytes }),
     });
     const actual =
-      opened === undefined || opened.stats.nlink > 1
+      opened === undefined ||
+      opened.identity.nlink !== 1n ||
+      !matchesExternalCustody(assertion.externalCustody, opened.identity)
         ? undefined
         : createHash("sha256").update(opened.contents).digest("hex");
     if (actual !== assertion.sha256)
       throw new FsTxnError(`${assertion.describe} changed before commit`);
   }
+}
+
+function matchesExternalCustody(
+  custody: ExternalFileCustody | undefined,
+  file: { dev: bigint; ino: bigint },
+): boolean {
+  if (custody === undefined) return true;
+  if (file.dev.toString(10) !== custody.file.dev || file.ino.toString(10) !== custody.file.ino)
+    return false;
+  return custody.parents.every((parent) => {
+    try {
+      const stats = lstatSync(parent.path, { bigint: true });
+      return (
+        stats.isDirectory() &&
+        !stats.isSymbolicLink() &&
+        stats.dev.toString(10) === parent.dev &&
+        stats.ino.toString(10) === parent.ino
+      );
+    } catch {
+      return false;
+    }
+  });
 }
 
 /** Keep only the last staged removal per source path (deterministic). */

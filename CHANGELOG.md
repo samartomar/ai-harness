@@ -19,6 +19,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   supply that read-only distribution and process-configuration boundary. Organization-selected
   catalog-absent artifacts and the fixed AIH-managed usage adapter carry the same authority
   assertion through observation, apply, update, revocation, and durable history. (#832, #848, #854)
+- **The Policy Workbench generates the protected authority file without raw JSON authoring.**
+  At Enterprise posture, administrators fill structured issuer, immutable GitHub, npm, PyPI, OCI,
+  remote-content, or AIH source, artifact,
+  target/effect, evidence, policy, control, actor, and reason fields. The portable browser computes
+  canonical Decision V2 digests, supports repeated tool/skill/MCP/package decisions and revocation,
+  previews the exact PolicyBundle V2, and downloads `aih-policy-bundle.json`. Vibe remains ordinary
+  policy-only, and Core still performs the active-file custody and authority verification.
 
 ### Security
 

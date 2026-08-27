@@ -21,6 +21,7 @@ import {
   type OrgPolicy,
   OrgPolicySchema,
   POLICY_HTTPS_ORIGIN_PATTERN,
+  PolicyBundleSchema,
   parseOrgPolicy,
 } from "./schema.js";
 
@@ -92,6 +93,7 @@ export interface PolicyStudioModel {
   catalogProvenance?: AdminCatalogProvenanceV1;
   baselineEvidenceProvenance?: AdminBaselineEvidenceProvenanceV1;
   schema: Record<string, unknown>;
+  protectedBundleSchema: Record<string, unknown>;
   decisionSchema: Record<string, unknown>;
   unwaivable: readonly string[];
   /**
@@ -221,6 +223,10 @@ export function policyStudioModel(
           ),
         }),
     schema: z.toJSONSchema(OrgPolicySchema, { io: "input" }) as Record<string, unknown>,
+    protectedBundleSchema: z.toJSONSchema(PolicyBundleSchema, { io: "input" }) as Record<
+      string,
+      unknown
+    >,
     decisionSchema: z.toJSONSchema(GovernanceDecisionV1Schema, { io: "input" }) as Record<
       string,
       unknown

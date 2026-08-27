@@ -283,6 +283,12 @@ export interface FileAssertion {
   external?: true;
   /** Existing real parent directory that contains an external assertion path. */
   trustedBase?: string;
+  /** Portable custody binding for administrator-provided external authority. */
+  externalCustody?: {
+    file: { dev: string; ino: string };
+    /** Every absolute directory from the volume root through the file parent. */
+    parents: readonly { path: string; dev: string; ino: string }[];
+  };
 }
 
 export interface Plan {

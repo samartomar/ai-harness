@@ -12,6 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { authorProtectedPolicyViaPackedWorkbench } from "./lib/author-protected-policy-via-workbench.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const npmCli = process.env.npm_execpath;
@@ -83,6 +84,17 @@ try {
   const cli = resolve(installed, "dist", "cli.js");
   const bin = resolve(consumer, "node_modules", ".bin", "aih");
   if (!existsSync(cli) || !existsSync(bin)) throw new Error("cold-managed-usage-install");
+  const admin = resolve(temp, "admin");
+  mkdirSync(admin);
+  const workbenchPath = resolve(admin, "aih-policy-workbench.html");
+  runInstalledCli(admin, cli, bin, [
+    "policy",
+    "generate",
+    "--apply",
+    "--out",
+    workbenchPath,
+  ]);
+  if (!existsSync(workbenchPath)) throw new Error("cold-managed-usage-workbench-generation");
 
   const described = runInstalledCli(consumer, cli, bin, [
     "policy",
@@ -118,10 +130,8 @@ try {
   if (before?.state !== "absent") throw new Error("cold-managed-usage-initial-inspection");
 
   const now = new Date();
-  const canonicalUtc = (value) => value.toISOString().replace(/\.\d{3}Z$/, "Z");
-  const issuedAt = canonicalUtc(now);
-  const expiresAt = canonicalUtc(new Date(now.getTime() + 24 * 60 * 60 * 1000));
-  const revokedAt = new Date(Date.parse(issuedAt)).toISOString();
+  const issuedAt = now.toISOString();
+  const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
   const evidencePath = resolve(target, "organization-evidence.json");
   const evidence = {
     attestor: "cold-administrator-proof",
@@ -231,44 +241,44 @@ try {
     version: 2,
   };
   const decisionDigest = packedCore.governanceDecisionDigestV2(decision);
-  const admin = resolve(temp, "admin");
   const policyPath = resolve(admin, "policy-bundle.json");
-  mkdirSync(admin);
-  const authorityReceipt = (decisionRevocations) => ({
-    decisionRevocations,
-    decisions: [decision],
-    expiresAt,
-    format: "aih-policy-authority-receipt",
-    issuedAt,
-    issuerRepository: "example.invalid/cold-admin",
-    targets: ["claude", "codex"],
-    trustedIssuers: [
-      { githubRepository: "example.invalid/cold-admin", id: "platform-security" },
-    ],
-    version: 3,
-  });
-  const writePolicy = (bundleVersion, decisionRevocations = []) =>
-    writeFileSync(
-      policyPath,
-      stableJson({
-        authorityReceipt: authorityReceipt(decisionRevocations),
-        bundleVersion,
-        issuedAt,
-        issuer: "Cold administrator packed proof",
-        policy: {
-          governance: {
-            catalog: { custom: [], reviewed: [] },
-            policyVersion: "2026.08",
-            supportedClis: ["claude"],
-          },
-          minimumPosture: "enterprise",
-          references: { repoContract: "ai-coding/project.json" },
-          schemaVersion: 2,
-        },
-        schemaVersion: 2,
-      }),
-    );
-  writePolicy("2026.08.1");
+  const workbenchDecision = {
+    "protected-actor": decision.actor,
+    "protected-attestor": decision.evidence.attestor,
+    "protected-control-digest": decision.control.digest,
+    "protected-control-id": decision.control.id,
+    "protected-decision-id": decision.id,
+    "protected-effects": decision.allowedEffects.join(","),
+    "protected-evidence-digest": decision.evidence.digest,
+    "protected-evidence-id": decision.evidence.id,
+    "protected-kind": decision.subject.kind,
+    "protected-policy-digest": decision.policy.digest,
+    "protected-policy-id": decision.policy.id,
+    "protected-policy-version": decision.policy.version,
+    "protected-reason": decision.reason,
+    "protected-source-release": decision.subject.source.release,
+    "protected-source-revision": decision.subject.source.revision,
+    "protected-source-type": "aih",
+    "protected-subject-id": decision.subject.id,
+    "protected-targets": decision.targets.join(","),
+  };
+  const writePolicy = async (bundleVersion, revoked = false) =>
+    authorProtectedPolicyViaPackedWorkbench({
+      authorityFields: {
+        "protected-bundle-version": bundleVersion,
+        "protected-expires-at": expiresAt,
+        "protected-issued-at": issuedAt,
+        "protected-issuer": decision.issuer,
+        "protected-issuer-repository": "example.invalid/cold-admin",
+      },
+      decisions: [workbenchDecision],
+      htmlPath: workbenchPath,
+      outputPath: policyPath,
+      revokeDecisionIndexes: revoked ? [0] : [],
+    });
+  const authored = await writePolicy("2026.08.1");
+  if (packedCore.governanceDecisionDigestV2(authored.authorityReceipt.decisions[0]) !== decisionDigest)
+    throw new Error("cold-managed-usage-workbench-decision-mismatch");
   if (!packedCore.parsePolicyBundle(JSON.parse(readFileSync(policyPath, "utf8"))).ok)
     throw new Error("cold-managed-usage-public-policy-bundle-parser");
   const authorityEnv = { AIH_ORG_POLICY: policyPath };
@@ -323,16 +333,7 @@ try {
   if (JSON.parse(stillConfigured.stdout).digests?.[0]?.data?.state !== "configured")
     throw new Error("cold-managed-usage-malformed-authority-mutated");
 
-  writePolicy("2026.08.2", [
-    {
-      decisionDigest,
-      format: "aih-governance-decision-revocation",
-      issuer: decision.issuer,
-      reason: "The disposable cold administrator revoked this exact decision.",
-      revokedAt,
-      version: 2,
-    },
-  ]);
+  await writePolicy("2026.08.2", true);
   const revokedRequest = request.filter(
     (value, index, values) => value !== "--evidence" && values[index - 1] !== "--evidence",
   );
@@ -355,13 +356,13 @@ try {
   const revokedState = JSON.parse(inspected.stdout).digests?.[0]?.data?.state;
   if (revokedState !== "revoked")
     throw new Error(
-      `cold-managed-usage-revocation:${revocationResult.status}:${revocationResult.stdout.slice(0, 800)}:${revocationResult.stderr.slice(0, 800)}:${readFileSync(resolve(target, ".aih", "org-policy-hook-receipt.json"), "utf8").slice(0, 4000)}`,
+      `cold-managed-usage-revocation:${revokedState}:${revocationResult.status}:${revocationResult.stdout.slice(0, 800)}:${revocationResult.stderr.slice(0, 800)}:${readFileSync(resolve(target, ".aih", "org-policy-hook-receipt.json"), "utf8").slice(0, 4000)}`,
     );
   if (existsSync(resolve(target, ".aih", "usage-record.mjs")))
     throw new Error("cold-managed-usage-revocation-left-recorder");
 
   process.stdout.write(
-    "Cold packed AIH-managed usage-metering proof PASS (packed CLI; missing and malformed authority refused; protected PolicyBundle V2 configured, inspected, and revoked without fabricated GitHub authority; host ACL is outside this proof)\n",
+    "Cold packed AIH-managed usage-metering proof PASS (packed CLI and Workbench-generated PolicyBundle V2; missing and malformed authority refused; configured, inspected, and revoked without fabricated GitHub authority; host ACL is outside this proof)\n",
   );
 } finally {
   const resolvedTemp = resolve(temp);

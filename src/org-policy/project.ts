@@ -14,6 +14,7 @@ import {
 import { isPlainObject, parseJsoncText } from "../internals/merge.js";
 import {
   type Action,
+  type FileAssertion,
   type PlanContext,
   remove,
   writeExactText,
@@ -46,6 +47,10 @@ import { type McpServer, mcpServers, type StdioServer } from "../mcp/servers.js"
 import { scanRepo } from "../profile/scan.js";
 import { usageRecorderScript } from "../usage/capture.js";
 import { usageHookActions } from "../usage/hooks.js";
+import {
+  verifiedPolicyAuthorityReceiptAssertionV1,
+  verifyPolicyAuthorityReceipt,
+} from "./authority.js";
 import { composeOrgPolicy } from "./compose.js";
 import { planEccHookControlsProjection } from "./ecc-hook-controls-projection.js";
 import {
@@ -1901,12 +1906,73 @@ function projectionActionsFromRuntime(
   return coalesceMcpProjectionMarkerActions(actions);
 }
 
+export interface VerifiedOrgPolicyProjection {
+  readonly actions: readonly Action[];
+  readonly fileAssertions?: readonly FileAssertion[];
+  readonly commitNotAfter?: string;
+}
+
+function mutatesLocalState(action: Action): boolean {
+  return (
+    action.kind === "write" ||
+    action.kind === "remove" ||
+    action.kind === "envblock" ||
+    action.kind === "exec"
+  );
+}
+
 /** Governed projection: authority is verified before any policy-selected action is emitted. */
+export async function verifiedOrgPolicyProjection(
+  ctx: PlanContext,
+  policy: OrgPolicy,
+): Promise<VerifiedOrgPolicyProjection> {
+  const runtime = await resolveRuntimeOrgPolicy(ctx, policy);
+  const actions = projectionActionsFromRuntime(ctx, policy, runtime);
+  if (!actions.some(mutatesLocalState) || !runtime.effective.authority.verified) return { actions };
+
+  // Re-observe the authority after runtime resolution. Its digest must still
+  // match the authority that selected these effects before it can pin a commit.
+  const verification = await verifyPolicyAuthorityReceipt(ctx);
+  const authority = verification.authority;
+  if (
+    authority === undefined ||
+    authority.receiptDigest !== runtime.effective.authority.receiptDigest
+  ) {
+    throw new OrgPolicyError("policy project authority changed while preparing the projection");
+  }
+  const assertion = verifiedPolicyAuthorityReceiptAssertionV1(authority);
+  if (assertion === undefined)
+    throw new OrgPolicyError("policy project authority source could not be pinned");
+  const candidateDeadlines = runtime.effective.candidates
+    .filter((candidate) => candidate.effective)
+    .flatMap((candidate) => [
+      ...(candidate.approval === undefined ? [] : [candidate.approval.expiresAt]),
+      ...(candidate.decision === undefined
+        ? []
+        : [
+            candidate.decision.reviewBy !== undefined &&
+            Date.parse(candidate.decision.reviewBy) < Date.parse(candidate.decision.expiresAt)
+              ? candidate.decision.reviewBy
+              : candidate.decision.expiresAt,
+          ]),
+    ]);
+  const deadlines = [authority.receipt.expiresAt, ...candidateDeadlines].map(Date.parse);
+  const deadline = Math.min(...deadlines);
+  if (deadlines.some((value) => !Number.isFinite(value)) || deadline <= Date.now())
+    throw new OrgPolicyError("policy project authority is not currently valid");
+  return {
+    actions,
+    fileAssertions: [assertion],
+    commitNotAfter: new Date(deadline).toISOString(),
+  };
+}
+
+/** Read-only compatibility seam; mutation plans must retain `verifiedOrgPolicyProjection` pins. */
 export async function verifiedOrgPolicyProjectionActions(
   ctx: PlanContext,
   policy: OrgPolicy,
 ): Promise<Action[]> {
-  return projectionActionsFromRuntime(ctx, policy, await resolveRuntimeOrgPolicy(ctx, policy));
+  return [...(await verifiedOrgPolicyProjection(ctx, policy)).actions];
 }
 
 /**

@@ -701,8 +701,32 @@ function sameCustodiedAuthorityReceipt(
 
 interface CustodiedExternalPolicyBundle {
   readonly contents: Buffer;
-  readonly parent: CustodiedPathIdentity;
+  readonly parents: readonly ({ readonly path: string } & CustodiedPathIdentity)[];
   readonly file: CustodiedPathIdentity;
+}
+
+function custodiedAbsoluteParentChain(
+  path: string,
+): readonly ({ readonly path: string } & CustodiedPathIdentity)[] | undefined {
+  const absolute = resolve(path);
+  const volumeRoot = parsePath(absolute).root;
+  const parent = dirname(absolute);
+  const rel = relative(volumeRoot, parent);
+  if (rel.startsWith("..") || isAbsolute(rel)) return undefined;
+  const chain: ({ path: string } & CustodiedPathIdentity)[] = [];
+  let current = volumeRoot;
+  const capture = (): boolean => {
+    const identity = safeDirectoryIdentity(current);
+    if (identity === undefined) return false;
+    chain.push({ path: current, ...identity });
+    return true;
+  };
+  if (!capture()) return undefined;
+  for (const segment of rel.split(/[\\/]+/).filter((part) => part.length > 0)) {
+    current = join(current, segment);
+    if (!capture()) return undefined;
+  }
+  return chain;
 }
 
 function hasSymlinkedAbsoluteParent(path: string): boolean {
@@ -731,8 +755,8 @@ function pathIsInside(root: string, path: string): boolean {
 function readCustodiedExternalPolicyBundle(
   path: string,
 ): CustodiedExternalPolicyBundle | undefined {
-  const parent = safeDirectoryIdentity(dirname(path));
-  if (parent === undefined) return undefined;
+  const parents = custodiedAbsoluteParentChain(path);
+  if (parents === undefined) return undefined;
   const read = readRegularFileWithStats(path, { maxBytes: MAX_ORG_POLICY_BYTES });
   if (
     read === undefined ||
@@ -760,7 +784,7 @@ function readCustodiedExternalPolicyBundle(
   }
   return {
     contents: read.contents,
-    parent,
+    parents,
     file: { dev: read.identity.dev, ino: read.identity.ino },
   };
 }
@@ -771,7 +795,13 @@ function sameCustodiedExternalPolicyBundle(
 ): boolean {
   return (
     left.contents.equals(right.contents) &&
-    sameCustodiedPath(left.parent, right.parent) &&
+    left.parents.length === right.parents.length &&
+    left.parents.every((parent, index) => {
+      const current = right.parents[index];
+      return (
+        current !== undefined && parent.path === current.path && sameCustodiedPath(parent, current)
+      );
+    }) &&
     sameCustodiedPath(left.file, right.file)
   );
 }
@@ -885,6 +915,14 @@ function protectedPolicyFileAuthority(ctx: PlanContext): ProtectedPolicyFileAuth
       describe: "verified policy authority policy file",
       external: true as const,
       trustedBase: dirname(path),
+      externalCustody: deepFreeze({
+        file: { dev: observed.file.dev.toString(10), ino: observed.file.ino.toString(10) },
+        parents: observed.parents.map((parent) => ({
+          path: parent.path,
+          dev: parent.dev.toString(10),
+          ino: parent.ino.toString(10),
+        })),
+      }),
     }),
   });
   verifiedAuthorities.add(authority);

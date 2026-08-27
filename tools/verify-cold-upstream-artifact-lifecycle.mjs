@@ -12,6 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { authorProtectedPolicyViaPackedWorkbench } from "./lib/author-protected-policy-via-workbench.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const npmCli = process.env.npm_execpath;
@@ -89,6 +90,17 @@ try {
   const schema = resolve(installed, "schemas", "aih-upstream-artifact-manifest-v1.schema.json");
   if (!existsSync(cli) || !existsSync(bin) || !existsSync(schema))
     throw new Error("cold-upstream-artifact-install");
+  const admin = resolve(temp, "admin");
+  mkdirSync(admin);
+  const workbenchPath = resolve(admin, "aih-policy-workbench.html");
+  runInstalledCli(admin, cli, bin, [
+    "policy",
+    "generate",
+    "--apply",
+    "--out",
+    workbenchPath,
+  ]);
+  if (!existsSync(workbenchPath)) throw new Error("cold-upstream-artifact-workbench-generation");
 
   writeFileSync(
     resolve(consumer, "verify-public.mjs"),
@@ -167,16 +179,15 @@ try {
   if (typeof packedCore.PolicyBundleSchema?.safeParse !== "function")
     throw new Error("cold-upstream-artifact-public-helper:PolicyBundleSchema");
   const now = new Date();
-  const canonicalUtc = (value) => value.toISOString().replace(/\.\d{3}Z$/, "Z");
-  const issuedAt = canonicalUtc(now);
-  const expiresAt = canonicalUtc(new Date(now.getTime() + 24 * 60 * 60 * 1000));
-  const revokedAt = new Date(Date.parse(issuedAt)).toISOString();
+  const issuedAt = now.toISOString();
+  const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
   const makeCandidate = (revision, integrationVersion) => {
     const artifactBytes = Buffer.from(`organization tool ${revision}\n`, "utf8");
     const source = {
-      contentDigest: sha256(`reviewed organization tool ${revision}`),
-      endpoint: "https://tools.example.invalid/catalog-independent/",
-      type: "remote",
+      commit: (revision === "v1" ? "1" : "2").repeat(40),
+      path: "packages/custom-tool",
+      repository: "example-invalid/catalog-independent-tool",
+      type: "github",
     };
     const sourceDigest = packedCore.governanceDecisionSourceDigestV2(source);
     const subject = {
@@ -276,43 +287,48 @@ try {
   };
   writeCandidate(first);
 
-  const admin = resolve(temp, "admin");
   const policyPath = resolve(admin, "policy-bundle.json");
-  mkdirSync(admin);
-  const writePolicy = (bundleVersion, decisions, decisionRevocations = []) =>
-    writeFileSync(
-      policyPath,
-      stableJson({
-        authorityReceipt: {
-          decisionRevocations,
-          decisions,
-          expiresAt,
-          format: "aih-policy-authority-receipt",
-          issuedAt,
-          issuerRepository: "example.invalid/cold-admin",
-          targets: ["codex"],
-          trustedIssuers: [
-            { githubRepository: "example.invalid/cold-admin", id: "platform-security" },
-          ],
-          version: 3,
-        },
-        bundleVersion,
-        issuedAt,
-        issuer: "Cold administrator packed proof",
-        policy: {
-          governance: {
-            catalog: { custom: [], reviewed: [] },
-            policyVersion: "2026.08",
-            supportedClis: ["claude", "codex"],
-          },
-          minimumPosture: "enterprise",
-          references: { repoContract: "ai-coding/project.json" },
-          schemaVersion: 2,
-        },
-        schemaVersion: 2,
-      }),
-    );
-  writePolicy("2026.08.1", [first.decision]);
+  const workbenchDecision = (decision) => ({
+    "protected-actor": decision.actor,
+    "protected-attestor": decision.evidence.attestor,
+    "protected-control-digest": decision.control.digest,
+    "protected-control-id": decision.control.id,
+    "protected-decision-id": decision.id,
+    "protected-effects": decision.allowedEffects.join(","),
+    "protected-evidence-digest": decision.evidence.digest,
+    "protected-evidence-id": decision.evidence.id,
+    "protected-kind": decision.subject.kind,
+    "protected-policy-digest": decision.policy.digest,
+    "protected-policy-id": decision.policy.id,
+    "protected-policy-version": decision.policy.version,
+    "protected-reason": decision.reason,
+    "protected-source-commit": decision.subject.source.commit,
+    "protected-source-path": decision.subject.source.path,
+    "protected-source-repository": decision.subject.source.repository,
+    "protected-source-type": "github",
+    "protected-subject-id": decision.subject.id,
+    "protected-targets": decision.targets.join(","),
+  });
+  const writePolicy = async (bundleVersion, candidates, revokeDecisionIndexes = []) =>
+    authorProtectedPolicyViaPackedWorkbench({
+      authorityFields: {
+        "protected-bundle-version": bundleVersion,
+        "protected-expires-at": expiresAt,
+        "protected-issued-at": issuedAt,
+        "protected-issuer": "platform-security",
+        "protected-issuer-repository": "example.invalid/cold-admin",
+      },
+      decisions: candidates.map((candidate) => workbenchDecision(candidate.decision)),
+      htmlPath: workbenchPath,
+      outputPath: policyPath,
+      revokeDecisionIndexes,
+    });
+  const firstBundle = await writePolicy("2026.08.1", [first]);
+  if (
+    packedCore.governanceDecisionDigestV2(firstBundle.authorityReceipt.decisions[0]) !==
+    first.decisionDigest
+  )
+    throw new Error("cold-upstream-artifact-workbench-decision-mismatch");
   if (!packedCore.parsePolicyBundle(JSON.parse(readFileSync(policyPath, "utf8"))).ok)
     throw new Error("cold-upstream-artifact-public-policy-bundle-parser");
   const authorityEnv = { AIH_ORG_POLICY: policyPath };
@@ -359,7 +375,15 @@ try {
   runInstalledCli(target, cli, bin, request("lifecycle", first, true), false, authorityEnv);
 
   writeCandidate(second);
-  writePolicy("2026.08.2", [first.decision, second.decision]);
+  const updateBundle = await writePolicy("2026.08.2", [first, second]);
+  const updateDecision = updateBundle.authorityReceipt.decisions.find(
+    (decision) => decision.id === second.decision.id,
+  );
+  if (
+    updateDecision === undefined ||
+    packedCore.governanceDecisionDigestV2(updateDecision) !== second.decisionDigest
+  )
+    throw new Error("cold-upstream-artifact-workbench-update-mismatch");
   const observedSecond = runInstalledCli(
     target,
     cli,
@@ -385,16 +409,7 @@ try {
     throw new Error("cold-upstream-artifact-drift-accepted");
   writeCandidate(second);
 
-  writePolicy("2026.08.3", [first.decision, second.decision], [
-    {
-      decisionDigest: second.decisionDigest,
-      format: "aih-governance-decision-revocation",
-      issuer: second.decision.issuer,
-      reason: "The disposable administrator revoked this exact tool decision.",
-      revokedAt,
-      version: 2,
-    },
-  ]);
+  await writePolicy("2026.08.3", [first, second], [1]);
   const revoked = runInstalledCli(
     target,
     cli,
@@ -417,7 +432,7 @@ try {
     throw new Error(`cold-upstream-artifact-history:${evaluated.stdout.slice(0, 800)}`);
 
   process.stdout.write(
-    "Cold packed organization-managed artifact proof PASS (packed parser/schema/CLI; missing authority refused; protected PolicyBundle V2 observed and recorded a catalog-absent exact tool, appended an exact version update, refused drift, recorded revocation, and exposed durable history; no install, configuration, execution, or host-ACL claim)\n",
+    "Cold packed organization-managed artifact proof PASS (packed parser/schema/CLI and Workbench-generated PolicyBundle V2; missing authority refused; observed and recorded a catalog-absent exact tool, appended an exact version update, refused drift, recorded revocation, and exposed durable history; no install, configuration, execution, or host-ACL claim)\n",
   );
 } finally {
   const resolvedTemp = resolve(temp);

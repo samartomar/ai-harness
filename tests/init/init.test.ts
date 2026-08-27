@@ -1,5 +1,14 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -67,6 +76,39 @@ function seedOrgPolicy(allowedServers = ["code-review-graph"]): void {
       mcp: { allowedServers, allowManagedOnly: true },
     }),
   );
+}
+
+function externalPolicyBundle(): string {
+  return JSON.stringify({
+    schemaVersion: 2,
+    bundleVersion: "2026.08.1",
+    issuer: "Acme platform security",
+    issuedAt: "2026-08-25T00:00:00Z",
+    policy: {
+      schemaVersion: 2,
+      minimumPosture: "enterprise",
+      references: { repoContract: ".ai-context/project.json" },
+      mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
+      governance: {
+        policyVersion: "2026.08",
+        catalog: { reviewed: [], custom: [] },
+        activations: [],
+        authority: { approvals: [], decisions: [] },
+        supportedClis: ["claude"],
+      },
+    },
+    authorityReceipt: {
+      format: "aih-policy-authority-receipt",
+      version: 3,
+      issuerRepository: "acme/governance",
+      issuedAt: "2026-08-25T00:00:00Z",
+      expiresAt: "2026-09-01T00:00:00Z",
+      trustedIssuers: [{ id: "platform-security", githubRepository: "acme/governance" }],
+      targets: ["claude"],
+      decisions: [],
+      decisionRevocations: [],
+    },
+  });
 }
 
 function seedGovernedUsage(state: "active" | "disabled", targets: string[] = ["claude"]): void {
@@ -234,6 +276,36 @@ describe("aih init — command surface", () => {
 
     expect(check.verdict).toBe("pass");
     expect(check.detail).toContain(".claude/managed-settings.json matches");
+  });
+
+  it("refuses an external authority replacement before init creates a lock anchor or projects effects", async () => {
+    const adminRoot = realpathSync.native(
+      mkdtempSync(join(realpathSync.native(tmpdir()), "aih-init-policy-authority-")),
+    );
+    try {
+      const policyPath = join(adminRoot, "policy-bundle.json");
+      const policy = externalPolicyBundle();
+      writeFileSync(policyPath, policy);
+      const plannedCtx = ctx({
+        apply: true,
+        posture: "enterprise",
+        postureSource: "flag",
+        env: { AIH_ORG_POLICY: policyPath },
+      });
+      const planned = await command.plan(plannedCtx);
+      const replacement = join(adminRoot, "replacement.json");
+      writeFileSync(replacement, policy);
+      rmSync(policyPath);
+      renameSync(replacement, policyPath);
+
+      await expect(executePlan(planned, plannedCtx)).rejects.toThrow(
+        /verified policy authority policy file changed before commit/,
+      );
+      expect(existsSync(join(dir, ".aih"))).toBe(false);
+      expect(existsSync(join(dir, ".claude", "managed-settings.json"))).toBe(false);
+    } finally {
+      rmSync(adminRoot, { recursive: true, force: true });
+    }
   });
 
   it("lets governed policy exclusively control init usage hooks for disabled and active states", async () => {

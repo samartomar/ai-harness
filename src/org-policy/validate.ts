@@ -11,7 +11,7 @@ import { parsePolicyBundle } from "./bundle.js";
 import { AIH_ORG_POLICY_FILE } from "./constants.js";
 import { assertOrgPolicyMutationSource, sameJson } from "./drift.js";
 import { orgPolicyEffectiveCheck, orgPolicyEffectiveDigest } from "./evaluate.js";
-import { verifiedOrgPolicyProjectionActions } from "./project.js";
+import { verifiedOrgPolicyProjection } from "./project.js";
 import { orgPolicyPath, readOrgPolicy } from "./schema.js";
 
 /**
@@ -318,9 +318,10 @@ async function policyProjectPlan(ctx: PlanContext): Promise<Plan> {
       "AIH_ORG_POLICY",
     );
   }
-  return plan(
+  const projection = await verifiedOrgPolicyProjection(projectCtx, policy);
+  const projected = plan(
     "policy project",
-    ...(await verifiedOrgPolicyProjectionActions(projectCtx, policy)),
+    ...projection.actions,
     // `--verify` promised probes and ran none: the plan carried zero, so the
     // executor suppressed the whole verification section — the same silent
     // shape the 6.0.0 cut fixed for `aih secrets --verify`. The
@@ -330,6 +331,15 @@ async function policyProjectPlan(ctx: PlanContext): Promise<Plan> {
     probe("org policy effective resolution", () => orgPolicyEffectiveCheck(projectCtx)),
     probe("usage-recorder", () => usageRecorderCheck(projectCtx)),
   );
+  return {
+    ...projected,
+    ...(projection.fileAssertions === undefined
+      ? {}
+      : { fileAssertions: projection.fileAssertions }),
+    ...(projection.commitNotAfter === undefined
+      ? {}
+      : { commitNotAfter: projection.commitNotAfter }),
+  };
 }
 
 export const policyProjectCommand: CommandSpec = {

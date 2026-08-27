@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { dirname, isAbsolute, parse as parsePath, relative, resolve } from "node:path";
 import { applyEdits, type FormattingOptions, modify } from "jsonc-parser";
 import { AihError, DirtyWorktreeError, PathContainmentError } from "../errors.js";
 import { redactSecrets } from "../guardrails/redact.js";
@@ -31,6 +31,7 @@ import type {
   DigestAction,
   EnvBlockAction,
   ExecAction,
+  FileAssertion,
   Plan,
   PlanContext,
   ProbeAction,
@@ -896,6 +897,7 @@ export async function executePlan(
   const deferredTxn = new FsTransaction(transactionOptions);
   for (const assertion of plan.fileAssertions ?? []) {
     const external = assertion.external === true;
+    const absPath = resolvePath(ctx, assertion.path);
     if (
       !/^[a-f0-9]{64}$/.test(assertion.sha256) ||
       !Number.isSafeInteger(assertion.maxBytes) ||
@@ -903,11 +905,12 @@ export async function executePlan(
       (external &&
         (!isAbsolute(assertion.path) ||
           typeof assertion.trustedBase !== "string" ||
-          !isAbsolute(assertion.trustedBase))) ||
-      (!external && assertion.trustedBase !== undefined)
+          !isAbsolute(assertion.trustedBase) ||
+          !validExternalCustody(assertion.externalCustody, absPath))) ||
+      (!external &&
+        (assertion.trustedBase !== undefined || assertion.externalCustody !== undefined))
     )
       throw new AihError("invalid transaction file assertion", "AIH_CONFIG");
-    const absPath = resolvePath(ctx, assertion.path);
     const assertionRoot = external ? resolve(assertion.trustedBase as string) : ctx.root;
     if (external) {
       assertTrustedExternalPath(assertionRoot, absPath, assertion.path);
@@ -922,6 +925,7 @@ export async function executePlan(
         assertion.describe,
         assertionRoot,
         assertion.maxBytes,
+        assertion.externalCustody,
       );
       deferredTxn.stageAssertion(
         absPath,
@@ -929,6 +933,7 @@ export async function executePlan(
         assertion.describe,
         assertionRoot,
         assertion.maxBytes,
+        assertion.externalCustody,
       );
     }
   }
@@ -1313,6 +1318,32 @@ export async function executePlan(
     report,
     verification,
   };
+}
+
+function validExternalCustody(custody: FileAssertion["externalCustody"], path: string): boolean {
+  if (custody === undefined) return false;
+  const validIdentity = (identity: { dev: string; ino: string }): boolean =>
+    /^[1-9]\d*$/.test(identity.dev) && /^[1-9]\d*$/.test(identity.ino);
+  const absolute = resolve(path);
+  const volumeRoot = parsePath(absolute).root;
+  const rel = relative(volumeRoot, dirname(absolute));
+  if (rel.startsWith("..") || isAbsolute(rel)) return false;
+  const expectedParents = [volumeRoot];
+  let current = volumeRoot;
+  for (const part of rel.split(/[\\/]+/).filter((part) => part.length > 0)) {
+    current = resolve(current, part);
+    expectedParents.push(current);
+  }
+  return (
+    validIdentity(custody.file) &&
+    custody.parents.length === expectedParents.length &&
+    custody.parents.every(
+      (parent, index) =>
+        isAbsolute(parent.path) &&
+        validIdentity(parent) &&
+        resolve(parent.path) === expectedParents[index],
+    )
+  );
 }
 
 /** Human-readable summary of a plan result (used when --json is off). */

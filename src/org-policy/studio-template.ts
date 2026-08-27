@@ -1,4 +1,8 @@
 import type { PolicyStudioModel } from "./studio-model.js";
+import {
+  protectedPolicyWorkbenchMarkup,
+  protectedPolicyWorkbenchScript,
+} from "./studio-protected-authority.js";
 
 /**
  * Escape the model for embedding inside an inline script. Angle brackets go to
@@ -59,6 +63,8 @@ function baselineEvidenceProvenanceLine(model: PolicyStudioModel): string {
 export function policyStudioHtml(model: PolicyStudioModel): string {
   const catalogProvenance = catalogProvenanceLine(model);
   const baselineEvidenceProvenance = baselineEvidenceProvenanceLine(model);
+  const protectedPolicyMarkup = protectedPolicyWorkbenchMarkup();
+  const protectedPolicyScript = protectedPolicyWorkbenchScript();
   const hookRegistryOwners = safeHtmlAttribute(
     [...new Set(model.catalog.hookRegistry.entries.map((entry) => entry.ownerLabel))].join(" "),
   );
@@ -528,6 +534,8 @@ body{font:400 var(--type-body)/1.55 var(--sans);color:var(--ink);background:var(
       <section class="gcard grp group" data-open="0" data-owner="ECC" data-groupcard><button type="button" class="grphead" data-group aria-expanded="false"><span class="tw" aria-hidden="true">&#9654;</span><h2>Enterprise composition</h2><span class="own">ECC</span><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="grpbody stack" id="composition-parts"></div></section>
 
       <section class="gcard grp group" data-open="0" data-owner="You" data-groupcard><button type="button" class="grphead" data-group aria-expanded="false"><span class="tw" aria-hidden="true">&#9654;</span><h2>Your sources</h2><span class="own">You</span><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="grpbody stack" id="custom-rows"></div><p class="grpnote">Custom MCP can only be authored as a fully pinned pending candidate. It has no activation affordance until supported scanning, evidence and projection exist.</p></section>
+
+${protectedPolicyMarkup}
 
       <section class="gcard grp group" data-open="0" data-owner="ECC Superpowers" data-groupcard><button type="button" class="grphead" data-group aria-expanded="false"><span class="tw" aria-hidden="true">&#9654;</span><h2>ECC / Superpowers curation</h2><span class="own">recorded</span><span class="ct"></span><span class="meter" aria-hidden="true"></span></button><div class="grpbody stack" id="curation-rows"></div><p class="grpnote">AIH preserves audited curation intent for agents, skills and commands. It does not install, project or enforce those external assets. A selection becomes curation once it carries an audit record and digest.</p></section>
 
@@ -1295,6 +1303,7 @@ byId("copy-approvals").addEventListener("click",function(event){event.preventDef
   const idReference=function(id,key){const button=document.createElement("button");button.type="button";button.className="rid";button.dataset.idReference=id;button.dataset.detail=key;button.textContent=id;return button};
   const enhanceIdReferences=function(){const composition=model.catalog.enterpriseComposition;Array.from(byId("composition-parts").querySelectorAll(":scope > .row")).forEach(function(row,index){const part=composition.parts[index];const host=row.querySelector("p.mono");if(!part||!host||host.querySelector("[data-id-reference]")){return}host.textContent="";part.componentIds.forEach(function(id,itemIndex){const key=detailKey(composition.framework,id);if(!key){return}if(itemIndex){host.append(document.createTextNode(" "))}host.append(idReference(id,key))})});Array.from(byId("hook-registry-rows").querySelectorAll(".hookreg")).forEach(function(row,index){const entry=model.catalog.hookRegistry.entries[index];const host=row.querySelector("b");if(!entry||!host||host.querySelector("[data-id-reference]")){return}const framework=entry.owner==="aih"?null:model.catalog.frameworks.find(function(item){return item.assets.some(function(asset){return asset.id===entry.id})&&((item.id==="superpowers"?"Superpowers":"ECC")===entry.ownerLabel)});const key=entry.owner==="aih"?entry.id:(framework&&detailKey(framework.id,entry.id));if(!key){return}host.textContent="";host.append(idReference(entry.id,key))})};
   window.__aihPolicyWorkbenchEnhanceRows=function(){enhanceRows();enhanceIdReferences()};[byId("custom-rows"),byId("curation-rows"),byId("approval-rows")].forEach(function(node){new MutationObserver(enhanceRows).observe(node,{childList:true})});[byId("composition-parts"),byId("hook-registry-rows")].forEach(function(node){new MutationObserver(enhanceIdReferences).observe(node,{childList:true})});enhanceRows();enhanceIdReferences();
+${protectedPolicyScript}
 })();
 </script>
 </body>

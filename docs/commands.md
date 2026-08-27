@@ -700,7 +700,17 @@ contains only the exact decision binding and code-owned target.
 
 `generate --apply` writes `aih-policy-workbench.html` (or `--out <path>`). The workbench authors and downloads the actual
 `aih-org-policy.json` schema, with schema-backed audit references for ECC or Superpowers agents, skills, and commands.
-Those records are external curation guidance only: AIH does not install, project, or enforce the external assets. Its
+At Enterprise posture, its protected-file form also authors organization-qualified Decision V2
+records for exact GitHub, npm, PyPI, OCI, remote-content, or AIH source identities classified
+as tools, skills, MCP servers, packages, or profiles. The administrator enters ordinary fields for targets, effects, evidence,
+issuer, actor, policy, and control; Web Crypto computes the domain-separated source, subject, and
+revocation digests. The read-only preview and `aih-policy-bundle.json` download are PolicyBundle V2,
+and Core's exported parser accepts the same bytes. This surface accepts no editable raw-JSON decision
+or bundle input. Vibe continues to export only ordinary repo-local policy and cannot generate
+authority.
+The protected-file decisions authorize only the effects named in the exact decision and supported by
+a closed Core lifecycle; the Workbench itself performs no install, projection, or execution.
+Separately, external-curation records remain guidance only: AIH does not install, project, or enforce those external assets. Its
 catalog is an authoring projection of the same pinned AIH controls and framework catalog data used by the engine; it does
 not scan a repository. The workbench can also author `governance.supportedClis`, the organization-sanctioned CLI
 allow-list. At Enterprise posture it is required and non-empty; omission is refused with the current registry ids and a paste-all remedy, while wildcard sentinels are not supported. At Vibe posture omission is unrestricted, and a present list enforces at either posture. The list is independent of activation targets: sanctioned, materialization-capable, and projector-capable are three separate host sets. Browser import/export preserves policy semantics, including pinned stdio candidates, fenced remote endpoint candidates, annotations,
@@ -862,7 +872,9 @@ integrity-enforcing materializer continue to report `supported=none`.
 Custom evidence, approvals, and governance decisions require verified organization authority.
 The default Enterprise route is one PolicyBundle V2 JSON file at an absolute `AIH_ORG_POLICY` path
 outside the governed target. It combines the ordinary policy with the exact V3 decision-authority
-payload. Core accepts only current, strict, bounded, regular, single-link, non-symlinked custody,
+payload. Generate it through the Policy Workbench protected-file form; the `issuerRepository` field
+is an attribution identity required by the reused V3 schema, not a requirement that the file live in
+GitHub. Core accepts only current, strict, bounded, regular, single-link, non-symlinked custody,
 re-observes the exact bytes, and pins them inside every authority-dependent mutating transaction.
 Core never writes this
 file and does not prove its host ACL; the organization must control both file replacement and the
@@ -1090,8 +1102,9 @@ descriptor and migration before it can update owned bytes; receipt data cannot
 nominate its own adapter or migration implementation.
 
 `npm run verify:cold-aih-managed-usage` builds and packs Core, installs that
-tarball into a disposable consumer, and uses only the installed CLI plus a separate
-protected PolicyBundle V2 file to exercise descriptor discovery, absent inspection,
+tarball into a disposable consumer, uses the installed CLI to generate the Policy Workbench, and
+drives its structured form/download to create the separate protected PolicyBundle V2 used for
+descriptor discovery, absent inspection,
 qualified preview, configure, inspect, authenticated revocation, final inspection,
 and fail-closed authority substitution. It uses no fake `gh` and no workflow for
 organization authority. The proof establishes Core's exact file-custody contract;
@@ -1274,7 +1287,8 @@ newly authorized decision/evidence to append the new audit record. Live file obs
 not installation, activation, endpoint reachability, or process-running proof.
 
 `npm run verify:cold-upstream-artifact-lifecycle` builds and packs Core, installs only the tarball in
-a disposable consumer, and exercises the public parser, packaged schema, and installed CLI. It
+a disposable consumer, and exercises the public parser, packaged schema, installed CLI, and the
+structured Workbench form/download that generates its authority file. It
 first proves that observation and explicit lifecycle apply refuse without authority. It then uses a
 separate protected PolicyBundle V2 to observe and persist one catalog-absent exact organization
 tool, append an exact source/version update, refuse live file drift, record authenticated

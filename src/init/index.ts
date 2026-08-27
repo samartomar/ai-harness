@@ -14,7 +14,13 @@ import {
   unmanagedBootloaders,
 } from "../internals/cli-detect.js";
 import { deepMerge, isPlainObject } from "../internals/merge.js";
-import type { Action, CommandSpec, PlanContext, WriteAction } from "../internals/plan.js";
+import type {
+  Action,
+  CommandSpec,
+  FileAssertion,
+  PlanContext,
+  WriteAction,
+} from "../internals/plan.js";
 import { doc, plan, writeJson } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import {
@@ -22,7 +28,7 @@ import {
   KIRO_HOOK_RUNTIME_OPTION,
   kiroHookRuntime,
 } from "../kiro/runtime.js";
-import { verifiedOrgPolicyProjectionActions } from "../org-policy/project.js";
+import { verifiedOrgPolicyProjection } from "../org-policy/project.js";
 import { governanceOwnsAihSurfaces, readOrgPolicy } from "../org-policy/schema.js";
 import { sidecarInitActions } from "../truth/index.js";
 import { INIT_PHASES } from "./phases.js";
@@ -158,6 +164,8 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   if (redirect) return plan("init", redirect);
 
   const actions: Action[] = [];
+  let authorityAssertions: readonly FileAssertion[] | undefined;
+  let authorityCommitNotAfter: string | undefined;
   // `--mcp-mode` flows to the mcp phase only (standard|offline|none) so a
   // locked-down org gets the right MCP handling in one `aih init`.
   const mcpMode = String(ctx.options.mcpMode ?? "standard");
@@ -228,13 +236,16 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   }
 
   if (policy !== undefined) {
+    const projection = await verifiedOrgPolicyProjection(baseCtx, policy);
     actions.push(
       doc(
         "init: org-policy",
         "org-policy — project the active aih-org-policy.json into managed settings for doctor-compatible regeneration",
       ),
-      ...(await verifiedOrgPolicyProjectionActions(baseCtx, policy)),
+      ...projection.actions,
     );
+    authorityAssertions = projection.fileAssertions;
+    authorityCommitNotAfter = projection.commitNotAfter;
   }
 
   // ECC is not a phase: its installer runs the network (`npx ecc-install` / a git
@@ -316,7 +327,11 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     }
   }
 
-  return plan("init", ...deduped);
+  return {
+    ...plan("init", ...deduped),
+    ...(authorityAssertions === undefined ? {} : { fileAssertions: authorityAssertions }),
+    ...(authorityCommitNotAfter === undefined ? {} : { commitNotAfter: authorityCommitNotAfter }),
+  };
 }
 
 function baselineInstallDoc(baseline: ReturnType<typeof resolveBaselineSource>): Action {

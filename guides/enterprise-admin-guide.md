@@ -45,7 +45,22 @@ treats an unsigned `approved` field as authority.
 
 #### Default Enterprise authority: one protected policy file
 
-The adopter stores one PolicyBundle V2 JSON document in an administrator-only directory outside
+The adopter creates the document through the existing Policy Workbench rather than writing JSON:
+
+```console
+aih policy generate --apply
+```
+
+Open `aih-policy-workbench.html`, select Enterprise, complete the **Protected Enterprise policy
+file** form, add each exact artifact approval, and download `aih-policy-bundle.json`. The form accepts
+ordinary fields for an exact GitHub, npm, PyPI, OCI, remote-content, or AIH source identity,
+plus artifact kind, targets, effects, evidence, issuer, actor, policy, and control. It computes the canonical Decision V2 source,
+subject, and revocation digests in the browser. Repeat the form for organization-chosen tools,
+skills, MCP servers, or packages absent from the Catalog; use a new exact decision for a version
+change and the row's Revoke action for revocation. The `issuerRepository` value is attribution in the
+reused V3 contract—it does not require a GitHub workflow or dictate where the file is stored.
+
+The adopter stores the generated PolicyBundle V2 document in an administrator-only directory outside
 the governed repository and supplies its absolute path as `AIH_ORG_POLICY`. The document reuses the
 existing org policy, `GovernanceDecisionV2`, decision revocations, and V3 authority envelope. It is
 not a new policy plane, workflow, or durable store. Vibe remains unchanged and a repo-local policy
@@ -369,7 +384,8 @@ Scanner can produce attributable evidence for a catalog-absent exact detector th
 code-owned adapter. Its source repository and exact `@aihq/scan@0.1.2` npm package are public.
 Observe npm package provenance and GitHub Release evidence independently; success at one boundary
 does not prove the other.
-The packed Core proof uses a separate protected PolicyBundle V2 file and disposable consumer root to
+The packed Core proof uses the packed CLI to generate the Workbench, drives its structured fields and
+download, and uses that protected PolicyBundle V2 with a disposable consumer root to
 exercise successful organization authority, exact observation, lifecycle update, and authenticated
 revocation without fabricated GitHub authority. It proves Core's file-custody contract, not the real
 deployment's ACL or MDM controls. Scanner publication, Scanner signer roots, Catalog attestation,
@@ -479,49 +495,18 @@ aih evidence build --out <evidence-dir> --sign cosign --require-signature --appl
 aih verify-bundle --bundle <evidence-dir> --require-signature
 ```
 
-### Admin Configuration Repo
+### Admin Configuration Location
 
-An enterprise admin can keep the policy and bundle source in an otherwise empty repo, for example `aih-admin-configuration`. The admin repo is a distribution source, not a secret store. Commit policy, pins, cards, pack manifests, and bundle output metadata only after review. Keep real tokens, PATs, OAuth state, AWS profiles, and Jira/Figma credentials in developer-local environment variables, browser OAuth, or the organization's secret manager.
+An enterprise admin may use an otherwise empty repository, MDM directory, configuration-management
+root, or another read-only location. That location distributes the Workbench-generated file; it is
+not another AIH runtime or approval workflow and must not become a secret store. Keep real tokens,
+PATs, OAuth state, AWS profiles, and Jira/Figma credentials in developer-local environment variables,
+browser OAuth, or the organization's secret manager.
 
-```powershell
-git init aih-admin-configuration
-Set-Location aih-admin-configuration
-@'
-{
-  "schemaVersion": 2,
-  "minimumPosture": "enterprise",
-  "references": {
-    "repoContract": "ai-coding/project.json"
-  },
-  "mcp": {
-    "allowedServers": [],
-    "approvals": [],
-    "allowManagedOnly": true,
-    "incumbentHosts": [],
-    "disabledServers": []
-  },
-  "trust": {
-    "requireSignedSource": false,
-    "requiredDetectors": [
-      "skillspector"
-    ],
-    "requiredChecks": [
-      "license",
-      "pin"
-    ],
-    "internalScopes": []
-  }
-}
-'@ | Set-Content -Encoding utf8 aih-org-policy.json
-aih policy validate
-git add aih-org-policy.json
-git commit -m "seed enterprise ai-harness policy"
-```
-Here, `allowedServers: []` plus `allowManagedOnly: true` intentionally generates no MCP servers.
-Populate the list to emit only listed, enabled servers, or set `allowManagedOnly` to `false` for the
-enabled catalog; unrelated operator-owned settings and customized same-name entries are preserved.
-
-Developers can consume this policy by setting `AIH_ORG_POLICY` to the cloned file path. Product repos may also commit their own `aih-org-policy.json` when policy is repo-local; the env override wins when set and should be visible in `aih doctor --posture enterprise`.
+Generate the file with `aih policy generate --apply`, then use the Workbench rather than typing an
+`aih-org-policy.json` or PolicyBundle by hand. Set `AIH_ORG_POLICY` to the absolute generated bundle
+path outside each governed target. Vibe repositories may still use a repo-local
+`aih-org-policy.json`; that file is ordinary policy, not Enterprise authority.
 
 ### Scanner And Docker Preparation
 

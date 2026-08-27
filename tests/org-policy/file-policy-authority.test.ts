@@ -4,6 +4,7 @@ import {
   mkdirSync,
   mkdtempSync,
   realpathSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -63,7 +64,8 @@ beforeEach(() => {
   adminRoot = realpathSync.native(
     mkdtempSync(join(realpathSync.native(tmpdir()), "aih-file-authority-admin-")),
   );
-  policyPath = join(adminRoot, "policy-bundle.json");
+  policyPath = join(adminRoot, "policies", "policy-bundle.json");
+  mkdirSync(dirname(policyPath));
   writeFileSync(policyPath, authorityBundle());
 });
 
@@ -253,6 +255,91 @@ describe("administrator-protected policy-file authority", () => {
         { ...ctx, apply: true, options: { force: true } },
       ),
     ).rejects.toThrow(/verified policy authority .* changed before commit/);
+    expect(existsSync(join(targetRoot, "effect.txt"))).toBe(false);
+    expect(existsSync(join(targetRoot, ".aih"))).toBe(false);
+  });
+
+  it("refuses a same-byte replacement of the verified external policy file before lock or effects", async () => {
+    const { ctx } = context();
+    const verified = await verifyPolicyAuthorityReceipt(ctx);
+    const authority = verified.authority;
+    if (authority === undefined) throw new Error("expected file authority");
+    const assertion = verifiedPolicyAuthorityReceiptAssertionV1(authority);
+    if (assertion === undefined) throw new Error("expected file assertion");
+
+    const replacement = join(adminRoot, "replacement.json");
+    writeFileSync(replacement, authorityBundle());
+    rmSync(policyPath);
+    renameSync(replacement, policyPath);
+
+    await expect(
+      executePlan(
+        {
+          ...plan("file-authority-effect", writeText("effect.txt", "applied", "apply effect")),
+          fileAssertions: [assertion],
+          commitLock: ".aih/file-authority/commit-lock",
+        },
+        { ...ctx, apply: true, options: { force: true } },
+      ),
+    ).rejects.toThrow(/verified policy authority .* changed before commit/);
+    expect(existsSync(join(targetRoot, "effect.txt"))).toBe(false);
+    expect(existsSync(join(targetRoot, ".aih"))).toBe(false);
+  });
+
+  it("refuses a same-byte replacement of an external policy parent before lock or effects", async () => {
+    const { ctx } = context();
+    const verified = await verifyPolicyAuthorityReceipt(ctx);
+    const authority = verified.authority;
+    if (authority === undefined) throw new Error("expected file authority");
+    const assertion = verifiedPolicyAuthorityReceiptAssertionV1(authority);
+    if (assertion === undefined) throw new Error("expected file assertion");
+
+    const policyParent = dirname(policyPath);
+    const originalParent = join(adminRoot, "original-policies");
+    renameSync(policyParent, originalParent);
+    mkdirSync(policyParent);
+    writeFileSync(policyPath, authorityBundle());
+
+    await expect(
+      executePlan(
+        {
+          ...plan("file-authority-effect", writeText("effect.txt", "applied", "apply effect")),
+          fileAssertions: [assertion],
+          commitLock: ".aih/file-authority/commit-lock",
+        },
+        { ...ctx, apply: true, options: { force: true } },
+      ),
+    ).rejects.toThrow(/verified policy authority .* changed before commit/);
+    expect(existsSync(join(targetRoot, "effect.txt"))).toBe(false);
+    expect(existsSync(join(targetRoot, ".aih"))).toBe(false);
+
+    rmSync(originalParent, { recursive: true, force: true });
+  });
+
+  it("continues to refuse a symlinked external policy ancestor before lock or effects", async () => {
+    if (process.platform === "win32") return;
+    const { ctx } = context();
+    const verified = await verifyPolicyAuthorityReceipt(ctx);
+    const authority = verified.authority;
+    if (authority === undefined) throw new Error("expected file authority");
+    const assertion = verifiedPolicyAuthorityReceiptAssertionV1(authority);
+    if (assertion === undefined) throw new Error("expected file assertion");
+
+    const policyParent = dirname(policyPath);
+    const originalParent = join(adminRoot, "original-policies");
+    renameSync(policyParent, originalParent);
+    symlinkSync(originalParent, policyParent, "dir");
+
+    await expect(
+      executePlan(
+        {
+          ...plan("file-authority-effect", writeText("effect.txt", "applied", "apply effect")),
+          fileAssertions: [assertion],
+          commitLock: ".aih/file-authority/commit-lock",
+        },
+        { ...ctx, apply: true, options: { force: true } },
+      ),
+    ).rejects.toThrow(/unsafe symlinked parent/);
     expect(existsSync(join(targetRoot, "effect.txt"))).toBe(false);
     expect(existsSync(join(targetRoot, ".aih"))).toBe(false);
   });

@@ -123,8 +123,14 @@ and durable audit inspection. The complete packaged syntax is in
 [`aih policy`](docs/commands.md#aih-policy). Catalog-absent Scanner evidence is covered separately in
 [Catalog-absent organization detector evidence](guides/enterprise-admin-guide.md#catalog-absent-organization-detector-evidence).
 
-For Enterprise, the shortest organization-authority path is one
-administrator-distributed **PolicyBundle V2** JSON file selected by an absolute
+<!-- aih:claim CM-91 -->
+For Enterprise, the shortest organization-authority path starts in the generated Policy Workbench.
+Run `aih policy generate --apply`, open `aih-policy-workbench.html`, select Enterprise, fill the
+protected-file form, and download `aih-policy-bundle.json`. The administrator supplies ordinary
+fields for the issuer, an exact GitHub, npm, PyPI, OCI, remote-content, or AIH source identity, artifact kind, targets, effects, and
+attributable evidence; the browser computes the canonical Decision V2 source and subject digests.
+The administrator does not write JSON. Store the generated **PolicyBundle V2** file at an
+administrator-controlled read-only path selected by an absolute
 `AIH_ORG_POLICY` path outside the governed target. It contains the ordinary org policy plus the
 existing V3 decision-authority payload; no approval workflow or second policy store is required.
 Core requires Enterprise posture, bounded strict JSON, a current 90-day-or-shorter authority window,
@@ -405,7 +411,7 @@ still initialize under the vendor CLI. Aih does not attest those customizations 
 | [`aih skill`](docs/commands.md#aih-skill) | Govern the skill lifecycle — vet → approve → inventory → quarantine → remove — anchored in `aih-skills.lock.json`. |
 | [`aih pack`](docs/commands.md#aih-pack) | Curate committed sets of approved skills (`aih-packs.json`); every ref is cross-checked against the lock, fail-closed. |
 | [`aih marketplace`](docs/commands.md#aih-marketplace) | Build, validate, and publish a reproducible, verifiable distribution artifact for hostable approved skills — never a registry. |
-| [`aih policy`](docs/commands.md#aih-policy) | Generate the Policy Workbench; resolve attested V3 authority plus exact organization evidence; observe and persist the bounded root npm lifecycle; evaluate, project, validate, or verify policy. |
+| [`aih policy`](docs/commands.md#aih-policy) | Generate the Policy Workbench and its protected Enterprise authority file; resolve protected-file or optional attested V3 authority plus exact organization evidence; observe and persist governed lifecycles; evaluate, project, validate, or verify policy. |
 | [`aih evidence`](docs/commands.md#aih-evidence) | Vet exact-pinned baseline components and package local audit artifacts into deterministic signed evidence bundles. |
 | [`aih truth`](docs/commands.md#aih-truth) | Create and verify an external project-truth sidecar; commit, version, claim, decision, acceptance-preflight, and agent-evidence assertions fail closed before a pack helps govern evidence. <!-- aih:claim CM-13 --> |
 | [`aih bundle`](docs/commands.md#aih-bundle) | Build a deterministic fleet bundle with checksums; `aih verify-bundle --require-signature` turns missing/unverifiable signatures into failures. |
@@ -630,7 +636,7 @@ receipt-owned entries with `aih ecc mcp remove <id> --cli <client> --apply`, and
 receipt/config ownership state. It does not contact the endpoint, scan the remote tool list, or install all
 approved entries.
 
-The portable Policy Workbench uses a flat Ledger paper-and-ink identity in light and dark themes. Its left rail remains the canonical selection surface, including on compact screens; the inspector is mutation-free, narrates the selected-to-materialized journey, and offers one routed next action. Curation and custom-source forms live in a separate authoring sidebar. The separate Add MCP sidebar records the exact `governance.eccMcpApprovals` decision; it does not choose a client or configure one. For an entry marked HTTPS-configurable, the seat operator still selects one client explicitly with the command above; manual entries remain approval-only until a supported lifecycle exists.
+The portable Policy Workbench uses a flat Ledger paper-and-ink identity in light and dark themes. Its left rail remains the canonical selection surface, including on compact screens; the inspector is mutation-free, narrates the selected-to-materialized journey, and offers one routed next action. At Enterprise posture, the protected-file form is the administrator-facing authority authoring surface: it accepts structured exact-source and evidence fields, computes the existing Decision V2 digests, and downloads the existing PolicyBundle V2 without exposing editable raw JSON. Curation and custom-source forms live in a separate authoring sidebar. The separate Add MCP sidebar records the exact `governance.eccMcpApprovals` decision; it does not choose a client or configure one. For an entry marked HTTPS-configurable, the seat operator still selects one client explicitly with the command above; manual entries remain approval-only until a supported lifecycle exists.
 
 The Workbench also shows the first bounded adoption recipe for Token Savior, Serena,
 code-review-graph, codebase-memory-mcp, and Token Optimizer. It assigns one question class to each
