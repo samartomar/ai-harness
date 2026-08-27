@@ -18,7 +18,11 @@ import { hashComponentTree } from "../../src/baseline-evidence/hash.js";
 import { parseBaselineEvidenceLock } from "../../src/baseline-evidence/schema.js";
 import { command as bootstrapAiCommand } from "../../src/bootstrap-ai/index.js";
 import { eccMcpAddCommand } from "../../src/ecc/index.js";
-import { executeEccEvidencePipeline } from "../../src/ecc/pipeline.js";
+import {
+  type EccRegistrationRequest,
+  executeEccCommand,
+  executeEccEvidencePipeline,
+} from "../../src/ecc/pipeline.js";
 import { resolveTargets } from "../../src/internals/cli-detect.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
@@ -496,6 +500,85 @@ describe("administrator-protected policy-file authority", () => {
 
     expect(pipelinePolicy).toBe(observed);
     expect(result.docs).toEqual([expect.objectContaining({ describe: "install" })]);
+  });
+
+  it("keeps protected policy A for ECC request selection across an A-to-B-to-A swap", async () => {
+    const sourceRoot = join(targetRoot, "ecc-command-source");
+    mkdirSync(sourceRoot);
+    writeFileSync(join(sourceRoot, "install.sh"), "echo verified\n", "utf8");
+    const replacement = JSON.parse(authorityBundle()) as { policy: Record<string, unknown> };
+    replacement.policy.governance = { supportedClis: ["claude"] };
+    const replacementBytes = JSON.stringify(replacement);
+    const componentIds = [
+      "runtime:ecc-installer",
+      "agent:build-error-resolver",
+      "agent:code-reviewer",
+      "agent:planner",
+      "agent:security-reviewer",
+      "agent:tdd-guide",
+      "baseline:rules",
+      "module:platform-configs",
+      "skill:security-review",
+      "skill:tdd-workflow",
+      "skill:verification-loop",
+    ];
+    const catalog = defineBaselineCatalog({
+      id: "ecc",
+      owner: "affaan-m",
+      repo: "ECC",
+      pinnedSha: "a".repeat(40),
+      components: componentIds.map((id) => ({ id, paths: ["install.sh"] })),
+    });
+    const vendorLock = parseBaselineEvidenceLock({
+      schemaVersion: 1,
+      sources: [
+        {
+          id: "ecc",
+          owner: "affaan-m",
+          repo: "ECC",
+          pinnedSha: "a".repeat(40),
+          components: componentIds.map((id) => ({
+            id,
+            paths: ["install.sh"],
+            treeSha256: hashComponentTree(sourceRoot, ["install.sh"]).treeSha256,
+            verdict: "pass" as const,
+            analyzers: [{ name: "aih-native", version: "test" }],
+            findings: [],
+          })),
+        },
+      ],
+    });
+    let capturedRequest: EccRegistrationRequest | undefined;
+    const { ctx } = context();
+    const options: Record<string, unknown> = {
+      cli: "claude",
+      with: ["mcp:code-review-graph"],
+      get profile() {
+        writeFileSync(policyPath, replacementBytes, "utf8");
+        return "minimal";
+      },
+    };
+
+    await executeEccCommand(
+      { ...ctx, apply: true, options },
+      {
+        catalog,
+        source: resolveTrustSource(sourceRoot, { root: targetRoot }),
+        vendorLock,
+        vendorLockSha256: "f".repeat(64),
+        resolveOrgEvidence: async () => {
+          writeFileSync(policyPath, authorityBundle(), "utf8");
+          return { checks: [] };
+        },
+        buildInstallPlan: (_ctx, _sourceRoot, request) => {
+          capturedRequest = request as EccRegistrationRequest;
+          return plan("verified ECC", doc("install", "verified"));
+        },
+      },
+    );
+
+    expect(capturedRequest?.governance).toBe(true);
+    expect(capturedRequest?.project.mcps).toEqual([]);
   });
 
   it("refuses a same-byte replacement of the verified external policy file before lock or effects", async () => {

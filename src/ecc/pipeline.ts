@@ -184,6 +184,15 @@ export interface EccRegistrationRequest extends VerifiedEccRequest {
 }
 
 export function buildEccRegistrationRequest(ctx: PlanContext, clis: Cli[]): EccRegistrationRequest {
+  return buildEccRegistrationRequestForPolicy(ctx, clis, readOrgPolicy(ctx.root, ctx.env));
+}
+
+/** Build a request from an already observed policy; mutating callers must not reread it. */
+function buildEccRegistrationRequestForPolicy(
+  ctx: PlanContext,
+  clis: Cli[],
+  policy: OrgPolicy | undefined,
+): EccRegistrationRequest {
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   const language = eccLanguages(stack);
   const profile = String(ctx.options.profile ?? "minimal");
@@ -194,7 +203,6 @@ export function buildEccRegistrationRequest(ctx: PlanContext, clis: Cli[]): EccR
     declarations: declarations(ctx.options),
     declaredMcps: declaredMcpNames(ctx.root),
   });
-  const policy = readOrgPolicy(ctx.root, ctx.env);
   const projectMcps = orgAllowedEccMcpComponents(selected.mcps, policy);
   const home = ctx.env.HOME || ctx.env.USERPROFILE || homedir();
   const ledger = readRegistrationLedger(home);
@@ -365,7 +373,7 @@ export async function executeEccCommand(
     );
   }
   const { clis, detectFellBack } = policyTargets.resolution;
-  const request = buildEccRegistrationRequest(targetCtx, clis);
+  const request = buildEccRegistrationRequestForPolicy(targetCtx, clis, policyTargets.policy);
   if (clis.some(isMutatingEccTarget))
     return executeEccEvidencePipeline(
       targetCtx,

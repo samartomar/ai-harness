@@ -25,7 +25,7 @@ import {
 } from "../kiro/runtime.js";
 import { withExpectedContents } from "../mcp/managed-projection.js";
 import { verifiedOrgPolicyTargets } from "../org-policy/project.js";
-import { assertGovernanceOwnsSurface } from "../org-policy/schema.js";
+import { governanceOwnsAihSurfaces, OrgPolicyError } from "../org-policy/schema.js";
 import { aggregateUsage } from "./aggregate.js";
 import { gitPostCommitChainSnippet, gitPostCommitHook, usageRecorderScript } from "./capture.js";
 import { readUsage, USAGE_PATH, type UsageEvent } from "./events.js";
@@ -159,9 +159,12 @@ async function usagePlan(ctx: PlanContext): Promise<Plan> {
   const requestedKiroRuntime = explicitKiroHookRuntime(ctx);
   const roots = rollupRoots(ctx);
   if (roots.length > 0) return usageRollupPlan(ctx, roots);
-  assertGovernanceOwnsSurface(ctx, "usage");
-
   const policyTargets = await verifiedOrgPolicyTargets(ctx);
+  if (governanceOwnsAihSurfaces(policyTargets.policy)) {
+    throw new OrgPolicyError(
+      "governance exclusively owns AIH usage projection; use `aih policy project` to evaluate and apply the verified policy",
+    );
+  }
   const { clis } = policyTargets.resolution;
   const zedDbPath = clis.includes("zed") ? zedThreadsDbPath(ctx) : undefined;
   const zedEvents =

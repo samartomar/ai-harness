@@ -12,7 +12,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SHARED_MARKER, sharedCanonicalBlockBody } from "../../src/bootstrap-ai/canon.js";
 import { AIH_CAPABILITIES_FILE, machineCapabilityCachePath } from "../../src/capability/index.js";
 import { command as doctorCommand } from "../../src/doctor.js";
@@ -346,6 +346,57 @@ describe("aih init — command surface", () => {
       expect(existsSync(join(dir, ".aih-config.json"))).toBe(false);
       expect(existsSync(join(dir, ".codex"))).toBe(false);
     } finally {
+      rmSync(adminRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses an MCP phase that observes protected policy B after init verified policy A", async () => {
+    const adminRoot = realpathSync.native(
+      mkdtempSync(join(realpathSync.native(tmpdir()), "aih-init-nested-policy-authority-")),
+    );
+    const mcpPhase = INIT_PHASES.find((phase) => phase.command.name === "mcp");
+    if (mcpPhase === undefined) throw new Error("expected MCP init phase");
+    const originalMcpPlan = mcpPhase.command.plan;
+    try {
+      const policyPath = join(adminRoot, "policy-bundle.json");
+      const policyA = JSON.parse(externalPolicyBundle()) as {
+        bundleVersion: string;
+        policy: {
+          governance: Record<string, unknown>;
+          mcp: { allowedServers: string[]; allowManagedOnly: boolean };
+        };
+      };
+      policyA.policy.governance = { supportedClis: ["claude"] };
+      policyA.policy.mcp.allowedServers = ["code-review-graph"];
+      const policyB = structuredClone(policyA);
+      policyB.bundleVersion = "2026.08.2";
+      policyB.policy.mcp.allowedServers = ["memory"];
+      const policyABytes = JSON.stringify(policyA);
+      const policyBBytes = JSON.stringify(policyB);
+      writeFileSync(policyPath, policyABytes);
+      const plannedCtx = ctx({
+        apply: true,
+        posture: "enterprise",
+        postureSource: "flag",
+        env: { AIH_ORG_POLICY: policyPath },
+        options: { cli: "claude" },
+      });
+      vi.spyOn(mcpPhase.command, "plan").mockImplementation(async (phaseCtx) => {
+        writeFileSync(policyPath, policyBBytes);
+        try {
+          return await originalMcpPlan(phaseCtx);
+        } finally {
+          writeFileSync(policyPath, policyABytes);
+        }
+      });
+
+      await expect(command.plan(plannedCtx)).rejects.toThrow(
+        /init phase mcp.*conflicting authority assertion/i,
+      );
+      expect(existsSync(join(dir, ".aih"))).toBe(false);
+      expect(existsSync(join(dir, ".mcp.json"))).toBe(false);
+    } finally {
+      vi.restoreAllMocks();
       rmSync(adminRoot, { recursive: true, force: true });
     }
   });

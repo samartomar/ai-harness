@@ -1,5 +1,7 @@
+import { isDeepStrictEqual } from "node:util";
 import { classifyCanon, isAdoptable } from "../adopt/classify.js";
 import { aihConfigJson, readAihConfigBaseline } from "../config/marker.js";
+import { AihError } from "../errors.js";
 import {
   BASELINE_OPTION,
   DEFAULT_BASELINE_SOURCE_ID,
@@ -18,10 +20,11 @@ import type {
   Action,
   CommandSpec,
   FileAssertion,
+  Plan,
   PlanContext,
   WriteAction,
 } from "../internals/plan.js";
-import { doc, plan, writeJson } from "../internals/plan.js";
+import { doc, parseCommitNotAfter, plan, writeJson } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import {
   explicitKiroHookRuntime,
@@ -142,6 +145,53 @@ function plannedMcpServerNames(actions: readonly Action[]): readonly string[] {
   return [...names];
 }
 
+function retainInitAssertions(
+  current: readonly FileAssertion[] | undefined,
+  next: readonly FileAssertion[] | undefined,
+  phase: string,
+): readonly FileAssertion[] | undefined {
+  if (next === undefined || next.length === 0) return current;
+  const retained = [...(current ?? [])];
+  for (const assertion of next) {
+    const existing = retained.find((candidate) => candidate.path === assertion.path);
+    if (existing === undefined) {
+      retained.push(assertion);
+      continue;
+    }
+    if (!isDeepStrictEqual(existing, assertion)) {
+      throw new AihError(
+        `init phase ${phase} returned a conflicting authority assertion for ${assertion.path}`,
+        "AIH_TRUST",
+      );
+    }
+  }
+  return retained;
+}
+
+function retainInitDeadline(
+  current: string | undefined,
+  next: string | undefined,
+): string | undefined {
+  if (current === undefined) return next;
+  if (next === undefined) return current;
+  const currentTimestamp = parseCommitNotAfter(current) as number;
+  const nextTimestamp = parseCommitNotAfter(next) as number;
+  return currentTimestamp <= nextTimestamp ? current : next;
+}
+
+function retainInitCommitLock(
+  current: Plan["commitLock"],
+  next: Plan["commitLock"],
+  phase: string,
+): Plan["commitLock"] {
+  if (current === undefined) return next;
+  if (next === undefined) return current;
+  if (!isDeepStrictEqual(current, next)) {
+    throw new AihError(`init phase ${phase} returned a conflicting commit lock`, "AIH_TRUST");
+  }
+  return current;
+}
+
 /**
  * Orchestrate a full repo bootstrap by COMPOSING the repo-scoped capabilities —
  * profile, superpowers, bootstrap-ai, scaffold, contract, secrets, guardrails,
@@ -166,7 +216,7 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const actions: Action[] = [];
   let authorityAssertions: readonly FileAssertion[] | undefined;
   let authorityCommitNotAfter: string | undefined;
-  let authorityCommitLock: string | undefined;
+  let authorityCommitLock: Plan["commitLock"];
   // `--mcp-mode` flows to the mcp phase only (standard|offline|none) so a
   // locked-down org gets the right MCP handling in one `aih init`.
   const mcpMode = String(ctx.options.mcpMode ?? "standard");
@@ -201,6 +251,22 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     policy === undefined
       ? undefined
       : await verifiedOrgPolicyProjection(baseCtx, policy, preparedPolicy);
+  if (governedProjection !== undefined) {
+    authorityAssertions = retainInitAssertions(
+      authorityAssertions,
+      governedProjection.fileAssertions,
+      "org-policy",
+    );
+    authorityCommitNotAfter = retainInitDeadline(
+      authorityCommitNotAfter,
+      governedProjection.commitNotAfter,
+    );
+    authorityCommitLock = retainInitCommitLock(
+      authorityCommitLock,
+      governedProjection.commitLock,
+      "org-policy",
+    );
+  }
 
   // If `--detect` found nothing and we defaulted to claude, say so once at the top
   // (the phases short-circuit on `ctx.targets`, so no phase emits this itself).
@@ -244,6 +310,17 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
           ? { ...baseCtx, plannedMcpServers: plannedMcpServerNames(actions) }
           : baseCtx;
     const sub = await phase.command.plan(phaseCtx);
+    authorityAssertions = retainInitAssertions(
+      authorityAssertions,
+      sub.fileAssertions,
+      phase.command.name,
+    );
+    authorityCommitNotAfter = retainInitDeadline(authorityCommitNotAfter, sub.commitNotAfter);
+    authorityCommitLock = retainInitCommitLock(
+      authorityCommitLock,
+      sub.commitLock,
+      phase.command.name,
+    );
     actions.push(doc(`init: ${phase.command.name}`, phase.headline));
     actions.push(...sub.actions);
   }
@@ -256,9 +333,6 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
       ),
       ...governedProjection.actions,
     );
-    authorityAssertions = governedProjection.fileAssertions;
-    authorityCommitNotAfter = governedProjection.commitNotAfter;
-    authorityCommitLock = governedProjection.commitLock;
   }
 
   // ECC is not a phase: its installer runs the network (`npx ecc-install` / a git

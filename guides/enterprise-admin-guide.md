@@ -77,6 +77,11 @@ Core accepts the file only at Enterprise posture and only while all of these con
 - every authority-dependent mutating transaction pins and rechecks that exact external file before
   effects.
 
+ECC and Superpowers evidence, ECC request selection, standalone MCP planning, and standalone Usage
+ownership checks all consume their one verified policy observation. The composed `aih init` plan
+retains every nested phase's file assertions, deadline, and cooperative lock; it refuses conflicting
+nested authority before any plan effect runs.
+
 When a governed plan launches a child process, Core holds and renews the same cooperative authority
 lease while the process is running and revalidates the protected file immediately before and after
 the process. If authority changes after the child starts, Core fails the command, blocks later child

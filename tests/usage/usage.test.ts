@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner, type Runner } from "../../src/internals/proc.js";
@@ -18,6 +18,21 @@ import {
 import { readUsage, readUsageStrict, type UsageEvent } from "../../src/usage/events.js";
 import { command } from "../../src/usage/index.js";
 
+const policySwap = vi.hoisted(() => ({ beforeVerified: undefined as (() => void) | undefined }));
+
+vi.mock("../../src/org-policy/project.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/org-policy/project.js")>();
+  return {
+    ...actual,
+    verifiedOrgPolicyTargets: async (
+      ...args: Parameters<typeof actual.verifiedOrgPolicyTargets>
+    ) => {
+      policySwap.beforeVerified?.();
+      return actual.verifiedOrgPolicyTargets(...args);
+    },
+  };
+});
+
 const TEST_PROCESS_TIMEOUT_MS = 10_000;
 
 let root: string;
@@ -25,6 +40,7 @@ beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "aih-usage-"));
 });
 afterEach(() => {
+  policySwap.beforeVerified = undefined;
   rmSync(root, { recursive: true, force: true });
 });
 
@@ -424,6 +440,39 @@ describe("capture artifacts", () => {
 });
 
 describe("aih usage command", () => {
+  it("refuses a governed policy substituted after an ungoverned ownership observation", async () => {
+    const policyPath = join(root, "aih-org-policy.json");
+    writeFileSync(
+      policyPath,
+      JSON.stringify({
+        schemaVersion: 2,
+        minimumPosture: "vibe",
+        references: { repoContract: "ai-coding/project.json" },
+      }),
+    );
+    policySwap.beforeVerified = () => {
+      writeFileSync(
+        policyPath,
+        JSON.stringify({
+          schemaVersion: 2,
+          minimumPosture: "vibe",
+          references: { repoContract: "ai-coding/project.json" },
+          governance: {
+            policyVersion: "2026.08.0",
+            supportedClis: ["claude"],
+            catalog: { reviewed: [], custom: [] },
+            activations: [],
+            authority: { approvals: [] },
+          },
+        }),
+      );
+    };
+
+    await expect(command.plan(makeCtx({ cli: "claude" }))).rejects.toThrow(
+      /governance exclusively owns AIH usage projection/i,
+    );
+  });
+
   it("installs the recorder + universal git hook + gitignore + coverage doc", async () => {
     const actions = (await command.plan(makeCtx({ cli: "claude,cursor" }))).actions;
     const writes = actions.filter((a) => a.kind === "write");
