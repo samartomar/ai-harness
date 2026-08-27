@@ -2,7 +2,7 @@ import type { PlanContext } from "../internals/plan.js";
 import { mcpApprovalSubject } from "../mcp/policy.js";
 import { type McpServer, mcpServers } from "../mcp/servers.js";
 import { scanRepo } from "../profile/scan.js";
-import { verifyPolicyAuthorityReceipt } from "./authority.js";
+import { type PolicyAuthorityVerification, verifyPolicyAuthorityReceipt } from "./authority.js";
 import { aihPolicyControls } from "./catalog.js";
 import {
   type EffectiveOrgPolicy,
@@ -28,6 +28,7 @@ export interface RuntimeOrgPolicyResolution {
 export async function resolveRuntimeOrgPolicy(
   ctx: PlanContext,
   policy: OrgPolicy,
+  authorityVerification?: PolicyAuthorityVerification,
 ): Promise<RuntimeOrgPolicyResolution> {
   const catalog = mcpServers(
     "project",
@@ -48,7 +49,7 @@ export async function resolveRuntimeOrgPolicy(
   if (usageControl?.source.type !== "hook") {
     throw new Error("AIH policy catalog is missing the usage-metering hook control");
   }
-  const verification = await verifyPolicyAuthorityReceipt(ctx);
+  const verification = authorityVerification ?? (await verifyPolicyAuthorityReceipt(ctx));
   const npmPackageLifecycle = governanceOwnsAihSurfaces(policy)
     ? resolveNpmPackageEffectiveStateWithAuthorityV1(ctx.root, verification)
     : [];

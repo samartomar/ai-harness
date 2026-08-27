@@ -184,10 +184,15 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     targets: resolution.clis,
     options: { ...ctx.options, baseline: baseline.id },
   };
-  // Read once before composing leaf plans. A governed inventory exclusively owns
-  // its MCP and usage-hook surfaces, so generic phases must not leave earlier
-  // writes for the policy projector to accidentally merge or conflict with.
-  const policy = readOrgPolicy(baseCtx.root, baseCtx.env);
+  // Resolve the active policy before composing leaf plans. A protected bundle's
+  // policy and authority come from the same verified bytes; that resolved policy
+  // also decides whether generic MCP and usage phases must be suppressed.
+  const configuredPolicy = readOrgPolicy(baseCtx.root, baseCtx.env);
+  const governedProjection =
+    configuredPolicy === undefined
+      ? undefined
+      : await verifiedOrgPolicyProjection(baseCtx, configuredPolicy);
+  const policy = governedProjection?.policy ?? configuredPolicy;
 
   // If `--detect` found nothing and we defaulted to claude, say so once at the top
   // (the phases short-circuit on `ctx.targets`, so no phase emits this itself).
@@ -235,17 +240,16 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     actions.push(...sub.actions);
   }
 
-  if (policy !== undefined) {
-    const projection = await verifiedOrgPolicyProjection(baseCtx, policy);
+  if (governedProjection !== undefined) {
     actions.push(
       doc(
         "init: org-policy",
         "org-policy — project the active aih-org-policy.json into managed settings for doctor-compatible regeneration",
       ),
-      ...projection.actions,
+      ...governedProjection.actions,
     );
-    authorityAssertions = projection.fileAssertions;
-    authorityCommitNotAfter = projection.commitNotAfter;
+    authorityAssertions = governedProjection.fileAssertions;
+    authorityCommitNotAfter = governedProjection.commitNotAfter;
   }
 
   // ECC is not a phase: its installer runs the network (`npx ecc-install` / a git

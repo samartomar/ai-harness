@@ -17,6 +17,7 @@ import {
   CandidateSourceSchema,
   hasExplicitOrgPolicySource,
   MAX_ORG_POLICY_BYTES,
+  type OrgPolicy,
   OrgPolicySchema,
   orgPolicyPath,
   PolicyApprovalSchema,
@@ -529,6 +530,7 @@ export const POLICY_AUTHORITY_RECEIPT_FIELD_CONSUMERS: Readonly<Record<string, s
   });
 
 const verifiedAuthorities = new WeakSet<object>();
+const verifiedPolicyFilePolicies = new WeakMap<object, OrgPolicy>();
 
 function deepFreeze<T>(value: T): Readonly<T> {
   if (value !== null && typeof value === "object") {
@@ -553,6 +555,14 @@ export interface VerifiedPolicyAuthority {
 
 export function isVerifiedPolicyAuthority(value: unknown): value is VerifiedPolicyAuthority {
   return typeof value === "object" && value !== null && verifiedAuthorities.has(value);
+}
+
+/** Policy parsed from the same protected-file bytes that minted this opaque authority. */
+export function verifiedPolicyFileAuthorityPolicyV1(
+  authority: VerifiedPolicyAuthority,
+): OrgPolicy | undefined {
+  if (!isVerifiedPolicyAuthority(authority) || authority.source !== "policy-file") return undefined;
+  return verifiedPolicyFilePolicies.get(authority);
 }
 
 /** Read-only transaction pin for the exact no-follow authority receipt just verified. */
@@ -926,6 +936,9 @@ function protectedPolicyFileAuthority(ctx: PlanContext): ProtectedPolicyFileAuth
     }),
   });
   verifiedAuthorities.add(authority);
+  const verifiedPolicy = structuredClone(parsed.bundle.policy) as OrgPolicy;
+  deepFreeze(verifiedPolicy);
+  verifiedPolicyFilePolicies.set(authority, verifiedPolicy);
   return { state: "verified", authority };
 }
 

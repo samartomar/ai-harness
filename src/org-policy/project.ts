@@ -49,6 +49,7 @@ import { usageRecorderScript } from "../usage/capture.js";
 import { usageHookActions } from "../usage/hooks.js";
 import {
   verifiedPolicyAuthorityReceiptAssertionV1,
+  verifiedPolicyFileAuthorityPolicyV1,
   verifyPolicyAuthorityReceipt,
 } from "./authority.js";
 import { composeOrgPolicy } from "./compose.js";
@@ -1907,6 +1908,7 @@ function projectionActionsFromRuntime(
 }
 
 export interface VerifiedOrgPolicyProjection {
+  readonly policy: OrgPolicy;
   readonly actions: readonly Action[];
   readonly fileAssertions?: readonly FileAssertion[];
   readonly commitNotAfter?: string;
@@ -1926,14 +1928,27 @@ export async function verifiedOrgPolicyProjection(
   ctx: PlanContext,
   policy: OrgPolicy,
 ): Promise<VerifiedOrgPolicyProjection> {
-  const runtime = await resolveRuntimeOrgPolicy(ctx, policy);
-  const actions = projectionActionsFromRuntime(ctx, policy, runtime);
-  if (!actions.some(mutatesLocalState) || !runtime.effective.authority.verified) return { actions };
+  const initialVerification = await verifyPolicyAuthorityReceipt(ctx);
+  const initialAuthority = initialVerification.authority;
+  const verifiedPolicy =
+    initialAuthority?.source === "policy-file"
+      ? verifiedPolicyFileAuthorityPolicyV1(initialAuthority)
+      : policy;
+  if (verifiedPolicy === undefined) {
+    throw new OrgPolicyError("policy project protected authority policy could not be recovered");
+  }
+  const runtime = await resolveRuntimeOrgPolicy(ctx, verifiedPolicy, initialVerification);
+  const actions = projectionActionsFromRuntime(ctx, verifiedPolicy, runtime);
+  if (!actions.some(mutatesLocalState) || !runtime.effective.authority.verified) {
+    return { policy: verifiedPolicy, actions };
+  }
 
-  // Re-observe the authority after runtime resolution. Its digest must still
-  // match the authority that selected these effects before it can pin a commit.
-  const verification = await verifyPolicyAuthorityReceipt(ctx);
-  const authority = verification.authority;
+  // The protected-file policy and authority came from one custodied observation.
+  // Legacy attested receipts remain independently re-observed after resolution.
+  const authority =
+    initialAuthority?.source === "policy-file"
+      ? initialAuthority
+      : (await verifyPolicyAuthorityReceipt(ctx)).authority;
   if (
     authority === undefined ||
     authority.receiptDigest !== runtime.effective.authority.receiptDigest
@@ -1961,6 +1976,7 @@ export async function verifiedOrgPolicyProjection(
   if (deadlines.some((value) => !Number.isFinite(value)) || deadline <= Date.now())
     throw new OrgPolicyError("policy project authority is not currently valid");
   return {
+    policy: verifiedPolicy,
     actions,
     fileAssertions: [assertion],
     commitNotAfter: new Date(deadline).toISOString(),

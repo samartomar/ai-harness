@@ -20,6 +20,7 @@ import {
   verifiedPolicyAuthorityReceiptAssertionV1,
   verifyPolicyAuthorityReceipt,
 } from "../../src/org-policy/authority.js";
+import { verifiedOrgPolicyProjection } from "../../src/org-policy/project.js";
 import { readOrgPolicy } from "../../src/org-policy/schema.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 
@@ -27,7 +28,10 @@ let targetRoot: string;
 let adminRoot: string;
 let policyPath: string;
 
-function authorityBundle(expiresAt = "2026-09-01T00:00:00Z"): string {
+function authorityBundle(
+  expiresAt = "2026-09-01T00:00:00Z",
+  repoContract = "ai-coding/project.json",
+): string {
   return JSON.stringify({
     schemaVersion: 2,
     bundleVersion: "2026.08.1",
@@ -36,7 +40,7 @@ function authorityBundle(expiresAt = "2026-09-01T00:00:00Z"): string {
     policy: {
       schemaVersion: 2,
       minimumPosture: "enterprise",
-      references: { repoContract: "ai-coding/project.json" },
+      references: { repoContract },
       governance: {
         policyVersion: "2026.08",
         catalog: { reviewed: [], custom: [] },
@@ -125,6 +129,21 @@ describe("administrator-protected policy-file authority", () => {
       trustedBase: dirname(policyPath),
       maxBytes: 1_000_000,
     });
+  });
+
+  it("derives projected policy and authority from the same protected-file observation", async () => {
+    const { ctx } = context();
+    const stalePolicy = readOrgPolicy(ctx.root, ctx.env);
+    if (stalePolicy === undefined) throw new Error("expected initial protected policy");
+
+    writeFileSync(policyPath, authorityBundle("2026-09-01T00:00:00Z", "policy-b.json"));
+    const projected = await verifiedOrgPolicyProjection(ctx, stalePolicy);
+    const rendered = JSON.stringify(projected.actions);
+
+    expect(projected.policy.references.repoContract).toBe("policy-b.json");
+    expect(rendered).toContain("policy-b.json");
+    expect(rendered).not.toContain("ai-coding/project.json");
+    expect(projected.fileAssertions).toHaveLength(1);
   });
 
   it("does not grant file authority to a developer-controlled bundle inside the target", async () => {

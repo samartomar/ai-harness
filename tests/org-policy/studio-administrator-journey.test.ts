@@ -1,6 +1,9 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Window } from "happy-dom";
 import { describe, expect, it } from "vitest";
-import { parsePolicyBundle } from "../../src/org-policy/schema.js";
+import { parsePolicyBundle, readOrgPolicy } from "../../src/org-policy/schema.js";
 import { policyStudioModel } from "../../src/org-policy/studio-model.js";
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
 
@@ -255,6 +258,69 @@ describe("policy workbench administrator journey", () => {
     });
     expect(bundle.issuedAt).toBe("2026-08-26T12:00:00.000Z");
     expect(text(window, "announcement")).toContain("protected policy file is ready");
+  });
+
+  it("downloads NFC bytes accepted by Core's strict active-policy reader", async () => {
+    const window = openWorkbench();
+    chooseProfile(window, "enterprise");
+    fillProtectedFields(window, {
+      "protected-reason": "Approved after Cafe\u0301 evidence review",
+    });
+    await submitProtected(window);
+
+    let downloaded: Blob | undefined;
+    window.URL.createObjectURL = (blob: Blob): string => {
+      downloaded = blob;
+      return "blob:aih-policy-bundle";
+    };
+    window.URL.revokeObjectURL = (): void => undefined;
+    window.HTMLAnchorElement.prototype.click = (): void => undefined;
+    click(window, "download-protected-bundle");
+    const pending = (window as unknown as { __aihPolicyWorkbenchPending?: Promise<void> })
+      .__aihPolicyWorkbenchPending;
+    if (pending === undefined) throw new Error("protected download did not start");
+    await pending;
+    if (downloaded === undefined) throw new Error("protected download was not captured");
+    const bytes = await downloaded.text();
+
+    expect(bytes).toContain("Caf\u00e9 evidence review");
+    expect(bytes).not.toContain("Cafe\u0301 evidence review");
+    const targetRoot = mkdtempSync(join(tmpdir(), "aih-workbench-target-"));
+    const adminRoot = mkdtempSync(join(tmpdir(), "aih-workbench-admin-"));
+    try {
+      const policyPath = join(adminRoot, "aih-policy-bundle.json");
+      writeFileSync(policyPath, bytes);
+      expect(readOrgPolicy(targetRoot, { AIH_ORG_POLICY: policyPath })).toMatchObject({
+        minimumPosture: "enterprise",
+      });
+    } finally {
+      rmSync(targetRoot, { recursive: true, force: true });
+      rmSync(adminRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses non-NFC content inherited from the composed policy", async () => {
+    const window = openWorkbench();
+    chooseProfile(window, "enterprise");
+    for (const [id, entry] of [
+      ["custom-id", "acme-mcp"],
+      ["custom-package", "@acme/mcp-server"],
+      ["custom-version", "1.4.2"],
+      ["custom-integrity", `sha256:${"b".repeat(64)}`],
+      ["custom-evidence", "acme-scan-002"],
+      ["custom-note", "Cafe\u0301 review"],
+    ] as const) {
+      setValue(window, id, entry);
+    }
+    window.document
+      .getElementById("custom-form")
+      ?.dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
+    fillProtectedFields(window);
+
+    await submitProtected(window);
+
+    expect(value(window, "protected-bundle-preview")).toBe("");
+    expect(text(window, "announcement")).toContain("must already be NFC");
   });
 
   it("refuses protected-file authority in Vibe posture and outside the 90-day window", () => {
