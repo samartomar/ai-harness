@@ -8,7 +8,7 @@ purpose: Use-case map for AI-Harness commands across developer, shared-repositor
 
 # AI-Harness Command Use-Case Guide
 
-Use this guide when the question is "which `aih` command applies to this situation?" The public `docs/commands.md` page and `aih <command> --help` remain the syntax authorities. This guide maps common workflows across the `@aihq/core@0.2.0` command surface; it does not replace the command reference.
+Use this guide when the question is "which `aih` command applies to this situation?" The public `docs/commands.md` page and `aih <command> --help` remain the syntax authorities. This guide maps common workflows across the `@aihq/core@0.3.0` command surface; it does not replace the command reference.
 
 ## Command Rule
 

@@ -47,11 +47,11 @@ describe("README docs currency", () => {
     const readme = read("README.md");
     const pkg = JSON.parse(read("package.json")) as { name: string; version: string };
 
-    expect(pkg).toMatchObject({ name: "@aihq/core", version: "0.2.0" });
+    expect(pkg).toMatchObject({ name: "@aihq/core", version: "0.3.0" });
     expect(readme).toContain("The active pre-1.0 package line is `@aihq/core`");
     expect(readme).toContain("published `@aihq/harness@6.1.0` package is frozen");
-    expect(readme).toContain("npm install -g @aihq/core@0.2.0");
-    expect(readme).toContain("`@aihq/core@0.2.0` is public on npm");
+    expect(readme).toContain("npm install -g @aihq/core@0.3.0");
+    expect(readme).toContain("`@aihq/core@0.3.0` is public on npm");
     expect(readme).not.toContain("Until those exact artifacts exist");
   });
 
