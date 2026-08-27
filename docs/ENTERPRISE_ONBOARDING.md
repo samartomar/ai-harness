@@ -64,11 +64,22 @@ aih verify-release 0.1.1
    ```
 
    Treat the trusted policy channel as either the committed `aih-org-policy.json`
-   reviewed in the repo or a signed/distributed bundle whose hash you pin out of
-   band. `AIH_ORG_POLICY` is an emergency override, not a silent replacement:
-   `aih doctor` and `aih report` surface it as policy-source integrity signal.
-   `policy project --apply` deliberately accepts only the committed default source
-   and updates policy-generated settings without rerunning the canon bootstrap.
+   reviewed in the repo or the Workbench-generated PolicyBundle V2 distributed at
+   an administrator-controlled read-only path outside the governed target. An
+   ordinary `AIH_ORG_POLICY` override is not a silent replacement: `aih doctor` and
+   `aih report` surface it as a policy-source integrity signal, and mutation refuses
+   it. `policy project --apply` additionally accepts the exact protected PolicyBundle
+   V2 only after Core verifies its authority, custody, freshness, and file identity;
+   the resulting transaction pins those bytes. ECC and Superpowers evidence, ECC request
+   selection, ordinary ECC profile lifecycle acquisition and mutation, standalone MCP planning,
+   and standalone Usage ownership checks reuse that same verified policy observation. ECC profile
+   install/update composes projection and native registration in one pinned filesystem transaction;
+   receipt-bound uninstall remains independently authorized by installed custody. Init retains each
+   nested phase's assertion, deadline, and lock and refuses conflicting observations before effects.
+   Child-process effects retain the renewable cooperative authority lease and revalidate before and
+   after execution; a post-effect failure never claims that Core rolled the child back.
+   It updates policy-generated settings
+   without rerunning the canon bootstrap.
    It is a Claude projection, so use the default target (or explicitly include
    Claude) when applying it.
    Managed-only MCP policy also records AIH ownership provenance so later removal

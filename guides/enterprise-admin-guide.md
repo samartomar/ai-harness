@@ -1,7 +1,7 @@
 ---
 status: guide
 owner: AI-Harness maintainers
-last_verified: 2026-08-24
+last_verified: 2026-08-26
 truth_home: true
 purpose: Admin guide for governed organizations and enterprise rollout of AI-Harness.
 ---
@@ -31,15 +31,90 @@ is made.
 The maintained AIH catalog is intended to reduce administrator work; it is not the
 organization's permission boundary. The Strict V2 library/schema
 foundation can represent an exact organization-chosen tool, skill, MCP server,
-package, or profile, its attributable evidence and signed decision, and a separate
+package, or profile, its attributable evidence and authority-bound decision, and a separate
 upstream-managed installed-state observation that names the responsible integration
 owner and exact integration version. Qualification must point to the exact organization
 evidence or an exact catalog signer identity plus head, catalog, and member digests; it is
 not a status an administrator can assert. Core derives and checks canonical source/subject
-digests, and its internal effectiveness resolver accepts only an opaque, externally verified,
-attested V3 authority token—not a standalone decision file. It deliberately keeps
+digests, and its internal effectiveness resolver accepts only an opaque, freshly verified
+authority capability—not a standalone decision file. The default Enterprise transport is one
+administrator-protected PolicyBundle V2 file; the existing GitHub-attested V3 receipt remains an
+optional higher-assurance/compatibility transport. It deliberately keeps
 `aih-supported`, `organization-qualified`, and `unqualified` distinct and never
 treats an unsigned `approved` field as authority.
+
+#### Default Enterprise authority: one protected policy file
+
+The adopter creates the document through the existing Policy Workbench rather than writing JSON:
+
+```console
+aih policy generate --apply
+```
+
+Open `aih-policy-workbench.html`, select Enterprise, complete the **Protected Enterprise policy
+file** form, add each exact artifact approval, and download `aih-policy-bundle.json`. The form accepts
+ordinary fields for an exact GitHub, npm, PyPI, OCI, remote-content, or AIH source identity,
+plus artifact kind, targets, effects, evidence, issuer, actor, policy, and control. It computes the canonical Decision V2 source,
+subject, and revocation digests in the browser. Repeat the form for organization-chosen tools,
+skills, MCP servers, or packages absent from the Catalog; use a new exact decision for a version
+change and the row's Revoke action for revocation. The `issuerRepository` value is attribution in the
+reused V3 contract—it does not require a GitHub workflow or dictate where the file is stored.
+
+The adopter stores the generated PolicyBundle V2 document in an administrator-only directory outside
+the governed repository and supplies its absolute path as `AIH_ORG_POLICY`. The document reuses the
+existing org policy, `GovernanceDecisionV2`, decision revocations, and V3 authority envelope. It is
+not a new policy plane, workflow, or durable store. Vibe remains unchanged and a repo-local policy
+never becomes authority merely because it contains an `approved` field.
+
+Core accepts the file only at Enterprise posture and only while all of these conditions hold:
+
+- the configured path is absolute and resolves outside the governed target;
+- the document is strict PolicyBundle V2 JSON no larger than 1,000,000 bytes;
+- the file and all existing parents are non-symlinked, and the file is regular and single-link;
+- the bundle and authority issuance instants match, and the authority window is current and no
+  longer than 90 days;
+- the exact bytes and file identity survive live re-observation; and
+- every authority-dependent mutating transaction pins and rechecks that exact external file before
+  effects.
+
+ECC and Superpowers evidence, ECC request selection, ordinary ECC profile lifecycle acquisition and
+mutation, standalone MCP planning, and standalone Usage ownership checks all consume their one
+verified policy observation. ECC profile install/update composes projection and native registration
+inside one pinned filesystem transaction; receipt-bound uninstall remains independently authorized
+by installed custody. The composed `aih init` plan retains every nested phase's file assertions,
+deadline, and cooperative lock; it refuses conflicting nested authority before any plan effect runs.
+
+When a governed plan launches a child process, Core holds and renews the same cooperative authority
+lease while the process is running and revalidates the protected file immediately before and after
+the process. If authority changes after the child starts, Core fails the command, blocks later child
+effects and deferred writes, and reports that the already-started process may have produced effects
+that Core cannot roll back.
+
+Core never writes the protected file and never claims that these checks prove its host ACL. The
+administrator or MDM/configuration-management system must restrict replacement to authorized
+operators and must control the process environment that names `AIH_ORG_POLICY`. Distribute a newly
+issued exact bundle to update a decision, change an artifact version, supersede an earlier policy,
+or add a revocation. The same lifecycle commands append observations and revocations to Core's
+existing `.aih/governance/` history; there is no second audit database. Offline use continues only
+until the file's current validity window ends. Missing, stale, malformed, linked, moved-inside-target,
+expired, replaced, or decision-mismatched authority fails closed.
+
+Existing target history binds the authority digest used for each recorded effect. A fresh target has
+no separate global PolicyBundle version high-water mark, so Core cannot detect rollback to older
+file bytes that are still within their declared validity window. The administrator's MDM or file
+distribution system owns that fresh-target rollback prevention.
+
+Automation can validate the decoded bundle structure from an installed package before distribution:
+
+```js
+import { parsePolicyBundle, PolicyBundleSchema } from "@aihq/core";
+```
+
+`PolicyBundleSchema` supplies the closed structural contract; `parsePolicyBundle` returns
+layer-attributed envelope or embedded-policy errors. These object-level helpers do not enforce the
+raw file's UTF-8, duplicate-key, or byte-limit rules. The file becomes authority only when Core's
+active-file reader validates those exact bytes from the protected external `AIH_ORG_POLICY` path and
+rechecks them at the effect boundary.
 
 #### Exact governance command map
 
@@ -59,21 +134,21 @@ closed route selected by the exact decision; do not treat a command's reachabili
 
 A version update requires a newly authorized decision whose exact version/integrity and evidence
 match the newly observed installation; rerun lifecycle preview and explicit apply. A revocation
-requires the current authenticated V3 revocation and the same lifecycle command. Revocation appends
+requires the current authenticated decision revocation and the same lifecycle command. Revocation appends
 an audit fact and remains non-effective/nonzero; it does not claim that an upstream package manager
 removed or stopped the package. The fixed AIH-managed route has its own authenticated reconcile and
 inspect lifecycle because it owns only its code-derived bytes.
 
 For an `aih-supported` basis, Core consumes the fixed
 `.aih/aih-supported-qualification-receipt.json` file. The file must be canonical,
-no larger than 4 KiB, and externally attested by the independently configured
+no larger than 5,970 bytes, and externally attested by the independently configured
 `AIH_SUPPORTED_QUALIFICATION_REPOSITORY` and
 `AIH_SUPPORTED_QUALIFICATION_WORKFLOW`. Core rejects linked custody, verifies an
 owner-only private copy with an absolute external GitHub CLI, then exact-matches the
 receipt's full subject and seven catalog-basis fields to the current Decision V2.
 Those roots cannot reuse the verified organization authority root. A verified
 supported receipt qualifies provenance only; the organization must still issue the
-separate V3 decision that authorizes the exact target and effect.
+separate Decision V2 that authorizes the exact target and effect.
 
 #### Catalog-absent organization detector evidence
 
@@ -147,8 +222,8 @@ Capture, signing, independent verification, and Core projection are separate pha
 only in a disposable target and cannot mint qualification, approval, Core authority, installation,
 configuration, or runtime effects. Generated test keys, signer-class strings, and packed proofs are
 mechanics only. Production use still requires independently controlled signer roots and claims, a
-genuine current V3 organization decision plus its separately authorized public attestation, and a
-matching Core observation/effect route. Place the projected canonical envelope below the governed
+current organization decision from the protected PolicyBundle V2 (or the optional attested
+receipt transport), and a matching Core observation/effect route. Place the projected canonical envelope below the governed
 target only after preserving its custody, then use `aih policy resolve` or a supported observer from
 the command map above. Missing catalog membership is not a denial, but missing authority is.
 
@@ -165,11 +240,16 @@ aih policy resolve <root> \
   --json
 ```
 
-Configure `AIH_POLICY_AUTHORITY_REPOSITORY` outside the governed checkout (and optional
-`AIH_POLICY_AUTHORITY_WORKFLOW` when your authority policy requires it). The command
-re-verifies the fixed V3 receipt, exact decision and evidence; it writes neither the target
+Set `AIH_ORG_POLICY` to the absolute protected PolicyBundle V2 path. The command re-verifies the
+exact authority file, decision, and evidence; it writes neither the target
 nor a run ledger. A valid result is still `partial`/`observation-missing` and exits nonzero.
 Treat that result as verified prerequisites, not as permission or effective state.
+
+Deployments that deliberately retain the GitHub-attested receipt transport instead configure
+`AIH_POLICY_AUTHORITY_REPOSITORY` and, when required,
+`AIH_POLICY_AUTHORITY_WORKFLOW`. That transport uses the fixed
+`.aih/policy-authority-receipt.json`; it is optional and does not make a reference AIH repository
+the authority for adopter organizations.
 
 For an organization-qualified npm `package` decision whose allowed effects include `install`, an
 administrator can also observe an installation that npm already manages:
@@ -245,14 +325,16 @@ incident-reconciliation process.
 The target-local chain blocks a different lineage while either subject index remains and detects a
 stale head while its canonical successor records remain. It cannot prove that an administrator or
 attacker did not delete both the claim and binding, or roll back a head advance and all later records.
-Retain the whole store in organization-controlled versioned evidence. Do not
-promote the inert offline high-water seam to authority; that requires Core's future
-administrator-managed trust-root loader and fixed verifier/producer.
+Retain the whole store in organization-controlled versioned evidence. Neither the
+lifecycle store nor the inert offline high-water seam is authority. Current authority comes from
+the protected PolicyBundle V2 file or the optional GitHub-attested receipt transport. On a fresh
+target, the administrator's file-distribution system must still prevent rollback to older
+still-valid bundle bytes.
 
 For this narrow npm route, the durable lifecycle now reaches the governance read surfaces. Run
 `aih policy evaluate <root> --no-log --json` after the lifecycle apply, then inspect the governed report with
 `aih report <root> --no-log`. Both
-validate the fixed store and freshly verify current V3 authority. They report the exact lineage as
+validate the fixed store and freshly verify current organization authority. They report the exact lineage as
 `observed-effective` only while the observation and authority remain current; partial,
 withheld/refused, revoked, stale, or drifted state is explicit and blocks evaluation. Observation
 expiry alone does not freeze unrelated policy projection; unsafe custody, authority failure,
@@ -315,11 +397,12 @@ Scanner can produce attributable evidence for a catalog-absent exact detector th
 code-owned adapter. Its source repository and exact `@aihq/scan@0.1.2` npm package are public.
 Observe npm package provenance and GitHub Release evidence independently; success at one boundary
 does not prove the other.
-Production success also still requires a genuine current V3 organization authority receipt and its separately
-authorized public attestation. The packed Core proof therefore demonstrates the public parser,
-schema, command surfaces, and honest fail-closed refusal only; it does not claim successful custody,
-configuration, activation, or revocation. Scanner publication and organization authority are
-separate trust and release boundaries.
+The packed Core proof uses the packed CLI to generate the Workbench, drives its structured fields and
+download, and uses that protected PolicyBundle V2 with a disposable consumer root to
+exercise successful organization authority, exact observation, lifecycle update, and authenticated
+revocation without fabricated GitHub authority. It proves Core's file-custody contract, not the real
+deployment's ACL or MDM controls. Scanner publication, Scanner signer roots, Catalog attestation,
+and organization authority remain separate trust and release boundaries.
 
 ## 2. Quickstart / Implementation Blueprint
 
@@ -425,49 +508,18 @@ aih evidence build --out <evidence-dir> --sign cosign --require-signature --appl
 aih verify-bundle --bundle <evidence-dir> --require-signature
 ```
 
-### Admin Configuration Repo
+### Admin Configuration Location
 
-An enterprise admin can keep the policy and bundle source in an otherwise empty repo, for example `aih-admin-configuration`. The admin repo is a distribution source, not a secret store. Commit policy, pins, cards, pack manifests, and bundle output metadata only after review. Keep real tokens, PATs, OAuth state, AWS profiles, and Jira/Figma credentials in developer-local environment variables, browser OAuth, or the organization's secret manager.
+An enterprise admin may use an otherwise empty repository, MDM directory, configuration-management
+root, or another read-only location. That location distributes the Workbench-generated file; it is
+not another AIH runtime or approval workflow and must not become a secret store. Keep real tokens,
+PATs, OAuth state, AWS profiles, and Jira/Figma credentials in developer-local environment variables,
+browser OAuth, or the organization's secret manager.
 
-```powershell
-git init aih-admin-configuration
-Set-Location aih-admin-configuration
-@'
-{
-  "schemaVersion": 2,
-  "minimumPosture": "enterprise",
-  "references": {
-    "repoContract": "ai-coding/project.json"
-  },
-  "mcp": {
-    "allowedServers": [],
-    "approvals": [],
-    "allowManagedOnly": true,
-    "incumbentHosts": [],
-    "disabledServers": []
-  },
-  "trust": {
-    "requireSignedSource": false,
-    "requiredDetectors": [
-      "skillspector"
-    ],
-    "requiredChecks": [
-      "license",
-      "pin"
-    ],
-    "internalScopes": []
-  }
-}
-'@ | Set-Content -Encoding utf8 aih-org-policy.json
-aih policy validate
-git add aih-org-policy.json
-git commit -m "seed enterprise ai-harness policy"
-```
-Here, `allowedServers: []` plus `allowManagedOnly: true` intentionally generates no MCP servers.
-Populate the list to emit only listed, enabled servers, or set `allowManagedOnly` to `false` for the
-enabled catalog; unrelated operator-owned settings and customized same-name entries are preserved.
-
-Developers can consume this policy by setting `AIH_ORG_POLICY` to the cloned file path. Product repos may also commit their own `aih-org-policy.json` when policy is repo-local; the env override wins when set and should be visible in `aih doctor --posture enterprise`.
+Generate the file with `aih policy generate --apply`, then use the Workbench rather than typing an
+`aih-org-policy.json` or PolicyBundle by hand. Set `AIH_ORG_POLICY` to the absolute generated bundle
+path outside each governed target. Vibe repositories may still use a repo-local
+`aih-org-policy.json`; that file is ordinary policy, not Enterprise authority.
 
 ### Scanner And Docker Preparation
 

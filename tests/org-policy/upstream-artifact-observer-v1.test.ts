@@ -318,6 +318,62 @@ describe("upstream artifact observer V1", () => {
     },
   );
 
+  it("governs one catalog-absent organization tool with a protected PolicyBundle and no authority workflow", async () => {
+    const value = fixture("tool");
+    writeFixture(value);
+    rmSync(join(root, ".aih", "policy-authority-receipt.json"));
+    const adminRoot = realpathSync.native(
+      mkdtempSync(join(realpathSync.native(tmpdir()), "aih-upstream-artifact-policy-")),
+    );
+    const policyPath = join(adminRoot, "policy-bundle.json");
+    writeFileSync(
+      policyPath,
+      JSON.stringify({
+        schemaVersion: 2,
+        bundleVersion: "2026.08.1",
+        issuer: "Acme platform security",
+        issuedAt: "2026-08-24T00:00:00Z",
+        policy: {
+          schemaVersion: 2,
+          minimumPosture: "enterprise",
+          references: { repoContract: "ai-coding/project.json" },
+          governance: {
+            policyVersion: "2026.08",
+            catalog: { reviewed: [], custom: [] },
+            supportedClis: ["codex"],
+          },
+        },
+        authorityReceipt: {
+          format: "aih-policy-authority-receipt",
+          version: 3,
+          issuerRepository: "acme/governance",
+          issuedAt: "2026-08-24T00:00:00Z",
+          expiresAt: "2026-08-25T00:00:00Z",
+          trustedIssuers: [{ id: "platform-security", githubRepository: "acme/governance" }],
+          targets: ["codex"],
+          decisions: [value.decision],
+          decisionRevocations: [],
+        },
+      }),
+    );
+    try {
+      const calls: string[][] = [];
+      const base = context(options(value), calls, true);
+      const ctx = { ...base, env: { AIH_ORG_POLICY: policyPath } };
+      await expect(observeUpstreamArtifactV1(ctx)).resolves.toMatchObject({
+        authority: "verified",
+        qualification: "organization-qualified",
+        outcome: "observed-effective",
+      });
+      const lifecycle = await upstreamArtifactLifecyclePlan(ctx);
+      await expect(executePlan(lifecycle, ctx)).resolves.toMatchObject({ applied: true });
+      expect(calls.some((argv) => argv[0] === gh)).toBe(false);
+      expect(readUpstreamArtifactLifecycleStoreV1(root)).toMatchObject({ kind: "complete" });
+    } finally {
+      rmSync(adminRoot, { recursive: true, force: true });
+    }
+  });
+
   it("exposes no observer, verifier, effect, file, command, callback, or network override", () => {
     expect(upstreamArtifactObserveCommand.readOnly).toBe(true);
     expect(upstreamArtifactObserveCommand.zeroWrite).toBe(true);

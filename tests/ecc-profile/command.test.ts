@@ -310,7 +310,7 @@ describe("ECC profile lifecycle command", () => {
     120_000,
   );
 
-  it("compensates a completed projection install when native registration fails", async () => {
+  it("rolls back the compound install when native registration preflight fails", async () => {
     const sources = await projectionRoots();
     const target = mkdtempSync(join(tmpdir(), "aih-ecc-profile-command-compensation-"));
     const stateRoot = mkdtempSync(join(tmpdir(), "aih-ecc-profile-command-compensation-state-"));

@@ -1,26 +1,28 @@
 import { createHash } from "node:crypto";
 import { lstatSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, isAbsolute, join, parse as parsePath, relative, resolve } from "node:path";
 import { z } from "zod";
+import { parseNativeStrictJsonObjectV1 } from "../contract/native-strict-json-object-v1.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
 import type { FileAssertion, PlanContext } from "../internals/plan.js";
 import { findOnPath } from "../live/runner.js";
+import { PolicyAuthorityReceiptV3Schema } from "./authority-v3.js";
 import {
   GovernanceDecisionRevocationV1Schema,
   GovernanceDecisionTimestampSchema,
   GovernanceDecisionV1Schema,
 } from "./governance-decision-v1.js";
 import {
-  GovernanceDecisionRevocationV2Schema,
-  GovernanceDecisionTargetV2Schema,
-  GovernanceDecisionV2Schema,
-  governanceDecisionDigestV2,
-} from "./governance-decision-v2.js";
-import {
   CandidateSourceSchema,
+  hasExplicitOrgPolicySource,
+  MAX_ORG_POLICY_BYTES,
+  type OrgPolicy,
+  OrgPolicySchema,
+  orgPolicyPath,
   PolicyApprovalSchema,
   PolicyDangerCodeSchema,
+  parsePolicyBundle,
   schemaLeafPaths,
 } from "./schema.js";
 
@@ -95,10 +97,6 @@ function sortedUniqueBy<T>(items: readonly T[], id: (item: T) => string): boolea
   );
 }
 
-function sortedUniqueByString(items: readonly string[]): boolean {
-  return sortedUniqueBy(items, (item) => item);
-}
-
 const ReceiptDecisionsV2Schema = z
   .array(GovernanceDecisionV1Schema)
   .max(64)
@@ -112,29 +110,6 @@ const ReceiptDecisionRevocationsV2Schema = z
   .refine(
     (revocations) => sortedUniqueBy(revocations, (revocation) => revocation.decision),
     "decisionRevocations must be ordinal-sorted and unique by decision",
-  );
-
-const ReceiptDecisionsV3Schema = z
-  .array(GovernanceDecisionV2Schema)
-  .max(64)
-  .superRefine((decisions, ctx) => {
-    if (!sortedUniqueBy(decisions, (decision) => decision.id)) {
-      ctx.addIssue({
-        code: "custom",
-        message: "decisions must be ordinal-sorted and unique by id",
-      });
-    }
-    const digests = decisions.map(governanceDecisionDigestV2);
-    if (new Set(digests).size !== digests.length) {
-      ctx.addIssue({ code: "custom", message: "decisions must be unique by immutable digest" });
-    }
-  });
-const ReceiptDecisionRevocationsV3Schema = z
-  .array(GovernanceDecisionRevocationV2Schema)
-  .max(64)
-  .refine(
-    (revocations) => sortedUniqueBy(revocations, (revocation) => revocation.decisionDigest),
-    "decisionRevocations must be ordinal-sorted and unique by immutable decision digest",
   );
 
 function receiptBaseIssues(
@@ -263,80 +238,9 @@ const PolicyAuthorityReceiptV2Schema = z
   });
 
 /**
- * V3 is deliberately decision-only: it cannot carry V1/V2 approvals,
- * revocations, or evidence. A verified attestation is still required before
- * this parsed data becomes a usable authority object.
+ * Strict decision-authority payload shared by the optional GitHub-attested
+ * receipt transport and the administrator-protected PolicyBundle V2 transport.
  */
-const PolicyAuthorityReceiptV3Schema = z
-  .object({
-    format: z.literal("aih-policy-authority-receipt"),
-    version: z.literal(3),
-    issuerRepository: Repository,
-    issuedAt: GovernanceDecisionTimestampSchema,
-    expiresAt: GovernanceDecisionTimestampSchema,
-    trustedIssuers: z
-      .array(ReceiptIssuerSchema)
-      .min(1)
-      .max(64)
-      .refine(
-        (issuers) => sortedUniqueBy(issuers, (issuer) => issuer.id),
-        "trustedIssuers must be ordinal-sorted and unique by id",
-      ),
-    targets: z
-      .array(GovernanceDecisionTargetV2Schema)
-      .min(1)
-      .max(64)
-      .refine(sortedUniqueByString, "targets must be ordinal-sorted and unique"),
-    decisions: ReceiptDecisionsV3Schema,
-    decisionRevocations: ReceiptDecisionRevocationsV3Schema,
-  })
-  .strict()
-  .superRefine((receipt, ctx) => {
-    const issuedAt = Date.parse(receipt.issuedAt);
-    const expiresAt = Date.parse(receipt.expiresAt);
-    if (expiresAt <= issuedAt) {
-      ctx.addIssue({ code: "custom", message: "receipt expiresAt must be after issuedAt" });
-    }
-    if (expiresAt - issuedAt > 90 * 24 * 60 * 60 * 1000) {
-      ctx.addIssue({ code: "custom", message: "receipt lifetime must not exceed 90 days" });
-    }
-    const trustedIssuers = new Set(receipt.trustedIssuers.map((issuer) => issuer.id));
-    const receiptTargets = new Set<string>(receipt.targets);
-    const decisions = new Map(
-      receipt.decisions.map((decision) => [governanceDecisionDigestV2(decision), decision]),
-    );
-    for (const decision of receipt.decisions) {
-      const digest = governanceDecisionDigestV2(decision);
-      if (!trustedIssuers.has(decision.issuer)) {
-        ctx.addIssue({ code: "custom", message: `decision ${digest} issuer is not trusted` });
-      }
-      if (decision.targets.some((target) => !receiptTargets.has(target))) {
-        ctx.addIssue({ code: "custom", message: `decision ${digest} exceeds receipt targets` });
-      }
-      if (Date.parse(decision.issuedAt) > issuedAt || Date.parse(decision.expiresAt) > expiresAt) {
-        ctx.addIssue({ code: "custom", message: `decision ${digest} is outside receipt validity` });
-      }
-    }
-    for (const revocation of receipt.decisionRevocations) {
-      const decision = decisions.get(revocation.decisionDigest);
-      if (decision === undefined) {
-        ctx.addIssue({
-          code: "custom",
-          message: `decision revocation targets unknown ${revocation.decisionDigest}`,
-        });
-        continue;
-      }
-      const revokedAt = Date.parse(revocation.revokedAt);
-      if (revocation.issuer !== decision.issuer) {
-        ctx.addIssue({ code: "custom", message: "decision revocation issuer mismatches decision" });
-      }
-      if (revokedAt < Date.parse(decision.issuedAt) || revokedAt > issuedAt) {
-        ctx.addIssue({ code: "custom", message: "decision revocation time is invalid" });
-      }
-    }
-  });
-
-/** Strict external authority receipt contract; policy JSON cannot supply these facts. */
 export const PolicyAuthorityReceiptSchema = z.discriminatedUnion("version", [
   PolicyAuthorityReceiptV1Schema,
   PolicyAuthorityReceiptV2Schema,
@@ -417,13 +321,13 @@ function phaseHonestV3Consumer(leaf: string, consumer: string): string {
     ? consumer.slice(V3_TRANSPORT_ONLY_PREFIX.length)
     : consumer;
   if (V3_ORGANIZATION_QUALIFICATION_RUNTIME_LEAVES.has(leaf)) {
-    return `V3 externally verified signed transport/schema validation; current organization-qualified upstream-observation runtime: ${detail}`;
+    return `V3 verified transport/schema validation; current organization-qualified upstream-observation runtime: ${detail}`;
   }
   if (V3_AIH_SUPPORTED_QUALIFICATION_RUNTIME_LEAVES.has(leaf)) {
-    return `V3 externally verified signed transport/schema validation; current AIH-supported qualification runtime: ${detail}`;
+    return `V3 verified transport/schema validation; current AIH-supported qualification runtime: ${detail}`;
   }
   if (!consumer.startsWith(V3_TRANSPORT_ONLY_PREFIX)) return consumer;
-  return `V3 externally verified signed transport/schema validation; legacy effective resolver deliberately withholds V3 runtime use: ${consumer.slice(V3_TRANSPORT_ONLY_PREFIX.length)}`;
+  return `V3 verified transport/schema validation; legacy effective resolver deliberately withholds V3 runtime use: ${consumer.slice(V3_TRANSPORT_ONLY_PREFIX.length)}`;
 }
 
 const RECEIPT_TOP_LEVEL_CONSUMERS: Readonly<Record<string, string>> = {
@@ -453,8 +357,7 @@ const RECEIPT_TOP_LEVEL_CONSUMERS: Readonly<Record<string, string>> = {
   "decisions.*.expiresAt": "effective resolver: signed decision expiry gate",
   "decisions.*.format": "receipt schema: fixed signed decision artifact protocol",
   "decisions.*.id": "effective resolver: exact policy decision-reference lookup",
-  "decisions.*.issuedAt":
-    "receipt schema: decision issuance bound to the externally verified receipt",
+  "decisions.*.issuedAt": "authority schema: decision issuance bound to verified authority",
   "decisions.*.issuer": "effective resolver: trusted decision issuer binding",
   "decisions.*.kind": "effective resolver: exact governed kind binding",
   "decisions.*.notBefore": "effective resolver: signed decision not-before gate",
@@ -627,6 +530,7 @@ export const POLICY_AUTHORITY_RECEIPT_FIELD_CONSUMERS: Readonly<Record<string, s
   });
 
 const verifiedAuthorities = new WeakSet<object>();
+const verifiedPolicyFilePolicies = new WeakMap<object, OrgPolicy>();
 
 function deepFreeze<T>(value: T): Readonly<T> {
   if (value !== null && typeof value === "object") {
@@ -643,10 +547,22 @@ export interface VerifiedPolicyAuthority {
   readonly repository: string;
   /** Optional signer-workflow root verified with the authority receipt. */
   readonly workflow?: string;
+  /** Transport that established the opaque authority capability. */
+  readonly source?: "github-attestation" | "policy-file";
+  /** Exact transaction pin for the verified source file. */
+  readonly sourceAssertion?: FileAssertion;
 }
 
 export function isVerifiedPolicyAuthority(value: unknown): value is VerifiedPolicyAuthority {
   return typeof value === "object" && value !== null && verifiedAuthorities.has(value);
+}
+
+/** Policy parsed from the same protected-file bytes that minted this opaque authority. */
+export function verifiedPolicyFileAuthorityPolicyV1(
+  authority: VerifiedPolicyAuthority,
+): OrgPolicy | undefined {
+  if (!isVerifiedPolicyAuthority(authority) || authority.source !== "policy-file") return undefined;
+  return verifiedPolicyFilePolicies.get(authority);
 }
 
 /** Read-only transaction pin for the exact no-follow authority receipt just verified. */
@@ -658,18 +574,27 @@ export function verifiedPolicyAuthorityReceiptAssertionV1(
     !/^sha256:[0-9a-f]{64}$/.test(authority.receiptDigest)
   )
     return undefined;
-  return {
-    path: POLICY_AUTHORITY_RECEIPT_PATH,
-    sha256: authority.receiptDigest.slice("sha256:".length),
-    maxBytes: 1_000_000,
-    describe: "assert verified policy authority receipt remains exact",
-  };
+  return authority.sourceAssertion === undefined
+    ? {
+        path: POLICY_AUTHORITY_RECEIPT_PATH,
+        sha256: authority.receiptDigest.slice("sha256:".length),
+        maxBytes: MAX_ORG_POLICY_BYTES,
+        describe: "assert verified policy authority receipt remains exact",
+      }
+    : { ...authority.sourceAssertion };
 }
 
 export interface PolicyAuthorityVerification {
   authority?: VerifiedPolicyAuthority;
   /** Deliberately scrubbed: trust-verifier child output may contain credentials. */
   problem?: string;
+  /**
+   * An explicitly selected PolicyBundle V2 claimed the protected-file authority
+   * transport but failed its custody or freshness checks. Callers that would
+   * otherwise derive effects from that bundle must fail closed, rather than
+   * treating it as an ordinary un-attested policy.
+   */
+  protectedPolicyFile?: "problem" | "verified";
 }
 
 function externalAuthorityRoot(
@@ -746,7 +671,7 @@ function readCustodiedAuthorityReceipt(
   const parentIdentity = safeDirectoryIdentity(join(root, ".aih"));
   if (rootIdentity === undefined || parentIdentity === undefined) return undefined;
 
-  const read = readRegularFileWithStats(path, { maxBytes: 1_000_000 });
+  const read = readRegularFileWithStats(path, { maxBytes: MAX_ORG_POLICY_BYTES });
   if (
     read === undefined ||
     read.identity.dev === 0n ||
@@ -791,16 +716,310 @@ function sameCustodiedAuthorityReceipt(
   );
 }
 
+interface CustodiedExternalPolicyBundle {
+  readonly contents: Buffer;
+  readonly parents: readonly ({ readonly path: string } & CustodiedPathIdentity)[];
+  readonly file: CustodiedPathIdentity;
+}
+
+function custodiedAbsoluteParentChain(
+  path: string,
+): readonly ({ readonly path: string } & CustodiedPathIdentity)[] | undefined {
+  const absolute = resolve(path);
+  const volumeRoot = parsePath(absolute).root;
+  const parent = dirname(absolute);
+  const rel = relative(volumeRoot, parent);
+  if (rel.startsWith("..") || isAbsolute(rel)) return undefined;
+  const chain: ({ path: string } & CustodiedPathIdentity)[] = [];
+  let current = volumeRoot;
+  const capture = (): boolean => {
+    const identity = safeDirectoryIdentity(current);
+    if (identity === undefined) return false;
+    chain.push({ path: current, ...identity });
+    return true;
+  };
+  if (!capture()) return undefined;
+  for (const segment of rel.split(/[\\/]+/).filter((part) => part.length > 0)) {
+    current = join(current, segment);
+    if (!capture()) return undefined;
+  }
+  return chain;
+}
+
+function hasSymlinkedAbsoluteParent(path: string): boolean {
+  const absolute = resolve(path);
+  const root = parsePath(absolute).root;
+  const parent = dirname(absolute);
+  const rel = relative(root, parent);
+  if (rel.startsWith("..") || isAbsolute(rel)) return true;
+  let current = root;
+  for (const part of rel.split(/[\\/]+/).filter((segment) => segment.length > 0)) {
+    current = join(current, part);
+    try {
+      if (lstatSync(current).isSymbolicLink()) return true;
+    } catch {
+      return true;
+    }
+  }
+  return false;
+}
+
+function pathIsInside(root: string, path: string): boolean {
+  const rel = relative(resolve(root), resolve(path));
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+function readCustodiedExternalPolicyBundle(
+  path: string,
+): CustodiedExternalPolicyBundle | undefined {
+  const parents = custodiedAbsoluteParentChain(path);
+  if (parents === undefined) return undefined;
+  const read = readRegularFileWithStats(path, { maxBytes: MAX_ORG_POLICY_BYTES });
+  if (
+    read === undefined ||
+    read.identity.dev === 0n ||
+    read.identity.ino === 0n ||
+    read.identity.nlink !== 1n
+  ) {
+    return undefined;
+  }
+  try {
+    const current = lstatSync(path, { bigint: true });
+    if (
+      current.isSymbolicLink() ||
+      !current.isFile() ||
+      current.dev === 0n ||
+      current.ino === 0n ||
+      current.nlink !== 1n ||
+      current.dev !== read.identity.dev ||
+      current.ino !== read.identity.ino
+    ) {
+      return undefined;
+    }
+  } catch {
+    return undefined;
+  }
+  return {
+    contents: read.contents,
+    parents,
+    file: { dev: read.identity.dev, ino: read.identity.ino },
+  };
+}
+
+function sameCustodiedExternalPolicyBundle(
+  left: CustodiedExternalPolicyBundle,
+  right: CustodiedExternalPolicyBundle,
+): boolean {
+  return (
+    left.contents.equals(right.contents) &&
+    left.parents.length === right.parents.length &&
+    left.parents.every((parent, index) => {
+      const current = right.parents[index];
+      return (
+        current !== undefined && parent.path === current.path && sameCustodiedPath(parent, current)
+      );
+    }) &&
+    sameCustodiedPath(left.file, right.file)
+  );
+}
+
+type ProtectedPolicyFileAuthority =
+  | { state: "absent" }
+  | { state: "problem"; problem: string }
+  | { state: "verified"; authority: VerifiedPolicyAuthority };
+
 /**
- * Verify the fixed authority receipt against an organization-admin registry set
- * outside the target checkout (`AIH_POLICY_AUTHORITY_REPOSITORY`, optionally
- * `AIH_POLICY_AUTHORITY_WORKFLOW`). The governed repository's origin and its
- * policy JSON are never trust roots. The receipt remains untrusted data until
- * `gh attestation verify` succeeds against that exact external identity.
+ * A V2 active policy bundle is itself the authority transport when an
+ * administrator supplies it as one absolute file outside the governed target.
+ * Core does not claim to prove the host ACL: read-only distribution is the
+ * administrator's trust root. Core proves only exact no-follow custody and
+ * pins those same bytes across every local transaction.
+ */
+function protectedPolicyFileAuthority(ctx: PlanContext): ProtectedPolicyFileAuthority {
+  if (!hasExplicitOrgPolicySource(ctx.env)) return { state: "absent" };
+  const configured = ctx.env.AIH_ORG_POLICY?.trim();
+  if (configured === undefined) return { state: "absent" };
+  const path = orgPolicyPath(ctx.root, ctx.env);
+  const candidate = readRegularFileWithStats(path, { maxBytes: MAX_ORG_POLICY_BYTES });
+  if (candidate === undefined) {
+    try {
+      const stats = lstatSync(path, { bigint: true });
+      if (stats.size > BigInt(MAX_ORG_POLICY_BYTES)) {
+        return {
+          state: "problem",
+          problem: `protected policy bundle authority exceeds the ${MAX_ORG_POLICY_BYTES.toLocaleString("en-US")}-byte safety limit`,
+        };
+      }
+    } catch {
+      // The fail-closed custody diagnostic below also covers a missing path.
+    }
+    return {
+      state: "problem",
+      problem: "protected policy bundle authority has unsafe file custody",
+    };
+  }
+
+  let value: unknown;
+  try {
+    value = parseNativeStrictJsonObjectV1(
+      new TextDecoder("utf-8", { fatal: true }).decode(candidate.contents),
+      "protected policy bundle authority",
+    );
+  } catch {
+    return { state: "problem", problem: "protected policy bundle authority is malformed" };
+  }
+  const looksLikeV2Bundle =
+    value !== null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    (value as { schemaVersion?: unknown }).schemaVersion === 2 &&
+    Object.hasOwn(value, "bundleVersion") &&
+    Object.hasOwn(value, "policy");
+  const parsed = parsePolicyBundle(value);
+  if (!parsed.ok) {
+    return looksLikeV2Bundle
+      ? { state: "problem", problem: "protected policy bundle authority is malformed" }
+      : OrgPolicySchema.safeParse(value).success
+        ? { state: "absent" }
+        : { state: "problem", problem: "explicit organization policy is malformed" };
+  }
+  if (parsed.bundle.schemaVersion !== 2) return { state: "absent" };
+  if (!isAbsolute(configured) || pathIsInside(ctx.root, path)) {
+    return {
+      state: "problem",
+      problem:
+        "protected policy bundle authority requires an absolute file outside the governed target",
+    };
+  }
+  if (hasSymlinkedAbsoluteParent(path)) {
+    return {
+      state: "problem",
+      problem: "protected policy bundle authority has unsafe file custody",
+    };
+  }
+  const observed = readCustodiedExternalPolicyBundle(path);
+  if (observed === undefined || !observed.contents.equals(candidate.contents)) {
+    return {
+      state: "problem",
+      problem: "protected policy bundle authority has unsafe file custody",
+    };
+  }
+  const now = Date.now();
+  const receipt = parsed.bundle.authorityReceipt;
+  if (now < Date.parse(receipt.issuedAt) || now >= Date.parse(receipt.expiresAt)) {
+    return {
+      state: "problem",
+      problem: "protected policy bundle authority is not currently valid",
+    };
+  }
+  const reobserved = readCustodiedExternalPolicyBundle(path);
+  if (reobserved === undefined || !sameCustodiedExternalPolicyBundle(observed, reobserved)) {
+    return {
+      state: "problem",
+      problem: "protected policy bundle authority has unsafe file custody",
+    };
+  }
+  const digest = createHash("sha256").update(observed.contents).digest("hex");
+  const authority: VerifiedPolicyAuthority = Object.freeze({
+    receipt: deepFreeze(structuredClone(receipt)) as PolicyAuthorityReceipt,
+    receiptDigest: `sha256:${digest}`,
+    repository: receipt.issuerRepository,
+    source: "policy-file" as const,
+    sourceAssertion: Object.freeze({
+      path,
+      sha256: digest,
+      maxBytes: MAX_ORG_POLICY_BYTES,
+      describe: "verified policy authority policy file",
+      external: true as const,
+      trustedBase: dirname(path),
+      externalCustody: deepFreeze({
+        file: { dev: observed.file.dev.toString(10), ino: observed.file.ino.toString(10) },
+        parents: observed.parents.map((parent) => ({
+          path: parent.path,
+          dev: parent.dev.toString(10),
+          ino: parent.ino.toString(10),
+        })),
+      }),
+    }),
+  });
+  verifiedAuthorities.add(authority);
+  const verifiedPolicy = structuredClone(parsed.bundle.policy) as OrgPolicy;
+  deepFreeze(verifiedPolicy);
+  verifiedPolicyFilePolicies.set(authority, verifiedPolicy);
+  return { state: "verified", authority };
+}
+
+export interface VerifiedPolicyAuthoritySourceCustodyV1 {
+  readonly assertion: FileAssertion;
+  readonly rawDigest: string;
+  unchanged(): boolean;
+}
+
+/** Re-open the opaque authority source for same-invocation live custody checks. */
+export function verifiedPolicyAuthoritySourceCustodyV1(
+  ctx: PlanContext,
+  authority: VerifiedPolicyAuthority,
+): VerifiedPolicyAuthoritySourceCustodyV1 | undefined {
+  const assertion = verifiedPolicyAuthorityReceiptAssertionV1(authority);
+  if (assertion === undefined) return undefined;
+  const expectedDigest = `sha256:${assertion.sha256}`;
+  if (expectedDigest !== authority.receiptDigest) return undefined;
+  if (assertion.external === true) {
+    if (
+      assertion.trustedBase === undefined ||
+      hasSymlinkedAbsoluteParent(assertion.path) ||
+      resolve(assertion.trustedBase) !== resolve(dirname(assertion.path))
+    ) {
+      return undefined;
+    }
+    const observed = readCustodiedExternalPolicyBundle(assertion.path);
+    if (
+      observed === undefined ||
+      createHash("sha256").update(observed.contents).digest("hex") !== assertion.sha256
+    ) {
+      return undefined;
+    }
+    return {
+      assertion,
+      rawDigest: expectedDigest,
+      unchanged: () => {
+        const current = readCustodiedExternalPolicyBundle(assertion.path);
+        return current !== undefined && sameCustodiedExternalPolicyBundle(observed, current);
+      },
+    };
+  }
+  if (assertion.path !== POLICY_AUTHORITY_RECEIPT_PATH) return undefined;
+  const observed = readCustodiedAuthorityReceipt(ctx.root, join(ctx.root, assertion.path));
+  if (
+    observed === undefined ||
+    createHash("sha256").update(observed.contents).digest("hex") !== assertion.sha256
+  ) {
+    return undefined;
+  }
+  return {
+    assertion,
+    rawDigest: expectedDigest,
+    unchanged: () => {
+      const current = readCustodiedAuthorityReceipt(ctx.root, join(ctx.root, assertion.path));
+      return current !== undefined && sameCustodiedAuthorityReceipt(observed, current);
+    },
+  };
+}
+
+/**
+ * Mint current organization authority from either an explicitly selected,
+ * administrator-protected PolicyBundle V2 outside the target or the legacy
+ * fixed GitHub-attested receipt. The file transport is exact-byte and
+ * transaction pinned; the deployment, not Core, owns its host ACL.
  */
 export async function verifyPolicyAuthorityReceipt(
   ctx: PlanContext,
 ): Promise<PolicyAuthorityVerification> {
+  const policyFile = protectedPolicyFileAuthority(ctx);
+  if (policyFile.state === "problem")
+    return { problem: policyFile.problem, protectedPolicyFile: "problem" };
+  if (policyFile.state === "verified")
+    return { authority: policyFile.authority, protectedPolicyFile: "verified" };
   const root = externalAuthorityRoot(ctx);
   if (root === undefined) {
     return {
@@ -891,6 +1110,13 @@ export async function verifyPolicyAuthorityReceipt(
     receiptDigest: `sha256:${createHash("sha256").update(observed.contents).digest("hex")}`,
     repository: root.repository,
     ...(root.workflow === undefined ? {} : { workflow: root.workflow }),
+    source: "github-attestation" as const,
+    sourceAssertion: Object.freeze({
+      path: POLICY_AUTHORITY_RECEIPT_PATH,
+      sha256: createHash("sha256").update(observed.contents).digest("hex"),
+      maxBytes: MAX_ORG_POLICY_BYTES,
+      describe: "verified policy authority receipt",
+    }),
   });
   verifiedAuthorities.add(authority);
   return { authority };

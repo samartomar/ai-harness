@@ -1,6 +1,5 @@
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { AIH_CONFIG_FILE, readAihConfig } from "../config/marker.js";
-import { resolveTargets } from "../internals/cli-detect.js";
 import { readIfExists } from "../internals/fsxn.js";
 import { gitRead } from "../internals/git.js";
 import { repoLocalHookPath } from "../internals/git-hooks.js";
@@ -25,7 +24,8 @@ import {
   kiroHookRuntime,
 } from "../kiro/runtime.js";
 import { withExpectedContents } from "../mcp/managed-projection.js";
-import { assertGovernanceOwnsSurface } from "../org-policy/schema.js";
+import { verifiedOrgPolicyTargets } from "../org-policy/project.js";
+import { governanceOwnsAihSurfaces, OrgPolicyError } from "../org-policy/schema.js";
 import { aggregateUsage } from "./aggregate.js";
 import { gitPostCommitChainSnippet, gitPostCommitHook, usageRecorderScript } from "./capture.js";
 import { readUsage, USAGE_PATH, type UsageEvent } from "./events.js";
@@ -159,9 +159,13 @@ async function usagePlan(ctx: PlanContext): Promise<Plan> {
   const requestedKiroRuntime = explicitKiroHookRuntime(ctx);
   const roots = rollupRoots(ctx);
   if (roots.length > 0) return usageRollupPlan(ctx, roots);
-  assertGovernanceOwnsSurface(ctx, "usage");
-
-  const { clis } = await resolveTargets(ctx);
+  const policyTargets = await verifiedOrgPolicyTargets(ctx);
+  if (governanceOwnsAihSurfaces(policyTargets.policy)) {
+    throw new OrgPolicyError(
+      "governance exclusively owns AIH usage projection; use `aih policy project` to evaluate and apply the verified policy",
+    );
+  }
+  const { clis } = policyTargets.resolution;
   const zedDbPath = clis.includes("zed") ? zedThreadsDbPath(ctx) : undefined;
   const zedEvents =
     zedDbPath === undefined
@@ -297,7 +301,16 @@ async function usagePlan(ctx: PlanContext): Promise<Plan> {
       }),
     ),
   );
-  return plan("usage", ...actions);
+  return {
+    ...plan("usage", ...actions),
+    ...(policyTargets.fileAssertions === undefined
+      ? {}
+      : { fileAssertions: policyTargets.fileAssertions }),
+    ...(policyTargets.commitNotAfter === undefined
+      ? {}
+      : { commitNotAfter: policyTargets.commitNotAfter }),
+    ...(policyTargets.commitLock === undefined ? {} : { commitLock: policyTargets.commitLock }),
+  };
 }
 
 export const command: CommandSpec = {

@@ -201,10 +201,10 @@ export type ObservedEffectResolution =
     };
 
 export interface ObservedEffectResolutionInput {
-  /** Only an opaque externally verified V3 authority can supply the decision. */
+  /** Only an opaque freshly verified V3 authority can supply the decision. */
   authority?: unknown;
   decisionReference?: { id: string; digest: string };
-  /** Current externally verified qualification capability; raw evidence cannot stand in for it. */
+  /** Current verified qualification capability; raw evidence cannot stand in for it. */
   qualification?: unknown;
   observation?: unknown;
   subject: Pick<GovernanceDecisionV2["subject"], "kind" | "id" | "sourceDigest" | "subjectDigest">;

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -8,6 +8,7 @@ import type { Action, DigestAction, PlanContext } from "../../src/internals/plan
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { buildProgram } from "../../src/program.js";
+import { executeSuperpowersCommand } from "../../src/superpowers/pipeline.js";
 import {
   superpowersEvidenceComponentIds,
   verifiedSuperpowersInstallPlan,
@@ -91,6 +92,28 @@ describe("verified Superpowers install planning", () => {
 });
 
 describe("registered Superpowers command", () => {
+  it("refuses an ordinary policy override before any Superpowers source or receipt effect", async () => {
+    const policyPath = join(root, "ordinary-policy.json");
+    writeFileSync(
+      policyPath,
+      JSON.stringify({
+        schemaVersion: 2,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        governance: { supportedClis: ["claude"] },
+      }),
+      "utf8",
+    );
+    const context = ctx();
+    context.env = { AIH_ORG_POLICY: policyPath };
+    context.host = makeHostAdapter({ platform: "linux", run: context.run, env: context.env });
+
+    await expect(executeSuperpowersCommand(context)).rejects.toThrow(
+      /configuration mutation requires the committed default policy or a trusted managed channel/,
+    );
+    expect(existsSync(join(root, ".aih"))).toBe(false);
+  });
+
   it("previews exact-pinned acquisition before any target guidance", async () => {
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     try {

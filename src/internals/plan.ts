@@ -272,13 +272,23 @@ export type Action =
  * bounded, no-follow, regular single-link bytes before and after effects.
  */
 export interface FileAssertion {
-  /** Root-relative path of the verified input. */
+  /** Root-relative path by default; an absolute path when `external` is true. */
   path: string;
   /** Lowercase SHA-256 digest of its exact bytes, without the `sha256:` prefix. */
   sha256: string;
   /** Maximum safe byte size for the no-follow descriptor read. */
   maxBytes: number;
   describe: string;
+  /** Assert an explicitly configured input outside the governed target. */
+  external?: true;
+  /** Existing real parent directory that contains an external assertion path. */
+  trustedBase?: string;
+  /** Portable custody binding for administrator-provided external authority. */
+  externalCustody?: {
+    file: { dev: string; ino: string };
+    /** Every absolute directory from the volume root through the file parent. */
+    parents: readonly { path: string; dev: string; ino: string }[];
+  };
 }
 
 export interface Plan {

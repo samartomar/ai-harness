@@ -101,12 +101,12 @@ identity uniqueness, direct-member resolution, and evidence subject binding belo
 to the TypeScript parser; graph metadata is never approval or evidence by itself.
 
 <!-- aih:claim CM-86 -->
-Core 0.1.1 source and package export Strict V2 organization-qualified,
+Core source and package export Strict V2 organization-qualified,
 AIH-supported qualification, decision, upstream-artifact manifest, and upstream-observation
 contracts, with matching JSON Schemas under `@aihq/core/schemas/`. They let organization evidence and supported-catalog
 producers share one exact GitHub/npm/PyPI/OCI/remote subject grammar without making catalog
 membership an organization admission. The organization-qualified route binds one canonical,
-size-bounded evidence envelope to an externally verified V3 authority decision. The supported
+size-bounded evidence envelope to a current Decision V2 inside verified organization authority. The supported
 route accepts only canonical Qualification Receipt V2 bytes after separate GitHub attestation,
 then records bounded signer, replay, head, and head-scoped member custody with
 `aih policy supported accept --apply`. `aih policy supported inspect` reports a deterministic,
@@ -123,18 +123,53 @@ and durable audit inspection. The complete packaged syntax is in
 [`aih policy`](docs/commands.md#aih-policy). Catalog-absent Scanner evidence is covered separately in
 [Catalog-absent organization detector evidence](guides/enterprise-admin-guide.md#catalog-absent-organization-detector-evidence).
 
+<!-- aih:claim CM-91 -->
+For Enterprise, the shortest organization-authority path starts in the generated Policy Workbench.
+Run `aih policy generate --apply`, open `aih-policy-workbench.html`, select Enterprise, fill the
+protected-file form, and download `aih-policy-bundle.json`. The administrator supplies ordinary
+fields for the issuer, an exact GitHub, npm, PyPI, OCI, remote-content, or AIH source identity, artifact kind, targets, effects, and
+attributable evidence; the browser computes the canonical Decision V2 source and subject digests.
+The administrator does not write JSON. Store the generated **PolicyBundle V2** file at an
+administrator-controlled read-only path selected by an absolute
+`AIH_ORG_POLICY` path outside the governed target. It contains the ordinary org policy plus the
+existing V3 decision-authority payload; no approval workflow or second policy store is required.
+Core requires Enterprise posture, bounded strict JSON, a current 90-day-or-shorter authority window,
+a regular single-link file reached without symlinked parents, and exact byte re-observation before
+effects. Authority-dependent mutating transactions pin those same external bytes. ECC and
+Superpowers evidence, ECC request selection, ordinary ECC profile lifecycle acquisition and
+mutation, standalone MCP planning, and standalone Usage ownership decisions reuse one verified
+policy observation. ECC profile install/update composes projection and native registration inside
+one pinned filesystem transaction; receipt-bound uninstall remains independently authorized by
+installed custody. Init retains each nested phase's file assertions, deadline, and lock and refuses
+a conflicting observation before effects. Child-process effects retain a renewable cooperative
+lease and revalidate authority before and after execution; if the latter fails, Core blocks later
+effects without claiming it rolled back the already-run child.
+Core never writes this file and does
+not prove its operating-system ACL: the organization must use an administrator-only directory,
+MDM/configuration management, or an equivalent read-only distribution boundary and must control
+the process configuration that supplies `AIH_ORG_POLICY`. Replacing the protected file with a newly
+issued bundle performs a decision update or revocation; existing Core lifecycle stores retain their
+immutable history. On a fresh target with no retained lifecycle state, Core has no separate global
+bundle-version high-water mark; the administrator's distribution system must prevent rollback to
+older still-valid file bytes. Vibe posture and repo-local `aih-org-policy.json` behavior are unchanged. The
+existing fixed GitHub-attested V3 receipt remains an optional higher-assurance/compatibility
+transport, not a universal adopter requirement.
+Packed library consumers can import `PolicyBundleSchema` and `parsePolicyBundle` from
+`@aihq/core` to validate the decoded bundle structure before deployment. Core's active-file reader,
+not those object-level helpers, enforces the exact UTF-8 bytes and duplicate-key rules.
+
 <!-- aih:claim CM-89 -->
 The `aih policy managed usage-metering` route is one closed AIH-managed
 adapter, not a generic plugin registry. `describe` reports the code-derived
 `usage-metering` subject, AIH release/source revision, adapter identity, fixed
 `configure` effect, and the only supported targets (`claude` and `codex`).
-`reconcile [root]` accepts only an exact current V3 decision/digest, one canonical
+`reconcile [root]` accepts only an exact current Decision V2/digest from verified authority, one canonical
 organization-evidence file, and a fixed target. Preview is non-effective and
 zero-write; literal `--apply` can write only the fixed recorder, the fixed host
 `PostToolUse` entry, the AIH ignore marker, and the strict V4 ownership receipt.
 The adapter executes no candidate code and accepts no caller-selected command,
-path, source, effect, or adapter. Authority verification remains the separately
-named, fixed external `gh attestation verify` boundary.
+path, source, effect, or adapter. Organization authority can come from the protected
+PolicyBundle V2 file above; the optional GitHub-attested receipt transport remains supported.
 
 The V4 receipt records an exact durable claim before configuration, then binds
 the verified authority and decision, qualification provenance, subject/source,
@@ -150,11 +185,11 @@ authorize this route. A later release
 whose code-derived source changes must ship an explicit code-owned predecessor
 migration; an arbitrary old receipt is never migration authority.
 
-The repository's packed prepublication proof installs the tarball in a disposable
-consumer and proves `describe`, clean `inspect`, and refusal without external
-authority. It does **not** prove successful configure or revocation. That final
-production proof still requires a genuine organization V3 authority receipt and
-its separately authorized public GitHub attestation for the exact candidate.
+The repository's packed cold-administrator proof installs the tarball in a disposable
+consumer and uses a separate protected PolicyBundle V2 file to prove `describe`,
+configure, inspect, authenticated revocation, exact byte pinning, and refusal when authority is
+missing or changed. It makes no host-ACL claim and does not turn generated test evidence into a
+production Scanner signature or Catalog attestation.
 
 `aih policy observe npm-package` selects the qualification route from the exact current decision.
 An organization-qualified decision requires `--evidence`; an `aih-supported` decision rejects that
@@ -201,7 +236,7 @@ decision cannot assert its own qualification.
 <!-- aih:claim CM-88 -->
 For a governance-owned target, `aih policy evaluate <root> --no-log --json` and the governed report now consume
 that fixed lifecycle store as observed state. They validate canonical heads, bindings, and complete
-bounded history, then freshly verify current V3 authority before classifying each exact npm
+bounded history, then freshly verify current organization authority before classifying each exact npm
 package/target lineage as `observed-effective`, `partial`, `withheld`, `refused`, `revoked`, `stale`,
 or `drifted`. The observation window is at most 24 hours and is shortened by the authority,
 decision, or conditional-review deadline. Every non-effective lifecycle state blocks policy
@@ -234,9 +269,9 @@ re-read the bounded lifecycle snapshot before exposing effective state. Missing 
 inputs and substituted stored identities remain non-effective. Revocation is durable but
 non-effective and nonzero. These commands govern exact observed files; they do not install, copy,
 configure, activate, remove, stop, or execute them. The packed proof uses installed package bytes and
-proves the public parser/schema/commands plus refusal without external authority. It does not claim
-successful production custody, which still requires genuine V3 organization authority and a
-separately authorized GitHub attestation.
+proves the public parser/schema/commands and the protected-file authority route in a disposable
+target. Production deployment still depends on the organization's real administrator-only file
+distribution and process-configuration boundary; Core does not certify that host ACL.
 
 <!-- aih:claim CM-86 -->
 For an `aih-supported` basis, the administrator first supplies the separately controlled support
@@ -385,7 +420,7 @@ still initialize under the vendor CLI. Aih does not attest those customizations 
 | [`aih skill`](docs/commands.md#aih-skill) | Govern the skill lifecycle — vet → approve → inventory → quarantine → remove — anchored in `aih-skills.lock.json`. |
 | [`aih pack`](docs/commands.md#aih-pack) | Curate committed sets of approved skills (`aih-packs.json`); every ref is cross-checked against the lock, fail-closed. |
 | [`aih marketplace`](docs/commands.md#aih-marketplace) | Build, validate, and publish a reproducible, verifiable distribution artifact for hostable approved skills — never a registry. |
-| [`aih policy`](docs/commands.md#aih-policy) | Generate the Policy Workbench; resolve attested V3 authority plus exact organization evidence; observe and persist the bounded root npm lifecycle; evaluate, project, validate, or verify policy. |
+| [`aih policy`](docs/commands.md#aih-policy) | Generate the Policy Workbench and its protected Enterprise authority file; resolve protected-file or optional attested V3 authority plus exact organization evidence; observe and persist governed lifecycles; evaluate, project, validate, or verify policy. |
 | [`aih evidence`](docs/commands.md#aih-evidence) | Vet exact-pinned baseline components and package local audit artifacts into deterministic signed evidence bundles. |
 | [`aih truth`](docs/commands.md#aih-truth) | Create and verify an external project-truth sidecar; commit, version, claim, decision, acceptance-preflight, and agent-evidence assertions fail closed before a pack helps govern evidence. <!-- aih:claim CM-13 --> |
 | [`aih bundle`](docs/commands.md#aih-bundle) | Build a deterministic fleet bundle with checksums; `aih verify-bundle --require-signature` turns missing/unverifiable signatures into failures. |
@@ -610,7 +645,7 @@ receipt-owned entries with `aih ecc mcp remove <id> --cli <client> --apply`, and
 receipt/config ownership state. It does not contact the endpoint, scan the remote tool list, or install all
 approved entries.
 
-The portable Policy Workbench uses a flat Ledger paper-and-ink identity in light and dark themes. Its left rail remains the canonical selection surface, including on compact screens; the inspector is mutation-free, narrates the selected-to-materialized journey, and offers one routed next action. Curation and custom-source forms live in a separate authoring sidebar. The separate Add MCP sidebar records the exact `governance.eccMcpApprovals` decision; it does not choose a client or configure one. For an entry marked HTTPS-configurable, the seat operator still selects one client explicitly with the command above; manual entries remain approval-only until a supported lifecycle exists.
+The portable Policy Workbench uses a flat Ledger paper-and-ink identity in light and dark themes. Its left rail remains the canonical selection surface, including on compact screens; the inspector is mutation-free, narrates the selected-to-materialized journey, and offers one routed next action. At Enterprise posture, the protected-file form is the administrator-facing authority authoring surface: it accepts structured exact-source and evidence fields, computes the existing Decision V2 digests, and downloads the existing PolicyBundle V2 without exposing editable raw JSON. Curation and custom-source forms live in a separate authoring sidebar. The separate Add MCP sidebar records the exact `governance.eccMcpApprovals` decision; it does not choose a client or configure one. For an entry marked HTTPS-configurable, the seat operator still selects one client explicitly with the command above; manual entries remain approval-only until a supported lifecycle exists.
 
 The Workbench also shows the first bounded adoption recipe for Token Savior, Serena,
 code-review-graph, codebase-memory-mcp, and Token Optimizer. It assigns one question class to each

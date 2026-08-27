@@ -105,6 +105,7 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "aih-fsxn-"));
 });
 afterEach(() => {
+  vi.useRealTimers();
   fsEvents.afterTempWrite = undefined;
   fsEvents.afterRename = undefined;
   fsEvents.afterRead = undefined;
@@ -562,6 +563,114 @@ describe("FsTransaction", () => {
     expect(existsSync(first)).toBe(false);
     expect(existsSync(second)).toBe(false);
     now.mockRestore();
+  });
+
+  it("renews an owned lease while a guarded async effect remains pending", async () => {
+    const start = Date.parse("2030-01-01T00:00:00.000Z");
+    const lock = join(dir, ".aih", "commit.lock");
+    vi.useFakeTimers();
+    vi.setSystemTime(start);
+    let finish: (() => void) | undefined;
+    const t = new FsTransaction({ commitLock: { path: lock, root: dir } });
+    const guarded = t.runGuarded(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+
+    await vi.advanceTimersByTimeAsync(30_001);
+
+    const active = join(lock, "active");
+    const lease = readdirSync(active).find((name) => name.startsWith("lease."));
+    expect(lease).toBeDefined();
+    const renewed = JSON.parse(readFileSync(join(active, lease as string), "utf8")) as {
+      expiresAt: number;
+    };
+    expect(renewed.expiresAt).toBeGreaterThan(start + 30_000);
+
+    finish?.();
+    await guarded;
+    expect(existsSync(active)).toBe(false);
+  });
+
+  it("caps a guarded async lease renewal at the commit deadline", async () => {
+    const start = Date.parse("2030-01-01T00:00:00.000Z");
+    const deadline = start + 20_000;
+    const lock = join(dir, ".aih", "commit.lock");
+    vi.useFakeTimers();
+    vi.setSystemTime(start);
+    let finish: (() => void) | undefined;
+    const t = new FsTransaction({
+      commitLock: { path: lock, root: dir },
+      commitNotAfter: deadline,
+    });
+    const guarded = t.runGuarded(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+
+    await vi.advanceTimersByTimeAsync(15_000);
+
+    const active = join(lock, "active");
+    const lease = readdirSync(active).find((name) => name.startsWith("lease."));
+    const renewed = JSON.parse(readFileSync(join(active, lease as string), "utf8")) as {
+      expiresAt: number;
+    };
+    expect(renewed.expiresAt).toBe(deadline);
+
+    finish?.();
+    await guarded;
+  });
+
+  it("fails closed when a guarded async effect loses its lease before renewal", async () => {
+    const start = Date.parse("2030-01-01T00:00:00.000Z");
+    const lock = join(dir, ".aih", "commit.lock");
+    const successorOwner = "b".repeat(64);
+    vi.useFakeTimers();
+    vi.setSystemTime(start);
+    let finish: (() => void) | undefined;
+    const t = new FsTransaction({ commitLock: { path: lock, root: dir } });
+    const guarded = t.runGuarded(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+
+    rmSync(join(lock, "active"), { recursive: true, force: true });
+    writeActiveLease(lock, successorOwner, start + 60_000);
+    await vi.advanceTimersByTimeAsync(15_000);
+
+    finish?.();
+    await expect(guarded).rejects.toThrow(/commit lock lease lost/);
+    expect(readFileSync(join(lock, "active", `lease.${successorOwner}.json`), "utf8")).toBe(
+      commitLease(successorOwner, start + 60_000),
+    );
+  });
+
+  it("revalidates authority after a guarded async effect rejects", async () => {
+    const authority = join(dir, "authority.json");
+    const approved = "approved authority\n";
+    writeFileSync(authority, approved);
+    const t = new FsTransaction();
+    t.stageAssertion(
+      authority,
+      createHash("sha256").update(approved, "utf8").digest("hex"),
+      "authority receipt",
+      dir,
+    );
+
+    const guarded = t.runGuarded(async () => {
+      writeFileSync(authority, "swapped authority\n");
+      throw new Error("child runner failed");
+    });
+
+    await expect(guarded).rejects.toThrow(
+      /child runner failed.*authority receipt changed before commit/i,
+    );
   });
 
   it("never removes a successor lease substituted before cleanup", () => {

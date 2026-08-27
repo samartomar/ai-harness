@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { readAihConfig } from "../config/marker.js";
 import { SettingsError } from "../errors.js";
+import type { OrgPolicy } from "../org-policy/schema.js";
 import { readOrgPolicy } from "../org-policy/schema.js";
 import { entry } from "./cli-registry.js";
 import { type Cli, resolveClis, SUPPORTED_CLIS } from "./clis.js";
@@ -208,8 +209,9 @@ export async function confirmDetectedClis(
 function enforceOrgSupportedCliAllowList(
   ctx: PlanContext,
   resolution: TargetResolution,
+  policy?: OrgPolicy,
 ): TargetResolution {
-  const sanctioned = readOrgPolicy(ctx.root, ctx.env)?.governance?.supportedClis;
+  const sanctioned = (policy ?? readOrgPolicy(ctx.root, ctx.env))?.governance?.supportedClis;
   if (sanctioned === undefined) return resolution;
   const allowed = new Set<Cli>(sanctioned);
   const blocked = resolution.clis.filter((cli) => !allowed.has(cli));
@@ -225,17 +227,24 @@ function enforceOrgSupportedCliAllowList(
   return resolution;
 }
 
-export async function resolveTargets(ctx: PlanContext): Promise<TargetResolution> {
+export async function resolveTargets(
+  ctx: PlanContext,
+  policy?: OrgPolicy,
+): Promise<TargetResolution> {
   // An orchestrator (`aih init`) resolves the target set ONCE and threads it into
   // every phase via `ctx.targets`, so the user is prompted at most once and all
   // phases agree on the set. When present, it is authoritative — short-circuit
   // before any detection/prompt so no phase re-resolves or re-prompts.
   if (ctx.targets !== undefined)
-    return enforceOrgSupportedCliAllowList(ctx, {
-      clis: ctx.targets,
-      detectFellBack: false,
-      bareDefault: false,
-    });
+    return enforceOrgSupportedCliAllowList(
+      ctx,
+      {
+        clis: ctx.targets,
+        detectFellBack: false,
+        bareDefault: false,
+      },
+      policy,
+    );
   const opts = ctx.options;
   const explicit = typeof opts.cli === "string" && opts.cli.trim().length > 0;
   if (opts.detect === true && opts.allTools !== true && !explicit) {
@@ -245,28 +254,44 @@ export async function resolveTargets(ctx: PlanContext): Promise<TargetResolution
     if (ctx.prompter) {
       const confirmed = await confirmDetectedClis(ctx.prompter, runnable, configOnly);
       if (confirmed.length > 0)
-        return enforceOrgSupportedCliAllowList(ctx, {
-          clis: confirmed,
+        return enforceOrgSupportedCliAllowList(
+          ctx,
+          {
+            clis: confirmed,
+            detectFellBack: false,
+            bareDefault: false,
+          },
+          policy,
+        );
+      return enforceOrgSupportedCliAllowList(
+        ctx,
+        {
+          clis: ["claude"],
+          detectFellBack: true,
+          bareDefault: false,
+        },
+        policy,
+      );
+    }
+    if (runnable.length > 0)
+      return enforceOrgSupportedCliAllowList(
+        ctx,
+        {
+          clis: runnable,
           detectFellBack: false,
           bareDefault: false,
-        });
-      return enforceOrgSupportedCliAllowList(ctx, {
+        },
+        policy,
+      );
+    return enforceOrgSupportedCliAllowList(
+      ctx,
+      {
         clis: ["claude"],
         detectFellBack: true,
         bareDefault: false,
-      });
-    }
-    if (runnable.length > 0)
-      return enforceOrgSupportedCliAllowList(ctx, {
-        clis: runnable,
-        detectFellBack: false,
-        bareDefault: false,
-      });
-    return enforceOrgSupportedCliAllowList(ctx, {
-      clis: ["claude"],
-      detectFellBack: true,
-      bareDefault: false,
-    });
+      },
+      policy,
+    );
   }
   // No explicit selection (no --cli/--all-tools/--detect): honor the committed
   // `.aih-config.json` targets when present. The marker records what the repo was
@@ -282,22 +307,30 @@ export async function resolveTargets(ctx: PlanContext): Promise<TargetResolution
     if (cfg && cfg.targets.length > 0) {
       const fromMarker = resolveClis({ cli: cfg.targets.join(",") });
       if (fromMarker.length > 0)
-        return enforceOrgSupportedCliAllowList(ctx, {
-          clis: fromMarker,
-          detectFellBack: false,
-          bareDefault: false,
-        });
+        return enforceOrgSupportedCliAllowList(
+          ctx,
+          {
+            clis: fromMarker,
+            detectFellBack: false,
+            bareDefault: false,
+          },
+          policy,
+        );
     }
   }
   // Fallback: explicit `--cli` (validated strictly so a typo fails closed) or a
   // deterministic first-run default of claude. Discovering runnable tools is an
   // explicit `--detect` operation. Reaching here with nothing selected IS the bare
   // default — flagged so callers can warn before it narrows past existing canon.
-  return enforceOrgSupportedCliAllowList(ctx, {
-    clis: resolveClis(opts, { strict: true }),
-    detectFellBack: false,
-    bareDefault: unselected,
-  });
+  return enforceOrgSupportedCliAllowList(
+    ctx,
+    {
+      clis: resolveClis(opts, { strict: true }),
+      detectFellBack: false,
+      bareDefault: unselected,
+    },
+    policy,
+  );
 }
 
 /**

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { parsePolicyBundle as parsePublishedPolicyBundle } from "../../src/index.js";
 import { PolicyBundleSchema, parsePolicyBundle } from "../../src/org-policy/bundle.js";
 
 /** A minimal valid embedded org policy (the local `aih-org-policy.json` shape). */
@@ -22,7 +23,38 @@ function bundle(overrides: Record<string, unknown> = {}): Record<string, unknown
   };
 }
 
+function authorityBundle(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    ...bundle(),
+    schemaVersion: 2,
+    policy: policy({
+      minimumPosture: "enterprise",
+      governance: {
+        policyVersion: "2026.08",
+        catalog: { reviewed: [], custom: [] },
+        supportedClis: ["claude"],
+      },
+    }),
+    authorityReceipt: {
+      format: "aih-policy-authority-receipt",
+      version: 3,
+      issuerRepository: "acme/governance",
+      issuedAt: "2026-07-01T00:00:00Z",
+      expiresAt: "2026-07-08T00:00:00Z",
+      trustedIssuers: [{ id: "platform-security", githubRepository: "acme/governance" }],
+      targets: ["claude"],
+      decisions: [],
+      decisionRevocations: [],
+    },
+    ...overrides,
+  };
+}
+
 describe("PolicyBundleSchema", () => {
+  it("publishes the exact PolicyBundle parser from the Core package surface", () => {
+    expect(parsePublishedPolicyBundle(authorityBundle())).toMatchObject({ ok: true });
+  });
+
   it("parses a valid envelope embedding the org-policy shape", () => {
     const result = parsePolicyBundle(bundle({ rings: [{ name: "canary" }] }));
     expect(result.ok).toBe(true);
@@ -38,8 +70,29 @@ describe("PolicyBundleSchema", () => {
     expect(parsePolicyBundle(bundle({ issuedAt: "not-a-date" })).ok).toBe(false);
   });
 
-  it("rejects a wrong schemaVersion", () => {
-    expect(PolicyBundleSchema.safeParse(bundle({ schemaVersion: 2 })).success).toBe(false);
+  it("accepts the authority-bearing V2 envelope and rejects unknown versions", () => {
+    const parsed = parsePolicyBundle(authorityBundle());
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) throw new Error("expected authority bundle");
+    expect(parsed.bundle.schemaVersion).toBe(2);
+    if (parsed.bundle.schemaVersion !== 2) throw new Error("expected V2 bundle");
+    expect(parsed.bundle.authorityReceipt.version).toBe(3);
+    expect(PolicyBundleSchema.safeParse(bundle({ schemaVersion: 3 })).success).toBe(false);
+  });
+
+  it("rejects a V2 envelope without its exact V3 decision authority", () => {
+    const { authorityReceipt: _dropped, ...withoutAuthority } = authorityBundle();
+    expect(parsePolicyBundle(withoutAuthority).ok).toBe(false);
+    expect(
+      parsePolicyBundle(
+        authorityBundle({
+          authorityReceipt: {
+            ...(authorityBundle().authorityReceipt as Record<string, unknown>),
+            version: 2,
+          },
+        }),
+      ).ok,
+    ).toBe(false);
   });
 
   it("rejects unknown envelope keys (strict)", () => {

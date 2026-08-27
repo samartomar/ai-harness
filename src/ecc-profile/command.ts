@@ -34,7 +34,6 @@ import {
   type EccProfileLifecycleOperation,
   planEccProfileLifecycle,
   planInstalledEccProfileLifecycle,
-  readEccProfileOwnership,
 } from "./lifecycle.js";
 import {
   buildNativeEccRegistration,
@@ -79,6 +78,8 @@ export interface EccProfileLifecycleCommandDeps {
   installedSourceTrust?: readonly EccProfileInstalledSourceTrust[];
   /** Internal hermetic-test seam; injected projection tests do not touch native config by default. */
   loadNativeRegistration?: (ctx: PlanContext) => NativeEccRegistration;
+  /** Protected-policy pins supplied by the command that authorized this lifecycle mutation. */
+  transactionPins?: Pick<Plan, "fileAssertions" | "commitNotAfter" | "commitLock">;
 }
 
 const PACKAGED_EVIDENCE = pinnedEvidenceJson as unknown as PackagedPinnedEvidence;
@@ -132,7 +133,7 @@ function managedTextBody(contents: string, scope: string): string {
 function composeOverlappingConfigMutation(
   projection: FileMutation,
   native: FileMutation,
-  operation: "repair" | "rollback" | "uninstall",
+  operation: EccProfileLifecycleOperation,
 ): FileMutation {
   if (
     projection.path !== ".codex/config.toml" ||
@@ -186,7 +187,7 @@ function composeInstalledLifecyclePlan(
   capability: string,
   projectionPlan: Plan,
   nativePlan: Plan,
-  operation: "repair" | "rollback" | "uninstall",
+  operation: EccProfileLifecycleOperation,
 ): Plan {
   const actions = [...projectionPlan.actions];
   const projectionMutations = new Map<string, number>();
@@ -219,6 +220,23 @@ function composeInstalledLifecyclePlan(
     actions[existingIndex] = composeOverlappingConfigMutation(existing, action, operation);
   }
   return plan(capability, ...actions);
+}
+
+function withTransactionPins(
+  lifecyclePlan: Plan,
+  transactionPins: EccProfileLifecycleCommandDeps["transactionPins"],
+): Plan {
+  if (transactionPins === undefined) return lifecyclePlan;
+  return {
+    ...lifecyclePlan,
+    ...(transactionPins.fileAssertions === undefined
+      ? {}
+      : { fileAssertions: transactionPins.fileAssertions }),
+    ...(transactionPins.commitNotAfter === undefined
+      ? {}
+      : { commitNotAfter: transactionPins.commitNotAfter }),
+    ...(transactionPins.commitLock === undefined ? {} : { commitLock: transactionPins.commitLock }),
+  };
 }
 
 function sourceClosureBytes(): string {
@@ -330,7 +348,10 @@ function verifiedGitHubSourceRoot(source: Extract<TrustSource, { kind: "github" 
   return assertTrustTreeSafe(source.treePath);
 }
 
-async function acquirePackagedProjection(ctx: PlanContext): Promise<EccProjection> {
+async function acquirePackagedProjection(
+  ctx: PlanContext,
+  transactionPins: EccProfileLifecycleCommandDeps["transactionPins"],
+): Promise<EccProjection> {
   const source = requestedSource(ctx);
   const packaged = createPackagedEccProfileEvidence();
   try {
@@ -338,13 +359,15 @@ async function acquirePackagedProjection(ctx: PlanContext): Promise<EccProjectio
     if (source.kind === "github") {
       const acquisitionContext: PlanContext = {
         ...ctx,
-        root: source.quarantineRoot,
         apply: true,
         verify: false,
         options: { ...ctx.options, force: true },
       };
       const acquired = await executePlan(
-        plan("ecc-profile: acquire exact source", trustFetchExec(source, acquisitionContext)),
+        withTransactionPins(
+          plan("ecc-profile: acquire exact source", trustFetchExec(source, acquisitionContext)),
+          transactionPins,
+        ),
         acquisitionContext,
         { skipWorktreeGate: true },
       );
@@ -403,57 +426,6 @@ function defaultNativeRegistration(ctx: PlanContext): NativeEccRegistration {
   });
 }
 
-function combineResults(...results: PlanResult[]): PlanResult {
-  const first = results[0];
-  if (!first) throw new Error("ECC lifecycle produced no execution result");
-  return {
-    capability: "ecc-profile: projection and native registration",
-    applied: results.every((result) => result.applied),
-    writes: results.flatMap((result) => result.writes),
-    docs: results.flatMap((result) => result.docs),
-    probes: results.flatMap((result) => result.probes),
-    execs: results.flatMap((result) => result.execs),
-    digests: results.flatMap((result) => result.digests),
-    backups: results.flatMap((result) => result.backups),
-    removed: results.flatMap((result) => result.removed),
-    ...(results.findLast((result) => result.report !== undefined)?.report === undefined
-      ? {}
-      : { report: results.findLast((result) => result.report !== undefined)?.report }),
-    ...(results.findLast((result) => result.verification !== undefined)?.verification === undefined
-      ? {}
-      : {
-          verification: results.findLast((result) => result.verification !== undefined)
-            ?.verification,
-        }),
-  };
-}
-
-async function compensateProjectionAfterRegistrationFailure(
-  ctx: PlanContext,
-  operation: "install" | "update",
-  originalError: unknown,
-): Promise<never> {
-  const source = readEccProfileOwnership(ctx.root)?.source;
-  if (source === undefined) throw originalError;
-  try {
-    await executePlan(
-      planInstalledEccProfileLifecycle(
-        ctx.root,
-        operation === "install" ? "uninstall" : "rollback",
-        [source],
-      ),
-      ctx,
-      { skipWorktreeGate: true },
-    );
-  } catch (recoveryError) {
-    throw new AggregateError(
-      [originalError, recoveryError],
-      "native ECC registration failed and projection recovery also failed",
-    );
-  }
-  throw originalError;
-}
-
 export async function executeEccProfileLifecycleCommand(
   ctx: PlanContext,
   deps: EccProfileLifecycleCommandDeps = {},
@@ -489,41 +461,45 @@ export async function executeEccProfileLifecycleCommand(
       operation,
       deps.installedSourceTrust ?? PACKAGED_ECC_PROFILE_INSTALLATION_TRUST,
     );
-    if (!nativeEnabled) return executePlan(projectionPlan, ctx);
+    if (!nativeEnabled)
+      return executePlan(withTransactionPins(projectionPlan, deps.transactionPins), ctx);
     const nativePlan = planInstalledNativeEccRegistration(ctx.root, operation);
     return executePlan(
+      withTransactionPins(
+        composeInstalledLifecyclePlan(
+          `ecc-profile: atomic projection and native registration ${operation}`,
+          projectionPlan,
+          nativePlan,
+          operation,
+        ),
+        deps.transactionPins,
+      ),
+      ctx,
+      { skipWorktreeGate: true },
+    );
+  }
+  const projection = await (
+    deps.loadProjection ??
+    ((context: PlanContext) => acquirePackagedProjection(context, deps.transactionPins))
+  )(ctx);
+  const projectionPlan = planEccProfileLifecycle(ctx.root, projection, operation);
+  if (!nativeEnabled)
+    return executePlan(withTransactionPins(projectionPlan, deps.transactionPins), ctx, {
+      skipWorktreeGate: true,
+    });
+  const registration = (deps.loadNativeRegistration ?? defaultNativeRegistration)(ctx);
+  const nativePlan = planNativeEccRegistration(ctx.root, registration, operation);
+  return executePlan(
+    withTransactionPins(
       composeInstalledLifecyclePlan(
         `ecc-profile: atomic projection and native registration ${operation}`,
         projectionPlan,
         nativePlan,
         operation,
       ),
-      ctx,
-      { skipWorktreeGate: true },
-    );
-  }
-  const projection = await (deps.loadProjection ?? acquirePackagedProjection)(ctx);
-  const projected = await executePlan(
-    planEccProfileLifecycle(ctx.root, projection, operation),
+      deps.transactionPins,
+    ),
     ctx,
     { skipWorktreeGate: true },
   );
-  if (!nativeEnabled) return projected;
-  try {
-    const registration = (deps.loadNativeRegistration ?? defaultNativeRegistration)(ctx);
-    const registered = await executePlan(
-      planNativeEccRegistration(ctx.root, registration, operation),
-      ctx,
-      // The projection phase already passed the operator-dirt gate. Its owned
-      // writes are now intentionally dirty and are the input to this second,
-      // separately transactional half of the same lifecycle command.
-      { skipWorktreeGate: true },
-    );
-    return combineResults(projected, registered);
-  } catch (error) {
-    if (ctx.apply && projected.applied) {
-      return compensateProjectionAfterRegistrationFailure(ctx, operation, error);
-    }
-    throw error;
-  }
 }

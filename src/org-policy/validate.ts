@@ -11,7 +11,7 @@ import { parsePolicyBundle } from "./bundle.js";
 import { AIH_ORG_POLICY_FILE } from "./constants.js";
 import { assertOrgPolicyMutationSource, sameJson } from "./drift.js";
 import { orgPolicyEffectiveCheck, orgPolicyEffectiveDigest } from "./evaluate.js";
-import { verifiedOrgPolicyProjectionActions } from "./project.js";
+import { verifiedOrgPolicyProjection, verifiedOrgPolicyTargets } from "./project.js";
 import { orgPolicyPath, readOrgPolicy } from "./schema.js";
 
 /**
@@ -305,22 +305,24 @@ async function policyEvaluatePlan(ctx: PlanContext): Promise<Plan> {
 }
 
 async function policyProjectPlan(ctx: PlanContext): Promise<Plan> {
-  const { clis } = await resolveTargets(ctx);
+  const policyTargets = await verifiedOrgPolicyTargets(ctx);
+  const { clis } = policyTargets.resolution;
   // Candidate resolution always runs for the selected target set. The managed
   // MCP adapter owns Claude; the safe usage hook adapter also supports Codex.
   const projectCtx: PlanContext = { ...ctx, targets: clis };
 
-  assertOrgPolicyMutationSource(projectCtx);
-  const policy = readOrgPolicy(projectCtx.root, projectCtx.env);
+  assertOrgPolicyMutationSource(projectCtx, policyTargets.source?.verification.authority);
+  const policy = policyTargets.policy;
   if (policy === undefined) {
     throw new AihError(
       `policy project requires a committed ${AIH_ORG_POLICY_FILE} in the target root`,
       "AIH_ORG_POLICY",
     );
   }
-  return plan(
+  const projection = await verifiedOrgPolicyProjection(projectCtx, policy, policyTargets.source);
+  const projected = plan(
     "policy project",
-    ...(await verifiedOrgPolicyProjectionActions(projectCtx, policy)),
+    ...projection.actions,
     // `--verify` promised probes and ran none: the plan carried zero, so the
     // executor suppressed the whole verification section — the same silent
     // shape the 6.0.0 cut fixed for `aih secrets --verify`. The
@@ -330,12 +332,22 @@ async function policyProjectPlan(ctx: PlanContext): Promise<Plan> {
     probe("org policy effective resolution", () => orgPolicyEffectiveCheck(projectCtx)),
     probe("usage-recorder", () => usageRecorderCheck(projectCtx)),
   );
+  return {
+    ...projected,
+    ...(projection.fileAssertions === undefined
+      ? {}
+      : { fileAssertions: projection.fileAssertions }),
+    ...(projection.commitNotAfter === undefined
+      ? {}
+      : { commitNotAfter: projection.commitNotAfter }),
+    ...(projection.commitLock === undefined ? {} : { commitLock: projection.commitLock }),
+  };
 }
 
 export const policyProjectCommand: CommandSpec = {
   name: "project",
   summary:
-    "Project the committed org policy into its generated settings without running full initialization",
+    "Project the active verified org policy into its generated settings without running full initialization",
   plan: policyProjectPlan,
 };
 

@@ -658,7 +658,7 @@ describe("headless effective org policy", () => {
     expect(v3Consumers).not.toContainEqual(expect.stringContaining("V3 downstream resolver"));
     expect(v3Consumers).toEqual(
       expect.arrayContaining([
-        expect.stringContaining("externally verified signed transport/schema validation"),
+        expect.stringContaining("verified transport/schema validation"),
         expect.stringContaining("current organization-qualified upstream-observation runtime"),
         expect.stringContaining("current AIH-supported qualification runtime"),
         expect.stringContaining("legacy effective resolver deliberately withholds V3 runtime use"),

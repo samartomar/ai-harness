@@ -10,10 +10,10 @@ export const policySupportedAcceptCommandV2: CommandSpec = {
   zeroWrite: true,
   requireExplicitApply: true,
   options: [
-    { flags: "--decision <id>", description: "exact externally verified governance decision id" },
+    { flags: "--decision <id>", description: "exact verified governance decision id" },
     {
       flags: "--decision-digest <sha256>",
-      description: "exact externally verified governance decision digest",
+      description: "exact verified governance decision digest",
     },
     { flags: "--target <id>", description: "code-owned supported CLI target" },
   ],

@@ -700,7 +700,17 @@ contains only the exact decision binding and code-owned target.
 
 `generate --apply` writes `aih-policy-workbench.html` (or `--out <path>`). The workbench authors and downloads the actual
 `aih-org-policy.json` schema, with schema-backed audit references for ECC or Superpowers agents, skills, and commands.
-Those records are external curation guidance only: AIH does not install, project, or enforce the external assets. Its
+At Enterprise posture, its protected-file form also authors organization-qualified Decision V2
+records for exact GitHub, npm, PyPI, OCI, remote-content, or AIH source identities classified
+as tools, skills, MCP servers, packages, or profiles. The administrator enters ordinary fields for targets, effects, evidence,
+issuer, actor, policy, and control; Web Crypto computes the domain-separated source, subject, and
+revocation digests. The read-only preview and `aih-policy-bundle.json` download are PolicyBundle V2,
+and Core's exported parser accepts the same bytes. This surface accepts no editable raw-JSON decision
+or bundle input. Vibe continues to export only ordinary repo-local policy and cannot generate
+authority.
+The protected-file decisions authorize only the effects named in the exact decision and supported by
+a closed Core lifecycle; the Workbench itself performs no install, projection, or execution.
+Separately, external-curation records remain guidance only: AIH does not install, project, or enforce those external assets. Its
 catalog is an authoring projection of the same pinned AIH controls and framework catalog data used by the engine; it does
 not scan a repository. The workbench can also author `governance.supportedClis`, the organization-sanctioned CLI
 allow-list. At Enterprise posture it is required and non-empty; omission is refused with the current registry ids and a paste-all remedy, while wildcard sentinels are not supported. At Vibe posture omission is unrestricted, and a present list enforces at either posture. The list is independent of activation targets: sanctioned, materialization-capable, and projector-capable are three separate host sets. Browser import/export preserves policy semantics, including pinned stdio candidates, fenced remote endpoint candidates, annotations,
@@ -793,7 +803,9 @@ same schema gate as `validate`. Declaring `mcp.allowedServers` records registry 
 `aih mcp approve` is a legacy, non-governed approval path. Governed operators use an externally
 verified evidence/approval receipt, then `aih policy evaluate` and `aih policy project`.
 
-`project --apply` compiles the committed `aih-org-policy.json` into generated policy artifacts. For
+`project --apply` compiles the active verified org policy into generated policy artifacts. The source
+may be the committed `aih-org-policy.json` or an Enterprise PolicyBundle V2 at an absolute external
+`AIH_ORG_POLICY` path whose authority, custody, freshness, and exact file identity Core verifies. For
 Claude this includes `.claude/managed-settings.json` and, at enterprise posture, the two system-path
 examples; selected Kiro reviewed stdio MCP candidates are distributed separately to
 `.kiro/settings/mcp.json`. An active
@@ -803,14 +815,15 @@ It does not run `aih init`, regenerate the canon, or modify unrelated settings. 
 portion is a Claude projection: it writes only when Claude is selected (the default); `--cli cursor`,
 for example, produces no managed-settings projection. When managed-only MCP is active, it records existing AIH ownership provenance in
 `.aih-config.json` so later deactivation can remove only the exact generated values. It refuses a
-configuration write when `AIH_ORG_POLICY` selects an override; previewing without `--apply` remains
-inspectable, but mutation requires the committed default policy source.
+configuration write when `AIH_ORG_POLICY` selects an ordinary override; previewing without `--apply`
+remains inspectable. The only external mutation source is the exact protected PolicyBundle V2 that
+Core has verified for the same path, and its bytes remain pinned through the transaction.
 
 New Claude and Kiro MCP ownership records are always strict schema V2 and bind the exact effective
 decision identity for their own surface. New usage-hook ownership records are always V3 and bind the
 same decision facts plus the policy version under a domain-separated self-digest. The persisted
-records are comparison and rollback evidence, never authority: the externally verified authority
-receipt is resolved first. Exact legacy MCP V1 and usage-hook V2 records remain readable only so
+records are comparison and rollback evidence, never authority: freshly verified organization
+authority is resolved first. Exact legacy MCP V1 and usage-hook V2 records remain readable only so
 `project --apply` can conservatively subtract unchanged owned state or refresh the receipt without
 rewriting unchanged host content. They never authorize a current decision-bearing effect.
 
@@ -847,7 +860,7 @@ and are deliberately omitted from public managed-settings and evaluate JSON.
 The generic decision record reserves `acceptedGaps` for an explicitly registered waivable named-gap
 class, but the current resolver registers none. Therefore current decisions must keep `acceptedGaps`
 empty and report `observedGaps` as empty. Evidence gaps such as missing or unverifiable evidence remain
-fenced prerequisites reported through the ordinary danger/blocker fields; a signed decision cannot
+fenced prerequisites reported through the ordinary danger/blocker fields; an authority-bound decision cannot
 turn them into accepted gaps or authorize an effect.
 
 The target-coverage triplet separates capability from invocation state: `supported` lists targets with
@@ -859,13 +872,42 @@ Vibe posture can report `supported=claude,kiro; available=kiro; blocked`: the Ki
 exists, but posture intentionally disabled this invocation. Custom stdio candidates without an
 integrity-enforcing materializer continue to report `supported=none`.
 
-Custom evidence, approvals, and governance decisions require `.aih/policy-authority-receipt.json`, a regular-file receipt that
-has passed `gh attestation verify` against the **out-of-band organization authority** named by
-`AIH_POLICY_AUTHORITY_REPOSITORY`; deployments can additionally constrain the exact signing workflow with
-`AIH_POLICY_AUTHORITY_WORKFLOW`. These process-environment values must be supplied by the organization
-admin/runtime, never by `aih-org-policy.json`; the governed repository's remote is not an authority root.
-The strict receipt format is published as `schemas/aih-policy-authority-receipt.schema.json`.
-The receipt is data until that verification succeeds. A signed approval binds candidate id/kind, immutable
+Custom evidence, approvals, and governance decisions require verified organization authority.
+The default Enterprise route is one PolicyBundle V2 JSON file at an absolute `AIH_ORG_POLICY` path
+outside the governed target. It combines the ordinary policy with the exact V3 decision-authority
+payload. Generate it through the Policy Workbench protected-file form; the `issuerRepository` field
+is an attribution identity required by the reused V3 schema, not a requirement that the file live in
+GitHub. Core accepts only current, strict, bounded, regular, single-link, non-symlinked custody,
+re-observes the exact bytes, and pins them inside every authority-dependent mutating transaction.
+ECC and Superpowers evidence, ECC request selection, ordinary ECC profile lifecycle acquisition and
+mutation, standalone MCP planning, and standalone Usage ownership checks reuse that one verified
+policy observation. ECC profile install/update composes projection and native registration in one
+pinned filesystem transaction; receipt-bound uninstall remains independently authorized by installed
+custody. Init retains each nested phase's file assertions, deadline, and lock and refuses a
+conflicting observation before effects. A plan that launches a child process retains and renews the
+cooperative authority lease across the awaited process and revalidates immediately before and after
+it. A failed post-process revalidation blocks later effects and deferred writes but reports honestly
+that an already-run external command is not rollbackable by Core.
+Core never writes this
+file and does not prove its host ACL; the organization must control both file replacement and the
+process configuration that selects it. PolicyBundle V1 remains a validation/distribution envelope
+and cannot grant authority. PolicyBundle V2 is Enterprise-only; Vibe and repo-local policy behavior
+remain unchanged.
+The installed `@aihq/core` library exports `PolicyBundleSchema` and `parsePolicyBundle` for decoded
+structure validation; those object-level helpers do not enforce raw UTF-8 bytes, duplicate keys, or
+the active-file byte limit, and successful parsing alone does not mint authority.
+Existing lifecycle history retains the authority digest used by prior effects. A fresh target has no
+separate global bundle-version high-water mark, so the organization's file distribution system must
+prevent rollback to older policy bytes that remain within their validity window.
+
+The optional GitHub transport continues to read `.aih/policy-authority-receipt.json` and requires
+`gh attestation verify` against the out-of-band organization authority named by
+`AIH_POLICY_AUTHORITY_REPOSITORY`; deployments may additionally pin
+`AIH_POLICY_AUTHORITY_WORKFLOW`. Those process-environment values must be supplied by the
+organization admin/runtime, never by `aih-org-policy.json`; the governed repository's remote is not
+an authority root. The strict receipt format is published as
+`schemas/aih-policy-authority-receipt.schema.json`. Neither transport treats unverified JSON as
+authority. A decision binds candidate id/kind, immutable
 source and evidence digests, projector, policy version, reason, signed clarification for a waiver, target scope, signer repository, and
 validity window; legacy receipt inputs may omit clarification but cannot waive a gap, and its post-signing transport locator is not part of the signed digest. Requested ECC or
 Superpowers framework intents remain visibly report-only and hard-blocked until a separately designed
@@ -912,14 +954,14 @@ the digest, attestor, subject, scope, time, and exact Decision V2 reference all 
 verified receipt V3. The attestor field is an authority-issued attribution, not a separately
 verified signer identity.
 
-Receipt V3 is usable only after the same out-of-band GitHub attestation verification
-that mints other `VerifiedPolicyAuthority` values. It carries only Strict V2 decisions
+Receipt V3 carries only Strict V2 decisions
 and revocations: unsigned policy or Workbench `approved` fields, legacy approvals,
-and standalone decision files cannot enter it. The separate observation receipt binds
+and standalone decision files cannot enter authority. It becomes usable only through either the
+protected PolicyBundle V2 transport or the optional GitHub-attested receipt transport. The separate observation receipt binds
 the decision digest, exact subject and installed digests, registered targets/effects,
 the named upstream integration owner and exact integration version,
 code-owned verifier id/version/digest, explicit outcome, and an observation window of at most 24
-hours, shortened by the authority, decision, or conditional-review deadline. Core's internal pure resolver accepts only the opaque verified V3 authority token,
+hours, shortened by the authority, decision, or conditional-review deadline. Core's internal pure resolver accepts only the opaque verified authority capability,
 an exact decision id/digest reference, and an opaque qualification capability; raw decisions,
 evidence envelopes, revocations, and cloned capabilities are untrusted data. It reports
 `observed-effective` only when those facts match a current approved or
@@ -957,7 +999,7 @@ authority, receipt bytes, qualification capability, effect, or reusable evidence
 `aih policy supported accept --root <target> --decision <id> --decision-digest <sha256>
 --target <id> --apply` is the durable administrator step for the supported route. Before any
 custody write, Core verifies the fixed Receipt V2 bytes against the dedicated support
-repository/workflow root and verifies the separate current V3 organization decision. The command
+repository/workflow root and verifies the separate current organization decision. The command
 derives continuity only from the attested receipt. It writes bounded, canonical signer, replay,
 head, and head-scoped member records under the posture-owned custody root using a fixed cooperative
 lock, immutable slots, exact-original preconditions, and a head compare-and-swap. Genesis requires
@@ -988,11 +1030,11 @@ read-only, zero-write administrator command. It accepts only code-owned CLI targ
 `configure`, `install`, `observe`, or `use` effects. The evidence path must be a bounded
 forward-slash relative path below the target root; the root and parent directories must be
 non-linked, the file must be regular/non-linked, and the exact bytes and file identity are re-read
-after the external authority verifier returns.
-Authority still comes only from the fixed receipt and out-of-band
-`AIH_POLICY_AUTHORITY_REPOSITORY` (plus optional `AIH_POLICY_AUTHORITY_WORKFLOW`), never from the
-command line, policy JSON, or evidence file. JSON output uses closed reason values and contains no
-verifier text or filesystem path.
+after organization authority is verified.
+Authority comes only from the protected external PolicyBundle V2 or the optional fixed receipt with
+out-of-band `AIH_POLICY_AUTHORITY_REPOSITORY` (plus optional
+`AIH_POLICY_AUTHORITY_WORKFLOW`), never from the command line, standalone policy JSON, or evidence
+file. JSON output uses closed reason values and contains no verifier text or filesystem path.
 
 `aih policy resolve` intentionally supplies no upstream observation. A valid authority, decision,
 scope, and organization qualification therefore returns
@@ -1072,15 +1114,14 @@ descriptor and migration before it can update owned bytes; receipt data cannot
 nominate its own adapter or migration implementation.
 
 `npm run verify:cold-aih-managed-usage` builds and packs Core, installs that
-tarball into a disposable consumer, and uses only the installed CLI to prove the
-descriptor, an absent inspection, and nonzero refusal of explicit apply when the
-external organization authority is unavailable. This is the strongest safe
-prepublication proof currently present. It does not claim a successful configure
-or revoke. Completing the packed lifecycle requires a genuine organization V3
-authority receipt and a separately authorized public GitHub attestation naming
-the exact candidate SHA; the proof must then exercise qualified preview, apply,
-inspect, authenticated revocation, and final inspection without a fake `gh` or
-fabricated authority.
+tarball into a disposable consumer, uses the installed CLI to generate the Policy Workbench, and
+drives its structured form/download to create the separate protected PolicyBundle V2 used for
+descriptor discovery, absent inspection,
+qualified preview, configure, inspect, authenticated revocation, final inspection,
+and fail-closed authority substitution. It uses no fake `gh` and no workflow for
+organization authority. The proof establishes Core's exact file-custody contract;
+it does not prove that a real adopter host applied administrator-only ACL or MDM
+controls to the file and process configuration.
 
 `aih policy observe npm-package [root] --decision <id> --decision-digest <sha256> --target <id>
 [--evidence <root-relative-file>]` is the fixed upstream-observation route. It accepts no package or
@@ -1104,9 +1145,10 @@ mismatched states refuse, and both classes exit nonzero. JSON reports `qualifica
 verified route: `organization-qualified` or `aih-supported`. A later installed-state, observation,
 or custody refusal preserves that already-established provenance; a refusal before qualification
 succeeds reports `unqualified`. The field is derived from the sealed decision route, cannot be
-caller-selected, and is not authority or proof of an effect. Apart from the fixed external GitHub
-authority attestation and, on the supported branch, the separate support-receipt attestation, the
-command starts no process. It does not write the target, append a run ledger, install, configure,
+caller-selected, and is not authority or proof of an effect. The protected-file authority path
+starts no process. The optional GitHub authority transport and, on the supported branch, the
+separate support-receipt attestation are the only external verifier processes. The command does not
+write the target, append a run ledger, install, configure,
 execute, sign, publish, or make the subject projectable. This route does not observe skills, MCP
 servers, remote endpoints, PyPI/OCI packages, or generic executable closures.
 
@@ -1257,12 +1299,14 @@ newly authorized decision/evidence to append the new audit record. Live file obs
 not installation, activation, endpoint reachability, or process-running proof.
 
 `npm run verify:cold-upstream-artifact-lifecycle` builds and packs Core, installs only the tarball in
-a disposable consumer, exercises the public parser, packaged schema, and both installed CLI help
-surfaces, then confirms that observation and explicit lifecycle apply refuse without externally
-attested V3 organization authority and create no lifecycle store. It uses no fake `gh` and claims no
-successful custody, configuration, activation, execution, update, or revocation. A successful
-production proof remains owner-only: it requires a genuine authority receipt and separately
-authorized public GitHub attestation naming the exact candidate SHA.
+a disposable consumer, and exercises the public parser, packaged schema, installed CLI, and the
+structured Workbench form/download that generates its authority file. It
+first proves that observation and explicit lifecycle apply refuse without authority. It then uses a
+separate protected PolicyBundle V2 to observe and persist one catalog-absent exact organization
+tool, append an exact source/version update, refuse live file drift, record authenticated
+revocation, and expose the resulting negative durable history through `policy evaluate`. It uses no
+fake `gh`, never installs/configures/executes the observed tool, and does not claim that Core proves
+the host ACL protecting the policy file.
 
 Approvals cover only a missing or failed **waivable** evidence record, require a non-empty signed reason,
 and last at most 90 days. Mandatory detector failures and every unwaivable danger code remain blocked even

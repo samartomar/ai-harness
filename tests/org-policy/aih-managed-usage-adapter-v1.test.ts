@@ -61,7 +61,9 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-08-24T12:00:00Z"));
   root = mkdtempSync(join(tmpdir(), "aih-managed-usage-adapter-"));
-  bin = mkdtempSync(join(tmpdir(), "aih-managed-usage-gh-"));
+  bin = realpathSync.native(
+    mkdtempSync(join(realpathSync.native(tmpdir()), "aih-managed-usage-gh-")),
+  );
   const executable = join(bin, process.platform === "win32" ? "gh.exe" : "gh");
   writeFileSync(executable, "trusted gh fixture\n", { mode: 0o755 });
   gh = realpathSync.native(executable);
@@ -145,6 +147,68 @@ function writeAuthority(
       decisionRevocations,
     }),
   );
+}
+
+function writeProtectedPolicyAuthority(
+  value: ReturnType<typeof fixture>,
+  decisionRevocations: readonly Record<string, unknown>[] = [],
+): string {
+  writeFileSync(
+    join(root, "evidence.json"),
+    canonicalOrganizationEvidenceEnvelopeV1(value.evidence),
+  );
+  const path = join(bin, "protected-policy-bundle.json");
+  writeFileSync(
+    path,
+    JSON.stringify({
+      schemaVersion: 2,
+      bundleVersion: decisionRevocations.length === 0 ? "2026.08.1" : "2026.08.2",
+      issuer: "Acme platform security",
+      issuedAt: "2026-08-24T00:00:00Z",
+      policy: {
+        schemaVersion: 2,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        governance: {
+          policyVersion: "2026.08",
+          catalog: { reviewed: [], custom: [] },
+          supportedClis: ["claude"],
+        },
+      },
+      authorityReceipt: {
+        format: "aih-policy-authority-receipt",
+        version: 3,
+        issuerRepository: "acme/governance",
+        issuedAt: "2026-08-24T00:00:00Z",
+        expiresAt: "2026-08-25T00:00:00Z",
+        trustedIssuers: [{ id: "platform-security", githubRepository: "acme/governance" }],
+        targets: ["claude", "codex"],
+        decisions: [value.decision],
+        decisionRevocations,
+      },
+    }),
+  );
+  return path;
+}
+
+function protectedPolicyContext(path: string, calls: string[][], apply = false): PlanContext {
+  const run = fakeRunner((argv) => {
+    calls.push(argv);
+    return { code: 1 };
+  });
+  const env = { AIH_ORG_POLICY: path, PATH: bin };
+  return {
+    root,
+    contextDir: "ai-coding",
+    posture: "enterprise",
+    apply,
+    verify: false,
+    json: true,
+    run,
+    host: makeHostAdapter({ platform: "linux", run, env }),
+    env,
+    options: {},
+  };
 }
 
 function context(apply = false): PlanContext {
@@ -307,6 +371,42 @@ describe("AIH-managed usage adapter V1", () => {
       outcome: "fulfilled",
     });
     expect(readFileSync(join(root, AIH_MANAGED_USAGE_RECEIPT_V4_PATH), "utf8")).toBe(configured);
+  });
+
+  it("configures and revokes from one protected policy file without an authority workflow", async () => {
+    const value = fixture();
+    const policyPath = writeProtectedPolicyAuthority(value);
+    const calls: string[][] = [];
+    const request = {
+      decision: value.decision.id,
+      digest: value.digest,
+      evidence: "evidence.json",
+      target: "claude" as const,
+    };
+
+    await expect(
+      applyAihManagedUsageAdapterV1(protectedPolicyContext(policyPath, calls, true), request),
+    ).resolves.toMatchObject({ outcome: "fulfilled" });
+    expect(inspectAihManagedUsageAdapterV1(root)).toMatchObject({ state: "configured" });
+
+    writeProtectedPolicyAuthority(value, [
+      {
+        format: "aih-governance-decision-revocation",
+        version: 2,
+        decisionDigest: value.digest,
+        issuer: value.decision.issuer,
+        revokedAt: "2026-08-24T00:00:00.000Z",
+        reason: "The organization revoked this exact fixed adapter decision.",
+      },
+    ]);
+    await expect(
+      applyAihManagedUsageAdapterV1(protectedPolicyContext(policyPath, calls, true), {
+        ...request,
+        evidence: "",
+      }),
+    ).resolves.toMatchObject({ outcome: "fulfilled", reason: "revoked" });
+    expect(inspectAihManagedUsageAdapterV1(root)).toMatchObject({ state: "revoked" });
+    expect(calls.some((argv) => argv[0] === gh)).toBe(false);
   });
 
   it("rejects untrusted request shape and a tampered V4 self-digest without effects", async () => {

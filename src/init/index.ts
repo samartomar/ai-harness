@@ -1,5 +1,7 @@
+import { isDeepStrictEqual } from "node:util";
 import { classifyCanon, isAdoptable } from "../adopt/classify.js";
 import { aihConfigJson, readAihConfigBaseline } from "../config/marker.js";
+import { AihError } from "../errors.js";
 import {
   BASELINE_OPTION,
   DEFAULT_BASELINE_SOURCE_ID,
@@ -14,15 +16,22 @@ import {
   unmanagedBootloaders,
 } from "../internals/cli-detect.js";
 import { deepMerge, isPlainObject } from "../internals/merge.js";
-import type { Action, CommandSpec, PlanContext, WriteAction } from "../internals/plan.js";
-import { doc, plan, writeJson } from "../internals/plan.js";
+import type {
+  Action,
+  CommandSpec,
+  FileAssertion,
+  Plan,
+  PlanContext,
+  WriteAction,
+} from "../internals/plan.js";
+import { doc, parseCommitNotAfter, plan, writeJson } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import {
   explicitKiroHookRuntime,
   KIRO_HOOK_RUNTIME_OPTION,
   kiroHookRuntime,
 } from "../kiro/runtime.js";
-import { verifiedOrgPolicyProjectionActions } from "../org-policy/project.js";
+import { verifiedOrgPolicyProjection, verifiedOrgPolicySource } from "../org-policy/project.js";
 import { governanceOwnsAihSurfaces, readOrgPolicy } from "../org-policy/schema.js";
 import { sidecarInitActions } from "../truth/index.js";
 import { INIT_PHASES } from "./phases.js";
@@ -136,6 +145,53 @@ function plannedMcpServerNames(actions: readonly Action[]): readonly string[] {
   return [...names];
 }
 
+function retainInitAssertions(
+  current: readonly FileAssertion[] | undefined,
+  next: readonly FileAssertion[] | undefined,
+  phase: string,
+): readonly FileAssertion[] | undefined {
+  if (next === undefined || next.length === 0) return current;
+  const retained = [...(current ?? [])];
+  for (const assertion of next) {
+    const existing = retained.find((candidate) => candidate.path === assertion.path);
+    if (existing === undefined) {
+      retained.push(assertion);
+      continue;
+    }
+    if (!isDeepStrictEqual(existing, assertion)) {
+      throw new AihError(
+        `init phase ${phase} returned a conflicting authority assertion for ${assertion.path}`,
+        "AIH_TRUST",
+      );
+    }
+  }
+  return retained;
+}
+
+function retainInitDeadline(
+  current: string | undefined,
+  next: string | undefined,
+): string | undefined {
+  if (current === undefined) return next;
+  if (next === undefined) return current;
+  const currentTimestamp = parseCommitNotAfter(current) as number;
+  const nextTimestamp = parseCommitNotAfter(next) as number;
+  return currentTimestamp <= nextTimestamp ? current : next;
+}
+
+function retainInitCommitLock(
+  current: Plan["commitLock"],
+  next: Plan["commitLock"],
+  phase: string,
+): Plan["commitLock"] {
+  if (current === undefined) return next;
+  if (next === undefined) return current;
+  if (!isDeepStrictEqual(current, next)) {
+    throw new AihError(`init phase ${phase} returned a conflicting commit lock`, "AIH_TRUST");
+  }
+  return current;
+}
+
 /**
  * Orchestrate a full repo bootstrap by COMPOSING the repo-scoped capabilities —
  * profile, superpowers, bootstrap-ai, scaffold, contract, secrets, guardrails,
@@ -158,9 +214,21 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   if (redirect) return plan("init", redirect);
 
   const actions: Action[] = [];
+  let authorityAssertions: readonly FileAssertion[] | undefined;
+  let authorityCommitNotAfter: string | undefined;
+  let authorityCommitLock: Plan["commitLock"];
   // `--mcp-mode` flows to the mcp phase only (standard|offline|none) so a
   // locked-down org gets the right MCP handling in one `aih init`.
   const mcpMode = String(ctx.options.mcpMode ?? "standard");
+
+  // Resolve protected policy and authority before target selection so the CLI
+  // sanction gate and every later effect use the same custodied policy bytes.
+  const configuredPolicy = readOrgPolicy(ctx.root, ctx.env);
+  const preparedPolicy =
+    configuredPolicy === undefined
+      ? undefined
+      : await verifiedOrgPolicySource(ctx, configuredPolicy);
+  const policy = preparedPolicy?.policy ?? configuredPolicy;
 
   // Resolve the target CLIs ONCE (honoring `--detect`/`--cli`, prompting once when
   // interactive) and thread the result into every phase via `ctx.targets`. Each
@@ -169,17 +237,36 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   // explicit `aih init --detect` on a Kiro-only box writes neither `.claude/*` nor
   // `.cursor/*`. Without this single resolution, every phase that calls
   // `resolveTargets` would re-prompt under `--detect`.
-  const resolution = await resolveTargets(ctx);
+  const resolution = await resolveTargets(ctx, policy);
   const baseline = resolveBaselineSource(ctx.options, readAihConfigBaseline(ctx.root));
   const baseCtx: PlanContext = {
     ...ctx,
     targets: resolution.clis,
     options: { ...ctx.options, baseline: baseline.id },
   };
-  // Read once before composing leaf plans. A governed inventory exclusively owns
-  // its MCP and usage-hook surfaces, so generic phases must not leave earlier
-  // writes for the policy projector to accidentally merge or conflict with.
-  const policy = readOrgPolicy(baseCtx.root, baseCtx.env);
+  // Resolve the active policy before composing leaf plans. A protected bundle's
+  // policy and authority come from the same verified bytes; that resolved policy
+  // also decides whether generic MCP and usage phases must be suppressed.
+  const governedProjection =
+    policy === undefined
+      ? undefined
+      : await verifiedOrgPolicyProjection(baseCtx, policy, preparedPolicy);
+  if (governedProjection !== undefined) {
+    authorityAssertions = retainInitAssertions(
+      authorityAssertions,
+      governedProjection.fileAssertions,
+      "org-policy",
+    );
+    authorityCommitNotAfter = retainInitDeadline(
+      authorityCommitNotAfter,
+      governedProjection.commitNotAfter,
+    );
+    authorityCommitLock = retainInitCommitLock(
+      authorityCommitLock,
+      governedProjection.commitLock,
+      "org-policy",
+    );
+  }
 
   // If `--detect` found nothing and we defaulted to claude, say so once at the top
   // (the phases short-circuit on `ctx.targets`, so no phase emits this itself).
@@ -223,17 +310,28 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
           ? { ...baseCtx, plannedMcpServers: plannedMcpServerNames(actions) }
           : baseCtx;
     const sub = await phase.command.plan(phaseCtx);
+    authorityAssertions = retainInitAssertions(
+      authorityAssertions,
+      sub.fileAssertions,
+      phase.command.name,
+    );
+    authorityCommitNotAfter = retainInitDeadline(authorityCommitNotAfter, sub.commitNotAfter);
+    authorityCommitLock = retainInitCommitLock(
+      authorityCommitLock,
+      sub.commitLock,
+      phase.command.name,
+    );
     actions.push(doc(`init: ${phase.command.name}`, phase.headline));
     actions.push(...sub.actions);
   }
 
-  if (policy !== undefined) {
+  if (governedProjection !== undefined) {
     actions.push(
       doc(
         "init: org-policy",
         "org-policy — project the active aih-org-policy.json into managed settings for doctor-compatible regeneration",
       ),
-      ...(await verifiedOrgPolicyProjectionActions(baseCtx, policy)),
+      ...governedProjection.actions,
     );
   }
 
@@ -316,7 +414,12 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     }
   }
 
-  return plan("init", ...deduped);
+  return {
+    ...plan("init", ...deduped),
+    ...(authorityAssertions === undefined ? {} : { fileAssertions: authorityAssertions }),
+    ...(authorityCommitNotAfter === undefined ? {} : { commitNotAfter: authorityCommitNotAfter }),
+    ...(authorityCommitLock === undefined ? {} : { commitLock: authorityCommitLock }),
+  };
 }
 
 function baselineInstallDoc(baseline: ReturnType<typeof resolveBaselineSource>): Action {

@@ -4,10 +4,19 @@ import { isAbsolute, relative, resolve, sep } from "node:path";
 import { canonicalStrictJsonBytesV1, parseStrictJsonObjectV1 } from "../contract/strict-json-v1.js";
 import { type Cli, SUPPORTED_CLIS } from "../internals/clis.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
-import type { CommandSpec, Plan, PlanContext, WriteAction } from "../internals/plan.js";
+import type {
+  CommandSpec,
+  FileAssertion,
+  Plan,
+  PlanContext,
+  WriteAction,
+} from "../internals/plan.js";
 import { dynamicDigest, plan, probe } from "../internals/plan.js";
 import type { Check, CheckCode } from "../internals/verify.js";
-import { verifyPolicyAuthorityReceipt } from "./authority.js";
+import {
+  verifiedPolicyAuthorityReceiptAssertionV1,
+  verifyPolicyAuthorityReceipt,
+} from "./authority.js";
 import type {
   GovernanceDecisionRevocationV2,
   GovernanceDecisionV2,
@@ -113,6 +122,7 @@ interface Existing {
 
 interface Prepared {
   readonly actions: readonly WriteAction[];
+  readonly fileAssertions?: readonly FileAssertion[];
   readonly commitNotAfter?: string;
   readonly commitLock?: string;
   readonly postcondition?: {
@@ -152,6 +162,7 @@ type CurrentAuthorityRevocation =
   | {
       readonly kind: "revoked";
       readonly authorityReceiptDigest: string;
+      readonly authorityAssertion: FileAssertion;
       readonly authorityExpiresAt: string;
       readonly decision: GovernanceDecisionV2;
       readonly revocation: GovernanceDecisionRevocationV2;
@@ -1381,11 +1392,13 @@ function currentAuthorityRevocation(
     if (authority === undefined)
       return {
         kind:
-          verified.problem === "authority receipt is not currently valid"
+          verified.problem?.includes("not currently valid") === true
             ? "authority-not-current"
             : "authority-drift",
       };
     if (authority.receipt.version !== 3) return { kind: "authority-unverified" };
+    const authorityAssertion = verifiedPolicyAuthorityReceiptAssertionV1(authority);
+    if (authorityAssertion === undefined) return { kind: "authority-drift" };
     const receipt = authority.receipt;
     const now = Date.now();
     if (now < Date.parse(receipt.issuedAt) || now >= Date.parse(receipt.expiresAt))
@@ -1415,6 +1428,7 @@ function currentAuthorityRevocation(
     return {
       kind: "revoked",
       authorityReceiptDigest: authority.receiptDigest,
+      authorityAssertion,
       authorityExpiresAt: receipt.expiresAt,
       decision,
       revocation,
@@ -1449,6 +1463,7 @@ function lifecycleActions(
   handoff: {
     authorityReceiptDigest: string;
     custody: readonly { path: string; sha256: string }[];
+    fileAssertions?: readonly FileAssertion[];
     custodyAssertions?: readonly WriteAction[];
     supportedCustody?: Readonly<{
       binding: VerifiedAihSupportedCustodyBindingV2;
@@ -1593,6 +1608,7 @@ function lifecycleActions(
   ];
   return {
     actions,
+    ...(handoff.fileAssertions === undefined ? {} : { fileAssertions: handoff.fileAssertions }),
     commitNotAfter: lifecycleCommitNotAfter(Date.parse(receipt.validUntil)),
     commitLock: lifecycleStoreLockPath(),
     postcondition: {
@@ -1763,11 +1779,6 @@ function revocationActions(
     subjectDigest: current.decision.subject.subjectDigest,
     version: 1,
   });
-  const authorityPin = pinObservedCustody(ctx.root, {
-    path: ".aih/policy-authority-receipt.json",
-    sha256: current.authorityReceiptDigest,
-  });
-  if (authorityPin === undefined) return refused("authority-unverified");
   return {
     actions: [
       staged(
@@ -1776,7 +1787,6 @@ function revocationActions(
         aggregate.existing,
         "advance npm lifecycle aggregate capacity",
       ),
-      authorityPin,
       pin(claimParts.join("/"), claim, "pin npm lifecycle subject lineage claim"),
       pin(bindingParts.join("/"), binding, "pin npm lifecycle subject lineage"),
       existingRecord === "absent"
@@ -1795,6 +1805,7 @@ function revocationActions(
           ),
       staged(headParts.join("/"), headText, head, "advance revoked npm lifecycle subject head"),
     ],
+    fileAssertions: [current.authorityAssertion],
     commitNotAfter: lifecycleCommitNotAfter(
       Date.parse(current.authorityExpiresAt),
       Date.parse(current.decision.expiresAt),
@@ -1910,6 +1921,7 @@ function planFrom(prepared: Prepared): Plan {
   );
   return {
     ...built,
+    ...(prepared.fileAssertions === undefined ? {} : { fileAssertions: prepared.fileAssertions }),
     ...(prepared.commitNotAfter === undefined ? {} : { commitNotAfter: prepared.commitNotAfter }),
     ...(prepared.commitLock === undefined ? {} : { commitLock: prepared.commitLock }),
   };

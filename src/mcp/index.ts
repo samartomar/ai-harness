@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { join, posix } from "node:path";
 import { SettingsError } from "../errors.js";
-import { homeDir, isTargeted, resolveTargets } from "../internals/cli-detect.js";
+import { homeDir, isTargeted } from "../internals/cli-detect.js";
 import { type CliEntry, entry } from "../internals/cli-registry.js";
 import { type Cli, SUPPORTED_CLIS } from "../internals/clis.js";
 import { upsertTextBlock } from "../internals/envfile.js";
@@ -19,10 +19,11 @@ import { beginMarker, endMarker } from "../internals/render.js";
 import type { Check } from "../internals/verify.js";
 import { AIH_ORG_POLICY_FILE } from "../org-policy/constants.js";
 import { assertOrgPolicyMutationSource } from "../org-policy/drift.js";
+import { verifiedOrgPolicyTargets } from "../org-policy/project.js";
 import {
-  assertGovernanceOwnsSurface,
   governanceOwnsAihSurfaces,
   type OrgPolicy,
+  OrgPolicyError,
   parseOrgPolicy,
   readOrgPolicy,
 } from "../org-policy/schema.js";
@@ -724,14 +725,8 @@ function planMcpNone(ctx: PlanContext): ReturnType<typeof plan> {
  * servers (drop http/remote that need egress) for vendoring by exact command, and
  * emit the admin fixed-set template + the allowlist playbook.
  */
-function planMcpOffline(ctx: PlanContext): ReturnType<typeof plan> {
-  const scope = String(ctx.options.scope ?? "project");
+function planMcpOffline(ctx: PlanContext, catalog: PolicyAwareMcpCatalog): ReturnType<typeof plan> {
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
-  const catalog = policyAwareMcpCatalog(ctx, {
-    scope,
-    stack,
-    includeDisabledServers: true,
-  });
   if (catalog.error !== undefined || catalog.servers === undefined) {
     throw mcpCatalogError(catalog);
   }
@@ -812,9 +807,9 @@ function mcpGuidanceDoc(e: CliEntry, serverNames: string[]): string {
 
 async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const posture = ctx.posture ?? asPosture(ctx.options.posture);
-  assertOrgPolicyMutationSource({ ...ctx, posture });
+  let policyTargets: Awaited<ReturnType<typeof verifiedOrgPolicyTargets>>;
   try {
-    assertGovernanceOwnsSurface(ctx, "mcp");
+    policyTargets = await verifiedOrgPolicyTargets(ctx);
   } catch (error) {
     // The catalog path has historically translated malformed policy input to
     // the public MCP diagnostic. The exclusive-governance guard reads first,
@@ -824,27 +819,47 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     }
     throw error;
   }
+  assertOrgPolicyMutationSource({ ...ctx, posture }, policyTargets.source?.verification.authority);
+  if (governanceOwnsAihSurfaces(policyTargets.policy)) {
+    throw new OrgPolicyError(
+      "governance exclusively owns AIH mcp projection; use `aih policy project` to evaluate and apply the verified policy",
+    );
+  }
   const githubAuth = githubAuthOption(ctx.options.githubAuth);
   const mode = String(ctx.options.mode ?? "standard");
-  if (mode === "none") return planMcpNone(ctx);
-  if (mode === "offline") return planMcpOffline(ctx);
+  const withPolicyPins = (planned: ReturnType<typeof plan>): ReturnType<typeof plan> => ({
+    ...planned,
+    ...(policyTargets.fileAssertions === undefined
+      ? {}
+      : { fileAssertions: policyTargets.fileAssertions }),
+    ...(policyTargets.commitNotAfter === undefined
+      ? {}
+      : { commitNotAfter: policyTargets.commitNotAfter }),
+    ...(policyTargets.commitLock === undefined ? {} : { commitLock: policyTargets.commitLock }),
+  });
+  if (mode === "none") return withPolicyPins(planMcpNone(ctx));
 
   // Honor --cli/--all-tools/--detect, a committed marker, or the deterministic
   // first-run Claude default. Previously mcp ignored the selection and wrote
   // Claude's `.mcp.json` for every tool — a real bug for Codex (config.toml),
   // Copilot (.vscode/mcp.json), OpenCode, Zed, etc.
-  const { clis } = await resolveTargets(ctx);
+  const { clis } = policyTargets.resolution;
   const scope = String(ctx.options.scope ?? "project");
   const selfHost = ctx.options.selfHost === true;
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
-  const actions: Action[] = [];
-  const catalog = policyAwareMcpCatalog(ctx, {
+  const catalogOptions = {
     scope,
     selfHost,
     githubAuth,
     stack,
     includeDisabledServers: true,
-  });
+    ...(policyTargets.source?.verification.authority?.source === "policy-file"
+      ? { verifiedPolicy: { policy: policyTargets.policy } }
+      : {}),
+  };
+  const catalog = policyAwareMcpCatalog(ctx, catalogOptions);
+  if (mode === "offline") return withPolicyPins(planMcpOffline(ctx, catalog));
+  const actions: Action[] = [];
   if (catalog.error !== undefined || catalog.servers === undefined) {
     throw mcpCatalogError(catalog);
   }
@@ -858,7 +873,10 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     posture === "enterprise" ? deniedGeneratedServerDetails(servers, posture, catalog.policy) : [];
   const remoteCatalog =
     mcpCompliant && scope !== "remote"
-      ? policyAwareMcpCatalog(ctx, { scope: "remote", selfHost, githubAuth, stack })
+      ? policyAwareMcpCatalog(ctx, {
+          ...catalogOptions,
+          scope: "remote",
+        })
       : undefined;
   if (
     remoteCatalog !== undefined &&
@@ -1182,7 +1200,7 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     );
   }
 
-  return plan("mcp", ...actions);
+  return withPolicyPins(plan("mcp", ...actions));
 }
 
 async function planMcpWithWriteGuards(ctx: PlanContext): Promise<ReturnType<typeof plan>> {

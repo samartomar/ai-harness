@@ -6,6 +6,27 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Enterprise organization authority can use one administrator-protected policy file.**
+  PolicyBundle V2 embeds the existing V3 Decision V2 authority payload beside the ordinary org
+  policy and is selected only by an absolute `AIH_ORG_POLICY` path outside the governed target.
+  Core requires Enterprise posture, strict bounded JSON, current validity, non-symlinked regular
+  single-link custody, repeated exact-byte/file-identity observation, and transaction-time file
+  assertions. The existing Decision V2 resolvers and lifecycle/audit stores are reused; Vibe is
+  unchanged and the GitHub-attested V3 receipt remains an optional transport. Core never writes the
+  authority file and does not claim to prove its host ACL or who replaced it; administrators must
+  supply that read-only distribution and process-configuration boundary. Organization-selected
+  catalog-absent artifacts and the fixed AIH-managed usage adapter carry the same authority
+  assertion through observation, apply, update, revocation, and durable history. (#832, #848, #854)
+- **The Policy Workbench generates the protected authority file without raw JSON authoring.**
+  At Enterprise posture, administrators fill structured issuer, immutable GitHub, npm, PyPI, OCI,
+  remote-content, or AIH source, artifact,
+  target/effect, evidence, policy, control, actor, and reason fields. The portable browser computes
+  canonical Decision V2 digests, supports repeated tool/skill/MCP/package decisions and revocation,
+  previews the exact PolicyBundle V2, and downloads `aih-policy-bundle.json`. Vibe remains ordinary
+  policy-only, and Core still performs the active-file custody and authority verification.
+
 ### Security
 
 - Remove the spent one-use npm token bootstrap from the Core release workflow.

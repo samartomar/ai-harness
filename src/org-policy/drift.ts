@@ -31,6 +31,7 @@ import {
   occupied,
   unprovableResidueReason,
 } from "../mcp/managed-projection.js";
+import { isVerifiedPolicyAuthority, type VerifiedPolicyAuthority } from "./authority.js";
 import { AIH_ORG_POLICY_FILE } from "./constants.js";
 import { orgPolicyProjectionActions, verifiedOrgPolicyProjectionActions } from "./project.js";
 import {
@@ -538,14 +539,27 @@ function sourceCheck(ctx: PlanContext): Check {
 
 /**
  * A transient AIH_ORG_POLICY override is inspectable but not a trusted source
- * for any configuration mutation. Refuse before any plan can produce writes;
- * otherwise an override could self-declare a lower posture and mask a committed
- * enterprise floor. The committed default remains the only direct mutation source.
+ * for configuration mutation. Refuse before any plan can produce writes unless
+ * the caller supplies Core's opaque verification of the same exact protected
+ * external policy file; otherwise an override could self-declare a lower posture
+ * and mask a committed enterprise floor.
  */
-export function assertOrgPolicyMutationSource(ctx: PlanContext): void {
+export function assertOrgPolicyMutationSource(
+  ctx: PlanContext,
+  authority?: VerifiedPolicyAuthority,
+): void {
   if (!ctx.apply) return;
   const source = policySource(ctx);
   if (source.kind === "repo-default") return;
+  const assertion = authority?.sourceAssertion;
+  if (
+    isVerifiedPolicyAuthority(authority) &&
+    authority.source === "policy-file" &&
+    assertion?.external === true &&
+    resolve(assertion.path) === resolve(source.abs)
+  ) {
+    return;
+  }
   throw new OrgPolicyError(
     `policy source: AIH_ORG_POLICY env override (${source.display}); ` +
       "configuration mutation requires the committed default policy or a trusted managed channel",

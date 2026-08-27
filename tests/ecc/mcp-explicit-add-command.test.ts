@@ -95,6 +95,17 @@ describe("ecc mcp add/remove command specs", () => {
     expect(readFileSync(join(root, ".mcp.json"), "utf8")).not.toContain("memxus");
   });
 
+  it("refuses a self-declared ordinary policy override before client or receipt writes", async () => {
+    const root = fixture();
+    const override = join(root, "ordinary-override.json");
+    writeFileSync(override, readFileSync(join(root, "aih-org-policy.json"), "utf8"), "utf8");
+    const ctx = context(root, true, { id: "memxus", cli: "claude" }, { AIH_ORG_POLICY: override });
+
+    await expect(eccMcpAddCommand.plan(ctx)).rejects.toThrow(/configuration mutation requires/i);
+    expect(readFileSync(join(root, ".mcp.json"), "utf8")).not.toContain("memxus");
+    expect(existsSync(join(root, ".aih", "ecc-mcp-explicit-add-v1.json"))).toBe(false);
+  });
+
   it("requires exactly one explicit --cli target", async () => {
     const root = fixture();
     await expect(eccMcpAddCommand.plan(context(root, false, { id: "memxus" }))).rejects.toThrow(

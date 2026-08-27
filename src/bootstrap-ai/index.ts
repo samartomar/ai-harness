@@ -39,6 +39,11 @@ import {
   supportsKiroStandaloneHooks,
 } from "../kiro/runtime.js";
 import { type GeneratedDoc, lintProbes } from "../lint/run.js";
+import {
+  requireVerifiedOrgPolicyTargets,
+  type VerifiedOrgPolicyTargets,
+  verifiedOrgPolicyTargets,
+} from "../org-policy/project.js";
 import { scanRepo } from "../profile/scan.js";
 import {
   adapterNote,
@@ -202,11 +207,23 @@ function generatedTextProbe(relPath: string, expected: string): Action {
  * the router exists and every bootloader carries the current block (drift gate).
  * Honors `--cli`/`--all-tools` (default claude) and `--context-dir`.
  */
-async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
+export async function bootstrapAiPlan(
+  ctx: PlanContext,
+  preparedTargets?: VerifiedOrgPolicyTargets,
+): Promise<Plan> {
   explicitKiroHookRuntime(ctx);
   const dir = ctx.contextDir;
   const canon = canonMode(ctx);
-  const { clis, detectFellBack, bareDefault } = await resolveTargets(ctx);
+  const policyTargets =
+    preparedTargets === undefined
+      ? await verifiedOrgPolicyTargets(ctx)
+      : {
+          ...requireVerifiedOrgPolicyTargets(preparedTargets),
+          // This is target resolution only: preserve the caller's one verified
+          // source/policy observation while checking Adopt's widened target set.
+          resolution: await resolveTargets(ctx, preparedTargets.policy),
+        };
+  const { clis, detectFellBack, bareDefault } = policyTargets.resolution;
   const baseline = resolveBaselineSource(ctx.options, readAihConfigBaseline(ctx.root));
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   const repoName = repoDisplayName(ctx.root);
@@ -407,7 +424,16 @@ async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
     ),
   );
 
-  return plan("bootstrap-ai", ...actions);
+  return {
+    ...plan("bootstrap-ai", ...actions),
+    ...(policyTargets.fileAssertions === undefined
+      ? {}
+      : { fileAssertions: policyTargets.fileAssertions }),
+    ...(policyTargets.commitNotAfter === undefined
+      ? {}
+      : { commitNotAfter: policyTargets.commitNotAfter }),
+    ...(policyTargets.commitLock === undefined ? {} : { commitLock: policyTargets.commitLock }),
+  };
 }
 
 function summaryText(

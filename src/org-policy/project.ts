@@ -5,6 +5,7 @@ import {
   type McpProjectionDecisionBindings,
   McpProjectionDecisionBindingsSchema,
 } from "../config/marker.js";
+import { resolveTargets, type TargetResolution } from "../internals/cli-detect.js";
 import { readRegularFile, readRegularFileWithStats } from "../internals/fsxn.js";
 import {
   canAppendPolicyAihIgnore,
@@ -14,6 +15,7 @@ import {
 import { isPlainObject, parseJsoncText } from "../internals/merge.js";
 import {
   type Action,
+  type FileAssertion,
   type PlanContext,
   remove,
   writeExactText,
@@ -46,6 +48,12 @@ import { type McpServer, mcpServers, type StdioServer } from "../mcp/servers.js"
 import { scanRepo } from "../profile/scan.js";
 import { usageRecorderScript } from "../usage/capture.js";
 import { usageHookActions } from "../usage/hooks.js";
+import {
+  type PolicyAuthorityVerification,
+  verifiedPolicyAuthorityReceiptAssertionV1,
+  verifiedPolicyFileAuthorityPolicyV1,
+  verifyPolicyAuthorityReceipt,
+} from "./authority.js";
 import { composeOrgPolicy } from "./compose.js";
 import { planEccHookControlsProjection } from "./ecc-hook-controls-projection.js";
 import {
@@ -58,9 +66,22 @@ import {
 import { HOOK_REGISTRAR_DESTINATION, hookRegistrarProjectionActions } from "./hook-registrar.js";
 import { expectedHooksFromReceipt, readHookRegistrarReceipt } from "./hook-registrar-receipt.js";
 import { type RuntimeOrgPolicyResolution, resolveRuntimeOrgPolicy } from "./runtime.js";
-import { governanceOwnsAihSurfaces, type OrgPolicy, OrgPolicyError } from "./schema.js";
+import {
+  governanceOwnsAihSurfaces,
+  type OrgPolicy,
+  OrgPolicyError,
+  readOrgPolicy,
+} from "./schema.js";
 
 export const ORG_POLICY_HOOK_RECEIPT_PATH = ".aih/org-policy-hook-receipt.json";
+
+/**
+ * All effectful plans derived from the protected policy transport share this
+ * target-local lock, so their exact authority assertion is rechecked while the
+ * transaction owns the commit window.
+ */
+export const POLICY_AUTHORITY_COMMIT_LOCK =
+  ".aih/governance/policy-authority/v1/locks/authority.lock";
 
 function commandPolicyFor(composed: ReturnType<typeof composeOrgPolicy>): Record<string, unknown> {
   return {
@@ -72,7 +93,7 @@ function commandPolicyFor(composed: ReturnType<typeof composeOrgPolicy>): Record
 }
 
 /**
- * Blocking codes whose remediation actually reads the external authority registry —
+ * Blocking codes whose remediation actually reads the organization authority source —
  * evidence and approval verification. Everything else (target coverage, projector
  * availability, posture) resolves without it.
  */
@@ -1901,23 +1922,184 @@ function projectionActionsFromRuntime(
   return coalesceMcpProjectionMarkerActions(actions);
 }
 
+export interface VerifiedOrgPolicyProjection {
+  readonly policy: OrgPolicy;
+  readonly actions: readonly Action[];
+  readonly fileAssertions?: readonly FileAssertion[];
+  readonly commitNotAfter?: string;
+  readonly commitLock?: string;
+}
+
+const verifiedOrgPolicySources = new WeakSet<object>();
+const verifiedOrgPolicyTargetSets = new WeakSet<object>();
+
+export interface VerifiedOrgPolicySource {
+  readonly policy: OrgPolicy;
+  readonly verification: PolicyAuthorityVerification;
+}
+
+export interface VerifiedOrgPolicyTargets {
+  readonly policy?: OrgPolicy;
+  readonly resolution: TargetResolution;
+  readonly source?: VerifiedOrgPolicySource;
+  readonly fileAssertions?: readonly FileAssertion[];
+  readonly commitNotAfter?: string;
+  readonly commitLock?: string;
+}
+
+/** Reject an invented prepared target set before a nested mutator reuses it. */
+export function requireVerifiedOrgPolicyTargets(
+  prepared: VerifiedOrgPolicyTargets,
+): VerifiedOrgPolicyTargets {
+  if (!verifiedOrgPolicyTargetSets.has(prepared)) {
+    throw new OrgPolicyError("prepared organization policy targets are invalid");
+  }
+  return prepared;
+}
+
+function protectedPolicyAuthorityPins(
+  source: VerifiedOrgPolicySource | undefined,
+): Pick<VerifiedOrgPolicyTargets, "fileAssertions" | "commitNotAfter" | "commitLock"> {
+  const authority = source?.verification.authority;
+  if (authority?.source !== "policy-file") return {};
+  const assertion = verifiedPolicyAuthorityReceiptAssertionV1(authority);
+  const deadline = Date.parse(authority.receipt.expiresAt);
+  if (assertion === undefined || !Number.isFinite(deadline) || deadline <= Date.now()) {
+    throw new OrgPolicyError("protected policy bundle authority is not currently valid");
+  }
+  return {
+    fileAssertions: [assertion],
+    commitNotAfter: new Date(deadline).toISOString(),
+    commitLock: POLICY_AUTHORITY_COMMIT_LOCK,
+  };
+}
+
+/** Resolve policy and authority from one observation before policy-selected planning. */
+export async function verifiedOrgPolicySource(
+  ctx: PlanContext,
+  policy: OrgPolicy,
+): Promise<VerifiedOrgPolicySource> {
+  const verification = await verifyPolicyAuthorityReceipt(ctx);
+  if (verification.protectedPolicyFile === "problem") {
+    throw new OrgPolicyError(
+      verification.problem ?? "protected policy bundle authority could not be verified",
+    );
+  }
+  const authority = verification.authority;
+  const resolvedPolicy =
+    authority?.source === "policy-file" ? verifiedPolicyFileAuthorityPolicyV1(authority) : policy;
+  if (resolvedPolicy === undefined) {
+    throw new OrgPolicyError("policy project protected authority policy could not be recovered");
+  }
+  const source = Object.freeze({ policy: resolvedPolicy, verification });
+  verifiedOrgPolicySources.add(source);
+  return source;
+}
+
+/**
+ * Resolve CLI targets from the one policy observation that authorized them.
+ * Plain Vibe policy sources keep their established read-only selection behavior;
+ * the protected V2 transport additionally returns the custody pins its effectful
+ * caller must carry into the final transaction.
+ */
+export async function verifiedOrgPolicyTargets(
+  ctx: PlanContext,
+): Promise<VerifiedOrgPolicyTargets> {
+  const configured = readOrgPolicy(ctx.root, ctx.env);
+  const source =
+    configured === undefined ? undefined : await verifiedOrgPolicySource(ctx, configured);
+  const policy = source?.policy ?? configured;
+  const resolution = await resolveTargets(ctx, policy);
+  const targets: VerifiedOrgPolicyTargets = Object.freeze({
+    ...(policy === undefined ? {} : { policy }),
+    ...(source === undefined ? {} : { source }),
+    resolution,
+    ...protectedPolicyAuthorityPins(source),
+  });
+  verifiedOrgPolicyTargetSets.add(targets);
+  return targets;
+}
+
 /** Governed projection: authority is verified before any policy-selected action is emitted. */
+export async function verifiedOrgPolicyProjection(
+  ctx: PlanContext,
+  policy: OrgPolicy,
+  preparedSource?: VerifiedOrgPolicySource,
+): Promise<VerifiedOrgPolicyProjection> {
+  const source = preparedSource ?? (await verifiedOrgPolicySource(ctx, policy));
+  if (
+    !verifiedOrgPolicySources.has(source) ||
+    (preparedSource !== undefined && source.policy !== policy)
+  ) {
+    throw new OrgPolicyError("policy project prepared authority source is invalid");
+  }
+  const initialVerification = source.verification;
+  const initialAuthority = initialVerification.authority;
+  const verifiedPolicy = source.policy;
+  const runtime = await resolveRuntimeOrgPolicy(ctx, verifiedPolicy, initialVerification);
+  const actions = projectionActionsFromRuntime(ctx, verifiedPolicy, runtime);
+  if (!runtime.effective.authority.verified) {
+    return { policy: verifiedPolicy, actions };
+  }
+
+  // The protected-file policy and authority came from one custodied observation.
+  // Legacy attested receipts remain independently re-observed after resolution.
+  const authority =
+    initialAuthority?.source === "policy-file"
+      ? initialAuthority
+      : (await verifyPolicyAuthorityReceipt(ctx)).authority;
+  if (
+    authority === undefined ||
+    authority.receiptDigest !== runtime.effective.authority.receiptDigest
+  ) {
+    throw new OrgPolicyError("policy project authority changed while preparing the projection");
+  }
+  const assertion = verifiedPolicyAuthorityReceiptAssertionV1(authority);
+  if (assertion === undefined)
+    throw new OrgPolicyError("policy project authority source could not be pinned");
+  const candidateDeadlines = runtime.effective.candidates
+    .filter((candidate) => candidate.effective)
+    .flatMap((candidate) => [
+      ...(candidate.approval === undefined ? [] : [candidate.approval.expiresAt]),
+      ...(candidate.decision === undefined
+        ? []
+        : [
+            candidate.decision.reviewBy !== undefined &&
+            Date.parse(candidate.decision.reviewBy) < Date.parse(candidate.decision.expiresAt)
+              ? candidate.decision.reviewBy
+              : candidate.decision.expiresAt,
+          ]),
+    ]);
+  const deadlines = [authority.receipt.expiresAt, ...candidateDeadlines].map(Date.parse);
+  const deadline = Math.min(...deadlines);
+  if (deadlines.some((value) => !Number.isFinite(value)) || deadline <= Date.now())
+    throw new OrgPolicyError("policy project authority is not currently valid");
+  return {
+    policy: verifiedPolicy,
+    actions,
+    fileAssertions: [assertion],
+    commitNotAfter: new Date(deadline).toISOString(),
+    commitLock: authority.source === "policy-file" ? POLICY_AUTHORITY_COMMIT_LOCK : undefined,
+  };
+}
+
+/** Read-only compatibility seam; mutation plans must retain `verifiedOrgPolicyProjection` pins. */
 export async function verifiedOrgPolicyProjectionActions(
   ctx: PlanContext,
   policy: OrgPolicy,
 ): Promise<Action[]> {
-  return projectionActionsFromRuntime(ctx, policy, await resolveRuntimeOrgPolicy(ctx, policy));
+  return [...(await verifiedOrgPolicyProjection(ctx, policy)).actions];
 }
 
 /**
  * Legacy internal projection seam retained for pre-governance callers/tests.
  * It refuses governance inventories so a synchronous caller cannot accidentally
- * bypass external authority verification.
+ * bypass organization authority verification.
  */
 export function orgPolicyProjectionActions(ctx: PlanContext, policy: OrgPolicy): Action[] {
   if (governanceOwnsAihSurfaces(policy)) {
     throw new OrgPolicyError(
-      "governed policy projection requires externally verified authority; use the verified policy projector",
+      "governed policy projection requires verified organization authority; use the verified policy projector",
     );
   }
   const catalog = mcpServers(

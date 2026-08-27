@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readFileSync, realpathSync } from "node:fs";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { dirname, isAbsolute, parse as parsePath, relative, resolve } from "node:path";
 import { applyEdits, type FormattingOptions, modify } from "jsonc-parser";
 import { AihError, DirtyWorktreeError, PathContainmentError } from "../errors.js";
 import { redactSecrets } from "../guardrails/redact.js";
@@ -31,6 +31,7 @@ import type {
   DigestAction,
   EnvBlockAction,
   ExecAction,
+  FileAssertion,
   Plan,
   PlanContext,
   ProbeAction,
@@ -894,30 +895,54 @@ export async function executePlan(
   };
   const txn = new FsTransaction(transactionOptions);
   const deferredTxn = new FsTransaction(transactionOptions);
+  const execTxn = new FsTransaction(transactionOptions);
   for (const assertion of plan.fileAssertions ?? []) {
+    const external = assertion.external === true;
+    const absPath = resolvePath(ctx, assertion.path);
     if (
       !/^[a-f0-9]{64}$/.test(assertion.sha256) ||
       !Number.isSafeInteger(assertion.maxBytes) ||
-      assertion.maxBytes < 0
+      assertion.maxBytes < 0 ||
+      (external &&
+        (!isAbsolute(assertion.path) ||
+          typeof assertion.trustedBase !== "string" ||
+          !isAbsolute(assertion.trustedBase) ||
+          !validExternalCustody(assertion.externalCustody, absPath))) ||
+      (!external &&
+        (assertion.trustedBase !== undefined || assertion.externalCustody !== undefined))
     )
       throw new AihError("invalid transaction file assertion", "AIH_CONFIG");
-    const absPath = resolvePath(ctx, assertion.path);
-    assertContained(ctx.root, absPath);
-    assertNoSymlinkParents(ctx.root, absPath, assertion.path);
+    const assertionRoot = external ? resolve(assertion.trustedBase as string) : ctx.root;
+    if (external) {
+      assertTrustedExternalPath(assertionRoot, absPath, assertion.path);
+    } else {
+      assertContained(ctx.root, absPath);
+      assertNoSymlinkParents(ctx.root, absPath, assertion.path);
+    }
     if (ctx.apply) {
       txn.stageAssertion(
         absPath,
         assertion.sha256,
         assertion.describe,
-        ctx.root,
+        assertionRoot,
         assertion.maxBytes,
+        assertion.externalCustody,
       );
       deferredTxn.stageAssertion(
         absPath,
         assertion.sha256,
         assertion.describe,
-        ctx.root,
+        assertionRoot,
         assertion.maxBytes,
+        assertion.externalCustody,
+      );
+      execTxn.stageAssertion(
+        absPath,
+        assertion.sha256,
+        assertion.describe,
+        assertionRoot,
+        assertion.maxBytes,
+        assertion.externalCustody,
       );
     }
   }
@@ -1172,8 +1197,8 @@ export async function executePlan(
   const execFailureChecks: Check[] = [];
   let skipProbesAfterExecFailure = false;
   let priorExecFailed = false;
-  for (const a of execActions) {
-    if (ctx.apply) {
+  const runExecActions = async (revalidate: () => void): Promise<void> => {
+    for (const a of execActions) {
       if (priorExecFailed && a.requiresPriorExecSuccess) {
         execs.push({ describe: a.describe, argv: collectedArgv(a), ran: false });
         continue;
@@ -1205,7 +1230,27 @@ export async function executePlan(
           );
         }
       }
-      const res = await ctx.run(a.argv, { cwd: a.cwd, env: a.env, timeoutMs: a.timeoutMs });
+      revalidate();
+      let res: Awaited<ReturnType<PlanContext["run"]>> | undefined;
+      let runnerError: unknown;
+      try {
+        res = await ctx.run(a.argv, { cwd: a.cwd, env: a.env, timeoutMs: a.timeoutMs });
+      } catch (error) {
+        runnerError = error;
+      }
+      try {
+        revalidate();
+      } catch (error) {
+        const outcome =
+          runnerError === undefined ? `returned exit code ${res?.code ?? "unknown"}` : "threw";
+        throw new AihError(
+          `authority validation failed after child "${a.describe}" ${outcome}; child process effects may have occurred and cannot be rolled back: ${(error as Error).message}`,
+          "AIH_TRUST",
+        );
+      }
+      if (runnerError !== undefined) throw runnerError;
+      if (res === undefined)
+        throw new AihError(`child "${a.describe}" returned no result`, "AIH_TRUST");
       const ok = res.code === 0 || Boolean(a.allowFailure);
       // A failing child already wrote a good diagnostic; carry it so the exit
       // code is not the only evidence the operator gets. Successful runs stay
@@ -1230,7 +1275,12 @@ export async function executePlan(
         }
         if (a.blockProbesOnFailure) skipProbesAfterExecFailure = true;
       }
-    } else {
+    }
+  };
+  if (ctx.apply && execActions.length > 0) {
+    await execTxn.runGuarded(runExecActions);
+  } else {
+    for (const a of execActions) {
       execs.push({ describe: a.describe, argv: collectedArgv(a), ran: false });
     }
   }
@@ -1302,6 +1352,32 @@ export async function executePlan(
     report,
     verification,
   };
+}
+
+function validExternalCustody(custody: FileAssertion["externalCustody"], path: string): boolean {
+  if (custody === undefined) return false;
+  const validIdentity = (identity: { dev: string; ino: string }): boolean =>
+    /^[1-9]\d*$/.test(identity.dev) && /^[1-9]\d*$/.test(identity.ino);
+  const absolute = resolve(path);
+  const volumeRoot = parsePath(absolute).root;
+  const rel = relative(volumeRoot, dirname(absolute));
+  if (rel.startsWith("..") || isAbsolute(rel)) return false;
+  const expectedParents = [volumeRoot];
+  let current = volumeRoot;
+  for (const part of rel.split(/[\\/]+/).filter((part) => part.length > 0)) {
+    current = resolve(current, part);
+    expectedParents.push(current);
+  }
+  return (
+    validIdentity(custody.file) &&
+    custody.parents.length === expectedParents.length &&
+    custody.parents.every(
+      (parent, index) =>
+        isAbsolute(parent.path) &&
+        validIdentity(parent) &&
+        resolve(parent.path) === expectedParents[index],
+    )
+  );
 }
 
 /** Human-readable summary of a plan result (used when --json is off). */

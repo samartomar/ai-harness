@@ -16,6 +16,7 @@ import { gitCommittedSet } from "../internals/scan-allowlist.js";
 import type { Check } from "../internals/verify.js";
 import { explicitKiroHookRuntime, KIRO_HOOK_RUNTIME_OPTION } from "../kiro/runtime.js";
 import { withExpectedContents } from "../mcp/managed-projection.js";
+import { verifiedOrgPolicyTargets } from "../org-policy/project.js";
 import { adoptApplyActions } from "./apply.js";
 import {
   type BootloaderState,
@@ -283,6 +284,10 @@ function migrateReport(fp: CliFootprint, contextDir: string): string {
  */
 async function adoptPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const explicitHookRuntime = explicitKiroHookRuntime(ctx);
+  let policyPins: Pick<
+    ReturnType<typeof plan>,
+    "fileAssertions" | "commitNotAfter" | "commitLock"
+  > = {};
   // The committed marker is authoritative for which context dir to inspect — same
   // precedence `doctor` uses, so adopt and doctor never disagree on the dir.
   const cfg = readAihConfig(ctx.root);
@@ -319,7 +324,18 @@ async function adoptPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   // + marker), shown in the plan and executed only under `--apply`. Greenfield and
   // already-adopted stay write-free — `init` owns greenfield; a converged repo is a no-op.
   if (cls.kind === "marker-divergent" || cls.kind === "foreign-scheme") {
-    actions.push(...(await adoptApplyActions(ctx, cls, contextDir)));
+    const policyTargets = await verifiedOrgPolicyTargets(ctx);
+    const policyCtx: PlanContext = { ...ctx, targets: policyTargets.resolution.clis };
+    actions.push(...(await adoptApplyActions(policyCtx, cls, contextDir, policyTargets)));
+    policyPins = {
+      ...(policyTargets.fileAssertions === undefined
+        ? {}
+        : { fileAssertions: policyTargets.fileAssertions }),
+      ...(policyTargets.commitNotAfter === undefined
+        ? {}
+        : { commitNotAfter: policyTargets.commitNotAfter }),
+      ...(policyTargets.commitLock === undefined ? {} : { commitLock: policyTargets.commitLock }),
+    };
   }
 
   // §13.6 opt-in: fold committed CLI-native content INTO the canon (additive copy +
@@ -374,7 +390,7 @@ async function adoptPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     }
   }
 
-  return plan("adopt", ...actions);
+  return { ...plan("adopt", ...actions), ...policyPins };
 }
 
 export const command: CommandSpec = {

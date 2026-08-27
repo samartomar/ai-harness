@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { deflateRawSync } from "node:zlib";
 import { SettingsError } from "../errors.js";
-import { detectFallbackNotice, homeDir, resolveTargets } from "../internals/cli-detect.js";
+import { detectFallbackNotice, homeDir } from "../internals/cli-detect.js";
 import { type Cli, resolveClis } from "../internals/clis.js";
 import { HERMETIC_GIT_ENV_SCRIPT_LINE } from "../internals/git-env.js";
 import {
@@ -17,7 +17,8 @@ import {
   probe,
 } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
-import { readOrgPolicy } from "../org-policy/schema.js";
+import { assertOrgPolicyMutationSource } from "../org-policy/drift.js";
+import { verifiedOrgPolicyTargets } from "../org-policy/project.js";
 import type { RepoStack } from "../profile/scan.js";
 import { scanRepo } from "../profile/scan.js";
 import { execArgv } from "../tools/install.js";
@@ -1040,7 +1041,8 @@ function summaryDoc(clis: string[], inputs: EccInstallInputs, stack: RepoStack):
  * Every network/install step is an `exec` that runs only under `--apply`.
  */
 async function eccPlan(ctx: PlanContext): Promise<Plan> {
-  const { clis, detectFellBack } = await resolveTargets(ctx);
+  const policyTargets = await verifiedOrgPolicyTargets(ctx);
+  const { clis, detectFellBack } = policyTargets.resolution;
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   const profile = String(ctx.options.profile ?? "minimal");
   const languageSelection = eccLanguages(stack);
@@ -1093,7 +1095,16 @@ async function eccPlan(ctx: PlanContext): Promise<Plan> {
     actions.push(doc("no AI CLIs detected — defaulted to claude", detectFallbackNotice()));
   }
   actions.push(summaryDoc(clis, inputs, stack));
-  return plan("ecc", ...actions);
+  return {
+    ...plan("ecc", ...actions),
+    ...(policyTargets.fileAssertions === undefined
+      ? {}
+      : { fileAssertions: policyTargets.fileAssertions }),
+    ...(policyTargets.commitNotAfter === undefined
+      ? {}
+      : { commitNotAfter: policyTargets.commitNotAfter }),
+    ...(policyTargets.commitLock === undefined ? {} : { commitLock: policyTargets.commitLock }),
+  };
 }
 
 const EXPLICIT_ECC_MCP_TARGET_ERROR =
@@ -1125,17 +1136,29 @@ function explicitEccMcpId(ctx: PlanContext): string {
 
 async function eccMcpAddPlan(ctx: PlanContext): Promise<Plan> {
   const target = await explicitEccMcpTarget(ctx);
-  const policy = readOrgPolicy(ctx.root, ctx.env);
+  const policyTargets = await verifiedOrgPolicyTargets(ctx);
+  assertOrgPolicyMutationSource(ctx, policyTargets.source?.verification.authority);
+  const policy = policyTargets.policy;
   if (policy === undefined) {
     throw new SettingsError("ecc mcp add requires a valid aih-org-policy.json in the target root");
   }
-  return planExplicitEccMcpAdd({
+  const planned = planExplicitEccMcpAdd({
     root: ctx.root,
     home: homeDir(ctx),
     policy,
     id: explicitEccMcpId(ctx),
     target,
   });
+  return {
+    ...planned,
+    ...(policyTargets.fileAssertions === undefined
+      ? {}
+      : { fileAssertions: policyTargets.fileAssertions }),
+    ...(policyTargets.commitNotAfter === undefined
+      ? {}
+      : { commitNotAfter: policyTargets.commitNotAfter }),
+    ...(policyTargets.commitLock === undefined ? {} : { commitLock: policyTargets.commitLock }),
+  };
 }
 
 async function eccMcpRemovePlan(ctx: PlanContext): Promise<Plan> {
