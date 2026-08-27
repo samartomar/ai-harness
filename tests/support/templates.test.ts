@@ -101,6 +101,10 @@ describe("findings — routing", () => {
       expect(finding.recommendedAction).not.toContain("package name");
     }
 
+    const artifactMismatch = mustFind("org-policy.observe-artifact-identity-mismatch", "fail");
+    expect(artifactMismatch.recommendedAction).toContain("64 MiB");
+    expect(artifactMismatch.recommendedAction).toContain("successor");
+
     expect(mustFind("org-policy.observe-decision-revoked", "fail").title).toBe(
       "npm observation decision is revoked",
     );

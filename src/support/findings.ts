@@ -657,7 +657,7 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     failSeverity: "blocking",
     title: "observed governed artifact does not match the decision",
     action:
-      "Restore the exact policy-approved manifest and artifact files recorded by the current decision, then rerun the observation.",
+      "Restore the exact policy-approved manifest and artifact files recorded by the current decision and keep their combined observed size within 64 MiB, then rerun the observation. If approved content exceeds that bound, reduce or split it to a supported bounded artifact shape and issue a separately reviewed, evidence-bound successor decision before re-observing.",
   },
   "org-policy.lifecycle-input-invalid": {
     audience: "developer",
