@@ -1,9 +1,9 @@
 import { baselineCatalogById } from "../baseline-evidence/catalogs.js";
 import { executeBaselineEvidencePipeline } from "../baseline-evidence/pipeline.js";
 import { AihError } from "../errors.js";
-import { resolveTargets } from "../internals/cli-detect.js";
 import type { PlanResult } from "../internals/execute.js";
 import type { PlanContext } from "../internals/plan.js";
+import { verifiedOrgPolicyTargets } from "../org-policy/project.js";
 import { resolveTrustSource } from "../trust/fetch.js";
 import { superpowersEvidenceComponentIds, verifiedSuperpowersInstallPlan } from "./verified.js";
 
@@ -21,17 +21,28 @@ function catalogFromContext(ctx: PlanContext) {
 }
 
 export async function executeSuperpowersCommand(ctx: PlanContext): Promise<PlanResult> {
-  const { clis } = await resolveTargets(ctx);
+  const policyTargets = await verifiedOrgPolicyTargets(ctx);
+  const { clis } = policyTargets.resolution;
+  const targetCtx: PlanContext = { ...ctx, targets: clis };
   const catalog = catalogFromContext(ctx);
   const source = resolveTrustSource(`${catalog.owner}/${catalog.repo}`, {
-    root: ctx.root,
+    root: targetCtx.root,
     pin: catalog.pinnedSha,
   });
-  return executeBaselineEvidencePipeline(ctx, {
+  return executeBaselineEvidencePipeline(targetCtx, {
     catalog,
     source,
     componentIds: superpowersEvidenceComponentIds(),
     buildInstallPlan: (sourceRoot, authorizations) =>
-      verifiedSuperpowersInstallPlan(ctx, sourceRoot, clis, authorizations),
+      verifiedSuperpowersInstallPlan(targetCtx, sourceRoot, clis, authorizations),
+    transactionPins: {
+      ...(policyTargets.fileAssertions === undefined
+        ? {}
+        : { fileAssertions: policyTargets.fileAssertions }),
+      ...(policyTargets.commitNotAfter === undefined
+        ? {}
+        : { commitNotAfter: policyTargets.commitNotAfter }),
+      ...(policyTargets.commitLock === undefined ? {} : { commitLock: policyTargets.commitLock }),
+    },
   });
 }

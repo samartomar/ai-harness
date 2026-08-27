@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { join, posix } from "node:path";
 import { SettingsError } from "../errors.js";
-import { homeDir, isTargeted, resolveTargets } from "../internals/cli-detect.js";
+import { homeDir, isTargeted } from "../internals/cli-detect.js";
 import { type CliEntry, entry } from "../internals/cli-registry.js";
 import { type Cli, SUPPORTED_CLIS } from "../internals/clis.js";
 import { upsertTextBlock } from "../internals/envfile.js";
@@ -19,6 +19,7 @@ import { beginMarker, endMarker } from "../internals/render.js";
 import type { Check } from "../internals/verify.js";
 import { AIH_ORG_POLICY_FILE } from "../org-policy/constants.js";
 import { assertOrgPolicyMutationSource } from "../org-policy/drift.js";
+import { verifiedOrgPolicyTargets } from "../org-policy/project.js";
 import {
   assertGovernanceOwnsSurface,
   governanceOwnsAihSurfaces,
@@ -826,14 +827,25 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   }
   const githubAuth = githubAuthOption(ctx.options.githubAuth);
   const mode = String(ctx.options.mode ?? "standard");
-  if (mode === "none") return planMcpNone(ctx);
-  if (mode === "offline") return planMcpOffline(ctx);
+  const policyTargets = await verifiedOrgPolicyTargets(ctx);
+  const withPolicyPins = (planned: ReturnType<typeof plan>): ReturnType<typeof plan> => ({
+    ...planned,
+    ...(policyTargets.fileAssertions === undefined
+      ? {}
+      : { fileAssertions: policyTargets.fileAssertions }),
+    ...(policyTargets.commitNotAfter === undefined
+      ? {}
+      : { commitNotAfter: policyTargets.commitNotAfter }),
+    ...(policyTargets.commitLock === undefined ? {} : { commitLock: policyTargets.commitLock }),
+  });
+  if (mode === "none") return withPolicyPins(planMcpNone(ctx));
+  if (mode === "offline") return withPolicyPins(planMcpOffline(ctx));
 
   // Honor --cli/--all-tools/--detect, a committed marker, or the deterministic
   // first-run Claude default. Previously mcp ignored the selection and wrote
   // Claude's `.mcp.json` for every tool — a real bug for Codex (config.toml),
   // Copilot (.vscode/mcp.json), OpenCode, Zed, etc.
-  const { clis } = await resolveTargets(ctx);
+  const { clis } = policyTargets.resolution;
   const scope = String(ctx.options.scope ?? "project");
   const selfHost = ctx.options.selfHost === true;
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
@@ -1182,7 +1194,7 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     );
   }
 
-  return plan("mcp", ...actions);
+  return withPolicyPins(plan("mcp", ...actions));
 }
 
 async function planMcpWithWriteGuards(ctx: PlanContext): Promise<ReturnType<typeof plan>> {

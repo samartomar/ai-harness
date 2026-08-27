@@ -588,6 +588,13 @@ export interface PolicyAuthorityVerification {
   authority?: VerifiedPolicyAuthority;
   /** Deliberately scrubbed: trust-verifier child output may contain credentials. */
   problem?: string;
+  /**
+   * An explicitly selected PolicyBundle V2 claimed the protected-file authority
+   * transport but failed its custody or freshness checks. Callers that would
+   * otherwise derive effects from that bundle must fail closed, rather than
+   * treating it as an ordinary un-attested policy.
+   */
+  protectedPolicyFile?: "problem" | "verified";
 }
 
 function externalAuthorityRoot(
@@ -1009,8 +1016,10 @@ export async function verifyPolicyAuthorityReceipt(
   ctx: PlanContext,
 ): Promise<PolicyAuthorityVerification> {
   const policyFile = protectedPolicyFileAuthority(ctx);
-  if (policyFile.state === "problem") return { problem: policyFile.problem };
-  if (policyFile.state === "verified") return { authority: policyFile.authority };
+  if (policyFile.state === "problem")
+    return { problem: policyFile.problem, protectedPolicyFile: "problem" };
+  if (policyFile.state === "verified")
+    return { authority: policyFile.authority, protectedPolicyFile: "verified" };
   const root = externalAuthorityRoot(ctx);
   if (root === undefined) {
     return {

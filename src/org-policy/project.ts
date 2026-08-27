@@ -5,6 +5,7 @@ import {
   type McpProjectionDecisionBindings,
   McpProjectionDecisionBindingsSchema,
 } from "../config/marker.js";
+import { resolveTargets, type TargetResolution } from "../internals/cli-detect.js";
 import { readRegularFile, readRegularFileWithStats } from "../internals/fsxn.js";
 import {
   canAppendPolicyAihIgnore,
@@ -65,9 +66,22 @@ import {
 import { HOOK_REGISTRAR_DESTINATION, hookRegistrarProjectionActions } from "./hook-registrar.js";
 import { expectedHooksFromReceipt, readHookRegistrarReceipt } from "./hook-registrar-receipt.js";
 import { type RuntimeOrgPolicyResolution, resolveRuntimeOrgPolicy } from "./runtime.js";
-import { governanceOwnsAihSurfaces, type OrgPolicy, OrgPolicyError } from "./schema.js";
+import {
+  governanceOwnsAihSurfaces,
+  type OrgPolicy,
+  OrgPolicyError,
+  readOrgPolicy,
+} from "./schema.js";
 
 export const ORG_POLICY_HOOK_RECEIPT_PATH = ".aih/org-policy-hook-receipt.json";
+
+/**
+ * All effectful plans derived from the protected policy transport share this
+ * target-local lock, so their exact authority assertion is rechecked while the
+ * transaction owns the commit window.
+ */
+export const POLICY_AUTHORITY_COMMIT_LOCK =
+  ".aih/governance/policy-authority/v1/locks/authority.lock";
 
 function commandPolicyFor(composed: ReturnType<typeof composeOrgPolicy>): Record<string, unknown> {
   return {
@@ -1913,6 +1927,7 @@ export interface VerifiedOrgPolicyProjection {
   readonly actions: readonly Action[];
   readonly fileAssertions?: readonly FileAssertion[];
   readonly commitNotAfter?: string;
+  readonly commitLock?: string;
 }
 
 const verifiedOrgPolicySources = new WeakSet<object>();
@@ -1922,12 +1937,43 @@ export interface VerifiedOrgPolicySource {
   readonly verification: PolicyAuthorityVerification;
 }
 
+export interface VerifiedOrgPolicyTargets {
+  readonly policy?: OrgPolicy;
+  readonly resolution: TargetResolution;
+  readonly source?: VerifiedOrgPolicySource;
+  readonly fileAssertions?: readonly FileAssertion[];
+  readonly commitNotAfter?: string;
+  readonly commitLock?: string;
+}
+
+function protectedPolicyAuthorityPins(
+  source: VerifiedOrgPolicySource | undefined,
+): Pick<VerifiedOrgPolicyTargets, "fileAssertions" | "commitNotAfter" | "commitLock"> {
+  const authority = source?.verification.authority;
+  if (authority?.source !== "policy-file") return {};
+  const assertion = verifiedPolicyAuthorityReceiptAssertionV1(authority);
+  const deadline = Date.parse(authority.receipt.expiresAt);
+  if (assertion === undefined || !Number.isFinite(deadline) || deadline <= Date.now()) {
+    throw new OrgPolicyError("protected policy bundle authority is not currently valid");
+  }
+  return {
+    fileAssertions: [assertion],
+    commitNotAfter: new Date(deadline).toISOString(),
+    commitLock: POLICY_AUTHORITY_COMMIT_LOCK,
+  };
+}
+
 /** Resolve policy and authority from one observation before policy-selected planning. */
 export async function verifiedOrgPolicySource(
   ctx: PlanContext,
   policy: OrgPolicy,
 ): Promise<VerifiedOrgPolicySource> {
   const verification = await verifyPolicyAuthorityReceipt(ctx);
+  if (verification.protectedPolicyFile === "problem") {
+    throw new OrgPolicyError(
+      verification.problem ?? "protected policy bundle authority could not be verified",
+    );
+  }
   const authority = verification.authority;
   const resolvedPolicy =
     authority?.source === "policy-file" ? verifiedPolicyFileAuthorityPolicyV1(authority) : policy;
@@ -1937,6 +1983,28 @@ export async function verifiedOrgPolicySource(
   const source = Object.freeze({ policy: resolvedPolicy, verification });
   verifiedOrgPolicySources.add(source);
   return source;
+}
+
+/**
+ * Resolve CLI targets from the one policy observation that authorized them.
+ * Plain Vibe policy sources keep their established read-only selection behavior;
+ * the protected V2 transport additionally returns the custody pins its effectful
+ * caller must carry into the final transaction.
+ */
+export async function verifiedOrgPolicyTargets(
+  ctx: PlanContext,
+): Promise<VerifiedOrgPolicyTargets> {
+  const configured = readOrgPolicy(ctx.root, ctx.env);
+  const source =
+    configured === undefined ? undefined : await verifiedOrgPolicySource(ctx, configured);
+  const policy = source?.policy ?? configured;
+  const resolution = await resolveTargets(ctx, policy);
+  return {
+    ...(policy === undefined ? {} : { policy }),
+    ...(source === undefined ? {} : { source }),
+    resolution,
+    ...protectedPolicyAuthorityPins(source),
+  };
 }
 
 /** Governed projection: authority is verified before any policy-selected action is emitted. */
@@ -1998,6 +2066,7 @@ export async function verifiedOrgPolicyProjection(
     actions,
     fileAssertions: [assertion],
     commitNotAfter: new Date(deadline).toISOString(),
+    commitLock: authority.source === "policy-file" ? POLICY_AUTHORITY_COMMIT_LOCK : undefined,
   };
 }
 

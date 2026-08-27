@@ -31,6 +31,8 @@ export interface BaselineEvidencePipelineInput {
   allowPartial?: boolean;
   /** When set, only accepted-with-conditions decisions for this exact tuple apply. */
   acceptanceTuple?: AcceptanceTuple;
+  /** Exact protected-policy custody pins carried into the target-local install transaction. */
+  transactionPins?: Pick<Plan, "fileAssertions" | "commitNotAfter" | "commitLock">;
   /**
    * `held` rides alongside `authorizations` because a caller that reports WHY a
    * requested component did not install needs the evidence state that held it
@@ -191,7 +193,7 @@ export async function executeBaselineEvidencePipeline(
       org.checks.length > 0
         ? [structuredChecksProbe("org baseline evidence", () => org.checks), ...install.actions]
         : install.actions;
-    return executePlan(plan(install.capability, ...actions), ctx);
+    return executePlan({ ...plan(install.capability, ...actions), ...input.transactionPins }, ctx);
   } finally {
     cleanupQuarantine(input.source);
   }

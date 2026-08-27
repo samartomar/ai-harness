@@ -12,6 +12,8 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { command as bootstrapAiCommand } from "../../src/bootstrap-ai/index.js";
+import { eccMcpAddCommand } from "../../src/ecc/index.js";
 import { resolveTargets } from "../../src/internals/cli-detect.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
@@ -21,6 +23,7 @@ import {
   verifiedPolicyAuthorityReceiptAssertionV1,
   verifyPolicyAuthorityReceipt,
 } from "../../src/org-policy/authority.js";
+import { ECC_MCP_CATALOG_PROVENANCE } from "../../src/org-policy/ecc-mcp-catalog.js";
 import {
   verifiedOrgPolicyProjection,
   verifiedOrgPolicySource,
@@ -35,6 +38,7 @@ let policyPath: string;
 function authorityBundle(
   expiresAt = "2026-09-01T00:00:00Z",
   repoContract = "ai-coding/project.json",
+  eccMcp = false,
 ): string {
   return JSON.stringify({
     schemaVersion: 2,
@@ -49,6 +53,20 @@ function authorityBundle(
         policyVersion: "2026.08",
         catalog: { reviewed: [], custom: [] },
         supportedClis: ["claude"],
+        ...(eccMcp
+          ? {
+              eccMcpApprovals: [
+                {
+                  id: "memxus",
+                  sourceContentSha256: ECC_MCP_CATALOG_PROVENANCE.contentSha256,
+                  state: "approved",
+                  approvedBy: "security-admin",
+                  authenticationMode: "api-key",
+                  allowedDataClasses: ["non-sensitive-context"],
+                },
+              ],
+            }
+          : {}),
       },
     },
     authorityReceipt: {
@@ -178,6 +196,7 @@ describe("administrator-protected policy-file authority", () => {
     expect(await verifyPolicyAuthorityReceipt(ctx)).toEqual({
       problem:
         "protected policy bundle authority requires an absolute file outside the governed target",
+      protectedPolicyFile: "problem",
     });
     expect(calls).toEqual([]);
   });
@@ -218,6 +237,7 @@ describe("administrator-protected policy-file authority", () => {
     expect(() => readOrgPolicy(duplicate.ctx.root, duplicate.ctx.env)).toThrow(/duplicate JSON/);
     await expect(verifyPolicyAuthorityReceipt(duplicate.ctx)).resolves.toEqual({
       problem: "protected policy bundle authority is malformed",
+      protectedPolicyFile: "problem",
     });
     expect(duplicate.calls).toEqual([]);
 
@@ -235,6 +255,7 @@ describe("administrator-protected policy-file authority", () => {
     );
     await expect(verifyPolicyAuthorityReceipt(invalidUtf8.ctx)).resolves.toEqual({
       problem: "protected policy bundle authority is malformed",
+      protectedPolicyFile: "problem",
     });
     expect(invalidUtf8.calls).toEqual([]);
 
@@ -248,6 +269,7 @@ describe("administrator-protected policy-file authority", () => {
     );
     await expect(verifyPolicyAuthorityReceipt(oversized.ctx)).resolves.toEqual({
       problem: "protected policy bundle authority exceeds the 1,000,000-byte safety limit",
+      protectedPolicyFile: "problem",
     });
     expect(oversized.calls).toEqual([]);
   });
@@ -299,6 +321,54 @@ describe("administrator-protected policy-file authority", () => {
     ).rejects.toThrow(/verified policy authority .* changed before commit/);
     expect(existsSync(join(targetRoot, "effect.txt"))).toBe(false);
     expect(existsSync(join(targetRoot, ".aih"))).toBe(false);
+  });
+
+  it("refuses a protected-policy A-to-B replacement before standalone bootstrap effects", async () => {
+    const { ctx } = context();
+    const plannedCtx: PlanContext = { ...ctx, apply: true, options: { cli: "claude" } };
+    const planned = await bootstrapAiCommand.plan(plannedCtx);
+    expect(planned.fileAssertions).toHaveLength(1);
+    expect(planned.commitLock).toBe(".aih/governance/policy-authority/v1/locks/authority.lock");
+
+    writeFileSync(
+      policyPath,
+      authorityBundle().replace('"supportedClis":["claude"]', '"supportedClis":["codex"]'),
+    );
+    await expect(executePlan(planned, plannedCtx)).rejects.toThrow(
+      /verified policy authority policy file changed before commit/,
+    );
+    expect(existsSync(join(targetRoot, "ai-coding", "RULE_ROUTER.md"))).toBe(false);
+    expect(existsSync(join(targetRoot, ".aih"))).toBe(false);
+  });
+
+  it("pins protected policy approval across standalone explicit ECC MCP Add", async () => {
+    writeFileSync(
+      policyPath,
+      authorityBundle("2026-09-01T00:00:00Z", "ai-coding/project.json", true),
+    );
+    writeFileSync(join(targetRoot, ".mcp.json"), '{"mcpServers":{}}\n');
+    const { ctx } = context();
+    const plannedCtx: PlanContext = {
+      ...ctx,
+      apply: true,
+      options: { id: "memxus", cli: "claude" },
+    };
+    const planned = await eccMcpAddCommand.plan(plannedCtx);
+    expect(planned.fileAssertions).toHaveLength(1);
+    expect(planned.commitLock).toBe(".aih/governance/policy-authority/v1/locks/authority.lock");
+
+    writeFileSync(
+      policyPath,
+      authorityBundle("2026-09-01T00:00:00Z", "ai-coding/project.json", true).replace(
+        '"supportedClis":["claude"]',
+        '"supportedClis":["codex"]',
+      ),
+    );
+    await expect(executePlan(planned, plannedCtx)).rejects.toThrow(
+      /verified policy authority policy file changed before commit/,
+    );
+    expect(existsSync(join(targetRoot, ".aih", "ecc-mcp-explicit-add-v1.json"))).toBe(false);
+    expect(existsSync(join(targetRoot, ".aih", "governance"))).toBe(false);
   });
 
   it("refuses a same-byte replacement of the verified external policy file before lock or effects", async () => {

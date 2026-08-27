@@ -20,12 +20,13 @@ import {
   executeEccProfileLifecycleCommand,
 } from "../ecc-profile/command.js";
 import { AihError } from "../errors.js";
-import { detectFallbackNotice, resolveTargets } from "../internals/cli-detect.js";
+import { detectFallbackNotice } from "../internals/cli-detect.js";
 import type { Cli } from "../internals/clis.js";
 import { inspectContainedRelativePath } from "../internals/contained-path.js";
 import { executePlan, type PlanResult } from "../internals/execute.js";
 import { doc, type Plan, type PlanContext, plan } from "../internals/plan.js";
 import { assertOrgPolicyMutationSource } from "../org-policy/drift.js";
+import { verifiedOrgPolicyTargets } from "../org-policy/project.js";
 import { governanceOwnsAihSurfaces, readOrgPolicy } from "../org-policy/schema.js";
 import type { RepoStack } from "../profile/scan.js";
 import { scanRepo } from "../profile/scan.js";
@@ -244,6 +245,7 @@ export async function executeEccEvidencePipeline(
   ctx: PlanContext,
   request: VerifiedEccRequest,
   deps: EccEvidencePipelineDeps = {},
+  transactionPins: Pick<Plan, "fileAssertions" | "commitNotAfter" | "commitLock"> = {},
 ): Promise<PlanResult> {
   const catalog = deps.catalog ?? requestedCatalog(ctx);
   if (!ctx.apply && deps.source === undefined && typeof ctx.options.eccPath !== "string") {
@@ -285,6 +287,7 @@ export async function executeEccEvidencePipeline(
       allowPartial:
         request.selection?.scope !== "full" && (request.selection?.moduleIds?.length ?? 0) === 0,
       acceptanceTuple: deps.acceptanceTuple,
+      transactionPins,
       buildInstallPlan: (sourceRoot, authorizations, held) =>
         buildInstallPlan(ctx, sourceRoot, request, authorizations, held),
     },
@@ -297,16 +300,27 @@ export async function executeEccCommand(
   ctx: PlanContext,
   deps: EccCommandDeps = {},
 ): Promise<PlanResult> {
-  assertOrgPolicyMutationSource({ ...ctx, posture: postureFromContext(ctx) });
-  if (ctx.options.lifecycle !== undefined) {
-    const lifecycle = String(ctx.options.lifecycle);
-    const policy = readOrgPolicy(ctx.root, ctx.env);
+  const policyTargets = await verifiedOrgPolicyTargets(ctx);
+  const targetCtx: PlanContext = { ...ctx, targets: policyTargets.resolution.clis };
+  const transactionPins: Pick<Plan, "fileAssertions" | "commitNotAfter" | "commitLock"> = {
+    ...(policyTargets.fileAssertions === undefined
+      ? {}
+      : { fileAssertions: policyTargets.fileAssertions }),
+    ...(policyTargets.commitNotAfter === undefined
+      ? {}
+      : { commitNotAfter: policyTargets.commitNotAfter }),
+    ...(policyTargets.commitLock === undefined ? {} : { commitLock: policyTargets.commitLock }),
+  };
+  assertOrgPolicyMutationSource({ ...targetCtx, posture: postureFromContext(targetCtx) });
+  if (targetCtx.options.lifecycle !== undefined) {
+    const lifecycle = String(targetCtx.options.lifecycle);
+    const policy = policyTargets.policy ?? readOrgPolicy(targetCtx.root, targetCtx.env);
     if (governanceOwnsAihSurfaces(policy) && lifecycle === "install") {
       // The governed framework lifecycle, reached by an operator. It replaces
       // the profile installer here rather than wrapping it: AIH-direct
       // materialization is what makes per-component governed control possible,
       // and the framework's own installer projects surfaces governance owns.
-      const catalog = deps.catalog ?? requestedCatalog(ctx);
+      const catalog = deps.catalog ?? requestedCatalog(targetCtx);
       // Validate the policy against the catalog BEFORE resolving a source:
       // resolving a remote source creates a quarantine directory, and an
       // invocation that refuses must create nothing at all.
@@ -317,15 +331,14 @@ export async function executeEccCommand(
       // policy grammar for it: a governed repository does not get a private
       // notion of "which tool am I installing for". Narrowed here, before the
       // source, for the same reason the catalog check is here.
-      const { clis } = await resolveTargets(ctx);
-      const targets = assertGovernedMaterializationTargets(clis);
+      const targets = assertGovernedMaterializationTargets(policyTargets.resolution.clis);
       return executeGovernedEccMaterialization(
-        ctx,
+        targetCtx,
         {
           catalog,
           componentIds,
           targets,
-          source: deps.source ?? requestedSource(ctx, catalog),
+          source: deps.source ?? requestedSource(targetCtx, catalog),
           policy,
         },
         deps,
@@ -341,19 +354,20 @@ export async function executeEccCommand(
       );
     }
     return (deps.executeProfileLifecycle ?? executeEccProfileLifecycleCommand)(
-      ctx,
+      targetCtx,
       deps.profileLifecycle,
     );
   }
-  const { clis, detectFellBack } = await resolveTargets(ctx);
-  const request = buildEccRegistrationRequest(ctx, clis);
-  if (clis.some(isMutatingEccTarget)) return executeEccEvidencePipeline(ctx, request, deps);
+  const { clis, detectFellBack } = policyTargets.resolution;
+  const request = buildEccRegistrationRequest(targetCtx, clis);
+  if (clis.some(isMutatingEccTarget))
+    return executeEccEvidencePipeline(targetCtx, request, deps, transactionPins);
 
   const actions = clis.flatMap((cli) =>
     eccActionsForCli(cli, {
       profile: request.profile,
       stackSummary: request.stackSummary ?? "this repository",
-      platform: ctx.host.platform,
+      platform: targetCtx.host.platform,
       packs: request.packs,
     }),
   );
@@ -368,5 +382,8 @@ export async function executeEccCommand(
   if (detectFellBack) {
     actions.push(doc("no AI CLIs detected — defaulted to claude", detectFallbackNotice()));
   }
-  return executePlan(plan("ecc: consult-only targets", ...actions), ctx);
+  return executePlan(
+    { ...plan("ecc: consult-only targets", ...actions), ...transactionPins },
+    targetCtx,
+  );
 }

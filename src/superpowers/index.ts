@@ -1,4 +1,4 @@
-import { detectFallbackNotice, resolveTargets } from "../internals/cli-detect.js";
+import { detectFallbackNotice } from "../internals/cli-detect.js";
 import {
   type Action,
   type CommandSpec,
@@ -10,6 +10,7 @@ import {
 } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import { methodologySteering } from "../kiro/content.js";
+import { verifiedOrgPolicyTargets } from "../org-policy/project.js";
 import {
   superpowersActionsForCli,
   superpowersOverviewDoc,
@@ -36,7 +37,8 @@ function summaryDoc(clis: string[]): Action {
  * commands / a pointer to the INSTALL guide.
  */
 async function superpowersPlan(ctx: PlanContext): Promise<Plan> {
-  const { clis, detectFellBack } = await resolveTargets(ctx);
+  const policyTargets = await verifiedOrgPolicyTargets(ctx);
+  const { clis, detectFellBack } = policyTargets.resolution;
   const actions: Action[] = [];
   for (const cli of clis) actions.push(...superpowersActionsForCli(cli));
   if (clis.includes("antigravity") || clis.includes("copilot")) {
@@ -57,7 +59,16 @@ async function superpowersPlan(ctx: PlanContext): Promise<Plan> {
     actions.push(doc("no AI CLIs detected — defaulted to claude", detectFallbackNotice()));
   }
   actions.push(summaryDoc(clis));
-  return plan("superpowers", ...actions);
+  return {
+    ...plan("superpowers", ...actions),
+    ...(policyTargets.fileAssertions === undefined
+      ? {}
+      : { fileAssertions: policyTargets.fileAssertions }),
+    ...(policyTargets.commitNotAfter === undefined
+      ? {}
+      : { commitNotAfter: policyTargets.commitNotAfter }),
+    ...(policyTargets.commitLock === undefined ? {} : { commitLock: policyTargets.commitLock }),
+  };
 }
 
 export const command: CommandSpec = {

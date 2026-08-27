@@ -10,7 +10,6 @@ import {
   bareDefaultNarrowingNotice,
   detectFallbackNotice,
   detectInstall,
-  resolveTargets,
   unmanagedBootloaders,
 } from "../internals/cli-detect.js";
 import type { Cli } from "../internals/clis.js";
@@ -39,6 +38,7 @@ import {
   supportsKiroStandaloneHooks,
 } from "../kiro/runtime.js";
 import { type GeneratedDoc, lintProbes } from "../lint/run.js";
+import { verifiedOrgPolicyTargets } from "../org-policy/project.js";
 import { scanRepo } from "../profile/scan.js";
 import {
   adapterNote,
@@ -206,7 +206,8 @@ async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
   explicitKiroHookRuntime(ctx);
   const dir = ctx.contextDir;
   const canon = canonMode(ctx);
-  const { clis, detectFellBack, bareDefault } = await resolveTargets(ctx);
+  const policyTargets = await verifiedOrgPolicyTargets(ctx);
+  const { clis, detectFellBack, bareDefault } = policyTargets.resolution;
   const baseline = resolveBaselineSource(ctx.options, readAihConfigBaseline(ctx.root));
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   const repoName = repoDisplayName(ctx.root);
@@ -407,7 +408,16 @@ async function bootstrapAiPlan(ctx: PlanContext): Promise<Plan> {
     ),
   );
 
-  return plan("bootstrap-ai", ...actions);
+  return {
+    ...plan("bootstrap-ai", ...actions),
+    ...(policyTargets.fileAssertions === undefined
+      ? {}
+      : { fileAssertions: policyTargets.fileAssertions }),
+    ...(policyTargets.commitNotAfter === undefined
+      ? {}
+      : { commitNotAfter: policyTargets.commitNotAfter }),
+    ...(policyTargets.commitLock === undefined ? {} : { commitLock: policyTargets.commitLock }),
+  };
 }
 
 function summaryText(

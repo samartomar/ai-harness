@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   existsSync,
+  linkSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -78,7 +79,10 @@ function seedOrgPolicy(allowedServers = ["code-review-graph"]): void {
   );
 }
 
-function externalPolicyBundle(supportedClis: string[] = ["claude"]): string {
+function externalPolicyBundle(
+  supportedClis: string[] = ["claude"],
+  expiresAt = "2026-09-01T00:00:00Z",
+): string {
   return JSON.stringify({
     schemaVersion: 2,
     bundleVersion: "2026.08.1",
@@ -102,7 +106,7 @@ function externalPolicyBundle(supportedClis: string[] = ["claude"]): string {
       version: 3,
       issuerRepository: "acme/governance",
       issuedAt: "2026-08-25T00:00:00Z",
-      expiresAt: "2026-09-01T00:00:00Z",
+      expiresAt,
       trustedIssuers: [{ id: "platform-security", githubRepository: "acme/governance" }],
       targets: supportedClis,
       decisions: [],
@@ -326,6 +330,7 @@ describe("aih init — command surface", () => {
       const planned = await command.plan(plannedCtx);
 
       expect(planned.fileAssertions).toHaveLength(1);
+      expect(planned.commitLock).toBe(".aih/governance/policy-authority/v1/locks/authority.lock");
       expect(writePaths(planned.actions)).toContain(".aih-config.json");
       expect(writePaths(planned.actions)).not.toContain(".claude/managed-settings.json");
 
@@ -340,6 +345,41 @@ describe("aih init — command surface", () => {
       expect(existsSync(join(dir, ".aih"))).toBe(false);
       expect(existsSync(join(dir, ".aih-config.json"))).toBe(false);
       expect(existsSync(join(dir, ".codex"))).toBe(false);
+    } finally {
+      rmSync(adminRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses expired, linked, and target-local protected bundles before init plans an effect", async () => {
+    const adminRoot = realpathSync.native(
+      mkdtempSync(join(realpathSync.native(tmpdir()), "aih-init-invalid-policy-authority-")),
+    );
+    try {
+      const outside = join(adminRoot, "policy-bundle.json");
+      const linked = join(adminRoot, "linked-policy-bundle.json");
+      const inside = join(dir, "inside-policy-bundle.json");
+      writeFileSync(inside, externalPolicyBundle());
+      const expectRefusal = async (path: string, problem: RegExp) => {
+        await expect(
+          command.plan(
+            ctx({
+              apply: true,
+              posture: "enterprise",
+              postureSource: "flag",
+              env: { AIH_ORG_POLICY: path },
+            }),
+          ),
+        ).rejects.toThrow(problem);
+        expect(existsSync(join(dir, ".aih"))).toBe(false);
+        expect(existsSync(join(dir, ".aih-config.json"))).toBe(false);
+        expect(existsSync(join(dir, ".claude", "managed-settings.json"))).toBe(false);
+      };
+      writeFileSync(outside, externalPolicyBundle(["claude"], "2026-08-26T00:00:00Z"));
+      await expectRefusal(outside, /not currently valid/);
+      writeFileSync(outside, externalPolicyBundle());
+      linkSync(outside, linked);
+      await expectRefusal(linked, /unsafe file custody/);
+      await expectRefusal(inside, /requires an absolute file outside the governed target/);
     } finally {
       rmSync(adminRoot, { recursive: true, force: true });
     }

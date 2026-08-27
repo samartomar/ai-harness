@@ -166,6 +166,7 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const actions: Action[] = [];
   let authorityAssertions: readonly FileAssertion[] | undefined;
   let authorityCommitNotAfter: string | undefined;
+  let authorityCommitLock: string | undefined;
   // `--mcp-mode` flows to the mcp phase only (standard|offline|none) so a
   // locked-down org gets the right MCP handling in one `aih init`.
   const mcpMode = String(ctx.options.mcpMode ?? "standard");
@@ -257,6 +258,7 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     );
     authorityAssertions = governedProjection.fileAssertions;
     authorityCommitNotAfter = governedProjection.commitNotAfter;
+    authorityCommitLock = governedProjection.commitLock;
   }
 
   // ECC is not a phase: its installer runs the network (`npx ecc-install` / a git
@@ -342,6 +344,7 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     ...plan("init", ...deduped),
     ...(authorityAssertions === undefined ? {} : { fileAssertions: authorityAssertions }),
     ...(authorityCommitNotAfter === undefined ? {} : { commitNotAfter: authorityCommitNotAfter }),
+    ...(authorityCommitLock === undefined ? {} : { commitLock: authorityCommitLock }),
   };
 }
 
