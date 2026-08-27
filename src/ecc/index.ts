@@ -17,6 +17,7 @@ import {
   probe,
 } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
+import { assertOrgPolicyMutationSource } from "../org-policy/drift.js";
 import { verifiedOrgPolicyTargets } from "../org-policy/project.js";
 import type { RepoStack } from "../profile/scan.js";
 import { scanRepo } from "../profile/scan.js";
@@ -1136,6 +1137,7 @@ function explicitEccMcpId(ctx: PlanContext): string {
 async function eccMcpAddPlan(ctx: PlanContext): Promise<Plan> {
   const target = await explicitEccMcpTarget(ctx);
   const policyTargets = await verifiedOrgPolicyTargets(ctx);
+  assertOrgPolicyMutationSource(ctx, policyTargets.source?.verification.authority);
   const policy = policyTargets.policy;
   if (policy === undefined) {
     throw new SettingsError("ecc mcp add requires a valid aih-org-policy.json in the target root");
