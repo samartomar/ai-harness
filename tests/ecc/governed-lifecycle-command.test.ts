@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -151,7 +152,9 @@ beforeEach(() => {
   writeTree(sourceRoot, SOURCE_TREE);
   root = mkdtempSync(join(tmpdir(), "aih-governed-lifecycle-root-"));
   writeTree(root, OPERATOR_TREE);
-  adminRoot = mkdtempSync(join(tmpdir(), "aih-governed-lifecycle-admin-"));
+  adminRoot = realpathSync.native(
+    mkdtempSync(join(realpathSync.native(tmpdir()), "aih-governed-lifecycle-admin-")),
+  );
 });
 afterEach(() => {
   vi.useRealTimers();
