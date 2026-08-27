@@ -89,6 +89,29 @@ describe("findings — routing", () => {
     }
   });
 
+  it("routes upstream-artifact refusals without changing npm-package wording", () => {
+    for (const code of [
+      "org-policy.observe-artifact-decision-revoked",
+      "org-policy.observe-artifact-identity-mismatch",
+      "org-policy.lifecycle-artifact-decision-revoked",
+    ] as const) {
+      const finding = mustFind(code, "fail");
+      expect(finding.title).toContain("governed artifact");
+      expect(finding.title).not.toContain("npm");
+      expect(finding.recommendedAction).not.toContain("package name");
+    }
+
+    expect(mustFind("org-policy.observe-decision-revoked", "fail").title).toBe(
+      "npm observation decision is revoked",
+    );
+    expect(mustFind("org-policy.observe-installed-identity-mismatch", "fail").title).toBe(
+      "installed npm package does not match the decision",
+    );
+    expect(mustFind("org-policy.lifecycle-decision-revoked", "fail").title).toBe(
+      "npm lifecycle decision is revoked",
+    );
+  });
+
   it("dedupes by code, merges details, sorts most-urgent-first", () => {
     const findings = findingsFrom(
       [
