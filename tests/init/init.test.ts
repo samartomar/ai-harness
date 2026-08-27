@@ -78,7 +78,7 @@ function seedOrgPolicy(allowedServers = ["code-review-graph"]): void {
   );
 }
 
-function externalPolicyBundle(): string {
+function externalPolicyBundle(supportedClis: string[] = ["claude"]): string {
   return JSON.stringify({
     schemaVersion: 2,
     bundleVersion: "2026.08.1",
@@ -94,7 +94,7 @@ function externalPolicyBundle(): string {
         catalog: { reviewed: [], custom: [] },
         activations: [],
         authority: { approvals: [], decisions: [] },
-        supportedClis: ["claude"],
+        supportedClis,
       },
     },
     authorityReceipt: {
@@ -104,7 +104,7 @@ function externalPolicyBundle(): string {
       issuedAt: "2026-08-25T00:00:00Z",
       expiresAt: "2026-09-01T00:00:00Z",
       trustedIssuers: [{ id: "platform-security", githubRepository: "acme/governance" }],
-      targets: ["claude"],
+      targets: supportedClis,
       decisions: [],
       decisionRevocations: [],
     },
@@ -303,6 +303,43 @@ describe("aih init — command surface", () => {
       );
       expect(existsSync(join(dir, ".aih"))).toBe(false);
       expect(existsSync(join(dir, ".claude", "managed-settings.json"))).toBe(false);
+    } finally {
+      rmSync(adminRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("retains protected authority custody when only generic Codex init phases write", async () => {
+    const adminRoot = realpathSync.native(
+      mkdtempSync(join(realpathSync.native(tmpdir()), "aih-init-codex-authority-")),
+    );
+    try {
+      const policyPath = join(adminRoot, "policy-bundle.json");
+      const policy = externalPolicyBundle(["codex"]);
+      writeFileSync(policyPath, policy);
+      const plannedCtx = ctx({
+        apply: true,
+        posture: "enterprise",
+        postureSource: "flag",
+        env: { AIH_ORG_POLICY: policyPath },
+        options: { cli: "codex" },
+      });
+      const planned = await command.plan(plannedCtx);
+
+      expect(planned.fileAssertions).toHaveLength(1);
+      expect(writePaths(planned.actions)).toContain(".aih-config.json");
+      expect(writePaths(planned.actions)).not.toContain(".claude/managed-settings.json");
+
+      const replacement = join(adminRoot, "replacement.json");
+      writeFileSync(replacement, policy);
+      rmSync(policyPath);
+      renameSync(replacement, policyPath);
+
+      await expect(executePlan(planned, plannedCtx)).rejects.toThrow(
+        /verified policy authority policy file changed before commit/,
+      );
+      expect(existsSync(join(dir, ".aih"))).toBe(false);
+      expect(existsSync(join(dir, ".aih-config.json"))).toBe(false);
+      expect(existsSync(join(dir, ".codex"))).toBe(false);
     } finally {
       rmSync(adminRoot, { recursive: true, force: true });
     }

@@ -48,6 +48,7 @@ import { scanRepo } from "../profile/scan.js";
 import { usageRecorderScript } from "../usage/capture.js";
 import { usageHookActions } from "../usage/hooks.js";
 import {
+  type PolicyAuthorityVerification,
   verifiedPolicyAuthorityReceiptAssertionV1,
   verifiedPolicyFileAuthorityPolicyV1,
   verifyPolicyAuthorityReceipt,
@@ -1914,32 +1915,49 @@ export interface VerifiedOrgPolicyProjection {
   readonly commitNotAfter?: string;
 }
 
-function mutatesLocalState(action: Action): boolean {
-  return (
-    action.kind === "write" ||
-    action.kind === "remove" ||
-    action.kind === "envblock" ||
-    action.kind === "exec"
-  );
+const verifiedOrgPolicySources = new WeakSet<object>();
+
+export interface VerifiedOrgPolicySource {
+  readonly policy: OrgPolicy;
+  readonly verification: PolicyAuthorityVerification;
+}
+
+/** Resolve policy and authority from one observation before policy-selected planning. */
+export async function verifiedOrgPolicySource(
+  ctx: PlanContext,
+  policy: OrgPolicy,
+): Promise<VerifiedOrgPolicySource> {
+  const verification = await verifyPolicyAuthorityReceipt(ctx);
+  const authority = verification.authority;
+  const resolvedPolicy =
+    authority?.source === "policy-file" ? verifiedPolicyFileAuthorityPolicyV1(authority) : policy;
+  if (resolvedPolicy === undefined) {
+    throw new OrgPolicyError("policy project protected authority policy could not be recovered");
+  }
+  const source = Object.freeze({ policy: resolvedPolicy, verification });
+  verifiedOrgPolicySources.add(source);
+  return source;
 }
 
 /** Governed projection: authority is verified before any policy-selected action is emitted. */
 export async function verifiedOrgPolicyProjection(
   ctx: PlanContext,
   policy: OrgPolicy,
+  preparedSource?: VerifiedOrgPolicySource,
 ): Promise<VerifiedOrgPolicyProjection> {
-  const initialVerification = await verifyPolicyAuthorityReceipt(ctx);
-  const initialAuthority = initialVerification.authority;
-  const verifiedPolicy =
-    initialAuthority?.source === "policy-file"
-      ? verifiedPolicyFileAuthorityPolicyV1(initialAuthority)
-      : policy;
-  if (verifiedPolicy === undefined) {
-    throw new OrgPolicyError("policy project protected authority policy could not be recovered");
+  const source = preparedSource ?? (await verifiedOrgPolicySource(ctx, policy));
+  if (
+    !verifiedOrgPolicySources.has(source) ||
+    (preparedSource !== undefined && source.policy !== policy)
+  ) {
+    throw new OrgPolicyError("policy project prepared authority source is invalid");
   }
+  const initialVerification = source.verification;
+  const initialAuthority = initialVerification.authority;
+  const verifiedPolicy = source.policy;
   const runtime = await resolveRuntimeOrgPolicy(ctx, verifiedPolicy, initialVerification);
   const actions = projectionActionsFromRuntime(ctx, verifiedPolicy, runtime);
-  if (!actions.some(mutatesLocalState) || !runtime.effective.authority.verified) {
+  if (!runtime.effective.authority.verified) {
     return { policy: verifiedPolicy, actions };
   }
 

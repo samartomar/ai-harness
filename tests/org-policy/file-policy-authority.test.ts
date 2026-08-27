@@ -12,6 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resolveTargets } from "../../src/internals/cli-detect.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { plan, writeText } from "../../src/internals/plan.js";
@@ -20,7 +21,10 @@ import {
   verifiedPolicyAuthorityReceiptAssertionV1,
   verifyPolicyAuthorityReceipt,
 } from "../../src/org-policy/authority.js";
-import { verifiedOrgPolicyProjection } from "../../src/org-policy/project.js";
+import {
+  verifiedOrgPolicyProjection,
+  verifiedOrgPolicySource,
+} from "../../src/org-policy/project.js";
 import { readOrgPolicy } from "../../src/org-policy/schema.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 
@@ -144,6 +148,25 @@ describe("administrator-protected policy-file authority", () => {
     expect(rendered).toContain("policy-b.json");
     expect(rendered).not.toContain("ai-coding/project.json");
     expect(projected.fileAssertions).toHaveLength(1);
+  });
+
+  it("sanctions CLI targets from the same protected-file observation as authority", async () => {
+    const { ctx } = context();
+    const stalePolicy = readOrgPolicy(ctx.root, ctx.env);
+    if (stalePolicy === undefined) throw new Error("expected initial protected policy");
+
+    writeFileSync(
+      policyPath,
+      authorityBundle().replace('"supportedClis":["claude"]', '"supportedClis":["codex"]'),
+    );
+    const source = await verifiedOrgPolicySource(ctx, stalePolicy);
+    const resolution = await resolveTargets({ ...ctx, options: { cli: "codex" } }, source.policy);
+
+    expect(source.policy.governance?.supportedClis).toEqual(["codex"]);
+    expect(resolution.clis).toEqual(["codex"]);
+    await expect(
+      resolveTargets({ ...ctx, options: { cli: "claude" } }, source.policy),
+    ).rejects.toThrow(/sanction gate refused selected CLI target/);
   });
 
   it("does not grant file authority to a developer-controlled bundle inside the target", async () => {

@@ -28,7 +28,7 @@ import {
   KIRO_HOOK_RUNTIME_OPTION,
   kiroHookRuntime,
 } from "../kiro/runtime.js";
-import { verifiedOrgPolicyProjection } from "../org-policy/project.js";
+import { verifiedOrgPolicyProjection, verifiedOrgPolicySource } from "../org-policy/project.js";
 import { governanceOwnsAihSurfaces, readOrgPolicy } from "../org-policy/schema.js";
 import { sidecarInitActions } from "../truth/index.js";
 import { INIT_PHASES } from "./phases.js";
@@ -170,6 +170,15 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   // locked-down org gets the right MCP handling in one `aih init`.
   const mcpMode = String(ctx.options.mcpMode ?? "standard");
 
+  // Resolve protected policy and authority before target selection so the CLI
+  // sanction gate and every later effect use the same custodied policy bytes.
+  const configuredPolicy = readOrgPolicy(ctx.root, ctx.env);
+  const preparedPolicy =
+    configuredPolicy === undefined
+      ? undefined
+      : await verifiedOrgPolicySource(ctx, configuredPolicy);
+  const policy = preparedPolicy?.policy ?? configuredPolicy;
+
   // Resolve the target CLIs ONCE (honoring `--detect`/`--cli`, prompting once when
   // interactive) and thread the result into every phase via `ctx.targets`. Each
   // tool-specific phase then emits only for a targeted tool: a bare `aih init`
@@ -177,7 +186,7 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   // explicit `aih init --detect` on a Kiro-only box writes neither `.claude/*` nor
   // `.cursor/*`. Without this single resolution, every phase that calls
   // `resolveTargets` would re-prompt under `--detect`.
-  const resolution = await resolveTargets(ctx);
+  const resolution = await resolveTargets(ctx, policy);
   const baseline = resolveBaselineSource(ctx.options, readAihConfigBaseline(ctx.root));
   const baseCtx: PlanContext = {
     ...ctx,
@@ -187,12 +196,10 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   // Resolve the active policy before composing leaf plans. A protected bundle's
   // policy and authority come from the same verified bytes; that resolved policy
   // also decides whether generic MCP and usage phases must be suppressed.
-  const configuredPolicy = readOrgPolicy(baseCtx.root, baseCtx.env);
   const governedProjection =
-    configuredPolicy === undefined
+    policy === undefined
       ? undefined
-      : await verifiedOrgPolicyProjection(baseCtx, configuredPolicy);
-  const policy = governedProjection?.policy ?? configuredPolicy;
+      : await verifiedOrgPolicyProjection(baseCtx, policy, preparedPolicy);
 
   // If `--detect` found nothing and we defaulted to claude, say so once at the top
   // (the phases short-circuit on `ctx.targets`, so no phase emits this itself).
