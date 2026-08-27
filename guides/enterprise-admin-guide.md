@@ -77,6 +77,12 @@ Core accepts the file only at Enterprise posture and only while all of these con
 - every authority-dependent mutating transaction pins and rechecks that exact external file before
   effects.
 
+When a governed plan launches a child process, Core holds and renews the same cooperative authority
+lease while the process is running and revalidates the protected file immediately before and after
+the process. If authority changes after the child starts, Core fails the command, blocks later child
+effects and deferred writes, and reports that the already-started process may have produced effects
+that Core cannot roll back.
+
 Core never writes the protected file and never claims that these checks prove its host ACL. The
 administrator or MDM/configuration-management system must restrict replacement to authorized
 operators and must control the process environment that names `AIH_ORG_POLICY`. Distribute a newly

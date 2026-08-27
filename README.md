@@ -135,7 +135,10 @@ administrator-controlled read-only path selected by an absolute
 existing V3 decision-authority payload; no approval workflow or second policy store is required.
 Core requires Enterprise posture, bounded strict JSON, a current 90-day-or-shorter authority window,
 a regular single-link file reached without symlinked parents, and exact byte re-observation before
-effects. Authority-dependent mutating transactions pin those same external bytes. Core never writes this file and does
+effects. Authority-dependent mutating transactions pin those same external bytes. Nested evidence
+and MCP planning reuse the one verified policy observation. Child-process effects retain a renewable
+cooperative lease and revalidate authority before and after execution; if the latter fails, Core
+blocks later effects without claiming it rolled back the already-run child. Core never writes this file and does
 not prove its operating-system ACL: the organization must use an administrator-only directory,
 MDM/configuration management, or an equivalent read-only distribution boundary and must control
 the process configuration that supplies `AIH_ORG_POLICY`. Replacing the protected file with a newly

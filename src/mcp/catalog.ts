@@ -106,9 +106,12 @@ export function policyAwareMcpCatalog(
     stack?: RepoStack;
     includeHostedGitHub?: boolean;
     includeDisabledServers?: boolean;
+    /** A policy verified by the caller's one authority observation. */
+    verifiedPolicy?: { policy?: OrgPolicy };
   },
 ): PolicyAwareMcpCatalog {
-  const policyResult = readMcpOrgPolicy(ctx);
+  const policyResult: { policy?: OrgPolicy; error?: unknown } =
+    opts.verifiedPolicy ?? readMcpOrgPolicy(ctx);
   if (policyResult.error !== undefined) {
     return { error: policyResult.error, errorSource: "org-policy" };
   }
@@ -122,7 +125,9 @@ export function policyAwareMcpCatalog(
       (includeDisabled || !githubDisabled);
     const githubAuth = opts.githubAuth ?? "oauth";
     const hostPolicyResult =
-      githubAuth === "token" ? tokenHostPolicy(ctx, policyResult) : policyResult;
+      githubAuth === "token" && opts.verifiedPolicy === undefined
+        ? tokenHostPolicy(ctx, policyResult)
+        : policyResult;
     if (hostPolicyResult.error !== undefined) {
       return {
         policy: policyResult.policy,

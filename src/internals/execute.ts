@@ -895,6 +895,7 @@ export async function executePlan(
   };
   const txn = new FsTransaction(transactionOptions);
   const deferredTxn = new FsTransaction(transactionOptions);
+  const execTxn = new FsTransaction(transactionOptions);
   for (const assertion of plan.fileAssertions ?? []) {
     const external = assertion.external === true;
     const absPath = resolvePath(ctx, assertion.path);
@@ -928,6 +929,14 @@ export async function executePlan(
         assertion.externalCustody,
       );
       deferredTxn.stageAssertion(
+        absPath,
+        assertion.sha256,
+        assertion.describe,
+        assertionRoot,
+        assertion.maxBytes,
+        assertion.externalCustody,
+      );
+      execTxn.stageAssertion(
         absPath,
         assertion.sha256,
         assertion.describe,
@@ -1188,8 +1197,8 @@ export async function executePlan(
   const execFailureChecks: Check[] = [];
   let skipProbesAfterExecFailure = false;
   let priorExecFailed = false;
-  for (const a of execActions) {
-    if (ctx.apply) {
+  const runExecActions = async (revalidate: () => void): Promise<void> => {
+    for (const a of execActions) {
       if (priorExecFailed && a.requiresPriorExecSuccess) {
         execs.push({ describe: a.describe, argv: collectedArgv(a), ran: false });
         continue;
@@ -1221,7 +1230,27 @@ export async function executePlan(
           );
         }
       }
-      const res = await ctx.run(a.argv, { cwd: a.cwd, env: a.env, timeoutMs: a.timeoutMs });
+      revalidate();
+      let res: Awaited<ReturnType<PlanContext["run"]>> | undefined;
+      let runnerError: unknown;
+      try {
+        res = await ctx.run(a.argv, { cwd: a.cwd, env: a.env, timeoutMs: a.timeoutMs });
+      } catch (error) {
+        runnerError = error;
+      }
+      try {
+        revalidate();
+      } catch (error) {
+        const outcome =
+          runnerError === undefined ? `returned exit code ${res?.code ?? "unknown"}` : "threw";
+        throw new AihError(
+          `authority validation failed after child "${a.describe}" ${outcome}; child process effects may have occurred and cannot be rolled back: ${(error as Error).message}`,
+          "AIH_TRUST",
+        );
+      }
+      if (runnerError !== undefined) throw runnerError;
+      if (res === undefined)
+        throw new AihError(`child "${a.describe}" returned no result`, "AIH_TRUST");
       const ok = res.code === 0 || Boolean(a.allowFailure);
       // A failing child already wrote a good diagnostic; carry it so the exit
       // code is not the only evidence the operator gets. Successful runs stay
@@ -1246,7 +1275,12 @@ export async function executePlan(
         }
         if (a.blockProbesOnFailure) skipProbesAfterExecFailure = true;
       }
-    } else {
+    }
+  };
+  if (ctx.apply && execActions.length > 0) {
+    await execTxn.runGuarded(runExecActions);
+  } else {
+    for (const a of execActions) {
       execs.push({ describe: a.describe, argv: collectedArgv(a), ran: false });
     }
   }

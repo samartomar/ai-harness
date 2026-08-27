@@ -879,6 +879,11 @@ payload. Generate it through the Policy Workbench protected-file form; the `issu
 is an attribution identity required by the reused V3 schema, not a requirement that the file live in
 GitHub. Core accepts only current, strict, bounded, regular, single-link, non-symlinked custody,
 re-observes the exact bytes, and pins them inside every authority-dependent mutating transaction.
+Authority-selected nested evidence pipelines reuse that one verified policy observation. A plan
+that launches a child process retains and renews the cooperative authority lease across the awaited
+process and revalidates immediately before and after it. A failed post-process revalidation blocks
+later effects and deferred writes but reports honestly that an already-run external command is not
+rollbackable by Core.
 Core never writes this
 file and does not prove its host ACL; the organization must control both file replacement and the
 process configuration that selects it. PolicyBundle V1 remains a validation/distribution envelope

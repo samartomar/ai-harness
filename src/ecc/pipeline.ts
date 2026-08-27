@@ -27,7 +27,7 @@ import { executePlan, type PlanResult } from "../internals/execute.js";
 import { doc, type Plan, type PlanContext, plan } from "../internals/plan.js";
 import { assertOrgPolicyMutationSource } from "../org-policy/drift.js";
 import { verifiedOrgPolicyTargets } from "../org-policy/project.js";
-import { governanceOwnsAihSurfaces, readOrgPolicy } from "../org-policy/schema.js";
+import { governanceOwnsAihSurfaces, type OrgPolicy, readOrgPolicy } from "../org-policy/schema.js";
 import type { RepoStack } from "../profile/scan.js";
 import { scanRepo } from "../profile/scan.js";
 import { cleanupQuarantine, resolveTrustSource, type TrustSource } from "../trust/fetch.js";
@@ -246,6 +246,7 @@ export async function executeEccEvidencePipeline(
   request: VerifiedEccRequest,
   deps: EccEvidencePipelineDeps = {},
   transactionPins: Pick<Plan, "fileAssertions" | "commitNotAfter" | "commitLock"> = {},
+  policy?: OrgPolicy,
 ): Promise<PlanResult> {
   const catalog = deps.catalog ?? requestedCatalog(ctx);
   if (!ctx.apply && deps.source === undefined && typeof ctx.options.eccPath !== "string") {
@@ -288,6 +289,7 @@ export async function executeEccEvidencePipeline(
         request.selection?.scope !== "full" && (request.selection?.moduleIds?.length ?? 0) === 0,
       acceptanceTuple: deps.acceptanceTuple,
       transactionPins,
+      policy,
       buildInstallPlan: (sourceRoot, authorizations, held) =>
         buildInstallPlan(ctx, sourceRoot, request, authorizations, held),
     },
@@ -365,7 +367,13 @@ export async function executeEccCommand(
   const { clis, detectFellBack } = policyTargets.resolution;
   const request = buildEccRegistrationRequest(targetCtx, clis);
   if (clis.some(isMutatingEccTarget))
-    return executeEccEvidencePipeline(targetCtx, request, deps, transactionPins);
+    return executeEccEvidencePipeline(
+      targetCtx,
+      request,
+      deps,
+      transactionPins,
+      policyTargets.policy,
+    );
 
   const actions = clis.flatMap((cli) =>
     eccActionsForCli(cli, {

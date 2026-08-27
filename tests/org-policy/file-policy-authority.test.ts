@@ -3,6 +3,7 @@ import {
   linkSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   realpathSync,
   renameSync,
   rmSync,
@@ -12,13 +13,19 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { defineBaselineCatalog } from "../../src/baseline-evidence/catalog.js";
+import { hashComponentTree } from "../../src/baseline-evidence/hash.js";
+import { parseBaselineEvidenceLock } from "../../src/baseline-evidence/schema.js";
 import { command as bootstrapAiCommand } from "../../src/bootstrap-ai/index.js";
 import { eccMcpAddCommand } from "../../src/ecc/index.js";
+import { executeEccEvidencePipeline } from "../../src/ecc/pipeline.js";
 import { resolveTargets } from "../../src/internals/cli-detect.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
-import { plan, writeText } from "../../src/internals/plan.js";
+import { doc, plan, writeText } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
+import { policyAwareMcpCatalog } from "../../src/mcp/catalog.js";
+import { command as mcpCommand } from "../../src/mcp/index.js";
 import {
   verifiedPolicyAuthorityReceiptAssertionV1,
   verifyPolicyAuthorityReceipt,
@@ -31,6 +38,7 @@ import {
 import { readOrgPolicy } from "../../src/org-policy/schema.js";
 import { policyProjectCommand } from "../../src/org-policy/validate.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
+import { resolveTrustSource } from "../../src/trust/fetch.js";
 
 let targetRoot: string;
 let adminRoot: string;
@@ -385,6 +393,109 @@ describe("administrator-protected policy-file authority", () => {
     );
     expect(existsSync(join(targetRoot, ".aih", "ecc-mcp-explicit-add-v1.json"))).toBe(false);
     expect(existsSync(join(targetRoot, ".aih", "governance"))).toBe(false);
+  });
+
+  it("applies standalone MCP from a pinned protected external policy", async () => {
+    const bundle = JSON.parse(authorityBundle()) as { policy: Record<string, unknown> };
+    bundle.policy.governance = { supportedClis: ["claude"] };
+    writeFileSync(policyPath, JSON.stringify(bundle), "utf8");
+    const { ctx } = context();
+    const planned = await mcpCommand.plan({
+      ...ctx,
+      apply: true,
+      verify: false,
+      options: { cli: "claude", mode: "standard" },
+    });
+
+    expect(planned.fileAssertions).toHaveLength(1);
+    expect(planned.commitLock).toBe(".aih/governance/policy-authority/v1/locks/authority.lock");
+    await executePlan(planned, {
+      ...ctx,
+      apply: true,
+      verify: false,
+      options: { cli: "claude", mode: "standard" },
+    });
+    expect(readFileSync(join(targetRoot, ".mcp.json"), "utf8")).toContain("mcpServers");
+  });
+
+  it("uses the verified protected policy for token MCP planning without rereading an override", () => {
+    const bundle = JSON.parse(authorityBundle()) as { policy: Record<string, unknown> };
+    bundle.policy.governance = { supportedClis: ["claude"] };
+    writeFileSync(policyPath, JSON.stringify(bundle), "utf8");
+    const { ctx } = context();
+    const observed = readOrgPolicy(ctx.root, ctx.env);
+    if (observed === undefined) throw new Error("expected protected policy observation");
+
+    writeFileSync(policyPath, "{not valid JSON", "utf8");
+    const catalog = policyAwareMcpCatalog(ctx, {
+      scope: "project",
+      githubAuth: "token",
+      verifiedPolicy: { policy: observed },
+    });
+
+    expect(catalog.error).toBeUndefined();
+    expect(catalog.policy).toBe(observed);
+  });
+
+  it("keeps the protected A observation through an ECC evidence pipeline A-to-B-to-A swap", async () => {
+    const sourceRoot = join(targetRoot, "ecc-source");
+    mkdirSync(sourceRoot);
+    writeFileSync(join(sourceRoot, "install.sh"), "echo verified\n", "utf8");
+    const observed = readOrgPolicy(targetRoot, { AIH_ORG_POLICY: policyPath });
+    if (observed === undefined) throw new Error("expected protected policy observation");
+    const replacement = authorityBundle().replace("ai-coding/project.json", "policy-b.json");
+    writeFileSync(policyPath, replacement, "utf8");
+    const catalog = defineBaselineCatalog({
+      id: "ecc",
+      owner: "affaan-m",
+      repo: "ECC",
+      pinnedSha: "a".repeat(40),
+      components: [{ id: "runtime:ecc-kiro", paths: ["install.sh"] }],
+    });
+    const vendorLock = parseBaselineEvidenceLock({
+      schemaVersion: 1,
+      sources: [
+        {
+          id: "ecc",
+          owner: "affaan-m",
+          repo: "ECC",
+          pinnedSha: "a".repeat(40),
+          components: [
+            {
+              id: "runtime:ecc-kiro",
+              paths: ["install.sh"],
+              treeSha256: hashComponentTree(sourceRoot, ["install.sh"]).treeSha256,
+              verdict: "pass",
+              analyzers: [{ name: "aih-native", version: "test" }],
+              findings: [],
+            },
+          ],
+        },
+      ],
+    });
+    let pipelinePolicy: unknown;
+    const { ctx } = context();
+    const result = await executeEccEvidencePipeline(
+      { ...ctx, posture: "vibe", apply: true },
+      { clis: ["kiro"], profile: "core", packs: [] },
+      {
+        catalog,
+        source: resolveTrustSource(sourceRoot, { root: targetRoot }),
+        vendorLock,
+        vendorLockSha256: "f".repeat(64),
+        resolveOrgEvidence: async (input) => {
+          pipelinePolicy = input.policy;
+          writeFileSync(policyPath, authorityBundle(), "utf8");
+          return { checks: [] };
+        },
+        buildInstallPlan: () => plan("verified ECC", doc("install", "verified")),
+      },
+      {},
+      observed,
+    );
+
+    expect(pipelinePolicy).toBe(observed);
+    expect(result.docs).toEqual([expect.objectContaining({ describe: "install" })]);
   });
 
   it("refuses a same-byte replacement of the verified external policy file before lock or effects", async () => {

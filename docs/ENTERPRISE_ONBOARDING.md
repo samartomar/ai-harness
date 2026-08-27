@@ -70,7 +70,11 @@ aih verify-release 0.1.1
    `aih report` surface it as a policy-source integrity signal, and mutation refuses
    it. `policy project --apply` additionally accepts the exact protected PolicyBundle
    V2 only after Core verifies its authority, custody, freshness, and file identity;
-   the resulting transaction pins those bytes. It updates policy-generated settings
+   the resulting transaction pins those bytes. Authority-selected nested evidence and
+   standalone MCP planning reuse that same verified policy observation. Child-process
+   effects retain the renewable cooperative authority lease and revalidate before and
+   after execution; a post-effect failure never claims that Core rolled the child back.
+   It updates policy-generated settings
    without rerunning the canon bootstrap.
    It is a Claude projection, so use the default target (or explicitly include
    Claude) when applying it.

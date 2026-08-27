@@ -3,6 +3,7 @@ import { executeBaselineEvidencePipeline } from "../baseline-evidence/pipeline.j
 import { AihError } from "../errors.js";
 import type { PlanResult } from "../internals/execute.js";
 import type { PlanContext } from "../internals/plan.js";
+import { assertOrgPolicyMutationSource } from "../org-policy/drift.js";
 import { verifiedOrgPolicyTargets } from "../org-policy/project.js";
 import { resolveTrustSource } from "../trust/fetch.js";
 import { superpowersEvidenceComponentIds, verifiedSuperpowersInstallPlan } from "./verified.js";
@@ -24,6 +25,7 @@ export async function executeSuperpowersCommand(ctx: PlanContext): Promise<PlanR
   const policyTargets = await verifiedOrgPolicyTargets(ctx);
   const { clis } = policyTargets.resolution;
   const targetCtx: PlanContext = { ...ctx, targets: clis };
+  assertOrgPolicyMutationSource(targetCtx, policyTargets.source?.verification.authority);
   const catalog = catalogFromContext(ctx);
   const source = resolveTrustSource(`${catalog.owner}/${catalog.repo}`, {
     root: targetCtx.root,
@@ -33,6 +35,7 @@ export async function executeSuperpowersCommand(ctx: PlanContext): Promise<PlanR
     catalog,
     source,
     componentIds: superpowersEvidenceComponentIds(),
+    policy: policyTargets.policy,
     buildInstallPlan: (sourceRoot, authorizations) =>
       verifiedSuperpowersInstallPlan(targetCtx, sourceRoot, clis, authorizations),
     transactionPins: {

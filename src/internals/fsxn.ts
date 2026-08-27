@@ -8,6 +8,7 @@ import {
   constants as fsConstants,
   fstatSync,
   fsyncSync,
+  ftruncateSync,
   lstatSync,
   mkdirSync,
   openSync,
@@ -19,6 +20,7 @@ import {
   rmSync,
   type Stats,
   writeFileSync,
+  writeSync,
 } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { FsTxnError } from "../errors.js";
@@ -425,6 +427,13 @@ export class FsTransaction {
   private static readonly maxStagingClaims = 32;
   private static readonly anchorText = '{"format":"aih-fs-commit-lock-anchor","version":1}';
 
+  private commitLeaseDuration(lock: CommitLock): number {
+    const leaseMs = lock.leaseMs ?? FsTransaction.commitLeaseMs;
+    if (!Number.isSafeInteger(leaseMs) || leaseMs <= 0 || leaseMs > FsTransaction.commitLeaseMs)
+      throw new FsTxnError("commit lock could not be verified");
+    return leaseMs;
+  }
+
   private leaseContents(lease: CommitLease): string {
     return JSON.stringify({
       expiresAt: lease.expiresAt,
@@ -644,18 +653,82 @@ export class FsTransaction {
   private sameLease(left: OwnedCommitLease, right: OwnedCommitLease | undefined): boolean {
     return (
       right !== undefined &&
-      left.owner === right.owner &&
+      this.sameLeaseIdentity(left, right) &&
       left.expiresAt === right.expiresAt &&
       left.reclaimAfter === right.reclaimAfter &&
+      left.leaseText === right.leaseText
+    );
+  }
+
+  private sameLeaseIdentity(left: OwnedCommitLease, right: OwnedCommitLease | undefined): boolean {
+    return (
+      right !== undefined &&
+      left.owner === right.owner &&
       left.dev === right.dev &&
       left.ino === right.ino &&
       left.anchorDev === right.anchorDev &&
       left.anchorIno === right.anchorIno &&
       left.leaseDev === right.leaseDev &&
       left.leaseIno === right.leaseIno &&
-      left.leasePath === right.leasePath &&
-      left.leaseText === right.leaseText
+      left.leasePath === right.leasePath
     );
+  }
+
+  private replaceOwnedLease(identity: OwnedCommitLease, contents: string): void {
+    let fd: number | undefined;
+    try {
+      fd = openSync(identity.leasePath, fsConstants.O_RDWR | O_NOFOLLOW, 0o600);
+      const info = fstatSync(fd, { bigint: true });
+      if (
+        !info.isFile() ||
+        info.nlink !== 1n ||
+        info.dev !== identity.leaseDev ||
+        info.ino !== identity.leaseIno ||
+        (!HAS_O_NOFOLLOW && !openedPathStillNamesFile(identity.leasePath, fd))
+      )
+        throw new FsTxnError("commit lock lease lost");
+      ftruncateSync(fd, 0);
+      writeSync(fd, contents, 0, "utf8");
+      fsyncSync(fd);
+    } catch (error) {
+      if (error instanceof FsTxnError) throw error;
+      throw new FsTxnError("commit lock lease lost");
+    } finally {
+      if (fd !== undefined) closeSync(fd);
+    }
+  }
+
+  private renewCommitLock(identity: OwnedCommitLease): OwnedCommitLease {
+    const lock = this.options.commitLock;
+    if (lock === undefined) return identity;
+    const now = Date.now();
+    if (this.options.commitNotAfter !== undefined && now >= this.options.commitNotAfter)
+      throw new FsTxnError("commit deadline expired");
+    if (now >= identity.reclaimAfter || !this.sameLease(identity, this.activeLease(lock)))
+      throw new FsTxnError("commit lock lease lost");
+    const expiresAt = Math.min(
+      now + this.commitLeaseDuration(lock),
+      this.options.commitNotAfter ?? Number.MAX_SAFE_INTEGER,
+    );
+    if (expiresAt <= now) throw new FsTxnError("commit deadline expired");
+    const renewed: CommitLease = {
+      expiresAt,
+      reclaimAfter: expiresAt + FsTransaction.recoveryGraceMs,
+      owner: identity.owner,
+    };
+    const leaseText = this.leaseContents(renewed);
+    this.replaceOwnedLease(identity, leaseText);
+    const active = this.activeLease(lock);
+    if (
+      active === undefined ||
+      !this.sameLeaseIdentity(identity, active) ||
+      active.expiresAt !== renewed.expiresAt ||
+      active.reclaimAfter !== renewed.reclaimAfter ||
+      active.leaseText !== leaseText
+    )
+      throw new FsTxnError("commit lock lease lost");
+    this.activeCommitLease = active;
+    return active;
   }
 
   private removeOwnedActive(lock: CommitLock, owned: OwnedCommitLease): boolean {
@@ -762,9 +835,7 @@ export class FsTransaction {
     this.ensureAnchor(lock);
     this.assertCommitDeadline();
     const now = Date.now();
-    const leaseMs = lock.leaseMs ?? FsTransaction.commitLeaseMs;
-    if (!Number.isSafeInteger(leaseMs) || leaseMs <= 0 || leaseMs > FsTransaction.commitLeaseMs)
-      throw new FsTxnError("commit lock could not be verified");
+    const leaseMs = this.commitLeaseDuration(lock);
     const expiresAt = Math.min(
       now + leaseMs,
       this.options.commitNotAfter ?? Number.MAX_SAFE_INTEGER,
@@ -1069,37 +1140,94 @@ export class FsTransaction {
   }
 
   /**
-   * Hold this transaction's assertion/lease boundary around a synchronous
-   * effect engine that owns its own rollback. The callback receives a
+   * Hold this transaction's assertion/lease boundary around an effect engine.
+   * The callback owns rollback when the effect is reversible and must report
+   * honestly when an external effect cannot be rolled back. It receives a
    * revalidation function it must call immediately before and after its
    * effects; an after-effect failure then belongs to that engine's rollback.
    *
    * This intentionally has no staged writes or removals of its own. It is the
    * bridge for a pre-existing transactional writer, not a second writer.
    */
-  runGuarded<T>(run: (revalidate: () => void) => T): T {
+  runGuarded<T>(run: (revalidate: () => void) => T): T;
+  runGuarded<T>(run: (revalidate: () => void) => Promise<T>): Promise<T>;
+  runGuarded<T>(run: (revalidate: () => void) => T | Promise<T>): T | Promise<T> {
     if (this.staged.length !== 0 || this.stagedRemovals.length !== 0) {
       throw new FsTxnError("guarded transaction cannot stage filesystem effects");
     }
     const assertions = dedupeAssertions(this.stagedAssertions);
     let lockIdentity: OwnedCommitLease | undefined;
+    let heartbeat: ReturnType<typeof setTimeout> | undefined;
+    let heartbeatError: unknown;
+    let released = false;
     const revalidate = (): void => {
+      if (heartbeatError !== undefined) throw heartbeatError;
       this.assertCommitDeadline();
       for (const assertion of assertions) this.guardParents(assertion.path, assertion.root, false);
       validateAssertions(assertions);
       this.assertCommitDeadline();
     };
+    const release = (): void => {
+      if (released) return;
+      released = true;
+      if (heartbeat !== undefined) clearTimeout(heartbeat);
+      try {
+        this.releaseCommitLock(lockIdentity);
+      } finally {
+        this.activeCommitLease = undefined;
+      }
+    };
+    const scheduleHeartbeat = (): void => {
+      const lock = this.options.commitLock;
+      if (lock === undefined || lockIdentity === undefined) return;
+      const delayMs = Math.max(1, Math.floor(this.commitLeaseDuration(lock) / 2));
+      const heartbeatEffect = (): void => {
+        if (released || lockIdentity === undefined) return;
+        try {
+          lockIdentity = this.renewCommitLock(lockIdentity);
+        } catch (error) {
+          heartbeatError = error;
+          return;
+        }
+        heartbeat = setTimeout(heartbeatEffect, delayMs);
+      };
+      heartbeat = setTimeout(heartbeatEffect, delayMs);
+    };
+    const settle = (value: T, callbackError: unknown = undefined): T => {
+      let validationError: unknown;
+      try {
+        revalidate();
+      } catch (error) {
+        validationError = error;
+      }
+      release();
+      if (callbackError !== undefined && validationError !== undefined) {
+        throw new FsTxnError(
+          `guarded effect failed: ${(callbackError as Error).message}; authority validation failed: ${(validationError as Error).message}`,
+        );
+      }
+      if (callbackError !== undefined) throw callbackError;
+      if (validationError !== undefined) throw validationError;
+      return value;
+    };
+    let result: T | Promise<T>;
     try {
       revalidate();
       lockIdentity = this.acquireCommitLock();
       revalidate();
-      const result = run(revalidate);
-      revalidate();
-      return result;
-    } finally {
-      this.releaseCommitLock(lockIdentity);
-      this.activeCommitLease = undefined;
+      result = run(revalidate);
+      scheduleHeartbeat();
+    } catch (error) {
+      release();
+      throw error;
     }
+    if (typeof (result as Promise<T> | undefined)?.then === "function") {
+      return Promise.resolve(result).then(
+        (value) => settle(value),
+        (error: unknown) => settle(undefined as T, error),
+      );
+    }
+    return settle(result as T);
   }
 }
 

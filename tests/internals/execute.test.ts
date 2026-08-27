@@ -1499,6 +1499,99 @@ describe("executePlan", () => {
     expect(result.execs.at(-1)).toMatchObject({ describe: "persist runtime trust", ran: false });
   });
 
+  it("fails closed when authority changes during a successful child effect", async () => {
+    const authority = join(dir, "authority.json");
+    const deferred = join(dir, "deferred.txt");
+    const lock = join(dir, ".aih", "commit.lock");
+    const approvedAuthority = "approved authority\n";
+    writeFileSync(authority, approvedAuthority);
+    const calls: string[] = [];
+    let childRanUnderLease = false;
+    const run = fakeRunner((argv) => {
+      const command = argv.at(-1) ?? "";
+      if (command === "mutate") {
+        calls.push(command);
+        childRanUnderLease = existsSync(join(lock, "active"));
+        writeFileSync(authority, "swapped authority\n");
+      }
+      return { code: 0 };
+    });
+    const p: Plan = {
+      capability: "authority-guarded-child",
+      commitLock: ".aih/commit.lock",
+      fileAssertions: [
+        {
+          path: "authority.json",
+          sha256: createHash("sha256").update(approvedAuthority, "utf8").digest("hex"),
+          maxBytes: approvedAuthority.length,
+          describe: "authority receipt",
+        },
+      ],
+      actions: [
+        exec("mutating child", ["node", "mutate"]),
+        exec("later child", ["node", "later"]),
+        writeText("deferred.txt", "must not commit", "deferred write", {
+          requiresPriorExecSuccess: true,
+        }),
+      ],
+    };
+
+    await expect(executePlan(p, ctx({ apply: true, run }))).rejects.toThrow(
+      /mutating child.*exit code 0.*cannot be rolled back/i,
+    );
+    expect(childRanUnderLease).toBe(true);
+    expect(calls).toEqual(["mutate"]);
+    expect(existsSync(deferred)).toBe(false);
+    expect(existsSync(join(lock, "active"))).toBe(false);
+  });
+
+  it("fails closed when authority changes during a failing child effect", async () => {
+    const authority = join(dir, "authority.json");
+    const deferred = join(dir, "deferred.txt");
+    const lock = join(dir, ".aih", "commit.lock");
+    const approvedAuthority = "approved authority\n";
+    writeFileSync(authority, approvedAuthority);
+    const calls: string[] = [];
+    let childRanUnderLease = false;
+    const run = fakeRunner((argv) => {
+      const command = argv.at(-1) ?? "";
+      if (command === "fail") {
+        calls.push(command);
+        childRanUnderLease = existsSync(join(lock, "active"));
+        writeFileSync(authority, "swapped authority\n");
+        return { code: 1, stderr: "child failed after changing local state" };
+      }
+      return { code: 0 };
+    });
+    const p: Plan = {
+      capability: "authority-guarded-failing-child",
+      commitLock: ".aih/commit.lock",
+      fileAssertions: [
+        {
+          path: "authority.json",
+          sha256: createHash("sha256").update(approvedAuthority, "utf8").digest("hex"),
+          maxBytes: approvedAuthority.length,
+          describe: "authority receipt",
+        },
+      ],
+      actions: [
+        exec("failing child", ["node", "fail"]),
+        exec("later child", ["node", "later"]),
+        writeText("deferred.txt", "must not commit", "deferred write", {
+          requiresPriorExecSuccess: true,
+        }),
+      ],
+    };
+
+    await expect(executePlan(p, ctx({ apply: true, run }))).rejects.toThrow(
+      /failing child.*exit code 1.*cannot be rolled back/i,
+    );
+    expect(childRanUnderLease).toBe(true);
+    expect(calls).toEqual(["fail"]);
+    expect(existsSync(deferred)).toBe(false);
+    expect(existsSync(join(lock, "active"))).toBe(false);
+  });
+
   it("commits dependent files only after dependent execs succeed", async () => {
     const dependent = join(dir, "dependent.plist");
     const profile = join(dir, "profile");
