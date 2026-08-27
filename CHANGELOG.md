@@ -6,12 +6,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [Core 0.3.0] - 2026-08-27
+
 ### Fixed
 
 - Refuse Policy Workbench protected Enterprise authoring until the policy sanctions at least one
   supported CLI, before adding decision state or enabling download. Upstream-artifact mismatch and
   revocation support output now identifies governed artifacts without changing npm-package wording.
   Authority, observation, lifecycle writes, and fail-closed decisions are unchanged. (#887, #888)
+- Advance current installation, release-verification, and guide examples to Core `0.3.0` and
+  Scanner `0.1.4`; historical release evidence remains version-scoped.
 
 ## [Core 0.2.0] - 2026-08-27
 
@@ -2985,7 +2989,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v-core-0.2.0...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v-core-0.3.0...HEAD
+[Core 0.3.0]: https://github.com/samartomar/ai-harness/compare/v-core-0.2.0...v-core-0.3.0
 [Core 0.2.0]: https://github.com/samartomar/ai-harness/compare/v-core-0.1.1...v-core-0.2.0
 [Core 0.1.1]: https://github.com/samartomar/ai-harness/compare/v6.1.0...v-core-0.1.1
 [6.1.0]: https://github.com/samartomar/ai-harness/compare/v6.0.1...v6.1.0

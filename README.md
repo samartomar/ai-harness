@@ -8,7 +8,7 @@
 [![Node ≥20](https://img.shields.io/badge/node-%E2%89%A520-339933.svg)](package.json)
 
 <p align="center">
-<img src="docs/assets/aih-overview.svg" alt="aih v0.2.0 governed-readiness overview showing Environment, Context, Policy, Execution, and Evidence pillars plus truth verify and the docs-lint claim gate" width="100%">
+<img src="docs/assets/aih-overview.svg" alt="aih v0.3.0 governed-readiness overview showing Environment, Context, Policy, Execution, and Evidence pillars plus truth verify and the docs-lint claim gate" width="100%">
 </p>
 
 Use the coding agent that fits your workflow. `aih` is a cross-platform CLI that
@@ -66,12 +66,12 @@ policy: [STABILITY.md](https://github.com/samartomar/ai-harness/blob/main/STABIL
 
 The immutable `v-core-0.1.0` attempt passed its read-only verification but npm
 refused publication with `EOTP`; that tag and failed run are audit evidence and
-must never be deleted, moved, or reused. `@aihq/core@0.2.0` is public on npm
+must never be deleted, moved, or reused. `@aihq/core@0.3.0` is public on npm
 with a matching GitHub Release. Install and verify that exact active release:
 
 ```bash
-npm install -g @aihq/core@0.2.0         # then run: aih --help
-aih verify-release 0.2.0   # checks npm signatures, GitHub release sums, and cosign evidence
+npm install -g @aihq/core@0.3.0         # then run: aih --help
+aih verify-release 0.3.0   # checks npm signatures, GitHub release sums, and cosign evidence
 ```
 
 The frozen legacy package is npm-deprecated and remains installable only for
@@ -91,7 +91,7 @@ Per-version release notes — what changed, and why — live in
 npm tarball too, so an evaluator can read the version history straight from the unpacked package.
 
 <!-- aih:claim CM-51 -->
-Core 0.2.0 library integrations import the strict Package Graph v1 TypeScript schema
+Core 0.3.0 library integrations import the strict Package Graph v1 TypeScript schema
 from `@aihq/core` and resolve its structural editor schema at
 `@aihq/core/schemas/aih-package-graph.schema.json`; no legacy compatibility wrapper is
 planned. Existing v6 consumers retain the matching exports under the
@@ -773,9 +773,9 @@ aih usage --rollup ../repo-a,../repo-b
   signature bundle** (`SHA256SUMS.txt.sigstore.json`), and the Sigstore **build-provenance
   bundle** on the GitHub Release. Candidate build and smoke execution stay in a read-only job;
   the protected publication job verifies the workflow-artifact digest, original tarball digest,
-  and packed identity without executing Core package code. The tokenless workflow source is ready,
-  but a future Core tag remains blocked until the owner configures and observes the exact npm
-  Trusted Publisher binding documented in [RELEASING.md](RELEASING.md). Releases from `v0.6.0` onward include
+  and packed identity without executing Core package code. Tokenless npm Trusted Publishing is the
+  steady-state publication path, and the workflow fails closed unless the exact binding documented in
+  [RELEASING.md](RELEASING.md) remains present and matches. Releases from `v0.6.0` onward include
   the sigstore/provenance assets; earlier historical tags have a narrower asset set. The tagged Core tarball
   claims [SLSA Build L2](https://github.com/samartomar/ai-harness/blob/main/docs/security/release-slsa.md)
   under SLSA v1.2; the other Release assets are supporting evidence, not additional L2 subjects,
