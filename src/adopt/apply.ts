@@ -6,7 +6,7 @@ import {
   SHARED_MARKER,
   sharedCanonicalBlockBody,
 } from "../bootstrap-ai/canon.js";
-import { command as bootstrapAiCommand } from "../bootstrap-ai/index.js";
+import { bootstrapAiPlan } from "../bootstrap-ai/index.js";
 import { AIH_CONFIG_FILE, aihConfigJson, readAihConfigBaseline } from "../config/marker.js";
 import {
   DEFAULT_BASELINE_SOURCE_ID,
@@ -20,7 +20,7 @@ import { type Action, type PlanContext, writeJson, writeText } from "../internal
 import { lines } from "../internals/render.js";
 import { repoDisplayName } from "../internals/repo-name.js";
 import { kiroHookRuntime } from "../kiro/runtime.js";
-import type { OrgPolicy } from "../org-policy/schema.js";
+import type { VerifiedOrgPolicyTargets } from "../org-policy/project.js";
 import { scanRepo } from "../profile/scan.js";
 import type { CanonClassification } from "./classify.js";
 
@@ -101,7 +101,7 @@ export async function adoptApplyActions(
   ctx: PlanContext,
   cls: CanonClassification,
   contextDir: string,
-  policy?: OrgPolicy,
+  policyTargets?: VerifiedOrgPolicyTargets,
 ): Promise<Action[]> {
   const dir = contextDir;
   const extension = carveExtension(ctx, cls, dir);
@@ -112,14 +112,14 @@ export async function adoptApplyActions(
   // existing bootloader is another host, but `--cli kiro` must survive alongside
   // an existing AGENTS.md instead of being overwritten by the Codex inference.
   const existing = existingBootloaderTargets(ctx.root);
-  const requested = await resolveTargets(ctx, policy);
+  const requested = await resolveTargets(ctx, policyTargets?.policy);
   const clis =
     requested.bareDefault && existing.length > 0
       ? existing
       : [...new Set([...existing, ...requested.clis])];
   const applyCtx: PlanContext = { ...ctx, targets: clis };
 
-  const base = await bootstrapAiCommand.plan(applyCtx);
+  const base = await bootstrapAiPlan(applyCtx, policyTargets);
   const baseline = resolveBaselineSource(applyCtx.options, readAihConfigBaseline(applyCtx.root));
   const routerRel = posix.join(dir, "RULE_ROUTER.md");
 

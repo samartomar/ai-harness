@@ -4,7 +4,7 @@ import { AihError } from "../errors.js";
 import { executePlan, type PlanResult } from "../internals/execute.js";
 import { type Plan, type PlanContext, plan, structuredChecksProbe } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
-import { readOrgPolicy } from "../org-policy/schema.js";
+import { type OrgPolicy, readOrgPolicy } from "../org-policy/schema.js";
 import {
   assertTrustTreeSafe,
   cleanupQuarantine,
@@ -33,6 +33,8 @@ export interface BaselineEvidencePipelineInput {
   acceptanceTuple?: AcceptanceTuple;
   /** Exact protected-policy custody pins carried into the target-local install transaction. */
   transactionPins?: Pick<Plan, "fileAssertions" | "commitNotAfter" | "commitLock">;
+  /** The caller's one verified policy observation; avoids a second authority read. */
+  policy?: OrgPolicy;
   /**
    * `held` rides alongside `authorizations` because a caller that reports WHY a
    * requested component did not install needs the evidence state that held it
@@ -125,7 +127,7 @@ export async function executeBaselineEvidencePipeline(
     const org = await resolveOrgEvidence({
       root: ctx.root,
       catalog: input.catalog,
-      policy: readOrgPolicy(ctx.root, ctx.env),
+      policy: input.policy ?? readOrgPolicy(ctx.root, ctx.env),
       run: ctx.run,
       posture: postureFromContext(ctx),
     });

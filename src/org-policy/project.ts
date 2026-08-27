@@ -1931,6 +1931,7 @@ export interface VerifiedOrgPolicyProjection {
 }
 
 const verifiedOrgPolicySources = new WeakSet<object>();
+const verifiedOrgPolicyTargetSets = new WeakSet<object>();
 
 export interface VerifiedOrgPolicySource {
   readonly policy: OrgPolicy;
@@ -1944,6 +1945,16 @@ export interface VerifiedOrgPolicyTargets {
   readonly fileAssertions?: readonly FileAssertion[];
   readonly commitNotAfter?: string;
   readonly commitLock?: string;
+}
+
+/** Reject an invented prepared target set before a nested mutator reuses it. */
+export function requireVerifiedOrgPolicyTargets(
+  prepared: VerifiedOrgPolicyTargets,
+): VerifiedOrgPolicyTargets {
+  if (!verifiedOrgPolicyTargetSets.has(prepared)) {
+    throw new OrgPolicyError("prepared organization policy targets are invalid");
+  }
+  return prepared;
 }
 
 function protectedPolicyAuthorityPins(
@@ -1999,12 +2010,14 @@ export async function verifiedOrgPolicyTargets(
     configured === undefined ? undefined : await verifiedOrgPolicySource(ctx, configured);
   const policy = source?.policy ?? configured;
   const resolution = await resolveTargets(ctx, policy);
-  return {
+  const targets: VerifiedOrgPolicyTargets = Object.freeze({
     ...(policy === undefined ? {} : { policy }),
     ...(source === undefined ? {} : { source }),
     resolution,
     ...protectedPolicyAuthorityPins(source),
-  };
+  });
+  verifiedOrgPolicyTargetSets.add(targets);
+  return targets;
 }
 
 /** Governed projection: authority is verified before any policy-selected action is emitted. */

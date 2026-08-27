@@ -2,12 +2,15 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { adoptApplyActions } from "../../src/adopt/apply.js";
+import { classifyCanon } from "../../src/adopt/classify.js";
 import { command } from "../../src/adopt/index.js";
 import { SHARED_MARKER, sharedCanonicalBlockBody } from "../../src/bootstrap-ai/canon.js";
 import { executePlan } from "../../src/internals/execute.js";
 import { beginLine, endLine } from "../../src/internals/markers.js";
 import type { Action, DigestAction, PlanContext, ProbeAction } from "../../src/internals/plan.js";
 import { fakeRunner, type Runner } from "../../src/internals/proc.js";
+import { verifiedOrgPolicyTargets } from "../../src/org-policy/project.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 
 let tmp: string;
@@ -30,6 +33,7 @@ function makeCtx(
     verify?: boolean;
     run?: Runner;
     options?: Record<string, unknown>;
+    env?: NodeJS.ProcessEnv;
   } = {},
 ): PlanContext {
   const run = flags.run ?? fakeRunner(() => undefined);
@@ -41,7 +45,7 @@ function makeCtx(
     json: false,
     run,
     host: makeHostAdapter({ platform: "linux", run, env: {} }),
-    env: { HOME: tmp },
+    env: { HOME: tmp, ...flags.env },
     options: flags.options ?? {},
   };
 }
@@ -62,6 +66,40 @@ function divergentBootloader(): string {
 }
 
 describe("aih adopt — digest + routing", () => {
+  it("reuses its outer policy observation so nested planning cannot widen A with B", async () => {
+    put("CLAUDE.md", divergentBootloader());
+    put("AGENTS.md", divergentBootloader());
+    const policy = (targets: string[]) =>
+      JSON.stringify({
+        schemaVersion: 2,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        governance: { supportedClis: targets },
+      });
+    put("policy.json", policy(["claude"]));
+    const ctx = makeCtx({ apply: true, env: { AIH_ORG_POLICY: "policy.json" } });
+    const outer = await verifiedOrgPolicyTargets(ctx);
+    const beforeClaude = readFileSync(join(tmp, "CLAUDE.md"), "utf8");
+    const beforeCodex = readFileSync(join(tmp, "AGENTS.md"), "utf8");
+
+    // Existing bootloaders widen Adopt's nested target set to Claude + Codex.
+    // B sanctions that wider set after the outer observation. The nested planner
+    // must keep using A and refuse Codex instead of rereading B and emitting
+    // B-derived actions that the outer transaction could later commit under A.
+    put("policy.json", policy(["claude", "codex"]));
+    await expect(
+      adoptApplyActions(
+        { ...ctx, targets: outer.resolution.clis },
+        classifyCanon(tmp, "ai-coding"),
+        "ai-coding",
+        outer,
+      ),
+    ).rejects.toThrow(/sanction gate refused selected CLI target.*codex.*Allowed: claude/);
+
+    expect(readFileSync(join(tmp, "CLAUDE.md"), "utf8")).toBe(beforeClaude);
+    expect(readFileSync(join(tmp, "AGENTS.md"), "utf8")).toBe(beforeCodex);
+  });
+
   it("emits a digest and probes; a brownfield canon yields convergence writes, greenfield none", async () => {
     put("CLAUDE.md", divergentBootloader());
     const actions = (await command.plan(makeCtx())).actions;

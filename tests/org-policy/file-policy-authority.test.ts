@@ -29,6 +29,7 @@ import {
   verifiedOrgPolicySource,
 } from "../../src/org-policy/project.js";
 import { readOrgPolicy } from "../../src/org-policy/schema.js";
+import { policyProjectCommand } from "../../src/org-policy/validate.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 
 let targetRoot: string;
@@ -166,6 +167,21 @@ describe("administrator-protected policy-file authority", () => {
     expect(rendered).toContain("policy-b.json");
     expect(rendered).not.toContain("ai-coding/project.json");
     expect(projected.fileAssertions).toHaveLength(1);
+  });
+
+  it("admits the verified protected file as the policy-project managed mutation source", async () => {
+    const { ctx } = context();
+    const projectCtx: PlanContext = {
+      ...ctx,
+      apply: true,
+      options: { cli: "claude" },
+    };
+
+    const planned = await policyProjectCommand.plan(projectCtx);
+
+    expect(planned.fileAssertions).toHaveLength(1);
+    expect(planned.commitLock).toBe(".aih/governance/policy-authority/v1/locks/authority.lock");
+    expect(planned.commitNotAfter).toBe("2026-09-01T00:00:00.000Z");
   });
 
   it("sanctions CLI targets from the same protected-file observation as authority", async () => {

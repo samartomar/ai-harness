@@ -803,7 +803,9 @@ same schema gate as `validate`. Declaring `mcp.allowedServers` records registry 
 `aih mcp approve` is a legacy, non-governed approval path. Governed operators use an externally
 verified evidence/approval receipt, then `aih policy evaluate` and `aih policy project`.
 
-`project --apply` compiles the committed `aih-org-policy.json` into generated policy artifacts. For
+`project --apply` compiles the active verified org policy into generated policy artifacts. The source
+may be the committed `aih-org-policy.json` or an Enterprise PolicyBundle V2 at an absolute external
+`AIH_ORG_POLICY` path whose authority, custody, freshness, and exact file identity Core verifies. For
 Claude this includes `.claude/managed-settings.json` and, at enterprise posture, the two system-path
 examples; selected Kiro reviewed stdio MCP candidates are distributed separately to
 `.kiro/settings/mcp.json`. An active
@@ -813,8 +815,9 @@ It does not run `aih init`, regenerate the canon, or modify unrelated settings. 
 portion is a Claude projection: it writes only when Claude is selected (the default); `--cli cursor`,
 for example, produces no managed-settings projection. When managed-only MCP is active, it records existing AIH ownership provenance in
 `.aih-config.json` so later deactivation can remove only the exact generated values. It refuses a
-configuration write when `AIH_ORG_POLICY` selects an override; previewing without `--apply` remains
-inspectable, but mutation requires the committed default policy source.
+configuration write when `AIH_ORG_POLICY` selects an ordinary override; previewing without `--apply`
+remains inspectable. The only external mutation source is the exact protected PolicyBundle V2 that
+Core has verified for the same path, and its bytes remain pinned through the transaction.
 
 New Claude and Kiro MCP ownership records are always strict schema V2 and bind the exact effective
 decision identity for their own surface. New usage-hook ownership records are always V3 and bind the

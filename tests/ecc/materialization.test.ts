@@ -366,6 +366,65 @@ describe("F1/F5 — AIH-direct per-component materialization", () => {
     ]);
   });
 
+  it("refuses a changed authority assertion before it materializes any owned bytes", () => {
+    const authority = join(root, "authority.json");
+    writeFileSync(authority, "authority A\n", "utf8");
+    const authoritySha256 = sha256("authority A\n");
+    // Simulate the policy source changing after the caller observed and pinned A,
+    // but before governed materialization reaches its first file effect.
+    writeFileSync(authority, "authority B\n", "utf8");
+
+    expect(() =>
+      applyEccMaterialization(
+        request(skillComponent()),
+        {},
+        {
+          fileAssertions: [
+            {
+              path: "authority.json",
+              sha256: authoritySha256,
+              maxBytes: 1024,
+              describe: "governed policy authority",
+            },
+          ],
+          commitLock: ".aih/governance/policy-authority/v1/locks/authority.lock",
+        },
+      ),
+    ).toThrow(/governed policy authority changed before commit/);
+    expect(existsSync(join(root, SKILL_PATH))).toBe(false);
+    expect(existsSync(join(root, ECC_MATERIALIZATION_RECEIPT_PATH))).toBe(false);
+  });
+
+  it("rolls back every materialized byte when authority changes during the guarded commit", () => {
+    const authority = join(root, "authority.json");
+    writeFileSync(authority, "authority A\n", "utf8");
+    const guard = {
+      fileAssertions: [
+        {
+          path: "authority.json",
+          sha256: sha256("authority A\n"),
+          maxBytes: 1024,
+          describe: "governed policy authority",
+        },
+      ],
+      commitLock: ".aih/governance/policy-authority/v1/locks/authority.lock",
+    };
+
+    expect(() =>
+      applyEccMaterialization(
+        request(skillComponent()),
+        {
+          onStep: (step) => {
+            if (step.phase === "receipt") writeFileSync(authority, "authority B\n", "utf8");
+          },
+        },
+        guard,
+      ),
+    ).toThrow(/governed policy authority changed before commit/);
+    expect(existsSync(join(root, SKILL_PATH))).toBe(false);
+    expect(existsSync(join(root, ECC_MATERIALIZATION_RECEIPT_PATH))).toBe(false);
+  });
+
   it("refuses to launder curated Kiro bytes through only the selected component authorization", () => {
     const laundered = componentInput("skill:tdd-workflow", [
       { path: ".kiro/skills/tdd-workflow/SKILL.md", contents: SKILL_BODY },

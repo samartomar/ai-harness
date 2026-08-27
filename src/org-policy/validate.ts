@@ -311,7 +311,7 @@ async function policyProjectPlan(ctx: PlanContext): Promise<Plan> {
   // MCP adapter owns Claude; the safe usage hook adapter also supports Codex.
   const projectCtx: PlanContext = { ...ctx, targets: clis };
 
-  assertOrgPolicyMutationSource(projectCtx);
+  assertOrgPolicyMutationSource(projectCtx, policyTargets.source?.verification.authority);
   const policy = policyTargets.policy;
   if (policy === undefined) {
     throw new AihError(
@@ -347,7 +347,7 @@ async function policyProjectPlan(ctx: PlanContext): Promise<Plan> {
 export const policyProjectCommand: CommandSpec = {
   name: "project",
   summary:
-    "Project the committed org policy into its generated settings without running full initialization",
+    "Project the active verified org policy into its generated settings without running full initialization",
   plan: policyProjectPlan,
 };
 

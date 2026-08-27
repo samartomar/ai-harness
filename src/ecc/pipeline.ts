@@ -311,7 +311,10 @@ export async function executeEccCommand(
       : { commitNotAfter: policyTargets.commitNotAfter }),
     ...(policyTargets.commitLock === undefined ? {} : { commitLock: policyTargets.commitLock }),
   };
-  assertOrgPolicyMutationSource({ ...targetCtx, posture: postureFromContext(targetCtx) });
+  assertOrgPolicyMutationSource(
+    { ...targetCtx, posture: postureFromContext(targetCtx) },
+    policyTargets.source?.verification.authority,
+  );
   if (targetCtx.options.lifecycle !== undefined) {
     const lifecycle = String(targetCtx.options.lifecycle);
     const policy = policyTargets.policy ?? readOrgPolicy(targetCtx.root, targetCtx.env);
@@ -340,6 +343,7 @@ export async function executeEccCommand(
           targets,
           source: deps.source ?? requestedSource(targetCtx, catalog),
           policy,
+          transactionGuard: transactionPins,
         },
         deps,
       );

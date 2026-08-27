@@ -1,3 +1,6 @@
+import { isAbsolute, relative, resolve } from "node:path";
+import { FsTransaction } from "../internals/fsxn.js";
+import { type FileAssertion, type Plan, parseCommitNotAfter } from "../internals/plan.js";
 import type { EccComponentId } from "./components.js";
 import { commitMaterializationSteps, MATERIALIZED_CONTENT_MODE } from "./materialization-fs.js";
 import {
@@ -29,6 +32,13 @@ import type {
   PlannedStep,
   ResolvedFile,
 } from "./materialization-types.js";
+
+/** In-memory plan-executor authority pins for the direct materializer. */
+export interface EccMaterializationTransactionGuard {
+  readonly fileAssertions?: readonly FileAssertion[];
+  readonly commitNotAfter?: string;
+  readonly commitLock?: Plan["commitLock"];
+}
 
 /**
  * AIH-direct per-component materialization (F1), receipt-bound (F5).
@@ -68,26 +78,92 @@ export type {
   EccMaterializationStep,
 } from "./materialization-types.js";
 
-function commit(operation: PlannedOperation, deps: EccMaterializationDeps): void {
-  commitMaterializationSteps(
-    operation.root,
-    operation.steps.map((step) => ({
-      path: step.path,
-      mode: step.mode,
-      expect: step.expect,
-      ...(step.contents === undefined ? {} : { contents: step.contents }),
-      ...(step.prior === undefined ? {} : { prior: step.prior }),
-      ...(step.priorMode === undefined ? {} : { priorMode: step.priorMode }),
-      announce: () =>
-        deps.onStep?.({
-          phase: step.phase,
-          kind: step.kind,
-          path: step.path,
-          ...(step.plan === undefined ? {} : { componentId: step.plan.componentId }),
-        }),
-    })),
-    deps.rename,
+function commit(
+  operation: PlannedOperation,
+  deps: EccMaterializationDeps,
+  guard?: EccMaterializationTransactionGuard,
+): void {
+  const steps = operation.steps.map((step) => ({
+    path: step.path,
+    mode: step.mode,
+    expect: step.expect,
+    ...(step.contents === undefined ? {} : { contents: step.contents }),
+    ...(step.prior === undefined ? {} : { prior: step.prior }),
+    ...(step.priorMode === undefined ? {} : { priorMode: step.priorMode }),
+    announce: () =>
+      deps.onStep?.({
+        phase: step.phase,
+        kind: step.kind,
+        path: step.path,
+        ...(step.plan === undefined ? {} : { componentId: step.plan.componentId }),
+      }),
+  }));
+  const materialize = (revalidate?: () => void): void => {
+    commitMaterializationSteps(operation.root, steps, {
+      ...(deps.rename === undefined ? {} : { rename: deps.rename }),
+      ...(revalidate === undefined ? {} : { beforeEffects: revalidate, afterEffects: revalidate }),
+    });
+  };
+  if (guard === undefined) {
+    materialize();
+    return;
+  }
+  guardedMaterializationTransaction(operation.root, guard).runGuarded((revalidate) =>
+    materialize(revalidate),
   );
+}
+
+function containedUnder(root: string, path: string): boolean {
+  const rel = relative(root, path);
+  return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
+}
+
+function guardedMaterializationTransaction(
+  root: string,
+  guard: EccMaterializationTransactionGuard,
+): FsTransaction {
+  const lock = guard.commitLock;
+  if (
+    lock !== undefined &&
+    (typeof lock !== "string" ||
+      !/^[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/.test(lock) ||
+      lock.split("/").some((part) => part === "." || part === ".."))
+  ) {
+    throw new Error("invalid ECC materialization transaction guard");
+  }
+  const transaction = new FsTransaction({
+    commitNotAfter: parseCommitNotAfter(guard.commitNotAfter),
+    ...(lock === undefined ? {} : { commitLock: { path: resolve(root, lock), root } }),
+  });
+  for (const assertion of guard.fileAssertions ?? []) {
+    if (
+      !/^[a-f0-9]{64}$/.test(assertion.sha256) ||
+      !Number.isSafeInteger(assertion.maxBytes) ||
+      assertion.maxBytes < 0
+    ) {
+      throw new Error("invalid ECC materialization transaction guard");
+    }
+    const external = assertion.external === true;
+    const assertionRoot = external ? assertion.trustedBase : root;
+    const path = external ? assertion.path : resolve(root, assertion.path);
+    if (
+      assertionRoot === undefined ||
+      !isAbsolute(assertionRoot) ||
+      !containedUnder(assertionRoot, path) ||
+      (!external && isAbsolute(assertion.path))
+    ) {
+      throw new Error("invalid ECC materialization transaction guard");
+    }
+    transaction.stageAssertion(
+      path,
+      assertion.sha256,
+      assertion.describe,
+      assertionRoot,
+      assertion.maxBytes,
+      assertion.externalCustody,
+    );
+  }
+  return transaction;
 }
 
 function ledgerUpdate(
@@ -138,9 +214,10 @@ export function previewEccMaterialization(
 export function applyEccMaterialization(
   request: EccMaterializationRequest,
   deps: EccMaterializationDeps = {},
+  guard?: EccMaterializationTransactionGuard,
 ): EccMaterializationResult {
   const operation = planEccMaterialization(request);
-  commit(operation, deps);
+  commit(operation, deps, guard);
   ledgerUpdate(operation.root, operation.components, deps);
   return result(operation);
 }

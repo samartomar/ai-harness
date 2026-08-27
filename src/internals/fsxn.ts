@@ -1067,6 +1067,40 @@ export class FsTransaction {
       this.activeCommitLease = undefined;
     }
   }
+
+  /**
+   * Hold this transaction's assertion/lease boundary around a synchronous
+   * effect engine that owns its own rollback. The callback receives a
+   * revalidation function it must call immediately before and after its
+   * effects; an after-effect failure then belongs to that engine's rollback.
+   *
+   * This intentionally has no staged writes or removals of its own. It is the
+   * bridge for a pre-existing transactional writer, not a second writer.
+   */
+  runGuarded<T>(run: (revalidate: () => void) => T): T {
+    if (this.staged.length !== 0 || this.stagedRemovals.length !== 0) {
+      throw new FsTxnError("guarded transaction cannot stage filesystem effects");
+    }
+    const assertions = dedupeAssertions(this.stagedAssertions);
+    let lockIdentity: OwnedCommitLease | undefined;
+    const revalidate = (): void => {
+      this.assertCommitDeadline();
+      for (const assertion of assertions) this.guardParents(assertion.path, assertion.root, false);
+      validateAssertions(assertions);
+      this.assertCommitDeadline();
+    };
+    try {
+      revalidate();
+      lockIdentity = this.acquireCommitLock();
+      revalidate();
+      const result = run(revalidate);
+      revalidate();
+      return result;
+    } finally {
+      this.releaseCommitLock(lockIdentity);
+      this.activeCommitLease = undefined;
+    }
+  }
 }
 
 function dedupeAssertions(staged: StagedAssertion[]): StagedAssertion[] {

@@ -15,6 +15,8 @@ import {
   applyEccMaterialization,
   type EccMaterializationAdvisory,
   type EccMaterializationFilePlan,
+  type EccMaterializationRequest,
+  type EccMaterializationTransactionGuard,
   previewEccMaterialization,
 } from "./materialization.js";
 import { displaySafe, ECC_KIRO_RUNTIME_COMPONENT_ID } from "./materialization-receipt.js";
@@ -83,6 +85,8 @@ export interface GovernedEccMaterializationInput {
    * target this lifecycle refuses must create no quarantine.
    */
   targets: readonly EccMaterializationTarget[];
+  /** One verified protected-policy observation carried to the direct writer. */
+  transactionGuard?: EccMaterializationTransactionGuard;
 }
 
 /** One normalized report for both halves of the `--apply` gate. */
@@ -275,6 +279,7 @@ function governedMaterializationPlan(
   sourceRoot: string,
   authorizations: readonly BaselineAuthorization[],
   held: readonly BaselineHeldComponent[],
+  onPrepared?: (request: EccMaterializationRequest, report: GovernedMaterializationReport) => void,
 ): Plan {
   const effective = resolveEffectiveOrgPolicy(policy);
   const selection = resolveEccMaterializationSelection(effective, {
@@ -305,19 +310,21 @@ function governedMaterializationPlan(
     );
   }
   const request = { root: ctx.root, components: target.components };
-  // The ONLY preview-first gate. The engine writes on apply and plans on dry
-  // run; nothing here re-implements either half.
-  const outcome = ctx.apply ? applyEccMaterialization(request) : previewEccMaterialization(request);
+  // Keep planning pure. The direct materializer runs later, inside its own
+  // authority assertion/lease boundary, after the evidence pipeline accepted
+  // this exact request.
+  const outcome = previewEccMaterialization(request);
   const report: GovernedMaterializationReport = {
     root: ctx.root,
-    applied: ctx.apply,
+    applied: false,
     targets,
-    write: "written" in outcome ? outcome.written : outcome.write,
-    subtract: "removed" in outcome ? outcome.removed : outcome.subtract,
+    write: outcome.write,
+    subtract: outcome.subtract,
     advisories: outcome.advisories,
     excluded: selection.excluded,
     refused: target.refused,
   };
+  onPrepared?.(request, report);
   return plan(
     "ecc: governed framework materialization",
     digest("governed ECC framework materialization", reportBody(report), report),
@@ -358,12 +365,16 @@ export async function executeGovernedEccMaterialization(
   ) {
     evidenceComponentIds.push(ECC_KIRO_RUNTIME_COMPONENT_ID);
   }
-  return executeBaselineEvidencePipeline(
+  let prepared:
+    | { request: EccMaterializationRequest; report: GovernedMaterializationReport }
+    | undefined;
+  const result = await executeBaselineEvidencePipeline(
     ctx,
     {
       catalog: input.catalog,
       source: input.source,
       componentIds: evidenceComponentIds,
+      policy: input.policy,
       // A governed selection is expected to carry components the vet blocked or
       // never recorded. Each is reported with its reason by the resolver; one of
       // them must not take the whole install down with it.
@@ -376,8 +387,32 @@ export async function executeGovernedEccMaterialization(
           sourceRoot,
           authorizations,
           held,
+          (request, report) => {
+            prepared = { request, report };
+          },
         ),
     },
     deps,
   );
+  if (!ctx.apply || prepared === undefined) return result;
+
+  const outcome = applyEccMaterialization(prepared.request, {}, input.transactionGuard);
+  const report: GovernedMaterializationReport = {
+    ...prepared.report,
+    applied: true,
+    write: outcome.written,
+    subtract: outcome.removed,
+    advisories: outcome.advisories,
+  };
+  const digestIndex = result.digests.findIndex((entry) =>
+    entry.describe.includes("governed ECC framework materialization"),
+  );
+  if (digestIndex >= 0) {
+    result.digests[digestIndex] = {
+      describe: "governed ECC framework materialization",
+      text: reportBody(report),
+      data: report,
+    };
+  }
+  return result;
 }

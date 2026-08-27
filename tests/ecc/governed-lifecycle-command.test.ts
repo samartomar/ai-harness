@@ -144,16 +144,20 @@ const MATERIALIZED: ReadonlyArray<{ source: string; destination: string }> = [
 
 let root: string;
 let sourceRoot: string;
+let adminRoot: string;
 
 beforeEach(() => {
   sourceRoot = mkdtempSync(join(tmpdir(), "aih-governed-lifecycle-source-"));
   writeTree(sourceRoot, SOURCE_TREE);
   root = mkdtempSync(join(tmpdir(), "aih-governed-lifecycle-root-"));
   writeTree(root, OPERATOR_TREE);
+  adminRoot = mkdtempSync(join(tmpdir(), "aih-governed-lifecycle-admin-"));
 });
 afterEach(() => {
+  vi.useRealTimers();
   rmSync(sourceRoot, { recursive: true, force: true });
   rmSync(root, { recursive: true, force: true });
+  rmSync(adminRoot, { recursive: true, force: true });
 });
 
 function writeTree(base: string, tree: Readonly<Record<string, string>>): void {
@@ -175,7 +179,11 @@ function snapshot(base: string): Record<string, string> {
   return entries;
 }
 
-function ctx(apply: boolean, options: Record<string, unknown>): PlanContext {
+function ctx(
+  apply: boolean,
+  options: Record<string, unknown>,
+  env: NodeJS.ProcessEnv = {},
+): PlanContext {
   const run = fakeRunner(() => undefined);
   return {
     root,
@@ -186,8 +194,38 @@ function ctx(apply: boolean, options: Record<string, unknown>): PlanContext {
     json: false,
     run,
     host: makeHostAdapter({ platform: "linux", run, env: {} }),
-    env: {},
+    env,
     options,
+  };
+}
+
+function governedPolicy(
+  selections: readonly SelectionFixture[],
+  source: { repository?: string; commit?: string } = {},
+) {
+  return {
+    schemaVersion: 2 as const,
+    minimumPosture: "enterprise" as const,
+    references: { repoContract: "ai-coding/project.json" },
+    governance: {
+      supportedClis: SUPPORTED_CLIS,
+      policyVersion: "2026-08-07.f6",
+      catalog: { reviewed: [], custom: [] },
+      externalSelections: [
+        {
+          framework: "ecc",
+          items: selections.map((item) => ({
+            kind: item.kind,
+            id: item.id,
+            source: {
+              repository: source.repository ?? REPOSITORY,
+              commit: source.commit ?? COMMIT,
+              path: item.path,
+            },
+          })),
+        },
+      ],
+    },
   };
 }
 
@@ -197,36 +235,30 @@ function writeGovernedPolicy(
 ): void {
   writeFileSync(
     orgPolicyPath(root, {}),
-    `${JSON.stringify(
-      {
-        schemaVersion: 2,
-        minimumPosture: "enterprise",
-        references: { repoContract: "ai-coding/project.json" },
-        governance: {
-          supportedClis: SUPPORTED_CLIS,
-          policyVersion: "2026-08-07.f6",
-          catalog: { reviewed: [], custom: [] },
-          externalSelections: [
-            {
-              framework: "ecc",
-              items: selections.map((item) => ({
-                kind: item.kind,
-                id: item.id,
-                source: {
-                  repository: source.repository ?? REPOSITORY,
-                  commit: source.commit ?? COMMIT,
-                  path: item.path,
-                },
-              })),
-            },
-          ],
-        },
-      },
-      null,
-      2,
-    )}\n`,
+    `${JSON.stringify(governedPolicy(selections, source), null, 2)}\n`,
     "utf8",
   );
+}
+
+function protectedGovernedPolicyBundle(selections: readonly SelectionFixture[]): string {
+  return JSON.stringify({
+    schemaVersion: 2,
+    bundleVersion: "2026.08.f6",
+    issuer: "Acme platform security",
+    issuedAt: "2026-08-25T00:00:00Z",
+    policy: governedPolicy(selections),
+    authorityReceipt: {
+      format: "aih-policy-authority-receipt",
+      version: 3,
+      issuerRepository: "acme/governance",
+      issuedAt: "2026-08-25T00:00:00Z",
+      expiresAt: "2026-09-01T00:00:00Z",
+      trustedIssuers: [{ id: "platform-security", githubRepository: "acme/governance" }],
+      targets: [...SUPPORTED_CLIS].sort(),
+      decisions: [],
+      decisionRevocations: [],
+    },
+  });
 }
 
 function writeUngovernedPolicy(): void {
@@ -408,6 +440,50 @@ describe("F6 — the governed framework lifecycle reached through `aih ecc`", ()
     for (const path of Object.keys(OPERATOR_TREE)) {
       expect(bytesAt(root, path).toString("utf8"), path).toBe(OPERATOR_TREE[path]);
     }
+  });
+
+  it("refuses protected authority A-to-B before the governed writer creates any effect", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-26T12:00:00Z"));
+    const policyPath = join(adminRoot, "policies", "policy-bundle.json");
+    mkdirSync(dirname(policyPath), { recursive: true });
+    writeFileSync(policyPath, protectedGovernedPolicyBundle([...PASSED, BLOCKED]), "utf8");
+    const before = snapshot(root);
+    const lock = vendorLock();
+
+    await expect(
+      executeEccCommand(
+        ctx(true, { lifecycle: "install", eccPath: sourceRoot }, { AIH_ORG_POLICY: policyPath }),
+        {
+          catalog: catalog(),
+          resolveOrgEvidence: async (input) => {
+            expect(input.policy?.governance?.externalSelections?.[0]?.items).toHaveLength(
+              PASSED.length + 1,
+            );
+            // The evidence phase is the last asynchronous boundary before the
+            // direct writer. Replace A with valid B there: the original A pin
+            // must still guard the later materialization transaction.
+            writeFileSync(policyPath, protectedGovernedPolicyBundle([BLOCKED]), "utf8");
+            return {
+              checks: [],
+              evidence: {
+                tier: "org" as const,
+                issuer: "github:acme/engineering-governance",
+                evidenceSha256: "e".repeat(64),
+                lock,
+              },
+            };
+          },
+          executeProfileLifecycle: async () => {
+            throw new Error("the governed install must not fall through to the profile lifecycle");
+          },
+        },
+      ),
+    ).rejects.toThrow(/verified policy authority .* changed before commit/);
+
+    expect(snapshot(root)).toEqual(before);
+    expect(existsSync(eccMaterializationReceiptPath(root))).toBe(false);
+    expect(existsSync(join(root, ".aih"))).toBe(false);
   });
 
   for (const lifecycle of ["update", "repair", "rollback"]) {

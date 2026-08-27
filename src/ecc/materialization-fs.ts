@@ -31,6 +31,11 @@ const STATE_DIRECTORY_MODE = 0o700;
 export type DestinationRead = OwnedFileRead;
 export type DestinationExpectation = OwnedFileExpectation;
 export interface MaterializationCommitStep extends OwnedFileStep {}
+export interface MaterializationCommitDeps {
+  rename?: (from: string, to: string) => void;
+  beforeEffects?: () => void;
+  afterEffects?: () => void;
+}
 
 /**
  * Preserve the historical import-time refusal: the JS realpath implementation leaves
@@ -57,11 +62,8 @@ const ECC_POLICY: OwnedFilePolicy = {
   },
 };
 
-function transaction(
-  rootReal: string,
-  rename?: (from: string, to: string) => void,
-): OwnedFileTransaction {
-  return new OwnedFileTransaction(rootReal, ECC_POLICY, { rename });
+function transaction(rootReal: string, deps: MaterializationCommitDeps = {}): OwnedFileTransaction {
+  return new OwnedFileTransaction(rootReal, ECC_POLICY, deps);
 }
 
 /** The destination root must be an absolute, real, non-symlinked directory. */
@@ -86,7 +88,7 @@ export function writeDestinationAtomic(
   mode: number,
   rename?: (from: string, to: string) => void,
 ): void {
-  transaction(rootReal, rename).writeAtomic(path, contents, mode);
+  transaction(rootReal, { rename }).writeAtomic(path, contents, mode);
 }
 
 export function removeDestination(rootReal: string, path: string): void {
@@ -97,7 +99,7 @@ export function removeDestination(rootReal: string, path: string): void {
 export function commitMaterializationSteps(
   rootReal: string,
   steps: readonly MaterializationCommitStep[],
-  rename?: (from: string, to: string) => void,
+  deps: MaterializationCommitDeps = {},
 ): void {
-  transaction(rootReal, rename).commit(steps);
+  transaction(rootReal, deps).commit(steps);
 }

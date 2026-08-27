@@ -326,7 +326,7 @@ async function adoptPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   if (cls.kind === "marker-divergent" || cls.kind === "foreign-scheme") {
     const policyTargets = await verifiedOrgPolicyTargets(ctx);
     const policyCtx: PlanContext = { ...ctx, targets: policyTargets.resolution.clis };
-    actions.push(...(await adoptApplyActions(policyCtx, cls, contextDir, policyTargets.policy)));
+    actions.push(...(await adoptApplyActions(policyCtx, cls, contextDir, policyTargets)));
     policyPins = {
       ...(policyTargets.fileAssertions === undefined
         ? {}

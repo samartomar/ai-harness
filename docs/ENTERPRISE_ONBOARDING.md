@@ -64,11 +64,14 @@ aih verify-release 0.1.1
    ```
 
    Treat the trusted policy channel as either the committed `aih-org-policy.json`
-   reviewed in the repo or a signed/distributed bundle whose hash you pin out of
-   band. `AIH_ORG_POLICY` is an emergency override, not a silent replacement:
-   `aih doctor` and `aih report` surface it as policy-source integrity signal.
-   `policy project --apply` deliberately accepts only the committed default source
-   and updates policy-generated settings without rerunning the canon bootstrap.
+   reviewed in the repo or the Workbench-generated PolicyBundle V2 distributed at
+   an administrator-controlled read-only path outside the governed target. An
+   ordinary `AIH_ORG_POLICY` override is not a silent replacement: `aih doctor` and
+   `aih report` surface it as a policy-source integrity signal, and mutation refuses
+   it. `policy project --apply` additionally accepts the exact protected PolicyBundle
+   V2 only after Core verifies its authority, custody, freshness, and file identity;
+   the resulting transaction pins those bytes. It updates policy-generated settings
+   without rerunning the canon bootstrap.
    It is a Claude projection, so use the default target (or explicitly include
    Claude) when applying it.
    Managed-only MCP policy also records AIH ownership provenance so later removal
