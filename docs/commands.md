@@ -39,7 +39,7 @@ MCP config where possible and emits chain-inspection guidance plus `NODE_EXTRA_C
 repo-derived MCP endpoints during planning; live Node/Python endpoint TLS handshakes and CA-bundle
 comparisons require explicit `--probe-mcp-endpoints` and run as verification probes. For major
 AI-Harness upgrades, install the exact active Core line with
-`npm install -g @aihq/core@0.1.1`; its npm package and matching GitHub Release
+`npm install -g @aihq/core@0.2.0`; its npm package and matching GitHub Release
 evidence are public. The frozen `@aihq/harness@6.1.0` package is npm-deprecated
 and remains available only for existing consumers that have not migrated; new
 installations use `@aihq/core`. Add `--force` only when replacing a
@@ -983,7 +983,7 @@ predecessor, replay identity, and head validity ceiling; Receipt V1 is unsupport
 expired, substituted, replayed, rolled-back, or differently scoped receipts cannot mint the
 process-local qualification capability. The portable schema is shipped at
 `@aihq/core/schemas/aih-supported-qualification-receipt-v2.schema.json` in the
-published `0.1.1` Core package.
+published `0.2.0` Core package.
 
 A packed consumer may call `verifyAihSupportedQualificationArtifactV2` with only the target root,
 the exact expected decision id/digest, and the exact expected subject. The package resolves the
@@ -1262,7 +1262,7 @@ organization evidence envelope's `artifactDigests`. The manifest binds the decis
 the decision digest because the decision already binds the evidence digest and the evidence binds
 the manifest bytes; a decision-digest field would create a digest cycle. The portable schema ships
 at `@aihq/core/schemas/aih-upstream-artifact-manifest-v1.schema.json` in the published
-`0.1.1` Core package, and the public library
+`0.2.0` Core package, and the public library
 exports the strict canonical parser and serializer.
 
 The fixed observer accepts no caller-selected command, executable, callback, runner, clock,
@@ -1389,7 +1389,7 @@ attestations.
 
 ## aih verify-release
 
-Core `0.1.1` behavior: read-only release verification for published `@aihq/core`
+Core `0.2.0` behavior: read-only release verification for published `@aihq/core`
 versions. With no positional version,
 it resolves the latest package version from npm; with `aih verify-release <version>`, it checks that
 specific version. The command installs that exact package into a temporary prefix with scripts

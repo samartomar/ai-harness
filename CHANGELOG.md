@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [Core 0.2.0] - 2026-08-27
+
 ### Added
 
 - **Enterprise organization authority can use one administrator-protected policy file.**
@@ -36,7 +38,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - Reconcile administrator-facing release truth after publication: the enterprise
-  guide selects current Scanner `0.1.2`, Core `0.1.1` schemas are described as
+  guide selects current Scanner `0.1.3`, Core `0.2.0` schemas are described as
   published, and shared organization-observation support tickets use governed-
   artifact wording that remains accurate for both npm packages and catalog-
   independent files. The package now also ships the release and versioning
@@ -2976,7 +2978,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v-core-0.1.1...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v-core-0.2.0...HEAD
+[Core 0.2.0]: https://github.com/samartomar/ai-harness/compare/v-core-0.1.1...v-core-0.2.0
 [Core 0.1.1]: https://github.com/samartomar/ai-harness/compare/v6.1.0...v-core-0.1.1
 [6.1.0]: https://github.com/samartomar/ai-harness/compare/v6.0.1...v6.1.0
 [6.0.1]: https://github.com/samartomar/ai-harness/compare/v5.4.0...v6.0.1
