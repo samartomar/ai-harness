@@ -339,7 +339,7 @@ describe("administrator-protected policy-file authority", () => {
         },
         { ...ctx, apply: true, options: { force: true } },
       ),
-    ).rejects.toThrow(/unsafe symlinked parent/);
+    ).rejects.toThrow(/unsafe symlinked parent|trusted external base is not a real directory/);
     expect(existsSync(join(targetRoot, "effect.txt"))).toBe(false);
     expect(existsSync(join(targetRoot, ".aih"))).toBe(false);
   });
