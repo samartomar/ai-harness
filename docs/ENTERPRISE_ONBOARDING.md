@@ -71,11 +71,13 @@ aih verify-release 0.1.1
    it. `policy project --apply` additionally accepts the exact protected PolicyBundle
    V2 only after Core verifies its authority, custody, freshness, and file identity;
    the resulting transaction pins those bytes. ECC and Superpowers evidence, ECC request
-   selection, standalone MCP planning, and standalone Usage ownership checks reuse that
-   same verified policy observation. Init retains each nested phase's assertion, deadline,
-   and lock and refuses conflicting observations before effects. Child-process effects
-   retain the renewable cooperative authority lease and revalidate before and after
-   execution; a post-effect failure never claims that Core rolled the child back.
+   selection, ordinary ECC profile lifecycle acquisition and mutation, standalone MCP planning,
+   and standalone Usage ownership checks reuse that same verified policy observation. ECC profile
+   install/update composes projection and native registration in one pinned filesystem transaction;
+   receipt-bound uninstall remains independently authorized by installed custody. Init retains each
+   nested phase's assertion, deadline, and lock and refuses conflicting observations before effects.
+   Child-process effects retain the renewable cooperative authority lease and revalidate before and
+   after execution; a post-effect failure never claims that Core rolled the child back.
    It updates policy-generated settings
    without rerunning the canon bootstrap.
    It is a Claude projection, so use the default target (or explicitly include

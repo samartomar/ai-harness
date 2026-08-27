@@ -77,10 +77,12 @@ Core accepts the file only at Enterprise posture and only while all of these con
 - every authority-dependent mutating transaction pins and rechecks that exact external file before
   effects.
 
-ECC and Superpowers evidence, ECC request selection, standalone MCP planning, and standalone Usage
-ownership checks all consume their one verified policy observation. The composed `aih init` plan
-retains every nested phase's file assertions, deadline, and cooperative lock; it refuses conflicting
-nested authority before any plan effect runs.
+ECC and Superpowers evidence, ECC request selection, ordinary ECC profile lifecycle acquisition and
+mutation, standalone MCP planning, and standalone Usage ownership checks all consume their one
+verified policy observation. ECC profile install/update composes projection and native registration
+inside one pinned filesystem transaction; receipt-bound uninstall remains independently authorized
+by installed custody. The composed `aih init` plan retains every nested phase's file assertions,
+deadline, and cooperative lock; it refuses conflicting nested authority before any plan effect runs.
 
 When a governed plan launches a child process, Core holds and renews the same cooperative authority
 lease while the process is running and revalidates the protected file immediately before and after

@@ -136,11 +136,14 @@ existing V3 decision-authority payload; no approval workflow or second policy st
 Core requires Enterprise posture, bounded strict JSON, a current 90-day-or-shorter authority window,
 a regular single-link file reached without symlinked parents, and exact byte re-observation before
 effects. Authority-dependent mutating transactions pin those same external bytes. ECC and
-Superpowers evidence, ECC request selection, standalone MCP planning, and standalone Usage
-ownership decisions reuse one verified policy observation. Init retains each nested phase's file
-assertions, deadline, and lock and refuses a conflicting observation before effects. Child-process
-effects retain a renewable cooperative lease and revalidate authority before and after execution;
-if the latter fails, Core blocks later effects without claiming it rolled back the already-run child.
+Superpowers evidence, ECC request selection, ordinary ECC profile lifecycle acquisition and
+mutation, standalone MCP planning, and standalone Usage ownership decisions reuse one verified
+policy observation. ECC profile install/update composes projection and native registration inside
+one pinned filesystem transaction; receipt-bound uninstall remains independently authorized by
+installed custody. Init retains each nested phase's file assertions, deadline, and lock and refuses
+a conflicting observation before effects. Child-process effects retain a renewable cooperative
+lease and revalidate authority before and after execution; if the latter fails, Core blocks later
+effects without claiming it rolled back the already-run child.
 Core never writes this file and does
 not prove its operating-system ACL: the organization must use an administrator-only directory,
 MDM/configuration management, or an equivalent read-only distribution boundary and must control

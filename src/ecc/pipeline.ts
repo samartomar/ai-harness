@@ -367,9 +367,13 @@ export async function executeEccCommand(
         "AIH_CONFIG",
       );
     }
+    const profileLifecycle = {
+      ...deps.profileLifecycle,
+      transactionPins,
+    };
     return (deps.executeProfileLifecycle ?? executeEccProfileLifecycleCommand)(
       targetCtx,
-      deps.profileLifecycle,
+      profileLifecycle,
     );
   }
   const { clis, detectFellBack } = policyTargets.resolution;

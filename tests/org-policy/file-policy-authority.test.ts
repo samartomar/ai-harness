@@ -23,6 +23,8 @@ import {
   executeEccCommand,
   executeEccEvidencePipeline,
 } from "../../src/ecc/pipeline.js";
+import { ECC_PROFILE_OWNERSHIP_PATH } from "../../src/ecc-profile/lifecycle.js";
+import { renderEccProjectionWithTrust } from "../../src/ecc-profile/render.js";
 import { resolveTargets } from "../../src/internals/cli-detect.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
@@ -43,6 +45,7 @@ import { readOrgPolicy } from "../../src/org-policy/schema.js";
 import { policyProjectCommand } from "../../src/org-policy/validate.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { resolveTrustSource } from "../../src/trust/fetch.js";
+import { evidence, profile, projectionRoots } from "../ecc-profile/render-fixture.js";
 
 let targetRoot: string;
 let adminRoot: string;
@@ -580,6 +583,46 @@ describe("administrator-protected policy-file authority", () => {
     expect(capturedRequest?.governance).toBe(true);
     expect(capturedRequest?.project.mcps).toEqual([]);
   });
+
+  it("refuses a protected-policy A-to-B swap before ordinary ECC lifecycle effects", async () => {
+    vi.useRealTimers();
+    const bundle = JSON.parse(authorityBundle()) as { policy: Record<string, unknown> };
+    bundle.policy.governance = { supportedClis: ["claude"] };
+    const initialBytes = JSON.stringify(bundle);
+    writeFileSync(policyPath, initialBytes, "utf8");
+    const replacement = JSON.stringify({ ...bundle, bundleVersion: "2026.08.2" });
+    const sources = await projectionRoots();
+    try {
+      const projection = await renderEccProjectionWithTrust(
+        profile,
+        evidence,
+        sources,
+        await sources.createTrust(),
+      );
+      let replaced = false;
+      const options: Record<string, unknown> = {
+        get lifecycle() {
+          if (!replaced) {
+            replaced = true;
+            writeFileSync(policyPath, replacement, "utf8");
+          }
+          return "install";
+        },
+      };
+      const { ctx } = context();
+
+      await expect(
+        executeEccCommand(
+          { ...ctx, apply: true, verify: false, options },
+          { profileLifecycle: { loadProjection: async () => projection } },
+        ),
+      ).rejects.toThrow(/verified policy authority policy file changed before commit/);
+      expect(existsSync(join(targetRoot, ECC_PROFILE_OWNERSHIP_PATH))).toBe(false);
+      expect(existsSync(join(targetRoot, ".aih"))).toBe(false);
+    } finally {
+      await sources.cleanup();
+    }
+  }, 30_000);
 
   it("refuses a same-byte replacement of the verified external policy file before lock or effects", async () => {
     const { ctx } = context();
