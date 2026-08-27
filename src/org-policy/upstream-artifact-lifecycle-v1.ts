@@ -1368,7 +1368,7 @@ function check(result: UpstreamArtifactLifecycleResultV1): Check {
     return {
       name: "policy lifecycle upstream-artifact",
       verdict: "fail",
-      code: "org-policy.lifecycle-decision-revoked",
+      code: "org-policy.lifecycle-artifact-decision-revoked",
       detail: "policy lifecycle upstream-artifact decision-revoked",
     };
   }

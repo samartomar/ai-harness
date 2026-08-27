@@ -528,6 +528,15 @@ describe("upstream artifact observer V1", () => {
       outcome: "refused",
       reason: "observed-file-mismatch",
     });
+    const mismatchedContext = context(options(mismatched));
+    const mismatchedExecution = await executePlan(
+      upstreamArtifactObservePlan(mismatchedContext),
+      mismatchedContext,
+      { skipWorktreeGate: true },
+    );
+    expect(mismatchedExecution.report?.checks).toContainEqual(
+      expect.objectContaining({ code: "org-policy.observe-artifact-identity-mismatch" }),
+    );
 
     const invalid = context({});
     const execution = await executePlan(upstreamArtifactObservePlan(invalid), invalid, {
@@ -1693,6 +1702,14 @@ describe("upstream artifact observer V1", () => {
     await expect(resolveUpstreamArtifactEffectiveStateV1(revokedContext)).resolves.toEqual([
       expect.objectContaining({ reason: "decision-revoked", state: "revoked" }),
     ]);
+    const revokedObservation = await executePlan(
+      upstreamArtifactObservePlan(revokedContext),
+      revokedContext,
+      { skipWorktreeGate: true },
+    );
+    expect(revokedObservation.report?.checks).toContainEqual(
+      expect.objectContaining({ code: "org-policy.observe-artifact-decision-revoked" }),
+    );
     const revoked = await executePlan(
       await upstreamArtifactLifecyclePlan(revokedContext),
       revokedContext,
@@ -1703,6 +1720,9 @@ describe("upstream artifact observer V1", () => {
       outcome: "reported-only",
       state: "decision-revoked",
     });
+    expect(revoked.report?.checks).toContainEqual(
+      expect.objectContaining({ code: "org-policy.lifecycle-artifact-decision-revoked" }),
+    );
     expect(readUpstreamArtifactLifecycleStoreV1(root)).toMatchObject({
       kind: "complete",
       records: [

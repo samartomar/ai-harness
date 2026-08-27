@@ -6,6 +6,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Refuse Policy Workbench protected Enterprise authoring until the policy sanctions at least one
+  supported CLI, before adding decision state or enabling download. Upstream-artifact mismatch and
+  revocation support output now identifies governed artifacts without changing npm-package wording.
+  Authority, observation, lifecycle writes, and fail-closed decisions are unchanged. (#887, #888)
+
 ## [Core 0.2.0] - 2026-08-27
 
 ### Added

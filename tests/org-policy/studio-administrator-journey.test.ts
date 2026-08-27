@@ -275,7 +275,11 @@ describe("policy workbench administrator journey", () => {
 
     expect(value(window, "protected-bundle-preview")).toBe("");
     expect(
-      (window.document.getElementById("download-protected-bundle") as HTMLButtonElement).disabled,
+      (
+        window.document.getElementById("download-protected-bundle") as unknown as {
+          disabled: boolean;
+        }
+      ).disabled,
     ).toBe(true);
     expect(window.document.querySelectorAll("#protected-decision-rows .row")).toHaveLength(0);
     expect(text(window, "protected-bundle-version-error")).toContain("supported CLI");

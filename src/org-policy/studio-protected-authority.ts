@@ -94,6 +94,8 @@ export function protectedPolicyWorkbenchScript(): string {
   const protectedIssues=function(values){
     const issues={};
     if(state.policy.minimumPosture!=="enterprise"){issues["protected-bundle-version"]="Choose Enterprise posture before creating authority."}
+    const supportedClis=state.policy.governance&&state.policy.governance.supportedClis;
+    if(state.policy.minimumPosture==="enterprise"&&(!Array.isArray(supportedClis)||supportedClis.length===0)){issues["protected-bundle-version"]="Choose at least one supported CLI before creating an Enterprise protected policy file."}
     if(!visible(values.bundleVersion)){issues["protected-bundle-version"]="Use a visible bundle version."}
     if(!protectedRepository.test(values.issuerRepository)){issues["protected-issuer-repository"]="Use organization/repository."}
     if(!protectedId.test(values.issuer)){issues["protected-issuer"]="Use a lowercase stable issuer identifier."}
