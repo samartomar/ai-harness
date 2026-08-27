@@ -20,7 +20,7 @@ The `enterprise` posture emphasizes least privilege, approval, auditability, and
 
 The enterprise examples in this public guide are intentionally limited to reviewed Figma, Jira/Atlassian, and AWS MCP paths. Additional service MCPs should follow the same policy and source-review pattern before appearing in public enterprise guidance.
 
-Release baseline covered by this guide: `@aihq/core@0.1.1`; the frozen,
+Release baseline covered by this guide: `@aihq/core@0.2.0`; the frozen,
 npm-deprecated legacy evidence remains at `@aihq/harness@6.1.0`, but new
 installations use `@aihq/core`. The scoped public security doc documents SLSA
 v1.2 Build L2 for tagged Core tarballs; no Build L3 or formal compliance claim
@@ -207,11 +207,11 @@ annex files. Runtime/configuration substitution, unknown fields, duplicate IDs, 
 references, unsupported platforms, cross-detector evidence, source/request drift, and final
 caller-registration drift fail closed.
 
-`@aihq/scan@0.1.2` is public with matching npm, GitHub Release, and provenance
+`@aihq/scan@0.1.3` is public with matching npm, GitHub Release, and provenance
 evidence. Install that exact version into a disposable consumer:
 
 ```bash
-npm install --save-dev /reviewed/path/aihq-scan-0.1.2.tgz
+npm install --save-dev @aihq/scan@0.1.3
 npx --no-install aih-scan capture --request <capture-request.json> --output <new-bundle>
 npx --no-install aih-scan sign --bundle <bundle> --signer <signer.json> --private-key <key.pem> --claims <claims.json> --output <evidence.json>
 npx --no-install aih-scan verify --evidence <evidence.json> --bundle <bundle> --roots <independent-roots.json> --expected <expected-claims.json>
@@ -348,7 +348,7 @@ do not delete or prune target-local history to make the check pass.
 For catalog-independent files already placed in the governed root by the organization, use the
 fixed `upstream-artifact` observer and lifecycle. The canonical manifest is shipped as
 `@aihq/core/schemas/aih-upstream-artifact-manifest-v1.schema.json` in the published
-`0.1.1` Core package; its public parser also rejects
+`0.2.0` Core package; its public parser also rejects
 noncanonical or oversized bytes. It binds the exact organization-qualified Decision V2 id,
 tool/skill/MCP/package subject and digests, target, allowed effect, accountable integration owner,
 fixed integration-contract version, and one to 256 sorted root-relative file digests. The raw
@@ -394,7 +394,7 @@ stay non-effective. After an external version or source change, run
 append the new audit record.
 
 Scanner can produce attributable evidence for a catalog-absent exact detector through its one
-code-owned adapter. Its source repository and exact `@aihq/scan@0.1.2` npm package are public.
+code-owned adapter. Its source repository and exact `@aihq/scan@0.1.3` npm package are public.
 Observe npm package provenance and GitHub Release evidence independently; success at one boundary
 does not prove the other.
 The packed Core proof uses the packed CLI to generate the Workbench, drives its structured fields and
@@ -434,16 +434,16 @@ If Docker or cosign is not part of the organization's selected policy path, docu
 Verify the release before rollout:
 
 ```console
-npm install -g @aihq/core@0.1.1
-aih verify-release 0.1.1
+npm install -g @aihq/core@0.2.0
+aih verify-release 0.2.0
 ```
 
 Full release verification requires local `npm`, `gh`, and `cosign`; proceed only when all three legs
 pass. A skipped leg is incomplete evidence, not a successful rollout gate.
 
 For a major-version upgrade, install the approved explicit version (currently
-`npm install -g @aihq/core@0.1.1`); `npm update -g` may stay within the current major. Re-run
-`aih verify-release 0.1.1` after an upgrade. Use `--force` only
+`npm install -g @aihq/core@0.2.0`); `npm update -g` may stay within the current major. Re-run
+`aih verify-release 0.2.0` after an upgrade. Use `--force` only
 when replacing a broken global install after reviewing the npm prefix and approved package source.
 
 Bootstrap a governed repo with an enterprise posture:
@@ -589,8 +589,8 @@ Most writing commands refuse a dirty worktree unless `--force` is supplied. In g
 Min Configuration:
 
 ```powershell
-npm install -g @aihq/core@0.1.1
-aih verify-release 0.1.1
+npm install -g @aihq/core@0.2.0
+aih verify-release 0.2.0
 aih policy validate
 aih init . --posture enterprise --mcp-mode offline --mcp-compliant
 aih init . --posture enterprise --mcp-mode offline --mcp-compliant --apply
@@ -826,7 +826,7 @@ uvx codebase-memory-mcp@0.10.5 --help
 Before handing configuration to developers, verify the admin package from the same repo or distribution location developers will use:
 
 ```powershell
-aih verify-release 0.1.1
+aih verify-release 0.2.0
 aih policy validate
 aih policy verify --against <trusted-policy-sha-or-bundle>
 aih pack validate --pack docs-quality

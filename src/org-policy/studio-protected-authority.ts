@@ -36,7 +36,7 @@ export function protectedPolicyWorkbenchMarkup(): string {
                 <label data-protected-source="oci" hidden>Exact OCI manifest digest <input id="protected-source-manifest-digest" placeholder="sha256:..."></label>
                 <label data-protected-source="remote" hidden>Canonical HTTPS endpoint <input id="protected-source-endpoint" placeholder="https://mcp.example.test/v1/server"></label>
                 <label data-protected-source="remote" hidden>Exact content digest <input id="protected-source-content-digest" placeholder="sha256:..."></label>
-                <label data-protected-source="aih" hidden>Exact AIH release <input id="protected-source-release" placeholder="0.1.1"></label>
+                <label data-protected-source="aih" hidden>Exact AIH release <input id="protected-source-release" placeholder="0.2.0"></label>
                 <label data-protected-source="aih" hidden>Exact AIH revision <input id="protected-source-revision" placeholder="sha256:..."></label>
                 <label>Targets <input id="protected-targets" placeholder="claude,codex" required></label>
                 <label>Allowed effects <input id="protected-effects" placeholder="observe,use" required></label>

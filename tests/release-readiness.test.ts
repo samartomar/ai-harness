@@ -424,7 +424,7 @@ describe("release readiness metadata", () => {
       `published \`@aihq/harness@${legacyVersion}\` package is frozen and npm-deprecated`,
     );
     expect(readme).toContain(`npm install -g @aihq/core@${coreVersion}`);
-    expect(readme).toContain("`@aihq/core@0.1.1` is public on npm");
+    expect(readme).toContain("`@aihq/core@0.2.0` is public on npm");
     expect(readme).not.toContain("Until those exact artifacts exist");
 
     for (const path of [
@@ -450,12 +450,13 @@ describe("release readiness metadata", () => {
     ] as const) {
       expect(text, path).not.toContain("pending `0.1.1` Core package");
     }
-    expect(adminGuide).toContain("@aihq/scan@0.1.2");
-    expect(adminGuide).not.toContain("@aihq/scan@0.1.1");
+    expect(adminGuide).toContain("@aihq/scan@0.1.3");
+    expect(adminGuide).not.toContain("@aihq/scan@0.1.2");
 
     for (const path of ["SUPPORT.md", "docs/commands.md", "guides/README.md"]) {
       const installDoc = read(path);
-      expect(installDoc, path).toContain("@aihq/core@0.1.1");
+      expect(installDoc, path).toContain("@aihq/core@0.2.0");
+      expect(installDoc, path).not.toContain("@aihq/core@0.1.1");
       expect(installDoc, path).not.toContain("@aihq/core@0.1.0");
       expect(installDoc, path).not.toContain("pre-publication fallback");
       expect(installDoc, path).not.toContain("only published install");
