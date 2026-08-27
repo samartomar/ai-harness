@@ -648,6 +648,17 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     ...OBSERVE_PLATFORM,
     title: "npm observation invariant could not be established",
   },
+  "org-policy.observe-artifact-decision-revoked": {
+    ...OBSERVE_PLATFORM,
+    title: "governed artifact observation decision is revoked",
+  },
+  "org-policy.observe-artifact-identity-mismatch": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "observed governed artifact does not match the decision",
+    action:
+      "Restore the exact policy-approved manifest and artifact files recorded by the current decision and keep their combined observed size within 64 MiB, then rerun the observation. If approved content exceeds that bound, reduce or split it to a supported bounded artifact shape and issue a separately reviewed, evidence-bound successor decision before re-observing.",
+  },
   "org-policy.lifecycle-input-invalid": {
     audience: "developer",
     failSeverity: "blocking",
@@ -662,6 +673,10 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
   "org-policy.lifecycle-decision-revoked": {
     ...OBSERVE_PLATFORM,
     title: "npm lifecycle decision is revoked",
+  },
+  "org-policy.lifecycle-artifact-decision-revoked": {
+    ...OBSERVE_PLATFORM,
+    title: "governed artifact lifecycle decision is revoked",
   },
   "org-policy.lifecycle-observation-invalid": {
     ...OBSERVE_PLATFORM,

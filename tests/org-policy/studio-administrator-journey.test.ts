@@ -260,6 +260,33 @@ describe("policy workbench administrator journey", () => {
     expect(text(window, "announcement")).toContain("protected policy file is ready");
   });
 
+  it("refuses protected Enterprise authoring until a supported CLI is sanctioned", async () => {
+    const window = openWorkbench();
+    setValue(window, "posture", "enterprise");
+    expect(JSON.parse(value(window, "config-preview")).governance.supportedClis).toBeUndefined();
+    fillProtectedFields(window);
+
+    const pending = window as unknown as { __aihPolicyWorkbenchPending?: Promise<void> };
+    pending.__aihPolicyWorkbenchPending = undefined;
+    window.document
+      .getElementById("protected-form")
+      ?.dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
+    await pending.__aihPolicyWorkbenchPending;
+
+    expect(value(window, "protected-bundle-preview")).toBe("");
+    expect(
+      (
+        window.document.getElementById("download-protected-bundle") as unknown as {
+          disabled: boolean;
+        }
+      ).disabled,
+    ).toBe(true);
+    expect(window.document.querySelectorAll("#protected-decision-rows .row")).toHaveLength(0);
+    expect(text(window, "protected-bundle-version-error")).toContain("supported CLI");
+    expect(text(window, "announcement")).toContain("highlighted protected policy fields");
+    expect(text(window, "announcement")).not.toContain("protected policy file is ready");
+  });
+
   it("downloads NFC bytes accepted by Core's strict active-policy reader", async () => {
     const window = openWorkbench();
     chooseProfile(window, "enterprise");
