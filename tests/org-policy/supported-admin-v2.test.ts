@@ -10,9 +10,10 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { canonicalStrictJsonBytesV1 } from "../../src/contract/strict-json-v1.js";
+import * as containedPath from "../../src/internals/contained-path.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type { WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
@@ -993,10 +994,14 @@ describe("SupportedQualificationCustodyV2 durable acceptance", { timeout: 15_000
     }
   });
 
+  // The 4,096-entry fixture proves the capacity boundary; the no-read assertion below proves
+  // enumeration happens before content scanning, while this per-test budget absorbs Windows
+  // filesystem scheduling during fixture creation rather than weakening the custody contract.
   it("bounds current-head member enumeration before scanning a large custody directory", async () => {
     const { root, genesis } = await applyGenesis();
     try {
       const memberDirectory = dirname(join(root, writes(genesis)[2]?.path ?? ""));
+      const fakePaths = new Set<string>();
       for (let index = 0; index < 4_096; index++) {
         const path = join(memberDirectory, `${index.toString(16).padStart(64, "0")}.json`);
         writeFileSync(
@@ -1008,16 +1013,28 @@ describe("SupportedQualificationCustodyV2 durable acceptance", { timeout: 15_000
             catalogHeadDigest: `sha256:${"a".repeat(64)}`,
           }),
         );
+        fakePaths.add(relative(root, path).replaceAll("\\", "/"));
       }
-      await expect(prepare(root, candidateFor(memberReceipt()))).rejects.toMatchObject({
-        code: "AIH_TRUST",
-      });
+      const scanned = vi.spyOn(containedPath, "readContainedRegularFile");
+      try {
+        await expect(prepare(root, candidateFor(memberReceipt()))).rejects.toMatchObject({
+          code: "AIH_TRUST",
+        });
+        expect(scanned).toHaveBeenCalled();
+        expect(
+          scanned.mock.calls.filter(([, path]) => fakePaths.has(path.replaceAll("\\", "/"))),
+        ).toHaveLength(0);
+      } finally {
+        scanned.mockRestore();
+      }
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
     // Creating and enumerating 4,096 files can exceed the normal budget on Windows runners.
   }, 60_000);
 
+  // This intentionally constructs and scans the full 4,096-record capacity fixture; the
+  // bounded budget absorbs Windows filesystem scheduling and is not a runtime performance contract.
   it("allows an occupied exact member slot at capacity but refuses a new member", async () => {
     const { root } = await applyGenesis();
     try {
@@ -1073,7 +1090,7 @@ describe("SupportedQualificationCustodyV2 durable acceptance", { timeout: 15_000
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  }, 120_000);
+  }, 180_000);
 
   it("fails closed when inspect sees partial or foreign custody directories", async () => {
     const root = mkdtempSync(join(tmpdir(), "aih-supported-inspect-invalid-"));
