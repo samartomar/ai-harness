@@ -82,6 +82,14 @@ describe("production baseline catalogs", () => {
       catalog.components.find((component) => component.id === "runtime:ecc-installer"),
     ).not.toHaveProperty("skillContent");
     expect(
+      catalog.components.find((component) => component.id === "runtime:ecc-installer")?.paths,
+    ).toEqual(
+      expect.arrayContaining([
+        "scripts/lib/invocation-environment.js",
+        "scripts/lib/opencode-paths.js",
+      ]),
+    );
+    expect(
       catalog.components.find((component) => component.id === "baseline:agents")?.paths,
     ).toEqual([".agents/plugins/marketplace.json", "AGENTS.md"]);
     expect(catalog.components.find((component) => component.id === "agent:planner")?.paths).toEqual(

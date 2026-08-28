@@ -24,7 +24,7 @@ import { shardCatalog } from "../../src/baseline-evidence/shard.js";
 const PIN = "a".repeat(40);
 const RUNTIME_PATHS = [
   "package.json",
-  "scripts/lib/install-executor.js",
+  "scripts/lib/install/plan.js",
   "scripts/lib/install-manifests.js",
   "scripts/lib/install-targets/registry.js",
 ] as const;
@@ -45,13 +45,14 @@ function catalog(): BaselineCatalog {
 
 function writeFixture(root: string): void {
   mkdirSync(join(root, "scripts/lib/install-targets"), { recursive: true });
+  mkdirSync(join(root, "scripts/lib/install"), { recursive: true });
   mkdirSync(join(root, "module"));
   writeFileSync(
     join(root, "package.json"),
     `{"name":"ecc-fixture","secret":"${SECRET_SNIPPET}"}\n`,
   );
   writeFileSync(
-    join(root, "scripts/lib/install-executor.js"),
+    join(root, "scripts/lib/install/plan.js"),
     [
       'const fs = require("node:fs");',
       `fs.writeFileSync(${JSON.stringify(join(root, "executed.txt"))}, "executed");`,
