@@ -223,8 +223,8 @@ export class EccLeanInstallerUnavailableError extends AihError {
 }
 
 /**
- * affaan-m/ecc pin — the maintainer-locked commit this binding is pinned to.
- * MIRRORS (deliberately does not import) the "affaan-m"/"ecc" entry in
+ * samartomar/ECC pin — the maintainer-locked commit this binding is pinned to.
+ * MIRRORS (deliberately does not import) the "samartomar"/"ECC" entry in
  * `src/internals/baseline-sources.ts` — also the pin of the shipped
  * `src/baseline-evidence/ecc-install-preview.json` and of
  * `baselineCatalogById("ecc").pinnedSha`. Mirrored rather than imported for the
@@ -236,7 +236,7 @@ export class EccLeanInstallerUnavailableError extends AihError {
  * source cross-checks this constant against the live catalog, so a silent drift
  * fails closed rather than binding the wrong commit.
  */
-export const ECC_PIN_COMMIT = "623f2c020f052319657674e4e6c29ab5d0ad566b";
+export const ECC_PIN_COMMIT = "5caf398a91599029a176ca6d806409b00d1052c4";
 
 /**
  * The ECC adapter version (W7 §C.2) — bumped when this adapter's provisioning /
@@ -248,7 +248,7 @@ export const ECC_PIN_COMMIT = "623f2c020f052319657674e4e6c29ab5d0ad566b";
 export const ADAPTER_VERSION = 1 as const;
 
 /** The pinned git source location (`owner/repo` shape; see `isPlausibleGitRepository`). */
-export const ECC_REPOSITORY = "affaan-m/ecc";
+export const ECC_REPOSITORY = "samartomar/ECC";
 
 /** The single ECC install target for the `claude` host (the preview's `target`). */
 export const ECC_HOST_TARGET = "claude";

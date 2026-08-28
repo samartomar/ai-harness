@@ -152,7 +152,7 @@ interface Op {
 function previewArtifact(ops: Op[]): any {
   return {
     schemaVersion: 1,
-    source: { owner: "affaan-m", repo: "ecc", pinnedSha: ECC_PIN_COMMIT },
+    source: { owner: "samartomar", repo: "ECC", pinnedSha: ECC_PIN_COMMIT },
     operations: ops.map((op) => ({
       target: "claude",
       kind: op.kind ?? "copy-file",
@@ -1518,7 +1518,7 @@ describe("acceptance — real evidence-gated ECC selective install", () => {
      * The HARD RULE forbids a real ECC install in unit tests. Run this only in the
      * orchestrator-triggered acceptance phase, on a throwaway machine seat:
      *
-     *  1. Resolve the pinned source: `resolveGitSource({ repository: "affaan-m/ecc",
+     *  1. Resolve the pinned source: `resolveGitSource({ repository: "samartomar/ECC",
      *     commitSha: ECC_PIN_COMMIT }, { runner: defaultRunner, cacheHome: <tmp> })`.
      *  2. Run the W2 fast-scan gate over the checkout to mint a real disposition.
      *  3. Build a real EccLeanInstaller that composes ECC's `executeEccEvidencePipeline`

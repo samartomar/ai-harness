@@ -11,7 +11,7 @@
       "version": "v2.2.0-1-g5caf398a",
       "commit": "5caf398a91599029a176ca6d806409b00d1052c4",
       "disposition": "active",
-      "reason": "Explicitly authorized temporary bridge to the administrator-owned fork. The exact one-commit v2.2.0 descendant exposes the upstream pure manifest planner required for fail-closed preview generation; Core's lexical closure covers the planner and its two explicit non-directory dependencies. The governed lock and install preview must be regenerated from this exact checkout before this pin can ship. Archived affaan-m/ECC candidate evidence remains immutable history."
+      "reason": "Explicitly authorized temporary bridge to the administrator-owned fork. The exact one-commit v2.2.0 descendant exposes the upstream pure manifest planner required for fail-closed preview generation; Core's lexical closure covers the planner and its two explicit non-directory dependencies. Governed run 33147078833 regenerated the lock and install preview from this exact checkout: ECC recorded 109 pass and 28 blocked raw verdicts, including the newly passing nasiko-control-plane module, and Superpowers recorded 15 pass verdicts. Archived affaan-m/ECC candidate evidence remains immutable history."
     },
     {
       "surface": "ecc-candidate",

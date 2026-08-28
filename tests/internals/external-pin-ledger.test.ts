@@ -145,6 +145,7 @@ describe("active external-pin ledger", () => {
       commit: "5caf398a91599029a176ca6d806409b00d1052c4",
       disposition: "active",
     });
+    expect(entry("ecc").reason).toMatch(/administrator-owned fork.*governed run 33147078833/i);
     expect(entry("superpowers")).toMatchObject({
       identity: "obra/Superpowers",
       commit: "3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9",

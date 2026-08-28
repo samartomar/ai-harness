@@ -131,9 +131,9 @@ names `catalog`, `owner`, `repo`, `pinnedSha`, `bundle`, `signingRepository`,
 
 ## Supported ECC catalog
 
-The v2.9 baseline is English-only. The pinned ECC module snapshot retains all 32
+The v2.9 baseline is English-only. The pinned ECC module snapshot retains all 35
 vendor-declared modules for dependency, target, and drift metadata, but the shipped evidence
-catalog follows the pinned `full` install profile's 23 canonical English modules. The nine
+catalog follows the pinned `full` install profile's 26 canonical English modules. The nine
 `docs-*` locale modules are not selected by the supported full profile or scoped component
 descriptors, so they are not installed, authorized, or represented as vetted.
 
@@ -418,13 +418,15 @@ Every receipt is keyed to the exact file content at the pinned commit, so the
 identity that was vetted is the only identity the evidence covers. Two rules
 follow, and both are load-bearing:
 
-1. **Vet what you ship, from upstream.** The pin names an upstream repository and
-   a full commit SHA — currently `affaan-m/ECC@623f2c02…` and
-   `obra/Superpowers@3dcbd5c4…` in `src/internals/baseline-sources.ts`, recorded
-   with their acceptance disposition in `src/internals/external-pin-ledger.json`.
-   Any working checkout used to reproduce a baseline — a local clone, a personal
-   fork, a CI runner tree — must be on that same commit. A fork sitting on a
-   different SHA is a different artifact, and evidence generated from it does not
+1. **Vet what you ship, at its exact named source.** The active temporary ECC
+   bridge is the explicitly authorized administrator-owned
+   `samartomar/ECC@5caf398a91599029a176ca6d806409b00d1052c4`, alongside
+   `obra/Superpowers@3dcbd5c4…`, in `src/internals/baseline-sources.ts` and
+   recorded with their acceptance disposition in
+   `src/internals/external-pin-ledger.json`. Any working checkout used to
+   reproduce a baseline — a local clone, a personal fork, a CI runner tree —
+   must resolve to that named source identity and exact commit. A different fork
+   or SHA is a different artifact, and evidence generated from it does not
    describe the shipped pin, however similar the trees look.
 2. **Fixes go upstream, not into the pin's blast radius.** When a defect is found
    in a pinned component, the change is raised against the upstream project and
