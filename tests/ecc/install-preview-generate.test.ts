@@ -59,7 +59,7 @@ describe("ECC install preview generation", () => {
 
     const result = generateEccInstallPreviewArtifact(root, PIN);
 
-    expect(result.source).toEqual({ owner: "affaan-m", repo: "ecc", pinnedSha: PIN });
+    expect(result.source).toEqual({ owner: "samartomar", repo: "ECC", pinnedSha: PIN });
     expect(result.operations).toContainEqual(
       expect.objectContaining({
         target: "claude",
