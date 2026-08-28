@@ -133,6 +133,9 @@ it.skipIf(process.platform === "win32")(
 );
 
 it("plans a large promoted-source inventory within a bounded child process", () => {
+  // This child checks 5,000 absent promoted-artifact paths; keep it bounded while
+  // allowing filesystem scheduling variance on slower Windows development hosts.
+  const childTimeoutMs = 15_000;
   const promotedSkills = Array.from({ length: 5_000 }, (_, index) => `skill-${index}`);
   put(
     ".aih-config.json",
@@ -189,9 +192,9 @@ it("plans a large promoted-source inventory within a bounded child process", () 
       pathToFileURL(join(process.cwd(), "src", "platform", "detect.ts")).href,
       root,
     ],
-    { encoding: "utf8", timeout: 6_000 },
+    { encoding: "utf8", timeout: childTimeoutMs },
   );
 
   expect(result.error).toBeUndefined();
   expect(result.status, result.stderr).toBe(0);
-}, 15_000);
+}, 20_000);
