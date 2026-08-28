@@ -62,13 +62,46 @@ describe("policy studio component relations", () => {
         expect(present.has(rider), `${asset.id} -> ${rider}`).toBe(true);
   });
 
-  it("keeps a rail-owned declaration out of the duplicate main-plane row", () => {
+  it("authors and reverses a rail declaration with its exact declared riders", () => {
     const window = studio();
     click(window, `[data-framework-select="ecc|${declarer.kind}|${declarer.id}"]`);
-    expect(selectedIds(window), "only the item the administrator picked").toEqual([declarer.id]);
+    expect(selectedIds(window).sort()).toEqual([declarer.id, ...(declarer.riders ?? [])].sort());
     expect(
       window.document.querySelector(`[data-row="ecc / ${declarer.kind}: ${declarer.id}"]`),
     ).toBeNull();
+    expect(window.document.getElementById("announcement")?.textContent).toContain(
+      `${declarer.riders?.length ?? 0} declared rider`,
+    );
+
+    click(window, `[data-framework-select="ecc|${declarer.kind}|${declarer.id}"]`);
+    expect(selectedIds(window)).toEqual([]);
+    expect(window.document.getElementById("announcement")?.textContent).toContain(
+      "General ECC skills and modules are independent and unchanged",
+    );
+  });
+
+  it("makes a broken preset visibly custom and warns when ECC Core is incomplete", () => {
+    const window = studio();
+    click(window, '[data-preset="enterprise"]');
+    const core = model.catalog.enterpriseComposition.parts
+      .filter((part) => part.selection === "composed")
+      .flatMap((part) => part.componentIds);
+    const removed = core[0];
+    if (removed === undefined) throw new Error("expected an ECC Core component");
+    const asset = ecc.assets.find((item) => item.id === removed);
+    if (asset === undefined) throw new Error(`expected catalog asset ${removed}`);
+
+    click(window, `[data-framework-select="ecc|${asset.kind}|${asset.id}"]`);
+
+    expect(
+      window.document.querySelector('[data-preset="custom"]')?.getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(window.document.getElementById("rail-composition-note")?.textContent).toContain(
+      "ECC Core incomplete",
+    );
+    expect(window.document.getElementById("announcement")?.textContent).toContain(
+      "no longer matches the Enterprise preset",
+    );
   });
 
   it("shows rail-owned rider facts through search without exposing mutation", () => {
