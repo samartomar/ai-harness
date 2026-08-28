@@ -55,7 +55,7 @@ describe("policy authoring catalog inventory", () => {
 
   it("kinds the whole component-id namespace, not three prefixes", () => {
     const assets = allAssets();
-    expect(assets.length).toBe(151);
+    expect(assets.length).toBe(152);
     expect(countByKind(assets.map((asset) => asset.kind))).toStrictEqual({
       agent: 44,
       baseline: 6,
@@ -63,7 +63,7 @@ describe("policy authoring catalog inventory", () => {
       framework: 11,
       lang: 15,
       mcp: 6,
-      module: 25,
+      module: 26,
       runtime: 3,
       skill: 26,
     });

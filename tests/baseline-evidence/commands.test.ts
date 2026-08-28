@@ -71,7 +71,7 @@ function ctx(apply: boolean, head = "a".repeat(40)): PlanContext {
 function catalog() {
   return defineBaselineCatalog({
     id: "ecc",
-    owner: "affaan-m",
+    owner: "samartomar",
     repo: "ECC",
     pinnedSha: "a".repeat(40),
     components: [{ id: "skill:clean", paths: ["skills/clean"] }],
@@ -81,7 +81,7 @@ function catalog() {
 function evidence() {
   return BaselineSourceEvidenceSchema.parse({
     id: "ecc",
-    owner: "affaan-m",
+    owner: "samartomar",
     repo: "ECC",
     pinnedSha: "a".repeat(40),
     components: [
@@ -159,7 +159,7 @@ describe("baseline vet command plan", () => {
   it("previews a remote exact-pin fetch without network or report writes", async () => {
     const c = ctx(false);
     c.options = {
-      source: "affaan-m/ecc",
+      source: "samartomar/ECC",
       pin: "a".repeat(40),
       catalog: "ecc",
       components: "runtime:ecc-installer",
