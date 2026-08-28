@@ -283,7 +283,7 @@ describe("active external-pin ledger", () => {
     expect(entry("claude-code-action")).toMatchObject({
       commit: claude?.[1],
     });
-    expect(entry("claude-code-action").version).toBe("v1.0.193");
+    expect(entry("claude-code-action").version).toBe("v1.0.201");
 
     const baselineWorkflow = readFileSync(
       resolve(root, ".github/workflows/baseline-evidence.yml"),
