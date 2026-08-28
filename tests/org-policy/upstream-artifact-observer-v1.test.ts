@@ -1797,6 +1797,8 @@ describe("upstream artifact observer V1", () => {
     }
   });
 
+  // This exercises two durable lifecycle lineages and their revocations; the finite budget
+  // absorbs Windows filesystem scheduling and is not a runtime performance contract.
   it("revokes only the validated manifest effect when one decision has multiple lifecycle lineages", async () => {
     const configure = fixture("mcp", "v1", "configure");
     const use = fixture("mcp", "v1", "use");
@@ -1917,7 +1919,7 @@ describe("upstream artifact observer V1", () => {
         { effect: "use", state: "decision-revoked" },
       ]);
     }
-  });
+  }, 15_000);
 
   it("refuses an authenticated revocation that has no prior lifecycle custody", async () => {
     const value = fixture("mcp");

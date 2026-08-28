@@ -2001,6 +2001,8 @@ describe("npm package lifecycle V1", () => {
     });
   });
 
+  // This deliberately drives observe, apply, update, and revocation through durable state; the
+  // finite budget absorbs Windows filesystem scheduling and is not a runtime performance contract.
   it("runs the cold disposable sequence without touching package bytes, a run ledger, or offline state", async () => {
     const first = fixture();
     writeFixture(first);
@@ -2045,7 +2047,7 @@ describe("npm package lifecycle V1", () => {
     );
     expect(existsSync(join(root, ".aih", "run-log.jsonl"))).toBe(false);
     expect(existsSync(join(root, ".aih", "offline-revocations"))).toBe(false);
-  });
+  }, 15_000);
 
   it("requires explicit CLI apply, emits deterministic JSON, and never writes a run ledger or package files", async () => {
     const value = fixture();
