@@ -1015,7 +1015,8 @@ describe("SupportedQualificationCustodyV2 durable acceptance", { timeout: 15_000
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
-  }, 15_000);
+    // Creating and enumerating 4,096 files can exceed the normal budget on Windows runners.
+  }, 60_000);
 
   it("allows an occupied exact member slot at capacity but refuses a new member", async () => {
     const { root } = await applyGenesis();
