@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { parseDocument } from "yaml";
 import {
   CISCO_SKILL_SCANNER_SPEC,
   CISCO_SKILL_SCANNER_VERSION,
@@ -65,6 +66,21 @@ describe("baseline evidence release payload", () => {
     expect(workflow).toContain("npm run check:baseline-pins");
     expect(workflow).toContain("npm run baseline:check");
     expect(workflow).not.toContain("npm run baseline:vet");
+    const workflowDocument = parseDocument(workflow);
+    expect(workflowDocument.errors).toEqual([]);
+    const steps = (
+      workflowDocument.toJSON() as {
+        jobs?: { "vet-once"?: { steps?: Array<{ if?: unknown; run?: unknown }> } };
+      }
+    ).jobs?.["vet-once"]?.steps;
+    if (!steps) throw new Error("baseline-evidence workflow must define vet-once steps");
+    for (const command of ["npm run check:baseline-pins", "npm run baseline:check"]) {
+      const step = steps.find(
+        (candidate) => typeof candidate.run === "string" && candidate.run.includes(command),
+      );
+      if (!step) throw new Error(`baseline-evidence workflow must run ${command}`);
+      expect(step).not.toHaveProperty("if");
+    }
     expect(workflow).not.toContain("--full");
     expect(workflow).toContain(SKILLSPECTOR_IMAGE_DIGEST);
     // The image is pulled content-addressed by digest from GHCR, then tagged to

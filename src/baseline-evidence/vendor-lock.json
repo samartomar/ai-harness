@@ -3,10 +3,10 @@
   "sources": [
     {
       "id": "ecc",
-      "owner": "affaan-m",
-      "repo": "ecc",
-      "pinnedSha": "623f2c020f052319657674e4e6c29ab5d0ad566b",
-      "sourceTreeSha256": "c6037c8d266e5c32b8851947ba9c20fe78e245f5e238fb177cb5ab403621194e",
+      "owner": "samartomar",
+      "repo": "ECC",
+      "pinnedSha": "5caf398a91599029a176ca6d806409b00d1052c4",
+      "sourceTreeSha256": "3365a0ab8a763ce10f6d18c21829c81b5bf855cec97e331c13d86975d2b7f812",
       "components": [
         {
           "id": "runtime:ecc-installer",
@@ -18,16 +18,18 @@
             "scripts/lib/install",
             "scripts/lib/install-manifests.js",
             "scripts/lib/install-executor.js",
+            "scripts/lib/invocation-environment.js",
             "scripts/lib/install-state.js",
             "scripts/lib/install-targets",
             "scripts/lib/cursor-agent-names.js",
             "scripts/lib/mcp-config.js",
+            "scripts/lib/opencode-paths.js",
             "scripts/lib/path-safety.js",
             "scripts/codex/merge-codex-config.js",
             "scripts/codex/merge-mcp-config.js",
             ".codex/AGENTS.md"
           ],
-          "treeSha256": "be86835abe3dd48b036a58588de5c707abdd47e103dda9d58fe31e63e3cbd810",
+          "treeSha256": "869dec45d895f7cfc7e270805440e7e1bea147924bc2cf4e4b60d61fe276bd76",
           "verdict": "pass",
           "analyzers": [
             {
@@ -50,7 +52,7 @@
           "paths": [
             ".kiro"
           ],
-          "treeSha256": "1a6919a609777706826981cc965ee80757b7c7131dbc4cc8bed3d4824e46ac08",
+          "treeSha256": "74fead936ab852a64c811690262fc9974f72adcd54049a21637531d389a8de2e",
           "verdict": "pass",
           "analyzers": [
             {
@@ -77,7 +79,7 @@
           "paths": [
             "rules"
           ],
-          "treeSha256": "d4d9a6f0a5a286b82cd8a5351fe924b4a3f4de04e117483a31486b154e773820",
+          "treeSha256": "94637b88166c7f13606c7acd5dd9cbe1b79995b6422869f298da5736c894731f",
           "verdict": "pass",
           "analyzers": [
             {
@@ -102,7 +104,7 @@
             "agents",
             "AGENTS.md"
           ],
-          "treeSha256": "7110d1a4fb13ef4a7e7f443addd101cc8a0e73fe55933d46edde4edf87e3af14",
+          "treeSha256": "5fd1dde9dbd35a9dca9d17e9606483613fc6c132fa0522c5015ae88357fc37a3",
           "verdict": "blocked",
           "analyzers": [
             {
@@ -155,7 +157,7 @@
             "scripts/harness-audit.js",
             "scripts/skills-health.js"
           ],
-          "treeSha256": "7393b689e3f9d990723bced7196cbca85ba32cec86bbb2966a6664520e41928e",
+          "treeSha256": "6f7cac24dc1d8a255bc66fe752e8d791efb584106f2d24b014ebce3166ae3537",
           "verdict": "pass",
           "analyzers": [
             {
@@ -180,7 +182,7 @@
             "scripts/hooks",
             "scripts/lib"
           ],
-          "treeSha256": "0d91734a313f6cd240d465b98ea6844d917386542af5402508dcbf52768bb050",
+          "treeSha256": "dde39c0fbf4dd3336856204998d208f612b0ec7651ff0cbddd0fc3356d75e76e",
           "verdict": "pass",
           "analyzers": [
             {
@@ -206,6 +208,7 @@
             ".cursor",
             ".gemini",
             ".opencode",
+            ".pi",
             ".qwen",
             ".zed",
             "mcp-configs",
@@ -215,7 +218,7 @@
             ".openclaw",
             ".kimi"
           ],
-          "treeSha256": "db9e57889f123c702391d6a164122909e14bac4b036a2468d78745634d0b5a92",
+          "treeSha256": "196d294d9143ad99d6311011f0d8205ceab053a7c519e168c6480625da65bcd6",
           "verdict": "blocked",
           "analyzers": [
             {
@@ -327,7 +330,7 @@
             "skills/tinystruct-patterns",
             "skills/vite-patterns"
           ],
-          "treeSha256": "38d272e8b2c660536f4047666e1d85805542485053166d08b91bcc97e0429a78",
+          "treeSha256": "ef87adef986f55b20d69f8e7451ff121a32181be7f9617c60be30fb2818cc77b",
           "verdict": "blocked",
           "analyzers": [
             {
@@ -369,7 +372,7 @@
             "skills/prisma-patterns",
             "skills/redis-patterns"
           ],
-          "treeSha256": "9d3267a14df9090e83e153f7833788f7f89b814f607ec8c120547292fb2b5924",
+          "treeSha256": "c3d0b1b0180c97574e3de4d43a0767a6cced51923547dcc0c03182b47a329cb6",
           "verdict": "pass",
           "analyzers": [
             {
@@ -402,6 +405,8 @@
             "skills/continuous-learning",
             "skills/continuous-learning-v2",
             "skills/council",
+            "skills/council-multi-model",
+            "skills/dev-team",
             "skills/e2e-testing",
             "skills/error-handling",
             "skills/eval-harness",
@@ -410,6 +415,7 @@
             "skills/plan-canvas",
             "skills/plankton-code-quality",
             "skills/production-audit",
+            "skills/skill-comply",
             "skills/skill-scout",
             "skills/skill-stocktake",
             "skills/strategic-compact",
@@ -431,6 +437,7 @@
             "skills/growth-log",
             "skills/inherit-legacy-style",
             "skills/intent-driven-development",
+            "skills/living-docs-governance",
             "skills/loop-design-check",
             "skills/product-lens",
             "skills/repo-scan",
@@ -438,7 +445,7 @@
             "skills/santa-method",
             "skills/git-workflow"
           ],
-          "treeSha256": "74b0a8d0b7c87b787733532d598c649dd14a3e6ada19b44ee8d830378b1dce46",
+          "treeSha256": "3a15ec9bb1d21e73fa90bdd6ea4c64573e76b5fdb2d6082729ac840650d6e438",
           "verdict": "blocked",
           "analyzers": [
             {
@@ -459,6 +466,14 @@
             }
           ],
           "findings": [
+            {
+              "code": "trust.prompt-injection",
+              "detail": "BLOCK: skills/council-multi-model/SKILL.md:25 — - the user explicitly agrees to send that packet to OpenAI.",
+              "fingerprint": "trust-prompt-injection:skills/council-multi-model/SKILL.md:b013ad6e2455b898379d0f719040a1b188cbb117702e992b193ead6daa5ad6ec",
+              "fingerprints": [
+                "trust-prompt-injection:skills/council-multi-model/SKILL.md:b013ad6e2455b898379d0f719040a1b188cbb117702e992b193ead6daa5ad6ec"
+              ]
+            },
             {
               "code": "trust.permission-risk",
               "detail": "REVIEW: skills/inherit-legacy-style/SKILL.md:6 — allowed-tools: Read, Glob, Grep, Bash, Edit, Write, AskUserQuestion",
@@ -520,7 +535,7 @@
             "skills/healthcare-eval-harness",
             "skills/safety-guard"
           ],
-          "treeSha256": "ae428d45cba8c14b8b78faa82741b2e4cd3704746d45a6617249b817975d7631",
+          "treeSha256": "f8b5f50ee5022ae9a8c92499118215363ffbe6f44e59a934f1fc194adfa5120e",
           "verdict": "pass",
           "analyzers": [
             {
@@ -555,7 +570,7 @@
             "skills/scientific-thinking-scholar-evaluation",
             "skills/documentation-lookup"
           ],
-          "treeSha256": "9709de67a3b4225e1f6b9bc1c7108cd42c1c31bafd9a53eb355ec77d98ea2e15",
+          "treeSha256": "7762fe8bcbbd781ac9f903754363e50973fc85fc4573cedfc2ce2ba794e0831f",
           "verdict": "blocked",
           "analyzers": [
             {
@@ -605,7 +620,7 @@
             "skills/competitive-report-structure",
             "skills/marketing-campaign"
           ],
-          "treeSha256": "27cba1785f33513985d2b6d2a999b58b669269648468e2aaac01f447c088d664",
+          "treeSha256": "4d62e1018d3ff5c926bbf130af3db2e3121ace8bf44386bad39ea878c0afeedf",
           "verdict": "pass",
           "analyzers": [
             {
@@ -650,7 +665,7 @@
             "skills/workspace-surface-audit",
             "skills/mailtrap-email-integration"
           ],
-          "treeSha256": "52304b047e1d78e4f0f291c0c23543a2d1084732f6262e6816edd6f683c2ac18",
+          "treeSha256": "e4e1e1ca5831cd1afb12663697670185f4a345135aa6a7b3cf4d78b8d63d65dd",
           "verdict": "blocked",
           "analyzers": [
             {
@@ -693,7 +708,7 @@
             "skills/benchmark",
             "skills/benchmark-methodology"
           ],
-          "treeSha256": "c1d663de22cba60000d1f2837977069e487b8efc688124e2bbcb4f41b8157011",
+          "treeSha256": "0a124f62e2ac727cfa8291409fb1c036090da5f7da9acc9ee32eca532cd257d6",
           "verdict": "pass",
           "analyzers": [
             {
@@ -718,14 +733,11 @@
         {
           "id": "module:prediction-market-skills",
           "paths": [
-            "skills/ito-basket-compare",
-            "skills/ito-data-atlas-agent",
-            "skills/ito-market-intelligence",
-            "skills/ito-trade-planner",
+            "skills/ito-baskets",
             "skills/prediction-market-oracle-research",
             "skills/prediction-market-risk-review"
           ],
-          "treeSha256": "ce922a3f072f9be06ea2cc6f8b3642d1e3eb535de9fbc50b583d7d94dcc01b76",
+          "treeSha256": "4ff74add58b5cd09128a87228e2ee9592acf4e9ce0ee44d237a2e9314c87cb1b",
           "verdict": "pass",
           "analyzers": [
             {
@@ -750,9 +762,38 @@
         {
           "id": "module:ito-compute",
           "paths": [
-            "skills/ito-compute"
+            "skills/ito-compute",
+            "skills/ito-inference",
+            "skills/ito-training"
           ],
-          "treeSha256": "890d5cbee60dcf8e1d99a30a8b5ef5699a1ab3966213015bb0dc4d2ca8efc477",
+          "treeSha256": "24d3a0d379f8b5af9c83c5c7375333b12fec681f1310f6e5eea127d5c423e50d",
+          "verdict": "pass",
+          "analyzers": [
+            {
+              "name": "aih-native",
+              "version": "native.791c9871d668"
+            },
+            {
+              "name": "cisco@uvx",
+              "version": "2.0.13+uvlock.3ba245280507"
+            },
+            {
+              "name": "semgrep@uv:1.173.0",
+              "version": "1.173.0+uvlock.77f2bf3e7525"
+            },
+            {
+              "name": "skillspector@docker",
+              "version": "2d198ab910add401cad658d1087e7c7ba24fd640@sha256:c5d4a1816419f129ae85ff96b3e366d4a062c1859997e26b7ab87341a43d4800"
+            }
+          ],
+          "findings": []
+        },
+        {
+          "id": "module:nasiko-control-plane",
+          "paths": [
+            "skills/nasiko-control-plane"
+          ],
+          "treeSha256": "347032948174aa25706813803e34b9194149f2221cf8e0e3659f3a053bdc4346",
           "verdict": "pass",
           "analyzers": [
             {
@@ -823,9 +864,10 @@
             "skills/ui-demo",
             "skills/video-editing",
             "skills/videodb",
-            "skills/taste"
+            "skills/taste",
+            "skills/tasteforge-video"
           ],
-          "treeSha256": "9d2cac8872a5b827f7429c9472e211ec00638826f0040c35a659ec694318baa9",
+          "treeSha256": "c30a55349fe9eaef9b76cf4124d9f20598fcd7d3b36fd64307528c2138d9ebaa",
           "verdict": "blocked",
           "analyzers": [
             {
@@ -904,7 +946,7 @@
             "skills/swiftui-patterns",
             "skills/ios-icon-gen"
           ],
-          "treeSha256": "448d3a6cf38b66f17eaa006e05eb33713e1496a44eced00890d0bffc537ec500",
+          "treeSha256": "57d06c932b49c6666c2a0eb345372cadec75b10e20a6d367786a57a240623ea2",
           "verdict": "pass",
           "analyzers": [
             {
@@ -966,7 +1008,7 @@
             "skills/orch-refine-code",
             "skills/plan-orchestrate"
           ],
-          "treeSha256": "3ea48783466c8b655e33f44ee6d89285b3ee1a6f0e84269ee1c4a402de7c11d6",
+          "treeSha256": "f368dded440cc6856c14314d9f57505d2efcb5dec9e2b5491f128286307ccd69",
           "verdict": "blocked",
           "analyzers": [
             {
@@ -1005,6 +1047,7 @@
             "skills/cisco-ios-patterns",
             "skills/deployment-patterns",
             "skills/docker-patterns",
+            "skills/terminal-opener",
             "skills/homelab-network-readiness",
             "skills/homelab-network-setup",
             "skills/netmiko-ssh-automation",
@@ -1019,7 +1062,7 @@
             "skills/kubernetes-patterns",
             "skills/uncloud"
           ],
-          "treeSha256": "a8e92c3bfad3f9ebb7e8d9d078b3dba21b0f152056f390f05494142f5e7ca4a1",
+          "treeSha256": "876929306c0679d79be32e963c9e5da7a5cf2e31defa653fb658ae54950349d4",
           "verdict": "blocked",
           "analyzers": [
             {
@@ -1058,7 +1101,7 @@
             "skills/pytorch-patterns",
             "skills/recsys-pipeline-architect"
           ],
-          "treeSha256": "e60795b3378afc4465af2e4908f597f5b0d7e7118531dffa2207843e531691ac",
+          "treeSha256": "1ba658daabcf143f5da6d2b8de1139767ed785a3e04da01e0d3bd75bb528973e",
           "verdict": "pass",
           "analyzers": [
             {
@@ -1092,7 +1135,7 @@
             "skills/quality-nonconformance",
             "skills/returns-reverse-logistics"
           ],
-          "treeSha256": "7268bf4190addca484cb2adefe7681a8a13ff309119e6feca24c933ff254f83a",
+          "treeSha256": "c236c7bac8106933c24aaae11d5c405fcaff1590398415f85ec4219923a23a23",
           "verdict": "pass",
           "analyzers": [
             {
@@ -1120,7 +1163,7 @@
             "skills/nutrient-document-processing",
             "skills/visa-doc-translate"
           ],
-          "treeSha256": "3f44338ab052a5df38c3b4283b754526f26ac69a473a1791b003f9c95168b610",
+          "treeSha256": "187781f3c4baa3060f841c70ad266dcdeede89f5a8fc316184c8f9d4c0e77ca4",
           "verdict": "blocked",
           "analyzers": [
             {
@@ -1179,7 +1222,7 @@
             "rules/common",
             "rules/README.md"
           ],
-          "treeSha256": "d193d67880327ae81f23cb66168bf74b6d5b4747b760d7f51adae477f94fa48b",
+          "treeSha256": "3005a89d87a6cf4916bed5be1523c8e148e3711f5117051b0974f6f05419c989",
           "verdict": "pass",
           "analyzers": [
             {
@@ -1203,7 +1246,7 @@
             ".agents/plugins/marketplace.json",
             "AGENTS.md"
           ],
-          "treeSha256": "63470d6f160ed0ad814e7fb3c19a4367938dd8add84265ff6ed6800d4619fc9b",
+          "treeSha256": "b177e2d1460392ef519a777b9b00428046b701bb898643fe10ecfa44fb975b61",
           "verdict": "pass",
           "analyzers": [
             {
@@ -1232,13 +1275,14 @@
             ".kimi",
             ".openclaw",
             ".opencode",
+            ".pi",
             ".qwen",
             ".zed",
             "mcp-configs",
             "scripts/auto-update.js",
             "scripts/setup-package-manager.js"
           ],
-          "treeSha256": "db9e57889f123c702391d6a164122909e14bac4b036a2468d78745634d0b5a92",
+          "treeSha256": "196d294d9143ad99d6311011f0d8205ceab053a7c519e168c6480625da65bcd6",
           "verdict": "blocked",
           "analyzers": [
             {
@@ -1284,7 +1328,7 @@
             "scripts/harness-audit.js",
             "scripts/skills-health.js"
           ],
-          "treeSha256": "7393b689e3f9d990723bced7196cbca85ba32cec86bbb2966a6664520e41928e",
+          "treeSha256": "6f7cac24dc1d8a255bc66fe752e8d791efb584106f2d24b014ebce3166ae3537",
           "verdict": "pass",
           "analyzers": [
             {
@@ -1336,7 +1380,7 @@
             ".agents/skills/verification-loop",
             "skills/verification-loop"
           ],
-          "treeSha256": "9f7ee94a8ca64e6d2b33c309cdfeeaae4df8b6fe499de70bb7ba3d20499f40d8",
+          "treeSha256": "da14f0f1c6c1c47ce68f7fec3ea58db25dd239acf353518cb7d5bed6bbc3ca4c",
           "verdict": "pass",
           "analyzers": [
             {
@@ -1364,7 +1408,7 @@
             ".agents/skills/strategic-compact",
             "skills/strategic-compact"
           ],
-          "treeSha256": "868293295e8ebb45086401aebc77f28384eb33c43307c33579a51e03d4c68929",
+          "treeSha256": "06a32dcd89814e04789a0feb7ff639e8c0d9c595279b4a4d0748fa8fc320e598",
           "verdict": "pass",
           "analyzers": [
             {
@@ -1392,7 +1436,7 @@
             ".agents/skills/coding-standards",
             "skills/coding-standards"
           ],
-          "treeSha256": "9748e4798aef45c4ed4026c85dc478b132fa05d0f8b541937d28cc30a26ddae3",
+          "treeSha256": "54e6746e005920d55794b5d06f324c6b1d64323cd1e425d0aa6a700bfa9c6787",
           "verdict": "pass",
           "analyzers": [
             {
@@ -1794,7 +1838,7 @@
             "skills/frontend-patterns",
             "skills/nestjs-patterns"
           ],
-          "treeSha256": "f3040db79db97e7cc3d9ad4e3f3861c8f4e5ed04b8230b8ff61bb3608402a38b",
+          "treeSha256": "4116981cc04866d141ea406989eae420b70a952ce999dbccca649ed3e417a900",
           "verdict": "pass",
           "analyzers": [
             {
@@ -1846,7 +1890,7 @@
             "skills/python-patterns",
             "skills/python-testing"
           ],
-          "treeSha256": "5d423b948d074f0c7876ddda482b5671595aee7f6c30686b8b54749918d53f98",
+          "treeSha256": "95e192ba472b310c9afb2b1273c7dcaa4c3c29adeb5be149072475093eefa889",
           "verdict": "pass",
           "analyzers": [
             {
@@ -1898,7 +1942,7 @@
             "skills/golang-patterns",
             "skills/golang-testing"
           ],
-          "treeSha256": "f6effdd068f09b5e6944de68f811aaa891386559954802d736e3dec7aaa948aa",
+          "treeSha256": "b576588334f976bcef147b051ddea1bb851c8758eb30cbafb076be4125dc569b",
           "verdict": "pass",
           "analyzers": [
             {
@@ -1972,7 +2016,7 @@
             "rules/java",
             "skills/java-coding-standards"
           ],
-          "treeSha256": "493d4e0ac6dc13d03421e144d4387a2075bdd1533303ce3c3e5e64ac1777061e",
+          "treeSha256": "fb955cd6099a97d282f554eb9f501ed09652d96bfa35c250eef363c95e259994",
           "verdict": "pass",
           "analyzers": [
             {
@@ -2050,7 +2094,7 @@
             "skills/kotlin-patterns",
             "skills/kotlin-testing"
           ],
-          "treeSha256": "669038548ea24462feaf6acfe7be2f7a2e343d0606235e0e761267048431c807",
+          "treeSha256": "aebcb9c134bae5af369cc682a82ce8c9d36625fca49165b9acd0add69bcea0d8",
           "verdict": "pass",
           "analyzers": [
             {
@@ -2125,7 +2169,7 @@
             "skills/rust-patterns",
             "skills/rust-testing"
           ],
-          "treeSha256": "2e210c1f1d1be8cdb849772da079166b88a281d1f3fdf14bf44e35290412c2a3",
+          "treeSha256": "913fff8578bb62da7934b2ac967dba12b1d05c92321f8176c01eca91fa8148f6",
           "verdict": "pass",
           "analyzers": [
             {
@@ -2204,7 +2248,7 @@
             "skills/swift-protocol-di-testing",
             "skills/swiftui-patterns"
           ],
-          "treeSha256": "448d3a6cf38b66f17eaa006e05eb33713e1496a44eced00890d0bffc537ec500",
+          "treeSha256": "57d06c932b49c6666c2a0eb345372cadec75b10e20a6d367786a57a240623ea2",
           "verdict": "pass",
           "analyzers": [
             {
@@ -2352,7 +2396,7 @@
             "skills/react-performance",
             "skills/react-testing"
           ],
-          "treeSha256": "fef57a21503293f62f11ae3531263e3465c57c39729ba7722dc786d5f44175b0",
+          "treeSha256": "ed74599a5e67b4cf6f98ae3a81a0a204f3ba497e5a66ff76128578adc22c727d",
           "verdict": "pass",
           "analyzers": [
             {
@@ -2479,7 +2523,7 @@
             "skills/react-performance",
             "skills/react-testing"
           ],
-          "treeSha256": "ea1d8c1333da65397991dacb5ced405d971028dc98538888957191158ec7bcfe",
+          "treeSha256": "9545b37e1d4e0481d7e9b925780398a11513f474861d2f743de8d0941668d782",
           "verdict": "pass",
           "analyzers": [
             {
@@ -2509,7 +2553,7 @@
             "skills/angular-developer",
             "skills/frontend-patterns"
           ],
-          "treeSha256": "7fe3b940c61ca093860e82ce3e279c38cab26daa7a79488d7a8716b5a268016a",
+          "treeSha256": "74781f86bc8ccef8663a4eaa514977811d60259ca738bb83b9c811ea4b8c35c6",
           "verdict": "pass",
           "analyzers": [
             {
@@ -2541,7 +2585,7 @@
             "skills/ui-to-vue",
             "skills/vue-patterns"
           ],
-          "treeSha256": "cc77f660bd9521ec4668aa139436042b648fcd0dbd73e93688ccab8ead3ce0c3",
+          "treeSha256": "80023ca60a9aab310bfe62e9fa4e866d27d89c85f86f44be6336d3d6d6a515bd",
           "verdict": "pass",
           "analyzers": [
             {
@@ -2574,7 +2618,7 @@
             "skills/ui-to-vue",
             "skills/vue-patterns"
           ],
-          "treeSha256": "ec0ef0ec38046eb2f9d8b8aa6d2a41723caac8e76609b7dd4cb9f3e3efcc185c",
+          "treeSha256": "da1152c62a931eb41422c58307dda9a0d6596b2104075f327c2c5d1d713ee1bb",
           "verdict": "pass",
           "analyzers": [
             {
@@ -2603,7 +2647,7 @@
             "rules/web",
             "skills/frontend-patterns"
           ],
-          "treeSha256": "40549783aefe57527665427cf1157bc6409dbc8d7248325caf5c6ffbed3effcb",
+          "treeSha256": "f6520bfcf137c9e1776865c9baabe24da977661ea4c3265b79f76cb56a8532bd",
           "verdict": "pass",
           "analyzers": [
             {
@@ -2633,7 +2677,7 @@
             "skills/django-tdd",
             "skills/django-verification"
           ],
-          "treeSha256": "24ab80c1be98295d367b1f94b737545b71c7d146bb56b7a0f7a8f48d0e3480d4",
+          "treeSha256": "525b3fb64b85607b03e7d10897cf31674e8877bdea396842c87d2ea5de978dca",
           "verdict": "pass",
           "analyzers": [
             {
@@ -2732,7 +2776,7 @@
             "skills/springboot-tdd",
             "skills/springboot-verification"
           ],
-          "treeSha256": "c6a214d1e428bfb6b3cd497ff231daa97ab77fc170f0ff4918c75b6f684ffbff",
+          "treeSha256": "f28eb9786cacde32d68c0d1b168cecc11550fe690bfea79d4c0c58992e3d4d63",
           "verdict": "pass",
           "analyzers": [
             {
@@ -2762,7 +2806,7 @@
             "skills/quarkus-tdd",
             "skills/quarkus-verification"
           ],
-          "treeSha256": "330557a259b75ab48881fe802503727ac53272d8472e7f1fb8c454a36aac13e3",
+          "treeSha256": "f18ffac0e60cb85f5544b264285ec48714293f3903e98001280cb1e1c88c7544",
           "verdict": "pass",
           "analyzers": [
             {
@@ -2816,7 +2860,7 @@
             "skills/laravel-tdd",
             "skills/laravel-verification"
           ],
-          "treeSha256": "34a85270e4a8d7a4e882ac28dc9b9009e26085244ae807da388ab2e6a08ca461",
+          "treeSha256": "690e8d23f04990679902fb2db1668f5a22a6480f3ce419b21152ae048ed05ff8",
           "verdict": "pass",
           "analyzers": [
             {
@@ -2874,7 +2918,7 @@
             "skills/csharp-testing",
             "skills/dotnet-patterns"
           ],
-          "treeSha256": "243ae0e34c1842bdddee1b90c646d80315e7c63739aa36d8a89ca96dbfe7ecfc",
+          "treeSha256": "581057c05062850e817aefb8076168d9c27f1e275d30a45cba9712a65b713cc0",
           "verdict": "pass",
           "analyzers": [
             {
@@ -2903,7 +2947,7 @@
             "skills/dotnet-patterns",
             "skills/fsharp-testing"
           ],
-          "treeSha256": "178b4b26fb14a3c13ddcb151fe385051a2aee7cbf82729f89669246733179d7c",
+          "treeSha256": "f93b2bee22a183c3ec509a12930e3757b6b4cf4c0dafa9ee87801dd0f26eaf19",
           "verdict": "pass",
           "analyzers": [
             {
@@ -2959,7 +3003,7 @@
             "skills/prisma-patterns",
             "skills/redis-patterns"
           ],
-          "treeSha256": "9d3267a14df9090e83e153f7833788f7f89b814f607ec8c120547292fb2b5924",
+          "treeSha256": "c3d0b1b0180c97574e3de4d43a0767a6cced51923547dcc0c03182b47a329cb6",
           "verdict": "pass",
           "analyzers": [
             {
@@ -2989,7 +3033,7 @@
             "skills/pytorch-patterns",
             "skills/recsys-pipeline-architect"
           ],
-          "treeSha256": "e60795b3378afc4465af2e4908f597f5b0d7e7118531dffa2207843e531691ac",
+          "treeSha256": "1ba658daabcf143f5da6d2b8de1139767ed785a3e04da01e0d3bd75bb528973e",
           "verdict": "pass",
           "analyzers": [
             {
@@ -3202,7 +3246,7 @@
             "scripts/hooks",
             "scripts/lib"
           ],
-          "treeSha256": "0d91734a313f6cd240d465b98ea6844d917386542af5402508dcbf52768bb050",
+          "treeSha256": "dde39c0fbf4dd3336856204998d208f612b0ec7651ff0cbddd0fc3356d75e76e",
           "verdict": "pass",
           "analyzers": [
             {
@@ -3240,7 +3284,9 @@
             "skills/continuous-learning",
             "skills/continuous-learning-v2",
             "skills/council",
+            "skills/council-multi-model",
             "skills/delivery-gate",
+            "skills/dev-team",
             "skills/e2e-testing",
             "skills/ecc-guide",
             "skills/ecc-recipes",
@@ -3252,6 +3298,7 @@
             "skills/inherit-legacy-style",
             "skills/intent-driven-development",
             "skills/iterative-retrieval",
+            "skills/living-docs-governance",
             "skills/loop-design-check",
             "skills/plan-canvas",
             "skills/plankton-code-quality",
@@ -3260,6 +3307,7 @@
             "skills/repo-scan",
             "skills/rules-distill",
             "skills/santa-method",
+            "skills/skill-comply",
             "skills/skill-scout",
             "skills/skill-stocktake",
             "skills/strategic-compact",
@@ -3267,7 +3315,7 @@
             "skills/verification-loop",
             "skills/windows-desktop-e2e"
           ],
-          "treeSha256": "74b0a8d0b7c87b787733532d598c649dd14a3e6ada19b44ee8d830378b1dce46",
+          "treeSha256": "3a15ec9bb1d21e73fa90bdd6ea4c64573e76b5fdb2d6082729ac840650d6e438",
           "verdict": "blocked",
           "analyzers": [
             {
@@ -3288,6 +3336,14 @@
             }
           ],
           "findings": [
+            {
+              "code": "trust.prompt-injection",
+              "detail": "BLOCK: skills/council-multi-model/SKILL.md:25 — - the user explicitly agrees to send that packet to OpenAI.",
+              "fingerprint": "trust-prompt-injection:skills/council-multi-model/SKILL.md:b013ad6e2455b898379d0f719040a1b188cbb117702e992b193ead6daa5ad6ec",
+              "fingerprints": [
+                "trust-prompt-injection:skills/council-multi-model/SKILL.md:b013ad6e2455b898379d0f719040a1b188cbb117702e992b193ead6daa5ad6ec"
+              ]
+            },
             {
               "code": "trust.permission-risk",
               "detail": "REVIEW: skills/inherit-legacy-style/SKILL.md:6 — allowed-tools: Read, Glob, Grep, Bash, Edit, Write, AskUserQuestion",
@@ -3322,7 +3378,7 @@
             "skills/springboot-security",
             "the-security-guide.md"
           ],
-          "treeSha256": "ae428d45cba8c14b8b78faa82741b2e4cd3704746d45a6617249b817975d7631",
+          "treeSha256": "f8b5f50ee5022ae9a8c92499118215363ffbe6f44e59a934f1fc194adfa5120e",
           "verdict": "pass",
           "analyzers": [
             {
@@ -3357,7 +3413,7 @@
             "skills/scientific-thinking-literature-review",
             "skills/scientific-thinking-scholar-evaluation"
           ],
-          "treeSha256": "9709de67a3b4225e1f6b9bc1c7108cd42c1c31bafd9a53eb355ec77d98ea2e15",
+          "treeSha256": "7762fe8bcbbd781ac9f903754363e50973fc85fc4573cedfc2ce2ba794e0831f",
           "verdict": "blocked",
           "analyzers": [
             {
@@ -3407,7 +3463,7 @@
             "skills/seo",
             "skills/social-graph-ranker"
           ],
-          "treeSha256": "27cba1785f33513985d2b6d2a999b58b669269648468e2aaac01f447c088d664",
+          "treeSha256": "4d62e1018d3ff5c926bbf130af3db2e3121ace8bf44386bad39ea878c0afeedf",
           "verdict": "pass",
           "analyzers": [
             {
@@ -3452,7 +3508,7 @@
             "skills/unified-notifications-ops",
             "skills/workspace-surface-audit"
           ],
-          "treeSha256": "52304b047e1d78e4f0f291c0c23543a2d1084732f6262e6816edd6f683c2ac18",
+          "treeSha256": "e4e1e1ca5831cd1afb12663697670185f4a345135aa6a7b3cf4d78b8d63d65dd",
           "verdict": "blocked",
           "analyzers": [
             {
@@ -3495,7 +3551,7 @@
             "skills/parallel-execution-optimizer",
             "skills/recursive-decision-ledger"
           ],
-          "treeSha256": "c1d663de22cba60000d1f2837977069e487b8efc688124e2bbcb4f41b8157011",
+          "treeSha256": "0a124f62e2ac727cfa8291409fb1c036090da5f7da9acc9ee32eca532cd257d6",
           "verdict": "pass",
           "analyzers": [
             {
@@ -3520,14 +3576,11 @@
         {
           "id": "capability:prediction-markets",
           "paths": [
-            "skills/ito-basket-compare",
-            "skills/ito-data-atlas-agent",
-            "skills/ito-market-intelligence",
-            "skills/ito-trade-planner",
+            "skills/ito-baskets",
             "skills/prediction-market-oracle-research",
             "skills/prediction-market-risk-review"
           ],
-          "treeSha256": "ce922a3f072f9be06ea2cc6f8b3642d1e3eb535de9fbc50b583d7d94dcc01b76",
+          "treeSha256": "4ff74add58b5cd09128a87228e2ee9592acf4e9ce0ee44d237a2e9314c87cb1b",
           "verdict": "pass",
           "analyzers": [
             {
@@ -3596,11 +3649,12 @@
             "skills/manim-video",
             "skills/remotion-video-creation",
             "skills/taste",
+            "skills/tasteforge-video",
             "skills/ui-demo",
             "skills/video-editing",
             "skills/videodb"
           ],
-          "treeSha256": "9d2cac8872a5b827f7429c9472e211ec00638826f0040c35a659ec694318baa9",
+          "treeSha256": "c30a55349fe9eaef9b76cf4124d9f20598fcd7d3b36fd64307528c2138d9ebaa",
           "verdict": "blocked",
           "analyzers": [
             {
@@ -3708,7 +3762,7 @@
             "skills/team-builder",
             "skills/token-budget-advisor"
           ],
-          "treeSha256": "3ea48783466c8b655e33f44ee6d89285b3ee1a6f0e84269ee1c4a402de7c11d6",
+          "treeSha256": "f368dded440cc6856c14314d9f57505d2efcb5dec9e2b5491f128286307ccd69",
           "verdict": "blocked",
           "analyzers": [
             {
@@ -3759,9 +3813,10 @@
             "skills/network-bgp-diagnostics",
             "skills/network-config-validation",
             "skills/network-interface-health",
+            "skills/terminal-opener",
             "skills/uncloud"
           ],
-          "treeSha256": "a8e92c3bfad3f9ebb7e8d9d078b3dba21b0f152056f390f05494142f5e7ca4a1",
+          "treeSha256": "876929306c0679d79be32e963c9e5da7a5cf2e31defa653fb658ae54950349d4",
           "verdict": "blocked",
           "analyzers": [
             {
@@ -3804,7 +3859,7 @@
             "skills/quality-nonconformance",
             "skills/returns-reverse-logistics"
           ],
-          "treeSha256": "7268bf4190addca484cb2adefe7681a8a13ff309119e6feca24c933ff254f83a",
+          "treeSha256": "c236c7bac8106933c24aaae11d5c405fcaff1590398415f85ec4219923a23a23",
           "verdict": "pass",
           "analyzers": [
             {
@@ -3832,7 +3887,7 @@
             "skills/nutrient-document-processing",
             "skills/visa-doc-translate"
           ],
-          "treeSha256": "3f44338ab052a5df38c3b4283b754526f26ac69a473a1791b003f9c95168b610",
+          "treeSha256": "187781f3c4baa3060f841c70ad266dcdeede89f5a8fc316184c8f9d4c0e77ca4",
           "verdict": "blocked",
           "analyzers": [
             {
@@ -3921,7 +3976,7 @@
             "skills/perl-patterns",
             "skills/perl-testing"
           ],
-          "treeSha256": "5b08d73a77139e2a10bdd4c12840a5dd4efaebb4fe5b04d772daff336d914466",
+          "treeSha256": "d7bdbbdd8521efff4104bdf50054f3f00f38f6ee559d1237531370d883d6f2cc",
           "verdict": "pass",
           "analyzers": [
             {
@@ -3948,7 +4003,7 @@
           "paths": [
             "skills/continuous-learning"
           ],
-          "treeSha256": "78d1e8fcd48a3db00fbe9b35b3b6b3fc2526d0ca8f190e91521556e927562ac0",
+          "treeSha256": "96dbacc1f7198c0e681860b1963f009442fa5e969897483b67720f42730781b3",
           "verdict": "pass",
           "analyzers": [
             {
@@ -3976,7 +4031,7 @@
             ".agents/skills/eval-harness",
             "skills/eval-harness"
           ],
-          "treeSha256": "b9bdaa6d7c386768c1d7c807e079a0ac41de2c3995a48138bb81e4f940364001",
+          "treeSha256": "b99440ee291278e8fba243462cede536948d9b7c6115e11f216deabf3614bc89",
           "verdict": "blocked",
           "analyzers": [
             {
@@ -4012,7 +4067,7 @@
           "paths": [
             "skills/windows-desktop-e2e"
           ],
-          "treeSha256": "c38a91b26e8e6c9f78bef6176f59ebb15324599c7cf747647f617ef8916dea89",
+          "treeSha256": "4659ecfba1e77b6fc45a8337df4d336d60edf6e91eaf5f216c0d2d0692ab09b8",
           "verdict": "pass",
           "analyzers": [
             {
@@ -4040,7 +4095,7 @@
             ".agents/skills/frontend-patterns",
             "skills/frontend-patterns"
           ],
-          "treeSha256": "dac4acde6fb013d97f8a67cddc33f2b36ae1da0140990c952d0fc20825bf1931",
+          "treeSha256": "7665f3a7e899403bcedf6373dc107529b3ae93c8587db85928b0fbdde4a0b2eb",
           "verdict": "pass",
           "analyzers": [
             {
@@ -4068,7 +4123,7 @@
             ".agents/skills/backend-patterns",
             "skills/backend-patterns"
           ],
-          "treeSha256": "5d7f6148dda2b6e289c7b8b3f34901d8db8ef9db1d900be4606f297cbfe80f0b",
+          "treeSha256": "818b1f643426e843340aa3cd220f4f19c51f5d543df3e4e94738e74425f03469",
           "verdict": "pass",
           "analyzers": [
             {

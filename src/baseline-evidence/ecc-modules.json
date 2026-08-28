@@ -91,6 +91,7 @@
         ".cursor",
         ".gemini",
         ".opencode",
+        ".pi",
         ".qwen",
         ".zed",
         "mcp-configs",
@@ -273,6 +274,8 @@
         "skills/continuous-learning",
         "skills/continuous-learning-v2",
         "skills/council",
+        "skills/council-multi-model",
+        "skills/dev-team",
         "skills/e2e-testing",
         "skills/error-handling",
         "skills/eval-harness",
@@ -281,6 +284,7 @@
         "skills/plan-canvas",
         "skills/plankton-code-quality",
         "skills/production-audit",
+        "skills/skill-comply",
         "skills/skill-scout",
         "skills/skill-stocktake",
         "skills/strategic-compact",
@@ -302,6 +306,7 @@
         "skills/growth-log",
         "skills/inherit-legacy-style",
         "skills/intent-driven-development",
+        "skills/living-docs-governance",
         "skills/loop-design-check",
         "skills/product-lens",
         "skills/repo-scan",
@@ -502,10 +507,7 @@
     {
       "id": "prediction-market-skills",
       "paths": [
-        "skills/ito-basket-compare",
-        "skills/ito-data-atlas-agent",
-        "skills/ito-market-intelligence",
-        "skills/ito-trade-planner",
+        "skills/ito-baskets",
         "skills/prediction-market-oracle-research",
         "skills/prediction-market-risk-review"
       ],
@@ -530,7 +532,34 @@
     {
       "id": "ito-compute",
       "paths": [
-        "skills/ito-compute"
+        "skills/ito-compute",
+        "skills/ito-inference",
+        "skills/ito-training"
+      ],
+      "targets": [
+        "claude",
+        "claude-project",
+        "cursor",
+        "antigravity",
+        "codex",
+        "gemini",
+        "opencode",
+        "codebuddy",
+        "joycode",
+        "qwen",
+        "zed",
+        "hermes",
+        "openclaw",
+        "kimi"
+      ],
+      "dependencies": [
+        "platform-configs"
+      ]
+    },
+    {
+      "id": "nasiko-control-plane",
+      "paths": [
+        "skills/nasiko-control-plane"
       ],
       "targets": [
         "claude",
@@ -585,7 +614,8 @@
         "skills/ui-demo",
         "skills/video-editing",
         "skills/videodb",
-        "skills/taste"
+        "skills/taste",
+        "skills/tasteforge-video"
       ],
       "targets": [
         "claude",
@@ -712,6 +742,7 @@
         "skills/cisco-ios-patterns",
         "skills/deployment-patterns",
         "skills/docker-patterns",
+        "skills/terminal-opener",
         "skills/homelab-network-readiness",
         "skills/homelab-network-setup",
         "skills/netmiko-ssh-automation",

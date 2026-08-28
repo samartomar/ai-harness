@@ -136,7 +136,7 @@ export function generateEccInstallPreviewArtifact(
   pinnedSha: string,
 ): EccInstallPreviewArtifact {
   const require = createRequire(join(eccRoot, "package.json"));
-  const installer = require(join(eccRoot, "scripts/lib/install-executor.js")) as UpstreamInstaller;
+  const installer = require(join(eccRoot, "scripts/lib/install/plan.js")) as UpstreamInstaller;
   const manifests = require(join(eccRoot, "scripts/lib/install-manifests.js")) as UpstreamManifests;
   const targetRegistry = require(
     join(eccRoot, "scripts/lib/install-targets/registry.js"),
@@ -223,7 +223,7 @@ export function generateEccInstallPreviewArtifact(
   operations.sort((left, right) => operationKey(left).localeCompare(operationKey(right)));
   return parseEccInstallPreview({
     schemaVersion: 1,
-    source: { owner: "affaan-m", repo: "ecc", pinnedSha },
+    source: { owner: "samartomar", repo: "ECC", pinnedSha },
     operations,
   });
 }

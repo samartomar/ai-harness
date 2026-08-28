@@ -41,7 +41,7 @@ function inventory(window: Window): { rows: InventoryRow[]; text: string } {
 
 describe("policy studio framework inventory", () => {
   // Locked boundary: ownership annotates an item, it never removes one. Before
-  // this, all 151 framework components fed a prefill dropdown and nothing else.
+  // this, all 152 framework components fed a prefill dropdown and nothing else.
   it("presents every framework-owned component as visible inventory", () => {
     const { rows, text } = inventory(studio());
     expect(rows.length).toBe(mainAssets.length);
@@ -58,7 +58,7 @@ describe("policy studio framework inventory", () => {
     const { rows } = inventory(studio());
     for (const row of rows) {
       const text = row.textContent ?? "";
-      expect(text, "owner").toMatch(/affaan-m\/ecc|obra\/Superpowers/);
+      expect(text, "owner").toMatch(/samartomar\/ECC|obra\/Superpowers/);
       expect(row.querySelector(".badge")?.textContent ?? "", "status").toMatch(
         /Selectable|Selected/,
       );
@@ -101,7 +101,7 @@ describe("policy studio framework inventory", () => {
     expect(value("curation-framework")).toBe(key[0]);
     expect(value("curation-kind")).toBe(key[1]);
     expect(value("curation-id")).toBe(key[2]);
-    expect(value("curation-repository")).toMatch(/affaan-m\/ecc|obra\/Superpowers/);
+    expect(value("curation-repository")).toMatch(/samartomar\/ECC|obra\/Superpowers/);
     expect(value("curation-commit")).toMatch(/^[0-9a-f]{40}$/);
     expect(value("curation-path") ?? "").not.toBe("");
   });

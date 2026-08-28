@@ -68,10 +68,12 @@ const ECC_COMPONENTS: readonly BaselineCatalogComponent[] = [
       "scripts/lib/install",
       "scripts/lib/install-manifests.js",
       "scripts/lib/install-executor.js",
+      "scripts/lib/invocation-environment.js",
       "scripts/lib/install-state.js",
       "scripts/lib/install-targets",
       "scripts/lib/cursor-agent-names.js",
       "scripts/lib/mcp-config.js",
+      "scripts/lib/opencode-paths.js",
       "scripts/lib/path-safety.js",
       "scripts/codex/merge-codex-config.js",
       "scripts/codex/merge-mcp-config.js",
@@ -150,7 +152,7 @@ export const BASELINE_CATALOG_IDS = ["ecc", "superpowers"] as const;
 export type BaselineCatalogId = (typeof BASELINE_CATALOG_IDS)[number];
 
 export function baselineCatalogById(id: string, pin?: string): BaselineCatalog {
-  if (id === "ecc") return catalog("ecc", "affaan-m", "ecc", ECC_COMPONENTS, pin);
+  if (id === "ecc") return catalog("ecc", "samartomar", "ECC", ECC_COMPONENTS, pin);
   if (id === "superpowers") {
     return catalog("superpowers", "obra", "Superpowers", SUPERPOWERS_COMPONENTS, pin);
   }

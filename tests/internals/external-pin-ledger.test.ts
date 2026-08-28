@@ -117,7 +117,7 @@ describe("active external-pin ledger", () => {
     if (baseline === undefined) throw new Error("missing ECC baseline source");
 
     const ecc = baseline.sources.find(
-      (source) => source.owner === "affaan-m" && source.repo.toLowerCase() === "ecc",
+      (source) => source.owner === "samartomar" && source.repo === "ECC",
     );
     const superpowers = baseline.sources.find(
       (source) => source.owner === "obra" && source.repo.toLowerCase() === "superpowers",
@@ -138,14 +138,14 @@ describe("active external-pin ledger", () => {
     expect(ledger.verifiedAtPolicy).toMatch(/does not move this field/i);
     expect(ledger.historicalEvidencePolicy).toMatch(/immutable history/i);
 
-    // The ECC pin is 32 untagged commits past v2.1.0, which is still ECC's
-    // newest tag, so the entry must not claim a release it is not.
+    // The explicit temporary bridge is exactly one commit past upstream v2.2.0.
     expect(entry("ecc")).toMatchObject({
-      identity: "affaan-m/ECC",
-      version: "untagged, 32 commits past v2.1.0",
-      commit: "623f2c020f052319657674e4e6c29ab5d0ad566b",
+      identity: "samartomar/ECC",
+      version: "v2.2.0-1-g5caf398a",
+      commit: "5caf398a91599029a176ca6d806409b00d1052c4",
       disposition: "active",
     });
+    expect(entry("ecc").reason).toMatch(/administrator-owned fork.*governed run 33147078833/i);
     expect(entry("superpowers")).toMatchObject({
       identity: "obra/Superpowers",
       commit: "3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9",

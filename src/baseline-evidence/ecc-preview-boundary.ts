@@ -17,7 +17,7 @@ import type { BaselineSourceEvidence } from "./schema.js";
  */
 export const GENERATOR_ENTRY_PATHS = [
   "package.json",
-  "scripts/lib/install-executor.js",
+  "scripts/lib/install/plan.js",
   "scripts/lib/install-manifests.js",
   "scripts/lib/install-targets/registry.js",
 ] as const;

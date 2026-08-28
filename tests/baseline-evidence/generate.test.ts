@@ -155,8 +155,9 @@ describe("vendor baseline generator", () => {
   it("joins sharded ECC evidence to the full-source preflight digest", async () => {
     const eccRoot = mkdtempSync(join(tmpdir(), "aih-generate-shard-"));
     mkdirSync(join(eccRoot, "scripts/lib/install-targets"), { recursive: true });
+    mkdirSync(join(eccRoot, "scripts/lib/install"), { recursive: true });
     writeFileSync(join(eccRoot, "package.json"), '{"name":"ecc-shard-fixture"}\n');
-    writeFileSync(join(eccRoot, "scripts/lib/install-executor.js"), "module.exports = {};\n");
+    writeFileSync(join(eccRoot, "scripts/lib/install/plan.js"), "module.exports = {};\n");
     writeFileSync(join(eccRoot, "scripts/lib/install-manifests.js"), "module.exports = {};\n");
     writeFileSync(
       join(eccRoot, "scripts/lib/install-targets/registry.js"),

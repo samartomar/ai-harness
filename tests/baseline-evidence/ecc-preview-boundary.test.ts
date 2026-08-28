@@ -98,13 +98,14 @@ describe("ECC install preview execution boundary", () => {
   beforeEach(() => {
     root = mkdtempSync(resolve(tmpdir(), "aih-ecc-preview-boundary-"));
     mkdirSync(resolve(root, "scripts/lib/install-targets"), { recursive: true });
+    mkdirSync(resolve(root, "scripts/lib/install"), { recursive: true });
     mkdirSync(resolve(root, ".kiro"));
     writeFileSync(resolve(root, "package.json"), '{"name":"ecc-fixture"}\n');
     writeFileSync(
-      resolve(root, "scripts/lib/install-executor.js"),
+      resolve(root, "scripts/lib/install/plan.js"),
       'const path = require("node:path"); module.exports = require("./helper.js");\n',
     );
-    writeFileSync(resolve(root, "scripts/lib/helper.js"), "module.exports = {};\n");
+    writeFileSync(resolve(root, "scripts/lib/install/helper.js"), "module.exports = {};\n");
     writeFileSync(resolve(root, "scripts/lib/install-manifests.js"), "module.exports = {};\n");
     writeFileSync(
       resolve(root, "scripts/lib/install-targets/registry.js"),
@@ -185,7 +186,10 @@ describe("ECC install preview execution boundary", () => {
 
   it("does not execute the generator when the vetted tree drifts", () => {
     const vetted = evidence(root);
-    writeFileSync(resolve(root, "scripts/lib/helper.js"), "module.exports = { drift: true };\n");
+    writeFileSync(
+      resolve(root, "scripts/lib/install/helper.js"),
+      "module.exports = { drift: true };\n",
+    );
     const generate = vi.fn(() => artifact());
 
     expect(() =>
@@ -200,7 +204,7 @@ describe("ECC install preview execution boundary", () => {
   it("fails when the generator mutates the vetted tree", () => {
     const generate = vi.fn(() => {
       writeFileSync(
-        resolve(root, "scripts/lib/helper.js"),
+        resolve(root, "scripts/lib/install/helper.js"),
         "module.exports = { mutated: true };\n",
       );
       return artifact();
@@ -250,7 +254,7 @@ describe("ECC install preview execution boundary", () => {
     ["import(process.env.MODULE)", "dynamic import()"],
   ])("rejects an unvetted dependency load: %s", (expression, message) => {
     writeFileSync(
-      resolve(root, "scripts/lib/install-executor.js"),
+      resolve(root, "scripts/lib/install/plan.js"),
       `${expression}; module.exports = {};\n`,
     );
 
@@ -269,8 +273,8 @@ describe("ECC install preview execution boundary", () => {
   it("rejects a relative dependency outside the vetted runtime paths", () => {
     writeFileSync(resolve(root, "outside.js"), "module.exports = {};\n");
     writeFileSync(
-      resolve(root, "scripts/lib/install-executor.js"),
-      'module.exports = require("../../outside.js");\n',
+      resolve(root, "scripts/lib/install/plan.js"),
+      'module.exports = require("../../../outside.js");\n',
     );
 
     expect(() => assertPreviewGeneratorDependenciesCovered(root, RUNTIME_PATHS)).toThrow(
@@ -282,8 +286,8 @@ describe("ECC install preview execution boundary", () => {
     const secret = "fixture source must not appear in diagnostics";
     writeFileSync(resolve(root, "outside.js"), `module.exports = ${JSON.stringify(secret)};\n`);
     writeFileSync(
-      resolve(root, "scripts/lib/install-executor.js"),
-      'module.exports = require("../../outside.js");\n',
+      resolve(root, "scripts/lib/install/plan.js"),
+      'module.exports = require("../../../outside.js");\n',
     );
 
     let message = "";
@@ -297,9 +301,12 @@ describe("ECC install preview execution boundary", () => {
     expect(message).not.toContain(root);
     expect(message).not.toContain(secret);
 
-    writeFileSync(resolve(root, "scripts/lib/approved-helper.js"), "module.exports = {};\n");
     writeFileSync(
-      resolve(root, "scripts/lib/install-executor.js"),
+      resolve(root, "scripts/lib/install/approved-helper.js"),
+      "module.exports = {};\n",
+    );
+    writeFileSync(
+      resolve(root, "scripts/lib/install/plan.js"),
       'module.exports = require("./approved-helper.js");\n',
     );
     expect(() => assertPreviewGeneratorDependenciesCovered(root, RUNTIME_PATHS)).not.toThrow();
@@ -308,8 +315,8 @@ describe("ECC install preview execution boundary", () => {
   it("keeps the authorized preview boundary check independent of any preflight receipt", () => {
     writeFileSync(resolve(root, "outside.js"), "module.exports = {};\n");
     writeFileSync(
-      resolve(root, "scripts/lib/install-executor.js"),
-      'module.exports = require("../../outside.js");\n',
+      resolve(root, "scripts/lib/install/plan.js"),
+      'module.exports = require("../../../outside.js");\n',
     );
     const generate = vi.fn(() => artifact());
 
@@ -324,7 +331,7 @@ describe("ECC install preview execution boundary", () => {
 
   it("rejects a missing relative dependency", () => {
     writeFileSync(
-      resolve(root, "scripts/lib/install-executor.js"),
+      resolve(root, "scripts/lib/install/plan.js"),
       'module.exports = require("./missing.js");\n',
     );
 
@@ -341,7 +348,7 @@ describe("ECC install preview execution boundary", () => {
 
   it("accepts literal import and export dependencies within the vetted runtime paths", () => {
     writeFileSync(
-      resolve(root, "scripts/lib/install-executor.js"),
+      resolve(root, "scripts/lib/install/plan.js"),
       [
         'import "./helper.js";',
         'export * from "./helper.js";',

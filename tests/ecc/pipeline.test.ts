@@ -57,7 +57,7 @@ function ctx(apply = true): PlanContext {
 function catalog() {
   return defineBaselineCatalog({
     id: "ecc",
-    owner: "affaan-m",
+    owner: "samartomar",
     repo: "ECC",
     pinnedSha: "a".repeat(40),
     components: [{ id: "runtime:ecc-kiro", paths: ["install.sh"] }],
@@ -70,7 +70,7 @@ function vendorLock(verdict: "pass" | "blocked" = "pass") {
     sources: [
       {
         id: "ecc",
-        owner: "affaan-m",
+        owner: "samartomar",
         repo: "ECC",
         pinnedSha: "a".repeat(40),
         components: [
@@ -95,7 +95,7 @@ function installPreview(): EccInstallPreviewArtifact {
   return {
     schemaVersion: 1,
     source: {
-      owner: "affaan-m",
+      owner: "samartomar",
       repo: "ECC",
       pinnedSha: "a".repeat(40),
     },
@@ -139,7 +139,7 @@ function installPreview(): EccInstallPreviewArtifact {
 function mixedCatalog() {
   return defineBaselineCatalog({
     id: "ecc",
-    owner: "affaan-m",
+    owner: "samartomar",
     repo: "ECC",
     pinnedSha: "a".repeat(40),
     components: [
@@ -160,7 +160,7 @@ function mixedVendorLock() {
     sources: [
       {
         id: "ecc",
-        owner: "affaan-m",
+        owner: "samartomar",
         repo: "ECC",
         pinnedSha: "a".repeat(40),
         components: [
@@ -601,7 +601,7 @@ describe("ECC baseline evidence pipeline", () => {
             code: "baseline.org-evidence-required",
             detail: [
               "catalog: ecc",
-              "owner: affaan-m",
+              "owner: samartomar",
               "repo: ECC",
               `pinnedSha: ${"a".repeat(40)}`,
               "bundle:",
@@ -638,7 +638,7 @@ describe("ECC baseline evidence pipeline", () => {
         code: "baseline.org-evidence-required",
         detail: [
           "catalog: ecc",
-          "owner: affaan-m",
+          "owner: samartomar",
           "repo: ECC",
           `pinnedSha: ${"a".repeat(40)}`,
           "bundle:",
@@ -665,8 +665,8 @@ describe("ECC baseline evidence pipeline", () => {
           baselineOverrides: [
             {
               catalog: "ecc",
-              owner: "affaan-m",
-              repo: "ecc",
+              owner: "samartomar",
+              repo: "ECC",
               pinnedSha: stalePin,
               bundle: ".aih/org-evidence/ecc-stale",
               signingRepository: "acme/ecc-evidence",
@@ -728,7 +728,7 @@ describe("ECC baseline evidence pipeline", () => {
 
   it("previews an exact remote pin without fetching or constructing installs", async () => {
     const buildInstallPlan = vi.fn(() => plan("must not build"));
-    const source = resolveTrustSource("affaan-m/ECC", {
+    const source = resolveTrustSource("samartomar/ECC", {
       root,
       pin: "a".repeat(40),
     });
@@ -765,7 +765,7 @@ describe("ECC baseline evidence pipeline", () => {
   });
 
   it("filters a user-home dry-run preview to selected components and the installer runtime", async () => {
-    const source = resolveTrustSource("affaan-m/ECC", { root, pin: "a".repeat(40) });
+    const source = resolveTrustSource("samartomar/ECC", { root, pin: "a".repeat(40) });
     const buildInstallPlan = vi.fn(() => plan("must not build"));
     const selectedRequest = {
       clis: ["claude" as const],
@@ -811,7 +811,7 @@ describe("ECC baseline evidence pipeline", () => {
 
   it("rejects fetched metadata that does not bind the catalog pin", async () => {
     const buildInstallPlan = vi.fn(() => plan("must not build"));
-    const source = resolveTrustSource("affaan-m/ECC", {
+    const source = resolveTrustSource("samartomar/ECC", {
       root,
       pin: "a".repeat(40),
     });

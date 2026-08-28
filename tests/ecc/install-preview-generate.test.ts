@@ -13,9 +13,10 @@ describe("ECC install preview generation", () => {
     if (root !== undefined) rmSync(root, { recursive: true, force: true });
   });
 
-  it("expands the upstream manifest planner and applies harness-owned safe transforms", () => {
+  it("loads the pure upstream manifest planner and applies harness-owned safe transforms", () => {
     root = mkdtempSync(resolve(tmpdir(), "aih-ecc-preview-generator-"));
     mkdirSync(resolve(root, "scripts/lib/install-targets"), { recursive: true });
+    mkdirSync(resolve(root, "scripts/lib/install"), { recursive: true });
     writeFileSync(resolve(root, "package.json"), '{"name":"ecc-fixture","type":"commonjs"}\n');
     writeFileSync(
       resolve(root, "scripts/lib/install-manifests.js"),
@@ -26,6 +27,10 @@ describe("ECC install preview generation", () => {
     );
     writeFileSync(
       resolve(root, "scripts/lib/install-executor.js"),
+      'throw new Error("legacy executor must not load during preview generation");\n',
+    );
+    writeFileSync(
+      resolve(root, "scripts/lib/install/plan.js"),
       `exports.createManifestInstallPlan = (input) => {
         if (input.target === "opencode") throw new Error("compiled plugin payload is unavailable");
         const operations = [
@@ -54,7 +59,7 @@ describe("ECC install preview generation", () => {
 
     const result = generateEccInstallPreviewArtifact(root, PIN);
 
-    expect(result.source).toEqual({ owner: "affaan-m", repo: "ecc", pinnedSha: PIN });
+    expect(result.source).toEqual({ owner: "samartomar", repo: "ECC", pinnedSha: PIN });
     expect(result.operations).toContainEqual(
       expect.objectContaining({
         target: "claude",

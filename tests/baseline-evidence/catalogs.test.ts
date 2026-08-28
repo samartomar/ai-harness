@@ -14,7 +14,7 @@ function registryPin(owner: string, repo: string): string {
 describe("production baseline catalogs", () => {
   it("binds ECC components to the existing registry pin and locked common baseline", () => {
     const catalog = baselineCatalogById("ecc");
-    expect(catalog.pinnedSha).toBe(registryPin("affaan-m", "ecc"));
+    expect(catalog.pinnedSha).toBe(registryPin("samartomar", "ECC"));
     const ids = catalog.components.map((component) => component.id);
     expect(ids).toEqual(
       expect.arrayContaining([
@@ -30,6 +30,7 @@ describe("production baseline catalogs", () => {
         "module:security",
         "module:orchestration",
         "module:document-processing",
+        "module:nasiko-control-plane",
         "baseline:rules",
         "baseline:agents",
         "lang:typescript",
@@ -60,7 +61,7 @@ describe("production baseline catalogs", () => {
     expect(ids.filter((id) => id.startsWith("module:"))).toEqual(
       eccProfiles.profiles.full.modules.map((id) => `module:${id}`),
     );
-    expect(ids.filter((id) => id.startsWith("module:"))).toHaveLength(25);
+    expect(ids.filter((id) => id.startsWith("module:"))).toHaveLength(26);
     expect(ids.some((id) => id.startsWith("module:docs-"))).toBe(false);
     expect(
       catalog.components.some((component) =>
@@ -81,6 +82,14 @@ describe("production baseline catalogs", () => {
     expect(
       catalog.components.find((component) => component.id === "runtime:ecc-installer"),
     ).not.toHaveProperty("skillContent");
+    expect(
+      catalog.components.find((component) => component.id === "runtime:ecc-installer")?.paths,
+    ).toEqual(
+      expect.arrayContaining([
+        "scripts/lib/invocation-environment.js",
+        "scripts/lib/opencode-paths.js",
+      ]),
+    );
     expect(
       catalog.components.find((component) => component.id === "baseline:agents")?.paths,
     ).toEqual([".agents/plugins/marketplace.json", "AGENTS.md"]);

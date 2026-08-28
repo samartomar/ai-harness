@@ -430,7 +430,7 @@ describe("resolveOrgBaselineEvidence", () => {
             {
               catalog: catalog.id,
               owner: catalog.owner,
-              repo: catalog.repo.toUpperCase(),
+              repo: catalog.repo.toLowerCase(),
               pinnedSha: catalog.pinnedSha,
               bundle: ".aih/org-evidence/repo-case-alias",
               signingRepository: "acme/repo-case-alias",

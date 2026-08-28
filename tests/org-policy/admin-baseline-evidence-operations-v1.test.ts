@@ -26,9 +26,9 @@ import {
 const sources = [
   {
     id: "ecc",
-    owner: "affaan-m",
-    repo: "ecc",
-    pinnedSha: "623f2c020f052319657674e4e6c29ab5d0ad566b",
+    owner: "samartomar",
+    repo: "ECC",
+    pinnedSha: "5caf398a91599029a176ca6d806409b00d1052c4",
   },
   {
     id: "superpowers",

@@ -148,10 +148,11 @@ describe("ECC evidence component selection", () => {
     expect(antigravity).not.toContain("module:orchestration");
   });
 
-  it("covers all 25 modules selected by the pinned full profile for Claude", () => {
+  it("covers all 26 modules selected by the pinned full profile for Claude", () => {
     const full = eccEvidenceComponentIds("full", "claude", []);
     expect(full[0]).toBe("runtime:ecc-installer");
-    expect(full.filter((id) => id.startsWith("module:"))).toHaveLength(25);
+    expect(full).toContain("module:nasiko-control-plane");
+    expect(full.filter((id) => id.startsWith("module:"))).toHaveLength(26);
   });
 
   it("rejects a profile absent from the pinned profile snapshot", () => {
