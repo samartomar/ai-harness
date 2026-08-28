@@ -238,10 +238,10 @@
     {
       "surface": "claude-code-action",
       "identity": "anthropics/claude-code-action",
-      "version": "v1.0.193",
-      "commit": "9d7150bc8a3dae8149739a88019d192b579ad90c",
+      "version": "v1.0.201",
+      "commit": "c81e3bc69d1b18badbb63ba39581218f02421678",
       "disposition": "active",
-      "reason": "Routine move v1.0.191 -> v1.0.193 on 2026-08-15. The official v1.0.193 annotated tag dereferences to this immutable SHA; the workflow remains pinned to the commit rather than the movable v1 tag. The workflow comment now names the exact version instead of the v1 alias, so the pinned identity and the comment beside it can no longer disagree."
+      "reason": "The official v1.0.201 annotated tag dereferences to this immutable SHA. The opt-in maintainer workflow remains pinned to the commit rather than the movable v1 tag, and its permissions and secret input are unchanged."
     },
     {
       "surface": "setup-node-action",
@@ -270,10 +270,10 @@
     {
       "surface": "codeql-action",
       "identity": "github/codeql-action",
-      "version": "v4.37.7",
-      "commit": "ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd",
+      "version": "v4.37.8",
+      "commit": "db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28",
       "disposition": "active",
-      "reason": "Moved v4.37.6 -> v4.37.7 on 2026-08-15; the entry leaves the retained disposition because the latest stable tag no longer resolves to the previously recorded SHA. The release carries the CodeQL bundle 2.26.3 and no action-code change. All three governed call sites -- init and analyze in codeql.yml and upload-sarif in scorecard.yml -- move together, because one ledger identity covers them and a partial move would leave two CodeQL versions analyzing the same repository."
+      "reason": "The official v4.37.8 annotated tag dereferences to this immutable SHA, and the upstream release reports no user-facing changes. All three governed call sites -- init and analyze in codeql.yml and upload-sarif in scorecard.yml -- move together because one ledger identity covers them."
     },
     {
       "surface": "scorecard-action",
