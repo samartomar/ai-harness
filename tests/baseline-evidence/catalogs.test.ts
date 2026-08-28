@@ -30,6 +30,7 @@ describe("production baseline catalogs", () => {
         "module:security",
         "module:orchestration",
         "module:document-processing",
+        "module:nasiko-control-plane",
         "baseline:rules",
         "baseline:agents",
         "lang:typescript",
@@ -60,7 +61,7 @@ describe("production baseline catalogs", () => {
     expect(ids.filter((id) => id.startsWith("module:"))).toEqual(
       eccProfiles.profiles.full.modules.map((id) => `module:${id}`),
     );
-    expect(ids.filter((id) => id.startsWith("module:"))).toHaveLength(25);
+    expect(ids.filter((id) => id.startsWith("module:"))).toHaveLength(26);
     expect(ids.some((id) => id.startsWith("module:docs-"))).toBe(false);
     expect(
       catalog.components.some((component) =>
