@@ -550,6 +550,13 @@ export function readArtifactIntakePackageTrustFetchMetadata(
     "treePath",
     "version",
   ];
+  const registryIntegrity = metadata.registryIntegrity;
+  const encodedIntegrity =
+    typeof registryIntegrity === "string"
+      ? /^sha512-([A-Za-z0-9+/]+={0,2})$/.exec(registryIntegrity)?.[1]
+      : undefined;
+  const decodedIntegrity =
+    encodedIntegrity === undefined ? undefined : Buffer.from(encodedIntegrity, "base64");
   if (
     keys.length !== expected.length ||
     !keys.every((key, index) => key === expected[index]) ||
@@ -558,10 +565,11 @@ export function readArtifactIntakePackageTrustFetchMetadata(
     metadata.version !== source.version ||
     metadata.registry !== source.registry ||
     metadata.treePath !== source.treePath ||
-    typeof metadata.registryIntegrity !== "string" ||
-    !/^sha512-[A-Za-z0-9+/]+={0,2}$/.test(metadata.registryIntegrity) ||
-    (source.registryIntegrity !== undefined &&
-      metadata.registryIntegrity !== source.registryIntegrity) ||
+    typeof registryIntegrity !== "string" ||
+    encodedIntegrity === undefined ||
+    decodedIntegrity?.length !== 64 ||
+    decodedIntegrity.toString("base64") !== encodedIntegrity ||
+    (source.registryIntegrity !== undefined && registryIntegrity !== source.registryIntegrity) ||
     typeof metadata.tarballSha256 !== "string" ||
     !/^sha256:[a-f0-9]{64}$/.test(metadata.tarballSha256)
   ) {
@@ -572,7 +580,7 @@ export function readArtifactIntakePackageTrustFetchMetadata(
     package: source.package,
     version: source.version,
     registry: source.registry,
-    registryIntegrity: metadata.registryIntegrity,
+    registryIntegrity,
     tarballSha256: metadata.tarballSha256,
     treePath: source.treePath,
   };
@@ -860,7 +868,7 @@ function extractTar(buffer, outRoot) {
 
 (async () => {
   prepareQuarantine(input.quarantineRoot, input.treePath, input.metadataPath);
-  if (input.kind === "npm") {
+  if (input.kind === "npm" || input.kind === "artifact-intake-npm") {
     const tarballs = fs
       .readdirSync(input.quarantineRoot, { withFileTypes: true })
       .filter((entry) => entry.isFile() && entry.name.endsWith(".tgz"))

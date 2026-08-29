@@ -1,8 +1,10 @@
+import { createHash } from "node:crypto";
 import {
   existsSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   realpathSync,
   rmSync,
   symlinkSync,
@@ -24,7 +26,9 @@ import {
   assertTrustTreeSafe,
   isFirstPartySource,
   localFileHash,
+  readArtifactIntakePackageTrustFetchMetadata,
   readTrustFetchMetadata,
+  resolveArtifactIntakePackageTrustSource,
   resolvePackageTrustSource,
   resolveTrustSource,
   safeSourceRelative,
@@ -370,6 +374,49 @@ describe("trust fetch source resolution", () => {
         /npm tarball SHA-256 does not match the policy pin/,
       );
       expect(existsSync(join(source.treePath, "SKILL.md"))).toBe(false);
+    } finally {
+      rmSync(source.quarantineRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("verifies an artifact-intake npm tarball and records organization-computed digests", async () => {
+    const source = resolveArtifactIntakePackageTrustSource({
+      package: "firecrawl-mcp",
+      version: "3.24.0",
+      registry: "https://registry.npmjs.org",
+    });
+    try {
+      const tarball = gzipSync(
+        tarWithRegularFile(
+          "package/package.json",
+          Buffer.from(JSON.stringify({ name: "firecrawl-mcp", version: "3.24.0" }), "utf8"),
+        ),
+      );
+      writeFileSync(join(source.quarantineRoot, "firecrawl-mcp-3.24.0.tgz"), tarball);
+      const verify = trustPackageFetchActions(source, ctx())[1];
+      if (verify === undefined || verify.kind !== "exec") {
+        throw new Error("expected package verification action");
+      }
+      const input = JSON.parse(verify.argv[3] ?? "{}") as Record<string, unknown>;
+
+      await expect(runPackageFetchScript(verify.argv[2] ?? "", input)).resolves.toBeUndefined();
+      expect(readArtifactIntakePackageTrustFetchMetadata(source)).toMatchObject({
+        kind: "artifact-intake-npm",
+        package: "firecrawl-mcp",
+        version: "3.24.0",
+        registryIntegrity: `sha512-${createHash("sha512").update(tarball).digest("base64")}`,
+        tarballSha256: `sha256:${createHash("sha256").update(tarball).digest("hex")}`,
+      });
+      const metadata = JSON.parse(readFileSync(source.metadataPath, "utf8")) as Record<
+        string,
+        unknown
+      >;
+      writeFileSync(
+        source.metadataPath,
+        JSON.stringify({ ...metadata, registryIntegrity: "sha512-Zg==" }),
+        "utf8",
+      );
+      expect(() => readArtifactIntakePackageTrustFetchMetadata(source)).toThrow(/mismatched/);
     } finally {
       rmSync(source.quarantineRoot, { recursive: true, force: true });
     }

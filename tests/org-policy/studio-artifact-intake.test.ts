@@ -99,6 +99,7 @@ describe("Policy Workbench artifact intake", () => {
       "aih trust scan aih-artifact-intake.json --apply --evidence-out aih-artifact-evidence.json",
     );
     expect(card?.textContent).toContain("Preflight only");
+    expect(card?.textContent).toContain("limited to 1 MiB");
     expect(card?.textContent).not.toContain("Record Agent");
     expect(card?.querySelector('a[href="https://mcpmarket.com/"]')).not.toBeNull();
     expect(card?.querySelector('a[href="https://www.skills.sh/"]')).not.toBeNull();

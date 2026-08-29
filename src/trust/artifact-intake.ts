@@ -21,12 +21,14 @@ const targets = z
   .refine((values) => new Set(values).size === values.length, {
     message: "targets must be duplicate-free",
   });
-const discoveryUrl = z
-  .string()
-  .url()
-  .refine((value) => value.startsWith("https://"), {
-    message: "discovery URL must use HTTPS",
-  });
+const discoveryUrl = z.string().refine((value) => {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && url.username === "" && url.password === "";
+  } catch {
+    return false;
+  }
+}, "discovery URL must use HTTPS without credentials");
 const safePath = z
   .string()
   .max(1024)
@@ -40,19 +42,34 @@ const safePath = z
       });
     }
   });
-const sha512Sri = z
-  .string()
-  .regex(/^sha512-(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/);
+const sha512Sri = z.string().refine((value) => {
+  const match = /^sha512-([A-Za-z0-9+/]+={0,2})$/.exec(value);
+  if (match?.[1] === undefined) return false;
+  const decoded = Buffer.from(match[1], "base64");
+  return decoded.length === 64 && decoded.toString("base64") === match[1];
+}, "integrity must be a canonical SHA-512 SRI digest");
+
+const npmRegistry = z.string().refine((value) => {
+  try {
+    const url = new URL(value);
+    return (
+      url.protocol === "https:" &&
+      url.username === "" &&
+      url.password === "" &&
+      url.search === "" &&
+      url.hash === "" &&
+      url.pathname === "/" &&
+      (value === url.origin || value === `${url.origin}/`)
+    );
+  } catch {
+    return false;
+  }
+}, "npm registry must be a canonical HTTPS origin");
 
 export const ArtifactIntakeNpmSourceV1Schema = z
   .object({
     type: z.literal("npm"),
-    registry: z
-      .string()
-      .url()
-      .refine((value) => value.startsWith("https://"), {
-        message: "npm registry must use HTTPS",
-      }),
+    registry: npmRegistry,
     package: z.string().regex(PACKAGE_NAME),
     version: ExactSemverV2Schema,
     integrity: sha512Sri.optional(),

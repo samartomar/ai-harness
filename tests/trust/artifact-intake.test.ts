@@ -151,6 +151,15 @@ describe("ArtifactIntakeV1", () => {
       (value: MutableIntake) => (mutableItem(value, 1).source.commit = "main"),
     ],
     [
+      "non-canonical registry URL",
+      (value: MutableIntake) =>
+        (mutableItem(value, 0).source.registry = "https://user@example.test/?channel=latest"),
+    ],
+    [
+      "short registry integrity",
+      (value: MutableIntake) => (mutableItem(value, 0).source.integrity = "sha512-Zg=="),
+    ],
+    [
       "unsafe artifact path",
       (value: MutableIntake) => (mutableItem(value, 1).source.path = "../SKILL.md"),
     ],

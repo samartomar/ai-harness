@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  linkSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -181,5 +189,20 @@ describe("trust scan artifact intake", () => {
     const ctx = context(true);
     delete ctx.options.evidenceOut;
     await expect(trustScanCommand.plan(ctx)).rejects.toThrow(/--evidence-out/);
+  });
+
+  it("refuses a hard-linked intake before planning any acquisition", async () => {
+    write("artifact-intake-source.json", JSON.stringify(intake()));
+    linkSync(join(root, "artifact-intake-source.json"), join(root, "artifact-intake.json"));
+
+    await expect(trustScanCommand.plan(context(false))).rejects.toThrow(/single-link regular JSON/);
+  });
+
+  it("contains the explicitly named evidence output to the target root", async () => {
+    write("artifact-intake.json", JSON.stringify(intake()));
+    const ctx = context(true);
+    ctx.options.evidenceOut = "../escaped-evidence.json";
+
+    await expect(trustScanCommand.plan(ctx)).rejects.toThrow(/outside the target root/);
   });
 });

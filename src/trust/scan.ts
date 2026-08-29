@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { type Posture, postureFromContext } from "../config/posture.js";
 import { AihError } from "../errors.js";
-import { writeArtifact } from "../internals/execute.js";
+import { assertArtifactOutputPath, writeArtifact } from "../internals/execute.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
 import type { Action, CommandSpec, PlanContext, ProbeAction } from "../internals/plan.js";
 import { digest, dynamicDigest, plan, structuredChecksProbe } from "../internals/plan.js";
@@ -1337,6 +1337,7 @@ async function artifactIntakeScanPlan(
       "AIH_TRUST",
     );
   }
+  if (ctx.apply) assertArtifactOutputPath(ctx, String(evidenceOut));
   const records = new Map<string, ArtifactEvidenceRecordV1>();
   const problems: Record<string, string> = Object.fromEntries(
     intake.items.map((item) => [item.id, "not scanned"]),
