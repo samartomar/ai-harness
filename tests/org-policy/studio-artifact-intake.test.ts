@@ -172,6 +172,130 @@ describe("Policy Workbench artifact intake", () => {
     window.close();
   });
 
+  it("parses a Skills CLI discovery command without running or installing it", () => {
+    const window = studio();
+    click(window, window.document.getElementById("open-custom-skill"));
+
+    expect(
+      (
+        window.document.getElementById("artifact-skill-discovery-helper") as unknown as {
+          hidden: boolean;
+        }
+      ).hidden,
+    ).toBe(false);
+    input(
+      window,
+      "artifact-skill-discovery",
+      "npx skills add [https://github.com/mattpocock/skills](https://github.com/mattpocock/skills) --skill grill-me",
+    );
+    click(window, window.document.getElementById("parse-skill-discovery"));
+
+    expect(
+      (window.document.getElementById("artifact-item-id") as unknown as { value: string }).value,
+    ).toBe("grill-me");
+    expect(
+      (window.document.getElementById("artifact-source-type") as unknown as { value: string })
+        .value,
+    ).toBe("github");
+    expect(
+      (
+        window.document.getElementById("artifact-github-repository") as unknown as {
+          value: string;
+        }
+      ).value,
+    ).toBe("mattpocock/skills");
+    expect(
+      (window.document.getElementById("artifact-source-path") as unknown as { value: string })
+        .value,
+    ).toBe("");
+    expect(
+      (window.document.getElementById("artifact-github-commit") as unknown as { value: string })
+        .value,
+    ).toBe("");
+    expect(
+      window.document.getElementById("artifact-skill-discovery-message")?.textContent,
+    ).toContain("git ls-remote https://github.com/mattpocock/skills.git HEAD");
+    expect(
+      window.document.getElementById("artifact-skill-discovery-message")?.textContent,
+    ).toContain("nothing was installed");
+    expect(
+      window.document.getElementById("artifact-skill-discovery-message")?.textContent,
+    ).toContain("Requested Skill grill-me");
+    expect(
+      window.document.getElementById("artifact-skill-discovery-message")?.textContent,
+    ).toContain("repository layouts vary");
+    expect(api(window).snapshot().intake).toBeNull();
+
+    window.close();
+  });
+
+  it("accepts only exact GitHub Skill permalinks and rejects command syntax", () => {
+    const window = studio();
+    click(window, window.document.getElementById("open-custom-skill"));
+    input(window, "artifact-default-owner", "owner@company.example");
+    const commit = "a".repeat(40);
+    input(
+      window,
+      "artifact-skill-discovery",
+      `https://github.com/vercel-labs/skills/blob/${commit}/skills/find-skills/SKILL.md`,
+    );
+    click(window, window.document.getElementById("parse-skill-discovery"));
+
+    expect(
+      (window.document.getElementById("artifact-github-commit") as unknown as { value: string })
+        .value,
+    ).toBe(commit);
+    expect(
+      (window.document.getElementById("artifact-source-path") as unknown as { value: string })
+        .value,
+    ).toBe("skills/find-skills/SKILL.md");
+    expect(
+      window.document.getElementById("artifact-skill-discovery-message")?.textContent,
+    ).toContain("exact permalink");
+
+    input(
+      window,
+      "artifact-skill-discovery",
+      "npx skills add https://github.com/vercel-labs/skills --skill find-skills; calc",
+    );
+    click(window, window.document.getElementById("parse-skill-discovery"));
+    expect(window.document.getElementById("artifact-skill-discovery-message")?.textContent).toMatch(
+      /rejected.*command syntax/i,
+    );
+    expect(
+      (window.document.getElementById("artifact-item-id") as unknown as { value: string }).value,
+    ).toBe("");
+    expect(
+      (
+        window.document.getElementById("artifact-github-repository") as unknown as {
+          value: string;
+        }
+      ).value,
+    ).toBe("");
+    expect(
+      (window.document.getElementById("artifact-github-commit") as unknown as { value: string })
+        .value,
+    ).toBe("");
+    expect(
+      (window.document.getElementById("artifact-source-path") as unknown as { value: string })
+        .value,
+    ).toBe("");
+    click(window, window.document.getElementById("add-artifact-item"));
+    expect(api(window).snapshot().intake).toBeNull();
+    input(
+      window,
+      "artifact-skill-discovery",
+      "npx skills add [https://github.com/mattpocock/skills](https://github.com/attacker/skills) --skill grill-me",
+    );
+    click(window, window.document.getElementById("parse-skill-discovery"));
+    expect(window.document.getElementById("artifact-skill-discovery-message")?.textContent).toMatch(
+      /rejected.*link text and destination must match/i,
+    );
+    expect(api(window).snapshot().intake).toBeNull();
+
+    window.close();
+  });
+
   it("explains exact npm identity and scanner-computed integrity without trusting directory labels", () => {
     const window = studio();
 
