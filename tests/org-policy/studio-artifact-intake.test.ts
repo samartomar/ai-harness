@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 import { policyStudioModel } from "../../src/org-policy/studio-model.js";
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
 import {
+  artifactEvidenceBundleDigestV1,
+  artifactEvidenceDigestV1,
   artifactEvidenceRecordV1,
   createArtifactEvidenceBundleV1,
 } from "../../src/trust/artifact-evidence.js";
@@ -14,6 +16,9 @@ interface IntakeApi {
   mergeEvidenceText(text: string): Promise<void>;
   snapshot(): { intake: Record<string, unknown> | null; bundleCount: number };
 }
+
+const REGISTRY_INTEGRITY = `sha512-${Buffer.alloc(64, 1).toString("base64")}`;
+const OTHER_REGISTRY_INTEGRITY = `sha512-${Buffer.alloc(64, 2).toString("base64")}`;
 
 function input(window: Window, id: string, value: string): void {
   setValue(window, id, value);
@@ -52,11 +57,12 @@ function setValue(window: Window, id: string, value: string): void {
   input.value = value;
 }
 
-function intake(version = "3.24.0") {
+function intake(version = "3.24.0", integrity?: string) {
   return ArtifactIntakeV1Schema.parse({
     format: "aih-artifact-intake",
     version: 1,
-    defaults: { accountableOwner: "platform@acme.example", targets: ["codex"] },
+    authority: { state: "not-authority" },
+    defaults: { accountableOwner: "platform@acme.example" },
     items: [
       {
         id: "firecrawl-mcp",
@@ -67,8 +73,8 @@ function intake(version = "3.24.0") {
           registry: "https://registry.npmjs.org",
           package: "firecrawl-mcp",
           version,
+          ...(integrity === undefined ? {} : { integrity }),
         },
-        execution: { transport: "stdio", resolver: "npx" },
       },
     ],
   });
@@ -84,13 +90,11 @@ function intakeBatch(count: number) {
       id: `artifact-${String(index).padStart(3, "0")}`,
       kind: index % 3 === 0 ? "mcp" : index % 3 === 1 ? "skill" : "agent",
       source,
-      ...(index % 3 === 0 ? { execution: { transport: "stdio", resolver: "npx" } } : {}),
     })),
   });
 }
 
-function evidence(detail: string) {
-  const source = intake();
+function evidence(detail: string, source = intake()) {
   const item = source.items[0];
   if (item === undefined) throw new Error("expected intake item");
   return createArtifactEvidenceBundleV1(source, [
@@ -101,7 +105,10 @@ function evidence(detail: string) {
       observed: {
         type: "npm",
         tarballSha256: `sha256:${"b".repeat(64)}`,
-        registryIntegrity: `sha512-${Buffer.alloc(64, 1).toString("base64")}`,
+        registryIntegrity:
+          item.source.type === "npm" && item.source.integrity !== undefined
+            ? item.source.integrity
+            : REGISTRY_INTEGRITY,
       },
       analyzersRun: ["aih-native"],
       checks: [{ name: "trust scan", verdict: "pass", detail }],
@@ -124,6 +131,9 @@ describe("Policy Workbench artifact intake", () => {
     expect(card?.textContent).toContain("limited to 1 MiB");
     expect(card?.textContent).toContain("64 decisions per protected file");
     expect(card?.textContent).toContain("0 / 100 candidates");
+    expect(card?.textContent).toContain("does not choose authorized targets");
+    expect(card?.textContent).toContain("does not infer launch or transport");
+    expect(card?.textContent).not.toContain("Default targets");
     expect(card?.textContent).not.toContain("Record Agent");
     expect(card?.querySelector('a[href="https://mcpmarket.com/"]')).not.toBeNull();
     expect(card?.querySelector('a[href="https://www.skills.sh/"]')).not.toBeNull();
@@ -212,10 +222,92 @@ describe("Policy Workbench artifact intake", () => {
     window.close();
   });
 
+  it("rejects target claims and missing non-authority markers at the browser boundary", async () => {
+    const window = studio();
+    const targetClaim = structuredClone(intake()) as unknown as {
+      defaults: Record<string, unknown>;
+      items: Array<Record<string, unknown>>;
+    };
+    targetClaim.defaults.targets = ["codex"];
+    await expect(api(window).importIntakeText(JSON.stringify(targetClaim))).rejects.toThrow(
+      /unknown member targets/i,
+    );
+    targetClaim.defaults = { accountableOwner: "platform@acme.example" };
+    const firstItem = targetClaim.items[0];
+    if (firstItem === undefined) throw new Error("expected intake item");
+    firstItem.targets = ["codex"];
+    await expect(api(window).importIntakeText(JSON.stringify(targetClaim))).rejects.toThrow(
+      /unknown member targets/i,
+    );
+    delete firstItem.targets;
+    firstItem.execution = { transport: "stdio", resolver: "npx" };
+    await expect(api(window).importIntakeText(JSON.stringify(targetClaim))).rejects.toThrow(
+      /unknown member execution/i,
+    );
+
+    const missingAuthority = structuredClone(intake()) as unknown as Record<string, unknown>;
+    delete missingAuthority.authority;
+    await expect(api(window).importIntakeText(JSON.stringify(missingAuthority))).rejects.toThrow(
+      /missing authority/i,
+    );
+
+    expect(api(window).snapshot().intake).toBeNull();
+    window.close();
+  });
+
+  it("rejects evidence summaries that contradict their records in the browser", async () => {
+    const window = studio();
+    await api(window).importIntakeText(JSON.stringify(intake()));
+    const contradictory = structuredClone(evidence("contradictory"));
+    const result = contradictory.results[0];
+    if (result === undefined) throw new Error("expected evidence result");
+    result.state = "failed";
+    const { bundleDigest: _bundleDigest, ...unsigned } = contradictory;
+    contradictory.bundleDigest = artifactEvidenceBundleDigestV1(unsigned);
+
+    await expect(api(window).mergeEvidenceText(JSON.stringify(contradictory))).rejects.toThrow(
+      /result does not match evidence record/i,
+    );
+    expect(api(window).snapshot().bundleCount).toBe(0);
+    window.close();
+  });
+
+  it("rejects evidence target claims and observed npm pins that differ from intake", async () => {
+    const window = studio();
+    const pinned = intake("3.24.0", REGISTRY_INTEGRITY);
+    await api(window).importIntakeText(JSON.stringify(pinned));
+
+    const targetClaim = structuredClone(evidence("target claim", pinned)) as unknown as {
+      evidence: Array<Record<string, unknown>>;
+    };
+    const targetRecord = targetClaim.evidence[0];
+    if (targetRecord === undefined) throw new Error("expected evidence record");
+    targetRecord.targets = ["codex"];
+    await expect(api(window).mergeEvidenceText(JSON.stringify(targetClaim))).rejects.toThrow(
+      /unknown member targets/i,
+    );
+
+    const mismatched = structuredClone(evidence("mismatched pin", pinned));
+    const record = mismatched.evidence[0];
+    if (record === undefined || record.observed.type !== "npm") {
+      throw new Error("expected npm evidence record");
+    }
+    record.observed.registryIntegrity = OTHER_REGISTRY_INTEGRITY;
+    const { evidenceDigest: _evidenceDigest, ...recordUnsigned } = record;
+    record.evidenceDigest = artifactEvidenceDigestV1(recordUnsigned);
+    const { bundleDigest: _bundleDigest, ...bundleUnsigned } = mismatched;
+    mismatched.bundleDigest = artifactEvidenceBundleDigestV1(bundleUnsigned);
+    await expect(api(window).mergeEvidenceText(JSON.stringify(mismatched))).rejects.toThrow(
+      /observed registry integrity mismatch/i,
+    );
+
+    expect(api(window).snapshot().bundleCount).toBe(0);
+    window.close();
+  });
+
   it("builds an item without handwritten JSON and preserves evidence history across source updates", async () => {
     const window = studio();
     setValue(window, "artifact-default-owner", "platform@acme.example");
-    setValue(window, "artifact-default-targets", "codex");
     setValue(window, "artifact-item-id", "firecrawl-mcp");
     setValue(window, "artifact-npm-package", "firecrawl-mcp");
     setValue(window, "artifact-npm-version", "3.24.0");
@@ -223,8 +315,11 @@ describe("Policy Workbench artifact intake", () => {
 
     expect(api(window).snapshot().intake).toMatchObject({
       format: "aih-artifact-intake",
+      authority: { state: "not-authority" },
       items: [expect.objectContaining({ id: "firecrawl-mcp", kind: "mcp" })],
     });
+    expect(JSON.stringify(api(window).snapshot().intake)).not.toContain('"targets"');
+    expect(JSON.stringify(api(window).snapshot().intake)).not.toContain('"execution"');
     expect(window.document.getElementById("artifact-intake-items")?.textContent).toContain(
       "Missing scan evidence",
     );
@@ -246,11 +341,12 @@ describe("Policy Workbench artifact intake", () => {
     window.close();
   });
 
-  it("carries verified source, evidence, owner, and targets into protected approval", async () => {
+  it("carries verified source, evidence, and owner into approval but leaves targets authoritative", async () => {
     const window = studio();
     await api(window).importIntakeText(JSON.stringify(intake()));
     const bundle = evidence("ready for organization review");
     await api(window).mergeEvidenceText(JSON.stringify(bundle));
+    setValue(window, "protected-targets", "claude");
 
     const handoff = window.document.querySelector("[data-artifact-approve]");
     expect(handoff?.textContent).toContain("Continue to approval");
@@ -293,11 +389,17 @@ describe("Policy Workbench artifact intake", () => {
     expect(
       (window.document.getElementById("protected-actor") as unknown as { value: string }).value,
     ).toBe("platform@acme.example");
+    expect(
+      (window.document.getElementById("protected-targets") as unknown as { value: string }).value,
+    ).toBe("");
     expect(window.document.getElementById("organization-artifact-context")?.textContent).toContain(
       "firecrawl-mcp",
     );
     expect(window.document.getElementById("organization-artifact-context")?.textContent).toContain(
       "64 decisions per file",
+    );
+    expect(window.document.getElementById("organization-artifact-context")?.textContent).toContain(
+      "choose authorized targets",
     );
 
     window.close();

@@ -13,14 +13,6 @@ const GIT_COMMIT = /^[a-f0-9]{40}$/;
 
 const itemId = z.string().regex(ITEM_ID);
 const accountableOwner = z.string().email().max(320);
-const target = z.string().regex(ITEM_ID);
-const targets = z
-  .array(target)
-  .min(1)
-  .max(32)
-  .refine((values) => new Set(values).size === values.length, {
-    message: "targets must be duplicate-free",
-  });
 const discoveryUrl = z.string().refine((value) => {
   try {
     const url = new URL(value);
@@ -95,25 +87,12 @@ const commonItem = {
   id: itemId,
   discoveryUrl: discoveryUrl.optional(),
   accountableOwner: accountableOwner.optional(),
-  targets: targets.optional(),
   source: ArtifactIntakeSourceV1Schema,
   clarification: z.string().min(1).max(1000).optional(),
 };
 
 export const ArtifactIntakeItemV1Schema = z.discriminatedUnion("kind", [
-  z
-    .object({
-      ...commonItem,
-      kind: z.literal("mcp"),
-      execution: z
-        .object({
-          transport: z.literal("stdio"),
-          resolver: z.enum(["npx", "uvx"]),
-        })
-        .strict()
-        .optional(),
-    })
-    .strict(),
+  z.object({ ...commonItem, kind: z.literal("mcp") }).strict(),
   z.object({ ...commonItem, kind: z.literal("skill") }).strict(),
   z.object({ ...commonItem, kind: z.literal("agent") }).strict(),
 ]);
@@ -122,10 +101,10 @@ export const ArtifactIntakeV1Schema = z
   .object({
     format: z.literal("aih-artifact-intake"),
     version: z.literal(1),
+    authority: z.object({ state: z.literal("not-authority") }).strict(),
     defaults: z
       .object({
         accountableOwner: accountableOwner.optional(),
-        targets: targets.optional(),
       })
       .strict()
       .optional(),
@@ -150,13 +129,6 @@ export const ArtifactIntakeV1Schema = z
           message: "accountable owner is required on the item or in defaults",
         });
       }
-      if (item.targets === undefined && value.defaults?.targets === undefined) {
-        context.addIssue({
-          code: "custom",
-          path: ["items", index, "targets"],
-          message: "at least one target is required on the item or in defaults",
-        });
-      }
     }
   });
 
@@ -166,7 +138,6 @@ export type ArtifactIntakeSourceV1 = z.infer<typeof ArtifactIntakeSourceV1Schema
 
 export type EffectiveArtifactIntakeItemV1 = ArtifactIntakeItemV1 & {
   accountableOwner: string;
-  targets: string[];
 };
 
 export type ArtifactIntakeAcquisitionSourceV1 =
@@ -207,7 +178,6 @@ export function effectiveArtifactIntakeItemsV1(
   return value.items.map((item) => ({
     ...item,
     accountableOwner: item.accountableOwner ?? value.defaults?.accountableOwner ?? "",
-    targets: [...(item.targets ?? value.defaults?.targets ?? [])].sort(ordinalCompare),
   }));
 }
 
@@ -215,6 +185,7 @@ export function artifactIntakeDigestV1(value: ArtifactIntakeV1): string {
   const canonical = {
     format: value.format,
     version: value.version,
+    authority: value.authority,
     items: effectiveArtifactIntakeItemsV1(value).sort((left, right) =>
       ordinalCompare(left.id, right.id),
     ),

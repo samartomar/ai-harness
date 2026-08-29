@@ -58,10 +58,6 @@ const evidenceRecordShape = z
     candidate: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,127}$/),
     kind: itemKind,
     accountableOwner: z.string().email().max(320),
-    targets: z
-      .array(z.string().regex(/^[a-z0-9][a-z0-9._-]{0,127}$/))
-      .min(1)
-      .max(32),
     source: ArtifactIntakeSourceV1Schema,
     sourceDigest: digest,
     scanDigest: digest,
@@ -107,6 +103,29 @@ export const ArtifactEvidenceRecordV1Schema = evidenceRecordShape.superRefine((v
   }
   if (value.source.type !== value.observed.type) {
     context.addIssue({ code: "custom", path: ["observed"], message: "observed source mismatch" });
+  }
+  if (
+    value.source.type === "github" &&
+    value.observed.type === "github" &&
+    value.observed.commit !== value.source.commit
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["observed", "commit"],
+      message: "observed commit mismatch",
+    });
+  }
+  if (
+    value.source.type === "npm" &&
+    value.source.integrity !== undefined &&
+    value.observed.type === "npm" &&
+    value.observed.registryIntegrity !== value.source.integrity
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["observed", "registryIntegrity"],
+      message: "observed registry integrity mismatch",
+    });
   }
   if (artifactEvidenceDigestV1(withoutEvidenceDigest(value)) !== value.evidenceDigest) {
     context.addIssue({
@@ -161,7 +180,6 @@ export function artifactEvidenceRecordV1(
     candidate: effective.id,
     kind: effective.kind,
     accountableOwner: effective.accountableOwner,
-    targets: [...effective.targets],
     source: effective.source,
     sourceDigest,
     scanDigest: `sha256:${canonicalStrictJsonSha256V1(input.checks)}`,
@@ -227,6 +245,60 @@ export const ArtifactEvidenceBundleV1Schema = evidenceBundleShape.superRefine((v
   }
   if (new Set(value.evidence.map((entry) => entry.id)).size !== value.evidence.length) {
     context.addIssue({ code: "custom", path: ["evidence"], message: "duplicate evidence record" });
+  }
+  const resultByItem = new Map(value.results.map((entry) => [entry.itemId, entry]));
+  const evidenceByItem = new Map<string, ArtifactEvidenceRecordV1[]>();
+  for (const record of value.evidence) {
+    const records = evidenceByItem.get(record.itemId) ?? [];
+    records.push(record);
+    evidenceByItem.set(record.itemId, records);
+  }
+  for (const [index, record] of value.evidence.entries()) {
+    const matching = resultByItem.get(record.itemId);
+    if (matching === undefined) {
+      context.addIssue({
+        code: "custom",
+        path: ["evidence", index],
+        message: "orphaned evidence record",
+      });
+      continue;
+    }
+    if (
+      matching.kind !== record.kind ||
+      matching.state !== record.state ||
+      matching.evidenceId !== record.id ||
+      matching.sourceDigest !== record.sourceDigest ||
+      matching.problem !== undefined
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["evidence", index],
+        message: "result does not match evidence record",
+      });
+    }
+  }
+  for (const [index, entry] of value.results.entries()) {
+    const records = evidenceByItem.get(entry.itemId) ?? [];
+    if (records.length === 0) {
+      if (
+        entry.state !== "missing" ||
+        entry.problem === undefined ||
+        entry.evidenceId !== undefined ||
+        entry.sourceDigest !== undefined
+      ) {
+        context.addIssue({
+          code: "custom",
+          path: ["results", index],
+          message: "missing result must describe the problem without evidence claims",
+        });
+      }
+    } else if (records.length !== 1) {
+      context.addIssue({
+        code: "custom",
+        path: ["results", index],
+        message: "result must identify exactly one evidence record",
+      });
+    }
   }
 });
 
@@ -310,6 +382,7 @@ export function reconcileArtifactEvidenceV1(
       current.some(
         (record) =>
           record.kind !== item.kind ||
+          record.accountableOwner !== item.accountableOwner ||
           canonicalStrictJsonSha256V1(record.source) !== canonicalStrictJsonSha256V1(item.source),
       )
     ) {

@@ -13,9 +13,10 @@ const SHA = "a".repeat(40);
 interface MutableIntake {
   format: string;
   version: number;
+  authority: { state: string };
   defaults: {
     accountableOwner?: string;
-    targets: string[];
+    [key: string]: unknown;
   };
   items: Array<{
     id: string;
@@ -29,9 +30,9 @@ function intake(): MutableIntake {
   return {
     format: "aih-artifact-intake",
     version: 1,
+    authority: { state: "not-authority" },
     defaults: {
       accountableOwner: "platform@acme.example",
-      targets: ["codex"],
     },
     items: [
       {
@@ -44,7 +45,6 @@ function intake(): MutableIntake {
           package: "firecrawl-mcp",
           version: "3.24.0",
         },
-        execution: { transport: "stdio", resolver: "npx" },
         clarification: "Developer web research",
       },
       {
@@ -90,7 +90,8 @@ describe("ArtifactIntakeV1", () => {
       "platform@acme.example",
       "review@acme.example",
     ]);
-    expect(items.every((item) => item.targets[0] === "codex")).toBe(true);
+    expect(parsed.authority).toEqual({ state: "not-authority" });
+    expect(items.every((item) => !("targets" in item))).toBe(true);
   });
 
   it("treats marketplace URLs as optional discovery context, never source identity", () => {
@@ -138,6 +139,17 @@ describe("ArtifactIntakeV1", () => {
       (value: MutableIntake) => value.items.push({ ...mutableItem(value, 0) }),
     ],
     ["missing accountable owner", (value: MutableIntake) => delete value.defaults.accountableOwner],
+    ["authority claim", (value: MutableIntake) => (value.authority.state = "approved")],
+    ["target authority in intake", (value: MutableIntake) => (value.defaults.targets = ["codex"])],
+    [
+      "item-level target authority in intake",
+      (value: MutableIntake) => (mutableItem(value, 0).targets = ["codex"]),
+    ],
+    [
+      "unobserved execution claim in intake",
+      (value: MutableIntake) =>
+        (mutableItem(value, 0).execution = { transport: "stdio", resolver: "npx" }),
+    ],
     [
       "incomplete npm scope",
       (value: MutableIntake) => (mutableItem(value, 0).source.package = "@firecrawl"),

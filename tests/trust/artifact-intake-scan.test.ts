@@ -39,7 +39,8 @@ function intake(): Record<string, unknown> {
   return {
     format: "aih-artifact-intake",
     version: 1,
-    defaults: { accountableOwner: "platform@acme.example", targets: ["codex"] },
+    authority: { state: "not-authority" },
+    defaults: { accountableOwner: "platform@acme.example" },
     items: [
       {
         id: "firecrawl-mcp",
@@ -51,7 +52,6 @@ function intake(): Record<string, unknown> {
           version: "3.24.0",
           integrity: REGISTRY_INTEGRITY,
         },
-        execution: { transport: "stdio", resolver: "npx" },
       },
       {
         id: "security-skill",
