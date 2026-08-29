@@ -1,13 +1,13 @@
 import { TextEncoder } from "node:util";
 import { type Element, Window } from "happy-dom";
 import { describe, expect, it } from "vitest";
+import { policyStudioModel } from "../../src/org-policy/studio-model.js";
+import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
 import {
   artifactEvidenceRecordV1,
   createArtifactEvidenceBundleV1,
 } from "../../src/trust/artifact-evidence.js";
 import { ArtifactIntakeV1Schema } from "../../src/trust/artifact-intake.js";
-import { policyStudioModel } from "../../src/org-policy/studio-model.js";
-import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
 
 interface IntakeApi {
   importIntakeText(text: string): Promise<void>;

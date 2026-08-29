@@ -1,4 +1,5 @@
 import type { PolicyStudioModel } from "./studio-model.js";
+import { artifactIntakeWorkbenchScript } from "./studio-artifact-intake.js";
 import {
   protectedPolicyWorkbenchMarkup,
   protectedPolicyWorkbenchScript,
@@ -63,6 +64,7 @@ function baselineEvidenceProvenanceLine(model: PolicyStudioModel): string {
 export function policyStudioHtml(model: PolicyStudioModel): string {
   const catalogProvenance = catalogProvenanceLine(model);
   const baselineEvidenceProvenance = baselineEvidenceProvenanceLine(model);
+  const artifactIntakeScript = artifactIntakeWorkbenchScript();
   const protectedPolicyMarkup = protectedPolicyWorkbenchMarkup();
   const protectedPolicyScript = protectedPolicyWorkbenchScript();
   const hookRegistryOwners = safeHtmlAttribute(
@@ -1316,6 +1318,7 @@ byId("copy-approvals").addEventListener("click",function(event){event.preventDef
 ${protectedPolicyScript}
 })();
 </script>
+${artifactIntakeScript}
 </body>
 </html>`.replace("__AIH_DATA__", () => safeScriptJson(model));
 }
