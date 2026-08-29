@@ -73,6 +73,12 @@ function intake(): MutableIntake {
   };
 }
 
+function mutableItem(value: MutableIntake, index: number): MutableIntake["items"][number] {
+  const item = value.items[index];
+  if (item === undefined) throw new Error(`expected intake item ${String(index)}`);
+  return item;
+}
+
 describe("ArtifactIntakeV1", () => {
   it("accepts one attributable batch spanning MCP, Skill, and Agent sources", () => {
     const parsed = ArtifactIntakeV1Schema.parse(intake());
@@ -129,20 +135,26 @@ describe("ArtifactIntakeV1", () => {
   it.each([
     [
       "duplicate item identifiers",
-      (value: MutableIntake) => value.items.push({ ...value.items[0] }),
+      (value: MutableIntake) => value.items.push({ ...mutableItem(value, 0) }),
     ],
     ["missing accountable owner", (value: MutableIntake) => delete value.defaults.accountableOwner],
     [
       "incomplete npm scope",
-      (value: MutableIntake) => (value.items[0].source.package = "@firecrawl"),
+      (value: MutableIntake) => (mutableItem(value, 0).source.package = "@firecrawl"),
     ],
-    ["mutable npm version", (value: MutableIntake) => (value.items[0].source.version = "latest")],
-    ["mutable GitHub ref", (value: MutableIntake) => (value.items[1].source.commit = "main")],
+    [
+      "mutable npm version",
+      (value: MutableIntake) => (mutableItem(value, 0).source.version = "latest"),
+    ],
+    [
+      "mutable GitHub ref",
+      (value: MutableIntake) => (mutableItem(value, 1).source.commit = "main"),
+    ],
     [
       "unsafe artifact path",
-      (value: MutableIntake) => (value.items[1].source.path = "../SKILL.md"),
+      (value: MutableIntake) => (mutableItem(value, 1).source.path = "../SKILL.md"),
     ],
-    ["unknown member", (value: MutableIntake) => (value.items[0].approval = "approved")],
+    ["unknown member", (value: MutableIntake) => (mutableItem(value, 0).approval = "approved")],
   ])("rejects %s before any source acquisition", (_label, mutate) => {
     const value = intake();
     mutate(value);

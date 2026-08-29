@@ -3,6 +3,8 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { type Posture, postureFromContext } from "../config/posture.js";
 import { AihError } from "../errors.js";
+import { writeArtifact } from "../internals/execute.js";
+import { readRegularFileWithStats } from "../internals/fsxn.js";
 import type { Action, CommandSpec, PlanContext, ProbeAction } from "../internals/plan.js";
 import { digest, dynamicDigest, plan, structuredChecksProbe } from "../internals/plan.js";
 import type { Runner } from "../internals/proc.js";
@@ -15,6 +17,18 @@ import type { Platform } from "../platform/base.js";
 import { mcpConfigSecretCheck, plaintextSecretCheck } from "../secrets/probes.js";
 import { MCP_CONFIG_FILES, scanConfigSecrets, scanSecrets } from "../secrets/scan.js";
 import { applyTrustAcknowledgements } from "./acknowledge.js";
+import {
+  type ArtifactEvidenceRecordV1,
+  type ArtifactObservedSourceV1,
+  artifactEvidenceRecordV1,
+  createArtifactEvidenceBundleV1,
+} from "./artifact-evidence.js";
+import {
+  type ArtifactIntakeV1,
+  artifactIntakeSourceGroupsV1,
+  type EffectiveArtifactIntakeItemV1,
+  parseArtifactIntakeV1Text,
+} from "./artifact-intake.js";
 import { resolveInternalScopes, scanTrustDependencyNames } from "./depnames.js";
 import {
   runMcpConfigDetectors,
@@ -32,10 +46,13 @@ import {
   type TrustPolicyDisposition,
 } from "./evidence.js";
 import {
+  type ArtifactIntakePackageTrustSource,
   assertTrustTreeSafe,
   cleanupQuarantine,
   type GitHubTrustFetchMetadataValidation,
   type PackageTrustSource,
+  readArtifactIntakePackageTrustFetchMetadata,
+  resolveArtifactIntakePackageTrustSource,
   resolvePackageTrustSource,
   resolveTrustSource,
   sameGitHubTrustFetchMetadata,
@@ -107,11 +124,17 @@ interface IncomingMcpServerMap {
   servers: Record<string, unknown>;
 }
 
-type ScannableTrustSource = TrustSource | PackageTrustSource;
+type ScannableTrustSource = TrustSource | PackageTrustSource | ArtifactIntakePackageTrustSource;
 
 interface TrustScanPlanOptions {
   cleanupQuarantine?: boolean;
   sandboxSmokeShape?: (root: string) => SandboxSmokeShape | undefined;
+  artifactEvidence?: {
+    intake: ArtifactIntakeV1;
+    items: readonly EffectiveArtifactIntakeItemV1[];
+    records: Map<string, ArtifactEvidenceRecordV1>;
+    problems: Record<string, string>;
+  };
 }
 
 // npm accepts several non-registry specs (paths, git URLs) in `npm pack`.
@@ -219,6 +242,53 @@ function packagePreflightEvidenceRecord(source: PackageTrustSource, scan: TrustS
     null,
     2,
   );
+}
+
+function artifactEvidenceState(
+  scan: TrustScanResult,
+  item: EffectiveArtifactIntakeItemV1,
+  treePath: string,
+): "verified" | "failed" | "missing" {
+  const sourcePath = item.source.path;
+  if (sourcePath !== undefined && !existsSync(join(treePath, sourcePath))) return "missing";
+  if (scan.checks.some((check) => check.verdict === "fail")) return "failed";
+  if (scan.checks.some((check) => check.verdict === "skip")) return "missing";
+  return "verified";
+}
+
+function artifactEvidenceFindings(scan: TrustScanResult): string[] {
+  return [
+    ...new Set(
+      scan.checks
+        .filter((check) => check.verdict === "fail" && typeof check.code === "string")
+        .map(
+          (check) =>
+            POLICY_FINDING_FOR_TRUST_CODE[check.code as keyof typeof POLICY_FINDING_FOR_TRUST_CODE],
+        )
+        .filter((code) => code !== undefined),
+    ),
+  ];
+}
+
+function artifactObservedSource(
+  source: Exclude<ScannableTrustSource, { kind: "local" | "package" }>,
+): ArtifactObservedSourceV1 {
+  if (source.kind === "github") {
+    const validation = validateGitHubTrustFetchMetadata(source);
+    if (validation.state !== "trusted") {
+      throw new AihError(
+        `artifact intake GitHub fetch metadata is ${validation.state}`,
+        "AIH_TRUST",
+      );
+    }
+    return { type: "github", commit: validation.metadata.pinnedSha };
+  }
+  const metadata = readArtifactIntakePackageTrustFetchMetadata(source);
+  return {
+    type: "npm",
+    tarballSha256: metadata.tarballSha256,
+    registryIntegrity: metadata.registryIntegrity,
+  };
 }
 
 function toPosix(path: string): string {
@@ -1082,7 +1152,9 @@ export async function trustScanPlanForSource(
     requiredDetectors: policy.requiredDetectors,
   } satisfies ScanTrustTreeOptions;
   if (source.kind === "github") actions.push(trustFetchExec(source, ctx));
-  if (source.kind === "package") actions.push(...trustPackageFetchActions(source, ctx));
+  if (source.kind === "package" || source.kind === "artifact-intake-package") {
+    actions.push(...trustPackageFetchActions(source, ctx));
+  }
   actions.push(
     structuredChecksProbe("trust source origin", (probeCtx) =>
       acknowledgeChecks(
@@ -1168,6 +1240,43 @@ export async function trustScanPlanForSource(
             );
           })
         : undefined;
+    const artifactEvidence =
+      options.artifactEvidence === undefined || source.kind === "package"
+        ? undefined
+        : dynamicDigest(`artifact evidence for ${source.display}`, async (digestCtx) => {
+            if (!digestCtx.apply) {
+              return `Artifact evidence for ${source.display} is not emitted in dry-run; pass --apply to fetch, hash, and scan the exact source.`;
+            }
+            try {
+              const scan = await scanRemoteSource(digestCtx);
+              const observed = artifactObservedSource(source);
+              for (const item of options.artifactEvidence?.items ?? []) {
+                const record = artifactEvidenceRecordV1({
+                  intake: options.artifactEvidence?.intake as ArtifactIntakeV1,
+                  item,
+                  state: artifactEvidenceState(scan, item, source.treePath),
+                  observed,
+                  analyzersRun: scan.analyzersRun,
+                  checks: scan.checks,
+                  findings: artifactEvidenceFindings(scan),
+                });
+                options.artifactEvidence?.records.set(item.id, record);
+                delete options.artifactEvidence?.problems[item.id];
+              }
+              return `Prepared ${String(options.artifactEvidence?.items.length ?? 0)} preflight evidence record(s) for ${source.display}; these records are not authority, approval, installation, or activation.`;
+            } catch (error) {
+              const problem = (error instanceof Error ? error.message : String(error)).slice(
+                0,
+                500,
+              );
+              for (const item of options.artifactEvidence?.items ?? []) {
+                if (options.artifactEvidence !== undefined) {
+                  options.artifactEvidence.problems[item.id] = problem;
+                }
+              }
+              return `No preflight evidence was prepared for ${source.display}: ${problem}`;
+            }
+          });
     actions.push(
       structuredChecksProbe(`trust scan ${source.display}`, async (probeCtx) => {
         if (!probeCtx.apply) {
@@ -1185,6 +1294,7 @@ export async function trustScanPlanForSource(
         return acknowledgeChecks(scan.checks, probeCtx);
       }),
       ...(preflightEvidence === undefined ? [] : [preflightEvidence]),
+      ...(artifactEvidence === undefined ? [] : [artifactEvidence]),
       dynamicDigest("trust runtime advisory", async (digestCtx) => {
         try {
           if (!digestCtx.apply) return trustRuntimeAdvisory(["aih-native"]);
@@ -1203,6 +1313,74 @@ export async function trustScanPlanForSource(
   return plan("trust scan", ...actions);
 }
 
+function artifactIntakeTarget(ctx: PlanContext, target: string): ArtifactIntakeV1 | undefined {
+  const absolute = isAbsolute(target) ? target : resolve(ctx.root, target);
+  if (!existsSync(absolute) || statSync(absolute).isDirectory()) return undefined;
+  const opened = readRegularFileWithStats(absolute, { maxBytes: 1024 * 1024 });
+  if (opened === undefined || opened.identity.nlink !== 1n) {
+    throw new AihError(
+      "artifact intake must be a single-link regular JSON file no larger than 1 MiB",
+      "AIH_TRUST",
+    );
+  }
+  return parseArtifactIntakeV1Text(opened.contents.toString("utf8"));
+}
+
+async function artifactIntakeScanPlan(
+  ctx: PlanContext,
+  intake: ArtifactIntakeV1,
+): Promise<ReturnType<typeof plan>> {
+  const evidenceOut = ctx.options.evidenceOut;
+  if (ctx.apply && (typeof evidenceOut !== "string" || evidenceOut.trim().length === 0)) {
+    throw new AihError(
+      "artifact intake scanning with --apply requires --evidence-out <file>",
+      "AIH_TRUST",
+    );
+  }
+  const records = new Map<string, ArtifactEvidenceRecordV1>();
+  const problems: Record<string, string> = Object.fromEntries(
+    intake.items.map((item) => [item.id, "not scanned"]),
+  );
+  const actions: Action[] = [];
+  for (const group of artifactIntakeSourceGroupsV1(intake)) {
+    const source: Exclude<ScannableTrustSource, { kind: "local" | "package" }> =
+      group.source.type === "github"
+        ? (resolveTrustSource(group.source.repository, {
+            root: ctx.root,
+            pin: group.source.commit,
+            skipDirs: TRUST_SKIP_DIRS,
+          }) as Extract<TrustSource, { kind: "github" }>)
+        : resolveArtifactIntakePackageTrustSource({
+            package: group.source.package,
+            version: group.source.version,
+            registry: group.source.registry,
+            ...(group.source.integrity === undefined
+              ? {}
+              : { registryIntegrity: group.source.integrity }),
+          });
+    const sourcePlan = await trustScanPlanForSource(ctx, source, {
+      cleanupQuarantine: true,
+      artifactEvidence: { intake, items: group.items, records, problems },
+    });
+    actions.push(...sourcePlan.actions);
+  }
+  actions.push(
+    dynamicDigest("artifact evidence bundle", (digestCtx) => {
+      if (!digestCtx.apply) {
+        return "Artifact intake validated. Pass --apply --evidence-out <file> to acquire each unique exact source once and write one preflight evidence bundle; no package is installed or activated.";
+      }
+      const bundle = createArtifactEvidenceBundleV1(intake, [...records.values()], problems);
+      const output = String(evidenceOut);
+      writeArtifact(digestCtx, output, JSON.stringify(bundle, null, 2));
+      return {
+        text: `Wrote ${String(bundle.evidence.length)} non-authoritative preflight evidence record(s) for ${String(bundle.results.length)} requested artifact(s) to ${output}.`,
+        data: bundle,
+      };
+    }),
+  );
+  return plan("trust scan", ...actions);
+}
+
 async function trustScanPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const target = ctx.options.target;
   if (typeof target !== "string" || target.trim().length === 0) {
@@ -1211,6 +1389,8 @@ async function trustScanPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>>
       "AIH_TRUST",
     );
   }
+  const intake = artifactIntakeTarget(ctx, target);
+  if (intake !== undefined) return artifactIntakeScanPlan(ctx, intake);
   const packageSource = packageTrustSourceForTarget(ctx, target);
   if (packageSource !== undefined) {
     return trustScanPlanForSource(ctx, packageSource, { cleanupQuarantine: true });
@@ -1232,7 +1412,8 @@ async function trustScanPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>>
 
 export const trustScanCommand: CommandSpec = {
   name: "scan",
-  summary: "Scan a local source, GitHub owner/repo, or policy-pinned npm package before promotion",
+  summary:
+    "Scan a local source, GitHub owner/repo, policy-pinned npm package, or artifact intake batch before promotion",
   options: [
     {
       flags: "--pin <sha>",
@@ -1246,6 +1427,10 @@ export const trustScanCommand: CommandSpec = {
     {
       flags: "--sarif <file>",
       description: "write verification results as SARIF (or - for stdout)",
+    },
+    {
+      flags: "--evidence-out <file>",
+      description: "write one non-authoritative preflight evidence bundle for an artifact intake",
     },
     {
       flags: "--acknowledge <fingerprints>",

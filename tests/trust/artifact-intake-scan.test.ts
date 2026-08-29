@@ -141,9 +141,15 @@ describe("trust scan artifact intake", () => {
     const commandPlan = await trustScanCommand.plan(context(false));
     const fetches = commandPlan.actions.filter((action) => action.kind === "exec");
 
-    expect(fetches.filter((action) => action.describe.startsWith("fetch acme/security-assets@"))).toHaveLength(1);
-    expect(fetches.filter((action) => action.describe.includes("firecrawl-mcp@3.24.0"))).toHaveLength(2);
-    expect(fetches.every((action) => !action.describe.toLowerCase().includes("install"))).toBe(true);
+    expect(
+      fetches.filter((action) => action.describe.startsWith("fetch acme/security-assets@")),
+    ).toHaveLength(1);
+    expect(
+      fetches.filter((action) => action.describe.includes("firecrawl-mcp@3.24.0")),
+    ).toHaveLength(2);
+    expect(fetches.every((action) => !action.describe.toLowerCase().includes("install"))).toBe(
+      true,
+    );
     expect(
       trustScanCommand.options?.find((option) => option.flags.startsWith("--evidence-out")),
     ).toBeDefined();
@@ -165,7 +171,9 @@ describe("trust scan artifact intake", () => {
       "review-agent",
       "security-skill",
     ]);
-    expect(bundle.evidence.every((record) => record.authority.state === "not-authority")).toBe(true);
+    expect(bundle.evidence.every((record) => record.authority.state === "not-authority")).toBe(
+      true,
+    );
   });
 
   it("requires an explicit evidence output on apply", async () => {

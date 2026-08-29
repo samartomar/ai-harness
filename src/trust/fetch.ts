@@ -66,6 +66,30 @@ export interface PackageTrustSource {
   display: string;
 }
 
+export interface ArtifactIntakePackageTrustSource {
+  kind: "artifact-intake-package";
+  id: string;
+  source: string;
+  package: string;
+  version: string;
+  registry: string;
+  registryIntegrity?: string;
+  quarantineRoot: string;
+  treePath: string;
+  metadataPath: string;
+  display: string;
+}
+
+export interface ArtifactIntakePackageTrustFetchMetadata {
+  kind: "artifact-intake-npm";
+  package: string;
+  version: string;
+  registry: string;
+  registryIntegrity: string;
+  tarballSha256: string;
+  treePath: string;
+}
+
 export interface TrustFetchMetadata {
   kind: "github";
   owner: string;
@@ -141,9 +165,14 @@ function quarantineRoot(): string {
 }
 
 export function cleanupQuarantine(
-  source: TrustSource | PackageTrustSource | undefined,
+  source: TrustSource | PackageTrustSource | ArtifactIntakePackageTrustSource | undefined,
 ): Error | undefined {
-  if (source?.kind !== "github" && source?.kind !== "package") return;
+  if (
+    source?.kind !== "github" &&
+    source?.kind !== "package" &&
+    source?.kind !== "artifact-intake-package"
+  )
+    return;
   try {
     rmSync(source.quarantineRoot, { recursive: true, force: true });
     return undefined;
@@ -305,6 +334,30 @@ export function resolvePackageTrustSource(input: {
   };
 }
 
+export function resolveArtifactIntakePackageTrustSource(input: {
+  package: string;
+  version: string;
+  registry: string;
+  registryIntegrity?: string;
+}): ArtifactIntakePackageTrustSource {
+  const root = quarantineRoot();
+  return {
+    kind: "artifact-intake-package",
+    id: slugify(`${input.package}-${input.version}`),
+    source: `${input.package}@${input.version}`,
+    package: input.package,
+    version: input.version,
+    registry: input.registry,
+    ...(input.registryIntegrity === undefined
+      ? {}
+      : { registryIntegrity: input.registryIntegrity }),
+    quarantineRoot: root,
+    treePath: join(root, "tree"),
+    metadataPath: join(root, "metadata.json"),
+    display: `${input.package}@${input.version}`,
+  };
+}
+
 /**
  * A first-party source: a LOCAL path resolved UNDER the repo root (e.g. a bundled
  * skill in `packs/`). First-party sources are graded on aih-native coverage
@@ -459,6 +512,70 @@ export function sameGitHubTrustFetchMetadata(
     first.source === second.source &&
     first.treePath === second.treePath
   );
+}
+
+export function readArtifactIntakePackageTrustFetchMetadata(
+  source: ArtifactIntakePackageTrustSource,
+): ArtifactIntakePackageTrustFetchMetadata {
+  let listed: Stats;
+  try {
+    listed = lstatSync(source.metadataPath);
+  } catch {
+    throw new AihError("artifact intake npm fetch metadata is missing", "AIH_TRUST");
+  }
+  if (!listed.isFile() || listed.isSymbolicLink() || listed.nlink !== 1) {
+    throw new AihError("artifact intake npm fetch metadata is unreadable", "AIH_TRUST");
+  }
+  const opened = readRegularFileWithStats(source.metadataPath, { maxBytes: 64 * 1024 });
+  if (opened === undefined || opened.stats.nlink !== 1) {
+    throw new AihError("artifact intake npm fetch metadata is unreadable", "AIH_TRUST");
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(opened.contents.toString("utf8"));
+  } catch {
+    throw new AihError("artifact intake npm fetch metadata is malformed", "AIH_TRUST");
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new AihError("artifact intake npm fetch metadata is malformed", "AIH_TRUST");
+  }
+  const metadata = value as Record<string, unknown>;
+  const keys = Object.keys(metadata).sort();
+  const expected = [
+    "kind",
+    "package",
+    "registry",
+    "registryIntegrity",
+    "tarballSha256",
+    "treePath",
+    "version",
+  ];
+  if (
+    keys.length !== expected.length ||
+    !keys.every((key, index) => key === expected[index]) ||
+    metadata.kind !== "artifact-intake-npm" ||
+    metadata.package !== source.package ||
+    metadata.version !== source.version ||
+    metadata.registry !== source.registry ||
+    metadata.treePath !== source.treePath ||
+    typeof metadata.registryIntegrity !== "string" ||
+    !/^sha512-[A-Za-z0-9+/]+={0,2}$/.test(metadata.registryIntegrity) ||
+    (source.registryIntegrity !== undefined &&
+      metadata.registryIntegrity !== source.registryIntegrity) ||
+    typeof metadata.tarballSha256 !== "string" ||
+    !/^sha256:[a-f0-9]{64}$/.test(metadata.tarballSha256)
+  ) {
+    throw new AihError("artifact intake npm fetch metadata is mismatched", "AIH_TRUST");
+  }
+  return {
+    kind: "artifact-intake-npm",
+    package: source.package,
+    version: source.version,
+    registry: source.registry,
+    registryIntegrity: metadata.registryIntegrity,
+    tarballSha256: metadata.tarballSha256,
+    treePath: source.treePath,
+  };
 }
 
 const GITHUB_FETCH_SCRIPT = String.raw`
@@ -753,10 +870,43 @@ function extractTar(buffer, outRoot) {
     ensureContained(path.resolve(input.quarantineRoot), tarballPath);
     const tarball = fs.readFileSync(tarballPath);
     const actualSha256 = "sha256:" + crypto.createHash("sha256").update(tarball).digest("hex");
-    if (actualSha256 !== input.expectedSha256) {
+    const actualRegistryIntegrity = "sha512-" + crypto.createHash("sha512").update(tarball).digest("base64");
+    if (input.expectedSha256 && actualSha256 !== input.expectedSha256) {
       fail("npm tarball SHA-256 does not match the policy pin: expected " + input.expectedSha256 + ", got " + actualSha256);
     }
+    if (input.registryIntegrity && actualRegistryIntegrity !== input.registryIntegrity) {
+      fail("npm tarball SHA-512 does not match the registry integrity: expected " + input.registryIntegrity + ", got " + actualRegistryIntegrity);
+    }
     extractTar(zlib.gunzipSync(tarball), input.treePath);
+    if (input.kind === "artifact-intake-npm") {
+      let manifest;
+      try {
+        manifest = JSON.parse(fs.readFileSync(path.join(input.treePath, "package.json"), "utf8"));
+      } catch {
+        fail("npm tarball package.json is missing or malformed");
+      }
+      if (manifest.name !== input.package || manifest.version !== input.version) {
+        fail("npm tarball package identity does not match the requested exact package and version");
+      }
+      writeFileOwner(
+        input.metadataPath,
+        JSON.stringify(
+          {
+            kind: "artifact-intake-npm",
+            package: input.package,
+            registry: input.registry,
+            registryIntegrity: actualRegistryIntegrity,
+            tarballSha256: actualSha256,
+            treePath: input.treePath,
+            version: input.version,
+          },
+          null,
+          2,
+        ) + "\n",
+        "utf8",
+      );
+      return;
+    }
     writeFileOwner(
       input.metadataPath,
       JSON.stringify(
@@ -860,7 +1010,7 @@ export function trustFetchExec(source: GitHubTrustSource, ctx: PlanContext): Exe
 }
 
 export function trustPackageFetchActions(
-  source: PackageTrustSource,
+  source: PackageTrustSource | ArtifactIntakePackageTrustSource,
   ctx: PlanContext,
 ): ExecAction[] {
   const failureCheck = (stage: string) => (result: RunResult) => {
@@ -911,11 +1061,15 @@ export function trustPackageFetchActions(
         "-e",
         GITHUB_FETCH_SCRIPT,
         JSON.stringify({
-          kind: "npm",
-          candidate: source.candidate,
-          evidenceRecord: source.evidenceRecord,
-          source: source.candidateSource,
-          expectedSha256: source.integrity,
+          kind: source.kind === "package" ? "npm" : "artifact-intake-npm",
+          ...(source.kind === "package"
+            ? {
+                candidate: source.candidate,
+                evidenceRecord: source.evidenceRecord,
+                source: source.candidateSource,
+                expectedSha256: source.integrity,
+              }
+            : { registryIntegrity: source.registryIntegrity }),
           package: source.package,
           registry: source.registry,
           version: source.version,
