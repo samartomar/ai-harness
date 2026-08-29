@@ -51,6 +51,10 @@ function click(window: Window, node: Element | null): void {
   node.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
 }
 
+async function settle(window: Window): Promise<void> {
+  await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+}
+
 function setValue(window: Window, id: string, value: string): void {
   const input = window.document.getElementById(id) as unknown as { value: string } | null;
   if (input === null) throw new Error(`expected #${id}`);
@@ -172,9 +176,32 @@ describe("Policy Workbench artifact intake", () => {
     window.close();
   });
 
-  it("parses a Skills CLI discovery command without running or installing it", () => {
+  it("resolves a Skills CLI discovery command to one exact source without installing it", async () => {
     const window = studio();
     click(window, window.document.getElementById("open-custom-skill"));
+    input(window, "artifact-default-owner", "owner@company.example");
+    const commit = "b".repeat(40);
+    const requests: Array<{ url: string; options: Record<string, unknown> }> = [];
+    Object.defineProperty(window, "fetch", {
+      configurable: true,
+      value: async (url: string, options: Record<string, unknown>) => {
+        requests.push({ url, options });
+        if (url.endsWith("/commits/HEAD")) {
+          return { ok: true, status: 200, json: async () => ({ sha: commit }) };
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            truncated: false,
+            tree: [
+              { type: "blob", path: "skills/productivity/grill-me/SKILL.md" },
+              { type: "blob", path: "skills/productivity/other/SKILL.md" },
+            ],
+          }),
+        };
+      },
+    });
 
     expect(
       (
@@ -189,6 +216,7 @@ describe("Policy Workbench artifact intake", () => {
       "npx skills add [https://github.com/mattpocock/skills](https://github.com/mattpocock/skills) --skill grill-me",
     );
     click(window, window.document.getElementById("parse-skill-discovery"));
+    await settle(window);
 
     expect(
       (window.document.getElementById("artifact-item-id") as unknown as { value: string }).value,
@@ -207,14 +235,14 @@ describe("Policy Workbench artifact intake", () => {
     expect(
       (window.document.getElementById("artifact-source-path") as unknown as { value: string })
         .value,
-    ).toBe("");
+    ).toBe("skills/productivity/grill-me/SKILL.md");
     expect(
       (window.document.getElementById("artifact-github-commit") as unknown as { value: string })
         .value,
-    ).toBe("");
+    ).toBe(commit);
     expect(
       window.document.getElementById("artifact-skill-discovery-message")?.textContent,
-    ).toContain("git ls-remote https://github.com/mattpocock/skills.git HEAD");
+    ).toContain("GitHub public read-only metadata");
     expect(
       window.document.getElementById("artifact-skill-discovery-message")?.textContent,
     ).toContain("nothing was installed");
@@ -223,7 +251,351 @@ describe("Policy Workbench artifact intake", () => {
     ).toContain("Requested Skill grill-me");
     expect(
       window.document.getElementById("artifact-skill-discovery-message")?.textContent,
-    ).toContain("repository layouts vary");
+    ).toContain("not evidence or authority");
+    expect(api(window).snapshot().intake).toBeNull();
+    expect(requests.map((request) => request.url)).toEqual([
+      "https://api.github.com/repos/mattpocock/skills/commits/HEAD",
+      `https://api.github.com/repos/mattpocock/skills/git/trees/${commit}?recursive=1`,
+    ]);
+    for (const request of requests) {
+      expect(request.options).toMatchObject({
+        method: "GET",
+        credentials: "omit",
+        cache: "no-store",
+        referrerPolicy: "no-referrer",
+      });
+    }
+
+    click(window, window.document.getElementById("add-artifact-item"));
+    expect(api(window).snapshot().intake).toMatchObject({
+      authority: { state: "not-authority" },
+      items: [
+        {
+          id: "grill-me",
+          kind: "skill",
+          source: {
+            type: "github",
+            repository: "mattpocock/skills",
+            commit,
+            path: "skills/productivity/grill-me/SKILL.md",
+          },
+        },
+      ],
+    });
+
+    window.close();
+  });
+
+  it("fails closed when GitHub cannot return one complete unambiguous Skill path", async () => {
+    const window = studio();
+    click(window, window.document.getElementById("open-custom-skill"));
+    input(window, "artifact-default-owner", "owner@company.example");
+    Object.defineProperty(window, "fetch", {
+      configurable: true,
+      value: async (url: string) =>
+        url.endsWith("/commits/HEAD")
+          ? { ok: true, status: 200, json: async () => ({ sha: "c".repeat(40) }) }
+          : {
+              ok: true,
+              status: 200,
+              json: async () => ({
+                truncated: true,
+                tree: [{ type: "blob", path: "skills/grill-me/SKILL.md" }],
+              }),
+            },
+    });
+    input(
+      window,
+      "artifact-skill-discovery",
+      "npx skills add https://github.com/mattpocock/skills --skill grill-me",
+    );
+    click(window, window.document.getElementById("parse-skill-discovery"));
+    await settle(window);
+
+    expect(window.document.getElementById("artifact-skill-discovery-message")?.textContent).toMatch(
+      /rejected.*truncated/i,
+    );
+    expect(
+      (window.document.getElementById("artifact-github-repository") as unknown as { value: string })
+        .value,
+    ).toBe("");
+    expect(
+      (window.document.getElementById("artifact-github-commit") as unknown as { value: string })
+        .value,
+    ).toBe("");
+    expect(
+      (window.document.getElementById("artifact-source-path") as unknown as { value: string })
+        .value,
+    ).toBe("");
+    expect(
+      (window.document.getElementById("add-artifact-item") as unknown as { disabled: boolean })
+        .disabled,
+    ).toBe(true);
+    expect(api(window).snapshot().intake).toBeNull();
+
+    window.close();
+  });
+
+  it("rejects ambiguous Skill paths from public GitHub metadata", async () => {
+    const window = studio();
+    click(window, window.document.getElementById("open-custom-skill"));
+    input(window, "artifact-default-owner", "owner@company.example");
+    Object.defineProperty(window, "fetch", {
+      configurable: true,
+      value: async (url: string) =>
+        url.endsWith("/commits/HEAD")
+          ? { ok: true, status: 200, json: async () => ({ sha: "d".repeat(40) }) }
+          : {
+              ok: true,
+              status: 200,
+              json: async () => ({
+                truncated: false,
+                tree: [
+                  { type: "blob", path: "skills/grill-me/SKILL.md" },
+                  { type: "blob", path: "archive/grill-me/SKILL.md" },
+                ],
+              }),
+            },
+    });
+    input(
+      window,
+      "artifact-skill-discovery",
+      "npx skills add https://github.com/mattpocock/skills --skill grill-me",
+    );
+    click(window, window.document.getElementById("parse-skill-discovery"));
+    await settle(window);
+
+    expect(window.document.getElementById("artifact-skill-discovery-message")?.textContent).toMatch(
+      /rejected.*multiple matching Skill paths/i,
+    );
+    expect(
+      (window.document.getElementById("artifact-github-commit") as unknown as { value: string })
+        .value,
+    ).toBe("");
+    expect(
+      (window.document.getElementById("add-artifact-item") as unknown as { disabled: boolean })
+        .disabled,
+    ).toBe(true);
+    expect(api(window).snapshot().intake).toBeNull();
+
+    window.close();
+  });
+
+  it("does not apply a stale GitHub response after the discovery input changes", async () => {
+    const window = studio();
+    click(window, window.document.getElementById("open-custom-skill"));
+    input(window, "artifact-default-owner", "owner@company.example");
+    let resolveCommit!: (response: {
+      ok: boolean;
+      status: number;
+      json: () => Promise<{ sha: string }>;
+    }) => void;
+    const pendingCommit = new Promise<{
+      ok: boolean;
+      status: number;
+      json: () => Promise<{ sha: string }>;
+    }>((resolve) => {
+      resolveCommit = resolve;
+    });
+    Object.defineProperty(window, "fetch", {
+      configurable: true,
+      value: async (url: string) =>
+        url.endsWith("/commits/HEAD")
+          ? pendingCommit
+          : {
+              ok: true,
+              status: 200,
+              json: async () => ({
+                truncated: false,
+                tree: [{ type: "blob", path: "skills/productivity/grill-me/SKILL.md" }],
+              }),
+            },
+    });
+    input(
+      window,
+      "artifact-skill-discovery",
+      "npx skills add https://github.com/mattpocock/skills --skill grill-me",
+    );
+    click(window, window.document.getElementById("parse-skill-discovery"));
+    input(
+      window,
+      "artifact-skill-discovery",
+      "npx skills add https://github.com/vercel-labs/skills --skill find-skills",
+    );
+    resolveCommit({
+      ok: true,
+      status: 200,
+      json: async () => ({ sha: "e".repeat(40) }),
+    });
+    await settle(window);
+
+    expect(window.document.getElementById("artifact-skill-discovery-message")?.textContent).toMatch(
+      /input changed.*resolve it again/i,
+    );
+    expect(
+      (window.document.getElementById("artifact-github-repository") as unknown as { value: string })
+        .value,
+    ).toBe("");
+    expect(
+      (window.document.getElementById("artifact-github-commit") as unknown as { value: string })
+        .value,
+    ).toBe("");
+    expect(
+      (window.document.getElementById("add-artifact-item") as unknown as { disabled: boolean })
+        .disabled,
+    ).toBe(true);
+    expect(api(window).snapshot().intake).toBeNull();
+
+    window.close();
+  });
+
+  it("aborts resolution when exact-source fields change and never binds the stale response", async () => {
+    const window = studio();
+    click(window, window.document.getElementById("open-custom-skill"));
+    input(window, "artifact-default-owner", "owner@company.example");
+    let requestSignal: AbortSignal | undefined;
+    let resolveCommit!: (response: {
+      ok: boolean;
+      status: number;
+      json: () => Promise<{ sha: string }>;
+    }) => void;
+    const pendingCommit = new Promise<{
+      ok: boolean;
+      status: number;
+      json: () => Promise<{ sha: string }>;
+    }>((resolve) => {
+      resolveCommit = resolve;
+    });
+    Object.defineProperty(window, "fetch", {
+      configurable: true,
+      value: async (_url: string, options: { signal?: AbortSignal }) => {
+        requestSignal = options.signal;
+        return pendingCommit;
+      },
+    });
+    input(
+      window,
+      "artifact-skill-discovery",
+      "npx skills add https://github.com/mattpocock/skills --skill grill-me",
+    );
+    click(window, window.document.getElementById("parse-skill-discovery"));
+    input(window, "artifact-github-repository", "vercel-labs/skills");
+    resolveCommit({
+      ok: true,
+      status: 200,
+      json: async () => ({ sha: "f".repeat(40) }),
+    });
+    await settle(window);
+
+    expect(requestSignal?.aborted).toBe(true);
+    expect(window.document.getElementById("artifact-skill-discovery-message")?.textContent).toMatch(
+      /source details changed.*resolve the Skill again/i,
+    );
+    expect(
+      (window.document.getElementById("artifact-github-repository") as unknown as { value: string })
+        .value,
+    ).toBe("");
+    expect(
+      (window.document.getElementById("artifact-github-commit") as unknown as { value: string })
+        .value,
+    ).toBe("");
+    expect(
+      (window.document.getElementById("add-artifact-item") as unknown as { disabled: boolean })
+        .disabled,
+    ).toBe(true);
+    expect(api(window).snapshot().intake).toBeNull();
+
+    window.close();
+  });
+
+  it("aborts Skill resolution when the administrator switches artifact routes", async () => {
+    const window = studio();
+    click(window, window.document.getElementById("open-custom-skill"));
+    let requestSignal: AbortSignal | undefined;
+    let resolveCommit!: (response: {
+      ok: boolean;
+      status: number;
+      json: () => Promise<{ sha: string }>;
+    }) => void;
+    const pendingCommit = new Promise<{
+      ok: boolean;
+      status: number;
+      json: () => Promise<{ sha: string }>;
+    }>((resolve) => {
+      resolveCommit = resolve;
+    });
+    Object.defineProperty(window, "fetch", {
+      configurable: true,
+      value: async (_url: string, options: { signal?: AbortSignal }) => {
+        requestSignal = options.signal;
+        return pendingCommit;
+      },
+    });
+    input(
+      window,
+      "artifact-skill-discovery",
+      "npx skills add https://github.com/mattpocock/skills --skill grill-me",
+    );
+    click(window, window.document.getElementById("parse-skill-discovery"));
+    click(window, window.document.getElementById("open-custom-agent"));
+    resolveCommit({
+      ok: true,
+      status: 200,
+      json: async () => ({ sha: "a".repeat(40) }),
+    });
+    await settle(window);
+
+    expect(requestSignal?.aborted).toBe(true);
+    expect(
+      (window.document.getElementById("artifact-item-kind") as unknown as { value: string }).value,
+    ).toBe("agent");
+    expect(
+      (window.document.getElementById("artifact-github-repository") as unknown as { value: string })
+        .value,
+    ).toBe("");
+    expect(
+      (window.document.getElementById("artifact-github-commit") as unknown as { value: string })
+        .value,
+    ).toBe("");
+    expect(api(window).snapshot().intake).toBeNull();
+
+    window.close();
+  });
+
+  it.each([
+    {
+      name: "an HTTP failure",
+      response: { ok: false, status: 403, json: async () => ({}) },
+      expected: /HTTP 403/i,
+    },
+    {
+      name: "a malformed commit identity",
+      response: { ok: true, status: 200, json: async () => ({ sha: "not-a-commit" }) },
+      expected: /exact lowercase 40-character commit/i,
+    },
+  ])("fails closed when GitHub returns $name", async ({ response, expected }) => {
+    const window = studio();
+    click(window, window.document.getElementById("open-custom-skill"));
+    input(window, "artifact-default-owner", "owner@company.example");
+    Object.defineProperty(window, "fetch", {
+      configurable: true,
+      value: async () => response,
+    });
+    input(
+      window,
+      "artifact-skill-discovery",
+      "npx skills add https://github.com/mattpocock/skills --skill grill-me",
+    );
+    click(window, window.document.getElementById("parse-skill-discovery"));
+    await settle(window);
+
+    expect(window.document.getElementById("artifact-skill-discovery-message")?.textContent).toMatch(
+      expected,
+    );
+    expect(
+      (window.document.getElementById("add-artifact-item") as unknown as { disabled: boolean })
+        .disabled,
+    ).toBe(true);
     expect(api(window).snapshot().intake).toBeNull();
 
     window.close();
@@ -431,10 +803,10 @@ describe("Policy Workbench artifact intake", () => {
 
   it("builds an item without handwritten JSON and preserves evidence history across source updates", async () => {
     const window = studio();
-    setValue(window, "artifact-default-owner", "platform@acme.example");
-    setValue(window, "artifact-item-id", "firecrawl-mcp");
-    setValue(window, "artifact-npm-package", "firecrawl-mcp");
-    setValue(window, "artifact-npm-version", "3.24.0");
+    input(window, "artifact-default-owner", "platform@acme.example");
+    input(window, "artifact-item-id", "firecrawl-mcp");
+    input(window, "artifact-npm-package", "firecrawl-mcp");
+    input(window, "artifact-npm-version", "3.24.0");
     click(window, window.document.getElementById("add-artifact-item"));
 
     expect(api(window).snapshot().intake).toMatchObject({
