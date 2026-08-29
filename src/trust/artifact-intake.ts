@@ -205,6 +205,10 @@ export function artifactIntakeDigestV1(value: ArtifactIntakeV1): string {
   return `sha256:${canonicalStrictJsonSha256V1(canonical)}`;
 }
 
+export function artifactIntakeItemSourceDigestV1(item: ArtifactIntakeItemV1): string {
+  return `sha256:${canonicalStrictJsonSha256V1(item.source)}`;
+}
+
 export function artifactIntakeSourceGroupsV1(
   value: ArtifactIntakeV1,
 ): ArtifactIntakeSourceGroupV1[] {
