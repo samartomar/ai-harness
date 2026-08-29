@@ -15,6 +15,13 @@ interface IntakeApi {
   snapshot(): { intake: Record<string, unknown> | null; bundleCount: number };
 }
 
+function input(window: Window, id: string, value: string): void {
+  setValue(window, id, value);
+  window.document
+    .getElementById(id)
+    ?.dispatchEvent(new window.Event("input", { bubbles: true, cancelable: true }));
+}
+
 function studio(): Window {
   const window = new Window({ url: "http://localhost/" });
   const html = policyStudioHtml(policyStudioModel());
@@ -67,6 +74,21 @@ function intake(version = "3.24.0") {
   });
 }
 
+function intakeBatch(count: number) {
+  const template = intake();
+  const source = template.items[0]?.source;
+  if (source === undefined) throw new Error("expected intake source");
+  return ArtifactIntakeV1Schema.parse({
+    ...template,
+    items: Array.from({ length: count }, (_value, index) => ({
+      id: `artifact-${String(index).padStart(3, "0")}`,
+      kind: index % 3 === 0 ? "mcp" : index % 3 === 1 ? "skill" : "agent",
+      source,
+      ...(index % 3 === 0 ? { execution: { transport: "stdio", resolver: "npx" } } : {}),
+    })),
+  });
+}
+
 function evidence(detail: string) {
   const source = intake();
   const item = source.items[0];
@@ -100,6 +122,8 @@ describe("Policy Workbench artifact intake", () => {
     );
     expect(card?.textContent).toContain("Preflight only");
     expect(card?.textContent).toContain("limited to 1 MiB");
+    expect(card?.textContent).toContain("64 decisions per protected file");
+    expect(card?.textContent).toContain("0 / 100 candidates");
     expect(card?.textContent).not.toContain("Record Agent");
     expect(card?.querySelector('a[href="https://mcpmarket.com/"]')).not.toBeNull();
     expect(card?.querySelector('a[href="https://www.skills.sh/"]')).not.toBeNull();
@@ -109,6 +133,81 @@ describe("Policy Workbench artifact intake", () => {
     expect(window.document.getElementById("import-artifact-evidence")?.textContent).toContain(
       "Merge scan evidence",
     );
+
+    window.close();
+  });
+
+  it("routes every organization-artifact entry point into the same queue with kind preselected", () => {
+    const window = studio();
+
+    for (const [id, kind] of [
+      ["open-custom", "mcp"],
+      ["open-custom-skill", "skill"],
+      ["open-custom-agent", "agent"],
+    ] as const) {
+      click(window, window.document.getElementById(id));
+      expect((window.document.body as unknown as { dataset: { view: string } }).dataset.view).toBe(
+        "imports",
+      );
+      expect(
+        (window.document.getElementById("artifact-item-kind") as unknown as { value: string })
+          .value,
+      ).toBe(kind);
+      expect(
+        (window.document.getElementById("authoring-sidebar") as unknown as { hidden: boolean })
+          .hidden,
+      ).toBe(true);
+    }
+
+    window.close();
+  });
+
+  it("explains exact npm identity and scanner-computed integrity without trusting directory labels", () => {
+    const window = studio();
+
+    input(window, "artifact-npm-package", "@firecrawl");
+    input(window, "artifact-npm-version", "4.37.0");
+    expect(window.document.getElementById("artifact-source-guide")?.textContent).toContain(
+      "complete @scope/package",
+    );
+    expect(window.document.getElementById("artifact-source-guide")?.textContent).not.toContain(
+      "npm view",
+    );
+
+    input(window, "artifact-npm-package", "firecrawl-mcp");
+    input(window, "artifact-npm-version", "3.24.0");
+    expect(window.document.getElementById("artifact-source-guide")?.textContent).toContain(
+      'npm view "firecrawl-mcp@3.24.0"',
+    );
+    expect(window.document.getElementById("artifact-source-guide")?.textContent).toContain(
+      "computes the downloaded tarball SHA-256 and observed SHA-512 itself",
+    );
+
+    window.close();
+  });
+
+  it("makes the 100-item capacity usable with a visible count, source deduplication, and filtering", async () => {
+    const window = studio();
+    await api(window).importIntakeText(JSON.stringify(intakeBatch(100)));
+
+    expect(window.document.getElementById("artifact-intake-summary")?.textContent).toContain(
+      "100 / 100 candidates",
+    );
+    expect(window.document.getElementById("artifact-intake-summary")?.textContent).toContain(
+      "1 unique exact source",
+    );
+    expect(
+      (window.document.getElementById("add-artifact-item") as unknown as { disabled: boolean })
+        .disabled,
+    ).toBe(true);
+    expect(window.document.querySelectorAll("[data-artifact-row]")).toHaveLength(100);
+
+    input(window, "artifact-queue-filter", "artifact-099");
+    expect(
+      [...window.document.querySelectorAll("[data-artifact-row]")].filter(
+        (row) => !(row as unknown as { hidden: boolean }).hidden,
+      ),
+    ).toHaveLength(1);
 
     window.close();
   });
@@ -142,6 +241,63 @@ describe("Policy Workbench artifact intake", () => {
     expect(api(window).snapshot().bundleCount).toBe(1);
     expect(window.document.getElementById("artifact-intake-items")?.textContent).toContain(
       "Stale evidence",
+    );
+
+    window.close();
+  });
+
+  it("carries verified source, evidence, owner, and targets into protected approval", async () => {
+    const window = studio();
+    await api(window).importIntakeText(JSON.stringify(intake()));
+    const bundle = evidence("ready for organization review");
+    await api(window).mergeEvidenceText(JSON.stringify(bundle));
+
+    const handoff = window.document.querySelector("[data-artifact-approve]");
+    expect(handoff?.textContent).toContain("Continue to approval");
+    click(window, handoff);
+
+    expect((window.document.body as unknown as { dataset: { view: string } }).dataset.view).toBe(
+      "author",
+    );
+    expect(
+      (window.document.getElementById("protected-kind") as unknown as { value: string }).value,
+    ).toBe("mcp");
+    expect(
+      (window.document.getElementById("protected-subject-id") as unknown as { value: string })
+        .value,
+    ).toBe("firecrawl-mcp");
+    expect(
+      (window.document.getElementById("protected-source-package") as unknown as { value: string })
+        .value,
+    ).toBe("firecrawl-mcp");
+    expect(
+      (window.document.getElementById("protected-source-version") as unknown as { value: string })
+        .value,
+    ).toBe("3.24.0");
+    expect(
+      (window.document.getElementById("protected-source-integrity") as unknown as { value: string })
+        .value,
+    ).toBe(
+      bundle.evidence[0]?.observed.type === "npm"
+        ? bundle.evidence[0].observed.registryIntegrity
+        : "",
+    );
+    expect(
+      (window.document.getElementById("protected-evidence-id") as unknown as { value: string })
+        .value,
+    ).toBe(bundle.evidence[0]?.id);
+    expect(
+      (window.document.getElementById("protected-evidence-digest") as unknown as { value: string })
+        .value,
+    ).toBe(bundle.evidence[0]?.evidenceDigest);
+    expect(
+      (window.document.getElementById("protected-actor") as unknown as { value: string }).value,
+    ).toBe("platform@acme.example");
+    expect(window.document.getElementById("organization-artifact-context")?.textContent).toContain(
+      "firecrawl-mcp",
+    );
+    expect(window.document.getElementById("organization-artifact-context")?.textContent).toContain(
+      "64 decisions per file",
     );
 
     window.close();
