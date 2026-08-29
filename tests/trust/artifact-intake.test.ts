@@ -10,7 +10,22 @@ import {
 
 const SHA = "a".repeat(40);
 
-function intake(): Record<string, unknown> {
+interface MutableIntake {
+  format: string;
+  version: number;
+  defaults: {
+    accountableOwner?: string;
+    targets: string[];
+  };
+  items: Array<{
+    id: string;
+    kind: string;
+    source: Record<string, unknown>;
+    [key: string]: unknown;
+  }>;
+}
+
+function intake(): MutableIntake {
   return {
     format: "aih-artifact-intake",
     version: 1,
@@ -91,9 +106,9 @@ describe("ArtifactIntakeV1", () => {
     const groups = artifactIntakeSourceGroupsV1(parsed);
 
     expect(groups).toHaveLength(2);
-    expect(groups.find((group) => group.source.type === "github")?.items.map((item) => item.id)).toEqual(
-      ["review-agent", "security-skill"],
-    );
+    expect(
+      groups.find((group) => group.source.type === "github")?.items.map((item) => item.id),
+    ).toEqual(["review-agent", "security-skill"]);
   });
 
   it("produces a deterministic intake digest and source-bound evidence identifiers", () => {
@@ -112,15 +127,24 @@ describe("ArtifactIntakeV1", () => {
   });
 
   it.each([
-    ["duplicate item identifiers", (value: any) => value.items.push({ ...value.items[0] })],
-    ["missing accountable owner", (value: any) => delete value.defaults.accountableOwner],
-    ["incomplete npm scope", (value: any) => (value.items[0].source.package = "@firecrawl")],
-    ["mutable npm version", (value: any) => (value.items[0].source.version = "latest")],
-    ["mutable GitHub ref", (value: any) => (value.items[1].source.commit = "main")],
-    ["unsafe artifact path", (value: any) => (value.items[1].source.path = "../SKILL.md")],
-    ["unknown member", (value: any) => (value.items[0].approval = "approved")],
+    [
+      "duplicate item identifiers",
+      (value: MutableIntake) => value.items.push({ ...value.items[0] }),
+    ],
+    ["missing accountable owner", (value: MutableIntake) => delete value.defaults.accountableOwner],
+    [
+      "incomplete npm scope",
+      (value: MutableIntake) => (value.items[0].source.package = "@firecrawl"),
+    ],
+    ["mutable npm version", (value: MutableIntake) => (value.items[0].source.version = "latest")],
+    ["mutable GitHub ref", (value: MutableIntake) => (value.items[1].source.commit = "main")],
+    [
+      "unsafe artifact path",
+      (value: MutableIntake) => (value.items[1].source.path = "../SKILL.md"),
+    ],
+    ["unknown member", (value: MutableIntake) => (value.items[0].approval = "approved")],
   ])("rejects %s before any source acquisition", (_label, mutate) => {
-    const value = intake() as any;
+    const value = intake();
     mutate(value);
     expect(ArtifactIntakeV1Schema.safeParse(value).success).toBe(false);
   });
