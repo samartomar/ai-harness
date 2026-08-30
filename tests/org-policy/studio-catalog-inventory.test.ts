@@ -580,6 +580,41 @@ describe("policy authoring catalog inventory", () => {
     ).not.toBeNull();
   });
 
+  it("keeps Allowed CLI open while an administrator makes consecutive selections", () => {
+    const window = new Window({ url: "http://localhost/" });
+    const html = policyStudioHtml(policyStudioModel());
+    window.document.write(html);
+    loadStudio(window, html);
+
+    const menu = [...window.document.querySelectorAll("#preset-poplist > .pop-row")].find((row) =>
+      row.textContent?.includes("Allowed CLI"),
+    );
+    if (menu === undefined) throw new Error("expected Allowed CLI menu");
+    menu.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    const popover = menu.nextElementSibling;
+    if (popover === null) throw new Error("expected Allowed CLI popover");
+
+    expect(popover.getAttribute("data-open")).toBe("true");
+    for (const cli of ["claude", "codex"]) {
+      const button = popover.querySelector(`[data-sanctioned-cli="${cli}"]`);
+      if (button === null) throw new Error(`expected ${cli} CLI control`);
+      const prior = button.getAttribute("aria-pressed");
+      button.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+
+      expect(
+        popover.querySelector(`[data-sanctioned-cli="${cli}"]`)?.getAttribute("aria-pressed"),
+      ).not.toBe(prior);
+      expect(popover.getAttribute("data-open"), `${cli} selection keeps the panel open`).toBe(
+        "true",
+      );
+      expect(menu.getAttribute("aria-expanded")).toBe("true");
+    }
+
+    window.document.body.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    expect(popover.hasAttribute("data-open")).toBe(false);
+    expect(menu.getAttribute("aria-expanded")).toBe("false");
+  });
+
   it("ships source-authored descriptions for every visible ECC agent and skill", () => {
     const model = policyStudioModel();
     const ecc = model.catalog.frameworks.find((framework) => framework.id === "ecc");
