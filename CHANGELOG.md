@@ -8,6 +8,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Show Allowed CLI counts as selected over available, add explicit Select all and Done controls,
+  and refuse a manual Enterprise-posture transition until at least one CLI is explicitly
+  sanctioned. This prevents the misleading zero-selected `11` badge and the invalid draft state
+  that caused every subsequent Workbench selection to be rejected.
 - Keep the Allowed CLI popover open while administrators make consecutive selections. Repainting
   the policy no longer turns an in-panel selection into an outside click; explicit outside clicks
   and Escape still dismiss the panel.

@@ -497,7 +497,7 @@ describe("policy authoring catalog inventory", () => {
     );
     expect(
       [...window.document.querySelectorAll("#rail-poplist > .pop-row")].map((row) =>
-        row.textContent?.replace(/\d+/g, "").replace(/›/g, "").trim(),
+        row.querySelector(".pl")?.textContent?.trim(),
       ),
       "the largest ECC menu stays first so its popover gets the full viewport height",
     ).toEqual(["ECC modules", "Languages", "Frameworks", "Capabilities"]);
@@ -622,6 +622,15 @@ describe("policy authoring catalog inventory", () => {
     done.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
     expect(popover.hasAttribute("data-open")).toBe(false);
     expect(menu.getAttribute("aria-expanded")).toBe("false");
+
+    click(window, '[data-posture-set="enterprise"]');
+    click(window, "[data-aih-capability-package]");
+    expect(
+      window.document.querySelector("[data-aih-capability-package]")?.getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(window.document.getElementById("announcement")?.textContent).not.toContain(
+      "Policy change rejected",
+    );
   });
 
   it("refuses an Enterprise posture that has no explicit Allowed CLI selection", () => {
@@ -632,7 +641,9 @@ describe("policy authoring catalog inventory", () => {
 
     click(window, '[data-posture-set="enterprise"]');
 
-    expect((window.document.getElementById("posture") as HTMLSelectElement).value).toBe("vibe");
+    expect((window.document.getElementById("posture") as unknown as { value: string }).value).toBe(
+      "vibe",
+    );
     expect(window.document.getElementById("announcement")?.textContent).toContain(
       "Enterprise posture was not applied",
     );
@@ -642,7 +653,9 @@ describe("policy authoring catalog inventory", () => {
     if (capability === null) throw new Error("expected AIH capability control");
     capability.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
 
-    expect(capability.getAttribute("aria-pressed")).toBe("true");
+    expect(
+      window.document.querySelector("[data-aih-capability-package]")?.getAttribute("aria-pressed"),
+    ).toBe("true");
     expect(window.document.getElementById("announcement")?.textContent).not.toContain(
       "Policy change rejected",
     );
