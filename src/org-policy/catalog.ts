@@ -2,8 +2,14 @@ import { createHash } from "node:crypto";
 import firstPartyPacksManifest from "../../aih-packs.json";
 import { baselineCatalogById } from "../baseline-evidence/catalogs.js";
 import { readVendorBaselineLock } from "../baseline-evidence/vendor.js";
-import { CORE_ECC_COMPONENTS, ECC_DECLARATION_RIDERS } from "../ecc/components.js";
-import { eccProfileModuleIds } from "../ecc/evidence.js";
+import {
+  CORE_ECC_COMPONENTS,
+  ECC_DECLARATION_RIDERS,
+  type EccComponentId,
+  type EccMcpComponentId,
+} from "../ecc/components.js";
+import { eccModuleDependencyIds, eccProfileModuleIds } from "../ecc/evidence.js";
+import { eccComponentWholeModuleIds } from "../ecc/materialize.js";
 import { CLI_REGISTRY, REGISTRY_IDS } from "../internals/cli-registry.js";
 import { mcpApprovalSubject } from "../mcp/policy.js";
 import { type McpServer, mcpServers } from "../mcp/servers.js";
@@ -97,6 +103,12 @@ export interface PolicyAuthoringAsset {
    * surface never names a component the inventory denies.
    */
   riders?: string[];
+  /**
+   * Transitive module prerequisites from ECC's pinned module manifest. These
+   * are requested with the root selection; omitting one would authorize a
+   * partial upstream module configuration.
+   */
+  dependencies?: string[];
   source: { repository: string; commit: string; path: string };
   /**
    * The verdict AIH's own analyzers reached for this component at the pinned
@@ -442,6 +454,23 @@ function frameworkCatalog(id: "ecc" | "superpowers"): PolicyAuthoringFramework {
     const usable = declared.filter((rider) => present.has(rider));
     return usable.length > 0 ? [...usable] : undefined;
   };
+  const dependenciesFor = (componentId: string): string[] | undefined => {
+    if (id !== "ecc" || componentId.startsWith("runtime:")) return undefined;
+    const roots = eccComponentWholeModuleIds(componentId as EccComponentId | EccMcpComponentId);
+    const dependencies = [
+      ...new Set(roots.flatMap((moduleId) => [moduleId, ...eccModuleDependencyIds(moduleId)])),
+    ]
+      .map((moduleId) => `module:${moduleId}`)
+      .filter((dependencyId) => dependencyId !== componentId);
+    for (const dependency of dependencies) {
+      if (!present.has(dependency)) {
+        throw new Error(
+          `baseline component ${componentId} requires ${dependency}, which the pinned catalog does not contain`,
+        );
+      }
+    }
+    return dependencies.length > 0 ? dependencies : undefined;
+  };
   return {
     id,
     repository: `${catalog.owner}/${catalog.repo}`,
@@ -452,6 +481,7 @@ function frameworkCatalog(id: "ecc" | "superpowers"): PolicyAuthoringFramework {
         throw new Error(`baseline component ${component.id} declares no path`);
       const curation = curationKind(component.id);
       const riders = ridersFor(component.id);
+      const dependencies = dependenciesFor(component.id);
       const vet = vetted.get(component.id);
       const kind = assetKind(component.id);
       const name = component.id.slice(component.id.indexOf(":") + 1);
@@ -467,6 +497,7 @@ function frameworkCatalog(id: "ecc" | "superpowers"): PolicyAuthoringFramework {
         id: component.id,
         ...(curation === undefined ? {} : { curationKind: curation }),
         ...(riders === undefined ? {} : { riders }),
+        ...(dependencies === undefined ? {} : { dependencies }),
         ...(vet === undefined ? {} : { vet }),
         ...(metadata === undefined
           ? {}

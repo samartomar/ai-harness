@@ -1,7 +1,7 @@
 import { Window } from "happy-dom";
 import { describe, expect, it } from "vitest";
 import { eccModuleDependencyIds } from "../../src/ecc/evidence.js";
-import { policyStudioModel, type PolicyStudioModel } from "../../src/org-policy/studio-model.js";
+import { type PolicyStudioModel, policyStudioModel } from "../../src/org-policy/studio-model.js";
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
 
 const model = policyStudioModel();
@@ -39,6 +39,22 @@ function selectedIds(window: Window): string[] {
   );
 }
 
+function assetClosure(rootIds: readonly string[]): string[] {
+  const selected = new Set(rootIds);
+  const pending = [...rootIds];
+  while (pending.length > 0) {
+    const id = pending.shift();
+    const asset = ecc?.assets.find((candidate) => candidate.id === id);
+    if (asset === undefined) throw new Error(`expected ECC asset ${id}`);
+    for (const required of [...(asset.dependencies ?? []), ...(asset.riders ?? [])]) {
+      if (selected.has(required)) continue;
+      selected.add(required);
+      pending.push(required);
+    }
+  }
+  return [...selected];
+}
+
 describe("policy studio dependency-closed selection", () => {
   it("carries the pinned transitive dependency closure on every ECC module", () => {
     const moduleAssets = ecc.assets.filter((asset) => asset.kind === "module");
@@ -51,12 +67,36 @@ describe("policy studio dependency-closed selection", () => {
     }
   });
 
+  it("makes a whole-module semantic component visibly require its containing module", () => {
+    const asset = ecc.assets.find(
+      (candidate) =>
+        candidate.kind !== "module" &&
+        candidate.dependencies?.some((dependency) => dependency.startsWith("module:")),
+    );
+    if (asset === undefined) throw new Error("expected a semantic whole-module ECC component");
+
+    const window = studio();
+    click(window, `[data-framework-select="ecc|${asset.kind}|${asset.id}"]`);
+
+    expect(selectedIds(window).sort()).toEqual(assetClosure([asset.id]).sort());
+    for (const dependency of asset.dependencies ?? []) {
+      expect(
+        window.document
+          .querySelector(`[data-framework-select="ecc|module|${dependency}"]`)
+          ?.getAttribute("aria-pressed"),
+        `${dependency} is visibly selected with ${asset.id}`,
+      ).toBe("true");
+    }
+    window.close();
+  });
+
   it("selects and visibly checks every transitive module dependency in one change", () => {
     const window = studio();
     const module = ecc.assets.find(
       (asset) => asset.kind === "module" && (asset.dependencies?.length ?? 0) >= 3,
     );
-    if (module === undefined) throw new Error("expected an ECC module with transitive dependencies");
+    if (module === undefined)
+      throw new Error("expected an ECC module with transitive dependencies");
 
     click(window, `.rail [data-framework-select="ecc|module|${module.id}"]`);
 
@@ -80,6 +120,49 @@ describe("policy studio dependency-closed selection", () => {
     expect(window.document.getElementById("announcement")?.textContent).toContain(
       `${module.dependencies?.length ?? 0} required component`,
     );
+    window.close();
+  });
+
+  it("refuses removal of a required module and prunes derived modules with the root", () => {
+    const window = studio();
+    const module = ecc.assets.find(
+      (asset) => asset.kind === "module" && (asset.dependencies?.length ?? 0) >= 3,
+    );
+    if (module === undefined) throw new Error("expected an ECC module with dependencies");
+    const dependency = module.dependencies?.[0];
+    if (dependency === undefined) throw new Error("expected a module dependency");
+
+    click(window, `[data-framework-select="ecc|module|${module.id}"]`);
+    click(window, `[data-framework-select="ecc|module|${dependency}"]`);
+    expect(selectedIds(window).sort()).toEqual(assetClosure([module.id]).sort());
+    expect(window.document.getElementById("announcement")?.textContent).toMatch(
+      /cannot be deselected.*requires it/i,
+    );
+
+    click(window, `[data-framework-select="ecc|module|${module.id}"]`);
+    expect(selectedIds(window)).toEqual([]);
+    window.close();
+  });
+
+  it("retains shared dependencies while another selected root still requires them", () => {
+    const modules = ecc.assets.filter(
+      (asset) => asset.kind === "module" && (asset.dependencies?.length ?? 0) > 0,
+    );
+    const pair = modules
+      .flatMap((first, index) => modules.slice(index + 1).map((second) => ({ first, second })))
+      .find(({ first, second }) =>
+        (first.dependencies ?? []).some((dependency) =>
+          (second.dependencies ?? []).includes(dependency),
+        ),
+      );
+    if (pair === undefined) throw new Error("expected ECC modules with a shared dependency");
+
+    const window = studio();
+    click(window, `[data-framework-select="ecc|module|${pair.first.id}"]`);
+    click(window, `[data-framework-select="ecc|module|${pair.second.id}"]`);
+    click(window, `[data-framework-select="ecc|module|${pair.first.id}"]`);
+
+    expect(selectedIds(window).sort()).toEqual(assetClosure([pair.second.id]).sort());
     window.close();
   });
 

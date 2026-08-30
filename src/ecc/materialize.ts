@@ -221,6 +221,17 @@ function leafName(componentId: string, family: string): string | undefined {
 export function eccComponentInstallDescriptor(
   componentId: EccComponentId | EccMcpComponentId,
 ): EccComponentInstallDescriptor {
+  const selectedModule = leafName(componentId, "module");
+  if (selectedModule !== undefined) {
+    if (!MODULE_PATHS.has(selectedModule)) {
+      throw new Error(`pinned ECC module snapshot is missing ${selectedModule}`);
+    }
+    return {
+      evidenceComponentId: componentId,
+      containingModuleId: selectedModule,
+      wholeModules: [selectedModule],
+    };
+  }
   if (componentId === "baseline:rules") {
     return {
       evidenceComponentId: componentId,
@@ -288,6 +299,13 @@ export function eccComponentInstallDescriptor(
     };
   }
   throw new Error(`no ECC install descriptor for ${componentId}`);
+}
+
+/** Whole upstream modules selected by one semantic component, before dependency expansion. */
+export function eccComponentWholeModuleIds(
+  componentId: EccComponentId | EccMcpComponentId,
+): string[] {
+  return [...(eccComponentInstallDescriptor(componentId).wholeModules ?? [])];
 }
 
 function normalizedPath(value: string): string {

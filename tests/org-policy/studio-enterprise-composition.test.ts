@@ -61,6 +61,22 @@ function selectedIds(window: Window): string[] {
   );
 }
 
+function eccSelectionClosure(rootIds: readonly string[]): string[] {
+  const selected = new Set(rootIds);
+  const pending = [...rootIds];
+  while (pending.length > 0) {
+    const id = pending.shift();
+    const asset = ecc?.assets.find((candidate) => candidate.id === id);
+    if (asset === undefined) throw new Error(`expected ECC asset ${id}`);
+    for (const required of [...(asset.dependencies ?? []), ...(asset.riders ?? [])]) {
+      if (selected.has(required)) continue;
+      selected.add(required);
+      pending.push(required);
+    }
+  }
+  return [...selected];
+}
+
 describe("policy studio enterprise composition", () => {
   const composition = model.catalog.enterpriseComposition;
   const partIds = (selection: "composed" | "additive") =>
@@ -158,7 +174,9 @@ describe("policy studio enterprise composition", () => {
     expect(button, "a control to add the language composition").not.toBeNull();
     button?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
     const language = composition.parts.find((part) => part.id === "language")?.componentIds ?? [];
-    expect(selectedIds(window).sort()).toEqual([...before, ...language].sort());
+    expect(selectedIds(window).sort()).toEqual(
+      [...new Set([...before, ...eccSelectionClosure(language)])].sort(),
+    );
     window.document
       .querySelector('[data-composition-add="security"]')
       ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));

@@ -12,6 +12,12 @@ import { resolveEffectiveOrgPolicy } from "../org-policy/effective.js";
 import type { OrgPolicy } from "../org-policy/schema.js";
 import { cleanupQuarantine, type TrustSource } from "../trust/fetch.js";
 import {
+  ECC_DECLARATION_RIDERS,
+  type EccComponentId,
+  type EccMcpComponentId,
+} from "./components.js";
+import { eccModuleDependencyIds } from "./evidence.js";
+import {
   applyEccMaterialization,
   type EccMaterializationAdvisory,
   type EccMaterializationFilePlan,
@@ -30,6 +36,7 @@ import {
   eccMaterializationTargetName,
   resolveEccTargetMaterialization,
 } from "./materialization-target.js";
+import { eccComponentWholeModuleIds } from "./materialize.js";
 
 /**
  * F6: `aih ecc --lifecycle install` in a governed repository.
@@ -160,6 +167,38 @@ export function governedEccComponentIds(policy: OrgPolicy, catalog: BaselineCata
       // `displaySafe`'s second argument, which is its `max` — every id would
       // render as a bare ellipsis and the refusal would name nothing.
       `refusing the governed ECC framework lifecycle: the policy selects component(s) the pinned ECC catalog does not carry: ${unknown.map((id) => displaySafe(id)).join(", ")}`,
+      "AIH_CONFIG",
+    );
+  }
+  const missingDependencies = new Map<string, string[]>();
+  for (const id of selected) {
+    if (id.startsWith("runtime:")) continue;
+    const moduleDependencies = [
+      ...new Set(
+        eccComponentWholeModuleIds(id as EccComponentId | EccMcpComponentId).flatMap((moduleId) => [
+          moduleId,
+          ...eccModuleDependencyIds(moduleId),
+        ]),
+      ),
+    ]
+      .map((moduleId) => `module:${moduleId}`)
+      .filter((dependency) => dependency !== id);
+    const declaredRiders = (ECC_DECLARATION_RIDERS[id] ?? []).filter((rider) => known.has(rider));
+    const dependencies = [...new Set([...moduleDependencies, ...declaredRiders])].filter(
+      (dependency) => !selected.has(dependency),
+    );
+    if (dependencies.length > 0) missingDependencies.set(id, dependencies);
+  }
+  if (missingDependencies.size > 0) {
+    throw new AihError(
+      `refusing the governed ECC framework lifecycle: incomplete component dependency closure — ${[
+        ...missingDependencies,
+      ]
+        .map(
+          ([id, dependencies]) =>
+            `${displaySafe(id)} requires ${dependencies.map((dependency) => displaySafe(dependency)).join(", ")}`,
+        )
+        .join("; ")}`,
       "AIH_CONFIG",
     );
   }

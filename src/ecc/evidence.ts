@@ -66,6 +66,18 @@ function addWithDependencies(selected: Set<string>, id: string): void {
   selected.add(id);
 }
 
+/**
+ * Exact transitive prerequisites for one module in the pinned ECC manifest.
+ * The selected module itself is excluded so callers can distinguish the
+ * administrator's root choice from the dependency closure it requires.
+ */
+export function eccModuleDependencyIds(moduleId: string): string[] {
+  const selected = new Set<string>();
+  addWithDependencies(selected, moduleId);
+  selected.delete(moduleId);
+  return modules.filter((module) => selected.has(module.id)).map((module) => module.id);
+}
+
 export function eccProfileModuleIds(
   profileId: string,
   packs: readonly EccLanguagePack[] = [],
