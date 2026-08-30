@@ -22,18 +22,22 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
+import { parseDirectoryDiscoveryUrlV1 } from "../../src/trust/directory-resolution.js";
 import {
   assertTrustTreeSafe,
   isFirstPartySource,
   localFileHash,
+  readArtifactDirectoryTrustFetch,
   readArtifactIntakePackageTrustFetchMetadata,
   readTrustFetchMetadata,
+  resolveArtifactDirectoryTrustSource,
   resolveArtifactIntakePackageTrustSource,
   resolvePackageTrustSource,
   resolveTrustSource,
   safeSourceRelative,
   scrubDockerClientEnv,
   scrubFetchEnv,
+  trustDirectoryFetchExec,
   trustFetchExec,
   trustPackageFetchActions,
   validateGitHubTrustFetchMetadata,
@@ -50,7 +54,7 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-function ctx(env: NodeJS.ProcessEnv = {}): PlanContext {
+function ctx(env: NodeJS.ProcessEnv = {}, platform: "linux" | "windows" = "linux"): PlanContext {
   const run = fakeRunner(() => undefined);
   return {
     root: dir,
@@ -59,7 +63,7 @@ function ctx(env: NodeJS.ProcessEnv = {}): PlanContext {
     verify: true,
     json: false,
     run,
-    host: makeHostAdapter({ platform: "linux", run, env }),
+    host: makeHostAdapter({ platform, run, env }),
     env,
     options: {},
   };
@@ -178,9 +182,18 @@ function tarWithRegularFile(name: string, contents: Buffer): Buffer {
   ]);
 }
 
-function tarWithSymlinkEntry(): Buffer {
+function tarWithSymlinkEntry(linkName: string): Buffer {
+  return Buffer.concat([tarHeader("repo-aaaaaaaa/AGENTS.md", "2", linkName), Buffer.alloc(1024)]);
+}
+
+function tarWithContainedSymlink(): Buffer {
+  const contents = Buffer.from("# Shared instructions\n", "utf8");
+  const padding = Buffer.alloc((512 - (contents.length % 512)) % 512);
   return Buffer.concat([
-    tarHeader("repo-aaaaaaaa/skills/clean/LICENSE", "2", "skills/sibling/LICENSE"),
+    tarHeader("repo-aaaaaaaa/AGENTS.md", "2", "CLAUDE.md"),
+    tarHeader("repo-aaaaaaaa/CLAUDE.md", "0", "", contents.length),
+    contents,
+    padding,
     Buffer.alloc(1024),
   ]);
 }
@@ -422,33 +435,139 @@ describe("trust fetch source resolution", () => {
     }
   });
 
-  it("refuses quarantined tar symlink entries instead of materializing target bytes", () => {
-    const source = resolveTrustSource("Owner/Repo", { root: dir, pin: "a".repeat(40) });
-    if (source.kind !== "github") throw new Error("expected GitHub source");
+  it("routes artifact-intake npm acquisition through the Windows command shim", () => {
+    const source = resolveArtifactIntakePackageTrustSource({
+      package: "firecrawl-mcp",
+      version: "3.24.0",
+      registry: "https://registry.npmjs.org",
+    });
     try {
-      const script = trustFetchExec(source, ctx()).argv[2] ?? "";
-
-      expect(script).toContain('type === "2"');
-      expect(script).toContain("refusing tar symlink entry");
-      expect(script).not.toContain("writeFileOwner(link.target, fs.readFileSync(resolved))");
+      const fetch = trustPackageFetchActions(source, ctx({}, "windows"))[0];
+      expect(fetch?.argv.slice(0, 3)).toEqual(["cmd", "/c", "npm"]);
+      expect(fetch?.argv.slice(3)).toEqual([
+        "pack",
+        "firecrawl-mcp@3.24.0",
+        "--registry=https://registry.npmjs.org",
+        "--ignore-scripts",
+        "--json",
+        "--pack-destination",
+        source.quarantineRoot,
+      ]);
     } finally {
       rmSync(source.quarantineRoot, { recursive: true, force: true });
     }
   });
 
-  it("fails closed when executing the quarantined tar extractor on a symlink entry", async () => {
+  it("pins directory and registry acquisition to fixed HTTPS sources with a scrubbed environment", () => {
+    const source = resolveArtifactDirectoryTrustSource(
+      parseDirectoryDiscoveryUrlV1("https://www.pulsemcp.com/servers/firecrawl"),
+    );
+    try {
+      const action = trustDirectoryFetchExec(
+        source,
+        ctx({ PATH: "bin", HTTPS_PROXY: "http://proxy.example", FIRECRAWL_API_KEY: "secret" }),
+      );
+      const input = JSON.parse(action.argv[3] ?? "{}") as Record<string, unknown>;
+
+      expect(input).toMatchObject({
+        kind: "artifact-directory",
+        provider: "pulsemcp",
+        slug: "firecrawl",
+        directoryUrl: "https://www.pulsemcp.com/servers/firecrawl",
+        registryUrl:
+          "https://registry.modelcontextprotocol.io/v0.1/servers?limit=100&version=latest&search=firecrawl",
+      });
+      expect(action.env).toEqual({ PATH: "bin", HTTPS_PROXY: "http://proxy.example" });
+      expect(action.argv.join(" ")).not.toContain("secret");
+      expect(action.describe).not.toMatch(/install|activate/i);
+    } finally {
+      rmSync(source.quarantineRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("accepts only digest-bound single-link directory responses", () => {
+    const source = resolveArtifactDirectoryTrustSource(
+      parseDirectoryDiscoveryUrlV1("https://mcpmarket.com/server/atlassian-jira-confluence"),
+    );
+    try {
+      const directory = "<h1>Atlassian</h1>";
+      const registry = JSON.stringify({ servers: [], metadata: { count: 0 } });
+      writeFileSync(source.directoryPath, directory, "utf8");
+      writeFileSync(source.registryPath, registry, "utf8");
+      writeFileSync(
+        source.metadataPath,
+        JSON.stringify({
+          kind: source.kind,
+          provider: source.provider,
+          directoryUrl: source.directoryUrl,
+          registryUrl: source.registryUrl,
+          directoryPath: source.directoryPath,
+          registryPath: source.registryPath,
+          directorySha256: `sha256:${createHash("sha256").update(directory).digest("hex")}`,
+          registrySha256: `sha256:${createHash("sha256").update(registry).digest("hex")}`,
+        }),
+        "utf8",
+      );
+
+      expect(readArtifactDirectoryTrustFetch(source)).toEqual({
+        directoryHtml: directory,
+        registryJson: registry,
+      });
+      writeFileSync(source.directoryPath, `${directory}<p>changed</p>`, "utf8");
+      expect(() => readArtifactDirectoryTrustFetch(source)).toThrow(/digest is mismatched/i);
+    } finally {
+      rmSync(source.quarantineRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("materializes a contained tar symlink as a regular copy for scanning", async () => {
+    const source = resolveTrustSource("Owner/Repo", { root: dir, pin: "a".repeat(40) });
+    if (source.kind !== "github") throw new Error("expected GitHub source");
+    try {
+      const script = trustFetchExec(source, ctx()).argv[2] ?? "";
+      const outRoot = join(dir, "contained-tree");
+      await expect(
+        runFetchScriptHelpers<void>(
+          [
+            `const tarball = Buffer.from(${JSON.stringify(tarWithContainedSymlink().toString("base64"))}, "base64");`,
+            `extractTar(tarball, ${JSON.stringify(outRoot)});`,
+          ].join("\n"),
+        ),
+      ).resolves.toBeUndefined();
+      expect(readFileSync(join(outRoot, "AGENTS.md"), "utf8")).toBe("# Shared instructions\n");
+      expect(lstatSync(join(outRoot, "AGENTS.md")).isSymbolicLink()).toBe(false);
+      expect(script).toContain("refusing tar symlink outside quarantine");
+    } finally {
+      rmSync(source.quarantineRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed when a quarantined tar symlink escapes its extraction root", async () => {
     const outRoot = join(dir, "tree");
     await expect(
       runFetchScriptHelpers<void>(
         [
-          `const tarball = Buffer.from(${JSON.stringify(tarWithSymlinkEntry().toString("base64"))}, "base64");`,
+          `const tarball = Buffer.from(${JSON.stringify(tarWithSymlinkEntry("../../outside").toString("base64"))}, "base64");`,
           `extractTar(tarball, ${JSON.stringify(outRoot)});`,
         ].join("\n"),
       ),
     ).rejects.toThrow(
-      /script exited 1: refusing tar symlink entry: repo-aaaaaaaa\/skills\/clean\/LICENSE -> skills\/sibling\/LICENSE/,
+      /script exited 1: refusing tar symlink outside quarantine: repo-aaaaaaaa\/AGENTS\.md -> \.\.\/\.\.\/outside/,
     );
     expect(existsSync(outRoot)).toBe(false);
+  });
+
+  it("fails closed when a quarantined tar symlink target is absent", async () => {
+    const outRoot = join(dir, "missing-target-tree");
+    await expect(
+      runFetchScriptHelpers<void>(
+        [
+          `const tarball = Buffer.from(${JSON.stringify(tarWithSymlinkEntry("MISSING.md").toString("base64"))}, "base64");`,
+          `extractTar(tarball, ${JSON.stringify(outRoot)});`,
+        ].join("\n"),
+      ),
+    ).rejects.toThrow(/refusing tar symlink without a regular in-tree target/);
+    expect(existsSync(join(outRoot, "AGENTS.md"))).toBe(false);
   });
 
   it("honors NO_PROXY in the quarantined fetch helper", async () => {

@@ -535,6 +535,22 @@ describe("OrgPolicySchema", () => {
     ).toBe(false);
   });
 
+  it.each(["@firecrawl", "firecrawl/mcp", "@firecrawl/mcp/server"])(
+    "rejects malformed npm package identity %s",
+    (packageName) => {
+      expect(
+        CandidateSourceSchema.safeParse({
+          type: "stdio",
+          resolver: "npx",
+          registry: "https://registry.npmjs.org",
+          package: packageName,
+          version: "4.37.0",
+          integrity: `sha256:${"a".repeat(64)}`,
+        }).success,
+      ).toBe(false);
+    },
+  );
+
   it.each([
     ["a path-bearing endpoint", "https://mcp.figma.com/mcp"],
     ["an insecure endpoint", "http://mcp.figma.com"],

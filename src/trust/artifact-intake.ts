@@ -5,6 +5,10 @@ import {
   parseStrictJsonObjectV1,
 } from "../contract/strict-json-v1.js";
 import { ExactSemverV2Schema } from "../org-policy/governance-decision-v2.js";
+import {
+  type DirectoryDiscoverySourceV1,
+  parseDirectoryDiscoveryUrlV1,
+} from "./directory-resolution.js";
 
 const ITEM_ID = /^[a-z0-9][a-z0-9._-]{0,127}$/;
 const PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/;
@@ -83,6 +87,38 @@ export const ArtifactIntakeSourceV1Schema = z.discriminatedUnion("type", [
   ArtifactIntakeGithubSourceV1Schema,
 ]);
 
+export const ArtifactIntakeDirectorySourceV2Schema = z
+  .object({
+    type: z.literal("directory"),
+    provider: z.enum(["pulsemcp", "mcpmarket"]),
+    url: z.string().min(1).max(2_048),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    try {
+      const parsed = parseDirectoryDiscoveryUrlV1(value.url);
+      if (parsed.provider !== value.provider || parsed.url !== value.url) {
+        context.addIssue({
+          code: "custom",
+          path: ["url"],
+          message: "directory provider and canonical discovery URL must match",
+        });
+      }
+    } catch (error) {
+      context.addIssue({
+        code: "custom",
+        path: ["url"],
+        message: error instanceof Error ? error.message : "directory discovery URL is invalid",
+      });
+    }
+  });
+
+export const ArtifactIntakeSourceV2Schema = z.discriminatedUnion("type", [
+  ArtifactIntakeNpmSourceV1Schema,
+  ArtifactIntakeGithubSourceV1Schema,
+  ArtifactIntakeDirectorySourceV2Schema,
+]);
+
 const commonItem = {
   id: itemId,
   discoveryUrl: discoveryUrl.optional(),
@@ -132,11 +168,79 @@ export const ArtifactIntakeV1Schema = z
     }
   });
 
+const commonItemV2 = {
+  id: itemId,
+  discoveryUrl: discoveryUrl.optional(),
+  accountableOwner: accountableOwner.optional(),
+  source: ArtifactIntakeSourceV2Schema,
+  clarification: z.string().min(1).max(1000).optional(),
+};
+
+export const ArtifactIntakeItemV2Schema = z.discriminatedUnion("kind", [
+  z.object({ ...commonItemV2, kind: z.literal("mcp") }).strict(),
+  z.object({ ...commonItemV2, kind: z.literal("skill") }).strict(),
+  z.object({ ...commonItemV2, kind: z.literal("agent") }).strict(),
+]);
+
+export const ArtifactIntakeV2Schema = z
+  .object({
+    format: z.literal("aih-artifact-intake"),
+    version: z.literal(2),
+    authority: z.object({ state: z.literal("not-authority") }).strict(),
+    defaults: z
+      .object({
+        accountableOwner: accountableOwner.optional(),
+      })
+      .strict()
+      .optional(),
+    items: z.array(ArtifactIntakeItemV2Schema).min(1).max(100),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const ids = new Set<string>();
+    for (const [index, item] of value.items.entries()) {
+      if (ids.has(item.id)) {
+        context.addIssue({
+          code: "custom",
+          path: ["items", index, "id"],
+          message: `duplicate artifact intake item id: ${item.id}`,
+        });
+      }
+      ids.add(item.id);
+      if (item.accountableOwner === undefined && value.defaults?.accountableOwner === undefined) {
+        context.addIssue({
+          code: "custom",
+          path: ["items", index, "accountableOwner"],
+          message: "accountable owner is required on the item or in defaults",
+        });
+      }
+      if (item.kind !== "mcp" && item.source.type === "directory") {
+        context.addIssue({
+          code: "custom",
+          path: ["items", index, "source"],
+          message: "directory discovery sources are supported only for MCP items",
+        });
+      }
+    }
+  });
+
+export const ArtifactIntakeSchema = z.discriminatedUnion("version", [
+  ArtifactIntakeV1Schema,
+  ArtifactIntakeV2Schema,
+]);
+
 export type ArtifactIntakeV1 = z.infer<typeof ArtifactIntakeV1Schema>;
 export type ArtifactIntakeItemV1 = z.infer<typeof ArtifactIntakeItemV1Schema>;
 export type ArtifactIntakeSourceV1 = z.infer<typeof ArtifactIntakeSourceV1Schema>;
+export type ArtifactIntakeV2 = z.infer<typeof ArtifactIntakeV2Schema>;
+export type ArtifactIntakeItemV2 = z.infer<typeof ArtifactIntakeItemV2Schema>;
+export type ArtifactIntakeSourceV2 = z.infer<typeof ArtifactIntakeSourceV2Schema>;
+export type ArtifactIntake = z.infer<typeof ArtifactIntakeSchema>;
 
 export type EffectiveArtifactIntakeItemV1 = ArtifactIntakeItemV1 & {
+  accountableOwner: string;
+};
+export type EffectiveArtifactIntakeItemV2 = ArtifactIntakeItemV2 & {
   accountableOwner: string;
 };
 
@@ -148,6 +252,12 @@ export interface ArtifactIntakeSourceGroupV1 {
   key: string;
   source: ArtifactIntakeAcquisitionSourceV1;
   items: EffectiveArtifactIntakeItemV1[];
+}
+
+export interface ArtifactIntakeDirectoryGroupV2 {
+  key: string;
+  source: DirectoryDiscoverySourceV1;
+  items: Array<ArtifactIntakeItemV2 & { accountableOwner: string }>;
 }
 
 function ordinalCompare(left: string, right: string): number {
@@ -172,9 +282,22 @@ export function parseArtifactIntakeV1Text(text: string): ArtifactIntakeV1 {
   return ArtifactIntakeV1Schema.parse(parseStrictJsonObjectV1(text, "artifact intake"));
 }
 
+export function parseArtifactIntakeText(text: string): ArtifactIntake {
+  return ArtifactIntakeSchema.parse(parseStrictJsonObjectV1(text, "artifact intake"));
+}
+
 export function effectiveArtifactIntakeItemsV1(
   value: ArtifactIntakeV1,
 ): EffectiveArtifactIntakeItemV1[] {
+  return value.items.map((item) => ({
+    ...item,
+    accountableOwner: item.accountableOwner ?? value.defaults?.accountableOwner ?? "",
+  }));
+}
+
+export function effectiveArtifactIntakeItemsV2(
+  value: ArtifactIntakeV2,
+): EffectiveArtifactIntakeItemV2[] {
   return value.items.map((item) => ({
     ...item,
     accountableOwner: item.accountableOwner ?? value.defaults?.accountableOwner ?? "",
@@ -193,7 +316,23 @@ export function artifactIntakeDigestV1(value: ArtifactIntakeV1): string {
   return `sha256:${canonicalStrictJsonSha256V1(canonical)}`;
 }
 
+export function artifactIntakeDigestV2(value: ArtifactIntakeV2): string {
+  const canonical = {
+    format: value.format,
+    version: value.version,
+    authority: value.authority,
+    items: effectiveArtifactIntakeItemsV2(value).sort((left, right) =>
+      ordinalCompare(left.id, right.id),
+    ),
+  };
+  return `sha256:${canonicalStrictJsonSha256V1(canonical)}`;
+}
+
 export function artifactIntakeItemSourceDigestV1(item: ArtifactIntakeItemV1): string {
+  return `sha256:${canonicalStrictJsonSha256V1(item.source)}`;
+}
+
+export function artifactIntakeItemSourceDigestV2(item: ArtifactIntakeItemV2): string {
   return `sha256:${canonicalStrictJsonSha256V1(item.source)}`;
 }
 
@@ -217,6 +356,54 @@ export function artifactIntakeSourceGroupsV1(
       items: group.items.sort((left, right) => ordinalCompare(left.id, right.id)),
     }))
     .sort((left, right) => ordinalCompare(left.key, right.key));
+}
+
+export function artifactIntakeDirectoryGroupsV2(
+  value: ArtifactIntakeV2,
+): ArtifactIntakeDirectoryGroupV2[] {
+  const groups = new Map<string, ArtifactIntakeDirectoryGroupV2>();
+  for (const item of value.items) {
+    if (item.source.type !== "directory") continue;
+    const source = parseDirectoryDiscoveryUrlV1(item.source.url);
+    const effective = {
+      ...item,
+      accountableOwner: item.accountableOwner ?? value.defaults?.accountableOwner ?? "",
+    };
+    const key = `sha256:${canonicalStrictJsonSha256V1(source)}`;
+    const existing = groups.get(key);
+    if (existing === undefined) {
+      groups.set(key, { key, source, items: [effective] });
+    } else {
+      existing.items.push(effective);
+    }
+  }
+  return [...groups.values()]
+    .map((group) => ({
+      ...group,
+      items: group.items.sort((left, right) => ordinalCompare(left.id, right.id)),
+    }))
+    .sort((left, right) => ordinalCompare(left.key, right.key));
+}
+
+export function artifactIntakeExactProjectionV1(
+  value: ArtifactIntakeV2,
+): ArtifactIntakeV1 | undefined {
+  const items = effectiveArtifactIntakeItemsV2(value)
+    .filter(
+      (
+        item,
+      ): item is EffectiveArtifactIntakeItemV2 & {
+        source: ArtifactIntakeSourceV1;
+      } => item.source.type !== "directory",
+    )
+    .map((item) => ({ ...item, accountableOwner: item.accountableOwner }));
+  if (items.length === 0) return undefined;
+  return ArtifactIntakeV1Schema.parse({
+    format: value.format,
+    version: 1,
+    authority: value.authority,
+    items,
+  });
 }
 
 export function artifactEvidenceRecordIdV1(itemIdValue: string, sourceDigest: string): string {

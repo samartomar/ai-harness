@@ -1,5 +1,5 @@
 ---
-name: betterdoc
+name: aih-betterdoc
 description: Edit, review, and create source-grounded technical and product documentation for common use across software projects. Use for READMEs, quickstarts, API and SDK docs, generated API docs, schema/data model docs, tutorials, how-to guides, runbooks, architecture docs, ADRs, security/assurance docs, SECURITY.md, deployment/IaC docs, test or eval docs, migration guides, incident postmortems, PR summaries, changelogs, release notes, website copy, and enterprise/customer-facing technical prose. Replaces generic anti-slop passes with a claim-first, evidence-aware documentation workflow.
 license: Apache-2.0
 ---
@@ -443,7 +443,7 @@ Keep audits short unless the user asks for a deep review.
 ## Quick Invocation
 
 ```text
-Use $betterdoc.
+Use $aih-betterdoc.
 
 Edit this documentation for clarity, usefulness, and source-grounded accuracy.
 Do not invent product, maturity, security, compliance, roadmap, customer, deployment, performance, license, or audit claims.

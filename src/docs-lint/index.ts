@@ -7,7 +7,7 @@ import { plan, probeMany } from "../internals/plan.js";
 import type { Check, CheckCode, Verdict } from "../internals/verify.js";
 import { skipIntervals } from "../lint/rules.js";
 
-const SLOP_LINT_REL = join("packs", "docs-quality", "betterdoc", "references", "slop-lint.md");
+const SLOP_LINT_REL = join("packs", "docs-quality", "aih-betterdoc", "references", "slop-lint.md");
 const CONTROL_MATRIX_REL = join("docs", "CONTROL_MATRIX.md");
 const DEFAULT_ROOT_DOCS = ["README.md", "CHANGELOG.md", "CONTRIBUTING.md", "SECURITY.md"];
 const DEFAULT_DOC_DIRS = ["docs", "guides"];
@@ -147,8 +147,8 @@ function ruleCandidates(root: string): string[] {
   return [
     join(root, SLOP_LINT_REL),
     join(process.cwd(), SLOP_LINT_REL),
-    join(here, "..", "packs", "docs-quality", "betterdoc", "references", "slop-lint.md"),
-    join(here, "..", "..", "packs", "docs-quality", "betterdoc", "references", "slop-lint.md"),
+    join(here, "..", "packs", "docs-quality", "aih-betterdoc", "references", "slop-lint.md"),
+    join(here, "..", "..", "packs", "docs-quality", "aih-betterdoc", "references", "slop-lint.md"),
   ];
 }
 

@@ -2,7 +2,7 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { startPolicyWorkbenchUi, type PolicyWorkbenchUi } from "../../src/org-policy/ui-server.js";
+import { type PolicyWorkbenchUi, startPolicyWorkbenchUi } from "../../src/org-policy/ui-server.js";
 
 describe("Policy Workbench UI server", () => {
   let running: PolicyWorkbenchUi | undefined;
@@ -20,9 +20,7 @@ describe("Policy Workbench UI server", () => {
       },
     });
 
-    expect(running.url).toMatch(
-      /^http:\/\/127\.0\.0\.1:\d+\/aih-policy-workbench\.html$/,
-    );
+    expect(running.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/aih-policy-workbench\.html$/);
     expect(opened).toEqual([running.url]);
 
     const response = await fetch(running.url);

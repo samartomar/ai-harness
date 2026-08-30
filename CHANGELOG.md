@@ -6,6 +6,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Rename the three first-party skill identities to the concise AIH-owned names
+  `aih-betterdoc`, `aih-gov-doctor`, and `aih-bugbounty`. Their committed pack paths,
+  manifests, self-hosting references, runtime lookups, and public examples now use the same
+  canonical names. The Policy Workbench binds these first-party selections to AIH's managed
+  Catalog automatically and shows packaged-source proof without claiming missing qualification,
+  promotion, custody, or target-repository evidence. It presents `aih-betterdoc` as the
+  context-preserving AIH Skill and presents `aih-gov-doctor` plus `aih-bugbounty` separately as
+  AIH Agent workflows whose governed instruction sources are packaged as skills; selecting them
+  records package intent but does not claim the browser launched an isolated worker.
+
 ## [Core 0.3.0] - 2026-08-27
 
 ### Fixed

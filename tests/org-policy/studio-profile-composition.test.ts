@@ -38,9 +38,13 @@ function studio(): Window {
 }
 
 function selectProfile(window: Window, value: string): void {
-  const preset = window.document.querySelector(`[data-preset="${value}"]`);
+  const preset = window.document.getElementById("preset-select") as unknown as {
+    value: string;
+    dispatchEvent(event: unknown): boolean;
+  } | null;
   if (preset === null) throw new Error(`expected ${value} preset`);
-  preset.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  preset.value = value;
+  preset.dispatchEvent(new window.Event("change", { bubbles: true }));
 }
 
 /** The authored policy exactly as the surface shows it, not internal state. */
@@ -108,7 +112,10 @@ function curateFromFirstRow(window: Window): string {
     window.document.getElementById(id) as unknown as { value: string } | null;
   const record = field("audit-record");
   const digest = field("audit-digest");
-  if (record === null || digest === null) throw new Error("expected audit evidence fields");
+  const owner = field("curation-owner");
+  if (record === null || digest === null || owner === null)
+    throw new Error("expected audit evidence fields");
+  owner.value = "curator@acme.example";
   record.value = "audit-vibe-fixture";
   digest.value = `sha256:${"c".repeat(64)}`;
   window.document
@@ -143,7 +150,9 @@ describe("policy studio profile composition", () => {
     const window = studio();
     selectProfile(window, "vibe");
     for (const container of ["mcp-rows", "hook-rows"]) {
-      const rows = [...(window.document.getElementById(container)?.querySelectorAll(".row") ?? [])];
+      const rows = [
+        ...(window.document.getElementById(container)?.querySelectorAll(".row") ?? []),
+      ].filter((row) => row.querySelector("[data-reviewed]") !== null);
       expect(rows.length, container).toBeGreaterThan(0);
       for (const row of rows) {
         expect(row.querySelector(".badge")?.textContent ?? "", container).toContain(

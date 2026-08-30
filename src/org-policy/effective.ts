@@ -1414,6 +1414,7 @@ export function resolveEffectiveOrgPolicy(
 }
 
 const CANDIDATE_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
+  accountableOwner: "effective report: accountable candidate owner identity only",
   annotation: "effective report metadata consumer",
   autoExecute: "effective resolver: uncontrolled hook danger gate",
   "capabilities.*": "effective report metadata consumer",
@@ -1525,6 +1526,7 @@ const AUTHORITY_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
 
 const EXTERNAL_CURATION_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
   framework: "effective report: external framework identity only",
+  "items.*.accountableOwner": "effective report: accountable curation owner identity only",
   "items.*.audit.digest": "effective report: external audit reference digest only",
   "items.*.audit.record": "effective report: external audit reference locator only",
   "items.*.clarification": "effective report: external curation clarification only",

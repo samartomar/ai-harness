@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   ArtifactIntakeV1Schema,
+  ArtifactIntakeV2Schema,
   artifactEvidenceRecordIdV1,
   artifactIntakeDigestV1,
+  artifactIntakeDirectoryGroupsV2,
   artifactIntakeSourceGroupsV1,
   effectiveArtifactIntakeItemsV1,
   parseArtifactIntakeV1Text,
@@ -188,5 +190,83 @@ describe("ArtifactIntakeV1", () => {
         '{"format":"aih-artifact-intake","format":"other","version":1,"items":[]}',
       ),
     ).toThrow(/duplicate JSON object key/i);
+  });
+});
+
+describe("ArtifactIntakeV2 directory discovery", () => {
+  function discoveryIntake(): Record<string, unknown> {
+    return {
+      format: "aih-artifact-intake",
+      version: 2,
+      authority: { state: "not-authority" },
+      defaults: { accountableOwner: "platform@acme.example" },
+      items: [
+        {
+          id: "firecrawl-directory",
+          kind: "mcp",
+          source: {
+            type: "directory",
+            provider: "pulsemcp",
+            url: "https://www.pulsemcp.com/servers/firecrawl",
+          },
+        },
+        {
+          id: "atlassian-directory",
+          kind: "mcp",
+          source: {
+            type: "directory",
+            provider: "mcpmarket",
+            url: "https://mcpmarket.com/server/atlassian-jira-confluence",
+          },
+        },
+      ],
+    };
+  }
+
+  it("accepts directory-only MCP candidates without execution or authority claims", () => {
+    const parsed = ArtifactIntakeV2Schema.parse(discoveryIntake());
+
+    expect(parsed.authority).toEqual({ state: "not-authority" });
+    expect(parsed.items).toHaveLength(2);
+    expect(parsed.items.every((item) => !Object.hasOwn(item, "targets"))).toBe(true);
+    expect(JSON.stringify(parsed)).not.toContain("execution");
+    expect(JSON.stringify(parsed)).not.toContain("approved");
+  });
+
+  it("deduplicates one directory lookup while preserving every requested item", () => {
+    const value = discoveryIntake();
+    const items = value.items as Array<Record<string, unknown>>;
+    items.push({ ...items[0], id: "firecrawl-second-team" });
+    const parsed = ArtifactIntakeV2Schema.parse(value);
+    const groups = artifactIntakeDirectoryGroupsV2(parsed);
+
+    expect(groups).toHaveLength(2);
+    expect(
+      groups.find((group) => group.source.provider === "pulsemcp")?.items.map((item) => item.id),
+    ).toEqual(["firecrawl-directory", "firecrawl-second-team"]);
+  });
+
+  it.each([
+    ["provider mismatch", (source: Record<string, unknown>) => (source.provider = "mcpmarket")],
+    ["query-bearing URL", (source: Record<string, unknown>) => (source.url += "?ref=other")],
+    ["unsupported provider", (source: Record<string, unknown>) => (source.provider = "other")],
+  ])("rejects %s before directory acquisition", (_label, mutate) => {
+    const value = discoveryIntake();
+    const source = ((value.items as Array<Record<string, unknown>>)[0]?.source ?? {}) as Record<
+      string,
+      unknown
+    >;
+    mutate(source);
+    expect(ArtifactIntakeV2Schema.safeParse(value).success).toBe(false);
+  });
+
+  it("rejects directory sources for Skills and Agents", () => {
+    for (const kind of ["skill", "agent"]) {
+      const value = discoveryIntake();
+      const first = (value.items as Array<Record<string, unknown>>)[0];
+      if (first === undefined) throw new Error("expected directory item fixture");
+      first.kind = kind;
+      expect(ArtifactIntakeV2Schema.safeParse(value).success).toBe(false);
+    }
   });
 });

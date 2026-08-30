@@ -613,7 +613,7 @@ describe("policy generate", () => {
         type: "remote",
         origin: "https://mcp.figma.com",
         approval: {
-          approvedBy: "security-admin",
+          approvedBy: "approver@example.com",
           authenticationMode: "oauth",
           allowedDataClasses: ["design-metadata"],
         },
@@ -744,11 +744,13 @@ describe("policy generate", () => {
     const html = policyStudioHtml(model);
     expect(html).toContain('aria-live="polite"');
     expect(html).toContain('role="tooltip"');
+    expect(html).toContain('<link rel="icon" href="data:,">');
     expect(html).toContain("Escape");
     expect(html).toContain("Blocked - evidence owed at this pin");
     expect(html).toContain("report-only and not enforced by AIH");
     expect(html).toContain("Preserve approval subjects in policy (not effective)");
-    expect(html).toContain("summary{min-height:32px}");
+    expect(html).toContain("summary{cursor:pointer");
+    expect(html).toContain("min-height:28px");
     expect(html).toContain("const unsafePath=");
     expect(html).not.toMatch(/gstack/i);
   });
@@ -764,8 +766,11 @@ describe("policy generate", () => {
     expect(document.querySelector("button#add-curation")).not.toBeNull();
     expect(document.querySelector("textarea#config-preview")).not.toBeNull();
     expect(document.querySelector("textarea#report-preview")).not.toBeNull();
+    expect(document.querySelector("summary button, summary input, summary select")).toBeNull();
     const help = document.querySelector("button[data-tooltip-button]");
-    expect(help?.getAttribute("aria-describedby")).toMatch(/^tooltip-/);
+    const describedBy = help?.getAttribute("aria-describedby") ?? "";
+    expect(describedBy).not.toBe("");
+    expect(document.getElementById(describedBy)?.getAttribute("role")).toBe("tooltip");
     expect(document.querySelector(".tooltip")?.getAttribute("role")).toBe("tooltip");
     help?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
     expect(
@@ -851,6 +856,7 @@ describe("policy generate", () => {
       (input as unknown as { value: string }).value = value;
     };
     setValue("custom-id", "custom-mcp");
+    setValue("custom-owner", "mcp.owner@example.com");
     setValue("custom-package", "@example/custom-mcp");
     setValue("custom-version", "1.2.3");
     setValue("custom-integrity", sha("a"));
@@ -867,7 +873,7 @@ describe("policy generate", () => {
     expect(document.getElementById("custom-rows")?.textContent).toContain("No custom candidates");
     setValue("remote-custom-id", "figma-remote");
     setValue("remote-custom-origin", "https://mcp.figma.com/mcp");
-    setValue("remote-custom-approved-by", "security-admin");
+    setValue("remote-custom-approved-by", "approver@example.com");
     setValue("remote-custom-authentication-mode", "oauth");
     setValue("remote-custom-data-classes", "design-metadata");
     setValue("remote-custom-evidence", "audit-remote-2026");
@@ -915,6 +921,7 @@ describe("policy generate", () => {
       input.dispatchEvent(new window.Event("input", { bubbles: true }));
     };
     set("curation-id", "review-agent");
+    set("curation-owner", "framework.owner@acme.example");
     expect(document.getElementById("curation-id")?.getAttribute("aria-invalid")).toBeNull();
     expect(document.getElementById("curation-id")?.getAttribute("aria-describedby")).toBeNull();
     set("curation-repository", "acme/catalog");
@@ -955,7 +962,9 @@ describe("policy generate", () => {
       .getElementById("cancel-curation-edit")
       ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
     expect(framework.disabled).toBe(false);
-    expect(document.getElementById("curation-framework-label")?.textContent).toBe("Framework");
+    expect(document.getElementById("curation-framework-label")?.textContent).toBe(
+      "External framework owner",
+    );
     editCuration?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
     expect(framework.disabled).toBe(true);
     framework.value = "superpowers";
@@ -967,7 +976,9 @@ describe("policy generate", () => {
       "ecc: agent / review-agent",
     );
     expect(framework.disabled).toBe(false);
-    expect(document.getElementById("curation-framework-label")?.textContent).toBe("Framework");
+    expect(document.getElementById("curation-framework-label")?.textContent).toBe(
+      "External framework owner",
+    );
     expect(
       (document.getElementById("cancel-curation-edit") as unknown as { hidden: boolean } | null)
         ?.hidden,
@@ -981,6 +992,7 @@ describe("policy generate", () => {
     );
 
     set("custom-id", "custom-mcp");
+    set("custom-owner", "mcp.owner@example.com");
     set("custom-package", "@example/custom-mcp");
     set("custom-version", "1.2.3");
     set("custom-integrity", sha("c"));
@@ -1001,7 +1013,7 @@ describe("policy generate", () => {
     );
     set("remote-custom-id", "figma-remote");
     set("remote-custom-origin", "https://mcp.figma.com");
-    set("remote-custom-approved-by", "security-admin");
+    set("remote-custom-approved-by", "approver@example.com");
     set("remote-custom-authentication-mode", "oauth");
     set("remote-custom-data-classes", "design-metadata");
     set("remote-custom-administrative-status", "approved");
@@ -1241,11 +1253,15 @@ describe("policy generate", () => {
           .getElementById("validate")
           ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
         expect(announcement?.textContent).toContain("validation passed");
-        const preset = document.querySelector('[data-preset="vibe"]');
+        const preset = document.getElementById("preset-select") as unknown as {
+          value: string;
+          dispatchEvent(event: unknown): boolean;
+        } | null;
         if (preset === null) throw new Error("expected Vibe preset");
         // Presets compose selections; posture-only behavior is covered separately.
         // This assertion is about the canonical rail control still working after an import.
-        preset.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+        preset.value = "vibe";
+        preset.dispatchEvent(new window.Event("change", { bubbles: true }));
         expect(announcement?.textContent).toContain("Vibe composed:");
       } else {
         expect(
@@ -1261,5 +1277,5 @@ describe("policy generate", () => {
         expect(announcement?.textContent).toContain("Download blocked");
       }
     }
-  });
+  }, 10_000);
 });

@@ -46,7 +46,7 @@ describe("docs-lint", () => {
   it("loads BetterDoc phrase rules from slop-lint.md", () => {
     const rules = loadDocsLintRules(process.cwd());
 
-    expect(rules?.source).toBe("packs/docs-quality/betterdoc/references/slop-lint.md");
+    expect(rules?.source).toBe("packs/docs-quality/aih-betterdoc/references/slop-lint.md");
     expect(rules?.phrases).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ phrase: "Here's the thing", label: "throat-clearing phrase" }),

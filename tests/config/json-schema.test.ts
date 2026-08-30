@@ -438,16 +438,21 @@ describe("committed JSON Schemas", () => {
       id: "vercel",
       sourceContentSha256: "a4426254c55a5352db2672bc86a87f10b0029f5e4ae1b74817841e87d9ab1e57",
       state: "approved",
-      approvedBy: "security-admin",
+      approvedBy: "approver@example.com",
       authenticationMode: "oauth",
       allowedDataClasses: ["deployment-metadata"],
     };
 
     validateCommittedSchema("schemas/aih-org-policy.schema.json", governance([approval]));
+    validateCommittedSchema(
+      "schemas/aih-org-policy.schema.json",
+      governance([{ ...approval, approvedBy: "security-admin" }]),
+    );
     for (const invalid of [
       { ...approval, id: "github" },
       { ...approval, sourceContentSha256: "0".repeat(64) },
       { ...approval, allowedDataClasses: [] },
+      { ...approval, approvedBy: "Samar" },
       { ...approval, unexpected: true },
     ]) {
       rejectCommittedSchema("schemas/aih-org-policy.schema.json", governance([invalid]));
@@ -729,6 +734,7 @@ describe("committed JSON Schemas", () => {
               {
                 kind: "agent",
                 id: "external-review-agent",
+                accountableOwner: "agent.owner@acme.example",
                 source: {
                   repository: "acme/ecc-catalog",
                   commit: "a".repeat(40),

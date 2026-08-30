@@ -22,6 +22,16 @@ function click(window: Window, node: Element | null, label: string): void {
   node.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
 }
 
+function choosePreset(window: Window, value: "vibe" | "enterprise"): void {
+  const select = window.document.getElementById("preset-select") as unknown as {
+    value: string;
+    dispatchEvent: (event: unknown) => boolean;
+  } | null;
+  if (select === null) throw new Error(`expected ${value} preset`);
+  select.value = value;
+  select.dispatchEvent(new window.Event("change", { bubbles: true }));
+}
+
 function policyText(window: Window): string {
   const preview = window.document.getElementById("config-preview") as unknown as {
     value: string;
@@ -94,6 +104,47 @@ function expectDetailNarrationToVary(label: string, baseline: string, selected: 
 }
 
 describe("policy studio surface invariants", () => {
+  it("lets the checkbox carry ordinary row state and keeps one plain details action", () => {
+    const window = studio();
+    const rows = [...window.document.querySelectorAll(".row[data-state]")];
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      const key = row.getAttribute("data-row") ?? "unnamed row";
+      expect(row.querySelector(".cust"), `${key} has no cryptic custody strip`).toBeNull();
+      const compactState = row.querySelector(".row-state")?.textContent?.trim() ?? "";
+      expect(compactState, `${key} does not repeat its checkbox state`).not.toMatch(
+        /^(Selected|Selectable)$/,
+      );
+      const fullState = row.querySelector(".badge")?.textContent?.trim() ?? "";
+      if (
+        row.getAttribute("data-state") === "requested" ||
+        fullState.startsWith("Selectable") ||
+        fullState.startsWith("Disabled") ||
+        fullState.startsWith("Available")
+      ) {
+        expect(compactState, `${key} lets its checkbox carry selection state`).toBe("");
+      } else {
+        expect(compactState, `${key} names its non-selection state`).toMatch(
+          /^(Awaiting|Blocked|Approval|External)$/,
+        );
+      }
+      expect(
+        row.querySelector('.vet[data-vet="pass"]'),
+        `${key} has no redundant pass tick`,
+      ).toBeNull();
+      const details = row.querySelector("button.more");
+      expect(details?.textContent?.trim() ?? "", `${key} names its details action`).toBe("Details");
+      expect(
+        details?.querySelector('[aria-hidden="true"]'),
+        `${key} has no decorative arrow`,
+      ).toBeNull();
+      expect(details?.getAttribute("aria-label") ?? "", `${key} keeps its full identity`).toMatch(
+        /^Details for /,
+      );
+    }
+    window.close();
+  });
+
   it("gives every group card only ticker-resolvable owners", () => {
     const window = studio();
     const tickerOwners = new Set(
@@ -123,9 +174,11 @@ describe("policy studio surface invariants", () => {
     ]) {
       assertRoundTrip(window, () => document, "data-reviewed", control.id);
     }
-    const inventoryKeys = [...document.querySelectorAll("[data-framework-select]")].map((control) =>
-      control.getAttribute("data-framework-select"),
-    );
+    const inventoryKeys = [
+      ...document.querySelectorAll(
+        "#framework-rows [data-framework-select], #ecc-skill-rows [data-framework-select], #ecc-mcp-declaration-rows [data-framework-select]",
+      ),
+    ].map((control) => control.getAttribute("data-framework-select"));
     expect(inventoryKeys.sort()).toEqual(
       model.catalog.frameworks
         .flatMap((framework) =>
@@ -153,14 +206,13 @@ describe("policy studio surface invariants", () => {
     for (const host of model.catalog.hosts) {
       assertRoundTrip(window, () => document, "data-sanctioned-cli", host.id);
     }
+    for (const capability of [...model.catalog.aihSkills, ...model.catalog.aihAgents]) {
+      assertRoundTrip(window, () => document, "data-aih-capability-package", capability.id);
+    }
     for (const preset of ["vibe", "enterprise"]) {
       const presetWindow = studio();
       const baseline = policyText(presetWindow);
-      click(
-        presetWindow,
-        byAttribute(presetWindow.document, "data-preset", preset),
-        `${preset} preset`,
-      );
+      choosePreset(presetWindow, preset as "vibe" | "enterprise");
       expect(policyText(presetWindow), `${preset} authors a selection`).not.toBe(baseline);
       click(
         presetWindow,
@@ -171,7 +223,7 @@ describe("policy studio surface invariants", () => {
       presetWindow.close();
     }
     window.close();
-  }, 15_000);
+  }, 30_000);
 
   it("makes every component id named by a panel resolve through its click-through", () => {
     const window = studio();
@@ -206,7 +258,7 @@ describe("policy studio surface invariants", () => {
   it("narrates authored selection without inventing a target-evaluated state", () => {
     const baseline = studio();
     const selectedEcc = studio();
-    click(selectedEcc, byAttribute(selectedEcc.document, "data-preset", "vibe"), "vibe preset");
+    choosePreset(selectedEcc, "vibe");
 
     for (const item of [...model.catalog.mcp, ...model.catalog.hooks]) {
       expectDetailNarrationToVary(

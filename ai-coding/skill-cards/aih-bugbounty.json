@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "name": "bugbounty-pr-scan",
-  "source": "packs/review-quality/bugbounty-pr-scan",
+  "name": "aih-bugbounty",
+  "source": "packs/review-quality/aih-bugbounty",
   "commit": "local",
   "license": "Apache-2.0",
   "owner": "aih-maintainers",
@@ -14,7 +14,7 @@
   "requiresMcp": false,
   "requiresShell": false,
   "scanEvidence": [
-    ".aih/skill-reports/bugbounty-pr-scan-local.json"
+    ".aih/skill-reports/aih-bugbounty-local.json"
   ],
   "approval": {
     "verdict": "YELLOW",

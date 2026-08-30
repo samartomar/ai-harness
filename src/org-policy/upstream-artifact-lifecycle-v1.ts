@@ -48,7 +48,10 @@ interface Lineage {
   readonly digest: string;
   readonly effect: UpstreamObservationReceiptV1["allowedEffects"][number];
   readonly integration: Pick<UpstreamObservationReceiptV1["integration"], "mode" | "owner">;
-  readonly subject: { readonly kind: "tool" | "skill" | "mcp" | "package"; readonly id: string };
+  readonly subject: {
+    readonly kind: "tool" | "skill" | "agent" | "mcp" | "package";
+    readonly id: string;
+  };
   readonly target: string;
 }
 
@@ -239,7 +242,7 @@ function lineageFromReceipt(receipt: UpstreamObservationReceiptV1): Lineage | un
     receipt.allowedEffects.length !== 1 ||
     receipt.targets.length !== 1 ||
     receipt.integration.mode !== "upstream-managed" ||
-    !["tool", "skill", "mcp", "package"].includes(receipt.subject.kind)
+    !["tool", "skill", "agent", "mcp", "package"].includes(receipt.subject.kind)
   )
     return undefined;
   const base = {
@@ -284,7 +287,7 @@ function parseLineage(value: unknown): Lineage | undefined {
     !exactKeys(subjectObject, ["id", "kind"]) ||
     typeof subjectObject.id !== "string" ||
     !ID.test(subjectObject.id) ||
-    !["tool", "skill", "mcp", "package"].includes(String(subjectObject.kind))
+    !["tool", "skill", "agent", "mcp", "package"].includes(String(subjectObject.kind))
   )
     return undefined;
   const base = {

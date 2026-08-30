@@ -69,6 +69,17 @@ function decision(overrides: Record<string, unknown> = {}) {
 }
 
 describe("GovernanceDecisionV2 public contract", () => {
+  it("accepts Workbench owner email while preserving legacy stable actor identifiers", () => {
+    expect(GovernanceDecisionV2Schema.safeParse(decision()).success).toBe(true);
+    expect(
+      GovernanceDecisionV2Schema.safeParse(decision({ actor: "security.owner@acme.example" }))
+        .success,
+    ).toBe(true);
+    for (const actor of ["security@localhost", "security owner@acme.example", "@acme.example"]) {
+      expect(GovernanceDecisionV2Schema.safeParse(decision({ actor })).success).toBe(false);
+    }
+  });
+
   it("uses strict SemVer for pinned executable and observer versions", () => {
     expect(ExactSemverV2Schema.safeParse("1.2.3-rc.1+build.7").success).toBe(true);
     for (const invalid of ["01.2.3", "1.2.3-..", "1.2.3-", "1.2.3+", "1.2.3+build..7"]) {
@@ -262,7 +273,7 @@ describe("GovernanceDecisionV2 public contract", () => {
       },
       { type: "aih", release: "6.1.0", revision: `sha256:${"0".repeat(64)}` },
     ];
-    for (const [index, kind] of ["tool", "skill", "mcp", "package", "profile"].entries()) {
+    for (const [index, kind] of ["tool", "skill", "agent", "mcp", "package", "profile"].entries()) {
       const source = sources[index % sources.length];
       const sourceDigest = governanceDecisionSourceDigestV2(source as never);
       expect(

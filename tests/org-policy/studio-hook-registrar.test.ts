@@ -25,6 +25,36 @@ function workbenchText(id: string): string {
 }
 
 describe("H4 — visible inventory, source-labeled", () => {
+  it("opens registrar information from AIH Governance instead of another inventory section", () => {
+    const window = workbenchWindow();
+    const governance = window.document.getElementById("surface-aih-governance");
+    if (governance === null) throw new Error("workbench renders no AIH Governance surface");
+    expect(
+      [...window.document.querySelectorAll("[data-groupcard] h2")].map(
+        (heading) => heading.textContent,
+      ),
+    ).not.toContain("Hook registrar");
+    const information = governance.querySelector(
+      '[data-governance-information][data-detail="AIH Governance & Telemetry Hooks information"]',
+    );
+    if (information === null) throw new Error("AIH Governance has no information control");
+    expect(information.getAttribute("aria-label")).toBe(
+      "AIH Governance & Telemetry Hooks information",
+    );
+    information.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    const drawer = window.document.getElementById("drawer-detail");
+    expect(drawer?.textContent).toContain("Hook registration and runtime information");
+    expect(drawer?.textContent).toContain("Third-party controls, recorded read-only");
+    expect(drawer?.textContent).toContain("Entries and process spawns");
+    expect(drawer?.querySelectorAll(".governance-info .hookreg").length).toBe(
+      model.catalog.hookRegistry.entries.length,
+    );
+    expect(drawer?.querySelectorAll("[data-reviewed], [data-framework-select], input").length).toBe(
+      0,
+    );
+    window.close();
+  });
+
   it("carries AIH-owned handlers and third-party hooks in one inventory", () => {
     const registry = model.catalog.hookRegistry;
     expect(registry.entries.length).toBeGreaterThan(0);
@@ -146,15 +176,16 @@ describe("S1 — annotate, never duplicate", () => {
     const window = workbenchWindow();
     const rows = window.document.getElementById("hook-registry-rows");
     if (rows === null) throw new Error("workbench renders no #hook-registry-rows");
-    const panel = rows.closest(".grp");
-    expect(panel?.textContent?.toLowerCase()).toContain("read-only projection view");
-    expect(panel?.textContent).toContain("governance.hookRegistrations");
+    const source = rows.closest("#hook-registry-source");
+    expect(source?.hasAttribute("hidden")).toBe(true);
+    expect(source?.textContent?.toLowerCase()).toContain("read-only projection view");
+    expect(source?.textContent).toContain("governance.hookRegistrations");
     // Id links navigate to the one inventory row that authors the component;
     // the registrar inventory itself still carries no selection or form
     // affordance. The separately headed ECC controls surface may author its
     // pinned environment choices without turning the inventory into a second
     // component-selection path.
-    expect(panel?.querySelectorAll(".grpbody [data-id-reference]").length).toBe(
+    expect(source?.querySelectorAll("[data-id-reference]").length).toBe(
       model.catalog.hookRegistry.entries.length,
     );
     expect(rows.querySelectorAll("[data-reviewed], [data-framework-select], input").length).toBe(0);
@@ -180,9 +211,13 @@ describe("S2 — the owner ticker counts every registrar-related row under its t
     expect(owners("usage-metering")).toContain("AIH");
     for (const entry of model.catalog.hookRegistry.entries) {
       if (entry.owner === "aih") continue;
-      const railOwners = [...window.document.querySelectorAll(".rail [data-framework-select]")]
+      const railOwners = [...window.document.querySelectorAll(".chips [data-framework-select]")]
         .filter((node) => node.getAttribute("data-framework-select")?.endsWith(`|${entry.id}`))
-        .map((node) => node.closest("[data-owner]")?.getAttribute("data-owner") ?? "(unfiled)");
+        .map((node) =>
+          node.getAttribute("data-framework-select")?.startsWith("superpowers|")
+            ? "Superpowers"
+            : "ECC",
+        );
       const filed = owners(entry.id).concat(railOwners);
       expect(filed.length, `${entry.id} has a counted inventory row`).toBeGreaterThan(0);
       for (const owner of filed) expect(owner).toBe(entry.ownerLabel);
@@ -196,12 +231,9 @@ describe("S2 — the owner ticker counts every registrar-related row under its t
       const domRows = [...document.querySelectorAll(".grp[data-owner]")]
         .filter((group) => String(group.getAttribute("data-owner")).split(" ").includes(owner))
         .reduce((total, group) => total + group.querySelectorAll(".row[data-state]").length, 0);
-      const railSelections = [
-        ...document.querySelectorAll(`.rail [data-owner="${owner}"] [data-framework-select]`),
-      ].length;
       const button = document.querySelector(`#owner-ticker [data-owner-focus="${owner}"] b`);
       expect(button, `${owner} ticker entry`).not.toBeNull();
-      expect(Number(button?.textContent), `${owner} tally`).toBe(domRows + railSelections);
+      expect(Number(button?.textContent), `${owner} tally`).toBe(domRows);
     }
   });
 });

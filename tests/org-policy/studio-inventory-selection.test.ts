@@ -14,10 +14,7 @@ const model = policyStudioModel();
 const assets = model.catalog.frameworks.flatMap((framework) =>
   framework.assets.map((asset) => ({ framework, asset })),
 );
-const mainAssets = assets.filter(
-  ({ framework, asset }) =>
-    framework.id !== "ecc" || !["lang", "framework", "capability", "module"].includes(asset.kind),
-);
+const mainAssets = assets;
 type InventoryEntry = (typeof assets)[number];
 
 /**
@@ -80,9 +77,11 @@ function inventoryRows(window: Window): Array<{
   textContent: string | null;
   querySelector(selector: string): { textContent: string | null } | null;
 }> {
-  const container = window.document.getElementById("framework-rows");
-  if (container === null) throw new Error("workbench renders no framework inventory");
-  return [...container.querySelectorAll(".row")] as unknown as Array<{
+  return [
+    ...window.document.querySelectorAll(
+      "#framework-rows .row, #ecc-skill-rows .row, #ecc-mcp-declaration-rows .row",
+    ),
+  ].filter((row) => row.querySelector("[data-framework-select]") !== null) as unknown as Array<{
     textContent: string | null;
     querySelector(selector: string): { textContent: string | null } | null;
   }>;
@@ -108,8 +107,11 @@ describe("policy studio framework selection", () => {
   });
 
   it("leaves no row without a next action", () => {
-    const container = studio().document.getElementById("framework-rows");
-    expect(container?.textContent ?? "").not.toContain("No next action");
+    expect(
+      inventoryRows(studio())
+        .map((row) => row.textContent)
+        .join(" "),
+    ).not.toContain("No next action");
   });
 
   // The strongest case for the model: a kind the external-curation grammar

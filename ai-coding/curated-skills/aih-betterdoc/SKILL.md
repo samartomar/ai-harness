@@ -1,12 +1,12 @@
 ---
-name: betterdoc
+name: aih-betterdoc
 description: Create, edit, and review ai-harness public documentation with BetterDoc's claim-first, evidence-aware workflow. Use for README and website copy, quickstarts, reference docs, architecture and ADRs, security and assurance docs, runbooks, migration guides, changelogs, release notes, PR summaries, or any other public technical prose in this repository. Preserve technical artifacts, scope every claim to repository evidence, keep private companion material out of public text, and validate with the repository's direct documentation checks without running AIH against this checkout.
 ---
 
 # BetterDoc (ai-harness)
 
 This is the project-curated, CLI-neutral copy of the BetterDoc skill distributed
-from `packs/docs-quality/betterdoc/`. Load it through the repository's shared
+from `packs/docs-quality/aih-betterdoc/`. Load it through the repository's shared
 canon routing. Do not create per-client copies or run AIH to install, refresh,
 or validate it in this checkout.
 
@@ -290,7 +290,7 @@ Keep audits short unless the user asks for a deep review.
 ## Quick invocation
 
 ```text
-Use $betterdoc.
+Use $aih-betterdoc.
 
 Edit this ai-harness documentation for clarity, usefulness, and source-grounded accuracy.
 Follow PUBLIC_DOCS_POLICY.md and ai-coding/rules/doc-and-truth-homes.md.

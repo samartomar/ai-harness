@@ -19,9 +19,13 @@ function studio(): Window {
 }
 
 function selectProfile(window: Window, value: string): void {
-  const preset = window.document.querySelector(`[data-preset="${value}"]`);
+  const preset = window.document.getElementById("preset-select") as unknown as {
+    value: string;
+    dispatchEvent(event: unknown): boolean;
+  } | null;
   if (preset === null) throw new Error(`expected ${value} preset`);
-  preset.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  preset.value = value;
+  preset.dispatchEvent(new window.Event("change", { bubbles: true }));
 }
 
 function activations(window: Window): { candidate: string; clarification?: string }[] {
@@ -34,10 +38,12 @@ function activations(window: Window): { candidate: string; clarification?: strin
 
 function controlRows(window: Window): { text: string; firstBadge: string }[] {
   return ["mcp-rows", "hook-rows"].flatMap((container) =>
-    [...(window.document.getElementById(container)?.querySelectorAll(".row") ?? [])].map((row) => ({
-      text: row.textContent ?? "",
-      firstBadge: row.querySelector(".badge")?.textContent ?? "",
-    })),
+    [...(window.document.getElementById(container)?.querySelectorAll(".row") ?? [])]
+      .filter((row) => row.querySelector("[data-reviewed]") !== null)
+      .map((row) => ({
+        text: row.textContent ?? "",
+        firstBadge: row.querySelector(".badge")?.textContent ?? "",
+      })),
   );
 }
 

@@ -1,13 +1,24 @@
 import { describe, expect, it } from "vitest";
+import type { Check } from "../../src/internals/verify.js";
 import {
   ArtifactEvidenceBundleV1Schema,
+  ArtifactEvidenceBundleV2Schema,
+  artifactDirectoryResolutionRecordV2,
   artifactEvidenceBundleDigestV1,
+  artifactEvidenceBundleDigestV2,
   artifactEvidenceRecordV1,
   createArtifactEvidenceBundleV1,
+  createArtifactEvidenceBundleV2,
   parseArtifactEvidenceBundleV1Text,
+  parseArtifactEvidenceBundleV2Text,
   reconcileArtifactEvidenceV1,
 } from "../../src/trust/artifact-evidence.js";
-import { ArtifactIntakeV1Schema } from "../../src/trust/artifact-intake.js";
+import { ArtifactIntakeV1Schema, ArtifactIntakeV2Schema } from "../../src/trust/artifact-intake.js";
+import {
+  extractDirectoryClaimV1,
+  parseDirectoryDiscoveryUrlV1,
+  resolveDirectoryClaimV1,
+} from "../../src/trust/directory-resolution.js";
 
 const SHA = "a".repeat(40);
 const REGISTRY_INTEGRITY = `sha512-${Buffer.alloc(64, 1).toString("base64")}`;
@@ -63,7 +74,82 @@ function firecrawlRecord(detail = "clean") {
   });
 }
 
+function directoryIntake() {
+  return ArtifactIntakeV2Schema.parse({
+    format: "aih-artifact-intake",
+    version: 2,
+    authority: { state: "not-authority" },
+    defaults: { accountableOwner: "platform@acme.example" },
+    items: [
+      {
+        id: "firecrawl-directory",
+        kind: "mcp",
+        source: {
+          type: "directory",
+          provider: "pulsemcp",
+          url: "https://www.pulsemcp.com/servers/firecrawl",
+        },
+      },
+    ],
+  });
+}
+
+function firecrawlDirectoryResolution() {
+  const source = parseDirectoryDiscoveryUrlV1("https://www.pulsemcp.com/servers/firecrawl");
+  const claim = extractDirectoryClaimV1(
+    source,
+    "<h1>Firecrawl</h1><p>NAME io.github.firecrawl/firecrawl-mcp-server</p><p>Current Version: 3.7.4</p>",
+  );
+  return resolveDirectoryClaimV1(claim, {
+    servers: [
+      {
+        server: {
+          name: "io.github.firecrawl/firecrawl-mcp-server",
+          version: "3.24.0",
+          repository: {
+            url: "https://github.com/firecrawl/firecrawl-mcp-server",
+            source: "github",
+          },
+          packages: [
+            {
+              registryType: "npm",
+              identifier: "firecrawl-mcp",
+              version: "3.24.0",
+              transport: { type: "stdio" },
+              environmentVariables: [{ name: "FIRECRAWL_API_KEY", isSecret: true }],
+            },
+          ],
+        },
+      },
+    ],
+    metadata: { count: 1 },
+  });
+}
+
 describe("ArtifactEvidenceBundleV1", () => {
+  it("omits undefined optional check fields from the scan digest", () => {
+    const item = intake().items[0];
+    if (item === undefined) throw new Error("expected firecrawl intake item");
+    const check: Check = { name: "trust scan", verdict: "pass", detail: "clean" };
+    Object.assign(check, { code: undefined });
+
+    const record = artifactEvidenceRecordV1({
+      intake: intake(),
+      item,
+      state: "verified",
+      observed: {
+        type: "npm",
+        tarballSha256: `sha256:${"b".repeat(64)}`,
+        registryIntegrity: REGISTRY_INTEGRITY,
+      },
+      analyzersRun: ["aih-native"],
+      checks: [check],
+      findings: [],
+    });
+
+    expect(record.scanDigest).toBe(firecrawlRecord().scanDigest);
+  });
+
   it("binds preflight evidence to one exact request without claiming authority", () => {
     const source = intake();
     const bundle = createArtifactEvidenceBundleV1(source, [firecrawlRecord()]);
@@ -195,5 +281,107 @@ describe("ArtifactEvidenceBundleV1", () => {
       state: "mismatched",
       authorized: false,
     });
+  });
+});
+
+describe("ArtifactEvidenceBundleV2", () => {
+  it("binds a directory resolution to the exact claim without treating it as scan evidence", () => {
+    const source = directoryIntake();
+    const item = source.items[0];
+    if (item === undefined) throw new Error("expected directory intake item");
+    const resolution = artifactDirectoryResolutionRecordV2({
+      intake: source,
+      item,
+      resolution: firecrawlDirectoryResolution(),
+    });
+    const bundle = createArtifactEvidenceBundleV2(source, [], [resolution]);
+
+    expect(ArtifactEvidenceBundleV2Schema.parse(bundle)).toEqual(bundle);
+    expect(bundle.results).toEqual([
+      expect.objectContaining({
+        itemId: "firecrawl-directory",
+        state: "missing",
+        resolutionId: resolution.id,
+        resolutionDigest: resolution.resolutionDigest,
+      }),
+    ]);
+    expect(bundle.evidence).toEqual([]);
+    expect(bundle.resolutions[0]).toMatchObject({
+      authority: { state: "not-authority" },
+      resolution: {
+        state: "mismatched",
+        options: expect.arrayContaining([
+          expect.objectContaining({
+            source: expect.objectContaining({
+              type: "npm",
+              package: "firecrawl-mcp",
+              version: "3.24.0",
+            }),
+          }),
+        ]),
+      },
+    });
+    expect(bundle.resolutions[0]).not.toHaveProperty("targets");
+    expect(JSON.stringify(bundle)).not.toContain("FIRECRAWL_API_KEY=");
+  });
+
+  it("rejects altered, orphaned, replayed, and authority-bearing resolution claims", () => {
+    const source = directoryIntake();
+    const item = source.items[0];
+    if (item === undefined) throw new Error("expected directory intake item");
+    const resolution = artifactDirectoryResolutionRecordV2({
+      intake: source,
+      item,
+      resolution: firecrawlDirectoryResolution(),
+    });
+    const bundle = createArtifactEvidenceBundleV2(source, [], [resolution]);
+
+    const altered = structuredClone(bundle);
+    const alteredResolution = altered.resolutions[0];
+    if (alteredResolution === undefined) throw new Error("expected directory resolution");
+    alteredResolution.resolution.options = [];
+    expect(ArtifactEvidenceBundleV2Schema.safeParse(altered).success).toBe(false);
+
+    const orphaned = structuredClone(bundle);
+    const orphanedResult = orphaned.results[0];
+    if (orphanedResult === undefined) throw new Error("expected directory result");
+    delete orphanedResult.resolutionId;
+    delete orphanedResult.resolutionDigest;
+    const { bundleDigest: _orphanDigest, ...orphanUnsigned } = orphaned;
+    orphaned.bundleDigest = artifactEvidenceBundleDigestV2(orphanUnsigned);
+    expect(ArtifactEvidenceBundleV2Schema.safeParse(orphaned).success).toBe(false);
+
+    const replayed = structuredClone(bundle);
+    replayed.resolutions.push(structuredClone(resolution));
+    const { bundleDigest: _replayDigest, ...replayUnsigned } = replayed;
+    replayed.bundleDigest = artifactEvidenceBundleDigestV2(replayUnsigned);
+    expect(ArtifactEvidenceBundleV2Schema.safeParse(replayed).success).toBe(false);
+
+    const authorityClaim = structuredClone(bundle) as unknown as {
+      resolutions: Array<Record<string, unknown>>;
+    };
+    const authorityResolution = authorityClaim.resolutions[0];
+    if (authorityResolution === undefined) throw new Error("expected directory resolution");
+    authorityResolution.targets = ["codex"];
+    expect(ArtifactEvidenceBundleV2Schema.safeParse(authorityClaim).success).toBe(false);
+  });
+
+  it("strictly parses version 2 bundles and rejects duplicate JSON members", () => {
+    const source = directoryIntake();
+    const item = source.items[0];
+    if (item === undefined) throw new Error("expected directory intake item");
+    const resolution = artifactDirectoryResolutionRecordV2({
+      intake: source,
+      item,
+      resolution: firecrawlDirectoryResolution(),
+    });
+    const bundle = createArtifactEvidenceBundleV2(source, [], [resolution]);
+
+    expect(parseArtifactEvidenceBundleV2Text(JSON.stringify(bundle))).toEqual(bundle);
+    expect(() =>
+      parseArtifactEvidenceBundleV2Text(
+        '{"format":"aih-preflight-evidence-bundle","version":2,"version":1}',
+      ),
+    ).toThrow(/duplicate JSON object key/i);
   });
 });

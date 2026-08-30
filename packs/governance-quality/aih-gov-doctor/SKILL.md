@@ -1,5 +1,5 @@
 ---
-name: governance-doctor-audit-guide
+name: aih-gov-doctor
 description: Declarative Audit and Guide source material for Governance Doctor profiles.
 license: Apache-2.0
 ---

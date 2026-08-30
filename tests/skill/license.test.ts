@@ -13,7 +13,7 @@ describe("skill license check", () => {
     const dir = tempSkill();
     writeFileSync(
       join(dir, "SKILL.md"),
-      "---\nname: betterdoc\nlicense: Apache-2.0\n---\n\n# BetterDoc\n",
+      "---\nname: aih-betterdoc\nlicense: Apache-2.0\n---\n\n# BetterDoc\n",
       "utf8",
     );
     writeFileSync(join(dir, "LICENSE"), "Apache License\nVersion 2.0\n", "utf8");

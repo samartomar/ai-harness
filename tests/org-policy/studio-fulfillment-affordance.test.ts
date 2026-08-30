@@ -9,10 +9,7 @@ const model = policyStudioModel();
 const assets = model.catalog.frameworks.flatMap((framework) =>
   framework.assets.map((asset) => ({ framework, asset })),
 );
-const mainAssets = assets.filter(
-  ({ framework, asset }) =>
-    framework.id !== "ecc" || !["lang", "framework", "capability", "module"].includes(asset.kind),
-);
+const mainAssets = assets;
 
 // Real, shipped fixtures for the two vet verdicts the vendor lock actually
 // carries at this pin. A second, distinct pass example lets the fulfillment
@@ -405,14 +402,19 @@ describe("selection to fulfillment affordance", () => {
     // a row this change added.
     const window = studioWindow(model);
     click(window, selectSelector(passExample));
-    const rowCountAfterFirstSelection =
-      window.document.querySelectorAll("#framework-rows .row").length;
+    const rowCountAfterFirstSelection = window.document.querySelectorAll(
+      "#framework-rows .row, #ecc-mcp-declaration-rows .row",
+    ).length;
     expect(rowCountAfterFirstSelection).toBe(
-      mainAssets.filter(({ framework }) => framework.id === passExample.framework.id).length,
+      mainAssets.filter(
+        ({ framework, asset }) =>
+          framework.id === passExample.framework.id && asset.kind !== "skill",
+      ).length,
     );
     click(window, selectSelector(blockedExample));
-    const rowCountAfterSecondSelection =
-      window.document.querySelectorAll("#framework-rows .row").length;
+    const rowCountAfterSecondSelection = window.document.querySelectorAll(
+      "#framework-rows .row, #ecc-mcp-declaration-rows .row",
+    ).length;
     expect(rowCountAfterSecondSelection).toBe(rowCountAfterFirstSelection);
   });
 
@@ -436,10 +438,19 @@ describe("selection to fulfillment affordance", () => {
     // Selecting an ecc component makes ecc the active framework, which hides
     // superpowers' groups from the plane entirely (pre-existing exclusivity,
     // unrelated to this row) - the ticker must agree with that, not with 15.
-    expect(chip("AIH")).toBe(String(aihControls));
-    expect(chip("ECC")).toBe(String(ecc.assets.length));
+    const aihMcpDeclarations = model.catalog.eccMcpInventory.filter(
+      (entry) => entry.owner === "aih",
+    ).length;
+    expect(chip("AIH")).toBe(String(aihControls + aihMcpDeclarations));
+    const governedSkills = ecc.assets.filter((asset) => asset.kind === "skill").length;
+    const visibleEccInventory =
+      ecc.assets.length -
+      governedSkills +
+      model.catalog.eccSkills.length +
+      model.catalog.externalMcp.length;
+    expect(chip("ECC")).toBe(String(visibleEccInventory));
     expect(chip("Superpowers")).toBe("0");
     expect(chip("You")).toBe("0");
-    expect(chip("all")).toBe(String(aihControls + ecc.assets.length));
+    expect(chip("all")).toBe(String(aihControls + aihMcpDeclarations + visibleEccInventory));
   });
 });

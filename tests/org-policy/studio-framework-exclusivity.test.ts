@@ -17,10 +17,7 @@ if (eccAsset === undefined || spAsset === undefined)
   throw new Error("expected both frameworks to carry assets");
 
 const planeCount = (framework: (typeof frameworks)[number]): number =>
-  framework.assets.filter(
-    (asset) =>
-      framework.id !== "ecc" || !["lang", "framework", "capability", "module"].includes(asset.kind),
-  ).length;
+  framework.assets.filter((asset) => framework.id !== "ecc" || asset.kind !== "skill").length;
 
 function studio(): Window {
   const window = new Window({ url: "http://localhost/" });
@@ -67,8 +64,23 @@ function click(window: Window, selector: string): void {
   node.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
 }
 
+function selectPreset(window: Window, value: string): void {
+  const preset = window.document.getElementById("preset-select") as unknown as {
+    value: string;
+    dispatchEvent(event: unknown): boolean;
+  } | null;
+  if (preset === null) throw new Error(`expected ${value} preset`);
+  preset.value = value;
+  preset.dispatchEvent(new window.Event("change", { bubbles: true }));
+}
+
 function selections(window: Window): Array<{ framework: string; items: Array<{ id: string }> }> {
   return authored(window).governance.externalSelections;
+}
+
+function visibleFrameworkRows(window: Window): number {
+  return window.document.querySelectorAll("#framework-rows .row, #ecc-mcp-declaration-rows .row")
+    .length;
 }
 
 describe("policy studio framework exclusivity", () => {
@@ -107,7 +119,8 @@ describe("policy studio framework exclusivity", () => {
   it("takes the other framework out of the plane and states the count", () => {
     const window = studio();
     click(window, selectKey(ecc, eccAsset));
-    expect(window.document.querySelectorAll("#framework-rows .row").length).toBe(planeCount(ecc));
+    expect(visibleFrameworkRows(window)).toBe(planeCount(ecc));
+    expect(window.document.querySelectorAll("[data-ecc-skill-availability]").length).toBe(286);
     const notice = window.document.querySelector("[data-framework-notice]")?.textContent ?? "";
     expect(notice).toContain(String(planeCount(superpowers)));
     expect(notice.toLowerCase()).toContain("one framework at a time");
@@ -117,9 +130,7 @@ describe("policy studio framework exclusivity", () => {
   it("scopes to Superpowers when Superpowers is chosen first", () => {
     const window = studio();
     click(window, selectKey(superpowers, spAsset));
-    expect(window.document.querySelectorAll("#framework-rows .row").length).toBe(
-      planeCount(superpowers),
-    );
+    expect(visibleFrameworkRows(window)).toBe(planeCount(superpowers));
     const notice = window.document.querySelector("[data-framework-notice]")?.textContent ?? "";
     expect(notice).toContain(String(planeCount(ecc)));
   });
@@ -156,7 +167,7 @@ describe("policy studio framework exclusivity", () => {
   // Acceptance demonstration step 3 opens with "Reset, select Enterprise, ...".
   it("clears every selection back to the starting policy", () => {
     const window = studio();
-    click(window, '[data-preset="vibe"]');
+    selectPreset(window, "vibe");
     expect(selections(window).length).toBeGreaterThan(0);
     expect(authored(window).governance.catalog.reviewed.length).toBeGreaterThan(0);
     click(window, "#clear-policy");
@@ -201,7 +212,7 @@ describe("policy studio framework exclusivity", () => {
   // and state what it left out rather than silently dropping it.
   it("composes Vibe within a single framework and states the exclusion", () => {
     const window = studio();
-    click(window, '[data-preset="vibe"]');
+    selectPreset(window, "vibe");
     const groups = selections(window);
     expect(groups).toHaveLength(1);
     expect(groups[0]?.framework).toBe("ecc");
@@ -214,7 +225,7 @@ describe("policy studio framework exclusivity", () => {
   it("composes Vibe into the framework already in play", () => {
     const window = studio();
     click(window, selectKey(superpowers, spAsset));
-    click(window, '[data-preset="vibe"]');
+    selectPreset(window, "vibe");
     const groups = selections(window);
     expect(groups).toHaveLength(1);
     expect(groups[0]?.framework).toBe("superpowers");

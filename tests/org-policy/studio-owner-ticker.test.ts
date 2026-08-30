@@ -8,7 +8,20 @@ const ecc = model.catalog.frameworks.find((framework) => framework.id === "ecc")
 const superpowers = model.catalog.frameworks.find((framework) => framework.id === "superpowers");
 if (ecc === undefined || superpowers === undefined)
   throw new Error("expected both pinned frameworks in the catalog");
-const aihControls = model.catalog.mcp.length + model.catalog.hooks.length;
+const aihCapabilityPackages = model.catalog.aihSkills.length + model.catalog.aihAgents.length;
+const aihMcpRows = new Set([
+  ...model.catalog.mcp.map((entry) => entry.id),
+  ...model.catalog.eccMcpInventory
+    .filter((entry) => entry.owner === "aih")
+    .map((entry) => entry.id),
+]).size;
+const aihRows = aihCapabilityPackages + aihMcpRows + model.catalog.hooks.length;
+const governedSkills = ecc.assets.filter((asset) => asset.kind === "skill").length;
+const visibleEccInventory =
+  ecc.assets.length -
+  governedSkills +
+  model.catalog.eccSkills.length +
+  model.catalog.externalMcp.length;
 
 function studio(): Window {
   const window = new Window({ url: "http://localhost/" });
@@ -35,15 +48,46 @@ function visibleGroups(window: Window): string[] {
 }
 
 describe("policy studio owner ticker", () => {
+  it("shows selection progress instead of filling the meter with unselected inventory", () => {
+    const window = studio();
+    const progress = (surface: string) => {
+      const group = window.document.getElementById(surface);
+      if (group === null) throw new Error(`expected ${surface}`);
+      return {
+        count: group.querySelector(".ct")?.textContent,
+        meter: group.querySelector(".meter"),
+      };
+    };
+
+    expect(progress("surface-aih-skills").count).toBe("0 / 1");
+    expect(progress("surface-aih-agents").count).toBe("0 / 2");
+    const mcpGroup = [...window.document.querySelectorAll(".grp")].find(
+      (group) => group.querySelector("h2")?.textContent === "AIH MCP servers",
+    );
+    expect(mcpGroup?.querySelector(".ct")?.textContent).toBe("0 / 5");
+    expect(progress("surface-aih-skills").meter?.getAttribute("role")).toBe("progressbar");
+    expect(progress("surface-aih-skills").meter?.getAttribute("aria-valuenow")).toBe("0");
+    expect(progress("surface-aih-skills").meter?.getAttribute("aria-valuemax")).toBe("1");
+    expect(progress("surface-aih-skills").meter?.querySelector("i")).toBeNull();
+
+    click(window, '[data-aih-capability-package="package:skill-pack/docs-quality"]');
+
+    expect(progress("surface-aih-skills").count).toBe("1 / 1");
+    expect(progress("surface-aih-skills").meter?.getAttribute("aria-valuenow")).toBe("1");
+    expect(progress("surface-aih-skills").meter?.querySelector("i")?.getAttribute("style")).toBe(
+      "width:100%",
+    );
+  });
+
   it("counts every owner's rows", () => {
     const window = studio();
     const chips = [...window.document.querySelectorAll("#owner-ticker [data-owner-focus]")].map(
       (button) => [button.getAttribute("data-owner-focus"), button.textContent?.trim()],
     );
     expect(chips).toEqual([
-      ["all", `All ${aihControls + ecc.assets.length + superpowers.assets.length}`],
-      ["AIH", `AIH ${aihControls}`],
-      ["ECC", `ECC ${ecc.assets.length}`],
+      ["all", `All ${aihRows + visibleEccInventory + superpowers.assets.length}`],
+      ["AIH", `AIH ${aihRows}`],
+      ["ECC", `ECC ${visibleEccInventory}`],
       ["Superpowers", `Superpowers ${superpowers.assets.length}`],
       ["You", "Your sources 0"],
     ]);
@@ -58,15 +102,19 @@ describe("policy studio owner ticker", () => {
     const before = preview();
     click(window, '[data-owner-focus="AIH"]');
     expect(visibleGroups(window)).toEqual([
+      "AIH Skills",
+      "AIH Agents",
       "AIH MCP servers",
-      "AIH hooks",
-      "Hook registrar",
+      "AIH-Governance & Telemetry Hooks",
       "Approval / evidence",
     ]);
     expect(preview(), "focus authored nothing").toBe(before);
     click(window, '[data-owner-focus="Superpowers"]');
     expect(visibleGroups(window)).toContain("Superpowers");
     expect(visibleGroups(window)).not.toContain("AIH MCP servers");
+    click(window, '[data-owner-focus="ECC"]');
+    expect(visibleGroups(window)).toContain("ECC-Guardrails & Safety Hooks");
+    expect(visibleGroups(window)).not.toContain("Hook registrar");
     click(window, '[data-owner-focus="all"]');
     expect(visibleGroups(window).length).toBeGreaterThan(10);
   });

@@ -52,8 +52,8 @@ For the first-party docs-quality pack in a repo that has not yet seeded it:
 
 ```console
 aih pack scaffold --pack docs-quality --apply
-aih skill vet packs/docs-quality/betterdoc --apply
-aih skill approve packs/docs-quality/betterdoc --owner <team-or-owner> --pack docs-quality --apply
+aih skill vet packs/docs-quality/aih-betterdoc --apply
+aih skill approve packs/docs-quality/aih-betterdoc --owner <team-or-owner> --pack docs-quality --apply
 aih pack install --pack docs-quality --apply
 aih pack validate --pack docs-quality
 ```

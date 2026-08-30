@@ -74,8 +74,8 @@ If the repo does not yet carry that first-party pack, seed and approve the local
 
 ```console
 aih pack scaffold --pack docs-quality --apply
-aih skill vet packs/docs-quality/betterdoc --apply
-aih skill approve packs/docs-quality/betterdoc --owner <owner> --pack docs-quality --apply
+aih skill vet packs/docs-quality/aih-betterdoc --apply
+aih skill approve packs/docs-quality/aih-betterdoc --owner <owner> --pack docs-quality --apply
 aih pack install --pack docs-quality --apply
 ```
 
@@ -120,8 +120,8 @@ aih ecc --cli claude,codex --profile full
 aih ecc --cli claude,codex --profile full --apply
 aih superpowers --cli claude,codex --apply
 aih pack scaffold --pack docs-quality --apply
-aih skill vet packs/docs-quality/betterdoc --apply
-aih skill approve packs/docs-quality/betterdoc --owner <owner> --pack docs-quality --mode review-only --intended-use "Source-grounded documentation editing." --apply
+aih skill vet packs/docs-quality/aih-betterdoc --apply
+aih skill approve packs/docs-quality/aih-betterdoc --owner <owner> --pack docs-quality --mode review-only --intended-use "Source-grounded documentation editing." --apply
 aih pack install --pack docs-quality --apply
 aih usage --cli claude,codex,cursor,zed --apply
 aih track --apply
@@ -155,7 +155,7 @@ Use the generated router as the agent entry point. The root bootloaders are tool
 
 Treat external skills as code. Even at vibe posture, run trust and skill commands before adopting unknown skill sources. Same name does not mean same approval.
 
-Use BetterDoc for documentation edits. The shipped source lives at `packs/docs-quality/betterdoc`; its rule is claim-first, evidence-grounded writing. Do not turn BetterDoc, `docs-lint`, reports, or sidecars into compliance claims.
+Use BetterDoc for documentation edits. The shipped source lives at `packs/docs-quality/aih-betterdoc`; its rule is claim-first, evidence-grounded writing. Do not turn BetterDoc, `docs-lint`, reports, or sidecars into compliance claims.
 
 Use portable checks first. `git ls-remote`, `npm view`, and GitHub web pages work across Windows, Linux, and macOS. GitHub CLI (`gh`) is useful if you already have it, especially for authenticated GitHub reads and PR/release work, but the same verification should still be possible without it.
 

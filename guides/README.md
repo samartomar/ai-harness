@@ -38,7 +38,7 @@ installations use `@aihq/core`. Use [docs/commands.md](../docs/commands.md) and
 - Keep enterprise examples limited to the reviewed public guide set: Figma, Jira/Atlassian, and selected AWS MCP. Other service examples need a separate source review before they become public guide material.
 - Preserve the admin/developer split. The admin guide owns policy, approvals, signing, Docker/SkillSpector, bundles, and evidence; the enterprise developer guide owns release verification, applying admin config, local auth, and approved MCP/skills consumption.
 - Validate guide updates across prior shipped releases when the guide predates the current command surface; do not check only the newest release note.
-- Use the BetterDoc rules from `packs/docs-quality/betterdoc`: preserve commands and paths, build a claim ledger mentally before polishing, and scope maturity/security/release claims to evidence.
+- Use the BetterDoc rules from `packs/docs-quality/aih-betterdoc`: preserve commands and paths, build a claim ledger mentally before polishing, and scope maturity/security/release claims to evidence.
 - Do not describe unshipped behavior as available. Label future-facing examples explicitly or omit them.
 - Keep examples free of personal names, non-public repo paths, real tokens, customer identifiers, pricing details, and unapproved roadmap claims.
 - Run repository-level documentation checks before calling the guide set current. Standalone guide-folder lint is not enough because public claims depend on the control matrix and source/test references.

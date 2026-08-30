@@ -25,6 +25,16 @@ function hookRows(): { text: string; firstBadge: string } {
 }
 
 describe("policy studio AIH hook transparency", () => {
+  it("names AIH's hook surface as governance and telemetry", () => {
+    const html = policyStudioHtml(model);
+    expect(html).toContain("<h2>AIH-Governance &amp; Telemetry Hooks</h2>");
+    expect(html).toContain("<h2>ECC-Guardrails &amp; Safety Hooks</h2>");
+    expect(html).not.toContain("<h2>AIH hooks</h2>");
+    expect(html).not.toContain("<h2>AIH-Guardrails &amp; Safety Hooks</h2>");
+    expect(html).not.toContain("<h3>ECC hook controls</h3>");
+    expect(html).not.toContain("<h3>ECC-Guardrails &amp; Safety Hooks</h3>");
+  });
+
   // Recorded product failure 5: the only thing the workbench said about an
   // AIH hook was "AIH-owned hook identity" - an administrator could not learn
   // when it fires, what it writes, or whether it can block their work.

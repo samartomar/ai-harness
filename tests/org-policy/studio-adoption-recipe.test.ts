@@ -188,7 +188,10 @@ describe("policy studio adoption recipe", () => {
     if (panel === null) throw new Error("expected adoption recipe panel");
 
     expect(panel.querySelectorAll(".row")).toHaveLength(0);
-    expect(panel.querySelectorAll("button,input,select,textarea")).toHaveLength(0);
+    expect(panel.querySelectorAll("input,select,textarea")).toHaveLength(0);
+    const buttons = [...panel.querySelectorAll("button")];
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0]?.hasAttribute("data-tooltip-button")).toBe(true);
     expect(panel.querySelector("img")).toBeNull();
     expect(panel.textContent).toContain('<img src=x onerror="globalThis.__unsafe=true"> hostile');
     expect((window as unknown as { __unsafe?: boolean }).__unsafe).toBeUndefined();
@@ -221,14 +224,23 @@ describe("policy studio adoption recipe", () => {
       throw new Error("expected pinned framework assets");
     }
     const aihCount = model.catalog.mcp.length + model.catalog.hooks.length;
+    const aihMcpDeclarations = model.catalog.eccMcpInventory.filter(
+      (entry) => entry.owner === "aih",
+    ).length;
+    const governedSkills = eccAssets.filter((asset) => asset.kind === "skill").length;
+    const visibleEccInventory =
+      eccAssets.length -
+      governedSkills +
+      model.catalog.eccSkills.length +
+      model.catalog.externalMcp.length;
     expect(
       [...window.document.querySelectorAll("#owner-ticker [data-owner-focus]")].map((node) =>
         node.textContent?.trim(),
       ),
     ).toEqual([
-      `All ${aihCount + eccAssets.length + superpowersAssets.length}`,
-      `AIH ${aihCount}`,
-      `ECC ${eccAssets.length}`,
+      `All ${aihCount + aihMcpDeclarations + visibleEccInventory + superpowersAssets.length}`,
+      `AIH ${aihCount + aihMcpDeclarations}`,
+      `ECC ${visibleEccInventory}`,
       `Superpowers ${superpowersAssets.length}`,
       "Your sources 0",
     ]);

@@ -4,12 +4,21 @@ import { describe, expect, it } from "vitest";
 import { policyStudioModel } from "../../src/org-policy/studio-model.js";
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
 import {
+  artifactDirectoryResolutionDigestV2,
+  artifactDirectoryResolutionRecordV2,
   artifactEvidenceBundleDigestV1,
+  artifactEvidenceBundleDigestV2,
   artifactEvidenceDigestV1,
   artifactEvidenceRecordV1,
   createArtifactEvidenceBundleV1,
+  createArtifactEvidenceBundleV2,
 } from "../../src/trust/artifact-evidence.js";
-import { ArtifactIntakeV1Schema } from "../../src/trust/artifact-intake.js";
+import { ArtifactIntakeV1Schema, ArtifactIntakeV2Schema } from "../../src/trust/artifact-intake.js";
+import {
+  extractDirectoryClaimV1,
+  parseDirectoryDiscoveryUrlV1,
+  resolveDirectoryClaimV1,
+} from "../../src/trust/directory-resolution.js";
 
 interface IntakeApi {
   importIntakeText(text: string): Promise<void>;
@@ -49,6 +58,14 @@ function api(window: Window): IntakeApi {
 function click(window: Window, node: Element | null): void {
   if (node === null) throw new Error("expected clickable element");
   node.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+}
+
+function openArtifact(window: Window, kind: "mcp" | "skill" | "agent"): void {
+  click(window, window.document.getElementById("open-artifacts"));
+  setValue(window, "artifact-item-kind", kind);
+  window.document
+    .getElementById("artifact-item-kind")
+    ?.dispatchEvent(new window.Event("change", { bubbles: true, cancelable: true }));
 }
 
 async function settle(window: Window): Promise<void> {
@@ -121,12 +138,114 @@ function evidence(detail: string, source = intake()) {
   ]);
 }
 
+function directoryEvidence(source: ReturnType<typeof ArtifactIntakeV2Schema.parse>) {
+  const item = source.items[0];
+  if (item === undefined) throw new Error("expected directory intake item");
+  const discovery = parseDirectoryDiscoveryUrlV1("https://www.pulsemcp.com/servers/firecrawl");
+  const claim = extractDirectoryClaimV1(
+    discovery,
+    "<h1>Firecrawl</h1><p>NAME io.github.firecrawl/firecrawl-mcp-server</p><p>Current Version: 3.7.4</p>",
+  );
+  const resolution = resolveDirectoryClaimV1(claim, {
+    servers: [
+      {
+        server: {
+          name: "io.github.firecrawl/firecrawl-mcp-server",
+          version: "3.24.0",
+          repository: {
+            url: "https://github.com/firecrawl/firecrawl-mcp-server",
+            source: "github",
+          },
+          packages: [
+            {
+              registryType: "npm",
+              identifier: "firecrawl-mcp",
+              version: "3.24.0",
+              transport: { type: "stdio" },
+              environmentVariables: [{ name: "FIRECRAWL_API_KEY", isSecret: true }],
+            },
+          ],
+        },
+      },
+    ],
+    metadata: { count: 1 },
+  });
+  const record = artifactDirectoryResolutionRecordV2({ intake: source, item, resolution });
+  return createArtifactEvidenceBundleV2(source, [], [record]);
+}
+
+function rehashDirectoryEvidence(bundle: ReturnType<typeof directoryEvidence>) {
+  const resolution = bundle.resolutions[0];
+  const result = bundle.results[0];
+  if (resolution === undefined || result === undefined) {
+    throw new Error("expected directory resolution bundle");
+  }
+  const { resolutionDigest: _resolutionDigest, ...resolutionUnsigned } = resolution;
+  resolution.resolutionDigest = artifactDirectoryResolutionDigestV2(resolutionUnsigned);
+  result.resolutionDigest = resolution.resolutionDigest;
+  const { bundleDigest: _bundleDigest, ...bundleUnsigned } = bundle;
+  bundle.bundleDigest = artifactEvidenceBundleDigestV2(bundleUnsigned);
+  return bundle;
+}
+
+function atlassianDirectoryIntake() {
+  return ArtifactIntakeV2Schema.parse({
+    format: "aih-artifact-intake",
+    version: 2,
+    authority: { state: "not-authority" },
+    defaults: { accountableOwner: "platform@acme.example" },
+    items: [
+      {
+        id: "atlassian-directory",
+        kind: "mcp",
+        source: {
+          type: "directory",
+          provider: "mcpmarket",
+          url: "https://mcpmarket.com/server/atlassian-jira-confluence",
+        },
+      },
+    ],
+  });
+}
+
+function atlassianDirectoryEvidence(source: ReturnType<typeof atlassianDirectoryIntake>) {
+  const item = source.items[0];
+  if (item === undefined) throw new Error("expected Atlassian intake item");
+  const discovery = parseDirectoryDiscoveryUrlV1(
+    "https://mcpmarket.com/server/atlassian-jira-confluence",
+  );
+  const claim = extractDirectoryClaimV1(
+    discovery,
+    "<h1>Atlassian Jira &amp; Confluence</h1><p>Endpoint https://mcp.atlassian.com/v1/sse</p>",
+  );
+  const resolution = resolveDirectoryClaimV1(claim, {
+    servers: [
+      {
+        server: {
+          name: "com.atlassian/atlassian-mcp-server",
+          version: "1.1.3",
+          remotes: [
+            { type: "streamable-http", url: "https://mcp.atlassian.com/v1/mcp" },
+            {
+              type: "streamable-http",
+              url: "https://mcp.atlassian.com/v1/mcp/authv2",
+            },
+          ],
+        },
+      },
+    ],
+    metadata: { count: 1 },
+  });
+  const record = artifactDirectoryResolutionRecordV2({ intake: source, item, resolution });
+  return createArtifactEvidenceBundleV2(source, [], [record]);
+}
+
 describe("Policy Workbench artifact intake", () => {
   it("offers one scalable Add/import/scan/review path for MCP, Skill, and Agent sources", () => {
     const window = studio();
     const card = window.document.getElementById("artifact-intake-review");
 
-    expect(card?.textContent).toContain("Add MCP, Skill, or Agent");
+    expect(card?.textContent).toContain("Add and review MCP, Skill, or Agent sources");
     expect(card?.textContent).toContain("one accountable owner email");
     expect(card?.textContent).toContain(
       "aih trust scan aih-artifact-intake.json --apply --evidence-out aih-artifact-evidence.json",
@@ -139,46 +258,308 @@ describe("Policy Workbench artifact intake", () => {
     expect(card?.textContent).toContain("does not infer launch or transport");
     expect(card?.textContent).not.toContain("Default targets");
     expect(card?.textContent).not.toContain("Record Agent");
+    const pulseMcpLink = card?.querySelector('a[href="https://www.pulsemcp.com/"]');
+    expect(pulseMcpLink?.textContent).toContain("AIH recommended");
     expect(card?.querySelector('a[href="https://mcpmarket.com/"]')).not.toBeNull();
     expect(card?.querySelector('a[href="https://www.skills.sh/"]')).not.toBeNull();
     expect(window.document.getElementById("import-artifact-intake")?.textContent).toContain(
-      "Import artifact intake",
+      "Import existing artifact intake",
     );
     expect(window.document.getElementById("import-artifact-evidence")?.textContent).toContain(
       "Merge scan evidence",
     );
+    expect(window.document.getElementById("panel-artifacts")?.firstElementChild).toBe(card);
+    expect(
+      window.document.getElementById("panel-imports")?.querySelector("#artifact-intake-review"),
+    ).toBeNull();
 
     window.close();
   });
 
-  it("routes every organization-artifact entry point into the same queue with kind preselected", () => {
+  it("opens one dedicated Artifacts workspace and chooses kind inside it", () => {
     const window = studio();
 
-    for (const [id, kind] of [
-      ["open-custom", "mcp"],
-      ["open-custom-skill", "skill"],
-      ["open-custom-agent", "agent"],
-    ] as const) {
-      click(window, window.document.getElementById(id));
-      expect((window.document.body as unknown as { dataset: { view: string } }).dataset.view).toBe(
-        "imports",
-      );
-      expect(
-        (window.document.getElementById("artifact-item-kind") as unknown as { value: string })
-          .value,
-      ).toBe(kind);
-      expect(
-        (window.document.getElementById("authoring-sidebar") as unknown as { hidden: boolean })
-          .hidden,
-      ).toBe(true);
+    expect(window.document.getElementById("open-artifacts")?.textContent).toContain(
+      "Organization artifacts",
+    );
+    expect(window.document.getElementById("open-custom")).toBeNull();
+    expect(window.document.getElementById("open-custom-skill")).toBeNull();
+    expect(window.document.getElementById("open-custom-agent")).toBeNull();
+
+    click(window, window.document.getElementById("open-artifacts"));
+    expect((window.document.body as unknown as { dataset: { view: string } }).dataset.view).toBe(
+      "artifacts",
+    );
+    expect(
+      window.document.querySelector('[data-view-tab="artifacts"]')?.getAttribute("aria-pressed"),
+    ).toBe("true");
+    expect(
+      [...(window.document.getElementById("artifact-item-kind")?.querySelectorAll("option") ?? [])]
+        .map((option) => option.textContent)
+        .filter(Boolean),
+    ).toEqual(["MCP", "Skill", "Agent"]);
+    expect(
+      (window.document.getElementById("authoring-sidebar") as unknown as { hidden: boolean })
+        .hidden,
+    ).toBe(true);
+
+    window.close();
+  });
+
+  it("closes overlays on workspace changes and gives every workspace a main landmark", () => {
+    const window = studio();
+    const overlays = [
+      ["drawer", "scrim"],
+      ["authoring-sidebar", "authoring-scrim"],
+      ["ecc-mcp-sidebar", "ecc-mcp-scrim"],
+    ] as const;
+    const showOverlays = () => {
+      for (const [panelId, scrimId] of overlays) {
+        const panel = window.document.getElementById(panelId) as unknown as {
+          hidden: boolean;
+        } | null;
+        const scrim = window.document.getElementById(scrimId);
+        if (panel === null || scrim === null) throw new Error(`expected ${panelId} overlay`);
+        panel.hidden = false;
+        scrim.classList.add("open");
+      }
+    };
+    const expectOverlaysClosed = () => {
+      for (const [panelId, scrimId] of overlays) {
+        expect(
+          (window.document.getElementById(panelId) as unknown as { hidden: boolean }).hidden,
+        ).toBe(true);
+        expect(window.document.getElementById(scrimId)?.classList.contains("open")).toBe(false);
+      }
+    };
+
+    for (const panelId of ["panel-artifacts", "panel-author", "panel-imports"]) {
+      expect(window.document.getElementById(panelId)?.getAttribute("role")).toBe("main");
     }
 
+    showOverlays();
+    click(window, window.document.getElementById("open-artifacts"));
+    expectOverlaysClosed();
+
+    showOverlays();
+    click(window, window.document.querySelector('[data-view-tab="imports"]'));
+    expectOverlaysClosed();
+
+    window.close();
+  });
+
+  it("offers MCP the same paste-first discovery path and routes a directory page to resolution", () => {
+    const window = studio();
+    openArtifact(window, "mcp");
+    input(window, "artifact-default-owner", "owner@company.example");
+    const helper = window.document.getElementById("artifact-mcp-discovery-helper") as unknown as {
+      hidden: boolean;
+      textContent: string | null;
+    } | null;
+
+    expect(helper?.hidden).toBe(false);
+    expect(helper?.textContent).toContain("Paste an MCP directory page");
+    expect(helper?.textContent).toContain("never runs or installs");
+    expect(
+      (
+        window.document.getElementById("artifact-skill-discovery-helper") as unknown as {
+          hidden: boolean;
+        }
+      ).hidden,
+    ).toBe(true);
+
+    input(
+      window,
+      "artifact-mcp-discovery",
+      "[https://mcpmarket.com/server/atlassian-jira-confluence](https://mcpmarket.com/server/atlassian-jira-confluence)",
+    );
+    click(window, window.document.getElementById("parse-mcp-discovery"));
+
+    expect(
+      (window.document.getElementById("artifact-item-id") as unknown as { value: string }).value,
+    ).toBe("atlassian-jira-confluence");
+    expect(
+      (window.document.getElementById("artifact-source-type") as unknown as { value: string })
+        .value,
+    ).toBe("directory");
+    expect(
+      (window.document.getElementById("artifact-directory-url") as unknown as { value: string })
+        .value,
+    ).toBe("https://mcpmarket.com/server/atlassian-jira-confluence");
+    expect(window.document.getElementById("artifact-mcp-discovery-message")?.textContent).toContain(
+      "official MCP Registry",
+    );
+    expect(window.document.getElementById("artifact-mcp-discovery-message")?.textContent).toContain(
+      "not evidence or authority",
+    );
+
+    click(window, window.document.getElementById("add-artifact-item"));
+    const queued = ArtifactIntakeV2Schema.parse(api(window).snapshot().intake);
+    expect(queued.items[0]).toMatchObject({
+      id: "atlassian-jira-confluence",
+      kind: "mcp",
+      source: {
+        type: "directory",
+        provider: "mcpmarket",
+        url: "https://mcpmarket.com/server/atlassian-jira-confluence",
+      },
+    });
+    expect(queued.items[0]).not.toHaveProperty("execution");
+    expect(queued.items[0]).not.toHaveProperty("targets");
+    window.close();
+  });
+
+  it("extracts exact MCP npm intent from a pinned npx command without copying execution", () => {
+    const window = studio();
+    openArtifact(window, "mcp");
+    input(window, "artifact-default-owner", "owner@company.example");
+    input(window, "artifact-mcp-discovery", "npx -y firecrawl-mcp@3.24.0");
+    click(window, window.document.getElementById("parse-mcp-discovery"));
+
+    expect(
+      (window.document.getElementById("artifact-item-id") as unknown as { value: string }).value,
+    ).toBe("firecrawl-mcp");
+    expect(
+      (window.document.getElementById("artifact-source-type") as unknown as { value: string })
+        .value,
+    ).toBe("npm");
+    expect(
+      (window.document.getElementById("artifact-npm-package") as unknown as { value: string })
+        .value,
+    ).toBe("firecrawl-mcp");
+    expect(
+      (window.document.getElementById("artifact-npm-version") as unknown as { value: string })
+        .value,
+    ).toBe("3.24.0");
+    expect(window.document.getElementById("artifact-mcp-discovery-message")?.textContent).toMatch(
+      /parsed locally.*never ran/i,
+    );
+
+    click(window, window.document.getElementById("add-artifact-item"));
+    const queued = ArtifactIntakeV1Schema.parse(api(window).snapshot().intake);
+    expect(queued.items[0]).toMatchObject({
+      id: "firecrawl-mcp",
+      kind: "mcp",
+      source: {
+        type: "npm",
+        registry: "https://registry.npmjs.org",
+        package: "firecrawl-mcp",
+        version: "3.24.0",
+      },
+    });
+    expect(queued.items[0]).not.toHaveProperty("execution");
+    window.close();
+  });
+
+  it("clears helper-derived MCP discovery provenance when the exact source changes", () => {
+    const window = studio();
+    openArtifact(window, "mcp");
+    input(window, "artifact-default-owner", "owner@company.example");
+    input(window, "artifact-mcp-discovery", "https://www.npmjs.com/package/firecrawl-mcp/v/3.24.0");
+    click(window, window.document.getElementById("parse-mcp-discovery"));
+
+    expect(
+      (window.document.getElementById("artifact-discovery-url") as unknown as { value: string })
+        .value,
+    ).toBe("https://www.npmjs.com/package/firecrawl-mcp/v/3.24.0");
+
+    input(window, "artifact-item-id", "other-mcp");
+    input(window, "artifact-npm-package", "other-mcp");
+    input(window, "artifact-npm-version", "1.2.3");
+
+    expect(
+      (window.document.getElementById("artifact-discovery-url") as unknown as { value: string })
+        .value,
+    ).toBe("");
+    expect(window.document.getElementById("artifact-mcp-discovery-message")?.textContent).toMatch(
+      /source changed.*provenance was cleared/i,
+    );
+
+    click(window, window.document.getElementById("add-artifact-item"));
+    const queued = ArtifactIntakeV1Schema.parse(api(window).snapshot().intake);
+    expect(queued.items[0]).toMatchObject({
+      id: "other-mcp",
+      kind: "mcp",
+      source: {
+        type: "npm",
+        registry: "https://registry.npmjs.org",
+        package: "other-mcp",
+        version: "1.2.3",
+      },
+    });
+    expect(queued.items[0]).not.toHaveProperty("discoveryUrl");
+    window.close();
+  });
+
+  it("extracts an exact MCP GitHub permalink without a mutable HEAD lookup", () => {
+    const window = studio();
+    openArtifact(window, "mcp");
+    input(window, "artifact-default-owner", "owner@company.example");
+    const commit = "a".repeat(40);
+    input(
+      window,
+      "artifact-mcp-discovery",
+      `https://github.com/example/mcp-server/blob/${commit}/packages/server/package.json`,
+    );
+    click(window, window.document.getElementById("parse-mcp-discovery"));
+
+    expect(
+      (window.document.getElementById("artifact-item-id") as unknown as { value: string }).value,
+    ).toBe("mcp-server");
+    expect(
+      (window.document.getElementById("artifact-source-type") as unknown as { value: string })
+        .value,
+    ).toBe("github");
+    expect(
+      (
+        window.document.getElementById("artifact-github-repository") as unknown as {
+          value: string;
+        }
+      ).value,
+    ).toBe("example/mcp-server");
+    expect(
+      (window.document.getElementById("artifact-github-commit") as unknown as { value: string })
+        .value,
+    ).toBe(commit);
+    expect(
+      (window.document.getElementById("artifact-source-path") as unknown as { value: string })
+        .value,
+    ).toBe("packages/server/package.json");
+    expect(window.document.getElementById("artifact-mcp-discovery-message")?.textContent).toContain(
+      "exact GitHub permalink",
+    );
+    window.close();
+  });
+
+  it.each([
+    ["npx firecrawl-mcp", /exact package version/i],
+    ["npx -y firecrawl-mcp@3.24.0 --token secret", /command syntax is not accepted/i],
+    ["npx -y firecrawl-mcp@3.24.0 && echo unsafe", /command syntax is not accepted/i],
+    [
+      "[https://mcpmarket.com/server/firecrawl](https://attacker.example/server/firecrawl)",
+      /link text and destination must match/i,
+    ],
+  ])("rejects unsafe or mutable MCP discovery input %s", (raw, expected) => {
+    const window = studio();
+    openArtifact(window, "mcp");
+    input(window, "artifact-default-owner", "owner@company.example");
+    input(window, "artifact-mcp-discovery", raw);
+    click(window, window.document.getElementById("parse-mcp-discovery"));
+
+    expect(window.document.getElementById("artifact-mcp-discovery-message")?.textContent).toMatch(
+      expected,
+    );
+    expect(
+      (window.document.getElementById("add-artifact-item") as unknown as { disabled: boolean })
+        .disabled,
+    ).toBe(true);
+    expect(api(window).snapshot().intake).toBeNull();
     window.close();
   });
 
   it("resolves a Skills CLI discovery command to one exact source without installing it", async () => {
     const window = studio();
-    click(window, window.document.getElementById("open-custom-skill"));
+    openArtifact(window, "skill");
     input(window, "artifact-default-owner", "owner@company.example");
     const commit = "b".repeat(40);
     const requests: Array<{ url: string; options: Record<string, unknown> }> = [];
@@ -288,7 +669,7 @@ describe("Policy Workbench artifact intake", () => {
 
   it("fails closed when GitHub cannot return one complete unambiguous Skill path", async () => {
     const window = studio();
-    click(window, window.document.getElementById("open-custom-skill"));
+    openArtifact(window, "skill");
     input(window, "artifact-default-owner", "owner@company.example");
     Object.defineProperty(window, "fetch", {
       configurable: true,
@@ -338,7 +719,7 @@ describe("Policy Workbench artifact intake", () => {
 
   it("rejects ambiguous Skill paths from public GitHub metadata", async () => {
     const window = studio();
-    click(window, window.document.getElementById("open-custom-skill"));
+    openArtifact(window, "skill");
     input(window, "artifact-default-owner", "owner@company.example");
     Object.defineProperty(window, "fetch", {
       configurable: true,
@@ -383,7 +764,7 @@ describe("Policy Workbench artifact intake", () => {
 
   it("does not apply a stale GitHub response after the discovery input changes", async () => {
     const window = studio();
-    click(window, window.document.getElementById("open-custom-skill"));
+    openArtifact(window, "skill");
     input(window, "artifact-default-owner", "owner@company.example");
     let resolveCommit!: (response: {
       ok: boolean;
@@ -451,7 +832,7 @@ describe("Policy Workbench artifact intake", () => {
 
   it("aborts resolution when exact-source fields change and never binds the stale response", async () => {
     const window = studio();
-    click(window, window.document.getElementById("open-custom-skill"));
+    openArtifact(window, "skill");
     input(window, "artifact-default-owner", "owner@company.example");
     let requestSignal: AbortSignal | undefined;
     let resolveCommit!: (response: {
@@ -508,9 +889,9 @@ describe("Policy Workbench artifact intake", () => {
     window.close();
   });
 
-  it("aborts Skill resolution when the administrator switches artifact routes", async () => {
+  it("aborts Skill resolution when the administrator changes artifact kind", async () => {
     const window = studio();
-    click(window, window.document.getElementById("open-custom-skill"));
+    openArtifact(window, "skill");
     let requestSignal: AbortSignal | undefined;
     let resolveCommit!: (response: {
       ok: boolean;
@@ -537,7 +918,10 @@ describe("Policy Workbench artifact intake", () => {
       "npx skills add https://github.com/mattpocock/skills --skill grill-me",
     );
     click(window, window.document.getElementById("parse-skill-discovery"));
-    click(window, window.document.getElementById("open-custom-agent"));
+    setValue(window, "artifact-item-kind", "agent");
+    window.document
+      .getElementById("artifact-item-kind")
+      ?.dispatchEvent(new window.Event("change", { bubbles: true, cancelable: true }));
     resolveCommit({
       ok: true,
       status: 200,
@@ -575,7 +959,7 @@ describe("Policy Workbench artifact intake", () => {
     },
   ])("fails closed when GitHub returns $name", async ({ response, expected }) => {
     const window = studio();
-    click(window, window.document.getElementById("open-custom-skill"));
+    openArtifact(window, "skill");
     input(window, "artifact-default-owner", "owner@company.example");
     Object.defineProperty(window, "fetch", {
       configurable: true,
@@ -603,7 +987,7 @@ describe("Policy Workbench artifact intake", () => {
 
   it("accepts only exact GitHub Skill permalinks and rejects command syntax", () => {
     const window = studio();
-    click(window, window.document.getElementById("open-custom-skill"));
+    openArtifact(window, "skill");
     input(window, "artifact-default-owner", "owner@company.example");
     const commit = "a".repeat(40);
     input(
@@ -689,6 +1073,375 @@ describe("Policy Workbench artifact intake", () => {
       "computes the downloaded tarball SHA-256 and observed SHA-512 itself",
     );
 
+    window.close();
+  });
+
+  it("turns a directory claim into a reviewable exact candidate without inferring authority or execution", async () => {
+    const window = studio();
+    openArtifact(window, "mcp");
+    input(window, "artifact-default-owner", "platform@acme.example");
+    input(window, "artifact-item-id", "firecrawl-directory");
+    setValue(window, "artifact-source-type", "directory");
+    window.document
+      .getElementById("artifact-source-type")
+      ?.dispatchEvent(new window.Event("change", { bubbles: true, cancelable: true }));
+    input(window, "artifact-directory-url", "https://www.pulsemcp.com/servers/firecrawl");
+
+    expect(window.document.getElementById("artifact-source-guide")?.textContent).toContain(
+      "directory claim",
+    );
+    click(window, window.document.getElementById("add-artifact-item"));
+    const queued = ArtifactIntakeV2Schema.parse(api(window).snapshot().intake);
+    expect(queued).toMatchObject({
+      version: 2,
+      authority: { state: "not-authority" },
+      items: [
+        {
+          kind: "mcp",
+          source: {
+            type: "directory",
+            provider: "pulsemcp",
+            url: "https://www.pulsemcp.com/servers/firecrawl",
+          },
+        },
+      ],
+    });
+    expect(queued.items[0]).not.toHaveProperty("targets");
+    expect(queued.items[0]).not.toHaveProperty("execution");
+
+    await api(window).mergeEvidenceText(JSON.stringify(directoryEvidence(queued)));
+    await settle(window);
+    const row = window.document.querySelector('[data-artifact-row="firecrawl-directory"]');
+    expect(row?.textContent).toContain("Directory version mismatch");
+    expect(row?.textContent).toContain("3.7.4 → 3.24.0");
+    expect(row?.textContent).toContain("firecrawl-mcp@3.24.0");
+    expect(row?.textContent).toContain("FIRECRAWL_API_KEY");
+    expect(row?.textContent).toContain("Scan still required");
+
+    click(window, row?.querySelector('[data-artifact-option="npm-firecrawl-mcp-3.24.0"]') ?? null);
+    const selected = ArtifactIntakeV2Schema.parse(api(window).snapshot().intake);
+    expect(selected.items[0]).toMatchObject({
+      discoveryUrl: "https://www.pulsemcp.com/servers/firecrawl",
+      source: {
+        type: "npm",
+        registry: "https://registry.npmjs.org",
+        package: "firecrawl-mcp",
+        version: "3.24.0",
+      },
+    });
+    expect(selected.items[0]).not.toHaveProperty("execution");
+    expect(selected.items[0]).not.toHaveProperty("targets");
+    expect(window.document.getElementById("artifact-intake-message")?.textContent).toContain(
+      "download the updated intake and scan",
+    );
+
+    window.close();
+  });
+
+  it("does not apply directory resolution history to a changed source or owner", async () => {
+    const window = studio();
+    const original = ArtifactIntakeV2Schema.parse({
+      format: "aih-artifact-intake",
+      version: 2,
+      authority: { state: "not-authority" },
+      defaults: { accountableOwner: "platform@acme.example" },
+      items: [
+        {
+          id: "firecrawl-directory",
+          kind: "mcp",
+          source: {
+            type: "directory",
+            provider: "pulsemcp",
+            url: "https://www.pulsemcp.com/servers/firecrawl",
+          },
+        },
+      ],
+    });
+    await api(window).importIntakeText(JSON.stringify(original));
+    await api(window).mergeEvidenceText(JSON.stringify(directoryEvidence(original)));
+
+    const changedSource = ArtifactIntakeV2Schema.parse({
+      ...original,
+      items: [
+        {
+          ...original.items[0],
+          source: {
+            type: "directory",
+            provider: "mcpmarket",
+            url: "https://mcpmarket.com/server/firecrawl",
+          },
+        },
+      ],
+    });
+    await api(window).importIntakeText(JSON.stringify(changedSource));
+    await settle(window);
+    let row = window.document.querySelector('[data-artifact-row="firecrawl-directory"]');
+    expect(row?.textContent).toContain("Stale directory resolution");
+    expect(row?.querySelectorAll("[data-artifact-option]")).toHaveLength(0);
+
+    const changedOwner = ArtifactIntakeV2Schema.parse({
+      ...original,
+      defaults: { accountableOwner: "different-owner@acme.example" },
+    });
+    await api(window).importIntakeText(JSON.stringify(changedOwner));
+    await settle(window);
+    row = window.document.querySelector('[data-artifact-row="firecrawl-directory"]');
+    expect(row?.textContent).toContain("Mismatched directory resolution");
+    expect(row?.querySelectorAll("[data-artifact-option]")).toHaveLength(0);
+
+    window.close();
+  });
+
+  it("blocks conflicting directory resolution history instead of choosing the last import", async () => {
+    const window = studio();
+    const source = ArtifactIntakeV2Schema.parse({
+      format: "aih-artifact-intake",
+      version: 2,
+      authority: { state: "not-authority" },
+      defaults: { accountableOwner: "platform@acme.example" },
+      items: [
+        {
+          id: "firecrawl-directory",
+          kind: "mcp",
+          source: {
+            type: "directory",
+            provider: "pulsemcp",
+            url: "https://www.pulsemcp.com/servers/firecrawl",
+          },
+        },
+      ],
+    });
+    const first = directoryEvidence(source);
+    const conflicting = structuredClone(first);
+    const resolution = conflicting.resolutions[0];
+    const result = conflicting.results[0];
+    if (
+      resolution === undefined ||
+      result === undefined ||
+      resolution.resolution.registry === undefined
+    ) {
+      throw new Error("expected directory resolution bundle");
+    }
+    resolution.resolution.registry.version = "3.25.0";
+    const npmOption = resolution.resolution.options.find((option) => option.source.type === "npm");
+    if (npmOption === undefined || npmOption.source.type !== "npm") {
+      throw new Error("expected npm resolution option");
+    }
+    const registryNpmSource = resolution.resolution.registry.sources.find(
+      (source) => source.type === "npm",
+    );
+    if (registryNpmSource === undefined || registryNpmSource.type !== "npm") {
+      throw new Error("expected npm registry source");
+    }
+    npmOption.id = "npm-firecrawl-mcp-3.25.0";
+    npmOption.source.version = "3.25.0";
+    npmOption.server.version = "3.25.0";
+    registryNpmSource.version = "3.25.0";
+    const versionConflict = resolution.resolution.conflicts.find(
+      (conflict) => conflict.field === "version",
+    );
+    if (versionConflict === undefined) throw new Error("expected version conflict");
+    versionConflict.observed = "3.25.0";
+    const { resolutionDigest: _resolutionDigest, ...resolutionUnsigned } = resolution;
+    resolution.resolutionDigest = artifactDirectoryResolutionDigestV2(resolutionUnsigned);
+    result.resolutionDigest = resolution.resolutionDigest;
+    const { bundleDigest: _bundleDigest, ...bundleUnsigned } = conflicting;
+    conflicting.bundleDigest = artifactEvidenceBundleDigestV2(bundleUnsigned);
+
+    await api(window).importIntakeText(JSON.stringify(source));
+    await api(window).mergeEvidenceText(JSON.stringify(first));
+    await api(window).mergeEvidenceText(JSON.stringify(conflicting));
+    await settle(window);
+
+    const row = window.document.querySelector('[data-artifact-row="firecrawl-directory"]');
+    expect(row?.textContent).toContain("Conflicting directory resolution history");
+    expect(row?.querySelectorAll("[data-artifact-option]")).toHaveLength(0);
+    window.close();
+  });
+
+  it("preserves every canonical remote option when a directory advertises a retired endpoint", async () => {
+    const window = studio();
+    const intake = atlassianDirectoryIntake();
+    await api(window).importIntakeText(JSON.stringify(intake));
+    await api(window).mergeEvidenceText(JSON.stringify(atlassianDirectoryEvidence(intake)));
+    await settle(window);
+
+    const row = window.document.querySelector('[data-artifact-row="atlassian-directory"]');
+    expect(row?.textContent).toContain("Directory endpoint mismatch");
+    expect(row?.textContent).toContain("https://mcp.atlassian.com/v1/sse");
+    expect(row?.textContent).toContain("https://mcp.atlassian.com/v1/mcp");
+    expect(row?.textContent).toContain("https://mcp.atlassian.com/v1/mcp/authv2");
+    const remoteButtons = [...(row?.querySelectorAll("[data-artifact-option]") ?? [])];
+    expect(remoteButtons).toHaveLength(2);
+    expect(
+      remoteButtons.every((button) => (button as unknown as { disabled: boolean }).disabled),
+    ).toBe(true);
+    expect(api(window).snapshot().intake).toEqual(intake);
+
+    window.close();
+  });
+
+  it("rejects a recomputed V2 bundle whose resolution state contradicts its conflicts", async () => {
+    const window = studio();
+    const intake = ArtifactIntakeV2Schema.parse({
+      format: "aih-artifact-intake",
+      version: 2,
+      authority: { state: "not-authority" },
+      defaults: { accountableOwner: "platform@acme.example" },
+      items: [
+        {
+          id: "firecrawl-directory",
+          kind: "mcp",
+          source: {
+            type: "directory",
+            provider: "pulsemcp",
+            url: "https://www.pulsemcp.com/servers/firecrawl",
+          },
+        },
+      ],
+    });
+    const bundle = structuredClone(directoryEvidence(intake));
+    const resolution = bundle.resolutions[0];
+    const result = bundle.results[0];
+    if (resolution === undefined || result === undefined) {
+      throw new Error("expected directory resolution bundle");
+    }
+    resolution.resolution.state = "resolved";
+    const { resolutionDigest: _resolutionDigest, ...resolutionUnsigned } = resolution;
+    resolution.resolutionDigest = artifactDirectoryResolutionDigestV2(resolutionUnsigned);
+    result.resolutionDigest = resolution.resolutionDigest;
+    const { bundleDigest: _bundleDigest, ...bundleUnsigned } = bundle;
+    bundle.bundleDigest = artifactEvidenceBundleDigestV2(bundleUnsigned);
+
+    await expect(api(window).mergeEvidenceText(JSON.stringify(bundle))).rejects.toThrow(
+      /resolved state cannot contain conflicts/i,
+    );
+    expect(api(window).snapshot().bundleCount).toBe(0);
+    window.close();
+  });
+
+  it("rejects a recomputed directory option that is not bound to the selected registry server", async () => {
+    const window = studio();
+    const intake = ArtifactIntakeV2Schema.parse({
+      format: "aih-artifact-intake",
+      version: 2,
+      authority: { state: "not-authority" },
+      defaults: { accountableOwner: "platform@acme.example" },
+      items: [
+        {
+          id: "firecrawl-directory",
+          kind: "mcp",
+          source: {
+            type: "directory",
+            provider: "pulsemcp",
+            url: "https://www.pulsemcp.com/servers/firecrawl",
+          },
+        },
+      ],
+    });
+    const bundle = structuredClone(directoryEvidence(intake));
+    const option = bundle.resolutions[0]?.resolution.options[0];
+    if (option === undefined) throw new Error("expected directory option");
+    option.server = { name: "io.attacker/unrelated-server", version: "3.24.0" };
+    rehashDirectoryEvidence(bundle);
+
+    await expect(api(window).mergeEvidenceText(JSON.stringify(bundle))).rejects.toThrow(
+      /option server binding/i,
+    );
+    expect(api(window).snapshot().bundleCount).toBe(0);
+    window.close();
+  });
+
+  it("rejects a recomputed directory package absent from the selected registry record", async () => {
+    const window = studio();
+    const intake = ArtifactIntakeV2Schema.parse({
+      format: "aih-artifact-intake",
+      version: 2,
+      authority: { state: "not-authority" },
+      defaults: { accountableOwner: "platform@acme.example" },
+      items: [
+        {
+          id: "firecrawl-directory",
+          kind: "mcp",
+          source: {
+            type: "directory",
+            provider: "pulsemcp",
+            url: "https://www.pulsemcp.com/servers/firecrawl",
+          },
+        },
+      ],
+    });
+    const bundle = structuredClone(directoryEvidence(intake));
+    const option = bundle.resolutions[0]?.resolution.options[0];
+    if (option === undefined || option.source.type !== "npm") {
+      throw new Error("expected npm directory option");
+    }
+    option.source.package = "unrelated-mcp";
+    rehashDirectoryEvidence(bundle);
+
+    await expect(api(window).mergeEvidenceText(JSON.stringify(bundle))).rejects.toThrow(
+      /option source binding/i,
+    );
+    expect(api(window).snapshot().bundleCount).toBe(0);
+    window.close();
+  });
+
+  it("rejects unsupported integrity or path fields instead of dropping them during selection", async () => {
+    for (const field of ["integrity", "path"] as const) {
+      const window = studio();
+      const intake = ArtifactIntakeV2Schema.parse({
+        format: "aih-artifact-intake",
+        version: 2,
+        authority: { state: "not-authority" },
+        defaults: { accountableOwner: "platform@acme.example" },
+        items: [
+          {
+            id: "firecrawl-directory",
+            kind: "mcp",
+            source: {
+              type: "directory",
+              provider: "pulsemcp",
+              url: "https://www.pulsemcp.com/servers/firecrawl",
+            },
+          },
+        ],
+      });
+      const bundle = structuredClone(directoryEvidence(intake)) as unknown as ReturnType<
+        typeof directoryEvidence
+      > & {
+        resolutions: Array<{
+          resolution: { options: Array<{ source: Record<string, unknown> }> };
+        }>;
+      };
+      const option = bundle.resolutions[0]?.resolution.options[0];
+      if (option === undefined) throw new Error("expected directory option");
+      option.source[field] = field === "integrity" ? REGISTRY_INTEGRITY : "packages/server";
+      rehashDirectoryEvidence(bundle);
+
+      await expect(api(window).mergeEvidenceText(JSON.stringify(bundle))).rejects.toThrow(
+        new RegExp(`unknown member ${field}`, "i"),
+      );
+      expect(api(window).snapshot().bundleCount).toBe(0);
+      window.close();
+    }
+  });
+
+  it("rejects credential-bearing endpoint conflicts before rendering them", async () => {
+    const window = studio();
+    const intake = atlassianDirectoryIntake();
+    const bundle = structuredClone(atlassianDirectoryEvidence(intake));
+    const conflict = bundle.resolutions[0]?.resolution.conflicts.find(
+      (entry) => entry.field === "endpoint",
+    );
+    if (conflict === undefined) throw new Error("expected endpoint conflict");
+    conflict.claimed = "https://user:secret@mcp.atlassian.com/v1/sse";
+    rehashDirectoryEvidence(bundle);
+
+    await expect(api(window).mergeEvidenceText(JSON.stringify(bundle))).rejects.toThrow(
+      /endpoint conflict claimed/i,
+    );
+    expect(window.document.body.textContent).not.toContain("user:secret");
+    expect(api(window).snapshot().bundleCount).toBe(0);
     window.close();
   });
 

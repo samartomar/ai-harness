@@ -15,7 +15,10 @@ import {
   ECC_DISABLE_ELIGIBLE_HOOK_IDS,
   type EccHookProfile,
 } from "./ecc-hook-controls.js";
-import { ECC_EXTERNAL_MCP_APPROVAL_IDS } from "./ecc-mcp-approval.js";
+import {
+  ECC_EXTERNAL_MCP_APPROVAL_IDS,
+  POLICY_APPROVER_EMAIL_PATTERN,
+} from "./ecc-mcp-approval.js";
 import { ECC_MCP_CATALOG_PROVENANCE } from "./ecc-mcp-catalog.js";
 import { GovernanceDecisionIdSchema } from "./governance-decision-v1.js";
 
@@ -253,6 +256,14 @@ const SafePolicyIdentifierSchema = z
   .string()
   .regex(/^[a-z][a-z0-9-]{0,63}$/, "must be a lowercase stable identifier");
 
+const PolicyApproverIdentitySchema = z.union([
+  z
+    .string()
+    .max(254)
+    .regex(new RegExp(POLICY_APPROVER_EMAIL_PATTERN), "must be an approver email address"),
+  SafePolicyIdentifierSchema,
+]);
+
 const EccHookProfileSchema = z.enum(["minimal", "standard", "strict"]);
 const EccHookControlsSchema = z
   .object({
@@ -321,6 +332,13 @@ const GitRepositorySchema = z
 const GitCommitSchema = z
   .string()
   .regex(/^[0-9a-f]{40}$/, "must be a lowercase immutable Git commit or tree digest");
+const NpmPackageNameSchema = z
+  .string()
+  .max(214)
+  .regex(
+    /^(?:@[A-Za-z0-9][A-Za-z0-9._-]*\/)?[A-Za-z0-9][A-Za-z0-9._-]*$/,
+    "must be an unscoped package name or a complete @scope/package identity",
+  );
 const ExactPackageVersionSchema = z
   .string()
   .regex(
@@ -370,7 +388,7 @@ const IsoTimestampSchema = z.string().refine((value) => {
 
 const RemoteMcpApprovalSchema = z
   .object({
-    approvedBy: SafePolicyIdentifierSchema,
+    approvedBy: PolicyApproverIdentitySchema,
     authenticationMode: SafePolicyTextSchema,
     allowedDataClasses: z.array(SafePolicyIdentifierSchema).min(1).max(20),
   })
@@ -386,7 +404,7 @@ const EccMcpApprovalSchema = z
     id: z.enum(ECC_EXTERNAL_MCP_APPROVAL_IDS),
     sourceContentSha256: z.literal(ECC_MCP_CATALOG_PROVENANCE.contentSha256),
     state: z.enum(["approved", "revoked"]),
-    approvedBy: SafePolicyIdentifierSchema,
+    approvedBy: PolicyApproverIdentitySchema,
     authenticationMode: SafePolicyTextSchema,
     allowedDataClasses: z.array(SafePolicyIdentifierSchema).min(1).max(20),
   })
@@ -434,7 +452,7 @@ export const CandidateSourceSchema = z.union([
     .object({
       type: z.literal("package"),
       registry: HttpsOriginSchema,
-      package: z.string().regex(/^@?[A-Za-z0-9][A-Za-z0-9._/-]*$/, "must be a package identity"),
+      package: NpmPackageNameSchema,
       version: ExactPackageVersionSchema,
       integrity: Sha256Schema,
     })
@@ -453,7 +471,7 @@ export const CandidateSourceSchema = z.union([
       /** The resolver is an identity selector, never an arbitrary executable. */
       resolver: z.enum(["npx", "uvx"]),
       registry: HttpsOriginSchema,
-      package: z.string().regex(/^@?[A-Za-z0-9][A-Za-z0-9._/-]*$/, "must be a package identity"),
+      package: NpmPackageNameSchema,
       version: ExactPackageVersionSchema,
       integrity: Sha256Schema,
     })
@@ -505,6 +523,8 @@ const PolicyCandidateSchema = z
   .object({
     id: SafePolicyIdentifierSchema,
     kind: z.enum(["mcp", "hook", "framework"]),
+    /** Human accountable for advancing or withdrawing this candidate; not approval authority. */
+    accountableOwner: PolicyApproverIdentitySchema.optional(),
     description: SafePolicyTextSchema,
     capabilities: z.array(SafePolicyTextSchema).max(20).default([]),
     risks: z.array(SafePolicyTextSchema).max(20).default([]),
@@ -674,6 +694,8 @@ const ExternalCurationItemSchema = z
   .object({
     kind: z.enum(["agent", "skill", "command"]),
     id: SafePolicyTextSchema,
+    /** Human accountable for this report-only audit reference; not framework ownership. */
+    accountableOwner: PolicyApproverIdentitySchema.optional(),
     source: z
       .object({
         repository: GitRepositorySchema,

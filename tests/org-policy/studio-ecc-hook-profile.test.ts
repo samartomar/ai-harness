@@ -66,9 +66,55 @@ describe("ECC hook profile authoring", () => {
     const baseline = JSON.stringify(policy(window));
     const panel = window.document.getElementById("ecc-hook-controls");
     if (panel === null) throw new Error("expected ECC hook controls panel");
+    const eccSurface = window.document.getElementById("surface-ecc-hooks");
+    if (eccSurface === null) throw new Error("expected a separate ECC hook surface");
+    const registrar = [...window.document.querySelectorAll(".grp")].find(
+      (group) => group.querySelector("h2")?.textContent === "Hook registrar",
+    );
+    expect(eccSurface.getAttribute("data-open")).toBe("0");
+    expect(eccSurface.contains(panel)).toBe(true);
+    expect(registrar).toBeUndefined();
 
     expect(panel.textContent).toContain("ECC executes hooks");
     expect(panel.textContent).toContain("AIH configures");
+    const groups = [...panel.querySelectorAll("[data-ecc-hook-group]")];
+    expect(groups.every((group) => group.tagName === "DETAILS")).toBe(true);
+    expect(
+      groups.map((group) => group.querySelector("[data-ecc-hook-group-label]")?.textContent),
+    ).toEqual([
+      "Pre-tool Guardrails",
+      "Gate Checks",
+      "Additional Pre-tool Controls",
+      "Session & Lifecycle",
+      "Post-tool Observability & Feedback",
+    ]);
+    expect(groups.map((group) => group.hasAttribute("open"))).toEqual([
+      true,
+      true,
+      false,
+      false,
+      false,
+    ]);
+    expect(
+      groups.map((group) => group.querySelector("[data-ecc-hook-group-count]")?.textContent),
+    ).toEqual(["2", "2", "11", "10", "16"]);
+    expect(
+      [...groups[0]!.querySelectorAll("[data-ecc-hook-id]")].map((row) =>
+        row.getAttribute("data-ecc-hook-id"),
+      ),
+    ).toEqual(["pre:bash:block-no-verify", "pre:config-protection"]);
+    expect(
+      [...groups[1]!.querySelectorAll("[data-ecc-hook-id]")].map((row) =>
+        row.getAttribute("data-ecc-hook-id"),
+      ),
+    ).toEqual(["pre:edit-write:gateguard-fact-force", "post:quality-gate"]);
+    const groupedIds = groups.flatMap((group) =>
+      [...group.querySelectorAll("[data-ecc-hook-id]")].map((row) =>
+        row.getAttribute("data-ecc-hook-id"),
+      ),
+    );
+    expect(new Set(groupedIds).size).toBe(groupedIds.length);
+    expect([...groupedIds].sort()).toEqual(controls.hooks.map((hook) => hook.id).sort());
     expect(
       [...panel.querySelectorAll('input[name="ecc-hook-profile"]')].map(
         (input) => (input as unknown as ControlInput).value,

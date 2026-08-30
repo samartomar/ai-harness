@@ -23,9 +23,13 @@ function studio(): Window {
 }
 
 function selectProfile(window: Window, value: string): void {
-  const preset = window.document.querySelector(`[data-preset="${value}"]`);
+  const preset = window.document.getElementById("preset-select") as unknown as {
+    value: string;
+    dispatchEvent(event: unknown): boolean;
+  } | null;
   if (preset === null) throw new Error(`expected ${value} preset`);
-  preset.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  preset.value = value;
+  preset.dispatchEvent(new window.Event("change", { bubbles: true }));
 }
 
 function authoredPolicy(window: Window): {
@@ -189,12 +193,13 @@ describe("policy studio enterprise composition", () => {
   it("leaves the composed framework's inventory intact and accounts for the rest", () => {
     const window = studio();
     selectProfile(window, "enterprise");
-    const rows =
+    const frameworkRows =
       window.document.getElementById("framework-rows")?.querySelectorAll(".row").length ?? 0;
-    const railOwned = ecc.assets.filter((asset) =>
-      ["lang", "framework", "capability", "module"].includes(asset.kind),
-    ).length;
-    expect(rows).toBe(ecc.assets.length - railOwned);
+    const governedSkillRows = [
+      ...window.document.querySelectorAll("[data-ecc-skill-availability]"),
+    ].filter((row) => row.querySelector("[data-framework-select]") !== null).length;
+    const mcpDeclarations = ecc.assets.filter((asset) => asset.kind === "mcp").length;
+    expect(frameworkRows + governedSkillRows).toBe(ecc.assets.length - mcpDeclarations);
     const others = model.catalog.frameworks
       .filter((framework) => framework.id !== "ecc")
       .reduce((total, framework) => total + framework.assets.length, 0);

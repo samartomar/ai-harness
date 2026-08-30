@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { type Posture, postureFromContext } from "../config/posture.js";
+import { parseStrictJsonObjectV1 } from "../contract/strict-json-v1.js";
 import { AihError } from "../errors.js";
 import { assertArtifactOutputPath, writeArtifact } from "../internals/execute.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
@@ -18,16 +19,23 @@ import { mcpConfigSecretCheck, plaintextSecretCheck } from "../secrets/probes.js
 import { MCP_CONFIG_FILES, scanConfigSecrets, scanSecrets } from "../secrets/scan.js";
 import { applyTrustAcknowledgements } from "./acknowledge.js";
 import {
+  type ArtifactDirectoryResolutionRecordV2,
   type ArtifactEvidenceRecordV1,
   type ArtifactObservedSourceV1,
+  artifactDirectoryResolutionRecordV2,
   artifactEvidenceRecordV1,
   createArtifactEvidenceBundleV1,
+  createArtifactEvidenceBundleV2,
 } from "./artifact-evidence.js";
 import {
+  type ArtifactIntake,
   type ArtifactIntakeV1,
+  type ArtifactIntakeV2,
+  artifactIntakeDirectoryGroupsV2,
+  artifactIntakeExactProjectionV1,
   artifactIntakeSourceGroupsV1,
   type EffectiveArtifactIntakeItemV1,
-  parseArtifactIntakeV1Text,
+  parseArtifactIntakeText,
 } from "./artifact-intake.js";
 import { resolveInternalScopes, scanTrustDependencyNames } from "./depnames.js";
 import {
@@ -38,6 +46,11 @@ import {
   trustRuntimeAdvisory,
 } from "./detectors.js";
 import {
+  DirectoryRegistryResponseV1Schema,
+  extractDirectoryClaimV1,
+  resolveDirectoryClaimV1,
+} from "./directory-resolution.js";
+import {
   dispositionForTrustFinding,
   type NormalizedTrustFinding,
   normalizeTrustFindings,
@@ -46,18 +59,22 @@ import {
   type TrustPolicyDisposition,
 } from "./evidence.js";
 import {
+  type ArtifactDirectoryTrustSource,
   type ArtifactIntakePackageTrustSource,
   assertTrustTreeSafe,
   cleanupQuarantine,
   type GitHubTrustFetchMetadataValidation,
   type PackageTrustSource,
+  readArtifactDirectoryTrustFetch,
   readArtifactIntakePackageTrustFetchMetadata,
+  resolveArtifactDirectoryTrustSource,
   resolveArtifactIntakePackageTrustSource,
   resolvePackageTrustSource,
   resolveTrustSource,
   sameGitHubTrustFetchMetadata,
   type TrustFetchMetadata,
   type TrustSource,
+  trustDirectoryFetchExec,
   trustFetchExec,
   trustPackageFetchActions,
   validateGitHubTrustFetchMetadata,
@@ -1313,7 +1330,7 @@ export async function trustScanPlanForSource(
   return plan("trust scan", ...actions);
 }
 
-function artifactIntakeTarget(ctx: PlanContext, target: string): ArtifactIntakeV1 | undefined {
+function artifactIntakeTarget(ctx: PlanContext, target: string): ArtifactIntake | undefined {
   const absolute = isAbsolute(target) ? target : resolve(ctx.root, target);
   if (!existsSync(absolute) || statSync(absolute).isDirectory()) return undefined;
   const opened = readRegularFileWithStats(absolute, { maxBytes: 1024 * 1024 });
@@ -1323,13 +1340,10 @@ function artifactIntakeTarget(ctx: PlanContext, target: string): ArtifactIntakeV
       "AIH_TRUST",
     );
   }
-  return parseArtifactIntakeV1Text(opened.contents.toString("utf8"));
+  return parseArtifactIntakeText(opened.contents.toString("utf8"));
 }
 
-async function artifactIntakeScanPlan(
-  ctx: PlanContext,
-  intake: ArtifactIntakeV1,
-): Promise<ReturnType<typeof plan>> {
+function artifactEvidenceOutput(ctx: PlanContext): string | undefined {
   const evidenceOut = ctx.options.evidenceOut;
   if (ctx.apply && (typeof evidenceOut !== "string" || evidenceOut.trim().length === 0)) {
     throw new AihError(
@@ -1338,11 +1352,16 @@ async function artifactIntakeScanPlan(
     );
   }
   if (ctx.apply) assertArtifactOutputPath(ctx, String(evidenceOut));
-  const records = new Map<string, ArtifactEvidenceRecordV1>();
-  const problems: Record<string, string> = Object.fromEntries(
-    intake.items.map((item) => [item.id, "not scanned"]),
-  );
-  const actions: Action[] = [];
+  return typeof evidenceOut === "string" ? evidenceOut : undefined;
+}
+
+async function appendExactArtifactScanActions(
+  ctx: PlanContext,
+  intake: ArtifactIntakeV1,
+  records: Map<string, ArtifactEvidenceRecordV1>,
+  problems: Record<string, string>,
+  actions: Action[],
+): Promise<void> {
   for (const group of artifactIntakeSourceGroupsV1(intake)) {
     const source: Exclude<ScannableTrustSource, { kind: "local" | "package" }> =
       group.source.type === "github"
@@ -1365,6 +1384,19 @@ async function artifactIntakeScanPlan(
     });
     actions.push(...sourcePlan.actions);
   }
+}
+
+async function artifactIntakeScanPlanV1(
+  ctx: PlanContext,
+  intake: ArtifactIntakeV1,
+): Promise<ReturnType<typeof plan>> {
+  const evidenceOut = artifactEvidenceOutput(ctx);
+  const records = new Map<string, ArtifactEvidenceRecordV1>();
+  const problems: Record<string, string> = Object.fromEntries(
+    intake.items.map((item) => [item.id, "not scanned"]),
+  );
+  const actions: Action[] = [];
+  await appendExactArtifactScanActions(ctx, intake, records, problems, actions);
   actions.push(
     dynamicDigest("artifact evidence bundle", (digestCtx) => {
       if (!digestCtx.apply) {
@@ -1380,6 +1412,99 @@ async function artifactIntakeScanPlan(
     }),
   );
   return plan("trust scan", ...actions);
+}
+
+function directoryResolutionAction(
+  ctx: PlanContext,
+  intake: ArtifactIntakeV2,
+  source: ArtifactDirectoryTrustSource,
+  items: ReturnType<typeof artifactIntakeDirectoryGroupsV2>[number]["items"],
+  resolutions: Map<string, ArtifactDirectoryResolutionRecordV2>,
+  problems: Record<string, string>,
+): Action {
+  return dynamicDigest(`resolve ${source.display} claim`, (digestCtx) => {
+    if (!digestCtx.apply) {
+      return `Directory claim for ${source.display} is not resolved in dry-run; pass --apply to fetch the claim and official MCP Registry metadata into quarantine. No package is installed or activated.`;
+    }
+    try {
+      const fetched = readArtifactDirectoryTrustFetch(source);
+      const claim = extractDirectoryClaimV1(
+        { provider: source.provider, slug: source.slug, url: source.directoryUrl },
+        fetched.directoryHtml,
+      );
+      const registry = DirectoryRegistryResponseV1Schema.parse(
+        parseStrictJsonObjectV1(fetched.registryJson, "official MCP registry response"),
+      );
+      const resolution = resolveDirectoryClaimV1(claim, registry);
+      for (const item of items) {
+        const record = artifactDirectoryResolutionRecordV2({ intake, item, resolution });
+        resolutions.set(item.id, record);
+        delete problems[item.id];
+      }
+      return `Prepared ${String(items.length)} non-authoritative directory resolution record(s) for ${source.display}; exact source selection and a separate scan are still required.`;
+    } catch (error) {
+      const problem = (error instanceof Error ? error.message : String(error)).slice(0, 500);
+      for (const item of items) problems[item.id] = problem;
+      return `No directory resolution was prepared for ${source.display}: ${problem}`;
+    } finally {
+      if (ctx.deferCleanup === undefined && ctx.options.keepQuarantine !== true) {
+        cleanupQuarantine(source);
+      }
+    }
+  });
+}
+
+async function artifactIntakeScanPlanV2(
+  ctx: PlanContext,
+  intake: ArtifactIntakeV2,
+): Promise<ReturnType<typeof plan>> {
+  const evidenceOut = artifactEvidenceOutput(ctx);
+  const records = new Map<string, ArtifactEvidenceRecordV1>();
+  const resolutions = new Map<string, ArtifactDirectoryResolutionRecordV2>();
+  const problems: Record<string, string> = Object.fromEntries(
+    intake.items.map((item) => [item.id, "not scanned"]),
+  );
+  const actions: Action[] = [];
+  const exactIntake = artifactIntakeExactProjectionV1(intake);
+  if (exactIntake !== undefined) {
+    await appendExactArtifactScanActions(ctx, exactIntake, records, problems, actions);
+  }
+  for (const group of artifactIntakeDirectoryGroupsV2(intake)) {
+    const source = resolveArtifactDirectoryTrustSource(group.source);
+    actions.push(
+      trustDirectoryFetchExec(source, ctx),
+      directoryResolutionAction(ctx, intake, source, group.items, resolutions, problems),
+    );
+  }
+  actions.push(
+    dynamicDigest("artifact evidence bundle", (digestCtx) => {
+      if (!digestCtx.apply) {
+        return "Artifact intake validated. Pass --apply --evidence-out <file> to fetch each unique exact or directory source once and write one review bundle; directory resolution is not scan evidence, approval, installation, or activation.";
+      }
+      const bundle = createArtifactEvidenceBundleV2(
+        intake,
+        [...records.values()],
+        [...resolutions.values()],
+        problems,
+      );
+      const output = String(evidenceOut);
+      writeArtifact(digestCtx, output, JSON.stringify(bundle, null, 2));
+      return {
+        text: `Wrote ${String(bundle.evidence.length)} preflight evidence record(s) and ${String(bundle.resolutions.length)} non-authoritative directory resolution record(s) for ${String(bundle.results.length)} requested artifact(s) to ${output}.`,
+        data: bundle,
+      };
+    }),
+  );
+  return plan("trust scan", ...actions);
+}
+
+async function artifactIntakeScanPlan(
+  ctx: PlanContext,
+  intake: ArtifactIntake,
+): Promise<ReturnType<typeof plan>> {
+  return intake.version === 1
+    ? artifactIntakeScanPlanV1(ctx, intake)
+    : artifactIntakeScanPlanV2(ctx, intake);
 }
 
 async function trustScanPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {

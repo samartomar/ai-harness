@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
+import { POLICY_APPROVER_EMAIL_PATTERN } from "./ecc-mcp-approval.js";
 import { GovernanceDecisionTimestampSchema } from "./governance-decision-v1.js";
 
 const ID = /^[a-z][a-z0-9-]{0,63}$/;
@@ -8,6 +9,13 @@ const GIT_COMMIT = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 const MAX_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
 
 const stableId = z.string().regex(ID, "must be a bounded stable identifier");
+const accountableActor = z.union([
+  stableId,
+  z
+    .string()
+    .max(254)
+    .regex(new RegExp(POLICY_APPROVER_EMAIL_PATTERN), "must be an accountable owner email"),
+]);
 const digest = z.string().regex(SHA256, "must be a sha256 digest");
 const text = z
   .string()
@@ -181,7 +189,7 @@ export const GovernanceDecisionSourceV2Schema = z.discriminatedUnion("type", [
 
 export const GovernanceDecisionSubjectV2Schema = z
   .object({
-    kind: z.enum(["tool", "skill", "mcp", "package", "profile"]),
+    kind: z.enum(["tool", "skill", "agent", "mcp", "package", "profile"]),
     id: stableId,
     source: GovernanceDecisionSourceV2Schema,
     sourceDigest: digest,
@@ -203,7 +211,7 @@ const qualificationBasis = z.discriminatedUnion("kind", [
       catalogDigest: digest,
       catalogHeadDigest: digest,
       catalogMemberDigest: digest,
-      subjectKind: z.enum(["tool", "skill", "mcp", "package", "profile"]),
+      subjectKind: z.enum(["tool", "skill", "agent", "mcp", "package", "profile"]),
       subjectDigest: digest,
     })
     .strict(),
@@ -229,7 +237,7 @@ const base = z
     control: z.object({ id: stableId, digest }).strict(),
     evidence: z.object({ id: stableId, digest, attestor: qualificationIdentity }).strict(),
     issuer: stableId,
-    actor: stableId,
+    actor: accountableActor,
     reason: text,
     issuedAt: GovernanceDecisionTimestampSchema,
     notBefore: GovernanceDecisionTimestampSchema,

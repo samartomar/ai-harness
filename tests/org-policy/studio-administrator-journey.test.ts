@@ -44,7 +44,7 @@ const protectedFields = {
   "protected-policy-digest": `sha256:${"c".repeat(64)}`,
   "protected-control-id": "tool-admission",
   "protected-control-digest": `sha256:${"d".repeat(64)}`,
-  "protected-actor": "ruchi-admin",
+  "protected-actor": "ruchi.admin@acme.example",
   "protected-reason": "Approved after attributable scanner evidence review",
 } as const;
 
@@ -68,9 +68,13 @@ const value = (window: Window, id: string): string =>
   (window.document.getElementById(id) as unknown as { value: string } | null)?.value ?? "";
 
 function chooseProfile(window: Window, profile: string): void {
-  const preset = window.document.querySelector(`[data-preset="${profile}"]`);
+  const preset = window.document.getElementById("preset-select") as unknown as {
+    value: string;
+    dispatchEvent(event: unknown): boolean;
+  } | null;
   if (preset === null) throw new Error(`expected ${profile} preset`);
-  preset.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  preset.value = profile;
+  preset.dispatchEvent(new window.Event("change", { bubbles: true }));
 }
 
 function click(window: Window, id: string): void {
@@ -120,16 +124,21 @@ describe("policy workbench administrator journey", () => {
       "Requested by:",
     );
 
-    // 2. SURVEY. The main plane holds the non-duplicated inventory; the four
-    //    ECC namespaces owned by the rail remain selectable there.
-    const railOwned = model.catalog.frameworks
+    // 2. SURVEY. Every framework-owned artifact has a canonical row in the
+    //    main plane; the left rail mirrors the same ECC selection state.
+    const eccGovernedSkills = model.catalog.frameworks
       .find((framework) => framework.id === "ecc")
-      ?.assets.filter((asset) =>
-        ["lang", "framework", "capability", "module"].includes(asset.kind),
-      ).length;
+      ?.assets.filter((asset) => asset.kind === "skill").length;
+    const eccMcpDeclarations = model.catalog.frameworks
+      .find((framework) => framework.id === "ecc")
+      ?.assets.filter((asset) => asset.kind === "mcp").length;
     expect(rowCount(window, "framework-rows"), "non-duplicated inventory").toBe(
-      inventoryCount - (railOwned ?? 0),
+      inventoryCount - (eccGovernedSkills ?? 0) - (eccMcpDeclarations ?? 0),
     );
+    expect(rowCount(window, "ecc-mcp-declaration-rows"), "ECC MCP catalog selections").toBe(
+      eccMcpDeclarations,
+    );
+    expect(window.document.querySelectorAll("[data-ecc-skill-availability]").length).toBe(286);
     expect(text(window, "framework-rows")).toContain("Selectable");
     expect(text(window, "framework-rows")).toContain("installs and runs it");
     expect(text(window, "framework-rows")).toContain("aih evidence vet-baseline");
@@ -161,6 +170,7 @@ describe("policy workbench administrator journey", () => {
     //    command rather than in nothing.
     for (const [id, entry] of [
       ["custom-id", "acme-mcp"],
+      ["custom-owner", "mcp.owner@acme.example"],
       ["custom-package", "@acme/mcp-server"],
       ["custom-version", "1.4.2"],
       ["custom-integrity", `sha256:${"a".repeat(64)}`],
@@ -194,6 +204,7 @@ describe("policy workbench administrator journey", () => {
     const window = openWorkbench();
     for (const [id, entry] of [
       ["custom-id", "acme-mcp"],
+      ["custom-owner", "mcp.owner@acme.example"],
       ["custom-package", "@acme/mcp-server"],
       ["custom-version", "1.4.2"],
       ["custom-integrity", `sha256:${"b".repeat(64)}`],
@@ -237,7 +248,7 @@ describe("policy workbench administrator journey", () => {
     expect(bundle.authorityReceipt.decisions).toHaveLength(1);
     expect(bundle.authorityReceipt.decisions[0]).toMatchObject({
       id: "decision-acme-linter-1",
-      actor: "ruchi-admin",
+      actor: "ruchi.admin@acme.example",
       qualificationBasis: {
         kind: "organization-qualified",
         evidenceDigest: `sha256:${"b".repeat(64)}`,
@@ -331,6 +342,7 @@ describe("policy workbench administrator journey", () => {
     chooseProfile(window, "enterprise");
     for (const [id, entry] of [
       ["custom-id", "acme-mcp"],
+      ["custom-owner", "mcp.owner@acme.example"],
       ["custom-package", "@acme/mcp-server"],
       ["custom-version", "1.4.2"],
       ["custom-integrity", `sha256:${"b".repeat(64)}`],
@@ -368,13 +380,13 @@ describe("policy workbench administrator journey", () => {
     expect(text(window, "protected-expires-at-error")).toContain("within 90 days");
   });
 
-  it("authors tool, skill, MCP, and package approvals and a valid revocation", async () => {
+  it("authors tool, skill, Agent, MCP, and package approvals and a valid revocation", async () => {
     const window = openWorkbench();
     chooseProfile(window, "enterprise");
     fillProtectedFields(window);
     await submitProtected(window);
 
-    for (const [index, kind] of ["skill", "mcp", "package"].entries()) {
+    for (const [index, kind] of ["skill", "agent", "mcp", "package"].entries()) {
       fillProtectedFields(window, {
         "protected-decision-id": `decision-acme-${kind}-1`,
         "protected-kind": kind,
@@ -391,7 +403,7 @@ describe("policy workbench administrator journey", () => {
       bundle.authorityReceipt.decisions
         .map((decision: { subject: { kind: string } }) => decision.subject.kind)
         .sort(),
-    ).toEqual(["mcp", "package", "skill", "tool"]);
+    ).toEqual(["agent", "mcp", "package", "skill", "tool"]);
 
     window.document
       .querySelector('[data-protected-revoke="0"]')

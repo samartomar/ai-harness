@@ -779,7 +779,7 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     failSeverity: "blocking",
     title: "BetterDoc slop-lint rules could not be loaded",
     action:
-      "Restore packs/docs-quality/betterdoc/references/slop-lint.md in the installed package or repo, then rerun docs-lint.",
+      "Restore packs/docs-quality/aih-betterdoc/references/slop-lint.md in the installed package or repo, then rerun docs-lint.",
   },
   "docs.claim-mapping-missing": {
     audience: "developer",

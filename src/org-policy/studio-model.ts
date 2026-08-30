@@ -5,6 +5,7 @@ import type { AdminBaselineEvidenceProvenanceV1 } from "./admin-baseline-evidenc
 import type { AdminCatalogProvenanceV1 } from "./admin-catalog-operations-v1.js";
 import { type AdoptionRecipe, buildAdoptionRecipe } from "./adoption-recipe.js";
 import { policyAuthoringCatalog } from "./catalog.js";
+import { POLICY_APPROVER_EMAIL_PATTERN } from "./ecc-mcp-approval.js";
 import {
   DISPOSITIONABLE_POLICY_FINDING_CODES,
   FENCED_POLICY_PREREQUISITE_CODES,
@@ -108,6 +109,7 @@ export interface PolicyStudioModel {
   semantics: {
     httpsOriginArgumentPrefixes: readonly string[];
     httpsOriginPattern: string;
+    approverEmailPattern: string;
   };
 }
 
@@ -239,6 +241,7 @@ export function policyStudioModel(
     semantics: {
       httpsOriginArgumentPrefixes: HTTPS_ORIGIN_ARGUMENT_PREFIXES,
       httpsOriginPattern: POLICY_HTTPS_ORIGIN_PATTERN,
+      approverEmailPattern: POLICY_APPROVER_EMAIL_PATTERN,
     },
   };
 }

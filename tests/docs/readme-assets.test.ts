@@ -123,12 +123,12 @@ describe("README docs currency", () => {
   });
 
   it("keeps BetterDoc pack docs aligned with shipped files", () => {
-    const readme = read("packs/docs-quality/betterdoc/README.md");
-    const changelog = read("packs/docs-quality/betterdoc/CHANGELOG.md");
+    const readme = read("packs/docs-quality/aih-betterdoc/README.md");
+    const changelog = read("packs/docs-quality/aih-betterdoc/CHANGELOG.md");
 
-    expect(readme).toContain("packs/docs-quality/betterdoc/");
-    expect(readme).not.toContain("betterdoc-common/");
-    expect(existsSync(join(root, "packs/docs-quality/betterdoc/LICENSE"))).toBe(true);
+    expect(readme).toContain("packs/docs-quality/aih-betterdoc/");
+    expect(readme).not.toContain("aih-betterdoc-common/");
+    expect(existsSync(join(root, "packs/docs-quality/aih-betterdoc/LICENSE"))).toBe(true);
     expect(changelog).not.toContain("No license file was added");
   });
 });

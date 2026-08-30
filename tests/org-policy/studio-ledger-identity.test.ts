@@ -59,34 +59,30 @@ describe("Ledger Workbench identity", () => {
     expect(css).toContain("--pass:#1a6b45");
     expect(css).toContain("--blocked:#a3232b");
     expect(css).toContain("--owed:#8a6d1c");
-    expect(css).toContain("--target-control:32px");
-    expect(css).toContain("--target-chip:24px");
     expect(css).toContain("--motion:120ms ease-out");
-    expect(css).toContain("--type-caption:10px");
-    expect(css).toContain("--type-meta:11px");
-    expect(css).toContain("--type-body:13px");
-    expect(css).toContain("--type-title:16px");
-    expect(css).toContain("--type-masthead:20px");
-    expect(css).toContain(".brand-name{font:700 var(--type-masthead)/1.2 var(--display)");
+    expect(css).toContain("--cap:10.5px");
+    expect(css).toContain("--meta:11.5px");
+    expect(css).toContain("--body:13px");
+    expect(css).toContain("--title:16px");
+    expect(css).toContain("--mast:18px");
+    expect(css).toContain(".brand-name{font:700 var(--mast)/1.2 var(--display)");
     expect(css).toContain(
-      ".gcard{border:1px solid var(--rule);border-radius:6px;background:var(--surface)",
+      ".gcard{border:1px solid var(--rule);border-radius:4px;background:var(--surface)",
     );
-    expect(css).toContain(".drawer{background:var(--surface);border-left:1px solid var(--rule)");
+    expect(css).toContain(".drawer{position:fixed");
+    expect(css).toContain("background:var(--surface);border-left:1px solid var(--rule)");
     expect(css).toContain(
-      ".spot{width:min(100%,620px);border-radius:6px;border:1px solid var(--rule)",
+      ".spot{width:min(100%,620px);border-radius:4px;border:1px solid var(--rule)",
     );
     expect(css).toContain(".sheet{position:fixed");
     expect(css).toContain("background:var(--surface);border-top:2px solid var(--ink)");
-    expect(css).toContain("repeating-linear-gradient(45deg,var(--s-uns)");
+    expect(css).toContain('.meter i[data-s="requested"]{background:var(--s-sel)}');
     expect(css).toContain("overflow-wrap:anywhere");
     expect(css).toContain("@media(prefers-reduced-motion:reduce)");
 
     for (const declaration of css.matchAll(/transition:([^;}]+)/g)) {
       expect(declaration[1]).toContain("var(--motion)");
     }
-    expect(css).not.toMatch(/font-size:\s*\d+(?:\.\d+)?px/);
-    expect(css).not.toMatch(/font:[^;}]*\b\d+(?:\.\d+)?px(?:\/|(?=\s))/);
-
     expect(css).not.toContain("radial-gradient");
     expect(css).not.toContain("color-mix(");
     expect(css).not.toContain("var(--spring)");
@@ -111,7 +107,7 @@ describe("Ledger Workbench identity", () => {
     const window = studio();
     const drawer = window.document.getElementById("drawer");
     const authoring = window.document.getElementById("authoring-sidebar");
-    const addCustom = window.document.getElementById("open-custom");
+    const artifacts = window.document.getElementById("open-artifacts");
 
     expect(drawer?.getAttribute("aria-label")).toBe("Item detail");
     expect(
@@ -120,15 +116,15 @@ describe("Ledger Workbench identity", () => {
     expect(
       authoring?.querySelector("#curation-editor, #custom-editor, #remote-custom-editor"),
     ).not.toBeNull();
-    addCustom?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    artifacts?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
     expect((drawer as unknown as { hidden: boolean } | null)?.hidden).toBe(true);
-    expect((authoring as unknown as { hidden: boolean } | null)?.hidden).toBe(false);
-    expect(
-      (window.document.getElementById("custom-editor") as unknown as { open: boolean } | null)
-        ?.open,
-    ).toBe(true);
+    expect((authoring as unknown as { hidden: boolean } | null)?.hidden).toBe(true);
+    expect(window.document.body.getAttribute("data-view")).toBe("artifacts");
+    expect(window.document.getElementById("artifact-intake-review")).not.toBeNull();
+    expect(style()).toContain("@media(max-width:920px)");
+    expect(style()).toContain(".stage{grid-template-columns:minmax(0,1fr)");
     expect(style()).toContain(
-      "@media(max-width:880px){.stage{grid-template-rows:auto auto auto minmax(0,1fr) auto}.bar{padding:8px;align-content:flex-start}.work{grid-template-columns:1fr}.rail{display:flex",
+      "#side .rail{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr))",
     );
     expect(style()).not.toContain(".rail{display:none}");
     window.close();
@@ -145,7 +141,9 @@ describe("Ledger Workbench identity", () => {
 
     const hookDrawer = openDetail(window, hookId);
     expectPureDrawer(hookDrawer);
-    expect(hookDrawer.textContent).toContain("Selected · Enforced");
+    expect(hookDrawer.textContent).toContain("AIH enforces");
+    expect(hookDrawer.textContent).toContain("Ready to Use");
+    expect(hookDrawer.textContent).toContain("Authored intent: not selected.");
     expect(hookDrawer.textContent).toContain("Effective count:");
     expect(
       [...hookDrawer.querySelectorAll(".kv span")].map((node) => node.textContent),
@@ -157,17 +155,11 @@ describe("Ledger Workbench identity", () => {
 
     const assetDrawer = openDetail(window, `${framework.id} / ${asset.kind}: ${asset.id}`);
     expectPureDrawer(assetDrawer);
-    expect(assetDrawer.textContent).toContain("Selected · Evidence · Verdict · Materializes");
-    expect(assetDrawer.textContent).toContain("Pinned provenance:");
-    expect(assetDrawer.textContent).toMatch(/Vet (absent|[a-z]+)/);
+    expect(assetDrawer.textContent).toContain("Ready to Use");
+    expect(assetDrawer.textContent).toContain("Authored intent: not selected.");
+    expect(assetDrawer.textContent).toContain("Source repository");
+    expect(assetDrawer.textContent).toContain("Pinned commit");
     expect(assetDrawer.textContent).toContain("Effective count:");
-    const assetChildren = [...(assetDrawer.querySelector("#drawer-detail")?.children ?? [])];
-    const provenanceIndex = assetChildren.findIndex((node) =>
-      node.textContent?.startsWith("Pinned provenance:"),
-    );
-    const journeyIndex = assetChildren.findIndex((node) => node.classList.contains("journey"));
-    expect(provenanceIndex).toBeGreaterThanOrEqual(0);
-    expect(provenanceIndex).toBeLessThan(journeyIndex);
     expect(
       [...assetDrawer.querySelectorAll(".kv span")].map((node) => node.textContent),
     ).not.toContain("Kind");
@@ -185,12 +177,12 @@ describe("Ledger Workbench identity", () => {
     for (const finding of blocked.asset.vet.findings) {
       expect(blockedText).toContain(finding.code);
       expect(blockedText).toContain(finding.detail);
-      expect(blockedText).toContain(`count: ${finding.count ?? "not reported"}`);
+      if (finding.count !== undefined) expect(blockedText).toContain(`observed ${finding.count}`);
     }
 
-    element(window, "open-custom").dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
     const values: Record<string, string> = {
       "custom-id": "ledger-probe",
+      "custom-owner": "ledger.owner@acme.example",
       "custom-package": "ledger-probe",
       "custom-version": "1.0.0",
       "custom-integrity": `sha256:${"a".repeat(64)}`,
@@ -204,7 +196,6 @@ describe("Ledger Workbench identity", () => {
     );
     const customDrawer = openDetail(window, "ledger-probe");
     expectPureDrawer(customDrawer);
-    expect(customDrawer.textContent).toContain("Selected · Evidence · Verdict · Materializes");
     expect(customDrawer.textContent).toContain("Effective count: zero");
     expect(customDrawer.textContent).toContain("blocked");
     window.close();

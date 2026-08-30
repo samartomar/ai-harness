@@ -73,17 +73,14 @@ function expectRefusal(fn: () => unknown, pattern: RegExp): void {
 describe("pack scaffold", () => {
   it("ships the governance Audit/Guide source and profile without inventing lifecycle evidence", async () => {
     const sourceProfile = readFileSync(
-      resolve(
-        repositoryRoot,
-        "packs/governance-quality/governance-doctor-audit-guide/profile.json",
-      ),
+      resolve(repositoryRoot, "packs/governance-quality/aih-gov-doctor/profile.json"),
     );
     const sourceSkill = readFileSync(
-      resolve(repositoryRoot, "packs/governance-quality/governance-doctor-audit-guide/SKILL.md"),
+      resolve(repositoryRoot, "packs/governance-quality/aih-gov-doctor/SKILL.md"),
       "utf8",
     );
     const sourceLicense = readFileSync(
-      resolve(repositoryRoot, "packs/governance-quality/governance-doctor-audit-guide/LICENSE"),
+      resolve(repositoryRoot, "packs/governance-quality/aih-gov-doctor/LICENSE"),
     );
     expect(sourceSkill).toContain("license: Apache-2.0");
     expect(sourceSkill).not.toMatch(
@@ -101,39 +98,33 @@ describe("pack scaffold", () => {
       ctx({ options: { pack: "governance-quality" } }),
     );
     expect(preview.applied).toBe(false);
-    expect(
-      existsSync(
-        join(workspace, "packs/governance-quality/governance-doctor-audit-guide/SKILL.md"),
-      ),
-    ).toBe(false);
+    expect(existsSync(join(workspace, "packs/governance-quality/aih-gov-doctor/SKILL.md"))).toBe(
+      false,
+    );
 
     const applyContext = ctx({ apply: true, options: { pack: "governance-quality" } });
     await executePlan(await packScaffoldCommand.plan(applyContext), applyContext);
+    expect(existsSync(join(workspace, "packs/governance-quality/aih-gov-doctor/SKILL.md"))).toBe(
+      true,
+    );
     expect(
-      existsSync(
-        join(workspace, "packs/governance-quality/governance-doctor-audit-guide/SKILL.md"),
+      readFileSync(join(workspace, "packs/governance-quality/aih-gov-doctor/SKILL.md")).equals(
+        Buffer.from(sourceSkill, "utf8"),
       ),
     ).toBe(true);
     expect(
-      readFileSync(
-        join(workspace, "packs/governance-quality/governance-doctor-audit-guide/SKILL.md"),
-      ).equals(Buffer.from(sourceSkill, "utf8")),
+      readFileSync(join(workspace, "packs/governance-quality/aih-gov-doctor/profile.json")).equals(
+        sourceProfile,
+      ),
     ).toBe(true);
     expect(
-      readFileSync(
-        join(workspace, "packs/governance-quality/governance-doctor-audit-guide/profile.json"),
-      ).equals(sourceProfile),
-    ).toBe(true);
-    expect(
-      readFileSync(
-        join(workspace, "packs/governance-quality/governance-doctor-audit-guide/LICENSE"),
-      ).equals(sourceLicense),
+      readFileSync(join(workspace, "packs/governance-quality/aih-gov-doctor/LICENSE")).equals(
+        sourceLicense,
+      ),
     ).toBe(true);
     expect(existsSync(join(workspace, "aih-skills.lock.json"))).toBe(false);
     expect(existsSync(join(workspace, ".aih/skill-reports"))).toBe(false);
-    expect(
-      existsSync(join(workspace, "ai-coding/skill-cards/governance-doctor-audit-guide.md")),
-    ).toBe(false);
+    expect(existsSync(join(workspace, "ai-coding/skill-cards/aih-gov-doctor.md"))).toBe(false);
     expect(manifestOnDisk().packs.find((pack) => pack.name === "governance-quality")).toEqual(
       expect.objectContaining({ name: "governance-quality" }),
     );
@@ -147,15 +138,15 @@ describe("pack scaffold", () => {
     expect(result.writes).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          path: "packs/docs-quality/betterdoc/SKILL.md",
+          path: "packs/docs-quality/aih-betterdoc/SKILL.md",
           effect: "create",
         }),
         expect.objectContaining({ path: "aih-packs.json", effect: "create" }),
       ]),
     );
-    expect(existsSync(join(workspace, "packs/docs-quality/betterdoc/SKILL.md"))).toBe(false);
+    expect(existsSync(join(workspace, "packs/docs-quality/aih-betterdoc/SKILL.md"))).toBe(false);
     const digest = result.digests.find((d) => d.describe === "pack scaffold");
-    expect(digest?.text).toContain("aih skill vet packs/docs-quality/betterdoc --apply");
+    expect(digest?.text).toContain("aih skill vet packs/docs-quality/aih-betterdoc --apply");
     expect(digest?.text).toContain("aih pack install --pack docs-quality --apply");
   });
 
@@ -164,12 +155,14 @@ describe("pack scaffold", () => {
 
     expect(result.applied).toBe(true);
     expect(
-      readFileSync(join(workspace, "packs/docs-quality/betterdoc/SKILL.md"), "utf8"),
+      readFileSync(join(workspace, "packs/docs-quality/aih-betterdoc/SKILL.md"), "utf8"),
     ).toContain("BetterDoc");
     expect(manifestOnDisk().packs).toEqual([
       expect.objectContaining({
         name: "docs-quality",
-        skills: [{ name: "betterdoc", source: "packs/docs-quality/betterdoc", commit: "local" }],
+        skills: [
+          { name: "aih-betterdoc", source: "packs/docs-quality/aih-betterdoc", commit: "local" },
+        ],
       }),
     ]);
     expect(existsSync(join(workspace, "aih-skills.lock.json"))).toBe(false);
@@ -198,7 +191,7 @@ describe("pack scaffold", () => {
         packs: [
           {
             name: "other",
-            skills: [{ name: "betterdoc", source: "somewhere", commit: "local" }],
+            skills: [{ name: "aih-betterdoc", source: "somewhere", commit: "local" }],
           },
         ],
       }),
@@ -206,7 +199,7 @@ describe("pack scaffold", () => {
 
     expectRefusal(
       () => packScaffoldCommand.plan(ctx({ options: { pack: "docs-quality" } })),
-      /skill betterdoc is already curated in pack other/,
+      /skill aih-betterdoc is already curated in pack other/,
     );
   });
 });

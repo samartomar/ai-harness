@@ -1,8 +1,15 @@
-import { Window } from "happy-dom";
+import { type Element, Window } from "happy-dom";
 import { describe, expect, it } from "vitest";
 import { baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
 import { policyAuthoringCatalog } from "../../src/org-policy/catalog.js";
-import { eccExternalMcpCatalog } from "../../src/org-policy/ecc-mcp-catalog.js";
+import {
+  eccExternalMcpCatalog,
+  eccMcpCatalogInventory,
+} from "../../src/org-policy/ecc-mcp-catalog.js";
+import {
+  ECC_SKILL_CATALOG_PROVENANCE,
+  eccSkillCatalogInventory,
+} from "../../src/org-policy/ecc-skill-catalog.js";
 import { policyStudioModel } from "../../src/org-policy/studio-model.js";
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
 
@@ -29,9 +36,176 @@ function loadStudio(window: Window, html: string): void {
   window.eval(scripts.join("\n"));
 }
 
+function click(window: Window, selector: string): void {
+  const node = window.document.querySelector(selector);
+  if (node === null) throw new Error(`expected ${selector}`);
+  node.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+}
+
 describe("policy authoring catalog inventory", () => {
+  it("classifies the exact first-party Core packs as one AIH Skill and two AIH Agents", () => {
+    expect(policyStudioModel().catalog.aihSkills).toEqual([
+      {
+        id: "package:skill-pack/docs-quality",
+        pack: "docs-quality",
+        description: expect.stringContaining("BetterDoc"),
+        skills: ["aih-betterdoc"],
+        sources: [
+          {
+            skill: "aih-betterdoc",
+            path: "packs/docs-quality/aih-betterdoc",
+            manifestIdentity: "local",
+          },
+        ],
+      },
+    ]);
+    expect(policyStudioModel().catalog.aihAgents).toEqual([
+      {
+        id: "package:skill-pack/governance-quality",
+        pack: "governance-quality",
+        description: expect.stringContaining("Governance Doctor"),
+        skills: ["aih-gov-doctor"],
+        sources: [
+          {
+            skill: "aih-gov-doctor",
+            path: "packs/governance-quality/aih-gov-doctor",
+            manifestIdentity: "local",
+          },
+        ],
+      },
+      {
+        id: "package:skill-pack/review-quality",
+        pack: "review-quality",
+        description: expect.stringContaining("isolated BUGBOUNTY agent workflow"),
+        skills: ["aih-bugbounty"],
+        sources: [
+          {
+            skill: "aih-bugbounty",
+            path: "packs/review-quality/aih-bugbounty",
+            manifestIdentity: "local",
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("shows AIH Skills and Agents as real capability-package selections and round-trips them", () => {
+    const window = new Window({ url: "http://localhost/" });
+    const html = policyStudioHtml(policyStudioModel());
+    window.document.write(html);
+    loadStudio(window, html);
+
+    const group = window.document.getElementById("surface-aih-skills");
+    const agents = window.document.getElementById("surface-aih-agents");
+    expect(group?.textContent).toContain("AIH Skills");
+    expect(agents?.textContent).toContain("AIH Agents");
+    expect(group?.querySelector(".rid")?.textContent?.trim()).toBe("aih-betterdoc");
+    expect(group?.textContent).not.toContain("aih-bugbounty");
+    expect(
+      [...(agents?.querySelectorAll(".rid") ?? [])].map((row) => row.textContent?.trim()),
+    ).toEqual(["aih-gov-doctor", "aih-bugbounty"]);
+    expect(agents?.textContent).not.toContain("aih-betterdoc");
+    expect(group?.querySelector(".rid")?.getAttribute("aria-label")).toBe("aih-betterdoc");
+    expect(agents?.querySelector(".rid")?.getAttribute("aria-label")).toBe("aih-gov-doctor");
+    expect(group?.querySelector(".more")?.getAttribute("aria-label")).toBe(
+      "Details for aih-betterdoc",
+    );
+    expect(group?.querySelector(".concept-icon")?.getAttribute("data-concept")).toBe("skill");
+    expect(agents?.querySelector(".concept-icon")?.getAttribute("data-concept")).toBe("agent");
+    expect(group?.querySelector(".concept-icon svg")?.classList.contains("lucide-blocks")).toBe(
+      true,
+    );
+    expect(agents?.querySelector(".concept-icon svg")?.classList.contains("lucide-bot")).toBe(true);
+    expect(group?.querySelector(".row .concept-icon")).toBeNull();
+    expect(agents?.querySelector(".row .concept-icon")).toBeNull();
+    expect(group?.textContent).not.toContain("Enter your approved skill catalog");
+    expect(group?.querySelector("input")).toBeNull();
+    expect(agents?.querySelector("input")).toBeNull();
+    expect(window.document.querySelectorAll("[data-aih-capability-package]")).toHaveLength(3);
+    expect(window.document.querySelector('[data-sidebar-jump="aih-skills"]')).toBeNull();
+    expect(policyStudioModel().catalog.aihCapabilityCatalog).toEqual({
+      provider: "github",
+      repository: "samartomar/aih-catalog",
+    });
+
+    const first = window.document.querySelector(
+      '[data-aih-capability-package="package:skill-pack/docs-quality"]',
+    );
+    if (first === null) throw new Error("expected first-party AIH skill pack control");
+    first.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+
+    const authored = JSON.parse(
+      (window.document.getElementById("config-preview") as unknown as { value: string }).value,
+    ) as {
+      capabilityPackages?: { catalog: { repository: string }; roots: string[] };
+    };
+    expect(authored.capabilityPackages).toEqual({
+      catalog: { provider: "github", repository: "samartomar/aih-catalog" },
+      roots: ["package:skill-pack/docs-quality"],
+    });
+
+    const selectedFirst = window.document.querySelector(
+      '[data-aih-capability-package="package:skill-pack/docs-quality"]',
+    );
+    if (selectedFirst === null) throw new Error("expected selected first-party AIH skill pack");
+    selectedFirst.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    const cleared = JSON.parse(
+      (window.document.getElementById("config-preview") as unknown as { value: string }).value,
+    ) as { capabilityPackages?: unknown };
+    expect(cleared).not.toHaveProperty("capabilityPackages");
+  });
+
+  it("shows truthful packaged proof and execution boundaries for every first-party AIH capability", () => {
+    const window = new Window({ url: "http://localhost/" });
+    const html = policyStudioHtml(policyStudioModel());
+    window.document.write(html);
+    loadStudio(window, html);
+
+    const expected = [
+      {
+        skill: "aih-betterdoc",
+        kind: "Skill",
+        root: "package:skill-pack/docs-quality",
+        source: "packs/docs-quality/aih-betterdoc",
+      },
+      {
+        skill: "aih-gov-doctor",
+        kind: "Agent",
+        root: "package:skill-pack/governance-quality",
+        source: "packs/governance-quality/aih-gov-doctor",
+      },
+      {
+        skill: "aih-bugbounty",
+        kind: "Agent",
+        root: "package:skill-pack/review-quality",
+        source: "packs/review-quality/aih-bugbounty",
+      },
+    ];
+
+    for (const item of expected) {
+      click(window, `[data-detail="${item.skill}"]`);
+      const drawer = window.document.getElementById("drawer-detail");
+      expect(drawer?.querySelector("h2")?.textContent).toBe(item.skill);
+      expect(drawer?.textContent).toContain("@aihq/core@0.3.0");
+      expect(drawer?.textContent).toContain(item.root);
+      expect(drawer?.textContent).toContain(item.source);
+      expect(drawer?.textContent).toContain("Manifest identitylocal");
+      expect(drawer?.textContent).toContain(item.kind);
+      if (item.kind === "Agent") {
+        expect(drawer?.textContent).toContain("Isolated worker required");
+        expect(drawer?.textContent).toContain("does not launch the worker");
+      }
+      expect(drawer?.querySelector("[data-proof-status]")?.textContent).toContain(
+        "Qualification proof is still pending",
+      );
+      expect(drawer?.textContent).not.toContain("undefined");
+    }
+  });
+
   it("carries the source-locked ECC external MCP inventory outside AIH controls", () => {
     const model = policyStudioModel();
+    expect(model.catalog.eccMcpInventory).toEqual(eccMcpCatalogInventory);
+    expect(model.catalog.eccMcpInventory).toHaveLength(35);
     expect(model.catalog.externalMcp).toEqual(eccExternalMcpCatalog);
     expect(model.catalog.externalMcp).toHaveLength(31);
     expect(
@@ -39,6 +213,395 @@ describe("policy authoring catalog inventory", () => {
         (entry) => !("control" in entry) && !("server" in entry) && entry.owner === "ecc",
       ),
     ).toBe(true);
+  });
+
+  it("renders every source-locked ECC skill and external MCP availability row", () => {
+    const window = new Window({ url: "http://localhost/" });
+    const model = policyStudioModel();
+    const html = policyStudioHtml(model);
+    window.document.write(html);
+    loadStudio(window, html);
+
+    expect(
+      window.document.getElementById("ecc-skill-rows")?.closest("section")?.querySelector("h2")
+        ?.textContent,
+    ).toBe("ECC skills");
+    expect(ECC_SKILL_CATALOG_PROVENANCE.commit).toBe("5caf398a91599029a176ca6d806409b00d1052c4");
+    expect(eccSkillCatalogInventory).toHaveLength(286);
+    expect(eccSkillCatalogInventory.map((skill) => skill.id)).toEqual(
+      eccSkillCatalogInventory.map((skill) => skill.id).sort(),
+    );
+    expect(model.catalog.eccSkills).toEqual(eccSkillCatalogInventory);
+    expect(
+      [...window.document.querySelectorAll("[data-ecc-skill-availability]")].map((row) =>
+        row.getAttribute("data-ecc-skill-availability"),
+      ),
+    ).toEqual(eccSkillCatalogInventory.map((skill) => skill.id));
+    expect(
+      [...window.document.querySelectorAll("[data-ecc-mcp-availability]")]
+        .map((row) => row.getAttribute("data-ecc-mcp-availability"))
+        .sort(),
+    ).toEqual(eccMcpCatalogInventory.map((entry) => entry.id).sort());
+
+    for (const skill of eccSkillCatalogInventory.filter((item) => !item.governable)) {
+      const row = window.document.querySelector(`[data-ecc-skill-availability="${skill.id}"]`);
+      expect(row?.querySelector("[data-framework-select]")).toBeNull();
+      expect(row?.textContent).toContain("not individually governable");
+    }
+    for (const mcp of eccMcpCatalogInventory.filter((item) => item.owner === "aih")) {
+      const row = window.document.querySelector(`[data-ecc-mcp-availability="${mcp.id}"]`);
+      const hasAihControl = model.catalog.mcp.some((control) => control.id === mcp.id);
+      expect(row?.getAttribute("data-state")).toBe(hasAihControl ? "pending" : "availability");
+      expect(row?.querySelector(`[data-reviewed="${mcp.id}"]`) !== null).toBe(hasAihControl);
+      expect(row?.querySelector("[data-ecc-mcp-approval]")).toBeNull();
+    }
+  });
+
+  it("places selectable ECC MCP declarations inside the ECC MCP catalog", () => {
+    const window = new Window({ url: "http://localhost/" });
+    const model = policyStudioModel();
+    const html = policyStudioHtml(model);
+    window.document.write(html);
+    loadStudio(window, html);
+
+    const catalog = window.document.getElementById("surface-ecc-mcp-catalog");
+    const declarations =
+      model.catalog.frameworks
+        .find((framework) => framework.id === "ecc")
+        ?.assets.filter((asset) => asset.kind === "mcp") ?? [];
+
+    expect(catalog).not.toBeNull();
+    expect(catalog?.textContent).toContain("Selectable ECC MCP declarations");
+    expect(catalog?.textContent).toContain("Approval catalog entries");
+    expect(catalog?.querySelectorAll("[data-ecc-mcp-availability]")).toHaveLength(
+      model.catalog.eccMcpInventory.filter((entry) => entry.owner === "ecc").length,
+    );
+    expect(catalog?.querySelectorAll('[data-framework-select^="ecc|mcp|"]')).toHaveLength(
+      declarations.length,
+    );
+    expect(
+      window.document.querySelectorAll("#framework-rows [data-framework-select^='ecc|mcp|']"),
+    ).toHaveLength(0);
+    expect(
+      [...window.document.querySelectorAll("section.grp > .grphead h2")].filter(
+        (heading) => heading.textContent === "ECC MCP declarations",
+      ),
+    ).toHaveLength(0);
+
+    const first = declarations[0];
+    if (first === undefined) throw new Error("expected a selectable ECC MCP declaration");
+    click(window, `[data-framework-select="ecc|mcp|${first.id}"]`);
+    const authored = JSON.parse(
+      (window.document.getElementById("config-preview") as unknown as { value: string }).value,
+    ) as { governance?: { externalSelections?: Array<{ framework: string; items: unknown[] }> } };
+    expect(authored.governance?.externalSelections).toEqual([
+      { framework: "ecc", items: [expect.objectContaining({ kind: "mcp", id: first.id })] },
+    ]);
+  });
+
+  it("coalesces AIH controls and AIH-owned ECC declarations by MCP identity", () => {
+    const window = new Window({ url: "http://localhost/" });
+    const model = policyStudioModel();
+    const html = policyStudioHtml(model);
+    window.document.write(html);
+    loadStudio(window, html);
+
+    const servers = window.document.getElementById("surface-aih-mcp-servers");
+    const declarations = model.catalog.eccMcpInventory.filter((entry) => entry.owner === "aih");
+    const shared = declarations.filter((declaration) =>
+      model.catalog.mcp.some((control) => control.id === declaration.id),
+    );
+    const availabilityOnly = declarations.filter(
+      (declaration) => !model.catalog.mcp.some((control) => control.id === declaration.id),
+    );
+    const uniqueIds = new Set([
+      ...model.catalog.mcp.map((control) => control.id),
+      ...declarations.map((declaration) => declaration.id),
+    ]);
+
+    expect(servers).not.toBeNull();
+    expect(servers?.textContent).toContain("Unique MCP identities");
+    expect(servers?.textContent).not.toContain("ECC declarations assigned to AIH");
+    expect(servers?.querySelectorAll("#mcp-rows > .row")).toHaveLength(uniqueIds.size);
+    expect(servers?.querySelectorAll("#mcp-rows [data-reviewed]")).toHaveLength(
+      model.catalog.mcp.length,
+    );
+    expect(servers?.querySelectorAll("#mcp-rows [data-ecc-mcp-availability]")).toHaveLength(
+      declarations.length,
+    );
+
+    for (const declaration of shared) {
+      const row = servers?.querySelector(
+        `#mcp-rows > [data-ecc-mcp-availability="${declaration.id}"]`,
+      );
+      expect(row?.querySelector(`[data-reviewed="${declaration.id}"]`)).not.toBeNull();
+      expect(row?.textContent).toContain("Also declared by ECC");
+    }
+    for (const declaration of availabilityOnly) {
+      const row = servers?.querySelector(
+        `#mcp-rows > [data-ecc-mcp-availability="${declaration.id}"]`,
+      );
+      expect(row?.getAttribute("data-state")).toBe("availability");
+      expect(row?.textContent).toContain("ECC availability only");
+      expect(
+        row?.querySelector("[data-reviewed], [data-framework-select], [data-ecc-mcp-approval]"),
+      ).toBeNull();
+    }
+
+    const firstShared = shared[0];
+    if (firstShared === undefined) throw new Error("expected a shared AIH/ECC MCP identity");
+    click(window, `[data-detail="${firstShared.id}"]`);
+    const drawer = window.document.getElementById("drawer-detail");
+    expect(drawer?.textContent).toContain("Also declared by ECC");
+    expect(drawer?.textContent).toContain(model.catalog.eccMcpProvenance.repository);
+    expect(drawer?.textContent).toContain(model.catalog.eccMcpProvenance.commit);
+
+    click(window, "#seek");
+    const query = window.document.getElementById("spot-q") as unknown as {
+      value: string;
+      dispatchEvent(event: unknown): boolean;
+    } | null;
+    if (query === null) throw new Error("expected search input");
+    query.value = firstShared.id;
+    query.dispatchEvent(new window.Event("input", { bubbles: true }));
+    expect(window.document.querySelectorAll(`#hits [data-hit="${firstShared.id}"]`)).toHaveLength(
+      1,
+    );
+    expect(
+      window.document.querySelectorAll(`#hits [data-hit="ECC MCP: ${firstShared.id}"]`),
+    ).toHaveLength(0);
+    expect(
+      [...window.document.querySelectorAll("section.grp > .grphead h2")].filter(
+        (heading) => heading.textContent === "AIH-owned MCP declarations in ECC",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("keeps availability-only skills inspectable and routes every MCP through approval authoring", () => {
+    const window = new Window({ url: "http://localhost/" });
+    const model = policyStudioModel();
+    const html = policyStudioHtml(model);
+    window.document.write(html);
+    loadStudio(window, html);
+    const skill = eccSkillCatalogInventory.find((item) => !item.governable);
+    if (skill === undefined) throw new Error("expected an availability-only skill");
+
+    click(window, "#seek");
+    const query = window.document.getElementById("spot-q") as unknown as {
+      value: string;
+      dispatchEvent(event: unknown): boolean;
+    } | null;
+    if (query === null) throw new Error("expected search input");
+    query.value = skill.id;
+    query.dispatchEvent(new window.Event("input", { bubbles: true }));
+    click(window, "#hits .hit");
+    expect(window.document.getElementById("drawer-detail")?.textContent).toContain(skill.path);
+    expect(window.document.getElementById("drawer-detail")?.textContent).toContain(
+      "not individually governable",
+    );
+
+    for (const mcp of eccExternalMcpCatalog) {
+      const action = [...window.document.querySelectorAll("[data-ecc-mcp-approval]")].find(
+        (node) => node.getAttribute("data-ecc-mcp-approval") === mcp.id,
+      );
+      if (action === undefined) throw new Error(`expected approval action for ${mcp.id}`);
+      action.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      expect(window.document.getElementById("ecc-mcp-sidebar")?.hasAttribute("hidden")).toBe(false);
+      const select = window.document.getElementById("ecc-mcp-id");
+      if (select === null) throw new Error("expected ECC MCP approval select");
+      expect((select as unknown as { value: string }).value).toBe(mcp.id);
+    }
+  });
+
+  it("keeps every shipped surface reachable in the adopted Workbench shell", () => {
+    const window = new Window({ url: "http://localhost/" });
+    const model = policyStudioModel();
+    const html = policyStudioHtml(model);
+    window.document.write(html);
+    loadStudio(window, html);
+
+    const sidebar = window.document.getElementById("side");
+    const aihSkills = window.document.getElementById("surface-aih-skills");
+    const aihAgents = window.document.getElementById("surface-aih-agents");
+    const adoption = window.document.getElementById("adoption-recipe");
+    expect(sidebar?.textContent).not.toContain("AIH Skills");
+    expect(sidebar?.textContent).toContain("Languages");
+    expect(sidebar?.textContent).toContain("Frameworks");
+    expect(sidebar?.textContent).toContain("Capabilities");
+    expect(sidebar?.textContent).toContain("ECC modules");
+    expect(sidebar?.textContent).toContain("Allowed CLI");
+    expect(sidebar?.textContent).toContain("CLI usages");
+    expect(sidebar?.textContent).not.toContain("Hosts");
+    expect(sidebar?.textContent).toContain("AIH policy");
+    expect(sidebar?.textContent).toContain("ECC catalog");
+    expect(sidebar?.textContent).toContain("Bring Your Own");
+    expect(sidebar?.textContent).not.toContain("Other sources");
+    expect(sidebar?.textContent).not.toContain("Approve ECC MCP");
+    expect(window.document.getElementById("byo-actions")?.textContent).toContain(
+      "Organization artifacts",
+    );
+    expect(
+      window.document.getElementById("byo-actions")?.querySelectorAll(".pop-row"),
+    ).toHaveLength(2);
+    expect(window.document.getElementById("preset-poplist")?.textContent).toContain("Allowed CLI");
+    expect(window.document.getElementById("preset-poplist")?.textContent).toContain("CLI usages");
+    expect(window.document.getElementById("rail-poplist")?.textContent).not.toContain(
+      "Allowed CLI",
+    );
+    const repositoryLink = window.document.querySelector(
+      'a[href="https://github.com/samartomar/ai-harness"]',
+    );
+    expect(repositoryLink?.getAttribute("aria-label")).toBe("Open AIH on GitHub");
+    expect(repositoryLink?.getAttribute("target")).toBe("_blank");
+    expect(repositoryLink?.getAttribute("rel")?.split(/\s+/)).toEqual(
+      expect.arrayContaining(["noopener", "noreferrer"]),
+    );
+    expect(window.document.getElementById("download")?.nextElementSibling).toBe(repositoryLink);
+    expect(repositoryLink?.nextElementSibling).toBe(window.document.getElementById("export"));
+
+    click(window, '[title="CLI usages"]');
+    const cliUsageRow = [...window.document.querySelectorAll("#preset-poplist > .pop-row")].find(
+      (row) => row.textContent?.includes("CLI usages"),
+    );
+    const cliUsagePopover = cliUsageRow?.nextElementSibling;
+    expect(cliUsagePopover?.getAttribute("data-open")).toBe("true");
+    expect(cliUsagePopover?.textContent).toContain("aih heal --scope certs --apply");
+    expect(cliUsagePopover?.textContent).toContain("aih heal --scope npm --apply");
+    expect(cliUsagePopover?.textContent).toContain("aih heal --scope path --apply");
+    expect(cliUsagePopover?.textContent).toContain("aih heal --scope mcp --apply");
+    expect(cliUsagePopover?.textContent).toContain("aih certs --apply");
+    expect(cliUsagePopover?.textContent).toContain("aih tools --apply");
+    expect(cliUsagePopover?.textContent).toContain("aih ready");
+    expect(cliUsagePopover?.textContent).toContain("aih doctor");
+    expect(cliUsagePopover?.textContent).toContain("No dedicated AIH SSH repair command");
+    expect(cliUsagePopover?.textContent).not.toContain("aih heal --scope ssh");
+    expect(window.document.querySelectorAll("[data-view-tab]")).toHaveLength(4);
+    expect(window.document.querySelectorAll("[data-aih-capability-package]")).toHaveLength(
+      model.catalog.aihSkills.length + model.catalog.aihAgents.length,
+    );
+    expect(window.document.querySelectorAll("[data-ecc-mcp-availability]")).toHaveLength(
+      model.catalog.eccMcpInventory.length,
+    );
+    expect(window.document.querySelectorAll("[data-ecc-skill-availability]")).toHaveLength(
+      model.catalog.eccSkills.length,
+    );
+    const plane = window.document.getElementById("framework-rows")?.parentElement ?? null;
+    const ownerTicker = window.document.getElementById("owner-ticker");
+    const planeTop = plane?.querySelector(".planetop") ?? null;
+    if (plane === null || ownerTicker === null || planeTop === null) {
+      throw new Error("expected framework plane ordering surfaces");
+    }
+    const planeChildren = [...plane.children];
+    expect(planeChildren.indexOf(ownerTicker as Element)).toBeLessThan(
+      planeChildren.indexOf(planeTop as Element),
+    );
+    expect(
+      [...window.document.querySelectorAll("#rail-poplist > .pop-row")].map((row) =>
+        row.textContent?.replace(/\d+/g, "").replace(/›/g, "").trim(),
+      ),
+      "the largest ECC menu stays first so its popover gets the full viewport height",
+    ).toEqual(["ECC modules", "Languages", "Frameworks", "Capabilities"]);
+
+    const modulesMenu = [...window.document.querySelectorAll("#side .pop-row")].find((row) =>
+      row.textContent?.includes("ECC modules"),
+    );
+    if (modulesMenu === undefined) throw new Error("expected ECC modules menu");
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: 360 });
+    Object.defineProperty(modulesMenu, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({ bottom: 352, height: 32, left: 0, right: 250, top: 320, width: 250 }),
+    });
+    click(window, '[title="ECC modules"]');
+    const modulesPopover = modulesMenu.nextElementSibling as unknown as {
+      getAttribute: (name: string) => string | null;
+      style: { maxHeight: string; top: string };
+    } | null;
+    if (modulesPopover === null) throw new Error("expected ECC modules popover");
+    expect(modulesPopover.getAttribute("data-open")).toBe("true");
+    const popoverBottom =
+      Number.parseFloat(modulesPopover.style.top) +
+      Number.parseFloat(modulesPopover.style.maxHeight);
+    expect(popoverBottom).toBeLessThanOrEqual(348);
+
+    expect(aihSkills).not.toBeNull();
+    expect(aihSkills?.querySelectorAll("[data-aih-capability-package]")).toHaveLength(
+      model.catalog.aihSkills.length,
+    );
+    expect(aihAgents).not.toBeNull();
+    expect(aihAgents?.querySelectorAll("[data-aih-capability-package]")).toHaveLength(
+      model.catalog.aihAgents.length,
+    );
+    const conceptFor = (label: string) =>
+      [...window.document.querySelectorAll("section.grp .grphead h2")]
+        .find((heading) => heading.textContent === label)
+        ?.querySelector(".concept-icon")
+        ?.getAttribute("data-concept");
+    expect([
+      conceptFor("AIH Skills"),
+      conceptFor("AIH Agents"),
+      conceptFor("AIH MCP servers"),
+      conceptFor("AIH-Governance & Telemetry Hooks"),
+      conceptFor("ECC runtime"),
+      conceptFor("ECC baselines"),
+    ]).toEqual(["skill", "agent", "mcp", "hook", "runtime", "core"]);
+    const iconClassFor = (label: string) =>
+      [...window.document.querySelectorAll("section.grp .grphead h2")]
+        .find((heading) => heading.textContent === label)
+        ?.querySelector(".concept-icon svg")
+        ?.getAttribute("class");
+    expect([
+      iconClassFor("AIH Skills"),
+      iconClassFor("AIH Agents"),
+      iconClassFor("AIH MCP servers"),
+      iconClassFor("AIH-Governance & Telemetry Hooks"),
+      iconClassFor("ECC runtime"),
+      iconClassFor("ECC baselines"),
+    ]).toEqual([
+      "lucide lucide-blocks",
+      "lucide lucide-bot",
+      "lucide lucide-plug",
+      "lucide lucide-anchor",
+      "lucide lucide-zap",
+      "lucide lucide-layers",
+    ]);
+
+    click(window, '[data-view-tab="author"]');
+    expect(window.document.body.getAttribute("data-view")).toBe("author");
+    if (adoption === null) throw new Error("expected adoption panel");
+    expect(window.document.getElementById("panel-author")?.contains(adoption)).toBe(true);
+    expect(
+      window.document.getElementById("panel-author")?.querySelector("#protected-form"),
+    ).not.toBeNull();
+
+    click(window, '[data-view-tab="artifacts"]');
+    expect(window.document.body.getAttribute("data-view")).toBe("artifacts");
+    expect(
+      window.document.getElementById("panel-artifacts")?.querySelector("#artifact-intake-review"),
+    ).not.toBeNull();
+  });
+
+  it("ships source-authored descriptions for every visible ECC agent and skill", () => {
+    const model = policyStudioModel();
+    const ecc = model.catalog.frameworks.find((framework) => framework.id === "ecc");
+    if (ecc === undefined) throw new Error("expected ECC framework");
+    const contentAssets = ecc.assets.filter(
+      (asset) => asset.kind === "agent" || asset.kind === "skill",
+    );
+    expect(contentAssets.length).toBeGreaterThan(0);
+    for (const asset of contentAssets) {
+      expect(asset.metadata?.title, `${asset.id} source title`).toBeTruthy();
+      expect(asset.metadata?.summary, `${asset.id} source summary`).toBeTruthy();
+      expect(asset.metadata?.usageContext, `${asset.id} source usage context`).toBeTruthy();
+      expect(asset.metadata?.sourcePath, `${asset.id} source path`).toMatch(
+        asset.kind === "agent" ? /^agents\/.+\.md$/ : /^skills\/.+\/SKILL\.md$/,
+      );
+      expect(asset.metadata?.sourceSha256, `${asset.id} source digest`).toMatch(/^[a-f0-9]{64}$/);
+    }
+    for (const skill of model.catalog.eccSkills) {
+      expect(skill.summary, `${skill.id} source summary`).toBeTruthy();
+      expect(skill.usageContext, `${skill.id} source usage context`).toBeTruthy();
+      expect(skill.sourceSha256, `${skill.id} source digest`).toMatch(/^[a-f0-9]{64}$/);
+    }
   });
 
   // The locked ownership boundary: an unrecognised item is annotated, never

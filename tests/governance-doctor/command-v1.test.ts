@@ -242,7 +242,7 @@ describe("aih governance-doctor — command registration", () => {
 describe("aih governance-doctor — shipped profile", () => {
   it("loads only the shipped canonical profile with matching identity and bytes", () => {
     expect(SHIPPED_GOVERNANCE_DOCTOR_PROFILE_RELATIVE_PATH_V1).toBe(
-      "packs/governance-quality/governance-doctor-audit-guide/profile.json",
+      "packs/governance-quality/aih-gov-doctor/profile.json",
     );
     const bytes = readFileSync(
       resolve(repoRoot, SHIPPED_GOVERNANCE_DOCTOR_PROFILE_RELATIVE_PATH_V1),
@@ -867,7 +867,7 @@ describe("aih governance-doctor — non-recursive dispatch and bound identities"
     expect(presented.report.dispatchedDiagnosticIds).toEqual([]);
     expect(presented.check).toEqual({
       detail: "unavailable: adapter-unavailable",
-      name: "governance-doctor-audit-guide",
+      name: "aih-gov-doctor",
       verdict: "fail",
     });
     expect(presented.text).toContain("next action: withheld (owner: aih, executable: false)");

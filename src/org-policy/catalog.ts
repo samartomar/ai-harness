@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import firstPartyPacksManifest from "../../aih-packs.json";
 import { baselineCatalogById } from "../baseline-evidence/catalogs.js";
 import { readVendorBaselineLock } from "../baseline-evidence/vendor.js";
 import { CORE_ECC_COMPONENTS, ECC_DECLARATION_RIDERS } from "../ecc/components.js";
@@ -6,8 +7,11 @@ import { eccProfileModuleIds } from "../ecc/evidence.js";
 import { CLI_REGISTRY, REGISTRY_IDS } from "../internals/cli-registry.js";
 import { mcpApprovalSubject } from "../mcp/policy.js";
 import { type McpServer, mcpServers } from "../mcp/servers.js";
+import { PacksFileSchema } from "../pack/manifest.js";
 import { usageRecorderScript } from "../usage/capture.js";
 import { claudeUsageHookCommand } from "../usage/hooks.js";
+import { PACKAGE_NAME, VERSION } from "../version.js";
+import { eccContentMetadata } from "./ecc-content-metadata.js";
 import {
   ECC_DISABLE_ELIGIBLE_HOOK_IDS,
   ECC_HOOK_CONTROL_SOURCE_CONTENT_SHA256,
@@ -19,7 +23,13 @@ import {
   ECC_MCP_CATALOG_PROVENANCE,
   type EccMcpCatalogEntry,
   eccExternalMcpCatalog,
+  eccMcpCatalogInventory,
 } from "./ecc-mcp-catalog.js";
+import {
+  ECC_SKILL_CATALOG_PROVENANCE,
+  type EccSkillCatalogEntry,
+  eccSkillCatalogInventory,
+} from "./ecc-skill-catalog.js";
 import { type HookRegistration, hookOverlaps, hookSpawnProjection } from "./hook-registrar.js";
 
 /**
@@ -95,6 +105,15 @@ export interface PolicyAuthoringAsset {
    * stale result into a current claim.
    */
   vet?: PolicyAuthoringVet;
+  /** Source-authored identity shown to administrators, never generic UI prose. */
+  metadata?: {
+    title: string;
+    summary: string;
+    usageContext: string;
+    allowedTools: readonly string[];
+    sourcePath: string;
+    sourceSha256: string;
+  };
 }
 
 /** One blocking observation, reduced to what an administrator can act on. */
@@ -258,8 +277,34 @@ export interface PolicyAuthoringHookRegistry {
 }
 
 export interface PolicyAuthoringCatalog {
+  /** Canonical first-party catalog; the Workbench binds AIH capability intent to it automatically. */
+  aihCapabilityCatalog: { provider: "github"; repository: "samartomar/aih-catalog" };
+  /** Exact Core package identity that carries the first-party instruction sources. */
+  aihCapabilityPackage: { name: string; version: string };
+  /** Context-preserving first-party skill packs shipped in this exact @aihq/core package. */
+  aihSkills: Array<{
+    id: string;
+    pack: string;
+    description: string;
+    skills: string[];
+    sources: Array<{ skill: string; path: string; manifestIdentity: string }>;
+  }>;
+  /** Isolated-execution workflows whose reusable instruction sources remain governed as skills. */
+  aihAgents: Array<{
+    id: string;
+    pack: string;
+    description: string;
+    skills: string[];
+    sources: Array<{ skill: string; path: string; manifestIdentity: string }>;
+  }>;
   mcp: Array<{ id: string; description: string; server: McpServer; control: AihPolicyControl }>;
+  /** Complete source-locked MCP availability inventory, including AIH-owned declarations. */
+  eccMcpInventory: readonly EccMcpCatalogEntry[];
   externalMcp: readonly EccMcpCatalogEntry[];
+  eccMcpProvenance: typeof ECC_MCP_CATALOG_PROVENANCE;
+  /** Complete source-locked availability inventory; only existing assets are governable. */
+  eccSkills: readonly EccSkillCatalogEntry[];
+  eccSkillsProvenance: typeof ECC_SKILL_CATALOG_PROVENANCE;
   /** Digest paired with externalMcp when authoring an exact declarative ECC approval. */
   eccMcpApproval: { sourceContentSha256: string };
   eccHookControls: {
@@ -408,12 +453,33 @@ function frameworkCatalog(id: "ecc" | "superpowers"): PolicyAuthoringFramework {
       const curation = curationKind(component.id);
       const riders = ridersFor(component.id);
       const vet = vetted.get(component.id);
+      const kind = assetKind(component.id);
+      const name = component.id.slice(component.id.indexOf(":") + 1);
+      const metadata =
+        id === "ecc" && (kind === "agent" || kind === "skill")
+          ? eccContentMetadata(kind, name)
+          : undefined;
+      if (id === "ecc" && (kind === "agent" || kind === "skill") && metadata === undefined) {
+        throw new Error(`ECC ${kind} ${component.id} has no source-authored metadata`);
+      }
       return {
-        kind: assetKind(component.id),
+        kind,
         id: component.id,
         ...(curation === undefined ? {} : { curationKind: curation }),
         ...(riders === undefined ? {} : { riders }),
         ...(vet === undefined ? {} : { vet }),
+        ...(metadata === undefined
+          ? {}
+          : {
+              metadata: {
+                title: metadata.title,
+                summary: metadata.summary,
+                usageContext: metadata.usageContext,
+                allowedTools: metadata.allowedTools,
+                sourcePath: metadata.path,
+                sourceSha256: metadata.sourceSha256,
+              },
+            }),
         source: {
           repository: `${catalog.owner}/${catalog.repo}`,
           commit: catalog.pinnedSha,
@@ -484,6 +550,36 @@ function enterpriseComposition(ecc: PolicyAuthoringFramework): PolicyAuthoringCo
     }
   }
   return { framework: "ecc", parts };
+}
+
+/** The source-locked availability list may name more skills than AIH can govern,
+ * but it must never disagree about the governed subset. */
+function validateEccSkillCatalog(
+  ecc: PolicyAuthoringFramework,
+  skills: readonly EccSkillCatalogEntry[],
+): void {
+  if (
+    ECC_SKILL_CATALOG_PROVENANCE.repository !== ecc.repository ||
+    ECC_SKILL_CATALOG_PROVENANCE.commit !== ecc.commit
+  ) {
+    throw new Error(
+      "source-locked ECC skill inventory provenance does not match the policy catalog",
+    );
+  }
+  const byId = new Map(skills.map((skill) => [skill.id, skill]));
+  for (const skill of skills) {
+    if (skill.governable && !ecc.assets.some((asset) => asset.id === `skill:${skill.id}`)) {
+      throw new Error(`governable ECC skill ${skill.id} is absent from the policy catalog`);
+    }
+  }
+  for (const asset of ecc.assets.filter((asset) => asset.kind === "skill")) {
+    const name = asset.id.slice("skill:".length);
+    if (!byId.get(name)?.governable) {
+      throw new Error(
+        `policy skill ${asset.id} is absent or unavailable in the source-locked ECC inventory`,
+      );
+    }
+  }
 }
 
 /**
@@ -588,11 +684,35 @@ function hookRegistry(
 export function policyAuthoringCatalog(): PolicyAuthoringCatalog {
   const mcp = policyAuthoringMcpCatalog();
   const controls = aihPolicyControls(mcp);
+  const firstPartyPacks = PacksFileSchema.parse(firstPartyPacksManifest);
+  const firstPartyCapabilityPacks = firstPartyPacks.packs.map((pack) => ({
+    id: `package:skill-pack/${pack.name}`,
+    pack: pack.name,
+    description: pack.description ?? `AIH first-party ${pack.name} capability pack`,
+    skills: pack.skills.map((skill) => skill.name),
+    sources: pack.skills.map((skill) => ({
+      skill: skill.name,
+      path: skill.source,
+      manifestIdentity: skill.commit,
+    })),
+  }));
+  const agentSkillNames = new Set(["aih-bugbounty", "aih-gov-doctor"]);
+  const isAgentPack = (pack: (typeof firstPartyCapabilityPacks)[number]): boolean =>
+    pack.skills.some((skill) => agentSkillNames.has(skill));
   const ecc = frameworkCatalog("ecc");
   const frameworks = [ecc, frameworkCatalog("superpowers")];
+  validateEccSkillCatalog(ecc, eccSkillCatalogInventory);
   return {
+    aihCapabilityCatalog: { provider: "github", repository: "samartomar/aih-catalog" },
+    aihCapabilityPackage: { name: PACKAGE_NAME, version: VERSION },
+    aihSkills: firstPartyCapabilityPacks.filter((pack) => !isAgentPack(pack)),
+    aihAgents: firstPartyCapabilityPacks.filter(isAgentPack),
     hosts: policyAuthoringHosts(),
+    eccMcpInventory: eccMcpCatalogInventory,
     externalMcp: eccExternalMcpCatalog,
+    eccMcpProvenance: ECC_MCP_CATALOG_PROVENANCE,
+    eccSkills: eccSkillCatalogInventory,
+    eccSkillsProvenance: ECC_SKILL_CATALOG_PROVENANCE,
     eccMcpApproval: {
       sourceContentSha256: ECC_MCP_CATALOG_PROVENANCE.contentSha256,
     },

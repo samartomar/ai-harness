@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const skill = readFileSync(resolve("ai-coding/curated-skills/betterdoc/SKILL.md"), "utf8");
+const skill = readFileSync(resolve("ai-coding/curated-skills/aih-betterdoc/SKILL.md"), "utf8");
 const router = readFileSync(resolve("ai-coding/RULE_ROUTER.md"), "utf8");
 const extension = readFileSync(resolve("ai-coding/rules/project-canon-extension.md"), "utf8");
 
@@ -17,11 +17,11 @@ describe("repo-curated BetterDoc skill", () => {
   it("keeps the reusable reference surface aligned with packaged BetterDoc", () => {
     for (const name of referenceNames) {
       const packaged = readFileSync(
-        resolve("packs/docs-quality/betterdoc/references", name),
+        resolve("packs/docs-quality/aih-betterdoc/references", name),
         "utf8",
       );
       const curated = readFileSync(
-        resolve("ai-coding/curated-skills/betterdoc/references", name),
+        resolve("ai-coding/curated-skills/aih-betterdoc/references", name),
         "utf8",
       );
       expect(curated, name).toBe(packaged);
@@ -43,7 +43,7 @@ describe("repo-curated BetterDoc skill", () => {
   });
 
   it("is routed for public documentation work across supported clients", () => {
-    expect(router).toContain("ai-coding/curated-skills/betterdoc/SKILL.md");
-    expect(extension).toContain("../curated-skills/betterdoc/SKILL.md");
+    expect(router).toContain("ai-coding/curated-skills/aih-betterdoc/SKILL.md");
+    expect(extension).toContain("../curated-skills/aih-betterdoc/SKILL.md");
   });
 });
