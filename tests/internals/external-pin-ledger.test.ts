@@ -141,8 +141,8 @@ describe("active external-pin ledger", () => {
     // The active source is the exact reviewed upstream main revision.
     expect(entry("ecc")).toMatchObject({
       identity: "affaan-m/ECC",
-      version: "v2.2.0-126-g19e2f2b4",
-      commit: "19e2f2b46d1f7a6c2422ee5e299adcfa052a99e5",
+      version: "v2.2.0-128-gce64e417",
+      commit: "ce64e417fd420a0df98ed0aa00809eea5e74e127",
       disposition: "active",
     });
     expect(entry("ecc").reason).toMatch(/reviewed upstream.*governed/i);

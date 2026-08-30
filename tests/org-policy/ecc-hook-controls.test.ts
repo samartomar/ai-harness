@@ -70,7 +70,7 @@ describe("source-locked ECC hook controls", () => {
   it("binds all reviewed source files and the exact 43-row, 42-gated profile inventory", () => {
     expect(ECC_HOOK_CONTROL_PROVENANCE).toMatchObject({
       repository: "affaan-m/ECC",
-      commit: "19e2f2b46d1f7a6c2422ee5e299adcfa052a99e5",
+      commit: "ce64e417fd420a0df98ed0aa00809eea5e74e127",
     });
     const sourcePairs = ECC_HOOK_CONTROL_PROVENANCE.sources.map(({ path, sha256 }) => [
       path,

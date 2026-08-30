@@ -229,7 +229,7 @@ describe("policy authoring catalog inventory", () => {
     ).toBe("ECC skills");
     expect(ECC_SKILL_CATALOG_PROVENANCE).toMatchObject({
       repository: "affaan-m/ECC",
-      commit: "19e2f2b46d1f7a6c2422ee5e299adcfa052a99e5",
+      commit: "ce64e417fd420a0df98ed0aa00809eea5e74e127",
     });
     expect(eccSkillCatalogInventory).toHaveLength(286);
     expect(eccSkillCatalogInventory.map((skill) => skill.id)).toEqual(

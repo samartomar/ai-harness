@@ -51,7 +51,7 @@ describe("baseline source registry", () => {
       {
         owner: "affaan-m",
         repo: "ECC",
-        pinnedSha: "19e2f2b46d1f7a6c2422ee5e299adcfa052a99e5",
+        pinnedSha: "ce64e417fd420a0df98ed0aa00809eea5e74e127",
       },
       {
         owner: "obra",
