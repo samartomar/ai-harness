@@ -3,11 +3,24 @@ import { baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
 import { ECC_DECLARATION_RIDERS, UPSTREAM_CORE_ECC_MODULE_IDS } from "../../src/ecc/components.js";
 import { eccModuleDependencyIds } from "../../src/ecc/evidence.js";
 import { governedEccComponentIds } from "../../src/ecc/governed-lifecycle.js";
-import { eccComponentSourcePaths } from "../../src/ecc/materialize.js";
+import {
+  eccComponentSourcePaths,
+  eccModuleSelectableMemberIds,
+} from "../../src/ecc/materialize.js";
 import { defaultStudioPolicy } from "../../src/org-policy/studio-model.js";
 
 const catalog = baselineCatalogById("ecc");
 const repository = `${catalog.owner}/${catalog.repo}`;
+
+function selectedPolicyIds(policy: ReturnType<typeof defaultStudioPolicy>): string[] {
+  return [
+    ...new Set(
+      (policy.governance?.externalSelections ?? []).flatMap((group) =>
+        group.items.map((item) => item.id),
+      ),
+    ),
+  ];
+}
 
 function policyWithModules(moduleIds: readonly string[]) {
   const policy = defaultStudioPolicy();
@@ -27,6 +40,50 @@ function policyWithModules(moduleIds: readonly string[]) {
           source: { repository, commit: catalog.pinnedSha, path },
         };
       }),
+    },
+  ];
+  const group = governance.externalSelections[0];
+  if (group === undefined) throw new Error("missing ECC selection group");
+  for (const moduleId of moduleIds) {
+    for (const id of eccModuleSelectableMemberIds(
+      moduleId,
+      catalog.components.map((component) => component.id),
+    )) {
+      if (group.items.some((item) => item.id === id)) continue;
+      const component = catalog.components.find((item) => item.id === id);
+      const path = component?.paths[0];
+      if (path === undefined) throw new Error(`missing ${id}`);
+      const kind = id.startsWith("agent:")
+        ? "agent"
+        : id.startsWith("baseline:")
+          ? "baseline"
+          : "skill";
+      group.items.push({
+        kind,
+        id,
+        source: { repository, commit: catalog.pinnedSha, path },
+      });
+    }
+  }
+  return policy;
+}
+
+function policyWithBareModule(moduleId: string) {
+  const policy = defaultStudioPolicy();
+  const component = catalog.components.find((item) => item.id === `module:${moduleId}`);
+  const path = component?.paths[0];
+  if (path === undefined) throw new Error(`missing module:${moduleId}`);
+  if (policy.governance === undefined) throw new Error("expected governance");
+  policy.governance.externalSelections = [
+    {
+      framework: "ecc",
+      items: [
+        {
+          kind: "module",
+          id: `module:${moduleId}`,
+          source: { repository, commit: catalog.pinnedSha, path },
+        },
+      ],
     },
   ];
   return policy;
@@ -131,10 +188,17 @@ describe("governed ECC module selection closure", () => {
     );
   });
 
+  it("refuses a module selection whose selectable member closure is incomplete", () => {
+    expect(() => governedEccComponentIds(policyWithBareModule("agents-core"), catalog)).toThrow(
+      /module:agents-core.*requires.*(?:baseline:agents|agent:)/i,
+    );
+  });
+
   it("accepts the exact pinned dependency closure and resolves every module source", () => {
     const selected = ["machine-learning", ...eccModuleDependencyIds("machine-learning")];
-    expect(governedEccComponentIds(policyWithModules(selected), catalog).sort()).toEqual(
-      selected.map((id) => `module:${id}`).sort(),
+    const policy = policyWithModules(selected);
+    expect(governedEccComponentIds(policy, catalog).sort()).toEqual(
+      selectedPolicyIds(policy).sort(),
     );
     for (const id of selected) {
       expect(eccComponentSourcePaths(`module:${id}`)).not.toHaveLength(0);
@@ -147,14 +211,9 @@ describe("governed ECC module selection closure", () => {
     );
 
     const modules = ["machine-learning", ...eccModuleDependencyIds("machine-learning")];
-    expect(
-      governedEccComponentIds(withMachineLearningCapability(modules, true), catalog).sort(),
-    ).toEqual(
-      [
-        "capability:machine-learning",
-        ...modules.map((id) => `module:${id}`),
-        ...(ECC_DECLARATION_RIDERS["capability:machine-learning"] ?? []),
-      ].sort(),
+    const policy = withMachineLearningCapability(modules, true);
+    expect(governedEccComponentIds(policy, catalog).sort()).toEqual(
+      selectedPolicyIds(policy).sort(),
     );
   });
 

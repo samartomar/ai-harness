@@ -8,11 +8,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- Make ECC Workbench selections dependency-closed. Selecting a module, whole-module semantic
-  component, or declaration now visibly selects its pinned module prerequisites and declared
-  riders, exports the same complete set, and safely prunes only unshared derived requirements when
-  the root is removed. Policy import, browser validation, and governed materialization all refuse
-  incomplete closures before acquisition or installation.
+- Make ECC Workbench selections dependency-closed. Selecting a module now visibly selects its
+  corresponding selectable Skills, Agents, and baselines; selecting a language first brings the
+  canonical ECC Core module closure. Whole-module semantic components, module prerequisites, and
+  declared riders use the same mapping, export the same complete set, and safely prune only
+  unshared derived requirements when the root is removed. Policy import, browser validation, and
+  governed materialization all refuse incomplete closures before acquisition or installation.
 - Rename the three first-party skill identities to the concise AIH-owned names
   `aih-betterdoc`, `aih-gov-doctor`, and `aih-bugbounty`. Their committed pack paths,
   manifests, self-hosting references, runtime lookups, and public examples now use the same

@@ -1,6 +1,6 @@
 import { Window } from "happy-dom";
 import { describe, expect, it } from "vitest";
-import { UPSTREAM_CORE_ECC_MODULE_IDS } from "../../src/ecc/components.js";
+import { type EccComponentId, UPSTREAM_CORE_ECC_MODULE_IDS } from "../../src/ecc/components.js";
 import { eccModuleDependencyIds } from "../../src/ecc/evidence.js";
 import { eccComponentInstallDescriptor } from "../../src/ecc/materialize.js";
 import { type PolicyStudioModel, policyStudioModel } from "../../src/org-policy/studio-model.js";
@@ -65,7 +65,9 @@ describe("policy studio dependency-closed selection", () => {
     const expectedMembers = ecc.assets
       .filter((asset) => ["agent", "baseline", "skill"].includes(asset.kind))
       .filter(
-        (asset) => eccComponentInstallDescriptor(asset.id).containingModuleId === "agents-core",
+        (asset) =>
+          eccComponentInstallDescriptor(asset.id as EccComponentId).containingModuleId ===
+          "agents-core",
       )
       .map((asset) => asset.id);
     expect(expectedMembers.length).toBeGreaterThan(10);
@@ -87,6 +89,19 @@ describe("policy studio dependency-closed selection", () => {
       ).toBe("true");
     }
     window.close();
+  });
+
+  it("never turns module membership into MCP activation or another semantic choice", () => {
+    const moduleAssets = ecc.assets.filter((asset) => asset.kind === "module");
+    for (const module of moduleAssets) {
+      const members = module.members ?? [];
+      for (const id of members) {
+        const member = ecc.assets.find((asset) => asset.id === id);
+        expect(member, `${module.id} carries ${id}`).toBeDefined();
+        expect(["agent", "baseline", "skill"], `${module.id} -> ${id}`).toContain(member?.kind);
+      }
+    }
+    expect(moduleAssets.flatMap((module) => module.members ?? [])).not.toContain("mcp:github");
   });
 
   it("selects ECC Core and its members before a language from the left panel", () => {
@@ -157,25 +172,30 @@ describe("policy studio dependency-closed selection", () => {
 
     click(window, `.rail [data-framework-select="ecc|module|${module.id}"]`);
 
-    const expected = [module.id, ...(module.dependencies ?? [])].sort();
+    const expected = assetClosure([module.id]).sort();
     expect(selectedIds(window).sort()).toEqual(expected);
     for (const id of expected) {
-      const key = `ecc|module|${id}`;
+      const asset = ecc.assets.find((candidate) => candidate.id === id);
+      if (asset === undefined) throw new Error(`expected ${id}`);
+      const key = `ecc|${asset.kind}|${id}`;
+      if (["lang", "framework", "capability", "module"].includes(asset.kind)) {
+        expect(
+          window.document
+            .querySelector(`.rail [data-framework-select="${key}"]`)
+            ?.getAttribute("aria-pressed"),
+          `${id} is checked in the ECC left rail`,
+        ).toBe("true");
+      }
+      const canonicalControls = [
+        ...window.document.querySelectorAll(`[data-framework-select="${key}"]`),
+      ].filter((control) => control.closest(".rail") === null);
       expect(
-        window.document
-          .querySelector(`.rail [data-framework-select="${key}"]`)
-          ?.getAttribute("aria-pressed"),
-        `${id} is checked in the ECC module rail`,
-      ).toBe("true");
-      expect(
-        window.document
-          .querySelector(`#framework-rows [data-framework-select="${key}"]`)
-          ?.getAttribute("aria-pressed"),
+        canonicalControls.some((control) => control.getAttribute("aria-pressed") === "true"),
         `${id} is checked in the canonical inventory`,
-      ).toBe("true");
+      ).toBe(true);
     }
     expect(window.document.getElementById("announcement")?.textContent).toContain(
-      `${module.dependencies?.length ?? 0} required component`,
+      `${expected.length - 1} required component`,
     );
     window.close();
   });
@@ -239,6 +259,26 @@ describe("policy studio dependency-closed selection", () => {
 
     expect(window.document.getElementById("announcement")?.textContent).toMatch(
       /validation failed.*requires.*module:/i,
+    );
+    window.close();
+  });
+
+  it("rejects a policy that names a module but omits its selectable members", () => {
+    const partialModel = structuredClone(model);
+    const module = ecc.assets.find(
+      (asset) => asset.kind === "module" && (asset.members?.length ?? 0) > 0,
+    );
+    if (module === undefined) throw new Error("expected an ECC module with selectable members");
+    partialModel.initialPolicy.governance?.externalSelections.push({
+      framework: "ecc",
+      items: [{ kind: module.kind, id: module.id, source: { ...module.source } }],
+    });
+
+    const window = studio(partialModel);
+    click(window, "#validate");
+
+    expect(window.document.getElementById("announcement")?.textContent).toMatch(
+      /validation failed.*requires.*(?:agent|baseline|skill):/i,
     );
     window.close();
   });

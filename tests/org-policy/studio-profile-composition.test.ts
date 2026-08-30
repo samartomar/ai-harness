@@ -194,16 +194,18 @@ describe("policy studio profile composition", () => {
     expect(authoredPolicy(window).governance.externalCuration).toEqual([]);
   });
 
-  // A curated component already carries its evidence. Composing over it must not
-  // downgrade it to a bare selection, and the grammar forbids holding both.
-  it("leaves an already-curated component curated rather than selecting it", () => {
+  // A curated component is report-only evidence, not a module selection. Vibe
+  // cannot silently install a whole module while one of the members it must
+  // select is held only as curation, so the preset fails closed atomically.
+  it("blocks Vibe when curation prevents a dependency-closed selection", () => {
     const window = studio();
     const curated = curateFromFirstRow(window);
     selectProfile(window, "vibe");
     expect(curatedIds(window), "stays curated").toContain(curated);
     expect(selectedIds(window), "not also selected").not.toContain(curated);
-    expect(announcement(window)).not.toContain("rejected");
-    expect(selectedIds(window)).toHaveLength(eccAssetCount - 1);
+    expect(announcement(window)).toContain("Vibe composition blocked");
+    expect(announcement(window)).toContain("Nothing changed");
+    expect(selectedIds(window)).toEqual([]);
   });
 
   it("states what Vibe composed and what the one-framework rule left out", () => {

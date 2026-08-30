@@ -68,7 +68,11 @@ function eccSelectionClosure(rootIds: readonly string[]): string[] {
     const id = pending.shift();
     const asset = ecc?.assets.find((candidate) => candidate.id === id);
     if (asset === undefined) throw new Error(`expected ECC asset ${id}`);
-    for (const required of [...(asset.dependencies ?? []), ...(asset.riders ?? [])]) {
+    for (const required of [
+      ...(asset.dependencies ?? []),
+      ...(asset.members ?? []),
+      ...(asset.riders ?? []),
+    ]) {
       if (selected.has(required)) continue;
       selected.add(required);
       pending.push(required);
@@ -154,7 +158,7 @@ describe("policy studio enterprise composition", () => {
         .map((item) => item.candidate)
         .sort(),
     ).toEqual(controls.map((control) => control.id).sort());
-    expect(selectedIds(window).sort()).toEqual([...partIds("composed")].sort());
+    expect(selectedIds(window).sort()).toEqual(eccSelectionClosure(partIds("composed")).sort());
     const announcement = window.document.getElementById("announcement")?.textContent ?? "";
     expect(announcement).toContain(`${controls.length} AIH control`);
     expect(announcement).toContain(`${partIds("composed").length} ECC Core component`);

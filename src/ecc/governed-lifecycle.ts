@@ -36,7 +36,7 @@ import {
   eccMaterializationTargetName,
   resolveEccTargetMaterialization,
 } from "./materialization-target.js";
-import { eccComponentWholeModuleIds } from "./materialize.js";
+import { eccComponentRequiredModuleRootIds, eccModuleSelectableMemberIds } from "./materialize.js";
 
 /**
  * F6: `aih ecc --lifecycle install` in a governed repository.
@@ -175,18 +175,20 @@ export function governedEccComponentIds(policy: OrgPolicy, catalog: BaselineCata
     if (id.startsWith("runtime:")) continue;
     const moduleDependencies = [
       ...new Set(
-        eccComponentWholeModuleIds(id as EccComponentId | EccMcpComponentId).flatMap((moduleId) => [
-          moduleId,
-          ...eccModuleDependencyIds(moduleId),
-        ]),
+        eccComponentRequiredModuleRootIds(id as EccComponentId | EccMcpComponentId).flatMap(
+          (moduleId) => [moduleId, ...eccModuleDependencyIds(moduleId)],
+        ),
       ),
     ]
       .map((moduleId) => `module:${moduleId}`)
       .filter((dependency) => dependency !== id);
     const declaredRiders = (ECC_DECLARATION_RIDERS[id] ?? []).filter((rider) => known.has(rider));
-    const dependencies = [...new Set([...moduleDependencies, ...declaredRiders])].filter(
-      (dependency) => !selected.has(dependency),
-    );
+    const moduleMembers = id.startsWith("module:")
+      ? eccModuleSelectableMemberIds(id.slice("module:".length), [...known])
+      : [];
+    const dependencies = [
+      ...new Set([...moduleDependencies, ...moduleMembers, ...declaredRiders]),
+    ].filter((dependency) => !selected.has(dependency));
     if (dependencies.length > 0) missingDependencies.set(id, dependencies);
   }
   if (missingDependencies.size > 0) {

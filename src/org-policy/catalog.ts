@@ -9,7 +9,10 @@ import {
   type EccMcpComponentId,
 } from "../ecc/components.js";
 import { eccModuleDependencyIds, eccProfileModuleIds } from "../ecc/evidence.js";
-import { eccComponentWholeModuleIds } from "../ecc/materialize.js";
+import {
+  eccComponentRequiredModuleRootIds,
+  eccModuleSelectableMemberIds,
+} from "../ecc/materialize.js";
 import { CLI_REGISTRY, REGISTRY_IDS } from "../internals/cli-registry.js";
 import { mcpApprovalSubject } from "../mcp/policy.js";
 import { type McpServer, mcpServers } from "../mcp/servers.js";
@@ -109,6 +112,12 @@ export interface PolicyAuthoringAsset {
    * partial upstream module configuration.
    */
   dependencies?: string[];
+  /**
+   * Individually selectable Skill, Agent, and baseline artifacts materially
+   * contained by an aggregate module. The Workbench selects these in the same
+   * atomic change so inventory and export describe what the module brings.
+   */
+  members?: string[];
   source: { repository: string; commit: string; path: string };
   /**
    * The verdict AIH's own analyzers reached for this component at the pinned
@@ -456,7 +465,9 @@ function frameworkCatalog(id: "ecc" | "superpowers"): PolicyAuthoringFramework {
   };
   const dependenciesFor = (componentId: string): string[] | undefined => {
     if (id !== "ecc" || componentId.startsWith("runtime:")) return undefined;
-    const roots = eccComponentWholeModuleIds(componentId as EccComponentId | EccMcpComponentId);
+    const roots = eccComponentRequiredModuleRootIds(
+      componentId as EccComponentId | EccMcpComponentId,
+    );
     const dependencies = [
       ...new Set(roots.flatMap((moduleId) => [moduleId, ...eccModuleDependencyIds(moduleId)])),
     ]
@@ -471,6 +482,14 @@ function frameworkCatalog(id: "ecc" | "superpowers"): PolicyAuthoringFramework {
     }
     return dependencies.length > 0 ? dependencies : undefined;
   };
+  const membersFor = (componentId: string): string[] | undefined => {
+    if (id !== "ecc" || !componentId.startsWith("module:")) return undefined;
+    const members = eccModuleSelectableMemberIds(
+      componentId.slice("module:".length),
+      catalog.components.map((component) => component.id),
+    );
+    return members.length > 0 ? members : undefined;
+  };
   return {
     id,
     repository: `${catalog.owner}/${catalog.repo}`,
@@ -482,6 +501,7 @@ function frameworkCatalog(id: "ecc" | "superpowers"): PolicyAuthoringFramework {
       const curation = curationKind(component.id);
       const riders = ridersFor(component.id);
       const dependencies = dependenciesFor(component.id);
+      const members = membersFor(component.id);
       const vet = vetted.get(component.id);
       const kind = assetKind(component.id);
       const name = component.id.slice(component.id.indexOf(":") + 1);
@@ -498,6 +518,7 @@ function frameworkCatalog(id: "ecc" | "superpowers"): PolicyAuthoringFramework {
         ...(curation === undefined ? {} : { curationKind: curation }),
         ...(riders === undefined ? {} : { riders }),
         ...(dependencies === undefined ? {} : { dependencies }),
+        ...(members === undefined ? {} : { members }),
         ...(vet === undefined ? {} : { vet }),
         ...(metadata === undefined
           ? {}
