@@ -5,7 +5,10 @@ import { policyStudioModel } from "../../src/org-policy/studio-model.js";
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
 
 const model = policyStudioModel();
-const controls = [...model.catalog.mcp.map((item) => item.control), ...model.catalog.hooks];
+const controls = [
+  ...model.catalog.mcp.filter((item) => item.availability === "always").map((item) => item.control),
+  ...model.catalog.hooks,
+];
 const ecc = model.catalog.frameworks.find((framework) => framework.id === "ecc");
 if (ecc === undefined) throw new Error("expected an ecc framework in the catalog");
 const eccAssetIds = new Set(ecc.assets.map((asset) => asset.id));
@@ -39,7 +42,11 @@ function authoredPolicy(window: Window): {
     catalog: { reviewed: { id: string }[] };
     activations: { candidate: string; state: string }[];
     externalCuration: unknown[];
-    externalSelections: Array<{ framework: string; items: Array<{ id: string }> }>;
+    externalSelections: Array<{
+      framework: string;
+      roots?: string[];
+      items: Array<{ id: string }>;
+    }>;
   };
 } {
   const preview = window.document.getElementById("config-preview") as unknown as {
@@ -159,6 +166,9 @@ describe("policy studio enterprise composition", () => {
         .sort(),
     ).toEqual(controls.map((control) => control.id).sort());
     expect(selectedIds(window).sort()).toEqual(eccSelectionClosure(partIds("composed")).sort());
+    expect(policy.governance.externalSelections[0]?.roots?.sort()).toEqual(
+      partIds("composed").sort(),
+    );
     const announcement = window.document.getElementById("announcement")?.textContent ?? "";
     expect(announcement).toContain(`${controls.length} AIH control`);
     expect(announcement).toContain(`${partIds("composed").length} ECC Core component`);

@@ -1,6 +1,7 @@
 import { type Element, Window } from "happy-dom";
 import { describe, expect, it } from "vitest";
 import { baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
+import { mcpServers } from "../../src/mcp/servers.js";
 import { policyAuthoringCatalog } from "../../src/org-policy/catalog.js";
 import {
   eccExternalMcpCatalog,
@@ -295,7 +296,11 @@ describe("policy authoring catalog inventory", () => {
       (window.document.getElementById("config-preview") as unknown as { value: string }).value,
     ) as { governance?: { externalSelections?: Array<{ framework: string; items: unknown[] }> } };
     expect(authored.governance?.externalSelections).toEqual([
-      { framework: "ecc", items: [expect.objectContaining({ kind: "mcp", id: first.id })] },
+      {
+        framework: "ecc",
+        items: [expect.objectContaining({ kind: "mcp", id: first.id })],
+        roots: [first.id],
+      },
     ]);
   });
 
@@ -411,6 +416,60 @@ describe("policy authoring catalog inventory", () => {
       if (select === null) throw new Error("expected ECC MCP approval select");
       expect((select as unknown as { value: string }).value).toBe(mcp.id);
     }
+  });
+
+  it("offers AIH-delivered Playwright as an unrequested, selectable web control", () => {
+    const window = new Window({ url: "http://localhost/" });
+    const model = policyStudioModel();
+    const html = policyStudioHtml(model);
+    window.document.write(html);
+    loadStudio(window, html);
+
+    expect(model.catalog.mcp.find((entry) => entry.id === "playwright")?.availability).toBe(
+      "web-target",
+    );
+    const control = window.document.querySelector('[data-reviewed="playwright"]');
+    expect(control).not.toBeNull();
+    expect(control?.getAttribute("aria-pressed")).toBe("false");
+    expect(control?.hasAttribute("disabled")).toBe(false);
+
+    control?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    const authored = JSON.parse(
+      (window.document.getElementById("config-preview") as unknown as { value: string }).value,
+    ) as { governance?: { catalog?: { reviewed?: Array<{ id: string }> } } };
+    expect(authored.governance?.catalog?.reviewed?.map((entry) => entry.id)).toContain(
+      "playwright",
+    );
+
+    const selected = window.document.querySelector('[data-reviewed="playwright"]');
+    expect(selected?.getAttribute("aria-pressed")).toBe("true");
+    expect(selected?.hasAttribute("disabled")).toBe(false);
+    selected?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+
+    const removed = JSON.parse(
+      (window.document.getElementById("config-preview") as unknown as { value: string }).value,
+    ) as { governance?: { catalog?: { reviewed?: Array<{ id: string }> } } };
+    expect(removed.governance?.catalog?.reviewed?.map((entry) => entry.id)).not.toContain(
+      "playwright",
+    );
+  });
+
+  it("keeps Playwright target-derived after the no-repository Workbench authors it", () => {
+    const stack = {
+      languages: [],
+      frameworks: [],
+      cloud: [],
+      databases: [],
+      deployment: [],
+      hasTypeScript: false,
+      scripts: {},
+      entryPoints: [],
+      browserTest: false,
+      isMonorepo: false,
+      virtualEnvPaths: [],
+    };
+    expect(mcpServers("project", stack)).not.toHaveProperty("playwright");
+    expect(mcpServers("project", { ...stack, frameworks: ["React"] })).toHaveProperty("playwright");
   });
 
   it("keeps every shipped surface reachable in the adopted Workbench shell", () => {

@@ -10,7 +10,10 @@ const model = policyStudioModel();
  * than listed, so a catalog change fails these tests instead of silently
  * shrinking what a profile composes.
  */
-const controls = [...model.catalog.mcp.map((item) => item.control), ...model.catalog.hooks];
+const controls = [
+  ...model.catalog.mcp.filter((item) => item.availability === "always").map((item) => item.control),
+  ...model.catalog.hooks,
+];
 const frameworkAssets = model.catalog.frameworks.flatMap((framework) =>
   framework.assets.map((asset) => ({ framework, asset })),
 );
@@ -130,7 +133,7 @@ describe("policy studio profile composition", () => {
   // Recorded product failure 1: Vibe changed a label and nothing else, so the
   // administrator got a posture rename in place of the complete selection the
   // profile names.
-  it("composes Vibe into requested intent for every AIH control", () => {
+  it("composes Vibe into requested intent for every always-available AIH control", () => {
     const window = studio();
     selectProfile(window, "vibe");
     const policy = authoredPolicy(window);
@@ -146,22 +149,29 @@ describe("policy studio profile composition", () => {
     ).toEqual(controls.map((control) => control.id).sort());
   });
 
+  it("leaves target-conditional Playwright as an explicit administrator choice", () => {
+    const window = studio();
+    selectProfile(window, "vibe");
+    expect(authoredPolicy(window).governance.catalog.reviewed.map((item) => item.id)).not.toContain(
+      "playwright",
+    );
+    const playwright = window.document.querySelector('[data-reviewed="playwright"]');
+    expect(playwright?.getAttribute("aria-pressed")).toBe("false");
+    expect(playwright?.hasAttribute("disabled")).toBe(false);
+    expect(playwright?.closest(".row")?.textContent).toContain("Web target only");
+  });
+
   it("shows every composed control as requested in the rows it composed", () => {
     const window = studio();
     selectProfile(window, "vibe");
-    for (const container of ["mcp-rows", "hook-rows"]) {
-      const rows = [
-        ...(window.document.getElementById(container)?.querySelectorAll(".row") ?? []),
-      ].filter((row) => row.querySelector("[data-reviewed]") !== null);
-      expect(rows.length, container).toBeGreaterThan(0);
-      for (const row of rows) {
-        expect(row.querySelector(".badge")?.textContent ?? "", container).toContain(
-          "Requested intent",
-        );
-        const inverse = row.querySelector("[data-reviewed]");
-        expect(inverse?.hasAttribute("disabled") ?? true).toBe(false);
-        expect(inverse?.getAttribute("aria-label")).toContain("Deselect");
-      }
+    for (const control of controls) {
+      const inverse = window.document.querySelector(`[data-reviewed="${control.id}"]`);
+      const row = inverse?.closest(".row");
+      expect(row?.querySelector(".badge")?.textContent ?? "", control.id).toContain(
+        "Requested intent",
+      );
+      expect(inverse?.hasAttribute("disabled") ?? true).toBe(false);
+      expect(inverse?.getAttribute("aria-label")).toContain("Deselect");
     }
   });
 

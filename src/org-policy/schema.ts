@@ -780,6 +780,14 @@ const ExternalFrameworkSelectionSchema = z
   .object({
     framework: z.enum(["ecc", "superpowers"]),
     items: z.array(ExternalSelectionItemSchema).default([]),
+    /**
+     * Administrator-selected roots before dependency closure. `items` remains
+     * the complete requested set consumed by materialization; roots are inert
+     * provenance that lets review distinguish a direct choice from a required
+     * component. Optional keeps existing schema-v2 policies valid without
+     * inventing intent they did not record.
+     */
+    roots: z.array(SafePolicyTextSchema).optional(),
   })
   .strict()
   .superRefine((selection, ctx) => {
@@ -793,6 +801,25 @@ const ExternalFrameworkSelectionSchema = z
         });
       }
       seen.add(item.id);
+    }
+    const selectedIds = new Set(selection.items.map((item) => item.id));
+    const seenRoots = new Set<string>();
+    for (const [index, root] of (selection.roots ?? []).entries()) {
+      if (seenRoots.has(root)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["roots", index],
+          message: `duplicate external selection root ${root}`,
+        });
+      }
+      if (!selectedIds.has(root)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["roots", index],
+          message: `selection root ${root} is not present in items`,
+        });
+      }
+      seenRoots.add(root);
     }
   });
 

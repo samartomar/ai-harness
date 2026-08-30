@@ -245,6 +245,60 @@ describe("policy studio framework selection", () => {
     ).toThrow(/selection root lang:not-in-items is not present in items/i);
   });
 
+  it("rejects duplicate explicit selection roots", () => {
+    const policy = defaultStudioPolicy();
+    const governance = policy.governance;
+    if (governance === undefined) throw new Error("expected default studio governance");
+    expect(() =>
+      parseOrgPolicy({
+        ...policy,
+        governance: {
+          supportedClis: ["claude"],
+          ...governance,
+          externalSelections: [
+            {
+              framework: uncuratable.framework.id,
+              roots: [uncuratable.asset.id, uncuratable.asset.id],
+              items: [
+                {
+                  kind: uncuratable.asset.kind,
+                  id: uncuratable.asset.id,
+                  source: { ...uncuratable.asset.source },
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    ).toThrow(/duplicate external selection root/i);
+  });
+
+  it("accepts legacy selections that omit explicit roots without inventing them", () => {
+    const policy = defaultStudioPolicy();
+    const governance = policy.governance;
+    if (governance === undefined) throw new Error("expected default studio governance");
+    const parsed = parseOrgPolicy({
+      ...policy,
+      governance: {
+        supportedClis: ["claude"],
+        ...governance,
+        externalSelections: [
+          {
+            framework: uncuratable.framework.id,
+            items: [
+              {
+                kind: uncuratable.asset.kind,
+                id: uncuratable.asset.id,
+                source: { ...uncuratable.asset.source },
+              },
+            ],
+          },
+        ],
+      },
+    });
+    expect(parsed.governance?.externalSelections[0]).not.toHaveProperty("roots");
+  });
+
   // The grammar defaults this array, so a policy document written before it
   // existed is still valid and must import as "no selections" rather than as a
   // missing field the surface then reads off undefined.

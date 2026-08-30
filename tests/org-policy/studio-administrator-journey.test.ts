@@ -17,7 +17,10 @@ import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
  */
 
 const model = policyStudioModel();
-const controls = [...model.catalog.mcp.map((item) => item.control), ...model.catalog.hooks];
+const controls = [
+  ...model.catalog.mcp.filter((item) => item.availability === "always").map((item) => item.control),
+  ...model.catalog.hooks,
+];
 const inventoryCount = model.catalog.frameworks.reduce(
   (total, framework) => total + framework.assets.length,
   0,

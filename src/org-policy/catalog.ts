@@ -318,7 +318,13 @@ export interface PolicyAuthoringCatalog {
     skills: string[];
     sources: Array<{ skill: string; path: string; manifestIdentity: string }>;
   }>;
-  mcp: Array<{ id: string; description: string; server: McpServer; control: AihPolicyControl }>;
+  mcp: Array<{
+    id: string;
+    description: string;
+    server: McpServer;
+    control: AihPolicyControl;
+    availability: "always" | "web-target";
+  }>;
   /** Complete source-locked MCP availability inventory, including AIH-owned declarations. */
   eccMcpInventory: readonly EccMcpCatalogEntry[];
   externalMcp: readonly EccMcpCatalogEntry[];
@@ -346,7 +352,17 @@ export interface PolicyAuthoringCatalog {
 }
 
 export function policyAuthoringMcpCatalog(): Record<string, McpServer> {
-  return mcpServers("project", EMPTY_REPO_STACK);
+  const generic = mcpServers("project", EMPTY_REPO_STACK);
+  const web = mcpServers("project", { ...EMPTY_REPO_STACK, frameworks: ["React"] });
+  const playwright = web.playwright;
+  if (playwright === undefined) {
+    throw new Error("AIH's web MCP catalog is missing Playwright");
+  }
+  // The Workbench has no target repository to scan. Offer the one conditional
+  // AIH control explicitly so an administrator can request it; runtime policy
+  // resolution still uses the real target stack and refuses the request when
+  // that target does not expose Playwright.
+  return { ...generic, playwright };
 }
 
 function usageMeteringControl(): AihPolicyControl {
@@ -785,7 +801,15 @@ export function policyAuthoringCatalog(): PolicyAuthoringCatalog {
       const control = controls.find((candidate) => candidate.id === id);
       return control === undefined
         ? []
-        : [{ id, description: server.description, server, control }];
+        : [
+            {
+              id,
+              description: server.description,
+              server,
+              control,
+              availability: id === "playwright" ? "web-target" : "always",
+            },
+          ];
     }),
     hooks: controls
       .filter((control): control is AihHookControl => control.source.type === "hook")

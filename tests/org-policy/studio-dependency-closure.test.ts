@@ -316,4 +316,23 @@ describe("policy studio dependency-closed selection", () => {
     );
     window.close();
   });
+
+  it("rejects an out-of-closure explicit root in the portable browser validator", () => {
+    const partialModel = structuredClone(model);
+    const asset = ecc.assets[0];
+    if (asset === undefined) throw new Error("expected an ECC asset");
+    partialModel.initialPolicy.governance?.externalSelections.push({
+      framework: "ecc",
+      roots: ["lang:not-in-items"],
+      items: [{ kind: asset.kind, id: asset.id, source: { ...asset.source } }],
+    });
+
+    const window = studio(partialModel);
+    click(window, "#validate");
+
+    expect(window.document.getElementById("announcement")?.textContent).toMatch(
+      /validation failed.*selection root lang:not-in-items is not present in items/i,
+    );
+    window.close();
+  });
 });

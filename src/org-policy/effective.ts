@@ -345,6 +345,8 @@ export interface EffectiveOrgPolicy {
    */
   externalSelections: Array<{
     framework: "ecc" | "superpowers";
+    /** Explicit administrator choices; absent on legacy schema-v2 policies. */
+    roots?: string[];
     items: Array<{
       kind: string;
       id: string;
@@ -1388,6 +1390,7 @@ export function resolveEffectiveOrgPolicy(
     })),
     externalSelections: governance.externalSelections.map((selection) => ({
       framework: selection.framework,
+      ...(selection.roots === undefined ? {} : { roots: [...selection.roots] }),
       items: selection.items.map((item) => ({ ...item, source: { ...item.source } })),
       status: "requested-evidence-needed" as const,
     })),
@@ -1539,6 +1542,7 @@ const EXTERNAL_CURATION_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
 
 const EXTERNAL_SELECTION_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
   framework: "effective report: requested external framework identity only",
+  "roots.*": "effective report: explicit external selection root identity only",
   "items.*.id": "effective report: requested external component identity only",
   "items.*.kind": "effective report: requested external component kind only",
   "items.*.source.commit": "effective report: requested external source pin only",

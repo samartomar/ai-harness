@@ -8,6 +8,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Preserve explicit ECC and Superpowers Workbench selection roots separately from their complete
+  dependency closure, so exported and effective-policy review can distinguish administrator
+  choices from automatically required Skills, Agents, baselines, and modules. Legacy policies may
+  omit roots; malformed, duplicate, or out-of-closure roots fail closed. The no-repository
+  Workbench also exposes AIH's conditional Playwright MCP as an initially unrequested control,
+  while bulk profiles leave it additive and target-repository runtime resolution still refuses it
+  outside a detected web stack. Selected AIH MCP and Hook controls remain directly reversible
+  instead of becoming disabled after the first request.
 - Show Allowed CLI counts as selected over available, add explicit Select all and Done controls,
   and refuse a manual Enterprise-posture transition until at least one CLI is explicitly
   sanctioned. This prevents the misleading zero-selected `11` badge and the invalid draft state

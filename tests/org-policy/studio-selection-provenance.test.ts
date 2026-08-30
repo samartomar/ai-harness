@@ -4,7 +4,10 @@ import { policyStudioModel } from "../../src/org-policy/studio-model.js";
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
 
 const model = policyStudioModel();
-const controls = [...model.catalog.mcp.map((item) => item.control), ...model.catalog.hooks];
+const controls = [
+  ...model.catalog.mcp.filter((item) => item.availability === "always").map((item) => item.control),
+  ...model.catalog.hooks,
+];
 
 function studio(): Window {
   const window = new Window({ url: "http://localhost/" });
@@ -37,9 +40,13 @@ function activations(window: Window): { candidate: string; clarification?: strin
 }
 
 function controlRows(window: Window): { text: string; firstBadge: string }[] {
+  const composed = new Set(controls.map((control) => control.id));
   return ["mcp-rows", "hook-rows"].flatMap((container) =>
     [...(window.document.getElementById(container)?.querySelectorAll(".row") ?? [])]
-      .filter((row) => row.querySelector("[data-reviewed]") !== null)
+      .filter((row) => {
+        const control = row.querySelector("[data-reviewed]")?.getAttribute("data-reviewed");
+        return control !== null && control !== undefined && composed.has(control);
+      })
       .map((row) => ({
         text: row.textContent ?? "",
         firstBadge: row.querySelector(".badge")?.textContent ?? "",
