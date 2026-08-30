@@ -295,7 +295,7 @@ describe("active external-pin ledger", () => {
     expect(entry("claude-code-action")).toMatchObject({
       commit: claude?.[1],
     });
-    expect(entry("claude-code-action").version).toBe("v1.0.201");
+    expect(entry("claude-code-action").version).toBe("v1.0.210");
 
     const baselineWorkflow = readFileSync(
       resolve(root, ".github/workflows/baseline-evidence.yml"),
@@ -308,6 +308,12 @@ describe("active external-pin ledger", () => {
 
   it("binds the release provenance action to the governed external pin ledger", () => {
     const releaseWorkflow = readFileSync(resolve(root, ".github/workflows/release.yml"), "utf8");
+    expect(entry("sbom-action")).toMatchObject({
+      ...workflowActionPin(releaseWorkflow, "anchore/sbom-action"),
+      disposition: "active",
+    });
+    expect(entry("sbom-action").version).toBe("v0.24.2");
+    expect(entry("sbom-action").reason).toMatch(/pinned Syft installer.*release tag/i);
     expect(entry("attest-build-provenance-action")).toMatchObject({
       ...workflowActionPin(releaseWorkflow, "actions/attest-build-provenance"),
       disposition: "active",
@@ -345,6 +351,8 @@ describe("active external-pin ledger", () => {
         version: pin[2],
       });
     }
+    expect(entry("codeql-action").version).toBe("v4.37.9");
+    expect(entry("codeql-action").reason).toMatch(/codeql-bundle-v2\.26\.4/i);
   });
 
   it("records governed scanner identities and fails closed on AgentShield provenance", () => {
