@@ -744,6 +744,76 @@ describe("policy authoring catalog inventory", () => {
     }
   });
 
+  it("uses one auditable details pattern for every ECC component kind", () => {
+    const window = new Window({ url: "http://localhost/" });
+    const model = policyStudioModel();
+    const html = policyStudioHtml(model);
+    window.document.write(html);
+    loadStudio(window, html);
+
+    const ecc = model.catalog.frameworks.find((framework) => framework.id === "ecc");
+    if (ecc === undefined) throw new Error("expected ECC framework");
+    const representatives = new Map<string, (typeof ecc.assets)[number]>();
+    for (const asset of ecc.assets) {
+      if (!representatives.has(asset.kind)) representatives.set(asset.kind, asset);
+    }
+
+    expect([...representatives.keys()].sort()).toEqual([
+      "agent",
+      "baseline",
+      "capability",
+      "framework",
+      "lang",
+      "mcp",
+      "module",
+      "runtime",
+      "skill",
+    ]);
+    for (const asset of representatives.values()) {
+      click(window, `[data-detail="ecc / ${asset.kind}: ${asset.id}"]`);
+      const drawer = window.document.getElementById("drawer-detail");
+      expect(
+        drawer?.querySelector('[data-detail-section="overview"]'),
+        `${asset.kind} overview`,
+      ).not.toBeNull();
+      expect(
+        drawer?.querySelector('[data-detail-section="scope"]'),
+        `${asset.kind} selection scope`,
+      ).not.toBeNull();
+      expect(
+        drawer?.querySelector('[data-detail-section="sources"]'),
+        `${asset.kind} source definitions`,
+      ).not.toBeNull();
+      expect(
+        drawer?.querySelector('[data-detail-section="readiness"]'),
+        `${asset.kind} readiness`,
+      ).not.toBeNull();
+      expect(
+        drawer?.querySelector('[data-detail-section="security"]'),
+        `${asset.kind} security and audit`,
+      ).not.toBeNull();
+    }
+
+    const capability = ecc.assets.find((asset) => asset.id === "capability:security");
+    const lockedCapability = baselineCatalogById("ecc").components.find(
+      (component) => component.id === "capability:security",
+    );
+    if (capability === undefined || lockedCapability === undefined) {
+      throw new Error("expected pinned security capability");
+    }
+    expect(capability.source.paths).toEqual(lockedCapability.paths);
+    click(window, '[data-detail="ecc / capability: capability:security"]');
+    const drawer = window.document.getElementById("drawer-detail");
+    expect(
+      [...(drawer?.querySelectorAll("[data-source-definition]") ?? [])].map(
+        (entry) => entry.textContent,
+      ),
+    ).toEqual(lockedCapability.paths);
+    expect(drawer?.textContent).toContain("Composite capability");
+    expect(drawer?.textContent).toContain("complete pinned source set");
+    expect(drawer?.textContent).toContain("No aggregate tool allow-list declared");
+  });
+
   // The locked ownership boundary: an unrecognised item is annotated, never
   // removed. Dropping it hides inventory an administrator is accountable for.
   it("carries every pinned baseline component, dropping none", () => {
