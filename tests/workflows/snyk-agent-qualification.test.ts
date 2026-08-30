@@ -110,6 +110,9 @@ describe("Snyk Agent Scan behavioral qualification workflow", () => {
       steps.find((step) => step.uses?.startsWith("astral-sh/setup-uv@"))?.uses,
       "astral-sh/setup-uv",
     );
+    expect(steps.find((step) => step.uses?.startsWith("astral-sh/setup-uv@"))?.with).toMatchObject({
+      version: "0.12.7",
+    });
     expectPinnedAction(upload?.uses, "actions/upload-artifact");
     expect(checkout?.with).toMatchObject({ "persist-credentials": false });
     expect(commands).toContain("tools/trust-scanners/snyk-agent-scan/uv.lock");

@@ -274,6 +274,9 @@ describe("active external-pin ledger", () => {
     expect(entry("uv").version).toBe(
       skillspectorDockerfile.match(/pip install --no-cache-dir uv==([^\s]+)/)?.[1],
     );
+    expect(entry("uv")).toMatchObject({ version: "0.12.7", disposition: "active" });
+    expect(entry("uv").reason).toMatch(/five committed locks.*byte-identical/i);
+    expect(entry("uv").reason).toMatch(/Cisco.*link\.exe/i);
     expect(skillspectorDockerfile).toContain(
       `LABEL org.opencontainers.image.revision="${SKILLSPECTOR_SOURCE_REVISION}"`,
     );

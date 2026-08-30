@@ -98,6 +98,7 @@ describe("baseline evidence release payload", () => {
     expect(workflow).not.toContain("systemctl restart docker");
     expect(workflow).not.toContain("docker build");
     expect(workflow).toContain("astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d");
+    expect(workflow).toContain('version: "0.12.7"');
     expect(workflow).toContain(`skill-scanner ${CISCO_SKILL_SCANNER_VERSION}`);
     expect(workflow).toContain("actions/upload-artifact@");
     expect(workflow).toContain("src/baseline-evidence/vendor-lock.json");
@@ -146,7 +147,7 @@ describe("baseline evidence release payload", () => {
     expect(dockerfile).toContain(
       "python:3.12-slim-bookworm@sha256:a116514e19457bcb7af7efe9c3dd0b9b71e85b317694e7882a1c52aa15a78134",
     );
-    expect(dockerfile).toContain("uv==0.12.5");
+    expect(dockerfile).toContain("uv==0.12.7");
     expect(dockerfile).toContain(
       'org.opencontainers.image.revision="2d198ab910add401cad658d1087e7c7ba24fd640"',
     );
