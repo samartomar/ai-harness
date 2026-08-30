@@ -32,6 +32,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Advance the exact SBOM, CodeQL, and opt-in Claude workflow actions after reviewing their
+  immutable tags, unchanged AIH input surfaces, and upstream security or bounded-execution fixes.
 - Advance the exact uv toolchain from `0.12.5` to `0.12.7` across both scanner workflows and the
   controlled SkillSpector build after all five committed locks and offline exports remained stable.
 - Make ECC Workbench selections dependency-closed. Selecting a module now visibly selects its

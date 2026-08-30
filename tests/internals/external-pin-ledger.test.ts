@@ -313,7 +313,7 @@ describe("active external-pin ledger", () => {
       disposition: "active",
     });
     expect(entry("sbom-action").version).toBe("v0.24.2");
-    expect(entry("sbom-action").reason).toMatch(/pinned Syft installer.*release tag/i);
+    expect(entry("sbom-action").reason).toMatch(/pins.*Syft installer.*release tag/i);
     expect(entry("attest-build-provenance-action")).toMatchObject({
       ...workflowActionPin(releaseWorkflow, "actions/attest-build-provenance"),
       disposition: "active",

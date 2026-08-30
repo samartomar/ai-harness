@@ -238,10 +238,10 @@
     {
       "surface": "claude-code-action",
       "identity": "anthropics/claude-code-action",
-      "version": "v1.0.201",
-      "commit": "c81e3bc69d1b18badbb63ba39581218f02421678",
+      "version": "v1.0.210",
+      "commit": "a874e9ecd7bb36efdad65429c6b35815f5a08f10",
       "disposition": "active",
-      "reason": "The official v1.0.201 annotated tag dereferences to this immutable SHA. The opt-in maintainer workflow remains pinned to the commit rather than the movable v1 tag, and its permissions and secret input are unchanged."
+      "reason": "The official v1.0.210 annotated tag dereferences to this immutable SHA. The target commit and tag are unsigned, matching the prior Claude action pin's signature posture rather than introducing a new regression. The opt-in maintainer workflow remains pinned to the commit rather than the movable v1 tag; its action inputs, permissions, and secret input are unchanged. The reviewed range bounds stalled job-log downloads, encodes branch names in generated GitHub links, corrects delete-file path guidance, and advances the embedded Claude Code and Agent SDK together."
     },
     {
       "surface": "setup-node-action",
@@ -270,10 +270,10 @@
     {
       "surface": "codeql-action",
       "identity": "github/codeql-action",
-      "version": "v4.37.8",
-      "commit": "db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28",
+      "version": "v4.37.9",
+      "commit": "cdf488f595d80d6e07e03d4674febd5ab45fa938",
       "disposition": "active",
-      "reason": "The official v4.37.8 annotated tag dereferences to this immutable SHA, and the upstream release reports no user-facing changes. All three governed call sites -- init and analyze in codeql.yml and upload-sarif in scorecard.yml -- move together because one ledger identity covers them."
+      "reason": "The official v4.37.9 annotated tag dereferences to this immutable SHA. The action input surfaces used by this repository are unchanged; the default analysis engine advances to codeql-bundle-v2.26.4 and supported GitHub Enterprise Server metadata is refreshed. All three governed call sites -- init and analyze in codeql.yml and upload-sarif in scorecard.yml -- move together because one ledger identity covers them."
     },
     {
       "surface": "scorecard-action",
@@ -294,10 +294,10 @@
     {
       "surface": "sbom-action",
       "identity": "anchore/sbom-action",
-      "version": "v0.24.0",
-      "commit": "e22c389904149dbc22b58101806040fa8d37a610",
-      "disposition": "retained",
-      "reason": "Latest stable action release resolves to the existing immutable SHA."
+      "version": "v0.24.2",
+      "commit": "3ad7283483fc7af8ff2b4ea19663c2d5ca935e26",
+      "disposition": "active",
+      "reason": "The official v0.24.2 annotated tag dereferences to this immutable SHA. The reviewed action keeps AIH's tarball-scoped SPDX inputs unchanged, advances its default Syft from v1.42.3 to v1.51.1, pins the downloaded Syft installer to the requested release tag, and validates the entire version string before interpolating it into the installer URL."
     },
     {
       "surface": "attest-build-provenance-action",
