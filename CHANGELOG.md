@@ -32,6 +32,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Correct the active code-review-graph source repository without changing its `2.3.7` bytes, and
+  hold `2.3.8` because inherited OpenAI-compatible environment can silently enable network egress.
 - Advance the exact SBOM, CodeQL, and opt-in Claude workflow actions after reviewing their
   immutable tags, unchanged AIH input surfaces, and upstream security or bounded-execution fixes.
 - Advance the exact uv toolchain from `0.12.5` to `0.12.7` across both scanner workflows and the

@@ -43,7 +43,7 @@ const pins = {
   codeReviewGraph: {
     package: "code-review-graph==2.3.7",
     license: "MIT",
-    source: "https://github.com/DeusData/code-review-graph",
+    source: "https://github.com/tirth8205/code-review-graph",
   },
   codebaseMemory: {
     package: "codebase-memory-mcp==0.10.5",

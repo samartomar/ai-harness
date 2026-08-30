@@ -44,7 +44,7 @@
       "commit": "6a1ee1c7063cc35cfa5ff12b8198c29360f3e4ad",
       "integrity": "sha256:12196dce3e673bdec7fba97ae5c4dff7589adee73a721374f62efae76e0fdd88",
       "disposition": "active",
-      "reason": "The exact wheel and CLI identify 2.3.7, but its MCP initialize response reports FastMCP 3.4.5 because upstream does not pass its package version to FastMCP. Keep the fail-closed mcp.version-drift warning until upstream self-attestation is corrected."
+      "reason": "The exact wheel and CLI identify 2.3.7, and its dereferenced v2.3.7 source commit is still verified at the PyPI-advertised tirth8205/code-review-graph repository; the older DeusData URL no longer resolves and was corrected without changing package bytes. Its MCP initialize response reports FastMCP 3.4.5 because upstream does not pass its package version to FastMCP, so keep the fail-closed mcp.version-drift warning until upstream self-attestation is corrected. The 2.3.8 candidate remains on hold: its new implicit-provider path turns ambient CRG_OPENAI_API_KEY plus CRG_OPENAI_BASE_URL into silent network egress when an MCP call omits provider, while AIH currently inherits that environment and classifies this launch as local-only."
     },
     {
       "surface": "codebase-memory-mcp",
