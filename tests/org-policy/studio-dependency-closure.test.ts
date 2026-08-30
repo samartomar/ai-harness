@@ -1,6 +1,8 @@
 import { Window } from "happy-dom";
 import { describe, expect, it } from "vitest";
+import { UPSTREAM_CORE_ECC_MODULE_IDS } from "../../src/ecc/components.js";
 import { eccModuleDependencyIds } from "../../src/ecc/evidence.js";
+import { eccComponentInstallDescriptor } from "../../src/ecc/materialize.js";
 import { type PolicyStudioModel, policyStudioModel } from "../../src/org-policy/studio-model.js";
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
 
@@ -46,7 +48,8 @@ function assetClosure(rootIds: readonly string[]): string[] {
     const id = pending.shift();
     const asset = ecc?.assets.find((candidate) => candidate.id === id);
     if (asset === undefined) throw new Error(`expected ECC asset ${id}`);
-    for (const required of [...(asset.dependencies ?? []), ...(asset.riders ?? [])]) {
+    const members = (asset as typeof asset & { members?: string[] }).members ?? [];
+    for (const required of [...(asset.dependencies ?? []), ...members, ...(asset.riders ?? [])]) {
       if (selected.has(required)) continue;
       selected.add(required);
       pending.push(required);
@@ -56,6 +59,60 @@ function assetClosure(rootIds: readonly string[]): string[] {
 }
 
 describe("policy studio dependency-closed selection", () => {
+  it("maps an ECC module to its selectable Skill, Agent, and baseline members", () => {
+    const module = ecc.assets.find((asset) => asset.id === "module:agents-core");
+    if (module === undefined) throw new Error("expected module:agents-core");
+    const expectedMembers = ecc.assets
+      .filter((asset) => ["agent", "baseline", "skill"].includes(asset.kind))
+      .filter(
+        (asset) => eccComponentInstallDescriptor(asset.id).containingModuleId === "agents-core",
+      )
+      .map((asset) => asset.id);
+    expect(expectedMembers.length).toBeGreaterThan(10);
+    expect((module as typeof module & { members?: string[] }).members?.sort()).toEqual(
+      expectedMembers.sort(),
+    );
+
+    const window = studio();
+    click(window, `.rail [data-framework-select="ecc|module|${module.id}"]`);
+    expect(selectedIds(window).sort()).toEqual(assetClosure([module.id]).sort());
+    for (const member of expectedMembers) {
+      const memberAsset = ecc.assets.find((asset) => asset.id === member);
+      if (memberAsset === undefined) throw new Error(`expected ${member}`);
+      expect(
+        window.document
+          .querySelector(`[data-framework-select="ecc|${memberAsset.kind}|${member}"]`)
+          ?.getAttribute("aria-pressed"),
+        `${member} is selected from the left-panel module choice`,
+      ).toBe("true");
+    }
+    window.close();
+  });
+
+  it("selects ECC Core and its members before a language from the left panel", () => {
+    const language = ecc.assets.find((asset) => asset.kind === "lang");
+    if (language === undefined) throw new Error("expected an ECC language");
+    const coreModules = UPSTREAM_CORE_ECC_MODULE_IDS.map((id) => `module:${id}`);
+    expect(language.dependencies).toEqual(expect.arrayContaining(coreModules));
+
+    const window = studio();
+    click(window, `.rail [data-framework-select="ecc|lang|${language.id}"]`);
+
+    const expected = assetClosure([language.id]).sort();
+    expect(selectedIds(window).sort()).toEqual(expected);
+    for (const id of expected) {
+      const asset = ecc.assets.find((candidate) => candidate.id === id);
+      if (asset === undefined) throw new Error(`expected ${id}`);
+      expect(
+        window.document
+          .querySelector(`[data-framework-select="ecc|${asset.kind}|${id}"]`)
+          ?.getAttribute("aria-pressed"),
+        `${id} is selected in the canonical inventory`,
+      ).toBe("true");
+    }
+    window.close();
+  });
+
   it("carries the pinned transitive dependency closure on every ECC module", () => {
     const moduleAssets = ecc.assets.filter((asset) => asset.kind === "module");
     expect(moduleAssets.length).toBeGreaterThan(0);

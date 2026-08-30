@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
-import { ECC_DECLARATION_RIDERS } from "../../src/ecc/components.js";
+import { ECC_DECLARATION_RIDERS, UPSTREAM_CORE_ECC_MODULE_IDS } from "../../src/ecc/components.js";
 import { eccModuleDependencyIds } from "../../src/ecc/evidence.js";
 import { governedEccComponentIds } from "../../src/ecc/governed-lifecycle.js";
 import { eccComponentSourcePaths } from "../../src/ecc/materialize.js";
@@ -81,6 +81,49 @@ function withTypescriptLanguage(includeRider: boolean) {
   return policy;
 }
 
+function withTypescriptLanguageAndCore() {
+  const coreModules = [
+    ...new Set(
+      UPSTREAM_CORE_ECC_MODULE_IDS.flatMap((moduleId) => [
+        moduleId,
+        ...eccModuleDependencyIds(moduleId),
+      ]),
+    ),
+  ];
+  const policy = withTypescriptLanguage(true);
+  const group = policy.governance?.externalSelections[0];
+  if (group === undefined) throw new Error("missing ECC selection group");
+  for (const moduleId of coreModules) {
+    const id = `module:${moduleId}`;
+    const component = catalog.components.find((item) => item.id === id);
+    const path = component?.paths[0];
+    if (path === undefined) throw new Error(`missing ${id}`);
+    group.items.push({
+      kind: "module",
+      id,
+      source: { repository, commit: catalog.pinnedSha, path },
+    });
+  }
+  for (const component of catalog.components) {
+    const path = component.paths[0];
+    if (path === undefined) continue;
+    const kind = component.id.startsWith("agent:")
+      ? "agent"
+      : component.id.startsWith("baseline:")
+        ? "baseline"
+        : component.id.startsWith("skill:")
+          ? "skill"
+          : undefined;
+    if (kind === undefined || group.items.some((item) => item.id === component.id)) continue;
+    group.items.push({
+      kind,
+      id: component.id,
+      source: { repository, commit: catalog.pinnedSha, path },
+    });
+  }
+  return policy;
+}
+
 describe("governed ECC module selection closure", () => {
   it("refuses a module selection whose pinned dependency closure is incomplete", () => {
     expect(() => governedEccComponentIds(policyWithModules(["machine-learning"]), catalog)).toThrow(
@@ -119,9 +162,14 @@ describe("governed ECC module selection closure", () => {
     expect(() => governedEccComponentIds(withTypescriptLanguage(false), catalog)).toThrow(
       /lang:typescript.*requires.*agent:typescript-reviewer/i,
     );
-    expect(governedEccComponentIds(withTypescriptLanguage(true), catalog).sort()).toEqual([
-      "agent:typescript-reviewer",
+    expect(governedEccComponentIds(withTypescriptLanguageAndCore(), catalog)).toContain(
       "lang:typescript",
-    ]);
+    );
+  });
+
+  it("refuses a language selection that omits ECC Core", () => {
+    expect(() => governedEccComponentIds(withTypescriptLanguage(true), catalog)).toThrow(
+      /lang:typescript.*requires.*module:rules-core/i,
+    );
   });
 });
