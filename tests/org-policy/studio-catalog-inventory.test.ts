@@ -227,10 +227,7 @@ describe("policy authoring catalog inventory", () => {
       window.document.getElementById("ecc-skill-rows")?.closest("section")?.querySelector("h2")
         ?.textContent,
     ).toBe("ECC skills");
-    expect(ECC_SKILL_CATALOG_PROVENANCE).toMatchObject({
-      repository: "affaan-m/ECC",
-      commit: "ce64e417fd420a0df98ed0aa00809eea5e74e127",
-    });
+    expect(ECC_SKILL_CATALOG_PROVENANCE.commit).toBe("5caf398a91599029a176ca6d806409b00d1052c4");
     expect(eccSkillCatalogInventory).toHaveLength(286);
     expect(eccSkillCatalogInventory.map((skill) => skill.id)).toEqual(
       eccSkillCatalogInventory.map((skill) => skill.id).sort(),

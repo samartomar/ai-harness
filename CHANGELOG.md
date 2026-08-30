@@ -8,6 +8,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Classify ECC's complete OpenCode package tree as host runtime during governed
+  materialization, so executable plugins and their auto-loading configuration cannot be
+  mistaken for ordinary content when hook/runtime operations are excluded.
 - Preserve explicit ECC and Superpowers Workbench selection roots separately from their complete
   dependency closure, so exported and effective-policy review can distinguish administrator
   choices from automatically required Skills, Agents, baselines, and modules. Legacy policies may

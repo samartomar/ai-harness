@@ -49,9 +49,9 @@ describe("baseline source registry", () => {
     const source = resolveBaselineSource({ baseline: "ecc" });
     expect(source.sources).toEqual([
       {
-        owner: "affaan-m",
+        owner: "samartomar",
         repo: "ECC",
-        pinnedSha: "ce64e417fd420a0df98ed0aa00809eea5e74e127",
+        pinnedSha: "5caf398a91599029a176ca6d806409b00d1052c4",
       },
       {
         owner: "obra",
@@ -59,6 +59,6 @@ describe("baseline source registry", () => {
         pinnedSha: "3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9",
       },
     ]);
-    expect(describeBaselineSource(source)).toContain("affaan-m/ECC@");
+    expect(describeBaselineSource(source)).toContain("samartomar/ECC@");
   });
 });

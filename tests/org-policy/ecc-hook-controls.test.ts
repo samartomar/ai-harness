@@ -67,10 +67,10 @@ describe("source-locked ECC hook controls", () => {
     });
   });
 
-  it("binds all reviewed source files and the exact 43-row, 42-gated profile inventory", () => {
+  it("binds all reviewed source files and the exact 41-row, 40-gated profile inventory", () => {
     expect(ECC_HOOK_CONTROL_PROVENANCE).toMatchObject({
       repository: "affaan-m/ECC",
-      commit: "ce64e417fd420a0df98ed0aa00809eea5e74e127",
+      commit: "623f2c020f052319657674e4e6c29ab5d0ad566b",
     });
     const sourcePairs = ECC_HOOK_CONTROL_PROVENANCE.sources.map(({ path, sha256 }) => [
       path,
@@ -87,24 +87,24 @@ describe("source-locked ECC hook controls", () => {
       "scripts/hooks/run-with-flags.js",
       "scripts/lib/hook-flags.js",
     ]);
-    expect(eccHookControlCatalog).toHaveLength(43);
-    expect(new Set(eccHookControlCatalog.map(({ id }) => id)).size).toBe(43);
-    expect(ECC_DISABLE_ELIGIBLE_HOOK_IDS).toHaveLength(42);
+    expect(eccHookControlCatalog).toHaveLength(41);
+    expect(new Set(eccHookControlCatalog.map(({ id }) => id)).size).toBe(41);
+    expect(ECC_DISABLE_ELIGIBLE_HOOK_IDS).toHaveLength(40);
     expect(
       eccHookControlCatalog.filter(
         ({ disableEligible, profiles }) => disableEligible && profiles.includes("minimal"),
       ),
-    ).toHaveLength(11);
+    ).toHaveLength(10);
     expect(
       eccHookControlCatalog.filter(
         ({ disableEligible, profiles }) => disableEligible && profiles.includes("standard"),
       ),
-    ).toHaveLength(39);
+    ).toHaveLength(37);
     expect(
       eccHookControlCatalog.filter(
         ({ disableEligible, profiles }) => disableEligible && profiles.includes("strict"),
       ),
-    ).toHaveLength(42);
+    ).toHaveLength(40);
     expect(
       eccHookControlCatalog.find(({ id }) => id === "pre:bash:dispatcher")?.disableEligible,
     ).toBe(false);
@@ -113,18 +113,6 @@ describe("source-locked ECC hook controls", () => {
       "standard",
       "strict",
     ]);
-    expect(eccHookControlCatalog.find(({ id }) => id === "post:skill:track")).toMatchObject({
-      event: "PostToolUseFailure",
-      profiles: ["standard", "strict"],
-      disableEligible: true,
-    });
-    expect(eccHookControlCatalog.find(({ id }) => id === "stop:plan-canvas-pending")).toMatchObject(
-      {
-        event: "Stop",
-        profiles: ["minimal", "standard", "strict"],
-        disableEligible: true,
-      },
-    );
   });
 
   it("publishes one browser seam and enrolls both governance leaves", () => {

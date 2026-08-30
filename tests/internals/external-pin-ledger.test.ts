@@ -117,7 +117,7 @@ describe("active external-pin ledger", () => {
     if (baseline === undefined) throw new Error("missing ECC baseline source");
 
     const ecc = baseline.sources.find(
-      (source) => source.owner === "affaan-m" && source.repo === "ECC",
+      (source) => source.owner === "samartomar" && source.repo === "ECC",
     );
     const superpowers = baseline.sources.find(
       (source) => source.owner === "obra" && source.repo.toLowerCase() === "superpowers",
@@ -138,14 +138,23 @@ describe("active external-pin ledger", () => {
     expect(ledger.verifiedAtPolicy).toMatch(/does not move this field/i);
     expect(ledger.historicalEvidencePolicy).toMatch(/immutable history/i);
 
-    // The active source is the exact reviewed upstream main revision.
+    // The explicit temporary bridge is exactly one commit past upstream v2.2.0.
     expect(entry("ecc")).toMatchObject({
+      identity: "samartomar/ECC",
+      version: "v2.2.0-1-g5caf398a",
+      commit: "5caf398a91599029a176ca6d806409b00d1052c4",
+      disposition: "active",
+    });
+    expect(entry("ecc").reason).toMatch(/administrator-owned fork.*governed run 33147078833/i);
+    expect(entry("ecc-candidate")).toMatchObject({
       identity: "affaan-m/ECC",
       version: "v2.2.0-128-gce64e417",
       commit: "ce64e417fd420a0df98ed0aa00809eea5e74e127",
-      disposition: "active",
+      disposition: "blocked",
     });
-    expect(entry("ecc").reason).toMatch(/reviewed upstream.*governed/i);
+    expect(entry("ecc-candidate").reason).toMatch(/OpenCode.*hook-runtime consent/i);
+    expect(entry("ecc-candidate").reason).toMatch(/Docker.*link\.exe/i);
+    expect(entry("ecc-candidate").reason).toMatch(/nothing was promoted/i);
     expect(entry("superpowers")).toMatchObject({
       identity: "obra/Superpowers",
       commit: "3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9",
@@ -446,24 +455,23 @@ describe("active external-pin ledger", () => {
     // matched baseline-sources would mean the rotation happened.
     expect(entry("ecc-candidate")).toMatchObject({
       identity: "affaan-m/ECC",
-      version: "untagged, 100 commits past v2.1.0",
-      commit: "dcbf95bf63dc67701564198df9c3451940a2ca83",
+      version: "v2.2.0-128-gce64e417",
+      commit: "ce64e417fd420a0df98ed0aa00809eea5e74e127",
       disposition: "blocked",
     });
     expect(entry("ecc-candidate").commit).not.toBe(entry("ecc").commit);
-    expect(entry("ecc-candidate").reason).toMatch(/ECC_PREVIEW_DEPENDENCY_CLOSURE_UNQUALIFIED/);
-    // Counts and the run that produced them are the evidence; losing either
-    // would leave a verdict with nothing behind it.
-    expect(entry("ecc-candidate").reason).toMatch(/run 31922381993/);
-    expect(entry("ecc-candidate").reason).toMatch(/137 ECC components/);
-    expect(entry("ecc-candidate").reason).toMatch(/109 pass and 28 blocked/);
-    expect(entry("ecc-candidate").reason).toMatch(/NO newly blocked component ids/);
-    expect(entry("ecc-candidate").reason).toMatch(/15\/15 pass/);
-    expect(entry("ecc-candidate").reason).toMatch(/js-yaml@4\.3\.1/);
-    // These two disclaimers are the entry's load-bearing scope limits. Dropping
-    // either would overstate the finding into a content or execution claim.
-    expect(entry("ecc-candidate").reason).toMatch(/not a new malicious-content finding/i);
-    expect(entry("ecc-candidate").reason).toMatch(/not evidence that js-yaml executes/i);
-    expect(entry("ecc-candidate").reason).toMatch(/lexical/i);
+    expect(entry("ecc-candidate").reason).toMatch(
+      /ECC_OPENCODE_HOOK_CONSENT_AND_FULL_VET_UNQUALIFIED/,
+    );
+    // Live exact-SHA state, the local evidence boundary, and the consent defect
+    // are all load-bearing. Losing any one would make the HOLD unauditable.
+    expect(entry("ecc-candidate").reason).toMatch(/33 completed successes, 12 queued.*45/i);
+    expect(entry("ecc-candidate").reason).toMatch(/static AIH baseline preflight passed/i);
+    expect(entry("ecc-candidate").reason).toMatch(/full vet emitted no evidence/i);
+    expect(entry("ecc-candidate").reason).toMatch(/Docker.*link\.exe/i);
+    expect(entry("ecc-candidate").reason).toMatch(/opencode\.json auto-loads plugins/i);
+    expect(entry("ecc-candidate").reason).toMatch(/not evidence of a categorical block/i);
+    expect(entry("ecc-candidate").reason).toMatch(/production lock.*unchanged/i);
+    expect(entry("ecc-candidate").reason).toMatch(/dcbf95bf.*immutable history/i);
   });
 });
