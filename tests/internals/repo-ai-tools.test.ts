@@ -238,7 +238,11 @@ describe("ai-harness repo AI tooling", () => {
           license: "PolyForm-Noncommercial-1.0.0",
         },
         tokenSavior: { package: "token-savior-recall[mcp]==4.21.0", license: "MIT" },
-        codeReviewGraph: { package: "code-review-graph==2.3.7", license: "MIT" },
+        codeReviewGraph: {
+          package: "code-review-graph==2.3.7",
+          license: "MIT",
+          source: "https://github.com/tirth8205/code-review-graph",
+        },
         codebaseMemory: { package: "codebase-memory-mcp==0.10.5", license: "MIT" },
       },
       runtime: {

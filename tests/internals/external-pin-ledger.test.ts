@@ -167,6 +167,9 @@ describe("active external-pin ledger", () => {
     expect(entry("code-review-graph").version).toBe(
       versionFromSpec(stdioArg(servers, "code-review-graph", "code-review-graph@")),
     );
+    expect(entry("code-review-graph").reason).toMatch(
+      /2\.3\.8.*hold.*ambient.*CRG_OPENAI.*silent.*egress/i,
+    );
     expect(entry("codebase-memory-mcp").version).toBe(
       versionFromSpec(stdioArg(servers, "codebase-memory-mcp", "codebase-memory-mcp@")),
     );
