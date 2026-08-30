@@ -97,7 +97,7 @@ describe("ECC hook profile authoring", () => {
     ]);
     expect(
       groups.map((group) => group.querySelector("[data-ecc-hook-group-count]")?.textContent),
-    ).toEqual(["2", "2", "11", "10", "16"]);
+    ).toEqual(["2", "2", "11", "11", "17"]);
     expect(
       [...groups[0]!.querySelectorAll("[data-ecc-hook-id]")].map((row) =>
         row.getAttribute("data-ecc-hook-id"),
@@ -120,17 +120,17 @@ describe("ECC hook profile authoring", () => {
         (input) => (input as unknown as ControlInput).value,
       ),
     ).toEqual(controls.profiles.map((profile) => profile.id));
-    expect(controls.disabledHooks.eligibleIds).toHaveLength(40);
-    expect(new Set(controls.disabledHooks.eligibleIds).size).toBe(40);
+    expect(controls.disabledHooks.eligibleIds).toHaveLength(42);
+    expect(new Set(controls.disabledHooks.eligibleIds).size).toBe(42);
     expect(
       controls.hooks.filter((hook) => hook.disableEligible && hook.profiles.includes("minimal")),
-    ).toHaveLength(10);
+    ).toHaveLength(11);
     expect(
       controls.hooks.filter((hook) => hook.disableEligible && hook.profiles.includes("standard")),
-    ).toHaveLength(37);
+    ).toHaveLength(39);
     expect(
       controls.hooks.filter((hook) => hook.disableEligible && hook.profiles.includes("strict")),
-    ).toHaveLength(40);
+    ).toHaveLength(42);
     for (const hook of controls.hooks) {
       const row = panel.querySelector(`[data-ecc-hook-id="${hook.id}"]`);
       expect(row, `${hook.id} row`).not.toBeNull();
