@@ -11,9 +11,17 @@ import {
   PARENT_GROUPS,
   READONLY,
 } from "../src/commands/index.js";
-import { buildProgram } from "../src/program.js";
+import { buildProgram, isUiFastPath } from "../src/program.js";
 
 describe("CLI program", () => {
+  it("exposes the exact rootless --ui launch path used by npx @aihq/core --ui", () => {
+    const program = buildProgram();
+    expect(program.options.map((option) => option.long)).toContain("--ui");
+    expect(isUiFastPath(["node", "aih", "--ui"])).toBe(true);
+    expect(isUiFastPath(["node", "aih", "policy", "generate"])).toBe(false);
+    expect(isUiFastPath(["node", "aih", "--ui", "repair"])).toBe(false);
+  });
+
   it("registers every capability and read-only command", () => {
     const names = buildProgram()
       .commands.map((c) => c.name())
