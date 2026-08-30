@@ -8,6 +8,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Reconcile the ECC hook-control inventory to the exact active source pin, adding the
+  `post:skill:track` and `stop:plan-canvas-pending` controls so administrators can disable every
+  currently gated hook through the Workbench's source-locked profile surface.
 - Classify ECC's complete OpenCode package tree as host runtime during governed
   materialization, so executable plugins and their auto-loading configuration cannot be
   mistaken for ordinary content when hook/runtime operations are excluded.

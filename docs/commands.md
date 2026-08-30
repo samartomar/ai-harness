@@ -775,7 +775,7 @@ visible Workbench provenance line then shows verified tier, source, channel, res
 provenance. The embedded safe model also carries sequence, digests, posture, and verification time; neither surface carries
 locators, filesystem paths, tokens, signatures, raw attestations, signer identities, root digests, or machine detail.
 
-The Workbench's ECC hook-controls panel is bound to the pinned runtime inventory: 40 individually gated hook IDs plus one non-disableable Bash wrapper. It authors a required Minimal, Standard, or Strict profile and an optional canonical disabled-ID list, prunes disables that are ineligible after a profile change, and offers a clear inverse back to the policy baseline. AIH configures supported Claude environment intent; ECC executes and enforces it after process spawn.
+The Workbench's ECC hook-controls panel is bound to the pinned runtime inventory: 42 individually gated hook IDs plus one non-disableable Bash wrapper. It authors a required Minimal, Standard, or Strict profile and an optional canonical disabled-ID list, prunes disables that are ineligible after a profile change, and offers a clear inverse back to the policy baseline. AIH configures supported Claude environment intent; ECC executes and enforces it after process spawn.
 
 The headless schema also accepts a declarative remote record with an
 administrator-managed `approved` or `revoked` status and no tool-surface digest.
