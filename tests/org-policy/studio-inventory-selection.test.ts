@@ -42,6 +42,7 @@ function studio(): Window {
 
 interface SelectionGroup {
   framework: string;
+  roots?: string[];
   items: Array<{ kind: string; id: string; source: Record<string, string> }>;
 }
 
@@ -185,6 +186,7 @@ describe("policy studio framework selection", () => {
           externalSelections: [
             {
               framework: uncuratable.framework.id,
+              roots: [uncuratable.asset.id],
               items: [
                 {
                   kind: uncuratable.asset.kind,
@@ -200,6 +202,7 @@ describe("policy studio framework selection", () => {
     expect(resolved.externalSelections).toEqual([
       {
         framework: uncuratable.framework.id,
+        roots: [uncuratable.asset.id],
         items: [
           {
             kind: uncuratable.asset.kind,
@@ -212,6 +215,34 @@ describe("policy studio framework selection", () => {
     ]);
     expect(resolved.candidates).toHaveLength(0);
     expect(resolved.blocking).toBe(false);
+  });
+
+  it("rejects an explicit selection root that is absent from the dependency closure", () => {
+    const policy = defaultStudioPolicy();
+    const governance = policy.governance;
+    if (governance === undefined) throw new Error("expected default studio governance");
+    expect(() =>
+      parseOrgPolicy({
+        ...policy,
+        governance: {
+          supportedClis: ["claude"],
+          ...governance,
+          externalSelections: [
+            {
+              framework: uncuratable.framework.id,
+              roots: ["lang:not-in-items"],
+              items: [
+                {
+                  kind: uncuratable.asset.kind,
+                  id: uncuratable.asset.id,
+                  source: { ...uncuratable.asset.source },
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    ).toThrow(/selection root lang:not-in-items is not present in items/i);
   });
 
   // The grammar defaults this array, so a policy document written before it

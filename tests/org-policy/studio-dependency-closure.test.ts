@@ -41,6 +41,17 @@ function selectedIds(window: Window): string[] {
   );
 }
 
+function selectionRoots(window: Window): string[] | undefined {
+  const preview = window.document.getElementById("config-preview") as unknown as {
+    value: string;
+  } | null;
+  if (preview === null) throw new Error("expected policy preview");
+  const policy = JSON.parse(preview.value) as {
+    governance: { externalSelections: Array<{ roots?: string[] }> };
+  };
+  return policy.governance.externalSelections[0]?.roots;
+}
+
 function assetClosure(rootIds: readonly string[]): string[] {
   const selected = new Set(rootIds);
   const pending = [...rootIds];
@@ -125,6 +136,29 @@ describe("policy studio dependency-closed selection", () => {
         `${id} is selected in the canonical inventory`,
       ).toBe("true");
     }
+    window.close();
+  });
+
+  it("exports TypeScript and Python as explicit roots distinct from their dependency closure", () => {
+    const window = studio();
+    click(window, '.rail [data-framework-select="ecc|lang|lang:typescript"]');
+    click(window, '.rail [data-framework-select="ecc|lang|lang:python"]');
+
+    expect(selectionRoots(window)).toEqual(["lang:typescript", "lang:python"]);
+    expect(selectedIds(window)).toEqual(
+      expect.arrayContaining([
+        "lang:typescript",
+        "lang:python",
+        "agent:typescript-reviewer",
+        "agent:python-reviewer",
+        "module:rules-core",
+        "module:agents-core",
+        "module:commands-core",
+        "module:hooks-runtime",
+      ]),
+    );
+    expect(selectionRoots(window)).not.toContain("agent:typescript-reviewer");
+    expect(selectionRoots(window)).not.toContain("module:rules-core");
     window.close();
   });
 
