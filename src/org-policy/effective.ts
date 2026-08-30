@@ -1391,6 +1391,9 @@ export function resolveEffectiveOrgPolicy(
     externalSelections: governance.externalSelections.map((selection) => ({
       framework: selection.framework,
       ...(selection.roots === undefined ? {} : { roots: [...selection.roots] }),
+      ...(selection.unattributedItems === undefined
+        ? {}
+        : { unattributedItems: [...selection.unattributedItems] }),
       items: selection.items.map((item) => ({ ...item, source: { ...item.source } })),
       status: "requested-evidence-needed" as const,
     })),
@@ -1543,6 +1546,8 @@ const EXTERNAL_CURATION_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
 const EXTERNAL_SELECTION_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
   framework: "effective report: requested external framework identity only",
   "roots.*": "effective report: explicit external selection root identity only",
+  "unattributedItems.*":
+    "effective report: retained external selection with unavailable root provenance only",
   "items.*.id": "effective report: requested external component identity only",
   "items.*.kind": "effective report: requested external component kind only",
   "items.*.source.commit": "effective report: requested external source pin only",

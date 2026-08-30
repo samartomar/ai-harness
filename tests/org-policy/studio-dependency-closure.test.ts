@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { type EccComponentId, UPSTREAM_CORE_ECC_MODULE_IDS } from "../../src/ecc/components.js";
 import { eccModuleDependencyIds } from "../../src/ecc/evidence.js";
 import { eccComponentInstallDescriptor } from "../../src/ecc/materialize.js";
+import { parseOrgPolicy } from "../../src/org-policy/schema.js";
 import { type PolicyStudioModel, policyStudioModel } from "../../src/org-policy/studio-model.js";
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
 
@@ -193,10 +194,24 @@ describe("policy studio dependency-closed selection", () => {
     click(window, '.rail [data-framework-select="ecc|lang|lang:python"]');
     expect(selectionRoots(window)).toEqual(["lang:python"]);
 
-    click(window, '.rail [data-framework-select="ecc|lang|lang:python"]');
-    expect(selectedIds(window).sort()).toEqual(legacyIds.sort());
-    expect(selectionRoots(window)).toEqual([]);
+    const preview = window.document.getElementById("config-preview") as unknown as {
+      value: string;
+    } | null;
+    if (preview === null) throw new Error("expected policy preview");
+    const editedPolicy = parseOrgPolicy(JSON.parse(preview.value));
+    expect(editedPolicy.governance?.externalSelections[0]?.unattributedItems?.sort()).toEqual(
+      legacyIds.toSorted(),
+    );
     window.close();
+
+    const reopenedModel = structuredClone(model);
+    reopenedModel.initialPolicy = editedPolicy;
+    const reopened = studio(reopenedModel);
+
+    click(reopened, '.rail [data-framework-select="ecc|lang|lang:python"]');
+    expect(selectedIds(reopened).sort()).toEqual(legacyIds.sort());
+    expect(selectionRoots(reopened)).toEqual([]);
+    reopened.close();
   });
 
   it("carries the pinned transitive dependency closure on every ECC module", () => {

@@ -788,6 +788,13 @@ const ExternalFrameworkSelectionSchema = z
      * inventing intent they did not record.
      */
     roots: z.array(SafePolicyTextSchema).optional(),
+    /**
+     * Selection ids retained from an imported policy that predates explicit
+     * root provenance. They remain requested items, but the Workbench must not
+     * relabel them as administrator-selected roots merely because a later edit
+     * adds a new root. Runtime consumers continue to consume `items` only.
+     */
+    unattributedItems: z.array(SafePolicyTextSchema).optional(),
   })
   .strict()
   .superRefine((selection, ctx) => {
@@ -820,6 +827,31 @@ const ExternalFrameworkSelectionSchema = z
         });
       }
       seenRoots.add(root);
+    }
+    const seenUnattributed = new Set<string>();
+    for (const [index, item] of (selection.unattributedItems ?? []).entries()) {
+      if (seenUnattributed.has(item)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["unattributedItems", index],
+          message: `duplicate unattributed external selection ${item}`,
+        });
+      }
+      if (!selectedIds.has(item)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["unattributedItems", index],
+          message: `unattributed selection ${item} is not present in items`,
+        });
+      }
+      if (seenRoots.has(item)) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["unattributedItems", index],
+          message: `unattributed selection ${item} is also an explicit root`,
+        });
+      }
+      seenUnattributed.add(item);
     }
   });
 

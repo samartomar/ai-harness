@@ -7,6 +7,7 @@ import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
 const model = policyStudioModel();
 const ecc = model.catalog.frameworks.find((framework) => framework.id === "ecc");
 if (ecc === undefined) throw new Error("expected an ecc framework in the catalog");
+const eccAssets = ecc.assets;
 const present = new Set(ecc.assets.map((asset) => asset.id));
 const declarer = ecc.assets.find((asset) => (asset.riders?.length ?? 0) > 0);
 if (declarer === undefined) throw new Error("expected at least one asset that declares riders");
@@ -55,6 +56,44 @@ function selectedIds(window: Window): string[] {
   );
 }
 
+function selectionRoots(window: Window): string[] {
+  const preview = window.document.getElementById("config-preview") as unknown as {
+    value: string;
+  } | null;
+  if (preview === null) throw new Error("expected authored policy preview");
+  return JSON.parse(preview.value).governance.externalSelections[0]?.roots ?? [];
+}
+
+function assetClosure(rootIds: readonly string[]): string[] {
+  const selected = new Set(rootIds);
+  const pending = [...rootIds];
+  while (pending.length > 0) {
+    const id = pending.shift();
+    const asset = eccAssets.find((candidate) => candidate.id === id);
+    if (asset === undefined) throw new Error(`expected ECC asset ${id}`);
+    for (const required of [
+      ...(asset.dependencies ?? []),
+      ...(asset.members ?? []),
+      ...(asset.riders ?? []),
+    ]) {
+      if (selected.has(required)) continue;
+      selected.add(required);
+      pending.push(required);
+    }
+  }
+  return [...selected];
+}
+
+function selectProfile(window: Window, value: string): void {
+  const preset = window.document.getElementById("preset-select") as unknown as {
+    value: string;
+    dispatchEvent(event: unknown): boolean;
+  } | null;
+  if (preset === null) throw new Error(`expected ${value} preset`);
+  preset.value = value;
+  preset.dispatchEvent(new window.Event("change", { bubbles: true }));
+}
+
 function click(window: Window, selector: string): void {
   const node = window.document.querySelector(selector);
   if (node === null) throw new Error(`expected ${selector}`);
@@ -92,21 +131,24 @@ describe("policy studio component relations", () => {
         expect(present.has(rider), `${asset.id} -> ${rider}`).toBe(true);
   });
 
-  it("authors and reverses a rail declaration with its exact declared riders", () => {
+  it("authors and reverses a rail declaration with its complete requirement closure", () => {
     const window = studio();
     click(window, `[data-framework-select="ecc|${declarer.kind}|${declarer.id}"]`);
-    expect(selectedIds(window).sort()).toEqual([declarer.id, ...(declarer.riders ?? [])].sort());
+    expect(selectedIds(window).sort()).toEqual(assetClosure([declarer.id]).sort());
+    expect(selectionRoots(window)).toEqual([declarer.id]);
     expect(
-      window.document.querySelector(`[data-row="ecc / ${declarer.kind}: ${declarer.id}"]`),
-    ).toBeNull();
+      window.document
+        .querySelector(`[data-row="ecc / ${declarer.kind}: ${declarer.id}"]`)
+        ?.getAttribute("data-state"),
+    ).toBe("requested");
     expect(window.document.getElementById("announcement")?.textContent).toContain(
-      `${declarer.riders?.length ?? 0} declared rider`,
+      `${assetClosure([declarer.id]).length - 1} required component`,
     );
 
     click(window, `[data-framework-select="ecc|${declarer.kind}|${declarer.id}"]`);
     expect(selectedIds(window)).toEqual([]);
     expect(window.document.getElementById("announcement")?.textContent).toContain(
-      "General ECC skills and modules are independent and unchanged",
+      `removed ${assetClosure([declarer.id]).length} dependency-closed component`,
     );
   });
 
@@ -161,7 +203,7 @@ describe("policy studio component relations", () => {
     );
   });
 
-  it("conservatively retains imported rider intent when its declaration is removed", async () => {
+  it("uses persisted roots to remove an imported declaration and its derived closure", async () => {
     const authored = studio();
     click(authored, `[data-framework-select="ecc|${declarer.kind}|${declarer.id}"]`);
     const authoredPreview = authored.document.getElementById("config-preview") as unknown as {
@@ -190,8 +232,7 @@ describe("policy studio component relations", () => {
 
     click(window, `[data-framework-select="ecc|${declarer.kind}|${declarer.id}"]`);
 
-    expect(selectedIds(window)).not.toContain(declarer.id);
-    for (const rider of declarer.riders ?? []) expect(selectedIds(window)).toContain(rider);
+    expect(selectedIds(window)).toEqual([]);
   });
 
   it("rolls back a declaration and preset when a required rider carries curation", () => {
@@ -208,23 +249,22 @@ describe("policy studio component relations", () => {
       ],
     });
     const window = studio(blockedModel);
-    click(window, '[data-preset="enterprise"]');
     const before = selectedIds(window);
 
     click(window, `[data-framework-select="ecc|${curatedDeclarer.kind}|${curatedDeclarer.id}"]`);
 
     expect(selectedIds(window)).toEqual(before);
     expect(
-      window.document.querySelector('[data-preset="enterprise"]')?.getAttribute("aria-pressed"),
-    ).toBe("true");
+      (window.document.getElementById("preset-select") as unknown as { value: string }).value,
+    ).toBe("custom");
     expect(window.document.getElementById("announcement")?.textContent).toContain(
-      `Selection blocked: declared rider ${curatedRider.id}`,
+      `Selection blocked: required component ${curatedRider.id}`,
     );
   });
 
   it("makes a broken preset visibly custom and warns when ECC Core is incomplete", () => {
     const window = studio();
-    click(window, '[data-preset="enterprise"]');
+    selectProfile(window, "enterprise");
     const core = model.catalog.enterpriseComposition.parts
       .filter((part) => part.selection === "composed")
       .flatMap((part) => part.componentIds);
@@ -236,8 +276,8 @@ describe("policy studio component relations", () => {
     click(window, `[data-framework-select="ecc|${asset.kind}|${asset.id}"]`);
 
     expect(
-      window.document.querySelector('[data-preset="custom"]')?.getAttribute("aria-pressed"),
-    ).toBe("true");
+      (window.document.getElementById("preset-select") as unknown as { value: string }).value,
+    ).toBe("custom");
     expect(window.document.getElementById("rail-composition-note")?.textContent).toContain(
       "ECC Core incomplete",
     );
@@ -246,26 +286,26 @@ describe("policy studio component relations", () => {
     );
   });
 
-  it("warns immediately when a complete Vibe Core is broken", () => {
+  it("states when removing a Vibe root leaves its component required by another root", () => {
     const window = studio();
-    click(window, '[data-preset="vibe"]');
-    const removed = model.catalog.enterpriseComposition.parts.find(
-      (part) => part.selection === "composed",
-    )?.componentIds[0];
-    if (removed === undefined) throw new Error("expected an ECC Core component");
+    selectProfile(window, "vibe");
+    const removed = "module:hooks-runtime";
     const asset = ecc.assets.find((item) => item.id === removed);
     if (asset === undefined) throw new Error(`expected catalog asset ${removed}`);
 
     click(window, `[data-framework-select="ecc|${asset.kind}|${asset.id}"]`);
 
+    expect(selectedIds(window)).toContain(removed);
+    expect(selectionRoots(window)).not.toContain(removed);
     expect(window.document.getElementById("announcement")?.textContent).toContain(
-      "dependent Core behavior will not work until Core is restored",
+      "component remains selected because baseline:hooks requires it",
     );
   });
 
   it("describes Vibe as one-framework composition rather than every catalog component", () => {
     const window = studio();
-    const copy = window.document.querySelector('[data-preset="vibe"]')?.textContent ?? "";
+    selectProfile(window, "vibe");
+    const copy = window.document.querySelector("#presets .tooltip")?.textContent ?? "";
     expect(copy).toContain("active framework");
     expect(copy).not.toContain("every catalog component");
   });
@@ -335,7 +375,7 @@ describe("policy studio component relations", () => {
 
   it("makes the Enterprise preset write an explicit all-registry allow-list", () => {
     const window = studio();
-    click(window, '[data-preset="enterprise"]');
+    selectProfile(window, "enterprise");
     const preview = window.document.getElementById("config-preview") as unknown as {
       value: string;
     } | null;

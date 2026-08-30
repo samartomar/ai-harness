@@ -64,7 +64,7 @@ describe("policy studio owner ticker", () => {
     const mcpGroup = [...window.document.querySelectorAll(".grp")].find(
       (group) => group.querySelector("h2")?.textContent === "AIH MCP servers",
     );
-    expect(mcpGroup?.querySelector(".ct")?.textContent).toBe("0 / 5");
+    expect(mcpGroup?.querySelector(".ct")?.textContent).toBe(`0 / ${model.catalog.mcp.length}`);
     expect(progress("surface-aih-skills").meter?.getAttribute("role")).toBe("progressbar");
     expect(progress("surface-aih-skills").meter?.getAttribute("aria-valuenow")).toBe("0");
     expect(progress("surface-aih-skills").meter?.getAttribute("aria-valuemax")).toBe("1");

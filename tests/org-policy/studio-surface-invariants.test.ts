@@ -259,6 +259,15 @@ describe("policy studio surface invariants", () => {
     const baseline = studio();
     const selectedEcc = studio();
     choosePreset(selectedEcc, "vibe");
+    for (const item of model.catalog.mcp.filter(
+      (candidate) => candidate.availability !== "always",
+    )) {
+      click(
+        selectedEcc,
+        byAttribute(selectedEcc.document, "data-reviewed", item.id),
+        `conditional MCP ${item.id}`,
+      );
+    }
 
     for (const item of [...model.catalog.mcp, ...model.catalog.hooks]) {
       expectDetailNarrationToVary(

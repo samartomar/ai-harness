@@ -223,10 +223,11 @@ describe("policy studio adoption recipe", () => {
     if (eccAssets === undefined || superpowersAssets === undefined) {
       throw new Error("expected pinned framework assets");
     }
-    const aihCount = model.catalog.mcp.length + model.catalog.hooks.length;
-    const aihMcpDeclarations = model.catalog.eccMcpInventory.filter(
-      (entry) => entry.owner === "aih",
-    ).length;
+    const aihCount =
+      model.catalog.mcp.length +
+      model.catalog.hooks.length +
+      model.catalog.aihSkills.length +
+      model.catalog.aihAgents.length;
     const governedSkills = eccAssets.filter((asset) => asset.kind === "skill").length;
     const visibleEccInventory =
       eccAssets.length -
@@ -238,8 +239,8 @@ describe("policy studio adoption recipe", () => {
         node.textContent?.trim(),
       ),
     ).toEqual([
-      `All ${aihCount + aihMcpDeclarations + visibleEccInventory + superpowersAssets.length}`,
-      `AIH ${aihCount + aihMcpDeclarations}`,
+      `All ${aihCount + visibleEccInventory + superpowersAssets.length}`,
+      `AIH ${aihCount}`,
       `ECC ${visibleEccInventory}`,
       `Superpowers ${superpowersAssets.length}`,
       "Your sources 0",

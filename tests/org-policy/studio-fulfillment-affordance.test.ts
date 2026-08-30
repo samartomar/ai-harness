@@ -72,6 +72,35 @@ function reportPreview(window: Window): string {
   return node.value;
 }
 
+function fulfillmentCounts(window: Window): {
+  materializing: number;
+  blocked: number;
+  owed: number;
+  missing: number;
+} {
+  const preview = window.document.getElementById("config-preview") as unknown as {
+    value: string;
+  } | null;
+  if (preview === null) throw new Error("expected policy preview");
+  const policy = JSON.parse(preview.value) as {
+    governance: {
+      externalSelections: Array<{ framework: string; items: Array<{ id: string }> }>;
+    };
+  };
+  const counts = { materializing: 0, blocked: 0, owed: 0, missing: 0 };
+  for (const group of policy.governance.externalSelections) {
+    const framework = model.catalog.frameworks.find((item) => item.id === group.framework);
+    for (const item of group.items) {
+      const asset = framework?.assets.find((candidate) => candidate.id === item.id);
+      if (asset === undefined) counts.missing += 1;
+      else if (asset.vet?.verdict === "pass") counts.materializing += 1;
+      else if (asset.vet?.verdict === "blocked") counts.blocked += 1;
+      else counts.owed += 1;
+    }
+  }
+  return counts;
+}
+
 /**
  * The vendor lock vets every pinned component today — studio-vet-verdicts.test.ts
  * pins that coverage ("carries the vetted verdict for every component"), so
@@ -360,10 +389,13 @@ describe("selection to fulfillment affordance", () => {
       click(window, selectSelector(passExample2));
       click(window, selectSelector(blockedExample));
       const preview = reportPreview(window);
+      const counts = fulfillmentCounts(window);
       expect(preview).toContain(
         "Fulfillment summary (governed projection, engine-evaluated): " +
-          "2 would materialize directly, 1 vet-blocked and recorded as intent only, " +
-          "0 with evidence still owed, 0 selected but not shown as a row at this pin.",
+          `${counts.materializing} would materialize directly, ` +
+          `${counts.blocked} vet-blocked and recorded as intent only, ` +
+          `${counts.owed} with evidence still owed, ` +
+          `${counts.missing} selected but not shown as a row at this pin.`,
       );
     });
 
@@ -432,16 +464,17 @@ describe("selection to fulfillment affordance", () => {
     const document = window.document;
     const chip = (owner: string): string | null | undefined =>
       document.querySelector(`#owner-ticker [data-owner-focus="${owner}"] b`)?.textContent;
-    const aihControls = model.catalog.mcp.length + model.catalog.hooks.length;
+    const aihControls =
+      model.catalog.mcp.length +
+      model.catalog.hooks.length +
+      model.catalog.aihSkills.length +
+      model.catalog.aihAgents.length;
     const ecc = model.catalog.frameworks.find((framework) => framework.id === "ecc");
     if (ecc === undefined) throw new Error("expected the ecc framework in the catalog");
     // Selecting an ecc component makes ecc the active framework, which hides
     // superpowers' groups from the plane entirely (pre-existing exclusivity,
     // unrelated to this row) - the ticker must agree with that, not with 15.
-    const aihMcpDeclarations = model.catalog.eccMcpInventory.filter(
-      (entry) => entry.owner === "aih",
-    ).length;
-    expect(chip("AIH")).toBe(String(aihControls + aihMcpDeclarations));
+    expect(chip("AIH")).toBe(String(aihControls));
     const governedSkills = ecc.assets.filter((asset) => asset.kind === "skill").length;
     const visibleEccInventory =
       ecc.assets.length -
@@ -451,6 +484,6 @@ describe("selection to fulfillment affordance", () => {
     expect(chip("ECC")).toBe(String(visibleEccInventory));
     expect(chip("Superpowers")).toBe("0");
     expect(chip("You")).toBe("0");
-    expect(chip("all")).toBe(String(aihControls + aihMcpDeclarations + visibleEccInventory));
+    expect(chip("all")).toBe(String(aihControls + visibleEccInventory));
   });
 });
