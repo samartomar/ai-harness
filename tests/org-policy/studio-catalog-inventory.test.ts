@@ -801,7 +801,7 @@ describe("policy authoring catalog inventory", () => {
     if (capability === undefined || lockedCapability === undefined) {
       throw new Error("expected pinned security capability");
     }
-    expect(capability.source.paths).toEqual(lockedCapability.paths);
+    expect(capability.sourcePaths).toEqual(lockedCapability.paths);
     click(window, '[data-detail="ecc / capability: capability:security"]');
     const drawer = window.document.getElementById("drawer-detail");
     expect(

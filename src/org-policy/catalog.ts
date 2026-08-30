@@ -118,14 +118,9 @@ export interface PolicyAuthoringAsset {
    * atomic change so inventory and export describe what the module brings.
    */
   members?: string[];
-  source: {
-    repository: string;
-    commit: string;
-    /** Back-compatible primary path used by the policy selection grammar. */
-    path: string;
-    /** Complete pinned source set represented by this catalog component. */
-    paths: string[];
-  };
+  source: { repository: string; commit: string; path: string };
+  /** Complete pinned source set represented by this catalog component. */
+  sourcePaths: string[];
   /**
    * The verdict AIH's own analyzers reached for this component at the pinned
    * commit. Absent only when the shipped evidence was produced against a
@@ -559,8 +554,8 @@ function frameworkCatalog(id: "ecc" | "superpowers"): PolicyAuthoringFramework {
           repository: `${catalog.owner}/${catalog.repo}`,
           commit: catalog.pinnedSha,
           path,
-          paths: [...component.paths],
         },
+        sourcePaths: [...component.paths],
       };
     }),
   };
