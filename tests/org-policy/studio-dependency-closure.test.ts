@@ -162,6 +162,43 @@ describe("policy studio dependency-closed selection", () => {
     window.close();
   });
 
+  it("removes a selected root even when its closure contains a mutual module member", () => {
+    const window = studio();
+
+    click(window, '[data-framework-select="ecc|module|module:hooks-runtime"]');
+    expect(selectionRoots(window)).toEqual(["module:hooks-runtime"]);
+    expect(selectedIds(window)).toEqual(
+      expect.arrayContaining(["module:hooks-runtime", "baseline:hooks"]),
+    );
+
+    click(window, '[data-framework-select="ecc|module|module:hooks-runtime"]');
+    expect(selectedIds(window)).toEqual([]);
+    window.close();
+  });
+
+  it("keeps rootless legacy selections without promoting them to explicit roots", () => {
+    const partialModel = structuredClone(model);
+    const legacyIds = assetClosure(["lang:typescript"]);
+    const legacyItems = legacyIds.map((id) => {
+      const asset = ecc.assets.find((candidate) => candidate.id === id);
+      if (asset === undefined) throw new Error(`expected ECC asset ${id}`);
+      return { kind: asset.kind, id: asset.id, source: { ...asset.source } };
+    });
+    partialModel.initialPolicy.governance?.externalSelections.push({
+      framework: "ecc",
+      items: legacyItems,
+    });
+    const window = studio(partialModel);
+
+    click(window, '.rail [data-framework-select="ecc|lang|lang:python"]');
+    expect(selectionRoots(window)).toEqual(["lang:python"]);
+
+    click(window, '.rail [data-framework-select="ecc|lang|lang:python"]');
+    expect(selectedIds(window).sort()).toEqual(legacyIds.sort());
+    expect(selectionRoots(window)).toEqual([]);
+    window.close();
+  });
+
   it("carries the pinned transitive dependency closure on every ECC module", () => {
     const moduleAssets = ecc.assets.filter((asset) => asset.kind === "module");
     expect(moduleAssets.length).toBeGreaterThan(0);

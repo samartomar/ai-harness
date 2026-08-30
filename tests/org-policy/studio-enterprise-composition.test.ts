@@ -211,6 +211,26 @@ describe("policy studio enterprise composition", () => {
     expect(selectedIds(window).sort()).toEqual(before);
   });
 
+  it("does not remove a root selected individually when reversing an additive part", () => {
+    const window = studio();
+    selectProfile(window, "enterprise");
+    window.document
+      .querySelector('[data-framework-select="ecc|module|module:security"]')
+      ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    const add = () =>
+      window.document
+        .querySelector('[data-composition-add="security"]')
+        ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+
+    add();
+    add();
+
+    const policy = authoredPolicy(window);
+    expect(policy.governance.externalSelections[0]?.roots).toContain("module:security");
+    expect(selectedIds(window)).toContain("module:security");
+    window.close();
+  });
+
   // Row 12's ruling: a preset must never author an audit record it did not
   // receive. Asserted directly rather than inferred from a count.
   it("authors no external curation when Enterprise is composed", () => {

@@ -1166,6 +1166,87 @@ describe("policy generate", () => {
         },
       },
       {
+        name: "external selection duplicate item refinement",
+        mutate: (policy) => {
+          const governance = policy.governance as {
+            externalSelections?: Array<{ framework: string; items: unknown[] }>;
+          };
+          const item = {
+            kind: "skill",
+            id: "duplicate-skill",
+            source: {
+              repository: "acme/ecc-catalog",
+              commit: "e".repeat(40),
+              path: "skills/duplicate-skill.md",
+            },
+          };
+          governance.externalSelections = [
+            { framework: "ecc", items: [item, structuredClone(item)] },
+          ];
+        },
+      },
+      {
+        name: "multiple selected framework refinement",
+        mutate: (policy) => {
+          const governance = policy.governance as {
+            externalSelections?: Array<{ framework: string; items: unknown[] }>;
+          };
+          governance.externalSelections = [
+            {
+              framework: "ecc",
+              items: [
+                {
+                  kind: "skill",
+                  id: "ecc-skill",
+                  source: {
+                    repository: "acme/ecc-catalog",
+                    commit: "e".repeat(40),
+                    path: "skills/ecc-skill.md",
+                  },
+                },
+              ],
+            },
+            {
+              framework: "superpowers",
+              items: [
+                {
+                  kind: "skill",
+                  id: "superpowers-skill",
+                  source: {
+                    repository: "acme/superpowers-catalog",
+                    commit: "f".repeat(40),
+                    path: "skills/superpowers-skill.md",
+                  },
+                },
+              ],
+            },
+          ];
+        },
+      },
+      {
+        name: "selection and curation overlap refinement",
+        mutate: (policy) => {
+          const governance = policy.governance as {
+            externalCuration: Array<{ items: Array<Record<string, unknown>> }>;
+            externalSelections?: Array<{ framework: string; items: unknown[] }>;
+          };
+          const curated = governance.externalCuration[0]?.items[1];
+          if (curated === undefined) throw new Error("expected curated Skill fixture");
+          governance.externalSelections = [
+            {
+              framework: "ecc",
+              items: [
+                {
+                  kind: curated.kind,
+                  id: curated.id,
+                  source: structuredClone(curated.source),
+                },
+              ],
+            },
+          ];
+        },
+      },
+      {
         name: "governance activation reference refinement",
         mutate: (policy) => {
           const governance = policy.governance as { activations: unknown[] };
