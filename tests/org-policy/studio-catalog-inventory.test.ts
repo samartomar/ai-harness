@@ -595,6 +595,7 @@ describe("policy authoring catalog inventory", () => {
     if (popover === null) throw new Error("expected Allowed CLI popover");
 
     expect(popover.getAttribute("data-open")).toBe("true");
+    expect(menu.querySelector(".selcount")?.textContent).toBe("0 / 11");
     for (const cli of ["claude", "codex"]) {
       const button = popover.querySelector(`[data-sanctioned-cli="${cli}"]`);
       if (button === null) throw new Error(`expected ${cli} CLI control`);
@@ -610,9 +611,41 @@ describe("policy authoring catalog inventory", () => {
       expect(menu.getAttribute("aria-expanded")).toBe("true");
     }
 
-    window.document.body.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    const selectAll = popover.querySelector('[data-supported-cli-action="select-all"]');
+    if (selectAll === null) throw new Error("expected explicit Select all CLI control");
+    selectAll.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    expect(popover.querySelectorAll('[data-sanctioned-cli][aria-pressed="true"]')).toHaveLength(11);
+    expect(popover.getAttribute("data-open")).toBe("true");
+
+    const done = popover.querySelector('[data-supported-cli-action="done"]');
+    if (done === null) throw new Error("expected Allowed CLI Done control");
+    done.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
     expect(popover.hasAttribute("data-open")).toBe(false);
     expect(menu.getAttribute("aria-expanded")).toBe("false");
+  });
+
+  it("refuses an Enterprise posture that has no explicit Allowed CLI selection", () => {
+    const window = new Window({ url: "http://localhost/" });
+    const html = policyStudioHtml(policyStudioModel());
+    window.document.write(html);
+    loadStudio(window, html);
+
+    click(window, '[data-posture-set="enterprise"]');
+
+    expect((window.document.getElementById("posture") as HTMLSelectElement).value).toBe("vibe");
+    expect(window.document.getElementById("announcement")?.textContent).toContain(
+      "Enterprise posture was not applied",
+    );
+    expect(window.document.getElementById("announcement")?.textContent).toContain("Allowed CLI");
+
+    const capability = window.document.querySelector("[data-aih-capability-package]");
+    if (capability === null) throw new Error("expected AIH capability control");
+    capability.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+
+    expect(capability.getAttribute("aria-pressed")).toBe("true");
+    expect(window.document.getElementById("announcement")?.textContent).not.toContain(
+      "Policy change rejected",
+    );
   });
 
   it("ships source-authored descriptions for every visible ECC agent and skill", () => {
