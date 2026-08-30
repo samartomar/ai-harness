@@ -317,6 +317,16 @@ p.gcard.grpnote,section.gcard>.grpnote:first-child{border-top:0}
 .component-status{display:grid;gap:6px;padding:10px 0;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
 .component-status .b{justify-self:start;height:26px;padding-inline:10px}
 .component-status p{font-size:var(--meta);line-height:1.5;color:var(--ink-2);text-wrap:pretty}
+.drawer-section{display:grid;gap:7px;min-width:0}
+.source-definitions{border:1px solid var(--rule);border-radius:4px;overflow:hidden}
+.source-definitions>summary{min-height:38px;padding:7px 10px;background:var(--fill);list-style:none;gap:7px}
+.source-definitions>summary::-webkit-details-marker{display:none}
+.source-definitions>summary::before{content:"\25B8";font-size:9px;color:var(--ink-3);transition:transform var(--motion)}
+.source-definitions[open]>summary::before{transform:rotate(90deg)}
+.source-path-list{display:grid;gap:0;max-height:260px;overflow:auto;padding:4px 10px 8px;border-top:1px solid var(--rule)}
+.source-path-list li{min-width:0;padding:6px 0;border-bottom:1px solid var(--rule-soft);list-style:none}
+.source-path-list li:last-child{border-bottom:0}
+.source-path-list code{display:block;max-width:100%;overflow-x:auto;white-space:nowrap}
 .security-audit{border:1px solid var(--rule);border-radius:4px;overflow:hidden}
 .security-audit>summary{min-height:38px;padding:7px 10px;background:var(--fill);list-style:none;gap:7px}
 .security-audit>summary::-webkit-details-marker{display:none}
@@ -1198,8 +1208,13 @@ const findingPlainLanguage=function(finding){
   return {title:"Scanner review finding",meaning:"The scanner reported "+finding.code+" for this component.",risk:"Review the recorded source location and scanner evidence before completing the supported curation workflow."};
 };
 const scrollCode=function(value){return '<code class="scroll-code">'+esc(value)+'</code>'};
-const componentStatus=function(ready,reason){return '<div class="component-status" data-readiness="'+(ready?"ready":"review")+'"><span class="b '+(ready?"ok":"warn")+'">'+esc(ready?"Ready to Use":"Requires Human Review")+'</span><p>'+esc(reason)+'</p></div>'};
-const auditDetails=function(content){return '<details class="security-audit"><summary>Security &amp; Audit</summary><div class="security-body">'+content+'</div></details>'};
+const drawerSection=function(key,title,content){return '<section class="drawer-section" data-detail-section="'+esc(key)+'"><div class="cap">'+esc(title)+'</div>'+content+'</section>'};
+const componentStatus=function(ready,reason){return '<div class="component-status" data-detail-section="readiness" data-readiness="'+(ready?"ready":"review")+'"><span class="b '+(ready?"ok":"warn")+'">'+esc(ready?"Ready to Use":"Requires Human Review")+'</span><p>'+esc(reason)+'</p></div>'};
+const auditDetails=function(content){return '<details class="security-audit" data-detail-section="security"><summary>Security &amp; Audit</summary><div class="security-body">'+content+'</div></details>'};
+const assetSourcePaths=function(asset){const paths=asset&&asset.source&&Array.isArray(asset.source.paths)?asset.source.paths.filter(function(path){return typeof path==="string"&&path.length>0}):[];return paths.length?paths:[asset.source.path]};
+const sourceDefinitionsSection=function(asset){const paths=assetSourcePaths(asset);const count=paths.length;const list='<ul class="source-path-list">'+paths.map(function(path){return '<li data-source-definition>'+scrollCode(path)+'</li>'}).join("")+'</ul>';const body=count===1?list:'<details class="source-definitions"><summary>'+esc(count+" exact pinned source definitions")+'</summary>'+list+'</details>';return drawerSection("sources","Source definitions",body)};
+const assetScopeSection=function(item){const asset=item.asset;const metadata=asset.metadata;const aggregate=asset.kind!=="agent"&&asset.kind!=="skill";const allowed=metadata?(metadata.allowedTools.length?metadata.allowedTools.join(", "):"No explicit tool allow-list declared in source"):(aggregate?"No aggregate tool allow-list declared; included sources retain their own declared scopes.":"No explicit tool allow-list declared for this catalog component.");const paths=assetSourcePaths(asset);const behavior=asset.kind==="capability"?"Composite capability: selecting "+asset.id+" requests its complete pinned source set and dependency-closed requirements as one governed component.":"Selecting "+asset.id+" requests this exact "+asset.kind+" component and its dependency-closed requirements; this Workbench records intent and does not install or execute it.";const relationships=[];if(asset.dependencies&&asset.dependencies.length){relationships.push(kv("Required modules",esc(asset.dependencies.join(", "))))}if(asset.members&&asset.members.length){relationships.push(kv("Included components",esc(asset.members.join(", "))))}if(asset.riders&&asset.riders.length){relationships.push(kv("Declared riders",esc(asset.riders.join(", "))))}return drawerSection("scope","Selection scope",'<div class="kv">'+kv("Allowed tools / scope",esc(allowed))+kv("Pinned source count",esc(paths.length))+relationships.join("")+'</div><p class="note"><b>Usage context:</b> '+esc(metadata?metadata.usageContext:behavior)+'</p><p class="note">'+esc(item.framework.id)+" owns this component; by default it installs and runs it. AIH records the selection with its pinned source."+'</p>')};
+const assetOverviewSection=function(item){const asset=item.asset;const metadata=asset.metadata;const body=metadata?'<p class="note">'+esc(metadata.summary)+'</p><div class="kv">'+kv("Component title",esc(metadata.title))+'</div>':'<p class="note">This '+esc(asset.kind)+' is a pinned '+esc(item.framework.id)+' catalog component represented by '+esc(assetSourcePaths(asset).length)+' exact source definition(s).</p><div class="kv">'+kv("Component title",esc(asset.id))+kv("Component kind",esc(asset.kind))+'</div>';return drawerSection("overview","Component overview",body)};
 const scannerFindings=function(vet){
   if(!vet)return '<p class="note">No scanner verdict is recorded for this exact pin. No analyzer, tree digest, or finding is being claimed.</p>';
   const plain=vet.findings.map(findingPlainLanguage);
@@ -1208,7 +1223,8 @@ const scannerFindings=function(vet){
 };
 const securityAudit=function(framework,asset){
   const vet=asset.vet;const command=evidenceCommand(framework,asset);const analyzers=vet?vet.analyzers.map(function(analyzer){return analyzer.name+" "+analyzer.version}).join(", "):"not recorded";
-  let content='<div class="cap">AIH administrator command</div><div class="cmdline admin-command"><code>'+esc(command)+'</code><button type="button" class="copy" data-copy="'+esc(command)+'">COPY</button></div><p class="note">Run this exact applying command where you have repository access. Evidence returns to <code>.aih/evidence/</code> in the governed repository.</p><div class="cap">Scanner findings</div>'+scannerFindings(vet)+'<div class="cap">Provenance</div><div class="kv">'+kv("Source repository",esc(asset.source.repository))+kv("Pinned commit",scrollCode(asset.source.commit))+kv("Source definition",esc(asset.metadata?asset.metadata.sourcePath:asset.source.path))+(asset.metadata?kv("Source SHA-256",scrollCode(asset.metadata.sourceSha256)):"")+(vet?kv("Tree SHA-256",scrollCode(vet.treeSha256)):"")+kv("Analyzers",esc(analyzers))+'</div>';
+  const sourcePaths=assetSourcePaths(asset);const sourceSummary=asset.metadata?asset.metadata.sourcePath:sourcePaths.length===1?sourcePaths[0]:sourcePaths.length+" exact pinned paths listed above";
+  let content='<div class="cap">AIH administrator command</div><div class="cmdline admin-command"><code>'+esc(command)+'</code><button type="button" class="copy" data-copy="'+esc(command)+'">COPY</button></div><p class="note">Run this exact applying command where you have repository access. Evidence returns to <code>.aih/evidence/</code> in the governed repository.</p><div class="cap">Scanner findings</div>'+scannerFindings(vet)+'<div class="cap">Provenance</div><div class="kv">'+kv("Source repository",esc(asset.source.repository))+kv("Pinned commit",scrollCode(asset.source.commit))+kv("Source definition",esc(sourceSummary))+(asset.metadata?kv("Source SHA-256",scrollCode(asset.metadata.sourceSha256)):"")+(vet?kv("Tree SHA-256",scrollCode(vet.treeSha256)):"")+kv("Analyzers",esc(analyzers))+'</div>';
   return auditDetails(content);
 };
 const describeRow=function(id){
@@ -1248,14 +1264,13 @@ const paintDrawer=function(id){
   const selected=item.asset?isFrameworkSelected(item.framework.id,item.asset.id):
     (item.control?governance().catalog.reviewed.some(function(entry){return entry.id===item.id}):false);
   const kind=item.asset?item.asset.kind:item.hook?"hook":item.custom?"custom MCP":"MCP";
-  const metadata=item.asset&&item.asset.metadata;const drawerTitle=item.id;
+  const drawerTitle=item.id;
   let html='<div class="dhead"><h2>'+esc(drawerTitle)+'</h2>'+close+'</div>'+
     '<div class="badges"><span class="b '+(item.owner==="AIH"?"":"ext")+'">'+esc(item.owner)+(item.enforce?" enforces":" &mdash; records only")+'</span>'+
-    '<span class="b">'+esc(kind)+'</span>'+(item.eccMcp?'<span class="b ext">Also declared by ECC</span>':"")+'</div><div class="cap">Component overview</div>';
-  if(metadata){html+='<p class="note">'+esc(metadata.summary)+'</p><div class="kv">'+kv("Component title",esc(metadata.title))+kv("Allowed tools / scope",esc(metadata.allowedTools.length?metadata.allowedTools.join(", "):"No explicit tool allow-list declared in source"))+kv("Source definition",esc(metadata.sourcePath))+'</div><p class="note"><b>Usage context:</b> '+esc(metadata.usageContext)+'</p>'}
-  else if(item.desc){html+='<p class="note">'+esc(item.desc)+'</p>'}
-  else if(item.asset){html+='<div class="kv">'+kv("Component",esc(item.asset.id))+kv("Source definition",esc(item.asset.source.path))+'</div>'}
-  if(item.asset){html+='<p class="note">'+esc(item.framework.id)+" owns this component; by default it installs and runs it. AIH records the selection with its pinned source."+'</p>'}
+    '<span class="b">'+esc(kind)+'</span>'+(item.eccMcp?'<span class="b ext">Also declared by ECC</span>':"")+'</div>';
+  if(item.asset){html+=assetOverviewSection(item)+assetScopeSection(item)+sourceDefinitionsSection(item.asset)}
+  else if(item.desc){html+=drawerSection("overview","Component overview",'<p class="note">'+esc(item.desc)+'</p>')}
+  else{html+=drawerSection("overview","Component overview",'<div class="kv">'+kv("Component",esc(item.id))+'</div>')}
   const ready=item.asset?!!item.asset.vet&&item.asset.vet.verdict==="pass":!!item.control&&!item.custom;
   const statusReason=ready?"Recorded evidence for this exact source passed; target-repository evaluation still decides whether authored intent becomes effective.":item.asset&&item.asset.vet&&item.asset.vet.verdict==="blocked"?"Recorded scanner findings require administrator review before the supported curation and authority workflow can complete.":item.custom?"This custom candidate remains blocked until exact evidence and authority are present.":"No exact scanner verdict is recorded for this component in the portable Workbench.";
   html+=componentStatus(ready,statusReason);

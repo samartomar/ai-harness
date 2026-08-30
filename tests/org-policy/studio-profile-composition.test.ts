@@ -190,7 +190,11 @@ describe("policy studio profile composition", () => {
       expect(groups[0]?.items, asset.id).toContainEqual({
         kind: asset.kind,
         id: asset.id,
-        source: { ...asset.source },
+        source: {
+          repository: asset.source.repository,
+          commit: asset.source.commit,
+          path: asset.source.path,
+        },
       });
     }
   });
