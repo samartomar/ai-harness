@@ -6,6 +6,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep the Allowed CLI popover open while administrators make consecutive selections. Repainting
+  the policy no longer turns an in-panel selection into an outside click; explicit outside clicks
+  and Escape still dismiss the panel.
+
 ### Changed
 
 - Make ECC Workbench selections dependency-closed. Selecting a module now visibly selects its

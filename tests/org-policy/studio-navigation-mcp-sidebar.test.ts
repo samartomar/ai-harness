@@ -102,7 +102,11 @@ describe("policy studio navigation ownership and ECC MCP authoring", () => {
       first.id,
     );
     expect(JSON.stringify(policy(window))).not.toBe(baseline);
-    expect(text(window, "t-req")).toBe("1");
+    const selectedCount = window.document.querySelectorAll(
+      '#framework-rows [data-framework-select][aria-pressed="true"]',
+    ).length;
+    expect(selectedCount).toBeGreaterThan(0);
+    expect(text(window, "t-req")).toBe(String(selectedCount));
     expect(report(window)).toContain("0 selected but not shown as a row at this pin.");
     expect(
       window.document
@@ -115,8 +119,10 @@ describe("policy studio navigation ownership and ECC MCP authoring", () => {
     expect(mappedGroup?.getAttribute("data-open")).toBe("1");
     expect(mappedGroup?.querySelector("[data-group]")?.getAttribute("aria-expanded")).toBe("true");
     click(window, window.document.querySelector('[data-filter="requested"]'), "Selected filter");
-    expect(window.document.querySelector('[data-filter="requested"]')?.textContent).toContain("1");
-    expect(text(window, "c-shown")).toBe("1");
+    expect(window.document.querySelector('[data-filter="requested"]')?.textContent).toContain(
+      String(selectedCount),
+    );
+    expect(text(window, "c-shown")).toBe(String(selectedCount));
     expect(hidden(window, "plane-empty")).toBe(true);
     const governedSkills = ecc.assets.filter((asset) => asset.kind === "skill").length;
     const visibleEccInventory =
