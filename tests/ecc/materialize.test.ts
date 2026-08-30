@@ -504,16 +504,21 @@ describe("filterEccManifestPlan", () => {
   });
 
   it.each([
+    [".opencode/index.ts", "/home/aih/.config/opencode/index.ts"],
+    [".opencode/opencode.json", "/home/aih/.config/opencode/opencode.json"],
     [".opencode/plugins/ecc-hooks.ts", "/home/aih/.config/opencode/plugins/ecc-hooks.ts"],
     [".opencode/dist/plugins/ecc-hooks.js", "/home/aih/.config/opencode/dist/plugins/ecc-hooks.js"],
-  ])("classifies OpenCode automatic plugin runtime as host runtime: %s", (source, destination) => {
-    expect(
-      classifyGovernedEccOperation(
-        operation(source, "platform-configs", "copy-file", destination),
-        { projectRoot: "/fixture", homeDir: "/home/aih", target: "opencode" },
-      ),
-    ).toBe("host-runtime");
-  });
+  ])(
+    "classifies OpenCode executable package content as host runtime: %s",
+    (source, destination) => {
+      expect(
+        classifyGovernedEccOperation(
+          operation(source, "platform-configs", "copy-file", destination),
+          { projectRoot: "/fixture", homeDir: "/home/aih", target: "opencode" },
+        ),
+      ).toBe("host-runtime");
+    },
+  );
 
   it("fails closed when operation and state-preview inputs drift", () => {
     const plan = fixturePlan();

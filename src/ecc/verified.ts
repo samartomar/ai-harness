@@ -178,7 +178,7 @@ if (spec.excludeAihOwnedSurfaces === true) {
     return normalized.split("/").some((part) => !part || part === "." || part === "..") ? undefined : normalized;
   };
   const mcpPath = (value) => /(?:^|\/)(?:\.mcp\.json|mcp\.json|mcp-servers\.json)$/i.test(value) || /^(?:mcp-configs|mcp)(?:\/|$)/i.test(value);
-  const hostRuntimePath = (value) => /(?:^|\/)(?:\.claude|\.codex|\.cursor|\.kiro|\.gemini|\.opencode|\.zed)\/(?:hooks(?:\/|$)|(?:settings(?:\.local)?\.json|config\.(?:json|toml)))$/i.test(value) || /^(?:hooks|scripts\/hooks)(?:\/|$)/i.test(value);
+  const hostRuntimePath = (value) => /(?:^|\/)(?:\.claude|\.codex|\.cursor|\.kiro|\.gemini|\.opencode|\.zed)\/(?:hooks(?:\/|$)|(?:settings(?:\.local)?\.json|config\.(?:json|toml)))$/i.test(value) || /(?:^|\/)(?:\.opencode|\.config\/opencode)(?:\/|$)/i.test(value) || /^(?:hooks|scripts\/hooks)(?:\/|$)/i.test(value);
   const eccContentPath = (value) => value === "AGENTS.md" || /^(?:\.agents\/(?:plugins|skills)\/|agents\/|skills\/|commands\/|rules\/|\.claude\/commands\/|\.codex\/AGENTS\.md$)/.test(value);
   const eccContentDestination = (source, destination) => {
     const mapping = (() => {

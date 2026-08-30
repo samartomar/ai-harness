@@ -565,7 +565,9 @@ function isHostRuntimePath(path: string): boolean {
   return (
     /(?:^|\/)(?:\.claude|\.codex|\.cursor|\.kiro|\.gemini|\.opencode|\.zed)\/(?:hooks(?:\/|$)|(?:settings(?:\.local)?\.json|config\.(?:json|toml)))$/i.test(
       path,
-    ) || /^(?:hooks|scripts\/hooks)(?:\/|$)/i.test(path)
+    ) ||
+    /(?:^|\/)(?:\.opencode|\.config\/opencode)(?:\/|$)/i.test(path) ||
+    /^(?:hooks|scripts\/hooks)(?:\/|$)/i.test(path)
   );
 }
 
