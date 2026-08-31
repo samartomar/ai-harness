@@ -16,7 +16,7 @@ permissions:
   contents: read
 
 env:
-  SCANNER_VERSION: 0.2.4
+  SCANNER_VERSION: 0.2.5
 
 jobs:
   # Keep this required-check name stable. Normal Core CI verifies only the
