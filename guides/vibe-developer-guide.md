@@ -32,8 +32,9 @@ Think in six layers:
 Verify a published release when release integrity matters:
 
 ```console
-npm install -g @aihq/core@0.3.0
-aih verify-release 0.3.0
+CORE_VERSION="$(npm view @aihq/core dist-tags.latest)"
+npm install -g "@aihq/core@$CORE_VERSION"
+aih verify-release "$CORE_VERSION"
 ```
 
 Full release verification requires local `npm`, `gh`, and `cosign`; proceed only when all three legs

@@ -37,10 +37,11 @@ silently editing shell profiles. The MCP scope also derives secret-safe endpoint
 MCP config where possible and emits chain-inspection guidance plus `NODE_EXTRA_CA_CERTS` /
 `SSL_CERT_FILE` remediation snippets for TLS-intercepting enterprise proxies. It does not contact
 repo-derived MCP endpoints during planning; live Node/Python endpoint TLS handshakes and CA-bundle
-comparisons require explicit `--probe-mcp-endpoints` and run as verification probes. For major
-AI-Harness upgrades, install the exact active Core line with
-`npm install -g @aihq/core@0.3.0`; its npm package and matching GitHub Release
-evidence are public. The frozen `@aihq/harness@6.1.0` package is npm-deprecated
+comparisons require explicit `--probe-mcp-endpoints` and run as verification probes. For
+AI-Harness upgrades, resolve the promoted version with
+`npm view @aihq/core dist-tags.latest`, approve that exact version, and install it;
+its npm package and matching GitHub Release carry the verification evidence. The
+frozen `@aihq/harness@6.1.0` package is npm-deprecated
 and remains available only for existing consumers that have not migrated; new
 installations use `@aihq/core`. Add `--force` only when replacing a
 broken global install after reviewing the current workstation state. For the
@@ -988,8 +989,8 @@ subject digest, and qualification kind. Receipt V2 also binds the entry id, sign
 predecessor, replay identity, and head validity ceiling; Receipt V1 is unsupported. Raw, cloned,
 expired, substituted, replayed, rolled-back, or differently scoped receipts cannot mint the
 process-local qualification capability. The portable schema is shipped at
-`@aihq/core/schemas/aih-supported-qualification-receipt-v2.schema.json` in the
-published `0.3.0` Core package.
+`@aihq/core/schemas/aih-supported-qualification-receipt-v2.schema.json`; the schema
+was introduced in Core `0.3.0`.
 
 A packed consumer may call `verifyAihSupportedQualificationArtifactV2` with only the target root,
 the exact expected decision id/digest, and the exact expected subject. The package resolves the
@@ -1395,8 +1396,7 @@ attestations.
 
 ## aih verify-release
 
-Core `0.3.0` behavior: read-only release verification for published `@aihq/core`
-versions. With no positional version,
+Read-only release verification for published `@aihq/core` versions. With no positional version,
 it resolves the latest package version from npm; with `aih verify-release <version>`, it checks that
 specific version. The command installs that exact package into a temporary prefix with scripts
 disabled, runs `npm audit signatures --prefix <temp>`, downloads the GitHub Release checksum and

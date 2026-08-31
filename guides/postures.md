@@ -10,7 +10,8 @@ purpose: Human-readable guide to posture behavior and positioning.
 
 This guide explains how to reason about `vibe` and `enterprise` posture without turning posture into feature availability or mixing shipped behavior with unshipped plans.
 
-The current release baseline is `@aihq/core@0.3.0`. Use the installed version's release notes and CLI help as the syntax authority.
+This guide follows the promoted `@aihq/core` stable train. Use the installed exact
+version's release notes and CLI help as the syntax authority.
 
 ## Read this as
 

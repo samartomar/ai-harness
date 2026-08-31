@@ -18,23 +18,25 @@ The admin config controls policy, approvals, pins, and allowed surfaces. The dev
 
 Do not commit secrets. It is safe to commit placeholders such as `${GITHUB_PERSONAL_ACCESS_TOKEN}` inside reviewed MCP templates when the CLI or client expects an env reference. It is not safe to commit actual GitHub, Jira, Figma, AWS, or other tokens. Real values stay in the local shell, browser OAuth flow, or the organization's secret manager.
 
-Release baseline covered by this guide: `@aihq/core@0.3.0`.
+This guide follows the promoted stable train. Resolve the exact version from npm,
+then apply the organization's approval before installation.
 
 ## 2. Quickstart / Implementation Blueprint
 
 Verify a published release first:
 
 ```powershell
-npm install -g @aihq/core@0.3.0
-aih verify-release 0.3.0
+$CoreVersion = npm view @aihq/core dist-tags.latest
+npm install -g "@aihq/core@$CoreVersion"
+aih verify-release $CoreVersion
 ```
 
 Full release verification requires local `npm`, `gh`, and `cosign`; proceed only when all three legs
 pass. A skipped leg is incomplete evidence, not a successful rollout gate.
 
-For a major-version upgrade, install the approved explicit version (currently
-`npm install -g @aihq/core@0.3.0`); `npm update -g` may stay within the current major. Re-run
-`aih verify-release 0.3.0` after an upgrade. Use `--force` only
+For an upgrade, resolve and approve the explicit promoted version; `npm update -g`
+may stay within the current major. Re-run `aih verify-release $CoreVersion` after
+installation. Use `--force` only
 to replace a broken global install after reviewing the npm prefix and package source.
 
 Clone the admin configuration repo and point AI-Harness at the policy:

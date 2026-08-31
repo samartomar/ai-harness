@@ -14,9 +14,10 @@ fix. We aim to acknowledge within a few days.
 ## Supported versions
 
 Which versions receive security fixes is set by the [versioning policy](VERSIONING.md):
-only the latest minor receives fixes, and the fix path is upgrading to it.
-Fixes ship as a patch on that line, documented in the [CHANGELOG](CHANGELOG.md)
-under **Security**.
+the promoted stable train receives fixes. Candidate versions under npm `next` remain
+evaluation builds until public installed acceptance and separate promotion authorization.
+Fixes ship on the stable train and are documented in the [CHANGELOG](CHANGELOG.md)
+under **Security**; the release note states when an upgrade is urgent.
 
 ## Design — reviewable by default
 

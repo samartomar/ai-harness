@@ -284,11 +284,10 @@ jobs:
           actual_sha256="$(sha256sum "$TARBALL" | awk '{print $1}')"
           test "$actual_sha256" = "$EXPECTED_TARBALL_SHA256"
           tarball="$TARBALL"
-          tag="${GITHUB_REF_NAME#v-core-}"
-          case "$tag" in
-            *-*) dist_tag=next ;;
-            *) dist_tag=latest ;;
-          esac
+          # Publication makes the exact immutable candidate publicly installable,
+          # but never changes the default install target. Promotion to `latest` is
+          # a separate owner-authorized effect after public installed acceptance.
+          dist_tag=next
           npm publish "$tarball" --ignore-scripts --provenance --access public --registry "https://registry.npmjs.org/" --tag "$dist_tag"
       - name: Verify exact tarball before GitHub release
         run: |
@@ -304,6 +303,7 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             --repo "$GITHUB_REPOSITORY" \
             --title "$GITHUB_REF_NAME" \
+            --prerelease \
             --generate-notes \
             --notes "$notes" \
             "$TARBALL" \

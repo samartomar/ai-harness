@@ -13,7 +13,8 @@
 ## What is supported
 
 Which versions receive fixes is defined in [VERSIONING.md](VERSIONING.md). While pre-1.0,
-only the latest minor is supported — upgrade to the newest `0.x` before reporting a bug.
+the promoted stable train is supported. A candidate under npm `next` is available for
+evaluation but is not the supported default and does not require every consumer to upgrade.
 
 ## Response expectations
 
@@ -27,8 +28,10 @@ this project or filing an issue creates **no service relationship** of any kind.
 ## Before you file
 
 - Run `aih doctor` and include the output.
-- Confirm the exact supported release with `npm install -g @aihq/core@0.3.0`
-  followed by `aih verify-release 0.3.0`. The npm package and matching GitHub
-  Release are public; a skipped verification leg is incomplete evidence.
+- Resolve the promoted version with `npm view @aihq/core dist-tags.latest`, obtain your
+  organization's approval for that exact version, then run
+  `npm install -g @aihq/core@<approved-version>` followed by
+  `aih verify-release <approved-version>`. A skipped verification leg is incomplete
+  evidence.
 - Search [existing issues](https://github.com/samartomar/ai-harness/issues?q=is%3Aissue)
   first.

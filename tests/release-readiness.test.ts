@@ -313,18 +313,20 @@ describe("release readiness metadata", () => {
     expect(trustedPublishStep).not.toContain('npm view "@aihq/core"');
   });
 
-  it("documents stable-direct as the default and names every required RC trigger", () => {
+  it("publishes every candidate to next and requires separate installed-evidence promotion", () => {
     const releasing = read("RELEASING.md");
+    const workflow = read(".github/workflows/release.yml");
 
-    expect(releasing).toContain("Stable-direct is the default release path");
+    expect(releasing).toContain("Candidate-first is mandatory");
     expect(releasing).toContain("SHA-bound publication approval");
-    expect(releasing).toContain("major-version or schema migration");
-    expect(releasing).toContain("evidence format");
-    expect(releasing).toContain("publishing machinery");
-    expect(releasing).toContain("production-equivalent verification");
-    expect(releasing).toContain("publishes under `next` and never touches `latest`");
+    expect(releasing).toContain("public installed acceptance");
+    expect(releasing).toContain("promote the same\nimmutable version");
+    expect(releasing).toContain("separate SHA-bound promotion authorization");
     expect(releasing).toContain("read-only `verify-and-pack` job");
     expect(releasing).toContain("runs no Core package code");
+    expect(workflow).toContain("dist_tag=next");
+    expect(workflow).not.toContain("dist_tag=latest");
+    expect(workflow).toContain("--prerelease");
   });
 
   it("scopes the SLSA Build L2 claim to the Core tarball and documents the Build L3 gap", () => {
@@ -357,7 +359,6 @@ describe("release readiness metadata", () => {
   });
 
   it("directs global-install verification through the release verifier", () => {
-    const coreVersion = JSON.parse(read("package.json")).version;
     const legacyVersion = "6.1.0";
     const installDocs = [
       "README.md",
@@ -373,20 +374,15 @@ describe("release readiness metadata", () => {
       const text = read(path);
       const installBlocks = (
         text.match(/```(?:bash|console|powershell)\n[\s\S]*?```/g) ?? []
-      ).filter((block) => block.includes("npm install -g @aihq/core"));
+      ).filter((block) => block.includes("npm install -g") && block.includes("@aihq/core@"));
       expect(installBlocks.length).toBeGreaterThan(0);
       for (const block of installBlocks) {
-        const installCommand = `npm install -g @aihq/core@${coreVersion}`;
-        const verifyCommand = `aih verify-release ${coreVersion}`;
-        expect(block).toContain(installCommand);
-        expect(block).toContain(verifyCommand);
-        const lines = block.split(/\r?\n/gu);
-        const commands = lines.map((line) => line.split(" #", 1)[0]?.trim() ?? "");
-        const installLine = commands.indexOf(installCommand);
-        expect(installLine).toBeGreaterThanOrEqual(0);
-        expect(commands[installLine + 1]).toBe(verifyCommand);
+        expect(block).toContain("npm view @aihq/core dist-tags.latest");
+        expect(block).toMatch(/@aihq\/core@\$(?:CORE_VERSION|CoreVersion)/u);
+        expect(block).toMatch(/aih verify-release ["']?\$(?:CORE_VERSION|CoreVersion)/u);
         expect(block).not.toContain("npm audit signatures");
       }
+      expect(text).not.toContain(`@aihq/core@${JSON.parse(read("package.json")).version}`);
       expect(text).toContain("Full release verification requires local `npm`, `gh`, and `cosign`");
       expect(text).toContain("all three legs");
       expect(text).toContain("skipped leg is incomplete evidence");
@@ -400,32 +396,23 @@ describe("release readiness metadata", () => {
       expect(block).not.toContain("npm audit signatures");
     }
     expect(slsa).toContain("aih verify-release <version>");
-    // The release cut makes Core the active line while retaining an honest
-    // pre-publication fallback in the README.
     const onboarding = read("docs/ENTERPRISE_ONBOARDING.md");
-    expect(onboarding).toContain("install the approved explicit version (currently");
-    expect(onboarding).toContain(`\`npm install -g @aihq/core@${coreVersion}\`);`);
+    expect(onboarding).toContain("approved explicit promoted version");
     for (const path of [
       "guides/enterprise-developer-guide.md",
       "guides/enterprise-admin-guide.md",
     ]) {
       const text = read(path);
-      expect(text).toContain(
-        `Release baseline covered by this guide: \`@aihq/core@${coreVersion}\``,
-      );
-      expect(text).toContain(
-        `For a major-version upgrade, install the approved explicit version (currently\n\`npm install -g @aihq/core@${coreVersion}\`); \`npm update -g\` may stay within the current major. Re-run\n\`aih verify-release ${coreVersion}\` after an upgrade.`,
-      );
+      expect(text).toContain("promoted");
+      expect(text).toContain("resolve and approve the explicit promoted version");
     }
     const postures = read("guides/postures.md");
-    expect(postures).toContain(`The current release baseline is \`@aihq/core@${coreVersion}\`.`);
+    expect(postures).toContain("promoted `@aihq/core` stable train");
     const readme = read("README.md");
     expect(readme).toContain(
       `published \`@aihq/harness@${legacyVersion}\` package is frozen and npm-deprecated`,
     );
-    expect(readme).toContain(`npm install -g @aihq/core@${coreVersion}`);
-    expect(readme).toContain("`@aihq/core@0.3.0` is public on npm");
-    expect(readme).not.toContain("Until those exact artifacts exist");
+    expect(readme).toContain("npm view @aihq/core dist-tags.latest");
 
     for (const path of [
       "README.md",
@@ -450,16 +437,12 @@ describe("release readiness metadata", () => {
     ] as const) {
       expect(text, path).not.toContain("pending `0.1.1` Core package");
     }
-    expect(adminGuide).toContain("@aihq/scan@0.2.2");
-    expect(adminGuide).not.toContain("@aihq/scan@0.1.3");
+    expect(adminGuide).toContain("promoted `@aihq/scan` stable train");
 
     for (const path of ["SUPPORT.md", "docs/commands.md", "guides/README.md"]) {
       const installDoc = read(path);
-      expect(installDoc, path).toContain("@aihq/core@0.3.0");
-      expect(installDoc, path).not.toContain("@aihq/core@0.2.0");
-      expect(installDoc, path).not.toContain("@aihq/core@0.1.0");
-      expect(installDoc, path).not.toContain("pre-publication fallback");
-      expect(installDoc, path).not.toContain("only published install");
+      expect(installDoc, path).toContain("promoted");
+      expect(installDoc, path).not.toContain("@aihq/core@0.3.0");
     }
   });
 

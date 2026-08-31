@@ -27,6 +27,7 @@ import {
 } from "./release-issue-ref-resolution.js";
 
 export type SemverClass = "patch" | "minor" | "major";
+type ReleaseClass = "none" | SemverClass;
 
 export interface MergedPr {
   number: number;
@@ -114,12 +115,18 @@ export interface Manifest {
 }
 
 const CLASSES: readonly SemverClass[] = ["patch", "minor", "major"];
+const RELEASE_CLASSES: readonly ReleaseClass[] = ["none", ...CLASSES];
 const CORE_INITIAL_VERSION = "0.1.0";
 const FINAL_LEGACY_TAG = "v6.1.0";
 
-function bumpOf(labels: string[]): SemverClass | undefined {
+function releaseClassOf(labels: string[]): ReleaseClass | undefined {
   const cls = labels[0]?.replace("semver:", "");
-  return CLASSES.includes(cls as SemverClass) ? (cls as SemverClass) : undefined;
+  return RELEASE_CLASSES.includes(cls as ReleaseClass) ? (cls as ReleaseClass) : undefined;
+}
+
+function bumpOf(labels: string[]): SemverClass | undefined {
+  const cls = releaseClassOf(labels);
+  return cls === "none" ? undefined : cls;
 }
 
 export function nextVersionFrom(tag: string, bump: SemverClass): string | undefined {
@@ -185,7 +192,7 @@ export function runPreflight(data: PreflightData): Manifest {
         code: "multi-label-pr",
         detail: `#${pr.number} carries ${pr.semverLabels.join(", ")} — exactly one is authoritative`,
       });
-    } else if (bumpOf(pr.semverLabels) === undefined) {
+    } else if (releaseClassOf(pr.semverLabels) === undefined) {
       findings.push({
         code: "unknown-label",
         detail: `#${pr.number} carries unknown class ${pr.semverLabels[0]}`,
@@ -267,6 +274,12 @@ export function runPreflight(data: PreflightData): Manifest {
   }
 
   const { cancelled, computedBump } = computedBumpFrom(data.mergedPrs);
+  if (computedBump === undefined) {
+    findings.push({
+      code: "no-releasable-change",
+      detail: "the cut contains no patch, minor, or major package change",
+    });
+  }
   const rawIntent = data.declaredIntent as string | undefined;
   const declaredIntent = CLASSES.includes(rawIntent as SemverClass)
     ? (rawIntent as SemverClass)

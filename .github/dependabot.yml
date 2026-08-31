@@ -1,8 +1,7 @@
 version: 2
 updates:
-  # Keep npm dependencies patched. `semver:patch` satisfies the semver-label gate by
-  # default (the release cut needs exactly one class per merged PR); re-label by hand
-  # if a bump changes our surface.
+  # Runtime dependency bytes ship in the package, so npm updates default to
+  # `semver:patch`; re-label when the actual public surface requires another class.
   #
   # Two groups, deliberately: a single "*" group let one high-risk toolchain bump
   # (Biome's new lint rules, TypeScript's declaration-build break) block every routine
@@ -42,7 +41,7 @@ updates:
     labels:
       - dependencies
       - github_actions
-      - "semver:patch"
+      - "semver:none"
     groups:
       codeql:
         patterns:

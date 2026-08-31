@@ -6,6 +6,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Separate merge, release cut, candidate publication, installed acceptance, and stable
+  promotion. Repository-only work uses `semver:none` and cannot trigger package bytes;
+  every tag workflow publishes first under npm `next`, and the same immutable version
+  reaches `latest` only after public installed acceptance and separate authorization.
+
 ### Fixed
 
 - Reconcile the ECC hook-control inventory to the exact active source pin, adding the
@@ -53,7 +60,6 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   context-preserving AIH Skill and presents `aih-gov-doctor` plus `aih-bugbounty` separately as
   AIH Agent workflows whose governed instruction sources are packaged as skills; selecting them
   records package intent but does not claim the browser launched an isolated worker.
-
 ## [Core 0.3.0] - 2026-08-27
 
 ### Fixed

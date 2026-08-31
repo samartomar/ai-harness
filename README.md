@@ -8,7 +8,7 @@
 [![Node ≥20](https://img.shields.io/badge/node-%E2%89%A520-339933.svg)](package.json)
 
 <p align="center">
-<img src="docs/assets/aih-overview.svg" alt="aih v0.3.0 governed-readiness overview showing Environment, Context, Policy, Execution, and Evidence pillars plus truth verify and the docs-lint claim gate" width="100%">
+<img src="docs/assets/aih-overview.svg" alt="aih governed-readiness overview showing Environment, Context, Policy, Execution, and Evidence pillars plus truth verify and the docs-lint claim gate" width="100%">
 </p>
 
 Use the coding agent that fits your workflow. `aih` is a cross-platform CLI that
@@ -53,7 +53,8 @@ snapshot-tested in CI against a committed fixture, the `--json` envelope is
 schema-pinned, and exit-code semantics are pinned — a surface change fails the build
 until it ships as a reviewed contract decision. Command renames ship as deprecated aliases
 (the old name keeps working, with a one-line warning) before a major removes them,
-and security fixes land on the latest minor — upgrading is the fix path. The full
+and security fixes land on the promoted stable train. Release notes say whether an
+upgrade is optional, recommended, required by date, or security urgent. The full
 policy: [STABILITY.md](https://github.com/samartomar/ai-harness/blob/main/STABILITY.md).
 
 ## Design posture
@@ -66,12 +67,14 @@ policy: [STABILITY.md](https://github.com/samartomar/ai-harness/blob/main/STABIL
 
 The immutable `v-core-0.1.0` attempt passed its read-only verification but npm
 refused publication with `EOTP`; that tag and failed run are audit evidence and
-must never be deleted, moved, or reused. `@aihq/core@0.3.0` is public on npm
-with a matching GitHub Release. Install and verify that exact active release:
+must never be deleted, moved, or reused. Resolve the promoted stable version from
+npm, approve that exact version under your organization policy, then install and
+verify it:
 
 ```bash
-npm install -g @aihq/core@0.3.0         # then run: aih --help
-aih verify-release 0.3.0   # checks npm signatures, GitHub release sums, and cosign evidence
+CORE_VERSION="$(npm view @aihq/core dist-tags.latest)"
+npm install -g "@aihq/core@$CORE_VERSION"
+aih verify-release "$CORE_VERSION"   # npm signatures, GitHub sums, and cosign evidence
 ```
 
 The frozen legacy package is npm-deprecated and remains installable only for
@@ -91,7 +94,7 @@ Per-version release notes — what changed, and why — live in
 npm tarball too, so an evaluator can read the version history straight from the unpacked package.
 
 <!-- aih:claim CM-51 -->
-Core 0.3.0 library integrations import the strict Package Graph v1 TypeScript schema
+Core library integrations import the strict Package Graph v1 TypeScript schema
 from `@aihq/core` and resolve its structural editor schema at
 `@aihq/core/schemas/aih-package-graph.schema.json`; no legacy compatibility wrapper is
 planned. Existing v6 consumers retain the matching exports under the
@@ -773,7 +776,7 @@ aih usage --rollup ../repo-a,../repo-b
 - **Changelog** — [CHANGELOG.md](CHANGELOG.md); tagged builds on
   [Releases](https://github.com/samartomar/ai-harness/releases).
 - **Versioning & support** — [VERSIONING.md](https://github.com/samartomar/ai-harness/blob/main/VERSIONING.md). SemVer; security fixes
-  land on the **latest minor** — upgrade to the latest release line to stay fixed.
+  land on the **promoted stable train**, and release notes state the required adoption action.
 - **Supply chain** — the Core release workflow is configured to publish via npm **Trusted Publishing** with build
   **provenance** and ships an **SPDX SBOM**, a **SHA256 checksum**, its keyless **cosign
   signature bundle** (`SHA256SUMS.txt.sigstore.json`), and the Sigstore **build-provenance

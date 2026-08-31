@@ -25,14 +25,18 @@ current AIH. The lower Core version is not a downgrade or a continuation of the
 legacy package's SemVer sequence.
 
 After `v-core-0.1.0`, the bump is not chosen by hand: each **merged PR** carries exactly one
-`semver:patch|minor|major` label (authoritative — issue-level labels are advisory
+`semver:none|patch|minor|major` label (authoritative — issue-level labels are advisory
 planning hints, and issueless PRs such as dependency or docs updates are labeled
 directly), and the release cut takes the highest class among the PRs merged since the
-previous tag. When labeling, apply the surface definition above — a change to verdicts,
+previous tag. `semver:none` means the merge changes only repository documentation,
+tests, CI, or maintainer tooling and does not require new public package bytes. It rides
+the open train but cannot start or bump a package cut; a train containing only
+`semver:none` changes is not releasable. When labeling, apply the surface definition above — a change to verdicts,
 exit codes, or generated-artifact content is a surface change (**MINOR** at least),
 even when the commit is typed `fix:`. The `semver-label` check enforces exactly one
-class per PR before merge; Dependabot PRs are labeled `semver:patch` automatically and
-re-labeled by hand when a bump changes our surface.
+class per PR before merge. Runtime dependency updates default to `semver:patch`; CI-only
+dependency updates default to `semver:none`; either is re-labeled when the actual public
+surface requires another class.
 
 The cut also declares an intent class with
 `npm run release:preflight -- --intent <patch|minor|major>`. Computation remains authoritative:
@@ -60,14 +64,32 @@ A **patch** (`0.2.0 → 0.2.1`) never breaks.
 - a maintenance-release lane exists, if N-1 support is committed at that point (see below);
 - the deprecation policy below is in force.
 
+## Release train and promotion
+
+Merging, cutting, publishing, and promoting are separate effects. Related changes
+accumulate in one coherent train. A release PR assigns one version to that train; the
+protected tag workflow publishes the immutable candidate under npm `next` and marks the
+GitHub Release as a prerelease. It never changes `latest`. Public installed acceptance
+must exercise those exact registry bytes with the compatible Scanner and Catalog
+baseline. A separate owner authorization may then promote the same version—without a
+rebuild or republish—to npm `latest` and stable GitHub Release status.
+
+An ordinary defect discovered during candidate acceptance joins the same open train when
+the candidate has not been published. If immutable candidate bytes are already public,
+the correction uses a new version but remains off `latest` until its own acceptance.
+Immediate hotfix trains are reserved for security defects, installation blockers,
+evidence corruption, data loss, or comparable material user harm. Documentation and CI
+cleanup do not create a release on their own.
+
 ## Supported versions
 
 | Phase | Supported |
 |---|---|
-| **All phases (current policy)** | Only the **latest minor** receives fixes. Upgrade to the latest release line to get security and bug fixes. |
+| **All phases (current policy)** | The **promoted stable train** receives fixes. Candidate versions under `next` are evaluation builds, not an upgrade instruction. |
 
-Support is latest-minor-only: security and bug fixes land on the latest minor, and the
-fix path is upgrading to it. An N-1 backport commitment requires a maintenance-release
+Security and bug fixes land on the promoted stable train. A release note states whether
+adoption is no action, recommended, required by a date, or security urgent; a larger
+version number by itself is not an upgrade instruction. An N-1 backport commitment requires a maintenance-release
 lane (releases cut from the previous tag's line) that does not exist yet; if that lane
 is built, this policy will be re-amended **first** — the promise follows the mechanism,
 never the other way around. Security reporting is in

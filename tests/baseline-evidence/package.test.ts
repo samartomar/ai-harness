@@ -45,7 +45,7 @@ describe("baseline evidence release payload", () => {
   it("delegates baseline execution to the exact public Scanner and keeps Core consumption explicit", () => {
     const manifest = packageJson();
     const scripts = manifest.scripts;
-    expect(manifest.devDependencies["@aihq/scan"]).toBe("0.2.2");
+    expect(manifest.devDependencies["@aihq/scan"]).toBe("0.2.3");
     expect(scripts["baseline:request"]).toContain("scanner-cli.ts request");
     expect(scripts["baseline:vet"]).toBe("aih-scan baseline-vet");
     expect(scripts["baseline:consume"]).toContain("scanner-cli.ts consume");
@@ -82,7 +82,9 @@ describe("baseline evidence release payload", () => {
     expect(requiredCommands).not.toContain("docker");
 
     const refreshJob = jobs?.["refresh-execute"];
-    expect(refreshJob?.if).toBe("${{ github.event_name == 'workflow_dispatch' && inputs.refresh }}");
+    expect(refreshJob?.if).toBe(
+      "${{ github.event_name == 'workflow_dispatch' && inputs.refresh }}",
+    );
     const refreshSteps = refreshJob?.steps ?? [];
     const refreshStepNames = refreshSteps.map((step) => step.name);
     expect(refreshStepNames).toEqual(
@@ -131,15 +133,11 @@ describe("baseline evidence release payload", () => {
     expect(workflow).toContain("/usr/bin/python3.13");
     expect(workflow).toContain("/usr/local/bin/uv");
     expect(workflow).toContain("/usr/bin/bwrap");
-    expect(workflow).toContain(
-      "/usr/share/apparmor/extra-profiles/bwrap-userns-restrict",
-    );
+    expect(workflow).toContain("/usr/share/apparmor/extra-profiles/bwrap-userns-restrict");
     expect(workflow).toContain("profile bwrap /usr/bin/bwrap flags=(attach_disconnected)");
     expect(workflow).toContain("audit deny capability");
     expect(workflow).toContain("sudo apparmor_parser --replace");
-    expect(workflow).not.toContain(
-      "sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0",
-    );
+    expect(workflow).not.toContain("sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0");
     expect(workflow).toContain("/usr/bin/bwrap --unshare-all --unshare-user");
     expect(workflow).toContain("--disable-userns --assert-userns-disabled");
     expect(workflow).toContain("--ro-bind-try /lib64 /lib64");
