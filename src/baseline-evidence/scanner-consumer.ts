@@ -156,7 +156,10 @@ function scannerAnalyzerVersions(
   return Object.freeze(versions);
 }
 
-function normalizeScannerSarifMounts(raw: Buffer): string {
+function normalizeScannerSarifForSourceComparison(
+  detector: TrustDetectorName,
+  raw: Buffer,
+): string {
   let value: unknown;
   try {
     value = JSON.parse(raw.toString("utf8"));
@@ -170,10 +173,34 @@ function normalizeScannerSarifMounts(raw: Buffer): string {
   if (!Array.isArray(runs)) throw new Error("Scanner baseline SARIF annex has no runs array");
   for (const run of runs) {
     if (typeof run !== "object" || run === null || Array.isArray(run)) continue;
+    if (detector === "cisco") {
+      const invocations = (run as { invocations?: unknown }).invocations;
+      if (Array.isArray(invocations)) {
+        for (const invocation of invocations) {
+          if (typeof invocation !== "object" || invocation === null || Array.isArray(invocation))
+            continue;
+          const stableInvocation = invocation as Record<string, unknown>;
+          delete stableInvocation.startTimeUtc;
+          delete stableInvocation.endTimeUtc;
+        }
+      }
+    }
     const results = (run as { results?: unknown }).results;
     if (!Array.isArray(results)) continue;
     for (const result of results) {
       if (typeof result !== "object" || result === null || Array.isArray(result)) continue;
+      if (detector === "skillspector") {
+        const properties = (result as { properties?: unknown }).properties;
+        if (typeof properties === "object" && properties !== null && !Array.isArray(properties)) {
+          const holder = properties as { findingId?: unknown };
+          if (
+            typeof holder.findingId === "string" &&
+            /^finding-[0-9a-f]{32}$/.test(holder.findingId)
+          ) {
+            delete holder.findingId;
+          }
+        }
+      }
       const locations = (result as { locations?: unknown }).locations;
       if (!Array.isArray(locations)) continue;
       for (const location of locations) {
@@ -206,7 +233,8 @@ function scannerSarif(
     const bytes = artifacts.get(observation.annex.path);
     if (bytes === undefined)
       throw new Error(`Scanner baseline annex is missing: ${observation.analyzer}`);
-    sarif[observation.analyzer as TrustDetectorName] = normalizeScannerSarifMounts(bytes);
+    const detector = observation.analyzer as TrustDetectorName;
+    sarif[detector] = normalizeScannerSarifForSourceComparison(detector, bytes);
   }
   return Object.freeze(sarif);
 }

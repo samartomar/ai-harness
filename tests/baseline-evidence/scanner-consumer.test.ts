@@ -93,6 +93,7 @@ function largeSourceFixture() {
 function buildResult(
   request: BaselineVetRequestV1,
   overrides: Partial<Record<ScannerBaselineAnalyzer, string>> = {},
+  annexOverrides: Partial<Record<ScannerBaselineAnalyzer, unknown>> = {},
 ): BaselineVetBatchResultV1 {
   const analyzers = [
     ...new Set(request.components.flatMap((component) => component.analyzers)),
@@ -106,10 +107,10 @@ function buildResult(
               sourceTreeSha256: request.source.treeSha256,
               files: [],
             }
-          : {
+          : (annexOverrides[analyzer] ?? {
               version: "2.1.0",
               runs: [{ tool: { driver: { name: analyzer } }, results: [] }],
-            },
+            }),
       ),
       "utf8",
     );
@@ -238,6 +239,92 @@ describe("Core Scanner baseline consumer", () => {
       expected,
     });
     expect(evidence.components).toHaveLength(SCANNER_BASELINE_COMPONENT_BATCH_LIMIT + 1);
+  }, 15_000);
+
+  it("accepts only known volatile analyzer fields across signed source-wide batches", async () => {
+    const { root, catalog } = largeSourceFixture();
+    const requests = createCoreBaselineVetRequests(root, catalog);
+    const keys = generateKeyPairSync("ed25519");
+    const keyId = ed25519KeyIdV2(keys.publicKey);
+    const signer = { identity: "fixture-batch-scanner", class: "test-ephemeral" as const, keyId };
+    const expected = { now: "2026-08-31T05:30:00.000Z", signer };
+    const batches = (changedMessage = false) =>
+      requests.map((request, index) => {
+        const suffix = String(index + 1).repeat(32);
+        const result = buildResult(
+          request,
+          {},
+          {
+            skillspector: {
+              version: "2.1.0",
+              runs: [
+                {
+                  tool: { driver: { name: "skillspector" } },
+                  results: [
+                    {
+                      ruleId: "skillspector.future-rule",
+                      message: { text: changedMessage && index === 1 ? "changed" : "stable" },
+                      properties: { findingId: `finding-${suffix}` },
+                    },
+                  ],
+                },
+              ],
+            },
+            cisco: {
+              version: "2.1.0",
+              runs: [
+                {
+                  tool: { driver: { name: "cisco" } },
+                  invocations: [
+                    {
+                      executionSuccessful: true,
+                      startTimeUtc: `2026-08-31T05:0${index}:00Z`,
+                      endTimeUtc: `2026-08-31T05:0${index}:30Z`,
+                    },
+                  ],
+                  results: [],
+                },
+              ],
+            },
+          },
+        );
+        const signed = signBaselineVetBundleV1({
+          request,
+          result,
+          signer: { ...signer, privateKey: keys.privateKey },
+          claims: {
+            signedAt: "2026-08-31T05:00:00.000Z",
+            expiresAt: "2026-08-31T06:00:00.000Z",
+          },
+        });
+        return {
+          request,
+          result,
+          envelope: parseBaselineVetAttestationEnvelopeV1Json(
+            canonicalBaselineVetAttestationEnvelopeV1Bytes(signed).toString("utf8"),
+          ),
+        };
+      });
+
+    await expect(
+      consumeVerifiedScannerBaselineBatches({
+        sourceRoot: root,
+        catalog,
+        batches: batches(),
+        roots: [{ ...signer, publicKey: keys.publicKey }],
+        expected,
+      }),
+    ).resolves.toMatchObject({ id: catalog.id });
+
+    await expect(
+      consumeVerifiedScannerBaselineBatches({
+        sourceRoot: root,
+        catalog,
+        batches: batches(true),
+        roots: [{ ...signer, publicKey: keys.publicKey }],
+        expected,
+      }),
+    ).rejects.toThrow(/batches disagree on skillspector annex bytes/);
   }, 15_000);
 
   it("authors the exact fixed Scanner profile and consumes signed annexes without executing analyzers", async () => {

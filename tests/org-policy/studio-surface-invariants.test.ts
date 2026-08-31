@@ -1,10 +1,19 @@
 import { type Document, type Element, Window } from "happy-dom";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { PolicyStudioModel } from "../../src/org-policy/studio-model.js";
 import { policyStudioModel } from "../../src/org-policy/studio-model.js";
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
 
 const model = policyStudioModel();
+const openWindows = new Set<Window>();
+
+afterEach(() => {
+  for (const window of openWindows) {
+    if (!window.closed) window.close();
+  }
+  openWindows.clear();
+});
+
 function studio(studioModel: PolicyStudioModel = model): Window {
   const window = new Window({ url: "http://localhost/" });
   const html = policyStudioHtml(studioModel);
@@ -14,6 +23,7 @@ function studio(studioModel: PolicyStudioModel = model): Window {
   const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/gi)].map((match) => match[1]);
   if (scripts.length === 0) throw new Error("expected generated workbench script");
   window.eval(scripts.join("\n"));
+  openWindows.add(window);
   return window;
 }
 
@@ -257,6 +267,20 @@ describe("policy studio surface invariants", () => {
 
   it("narrates authored selection without inventing a target-evaluated state", () => {
     const baseline = studio();
+    const baselineNarration = new Map<string, string>();
+    for (const item of [...model.catalog.mcp, ...model.catalog.hooks]) {
+      baselineNarration.set(item.id, detailNarration(baseline, item.id));
+    }
+    for (const framework of model.catalog.frameworks) {
+      for (const asset of framework.assets.filter(
+        (candidate) => !["lang", "framework", "capability", "module"].includes(candidate.kind),
+      )) {
+        const key = frameworkDetailKey(framework.id, asset.kind, asset.id);
+        baselineNarration.set(key, detailNarration(baseline, key));
+      }
+    }
+    baseline.close();
+
     const selectedEcc = studio();
     choosePreset(selectedEcc, "vibe");
     for (const item of model.catalog.mcp.filter(
@@ -272,7 +296,7 @@ describe("policy studio surface invariants", () => {
     for (const item of [...model.catalog.mcp, ...model.catalog.hooks]) {
       expectDetailNarrationToVary(
         item.id,
-        detailNarration(baseline, item.id),
+        baselineNarration.get(item.id) ?? "",
         detailNarration(selectedEcc, item.id),
       );
     }
@@ -284,10 +308,11 @@ describe("policy studio surface invariants", () => {
       const key = frameworkDetailKey(ecc.id, asset.kind, asset.id);
       expectDetailNarrationToVary(
         key,
-        detailNarration(baseline, key),
+        baselineNarration.get(key) ?? "",
         detailNarration(selectedEcc, key),
       );
     }
+    selectedEcc.close();
 
     const superpowers = model.catalog.frameworks.find(
       (framework) => framework.id === "superpowers",
@@ -298,10 +323,11 @@ describe("policy studio surface invariants", () => {
       const key = frameworkDetailKey(superpowers.id, asset.kind, asset.id);
       expectDetailNarrationToVary(
         key,
-        detailNarration(baseline, key),
+        baselineNarration.get(key) ?? "",
         detailNarration(selectedSuperpowers, key),
       );
     }
+    selectedSuperpowers.close();
   }, 15_000);
 
   it("narrates the requested and effective count at every export", () => {
