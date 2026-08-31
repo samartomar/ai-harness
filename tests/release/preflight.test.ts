@@ -128,6 +128,34 @@ describe("runPreflight — clean cut", () => {
     expect(m.nextVersion).toBe("2.6.0");
   });
 
+  it("accepts semver:none without allowing it to inflate the release bump", () => {
+    const data = cleanData();
+    data.mergedPrs = [pr(1, "docs: clarify install guidance", ["semver:none"]), pr(2, "fix: a")];
+    data.commitSubjects = ["docs: clarify install guidance (#1)", "fix: a (#2)"];
+    data.milestoneItems = [...data.mergedPrs.map(mergedItem), tracker()];
+    data.declaredIntent = "patch";
+    const m = runPreflight(data);
+
+    expect(m.ok).toBe(true);
+    expect(m.computedBump).toBe("patch");
+  });
+
+  it("refuses a release cut containing only semver:none changes", () => {
+    const data = cleanData();
+    data.mergedPrs = [pr(1, "docs: clarify install guidance", ["semver:none"])];
+    data.commitSubjects = ["docs: clarify install guidance (#1)"];
+    data.milestoneItems = [...data.mergedPrs.map(mergedItem), tracker()];
+    data.declaredIntent = "patch";
+    const m = runPreflight(data);
+
+    expect(m.ok).toBe(false);
+    expect(m.computedBump).toBeUndefined();
+    expect(m.findings).toContainEqual({
+      code: "no-releasable-change",
+      detail: "the cut contains no patch, minor, or major package change",
+    });
+  });
+
   it("records 0.1.0 as the one-time Core package-line bootstrap after legacy v6.1.0", () => {
     const data = cleanData();
     const manifest = runPreflight({

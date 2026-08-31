@@ -10,6 +10,10 @@
   file-disjoint small units into one PR labeled with the max `semver:*` of its
   parts. Keep a change separate only when its blast radius is broad (a seam
   many files import) and a clean one-commit revert matters.
+- **Do not equate merge count with release count.** Every PR carries exactly one
+  `semver:none|patch|minor|major` label. `semver:none` changes ride the open train
+  and cannot start a package cut. Package-bearing work accumulates into one coherent
+  release PR; an immediate hotfix train is reserved for material installed-user harm.
 - **Run apply-mode `aih` in a throwaway tree, never the repo root.** Apply runs
   emit files and rewrite `.gitignore`; a root run once swept thousands of
   generated files into a PR. Stage explicit paths, never `git add -A`; never
@@ -25,5 +29,8 @@
 - **Write for CodeQL up front** (it's a required check): guarded file reads,
   linear-time regexes on externally-influenced input — rather than fixing
   findings after the fact.
-- **Publishing is OIDC-only** and pauses at a human-approved environment gate;
-  never re-tag a published version — fix forward. Full runbook: `RELEASING.md`.
+- **Publishing is OIDC-only** and pauses at a human-approved environment gate.
+  The tag workflow publishes immutable candidates only under npm `next`; public
+  installed acceptance and separate owner authorization precede promotion of the same
+  bytes to `latest`. Never re-tag a published version — fix forward. Full runbook:
+  `RELEASING.md`.
