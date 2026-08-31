@@ -1220,7 +1220,7 @@ function extractTar(buffer, outRoot) {
     if (!targetStats.isFile() || targetStats.isSymbolicLink() || targetStats.nlink !== 1) {
       fail("refusing tar symlink without a regular in-tree target: " + link.fullName + " -> " + link.linkName);
     }
-    ensureContained(outRoot, fs.realpathSync(link.resolvedTarget));
+    ensureContained(fs.realpathSync(outRoot), fs.realpathSync(link.resolvedTarget));
     mkdirOwner(path.dirname(link.target));
     writeFileOwner(link.target, fs.readFileSync(link.resolvedTarget));
   }
