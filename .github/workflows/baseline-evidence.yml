@@ -109,15 +109,19 @@ jobs:
           npm run baseline:request -- \
             --catalog "${{ matrix.id }}" \
             --source .baseline-source \
-            --output "scanner-refresh/${{ matrix.id }}.request.json"
+            --output "scanner-refresh/${{ matrix.id }}.requests"
       - name: Execute the public Scanner baseline
         shell: bash
         run: |
           set -euo pipefail
-          npm run baseline:vet -- \
-            --request "scanner-refresh/${{ matrix.id }}.request.json" \
-            --source .baseline-source \
-            --output "scanner-refresh/${{ matrix.id }}.bundle"
+          mkdir "scanner-refresh/${{ matrix.id }}.bundles"
+          for request in "scanner-refresh/${{ matrix.id }}.requests"/*.request.json; do
+            batch="$(basename "$request" .request.json)"
+            npm run baseline:vet -- \
+              --request "$request" \
+              --source .baseline-source \
+              --output "scanner-refresh/${{ matrix.id }}.bundles/${batch}.bundle"
+          done
       - name: Upload unsigned Scanner observation
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -173,13 +177,17 @@ jobs:
             '{now:$now,signer:{identity:"github-actions:baseline-evidence",class:"test-ephemeral",keyId:$key}}' \
             > scanner-refresh/expected.json
           for source in ecc superpowers; do
-            node "$scanner" baseline-sign \
-              --request "scanner-refresh/${source}.request.json" \
-              --bundle "scanner-refresh/${source}.bundle" \
-              --signer scanner-refresh/signer.json \
-              --private-key .signer/private.pem \
-              --claims scanner-refresh/claims.json \
-              --output "scanner-refresh/${source}.evidence.json"
+            mkdir "scanner-refresh/${source}.evidence"
+            for request in "scanner-refresh/${source}.requests"/*.request.json; do
+              batch="$(basename "$request" .request.json)"
+              node "$scanner" baseline-sign \
+                --request "$request" \
+                --bundle "scanner-refresh/${source}.bundles/${batch}.bundle" \
+                --signer scanner-refresh/signer.json \
+                --private-key .signer/private.pem \
+                --claims scanner-refresh/claims.json \
+                --output "scanner-refresh/${source}.evidence/${batch}.evidence.json"
+            done
           done
           shred -u .signer/private.pem || rm -f .signer/private.pem
           rm -f .signer/public.der
@@ -234,9 +242,9 @@ jobs:
             npm run baseline:consume -- \
               --catalog "$source" \
               --source ".baseline-sources/${source}" \
-              --request "scanner-refresh/${source}.request.json" \
-              --bundle "scanner-refresh/${source}.bundle" \
-              --evidence "scanner-refresh/${source}.evidence.json" \
+              --requests "scanner-refresh/${source}.requests" \
+              --bundles "scanner-refresh/${source}.bundles" \
+              --evidence "scanner-refresh/${source}.evidence" \
               --roots scanner-refresh/roots.json \
               --expected scanner-refresh/expected.json \
               --output "candidate/${source}.json"

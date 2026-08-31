@@ -45,16 +45,32 @@ export interface VerifiedScannerBaselineInput {
   }>[];
 }
 
+export interface VerifiedScannerBaselineBatchInput {
+  sourceRoot: string;
+  catalog: BaselineCatalog;
+  batches: readonly Readonly<{
+    request: BaselineVetRequestV1;
+    result: BaselineVetBatchResultV1;
+    envelope: unknown;
+  }>[];
+  roots: readonly BaselineVetTrustRootV1[];
+  expected: VerifiedScannerBaselineInput["expected"];
+  seenEvidenceDigests?: readonly string[];
+  seenReceiptBindings?: VerifiedScannerBaselineInput["seenReceiptBindings"];
+}
+
+export const SCANNER_BASELINE_COMPONENT_BATCH_LIMIT = 100;
+
 function requestAnalyzers(skillContent: boolean): readonly ScannerBaselineAnalyzer[] {
   return skillContent
     ? SCANNER_ANALYZER_ORDER
     : SCANNER_ANALYZER_ORDER.filter((name) => name !== "cisco");
 }
 
-/** Author the canonical Scanner request from Core's exact catalog contract. */
-export function createCoreBaselineVetRequest(
+function createRequest(
   sourceRoot: string,
   catalog: BaselineCatalog,
+  components: BaselineCatalog["components"],
 ): BaselineVetRequestV1 {
   const source = hashSourceTree(sourceRoot);
   return createBaselineVetRequestV1({
@@ -67,7 +83,7 @@ export function createCoreBaselineVetRequest(
       pinnedCommit: catalog.pinnedSha,
       treeSha256: source.treeSha256,
     },
-    components: catalog.components.map((component) => ({
+    components: components.map((component) => ({
       id: component.id,
       content: component.skillContent === true ? "skill" : "general",
       paths: component.paths,
@@ -77,15 +93,47 @@ export function createCoreBaselineVetRequest(
   });
 }
 
+/** Author deterministic, bounded Scanner requests from Core's exact catalog. */
+export function createCoreBaselineVetRequests(
+  sourceRoot: string,
+  catalog: BaselineCatalog,
+): readonly BaselineVetRequestV1[] {
+  const requests: BaselineVetRequestV1[] = [];
+  for (let offset = 0; offset < catalog.components.length; ) {
+    const next = offset + SCANNER_BASELINE_COMPONENT_BATCH_LIMIT;
+    requests.push(createRequest(sourceRoot, catalog, catalog.components.slice(offset, next)));
+    offset = next;
+  }
+  return Object.freeze(requests);
+}
+
+/** Convenience boundary for catalogs that fit one Scanner request. */
+export function createCoreBaselineVetRequest(
+  sourceRoot: string,
+  catalog: BaselineCatalog,
+): BaselineVetRequestV1 {
+  const requests = createCoreBaselineVetRequests(sourceRoot, catalog);
+  if (requests.length !== 1) {
+    throw new Error(
+      `Core catalog ${catalog.id} requires ${requests.length} bounded Scanner requests`,
+    );
+  }
+  return requests[0] as BaselineVetRequestV1;
+}
+
 function assertExactRequest(
   sourceRoot: string,
   catalog: BaselineCatalog,
   request: BaselineVetRequestV1,
+  batchIndex = 0,
 ): void {
-  const expected = createCoreBaselineVetRequest(sourceRoot, catalog);
+  const expected = createCoreBaselineVetRequests(sourceRoot, catalog)[batchIndex];
+  if (expected === undefined) {
+    throw new Error(`Scanner baseline request has no Core catalog batch ${batchIndex + 1}`);
+  }
   if (request.requestSha256 !== expected.requestSha256) {
     throw new Error(
-      `Scanner baseline request does not match Core catalog ${catalog.id} at ${catalog.pinnedSha}`,
+      `Scanner baseline request batch ${batchIndex + 1} does not match Core catalog ${catalog.id} at ${catalog.pinnedSha}`,
     );
   }
 }
@@ -171,18 +219,56 @@ function scannerSarif(
 export async function consumeVerifiedScannerBaseline(
   input: VerifiedScannerBaselineInput,
 ): Promise<BaselineSourceEvidence> {
-  assertExactRequest(input.sourceRoot, input.catalog, input.request);
-  verifyBaselineVetAttestationV1({
-    envelope: input.envelope,
-    request: input.request,
-    result: input.result,
+  return consumeVerifiedScannerBaselineBatches({
+    sourceRoot: input.sourceRoot,
+    catalog: input.catalog,
+    batches: [{ request: input.request, result: input.result, envelope: input.envelope }],
     roots: input.roots,
     expected: input.expected,
-    seenEvidenceDigests: input.seenEvidenceDigests ?? [],
-    seenReceiptBindings: input.seenReceiptBindings ?? [],
+    seenEvidenceDigests: input.seenEvidenceDigests,
+    seenReceiptBindings: input.seenReceiptBindings,
   });
-  const versions = scannerAnalyzerVersions(input.result);
-  const precomputedDetectorSarif = scannerSarif(input.result);
+}
+
+/** Verify every bounded Scanner batch before interpreting their annex union. */
+export async function consumeVerifiedScannerBaselineBatches(
+  input: VerifiedScannerBaselineBatchInput,
+): Promise<BaselineSourceEvidence> {
+  const expectedRequests = createCoreBaselineVetRequests(input.sourceRoot, input.catalog);
+  if (input.batches.length !== expectedRequests.length) {
+    throw new Error(
+      `Scanner baseline batch count ${input.batches.length} does not match Core catalog ${expectedRequests.length}`,
+    );
+  }
+  const versions: Record<string, string> = {};
+  const precomputedDetectorSarif: Partial<Record<TrustDetectorName, string>> = {};
+  for (const [index, batch] of input.batches.entries()) {
+    assertExactRequest(input.sourceRoot, input.catalog, batch.request, index);
+    verifyBaselineVetAttestationV1({
+      envelope: batch.envelope,
+      request: batch.request,
+      result: batch.result,
+      roots: input.roots,
+      expected: input.expected,
+      seenEvidenceDigests: input.seenEvidenceDigests ?? [],
+      seenReceiptBindings: input.seenReceiptBindings ?? [],
+    });
+    for (const [name, version] of Object.entries(scannerAnalyzerVersions(batch.result))) {
+      const prior = versions[name];
+      if (prior !== undefined && prior !== version) {
+        throw new Error(`Scanner baseline batches disagree on analyzer identity ${name}`);
+      }
+      versions[name] = version;
+    }
+    for (const [name, sarif] of Object.entries(scannerSarif(batch.result))) {
+      const detector = name as TrustDetectorName;
+      const prior = precomputedDetectorSarif[detector];
+      if (prior !== undefined && prior !== sarif) {
+        throw new Error(`Scanner baseline batches disagree on ${detector} annex bytes`);
+      }
+      precomputedDetectorSarif[detector] = sarif;
+    }
+  }
   const detectors = EXTERNAL_SCANNER_ANALYZERS.filter(
     (name) => precomputedDetectorSarif[name] !== undefined,
   );

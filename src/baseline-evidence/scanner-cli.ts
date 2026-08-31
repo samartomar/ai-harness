@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { createPublicKey } from "node:crypto";
-import { readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { lstatSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import {
   canonicalBaselineVetRequestV1Bytes,
   parseBaselineVetAttestationEnvelopeV1Json,
@@ -13,8 +13,8 @@ import { hermeticGitEnv } from "../internals/git-env.js";
 import { baselineCatalogById } from "./catalogs.js";
 import { generateAuthorizedEccInstallPreview } from "./ecc-preview-boundary.js";
 import {
-  consumeVerifiedScannerBaseline,
-  createCoreBaselineVetRequest,
+  consumeVerifiedScannerBaselineBatches,
+  createCoreBaselineVetRequests,
 } from "./scanner-consumer.js";
 import {
   type BaselineSourceEvidence,
@@ -120,39 +120,79 @@ function writeJson(path: string, value: unknown): void {
   });
 }
 
+function newDirectory(path: string): string {
+  const resolved = resolve(path);
+  mkdirSync(resolved, { recursive: false, mode: 0o700 });
+  return resolved;
+}
+
+function existingDirectory(path: string, label: string): string {
+  const resolved = resolve(path);
+  const stat = lstatSync(resolved);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) fail(`${label} must be a real directory`);
+  return resolved;
+}
+
+function batchNames(path: string, suffix: string, label: string): readonly string[] {
+  const root = existingDirectory(path, label);
+  const names = readdirSync(root).sort();
+  if (names.length === 0) fail(`${label} is empty`);
+  for (const [index, name] of names.entries()) {
+    const expected = `batch-${String(index + 1).padStart(3, "0")}${suffix}`;
+    if (name !== expected) fail(`${label} must contain contiguous canonical batch names`);
+    const stat = lstatSync(join(root, name));
+    const validShape =
+      suffix === ".bundle"
+        ? stat.isDirectory() && !stat.isSymbolicLink()
+        : stat.isFile() && !stat.isSymbolicLink() && stat.nlink === 1;
+    if (!validShape) fail(`${label} contains an unsafe batch entry`);
+  }
+  return names;
+}
+
 function request(args: readonly string[]): void {
   const catalogId = flag(args, "--catalog");
   const sourceRoot = resolve(flag(args, "--source"));
-  const output = resolve(flag(args, "--output"));
+  const output = newDirectory(flag(args, "--output"));
   const catalog = assertCheckout(sourceRoot, catalogId);
-  const authored = createCoreBaselineVetRequest(sourceRoot, catalog);
-  writeFileSync(output, canonicalBaselineVetRequestV1Bytes(authored), { flag: "wx" });
-  process.stdout.write(`${authored.requestSha256}\n`);
+  const authored = createCoreBaselineVetRequests(sourceRoot, catalog);
+  for (const [index, batch] of authored.entries()) {
+    const name = `batch-${String(index + 1).padStart(3, "0")}.request.json`;
+    writeFileSync(join(output, name), canonicalBaselineVetRequestV1Bytes(batch), { flag: "wx" });
+  }
+  process.stdout.write(`authored ${authored.length} bounded Scanner request(s)\n`);
 }
 
 async function consume(args: readonly string[]): Promise<void> {
   const catalogId = flag(args, "--catalog");
   const sourceRoot = resolve(flag(args, "--source"));
   const catalog = assertCheckout(sourceRoot, catalogId);
-  const requestValue = parseBaselineVetRequestV1Json(
-    readFileSync(resolve(flag(args, "--request")), "utf8"),
-  );
-  const result = readBaselineVetBundleV1({
-    bundleDirectory: resolve(flag(args, "--bundle")),
-  });
-  const envelope = parseBaselineVetAttestationEnvelopeV1Json(
-    readFileSync(resolve(flag(args, "--evidence")), "utf8"),
-  );
+  const requestsRoot = existingDirectory(flag(args, "--requests"), "request batches");
+  const bundlesRoot = existingDirectory(flag(args, "--bundles"), "bundle batches");
+  const evidenceRoot = existingDirectory(flag(args, "--evidence"), "evidence batches");
+  const requestNames = batchNames(requestsRoot, ".request.json", "request batches");
+  const bundleNames = batchNames(bundlesRoot, ".bundle", "bundle batches");
+  const evidenceNames = batchNames(evidenceRoot, ".evidence.json", "evidence batches");
+  if (requestNames.length !== bundleNames.length || requestNames.length !== evidenceNames.length) {
+    fail("request, bundle, and evidence batch counts differ");
+  }
+  const batches = requestNames.map((requestName, index) => ({
+    request: parseBaselineVetRequestV1Json(readFileSync(join(requestsRoot, requestName), "utf8")),
+    result: readBaselineVetBundleV1({
+      bundleDirectory: join(bundlesRoot, bundleNames[index] ?? ""),
+    }),
+    envelope: parseBaselineVetAttestationEnvelopeV1Json(
+      readFileSync(join(evidenceRoot, evidenceNames[index] ?? ""), "utf8"),
+    ),
+  }));
   const expected = expectedWire.parse(readJson(flag(args, "--expected")));
   const seenPath = optionalFlag(args, "--seen");
   const seen =
     seenPath === undefined ? { digests: [], receipts: [] } : replayWire.parse(readJson(seenPath));
-  const evidence = await consumeVerifiedScannerBaseline({
+  const evidence = await consumeVerifiedScannerBaselineBatches({
     sourceRoot,
     catalog,
-    request: requestValue,
-    result,
-    envelope,
+    batches,
     roots: roots(flag(args, "--roots")),
     expected,
     seenEvidenceDigests: seen.digests,

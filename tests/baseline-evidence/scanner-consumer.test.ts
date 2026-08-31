@@ -14,7 +14,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import { defineBaselineCatalog } from "../../src/baseline-evidence/catalog.js";
 import {
   consumeVerifiedScannerBaseline,
+  consumeVerifiedScannerBaselineBatches,
   createCoreBaselineVetRequest,
+  createCoreBaselineVetRequests,
+  SCANNER_BASELINE_COMPONENT_BATCH_LIMIT,
 } from "../../src/baseline-evidence/scanner-consumer.js";
 import {
   SCANNER_BASELINE_ANALYZER_VERSIONS,
@@ -61,6 +64,28 @@ function sourceFixture() {
       { id: "rules", paths: ["rules"] },
       { id: "skill:demo", paths: ["skills/demo"], skillContent: true },
     ],
+  });
+  return { root, catalog };
+}
+
+function largeSourceFixture() {
+  const root = mkdtempSync(join(tmpdir(), "aih-core-scanner-batches-"));
+  roots.push(root);
+  const components = Array.from(
+    { length: SCANNER_BASELINE_COMPONENT_BATCH_LIMIT + 1 },
+    (_, index) => {
+      const id = `component-${String(index + 1).padStart(3, "0")}`;
+      mkdirSync(join(root, id), { recursive: true });
+      writeFileSync(join(root, id, "README.md"), `# ${id}\n`, "utf8");
+      return { id, paths: [id] };
+    },
+  );
+  const catalog = defineBaselineCatalog({
+    id: "large-fixture",
+    owner: "example",
+    repo: "large-fixture",
+    pinnedSha: "b".repeat(40),
+    components,
   });
   return { root, catalog };
 }
@@ -164,6 +189,57 @@ function signedFixture(request: BaselineVetRequestV1, result: BaselineVetBatchRe
 }
 
 describe("Core Scanner baseline consumer", () => {
+  it("batches more than 100 components and requires every signed batch", async () => {
+    const { root, catalog } = largeSourceFixture();
+    const requests = createCoreBaselineVetRequests(root, catalog);
+    expect(requests.map((request) => request.components.length)).toEqual([100, 1]);
+    expect(requests[0]?.source).toEqual(requests[1]?.source);
+    expect(() => createCoreBaselineVetRequest(root, catalog)).toThrow(/requires 2 bounded/);
+
+    const keys = generateKeyPairSync("ed25519");
+    const keyId = ed25519KeyIdV2(keys.publicKey);
+    const signer = { identity: "fixture-batch-scanner", class: "test-ephemeral" as const, keyId };
+    const expected = { now: "2026-08-31T05:30:00.000Z", signer };
+    const batches = requests.map((request) => {
+      const result = buildResult(request);
+      const signed = signBaselineVetBundleV1({
+        request,
+        result,
+        signer: { ...signer, privateKey: keys.privateKey },
+        claims: {
+          signedAt: "2026-08-31T05:00:00.000Z",
+          expiresAt: "2026-08-31T06:00:00.000Z",
+        },
+      });
+      return {
+        request,
+        result,
+        envelope: parseBaselineVetAttestationEnvelopeV1Json(
+          canonicalBaselineVetAttestationEnvelopeV1Bytes(signed).toString("utf8"),
+        ),
+      };
+    });
+
+    await expect(
+      consumeVerifiedScannerBaselineBatches({
+        sourceRoot: root,
+        catalog,
+        batches: batches.slice(0, 1),
+        roots: [{ ...signer, publicKey: keys.publicKey }],
+        expected,
+      }),
+    ).rejects.toThrow(/batch count 1 does not match Core catalog 2/);
+
+    const evidence = await consumeVerifiedScannerBaselineBatches({
+      sourceRoot: root,
+      catalog,
+      batches,
+      roots: [{ ...signer, publicKey: keys.publicKey }],
+      expected,
+    });
+    expect(evidence.components).toHaveLength(SCANNER_BASELINE_COMPONENT_BATCH_LIMIT + 1);
+  }, 15_000);
+
   it("authors the exact fixed Scanner profile and consumes signed annexes without executing analyzers", async () => {
     const { root, catalog } = sourceFixture();
     const request = createCoreBaselineVetRequest(root, catalog);
