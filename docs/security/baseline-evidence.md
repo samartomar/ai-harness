@@ -407,7 +407,7 @@ npm run baseline:check
 
 An intentional refresh is the manual `baseline-evidence` workflow with
 `refresh=true`. Core authors canonical requests for both exact checkouts. The
-public `@aihq/scan@0.2.1` package then runs the fixed `aih-baseline-v1` analyzer
+public `@aihq/scan@0.2.2` package then runs the fixed `aih-baseline-v1` analyzer
 set and emits detached bundles. A separate job signs those bytes with
 short-lived test custody; the signature proves integrity and confers no approval,
 organization authority, or provenance. Core finally verifies the requests,

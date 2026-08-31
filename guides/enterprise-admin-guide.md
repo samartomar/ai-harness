@@ -207,11 +207,11 @@ annex files. Runtime/configuration substitution, unknown fields, duplicate IDs, 
 references, unsupported platforms, cross-detector evidence, source/request drift, and final
 caller-registration drift fail closed.
 
-`@aihq/scan@0.2.1` is public with matching npm, GitHub Release, and provenance
+`@aihq/scan@0.2.2` is public with matching npm, GitHub Release, and provenance
 evidence. Install that exact version into a disposable consumer:
 
 ```bash
-npm install --save-dev @aihq/scan@0.2.1
+npm install --save-dev @aihq/scan@0.2.2
 npx --no-install aih-scan capture --request <capture-request.json> --output <new-bundle>
 npx --no-install aih-scan sign --bundle <bundle> --signer <signer.json> --private-key <key.pem> --claims <claims.json> --output <evidence.json>
 npx --no-install aih-scan verify --evidence <evidence.json> --bundle <bundle> --roots <independent-roots.json> --expected <expected-claims.json>
@@ -394,7 +394,7 @@ stay non-effective. After an external version or source change, run
 append the new audit record.
 
 Scanner can produce attributable evidence for a catalog-absent exact detector through its one
-code-owned adapter. Its source repository and exact `@aihq/scan@0.2.1` npm package are public.
+code-owned adapter. Its source repository and exact `@aihq/scan@0.2.2` npm package are public.
 Observe npm package provenance and GitHub Release evidence independently; success at one boundary
 does not prove the other.
 The packed Core proof uses the packed CLI to generate the Workbench, drives its structured fields and
