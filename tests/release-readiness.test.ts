@@ -450,7 +450,7 @@ describe("release readiness metadata", () => {
     ] as const) {
       expect(text, path).not.toContain("pending `0.1.1` Core package");
     }
-    expect(adminGuide).toContain("@aihq/scan@0.1.4");
+    expect(adminGuide).toContain("@aihq/scan@0.2.1");
     expect(adminGuide).not.toContain("@aihq/scan@0.1.3");
 
     for (const path of ["SUPPORT.md", "docs/commands.md", "guides/README.md"]) {

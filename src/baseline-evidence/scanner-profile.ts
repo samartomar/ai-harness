@@ -1,5 +1,5 @@
 /**
- * Exact analyzer identities emitted by the public @aihq/scan 0.2.0
+ * Exact analyzer identities emitted by the public @aihq/scan 0.2.1
  * `aih-baseline-v1` execution profile.
  *
  * These values are a consumer-side allow-list, not facts copied from an
