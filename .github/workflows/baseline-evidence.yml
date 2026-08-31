@@ -109,14 +109,29 @@ jobs:
           test "$(id -u)" -ne 0
           test -x /usr/bin/docker
           test -x /usr/bin/bwrap
+          test -x /usr/bin/unshare
           test -x /usr/local/bin/uv
           test -x /usr/bin/python3.13
           /usr/bin/python3.13 -c 'import sys; assert sys.version_info[:2] == (3, 13)'
+          sandbox_state="$(/usr/bin/bwrap --unshare-all --unshare-user --die-with-parent --as-pid-1 \
+            --disable-userns --assert-userns-disabled --clearenv \
+            --ro-bind /usr /usr --ro-bind-try /bin /bin \
+            --ro-bind-try /lib /lib --ro-bind-try /lib64 /lib64 \
+            --proc /proc --dev /dev /bin/sh -c \
+            '/usr/bin/cat /proc/self/attr/current; /usr/bin/grep "^CapEff:" /proc/self/status')"
+          if ! grep -Fq 'bwrap//&unpriv_bwrap' <<<"$sandbox_state"; then
+            echo "sandbox child did not enter unpriv_bwrap" >&2
+            exit 1
+          fi
+          if ! grep -Eq '^CapEff:[[:space:]]*0+$' <<<"$sandbox_state"; then
+            echo "sandbox child retained effective capabilities" >&2
+            exit 1
+          fi
           /usr/bin/bwrap --unshare-all --unshare-user --die-with-parent --as-pid-1 \
             --disable-userns --assert-userns-disabled --clearenv \
             --ro-bind /usr /usr --ro-bind-try /bin /bin \
             --ro-bind-try /lib /lib --ro-bind-try /lib64 /lib64 \
-            --proc /proc --dev /dev /usr/bin/true
+            --proc /proc --dev /dev /usr/bin/unshare --help >/dev/null
           if /usr/bin/bwrap --unshare-all --unshare-user --die-with-parent --as-pid-1 \
             --disable-userns --assert-userns-disabled --clearenv \
             --ro-bind /usr /usr --ro-bind-try /bin /bin \

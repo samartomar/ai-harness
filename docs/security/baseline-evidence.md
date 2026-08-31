@@ -419,8 +419,9 @@ The refresh executor runs on a dedicated ephemeral Linux runner. It requires
 Ubuntu's global unprivileged-user-namespace restriction to remain enabled, loads
 the distribution's constrained `bwrap-userns-restrict` AppArmor profile, and
 checks the profile's unprivileged-child capability denial before use. It then
-runs positive containment and negative nested-user-namespace smoke tests before
-any analyzer executes. Scanner and host analyzer processes run as the
+proves the child profile label, zero effective capabilities, positive
+containment, and negative nested-user-namespace behavior before any analyzer
+executes. Scanner and host analyzer processes run as the
 unprivileged runner account. SkillSpector may use container UID 0, but it has no
 network, a read-only root, `no-new-privileges`, and all capabilities dropped
 except `DAC_OVERRIDE`; it receives no host user-namespace permission.

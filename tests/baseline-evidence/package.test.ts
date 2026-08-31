@@ -67,7 +67,10 @@ describe("baseline evidence release payload", () => {
     expect(workflowDocument.errors).toEqual([]);
     const jobs = (
       workflowDocument.toJSON() as {
-        jobs?: Record<string, { steps?: Array<{ if?: unknown; run?: unknown }> }>;
+        jobs?: Record<
+          string,
+          { if?: unknown; steps?: Array<{ if?: unknown; name?: unknown; run?: unknown }> }
+        >;
       }
     ).jobs;
     const requiredSteps = jobs?.["vet-once"]?.steps;
@@ -78,7 +81,24 @@ describe("baseline evidence release payload", () => {
     expect(requiredCommands).not.toContain("setup-uv");
     expect(requiredCommands).not.toContain("docker");
 
-    const refreshCommands = JSON.stringify(jobs?.["refresh-execute"]?.steps);
+    const refreshJob = jobs?.["refresh-execute"];
+    expect(refreshJob?.if).toBe("${{ github.event_name == 'workflow_dispatch' && inputs.refresh }}");
+    const refreshSteps = refreshJob?.steps ?? [];
+    const refreshStepNames = refreshSteps.map((step) => step.name);
+    expect(refreshStepNames).toEqual(
+      expect.arrayContaining([
+        "Bind Scanner's fixed analyzer runtime paths",
+        "Author the exact Core request",
+        "Execute the public Scanner baseline",
+      ]),
+    );
+    expect(refreshStepNames.indexOf("Bind Scanner's fixed analyzer runtime paths")).toBeLessThan(
+      refreshStepNames.indexOf("Author the exact Core request"),
+    );
+    expect(refreshStepNames.indexOf("Author the exact Core request")).toBeLessThan(
+      refreshStepNames.indexOf("Execute the public Scanner baseline"),
+    );
+    const refreshCommands = JSON.stringify(refreshSteps);
     expect(refreshCommands).toContain("npm run baseline:request");
     expect(refreshCommands).toContain("npm run baseline:vet");
     expect(workflow).toContain("npm run baseline:consume");
@@ -124,25 +144,10 @@ describe("baseline evidence release payload", () => {
     expect(workflow).toContain("--disable-userns --assert-userns-disabled");
     expect(workflow).toContain("--ro-bind-try /lib64 /lib64");
     expect(workflow).toContain("nested user namespace unexpectedly available");
-
-    const refreshStart = workflow.indexOf("  refresh-execute:");
-    const refreshEnd = workflow.indexOf("  refresh-sign:");
-    const refresh = workflow.slice(refreshStart, refreshEnd);
-    expect(refreshStart).toBeGreaterThan(-1);
-    expect(refreshEnd).toBeGreaterThan(refreshStart);
-    expect(refresh).toContain(
-      "if: ${{ github.event_name == 'workflow_dispatch' && inputs.refresh }}",
-    );
-    const profileIndex = refresh.indexOf(
-      "/usr/share/apparmor/extra-profiles/bwrap-userns-restrict",
-    );
-    const smokeIndex = refresh.indexOf("/usr/bin/bwrap --unshare-all --unshare-user");
-    const requestIndex = refresh.indexOf("Author the exact Core request");
-    const analyzerIndex = refresh.indexOf("Execute the public Scanner baseline");
-    expect(profileIndex).toBeGreaterThan(-1);
-    expect(smokeIndex).toBeGreaterThan(profileIndex);
-    expect(requestIndex).toBeGreaterThan(smokeIndex);
-    expect(analyzerIndex).toBeGreaterThan(requestIndex);
+    expect(workflow).toContain("sandbox child did not enter unpriv_bwrap");
+    expect(workflow).toContain("sandbox child retained effective capabilities");
+    expect(workflow).toContain("test -x /usr/bin/unshare");
+    expect(workflow).toContain("/usr/bin/unshare --help");
     expect(workflow).toContain("npm run baseline:check");
     expect(workflow).toContain("scanner-baseline-core-candidate");
   });
