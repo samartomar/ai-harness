@@ -5,117 +5,201 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      refresh:
+        description: Run the detached Scanner baseline refresh and produce a Core evidence candidate
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
 
+env:
+  SCANNER_VERSION: 0.2.0
+
 jobs:
-  # The job keeps the name `vet-once` deliberately. It no longer runs the
-  # from-scratch vet, but the name is referenced by required-check
-  # configuration, and renaming it would wedge that list in "expected".
+  # Keep this required-check name stable. Normal Core CI verifies only the
+  # committed evidence contract; analyzer execution belongs to Scanner and is
+  # intentionally available through the explicit refresh path below.
   vet-once:
     runs-on: ubuntu-latest
     steps:
       - name: Check out ai-harness
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      # The from-scratch re-vet used to run here, on every push and on any PR a
-      # path pattern judged relevant. It no longer does, and the reason is that
-      # it could not tell us anything.
-      #
-      # Every input the vet consumes is content-addressed: sources by commit
-      # SHA, SkillSpector by image digest, the scanner environments by
-      # hash-pinned uv.lock, aih-native by a content digest over its own source
-      # closure. Between two runs at an unchanged pin set there is nothing that
-      # can differ except the machine, so repeating the scan did not re-test the
-      # supply chain -- it sampled the runner image. Content-addressed evidence
-      # does not expire: a receipt asserts "these exact bytes, scanned by these
-      # exact analyzers, produced this verdict", and that does not become less
-      # true with time.
-      #
-      # So a green vet now stands until a pin moves, and the moment one moves it
-      # becomes critical. Two cheap checks below decide which of those we are in:
-      # `check:baseline-pins` compares the pin set this build DECLARES against
-      # the pin set the committed lock RECORDED, and `baseline:check` proves the
-      # lock still reproduces from the pinned sources. The expensive
-      # from-scratch run is owned by the vet fleet and happens exactly when the
-      # first check fires -- see docs/security/baseline-evidence.md.
-      #
-      # Because both checks are cheap, the old path-pattern relevance gate is
-      # gone. It existed only to dodge a ~1 h cost, and inferring "did a pin
-      # move" from which files a diff touched was always a proxy for the fact
-      # that `check:baseline-pins` now measures directly.
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
           cache: npm
       - run: npm ci
+      - name: Verify the committed baseline evidence contract
+        run: npm run baseline:check
+      - name: Upload committed baseline evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: baseline-evidence-lock
+          path: |
+            src/baseline-evidence/vendor-lock.json
+            src/baseline-evidence/ecc-install-preview.json
+          if-no-files-found: error
 
-      # Pin currency runs BEFORE any analyzer provisioning: if the committed
-      # evidence describes a different pin set, nothing downstream can be
-      # trusted, and failing here explains that in one cheap step.
-      - name: Fail closed if the committed evidence is not current for the declared pins
-        run: npm run check:baseline-pins
-
-      - name: Set up scanner Python
+  # The two exact source scans run independently and in parallel. Core authors
+  # each canonical request, then the public Scanner package owns every analyzer
+  # process and emits an unsigned, authority-free observation bundle.
+  refresh-execute:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.refresh }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: ecc
+            repository: samartomar/ECC
+            sha: 5caf398a91599029a176ca6d806409b00d1052c4
+          - id: superpowers
+            repository: obra/Superpowers
+            sha: 3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9
+    steps:
+      - name: Check out ai-harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check out exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ matrix.repository }}
+          ref: ${{ matrix.sha }}
+          path: .baseline-source
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Set up fixed Python runtime
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
-      - name: Pull and verify pinned SkillSpector image by digest
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Content-addressed pull: the tag below is a public GHCR package, so no
-          # docker login or packages: permission is needed. Re-tag to the local
-          # runtime name so SKILLSPECTOR_IMAGE selection (src/trust/images.ts)
-          # keeps working unmodified. Verification checks RepoDigests rather than
-          # `.Id`, so it is correct regardless of the runner's Docker image-store
-          # type (containerd snapshotter vs legacy graphdriver).
-          image="ghcr.io/samartomar/skillspector@sha256:c5d4a1816419f129ae85ff96b3e366d4a062c1859997e26b7ab87341a43d4800"
-          docker pull "$image"
-          docker tag "$image" skillspector:aih-2d198ab910ad
-          digests="$(docker image inspect skillspector:aih-2d198ab910ad --format '{{json .RepoDigests}}')"
-          echo "repo digests: ${digests}"
-          echo "$digests" | grep -q "sha256:c5d4a1816419f129ae85ff96b3e366d4a062c1859997e26b7ab87341a43d4800"
-      - name: Set up pinned uv
+          python-version: "3.13"
+      - name: Set up fixed uv runtime
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           version: "0.12.7"
-          cache-dependency-glob: |
-            tools/cisco-skill-scanner/uv.lock
-            tools/trust-scanners/semgrep/uv.lock
-            tools/trust-scanners/snyk-agent-scan/uv.lock
-            tools/trust-scanners/cisco-mcp/uv.lock
-      - name: Cache and verify pinned Cisco skill-scanner
+      - run: npm ci
+      - name: Bind Scanner's fixed analyzer runtime paths
         shell: bash
         run: |
           set -euo pipefail
-          uv run --project tools/cisco-skill-scanner --locked --isolated --python 3.12 \
-            --no-python-downloads --no-env-file skill-scanner --version
-          version="$(uv run --project tools/cisco-skill-scanner --locked --isolated --python 3.12 \
-            --offline --no-python-downloads --no-env-file skill-scanner --version)"
-          test "$version" = "skill-scanner 2.0.13"
-      - name: Cache and verify supplemental locked scanners
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends bubblewrap
+          python_prefix="$(python3.13 -c 'import sys; print(sys.prefix)')"
+          sudo cp -a "${python_prefix}/." /usr/local/
+          sudo install -m 0755 "$(command -v uv)" /usr/local/bin/uv
+          sudo ln -sf /usr/local/bin/python3.13 /usr/bin/python3.13
+          test "$(id -u)" -ne 0
+          test -x /usr/bin/docker
+          test -x /usr/bin/bwrap
+          test -x /usr/local/bin/uv
+          test -x /usr/bin/python3.13
+          /usr/bin/python3.13 -c 'import sys; assert sys.version_info[:2] == (3, 13)'
+      - name: Author the exact Core request
         shell: bash
         run: |
           set -euo pipefail
-          uv run --project tools/trust-scanners/semgrep --locked --isolated --python 3.12 \
-            --no-python-downloads --no-env-file semgrep --version
-          semgrep_version="$(uv run --project tools/trust-scanners/semgrep \
-            --locked --isolated --python 3.12 --offline --no-python-downloads --no-env-file \
-            semgrep --version)"
-          test "$semgrep_version" = "1.173.0"
-          uv run --project tools/trust-scanners/snyk-agent-scan --locked --isolated --python 3.12 \
-            --no-python-downloads --no-env-file snyk-agent-scan help >/dev/null
-          uv run --project tools/trust-scanners/snyk-agent-scan --locked --isolated \
-            --python 3.12 --offline --no-python-downloads --no-env-file \
-            snyk-agent-scan help >/dev/null
-          uv run --project tools/trust-scanners/cisco-mcp --locked --isolated --python 3.12 \
-            --no-python-downloads --no-env-file mcp-scanner --help >/dev/null
-          uv run --project tools/trust-scanners/cisco-mcp --locked --isolated \
-            --python 3.12 --offline --no-python-downloads --no-env-file \
-            mcp-scanner --help >/dev/null
+          mkdir scanner-refresh
+          npm run baseline:request -- \
+            --catalog "${{ matrix.id }}" \
+            --source .baseline-source \
+            --output "scanner-refresh/${{ matrix.id }}.request.json"
+      - name: Execute the public Scanner baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run baseline:vet -- \
+            --request "scanner-refresh/${{ matrix.id }}.request.json" \
+            --source .baseline-source \
+            --output "scanner-refresh/${{ matrix.id }}.bundle"
+      - name: Upload unsigned Scanner observation
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: scanner-baseline-unsigned-${{ matrix.id }}
+          path: scanner-refresh
+          if-no-files-found: error
+
+  # Signing is deliberately detached from analyzer execution. The short-lived
+  # test key proves custody/integrity for this refresh but confers no product
+  # approval, organization authority, or provenance.
+  refresh-sign:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.refresh }}
+    needs: refresh-execute
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download unsigned Scanner observations
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: scanner-baseline-unsigned-*
+          path: scanner-refresh
+          merge-multiple: true
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+      - name: Install the exact public Scanner package in isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --prefix .signer --ignore-scripts --no-audit --no-fund --save-exact "@aihq/scan@${SCANNER_VERSION}"
+          installed="$(node -p "require('./.signer/node_modules/@aihq/scan/package.json').version")"
+          test "$installed" = "$SCANNER_VERSION"
+      - name: Sign both exact Scanner bundles with ephemeral custody
+        shell: bash
+        run: |
+          set -euo pipefail
+          scanner=".signer/node_modules/@aihq/scan/dist/cli.js"
+          openssl genpkey -algorithm ED25519 -out .signer/private.pem
+          openssl pkey -in .signer/private.pem -pubout -outform DER -out .signer/public.der
+          key_id="ed25519:$(sha256sum .signer/public.der | cut -d ' ' -f 1)"
+          public_key="$(base64 -w 0 .signer/public.der)"
+          signed_at="$(date -u +'%Y-%m-%dT%H:%M:%S.000Z')"
+          expires_at="$(date -u -d '+45 minutes' +'%Y-%m-%dT%H:%M:%S.000Z')"
+          jq -n --arg key "$key_id" \
+            '{identity:"github-actions:baseline-evidence",class:"test-ephemeral",keyId:$key}' \
+            > scanner-refresh/signer.json
+          jq -n --arg signed "$signed_at" --arg expires "$expires_at" \
+            '{signedAt:$signed,expiresAt:$expires}' > scanner-refresh/claims.json
+          jq -n --arg key "$key_id" --arg public "$public_key" \
+            '{roots:[{identity:"github-actions:baseline-evidence",class:"test-ephemeral",keyId:$key,publicKeySpkiBase64:$public}]}' \
+            > scanner-refresh/roots.json
+          jq -n --arg now "$signed_at" --arg key "$key_id" \
+            '{now:$now,signer:{identity:"github-actions:baseline-evidence",class:"test-ephemeral",keyId:$key}}' \
+            > scanner-refresh/expected.json
+          for source in ecc superpowers; do
+            node "$scanner" baseline-sign \
+              --request "scanner-refresh/${source}.request.json" \
+              --bundle "scanner-refresh/${source}.bundle" \
+              --signer scanner-refresh/signer.json \
+              --private-key .signer/private.pem \
+              --claims scanner-refresh/claims.json \
+              --output "scanner-refresh/${source}.evidence.json"
+          done
+          shred -u .signer/private.pem || rm -f .signer/private.pem
+          rm -f .signer/public.der
+      - name: Upload signed Scanner custody
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: scanner-baseline-signed
+          path: scanner-refresh
+          if-no-files-found: error
+
+  # Core verifies the request, source, annex digests, signature, freshness,
+  # replay state, and fixed analyzer identities before it interprets detached
+  # SARIF. Its runner throws if any analyzer command is attempted.
+  refresh-consume:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.refresh }}
+    needs: refresh-sign
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out ai-harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Check out exact ECC baseline
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -130,27 +214,56 @@ jobs:
           ref: 3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9
           path: .baseline-sources/superpowers
           persist-credentials: false
-
-      # Reproduction, not rescan. `baseline:check` re-derives the lock from the
-      # pinned sources with the full required-analyzer floor and byte-compares.
-      # Receipts are reused ONLY where the component tree hash AND the analyzer
-      # identity both match, so any content or analyzer change still forces a
-      # genuine rescan of exactly the affected components. What it stops doing is
-      # re-proving unchanged content, which is the part that cost an hour and
-      # could not have changed.
-      - name: Prove the committed lock still reproduces from the pinned sources
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Download signed Scanner custody
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: scanner-baseline-signed
+          path: scanner-refresh
+      - name: Verify and consume detached Scanner evidence
         shell: bash
         run: |
           set -euo pipefail
-          npm run baseline:check -- \
+          mkdir candidate
+          for source in ecc superpowers; do
+            npm run baseline:consume -- \
+              --catalog "$source" \
+              --source ".baseline-sources/${source}" \
+              --request "scanner-refresh/${source}.request.json" \
+              --bundle "scanner-refresh/${source}.bundle" \
+              --evidence "scanner-refresh/${source}.evidence.json" \
+              --roots scanner-refresh/roots.json \
+              --expected scanner-refresh/expected.json \
+              --output "candidate/${source}.json"
+          done
+          npm run baseline:assemble -- \
             --ecc-root .baseline-sources/ecc \
-            --superpowers-root .baseline-sources/superpowers
-      - name: Upload baseline evidence report
-        if: ${{ !cancelled() }}
+            --ecc-evidence candidate/ecc.json \
+            --superpowers-evidence candidate/superpowers.json \
+            --out candidate/vendor-lock.json \
+            --preview-out candidate/ecc-install-preview.json
+      - name: Verify the generated Core candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp candidate/vendor-lock.json src/baseline-evidence/vendor-lock.json
+          cp candidate/ecc-install-preview.json src/baseline-evidence/ecc-install-preview.json
+          npm run baseline:check
+          npx vitest run \
+            tests/baseline-evidence/scanner-consumer.test.ts \
+            tests/baseline-evidence/analyzer-profile.test.ts \
+            tests/baseline-evidence/analyzer-gate.test.ts \
+            tests/baseline-evidence/package.test.ts
+      - name: Upload generated Core baseline candidate
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: baseline-evidence-lock
+          name: scanner-baseline-core-candidate
           path: |
-            src/baseline-evidence/vendor-lock.json
-            src/baseline-evidence/ecc-install-preview.json
+            candidate/vendor-lock.json
+            candidate/ecc-install-preview.json
           if-no-files-found: error
