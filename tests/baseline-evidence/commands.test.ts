@@ -10,11 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  baselineAnalyzerVersions,
-  requiredBaselineAnalyzersForComponent,
-  requiredBaselineDetectorsForComponent,
-} from "../../src/baseline-evidence/analyzer-profile.js";
+import { requiredBaselineVetOptions } from "../../src/baseline-evidence/analyzer-profile.js";
 import { defineBaselineCatalog } from "../../src/baseline-evidence/catalog.js";
 import {
   baselineVetPlanForSource,
@@ -117,15 +113,22 @@ describe("baseline vet command plan", () => {
       ctx(true),
     );
     const rel = `.aih/baseline-reports/ecc-${"a".repeat(12)}.json`;
+    const required = requiredBaselineVetOptions({
+      run: fakeRunner(() => undefined),
+      platform: "linux",
+      env: {},
+    });
 
     expect(vetCatalog).toHaveBeenCalledOnce();
     expect(vetCatalog).toHaveBeenCalledWith(
       sourceRoot,
       catalog(),
       expect.objectContaining({
-        analyzerVersions: baselineAnalyzerVersions(),
-        requiredAnalyzers: requiredBaselineAnalyzersForComponent,
-        requiredDetectorsForComponent: requiredBaselineDetectorsForComponent,
+        analyzerVersions: required.analyzerVersions,
+        requiredAnalyzers: required.requiredAnalyzers,
+        requiredDetectorsForComponent: required.requiredDetectorsForComponent,
+        sourceWideCisco: required.sourceWideCisco,
+        sourceWideScan: required.sourceWideScan,
         scanOptions: expect.objectContaining({
           env: {},
           platform: "linux",
