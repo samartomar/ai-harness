@@ -415,6 +415,14 @@ source hashes, annexes, signature, freshness, replay state, and analyzer
 identities before interpreting the detached SARIF. Core's consumer cannot spawn
 an analyzer process.
 
+The refresh executor runs on a dedicated ephemeral Linux runner. Ubuntu 24.04's
+AppArmor default can deny Bubblewrap's initial UID map before isolation starts,
+so runner provisioning enables unprivileged user namespaces through the
+documented kernel control when that control is active. It then runs a
+fail-closed Bubblewrap smoke test with Scanner's nested-user-namespace lock
+before any analyzer executes. Scanner and every analyzer remain unprivileged;
+the privileged operation is limited to provisioning the disposable host.
+
 The workflow uploads `scanner-baseline-core-candidate`; it does not commit,
 push, publish, or modify the protected branch. A maintainer downloads that
 candidate, reviews the lock and preview diff, and commits those exact bytes only

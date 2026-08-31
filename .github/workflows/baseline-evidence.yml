@@ -91,6 +91,14 @@ jobs:
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends bubblewrap
+          # Ubuntu 24.04's AppArmor sysctl blocks Bubblewrap before its own
+          # user/PID/mount isolation can start. This runner is ephemeral and
+          # dedicated to this job; enable unprivileged user namespaces only at
+          # the host boundary, then prove Scanner's stricter nested-userns lock.
+          if [[ -r /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]] &&
+             [[ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)" == "1" ]]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
           python_prefix="$(python3.13 -c 'import sys; print(sys.prefix)')"
           sudo cp -a "${python_prefix}/." /usr/local/
           sudo install -m 0755 "$(command -v uv)" /usr/local/bin/uv
@@ -101,6 +109,9 @@ jobs:
           test -x /usr/local/bin/uv
           test -x /usr/bin/python3.13
           /usr/bin/python3.13 -c 'import sys; assert sys.version_info[:2] == (3, 13)'
+          /usr/bin/bwrap --unshare-all --unshare-user --die-with-parent --as-pid-1 \
+            --disable-userns --assert-userns-disabled --clearenv \
+            --ro-bind /usr /usr --proc /proc --dev /dev /usr/bin/true
       - name: Author the exact Core request
         shell: bash
         run: |

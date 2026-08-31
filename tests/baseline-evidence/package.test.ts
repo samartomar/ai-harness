@@ -111,6 +111,9 @@ describe("baseline evidence release payload", () => {
     expect(workflow).toContain("/usr/bin/python3.13");
     expect(workflow).toContain("/usr/local/bin/uv");
     expect(workflow).toContain("/usr/bin/bwrap");
+    expect(workflow).toContain("kernel.apparmor_restrict_unprivileged_userns");
+    expect(workflow).toContain("/usr/bin/bwrap --unshare-all --unshare-user");
+    expect(workflow).toContain("--disable-userns --assert-userns-disabled");
     expect(workflow).toContain("npm run baseline:check");
     expect(workflow).toContain("scanner-baseline-core-candidate");
   });
