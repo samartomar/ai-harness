@@ -176,7 +176,11 @@ export function matchesAihSupportedQualificationBindingV1(input: {
       stableJson(input.decision.qualificationBasis) &&
     now >= Date.parse(input.receipt.notBefore) &&
     now < Date.parse(input.receipt.expiresAt) &&
-    Date.parse(input.receipt.notBefore) >= Date.parse(input.decision.notBefore) &&
+    // Organization admission follows publication of the signed support receipt.
+    // This permits truthful post-publication approval without allowing an older,
+    // dormant organization decision to activate when support appears later.
+    Date.parse(input.decision.issuedAt) >= Date.parse(input.receipt.issuedAt) &&
+    Date.parse(input.decision.notBefore) >= Date.parse(input.receipt.notBefore) &&
     Date.parse(input.receipt.expiresAt) <= Date.parse(input.decision.expiresAt)
   );
 }

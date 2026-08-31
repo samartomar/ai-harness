@@ -565,10 +565,12 @@ function isHostRuntimePath(path: string): boolean {
   return (
     /(?:^|\/)(?:\.claude|\.codex|\.cursor|\.kiro|\.gemini|\.opencode|\.zed)\/(?:hooks(?:\/|$)|(?:settings(?:\.local)?\.json|config\.(?:json|toml)))$/i.test(
       path,
-    ) ||
-    /(?:^|\/)(?:\.opencode|\.config\/opencode)(?:\/|$)/i.test(path) ||
-    /^(?:hooks|scripts\/hooks)(?:\/|$)/i.test(path)
+    ) || /^(?:hooks|scripts\/hooks)(?:\/|$)/i.test(path)
   );
+}
+
+function isOpenCodeRuntimeTree(path: string): boolean {
+  return /(?:^|\/)(?:\.opencode|\.config\/opencode)(?:\/|$)/i.test(path);
 }
 
 function isEccContentPath(path: string): boolean {
@@ -709,7 +711,9 @@ export function classifyGovernedEccOperation(
   if (
     operation.moduleId === "hooks-runtime" ||
     isHostRuntimePath(source) ||
-    isHostRuntimePath(destination)
+    isHostRuntimePath(destination) ||
+    isOpenCodeRuntimeTree(source) ||
+    (!isEccContentPath(source) && isOpenCodeRuntimeTree(destination))
   ) {
     return "host-runtime";
   }

@@ -4,6 +4,9 @@
   "arguments": [],
   "options": [
     {
+      "flags": "--ui"
+    },
+    {
       "flags": "-V, --version"
     }
   ],
@@ -4385,6 +4388,9 @@
             },
             {
               "flags": "--detect"
+            },
+            {
+              "flags": "--evidence-out <file>"
             },
             {
               "flags": "--force"

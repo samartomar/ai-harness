@@ -274,6 +274,81 @@ describe("policy workbench administrator journey", () => {
     expect(text(window, "announcement")).toContain("protected policy file is ready");
   });
 
+  it("authors the exact AIH-supported qualification basis required by a signed receipt", async () => {
+    const window = openWorkbench();
+    chooseProfile(window, "enterprise");
+    fillProtectedFields(window, {
+      "protected-decision-id": "decision-supported-default-profile",
+      "protected-qualification-kind": "aih-supported",
+      "protected-kind": "profile",
+      "protected-subject-id": "default-profile",
+      "protected-source-type": "aih",
+      "protected-source-release": "1.0.0",
+      "protected-source-revision":
+        "sha256:1492fa09fc057e2e3659ca5ad3d143ba5a4b529a2b18e027b5e40a75439518c9",
+      "protected-catalog-signer": "administrator:aih-supported/catalog-v2",
+      "protected-catalog-digest":
+        "sha256:7e4ed0d0a5b1e0c053f5f25aeb2811ece87cc06f443b6241a47806fda05e304a",
+      "protected-catalog-head-digest":
+        "sha256:5b27c7d7c33afa0da41e06c4e62e91c94db238b04fbedfdad6a69d21aba1880f",
+      "protected-catalog-member-digest":
+        "sha256:6f9a4264ba9f1efa3be4e6db78376a4c7d40d155755e02b4e4c55978bcd0a6a7",
+    });
+
+    await submitProtected(window);
+
+    const bundle = JSON.parse(value(window, "protected-bundle-preview"));
+    expect(parsePolicyBundle(bundle)).toMatchObject({ ok: true });
+    expect(bundle.authorityReceipt.decisions[0]).toMatchObject({
+      id: "decision-supported-default-profile",
+      qualificationBasis: {
+        kind: "aih-supported",
+        catalogSignerIdentity: "administrator:aih-supported/catalog-v2",
+        catalogDigest: "sha256:7e4ed0d0a5b1e0c053f5f25aeb2811ece87cc06f443b6241a47806fda05e304a",
+        catalogHeadDigest:
+          "sha256:5b27c7d7c33afa0da41e06c4e62e91c94db238b04fbedfdad6a69d21aba1880f",
+        catalogMemberDigest:
+          "sha256:6f9a4264ba9f1efa3be4e6db78376a4c7d40d155755e02b4e4c55978bcd0a6a7",
+        subjectKind: "profile",
+        subjectDigest: "sha256:76eae60a7002fc68bb2938c9fac915d01e0191642c1346c04e0887c96f5fe2fb",
+      },
+      subject: {
+        kind: "profile",
+        id: "default-profile",
+        source: {
+          type: "aih",
+          release: "1.0.0",
+          revision: "sha256:1492fa09fc057e2e3659ca5ad3d143ba5a4b529a2b18e027b5e40a75439518c9",
+        },
+        sourceDigest: "sha256:f3a914fdca99c9f63a6844a3b5121018f5b8162c94bbf1af96093aaeca5563b2",
+        subjectDigest: "sha256:76eae60a7002fc68bb2938c9fac915d01e0191642c1346c04e0887c96f5fe2fb",
+      },
+    });
+    expect(text(window, "announcement")).toContain("protected policy file is ready");
+  });
+
+  it("refuses an AIH-supported decision with incomplete catalog binding", async () => {
+    const window = openWorkbench();
+    chooseProfile(window, "enterprise");
+    fillProtectedFields(window, {
+      "protected-qualification-kind": "aih-supported",
+      "protected-catalog-signer": "administrator:aih-supported/catalog-v2",
+      "protected-catalog-digest": `sha256:${"1".repeat(64)}`,
+      "protected-catalog-head-digest": `sha256:${"2".repeat(64)}`,
+      "protected-catalog-member-digest": "",
+    });
+
+    window.document
+      .getElementById("protected-form")
+      ?.dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
+
+    expect(value(window, "protected-bundle-preview")).toBe("");
+    expect(text(window, "protected-catalog-member-digest-error")).toContain(
+      "exact catalog member digest",
+    );
+    expect(text(window, "announcement")).toContain("highlighted protected policy fields");
+  });
+
   it("refuses protected Enterprise authoring until a supported CLI is sanctioned", async () => {
     const window = openWorkbench();
     setValue(window, "posture", "enterprise");

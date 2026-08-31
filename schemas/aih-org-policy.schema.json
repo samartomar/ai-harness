@@ -2530,6 +2530,8 @@
                       "post:dispatcher:sync",
                       "post:dispatcher:async",
                       "post:mcp-health-check",
+                      "post:skill:track",
+                      "stop:plan-canvas-pending",
                       "stop:format-typecheck",
                       "stop:check-console-log",
                       "stop:session-end",

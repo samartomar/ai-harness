@@ -277,6 +277,12 @@ distribution and process-configuration boundary; Core does not certify that host
 For an `aih-supported` basis, the administrator first supplies the separately controlled support
 repository/workflow roots and applies the exact decision binding to durable custody:
 
+In Policy Workbench, choose **AIH-supported Catalog receipt** as the qualification basis and copy
+the exact Catalog signer, Catalog digest, Catalog head digest, and Catalog member digest from the
+independently verified Qualification Receipt V2. The Workbench computes and embeds the matching
+subject kind and subject digest. The receipt qualifies those exact subject bytes; it does not grant
+organization admission or replace the accountable organization approval in the protected file.
+
 ```bash
 aih policy supported accept \
   --root <governed-target> \
