@@ -90,15 +90,18 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends bubblewrap
-          # Ubuntu 24.04's AppArmor sysctl blocks Bubblewrap before its own
-          # user/PID/mount isolation can start. This runner is ephemeral and
-          # dedicated to this job; enable unprivileged user namespaces only at
-          # the host boundary, then prove Scanner's stricter nested-userns lock.
-          if [[ -r /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]] &&
-             [[ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)" == "1" ]]; then
-            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          fi
+          sudo apt-get install --yes --no-install-recommends apparmor apparmor-profiles bubblewrap
+          # Keep Ubuntu's global user-namespace restriction enabled. Load the
+          # distribution's constrained bwrap profile, which grants namespace
+          # setup to bwrap but strips capabilities from its executed child.
+          test -r /proc/sys/kernel/apparmor_restrict_unprivileged_userns
+          test "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns)" = "1"
+          apparmor_profile=/usr/share/apparmor/extra-profiles/bwrap-userns-restrict
+          test -r "$apparmor_profile"
+          grep -Fq 'profile bwrap /usr/bin/bwrap flags=(attach_disconnected)' "$apparmor_profile"
+          grep -Fq 'allow px /** -> bwrap//&unpriv_bwrap' "$apparmor_profile"
+          grep -Fq 'audit deny capability' "$apparmor_profile"
+          sudo apparmor_parser --replace "$apparmor_profile"
           python_prefix="$(python3.13 -c 'import sys; print(sys.prefix)')"
           sudo cp -a "${python_prefix}/." /usr/local/
           sudo install -m 0755 "$(command -v uv)" /usr/local/bin/uv
@@ -111,7 +114,17 @@ jobs:
           /usr/bin/python3.13 -c 'import sys; assert sys.version_info[:2] == (3, 13)'
           /usr/bin/bwrap --unshare-all --unshare-user --die-with-parent --as-pid-1 \
             --disable-userns --assert-userns-disabled --clearenv \
-            --ro-bind /usr /usr --proc /proc --dev /dev /usr/bin/true
+            --ro-bind /usr /usr --ro-bind-try /bin /bin \
+            --ro-bind-try /lib /lib --ro-bind-try /lib64 /lib64 \
+            --proc /proc --dev /dev /usr/bin/true
+          if /usr/bin/bwrap --unshare-all --unshare-user --die-with-parent --as-pid-1 \
+            --disable-userns --assert-userns-disabled --clearenv \
+            --ro-bind /usr /usr --ro-bind-try /bin /bin \
+            --ro-bind-try /lib /lib --ro-bind-try /lib64 /lib64 \
+            --proc /proc --dev /dev /usr/bin/unshare --user /usr/bin/true; then
+            echo "nested user namespace unexpectedly available" >&2
+            exit 1
+          fi
       - name: Author the exact Core request
         shell: bash
         run: |

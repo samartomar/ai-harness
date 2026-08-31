@@ -111,9 +111,38 @@ describe("baseline evidence release payload", () => {
     expect(workflow).toContain("/usr/bin/python3.13");
     expect(workflow).toContain("/usr/local/bin/uv");
     expect(workflow).toContain("/usr/bin/bwrap");
-    expect(workflow).toContain("kernel.apparmor_restrict_unprivileged_userns");
+    expect(workflow).toContain(
+      "/usr/share/apparmor/extra-profiles/bwrap-userns-restrict",
+    );
+    expect(workflow).toContain("profile bwrap /usr/bin/bwrap flags=(attach_disconnected)");
+    expect(workflow).toContain("audit deny capability");
+    expect(workflow).toContain("sudo apparmor_parser --replace");
+    expect(workflow).not.toContain(
+      "sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0",
+    );
     expect(workflow).toContain("/usr/bin/bwrap --unshare-all --unshare-user");
     expect(workflow).toContain("--disable-userns --assert-userns-disabled");
+    expect(workflow).toContain("--ro-bind-try /lib64 /lib64");
+    expect(workflow).toContain("nested user namespace unexpectedly available");
+
+    const refreshStart = workflow.indexOf("  refresh-execute:");
+    const refreshEnd = workflow.indexOf("  refresh-sign:");
+    const refresh = workflow.slice(refreshStart, refreshEnd);
+    expect(refreshStart).toBeGreaterThan(-1);
+    expect(refreshEnd).toBeGreaterThan(refreshStart);
+    expect(refresh).toContain(
+      "if: ${{ github.event_name == 'workflow_dispatch' && inputs.refresh }}",
+    );
+    const profileIndex = refresh.indexOf(
+      "/usr/share/apparmor/extra-profiles/bwrap-userns-restrict",
+    );
+    const smokeIndex = refresh.indexOf("/usr/bin/bwrap --unshare-all --unshare-user");
+    const requestIndex = refresh.indexOf("Author the exact Core request");
+    const analyzerIndex = refresh.indexOf("Execute the public Scanner baseline");
+    expect(profileIndex).toBeGreaterThan(-1);
+    expect(smokeIndex).toBeGreaterThan(profileIndex);
+    expect(requestIndex).toBeGreaterThan(smokeIndex);
+    expect(analyzerIndex).toBeGreaterThan(requestIndex);
     expect(workflow).toContain("npm run baseline:check");
     expect(workflow).toContain("scanner-baseline-core-candidate");
   });
