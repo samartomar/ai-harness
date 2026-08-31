@@ -131,7 +131,8 @@ describe("baseline evidence release payload", () => {
     expect(workflow).toContain("actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97");
     expect(workflow).toContain('python-version: "3.13"');
     expect(workflow).toContain("/usr/bin/python3.13");
-    expect(workflow).toContain("sudo ldconfig");
+    expect(workflow).toContain('"${python_prefix}/lib/libpython3.13.so.1.0"');
+    expect(workflow).toContain("/usr/lib/x86_64-linux-gnu/libpython3.13.so.1.0");
     expect(workflow).toContain("/usr/local/bin/uv");
     expect(workflow).toContain("/usr/bin/bwrap");
     expect(workflow).toContain("/usr/share/apparmor/extra-profiles/bwrap-userns-restrict");
