@@ -32,6 +32,7 @@ import {
   readTrustFetchMetadata,
   resolveArtifactDirectoryTrustSource,
   resolveArtifactIntakePackageTrustSource,
+  resolveGitHubTrustSource,
   resolvePackageTrustSource,
   resolveTrustSource,
   safeSourceRelative,
@@ -182,6 +183,22 @@ function tarWithRegularFile(name: string, contents: Buffer): Buffer {
   ]);
 }
 
+function tarWithPaxPathOverride(): Buffer {
+  const pax = Buffer.from("25 path=package/package.json\n", "utf8");
+  const paxPadding = Buffer.alloc((512 - (pax.length % 512)) % 512);
+  const manifest = Buffer.from(JSON.stringify({ name: "safe-name", version: "1.0.0" }), "utf8");
+  const manifestPadding = Buffer.alloc((512 - (manifest.length % 512)) % 512);
+  return Buffer.concat([
+    tarHeader("PaxHeaders/package.json", "x", "", pax.length),
+    pax,
+    paxPadding,
+    tarHeader("package/not-package.json", "0", "", manifest.length),
+    manifest,
+    manifestPadding,
+    Buffer.alloc(1024),
+  ]);
+}
+
 function tarWithSymlinkEntry(linkName: string): Buffer {
   return Buffer.concat([tarHeader("repo-aaaaaaaa/AGENTS.md", "2", linkName), Buffer.alloc(1024)]);
 }
@@ -273,6 +290,26 @@ describe("trust fetch source resolution", () => {
     expect(action.env).not.toHaveProperty("GITHUB_TOKEN");
     expect(action.env).not.toHaveProperty("OPENAI_API_KEY");
     rmSync(source.quarantineRoot, { recursive: true, force: true });
+  });
+
+  it("resolves typed GitHub intake without allowing a colliding local directory to shadow it", () => {
+    mkdirSync(join(dir, "Owner", "Repo"), { recursive: true });
+
+    const source = resolveGitHubTrustSource("Owner/Repo", {
+      root: dir,
+      pin: "a".repeat(40),
+    });
+
+    try {
+      expect(source).toMatchObject({
+        kind: "github",
+        owner: "Owner",
+        repo: "Repo",
+        pin: "a".repeat(40),
+      });
+    } finally {
+      rmSync(source.quarantineRoot, { recursive: true, force: true });
+    }
   });
 
   it("creates fresh owner-only GitHub quarantine roots from mkdtemp", () => {
@@ -452,10 +489,44 @@ describe("trust fetch source resolution", () => {
         "--json",
         "--pack-destination",
         source.quarantineRoot,
+        `--userconfig=${join(source.quarantineRoot, ".aih-empty-npmrc")}`,
+        `--globalconfig=${join(source.quarantineRoot, ".aih-empty-npmrc")}`,
+        `--cache=${join(source.quarantineRoot, "npm-cache")}`,
       ]);
+      expect(fetch?.env).not.toHaveProperty("HOME");
+      expect(fetch?.env).not.toHaveProperty("USERPROFILE");
+      expect(fetch?.env).not.toHaveProperty("HTTPS_PROXY");
     } finally {
       rmSync(source.quarantineRoot, { recursive: true, force: true });
     }
+  });
+
+  it("rejects PAX metadata instead of scanning bytes npm may interpret under another path", async () => {
+    const outRoot = join(dir, "pax-output");
+    mkdirSync(outRoot);
+
+    await expect(
+      runFetchScriptHelpers<void>(
+        `const tarball = Buffer.from(${JSON.stringify(tarWithPaxPathOverride().toString("base64"))}, "base64");\nextractTar(tarball, ${JSON.stringify(outRoot)});`,
+      ),
+    ).rejects.toThrow(/unsupported tar metadata/);
+    expect(existsSync(join(outRoot, "package.json"))).toBe(false);
+  });
+
+  it("rejects oversized tar entries before buffering their declared contents", async () => {
+    const outRoot = join(dir, "oversized-output");
+    mkdirSync(outRoot);
+    const tarball = Buffer.concat([
+      tarHeader("package/oversized.bin", "0", "", 16 * 1024 * 1024 + 1),
+      Buffer.alloc(1024),
+    ]);
+
+    await expect(
+      runFetchScriptHelpers<void>(
+        `const tarball = Buffer.from(${JSON.stringify(tarball.toString("base64"))}, "base64");\nextractTar(tarball, ${JSON.stringify(outRoot)});`,
+      ),
+    ).rejects.toThrow(/tar entry exceeded/);
+    expect(existsSync(join(outRoot, "package", "oversized.bin"))).toBe(false);
   });
 
   it("pins directory and registry acquisition to fixed HTTPS sources with a scrubbed environment", () => {

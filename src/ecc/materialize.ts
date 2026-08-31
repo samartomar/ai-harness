@@ -264,6 +264,7 @@ export function eccComponentInstallDescriptor(
     return {
       evidenceComponentId: "module:platform-configs",
       containingModuleId: "platform-configs",
+      sourceRoots: [".mcp.json", "mcp-configs/mcp-servers.json"],
     };
   }
   const agent = leafName(componentId, "agent");

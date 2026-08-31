@@ -236,6 +236,28 @@ export function scrubFetchEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return out;
 }
 
+const SAFE_NPM_FETCH_ENV_KEYS = new Set([
+  "COMSPEC",
+  "LANG",
+  "PATH",
+  "PATHEXT",
+  "SYSTEMDRIVE",
+  "SYSTEMROOT",
+  "TEMP",
+  "TMP",
+  "TMPDIR",
+  "WINDIR",
+]);
+
+/** Public-registry acquisition must not inherit user npm credentials, proxy, CA, or home config. */
+export function scrubNpmFetchEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (value !== undefined && SAFE_NPM_FETCH_ENV_KEYS.has(key.toUpperCase())) out[key] = value;
+  }
+  return out;
+}
+
 export function scrubDockerClientEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const out = scrubFetchEnv(env);
   const dbus = env.DBUS_SESSION_BUS_ADDRESS;
@@ -278,27 +300,11 @@ export function isSafeGitRefName(ref: string): boolean {
     .every((part) => part.length > 0 && !part.startsWith(".") && !part.endsWith(".lock"));
 }
 
-export function resolveTrustSource(
+function githubTrustSource(
   raw: string,
-  opts: { root: string; ref?: string; pin?: string; skipDirs?: ReadonlySet<string> } = {
-    root: process.cwd(),
-  },
-): TrustSource {
+  opts: { root: string; ref?: string; pin?: string; skipDirs?: ReadonlySet<string> },
+): GitHubTrustSource {
   const trimmed = raw.trim();
-  if (trimmed.length === 0) throw new AihError("workspace add requires a source", "AIH_TRUST");
-
-  const local = isAbsolute(trimmed) ? trimmed : resolve(opts.root, trimmed);
-  if (existsSync(local)) {
-    const root = assertTrustTreeSafe(local, { skipDirs: opts.skipDirs });
-    return {
-      kind: "local",
-      id: sourceIdForLocal(root),
-      source: root,
-      root,
-      display: root,
-    };
-  }
-
   const gh = GITHUB_SOURCE.exec(trimmed);
   if (!gh) {
     throw new AihError(
@@ -335,6 +341,39 @@ export function resolveTrustSource(
     metadataPath: join(root, "metadata.json"),
     display: `${owner}/${repo}@${ref}`,
   };
+}
+
+/** Resolve an intake field whose schema already declares an exact GitHub identity. */
+export function resolveGitHubTrustSource(
+  raw: string,
+  opts: { root: string; ref?: string; pin?: string; skipDirs?: ReadonlySet<string> } = {
+    root: process.cwd(),
+  },
+): GitHubTrustSource {
+  return githubTrustSource(raw, opts);
+}
+
+export function resolveTrustSource(
+  raw: string,
+  opts: { root: string; ref?: string; pin?: string; skipDirs?: ReadonlySet<string> } = {
+    root: process.cwd(),
+  },
+): TrustSource {
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) throw new AihError("workspace add requires a source", "AIH_TRUST");
+
+  const local = isAbsolute(trimmed) ? trimmed : resolve(opts.root, trimmed);
+  if (existsSync(local)) {
+    const root = assertTrustTreeSafe(local, { skipDirs: opts.skipDirs });
+    return {
+      kind: "local",
+      id: sourceIdForLocal(root),
+      source: root,
+      root,
+      display: root,
+    };
+  }
+  return githubTrustSource(trimmed, opts);
 }
 
 export function resolvePackageTrustSource(input: {
@@ -753,6 +792,10 @@ const TRUSTED_PULSE_FETCH_HOSTS = new Set(["www.pulsemcp.com"]);
 const TRUSTED_MARKET_FETCH_HOSTS = new Set(["mcpmarket.com"]);
 const TRUSTED_MCP_REGISTRY_FETCH_HOSTS = new Set(["registry.modelcontextprotocol.io"]);
 const MAX_GITHUB_FETCH_REDIRECTS = 3;
+const MAX_COMPRESSED_ARCHIVE_BYTES = 64 * 1024 * 1024;
+const MAX_EXPANDED_ARCHIVE_BYTES = 256 * 1024 * 1024;
+const MAX_TAR_ENTRY_BYTES = 16 * 1024 * 1024;
+const MAX_TAR_ENTRIES = 100000;
 
 function fail(message) {
   process.stderr.write(message + "\n");
@@ -1106,12 +1149,24 @@ function isTarMetadata(type) {
   return type === "g" || type === "x";
 }
 
+function validTarHeaderChecksum(header) {
+  const declared = octal(header, 148, 8);
+  let actual = 0;
+  for (let index = 0; index < header.length; index += 1) {
+    actual += index >= 148 && index < 156 ? 32 : header[index];
+  }
+  return declared === actual;
+}
+
 function extractTar(buffer, outRoot) {
+  if (buffer.length > MAX_EXPANDED_ARCHIVE_BYTES) fail("expanded archive exceeded the byte limit");
   const pendingLinks = [];
   let offset = 0;
+  let entries = 0;
   while (offset + 512 <= buffer.length) {
     const header = buffer.subarray(offset, offset + 512);
     if (header.every((byte) => byte === 0)) break;
+    if (!validTarHeaderChecksum(header)) fail("refusing tar entry with an invalid header checksum");
     const name = text(header, 0, 100);
     const prefix = text(header, 345, 155);
     const fullName = prefix ? prefix + "/" + name : name;
@@ -1119,16 +1174,20 @@ function extractTar(buffer, outRoot) {
     const size = octal(header, 124, 12);
     const type = text(header, 156, 1) || "0";
     offset += 512;
+    entries += 1;
+    if (entries > MAX_TAR_ENTRIES) fail("tar archive exceeded the entry limit");
+    if (size > MAX_TAR_ENTRY_BYTES) fail("tar entry exceeded the byte limit: " + fullName);
+    const paddedSize = Math.ceil(size / 512) * 512;
+    if (!Number.isSafeInteger(paddedSize) || offset + paddedSize > buffer.length) {
+      fail("tar entry contents are truncated: " + fullName);
+    }
     const rel = safeRel(fullName);
     if (!rel) {
       if (type !== "5" && !isTarMetadata(type)) fail("refusing unsafe tar entry: " + fullName);
-      offset += Math.ceil(size / 512) * 512;
+      offset += paddedSize;
       continue;
     }
-    if (isTarMetadata(type)) {
-      offset += Math.ceil(size / 512) * 512;
-      continue;
-    }
+    if (isTarMetadata(type)) fail("refusing unsupported tar metadata: " + fullName);
     const target = path.resolve(outRoot, rel);
     ensureContained(outRoot, target);
     if (type === "5") {
@@ -1149,7 +1208,7 @@ function extractTar(buffer, outRoot) {
     } else {
       fail("refusing non-regular tar entry: " + fullName);
     }
-    offset += Math.ceil(size / 512) * 512;
+    offset += paddedSize;
   }
   for (const link of pendingLinks) {
     let targetStats;
@@ -1217,6 +1276,10 @@ function extractTar(buffer, outRoot) {
     if (tarballs.length !== 1) fail("expected exactly one npm tarball in quarantine");
     const tarballPath = path.resolve(input.quarantineRoot, tarballs[0]);
     ensureContained(path.resolve(input.quarantineRoot), tarballPath);
+    const tarballStat = fs.lstatSync(tarballPath);
+    if (!tarballStat.isFile() || tarballStat.isSymbolicLink() || tarballStat.nlink !== 1 || tarballStat.size > MAX_COMPRESSED_ARCHIVE_BYTES) {
+      fail("npm tarball exceeded the compressed byte limit or had an unsafe file shape");
+    }
     const tarball = fs.readFileSync(tarballPath);
     const actualSha256 = "sha256:" + crypto.createHash("sha256").update(tarball).digest("hex");
     const actualRegistryIntegrity = "sha512-" + crypto.createHash("sha512").update(tarball).digest("base64");
@@ -1226,7 +1289,13 @@ function extractTar(buffer, outRoot) {
     if (input.registryIntegrity && actualRegistryIntegrity !== input.registryIntegrity) {
       fail("npm tarball SHA-512 does not match the registry integrity: expected " + input.registryIntegrity + ", got " + actualRegistryIntegrity);
     }
-    extractTar(zlib.gunzipSync(tarball), input.treePath);
+    let expanded;
+    try {
+      expanded = zlib.gunzipSync(tarball, { maxOutputLength: MAX_EXPANDED_ARCHIVE_BYTES });
+    } catch {
+      fail("npm tarball decompression failed or exceeded the expanded byte limit");
+    }
+    extractTar(expanded, input.treePath);
     if (input.kind === "artifact-intake-npm") {
       let manifest;
       try {
@@ -1288,6 +1357,8 @@ function extractTar(buffer, outRoot) {
           encodeURIComponent(input.repo) +
           "/commits/" +
           encodeURIComponent(input.ref || "HEAD"),
+        0,
+        { allowedHosts: TRUSTED_GITHUB_FETCH_HOSTS, maxBytes: 2 * 1024 * 1024 },
       )).toString("utf8"),
     ).sha;
   if (!/^[a-f0-9]{40}$/i.test(resolvedSha)) fail("GitHub did not return a commit SHA");
@@ -1298,8 +1369,16 @@ function extractTar(buffer, outRoot) {
       encodeURIComponent(input.repo) +
       "/tar.gz/" +
       resolvedSha,
+    0,
+    { allowedHosts: TRUSTED_GITHUB_FETCH_HOSTS, maxBytes: MAX_COMPRESSED_ARCHIVE_BYTES },
   );
-  extractTar(zlib.gunzipSync(tarball), input.treePath);
+  let expanded;
+  try {
+    expanded = zlib.gunzipSync(tarball, { maxOutputLength: MAX_EXPANDED_ARCHIVE_BYTES });
+  } catch {
+    fail("GitHub tarball decompression failed or exceeded the expanded byte limit");
+  }
+  extractTar(expanded, input.treePath);
   writeFileOwner(
     input.metadataPath,
     JSON.stringify(
@@ -1405,6 +1484,8 @@ export function trustPackageFetchActions(
   source: PackageTrustSource | ArtifactIntakePackageTrustSource,
   ctx: PlanContext,
 ): ExecAction[] {
+  const isolatedNpmConfig = join(source.quarantineRoot, ".aih-empty-npmrc");
+  const isolatedNpmCache = join(source.quarantineRoot, "npm-cache");
   const failureCheck = (stage: string) => (result: RunResult) => {
     const reason = (result.stderr || result.stdout || `${stage} command failed`)
       .replace(/\s+/g, " ")
@@ -1437,10 +1518,13 @@ export function trustPackageFetchActions(
         "--json",
         "--pack-destination",
         source.quarantineRoot,
+        `--userconfig=${isolatedNpmConfig}`,
+        `--globalconfig=${isolatedNpmConfig}`,
+        `--cache=${isolatedNpmCache}`,
       ]),
       {
         cwd: source.quarantineRoot,
-        env: scrubFetchEnv(ctx.env),
+        env: scrubNpmFetchEnv(ctx.env),
         timeoutMs: 120_000,
         blockProbesOnFailure: true,
         failureCheck: failureCheck("fetch pinned npm tarball for"),

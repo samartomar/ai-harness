@@ -1,8 +1,21 @@
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { TextEncoder } from "node:util";
 import { type Element, Window } from "happy-dom";
 import { describe, expect, it } from "vitest";
+import type { PlanContext } from "../../src/internals/plan.js";
+import { fakeRunner } from "../../src/internals/proc.js";
+import { verifyPolicyAuthorityReceipt } from "../../src/org-policy/authority.js";
+import { governanceDecisionDigestV2 } from "../../src/org-policy/governance-decision-v2.js";
+import {
+  organizationEvidenceEnvelopeDigestV1,
+  parseOrganizationEvidenceEnvelopeV1Bytes,
+  verifyOrganizationQualificationV1,
+} from "../../src/org-policy/qualification-v1.js";
 import { policyStudioModel } from "../../src/org-policy/studio-model.js";
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
+import { makeHostAdapter } from "../../src/platform/detect.js";
 import {
   artifactDirectoryResolutionDigestV2,
   artifactDirectoryResolutionRecordV2,
@@ -72,6 +85,17 @@ async function settle(window: Window): Promise<void> {
   await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
 }
 
+async function submitProtected(window: Window): Promise<void> {
+  const state = window as unknown as { __aihPolicyWorkbenchPending?: Promise<void> };
+  state.__aihPolicyWorkbenchPending = undefined;
+  window.document
+    .getElementById("protected-form")
+    ?.dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
+  if (state.__aihPolicyWorkbenchPending === undefined)
+    throw new Error("protected authoring did not start");
+  await state.__aihPolicyWorkbenchPending;
+}
+
 function setValue(window: Window, id: string, value: string): void {
   const input = window.document.getElementById(id) as unknown as { value: string } | null;
   if (input === null) throw new Error(`expected #${id}`);
@@ -118,6 +142,8 @@ function intakeBatch(count: number) {
 function evidence(detail: string, source = intake()) {
   const item = source.items[0];
   if (item === undefined) throw new Error("expected intake item");
+  const observedAt = new Date(Date.now() - 60_000).toISOString();
+  const validUntil = new Date(Date.now() + 24 * 60 * 60 * 1_000).toISOString();
   return createArtifactEvidenceBundleV1(source, [
     artifactEvidenceRecordV1({
       intake: source,
@@ -134,6 +160,18 @@ function evidence(detail: string, source = intake()) {
       analyzersRun: ["aih-native"],
       checks: [{ name: "trust scan", verdict: "pass", detail }],
       findings: [],
+      scan: {
+        observedAt,
+        validUntil,
+        posture: "enterprise",
+        scanner: {
+          name: "@aihq/core",
+          version: "0.3.0",
+          nativeIdentity: "native.aaaaaaaaaaaa",
+        },
+        requiredDetectors: [],
+        policyDigest: `sha256:${"c".repeat(64)}`,
+      },
     }),
   ]);
 }
@@ -1592,6 +1630,10 @@ describe("Policy Workbench artifact intake", () => {
 
   it("carries verified source, evidence, and owner into approval but leaves targets authoritative", async () => {
     const window = studio();
+    setValue(window, "preset-select", "enterprise");
+    window.document
+      .getElementById("preset-select")
+      ?.dispatchEvent(new window.Event("change", { bubbles: true }));
     await api(window).importIntakeText(JSON.stringify(intake()));
     const bundle = evidence("ready for organization review");
     await api(window).mergeEvidenceText(JSON.stringify(bundle));
@@ -1630,11 +1672,11 @@ describe("Policy Workbench artifact intake", () => {
     expect(
       (window.document.getElementById("protected-evidence-id") as unknown as { value: string })
         .value,
-    ).toBe(bundle.evidence[0]?.id);
+    ).toMatch(/^scan-firecrawl-mcp-[a-f0-9]{12}$/);
     expect(
       (window.document.getElementById("protected-evidence-digest") as unknown as { value: string })
         .value,
-    ).toBe(bundle.evidence[0]?.evidenceDigest);
+    ).toBe("");
     expect(
       (window.document.getElementById("protected-actor") as unknown as { value: string }).value,
     ).toBe("platform@acme.example");
@@ -1650,6 +1692,102 @@ describe("Policy Workbench artifact intake", () => {
     expect(window.document.getElementById("organization-artifact-context")?.textContent).toContain(
       "choose authorized targets",
     );
+    expect(window.document.getElementById("organization-artifact-context")?.textContent).toContain(
+      "separate canonical organization evidence envelope",
+    );
+
+    const now = Date.now();
+    const protectedFields: Record<string, string> = {
+      "protected-bundle-version": "acme-artifacts-1",
+      "protected-issuer-repository": "acme/aih-policy",
+      "protected-issuer": "acme-security",
+      "protected-issued-at": new Date(now - 2 * 60_000).toISOString(),
+      "protected-expires-at": new Date(now + 12 * 60 * 60_000).toISOString(),
+      "protected-targets": "codex",
+      "protected-effects": "observe,use",
+      "protected-attestor": "acme-scanner",
+      "protected-policy-id": "enterprise-policy",
+      "protected-policy-version": "1",
+      "protected-policy-digest": `sha256:${"c".repeat(64)}`,
+      "protected-control-id": "artifact-admission",
+      "protected-control-digest": `sha256:${"d".repeat(64)}`,
+      "protected-reason": "Approved after reviewed enterprise preflight evidence",
+    };
+    for (const [id, value] of Object.entries(protectedFields)) input(window, id, value);
+    await submitProtected(window);
+
+    const canonicalEnvelope = (
+      window.document.getElementById("protected-evidence-preview") as unknown as { value: string }
+    ).value;
+    const envelope = parseOrganizationEvidenceEnvelopeV1Bytes(
+      Buffer.from(canonicalEnvelope, "utf8"),
+    );
+    expect(envelope).toBeDefined();
+    if (envelope === undefined) throw new Error("expected canonical organization evidence");
+    expect(envelope?.evidence.payloadDigest).toBe(bundle.evidence[0]?.evidenceDigest);
+    const organizationEvidenceDigest = organizationEvidenceEnvelopeDigestV1(envelope);
+    expect(organizationEvidenceDigest).not.toBe(bundle.evidence[0]?.evidenceDigest);
+
+    const protectedBundle = JSON.parse(
+      (window.document.getElementById("protected-bundle-preview") as unknown as { value: string })
+        .value,
+    );
+    const decision = protectedBundle.authorityReceipt.decisions[0];
+    expect(decision.qualificationBasis.evidenceDigest).toBe(organizationEvidenceDigest);
+    expect(decision.evidence.digest).toBe(organizationEvidenceDigest);
+    expect(decision.evidence.id).toBe(envelope?.evidence.id);
+    expect(decision.subject.subjectDigest).toBe(envelope?.subjectDigest);
+
+    const root = mkdtempSync(join(tmpdir(), "aih-workbench-qualification-"));
+    const bin = mkdtempSync(join(tmpdir(), "aih-workbench-gh-"));
+    try {
+      const authorityDir = join(root, ".aih");
+      mkdirSync(authorityDir, { recursive: true });
+      writeFileSync(
+        join(authorityDir, "policy-authority-receipt.json"),
+        JSON.stringify(protectedBundle.authorityReceipt),
+      );
+      const gh = join(bin, process.platform === "win32" ? "gh.exe" : "gh");
+      writeFileSync(gh, "trusted gh fixture\n", { mode: 0o755 });
+      const trustedGh = realpathSync.native(gh);
+      const run = fakeRunner((argv) =>
+        argv[0] === trustedGh && argv[1] === "attestation" && argv[2] === "verify"
+          ? { code: 0 }
+          : { code: 1 },
+      );
+      const ctx: PlanContext = {
+        root,
+        contextDir: "ai-coding",
+        posture: "enterprise",
+        apply: false,
+        verify: false,
+        json: false,
+        run,
+        host: makeHostAdapter({ platform: "linux", run, env: {} }),
+        env: { AIH_POLICY_AUTHORITY_REPOSITORY: "acme/aih-policy", PATH: bin },
+        options: {},
+      };
+      const verification = await verifyPolicyAuthorityReceipt(ctx);
+      expect(verification.authority, verification.problem).toBeDefined();
+      expect(
+        verifyOrganizationQualificationV1({
+          authority: verification.authority,
+          bytes: Buffer.from(canonicalEnvelope, "utf8"),
+          decisionReference: {
+            id: decision.id,
+            digest: governanceDecisionDigestV2(decision),
+          },
+          effect: "observe",
+          now: new Date(now).toISOString(),
+          subject: decision.subject,
+          supportedTargets: ["codex"],
+          target: "codex",
+        }),
+      ).toBeDefined();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(bin, { recursive: true, force: true });
+    }
 
     window.close();
   });

@@ -49,6 +49,7 @@ const npmRegistry = z.string().refine((value) => {
   try {
     const url = new URL(value);
     return (
+      url.origin === "https://registry.npmjs.org" &&
       url.protocol === "https:" &&
       url.username === "" &&
       url.password === "" &&
@@ -60,7 +61,7 @@ const npmRegistry = z.string().refine((value) => {
   } catch {
     return false;
   }
-}, "npm registry must be a canonical HTTPS origin");
+}, "npm registry must be the canonical public https://registry.npmjs.org origin");
 
 export const ArtifactIntakeNpmSourceV1Schema = z
   .object({

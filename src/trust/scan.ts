@@ -1,8 +1,12 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
+import { nativeAnalyzerIdentity } from "../baseline-evidence/native-identity.js";
 import { type Posture, postureFromContext } from "../config/posture.js";
-import { parseStrictJsonObjectV1 } from "../contract/strict-json-v1.js";
+import {
+  canonicalStrictJsonSha256V1,
+  parseStrictJsonObjectV1,
+} from "../contract/strict-json-v1.js";
 import { AihError } from "../errors.js";
 import { assertArtifactOutputPath, writeArtifact } from "../internals/execute.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
@@ -17,9 +21,11 @@ import { type OrgPolicy, OrgPolicyError, readOrgPolicy } from "../org-policy/sch
 import type { Platform } from "../platform/base.js";
 import { mcpConfigSecretCheck, plaintextSecretCheck } from "../secrets/probes.js";
 import { MCP_CONFIG_FILES, scanConfigSecrets, scanSecrets } from "../secrets/scan.js";
+import { VERSION } from "../version.js";
 import { applyTrustAcknowledgements } from "./acknowledge.js";
 import {
   type ArtifactDirectoryResolutionRecordV2,
+  type ArtifactEvidenceRecordInputV1,
   type ArtifactEvidenceRecordV1,
   type ArtifactObservedSourceV1,
   artifactDirectoryResolutionRecordV2,
@@ -69,6 +75,7 @@ import {
   readArtifactIntakePackageTrustFetchMetadata,
   resolveArtifactDirectoryTrustSource,
   resolveArtifactIntakePackageTrustSource,
+  resolveGitHubTrustSource,
   resolvePackageTrustSource,
   resolveTrustSource,
   sameGitHubTrustFetchMetadata,
@@ -151,6 +158,7 @@ interface TrustScanPlanOptions {
     items: readonly EffectiveArtifactIntakeItemV1[];
     records: Map<string, ArtifactEvidenceRecordV1>;
     problems: Record<string, string>;
+    scan: ArtifactEvidenceRecordInputV1["scan"];
   };
 }
 
@@ -1276,6 +1284,7 @@ export async function trustScanPlanForSource(
                   analyzersRun: scan.analyzersRun,
                   checks: scan.checks,
                   findings: artifactEvidenceFindings(scan),
+                  scan: options.artifactEvidence?.scan as ArtifactEvidenceRecordInputV1["scan"],
                 });
                 options.artifactEvidence?.records.set(item.id, record);
                 delete options.artifactEvidence?.problems[item.id];
@@ -1361,15 +1370,16 @@ async function appendExactArtifactScanActions(
   records: Map<string, ArtifactEvidenceRecordV1>,
   problems: Record<string, string>,
   actions: Action[],
+  scan: ArtifactEvidenceRecordInputV1["scan"],
 ): Promise<void> {
   for (const group of artifactIntakeSourceGroupsV1(intake)) {
     const source: Exclude<ScannableTrustSource, { kind: "local" | "package" }> =
       group.source.type === "github"
-        ? (resolveTrustSource(group.source.repository, {
+        ? resolveGitHubTrustSource(group.source.repository, {
             root: ctx.root,
             pin: group.source.commit,
             skipDirs: TRUST_SKIP_DIRS,
-          }) as Extract<TrustSource, { kind: "github" }>)
+          })
         : resolveArtifactIntakePackageTrustSource({
             package: group.source.package,
             version: group.source.version,
@@ -1380,10 +1390,33 @@ async function appendExactArtifactScanActions(
           });
     const sourcePlan = await trustScanPlanForSource(ctx, source, {
       cleanupQuarantine: true,
-      artifactEvidence: { intake, items: group.items, records, problems },
+      artifactEvidence: { intake, items: group.items, records, problems, scan },
     });
     actions.push(...sourcePlan.actions);
   }
+}
+
+function artifactEvidenceScanContext(ctx: PlanContext): ArtifactEvidenceRecordInputV1["scan"] {
+  const requiredDetectors = [...requiredDetectorsFromPolicy(ctx).requiredDetectors].sort();
+  const observedAt = new Date().toISOString();
+  const posture = postureFromContext(ctx);
+  return {
+    observedAt,
+    validUntil: new Date(Date.parse(observedAt) + 24 * 60 * 60 * 1000).toISOString(),
+    posture,
+    scanner: {
+      name: "@aihq/core",
+      version: VERSION,
+      nativeIdentity: nativeAnalyzerIdentity(),
+    },
+    requiredDetectors,
+    policyDigest: `sha256:${canonicalStrictJsonSha256V1({
+      domain: "aih-artifact-scan-policy/v1",
+      posture,
+      requiredDetectors,
+      trust: readOrgPolicy(ctx.root, ctx.env)?.trust ?? null,
+    })}`,
+  };
 }
 
 async function artifactIntakeScanPlanV1(
@@ -1396,7 +1429,14 @@ async function artifactIntakeScanPlanV1(
     intake.items.map((item) => [item.id, "not scanned"]),
   );
   const actions: Action[] = [];
-  await appendExactArtifactScanActions(ctx, intake, records, problems, actions);
+  await appendExactArtifactScanActions(
+    ctx,
+    intake,
+    records,
+    problems,
+    actions,
+    artifactEvidenceScanContext(ctx),
+  );
   actions.push(
     dynamicDigest("artifact evidence bundle", (digestCtx) => {
       if (!digestCtx.apply) {
@@ -1467,7 +1507,14 @@ async function artifactIntakeScanPlanV2(
   const actions: Action[] = [];
   const exactIntake = artifactIntakeExactProjectionV1(intake);
   if (exactIntake !== undefined) {
-    await appendExactArtifactScanActions(ctx, exactIntake, records, problems, actions);
+    await appendExactArtifactScanActions(
+      ctx,
+      exactIntake,
+      records,
+      problems,
+      actions,
+      artifactEvidenceScanContext(ctx),
+    );
   }
   for (const group of artifactIntakeDirectoryGroupsV2(intake)) {
     const source = resolveArtifactDirectoryTrustSource(group.source);

@@ -32,6 +32,21 @@ const SHA = "a".repeat(40);
 const REGISTRY_INTEGRITY = `sha512-${Buffer.alloc(64, 1).toString("base64")}`;
 const OTHER_REGISTRY_INTEGRITY = `sha512-${Buffer.alloc(64, 2).toString("base64")}`;
 
+function scanContext(requiredDetectors: string[] = []) {
+  return {
+    observedAt: "2026-08-30T00:00:00.000Z",
+    validUntil: "2026-08-31T00:00:00.000Z",
+    posture: "enterprise" as const,
+    scanner: {
+      name: "@aihq/core" as const,
+      version: "0.3.0",
+      nativeIdentity: "native.aaaaaaaaaaaa",
+    },
+    requiredDetectors,
+    policyDigest: `sha256:${"c".repeat(64)}`,
+  };
+}
+
 function intake(version = "3.24.0", integrity?: string) {
   return ArtifactIntakeV1Schema.parse({
     format: "aih-artifact-intake",
@@ -79,6 +94,7 @@ function firecrawlRecord(detail = "clean") {
     analyzersRun: ["aih-native"],
     checks: [{ name: "trust scan", verdict: "pass", detail }],
     findings: [],
+    scan: scanContext(),
   });
 }
 
@@ -142,6 +158,7 @@ function mixedIntakeEvidenceRecord() {
     analyzersRun: ["aih-native"],
     checks: [{ name: "trust scan", verdict: "pass" }],
     findings: [],
+    scan: scanContext(),
   });
 }
 
@@ -196,6 +213,7 @@ describe("ArtifactEvidenceBundleV1", () => {
       analyzersRun: ["aih-native"],
       checks: [check],
       findings: [],
+      scan: scanContext(),
     });
 
     expect(record.scanDigest).toBe(firecrawlRecord().scanDigest);
@@ -211,6 +229,10 @@ describe("ArtifactEvidenceBundleV1", () => {
       kind: "mcp",
       authority: { state: "not-authority" },
       state: "verified",
+      scan: expect.objectContaining({
+        posture: "enterprise",
+        policyDigest: `sha256:${"c".repeat(64)}`,
+      }),
     });
     expect(bundle.evidence[0]).not.toHaveProperty("targets");
     expect(bundle.evidence[0]?.observed).toMatchObject({
@@ -221,6 +243,37 @@ describe("ArtifactEvidenceBundleV1", () => {
       expect.objectContaining({ itemId: "firecrawl-mcp", state: "verified" }),
       { itemId: "review-agent", kind: "agent", state: "missing", problem: "not scanned" },
     ]);
+  });
+
+  it("marks the analyzer floor as required and binds freshness plus scanner identity", () => {
+    const source = intake();
+    const item = source.items[0];
+    if (item === undefined) throw new Error("expected intake item");
+    const record = artifactEvidenceRecordV1({
+      intake: source,
+      item,
+      state: "verified",
+      observed: {
+        type: "npm",
+        tarballSha256: `sha256:${"b".repeat(64)}`,
+        registryIntegrity: REGISTRY_INTEGRITY,
+      },
+      analyzersRun: ["aih-native", "semgrep@uv:1.175.0"],
+      checks: [{ name: "trust scan", verdict: "pass" }],
+      findings: [],
+      scan: scanContext(["semgrep"]),
+    });
+
+    expect(record.detectors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "semgrep", required: true, status: "pass" }),
+      ]),
+    );
+    expect(record.scan).toMatchObject({
+      observedAt: "2026-08-30T00:00:00.000Z",
+      validUntil: "2026-08-31T00:00:00.000Z",
+      scanner: { nativeIdentity: "native.aaaaaaaaaaaa" },
+    });
   });
 
   it("rejects altered evidence and duplicate JSON members", () => {
@@ -262,6 +315,7 @@ describe("ArtifactEvidenceBundleV1", () => {
         analyzersRun: ["aih-native"],
         checks: [],
         findings: [],
+        scan: scanContext(),
       }),
     ).toThrow(/observed registry integrity mismatch/i);
 
@@ -277,6 +331,7 @@ describe("ArtifactEvidenceBundleV1", () => {
         analyzersRun: ["aih-native"],
         checks: [],
         findings: [],
+        scan: scanContext(),
       }),
     ).toThrow(/observed commit mismatch/i);
   });
@@ -338,25 +393,32 @@ describe("ArtifactEvidenceBundleV1", () => {
     const first = createArtifactEvidenceBundleV1(source, [firecrawlRecord("first")]);
     const replay = createArtifactEvidenceBundleV1(source, [firecrawlRecord("different result")]);
 
-    expect(reconcileArtifactEvidenceV1(source, [first])).toEqual([
+    const expected = { ...scanContext(), now: "2026-08-30T12:00:00.000Z" };
+    expect(reconcileArtifactEvidenceV1(source, [first], expected)).toEqual([
       expect.objectContaining({ itemId: "firecrawl-mcp", state: "verified", authorized: false }),
       expect.objectContaining({ itemId: "review-agent", state: "missing", authorized: false }),
     ]);
-    expect(reconcileArtifactEvidenceV1(source, [first, replay])[0]).toMatchObject({
+    expect(reconcileArtifactEvidenceV1(source, [first, replay], expected)[0]).toMatchObject({
       state: "replayed",
       authorized: false,
     });
-    expect(reconcileArtifactEvidenceV1(intake("3.25.0"), [first])[0]).toMatchObject({
+    expect(reconcileArtifactEvidenceV1(intake("3.25.0"), [first], expected)[0]).toMatchObject({
       state: "stale",
       authorized: false,
     });
     const changedOwner = intake();
     if (changedOwner.defaults === undefined) throw new Error("expected intake defaults");
     changedOwner.defaults.accountableOwner = "different-owner@acme.example";
-    expect(reconcileArtifactEvidenceV1(changedOwner, [first])[0]).toMatchObject({
+    expect(reconcileArtifactEvidenceV1(changedOwner, [first], expected)[0]).toMatchObject({
       state: "mismatched",
       authorized: false,
     });
+    expect(
+      reconcileArtifactEvidenceV1(source, [first], {
+        ...expected,
+        now: "2026-08-31T00:00:00.000Z",
+      })[0],
+    ).toMatchObject({ state: "stale", authorized: false });
   });
 });
 
@@ -509,6 +571,7 @@ describe("ArtifactEvidenceBundleV2", () => {
       analyzersRun: ["aih-native"],
       checks: [{ name: "trust scan", verdict: "pass" }],
       findings: [],
+      scan: scanContext(),
     });
     const conflict = createArtifactEvidenceBundleV2(source, [], [resolution]);
     conflict.evidence.push(evidence);
@@ -615,6 +678,7 @@ describe("ArtifactEvidenceBundleV2", () => {
         analyzersRun: ["aih-native"],
         checks: [],
         findings: [],
+        scan: scanContext(),
       }),
     ).toThrow(/intake item is absent/);
 

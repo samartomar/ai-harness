@@ -184,6 +184,13 @@ describe("ArtifactIntakeV1", () => {
     expect(ArtifactIntakeV1Schema.safeParse(value).success).toBe(false);
   });
 
+  it("refuses an intake-controlled npm registry outside the public registry boundary", () => {
+    const value = intake();
+    mutableItem(value, 0).source.registry = "https://packages.acme.example";
+
+    expect(() => ArtifactIntakeV1Schema.parse(value)).toThrow(/registry\.npmjs\.org/);
+  });
+
   it("rejects duplicate JSON members instead of accepting the last value", () => {
     expect(() =>
       parseArtifactIntakeV1Text(

@@ -27,6 +27,7 @@ const itemKind = z.enum(["mcp", "skill", "agent"]);
 const evidenceId = z.string().regex(/^scan-[a-z0-9][a-z0-9._-]{0,127}-[a-f0-9]{12}$/);
 const detectorId = z.string().regex(/^[a-z0-9][a-z0-9._-]{0,127}$/);
 const finding = z.string().regex(/^[a-z0-9][a-z0-9._-]{0,127}$/);
+const timestamp = z.string().datetime({ offset: true });
 
 function validSha512Sri(value: string): boolean {
   const match = /^sha512-([A-Za-z0-9+/]+={0,2})$/.exec(value);
@@ -59,6 +60,41 @@ const detector = z
   })
   .strict();
 
+const scanContext = z
+  .object({
+    observedAt: timestamp,
+    validUntil: timestamp,
+    posture: z.enum(["vibe", "team", "enterprise"]),
+    scanner: z
+      .object({
+        name: z.literal("@aihq/core"),
+        version: z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/),
+        nativeIdentity: z.string().regex(/^native\.[a-f0-9]{12}$/),
+      })
+      .strict(),
+    requiredDetectors: z.array(detectorId).max(64),
+    policyDigest: digest,
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const observedAt = Date.parse(value.observedAt);
+    const validUntil = Date.parse(value.validUntil);
+    if (validUntil <= observedAt || validUntil - observedAt > 7 * 24 * 60 * 60 * 1000) {
+      context.addIssue({ code: "custom", message: "scan evidence validity must be within 7 days" });
+    }
+    if (
+      value.requiredDetectors.some(
+        (entry, index) => index > 0 && entry <= (value.requiredDetectors[index - 1] ?? ""),
+      )
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["requiredDetectors"],
+        message: "required detectors must be sorted and duplicate-free",
+      });
+    }
+  });
+
 const evidenceRecordShape = z
   .object({
     id: evidenceId,
@@ -76,6 +112,7 @@ const evidenceRecordShape = z
     detectors: z.array(detector).max(64),
     findings: z.array(finding).max(128),
     observed: ArtifactObservedSourceV1Schema,
+    scan: scanContext,
   })
   .strict();
 
@@ -142,6 +179,17 @@ export const ArtifactEvidenceRecordV1Schema = evidenceRecordShape.superRefine((v
       message: "evidence digest mismatch",
     });
   }
+  const detectorById = new Map(value.detectors.map((entry) => [entry.id, entry]));
+  for (const required of value.scan.requiredDetectors) {
+    const receipt = detectorById.get(required);
+    if (receipt?.required !== true || (value.state === "verified" && receipt.status !== "pass")) {
+      context.addIssue({
+        code: "custom",
+        path: ["detectors"],
+        message: `required detector receipt is incomplete: ${required}`,
+      });
+    }
+  }
 });
 
 export type ArtifactEvidenceRecordV1 = z.infer<typeof ArtifactEvidenceRecordV1Schema>;
@@ -155,6 +203,7 @@ export interface ArtifactEvidenceRecordInputV1 {
   analyzersRun: readonly string[];
   checks: readonly Check[];
   findings: readonly string[];
+  scan: z.input<typeof scanContext>;
 }
 
 function ordinalCompare(left: string, right: string): number {
@@ -168,6 +217,11 @@ function normalizedDetectorId(value: string): string {
     .replace(/^-+|-+$/g, "")
     .slice(0, 128);
   return normalized.length > 0 ? normalized : "aih-native";
+}
+
+function analyzerSatisfiesDetector(analyzer: string, detectorName: string): boolean {
+  if (analyzer === detectorName || analyzer.startsWith(`${detectorName}@`)) return true;
+  return detectorName === "cisco" && analyzer.startsWith("cisco@");
 }
 
 function canonicalEvidenceChecksV1(checks: readonly Check[]): object[] {
@@ -198,9 +252,28 @@ export function artifactEvidenceRecordV1(
   );
   if (effective === undefined) throw new TypeError(`intake item is absent: ${input.item.id}`);
   const sourceDigest = artifactIntakeItemSourceDigestV1(effective);
-  const detectors = [...new Set(input.analyzersRun.map(normalizedDetectorId))]
-    .sort(ordinalCompare)
-    .map((id) => ({ id, required: false, status: "pass" as const }));
+  const parsedScan = scanContext.parse(input.scan);
+  const detectorReceipts = new Map<
+    string,
+    { id: string; required: boolean; status: "pass" | "fail" | "missing" }
+  >(
+    [...new Set(input.analyzersRun.map(normalizedDetectorId))].map((id) => [
+      id,
+      { id, required: false, status: "pass" as const },
+    ]),
+  );
+  for (const required of parsedScan.requiredDetectors) {
+    detectorReceipts.set(required, {
+      id: required,
+      required: true,
+      status: input.analyzersRun.some((analyzer) => analyzerSatisfiesDetector(analyzer, required))
+        ? ("pass" as const)
+        : ("missing" as const),
+    });
+  }
+  const detectors = [...detectorReceipts.values()].sort((left, right) =>
+    ordinalCompare(left.id, right.id),
+  );
   const findings = [...new Set(input.findings)].sort(ordinalCompare);
   const unsigned = {
     id: artifactEvidenceRecordIdV1(effective.id, sourceDigest),
@@ -217,6 +290,7 @@ export function artifactEvidenceRecordV1(
     detectors,
     findings,
     observed: input.observed,
+    scan: parsedScan,
   };
   return ArtifactEvidenceRecordV1Schema.parse({
     ...unsigned,
@@ -734,9 +808,18 @@ export interface ArtifactEvidenceReconciliationV1 {
   evidenceId?: string;
 }
 
+export interface ArtifactEvidenceExpectedScanV1 {
+  now: string;
+  posture: "vibe" | "team" | "enterprise";
+  scanner: z.infer<typeof scanContext>["scanner"];
+  requiredDetectors: readonly string[];
+  policyDigest: string;
+}
+
 export function reconcileArtifactEvidenceV1(
   intake: ArtifactIntakeV1,
   bundles: readonly ArtifactEvidenceBundleV1[],
+  expected: ArtifactEvidenceExpectedScanV1,
 ): ArtifactEvidenceReconciliationV1[] {
   const records = bundles.flatMap((bundle) => bundle.evidence);
   return effectiveArtifactIntakeItemsV1(intake).map((item) => {
@@ -776,6 +859,26 @@ export function reconcileArtifactEvidenceV1(
     }
     const latest = current.at(-1);
     if (latest === undefined) throw new Error("expected current evidence record");
+    const expectedDetectors = [...new Set(expected.requiredDetectors)].sort(ordinalCompare);
+    if (
+      !timestamp.safeParse(expected.now).success ||
+      Date.parse(expected.now) < Date.parse(latest.scan.observedAt) ||
+      Date.parse(expected.now) >= Date.parse(latest.scan.validUntil) ||
+      latest.scan.posture !== expected.posture ||
+      latest.scan.policyDigest !== expected.policyDigest ||
+      latest.scan.scanner.name !== expected.scanner.name ||
+      latest.scan.scanner.version !== expected.scanner.version ||
+      latest.scan.scanner.nativeIdentity !== expected.scanner.nativeIdentity ||
+      JSON.stringify(latest.scan.requiredDetectors) !== JSON.stringify(expectedDetectors)
+    ) {
+      return {
+        itemId: item.id,
+        kind: item.kind,
+        state: "stale",
+        authorized: false,
+        evidenceId: latest.id,
+      };
+    }
     return {
       itemId: item.id,
       kind: item.kind,
