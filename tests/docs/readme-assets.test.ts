@@ -50,9 +50,9 @@ describe("README docs currency", () => {
     expect(pkg).toMatchObject({ name: "@aihq/core", version: "0.3.0" });
     expect(readme).toContain("The active pre-1.0 package line is `@aihq/core`");
     expect(readme).toContain("published `@aihq/harness@6.1.0` package is frozen");
-    expect(readme).toContain("npm install -g @aihq/core@0.3.0");
-    expect(readme).toContain("`@aihq/core@0.3.0` is public on npm");
-    expect(readme).not.toContain("Until those exact artifacts exist");
+    expect(readme).toContain("npm view @aihq/core dist-tags.latest");
+    expect(readme).toContain('npm install -g "@aihq/core@$CORE_VERSION"');
+    expect(readme).not.toContain(`@aihq/core@${pkg.version}`);
   });
 
   it("keeps README image metadata aligned with the current release assets", () => {
@@ -74,7 +74,7 @@ describe("README docs currency", () => {
       expect(existsSync(join(root, assetPath))).toBe(true);
       expect(isCoveredByPackageFiles(assetPath, pkg.files ?? [])).toBe(true);
     }
-    expect(overview).toContain(`v${pkg.version} Core overview`);
+    expect(overview).toContain("Core overview");
     expect(overview).toContain("Five governed-readiness pillars");
     expect(overview).toContain(`${surface.commands.length} commands`);
     expect(normalizedOverview).toContain("aih truth pack · verify · docs-lint claim gate");
@@ -83,11 +83,11 @@ describe("README docs currency", () => {
     expect(overview).not.toContain("staged &amp; signed");
     expect(overview).not.toContain("release-candidate");
     expect(overview).not.toContain("pending release");
-    expect(overview).toContain(`v${pkg.version} · Core`);
+    expect(overview).toContain("AIH · Core");
+    expect(overview).toContain("promoted stable train");
     expect(overview).not.toContain("· candidate");
 
     const overviewAlt = imageAlt(readme, "docs/assets/aih-overview.svg").toLowerCase();
-    expect(overviewAlt).toContain(`v${pkg.version}`);
     expect(overviewAlt).toContain("governed-readiness");
     expect(overviewAlt).toContain("truth verify");
     expect(overviewAlt).toContain("docs-lint claim gate");

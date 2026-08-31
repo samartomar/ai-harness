@@ -56,11 +56,13 @@ boundary in your description. For AI-delegated work, comment `@claude <task>` on
 an issue (see the Claude workflow).
 
 **Labels are a maintainer's job.** The `semver-label` check requires exactly one
-`semver:patch|minor|major` label, because the release cut computes the version from
+`semver:none|patch|minor|major` label, because the release cut computes the version from
 the labels on merged PRs ([VERSIONING.md](VERSIONING.md)). Applying labels needs repo
 triage permission, so if you contribute from a fork this check stays red until a
 maintainer labels your PR — that is expected, and no action is needed from you. Say in
-the PR description how you'd classify the change if you have a view.
+the PR description how you'd classify the change if you have a view. Use `semver:none`
+for docs, tests, CI, or maintainer tooling that does not require new package bytes; it
+cannot trigger a release cut.
 
 Before a PR is marked ready for review or merged, run the required review
 skills/agents for the change: at minimum code review and security review, plus

@@ -8,8 +8,9 @@
 1. Install from npm or an internal mirror and verify the release:
 
    ```bash
-npm install -g @aihq/core@0.3.0
-aih verify-release 0.3.0
+CORE_VERSION="$(npm view @aihq/core dist-tags.latest)"
+npm install -g "@aihq/core@$CORE_VERSION"
+aih verify-release "$CORE_VERSION"
    ```
 
    `aih verify-release` is the provenance gate for a global install. Do not add a
@@ -23,8 +24,8 @@ aih verify-release 0.3.0
    when all three legs pass. A missing verifier reports an explicit skip for that
    leg rather than a pass — a skipped leg is incomplete evidence, not a successful
    rollout gate.
-   For a major-version upgrade, install the approved explicit version (currently
-`npm install -g @aihq/core@0.3.0`); `npm update -g` may stay within the
+   For an upgrade, resolve and install the approved explicit promoted version;
+   `npm update -g` may stay within the
    existing major. If a broken global install blocks replacement, rerun the install
    with `--force` only after reviewing the global npm prefix and confirming the
    package source is approved.

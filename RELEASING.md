@@ -13,23 +13,30 @@ re-observes the current `main` and tag, publishes the same tarball to npm with
 the artifacts attached: the tarball, `SHA256SUMS.txt` (+ its cosign signature bundle
 `SHA256SUMS.txt.sigstore.json`), `provenance.intoto.jsonl`, and `aih-sbom.spdx.json`.
 
-Your job is everything up to the tag.
+The release is not stable merely because the tag workflow succeeds. The owner also
+controls the later promotion of the same accepted bytes from `next` to `latest`.
 
-## Choose the release channel
+## Candidate-first release channel
 
-Stable-direct is the default release path after every mechanical gate passes and
-the exact SHA-bound publication approval is recorded. Use a release candidate
-before stable when the cut includes any of these higher-risk conditions:
+Candidate-first is mandatory. Every stable or prerelease version is first published
+under `next`; the tag workflow never changes `latest`. Publication makes the exact
+immutable bytes publicly installable with provenance, but it does not recommend them
+as the default install. Public installed acceptance then exercises those same registry
+bytes with the compatible Scanner and Catalog baseline. Only after that evidence passes
+may the owner give a separate SHA-bound promotion authorization and promote the same
+immutable version to `latest`. Promotion never rebuilds, republishes, or retags.
 
-- a major-version or schema migration;
-- a change to an evidence format;
-- a change to publishing machinery; or
-- behavior that has not received adequate production-equivalent verification.
+The distinction is deliberate:
 
-An RC follows the same preflight, CI, authorization, immutability, and verification
-rules as a stable cut. It publishes under `next` and never touches `latest`; promoting
-to stable is a separate cut with its own exact-SHA approval. A maintainer may also
-choose an RC for any other cut when extra observation would be useful.
+- **merge** integrates a reviewed change;
+- **cut** groups a coherent release train and assigns one version;
+- **candidate publication** exposes exact bytes under `next`;
+- **promotion** changes the supported default after installed acceptance.
+
+Ordinary work accumulates in the open train. Documentation, tests, CI, and repository
+tooling marked `semver:none` cannot trigger a package cut. An immediate hotfix train is
+reserved for a security defect, installation blocker, evidence corruption, data loss,
+or another issue whose delay would materially harm an installed user.
 
 ## Package bootstrap state
 
@@ -94,11 +101,14 @@ source approval alone is not publication approval.
    open, deferred, or partial work never affects the version. Reconcile the open `next-release` train
    milestone ([Milestones](https://github.com/samartomar/ai-harness/milestones)) to that
    git truth: every merged PR since the last tag is in it and carries exactly one
-   `semver:*` label (issueless Dependabot/docs PRs are labeled directly); every
+   `semver:none|patch|minor|major` label (issueless Dependabot/docs PRs are labeled
+   directly); every
    still-open issue is moved to the successor with a reason, or carries `blocked:*`.
    Nothing is skipped silently. Corollary: **merged means ships** — WIP stays in draft
    PRs or behind flags, and regrets are reverted before the cut, not deferred.
-2. **Compute the bump and roll the train — atomically.** The bump is the highest
+2. **Compute the bump and roll the train — atomically.** `semver:none` records a
+   repository-only change and does not request package bytes. A cut containing only
+   `semver:none` changes is refused. Otherwise the bump is the highest package-bearing
    `semver:*` class among the merged PRs (a merged revert pair cancels out; label
    semantics in [VERSIONING.md](VERSIONING.md)). For the first Core cut, preflight
    preserves that risk class but reports the explicit new-line bootstrap version
@@ -121,13 +131,12 @@ source approval alone is not publication approval.
    section under the right headings (Added / Changed / Deprecated / Removed / Fixed /
    Security). Update the compare links at the bottom (add the new version's link and
    repoint `[Unreleased]`).
-5. **Refresh versioned surfaces and user-facing docs.** Version wording in the README
-   (including image alt text) and in `docs/assets/*.svg` must be updated to `X.Y.Z` —
-   the version-coherence test fails `npm run verify` on stale strings. If the release
-   adds or changes any command or flag, update the README command reference and any
-   affected `docs/` page **in this same release PR** — the CHANGELOG records the change,
-   it does not document the feature. (The v0.3.0→v0.3.1 `aih prune` gap and stale SVG
-   wording shipped in an earlier tarball are why this step exists.)
+5. **Refresh changed user-facing behavior, not mutable registry truth.** README,
+   guides, SVGs, tests, and repository contracts must not assert which exact version is
+   currently public or repeat a release number merely for display. They describe the
+   stable-train lookup and exact-version verification procedure. If the release adds or
+   changes a command or flag, update its owning documentation in the same train; the
+   CHANGELOG records the change but does not replace command documentation.
 6. **Verify locally:** `npm run verify` (typecheck · lint · test+coverage · build). Green
    only.
 7. **Confirm versions agree:** `aih --version` (from `npm run build` output) must equal the
@@ -135,9 +144,12 @@ source approval alone is not publication approval.
 8. **Open the release tracker issue** as the last open item in the `v-core-X.Y.Z` milestone.
    Its checklist records: included PRs + labels, previous tag + candidate SHA, local/CI
    verification (including `npm run release:preflight -- --milestone v-core-X.Y.Z --intent <patch|minor|major>`), the publication authorization, tag/workflow, GitHub Release, npm
-   publication, `aih verify-release`, and companion-docs reconciliation.
-9. **Open a release PR** (`release/v-core-X.Y.Z`) that says `Refs #<tracker>` — never
-   `Closes` — get it green in CI, and merge to `main`.
+   candidate publication, public installed acceptance, `latest` promotion,
+   `aih verify-release`, and companion-docs reconciliation.
+9. **Open one release PR for the whole train** (`release/v-core-X.Y.Z`) that says
+   `Refs #<tracker>` — never `Closes` — get it green in CI, and merge to `main`.
+   Do not cut and open another release PR merely because one ordinary fix merged; the
+   next train remains open until its coherent cutoff or an explicit hotfix trigger.
 10. **Obtain SHA-bound publication approval.** Publishing requires the maintainer's
     explicit
     `Authorize publishing @aihq/core@X.Y.Z from <full-main-SHA> using the swept v-core-X.Y.Z milestone.`
@@ -150,12 +162,13 @@ source approval alone is not publication approval.
    git tag v-core-X.Y.Z
    git push origin v-core-X.Y.Z
    ```
-12. **Watch the workflow.** First confirm the read-only `verify-and-pack` job completes.
+12. **Watch the candidate workflow.** First confirm the read-only `verify-and-pack` job completes.
    The protected `npm-publish` job then rechecks artifact custody, live `main` and tag state,
    and tokenless npm Trusted Publishing immediately before the effect. It publishes to
-   npm and creates the GitHub Release. If the environment has a required
+   npm under `next` and creates a prerelease GitHub Release. It never changes `latest`.
+   If the environment has a required
    reviewer, approve that job only after the read-only job is green.
-13. **Verify the published package:**
+13. **Verify and exercise the public candidate:**
    ```bash
    npm view @aihq/core@X.Y.Z
    npm audit signatures        # provenance + integrity
@@ -164,38 +177,51 @@ source approval alone is not publication approval.
    The verifying environment needs an authenticated `gh`, plus `npm` and `cosign` on
    `PATH` (`winget install sigstore.cosign` / `brew install cosign`) — without cosign,
    `verify-release` degrades its signature-bundle leg to a skip instead of verifying it.
-14. **Close on evidence — not at tag.** Only after the workflow succeeded, the GitHub
-    Release exists, npm serves the exact version, and `aih verify-release X.Y.Z` passes
-    with zero skipped legs (a skip is a prerequisite gap in the verifying environment,
-    not a pass — equip it and re-run):
-    complete the tracker checklist, close the tracker, then close the `v-core-X.Y.Z`
-    milestone. If publication fails permanently, never re-tag — fix forward to
-    `X.Y.Z+1`, close the milestone as superseded-not-released with a note, and re-board
-    its content on the successor train.
-15. **Sync project tracking.** Reconcile the private companion repo's truth homes
+    Also run the documented public installed Core/Scanner/Catalog acceptance against
+    the candidate's exact registry version. A source checkout or local tarball cannot
+    satisfy this promotion gate.
+14. **Obtain separate promotion authorization.** Promotion requires the maintainer's
+    explicit statement:
+
+    `Authorize promoting @aihq/core@X.Y.Z from next to latest after installed acceptance of <full-main-SHA>.`
+
+    Using an interactive npm session that satisfies package 2FA, promote without
+    rebuilding and then mark the existing GitHub Release stable:
+
+    ```bash
+    npm dist-tag add @aihq/core@X.Y.Z latest
+    npm dist-tag rm @aihq/core next
+    gh release edit v-core-X.Y.Z --repo samartomar/ai-harness --prerelease=false --latest
+    npm view @aihq/core dist-tags --json
+    ```
+15. **Close on promoted evidence — not at tag or candidate publication.** Only after
+    the candidate workflow succeeded, the exact public installed acceptance passed,
+    `aih verify-release X.Y.Z` passed with zero skipped legs, and npm/GitHub re-observation
+    shows the same version as stable may the tracker and milestone close. If candidate
+    publication fails or acceptance finds a defect, never re-tag and never promote it;
+    fix forward, optionally deprecate the rejected version with a precise message, and
+    preserve the evidence.
+16. **Sync project tracking.** Reconcile the private companion repo's truth homes
     (release history, feature-by-release mapping, current state, pipeline) and run its
     docs validation to green; record any notable decision in memory, so the next session
     resumes from an accurate state (not just the code). This closes the loop the
     CHANGELOG and milestone don't cover.
 
-## Pre-releases and dist-tags
+## Dist-tags are state, not urgency
 
-`release.yml` picks the dist-tag from the version: a **pre-release** (any version containing
-`-`, e.g. `X.Y.Z-rc.1`) publishes under `next` and never touches `latest`; a stable version
-publishes to `latest`. So tagging `v-core-X.Y.Z-rc.1` ships a pilot build automatically. Dist-tags
-can also be moved by hand:
-
-```bash
-npm dist-tag add @aihq/core@X.Y.Z next     # or publish the rc with --tag next
-# after pilots pass:
-npm dist-tag add @aihq/core@X.Y.Z latest
-```
+The release workflow always publishes under `next`, including a normal stable SemVer
+candidate. `latest` identifies only the most recently promoted stable train. Neither a
+larger version nor presence in the registry means every consumer must upgrade; release
+notes separately classify adoption as no action, recommended, required by date, or
+security urgent. A prerelease suffix remains useful for intentionally unstable API work,
+but it is not required merely to obtain the candidate-first safety boundary.
 
 ## If something goes wrong
 
 - **Never re-tag a published version.** npm and provenance treat `X.Y.Z` as immutable. Fix
   forward with `X.Y.Z+1`.
-- A bad `latest` can be pointed back with `npm dist-tag add @aihq/core@<good> latest`; a
+- A rejected candidate remains off `latest`; a bad `latest` can be pointed back with
+  `npm dist-tag add @aihq/core@<good> latest`; a
   published version can be **deprecated** (`npm deprecate`) but not deleted.
 - If a tag was pushed by mistake or publication fails, do not delete, move, or reuse
   the protected tag. Preserve the failed run as lifecycle evidence, fix forward to a
@@ -212,5 +238,5 @@ npm dist-tag add @aihq/core@X.Y.Z latest
 `version.ts VERSION === package.json version === package-lock root version === the version suffix of v-core-X.Y.Z`.
 `tests/version.test.ts` pins the first three values (a mismatch fails `npm run verify`,
 CI, and the release workflow's verify step), and the release workflow refuses a tag that
-does not match `package.json`. Steps 5–6 above catch any drift locally, before the tag
-exists — do not skip them.
+does not match `package.json`. The workflow and release-readiness tests also fail if a
+candidate can update `latest` or create a stable GitHub Release before promotion.

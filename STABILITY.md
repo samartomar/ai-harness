@@ -77,10 +77,11 @@ only the next major removes it. Announce/grace/remove lifecycle:
 aliases — the registry strips the field, and a built-in's old name stays reserved
 against plugin names for its whole grace window.
 
-## Security fixes (latest minor)
+## Security fixes
 
-A security fix lands on the latest minor of the current major; the fix path for
-older lines is upgrading. An N-1 backport lane is a future commitment that requires
+A security fix lands on the promoted stable train; its release note states whether and
+when consumers must upgrade. Candidate versions under npm `next` are not supported by
+default. An N-1 backport lane is a future commitment that requires
 a maintenance-release mechanism to exist first — the policy in
 [VERSIONING.md](VERSIONING.md#supported-versions) is re-amended before any such
 promise. Reporting is in [SECURITY.md](SECURITY.md).

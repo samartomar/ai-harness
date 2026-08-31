@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -27,47 +27,25 @@ describe("version coherence", () => {
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-// Versioned marketing surfaces ship in the npm tarball (`docs/assets` is in package.json
-// `files`). Stale v2.4.3 SVG wording shipped inside the v2.5.0 tarball; this lock makes
-// surface drift fail `npm run verify` before any tag exists (RELEASING.md step 5).
-describe("versioned surfaces", () => {
-  it("docs/assets SVGs carry no version string other than VERSION", () => {
-    const assetsDir = join(root, "docs", "assets");
-    // Two-segment forms (v2.4, "2.4 AI-Canonical") escaped the original three-segment
-    // pattern and shipped stale in the v2.6.0 tarball. Scan rendered text content only
-    // (attribute numerics like font-size="12.5" are not version claims); historical
-    // journey markers and the license id are the only tokens allowed besides VERSION.
-    const allowed = new Set([VERSION, `v${VERSION}`, "0.2", "0.4", "1.0", "v1.0", "2.1", "4.0"]);
-    for (const name of readdirSync(assetsDir).filter((f) => f.endsWith(".svg"))) {
-      let text = readFileSync(join(assetsDir, name), "utf8");
-      for (let prev = ""; prev !== text; ) {
-        prev = text;
-        text = text.replace(/<style[\s\S]*?<\/style>/g, "");
-      }
-      for (const chunk of text.match(/>[^<>]+</g) ?? []) {
-        for (const match of chunk.matchAll(/\bv?\d+\.\d+(?:\.\d+|\.x)?\b/g)) {
-          const token = match[0];
-          if (chunk.startsWith("Apache-", (match.index ?? 0) - "Apache-".length)) continue;
-          if (allowed.has(token)) continue;
-          expect(`${name}: ${token}`).toBe(`${name}: ${VERSION}`);
-        }
-      }
+describe("release-documentation surfaces", () => {
+  it("keeps evergreen SVGs independent of the package manifest version", () => {
+    for (const name of ["aih-overview.svg", "aih-command-lifecycle.svg", "aih-guide-map.svg"]) {
+      const text = readFileSync(join(root, "docs", "assets", name), "utf8");
+      expect(text, name).not.toContain(VERSION);
     }
   });
 
-  it("support-policy claims match VERSIONING.md (latest-minor-only)", () => {
+  it("support-policy claims name the promoted stable train rather than every latest minor", () => {
     for (const name of ["README.md", "SECURITY.md", "STABILITY.md"]) {
       const text = readFileSync(join(root, name), "utf8");
-      expect(`${name} claims N-1 support: ${/previous minor|\(N-1\)/.test(text)}`).toBe(
-        `${name} claims N-1 support: false`,
-      );
+      expect(text).not.toMatch(/latest minor|latest-minor-only/iu);
+      expect(text).toContain("promoted stable train");
     }
   });
 
-  it("README 'aih vX.Y.Z' claims match VERSION", () => {
+  it("README does not duplicate the mutable current package version", () => {
     const readme = readFileSync(join(root, "README.md"), "utf8");
-    for (const match of readme.match(/\baih v\d+\.\d+\.\d+/g) ?? []) {
-      expect(match).toBe(`aih v${VERSION}`);
-    }
+    expect(readme).not.toContain(`@aihq/core@${VERSION}`);
+    expect(readme).not.toContain(`aih v${VERSION}`);
   });
 });

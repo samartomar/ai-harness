@@ -10,8 +10,9 @@ purpose: Entry point for AI-Harness guides by reader persona and workflow.
 
 Use this folder for human-facing guidance. These docs explain how different readers should use AI-Harness without mixing shipped behavior with unshipped plans.
 
-Guide baseline: `@aihq/core@0.3.0`; its npm package and matching GitHub Release
-are public. The frozen `@aihq/harness@6.1.0` package is npm-deprecated and
+These guides follow the promoted `@aihq/core` stable train. Resolve and approve an
+exact version before installation; do not infer adoption urgency from a larger version
+number. The frozen `@aihq/harness@6.1.0` package is npm-deprecated and
 remains available only for existing consumers that have not migrated; new
 installations use `@aihq/core`. Use [docs/commands.md](../docs/commands.md) and
 `aih <command> --help` as syntax authorities.

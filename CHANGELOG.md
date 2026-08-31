@@ -6,6 +6,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Separate merge, release cut, candidate publication, installed acceptance, and stable
+  promotion. Repository-only work uses `semver:none` and cannot trigger package bytes;
+  every tag workflow publishes first under npm `next`, and the same immutable version
+  reaches `latest` only after public installed acceptance and separate authorization.
+
 ## [Core 0.3.0] - 2026-08-27
 
 ### Fixed
