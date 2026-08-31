@@ -104,6 +104,7 @@ jobs:
           sudo apparmor_parser --replace "$apparmor_profile"
           python_prefix="$(python3.13 -c 'import sys; print(sys.prefix)')"
           sudo cp -a "${python_prefix}/." /usr/local/
+          sudo ldconfig
           sudo install -m 0755 "$(command -v uv)" /usr/local/bin/uv
           sudo ln -sf /usr/local/bin/python3.13 /usr/bin/python3.13
           test "$(id -u)" -ne 0
@@ -132,6 +133,12 @@ jobs:
             --ro-bind /usr /usr --ro-bind-try /bin /bin \
             --ro-bind-try /lib /lib --ro-bind-try /lib64 /lib64 \
             --proc /proc --dev /dev /usr/bin/unshare --help >/dev/null
+          /usr/bin/bwrap --unshare-all --unshare-user --die-with-parent --as-pid-1 \
+            --disable-userns --assert-userns-disabled --clearenv \
+            --ro-bind /usr /usr --ro-bind-try /bin /bin \
+            --ro-bind-try /lib /lib --ro-bind-try /lib64 /lib64 \
+            --proc /proc --dev /dev /usr/bin/python3.13 -c \
+            'import sys; assert sys.version_info[:2] == (3, 13)'
           if /usr/bin/bwrap --unshare-all --unshare-user --die-with-parent --as-pid-1 \
             --disable-userns --assert-userns-disabled --clearenv \
             --ro-bind /usr /usr --ro-bind-try /bin /bin \

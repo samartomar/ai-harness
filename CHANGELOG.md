@@ -15,6 +15,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Refresh the trusted runner's dynamic-loader cache after copying the pinned Python runtime and
+  prove that interpreter inside Scanner's clear-environment Bubblewrap boundary, so detached
+  baseline acquisition cannot fail on a missing `libpython3.13.so.1.0` mapping.
 - Reconcile the ECC hook-control inventory to the exact active source pin, adding the
   `post:skill:track` and `stop:plan-canvas-pending` controls so administrators can disable every
   currently gated hook through the Workbench's source-locked profile surface.

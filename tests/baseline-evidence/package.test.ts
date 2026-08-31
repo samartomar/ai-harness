@@ -131,6 +131,7 @@ describe("baseline evidence release payload", () => {
     expect(workflow).toContain("actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97");
     expect(workflow).toContain('python-version: "3.13"');
     expect(workflow).toContain("/usr/bin/python3.13");
+    expect(workflow).toContain("sudo ldconfig");
     expect(workflow).toContain("/usr/local/bin/uv");
     expect(workflow).toContain("/usr/bin/bwrap");
     expect(workflow).toContain("/usr/share/apparmor/extra-profiles/bwrap-userns-restrict");
@@ -146,6 +147,7 @@ describe("baseline evidence release payload", () => {
     expect(workflow).toContain("sandbox child retained effective capabilities");
     expect(workflow).toContain("test -x /usr/bin/unshare");
     expect(workflow).toContain("/usr/bin/unshare --help");
+    expect(workflow).toContain("--proc /proc --dev /dev /usr/bin/python3.13 -c");
     expect(workflow).toContain("npm run baseline:check");
     expect(workflow).toContain("scanner-baseline-core-candidate");
   });
