@@ -2,11 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import {
-  baselineAnalyzerVersions,
-  requiredBaselineAnalyzersForComponent,
-  requiredBaselineDetectorsForComponent,
-} from "../../src/baseline-evidence/analyzer-profile.js";
+import { requiredBaselineVetOptions } from "../../src/baseline-evidence/analyzer-profile.js";
 import type { BaselineCatalog } from "../../src/baseline-evidence/catalog.js";
 import { baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
 import { buildEccPreflightReceipt } from "../../src/baseline-evidence/ecc-preflight-receipt.js";
@@ -227,20 +223,14 @@ describe("vendor baseline generator", () => {
     );
 
     expect(vetCatalog).toHaveBeenCalledTimes(2);
+    const expectedOptions = requiredBaselineVetOptions({
+      run,
+      platform: "linux",
+      env: {},
+      progress,
+    });
     for (const call of vetCatalog.mock.calls) {
-      expect(call[2]).toEqual(
-        expect.objectContaining({
-          analyzerVersions: baselineAnalyzerVersions(),
-          requiredAnalyzers: requiredBaselineAnalyzersForComponent,
-          requiredDetectorsForComponent: requiredBaselineDetectorsForComponent,
-          scanOptions: {
-            env: {},
-            platform: "linux",
-            progress,
-            run,
-          },
-        }),
-      );
+      expect(call[2]).toEqual(expect.objectContaining(expectedOptions));
     }
   });
 
