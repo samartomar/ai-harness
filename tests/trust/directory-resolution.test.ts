@@ -296,6 +296,7 @@ describe("directory discovery resolution", () => {
         <div aria-hidden="true">https://attacker.example/aria-mcp</div>
         <div style="display:none">https://attacker.example/style-hidden-mcp</div>
         <a href="https://visible.example/mcp">Official endpoint</a>
+        <a href="https://evilpulsemcp.com/mcp">Lookalike endpoint</a>
         <a href="https://attacker.example/mcp?api_key=secret-value">Unsafe endpoint</a>`,
     );
 
@@ -303,7 +304,16 @@ describe("directory discovery resolution", () => {
     expect(JSON.stringify(claim)).not.toContain("secret-value");
     expect(claim.endpoints).toEqual([
       { url: "https://visible.example/mcp", transport: "streamable-http" },
+      { url: "https://evilpulsemcp.com/mcp", transport: "streamable-http" },
     ]);
+  });
+
+  it("decodes each HTML entity once", () => {
+    const source = parseDirectoryDiscoveryUrlV1("https://www.pulsemcp.com/servers/firecrawl");
+
+    expect(extractDirectoryClaimV1(source, "<h1>Firecrawl &amp;lt;MCP&amp;gt;</h1>").title).toBe(
+      "Firecrawl &lt;MCP&gt;",
+    );
   });
 
   it("uses the first visible heading instead of a hidden directory title", () => {

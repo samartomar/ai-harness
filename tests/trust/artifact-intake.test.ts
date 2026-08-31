@@ -188,7 +188,7 @@ describe("ArtifactIntakeV1", () => {
     const value = intake();
     mutableItem(value, 0).source.registry = "https://packages.acme.example";
 
-    expect(() => ArtifactIntakeV1Schema.parse(value)).toThrow(/registry\.npmjs\.org/);
+    expect(() => ArtifactIntakeV1Schema.parse(value)).toThrow("registry.npmjs.org");
   });
 
   it("rejects duplicate JSON members instead of accepting the last value", () => {

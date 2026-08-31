@@ -460,12 +460,14 @@ export function parseDirectoryDiscoveryUrlV1(raw: string): DirectoryDiscoverySou
 }
 
 function decodeHtmlEntities(value: string): string {
-  return value
-    .replaceAll("&amp;", "&")
-    .replaceAll("&quot;", '"')
-    .replaceAll("&#39;", "'")
-    .replaceAll("&lt;", "<")
-    .replaceAll("&gt;", ">");
+  const entities: Readonly<Record<string, string>> = {
+    "&amp;": "&",
+    "&quot;": '"',
+    "&#39;": "'",
+    "&lt;": "<",
+    "&gt;": ">",
+  };
+  return value.replace(/&(amp|quot|#39|lt|gt);/g, (entity) => entities[entity] ?? entity);
 }
 
 const VOID_HTML_ELEMENTS = new Set([
@@ -657,8 +659,10 @@ function endpointClaim(
     const host = url.hostname.toLowerCase();
     if (
       host === "github.com" ||
-      host.endsWith("pulsemcp.com") ||
-      host.endsWith("mcpmarket.com") ||
+      host === "pulsemcp.com" ||
+      host.endsWith(".pulsemcp.com") ||
+      host === "mcpmarket.com" ||
+      host.endsWith(".mcpmarket.com") ||
       host === "registry.modelcontextprotocol.io" ||
       host === "www.npmjs.com"
     ) {
