@@ -1,5 +1,5 @@
 import { Window } from "happy-dom";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { type EccComponentId, UPSTREAM_CORE_ECC_MODULE_IDS } from "../../src/ecc/components.js";
 import { eccModuleDependencyIds } from "../../src/ecc/evidence.js";
 import { eccComponentInstallDescriptor } from "../../src/ecc/materialize.js";
@@ -8,8 +8,14 @@ import { type PolicyStudioModel, policyStudioModel } from "../../src/org-policy/
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
 
 const model = policyStudioModel();
+const openWindows = new Set<Window>();
 const ecc = model.catalog.frameworks.find((framework) => framework.id === "ecc");
 if (ecc === undefined) throw new Error("expected an ECC framework");
+
+afterEach(async () => {
+  await Promise.all([...openWindows].map((window) => window.happyDOM.close()));
+  openWindows.clear();
+});
 
 function studio(studioModel: PolicyStudioModel = model): Window {
   const window = new Window({ url: "http://localhost/" });
@@ -20,6 +26,7 @@ function studio(studioModel: PolicyStudioModel = model): Window {
   const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/gi)].map((match) => match[1]);
   if (scripts.length === 0) throw new Error("expected generated workbench script");
   window.eval(scripts.join("\n"));
+  openWindows.add(window);
   return window;
 }
 
