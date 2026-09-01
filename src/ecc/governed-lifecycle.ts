@@ -131,8 +131,12 @@ interface GovernedMaterializationReport {
 export function governedEccComponentIds(policy: OrgPolicy, catalog: BaselineCatalog): string[] {
   const expectedRepository = `${catalog.owner}/${catalog.repo}`;
   const selected = new Set<string>();
+  const memberClosed = new Set<string>();
   for (const selection of policy.governance?.externalSelections ?? []) {
     if (selection.framework !== GOVERNED_FRAMEWORK) continue;
+    const hasExplicitRoots = Array.isArray(selection.roots);
+    const roots = new Set(selection.roots ?? []);
+    const unattributed = new Set(selection.unattributedItems ?? []);
     for (const item of selection.items) {
       // GitHub owner/repo identity is case-insensitive, and this repository
       // carries both spellings of the ECC repo, so casing alone is never the
@@ -151,6 +155,9 @@ export function governedEccComponentIds(policy: OrgPolicy, catalog: BaselineCata
         );
       }
       selected.add(item.id);
+      if (!hasExplicitRoots || roots.has(item.id) || unattributed.has(item.id)) {
+        memberClosed.add(item.id);
+      }
     }
   }
   if (selected.size === 0) {
@@ -183,9 +190,10 @@ export function governedEccComponentIds(policy: OrgPolicy, catalog: BaselineCata
       .map((moduleId) => `module:${moduleId}`)
       .filter((dependency) => dependency !== id);
     const declaredRiders = (ECC_DECLARATION_RIDERS[id] ?? []).filter((rider) => known.has(rider));
-    const moduleMembers = id.startsWith("module:")
-      ? eccModuleSelectableMemberIds(id.slice("module:".length), [...known])
-      : [];
+    const moduleMembers =
+      id.startsWith("module:") && memberClosed.has(id)
+        ? eccModuleSelectableMemberIds(id.slice("module:".length), [...known])
+        : [];
     const dependencies = [
       ...new Set([...moduleDependencies, ...moduleMembers, ...declaredRiders]),
     ].filter((dependency) => !selected.has(dependency));

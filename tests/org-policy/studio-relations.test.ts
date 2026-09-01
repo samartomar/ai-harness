@@ -65,20 +65,25 @@ function selectionRoots(window: Window): string[] {
 }
 
 function assetClosure(rootIds: readonly string[]): string[] {
-  const selected = new Set(rootIds);
-  const pending = [...rootIds];
+  const selected = new Set<string>();
+  const expanded = new Set<string>();
+  const pending = rootIds.map((id) => ({ id, includeMembers: true }));
   while (pending.length > 0) {
-    const id = pending.shift();
-    const asset = eccAssets.find((candidate) => candidate.id === id);
-    if (asset === undefined) throw new Error(`expected ECC asset ${id}`);
+    const next = pending.shift();
+    if (next === undefined) break;
+    const expansionKey = `${next.id}|${next.includeMembers ? "members" : "structural"}`;
+    if (expanded.has(expansionKey)) continue;
+    expanded.add(expansionKey);
+    selected.add(next.id);
+    const asset = eccAssets.find((candidate) => candidate.id === next.id);
+    if (asset === undefined) throw new Error(`expected ECC asset ${next.id}`);
     for (const required of [
       ...(asset.dependencies ?? []),
-      ...(asset.members ?? []),
+      ...(next.includeMembers ? (asset.members ?? []) : []),
       ...(asset.riders ?? []),
     ]) {
-      if (selected.has(required)) continue;
       selected.add(required);
-      pending.push(required);
+      pending.push({ id: required, includeMembers: false });
     }
   }
   return [...selected];

@@ -61,7 +61,7 @@ function selectionRoots(window: Window): string[] | undefined {
   return policy.governance.externalSelections[0]?.roots;
 }
 
-function assetClosure(rootIds: readonly string[]): string[] {
+function legacyAssetClosure(rootIds: readonly string[]): string[] {
   const selected = new Set(rootIds);
   const pending = [...rootIds];
   while (pending.length > 0) {
@@ -73,6 +73,30 @@ function assetClosure(rootIds: readonly string[]): string[] {
       if (selected.has(required)) continue;
       selected.add(required);
       pending.push(required);
+    }
+  }
+  return [...selected];
+}
+
+function assetClosure(rootIds: readonly string[]): string[] {
+  const selected = new Set<string>();
+  const expanded = new Set<string>();
+  const pending = rootIds.map((id) => ({ id, includeMembers: true }));
+  while (pending.length > 0) {
+    const next = pending.shift();
+    if (next === undefined) break;
+    const expansionKey = `${next.id}|${next.includeMembers ? "members" : "structural"}`;
+    if (expanded.has(expansionKey)) continue;
+    expanded.add(expansionKey);
+    selected.add(next.id);
+    const asset = ecc?.assets.find((candidate) => candidate.id === next.id);
+    if (asset === undefined) throw new Error(`expected ECC asset ${next.id}`);
+    const members = next.includeMembers
+      ? ((asset as typeof asset & { members?: string[] }).members ?? [])
+      : [];
+    for (const required of [...(asset.dependencies ?? []), ...members, ...(asset.riders ?? [])]) {
+      selected.add(required);
+      pending.push({ id: required, includeMembers: false });
     }
   }
   return [...selected];
@@ -124,9 +148,9 @@ describe("policy studio dependency-closed selection", () => {
     expect(moduleAssets.flatMap((module) => module.members ?? [])).not.toContain("mcp:github");
   });
 
-  it("selects ECC Core and its members before a language from the left panel", () => {
-    const language = ecc.assets.find((asset) => asset.kind === "lang");
-    if (language === undefined) throw new Error("expected an ECC language");
+  it("selects only the TypeScript rider and structural ECC Core dependencies", () => {
+    const language = ecc.assets.find((asset) => asset.id === "lang:typescript");
+    if (language === undefined) throw new Error("expected lang:typescript");
     const coreModules = UPSTREAM_CORE_ECC_MODULE_IDS.map((id) => `module:${id}`);
     expect(language.dependencies).toEqual(expect.arrayContaining(coreModules));
 
@@ -135,6 +159,11 @@ describe("policy studio dependency-closed selection", () => {
 
     const expected = assetClosure([language.id]).sort();
     expect(selectedIds(window).sort()).toEqual(expected);
+    expect(
+      selectedIds(window)
+        .filter((id) => id.startsWith("agent:"))
+        .sort(),
+    ).toEqual(["agent:typescript-reviewer"]);
     for (const id of expected) {
       const asset = ecc.assets.find((candidate) => candidate.id === id);
       if (asset === undefined) throw new Error(`expected ${id}`);
@@ -187,7 +216,7 @@ describe("policy studio dependency-closed selection", () => {
 
   it("keeps rootless legacy selections without promoting them to explicit roots", () => {
     const partialModel = structuredClone(model);
-    const legacyIds = assetClosure(["lang:typescript"]);
+    const legacyIds = legacyAssetClosure(["lang:typescript"]);
     const legacyItems = legacyIds.map((id) => {
       const asset = ecc.assets.find((candidate) => candidate.id === id);
       if (asset === undefined) throw new Error(`expected ECC asset ${id}`);
@@ -224,7 +253,7 @@ describe("policy studio dependency-closed selection", () => {
 
   it("lets the center prune dependent items from an imported rootless selection", () => {
     const partialModel = structuredClone(model);
-    const legacyIds = assetClosure(["capability:database"]);
+    const legacyIds = legacyAssetClosure(["capability:database"]);
     const legacyItems = legacyIds.map((id) => {
       const asset = ecc.assets.find((candidate) => candidate.id === id);
       if (asset === undefined) throw new Error(`expected ECC asset ${id}`);

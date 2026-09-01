@@ -150,6 +150,7 @@ function withTypescriptLanguageAndCore() {
   const policy = withTypescriptLanguage(true);
   const group = policy.governance?.externalSelections[0];
   if (group === undefined) throw new Error("missing ECC selection group");
+  group.roots = ["lang:typescript"];
   for (const moduleId of coreModules) {
     const id = `module:${moduleId}`;
     const component = catalog.components.find((item) => item.id === id);
@@ -158,23 +159,6 @@ function withTypescriptLanguageAndCore() {
     group.items.push({
       kind: "module",
       id,
-      source: { repository, commit: catalog.pinnedSha, path },
-    });
-  }
-  for (const component of catalog.components) {
-    const path = component.paths[0];
-    if (path === undefined) continue;
-    const kind = component.id.startsWith("agent:")
-      ? "agent"
-      : component.id.startsWith("baseline:")
-        ? "baseline"
-        : component.id.startsWith("skill:")
-          ? "skill"
-          : undefined;
-    if (kind === undefined || group.items.some((item) => item.id === component.id)) continue;
-    group.items.push({
-      kind,
-      id: component.id,
       source: { repository, commit: catalog.pinnedSha, path },
     });
   }
@@ -221,9 +205,9 @@ describe("governed ECC module selection closure", () => {
     expect(() => governedEccComponentIds(withTypescriptLanguage(false), catalog)).toThrow(
       /lang:typescript.*requires.*agent:typescript-reviewer/i,
     );
-    expect(governedEccComponentIds(withTypescriptLanguageAndCore(), catalog)).toContain(
-      "lang:typescript",
-    );
+    const selected = governedEccComponentIds(withTypescriptLanguageAndCore(), catalog);
+    expect(selected).toContain("lang:typescript");
+    expect(selected.filter((id) => id.startsWith("agent:"))).toEqual(["agent:typescript-reviewer"]);
   });
 
   it("refuses a language selection that omits ECC Core", () => {
