@@ -209,10 +209,12 @@ describe("release readiness metadata", () => {
     const verification = release.slice(verificationStart, publishStart);
     const publication = release.slice(publishStart);
 
-    expect(verification).toMatch(/permissions:\n\s+contents:\s*read/);
+    expect(verification).toMatch(/permissions:\n(?:\s+[a-z-]+:\s*\w+\n)*\s+contents:\s*read/);
     expect(verification).not.toMatch(/(?:id-token|attestations):\s*write/);
     expect(verification).not.toMatch(/contents:\s*write/);
-    expect(verification).toContain("npm run verify");
+    expect(verification).toContain("npm run verify:release-candidate");
+    expect(verification).not.toMatch(/run:\s*npm run verify\s*$/mu);
+    expect(verification).not.toContain("test:cov");
     expect(verification).toContain("npm pack --ignore-scripts");
     expect(verification).toContain("Smoke-install the exact packed tarball");
     expect(verification).toContain("Upload immutable exact release candidate");
@@ -228,12 +230,13 @@ describe("release readiness metadata", () => {
     expect(publication).toContain("package-manager-cache: false");
   });
 
-  it("keeps the tag workflow on the same verify gate used by release PRs", () => {
+  it("consumes successful exact-SHA CI before package-specific release verification", () => {
     const release = read(".github/workflows/release.yml");
     const verificationStart = release.indexOf("  verify-and-pack:\n");
     const publishStart = release.indexOf("  npm-publish:\n");
     const verification = release.slice(verificationStart, publishStart);
     const tagGateIndex = verification.indexOf("Assert tag commit is current main");
+    const ciReceiptIndex = verification.indexOf("Require successful exact-SHA CI");
     const setupNodeIndex = verification.indexOf("actions/setup-node");
     const npmCiIndex = verification.indexOf("npm ci --ignore-scripts");
 
@@ -241,11 +244,62 @@ describe("release readiness metadata", () => {
       "git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main",
     );
     expect(verification).toContain('if [ "$GITHUB_SHA" != "$main_sha" ]; then');
-    expect(verification).toContain("npm run verify");
+    expect(verification).toContain("actions: read");
+    expect(verification).toContain("Require successful exact-SHA CI");
+    expect(verification).toContain("npm run verify:release-candidate");
+    expect(verification).not.toMatch(/run:\s*npm run verify\s*$/mu);
     expect(verification).not.toContain("npx vitest run --coverage");
     expect(tagGateIndex).toBeGreaterThan(-1);
+    expect(ciReceiptIndex).toBeGreaterThan(tagGateIndex);
     expect(setupNodeIndex).toBeGreaterThan(tagGateIndex);
     expect(npmCiIndex).toBeGreaterThan(tagGateIndex);
+  });
+
+  it("rejects a CI receipt unless it is a completed successful main push for the exact SHA", () => {
+    const release = read(".github/workflows/release.yml");
+    const validator = inlineModuleFollowing(release, "Validate exact-SHA CI receipt");
+    const fixtureRoot = mkdtempSync(join(tmpdir(), "aih-release-ci-receipt-"));
+    const receiptPath = join(fixtureRoot, "receipt.json");
+    const exactSha = "a".repeat(40);
+    const baseRun = {
+      conclusion: "success",
+      event: "push",
+      head_branch: "main",
+      head_sha: exactSha,
+      html_url: "https://github.com/example/project/actions/runs/1",
+      id: 1,
+      run_number: 1,
+      status: "completed",
+    };
+    const validate = (workflowRuns: unknown[]) => {
+      writeFileSync(receiptPath, JSON.stringify({ workflow_runs: workflowRuns }));
+      return spawnSync(
+        process.execPath,
+        ["--input-type=module", "-", receiptPath, exactSha, "example/project"],
+        {
+          encoding: "utf8",
+          input: validator,
+        },
+      );
+    };
+
+    try {
+      expect(validate([baseRun]).status).toBe(0);
+      for (const mutation of [
+        { conclusion: "failure" },
+        { event: "pull_request" },
+        { head_branch: "release" },
+        { head_sha: "b".repeat(40) },
+        { status: "in_progress" },
+        { html_url: "https://github.com/attacker/project/actions/runs/1" },
+        { html_url: "https://github.com/example/project/actions/runs/1\n::warning::spoofed" },
+      ]) {
+        expect(validate([{ ...baseRun, ...mutation }]).status).not.toBe(0);
+      }
+      expect(validate([]).status).not.toBe(0);
+    } finally {
+      rmSync(fixtureRoot, { recursive: true, force: true });
+    }
   });
 
   it("carries immutable artifact identity and rechecks exact custody before every effect", () => {

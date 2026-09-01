@@ -20,8 +20,9 @@ permissions:
 jobs:
   verify-and-pack:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 30
     permissions:
+      actions: read
       contents: read
     outputs:
       tarball: ${{ steps.pack.outputs.tarball }}
@@ -42,6 +43,60 @@ jobs:
             echo "::error::tag commit $GITHUB_SHA does not match origin/main ($main_sha)"
             exit 1
           fi
+      - name: Require successful exact-SHA CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          receipt="$(mktemp)"
+          gh api --method GET "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
+            -f head_sha="$GITHUB_SHA" \
+            -f branch=main \
+            -f event=push \
+            -f status=success \
+            -f per_page=100 > "$receipt"
+          # Validate exact-SHA CI receipt locally; API filters are narrowing hints,
+          # never the authority for accepting a workflow run.
+          node --input-type=module - "$receipt" "$GITHUB_SHA" "$GITHUB_REPOSITORY" <<'NODE'
+          import { readFileSync } from "node:fs";
+
+          const [receiptPath, expectedSha, expectedRepository] = process.argv.slice(2);
+          if (!/^[0-9a-f]{40}$/.test(expectedSha ?? "")) {
+            throw new Error("invalid expected CI SHA");
+          }
+          if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(expectedRepository ?? "")) {
+            throw new Error("invalid expected CI repository");
+          }
+          const payload = JSON.parse(readFileSync(receiptPath, "utf8"));
+          if (!Array.isArray(payload?.workflow_runs)) {
+            throw new Error("malformed CI workflow-runs receipt");
+          }
+          const matches = payload.workflow_runs.filter(
+            (run) =>
+              run !== null &&
+              typeof run === "object" &&
+              run.head_sha === expectedSha &&
+              run.head_branch === "main" &&
+              run.event === "push" &&
+              run.status === "completed" &&
+              run.conclusion === "success",
+          );
+          if (matches.length === 0) {
+            throw new Error(`no completed successful main CI run binds exact SHA ${expectedSha}`);
+          }
+          matches.sort((left, right) => (left.run_number ?? 0) - (right.run_number ?? 0));
+          const selected = matches.at(-1);
+          if (!Number.isSafeInteger(selected.id) || selected.id <= 0) {
+            throw new Error("invalid exact-SHA CI run id");
+          }
+          const url = new URL(selected.html_url);
+          const expectedUrl = `https://github.com/${expectedRepository}/actions/runs/${selected.id}`;
+          if (url.href !== expectedUrl || selected.html_url !== expectedUrl) {
+            throw new Error("invalid exact-SHA CI run URL");
+          }
+          console.log(`Exact-SHA CI receipt: ${expectedUrl}`);
+          NODE
+          rm -f "$receipt"
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "24"
@@ -57,12 +112,8 @@ jobs:
             echo "::error::package.json version ($ver) does not match tag $GITHUB_REF_NAME"
             exit 1
           fi
-      - name: Verify exact source candidate
-        run: npm run verify
-      - name: Check required baseline analyzer receipts
-        run: npm run check:baseline-analyzers
-      - name: Check installable baseline
-        run: npm run check:baseline-installable
+      - name: Verify package-specific release candidate
+        run: npm run verify:release-candidate
       - name: Audit dependencies
         run: npm audit --audit-level=high
       - name: Pack exact release tarball and checksum

@@ -176,7 +176,13 @@ describe("baseline evidence release payload", () => {
   });
 
   it("checks analyzer-complete vendor receipts again before release packaging", () => {
+    const manifest = JSON.parse(readFileSync(join(repo, "package.json"), "utf8")) as {
+      scripts: Record<string, string>;
+    };
     const workflow = readFileSync(join(repo, ".github", "workflows", "release.yml"), "utf8");
-    expect(workflow).toContain("npm run check:baseline-analyzers");
+    expect(manifest.scripts["verify:release-candidate"]).toContain(
+      "npm run check:baseline-analyzers",
+    );
+    expect(workflow).toContain("npm run verify:release-candidate");
   });
 });

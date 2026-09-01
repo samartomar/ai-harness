@@ -16,9 +16,23 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const npmCli = process.env.npm_execpath;
 if (typeof npmCli !== "string" || !isAbsolute(npmCli) || !existsSync(npmCli))
   throw new Error("packed-admin-docs-npm-cli-unavailable");
+const CHILD_PROCESS_TIMEOUT_MS = 5 * 60 * 1000;
 
 function runNode(cwd, args) {
-  const result = spawnSync(process.execPath, args, { cwd, encoding: "utf8" });
+  const result = spawnSync(process.execPath, args, {
+    cwd,
+    encoding: "utf8",
+    maxBuffer: 16 * 1024 * 1024,
+    timeout: CHILD_PROCESS_TIMEOUT_MS,
+  });
+  if (result.error !== undefined)
+    throw new Error(
+      `packed-admin-docs-command-failed:${args.join(" ")}:${result.error.code === "ETIMEDOUT" ? `timeout-after-${CHILD_PROCESS_TIMEOUT_MS}ms` : result.error.message}`,
+    );
+  if (result.status === null)
+    throw new Error(
+      `packed-admin-docs-command-failed:${args.join(" ")}:${result.signal ? `signal-${result.signal}` : "missing-exit-status"}`,
+    );
   if (result.status !== 0)
     throw new Error(
       `packed-admin-docs-command-failed:${args.join(" ")}:${(result.stderr || result.stdout).slice(0, 240)}`,

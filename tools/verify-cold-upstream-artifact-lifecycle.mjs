@@ -18,9 +18,25 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const npmCli = process.env.npm_execpath;
 if (typeof npmCli !== "string" || !isAbsolute(npmCli) || !existsSync(npmCli))
   throw new Error("cold-upstream-artifact-npm-cli-unavailable");
+const CHILD_PROCESS_TIMEOUT_MS = 5 * 60 * 1000;
+
+function requireCompleted(result, context) {
+  if (result.error !== undefined)
+    throw new Error(
+      `${context}:${result.error.code === "ETIMEDOUT" ? `timeout-after-${CHILD_PROCESS_TIMEOUT_MS}ms` : result.error.message}`,
+    );
+  if (result.status === null)
+    throw new Error(`${context}:${result.signal ? `signal-${result.signal}` : "missing-exit-status"}`);
+}
 
 function runNode(cwd, args) {
-  const result = spawnSync(process.execPath, args, { cwd, encoding: "utf8" });
+  const result = spawnSync(process.execPath, args, {
+    cwd,
+    encoding: "utf8",
+    maxBuffer: 16 * 1024 * 1024,
+    timeout: CHILD_PROCESS_TIMEOUT_MS,
+  });
+  requireCompleted(result, `cold-upstream-artifact-command-failed:${args.join(" ")}`);
   if (result.status !== 0)
     throw new Error(
       `cold-upstream-artifact-command-failed:${args.join(" ")}:${(result.stderr || result.stdout).slice(0, 200)}`,
@@ -49,8 +65,15 @@ function runInstalledCli(cwd, cli, bin, args, allowFailure = false, extraEnv = {
   const result = spawnSync(
     process.platform === "win32" ? process.execPath : bin,
     process.platform === "win32" ? [cli, ...args] : args,
-    { cwd, encoding: "utf8", env },
+    {
+      cwd,
+      encoding: "utf8",
+      env,
+      maxBuffer: 16 * 1024 * 1024,
+      timeout: CHILD_PROCESS_TIMEOUT_MS,
+    },
   );
+  requireCompleted(result, `cold-upstream-artifact-cli-failed:${args.join(" ")}`);
   if (result.status !== 0 && !allowFailure)
     throw new Error(
       `cold-upstream-artifact-cli-failed:${args.join(" ")}:${(result.stderr || result.stdout).slice(0, 200)}`,
