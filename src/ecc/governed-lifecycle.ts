@@ -131,12 +131,17 @@ interface GovernedMaterializationReport {
 export function governedEccComponentIds(policy: OrgPolicy, catalog: BaselineCatalog): string[] {
   const expectedRepository = `${catalog.owner}/${catalog.repo}`;
   const selected = new Set<string>();
-  const memberClosed = new Set<string>();
+  const attributionRoots = new Set<string>();
+  const unattributedRoots = new Set<string>();
+  let hasRootMetadata = false;
   for (const selection of policy.governance?.externalSelections ?? []) {
     if (selection.framework !== GOVERNED_FRAMEWORK) continue;
     const hasExplicitRoots = Array.isArray(selection.roots);
     const roots = new Set(selection.roots ?? []);
     const unattributed = new Set(selection.unattributedItems ?? []);
+    if (hasExplicitRoots) hasRootMetadata = true;
+    for (const id of roots) attributionRoots.add(id);
+    for (const id of unattributed) unattributedRoots.add(id);
     for (const item of selection.items) {
       // GitHub owner/repo identity is case-insensitive, and this repository
       // carries both spellings of the ECC repo, so casing alone is never the
@@ -155,9 +160,6 @@ export function governedEccComponentIds(policy: OrgPolicy, catalog: BaselineCata
         );
       }
       selected.add(item.id);
-      if (!hasExplicitRoots || roots.has(item.id) || unattributed.has(item.id)) {
-        memberClosed.add(item.id);
-      }
     }
   }
   if (selected.size === 0) {
@@ -177,10 +179,9 @@ export function governedEccComponentIds(policy: OrgPolicy, catalog: BaselineCata
       "AIH_CONFIG",
     );
   }
-  const missingDependencies = new Map<string, string[]>();
-  for (const id of selected) {
-    if (id.startsWith("runtime:")) continue;
-    const moduleDependencies = [
+  const mandatoryRequirementsFor = (id: string): string[] => {
+    if (id.startsWith("runtime:")) return [];
+    return [
       ...new Set(
         eccComponentRequiredModuleRootIds(id as EccComponentId | EccMcpComponentId).flatMap(
           (moduleId) => [moduleId, ...eccModuleDependencyIds(moduleId)],
@@ -189,14 +190,48 @@ export function governedEccComponentIds(policy: OrgPolicy, catalog: BaselineCata
     ]
       .map((moduleId) => `module:${moduleId}`)
       .filter((dependency) => dependency !== id);
+  };
+  const relatedComponentsFor = (id: string, includeMembers: boolean): string[] => {
+    if (id.startsWith("runtime:")) return [];
     const declaredRiders = (ECC_DECLARATION_RIDERS[id] ?? []).filter((rider) => known.has(rider));
     const moduleMembers =
-      id.startsWith("module:") && memberClosed.has(id)
+      id.startsWith("module:") && includeMembers
         ? eccModuleSelectableMemberIds(id.slice("module:".length), [...known])
         : [];
-    const dependencies = [
-      ...new Set([...moduleDependencies, ...moduleMembers, ...declaredRiders]),
-    ].filter((dependency) => !selected.has(dependency));
+    return [...new Set([...mandatoryRequirementsFor(id), ...moduleMembers, ...declaredRiders])];
+  };
+  if (hasRootMetadata) {
+    const reachable = new Set<string>();
+    const expanded = new Set<string>();
+    const pending = [...attributionRoots, ...unattributedRoots].map((id) => ({
+      id,
+      includeMembers: true,
+    }));
+    while (pending.length > 0) {
+      const next = pending.shift();
+      if (next === undefined) break;
+      const expansionKey = `${next.id}|${next.includeMembers ? "members" : "structural"}`;
+      if (expanded.has(expansionKey)) continue;
+      expanded.add(expansionKey);
+      reachable.add(next.id);
+      for (const required of relatedComponentsFor(next.id, next.includeMembers)) {
+        reachable.add(required);
+        pending.push({ id: required, includeMembers: false });
+      }
+    }
+    const unreachable = [...selected].filter((id) => !reachable.has(id)).sort();
+    if (unreachable.length > 0) {
+      throw new AihError(
+        `refusing the governed ECC framework lifecycle: selected component(s) are not reachable from an explicit root or preserved legacy item: ${unreachable.map((id) => displaySafe(id)).join(", ")}`,
+        "AIH_CONFIG",
+      );
+    }
+  }
+  const missingDependencies = new Map<string, string[]>();
+  for (const id of selected) {
+    const dependencies = mandatoryRequirementsFor(id).filter(
+      (dependency) => !selected.has(dependency),
+    );
     if (dependencies.length > 0) missingDependencies.set(id, dependencies);
   }
   if (missingDependencies.size > 0) {

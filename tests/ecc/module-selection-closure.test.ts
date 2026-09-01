@@ -138,7 +138,7 @@ function withTypescriptLanguage(includeRider: boolean) {
   return policy;
 }
 
-function withTypescriptLanguageAndCore() {
+function withTypescriptLanguageAndCore(includeRider = true) {
   const coreModules = [
     ...new Set(
       UPSTREAM_CORE_ECC_MODULE_IDS.flatMap((moduleId) => [
@@ -147,7 +147,7 @@ function withTypescriptLanguageAndCore() {
       ]),
     ),
   ];
-  const policy = withTypescriptLanguage(true);
+  const policy = withTypescriptLanguage(includeRider);
   const group = policy.governance?.externalSelections[0];
   if (group === undefined) throw new Error("missing ECC selection group");
   group.roots = ["lang:typescript"];
@@ -172,9 +172,25 @@ describe("governed ECC module selection closure", () => {
     );
   });
 
-  it("refuses a module selection whose selectable member closure is incomplete", () => {
-    expect(() => governedEccComponentIds(policyWithBareModule("agents-core"), catalog)).toThrow(
-      /module:agents-core.*requires.*(?:baseline:agents|agent:)/i,
+  it("accepts an exact module selection after its suggested members are deselected", () => {
+    const policy = policyWithBareModule("agents-core");
+    const group = policy.governance?.externalSelections[0];
+    if (group === undefined) throw new Error("missing ECC selection group");
+    group.roots = ["module:agents-core"];
+
+    expect(governedEccComponentIds(policy, catalog).sort()).toEqual(
+      selectedPolicyIds(policy).sort(),
+    );
+  });
+
+  it("refuses a stray module hidden behind empty explicit roots", () => {
+    const policy = policyWithBareModule("agents-core");
+    const group = policy.governance?.externalSelections[0];
+    if (group === undefined) throw new Error("missing ECC selection group");
+    group.roots = [];
+
+    expect(() => governedEccComponentIds(policy, catalog)).toThrow(
+      /not reachable from an explicit root or preserved legacy item.*module:agents-core/i,
     );
   });
 
@@ -201,13 +217,30 @@ describe("governed ECC module selection closure", () => {
     );
   });
 
-  it("refuses a declaration whose required rider is missing", () => {
-    expect(() => governedEccComponentIds(withTypescriptLanguage(false), catalog)).toThrow(
-      /lang:typescript.*requires.*agent:typescript-reviewer/i,
-    );
+  it("retains a selected declaration rider without treating it as structural authority", () => {
     const selected = governedEccComponentIds(withTypescriptLanguageAndCore(), catalog);
     expect(selected).toContain("lang:typescript");
     expect(selected.filter((id) => id.startsWith("agent:"))).toEqual(["agent:typescript-reviewer"]);
+  });
+
+  it("rejects a rootless legacy declaration whose suggested rider is missing", () => {
+    const policy = withTypescriptLanguageAndCore(false);
+    const group = policy.governance?.externalSelections[0];
+    if (group === undefined) throw new Error("missing ECC selection group");
+    delete group.roots;
+
+    expect(() => governedEccComponentIds(policy, catalog)).toThrow(
+      /lang:typescript.*requires.*agent:typescript-reviewer/i,
+    );
+  });
+
+  it("preserves an explicit language choice after its suggested Agent is deselected", () => {
+    const policy = withTypescriptLanguageAndCore(false);
+
+    expect(governedEccComponentIds(policy, catalog).sort()).toEqual(
+      selectedPolicyIds(policy).sort(),
+    );
+    expect(selectedPolicyIds(policy)).not.toContain("agent:typescript-reviewer");
   });
 
   it("refuses a language selection that omits ECC Core", () => {

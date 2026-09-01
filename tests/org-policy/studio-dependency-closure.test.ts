@@ -251,7 +251,26 @@ describe("policy studio dependency-closed selection", () => {
     reopened.close();
   });
 
-  it("lets the center prune dependent items from an imported rootless selection", () => {
+  it("rejects a stray attributed module that is not reachable from any root", () => {
+    const partialModel = structuredClone(model);
+    const module = ecc.assets.find((asset) => asset.id === "module:agents-core");
+    if (module === undefined) throw new Error("expected module:agents-core");
+    partialModel.initialPolicy.governance?.externalSelections.push({
+      framework: "ecc",
+      roots: [],
+      items: [{ kind: module.kind, id: module.id, source: { ...module.source } }],
+    });
+    const window = studio(partialModel);
+
+    click(window, "#validate");
+
+    expect(window.document.getElementById("announcement")?.textContent).toMatch(
+      /module:agents-core.*not reachable from an explicit root or preserved legacy item/i,
+    );
+    window.close();
+  });
+
+  it("keeps imported rootless closure fail-closed when suggestion provenance is unknown", () => {
     const partialModel = structuredClone(model);
     const legacyIds = legacyAssetClosure(["capability:database"]);
     const legacyItems = legacyIds.map((id) => {
@@ -267,10 +286,10 @@ describe("policy studio dependency-closed selection", () => {
 
     clickCanonical(window, "ecc|agent|agent:database-reviewer");
 
-    expect(selectedIds(window)).not.toContain("agent:database-reviewer");
-    expect(selectedIds(window)).not.toContain("capability:database");
+    expect(selectedIds(window)).toContain("agent:database-reviewer");
+    expect(selectedIds(window)).toContain("capability:database");
     expect(window.document.getElementById("announcement")?.textContent).toMatch(
-      /center deselected agent:database-reviewer/i,
+      /policy change rejected.*capability:database.*requires agent:database-reviewer/i,
     );
     click(window, "#validate");
     expect(window.document.getElementById("announcement")?.textContent).toMatch(
@@ -373,10 +392,14 @@ describe("policy studio dependency-closed selection", () => {
 
     clickCanonical(window, "ecc|agent|agent:database-reviewer");
 
-    expect(selectionRoots(window)).toEqual(["framework:react"]);
-    expect(selectedIds(window).sort()).toEqual(assetClosure(["framework:react"]).sort());
+    expect(selectionRoots(window)).toEqual(["capability:database", "framework:react"]);
+    expect(selectedIds(window).sort()).toEqual(
+      assetClosure(["capability:database", "framework:react"])
+        .filter((id) => id !== "agent:database-reviewer")
+        .sort(),
+    );
     expect(window.document.getElementById("announcement")?.textContent).toMatch(
-      /center deselected agent:database-reviewer.*removed.*capability:database/i,
+      /center deselected agent:database-reviewer/i,
     );
 
     click(window, "#validate");
@@ -394,18 +417,15 @@ describe("policy studio dependency-closed selection", () => {
 
     clickCanonical(window, "ecc|agent|agent:python-reviewer");
     expect(selectedIds(window)).not.toContain("agent:python-reviewer");
-    expect(selectedIds(window)).not.toContain("lang:python");
+    expect(selectedIds(window)).toContain("lang:python");
 
     click(window, '.rail [data-framework-select="ecc|lang|lang:python"]');
+    click(window, '.rail [data-framework-select="ecc|lang|lang:python"]');
     expect(selectedIds(window)).not.toContain("agent:python-reviewer");
-    expect(selectedIds(window)).not.toContain("lang:python");
-    expect(window.document.getElementById("announcement")?.textContent).toMatch(
-      /selection blocked.*agent:python-reviewer.*center/i,
-    );
+    expect(selectedIds(window)).toContain("lang:python");
 
     clickCanonical(window, "ecc|agent|agent:python-reviewer");
     expect(selectedIds(window)).toContain("agent:python-reviewer");
-    click(window, '.rail [data-framework-select="ecc|lang|lang:python"]');
     expect(selectedIds(window)).toEqual(
       expect.arrayContaining(["lang:python", "agent:python-reviewer"]),
     );
@@ -432,18 +452,15 @@ describe("policy studio dependency-closed selection", () => {
 
     clickCanonical(window, `ecc|skill|${skillId}`);
     expect(selectedIds(window)).not.toContain(skillId);
-    expect(selectedIds(window)).not.toContain(module.id);
+    expect(selectedIds(window)).toContain(module.id);
 
     click(window, `.rail [data-framework-select="ecc|module|${module.id}"]`);
+    click(window, `.rail [data-framework-select="ecc|module|${module.id}"]`);
     expect(selectedIds(window)).not.toContain(skillId);
-    expect(selectedIds(window)).not.toContain(module.id);
-    expect(window.document.getElementById("announcement")?.textContent).toMatch(
-      new RegExp(`selection blocked.*${skillId}.*center`, "i"),
-    );
+    expect(selectedIds(window)).toContain(module.id);
 
     clickCanonical(window, `ecc|skill|${skillId}`);
     expect(selectedIds(window)).toContain(skillId);
-    click(window, `.rail [data-framework-select="ecc|module|${module.id}"]`);
     expect(selectedIds(window)).toEqual(expect.arrayContaining([module.id, skillId]));
     click(window, "#validate");
     expect(window.document.getElementById("announcement")?.textContent).toMatch(
@@ -531,7 +548,7 @@ describe("policy studio dependency-closed selection", () => {
     window.close();
   });
 
-  it("rejects a policy that names a module but omits its selectable members", () => {
+  it("rejects a legacy rootless module that omits its selectable members", () => {
     const partialModel = structuredClone(model);
     const module = ecc.assets.find(
       (asset) => asset.kind === "module" && (asset.members?.length ?? 0) > 0,
