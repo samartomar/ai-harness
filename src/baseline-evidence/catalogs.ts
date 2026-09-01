@@ -1,4 +1,8 @@
-import { ECC_DECLARABLE_COMPONENT_IDS, ECC_EXPLICIT_MCP_COMPONENT_IDS } from "../ecc/components.js";
+import {
+  ECC_DECLARABLE_COMPONENT_IDS,
+  ECC_EXPLICIT_MCP_COMPONENT_IDS,
+  type EccComponentId,
+} from "../ecc/components.js";
 import { eccComponentSourcePaths } from "../ecc/materialize.js";
 import { BASELINE_SOURCES } from "../internals/baseline-sources.js";
 import {
@@ -85,13 +89,14 @@ function additionalEccSkillComponents(): BaselineCatalogComponent[] {
     for (const path of module.paths) {
       const name = /^skills\/([a-z0-9][a-z0-9-]*)$/.exec(path)?.[1];
       if (name === undefined) continue;
-      const id = `skill:${name}`;
+      const id: EccComponentId = `skill:${name}`;
       if (explicitIds.has(id)) continue;
+      const paths = eccComponentSourcePaths(id);
       const existing = byId.get(id);
-      if (existing !== undefined && existing.paths[0] !== path) {
+      if (existing !== undefined && JSON.stringify(existing.paths) !== JSON.stringify(paths)) {
         throw new Error(`ECC skill ${id} has conflicting source roots`);
       }
-      byId.set(id, { id, paths: [path], skillContent: true });
+      byId.set(id, { id, paths, skillContent: true });
     }
   }
   return [...byId.values()].sort((left, right) => left.id.localeCompare(right.id));

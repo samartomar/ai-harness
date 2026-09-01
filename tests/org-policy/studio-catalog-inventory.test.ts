@@ -1,7 +1,8 @@
 import { type Element, Window } from "happy-dom";
 import { describe, expect, it } from "vitest";
 import { baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
-import { ECC_DECLARABLE_COMPONENT_IDS } from "../../src/ecc/components.js";
+import { ECC_DECLARABLE_COMPONENT_IDS, type EccComponentId } from "../../src/ecc/components.js";
+import { eccComponentSourcePaths } from "../../src/ecc/materialize.js";
 import { mcpServers } from "../../src/mcp/servers.js";
 import { policyAuthoringCatalog } from "../../src/org-policy/catalog.js";
 import {
@@ -301,14 +302,19 @@ describe("policy authoring catalog inventory", () => {
   });
 
   it("binds every selectable ECC Skill to the authoritative lifecycle catalog", () => {
-    const baselineSkillIds = baselineCatalogById("ecc")
-      .components.filter((component) => component.id.startsWith("skill:"))
-      .map((component) => component.id)
-      .sort();
+    const baselineSkills = baselineCatalogById("ecc").components.filter((component) =>
+      component.id.startsWith("skill:"),
+    );
+    const baselineSkillIds = baselineSkills.map((component) => component.id).sort();
 
     expect(baselineSkillIds).toEqual(
       eccSkillCatalogInventory.map((skill) => `skill:${skill.id}`).sort(),
     );
+    for (const component of baselineSkills) {
+      expect(component.paths, `${component.id} binds every materialized source root`).toEqual(
+        eccComponentSourcePaths(component.id as EccComponentId),
+      );
+    }
   });
 
   it("places selectable ECC MCP declarations inside the ECC MCP catalog", () => {
