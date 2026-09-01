@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -83,11 +84,9 @@ function driverSteps(actions: Action[]): Array<{
 }> {
   const driver = execs(actions).find((action) => action.describe.includes("verified ECC checkout"));
   expect(driver).toBeDefined();
-  // Steps ride a temp FILE, never argv (Windows 32K command-line cap; the
-  // driver deletes it on execution — unexecuted plan actions leave it for us).
-  const stepsPath = driver?.argv.at(-1);
-  if (!stepsPath) throw new Error("missing verified ECC steps file path");
-  return JSON.parse(readFileSync(stepsPath, "utf8")) as Array<{
+  const serialized = driver?.stdin?.data;
+  if (serialized === undefined) throw new Error("missing verified ECC steps stdin");
+  return JSON.parse(serialized) as Array<{
     argv: string[];
     cwd: string;
     env?: Record<string, string>;
@@ -135,6 +134,39 @@ function put(path: string, contents: string): void {
 }
 
 describe("verifiedEccInstallPlan", () => {
+  it("constructs and renders a plan without touching an isolated temporary root", () => {
+    const isolatedTemp = join(root, "isolated-temp");
+    mkdirSync(isolatedTemp);
+    const original = {
+      TEMP: process.env.TEMP,
+      TMP: process.env.TMP,
+      TMPDIR: process.env.TMPDIR,
+    };
+    process.env.TEMP = isolatedTemp;
+    process.env.TMP = isolatedTemp;
+    process.env.TMPDIR = isolatedTemp;
+    try {
+      const selected = selection();
+      const built = verifiedEccInstallPlan(
+        ctx(),
+        join(root, "quarantine", "tree"),
+        { clis: ["claude"], profile: "core", packs: [], selection: selected },
+        authorizationsForSelection("claude", selected),
+      );
+      const driver = execs(built.actions).find((action) =>
+        action.describe.includes("verified ECC checkout"),
+      );
+      expect(driver?.argv).toEqual([process.execPath, "-e", expect.any(String)]);
+      expect(driver?.stdin?.data.length).toBeGreaterThan(0);
+      expect(readdirSync(isolatedTemp)).toEqual([]);
+    } finally {
+      for (const [key, value] of Object.entries(original)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
+
   it("refuses a partial Full install before any mutation", () => {
     const requested: EccComponentSelection = { ...selection(), scope: "full" };
     const everything = eccEvidenceComponentIdsForSelection("claude", requested);
@@ -1109,21 +1141,17 @@ describe("verifiedEccInstallPlan", () => {
               cwd: root,
             },
       );
-      // A dedicated subdir, mirroring production's private mkdtemp dir: the
-      // driver removes the file AND its parent — pointing it at `root` would
-      // let POSIX delete the very cwd the deterministic steps spawn in.
-      const stepsDir = join(root, `det-steps-${firstExit}`);
-      mkdirSync(stepsDir, { recursive: true });
-      const stepsFile = join(stepsDir, "steps.json");
-      writeFileSync(stepsFile, JSON.stringify(deterministic), "utf8");
-      return spawnSync(executable, [...driver.argv.slice(1, -1), stepsFile], {
+      return spawnSync(executable, driver.argv.slice(1), {
         cwd: root,
         env: { ...process.env, ...env },
+        input: JSON.stringify(deterministic),
         encoding: "utf8",
       });
     };
 
-    expect(run(7).status).toBe(7);
+    const failed = run(7);
+    expect(failed.status).toBe(7);
+    expect(failed.stderr).toBe("");
     expect(existsSync(registrationLedgerPath(root))).toBe(false);
     const preload = join(root, "transient-rename.cjs");
     writeFileSync(

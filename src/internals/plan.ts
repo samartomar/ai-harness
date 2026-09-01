@@ -165,6 +165,11 @@ export interface ExecAction {
   cwd?: string;
   /** Optional scrubbed environment for local helper commands. */
   env?: NodeJS.ProcessEnv;
+  /**
+   * Apply-only stdin kept outside argv and collected plan results. The executor
+   * refuses malformed limits and payloads whose UTF-8 bytes exceed `maxBytes`.
+   */
+  stdin?: { data: string; maxBytes: number };
   /** Optional timeout override for long-but-bounded local helpers. */
   timeoutMs?: number;
   /** Optional verification check to emit when the command exits non-zero. */
@@ -638,6 +643,7 @@ export function exec(
     allowFailure?: boolean;
     cwd?: string;
     env?: NodeJS.ProcessEnv;
+    stdin?: ExecAction["stdin"];
     timeoutMs?: number;
     failureCheck?: ExecAction["failureCheck"];
     blockProbesOnFailure?: boolean;
@@ -652,6 +658,7 @@ export function exec(
     argv,
     cwd: opts.cwd,
     env: opts.env,
+    stdin: opts.stdin,
     timeoutMs: opts.timeoutMs,
     failureCheck: opts.failureCheck,
     blockProbesOnFailure: opts.blockProbesOnFailure,

@@ -1239,7 +1239,30 @@ export async function executePlan(
       let res: Awaited<ReturnType<PlanContext["run"]>> | undefined;
       let runnerError: unknown;
       try {
-        res = await ctx.run(a.argv, { cwd: a.cwd, env: a.env, timeoutMs: a.timeoutMs });
+        let input: string | undefined;
+        if (a.stdin !== undefined) {
+          if (
+            typeof a.stdin.data !== "string" ||
+            !Number.isSafeInteger(a.stdin.maxBytes) ||
+            a.stdin.maxBytes <= 0
+          ) {
+            throw new AihError("invalid exec stdin byte limit", "AIH_CONFIG");
+          }
+          const inputBytes = Buffer.byteLength(a.stdin.data, "utf8");
+          if (inputBytes > a.stdin.maxBytes) {
+            throw new AihError(
+              `exec stdin exceeds its byte limit (${inputBytes} > ${a.stdin.maxBytes})`,
+              "AIH_TRUST",
+            );
+          }
+          input = a.stdin.data;
+        }
+        res = await ctx.run(a.argv, {
+          cwd: a.cwd,
+          env: a.env,
+          input,
+          timeoutMs: a.timeoutMs,
+        });
       } catch (error) {
         runnerError = error;
       }
