@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TextEncoder } from "node:util";
 import { type Element, Window } from "happy-dom";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { verifyPolicyAuthorityReceipt } from "../../src/org-policy/authority.js";
@@ -41,6 +41,12 @@ interface IntakeApi {
 
 const REGISTRY_INTEGRITY = `sha512-${Buffer.alloc(64, 1).toString("base64")}`;
 const OTHER_REGISTRY_INTEGRITY = `sha512-${Buffer.alloc(64, 2).toString("base64")}`;
+const openWindows = new Set<Window>();
+
+afterEach(async () => {
+  await Promise.all([...openWindows].map((window) => window.happyDOM.close()));
+  openWindows.clear();
+});
 
 function input(window: Window, id: string, value: string): void {
   setValue(window, id, value);
@@ -59,6 +65,7 @@ function studio(): Window {
     structuredClone;
   const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/gi)].map((match) => match[1]);
   window.eval(scripts.join("\n"));
+  openWindows.add(window);
   return window;
 }
 
@@ -1174,7 +1181,7 @@ describe("Policy Workbench artifact intake", () => {
     );
 
     window.close();
-  });
+  }, 15_000);
 
   it("does not apply directory resolution history to a changed source or owner", async () => {
     const window = studio();

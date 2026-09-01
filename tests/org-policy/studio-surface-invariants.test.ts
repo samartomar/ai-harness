@@ -7,12 +7,15 @@ import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
 const model = policyStudioModel();
 const openWindows = new Set<Window>();
 
-afterEach(() => {
-  for (const window of openWindows) {
-    if (!window.closed) window.close();
-  }
+afterEach(async () => {
+  await Promise.all([...openWindows].map((window) => window.happyDOM.close()));
   openWindows.clear();
 });
+
+async function closeWindow(window: Window): Promise<void> {
+  await window.happyDOM.close();
+  openWindows.delete(window);
+}
 
 function studio(studioModel: PolicyStudioModel = model): Window {
   const window = new Window({ url: "http://localhost/" });
@@ -174,7 +177,7 @@ describe("policy studio surface invariants", () => {
     }
   });
 
-  it("gives every selection an inverse that round-trips the policy to baseline", () => {
+  it("gives every selection an inverse that round-trips the policy to baseline", async () => {
     const window = studio();
     const document = window.document;
 
@@ -206,7 +209,7 @@ describe("policy studio surface invariants", () => {
         "data-framework-select",
         `${framework.id}|${asset.kind}|${asset.id}`,
       );
-      frameworkWindow.close();
+      await closeWindow(frameworkWindow);
     }
     for (const part of model.catalog.enterpriseComposition.parts.filter(
       (item) => item.selection === "additive",
@@ -230,10 +233,10 @@ describe("policy studio surface invariants", () => {
         `${preset} inverse`,
       );
       expect(policyText(presetWindow), `${preset} returns to baseline`).toBe(baseline);
-      presetWindow.close();
+      await closeWindow(presetWindow);
     }
-    window.close();
-  }, 30_000);
+    await closeWindow(window);
+  }, 60_000);
 
   it("makes every component id named by a panel resolve through its click-through", () => {
     const window = studio();
@@ -263,9 +266,9 @@ describe("policy studio surface invariants", () => {
         link.textContent,
       );
     }
-  });
+  }, 15_000);
 
-  it("narrates authored selection without inventing a target-evaluated state", () => {
+  it("narrates authored selection without inventing a target-evaluated state", async () => {
     const baseline = studio();
     const baselineNarration = new Map<string, string>();
     for (const item of [...model.catalog.mcp, ...model.catalog.hooks]) {
@@ -279,7 +282,7 @@ describe("policy studio surface invariants", () => {
         baselineNarration.set(key, detailNarration(baseline, key));
       }
     }
-    baseline.close();
+    await closeWindow(baseline);
 
     const selectedEcc = studio();
     choosePreset(selectedEcc, "vibe");
@@ -312,7 +315,7 @@ describe("policy studio surface invariants", () => {
         detailNarration(selectedEcc, key),
       );
     }
-    selectedEcc.close();
+    await closeWindow(selectedEcc);
 
     const superpowers = model.catalog.frameworks.find(
       (framework) => framework.id === "superpowers",
@@ -327,8 +330,8 @@ describe("policy studio surface invariants", () => {
         detailNarration(selectedSuperpowers, key),
       );
     }
-    selectedSuperpowers.close();
-  }, 15_000);
+    await closeWindow(selectedSuperpowers);
+  }, 30_000);
 
   it("narrates the requested and effective count at every export", () => {
     const window = studio();

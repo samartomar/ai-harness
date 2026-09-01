@@ -24,6 +24,13 @@ import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 
 let dir: string;
+const openWindows = new Set<Window>();
+
+function workbenchWindow(): Window {
+  const window = new Window({ url: "http://localhost/" });
+  openWindows.add(window);
+  return window;
+}
 
 /**
  * FileReader resolves on its own schedule, so a fixed sleep is a race the suite
@@ -42,7 +49,9 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "aih-policy-generate-"));
 });
 
-afterEach(() => {
+afterEach(async () => {
+  await Promise.all([...openWindows].map((window) => window.happyDOM.close()));
+  openWindows.clear();
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -317,7 +326,7 @@ describe("policy generate", () => {
   });
 
   it("keeps standalone decision import strict, inert, and parity-checked in the browser", async () => {
-    const window = new Window({ url: "http://localhost/" });
+    const window = workbenchWindow();
     const html = policyStudioHtml(policyStudioModel());
     window.document.write(html);
     loadStudio(window, html);
@@ -416,7 +425,7 @@ describe("policy generate", () => {
   });
 
   it("keeps decision import deterministic across out-of-order file reads", async () => {
-    const window = new Window({ url: "http://localhost/" });
+    const window = workbenchWindow();
     const readers: Array<{
       result: string | null;
       onload: (() => void) | null;
@@ -543,7 +552,7 @@ describe("policy generate", () => {
     for (const policy of invalidPolicies) {
       expect(() => parseStudioPolicyImport(JSON.stringify(policy))).toThrow();
     }
-    const window = new Window({ url: "http://localhost/" });
+    const window = workbenchWindow();
     const html = policyStudioHtml(policyStudioModel());
     window.document.write(html);
     loadStudio(window, html);
@@ -626,7 +635,7 @@ describe("policy generate", () => {
       evidence: { record: "audit-remote-2026" },
     });
 
-    const window = new Window({ url: "http://localhost/" });
+    const window = workbenchWindow();
     const html = policyStudioHtml(policyStudioModel());
     window.document.write(html);
     loadStudio(window, html);
@@ -756,7 +765,7 @@ describe("policy generate", () => {
   });
 
   it("has semantic controls and a usable accessible help interaction in the generated DOM", () => {
-    const window = new Window({ url: "http://localhost/" });
+    const window = workbenchWindow();
     const html = policyStudioHtml(policyStudioModel());
     window.document.write(html);
     loadStudio(window, html);
@@ -794,7 +803,7 @@ describe("policy generate", () => {
   });
 
   it("rejects invalid browser imports and invalid authored custom text before it can become downloadable policy", async () => {
-    const window = new Window({ url: "http://localhost/" });
+    const window = workbenchWindow();
     const html = policyStudioHtml(policyStudioModel());
     window.document.write(html);
     loadStudio(window, html);
@@ -893,7 +902,7 @@ describe("policy generate", () => {
   });
 
   it("provides field recovery and safe edit/remove disclosures for pending and report-only rows", async () => {
-    const window = new Window({ url: "http://localhost/" });
+    const window = workbenchWindow();
     const html = policyStudioHtml(policyStudioModel());
     window.document.write(html);
     loadStudio(window, html);
@@ -1043,7 +1052,7 @@ describe("policy generate", () => {
   });
 
   it("keeps curation and preserved evidence detail in compact accessible disclosures", async () => {
-    const window = new Window({ url: "http://localhost/" });
+    const window = workbenchWindow();
     const html = policyStudioHtml(policyStudioModel());
     window.document.write(html);
     loadStudio(window, html);
@@ -1262,7 +1271,7 @@ describe("policy generate", () => {
       const policy = fullAuthoringPolicy();
       fixture.mutate(policy);
       expect(() => parseStudioPolicyImport(JSON.stringify(policy)), fixture.name).toThrow();
-      const window = new Window({ url: "http://localhost/" });
+      const window = workbenchWindow();
       const html = policyStudioHtml(policyStudioModel());
       window.document.write(html);
       loadStudio(window, html);
@@ -1311,7 +1320,7 @@ describe("policy generate", () => {
       } else {
         expect(() => parseStudioPolicyImport(JSON.stringify(policy))).toThrow();
       }
-      const window = new Window({ url: "http://localhost/" });
+      const window = workbenchWindow();
       const html = policyStudioHtml(policyStudioModel());
       window.document.write(html);
       loadStudio(window, html, fixture.accepted ? "" : `state.policy=${JSON.stringify(policy)};`);

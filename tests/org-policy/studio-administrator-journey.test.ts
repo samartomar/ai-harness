@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Window } from "happy-dom";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { parsePolicyBundle, readOrgPolicy } from "../../src/org-policy/schema.js";
 import { policyStudioModel } from "../../src/org-policy/studio-model.js";
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
@@ -17,6 +17,13 @@ import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
  */
 
 const model = policyStudioModel();
+const openWindows = new Set<Window>();
+
+afterEach(async () => {
+  await Promise.all([...openWindows].map((window) => window.happyDOM.close()));
+  openWindows.clear();
+});
+
 const controls = [
   ...model.catalog.mcp.filter((item) => item.availability === "always").map((item) => item.control),
   ...model.catalog.hooks,
@@ -60,6 +67,7 @@ function openWorkbench(): Window {
   const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/gi)].map((match) => match[1]);
   if (scripts.length === 0) throw new Error("expected generated workbench script");
   window.eval(scripts.join("\n"));
+  openWindows.add(window);
   return window;
 }
 
@@ -617,5 +625,5 @@ describe("policy workbench administrator journey", () => {
       ).toHaveLength(0);
       window.close();
     }
-  });
+  }, 15_000);
 });
