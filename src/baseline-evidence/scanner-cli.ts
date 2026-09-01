@@ -222,8 +222,8 @@ function assemble(args: readonly string[]): void {
   process.stdout.write(`assembled ${lock.sources.length} Scanner-vetted baseline sources\n`);
 }
 
-async function main(): Promise<void> {
-  const [command, ...args] = process.argv.slice(2);
+export async function runScannerBridge(argv: readonly string[]): Promise<void> {
+  const [command, ...args] = argv;
   if (command === "request") request(args);
   else if (command === "consume") await consume(args);
   else if (command === "assemble") assemble(args);
@@ -231,7 +231,7 @@ async function main(): Promise<void> {
 }
 
 if (process.argv[1] && import.meta.url === new URL(`file://${resolve(process.argv[1])}`).href) {
-  main().catch((error) => {
+  runScannerBridge(process.argv.slice(2)).catch((error) => {
     process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;
   });
