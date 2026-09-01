@@ -594,7 +594,7 @@ function frameworkCatalog(id: "ecc" | "superpowers"): PolicyAuthoringFramework {
           commit: catalog.pinnedSha,
           path: skill.path,
         },
-        sourcePaths: [skill.path],
+        sourcePaths: eccSelectionSourcePaths(skillId, [skill.path]),
         metadata: {
           title: metadata.title,
           summary: metadata.summary,

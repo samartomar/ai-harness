@@ -6,6 +6,11 @@ import { eccComponentRequiredModuleRootIds } from "./materialize.js";
 export function eccSelectionSourcePaths(id: string, catalogPaths: readonly string[]): string[] {
   const paths = new Set(catalogPaths);
   if (id === "baseline:rules") paths.add("rules");
+  if (id.startsWith("skill:")) {
+    const skillDirectory = `skills/${id.slice("skill:".length)}`;
+    paths.add(skillDirectory);
+    paths.add(`${skillDirectory}/SKILL.md`);
+  }
   return [...paths];
 }
 
