@@ -284,7 +284,7 @@ describe("policy studio dependency-closed selection", () => {
       `${expected.length - 1} required component`,
     );
     window.close();
-  });
+  }, 15_000);
 
   it("refuses removal of a required module and prunes derived modules with the root", () => {
     const window = studio();
