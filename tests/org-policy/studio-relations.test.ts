@@ -65,20 +65,25 @@ function selectionRoots(window: Window): string[] {
 }
 
 function assetClosure(rootIds: readonly string[]): string[] {
-  const selected = new Set(rootIds);
-  const pending = [...rootIds];
+  const selected = new Set<string>();
+  const expanded = new Set<string>();
+  const pending = rootIds.map((id) => ({ id, includeMembers: true }));
   while (pending.length > 0) {
-    const id = pending.shift();
-    const asset = eccAssets.find((candidate) => candidate.id === id);
-    if (asset === undefined) throw new Error(`expected ECC asset ${id}`);
+    const next = pending.shift();
+    if (next === undefined) break;
+    const expansionKey = `${next.id}|${next.includeMembers ? "members" : "structural"}`;
+    if (expanded.has(expansionKey)) continue;
+    expanded.add(expansionKey);
+    selected.add(next.id);
+    const asset = eccAssets.find((candidate) => candidate.id === next.id);
+    if (asset === undefined) throw new Error(`expected ECC asset ${next.id}`);
     for (const required of [
       ...(asset.dependencies ?? []),
-      ...(asset.members ?? []),
+      ...(next.includeMembers ? (asset.members ?? []) : []),
       ...(asset.riders ?? []),
     ]) {
-      if (selected.has(required)) continue;
       selected.add(required);
-      pending.push(required);
+      pending.push({ id: required, includeMembers: false });
     }
   }
   return [...selected];
@@ -194,7 +199,7 @@ describe("policy studio component relations", () => {
     expect(selectedIds(window)).toEqual([riderAsset.id]);
   });
 
-  it("removes an independently selected rider and every dependent root from the center", () => {
+  it("removes an independently selected rider without erasing the declaration it suggested", () => {
     const window = studio();
     const rider = declarer.riders?.[0];
     if (rider === undefined) throw new Error("expected a declared rider");
@@ -205,14 +210,18 @@ describe("policy studio component relations", () => {
     click(window, `[data-framework-select="ecc|${declarer.kind}|${declarer.id}"]`);
     clickCanonical(window, `ecc|${riderAsset.kind}|${riderAsset.id}`);
 
-    expect(selectedIds(window)).toEqual([]);
-    expect(selectionRoots(window)).toEqual([]);
+    expect(selectedIds(window).sort()).toEqual(
+      assetClosure([declarer.id])
+        .filter((id) => id !== riderAsset.id)
+        .sort(),
+    );
+    expect(selectionRoots(window)).toEqual([declarer.id]);
     expect(window.document.getElementById("announcement")?.textContent).toContain(
-      `Center deselected ${riderAsset.id}; removed 2 dependent root(s)`,
+      `Center deselected ${riderAsset.id}`,
     );
   });
 
-  it("lets the center remove a rider by pruning every declaration that requires it", () => {
+  it("lets the center remove a suggested rider while retaining its declaration", () => {
     const window = studio();
     const rider = declarer.riders?.[0];
     if (rider === undefined) throw new Error("expected a declared rider");
@@ -222,10 +231,14 @@ describe("policy studio component relations", () => {
 
     clickCanonical(window, `ecc|${riderAsset.kind}|${riderAsset.id}`);
 
-    expect(selectedIds(window)).toEqual([]);
-    expect(selectionRoots(window)).toEqual([]);
+    expect(selectedIds(window).sort()).toEqual(
+      assetClosure([declarer.id])
+        .filter((id) => id !== riderAsset.id)
+        .sort(),
+    );
+    expect(selectionRoots(window)).toEqual([declarer.id]);
     expect(window.document.getElementById("announcement")?.textContent).toContain(
-      `Center deselected ${riderAsset.id}; removed 1 dependent root(s) (${declarer.id})`,
+      `Center deselected ${riderAsset.id}`,
     );
   });
 
@@ -261,7 +274,7 @@ describe("policy studio component relations", () => {
     expect(selectedIds(window)).toEqual([]);
   });
 
-  it("rolls back a declaration and preset when a required rider carries curation", () => {
+  it("selects a declaration without turning its curated rider into selected authority", () => {
     const blockedModel = structuredClone(model);
     blockedModel.initialPolicy.governance?.externalCuration.push({
       framework: "ecc",
@@ -275,16 +288,19 @@ describe("policy studio component relations", () => {
       ],
     });
     const window = studio(blockedModel);
-    const before = selectedIds(window);
-
     click(window, `[data-framework-select="ecc|${curatedDeclarer.kind}|${curatedDeclarer.id}"]`);
 
-    expect(selectedIds(window)).toEqual(before);
+    expect(selectedIds(window)).toContain(curatedDeclarer.id);
+    expect(selectedIds(window)).not.toContain(curatedRider.id);
     expect(
       (window.document.getElementById("preset-select") as unknown as { value: string }).value,
     ).toBe("custom");
     expect(window.document.getElementById("announcement")?.textContent).toContain(
-      `Selection blocked: required component ${curatedRider.id}`,
+      `Selected ${curatedDeclarer.id}`,
+    );
+    click(window, "#validate");
+    expect(window.document.getElementById("announcement")?.textContent).toMatch(
+      /validation passed/i,
     );
   });
 

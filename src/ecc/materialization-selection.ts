@@ -11,6 +11,7 @@ import {
   displaySafe,
   type EccComponentProvenance,
 } from "./materialization-receipt.js";
+import { eccMandatoryRequirementIds } from "./selection-closure.js";
 
 /**
  * F2: the policy's evidence-passed effective selection.
@@ -42,7 +43,8 @@ export type EccSelectionExclusionReason =
   | "vet-blocked"
   | "no-evidence"
   | "malformed-selection"
-  | "malformed-evidence";
+  | "malformed-evidence"
+  | "dependency-unavailable";
 
 export interface EccSelectionExclusion {
   /** The raw selection id (`governance.externalSelections[].items[].id`). */
@@ -203,6 +205,38 @@ export function resolveEccMaterializationSelection(
       }
 
       included.push({ id, authorization, provenance });
+    }
+  }
+
+  // Evidence is component-granular, but structural module requirements are
+  // not optional. Recompute closure after the evidence filter so a held or
+  // malformed dependency cannot leave its dependent eligible to materialize.
+  // Iterate to a fixed point because a removed dependency can itself be a
+  // dependency of another selected component.
+  let changed = true;
+  while (changed) {
+    changed = false;
+    const includedIds = new Set<string>(included.map((component) => component.id));
+    for (let index = included.length - 1; index >= 0; index -= 1) {
+      const component = included[index];
+      if (component === undefined) continue;
+      const missing = eccMandatoryRequirementIds(component.id).filter(
+        (dependency) => !includedIds.has(dependency),
+      );
+      if (missing.length === 0) continue;
+      included.splice(index, 1);
+      includedIds.delete(component.id);
+      excludedItems.push({
+        id: component.id,
+        kind: component.id.slice(0, component.id.indexOf(":")),
+        framework: "ecc",
+        reason: "dependency-unavailable",
+        findingCodes: [],
+        detail: `${displaySafe(component.id)} requires evidence-passed structural component(s) ${missing
+          .map((dependency) => displaySafe(dependency))
+          .join(", ")}`,
+      });
+      changed = true;
     }
   }
 

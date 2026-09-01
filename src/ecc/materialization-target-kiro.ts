@@ -346,7 +346,9 @@ function assertCommonEvidenceIdentity(
 
 function assertSupportedComponent(component: ParsedComponent): void {
   if (component.id === "baseline:rules") {
-    if (component.provenance.componentPath !== "rules") {
+    if (
+      !["rules", "rules/README.md", "rules/common"].includes(component.provenance.componentPath)
+    ) {
       fail("baseline:rules provenance does not match the selected component");
     }
     return;

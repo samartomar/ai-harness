@@ -11,12 +11,7 @@ import { lines } from "../internals/render.js";
 import { resolveEffectiveOrgPolicy } from "../org-policy/effective.js";
 import type { OrgPolicy } from "../org-policy/schema.js";
 import { cleanupQuarantine, type TrustSource } from "../trust/fetch.js";
-import {
-  ECC_DECLARATION_RIDERS,
-  type EccComponentId,
-  type EccMcpComponentId,
-} from "./components.js";
-import { eccModuleDependencyIds } from "./evidence.js";
+import { ECC_DECLARATION_RIDERS } from "./components.js";
 import {
   applyEccMaterialization,
   type EccMaterializationAdvisory,
@@ -36,7 +31,8 @@ import {
   eccMaterializationTargetName,
   resolveEccTargetMaterialization,
 } from "./materialization-target.js";
-import { eccComponentRequiredModuleRootIds, eccModuleSelectableMemberIds } from "./materialize.js";
+import { eccModuleSelectableMemberIds } from "./materialize.js";
+import { eccMandatoryRequirementIds, eccSelectionSourcePaths } from "./selection-closure.js";
 
 /**
  * F6: `aih ecc --lifecycle install` in a governed repository.
@@ -130,10 +126,35 @@ interface GovernedMaterializationReport {
  */
 export function governedEccComponentIds(policy: OrgPolicy, catalog: BaselineCatalog): string[] {
   const expectedRepository = `${catalog.owner}/${catalog.repo}`;
+  const catalogById = new Map(catalog.components.map((component) => [component.id, component]));
   const selected = new Set<string>();
+  const legacyClosed = new Set<string>();
+  const attributionRoots = new Set<string>();
+  const unattributedRoots = new Set<string>();
+  let hasRootMetadata = false;
   for (const selection of policy.governance?.externalSelections ?? []) {
     if (selection.framework !== GOVERNED_FRAMEWORK) continue;
+    const hasExplicitRoots = Array.isArray(selection.roots);
+    const roots = new Set(selection.roots ?? []);
+    const unattributed = new Set(selection.unattributedItems ?? []);
+    if (hasExplicitRoots) hasRootMetadata = true;
+    for (const id of roots) attributionRoots.add(id);
+    for (const id of unattributed) unattributedRoots.add(id);
     for (const item of selection.items) {
+      const component = catalogById.get(item.id);
+      if (component === undefined) {
+        throw new AihError(
+          `refusing the governed ECC framework lifecycle: the policy selects component the pinned ECC catalog does not carry: ${displaySafe(item.id)}`,
+          "AIH_CONFIG",
+        );
+      }
+      const expectedKind = item.id.slice(0, item.id.indexOf(":"));
+      if (item.kind !== expectedKind) {
+        throw new AihError(
+          `refusing the governed ECC framework lifecycle: ${displaySafe(item.id)} declares kind ${displaySafe(item.kind)}, but its pinned kind is ${displaySafe(expectedKind)}`,
+          "AIH_TRUST",
+        );
+      }
       // GitHub owner/repo identity is case-insensitive, and this repository
       // carries both spellings of the ECC repo, so casing alone is never the
       // disagreement. The commit is already lowercase-constrained by the policy
@@ -150,7 +171,15 @@ export function governedEccComponentIds(policy: OrgPolicy, catalog: BaselineCata
           "AIH_TRUST",
         );
       }
+      const expectedPaths = eccSelectionSourcePaths(item.id, component.paths);
+      if (!expectedPaths.includes(item.source.path)) {
+        throw new AihError(
+          `refusing the governed ECC framework lifecycle: ${displaySafe(item.id)} claims source path ${displaySafe(item.source.path)}, but its pinned catalog paths are ${expectedPaths.map((path) => displaySafe(path)).join(", ")}`,
+          "AIH_TRUST",
+        );
+      }
       selected.add(item.id);
+      if (!hasExplicitRoots || unattributed.has(item.id)) legacyClosed.add(item.id);
     }
   }
   if (selected.size === 0) {
@@ -159,7 +188,7 @@ export function governedEccComponentIds(policy: OrgPolicy, catalog: BaselineCata
       "AIH_CONFIG",
     );
   }
-  const known = new Set(catalog.components.map((component) => component.id));
+  const known = new Set(catalogById.keys());
   const unknown = [...selected].filter((id) => !known.has(id)).sort();
   if (unknown.length > 0) {
     throw new AihError(
@@ -170,25 +199,47 @@ export function governedEccComponentIds(policy: OrgPolicy, catalog: BaselineCata
       "AIH_CONFIG",
     );
   }
+  const relatedComponentsFor = (id: string, includeMembers: boolean): string[] => {
+    if (id.startsWith("runtime:")) return [];
+    const declaredRiders = (ECC_DECLARATION_RIDERS[id] ?? []).filter((rider) => known.has(rider));
+    const moduleMembers =
+      id.startsWith("module:") && includeMembers
+        ? eccModuleSelectableMemberIds(id.slice("module:".length), [...known])
+        : [];
+    return [...new Set([...eccMandatoryRequirementIds(id), ...moduleMembers, ...declaredRiders])];
+  };
+  if (hasRootMetadata) {
+    const reachable = new Set<string>();
+    const expanded = new Set<string>();
+    const pending = [...attributionRoots, ...unattributedRoots].map((id) => ({
+      id,
+      includeMembers: true,
+    }));
+    while (pending.length > 0) {
+      const next = pending.shift();
+      if (next === undefined) break;
+      const expansionKey = `${next.id}|${next.includeMembers ? "members" : "structural"}`;
+      if (expanded.has(expansionKey)) continue;
+      expanded.add(expansionKey);
+      reachable.add(next.id);
+      for (const required of relatedComponentsFor(next.id, next.includeMembers)) {
+        reachable.add(required);
+        pending.push({ id: required, includeMembers: false });
+      }
+    }
+    const unreachable = [...selected].filter((id) => !reachable.has(id)).sort();
+    if (unreachable.length > 0) {
+      throw new AihError(
+        `refusing the governed ECC framework lifecycle: selected component(s) are not reachable from an explicit root or preserved legacy item: ${unreachable.map((id) => displaySafe(id)).join(", ")}`,
+        "AIH_CONFIG",
+      );
+    }
+  }
   const missingDependencies = new Map<string, string[]>();
   for (const id of selected) {
-    if (id.startsWith("runtime:")) continue;
-    const moduleDependencies = [
-      ...new Set(
-        eccComponentRequiredModuleRootIds(id as EccComponentId | EccMcpComponentId).flatMap(
-          (moduleId) => [moduleId, ...eccModuleDependencyIds(moduleId)],
-        ),
-      ),
-    ]
-      .map((moduleId) => `module:${moduleId}`)
-      .filter((dependency) => dependency !== id);
-    const declaredRiders = (ECC_DECLARATION_RIDERS[id] ?? []).filter((rider) => known.has(rider));
-    const moduleMembers = id.startsWith("module:")
-      ? eccModuleSelectableMemberIds(id.slice("module:".length), [...known])
-      : [];
-    const dependencies = [
-      ...new Set([...moduleDependencies, ...moduleMembers, ...declaredRiders]),
-    ].filter((dependency) => !selected.has(dependency));
+    const dependencies = (
+      legacyClosed.has(id) ? relatedComponentsFor(id, true) : eccMandatoryRequirementIds(id)
+    ).filter((dependency) => !selected.has(dependency));
     if (dependencies.length > 0) missingDependencies.set(id, dependencies);
   }
   if (missingDependencies.size > 0) {
@@ -302,6 +353,41 @@ function reportBody(report: GovernedMaterializationReport): string {
   );
 }
 
+/** Refuse a target-specific partial map that drops a structural dependency. */
+export function assertGovernedEccTargetClosure(
+  targets: readonly EccMaterializationTarget[],
+  includedIds: readonly string[],
+  refused: readonly EccTargetedRefusal[],
+): void {
+  for (const requestedTarget of targets) {
+    const refusedIds = new Set(
+      refused.filter((entry) => entry.target === requestedTarget).map((entry) => entry.id),
+    );
+    const representedIds = new Set(includedIds.filter((id) => !refusedIds.has(id)));
+    const broken = [...representedIds]
+      .map((id) => ({
+        id,
+        missing: eccMandatoryRequirementIds(id).filter(
+          (dependency) => !representedIds.has(dependency),
+        ),
+      }))
+      .filter((entry) => entry.missing.length > 0);
+    if (broken.length > 0) {
+      throw new AihError(
+        `refusing the governed ECC framework materialization for ${eccMaterializationTargetName(requestedTarget)}: target mapping would omit structural dependencies — ${broken
+          .map(
+            (entry) =>
+              `${displaySafe(entry.id)} requires ${entry.missing
+                .map((dependency) => displaySafe(dependency))
+                .join(", ")}`,
+          )
+          .join("; ")}`,
+        "AIH_TRUST",
+      );
+    }
+  }
+}
+
 /**
  * Steps 2-5 of the journey, run against the verified source: resolve the
  * effective policy, resolve the evidence-passed effective selection, map it onto
@@ -333,6 +419,11 @@ function governedMaterializationPlan(
     components: selection.included,
     evidence: { authorizations: [...authorizations], held: [...held] },
   });
+  assertGovernedEccTargetClosure(
+    targets,
+    selection.included.map((component) => component.id),
+    target.refused,
+  );
   // Total refusal is ambiguity, and the engine cannot see it: an empty request
   // is byte-identical to "every component was deselected", on which `apply`
   // subtracts the whole prior install as stale ownership. Fail closed and name

@@ -1,5 +1,4 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 import type { BaselineAuthorization } from "../baseline-evidence/verify.js";
@@ -59,15 +58,17 @@ interface VerifiedInstallStep {
   input?: string;
 }
 
+const MAX_VERIFIED_ECC_INSTALL_STDIN_BYTES = 16 * 1024 * 1024;
+
 const VERIFIED_ECC_INSTALL_DRIVER = String.raw`
 const child = require("node:child_process");
 const fs = require("node:fs");
-const stepsPath = process.argv[1];
-const steps = JSON.parse(fs.readFileSync(stepsPath, "utf8"));
-try {
-  fs.unlinkSync(stepsPath);
-  fs.rmdirSync(require("node:path").dirname(stepsPath));
-} catch (_) {}
+const serialized = fs.readFileSync(0, "utf8");
+if (Buffer.byteLength(serialized, "utf8") > ${MAX_VERIFIED_ECC_INSTALL_STDIN_BYTES}) {
+  process.stderr.write("verified ECC install payload exceeds its byte limit\n");
+  process.exit(1);
+}
+const steps = JSON.parse(serialized);
 for (const step of steps) {
   if (!step || !Array.isArray(step.argv) || typeof step.cwd !== "string" || step.argv.length === 0) {
     process.stderr.write("invalid verified ECC install step\n");
@@ -359,20 +360,22 @@ function requireAuthorizedRuntime(
 }
 
 function driverAction(steps: readonly VerifiedInstallStep[]): Action {
-  // The steps ride a temp FILE, never argv: they embed unbounded payloads
-  // (registration ledger, materialization spec) and Windows command lines cap
-  // at 32,767 chars (W4 live-run ENAMETOOLONG). This file drives a PRIVILEGED
-  // installer, so it lands in a private per-invocation directory created with
-  // `mkdtempSync` (mode 0700, atomic, unguessable) rather than a bare
-  // world-writable tmp path — no symlink/pre-plant race can swap the driver's
-  // instructions. The driver deletes the file as its first act.
-  const stepsDir = mkdtempSync(join(tmpdir(), "aih-ecc-verified-"));
-  const stepsPath = join(stepsDir, "steps.json");
-  writeFileSync(stepsPath, JSON.stringify(steps), "utf8");
+  // Steps stay in memory until apply and ride bounded stdin, never argv or a
+  // shared temp file. They embed registration/materialization payloads that can
+  // exceed Windows' 32,767-character command-line limit.
+  const serialized = JSON.stringify(steps);
+  const serializedBytes = Buffer.byteLength(serialized, "utf8");
+  if (serializedBytes > MAX_VERIFIED_ECC_INSTALL_STDIN_BYTES) {
+    throw new AihError(
+      `verified ECC install payload exceeds ${MAX_VERIFIED_ECC_INSTALL_STDIN_BYTES} bytes`,
+      "AIH_TRUST",
+    );
+  }
   return exec(
     "Install from the evidence-verified ECC checkout — sequential fail-closed driver",
-    [process.execPath, "-e", VERIFIED_ECC_INSTALL_DRIVER, stepsPath],
+    [process.execPath, "-e", VERIFIED_ECC_INSTALL_DRIVER],
     {
+      stdin: { data: serialized, maxBytes: MAX_VERIFIED_ECC_INSTALL_STDIN_BYTES },
       timeoutMs: 180_000,
       failureCheck: (result) => ({
         name: "verified ECC install",

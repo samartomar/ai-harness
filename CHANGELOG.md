@@ -6,6 +6,26 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [Core 0.4.3] - 2026-09-01
+
+### Fixed
+
+- Keep center-panel ECC Skill and Agent deselections authoritative for the current Workbench
+  authoring session. Left-rail language, capability, module, and composition helpers cannot silently
+  restore an excluded item; they block and direct the administrator back to the center inventory.
+  Explicit center re-selection restores the item, while import and Clear discard the
+  transient authoring exclusion. Root-aware policy export and governed materialization retain exact
+  explicit choices, while policies with root metadata must prove every selected item is reachable
+  from an explicit root or preserved legacy item; empty-root stray modules fail closed in both the
+  Workbench and governed runtime ([#916]).
+- Keep verified ECC install planning effect-free. Serialized installer steps remain in an
+  executor-private, bounded, apply-only stdin channel instead of argv, exported Plan JSON, rendered
+  results, errors, or temporary files. Malformed, copied, or oversized channels fail before any
+  filesystem transaction or child process, and failed children cannot reflect the payload into
+  reports ([#920]).
+- Match required Windows CI by using a 15-second Vitest timeout only on Windows; Linux and macOS
+  retain the strict five-second default and the existing eight-worker ceiling ([#921]).
+
 ## [Core 0.4.2] - 2026-09-01
 
 ### Fixed
@@ -3071,7 +3091,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v-core-0.4.2...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v-core-0.4.3...HEAD
+[Core 0.4.3]: https://github.com/samartomar/ai-harness/compare/v-core-0.4.2...v-core-0.4.3
 [Core 0.4.2]: https://github.com/samartomar/ai-harness/compare/v-core-0.4.1...v-core-0.4.2
 [Core 0.4.1]: https://github.com/samartomar/ai-harness/compare/v-core-0.4.0...v-core-0.4.1
 [Core 0.4.0]: https://github.com/samartomar/ai-harness/compare/v-core-0.3.0...v-core-0.4.0

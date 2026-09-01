@@ -187,7 +187,7 @@ describe("policy authoring catalog inventory", () => {
       click(window, `[data-detail="${item.skill}"]`);
       const drawer = window.document.getElementById("drawer-detail");
       expect(drawer?.querySelector("h2")?.textContent).toBe(item.skill);
-      expect(drawer?.textContent).toContain("@aihq/core@0.4.2");
+      expect(drawer?.textContent).toContain("@aihq/core@0.4.3");
       expect(drawer?.textContent).toContain(item.root);
       expect(drawer?.textContent).toContain(item.source);
       expect(drawer?.textContent).toContain("Manifest identitylocal");
@@ -793,6 +793,12 @@ describe("policy authoring catalog inventory", () => {
         `${asset.kind} security and audit`,
       ).not.toBeNull();
     }
+
+    const rules = ecc.assets.find((asset) => asset.id === "baseline:rules");
+    const skill = ecc.assets.find((asset) => asset.id === "skill:tdd-workflow");
+    expect(rules?.source.path).toBe("rules");
+    expect(rules?.sourcePaths).toContain("rules");
+    expect(skill?.source.path).toBe("skills/tdd-workflow");
 
     const capability = ecc.assets.find((asset) => asset.id === "capability:security");
     const lockedCapability = baselineCatalogById("ecc").components.find(

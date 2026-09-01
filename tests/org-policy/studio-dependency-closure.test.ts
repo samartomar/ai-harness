@@ -1,5 +1,5 @@
 import { Window } from "happy-dom";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { type EccComponentId, UPSTREAM_CORE_ECC_MODULE_IDS } from "../../src/ecc/components.js";
 import { eccModuleDependencyIds } from "../../src/ecc/evidence.js";
 import { eccComponentInstallDescriptor } from "../../src/ecc/materialize.js";
@@ -8,8 +8,14 @@ import { type PolicyStudioModel, policyStudioModel } from "../../src/org-policy/
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
 
 const model = policyStudioModel();
+const openWindows = new Set<Window>();
 const ecc = model.catalog.frameworks.find((framework) => framework.id === "ecc");
 if (ecc === undefined) throw new Error("expected an ECC framework");
+
+afterEach(async () => {
+  await Promise.all([...openWindows].map((window) => window.happyDOM.close()));
+  openWindows.clear();
+});
 
 function studio(studioModel: PolicyStudioModel = model): Window {
   const window = new Window({ url: "http://localhost/" });
@@ -20,6 +26,7 @@ function studio(studioModel: PolicyStudioModel = model): Window {
   const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/gi)].map((match) => match[1]);
   if (scripts.length === 0) throw new Error("expected generated workbench script");
   window.eval(scripts.join("\n"));
+  openWindows.add(window);
   return window;
 }
 
@@ -61,7 +68,7 @@ function selectionRoots(window: Window): string[] | undefined {
   return policy.governance.externalSelections[0]?.roots;
 }
 
-function assetClosure(rootIds: readonly string[]): string[] {
+function legacyAssetClosure(rootIds: readonly string[]): string[] {
   const selected = new Set(rootIds);
   const pending = [...rootIds];
   while (pending.length > 0) {
@@ -73,6 +80,30 @@ function assetClosure(rootIds: readonly string[]): string[] {
       if (selected.has(required)) continue;
       selected.add(required);
       pending.push(required);
+    }
+  }
+  return [...selected];
+}
+
+function assetClosure(rootIds: readonly string[]): string[] {
+  const selected = new Set<string>();
+  const expanded = new Set<string>();
+  const pending = rootIds.map((id) => ({ id, includeMembers: true }));
+  while (pending.length > 0) {
+    const next = pending.shift();
+    if (next === undefined) break;
+    const expansionKey = `${next.id}|${next.includeMembers ? "members" : "structural"}`;
+    if (expanded.has(expansionKey)) continue;
+    expanded.add(expansionKey);
+    selected.add(next.id);
+    const asset = ecc?.assets.find((candidate) => candidate.id === next.id);
+    if (asset === undefined) throw new Error(`expected ECC asset ${next.id}`);
+    const members = next.includeMembers
+      ? ((asset as typeof asset & { members?: string[] }).members ?? [])
+      : [];
+    for (const required of [...(asset.dependencies ?? []), ...members, ...(asset.riders ?? [])]) {
+      selected.add(required);
+      pending.push({ id: required, includeMembers: false });
     }
   }
   return [...selected];
@@ -124,9 +155,9 @@ describe("policy studio dependency-closed selection", () => {
     expect(moduleAssets.flatMap((module) => module.members ?? [])).not.toContain("mcp:github");
   });
 
-  it("selects ECC Core and its members before a language from the left panel", () => {
-    const language = ecc.assets.find((asset) => asset.kind === "lang");
-    if (language === undefined) throw new Error("expected an ECC language");
+  it("selects only the TypeScript rider and structural ECC Core dependencies", () => {
+    const language = ecc.assets.find((asset) => asset.id === "lang:typescript");
+    if (language === undefined) throw new Error("expected lang:typescript");
     const coreModules = UPSTREAM_CORE_ECC_MODULE_IDS.map((id) => `module:${id}`);
     expect(language.dependencies).toEqual(expect.arrayContaining(coreModules));
 
@@ -135,6 +166,11 @@ describe("policy studio dependency-closed selection", () => {
 
     const expected = assetClosure([language.id]).sort();
     expect(selectedIds(window).sort()).toEqual(expected);
+    expect(
+      selectedIds(window)
+        .filter((id) => id.startsWith("agent:"))
+        .sort(),
+    ).toEqual(["agent:typescript-reviewer"]);
     for (const id of expected) {
       const asset = ecc.assets.find((candidate) => candidate.id === id);
       if (asset === undefined) throw new Error(`expected ${id}`);
@@ -187,7 +223,7 @@ describe("policy studio dependency-closed selection", () => {
 
   it("keeps rootless legacy selections without promoting them to explicit roots", () => {
     const partialModel = structuredClone(model);
-    const legacyIds = assetClosure(["lang:typescript"]);
+    const legacyIds = legacyAssetClosure(["lang:typescript"]);
     const legacyItems = legacyIds.map((id) => {
       const asset = ecc.assets.find((candidate) => candidate.id === id);
       if (asset === undefined) throw new Error(`expected ECC asset ${id}`);
@@ -222,9 +258,126 @@ describe("policy studio dependency-closed selection", () => {
     reopened.close();
   });
 
-  it("lets the center prune dependent items from an imported rootless selection", () => {
+  it("rejects a stray attributed module that is not reachable from any root", () => {
     const partialModel = structuredClone(model);
-    const legacyIds = assetClosure(["capability:database"]);
+    const module = ecc.assets.find((asset) => asset.id === "module:agents-core");
+    if (module === undefined) throw new Error("expected module:agents-core");
+    partialModel.initialPolicy.governance?.externalSelections.push({
+      framework: "ecc",
+      roots: [],
+      items: [{ kind: module.kind, id: module.id, source: { ...module.source } }],
+    });
+    const window = studio(partialModel);
+
+    click(window, "#validate");
+
+    expect(window.document.getElementById("announcement")?.textContent).toMatch(
+      /module:agents-core.*not reachable from an explicit root or preserved legacy item/i,
+    );
+    window.close();
+  });
+
+  it("rejects a selection whose kind contradicts the pinned Workbench asset", () => {
+    const partialModel = structuredClone(model);
+    const module = ecc.assets.find((asset) => asset.id === "module:agents-core");
+    if (module === undefined) throw new Error("expected module:agents-core");
+    partialModel.initialPolicy.governance?.externalSelections.push({
+      framework: "ecc",
+      roots: [module.id],
+      items: [{ kind: "skill", id: module.id, source: { ...module.source } }],
+    });
+    const window = studio(partialModel);
+
+    click(window, "#validate");
+
+    expect(window.document.getElementById("announcement")?.textContent).toMatch(
+      /validation failed.*module:agents-core.*kind skill.*pinned kind is module/i,
+    );
+    window.close();
+  });
+
+  it("rejects a selection whose source tuple does not match the pinned Workbench asset", () => {
+    const partialModel = structuredClone(model);
+    const module = ecc.assets.find((asset) => asset.id === "module:agents-core");
+    if (module === undefined) throw new Error("expected module:agents-core");
+    partialModel.initialPolicy.governance?.externalSelections.push({
+      framework: "ecc",
+      roots: [module.id],
+      items: [
+        {
+          kind: module.kind,
+          id: module.id,
+          source: { ...module.source, path: "skills/not-the-agents-core-source" },
+        },
+      ],
+    });
+    const window = studio(partialModel);
+
+    click(window, "#validate");
+
+    expect(window.document.getElementById("announcement")?.textContent).toMatch(
+      /validation failed.*module:agents-core.*source path.*pinned source paths/i,
+    );
+    window.close();
+  });
+
+  it("accepts an exact non-primary path from a multi-path Workbench asset", () => {
+    const partialModel = structuredClone(model);
+    const module = ecc.assets.find((asset) => asset.id === "module:platform-configs");
+    const alternatePath = module?.sourcePaths[1];
+    if (module === undefined || alternatePath === undefined) {
+      throw new Error("expected multi-path module:platform-configs");
+    }
+    partialModel.initialPolicy.governance?.externalSelections.push({
+      framework: "ecc",
+      roots: [module.id],
+      items: [
+        {
+          kind: module.kind,
+          id: module.id,
+          source: { ...module.source, path: alternatePath },
+        },
+      ],
+    });
+    const window = studio(partialModel);
+
+    click(window, "#validate");
+
+    expect(window.document.getElementById("announcement")?.textContent).toMatch(
+      /validation passed/i,
+    );
+    window.close();
+  });
+
+  it("rejects a parent directory that is not an exact Workbench source path", () => {
+    const partialModel = structuredClone(model);
+    const rootId = "module:database";
+    partialModel.initialPolicy.governance?.externalSelections.push({
+      framework: "ecc",
+      roots: [rootId],
+      items: assetClosure([rootId]).map((id) => {
+        const asset = ecc.assets.find((candidate) => candidate.id === id);
+        if (asset === undefined) throw new Error(`expected ${id}`);
+        return {
+          kind: asset.kind,
+          id,
+          source: { ...asset.source, ...(id === rootId ? { path: "skills" } : {}) },
+        };
+      }),
+    });
+    const window = studio(partialModel);
+
+    click(window, "#validate");
+
+    expect(window.document.getElementById("announcement")?.textContent).toMatch(
+      /validation failed.*module:database.*source path.*pinned source paths/i,
+    );
+    window.close();
+  });
+
+  it("attributes imported rootless closure before honoring a center suggestion override", () => {
+    const partialModel = structuredClone(model);
+    const legacyIds = legacyAssetClosure(["capability:database"]);
     const legacyItems = legacyIds.map((id) => {
       const asset = ecc.assets.find((candidate) => candidate.id === id);
       if (asset === undefined) throw new Error(`expected ECC asset ${id}`);
@@ -239,9 +392,37 @@ describe("policy studio dependency-closed selection", () => {
     clickCanonical(window, "ecc|agent|agent:database-reviewer");
 
     expect(selectedIds(window)).not.toContain("agent:database-reviewer");
-    expect(selectedIds(window)).not.toContain("capability:database");
+    expect(selectedIds(window)).toContain("capability:database");
+    expect(selectionRoots(window)).toEqual(["capability:database"]);
     expect(window.document.getElementById("announcement")?.textContent).toMatch(
-      /center deselected agent:database-reviewer/i,
+      /center deselected agent:database-reviewer.*rootless intent was attributed/i,
+    );
+    click(window, "#validate");
+    expect(window.document.getElementById("announcement")?.textContent).toMatch(
+      /validation passed/i,
+    );
+    window.close();
+  });
+
+  it("attributes a cyclic rootless module closure before a center removal", () => {
+    const partialModel = structuredClone(model);
+    const cycleItems = ["module:hooks-runtime", "baseline:hooks"].map((id) => {
+      const asset = ecc.assets.find((candidate) => candidate.id === id);
+      if (asset === undefined) throw new Error(`expected ECC asset ${id}`);
+      return { kind: asset.kind, id: asset.id, source: { ...asset.source } };
+    });
+    partialModel.initialPolicy.governance?.externalSelections.push({
+      framework: "ecc",
+      items: cycleItems,
+    });
+    const window = studio(partialModel);
+
+    clickCanonical(window, "ecc|baseline|baseline:hooks");
+
+    expect(selectedIds(window)).toEqual(["module:hooks-runtime"]);
+    expect(selectionRoots(window)).toEqual(["module:hooks-runtime"]);
+    expect(window.document.getElementById("announcement")?.textContent).toMatch(
+      /center deselected baseline:hooks.*rootless intent was attributed/i,
     );
     click(window, "#validate");
     expect(window.document.getElementById("announcement")?.textContent).toMatch(
@@ -344,15 +525,122 @@ describe("policy studio dependency-closed selection", () => {
 
     clickCanonical(window, "ecc|agent|agent:database-reviewer");
 
-    expect(selectionRoots(window)).toEqual(["framework:react"]);
-    expect(selectedIds(window).sort()).toEqual(assetClosure(["framework:react"]).sort());
+    expect(selectionRoots(window)).toEqual(["capability:database", "framework:react"]);
+    expect(selectedIds(window).sort()).toEqual(
+      assetClosure(["capability:database", "framework:react"])
+        .filter((id) => id !== "agent:database-reviewer")
+        .sort(),
+    );
     expect(window.document.getElementById("announcement")?.textContent).toMatch(
-      /center deselected agent:database-reviewer.*removed.*capability:database/i,
+      /center deselected agent:database-reviewer/i,
     );
 
     click(window, "#validate");
     expect(window.document.getElementById("announcement")?.textContent).toMatch(
       /validation passed/i,
+    );
+    window.close();
+  });
+
+  it("keeps a center-deselected language rider excluded until the center restores it", () => {
+    const window = studio();
+
+    click(window, '.rail [data-framework-select="ecc|lang|lang:python"]');
+    expect(selectedIds(window)).toContain("agent:python-reviewer");
+
+    clickCanonical(window, "ecc|agent|agent:python-reviewer");
+    expect(selectedIds(window)).not.toContain("agent:python-reviewer");
+    expect(selectedIds(window)).toContain("lang:python");
+
+    click(window, '.rail [data-framework-select="ecc|lang|lang:python"]');
+    click(window, '.rail [data-framework-select="ecc|lang|lang:python"]');
+    expect(selectedIds(window)).not.toContain("agent:python-reviewer");
+    expect(selectedIds(window)).toContain("lang:python");
+
+    clickCanonical(window, "ecc|agent|agent:python-reviewer");
+    expect(selectedIds(window)).toContain("agent:python-reviewer");
+    expect(selectedIds(window)).toEqual(
+      expect.arrayContaining(["lang:python", "agent:python-reviewer"]),
+    );
+    click(window, "#validate");
+    expect(window.document.getElementById("announcement")?.textContent).toMatch(
+      /validation passed/i,
+    );
+    window.close();
+  });
+
+  it("preserves a center-deselected language rider after reopening the exported policy", () => {
+    const window = studio();
+
+    click(window, '.rail [data-framework-select="ecc|lang|lang:python"]');
+    clickCanonical(window, "ecc|agent|agent:python-reviewer");
+
+    const preview = window.document.getElementById("config-preview") as unknown as {
+      value: string;
+    } | null;
+    if (preview === null) throw new Error("expected policy preview");
+    const editedPolicy = parseOrgPolicy(JSON.parse(preview.value));
+    window.close();
+
+    const reopenedModel = structuredClone(model);
+    reopenedModel.initialPolicy = editedPolicy;
+    const reopened = studio(reopenedModel);
+
+    expect(selectionRoots(reopened)).toEqual(["lang:python"]);
+    expect(selectedIds(reopened)).not.toContain("agent:python-reviewer");
+    click(reopened, '.rail [data-framework-select="ecc|lang|lang:python"]');
+    click(reopened, '.rail [data-framework-select="ecc|lang|lang:python"]');
+
+    expect(selectedIds(reopened)).toContain("lang:python");
+    expect(selectedIds(reopened)).not.toContain("agent:python-reviewer");
+    clickCanonical(reopened, "ecc|agent|agent:python-reviewer");
+    expect(selectedIds(reopened)).toContain("agent:python-reviewer");
+    reopened.close();
+  });
+
+  it("keeps a center-deselected Skill excluded from later module suggestions", () => {
+    const module = ecc.assets.find(
+      (asset) =>
+        asset.kind === "module" && asset.members?.some((member) => member.startsWith("skill:")),
+    );
+    const skillId = module?.members?.find((member) => member.startsWith("skill:"));
+    if (module === undefined || skillId === undefined) {
+      throw new Error("expected an ECC module with a Skill member");
+    }
+    const window = studio();
+
+    click(window, `.rail [data-framework-select="ecc|module|${module.id}"]`);
+    expect(selectedIds(window)).toContain(skillId);
+
+    clickCanonical(window, `ecc|skill|${skillId}`);
+    expect(selectedIds(window)).not.toContain(skillId);
+    expect(selectedIds(window)).toContain(module.id);
+
+    click(window, `.rail [data-framework-select="ecc|module|${module.id}"]`);
+    click(window, `.rail [data-framework-select="ecc|module|${module.id}"]`);
+    expect(selectedIds(window)).not.toContain(skillId);
+    expect(selectedIds(window)).toContain(module.id);
+
+    clickCanonical(window, `ecc|skill|${skillId}`);
+    expect(selectedIds(window)).toContain(skillId);
+    expect(selectedIds(window)).toEqual(expect.arrayContaining([module.id, skillId]));
+    click(window, "#validate");
+    expect(window.document.getElementById("announcement")?.textContent).toMatch(
+      /validation passed/i,
+    );
+    window.close();
+  }, 10_000);
+
+  it("clears session-only center exclusions when the administrator clears the policy", () => {
+    const window = studio();
+
+    click(window, '.rail [data-framework-select="ecc|lang|lang:python"]');
+    clickCanonical(window, "ecc|agent|agent:python-reviewer");
+    click(window, "#clear-policy");
+    click(window, '.rail [data-framework-select="ecc|lang|lang:python"]');
+
+    expect(selectedIds(window)).toEqual(
+      expect.arrayContaining(["lang:python", "agent:python-reviewer"]),
     );
     window.close();
   });
@@ -422,7 +710,7 @@ describe("policy studio dependency-closed selection", () => {
     window.close();
   });
 
-  it("rejects a policy that names a module but omits its selectable members", () => {
+  it("rejects a legacy rootless module that omits its selectable members", () => {
     const partialModel = structuredClone(model);
     const module = ecc.assets.find(
       (asset) => asset.kind === "module" && (asset.members?.length ?? 0) > 0,

@@ -294,12 +294,19 @@ describe("the verified-source Kiro projection", () => {
       },
       {
         ...rules,
-        provenance: { ...rules.provenance, componentPath: "rules/common" },
+        provenance: { ...rules.provenance, componentPath: "rules/not-pinned" },
       },
     ]) {
       expect(() => resolveVerifiedKiroMaterialization(request([component]))).toThrow(
         /provenance does not match/i,
       );
+    }
+  });
+
+  it("accepts every exact catalog provenance path for baseline rules", () => {
+    for (const path of ["rules", "rules/README.md", "rules/common"]) {
+      const rules = selected("baseline:rules", path);
+      expect(() => resolveVerifiedKiroMaterialization(request([rules]))).not.toThrow();
     }
   });
 
