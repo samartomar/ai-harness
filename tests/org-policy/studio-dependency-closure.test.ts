@@ -270,7 +270,7 @@ describe("policy studio dependency-closed selection", () => {
     window.close();
   });
 
-  it("keeps imported rootless closure fail-closed when suggestion provenance is unknown", () => {
+  it("attributes imported rootless closure before honoring a center suggestion override", () => {
     const partialModel = structuredClone(model);
     const legacyIds = legacyAssetClosure(["capability:database"]);
     const legacyItems = legacyIds.map((id) => {
@@ -286,10 +286,11 @@ describe("policy studio dependency-closed selection", () => {
 
     clickCanonical(window, "ecc|agent|agent:database-reviewer");
 
-    expect(selectedIds(window)).toContain("agent:database-reviewer");
+    expect(selectedIds(window)).not.toContain("agent:database-reviewer");
     expect(selectedIds(window)).toContain("capability:database");
+    expect(selectionRoots(window)).toEqual(["capability:database"]);
     expect(window.document.getElementById("announcement")?.textContent).toMatch(
-      /policy change rejected.*capability:database.*requires agent:database-reviewer/i,
+      /center deselected agent:database-reviewer.*rootless intent was attributed/i,
     );
     click(window, "#validate");
     expect(window.document.getElementById("announcement")?.textContent).toMatch(

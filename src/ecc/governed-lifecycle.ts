@@ -131,6 +131,7 @@ interface GovernedMaterializationReport {
 export function governedEccComponentIds(policy: OrgPolicy, catalog: BaselineCatalog): string[] {
   const expectedRepository = `${catalog.owner}/${catalog.repo}`;
   const selected = new Set<string>();
+  const legacyClosed = new Set<string>();
   const attributionRoots = new Set<string>();
   const unattributedRoots = new Set<string>();
   let hasRootMetadata = false;
@@ -160,6 +161,7 @@ export function governedEccComponentIds(policy: OrgPolicy, catalog: BaselineCata
         );
       }
       selected.add(item.id);
+      if (!hasExplicitRoots || unattributed.has(item.id)) legacyClosed.add(item.id);
     }
   }
   if (selected.size === 0) {
@@ -229,9 +231,9 @@ export function governedEccComponentIds(policy: OrgPolicy, catalog: BaselineCata
   }
   const missingDependencies = new Map<string, string[]>();
   for (const id of selected) {
-    const dependencies = mandatoryRequirementsFor(id).filter(
-      (dependency) => !selected.has(dependency),
-    );
+    const dependencies = (
+      legacyClosed.has(id) ? relatedComponentsFor(id, true) : mandatoryRequirementsFor(id)
+    ).filter((dependency) => !selected.has(dependency));
     if (dependencies.length > 0) missingDependencies.set(id, dependencies);
   }
   if (missingDependencies.size > 0) {
