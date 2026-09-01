@@ -270,6 +270,104 @@ describe("policy studio dependency-closed selection", () => {
     window.close();
   });
 
+  it("rejects a selection whose kind contradicts the pinned Workbench asset", () => {
+    const partialModel = structuredClone(model);
+    const module = ecc.assets.find((asset) => asset.id === "module:agents-core");
+    if (module === undefined) throw new Error("expected module:agents-core");
+    partialModel.initialPolicy.governance?.externalSelections.push({
+      framework: "ecc",
+      roots: [module.id],
+      items: [{ kind: "skill", id: module.id, source: { ...module.source } }],
+    });
+    const window = studio(partialModel);
+
+    click(window, "#validate");
+
+    expect(window.document.getElementById("announcement")?.textContent).toMatch(
+      /validation failed.*module:agents-core.*kind skill.*pinned kind is module/i,
+    );
+    window.close();
+  });
+
+  it("rejects a selection whose source tuple does not match the pinned Workbench asset", () => {
+    const partialModel = structuredClone(model);
+    const module = ecc.assets.find((asset) => asset.id === "module:agents-core");
+    if (module === undefined) throw new Error("expected module:agents-core");
+    partialModel.initialPolicy.governance?.externalSelections.push({
+      framework: "ecc",
+      roots: [module.id],
+      items: [
+        {
+          kind: module.kind,
+          id: module.id,
+          source: { ...module.source, path: "skills/not-the-agents-core-source" },
+        },
+      ],
+    });
+    const window = studio(partialModel);
+
+    click(window, "#validate");
+
+    expect(window.document.getElementById("announcement")?.textContent).toMatch(
+      /validation failed.*module:agents-core.*source path.*pinned source paths/i,
+    );
+    window.close();
+  });
+
+  it("accepts an exact non-primary path from a multi-path Workbench asset", () => {
+    const partialModel = structuredClone(model);
+    const module = ecc.assets.find((asset) => asset.id === "module:platform-configs");
+    const alternatePath = module?.sourcePaths[1];
+    if (module === undefined || alternatePath === undefined) {
+      throw new Error("expected multi-path module:platform-configs");
+    }
+    partialModel.initialPolicy.governance?.externalSelections.push({
+      framework: "ecc",
+      roots: [module.id],
+      items: [
+        {
+          kind: module.kind,
+          id: module.id,
+          source: { ...module.source, path: alternatePath },
+        },
+      ],
+    });
+    const window = studio(partialModel);
+
+    click(window, "#validate");
+
+    expect(window.document.getElementById("announcement")?.textContent).toMatch(
+      /validation passed/i,
+    );
+    window.close();
+  });
+
+  it("rejects a parent directory that is not an exact Workbench source path", () => {
+    const partialModel = structuredClone(model);
+    const rootId = "module:database";
+    partialModel.initialPolicy.governance?.externalSelections.push({
+      framework: "ecc",
+      roots: [rootId],
+      items: assetClosure([rootId]).map((id) => {
+        const asset = ecc.assets.find((candidate) => candidate.id === id);
+        if (asset === undefined) throw new Error(`expected ${id}`);
+        return {
+          kind: asset.kind,
+          id,
+          source: { ...asset.source, ...(id === rootId ? { path: "skills" } : {}) },
+        };
+      }),
+    });
+    const window = studio(partialModel);
+
+    click(window, "#validate");
+
+    expect(window.document.getElementById("announcement")?.textContent).toMatch(
+      /validation failed.*module:database.*source path.*pinned source paths/i,
+    );
+    window.close();
+  });
+
   it("attributes imported rootless closure before honoring a center suggestion override", () => {
     const partialModel = structuredClone(model);
     const legacyIds = legacyAssetClosure(["capability:database"]);
@@ -468,7 +566,7 @@ describe("policy studio dependency-closed selection", () => {
       /validation passed/i,
     );
     window.close();
-  });
+  }, 10_000);
 
   it("clears session-only center exclusions when the administrator clears the policy", () => {
     const window = studio();

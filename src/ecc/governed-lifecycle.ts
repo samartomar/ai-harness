@@ -11,12 +11,7 @@ import { lines } from "../internals/render.js";
 import { resolveEffectiveOrgPolicy } from "../org-policy/effective.js";
 import type { OrgPolicy } from "../org-policy/schema.js";
 import { cleanupQuarantine, type TrustSource } from "../trust/fetch.js";
-import {
-  ECC_DECLARATION_RIDERS,
-  type EccComponentId,
-  type EccMcpComponentId,
-} from "./components.js";
-import { eccModuleDependencyIds } from "./evidence.js";
+import { ECC_DECLARATION_RIDERS } from "./components.js";
 import {
   applyEccMaterialization,
   type EccMaterializationAdvisory,
@@ -36,7 +31,8 @@ import {
   eccMaterializationTargetName,
   resolveEccTargetMaterialization,
 } from "./materialization-target.js";
-import { eccComponentRequiredModuleRootIds, eccModuleSelectableMemberIds } from "./materialize.js";
+import { eccModuleSelectableMemberIds } from "./materialize.js";
+import { eccMandatoryRequirementIds } from "./selection-closure.js";
 
 /**
  * F6: `aih ecc --lifecycle install` in a governed repository.
@@ -130,6 +126,7 @@ interface GovernedMaterializationReport {
  */
 export function governedEccComponentIds(policy: OrgPolicy, catalog: BaselineCatalog): string[] {
   const expectedRepository = `${catalog.owner}/${catalog.repo}`;
+  const catalogById = new Map(catalog.components.map((component) => [component.id, component]));
   const selected = new Set<string>();
   const legacyClosed = new Set<string>();
   const attributionRoots = new Set<string>();
@@ -144,6 +141,20 @@ export function governedEccComponentIds(policy: OrgPolicy, catalog: BaselineCata
     for (const id of roots) attributionRoots.add(id);
     for (const id of unattributed) unattributedRoots.add(id);
     for (const item of selection.items) {
+      const component = catalogById.get(item.id);
+      if (component === undefined) {
+        throw new AihError(
+          `refusing the governed ECC framework lifecycle: the policy selects component the pinned ECC catalog does not carry: ${displaySafe(item.id)}`,
+          "AIH_CONFIG",
+        );
+      }
+      const expectedKind = item.id.slice(0, item.id.indexOf(":"));
+      if (item.kind !== expectedKind) {
+        throw new AihError(
+          `refusing the governed ECC framework lifecycle: ${displaySafe(item.id)} declares kind ${displaySafe(item.kind)}, but its pinned kind is ${displaySafe(expectedKind)}`,
+          "AIH_TRUST",
+        );
+      }
       // GitHub owner/repo identity is case-insensitive, and this repository
       // carries both spellings of the ECC repo, so casing alone is never the
       // disagreement. The commit is already lowercase-constrained by the policy
@@ -160,6 +171,12 @@ export function governedEccComponentIds(policy: OrgPolicy, catalog: BaselineCata
           "AIH_TRUST",
         );
       }
+      if (!component.paths.includes(item.source.path)) {
+        throw new AihError(
+          `refusing the governed ECC framework lifecycle: ${displaySafe(item.id)} claims source path ${displaySafe(item.source.path)}, but its pinned catalog paths are ${component.paths.map((path) => displaySafe(path)).join(", ")}`,
+          "AIH_TRUST",
+        );
+      }
       selected.add(item.id);
       if (!hasExplicitRoots || unattributed.has(item.id)) legacyClosed.add(item.id);
     }
@@ -170,7 +187,7 @@ export function governedEccComponentIds(policy: OrgPolicy, catalog: BaselineCata
       "AIH_CONFIG",
     );
   }
-  const known = new Set(catalog.components.map((component) => component.id));
+  const known = new Set(catalogById.keys());
   const unknown = [...selected].filter((id) => !known.has(id)).sort();
   if (unknown.length > 0) {
     throw new AihError(
@@ -181,18 +198,6 @@ export function governedEccComponentIds(policy: OrgPolicy, catalog: BaselineCata
       "AIH_CONFIG",
     );
   }
-  const mandatoryRequirementsFor = (id: string): string[] => {
-    if (id.startsWith("runtime:")) return [];
-    return [
-      ...new Set(
-        eccComponentRequiredModuleRootIds(id as EccComponentId | EccMcpComponentId).flatMap(
-          (moduleId) => [moduleId, ...eccModuleDependencyIds(moduleId)],
-        ),
-      ),
-    ]
-      .map((moduleId) => `module:${moduleId}`)
-      .filter((dependency) => dependency !== id);
-  };
   const relatedComponentsFor = (id: string, includeMembers: boolean): string[] => {
     if (id.startsWith("runtime:")) return [];
     const declaredRiders = (ECC_DECLARATION_RIDERS[id] ?? []).filter((rider) => known.has(rider));
@@ -200,7 +205,7 @@ export function governedEccComponentIds(policy: OrgPolicy, catalog: BaselineCata
       id.startsWith("module:") && includeMembers
         ? eccModuleSelectableMemberIds(id.slice("module:".length), [...known])
         : [];
-    return [...new Set([...mandatoryRequirementsFor(id), ...moduleMembers, ...declaredRiders])];
+    return [...new Set([...eccMandatoryRequirementIds(id), ...moduleMembers, ...declaredRiders])];
   };
   if (hasRootMetadata) {
     const reachable = new Set<string>();
@@ -232,7 +237,7 @@ export function governedEccComponentIds(policy: OrgPolicy, catalog: BaselineCata
   const missingDependencies = new Map<string, string[]>();
   for (const id of selected) {
     const dependencies = (
-      legacyClosed.has(id) ? relatedComponentsFor(id, true) : mandatoryRequirementsFor(id)
+      legacyClosed.has(id) ? relatedComponentsFor(id, true) : eccMandatoryRequirementIds(id)
     ).filter((dependency) => !selected.has(dependency));
     if (dependencies.length > 0) missingDependencies.set(id, dependencies);
   }
@@ -347,6 +352,41 @@ function reportBody(report: GovernedMaterializationReport): string {
   );
 }
 
+/** Refuse a target-specific partial map that drops a structural dependency. */
+export function assertGovernedEccTargetClosure(
+  targets: readonly EccMaterializationTarget[],
+  includedIds: readonly string[],
+  refused: readonly EccTargetedRefusal[],
+): void {
+  for (const requestedTarget of targets) {
+    const refusedIds = new Set(
+      refused.filter((entry) => entry.target === requestedTarget).map((entry) => entry.id),
+    );
+    const representedIds = new Set(includedIds.filter((id) => !refusedIds.has(id)));
+    const broken = [...representedIds]
+      .map((id) => ({
+        id,
+        missing: eccMandatoryRequirementIds(id).filter(
+          (dependency) => !representedIds.has(dependency),
+        ),
+      }))
+      .filter((entry) => entry.missing.length > 0);
+    if (broken.length > 0) {
+      throw new AihError(
+        `refusing the governed ECC framework materialization for ${eccMaterializationTargetName(requestedTarget)}: target mapping would omit structural dependencies — ${broken
+          .map(
+            (entry) =>
+              `${displaySafe(entry.id)} requires ${entry.missing
+                .map((dependency) => displaySafe(dependency))
+                .join(", ")}`,
+          )
+          .join("; ")}`,
+        "AIH_TRUST",
+      );
+    }
+  }
+}
+
 /**
  * Steps 2-5 of the journey, run against the verified source: resolve the
  * effective policy, resolve the evidence-passed effective selection, map it onto
@@ -378,6 +418,11 @@ function governedMaterializationPlan(
     components: selection.included,
     evidence: { authorizations: [...authorizations], held: [...held] },
   });
+  assertGovernedEccTargetClosure(
+    targets,
+    selection.included.map((component) => component.id),
+    target.refused,
+  );
   // Total refusal is ambiguity, and the engine cannot see it: an empty request
   // is byte-identical to "every component was deselected", on which `apply`
   // subtracts the whole prior install as stale ownership. Fail closed and name

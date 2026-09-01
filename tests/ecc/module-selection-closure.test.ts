@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import { baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
 import { ECC_DECLARATION_RIDERS, UPSTREAM_CORE_ECC_MODULE_IDS } from "../../src/ecc/components.js";
 import { eccModuleDependencyIds } from "../../src/ecc/evidence.js";
-import { governedEccComponentIds } from "../../src/ecc/governed-lifecycle.js";
+import {
+  assertGovernedEccTargetClosure,
+  governedEccComponentIds,
+} from "../../src/ecc/governed-lifecycle.js";
 import {
   eccComponentSourcePaths,
   eccModuleSelectableMemberIds,
@@ -194,6 +197,54 @@ describe("governed ECC module selection closure", () => {
     );
   });
 
+  it("refuses a selected component whose declared kind contradicts its pinned identity", () => {
+    const policy = policyWithBareModule("agents-core");
+    const item = policy.governance?.externalSelections[0]?.items[0];
+    if (item === undefined) throw new Error("missing module:agents-core");
+    item.kind = "skill";
+
+    expect(() => governedEccComponentIds(policy, catalog)).toThrow(
+      /module:agents-core.*kind skill.*pinned kind is module/i,
+    );
+  });
+
+  it("refuses a selected component whose source path is not its pinned catalog path", () => {
+    const policy = policyWithBareModule("agents-core");
+    const item = policy.governance?.externalSelections[0]?.items[0];
+    if (item === undefined) throw new Error("missing module:agents-core");
+    item.source.path = "skills/not-the-agents-core-source";
+
+    expect(() => governedEccComponentIds(policy, catalog)).toThrow(
+      /module:agents-core.*source path.*pinned catalog paths/i,
+    );
+  });
+
+  it("accepts an exact non-primary path carried by a multi-path catalog component", () => {
+    const policy = policyWithBareModule("platform-configs");
+    const group = policy.governance?.externalSelections[0];
+    const item = group?.items[0];
+    const component = catalog.components.find((entry) => entry.id === "module:platform-configs");
+    const alternatePath = component?.paths[1];
+    if (group === undefined || item === undefined || alternatePath === undefined) {
+      throw new Error("missing multi-path module:platform-configs");
+    }
+    group.roots = [item.id];
+    item.source.path = alternatePath;
+
+    expect(governedEccComponentIds(policy, catalog)).toEqual(["module:platform-configs"]);
+  });
+
+  it("refuses a parent directory that is not an exact pinned component path", () => {
+    const policy = policyWithBareModule("platform-configs");
+    const item = policy.governance?.externalSelections[0]?.items[0];
+    if (item === undefined) throw new Error("missing module:platform-configs");
+    item.source.path = ".";
+
+    expect(() => governedEccComponentIds(policy, catalog)).toThrow(
+      /module:platform-configs.*source path.*pinned catalog paths/i,
+    );
+  });
+
   it("accepts the exact pinned dependency closure and resolves every module source", () => {
     const selected = ["machine-learning", ...eccModuleDependencyIds("machine-learning")];
     const policy = policyWithModules(selected);
@@ -247,5 +298,42 @@ describe("governed ECC module selection closure", () => {
     expect(() => governedEccComponentIds(withTypescriptLanguage(true), catalog)).toThrow(
       /lang:typescript.*requires.*module:rules-core/i,
     );
+  });
+
+  it("refuses target mapping when a required module is unavailable on that target", () => {
+    const selected = [
+      "module:security",
+      ...eccModuleDependencyIds("security").map((id) => `module:${id}`),
+    ];
+
+    expect(() =>
+      assertGovernedEccTargetClosure(["codex"], selected, [
+        {
+          target: "codex",
+          id: "module:platform-configs",
+          reason: "missing-source",
+          detail: "the pinned source is unavailable",
+        },
+      ]),
+    ).toThrow(/Codex.*module:security requires module:platform-configs/i);
+  });
+
+  it("does not treat a refused optional Agent suggestion as a structural closure failure", () => {
+    const selected = [
+      "capability:database",
+      "module:database",
+      ...eccModuleDependencyIds("database").map((id) => `module:${id}`),
+      "agent:database-reviewer",
+    ];
+    expect(() =>
+      assertGovernedEccTargetClosure(["codex"], selected, [
+        {
+          target: "codex",
+          id: "agent:database-reviewer",
+          reason: "missing-source",
+          detail: "the optional Agent source is unavailable",
+        },
+      ]),
+    ).not.toThrow();
   });
 });

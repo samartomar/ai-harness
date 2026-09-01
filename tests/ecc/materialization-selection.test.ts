@@ -243,6 +243,28 @@ describe("resolveEccMaterializationSelection", () => {
     expect(result.excluded[0]?.reason).toBe("malformed-selection");
   });
 
+  it("removes a dependent component when one of its structural dependencies does not pass evidence", () => {
+    const dependent = selectionItem("module", "security", "modules/security");
+    const dependency = selectionItem("module", "platform-configs", "modules/platform-configs");
+    const heldDependency = held(
+      dependency.id,
+      "baseline.evidence-blocked",
+      ["secrets"],
+      `${dependency.id} is blocked by signed evidence`,
+    );
+
+    const result = resolveEccMaterializationSelection(policyWith([dependent, dependency]), {
+      authorizations: [authorization(dependent.id)],
+      held: [heldDependency],
+    });
+
+    expect(result.included).toEqual([]);
+    expect(result.excluded.map((entry) => ({ id: entry.id, reason: entry.reason }))).toEqual([
+      { id: dependency.id, reason: "vet-blocked" },
+      { id: dependent.id, reason: "dependency-unavailable" },
+    ]);
+  });
+
   it("returns nothing for a policy with no external selections", () => {
     const result = resolveEccMaterializationSelection(
       { externalSelections: [] },
