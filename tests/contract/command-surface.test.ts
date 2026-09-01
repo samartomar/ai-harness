@@ -206,9 +206,10 @@ describe("v1 contract — CLI command surface", () => {
     for (const [parentName, childName] of paths) {
       const parent = root.commands.find((command) => command.name === parentName);
       const child = parent?.commands.find((command) => command.name === childName);
-      expect(child?.options.map((option) => option.flags), `${parentName} ${childName}`).toContain(
-        "--policy <file>",
-      );
+      expect(
+        child?.options.map((option) => option.flags),
+        `${parentName} ${childName}`,
+      ).toContain("--policy <file>");
     }
   });
 
@@ -221,6 +222,7 @@ describe("v1 contract — CLI command surface", () => {
     expect(flags.sort()).toEqual([
       "--context-dir <dir>",
       "--json",
+      "--policy <file>",
       "--posture <posture>",
       "--repair-plan",
       "--root <dir>",
@@ -235,6 +237,7 @@ describe("v1 contract — CLI command surface", () => {
       "--apply",
       "--context-dir <dir>",
       "--json",
+      "--policy <file>",
       "--posture <posture>",
       "--root <dir>",
     ]);

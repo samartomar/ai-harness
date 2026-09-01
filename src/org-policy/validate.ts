@@ -354,14 +354,14 @@ export const policyProjectCommand: CommandSpec = {
 export const policyValidateCommand: CommandSpec = {
   name: "validate",
   summary:
-    "Validate the local aih-org-policy.json — or a policy-bundle envelope — against its schema (read-only gate)",
+    "Validate the selected organization policy JSON or PolicyBundle against its schema (read-only gate)",
   readOnly: true,
   skipOrgPolicyFloor: true,
   options: [
     {
       flags: "--bundle <path>",
       description:
-        "validate a policy-bundle envelope file instead of the local aih-org-policy.json",
+        "validate a PolicyBundle file directly instead of resolving the active policy source",
     },
   ],
   plan: policyValidatePlan,

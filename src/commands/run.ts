@@ -4,7 +4,7 @@ import { type Command, Option } from "commander";
 import { readAihConfig } from "../config/marker.js";
 import { parsePostureInput, resolvePosture } from "../config/posture.js";
 import { loadSettings } from "../config/settings.js";
-import { AihError } from "../errors.js";
+import { AihError, SettingsError } from "../errors.js";
 import { optionSource } from "../internals/commander-options.js";
 import {
   executePlan,
@@ -121,6 +121,35 @@ function sensitiveOptionFlags(spec: CommandSpec): string[] {
     .filter((flag): flag is string => flag !== undefined);
 }
 
+function relabelExplicitPolicySource(text: string): string {
+  return text
+    .replaceAll("unset AIH_ORG_POLICY", "omit --policy")
+    .replaceAll("AIH_ORG_POLICY", "--policy")
+    .replaceAll("Fix aih-org-policy.json", "Fix the file selected by `--policy`");
+}
+
+/**
+ * Relabel policy-source diagnostics for an explicit CLI selection without
+ * cloning class instances such as VerificationReport or invoking accessors on
+ * capability-owned result data.
+ */
+function relabelExplicitPolicySourceInPlace(value: unknown, seen = new WeakSet<object>()): void {
+  if (value === null || typeof value !== "object" || seen.has(value)) return;
+  seen.add(value);
+
+  for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(value))) {
+    if (!("value" in descriptor)) continue;
+    const current = descriptor.value;
+    if (typeof current === "string") {
+      if (descriptor.writable === true) {
+        Reflect.set(value, key, relabelExplicitPolicySource(current));
+      }
+      continue;
+    }
+    relabelExplicitPolicySourceInPlace(current, seen);
+  }
+}
+
 /**
  * Shared execution path for every capability command: resolve settings + host,
  * build the {@link PlanContext}, run the capability's `plan`, execute it (honoring
@@ -131,7 +160,8 @@ export async function runCapability(
   command: Command,
   deps: RunDeps = {},
 ): Promise<number> {
-  const env = deps.env ?? process.env;
+  const baseEnv = deps.env ?? process.env;
+  let env = baseEnv;
   const write = deps.write ?? ((t: string) => process.stdout.write(t));
   const writeError = deps.writeError ?? ((t: string) => process.stderr.write(t));
   const run = deps.run ?? defaultRunner;
@@ -168,6 +198,7 @@ export async function runCapability(
   process.once("SIGINT", onSigint);
   process.once("SIGTERM", onSigterm);
   const opts = command.optsWithGlobals() as Record<string, unknown>;
+  const policyFromCli = optionSource(command, "policy") === "cli";
   // Optional positional target dir (e.g. `aih init .`) overrides --root.
   const defaultPositionalRoot = Array.isArray(command.processedArgs)
     ? (command.processedArgs[0] as string | undefined)
@@ -193,7 +224,7 @@ export async function runCapability(
   // once here also keeps the run ledger, the committed marker, and loadSettings
   // all reading from the SAME root.
   const resolvedRoot = resolve(
-    positionalRoot ?? (opts.root as string | undefined) ?? env.AIH_ROOT ?? process.cwd(),
+    positionalRoot ?? (opts.root as string | undefined) ?? baseEnv.AIH_ROOT ?? process.cwd(),
   );
   // `--no-log` is a commander NEGATABLE flag → it sets `opts.log = false`.
   const noLog = spec.zeroWrite === true || opts.log === false;
@@ -204,6 +235,19 @@ export async function runCapability(
 
   let json = opts.json === true || earlyJsonMode(env.AIH_JSON);
   try {
+    if (policyFromCli) {
+      const policy = opts.policy;
+      if (
+        typeof policy !== "string" ||
+        policy.trim().length === 0 ||
+        policy.includes("\0") ||
+        policy.includes("\r") ||
+        policy.includes("\n")
+      ) {
+        throw new SettingsError("--policy requires one non-empty file path");
+      }
+      env = { ...baseEnv, AIH_ORG_POLICY: policy.trim() };
+    }
     // Context-dir precedence ladder: explicit `--context-dir` flag > committed
     // `.aih-config.json` marker > `AIH_CONTEXT_DIR` env > `ai-coding` default.
     // Commander fills the flag's default, so `opts.contextDir` is never undefined —
@@ -320,6 +364,8 @@ export async function runCapability(
           skipWorktreeGate: spec.skipWorktreeGate === true,
         });
 
+    if (policyFromCli) relabelExplicitPolicySourceInPlace(result);
+
     // A failed non-allowFailure exec must surface as a non-zero exit (writes commit
     // before execs run, so a silent success would hide partial state); a failed probe
     // flips the verify exit code. The ledger status maps from these two signals.
@@ -348,6 +394,7 @@ export async function runCapability(
             env,
           })
         : undefined;
+    if (policyFromCli) relabelExplicitPolicySourceInPlace(support);
 
     // `--support-out <dir>` writes each full ticket to a repo-contained file — the
     // operator named the path, so this is consent, exactly like `--sarif <file>`.
@@ -444,7 +491,11 @@ export async function runCapability(
     return exitCode;
   } catch (err) {
     const code = err instanceof AihError ? err.code : "AIH_ERROR";
-    const message = err instanceof Error ? err.message : String(err);
+    const rawMessage = err instanceof Error ? err.message : String(err);
+    const message =
+      policyFromCli && err instanceof AihError && err.code === "AIH_ORG_POLICY"
+        ? relabelExplicitPolicySource(rawMessage)
+        : rawMessage;
     // Log the crash as an `error` row (no result — settings/ctx may not exist yet).
     logRun({
       runId,

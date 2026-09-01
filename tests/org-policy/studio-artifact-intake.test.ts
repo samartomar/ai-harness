@@ -379,7 +379,9 @@ describe("Policy Workbench artifact intake", () => {
     const corrupted = structuredClone(workspace) as {
       evidenceBundles: Array<{ bundleDigest: string }>;
     };
-    corrupted.evidenceBundles[0]!.bundleDigest = `sha256:${"0".repeat(64)}`;
+    const corruptedBundle = corrupted.evidenceBundles[0];
+    if (corruptedBundle === undefined) throw new Error("expected exported evidence bundle");
+    corruptedBundle.bundleDigest = `sha256:${"0".repeat(64)}`;
     await expect(api(target).importWorkspaceText(JSON.stringify(corrupted))).rejects.toThrow(
       /digest mismatch/i,
     );

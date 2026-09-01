@@ -119,6 +119,7 @@ export const SHARED_FLAG_TOKENS: ReadonlySet<string> = new Set([
   "--posture",
   "--support-out",
   "--no-log",
+  "--policy",
   "--context-dir",
   "--root",
   "--cli",
