@@ -34,7 +34,9 @@ import {
 } from "../../src/trust/directory-resolution.js";
 
 interface IntakeApi {
+  exportWorkspaceValue(policyFilename?: string): Record<string, unknown>;
   importIntakeText(text: string): Promise<void>;
+  importWorkspaceText(text: string): Promise<void>;
   mergeEvidenceText(text: string): Promise<void>;
   snapshot(): { intake: Record<string, unknown> | null; bundleCount: number };
 }
@@ -319,6 +321,72 @@ describe("Policy Workbench artifact intake", () => {
     ).toBeNull();
 
     window.close();
+  });
+
+  it("saves and restores one non-authoritative team workspace with policy, intake, and evidence", async () => {
+    const window = studio();
+    const source = intake();
+    const bundle = evidence("team review");
+    await api(window).importIntakeText(JSON.stringify(source));
+    await api(window).mergeEvidenceText(JSON.stringify(bundle));
+
+    const workspace = api(window).exportWorkspaceValue("payments-platform-policy.json");
+    expect(workspace).toMatchObject({
+      format: "aih-policy-workbench-workspace",
+      version: 1,
+      authority: { state: "not-authority" },
+      policyFilename: "payments-platform-policy.json",
+      artifactIntake: source,
+      evidenceBundles: [bundle],
+    });
+    expect(workspace).toHaveProperty("policy");
+
+    const restored = studio();
+    await api(restored).importWorkspaceText(JSON.stringify(workspace));
+    expect(api(restored).snapshot()).toMatchObject({ intake: source, bundleCount: 1 });
+    expect(
+      (restored.document.getElementById("policy-download-name") as unknown as { value: string })
+        .value,
+    ).toBe("payments-platform-policy.json");
+    expect(
+      JSON.parse(
+        (restored.document.getElementById("config-preview") as unknown as { value: string }).value,
+      ),
+    ).toEqual(workspace.policy);
+    expect(restored.document.getElementById("artifact-intake-message")?.textContent).toContain(
+      "policy, intake, and 1 evidence bundle",
+    );
+
+    window.close();
+    restored.close();
+  });
+
+  it("rejects an unsafe or corrupted team workspace without partially replacing review state", async () => {
+    const source = intake();
+    const bundle = evidence("team review");
+    const sourceWindow = studio();
+    await api(sourceWindow).importIntakeText(JSON.stringify(source));
+    await api(sourceWindow).mergeEvidenceText(JSON.stringify(bundle));
+    const workspace = api(sourceWindow).exportWorkspaceValue("payments-platform-policy.json");
+
+    const unsafeName = structuredClone(workspace);
+    unsafeName.policyFilename = "teams/payments-platform-policy.json";
+    const target = studio();
+    await expect(api(target).importWorkspaceText(JSON.stringify(unsafeName))).rejects.toThrow(
+      /policy filename/i,
+    );
+
+    const corrupted = structuredClone(workspace) as {
+      evidenceBundles: Array<{ bundleDigest: string }>;
+    };
+    corrupted.evidenceBundles[0]!.bundleDigest = `sha256:${"0".repeat(64)}`;
+    await expect(api(target).importWorkspaceText(JSON.stringify(corrupted))).rejects.toThrow(
+      /digest mismatch/i,
+    );
+    expect(api(target).snapshot()).toEqual({ intake: null, bundleCount: 0 });
+
+    sourceWindow.close();
+    target.close();
   });
 
   it("opens one dedicated Artifacts workspace and chooses kind inside it", () => {
