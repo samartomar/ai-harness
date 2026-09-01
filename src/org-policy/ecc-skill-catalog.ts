@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import { ECC_DECLARABLE_COMPONENT_IDS } from "../ecc/components.js";
 import { eccContentMetadata } from "./ecc-content-metadata.js";
 import snapshot from "./ecc-skill-catalog.snapshot.json";
 
@@ -15,7 +14,7 @@ export interface EccSkillCatalogEntry {
   /** Directory name from the exact upstream skills/<name>/SKILL.md inventory. */
   id: string;
   path: string;
-  /** Only an existing policy component may be selected or carry policy semantics. */
+  /** Exact source intent may be selected; this is not an installability or vet claim. */
   governable: boolean;
   title: string;
   summary: string;
@@ -29,11 +28,6 @@ function fail(message: string): never {
 
 function inventory(value: unknown): readonly EccSkillCatalogEntry[] {
   if (!Array.isArray(value) || value.length !== 286) fail("count mismatch");
-  const governed = new Set(
-    ECC_DECLARABLE_COMPONENT_IDS.filter((component) => component.startsWith("skill:")).map(
-      (component) => component.slice("skill:".length),
-    ),
-  );
   const names: string[] = [];
   for (const [index, name] of value.entries()) {
     if (typeof name !== "string" || !/^[a-z0-9][a-z0-9-]*$/.test(name)) {
@@ -45,7 +39,6 @@ function inventory(value: unknown): readonly EccSkillCatalogEntry[] {
   const canonicalNames = [...names].sort();
   const digest = createHash("sha256").update(canonicalNames.join("\n"), "utf8").digest("hex");
   if (digest !== ECC_SKILL_CATALOG_PROVENANCE.namesSha256) fail("canonical names digest mismatch");
-  for (const name of governed) if (!names.includes(name)) fail(`governed skill ${name} is absent`);
   return Object.freeze(
     canonicalNames.map((id) => {
       const metadata = eccContentMetadata("skill", id);
@@ -53,7 +46,7 @@ function inventory(value: unknown): readonly EccSkillCatalogEntry[] {
       return Object.freeze({
         id,
         path: `skills/${id}/SKILL.md`,
-        governable: governed.has(id),
+        governable: true,
         title: metadata.title,
         summary: metadata.summary,
         usageContext: metadata.usageContext,
@@ -63,5 +56,5 @@ function inventory(value: unknown): readonly EccSkillCatalogEntry[] {
   );
 }
 
-/** Complete, availability-only inventory; policy authority stays on existing components. */
+/** Complete source-locked ECC Skill inventory selectable as evidence-owed intent. */
 export const eccSkillCatalogInventory = inventory(snapshot);

@@ -167,6 +167,16 @@ describe("policy workbench administrator journey", () => {
     expect(text(window, "composition-parts"), "the composition is named").toContain("ECC");
     // Naming is not selection: the composition authors no curation records.
     expect(composed.governance.externalCuration).toEqual([]);
+    expect(composed.mcp).toEqual({
+      allowedServers: model.catalog.mcp
+        .filter((item) => item.availability === "always")
+        .map((item) => {
+          if (item.control.source.type !== "mcp") throw new Error("expected MCP control source");
+          return item.control.source.server;
+        })
+        .sort(),
+      allowManagedOnly: true,
+    });
 
     // 4. INSPECT. The administrator can see what is selected, why, and what an
     //    AIH-owned hook will actually do at event time.
@@ -208,6 +218,30 @@ describe("policy workbench administrator journey", () => {
     const exported = JSON.parse(value(window, "config-preview"));
     expect(exported.governance.catalog.custom).toHaveLength(1);
     expect(exported.governance.catalog.reviewed).toHaveLength(controls.length);
+  });
+
+  it("keeps the managed MCP gate synchronized with the center-panel authority", () => {
+    const window = openWorkbench();
+    const first = model.catalog.mcp.find((item) => item.availability === "always");
+    if (first === undefined) throw new Error("expected an always-available MCP control");
+    if (first.control.source.type !== "mcp") throw new Error("expected MCP control source");
+
+    window.document
+      .querySelector(`[data-reviewed="${first.id}"]`)
+      ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    let policy = JSON.parse(value(window, "config-preview"));
+    expect(policy.mcp).toEqual({
+      allowedServers: [first.control.source.server],
+      allowManagedOnly: true,
+    });
+
+    window.document
+      .querySelector(`[data-reviewed="${first.id}"]`)
+      ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    policy = JSON.parse(value(window, "config-preview"));
+    expect(policy.governance.catalog.reviewed).toEqual([]);
+    expect(policy.governance.activations).toEqual([]);
+    expect(policy).not.toHaveProperty("mcp");
   });
 
   // The journey must not depend on the order the administrator happens to take.

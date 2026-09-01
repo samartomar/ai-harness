@@ -10,6 +10,7 @@ import {
 } from "../ecc/components.js";
 import { eccModuleDependencyIds, eccProfileModuleIds } from "../ecc/evidence.js";
 import {
+  eccComponentInstallDescriptor,
   eccComponentRequiredModuleRootIds,
   eccModuleSelectableMemberIds,
 } from "../ecc/materialize.js";
@@ -335,7 +336,7 @@ export interface PolicyAuthoringCatalog {
   eccMcpInventory: readonly EccMcpCatalogEntry[];
   externalMcp: readonly EccMcpCatalogEntry[];
   eccMcpProvenance: typeof ECC_MCP_CATALOG_PROVENANCE;
-  /** Complete source-locked availability inventory; only existing assets are governable. */
+  /** Complete source-locked ECC Skill inventory represented by exact policy assets. */
   eccSkills: readonly EccSkillCatalogEntry[];
   eccSkillsProvenance: typeof ECC_SKILL_CATALOG_PROVENANCE;
   /** Digest paired with externalMcp when authoring an exact declarative ECC approval. */
@@ -409,18 +410,20 @@ export function aihPolicyControls(
   catalog: Record<string, McpServer> = policyAuthoringMcpCatalog(),
 ): AihPolicyControl[] {
   return [
-    ...Object.entries(catalog).map(([id, server]) => ({
-      id,
-      kind: "mcp" as const,
-      source: { type: "mcp" as const, server: id, subject: mcpApprovalSubject(server) },
-      targets: (server.type === "stdio" ? ["claude", "kiro"] : ["claude"]) as (
-        | "claude"
-        | "codex"
-        | "kiro"
-      )[],
-      projector: "mcp-managed-settings" as const,
-      lifecycle: "supported" as const,
-    })),
+    ...Object.entries(catalog).flatMap(([id, server]) =>
+      server.type !== "stdio"
+        ? []
+        : [
+            {
+              id,
+              kind: "mcp" as const,
+              source: { type: "mcp" as const, server: id, subject: mcpApprovalSubject(server) },
+              targets: ["claude", "kiro"] as ("claude" | "kiro")[],
+              projector: "mcp-managed-settings" as const,
+              lifecycle: "supported" as const,
+            },
+          ],
+    ),
     usageMeteringControl(),
   ];
 }
@@ -474,15 +477,34 @@ function vetVerdicts(sourceId: string, pinnedSha: string): Map<string, PolicyAut
 
 function frameworkCatalog(id: "ecc" | "superpowers"): PolicyAuthoringFramework {
   const catalog = baselineCatalogById(id);
-  const present = new Set(catalog.components.map((component) => component.id));
+  const supplementalSkillIds =
+    id === "ecc" ? eccSkillCatalogInventory.map((skill) => `skill:${skill.id}`) : [];
+  const present = new Set([
+    ...catalog.components.map((component) => component.id),
+    ...supplementalSkillIds,
+  ]);
   const vetted = vetVerdicts(id, catalog.pinnedSha);
   // Only name riders the pinned catalog actually contains: a relation that
   // points at a component this framework does not carry is a claim its own
   // inventory denies, and it must not reach an administrator.
   const ridersFor = (componentId: string): string[] | undefined => {
     const declared = ECC_DECLARATION_RIDERS[componentId];
-    if (declared === undefined) return undefined;
-    const usable = declared.filter((rider) => present.has(rider));
+    const skillSuggestions =
+      id === "ecc" && /^(?:lang|framework|capability):/.test(componentId)
+        ? (() => {
+            const descriptor = eccComponentInstallDescriptor(componentId as EccComponentId);
+            const names = [...(descriptor.skills ?? [])];
+            for (const moduleId of descriptor.wholeModules ?? []) {
+              for (const member of eccModuleSelectableMemberIds(moduleId, [...present])) {
+                if (member.startsWith("skill:")) names.push(member.slice("skill:".length));
+              }
+            }
+            return names.map((name) => `skill:${name}`);
+          })()
+        : [];
+    const usable = [...new Set([...(declared ?? []), ...skillSuggestions])].filter((rider) =>
+      present.has(rider),
+    );
     return usable.length > 0 ? [...usable] : undefined;
   };
   const dependenciesFor = (componentId: string): string[] | undefined => {
@@ -506,62 +528,89 @@ function frameworkCatalog(id: "ecc" | "superpowers"): PolicyAuthoringFramework {
   };
   const membersFor = (componentId: string): string[] | undefined => {
     if (id !== "ecc" || !componentId.startsWith("module:")) return undefined;
-    const members = eccModuleSelectableMemberIds(
-      componentId.slice("module:".length),
-      catalog.components.map((component) => component.id),
-    );
+    const members = eccModuleSelectableMemberIds(componentId.slice("module:".length), [...present]);
     return members.length > 0 ? members : undefined;
   };
+  const assets: PolicyAuthoringAsset[] = catalog.components.map((component) => {
+    const path = eccPreferredSelectionSourcePath(component.id, component.paths);
+    if (path === undefined) throw new Error(`baseline component ${component.id} declares no path`);
+    const curation = curationKind(component.id);
+    const riders = ridersFor(component.id);
+    const dependencies = dependenciesFor(component.id);
+    const members = membersFor(component.id);
+    const vet = vetted.get(component.id);
+    const kind = assetKind(component.id);
+    const name = component.id.slice(component.id.indexOf(":") + 1);
+    const metadata =
+      id === "ecc" && (kind === "agent" || kind === "skill")
+        ? eccContentMetadata(kind, name)
+        : undefined;
+    if (id === "ecc" && (kind === "agent" || kind === "skill") && metadata === undefined) {
+      throw new Error(`ECC ${kind} ${component.id} has no source-authored metadata`);
+    }
+    return {
+      kind,
+      id: component.id,
+      ...(curation === undefined ? {} : { curationKind: curation }),
+      ...(riders === undefined ? {} : { riders }),
+      ...(dependencies === undefined ? {} : { dependencies }),
+      ...(members === undefined ? {} : { members }),
+      ...(vet === undefined ? {} : { vet }),
+      ...(metadata === undefined
+        ? {}
+        : {
+            metadata: {
+              title: metadata.title,
+              summary: metadata.summary,
+              usageContext: metadata.usageContext,
+              allowedTools: metadata.allowedTools,
+              sourcePath: metadata.path,
+              sourceSha256: metadata.sourceSha256,
+            },
+          }),
+      source: {
+        repository: `${catalog.owner}/${catalog.repo}`,
+        commit: catalog.pinnedSha,
+        path,
+      },
+      sourcePaths: eccSelectionSourcePaths(component.id, component.paths),
+    };
+  });
+  if (id === "ecc") {
+    const baselineIds = new Set(assets.map((asset) => asset.id));
+    for (const skill of eccSkillCatalogInventory) {
+      const skillId = `skill:${skill.id}`;
+      if (baselineIds.has(skillId)) continue;
+      const metadata = eccContentMetadata("skill", skill.id);
+      if (metadata === undefined) {
+        throw new Error(`ECC skill ${skillId} has no source-authored metadata`);
+      }
+      assets.push({
+        kind: "skill",
+        id: skillId,
+        curationKind: "skill",
+        source: {
+          repository: `${catalog.owner}/${catalog.repo}`,
+          commit: catalog.pinnedSha,
+          path: skill.path,
+        },
+        sourcePaths: [skill.path],
+        metadata: {
+          title: metadata.title,
+          summary: metadata.summary,
+          usageContext: metadata.usageContext,
+          allowedTools: metadata.allowedTools,
+          sourcePath: metadata.path,
+          sourceSha256: metadata.sourceSha256,
+        },
+      });
+    }
+  }
   return {
     id,
     repository: `${catalog.owner}/${catalog.repo}`,
     commit: catalog.pinnedSha,
-    assets: catalog.components.map((component) => {
-      const path = eccPreferredSelectionSourcePath(component.id, component.paths);
-      if (path === undefined)
-        throw new Error(`baseline component ${component.id} declares no path`);
-      const curation = curationKind(component.id);
-      const riders = ridersFor(component.id);
-      const dependencies = dependenciesFor(component.id);
-      const members = membersFor(component.id);
-      const vet = vetted.get(component.id);
-      const kind = assetKind(component.id);
-      const name = component.id.slice(component.id.indexOf(":") + 1);
-      const metadata =
-        id === "ecc" && (kind === "agent" || kind === "skill")
-          ? eccContentMetadata(kind, name)
-          : undefined;
-      if (id === "ecc" && (kind === "agent" || kind === "skill") && metadata === undefined) {
-        throw new Error(`ECC ${kind} ${component.id} has no source-authored metadata`);
-      }
-      return {
-        kind,
-        id: component.id,
-        ...(curation === undefined ? {} : { curationKind: curation }),
-        ...(riders === undefined ? {} : { riders }),
-        ...(dependencies === undefined ? {} : { dependencies }),
-        ...(members === undefined ? {} : { members }),
-        ...(vet === undefined ? {} : { vet }),
-        ...(metadata === undefined
-          ? {}
-          : {
-              metadata: {
-                title: metadata.title,
-                summary: metadata.summary,
-                usageContext: metadata.usageContext,
-                allowedTools: metadata.allowedTools,
-                sourcePath: metadata.path,
-                sourceSha256: metadata.sourceSha256,
-              },
-            }),
-        source: {
-          repository: `${catalog.owner}/${catalog.repo}`,
-          commit: catalog.pinnedSha,
-          path,
-        },
-        sourcePaths: eccSelectionSourcePaths(component.id, component.paths),
-      };
-    }),
+    assets,
   };
 }
 
@@ -591,7 +640,7 @@ function enterpriseComposition(ecc: PolicyAuthoringFramework): PolicyAuthoringCo
       id: "aih-core-closure",
       label: "AIH's named ECC Core closure",
       rule: "CORE_ECC_COMPONENTS — AIH's own curation, not a set ECC declares",
-      selection: "composed",
+      selection: "additive",
       componentIds: [...CORE_ECC_COMPONENTS],
     },
     {
@@ -627,8 +676,7 @@ function enterpriseComposition(ecc: PolicyAuthoringFramework): PolicyAuthoringCo
   return { framework: "ecc", parts };
 }
 
-/** The source-locked availability list may name more skills than AIH can govern,
- * but it must never disagree about the governed subset. */
+/** The source-locked Skill list and exact policy catalog must agree completely. */
 function validateEccSkillCatalog(
   ecc: PolicyAuthoringFramework,
   skills: readonly EccSkillCatalogEntry[],
@@ -642,11 +690,9 @@ function validateEccSkillCatalog(
     );
   }
   const byId = new Map(skills.map((skill) => [skill.id, skill]));
-  for (const skill of skills) {
-    if (skill.governable && !ecc.assets.some((asset) => asset.id === `skill:${skill.id}`)) {
-      throw new Error(`governable ECC skill ${skill.id} is absent from the policy catalog`);
-    }
-  }
+  for (const skill of skills)
+    if (!skill.governable || !ecc.assets.some((asset) => asset.id === `skill:${skill.id}`))
+      throw new Error(`ECC skill ${skill.id} is absent from the selectable policy catalog`);
   for (const asset of ecc.assets.filter((asset) => asset.kind === "skill")) {
     const name = asset.id.slice("skill:".length);
     if (!byId.get(name)?.governable) {

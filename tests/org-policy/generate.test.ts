@@ -612,6 +612,43 @@ describe("policy generate", () => {
     }
   });
 
+  it("rejects an imported governed MCP selection whose managed gate is absent", async () => {
+    const window = workbenchWindow();
+    const html = policyStudioHtml(policyStudioModel());
+    window.document.write(html);
+    loadStudio(window, html);
+    const control = window.document.querySelector("[data-reviewed]");
+    if (control === null) throw new Error("expected a managed MCP selection control");
+    control.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    const preview = window.document.getElementById("config-preview") as unknown as {
+      value: string;
+    };
+    const valid = JSON.parse(preview.value) as Record<string, unknown>;
+    expect(valid.mcp).toMatchObject({ allowManagedOnly: true });
+    const malformed = structuredClone(valid);
+    delete malformed.mcp;
+
+    const policyFile = window.document.getElementById("policy-file");
+    if (policyFile === null) throw new Error("expected policy file input");
+    Object.defineProperty(policyFile, "files", {
+      configurable: true,
+      value: [new window.File([JSON.stringify(malformed)], "missing-mcp-gate.json")],
+    });
+    policyFile.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await settle(window, () =>
+      Boolean(
+        window.document
+          .getElementById("announcement")
+          ?.textContent?.includes("Policy import rejected"),
+      ),
+    );
+
+    expect(window.document.getElementById("announcement")?.textContent).toContain(
+      "selected center-panel MCP controls require managed MCP projection",
+    );
+    expect(JSON.parse(preview.value)).toEqual(valid);
+  });
+
   it("round-trips administrator-managed remote status without inventing legacy drift fields", async () => {
     const imported = fullAuthoringPolicy();
     const governance = imported.governance as {

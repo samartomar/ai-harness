@@ -293,7 +293,7 @@ describe("Policy Workbench artifact intake", () => {
     expect(card?.textContent).toContain("Add and review MCP, Skill, or Agent sources");
     expect(card?.textContent).toContain("one accountable owner email");
     expect(card?.textContent).toContain(
-      "aih trust scan aih-artifact-intake.json --apply --evidence-out aih-artifact-evidence.json",
+      "aih trust scan aih-artifact-intake.json --posture enterprise --apply --evidence-out aih-artifact-evidence.json",
     );
     expect(card?.textContent).toContain("Preflight only");
     expect(card?.textContent).toContain("limited to 1 MiB");
@@ -1320,7 +1320,36 @@ describe("Policy Workbench artifact intake", () => {
     expect(remoteButtons).toHaveLength(2);
     expect(
       remoteButtons.every((button) => (button as unknown as { disabled: boolean }).disabled),
-    ).toBe(true);
+    ).toBe(false);
+    click(window, remoteButtons[0] ?? null);
+    expect((window.document.body as unknown as { dataset: { view: string } }).dataset.view).toBe(
+      "author",
+    );
+    expect(
+      (window.document.getElementById("protected-subject-id") as unknown as { value: string })
+        .value,
+    ).toBe("atlassian-directory");
+    expect(
+      (window.document.getElementById("protected-source-type") as unknown as { value: string })
+        .value,
+    ).toBe("remote");
+    expect(
+      (window.document.getElementById("protected-source-endpoint") as unknown as { value: string })
+        .value,
+    ).toBe("https://mcp.atlassian.com/v1/mcp");
+    expect(
+      (
+        window.document.getElementById("protected-source-content-digest") as unknown as {
+          value: string;
+        }
+      ).value,
+    ).toBe("");
+    expect(
+      (window.document.getElementById("protected-actor") as unknown as { value: string }).value,
+    ).toBe("");
+    expect(window.document.getElementById("artifact-intake-message")?.textContent).toContain(
+      "Exact hosted endpoint",
+    );
     expect(api(window).snapshot().intake).toEqual(intake);
 
     window.close();

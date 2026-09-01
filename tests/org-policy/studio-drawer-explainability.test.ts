@@ -74,7 +74,7 @@ describe("policy studio drawer explainability", () => {
 
   it("shows source-authored skill and MCP descriptions", () => {
     const window = studio();
-    expect(open(window, "ECC skill: browser-qa")).toContain(
+    expect(open(window, "ecc / skill: skill:browser-qa")).toContain(
       "automate visual testing and UI interaction verification",
     );
     const mcp = open(window, "ECC MCP: jira");

@@ -122,15 +122,14 @@ async function settle(window: Window, done: () => boolean, budgetMs = 2000): Pro
 }
 
 describe("policy studio component relations", () => {
-  // ECC declares that picking a language brings agents with it. That relation
-  // existed only inside a non-exported constant, so the surface could not state
-  // it and an administrator met the extra components after the fact.
+  // ECC's declared riders remain present beside exact Skill suggestions derived
+  // from the pinned materialization descriptor.
   it("carries ECC's declaration riders into the authoring catalog", () => {
     for (const [id, riders] of Object.entries(ECC_DECLARATION_RIDERS)) {
       const asset = ecc.assets.find((item) => item.id === id);
       if (asset === undefined) continue;
       const usable = riders.filter((rider) => present.has(rider));
-      expect(asset.riders ?? [], id).toEqual(usable.length ? usable : (asset.riders ?? []));
+      expect(asset.riders ?? [], id).toEqual(expect.arrayContaining(usable));
     }
     const typescript = ecc.assets.find((asset) => asset.id === "lang:typescript");
     expect(typescript?.riders).toContain("agent:typescript-reviewer");

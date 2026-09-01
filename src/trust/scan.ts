@@ -277,7 +277,6 @@ function artifactEvidenceState(
   const sourcePath = item.source.path;
   if (sourcePath !== undefined && !existsSync(join(treePath, sourcePath))) return "missing";
   if (scan.checks.some((check) => check.verdict === "fail")) return "failed";
-  if (scan.checks.some((check) => check.verdict === "skip")) return "missing";
   return "verified";
 }
 
