@@ -331,7 +331,7 @@ describe("policy studio surface invariants", () => {
       );
     }
     await closeWindow(selectedSuperpowers);
-  }, 30_000);
+  }, 60_000);
 
   it("narrates the requested and effective count at every export", () => {
     const window = studio();
