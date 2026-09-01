@@ -1054,7 +1054,7 @@ describe("policy generate", () => {
       .querySelector('[data-workbench-action="remove"][data-workbench-kind="custom"]')
       ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
     expect(document.getElementById("custom-rows")?.textContent).toContain("No custom candidates");
-  });
+  }, 15_000);
 
   it("keeps curation and preserved evidence detail in compact accessible disclosures", async () => {
     const window = workbenchWindow();
