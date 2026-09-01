@@ -32,7 +32,7 @@ import {
   resolveEccTargetMaterialization,
 } from "./materialization-target.js";
 import { eccModuleSelectableMemberIds } from "./materialize.js";
-import { eccMandatoryRequirementIds } from "./selection-closure.js";
+import { eccMandatoryRequirementIds, eccSelectionSourcePaths } from "./selection-closure.js";
 
 /**
  * F6: `aih ecc --lifecycle install` in a governed repository.
@@ -171,9 +171,10 @@ export function governedEccComponentIds(policy: OrgPolicy, catalog: BaselineCata
           "AIH_TRUST",
         );
       }
-      if (!component.paths.includes(item.source.path)) {
+      const expectedPaths = eccSelectionSourcePaths(item.id, component.paths);
+      if (!expectedPaths.includes(item.source.path)) {
         throw new AihError(
-          `refusing the governed ECC framework lifecycle: ${displaySafe(item.id)} claims source path ${displaySafe(item.source.path)}, but its pinned catalog paths are ${component.paths.map((path) => displaySafe(path)).join(", ")}`,
+          `refusing the governed ECC framework lifecycle: ${displaySafe(item.id)} claims source path ${displaySafe(item.source.path)}, but its pinned catalog paths are ${expectedPaths.map((path) => displaySafe(path)).join(", ")}`,
           "AIH_TRUST",
         );
       }

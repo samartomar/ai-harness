@@ -397,6 +397,33 @@ describe("policy studio dependency-closed selection", () => {
     window.close();
   });
 
+  it("attributes a cyclic rootless module closure before a center removal", () => {
+    const partialModel = structuredClone(model);
+    const cycleItems = ["module:hooks-runtime", "baseline:hooks"].map((id) => {
+      const asset = ecc.assets.find((candidate) => candidate.id === id);
+      if (asset === undefined) throw new Error(`expected ECC asset ${id}`);
+      return { kind: asset.kind, id: asset.id, source: { ...asset.source } };
+    });
+    partialModel.initialPolicy.governance?.externalSelections.push({
+      framework: "ecc",
+      items: cycleItems,
+    });
+    const window = studio(partialModel);
+
+    clickCanonical(window, "ecc|baseline|baseline:hooks");
+
+    expect(selectedIds(window)).toEqual(["module:hooks-runtime"]);
+    expect(selectionRoots(window)).toEqual(["module:hooks-runtime"]);
+    expect(window.document.getElementById("announcement")?.textContent).toMatch(
+      /center deselected baseline:hooks.*rootless intent was attributed/i,
+    );
+    click(window, "#validate");
+    expect(window.document.getElementById("announcement")?.textContent).toMatch(
+      /validation passed/i,
+    );
+    window.close();
+  });
+
   it("carries the pinned transitive dependency closure on every ECC module", () => {
     const moduleAssets = ecc.assets.filter((asset) => asset.kind === "module");
     expect(moduleAssets.length).toBeGreaterThan(0);

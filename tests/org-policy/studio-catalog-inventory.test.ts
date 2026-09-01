@@ -794,6 +794,12 @@ describe("policy authoring catalog inventory", () => {
       ).not.toBeNull();
     }
 
+    const rules = ecc.assets.find((asset) => asset.id === "baseline:rules");
+    const skill = ecc.assets.find((asset) => asset.id === "skill:tdd-workflow");
+    expect(rules?.source.path).toBe("rules");
+    expect(rules?.sourcePaths).toContain("rules");
+    expect(skill?.source.path).toBe("skills/tdd-workflow");
+
     const capability = ecc.assets.find((asset) => asset.id === "capability:security");
     const lockedCapability = baselineCatalogById("ecc").components.find(
       (component) => component.id === "capability:security",

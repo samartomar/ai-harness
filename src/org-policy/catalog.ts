@@ -13,6 +13,10 @@ import {
   eccComponentRequiredModuleRootIds,
   eccModuleSelectableMemberIds,
 } from "../ecc/materialize.js";
+import {
+  eccPreferredSelectionSourcePath,
+  eccSelectionSourcePaths,
+} from "../ecc/selection-closure.js";
 import { CLI_REGISTRY, REGISTRY_IDS } from "../internals/cli-registry.js";
 import { mcpApprovalSubject } from "../mcp/policy.js";
 import { type McpServer, mcpServers } from "../mcp/servers.js";
@@ -513,7 +517,7 @@ function frameworkCatalog(id: "ecc" | "superpowers"): PolicyAuthoringFramework {
     repository: `${catalog.owner}/${catalog.repo}`,
     commit: catalog.pinnedSha,
     assets: catalog.components.map((component) => {
-      const path = component.paths[0];
+      const path = eccPreferredSelectionSourcePath(component.id, component.paths);
       if (path === undefined)
         throw new Error(`baseline component ${component.id} declares no path`);
       const curation = curationKind(component.id);
@@ -555,7 +559,7 @@ function frameworkCatalog(id: "ecc" | "superpowers"): PolicyAuthoringFramework {
           commit: catalog.pinnedSha,
           path,
         },
-        sourcePaths: [...component.paths],
+        sourcePaths: eccSelectionSourcePaths(component.id, component.paths),
       };
     }),
   };
