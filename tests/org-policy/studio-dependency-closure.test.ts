@@ -29,6 +29,14 @@ function click(window: Window, selector: string): void {
   node.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
 }
 
+function clickCanonical(window: Window, key: string): void {
+  const node = [...window.document.querySelectorAll(`[data-framework-select="${key}"]`)].find(
+    (candidate) => candidate.closest(".rail") === null,
+  );
+  if (node === undefined) throw new Error(`expected canonical ${key}`);
+  node.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+}
+
 function selectedIds(window: Window): string[] {
   const preview = window.document.getElementById("config-preview") as unknown as {
     value: string;
@@ -214,6 +222,34 @@ describe("policy studio dependency-closed selection", () => {
     reopened.close();
   });
 
+  it("lets the center prune dependent items from an imported rootless selection", () => {
+    const partialModel = structuredClone(model);
+    const legacyIds = assetClosure(["capability:database"]);
+    const legacyItems = legacyIds.map((id) => {
+      const asset = ecc.assets.find((candidate) => candidate.id === id);
+      if (asset === undefined) throw new Error(`expected ECC asset ${id}`);
+      return { kind: asset.kind, id: asset.id, source: { ...asset.source } };
+    });
+    partialModel.initialPolicy.governance?.externalSelections.push({
+      framework: "ecc",
+      items: legacyItems,
+    });
+    const window = studio(partialModel);
+
+    clickCanonical(window, "ecc|agent|agent:database-reviewer");
+
+    expect(selectedIds(window)).not.toContain("agent:database-reviewer");
+    expect(selectedIds(window)).not.toContain("capability:database");
+    expect(window.document.getElementById("announcement")?.textContent).toMatch(
+      /center deselected agent:database-reviewer/i,
+    );
+    click(window, "#validate");
+    expect(window.document.getElementById("announcement")?.textContent).toMatch(
+      /validation passed/i,
+    );
+    window.close();
+  });
+
   it("carries the pinned transitive dependency closure on every ECC module", () => {
     const moduleAssets = ecc.assets.filter((asset) => asset.kind === "module");
     expect(moduleAssets.length).toBeGreaterThan(0);
@@ -286,7 +322,42 @@ describe("policy studio dependency-closed selection", () => {
     window.close();
   }, 15_000);
 
-  it("refuses removal of a required module and prunes derived modules with the root", () => {
+  it("keeps database and React suggestions exact while center deselection remains authoritative", () => {
+    const window = studio();
+
+    click(window, '.rail [data-framework-select="ecc|capability|capability:database"]');
+    click(window, '.rail [data-framework-select="ecc|framework|framework:react"]');
+
+    expect(
+      selectedIds(window)
+        .filter((id) => id.startsWith("agent:"))
+        .sort(),
+    ).toEqual(
+      [
+        "agent:a11y-architect",
+        "agent:database-reviewer",
+        "agent:e2e-runner",
+        "agent:react-build-resolver",
+        "agent:react-reviewer",
+      ].sort(),
+    );
+
+    clickCanonical(window, "ecc|agent|agent:database-reviewer");
+
+    expect(selectionRoots(window)).toEqual(["framework:react"]);
+    expect(selectedIds(window).sort()).toEqual(assetClosure(["framework:react"]).sort());
+    expect(window.document.getElementById("announcement")?.textContent).toMatch(
+      /center deselected agent:database-reviewer.*removed.*capability:database/i,
+    );
+
+    click(window, "#validate");
+    expect(window.document.getElementById("announcement")?.textContent).toMatch(
+      /validation passed/i,
+    );
+    window.close();
+  });
+
+  it("lets center removal of a required module prune its dependent root", () => {
     const window = studio();
     const module = ecc.assets.find(
       (asset) => asset.kind === "module" && (asset.dependencies?.length ?? 0) >= 3,
@@ -296,14 +367,16 @@ describe("policy studio dependency-closed selection", () => {
     if (dependency === undefined) throw new Error("expected a module dependency");
 
     click(window, `[data-framework-select="ecc|module|${module.id}"]`);
-    click(window, `[data-framework-select="ecc|module|${dependency}"]`);
-    expect(selectedIds(window).sort()).toEqual(assetClosure([module.id]).sort());
+    clickCanonical(window, `ecc|module|${dependency}`);
+    expect(selectedIds(window)).toEqual([]);
     expect(window.document.getElementById("announcement")?.textContent).toMatch(
-      /cannot be deselected.*requires it/i,
+      new RegExp(`center deselected ${dependency}.*removed.*${module.id}`, "i"),
     );
 
-    click(window, `[data-framework-select="ecc|module|${module.id}"]`);
-    expect(selectedIds(window)).toEqual([]);
+    click(window, "#validate");
+    expect(window.document.getElementById("announcement")?.textContent).toMatch(
+      /validation passed/i,
+    );
     window.close();
   });
 

@@ -100,6 +100,14 @@ function click(window: Window, selector: string): void {
   node.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
 }
 
+function clickCanonical(window: Window, key: string): void {
+  const node = [...window.document.querySelectorAll(`[data-framework-select="${key}"]`)].find(
+    (candidate) => candidate.closest(".rail") === null,
+  );
+  if (node === undefined) throw new Error(`expected canonical ${key}`);
+  node.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+}
+
 async function settle(window: Window, done: () => boolean, budgetMs = 2000): Promise<void> {
   const deadline = Date.now() + budgetMs;
   while (Date.now() < deadline) {
@@ -186,20 +194,38 @@ describe("policy studio component relations", () => {
     expect(selectedIds(window)).toEqual([riderAsset.id]);
   });
 
-  it("refuses to remove a rider while a selected declaration requires it", () => {
+  it("removes an independently selected rider and every dependent root from the center", () => {
+    const window = studio();
+    const rider = declarer.riders?.[0];
+    if (rider === undefined) throw new Error("expected a declared rider");
+    const riderAsset = ecc.assets.find((asset) => asset.id === rider);
+    if (riderAsset === undefined) throw new Error(`expected rider asset ${rider}`);
+
+    click(window, `[data-framework-select="ecc|${riderAsset.kind}|${riderAsset.id}"]`);
+    click(window, `[data-framework-select="ecc|${declarer.kind}|${declarer.id}"]`);
+    clickCanonical(window, `ecc|${riderAsset.kind}|${riderAsset.id}`);
+
+    expect(selectedIds(window)).toEqual([]);
+    expect(selectionRoots(window)).toEqual([]);
+    expect(window.document.getElementById("announcement")?.textContent).toContain(
+      `Center deselected ${riderAsset.id}; removed 2 dependent root(s)`,
+    );
+  });
+
+  it("lets the center remove a rider by pruning every declaration that requires it", () => {
     const window = studio();
     const rider = declarer.riders?.[0];
     if (rider === undefined) throw new Error("expected a declared rider");
     const riderAsset = ecc.assets.find((asset) => asset.id === rider);
     if (riderAsset === undefined) throw new Error(`expected rider asset ${rider}`);
     click(window, `[data-framework-select="ecc|${declarer.kind}|${declarer.id}"]`);
-    const before = selectedIds(window);
 
-    click(window, `[data-framework-select="ecc|${riderAsset.kind}|${riderAsset.id}"]`);
+    clickCanonical(window, `ecc|${riderAsset.kind}|${riderAsset.id}`);
 
-    expect(selectedIds(window)).toEqual(before);
+    expect(selectedIds(window)).toEqual([]);
+    expect(selectionRoots(window)).toEqual([]);
     expect(window.document.getElementById("announcement")?.textContent).toContain(
-      `cannot be deselected while ${declarer.id} requires it`,
+      `Center deselected ${riderAsset.id}; removed 1 dependent root(s) (${declarer.id})`,
     );
   });
 
