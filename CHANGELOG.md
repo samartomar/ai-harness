@@ -6,6 +6,20 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [Core 0.4.1] - 2026-08-31
+
+### Changed
+
+- Make the protected tag workflow consume a successful exact-SHA post-merge CI receipt and then
+  run only package, evidence-receipt, installed-Workbench, and custody checks. It no longer repeats
+  typecheck, lint, coverage, or the complete test suite after the same main commit passed CI.
+
+### Fixed
+
+- Await Happy DOM teardown for every packed Workbench authoring attempt, including refusal paths,
+  and bound release-proof child processes so a completed installed lifecycle proof exits instead
+  of retaining browser tasks until the runner exhausts its heap ([#911]).
+
 ## [Core 0.4.0] - 2026-08-31
 
 ### Changed
@@ -3047,7 +3061,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v-core-0.4.0...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v-core-0.4.1...HEAD
+[Core 0.4.1]: https://github.com/samartomar/ai-harness/compare/v-core-0.4.0...v-core-0.4.1
 [Core 0.4.0]: https://github.com/samartomar/ai-harness/compare/v-core-0.3.0...v-core-0.4.0
 [Core 0.3.0]: https://github.com/samartomar/ai-harness/compare/v-core-0.2.0...v-core-0.3.0
 [Core 0.2.0]: https://github.com/samartomar/ai-harness/compare/v-core-0.1.1...v-core-0.2.0

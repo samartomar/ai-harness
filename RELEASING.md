@@ -2,9 +2,11 @@
 
 How a maintainer cuts a release. The heavy lifting is automated: pushing a `v-core-*` tag runs
 [`release.yml`](https://github.com/samartomar/ai-harness/blob/main/.github/workflows/release.yml). A read-only
-`verify-and-pack` job verifies the gates, packs one tarball, records its SHA256 digest,
-smoke-installs that exact tarball in a disposable root, and uploads only the tarball as a
-GitHub workflow artifact. The protected `npm-publish` job downloads that artifact by ID,
+`verify-and-pack` job requires a successful post-merge CI run bound to the exact tagged main SHA,
+then runs the package, evidence-receipt, installed-Workbench, and custody gates. It packs one
+tarball, records its SHA256 digest, smoke-installs that exact tarball in a disposable root, and
+uploads only the tarball as a GitHub workflow artifact. It does not repeat CI's typecheck, lint,
+coverage, or complete test suite. The protected `npm-publish` job downloads that artifact by ID,
 verifies GitHub's artifact digest plus the original tarball digest and packed package
 identity, and runs no Core package code. It then generates the tarball-scoped SPDX SBOM,
 attests build provenance, signs a checksum reconstructed from the trusted digest,
@@ -162,7 +164,8 @@ source approval alone is not publication approval.
    git tag v-core-X.Y.Z
    git push origin v-core-X.Y.Z
    ```
-12. **Watch the candidate workflow.** First confirm the read-only `verify-and-pack` job completes.
+12. **Watch the candidate workflow.** First confirm the read-only `verify-and-pack` job accepts a
+   successful post-merge CI receipt for the exact tag SHA and completes its package-specific proof.
    The protected `npm-publish` job then rechecks artifact custody, live `main` and tag state,
    and tokenless npm Trusted Publishing immediately before the effect. It publishes to
    npm under `next` and creates a prerelease GitHub Release. It never changes `latest`.
@@ -237,6 +240,6 @@ but it is not required merely to obtain the candidate-first safety boundary.
 `package-lock.json` also records the root package version. The four-way release check is:
 `version.ts VERSION === package.json version === package-lock root version === the version suffix of v-core-X.Y.Z`.
 `tests/version.test.ts` pins the first three values (a mismatch fails `npm run verify`,
-CI, and the release workflow's verify step), and the release workflow refuses a tag that
+CI, and the release workflow's package-specific proof), and the release workflow refuses a tag that
 does not match `package.json`. The workflow and release-readiness tests also fail if a
 candidate can update `latest` or create a stable GitHub Release before promotion.

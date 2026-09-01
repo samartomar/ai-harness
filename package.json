@@ -1,6 +1,6 @@
 {
   "name": "@aihq/core",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "AI Development Assurance governance core for exact tools, skills, MCP servers, packages, evidence, approval, observation, and audit history",
   "repository": {
     "type": "git",
@@ -83,6 +83,7 @@
     "verify:cold-aih-managed-usage": "npm run build && node tools/verify-cold-aih-managed-usage.mjs",
     "verify:cold-upstream-artifact-lifecycle": "npm run build && node tools/verify-cold-upstream-artifact-lifecycle.mjs",
     "verify:packed-admin-docs": "tsx tools/verify-packed-administrator-docs.mjs",
+    "verify:release-candidate": "npm run check:baseline-analyzers && npm run check:native-identity && npm run check:baseline-pins && npm run check:baseline-installable && npm run check:ai-runtime && npm run check:bugbounty-report && npm run docs:lint && npm run check:packed-doc-links && npm run build && npm run check:published-bin && npm run check:published-library && npm run verify:packed-admin-docs && node tools/verify-cold-upstream-artifact-lifecycle.mjs",
     "docs:lint": "tsx src/internals/check-repo-docs.ts",
     "lint": "biome check src tests",
     "lint:fix": "biome check --write src tests",
