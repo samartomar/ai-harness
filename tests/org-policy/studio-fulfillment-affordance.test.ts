@@ -1,11 +1,12 @@
 import { Window } from "happy-dom";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { OrgPolicy } from "../../src/org-policy/schema.js";
 import type { PolicyStudioModel } from "../../src/org-policy/studio-model.js";
 import { policyStudioModel } from "../../src/org-policy/studio-model.js";
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
 
 const model = policyStudioModel();
+const openWindows = new Set<Window>();
 const assets = model.catalog.frameworks.flatMap((framework) =>
   framework.assets.map((asset) => ({ framework, asset })),
 );
@@ -31,6 +32,7 @@ type Entry = { framework: { id: string }; asset: { kind: string; id: string } };
 
 function studioWindow(studioModel: PolicyStudioModel): Window {
   const window = new Window({ url: "http://localhost/" });
+  openWindows.add(window);
   const html = policyStudioHtml(studioModel);
   window.document.write(html);
   (window as unknown as { structuredClone: typeof structuredClone }).structuredClone =
@@ -40,6 +42,11 @@ function studioWindow(studioModel: PolicyStudioModel): Window {
   window.eval(scripts.join("\n"));
   return window;
 }
+
+afterEach(async () => {
+  await Promise.all([...openWindows].map((window) => window.happyDOM.close()));
+  openWindows.clear();
+});
 
 function click(window: Window, selector: string): void {
   const node = window.document.querySelector(selector);

@@ -32,6 +32,11 @@ function workbenchWindow(): Window {
   return window;
 }
 
+async function closeWorkbenchWindow(window: Window): Promise<void> {
+  openWindows.delete(window);
+  await window.happyDOM.close();
+}
+
 /**
  * FileReader resolves on its own schedule, so a fixed sleep is a race the suite
  * outgrew: these waits passed alone and failed once the file count rose. Poll
@@ -50,7 +55,7 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
-  await Promise.all([...openWindows].map((window) => window.happyDOM.close()));
+  await Promise.all([...openWindows].map(closeWorkbenchWindow));
   openWindows.clear();
   rmSync(dir, { recursive: true, force: true });
 });
@@ -1292,8 +1297,9 @@ describe("policy generate", () => {
       expect(window.document.getElementById("announcement")?.textContent, fixture.name).toContain(
         "Policy import rejected",
       );
+      await closeWorkbenchWindow(window);
     }
-  });
+  }, 30_000);
 
   it("keeps browser import, validate, and download parity with command registry/index argument grammar", async () => {
     const cases = [
@@ -1366,6 +1372,7 @@ describe("policy generate", () => {
           ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
         expect(announcement?.textContent).toContain("Download blocked");
       }
+      await closeWorkbenchWindow(window);
     }
   }, 10_000);
 });
