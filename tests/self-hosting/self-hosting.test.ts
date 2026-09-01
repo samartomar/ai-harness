@@ -98,6 +98,7 @@ describe("ai-harness self-hosting boundary", () => {
     expect(workflow.jobs.verify.env.NODE_OPTIONS).toBe("--max-old-space-size=4096");
     expect(workflow.jobs.verify.steps.map((step) => step.run)).toEqual(
       expect.arrayContaining([
+        "npx vitest run --coverage --maxWorkers=2 --testTimeout=15000",
         "npx vitest run --shard=1/4",
         "npx vitest run --shard=2/4",
         "npx vitest run --shard=3/4",
