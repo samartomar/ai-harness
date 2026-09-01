@@ -244,10 +244,10 @@ describe("GovernanceDoctor Repair V1 capability boundary (static)", () => {
       recursive: true,
     }) as string[];
     expect(packAssets.map((entry) => entry.replace(/\\/g, "/")).sort()).toEqual([
-      "governance-doctor-audit-guide",
-      "governance-doctor-audit-guide/LICENSE",
-      "governance-doctor-audit-guide/SKILL.md",
-      "governance-doctor-audit-guide/profile.json",
+      "aih-gov-doctor",
+      "aih-gov-doctor/LICENSE",
+      "aih-gov-doctor/SKILL.md",
+      "aih-gov-doctor/profile.json",
     ]);
   });
 });

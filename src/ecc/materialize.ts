@@ -1,6 +1,11 @@
 import { isAbsolute, relative, resolve } from "node:path";
 import eccModules from "../baseline-evidence/ecc-modules.json";
-import type { EccComponentId, EccComponentSelection, EccMcpComponentId } from "./components.js";
+import {
+  type EccComponentId,
+  type EccComponentSelection,
+  type EccMcpComponentId,
+  UPSTREAM_CORE_ECC_MODULE_IDS,
+} from "./components.js";
 
 export interface EccComponentInstallDescriptor {
   evidenceComponentId: string;
@@ -221,6 +226,17 @@ function leafName(componentId: string, family: string): string | undefined {
 export function eccComponentInstallDescriptor(
   componentId: EccComponentId | EccMcpComponentId,
 ): EccComponentInstallDescriptor {
+  const selectedModule = leafName(componentId, "module");
+  if (selectedModule !== undefined) {
+    if (!MODULE_PATHS.has(selectedModule)) {
+      throw new Error(`pinned ECC module snapshot is missing ${selectedModule}`);
+    }
+    return {
+      evidenceComponentId: componentId,
+      containingModuleId: selectedModule,
+      wholeModules: [selectedModule],
+    };
+  }
   if (componentId === "baseline:rules") {
     return {
       evidenceComponentId: componentId,
@@ -248,6 +264,7 @@ export function eccComponentInstallDescriptor(
     return {
       evidenceComponentId: "module:platform-configs",
       containingModuleId: "platform-configs",
+      sourceRoots: [".mcp.json", "mcp-configs/mcp-servers.json"],
     };
   }
   const agent = leafName(componentId, "agent");
@@ -288,6 +305,54 @@ export function eccComponentInstallDescriptor(
     };
   }
   throw new Error(`no ECC install descriptor for ${componentId}`);
+}
+
+/** Whole upstream modules selected by one semantic component, before dependency expansion. */
+export function eccComponentWholeModuleIds(
+  componentId: EccComponentId | EccMcpComponentId,
+): string[] {
+  return [...(eccComponentInstallDescriptor(componentId).wholeModules ?? [])];
+}
+
+/**
+ * Module roots that must be selected beside one semantic component. Languages
+ * are additive only after ECC Core; whole-module semantic components retain
+ * their existing exact containing-module requirement.
+ */
+export function eccComponentRequiredModuleRootIds(
+  componentId: EccComponentId | EccMcpComponentId,
+): string[] {
+  return [
+    ...new Set([
+      ...eccComponentWholeModuleIds(componentId),
+      ...(componentId.startsWith("lang:") ? UPSTREAM_CORE_ECC_MODULE_IDS : []),
+    ]),
+  ];
+}
+
+const SELECTABLE_MODULE_MEMBER_KINDS = new Set(["agent", "baseline", "skill"]);
+
+/**
+ * Individually selectable artifacts materially contained by one module.
+ * MCP, language, framework, capability, runtime, and module identities are
+ * deliberately excluded: selecting a source module must not manufacture an
+ * activation or a broader semantic choice.
+ */
+export function eccModuleSelectableMemberIds(
+  moduleId: string,
+  componentIds: readonly string[],
+): string[] {
+  if (!MODULE_PATHS.has(moduleId)) {
+    throw new Error(`pinned ECC module snapshot is missing ${moduleId}`);
+  }
+  return componentIds.filter((componentId) => {
+    const separator = componentId.indexOf(":");
+    const kind = separator === -1 ? "" : componentId.slice(0, separator);
+    return (
+      SELECTABLE_MODULE_MEMBER_KINDS.has(kind) &&
+      eccComponentInstallDescriptor(componentId as EccComponentId).containingModuleId === moduleId
+    );
+  });
 }
 
 function normalizedPath(value: string): string {
@@ -505,6 +570,10 @@ function isHostRuntimePath(path: string): boolean {
   );
 }
 
+function isOpenCodeRuntimeTree(path: string): boolean {
+  return /(?:^|\/)(?:\.opencode|\.config\/opencode)(?:\/|$)/i.test(path);
+}
+
 function isEccContentPath(path: string): boolean {
   return (
     path === "AGENTS.md" ||
@@ -643,7 +712,9 @@ export function classifyGovernedEccOperation(
   if (
     operation.moduleId === "hooks-runtime" ||
     isHostRuntimePath(source) ||
-    isHostRuntimePath(destination)
+    isHostRuntimePath(destination) ||
+    isOpenCodeRuntimeTree(source) ||
+    (!isEccContentPath(source) && isOpenCodeRuntimeTree(destination))
   ) {
     return "host-runtime";
   }

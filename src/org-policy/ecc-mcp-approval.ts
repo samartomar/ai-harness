@@ -1,5 +1,15 @@
 import { ECC_MCP_CATALOG_PROVENANCE, eccExternalMcpCatalog } from "./ecc-mcp-catalog.js";
 
+/**
+ * Portable, deliberately conservative email grammar for a human policy approver.
+ * New Workbench-authored approvals use email; legacy stable identifiers remain
+ * readable so an existing protected policy does not become invalid on upgrade.
+ */
+export const POLICY_APPROVER_EMAIL_PATTERN =
+  "^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$";
+
+const POLICY_APPROVER_EMAIL_REGEX = new RegExp(POLICY_APPROVER_EMAIL_PATTERN);
+
 /** Exact external IDs from the pinned ECC snapshot, excluding AIH-owned MCPs. */
 export const ECC_EXTERNAL_MCP_APPROVAL_IDS = [
   "nexus",
@@ -74,6 +84,16 @@ function isStableId(value: unknown): value is string {
   return typeof value === "string" && /^[a-z][a-z0-9-]{0,63}$/.test(value);
 }
 
+function isApproverIdentity(value: unknown): value is string {
+  return (
+    isStableId(value) ||
+    (typeof value === "string" &&
+      value.length <= 254 &&
+      value === value.trim() &&
+      POLICY_APPROVER_EMAIL_REGEX.test(value))
+  );
+}
+
 function isSafePolicyText(value: unknown): value is string {
   return (
     typeof value === "string" &&
@@ -96,7 +116,7 @@ function isExactApprovalRecord(value: unknown): value is EccMcpApprovalRecord {
     EXTERNAL_IDS.has(value.id) &&
     typeof value.sourceContentSha256 === "string" &&
     (value.state === "approved" || value.state === "revoked") &&
-    isStableId(value.approvedBy) &&
+    isApproverIdentity(value.approvedBy) &&
     isSafePolicyText(value.authenticationMode) &&
     Array.isArray(value.allowedDataClasses) &&
     value.allowedDataClasses.length > 0 &&

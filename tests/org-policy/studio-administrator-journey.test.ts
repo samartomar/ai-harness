@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Window } from "happy-dom";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { parsePolicyBundle, readOrgPolicy } from "../../src/org-policy/schema.js";
 import { policyStudioModel } from "../../src/org-policy/studio-model.js";
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
@@ -17,7 +17,17 @@ import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
  */
 
 const model = policyStudioModel();
-const controls = [...model.catalog.mcp.map((item) => item.control), ...model.catalog.hooks];
+const openWindows = new Set<Window>();
+
+afterEach(async () => {
+  await Promise.all([...openWindows].map((window) => window.happyDOM.close()));
+  openWindows.clear();
+});
+
+const controls = [
+  ...model.catalog.mcp.filter((item) => item.availability === "always").map((item) => item.control),
+  ...model.catalog.hooks,
+];
 const inventoryCount = model.catalog.frameworks.reduce(
   (total, framework) => total + framework.assets.length,
   0,
@@ -44,7 +54,7 @@ const protectedFields = {
   "protected-policy-digest": `sha256:${"c".repeat(64)}`,
   "protected-control-id": "tool-admission",
   "protected-control-digest": `sha256:${"d".repeat(64)}`,
-  "protected-actor": "ruchi-admin",
+  "protected-actor": "ruchi.admin@acme.example",
   "protected-reason": "Approved after attributable scanner evidence review",
 } as const;
 
@@ -57,6 +67,7 @@ function openWorkbench(): Window {
   const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/gi)].map((match) => match[1]);
   if (scripts.length === 0) throw new Error("expected generated workbench script");
   window.eval(scripts.join("\n"));
+  openWindows.add(window);
   return window;
 }
 
@@ -68,9 +79,13 @@ const value = (window: Window, id: string): string =>
   (window.document.getElementById(id) as unknown as { value: string } | null)?.value ?? "";
 
 function chooseProfile(window: Window, profile: string): void {
-  const preset = window.document.querySelector(`[data-preset="${profile}"]`);
+  const preset = window.document.getElementById("preset-select") as unknown as {
+    value: string;
+    dispatchEvent(event: unknown): boolean;
+  } | null;
   if (preset === null) throw new Error(`expected ${profile} preset`);
-  preset.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  preset.value = profile;
+  preset.dispatchEvent(new window.Event("change", { bubbles: true }));
 }
 
 function click(window: Window, id: string): void {
@@ -120,16 +135,21 @@ describe("policy workbench administrator journey", () => {
       "Requested by:",
     );
 
-    // 2. SURVEY. The main plane holds the non-duplicated inventory; the four
-    //    ECC namespaces owned by the rail remain selectable there.
-    const railOwned = model.catalog.frameworks
+    // 2. SURVEY. Every framework-owned artifact has a canonical row in the
+    //    main plane; the left rail mirrors the same ECC selection state.
+    const eccGovernedSkills = model.catalog.frameworks
       .find((framework) => framework.id === "ecc")
-      ?.assets.filter((asset) =>
-        ["lang", "framework", "capability", "module"].includes(asset.kind),
-      ).length;
+      ?.assets.filter((asset) => asset.kind === "skill").length;
+    const eccMcpDeclarations = model.catalog.frameworks
+      .find((framework) => framework.id === "ecc")
+      ?.assets.filter((asset) => asset.kind === "mcp").length;
     expect(rowCount(window, "framework-rows"), "non-duplicated inventory").toBe(
-      inventoryCount - (railOwned ?? 0),
+      inventoryCount - (eccGovernedSkills ?? 0) - (eccMcpDeclarations ?? 0),
     );
+    expect(rowCount(window, "ecc-mcp-declaration-rows"), "ECC MCP catalog selections").toBe(
+      eccMcpDeclarations,
+    );
+    expect(window.document.querySelectorAll("[data-ecc-skill-availability]").length).toBe(286);
     expect(text(window, "framework-rows")).toContain("Selectable");
     expect(text(window, "framework-rows")).toContain("installs and runs it");
     expect(text(window, "framework-rows")).toContain("aih evidence vet-baseline");
@@ -161,6 +181,7 @@ describe("policy workbench administrator journey", () => {
     //    command rather than in nothing.
     for (const [id, entry] of [
       ["custom-id", "acme-mcp"],
+      ["custom-owner", "mcp.owner@acme.example"],
       ["custom-package", "@acme/mcp-server"],
       ["custom-version", "1.4.2"],
       ["custom-integrity", `sha256:${"a".repeat(64)}`],
@@ -194,6 +215,7 @@ describe("policy workbench administrator journey", () => {
     const window = openWorkbench();
     for (const [id, entry] of [
       ["custom-id", "acme-mcp"],
+      ["custom-owner", "mcp.owner@acme.example"],
       ["custom-package", "@acme/mcp-server"],
       ["custom-version", "1.4.2"],
       ["custom-integrity", `sha256:${"b".repeat(64)}`],
@@ -237,7 +259,7 @@ describe("policy workbench administrator journey", () => {
     expect(bundle.authorityReceipt.decisions).toHaveLength(1);
     expect(bundle.authorityReceipt.decisions[0]).toMatchObject({
       id: "decision-acme-linter-1",
-      actor: "ruchi-admin",
+      actor: "ruchi.admin@acme.example",
       qualificationBasis: {
         kind: "organization-qualified",
         evidenceDigest: `sha256:${"b".repeat(64)}`,
@@ -260,10 +282,87 @@ describe("policy workbench administrator journey", () => {
     expect(text(window, "announcement")).toContain("protected policy file is ready");
   });
 
+  it("authors the exact AIH-supported qualification basis required by a signed receipt", async () => {
+    const window = openWorkbench();
+    chooseProfile(window, "enterprise");
+    fillProtectedFields(window, {
+      "protected-decision-id": "decision-supported-default-profile",
+      "protected-qualification-kind": "aih-supported",
+      "protected-kind": "profile",
+      "protected-subject-id": "default-profile",
+      "protected-source-type": "aih",
+      "protected-source-release": "1.0.0",
+      "protected-source-revision":
+        "sha256:1492fa09fc057e2e3659ca5ad3d143ba5a4b529a2b18e027b5e40a75439518c9",
+      "protected-catalog-signer": "administrator:aih-supported/catalog-v2",
+      "protected-catalog-digest":
+        "sha256:7e4ed0d0a5b1e0c053f5f25aeb2811ece87cc06f443b6241a47806fda05e304a",
+      "protected-catalog-head-digest":
+        "sha256:5b27c7d7c33afa0da41e06c4e62e91c94db238b04fbedfdad6a69d21aba1880f",
+      "protected-catalog-member-digest":
+        "sha256:6f9a4264ba9f1efa3be4e6db78376a4c7d40d155755e02b4e4c55978bcd0a6a7",
+    });
+
+    await submitProtected(window);
+
+    const bundle = JSON.parse(value(window, "protected-bundle-preview"));
+    expect(parsePolicyBundle(bundle)).toMatchObject({ ok: true });
+    expect(bundle.authorityReceipt.decisions[0]).toMatchObject({
+      id: "decision-supported-default-profile",
+      qualificationBasis: {
+        kind: "aih-supported",
+        catalogSignerIdentity: "administrator:aih-supported/catalog-v2",
+        catalogDigest: "sha256:7e4ed0d0a5b1e0c053f5f25aeb2811ece87cc06f443b6241a47806fda05e304a",
+        catalogHeadDigest:
+          "sha256:5b27c7d7c33afa0da41e06c4e62e91c94db238b04fbedfdad6a69d21aba1880f",
+        catalogMemberDigest:
+          "sha256:6f9a4264ba9f1efa3be4e6db78376a4c7d40d155755e02b4e4c55978bcd0a6a7",
+        subjectKind: "profile",
+        subjectDigest: "sha256:76eae60a7002fc68bb2938c9fac915d01e0191642c1346c04e0887c96f5fe2fb",
+      },
+      subject: {
+        kind: "profile",
+        id: "default-profile",
+        source: {
+          type: "aih",
+          release: "1.0.0",
+          revision: "sha256:1492fa09fc057e2e3659ca5ad3d143ba5a4b529a2b18e027b5e40a75439518c9",
+        },
+        sourceDigest: "sha256:f3a914fdca99c9f63a6844a3b5121018f5b8162c94bbf1af96093aaeca5563b2",
+        subjectDigest: "sha256:76eae60a7002fc68bb2938c9fac915d01e0191642c1346c04e0887c96f5fe2fb",
+      },
+    });
+    expect(text(window, "announcement")).toContain("protected policy file is ready");
+  });
+
+  it("refuses an AIH-supported decision with incomplete catalog binding", async () => {
+    const window = openWorkbench();
+    chooseProfile(window, "enterprise");
+    fillProtectedFields(window, {
+      "protected-qualification-kind": "aih-supported",
+      "protected-catalog-signer": "administrator:aih-supported/catalog-v2",
+      "protected-catalog-digest": `sha256:${"1".repeat(64)}`,
+      "protected-catalog-head-digest": `sha256:${"2".repeat(64)}`,
+      "protected-catalog-member-digest": "",
+    });
+
+    window.document
+      .getElementById("protected-form")
+      ?.dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
+
+    expect(value(window, "protected-bundle-preview")).toBe("");
+    expect(text(window, "protected-catalog-member-digest-error")).toContain(
+      "exact catalog member digest",
+    );
+    expect(text(window, "announcement")).toContain("highlighted protected policy fields");
+  });
+
   it("refuses protected Enterprise authoring until a supported CLI is sanctioned", async () => {
     const window = openWorkbench();
     setValue(window, "posture", "enterprise");
+    expect(JSON.parse(value(window, "config-preview")).minimumPosture).toBe("vibe");
     expect(JSON.parse(value(window, "config-preview")).governance.supportedClis).toBeUndefined();
+    expect(text(window, "announcement")).toContain("Enterprise posture was not applied");
     fillProtectedFields(window);
 
     const pending = window as unknown as { __aihPolicyWorkbenchPending?: Promise<void> };
@@ -282,9 +381,17 @@ describe("policy workbench administrator journey", () => {
       ).disabled,
     ).toBe(true);
     expect(window.document.querySelectorAll("#protected-decision-rows .row")).toHaveLength(0);
-    expect(text(window, "protected-bundle-version-error")).toContain("supported CLI");
+    expect(text(window, "protected-bundle-version-error")).toContain("Choose Enterprise posture");
     expect(text(window, "announcement")).toContain("highlighted protected policy fields");
     expect(text(window, "announcement")).not.toContain("protected policy file is ready");
+
+    window.document
+      .querySelector('[data-sanctioned-cli="codex"]')
+      ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    setValue(window, "posture", "enterprise");
+    await submitProtected(window);
+    expect(value(window, "protected-bundle-preview")).not.toBe("");
+    expect(text(window, "announcement")).toContain("protected policy file is ready");
   });
 
   it("downloads NFC bytes accepted by Core's strict active-policy reader", async () => {
@@ -331,6 +438,7 @@ describe("policy workbench administrator journey", () => {
     chooseProfile(window, "enterprise");
     for (const [id, entry] of [
       ["custom-id", "acme-mcp"],
+      ["custom-owner", "mcp.owner@acme.example"],
       ["custom-package", "@acme/mcp-server"],
       ["custom-version", "1.4.2"],
       ["custom-integrity", `sha256:${"b".repeat(64)}`],
@@ -368,13 +476,13 @@ describe("policy workbench administrator journey", () => {
     expect(text(window, "protected-expires-at-error")).toContain("within 90 days");
   });
 
-  it("authors tool, skill, MCP, and package approvals and a valid revocation", async () => {
+  it("authors tool, skill, Agent, MCP, and package approvals and a valid revocation", async () => {
     const window = openWorkbench();
     chooseProfile(window, "enterprise");
     fillProtectedFields(window);
     await submitProtected(window);
 
-    for (const [index, kind] of ["skill", "mcp", "package"].entries()) {
+    for (const [index, kind] of ["skill", "agent", "mcp", "package"].entries()) {
       fillProtectedFields(window, {
         "protected-decision-id": `decision-acme-${kind}-1`,
         "protected-kind": kind,
@@ -391,7 +499,7 @@ describe("policy workbench administrator journey", () => {
       bundle.authorityReceipt.decisions
         .map((decision: { subject: { kind: string } }) => decision.subject.kind)
         .sort(),
-    ).toEqual(["mcp", "package", "skill", "tool"]);
+    ).toEqual(["agent", "mcp", "package", "skill", "tool"]);
 
     window.document
       .querySelector('[data-protected-revoke="0"]')
@@ -517,5 +625,5 @@ describe("policy workbench administrator journey", () => {
       ).toHaveLength(0);
       window.close();
     }
-  });
+  }, 15_000);
 });

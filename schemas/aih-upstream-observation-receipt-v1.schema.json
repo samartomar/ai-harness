@@ -47,6 +47,7 @@
           "enum": [
             "tool",
             "skill",
+            "agent",
             "mcp",
             "package",
             "profile"

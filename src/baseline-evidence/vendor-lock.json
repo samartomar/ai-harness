@@ -6,7 +6,7 @@
       "owner": "samartomar",
       "repo": "ECC",
       "pinnedSha": "5caf398a91599029a176ca6d806409b00d1052c4",
-      "sourceTreeSha256": "3365a0ab8a763ce10f6d18c21829c81b5bf855cec97e331c13d86975d2b7f812",
+      "sourceTreeSha256": "3f337f6fd97082fe5a2ba64f7f6b5c339ec2e6295f08e5ff7abaed319d667a2e",
       "components": [
         {
           "id": "runtime:ecc-installer",
@@ -34,7 +34,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -52,12 +52,12 @@
           "paths": [
             ".kiro"
           ],
-          "treeSha256": "74fead936ab852a64c811690262fc9974f72adcd54049a21637531d389a8de2e",
+          "treeSha256": "a0b0b9c32732a16bbd3d8b2236e71e8f2618fa20dde173358cb6c7036807f7aa",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -79,12 +79,12 @@
           "paths": [
             "rules"
           ],
-          "treeSha256": "94637b88166c7f13606c7acd5dd9cbe1b79995b6422869f298da5736c894731f",
+          "treeSha256": "1b85beba56a6a4a0179a5324cb0daa5a4a70af696846f33a5529e11226df4fdb",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -104,12 +104,12 @@
             "agents",
             "AGENTS.md"
           ],
-          "treeSha256": "5fd1dde9dbd35a9dca9d17e9606483613fc6c132fa0522c5015ae88357fc37a3",
+          "treeSha256": "25e94e9c4f822fba4daf4bada53465369c5cbeb0d30cc28bfa943906f7fb4d8e",
           "verdict": "blocked",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -157,12 +157,12 @@
             "scripts/harness-audit.js",
             "scripts/skills-health.js"
           ],
-          "treeSha256": "6f7cac24dc1d8a255bc66fe752e8d791efb584106f2d24b014ebce3166ae3537",
+          "treeSha256": "c8543631926ee9ec3cc495a8f88357d1d16a81f5235595d7acd3f39bc31aceb9",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -182,12 +182,12 @@
             "scripts/hooks",
             "scripts/lib"
           ],
-          "treeSha256": "dde39c0fbf4dd3336856204998d208f612b0ec7651ff0cbddd0fc3356d75e76e",
+          "treeSha256": "cace17b46dbd65bf738c179c5d3bdd7eebf4f8fd4de2ab09c2db3be9101c42c2",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -218,12 +218,12 @@
             ".openclaw",
             ".kimi"
           ],
-          "treeSha256": "196d294d9143ad99d6311011f0d8205ceab053a7c519e168c6480625da65bcd6",
+          "treeSha256": "a18be11bf95635b1c3070dd96df667da5eb6bb2ffd8823e8280ed5205b185ac3",
           "verdict": "blocked",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -330,12 +330,12 @@
             "skills/tinystruct-patterns",
             "skills/vite-patterns"
           ],
-          "treeSha256": "ef87adef986f55b20d69f8e7451ff121a32181be7f9617c60be30fb2818cc77b",
+          "treeSha256": "afc2dd8e24d37dada1b1027daa4019a2c7ed410b0e2a7f80c519ddff8612029d",
           "verdict": "blocked",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -377,7 +377,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -445,12 +445,12 @@
             "skills/santa-method",
             "skills/git-workflow"
           ],
-          "treeSha256": "3a15ec9bb1d21e73fa90bdd6ea4c64573e76b5fdb2d6082729ac840650d6e438",
+          "treeSha256": "c6b4e0b1561151cbd8ddc881fe8cea47c9f0754653439a8f1cc1cece0865530f",
           "verdict": "blocked",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -494,7 +494,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -535,12 +535,12 @@
             "skills/healthcare-eval-harness",
             "skills/safety-guard"
           ],
-          "treeSha256": "f8b5f50ee5022ae9a8c92499118215363ffbe6f44e59a934f1fc194adfa5120e",
+          "treeSha256": "ff8ee330be4687cd52bef65ed628c40beeeed8a76a2f58020ea61cc546de30bf",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -575,7 +575,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -620,12 +620,12 @@
             "skills/competitive-report-structure",
             "skills/marketing-campaign"
           ],
-          "treeSha256": "4d62e1018d3ff5c926bbf130af3db2e3121ace8bf44386bad39ea878c0afeedf",
+          "treeSha256": "196f73b374c49454db2def4843fed0664b0267b7a382ee35d8732de885ec64d9",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -670,7 +670,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -713,7 +713,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -737,12 +737,12 @@
             "skills/prediction-market-oracle-research",
             "skills/prediction-market-risk-review"
           ],
-          "treeSha256": "4ff74add58b5cd09128a87228e2ee9592acf4e9ce0ee44d237a2e9314c87cb1b",
+          "treeSha256": "fa0dffb579fd9b5cf3ad02852304d75358f67d439e1823bce831564d7078ee02",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -766,12 +766,12 @@
             "skills/ito-inference",
             "skills/ito-training"
           ],
-          "treeSha256": "24d3a0d379f8b5af9c83c5c7375333b12fec681f1310f6e5eea127d5c423e50d",
+          "treeSha256": "c84828cfe120fc9d0e9a8d34f8d4ef43a41d12ae08a3ffe5c42cd6f1fec880ab",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -793,12 +793,12 @@
           "paths": [
             "skills/nasiko-control-plane"
           ],
-          "treeSha256": "347032948174aa25706813803e34b9194149f2221cf8e0e3659f3a053bdc4346",
+          "treeSha256": "cd0936b3b742f5f7ce1f42cd0bbf365b62a0df5d8153febde61ccb8cb7cf03bc",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -827,7 +827,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -867,12 +867,12 @@
             "skills/taste",
             "skills/tasteforge-video"
           ],
-          "treeSha256": "c30a55349fe9eaef9b76cf4124d9f20598fcd7d3b36fd64307528c2138d9ebaa",
+          "treeSha256": "93d4188225519c474ff55a1b021648dc20c7675fcc4aa408c92a6a9e460ccaf2",
           "verdict": "blocked",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -918,7 +918,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -946,12 +946,12 @@
             "skills/swiftui-patterns",
             "skills/ios-icon-gen"
           ],
-          "treeSha256": "57d06c932b49c6666c2a0eb345372cadec75b10e20a6d367786a57a240623ea2",
+          "treeSha256": "f0fed72d974c0ad6f95ac74ff7d9a494bdcc29594411432e281937f4a42d03e2",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -1008,12 +1008,12 @@
             "skills/orch-refine-code",
             "skills/plan-orchestrate"
           ],
-          "treeSha256": "f368dded440cc6856c14314d9f57505d2efcb5dec9e2b5491f128286307ccd69",
+          "treeSha256": "b4caf8e3147859659e3f4d750d1425e71a77b6c6b0cd0ba239d729a729d66ca7",
           "verdict": "blocked",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -1062,12 +1062,12 @@
             "skills/kubernetes-patterns",
             "skills/uncloud"
           ],
-          "treeSha256": "876929306c0679d79be32e963c9e5da7a5cf2e31defa653fb658ae54950349d4",
+          "treeSha256": "5d456f26c5dfd9c444f71d7ae638fc942222f1c5acdb3723d541904e73780454",
           "verdict": "blocked",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -1106,7 +1106,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -1140,7 +1140,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -1168,7 +1168,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -1222,12 +1222,12 @@
             "rules/common",
             "rules/README.md"
           ],
-          "treeSha256": "3005a89d87a6cf4916bed5be1523c8e148e3711f5117051b0974f6f05419c989",
+          "treeSha256": "58cc35744fa04845202daf260f12cfeeb69523a7395df13af6c296bd732d0619",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -1251,7 +1251,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -1282,12 +1282,12 @@
             "scripts/auto-update.js",
             "scripts/setup-package-manager.js"
           ],
-          "treeSha256": "196d294d9143ad99d6311011f0d8205ceab053a7c519e168c6480625da65bcd6",
+          "treeSha256": "a18be11bf95635b1c3070dd96df667da5eb6bb2ffd8823e8280ed5205b185ac3",
           "verdict": "blocked",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -1328,12 +1328,12 @@
             "scripts/harness-audit.js",
             "scripts/skills-health.js"
           ],
-          "treeSha256": "6f7cac24dc1d8a255bc66fe752e8d791efb584106f2d24b014ebce3166ae3537",
+          "treeSha256": "c8543631926ee9ec3cc495a8f88357d1d16a81f5235595d7acd3f39bc31aceb9",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -1352,12 +1352,12 @@
             ".agents/skills/tdd-workflow",
             "skills/tdd-workflow"
           ],
-          "treeSha256": "6c477a27f3ca6d700aac67ef1403fb4ecebaa8c04fa3dd5a5e13306dac88540f",
+          "treeSha256": "e0efffa21403cc74042a9097f844697e2ed2a9ee1e7260dbf836a6448f9c907c",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -1380,12 +1380,12 @@
             ".agents/skills/verification-loop",
             "skills/verification-loop"
           ],
-          "treeSha256": "da14f0f1c6c1c47ce68f7fec3ea58db25dd239acf353518cb7d5bed6bbc3ca4c",
+          "treeSha256": "cc9333478f25a9c503760b4abc7e95f0f05b0c0fe6ee9a900b9ca03ab6f8f140",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -1408,12 +1408,12 @@
             ".agents/skills/strategic-compact",
             "skills/strategic-compact"
           ],
-          "treeSha256": "06a32dcd89814e04789a0feb7ff639e8c0d9c595279b4a4d0748fa8fc320e598",
+          "treeSha256": "4b74a500fbdd4a13ccc2fee48731c1cf8edce525b9e125b015a7d8a303e07e9d",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -1436,12 +1436,12 @@
             ".agents/skills/coding-standards",
             "skills/coding-standards"
           ],
-          "treeSha256": "54e6746e005920d55794b5d06f324c6b1d64323cd1e425d0aa6a700bfa9c6787",
+          "treeSha256": "6f2c7a498a52186dd34f4976d134b7ef6785b66c340d761ac1068efbb8abe4a4",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -1463,12 +1463,12 @@
           "paths": [
             "agents/code-reviewer.md"
           ],
-          "treeSha256": "fe8ec1ae6b116405970639b7a0474fff31f3009ba307778700bd9376dc0c0e1f",
+          "treeSha256": "cc756f384a5f41d87690ca132fff201e5472a456c5d923a4163e4095db041cd4",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -1486,12 +1486,12 @@
           "paths": [
             "agents/code-architect.md"
           ],
-          "treeSha256": "a8afc5b1253770461badf461a25c3aa550a24402aef0b667d2ad094b33c43330",
+          "treeSha256": "5fe51ac49fbd1db25106d278602a4c00d44d1f5192516cc283d699bbbc5c1b45",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -1509,12 +1509,12 @@
           "paths": [
             "agents/architect.md"
           ],
-          "treeSha256": "35d057136de2c60c168eaea01c36732d4dfbd04d14eabfefa6b06a10944e35b6",
+          "treeSha256": "193781ab04209682dc6074ebe6e260e1823ac49013012318d3ea08bdeb2061ae",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -1532,12 +1532,12 @@
           "paths": [
             "agents/planner.md"
           ],
-          "treeSha256": "30b11d872a726143042ee0853c8a37730bfd7765d403831ec5e6e9bcb787a0dd",
+          "treeSha256": "216360bc66236ab8a70807e1722727d5071aedf69ebe248dab07ada8afa39a71",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -1555,12 +1555,12 @@
           "paths": [
             "agents/tdd-guide.md"
           ],
-          "treeSha256": "7f88d9f142ad3da4de6a91837e55a70e1ce604ce5c38299ad442abc34c0c378f",
+          "treeSha256": "52d7aeddcf6dbb40dfe08eda21ceef45cf2ac8ef4a7ca728960974c15428b8d7",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -1578,12 +1578,12 @@
           "paths": [
             "agents/build-error-resolver.md"
           ],
-          "treeSha256": "607b2049bc8068a5d3cdb0cf4809b3661436607285c22354e5d1f7fca263e023",
+          "treeSha256": "5e0fdd9b9339213c995ce19a2a60d9db35601ee909747ea8d4d5e9c7d212967e",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -1601,12 +1601,12 @@
           "paths": [
             "agents/refactor-cleaner.md"
           ],
-          "treeSha256": "de3496ddb9c78babd65f10d49a00101f5f088435ebe9de385d93f725cf895793",
+          "treeSha256": "9e8cf170d87779614baa6990aebe28d35085d047e89d589cbd342900f5e2e8b8",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -1624,12 +1624,12 @@
           "paths": [
             "agents/code-simplifier.md"
           ],
-          "treeSha256": "9f4362cd878a44b09e5a241732708794f29ec7c8c7bd40102d73dc5f1059effc",
+          "treeSha256": "5275328a1c33c492e13787e03e54bd98bcf211fb2cb35402c927c55ba79adb5c",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -1647,12 +1647,12 @@
           "paths": [
             "agents/silent-failure-hunter.md"
           ],
-          "treeSha256": "2ebc34931266a659d0522d72984229fe81b513bbddec4ad9019171fde26310da",
+          "treeSha256": "5b961c7decb6d85a620553c8e719290c88e81ef22d3cf5a6e6c9d8ca788d38b1",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -1670,12 +1670,12 @@
           "paths": [
             "agents/pr-test-analyzer.md"
           ],
-          "treeSha256": "2b6131e46e9dce7d5d23da01f93fd5fbe2808fae5f8c84b2a5a8192baf2cb422",
+          "treeSha256": "f9596b188c3ac46d594f5b94afcc795e09e77cee062a0df6c495387542f78f07",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -1693,12 +1693,12 @@
           "paths": [
             "agents/doc-updater.md"
           ],
-          "treeSha256": "80e912447a64aba19fb1178df8c903b9859613d62dfc18ce2b521ba8a5c98564",
+          "treeSha256": "7140c1beeab027263e7e1ca962387238297d401260f1d909e7eae247576419ba",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -1716,12 +1716,12 @@
           "paths": [
             "agents/docs-lookup.md"
           ],
-          "treeSha256": "c03fdab1394e4b2e81b7ebf52b9aca95725ca1fdcced0d62ec58fe5c3ee79a72",
+          "treeSha256": "94456900bec1a5121957ff8dbe52ceb6910ecbca86541d337c560f5782a5cfa7",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -1739,12 +1739,12 @@
           "paths": [
             "agents/code-explorer.md"
           ],
-          "treeSha256": "5ce37da58468b9893716bd7ce5764353a0cdc528a74547812ac87f5fd841b78e",
+          "treeSha256": "ec16fb3fce9f0c262093f141e6462b614537dab4e673a775414431196d0eb0e9",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -1762,12 +1762,12 @@
           "paths": [
             "agents/security-reviewer.md"
           ],
-          "treeSha256": "31d9f4e740df368a3855552e0005bdae29444ec21ebf740b4e797db1f91d819a",
+          "treeSha256": "a02265f5580ddd93fd97fc70ea576235289167251a5f83b2de48a34af8153b77",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -1785,12 +1785,12 @@
           "paths": [
             "agents/type-design-analyzer.md"
           ],
-          "treeSha256": "0b44a45e12492ba82f497aa24446c82484140e07af3400ba0ef5664e8ee520f4",
+          "treeSha256": "0babcae069d0a1b1e0e0da49d02f6490a735b9b3c5553459f72686c91de4b493",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -1808,12 +1808,12 @@
           "paths": [
             "agents/performance-optimizer.md"
           ],
-          "treeSha256": "2665527163c73205216e65116435c632ca5e9a156aed06de4047c3708ddc2b29",
+          "treeSha256": "a0c771e553856df22f7a5afdf601e3f1f9b9b9234e4ac1e013bf5f1fc2fd8d26",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -1838,12 +1838,12 @@
             "skills/frontend-patterns",
             "skills/nestjs-patterns"
           ],
-          "treeSha256": "4116981cc04866d141ea406989eae420b70a952ce999dbccca649ed3e417a900",
+          "treeSha256": "e26ce47b19ef1ff6c156eb92227cc0c6613e01335659a40cad14a37768a20f60",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -1865,12 +1865,12 @@
           "paths": [
             "agents/typescript-reviewer.md"
           ],
-          "treeSha256": "d02cbd18782f2580246acc4b4b3c747600af9937e70fd9f71a4becb6e70a0e65",
+          "treeSha256": "bf056f13361bc2f19ad6305f12587db94a3617c2092e7bc202044e4ac22025a7",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -1895,7 +1895,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -1917,12 +1917,12 @@
           "paths": [
             "agents/python-reviewer.md"
           ],
-          "treeSha256": "d50eb32b1b12e30fe7dfa501defa1d0b8999919c850d3f7dd7d29ae8fa4dfe8d",
+          "treeSha256": "54c0ef8f51b55246498fe3a1f5ef4f40d83f67adb79b832afba1a0fb48752997",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -1947,7 +1947,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -1969,12 +1969,12 @@
           "paths": [
             "agents/go-reviewer.md"
           ],
-          "treeSha256": "53a6eeec8bd01225859e4d976a5cf09b6aa725e6e0ba1588d4762010d8357115",
+          "treeSha256": "ed013ceed45f9c3b86b8141c8a4ede85a1163bbff3c99161ff6802c93004f86b",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -1992,12 +1992,12 @@
           "paths": [
             "agents/go-build-resolver.md"
           ],
-          "treeSha256": "edad6cb74da2cf5c18f9de8a3e61b4d5b9abf11542d28eb14cdac9c7caacfbe2",
+          "treeSha256": "d321f9bbb75ef416b3a73790ddb57861aaf929803556e4c0e4aa9e80f9ff18be",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -2021,7 +2021,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -2043,12 +2043,12 @@
           "paths": [
             "agents/java-reviewer.md"
           ],
-          "treeSha256": "8c4c5c7f55de4b29949fcb7a7f31cccfe8d03c67e3c25e0d3f4d4cc7c41a6f0e",
+          "treeSha256": "bb25d64a3334af0b541ad928ae0db5066a729a0b5ae30e9af82258aeb311f76e",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -2066,12 +2066,12 @@
           "paths": [
             "agents/java-build-resolver.md"
           ],
-          "treeSha256": "b9a8a1fa7bc752349eeeb490d940252c9449145e6828cfbd824c105982109bc4",
+          "treeSha256": "51242b83858cda41f6f700748a140a476cc9063f3211ec3b5967ea9c2f66ac59",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -2099,7 +2099,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -2121,12 +2121,12 @@
           "paths": [
             "agents/kotlin-reviewer.md"
           ],
-          "treeSha256": "ed0326d329173528e09b2b67785deaf6dcfa351a55a061570a3ac46d828b8aa9",
+          "treeSha256": "c7880825237ecb96bbd67c5fc5ec6d3f170a82529c088d03b9068ad55aa7569f",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -2144,12 +2144,12 @@
           "paths": [
             "agents/kotlin-build-resolver.md"
           ],
-          "treeSha256": "080f7c8904ce5f2adea34da98b597728402c0d80a6fbfec0b4c0dfc4f94356de",
+          "treeSha256": "209ca2642d2f1af8dbad9be951a0c6a4540aaf6ad0240b99abbce0b50576bdaf",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -2174,7 +2174,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -2196,12 +2196,12 @@
           "paths": [
             "agents/rust-reviewer.md"
           ],
-          "treeSha256": "f85a994dd9f6a7dc3ab289e0bbf6a80750a70f9efd1f9d98ca6384f02a8f71df",
+          "treeSha256": "574360dac1920e77fc3afaafa0221f042c82e7953bf59d6243b1e6d52fa3638a",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -2219,12 +2219,12 @@
           "paths": [
             "agents/rust-build-resolver.md"
           ],
-          "treeSha256": "337552d20885c6239da3747ab26a7132d0413be4cefde655af7c4797dd8602ee",
+          "treeSha256": "e9cf04984d2e3cf0387c3e0a4506b3dde631a189eb38dafd512c1b8619924f30",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -2248,12 +2248,12 @@
             "skills/swift-protocol-di-testing",
             "skills/swiftui-patterns"
           ],
-          "treeSha256": "57d06c932b49c6666c2a0eb345372cadec75b10e20a6d367786a57a240623ea2",
+          "treeSha256": "f0fed72d974c0ad6f95ac74ff7d9a494bdcc29594411432e281937f4a42d03e2",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -2275,12 +2275,12 @@
           "paths": [
             "agents/swift-reviewer.md"
           ],
-          "treeSha256": "5911146d3f0a194cf2ce9fa423fc7a38f6080ef1254750816694df7fb7c97c94",
+          "treeSha256": "0fbd1bb1bb74f440db5cea0625e0cba567eea9d4055f45a448ac3f4b00edf4e2",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -2298,12 +2298,12 @@
           "paths": [
             "agents/swift-build-resolver.md"
           ],
-          "treeSha256": "6fd1d643c139e69dafb255aadc5adc6693378b2b7d63796bba0e947df6d2c60b",
+          "treeSha256": "2e664a960b76b30b161ddff7176ef8d060434cde0563ea4f780f3652b6c8f33b",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -2326,7 +2326,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -2344,12 +2344,12 @@
           "paths": [
             "agents/php-reviewer.md"
           ],
-          "treeSha256": "e483abc987cafe37537fbd934ec490bbad77c9a39f46d358b52b51746cf52aa9",
+          "treeSha256": "6e530b32e78f4b11ef19622c3dbef6808c497234898875636b39f44148dd0e1e",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -2372,7 +2372,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -2396,12 +2396,12 @@
             "skills/react-performance",
             "skills/react-testing"
           ],
-          "treeSha256": "ed74599a5e67b4cf6f98ae3a81a0a204f3ba497e5a66ff76128578adc22c727d",
+          "treeSha256": "514a974d8bf876d9504b129857e47f56483aa2baf226050715d805c01c477893",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -2423,12 +2423,12 @@
           "paths": [
             "agents/react-reviewer.md"
           ],
-          "treeSha256": "f4e75346e01b678fb8fca6e388e61c4e491b3f4fbe7b03333098dc485a952d41",
+          "treeSha256": "8199bb4230f5bc3be2857580e1c542402698f09681f1de8527f3797f6bff7750",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -2446,12 +2446,12 @@
           "paths": [
             "agents/react-build-resolver.md"
           ],
-          "treeSha256": "9544c8b4bf464f6a24b88684b35f4d7855305b32115486d44d56933c17cc10ed",
+          "treeSha256": "678e2b6b6ede5ae3239a7d31454fc9a0ee3303a22d71169da91f4e53207a028d",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -2469,12 +2469,12 @@
           "paths": [
             "agents/e2e-runner.md"
           ],
-          "treeSha256": "103ebd852e11838909f29c87172e85f68cd64452883fb8fdb9625862677e3033",
+          "treeSha256": "701adea566582ecd0115f8b1eb8d18e8a3087d9593d8447cefc97eae5aceab9f",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -2492,12 +2492,12 @@
           "paths": [
             "agents/a11y-architect.md"
           ],
-          "treeSha256": "08a115f15eec78907c59bdfe462742bdcbd81c7feb41782480f36b670d7c4608",
+          "treeSha256": "4115b9d833a74b0835ee538678d7b65796dff5a2282f589dc77fc645954131fb",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -2523,12 +2523,12 @@
             "skills/react-performance",
             "skills/react-testing"
           ],
-          "treeSha256": "9545b37e1d4e0481d7e9b925780398a11513f474861d2f743de8d0941668d782",
+          "treeSha256": "40a867df021d51d3f6e80c9ac367c96c1b27fb4228e1b95409b0b5b5a8e13e73",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -2553,12 +2553,12 @@
             "skills/angular-developer",
             "skills/frontend-patterns"
           ],
-          "treeSha256": "74781f86bc8ccef8663a4eaa514977811d60259ca738bb83b9c811ea4b8c35c6",
+          "treeSha256": "7196a3e4de5312ec833e5a9ede911efebd12b005ac17aa68fa8623bba821d721",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -2585,12 +2585,12 @@
             "skills/ui-to-vue",
             "skills/vue-patterns"
           ],
-          "treeSha256": "80023ca60a9aab310bfe62e9fa4e866d27d89c85f86f44be6336d3d6d6a515bd",
+          "treeSha256": "889d8fe534c66e7697299fd0a94a5363f755c589003f2fafa380ed61fcf0891b",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -2618,12 +2618,12 @@
             "skills/ui-to-vue",
             "skills/vue-patterns"
           ],
-          "treeSha256": "da1152c62a931eb41422c58307dda9a0d6596b2104075f327c2c5d1d713ee1bb",
+          "treeSha256": "90f8f77006b18ddb41a57c45f00be73a645f7f9f050060412b8e53eaf774e1c2",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -2647,12 +2647,12 @@
             "rules/web",
             "skills/frontend-patterns"
           ],
-          "treeSha256": "f6520bfcf137c9e1776865c9baabe24da977661ea4c3265b79f76cb56a8532bd",
+          "treeSha256": "a3620a1ad0d199455236156316b8b7e8bcd3c84c11a702675b1b1057b9b021af",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -2682,7 +2682,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -2704,12 +2704,12 @@
           "paths": [
             "agents/django-reviewer.md"
           ],
-          "treeSha256": "96cfbe0e3e364384c2261542a657c40e78c1d7db8fda9440978ff8f5ec192c58",
+          "treeSha256": "98a71c7d47c8bebb634ccdfce310ed5cf6e24c7c0e910d40f5b1bda71dc29fc8",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -2727,12 +2727,12 @@
           "paths": [
             "agents/django-build-resolver.md"
           ],
-          "treeSha256": "7824abfdb26a62bb382e480739df258095bd36620679ea92b9b98c534c0d0436",
+          "treeSha256": "5e06b27244fa9941c8dca19248372be2024b09b5a30d48ed6b292a91a25f37b4",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -2750,12 +2750,12 @@
           "paths": [
             "agents/fastapi-reviewer.md"
           ],
-          "treeSha256": "422475d9d3e844772c357b184946ad032472969234c21999a2e2bf1522d217f3",
+          "treeSha256": "a77b5c3b7c43e01a256c11cb6d7c7076a150a880e1a5805f65a83bce5b4e2243",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -2781,7 +2781,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -2811,7 +2811,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -2838,7 +2838,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -2865,7 +2865,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -2894,7 +2894,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -2923,7 +2923,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -2952,7 +2952,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -2979,7 +2979,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -3008,7 +3008,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -3038,7 +3038,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -3060,12 +3060,12 @@
           "paths": [
             "agents/cpp-reviewer.md"
           ],
-          "treeSha256": "c2110adcde8b198eb4b046416b2e778260969154a098cff2e03c1c71ee0949cc",
+          "treeSha256": "420ecd286852306f558669cf71c7a931b59906dd78a8f7658373c77102de1aee",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -3083,12 +3083,12 @@
           "paths": [
             "agents/cpp-build-resolver.md"
           ],
-          "treeSha256": "8036cbcc2c796336836689cc51c5bad30015f614f4ae551886d123309aa2fce4",
+          "treeSha256": "d5a59b540eb508e40b9cc83c596c5739b6d79f2300b69a977be9db4b45ac07f0",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -3106,12 +3106,12 @@
           "paths": [
             "agents/csharp-reviewer.md"
           ],
-          "treeSha256": "425405188f4a2d9a892e1655c73b7c84b7b18ca782a656bd84fe6cd895654114",
+          "treeSha256": "5cfea874dc0245b2144531d5baeeeb4826e24af2f2da24a4c31264d5cdc99ec5",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -3129,12 +3129,12 @@
           "paths": [
             "agents/fsharp-reviewer.md"
           ],
-          "treeSha256": "5b5ebb030bdc8c7d41dd98bf6aad49c3b82b6a146f99dbecdfaa7da114815af6",
+          "treeSha256": "77a5d80230bfd94f593002da3351114304d645c492c3fc5e8eff959ed3fa6afb",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -3152,12 +3152,12 @@
           "paths": [
             "agents/harmonyos-app-resolver.md"
           ],
-          "treeSha256": "29f514e414e7ebfcab50d46c7ed6101b4fe70e4aef639d996a562d5e0aff2bce",
+          "treeSha256": "b67a98034977b0b6a761206b163b36cddfaf4eef75f145cd2725915d1fccd6bf",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -3175,12 +3175,12 @@
           "paths": [
             "agents/database-reviewer.md"
           ],
-          "treeSha256": "713429f064814dd54cb1d851b4b4e141b4913661d67544ddd392138e429d24c1",
+          "treeSha256": "12ba799e0722c61f90f7de9f2a55f31b01b3241986804931a045b6aa79d506aa",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -3198,12 +3198,12 @@
           "paths": [
             "agents/pytorch-build-resolver.md"
           ],
-          "treeSha256": "bd27f6c073e9360b6e8412be12195e34e4980c5ad68a612ba3cf01897dc3b9a0",
+          "treeSha256": "03af493be71b45a991b12fdfb69976e7d72875381b281d958f96f9dc4c89b15a",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -3221,12 +3221,12 @@
           "paths": [
             "agents/mle-reviewer.md"
           ],
-          "treeSha256": "3b1214cbce636481b3dcc97c40e4567ca2847b4e96b3bf88ceae869ae023167b",
+          "treeSha256": "e7806cd04b136f527d6f112419f30dd36caa7920993d2d8baf8de7872e2810eb",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -3246,12 +3246,12 @@
             "scripts/hooks",
             "scripts/lib"
           ],
-          "treeSha256": "dde39c0fbf4dd3336856204998d208f612b0ec7651ff0cbddd0fc3356d75e76e",
+          "treeSha256": "cace17b46dbd65bf738c179c5d3bdd7eebf4f8fd4de2ab09c2db3be9101c42c2",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -3315,12 +3315,12 @@
             "skills/verification-loop",
             "skills/windows-desktop-e2e"
           ],
-          "treeSha256": "3a15ec9bb1d21e73fa90bdd6ea4c64573e76b5fdb2d6082729ac840650d6e438",
+          "treeSha256": "c6b4e0b1561151cbd8ddc881fe8cea47c9f0754653439a8f1cc1cece0865530f",
           "verdict": "blocked",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -3378,12 +3378,12 @@
             "skills/springboot-security",
             "the-security-guide.md"
           ],
-          "treeSha256": "f8b5f50ee5022ae9a8c92499118215363ffbe6f44e59a934f1fc194adfa5120e",
+          "treeSha256": "ff8ee330be4687cd52bef65ed628c40beeeed8a76a2f58020ea61cc546de30bf",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -3418,7 +3418,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -3463,12 +3463,12 @@
             "skills/seo",
             "skills/social-graph-ranker"
           ],
-          "treeSha256": "4d62e1018d3ff5c926bbf130af3db2e3121ace8bf44386bad39ea878c0afeedf",
+          "treeSha256": "196f73b374c49454db2def4843fed0664b0267b7a382ee35d8732de885ec64d9",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -3513,7 +3513,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -3556,7 +3556,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -3580,12 +3580,12 @@
             "skills/prediction-market-oracle-research",
             "skills/prediction-market-risk-review"
           ],
-          "treeSha256": "4ff74add58b5cd09128a87228e2ee9592acf4e9ce0ee44d237a2e9314c87cb1b",
+          "treeSha256": "fa0dffb579fd9b5cf3ad02852304d75358f67d439e1823bce831564d7078ee02",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -3614,7 +3614,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -3654,12 +3654,12 @@
             "skills/video-editing",
             "skills/videodb"
           ],
-          "treeSha256": "c30a55349fe9eaef9b76cf4124d9f20598fcd7d3b36fd64307528c2138d9ebaa",
+          "treeSha256": "93d4188225519c474ff55a1b021648dc20c7675fcc4aa408c92a6a9e460ccaf2",
           "verdict": "blocked",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -3705,7 +3705,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -3762,12 +3762,12 @@
             "skills/team-builder",
             "skills/token-budget-advisor"
           ],
-          "treeSha256": "f368dded440cc6856c14314d9f57505d2efcb5dec9e2b5491f128286307ccd69",
+          "treeSha256": "b4caf8e3147859659e3f4d750d1425e71a77b6c6b0cd0ba239d729a729d66ca7",
           "verdict": "blocked",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -3816,12 +3816,12 @@
             "skills/terminal-opener",
             "skills/uncloud"
           ],
-          "treeSha256": "876929306c0679d79be32e963c9e5da7a5cf2e31defa653fb658ae54950349d4",
+          "treeSha256": "5d456f26c5dfd9c444f71d7ae638fc942222f1c5acdb3723d541904e73780454",
           "verdict": "blocked",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -3864,7 +3864,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -3892,7 +3892,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -3952,7 +3952,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -3981,7 +3981,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -4003,12 +4003,12 @@
           "paths": [
             "skills/continuous-learning"
           ],
-          "treeSha256": "96dbacc1f7198c0e681860b1963f009442fa5e969897483b67720f42730781b3",
+          "treeSha256": "9b91127dab9e88f4609e2f9edb1eb695be152830c03dea2c5d1c5dd0b6ef58e9",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -4031,12 +4031,12 @@
             ".agents/skills/eval-harness",
             "skills/eval-harness"
           ],
-          "treeSha256": "b99440ee291278e8fba243462cede536948d9b7c6115e11f216deabf3614bc89",
+          "treeSha256": "3c11bd402c544bb5ee3a6c238a244d7dfd0133b302af626272f4cf29a44bb028",
           "verdict": "blocked",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -4072,7 +4072,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -4095,12 +4095,12 @@
             ".agents/skills/frontend-patterns",
             "skills/frontend-patterns"
           ],
-          "treeSha256": "7665f3a7e899403bcedf6373dc107529b3ae93c8587db85928b0fbdde4a0b2eb",
+          "treeSha256": "703c834e22341ad5d138e85103209be66ddec1666233b9025b0a552cc8e55d8c",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -4123,12 +4123,12 @@
             ".agents/skills/backend-patterns",
             "skills/backend-patterns"
           ],
-          "treeSha256": "818b1f643426e843340aa3cd220f4f19c51f5d543df3e4e94738e74425f03469",
+          "treeSha256": "7a271f0465f7506d788e0df65a6fa4c459159c8a83738606f405663ff5582f0f",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -4151,12 +4151,12 @@
             ".agents/skills/security-review",
             "skills/security-review"
           ],
-          "treeSha256": "498b21995e933f0684cea3dd4e17580eb7f37ae54edfe9487b4c542ba2b52709",
+          "treeSha256": "eb1c3960496b362e6ecc5370777ccba60740dab833e2b8dba64b8e042bf25b1e",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -4179,12 +4179,12 @@
             ".agents/skills/deep-research",
             "skills/deep-research"
           ],
-          "treeSha256": "03cd7d76861135a3c25aa808e6ff3ffcf99239eaaff2c15367a0c7d85b276f29",
+          "treeSha256": "8f699aec29286c565d45febad84d822ad65e914f94bd3c018162cb2343dcbe22",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -4207,12 +4207,12 @@
             ".agents/skills/mle-workflow",
             "skills/mle-workflow"
           ],
-          "treeSha256": "634edea2f0ae249b0583f5f5e1ad46cc0f001e232cd011c6e4b9c78fc9eea162",
+          "treeSha256": "29c2a54334ce004a48fa9098edeace6643e2b1152e0a9d3b039a6cef9f0d9c90",
           "verdict": "blocked",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -4249,7 +4249,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -4282,7 +4282,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -4315,7 +4315,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -4348,7 +4348,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -4381,7 +4381,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -4414,7 +4414,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -4443,7 +4443,7 @@
       "owner": "obra",
       "repo": "Superpowers",
       "pinnedSha": "3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9",
-      "sourceTreeSha256": "f61c30bd268f4fed91a5ced7173d01973c74e03f847492c1eae753197d5eaece",
+      "sourceTreeSha256": "9668cef42ac9e6bec2158b057ecf6599f0b5b1d27d0609d5e5cad2557e4b400d",
       "components": [
         {
           "id": "runtime:superpowers-plugin",
@@ -4459,12 +4459,12 @@
             "package.json",
             "scripts"
           ],
-          "treeSha256": "1d8ea1e3f96585f4a1cc430ae6c50985c756f72bfcff83af887160bf8a67bcd8",
+          "treeSha256": "598a078a1daaf172c88628d97e2cdbaa69ae333da3e831feced32c9d0e0c4b87",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "semgrep@uv:1.173.0",
@@ -4482,12 +4482,12 @@
           "paths": [
             "skills/brainstorming"
           ],
-          "treeSha256": "025dee438d08a9285aa2dcedca090d945082cab41a944161f5459ed0afced27a",
+          "treeSha256": "be6311a95101601d4f2a1ad5163ceeb2a9b84cb1c717c37df4a89986751cf068",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -4514,7 +4514,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -4541,7 +4541,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -4568,7 +4568,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -4595,7 +4595,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -4617,12 +4617,12 @@
           "paths": [
             "skills/requesting-code-review"
           ],
-          "treeSha256": "443b534113b28e506204559a6406c115abbc9fd2544e1f35f21c1f89e35a1b7e",
+          "treeSha256": "c24afad71b3a8ca2b06f06f9fdcd6e48fe7d5313a52011a553ecad87d6d50ab2",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -4644,12 +4644,12 @@
           "paths": [
             "skills/subagent-driven-development"
           ],
-          "treeSha256": "644daf9c89d32d231bf75decbdb0b3dfae68006cdeed4e5c5b787744d977b21c",
+          "treeSha256": "24f647f537a856fde70ec218ade366c4275204136c8e3426605364d6b885c692",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -4671,12 +4671,12 @@
           "paths": [
             "skills/systematic-debugging"
           ],
-          "treeSha256": "6c6dd79acce2c01289b72cb308b7b71061bc54b5178cd312828d9e5ed8b0c608",
+          "treeSha256": "8956991887a4f2bc38da3d84498d6c7e6e72916298f808244ed3af5c72c9277d",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -4703,7 +4703,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -4730,7 +4730,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -4752,12 +4752,12 @@
           "paths": [
             "skills/using-superpowers"
           ],
-          "treeSha256": "1376a0484220b888cc1332af1d12010dc5cfcabff9591564f56931e1e3eb2dc7",
+          "treeSha256": "74e9db4c46a36baa67c9ac6d55e2f2a71bc690b799cf19a7a1f536de6d2204ed",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -4784,7 +4784,7 @@
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -4806,12 +4806,12 @@
           "paths": [
             "skills/writing-plans"
           ],
-          "treeSha256": "f8cac548c3bed467013159818cf2cfcbbf6b15a389c9713c8298446e1bab96d3",
+          "treeSha256": "04ad8b428d530023fbabe749fe4b76f48fbf3921ab6d246104aa2c826fe2ee50",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",
@@ -4833,12 +4833,12 @@
           "paths": [
             "skills/writing-skills"
           ],
-          "treeSha256": "9995551a3fb95ad308500e20e6baece293fce28f116601158fe69bfbb6e35c5f",
+          "treeSha256": "1d9ba64290350ab61219ed02c28dd2995e5b405ce31e251e14d7869b47390b7f",
           "verdict": "pass",
           "analyzers": [
             {
               "name": "aih-native",
-              "version": "native.791c9871d668"
+              "version": "native.014fbd614a5a"
             },
             {
               "name": "cisco@uvx",

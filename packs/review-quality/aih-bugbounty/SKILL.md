@@ -1,5 +1,5 @@
 ---
-name: bugbounty-pr-scan
+name: aih-bugbounty
 description: Scan open PRs and generated ECC/agent artifacts for high-coverage review risks before they are accepted. Use when a PR adds or changes agent bootloaders, Codex or Claude skills, MCP config, generated workflow commands, auto-learning instincts, repository review runbooks, or multi-agent review configuration; also use when BUGBOUNTY needs independent ECC-style review coverage derived from PR files.
 license: Apache-2.0
 allowed-tools:
@@ -28,7 +28,7 @@ network egress, tool trust, workflow rules, or repo canon.
 2. Run the deterministic scanner:
 
    ```bash
-   python packs/review-quality/bugbounty-pr-scan/scripts/scan_ecc_pr.py \
+   python packs/review-quality/aih-bugbounty/scripts/scan_ecc_pr.py \
      --repo . \
      --base main \
      --head origin/pr-<number> \

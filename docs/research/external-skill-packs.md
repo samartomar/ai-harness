@@ -26,7 +26,7 @@ remaining the pin and approval authority.
       "requiredChecks": ["license", "pin"],
       "skills": [
         {
-          "name": "betterdoc",
+          "name": "aih-betterdoc",
           "source": "owner/repo@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         }

@@ -53,8 +53,8 @@ cannot faithfully round-trip, so a hand-mangled sibling pack is never silently d
 aih pack scaffold --pack docs-quality --apply
 
 # 1. Approve the copied local source (per-skill lifecycle — vet evidence → committed approval).
-aih skill vet packs/docs-quality/betterdoc --apply
-aih skill approve packs/docs-quality/betterdoc --owner docs-platform --pack docs-quality --apply
+aih skill vet packs/docs-quality/aih-betterdoc --apply
+aih skill approve packs/docs-quality/aih-betterdoc --owner docs-platform --pack docs-quality --apply
 
 # 2. Optionally curate additional approved skills one-by-one. Scaffold already
 #    wrote the docs-quality pack entry; `add` derives new refs from the lock.

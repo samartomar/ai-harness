@@ -32,7 +32,7 @@ re-spelling it; verify against repo evidence before acting.
 | editing `src/` engines, checks, plans, trust, writers | `rules/engine-invariants.md` |
 | proposing a feature or flag; report / dashboard work | `rules/product-principles.md` |
 | writing docs; filing issues; drafting PRs; committing; choosing where a fact lives | `rules/doc-and-truth-homes.md` |
-| creating, editing, or reviewing public documentation | `rules/doc-and-truth-homes.md`, `../../PUBLIC_DOCS_POLICY.md`, then `../curated-skills/betterdoc/SKILL.md` (repo-curated BetterDoc copy; resolve relative to this file) |
+| creating, editing, or reviewing public documentation | `rules/doc-and-truth-homes.md`, `../../PUBLIC_DOCS_POLICY.md`, then `../curated-skills/aih-betterdoc/SKILL.md` (repo-curated BetterDoc copy; resolve relative to this file) |
 | closing out a unit of work; before opening a PR | `rules/tracking-and-done.md` |
 | running a decision session — "decision session", "close decisions", weighing an aih product/governance choice | `../curated-skills/decision-partner/SKILL.md` (CLI-neutral canonical skill; resolve relative to this file) |
 

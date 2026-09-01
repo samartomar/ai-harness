@@ -1,10 +1,22 @@
 import { type Document, type Element, Window } from "happy-dom";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { PolicyStudioModel } from "../../src/org-policy/studio-model.js";
 import { policyStudioModel } from "../../src/org-policy/studio-model.js";
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
 
 const model = policyStudioModel();
+const openWindows = new Set<Window>();
+
+afterEach(async () => {
+  await Promise.all([...openWindows].map((window) => window.happyDOM.close()));
+  openWindows.clear();
+});
+
+async function closeWindow(window: Window): Promise<void> {
+  await window.happyDOM.close();
+  openWindows.delete(window);
+}
+
 function studio(studioModel: PolicyStudioModel = model): Window {
   const window = new Window({ url: "http://localhost/" });
   const html = policyStudioHtml(studioModel);
@@ -14,12 +26,23 @@ function studio(studioModel: PolicyStudioModel = model): Window {
   const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/gi)].map((match) => match[1]);
   if (scripts.length === 0) throw new Error("expected generated workbench script");
   window.eval(scripts.join("\n"));
+  openWindows.add(window);
   return window;
 }
 
 function click(window: Window, node: Element | null, label: string): void {
   if (node === null) throw new Error(`expected ${label}`);
   node.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+}
+
+function choosePreset(window: Window, value: "vibe" | "enterprise"): void {
+  const select = window.document.getElementById("preset-select") as unknown as {
+    value: string;
+    dispatchEvent: (event: unknown) => boolean;
+  } | null;
+  if (select === null) throw new Error(`expected ${value} preset`);
+  select.value = value;
+  select.dispatchEvent(new window.Event("change", { bubbles: true }));
 }
 
 function policyText(window: Window): string {
@@ -94,6 +117,47 @@ function expectDetailNarrationToVary(label: string, baseline: string, selected: 
 }
 
 describe("policy studio surface invariants", () => {
+  it("lets the checkbox carry ordinary row state and keeps one plain details action", () => {
+    const window = studio();
+    const rows = [...window.document.querySelectorAll(".row[data-state]")];
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) {
+      const key = row.getAttribute("data-row") ?? "unnamed row";
+      expect(row.querySelector(".cust"), `${key} has no cryptic custody strip`).toBeNull();
+      const compactState = row.querySelector(".row-state")?.textContent?.trim() ?? "";
+      expect(compactState, `${key} does not repeat its checkbox state`).not.toMatch(
+        /^(Selected|Selectable)$/,
+      );
+      const fullState = row.querySelector(".badge")?.textContent?.trim() ?? "";
+      if (
+        row.getAttribute("data-state") === "requested" ||
+        fullState.startsWith("Selectable") ||
+        fullState.startsWith("Disabled") ||
+        fullState.startsWith("Available")
+      ) {
+        expect(compactState, `${key} lets its checkbox carry selection state`).toBe("");
+      } else {
+        expect(compactState, `${key} names its non-selection state`).toMatch(
+          /^(Awaiting|Blocked|Approval|External)$/,
+        );
+      }
+      expect(
+        row.querySelector('.vet[data-vet="pass"]'),
+        `${key} has no redundant pass tick`,
+      ).toBeNull();
+      const details = row.querySelector("button.more");
+      expect(details?.textContent?.trim() ?? "", `${key} names its details action`).toBe("Details");
+      expect(
+        details?.querySelector('[aria-hidden="true"]'),
+        `${key} has no decorative arrow`,
+      ).toBeNull();
+      expect(details?.getAttribute("aria-label") ?? "", `${key} keeps its full identity`).toMatch(
+        /^Details for /,
+      );
+    }
+    window.close();
+  });
+
   it("gives every group card only ticker-resolvable owners", () => {
     const window = studio();
     const tickerOwners = new Set(
@@ -113,7 +177,7 @@ describe("policy studio surface invariants", () => {
     }
   });
 
-  it("gives every selection an inverse that round-trips the policy to baseline", () => {
+  it("gives every selection an inverse that round-trips the policy to baseline", async () => {
     const window = studio();
     const document = window.document;
 
@@ -123,9 +187,11 @@ describe("policy studio surface invariants", () => {
     ]) {
       assertRoundTrip(window, () => document, "data-reviewed", control.id);
     }
-    const inventoryKeys = [...document.querySelectorAll("[data-framework-select]")].map((control) =>
-      control.getAttribute("data-framework-select"),
-    );
+    const inventoryKeys = [
+      ...document.querySelectorAll(
+        "#framework-rows [data-framework-select], #ecc-skill-rows [data-framework-select], #ecc-mcp-declaration-rows [data-framework-select]",
+      ),
+    ].map((control) => control.getAttribute("data-framework-select"));
     expect(inventoryKeys.sort()).toEqual(
       model.catalog.frameworks
         .flatMap((framework) =>
@@ -143,7 +209,7 @@ describe("policy studio surface invariants", () => {
         "data-framework-select",
         `${framework.id}|${asset.kind}|${asset.id}`,
       );
-      frameworkWindow.close();
+      await closeWindow(frameworkWindow);
     }
     for (const part of model.catalog.enterpriseComposition.parts.filter(
       (item) => item.selection === "additive",
@@ -153,14 +219,13 @@ describe("policy studio surface invariants", () => {
     for (const host of model.catalog.hosts) {
       assertRoundTrip(window, () => document, "data-sanctioned-cli", host.id);
     }
+    for (const capability of [...model.catalog.aihSkills, ...model.catalog.aihAgents]) {
+      assertRoundTrip(window, () => document, "data-aih-capability-package", capability.id);
+    }
     for (const preset of ["vibe", "enterprise"]) {
       const presetWindow = studio();
       const baseline = policyText(presetWindow);
-      click(
-        presetWindow,
-        byAttribute(presetWindow.document, "data-preset", preset),
-        `${preset} preset`,
-      );
+      choosePreset(presetWindow, preset as "vibe" | "enterprise");
       expect(policyText(presetWindow), `${preset} authors a selection`).not.toBe(baseline);
       click(
         presetWindow,
@@ -168,10 +233,10 @@ describe("policy studio surface invariants", () => {
         `${preset} inverse`,
       );
       expect(policyText(presetWindow), `${preset} returns to baseline`).toBe(baseline);
-      presetWindow.close();
+      await closeWindow(presetWindow);
     }
-    window.close();
-  }, 15_000);
+    await closeWindow(window);
+  }, 60_000);
 
   it("makes every component id named by a panel resolve through its click-through", () => {
     const window = studio();
@@ -201,17 +266,40 @@ describe("policy studio surface invariants", () => {
         link.textContent,
       );
     }
-  });
+  }, 15_000);
 
-  it("narrates authored selection without inventing a target-evaluated state", () => {
+  it("narrates authored selection without inventing a target-evaluated state", async () => {
     const baseline = studio();
+    const baselineNarration = new Map<string, string>();
+    for (const item of [...model.catalog.mcp, ...model.catalog.hooks]) {
+      baselineNarration.set(item.id, detailNarration(baseline, item.id));
+    }
+    for (const framework of model.catalog.frameworks) {
+      for (const asset of framework.assets.filter(
+        (candidate) => !["lang", "framework", "capability", "module"].includes(candidate.kind),
+      )) {
+        const key = frameworkDetailKey(framework.id, asset.kind, asset.id);
+        baselineNarration.set(key, detailNarration(baseline, key));
+      }
+    }
+    await closeWindow(baseline);
+
     const selectedEcc = studio();
-    click(selectedEcc, byAttribute(selectedEcc.document, "data-preset", "vibe"), "vibe preset");
+    choosePreset(selectedEcc, "vibe");
+    for (const item of model.catalog.mcp.filter(
+      (candidate) => candidate.availability !== "always",
+    )) {
+      click(
+        selectedEcc,
+        byAttribute(selectedEcc.document, "data-reviewed", item.id),
+        `conditional MCP ${item.id}`,
+      );
+    }
 
     for (const item of [...model.catalog.mcp, ...model.catalog.hooks]) {
       expectDetailNarrationToVary(
         item.id,
-        detailNarration(baseline, item.id),
+        baselineNarration.get(item.id) ?? "",
         detailNarration(selectedEcc, item.id),
       );
     }
@@ -223,10 +311,11 @@ describe("policy studio surface invariants", () => {
       const key = frameworkDetailKey(ecc.id, asset.kind, asset.id);
       expectDetailNarrationToVary(
         key,
-        detailNarration(baseline, key),
+        baselineNarration.get(key) ?? "",
         detailNarration(selectedEcc, key),
       );
     }
+    await closeWindow(selectedEcc);
 
     const superpowers = model.catalog.frameworks.find(
       (framework) => framework.id === "superpowers",
@@ -237,11 +326,12 @@ describe("policy studio surface invariants", () => {
       const key = frameworkDetailKey(superpowers.id, asset.kind, asset.id);
       expectDetailNarrationToVary(
         key,
-        detailNarration(baseline, key),
+        baselineNarration.get(key) ?? "",
         detailNarration(selectedSuperpowers, key),
       );
     }
-  }, 15_000);
+    await closeWindow(selectedSuperpowers);
+  }, 30_000);
 
   it("narrates the requested and effective count at every export", () => {
     const window = studio();

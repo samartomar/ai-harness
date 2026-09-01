@@ -7,10 +7,7 @@ const model = policyStudioModel();
 const assets = model.catalog.frameworks.flatMap((framework) =>
   framework.assets.map((asset) => ({ framework, asset })),
 );
-const mainAssets = assets.filter(
-  ({ framework, asset }) =>
-    framework.id !== "ecc" || !["lang", "framework", "capability", "module"].includes(asset.kind),
-);
+const mainAssets = assets;
 
 function studio(): Window {
   const window = new Window({ url: "http://localhost/" });
@@ -31,11 +28,16 @@ interface InventoryRow {
 }
 
 function inventory(window: Window): { rows: InventoryRow[]; text: string } {
-  const container = window.document.getElementById("framework-rows");
-  if (container === null) throw new Error("workbench renders no framework inventory");
+  const rows = [
+    ...window.document.querySelectorAll(
+      "#framework-rows .row, #ecc-skill-rows .row, #ecc-mcp-declaration-rows .row",
+    ),
+  ].filter(
+    (row) => row.querySelector("[data-framework-select]") !== null,
+  ) as unknown as InventoryRow[];
   return {
-    rows: [...container.querySelectorAll(".row")] as unknown as InventoryRow[],
-    text: container.textContent ?? "",
+    rows,
+    text: rows.map((row) => row.textContent ?? "").join(" "),
   };
 }
 

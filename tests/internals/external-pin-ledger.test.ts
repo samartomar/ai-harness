@@ -146,6 +146,15 @@ describe("active external-pin ledger", () => {
       disposition: "active",
     });
     expect(entry("ecc").reason).toMatch(/administrator-owned fork.*governed run 33147078833/i);
+    expect(entry("ecc-candidate")).toMatchObject({
+      identity: "affaan-m/ECC",
+      version: "v2.2.0-128-gce64e417",
+      commit: "ce64e417fd420a0df98ed0aa00809eea5e74e127",
+      disposition: "blocked",
+    });
+    expect(entry("ecc-candidate").reason).toMatch(/OpenCode.*hook-runtime consent/i);
+    expect(entry("ecc-candidate").reason).toMatch(/Docker.*link\.exe/i);
+    expect(entry("ecc-candidate").reason).toMatch(/nothing was promoted/i);
     expect(entry("superpowers")).toMatchObject({
       identity: "obra/Superpowers",
       commit: "3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9",
@@ -157,6 +166,9 @@ describe("active external-pin ledger", () => {
     const servers = mcpServers("standard", webStack, { selfHost: true });
     expect(entry("code-review-graph").version).toBe(
       versionFromSpec(stdioArg(servers, "code-review-graph", "code-review-graph@")),
+    );
+    expect(entry("code-review-graph").reason).toMatch(
+      /2\.3\.8.*hold.*ambient.*CRG_OPENAI.*silent.*egress/i,
     );
     expect(entry("codebase-memory-mcp").version).toBe(
       versionFromSpec(stdioArg(servers, "codebase-memory-mcp", "codebase-memory-mcp@")),
@@ -265,6 +277,9 @@ describe("active external-pin ledger", () => {
     expect(entry("uv").version).toBe(
       skillspectorDockerfile.match(/pip install --no-cache-dir uv==([^\s]+)/)?.[1],
     );
+    expect(entry("uv")).toMatchObject({ version: "0.12.7", disposition: "active" });
+    expect(entry("uv").reason).toMatch(/five committed locks.*byte-identical/i);
+    expect(entry("uv").reason).toMatch(/Cisco.*link\.exe/i);
     expect(skillspectorDockerfile).toContain(
       `LABEL org.opencontainers.image.revision="${SKILLSPECTOR_SOURCE_REVISION}"`,
     );
@@ -283,7 +298,7 @@ describe("active external-pin ledger", () => {
     expect(entry("claude-code-action")).toMatchObject({
       commit: claude?.[1],
     });
-    expect(entry("claude-code-action").version).toBe("v1.0.201");
+    expect(entry("claude-code-action").version).toBe("v1.0.210");
 
     const baselineWorkflow = readFileSync(
       resolve(root, ".github/workflows/baseline-evidence.yml"),
@@ -296,6 +311,12 @@ describe("active external-pin ledger", () => {
 
   it("binds the release provenance action to the governed external pin ledger", () => {
     const releaseWorkflow = readFileSync(resolve(root, ".github/workflows/release.yml"), "utf8");
+    expect(entry("sbom-action")).toMatchObject({
+      ...workflowActionPin(releaseWorkflow, "anchore/sbom-action"),
+      disposition: "active",
+    });
+    expect(entry("sbom-action").version).toBe("v0.24.2");
+    expect(entry("sbom-action").reason).toMatch(/pins.*Syft installer.*release tag/i);
     expect(entry("attest-build-provenance-action")).toMatchObject({
       ...workflowActionPin(releaseWorkflow, "actions/attest-build-provenance"),
       disposition: "active",
@@ -333,6 +354,8 @@ describe("active external-pin ledger", () => {
         version: pin[2],
       });
     }
+    expect(entry("codeql-action").version).toBe("v4.37.9");
+    expect(entry("codeql-action").reason).toMatch(/codeql-bundle-v2\.26\.4/i);
   });
 
   it("records governed scanner identities and fails closed on AgentShield provenance", () => {
@@ -446,24 +469,23 @@ describe("active external-pin ledger", () => {
     // matched baseline-sources would mean the rotation happened.
     expect(entry("ecc-candidate")).toMatchObject({
       identity: "affaan-m/ECC",
-      version: "untagged, 100 commits past v2.1.0",
-      commit: "dcbf95bf63dc67701564198df9c3451940a2ca83",
+      version: "v2.2.0-128-gce64e417",
+      commit: "ce64e417fd420a0df98ed0aa00809eea5e74e127",
       disposition: "blocked",
     });
     expect(entry("ecc-candidate").commit).not.toBe(entry("ecc").commit);
-    expect(entry("ecc-candidate").reason).toMatch(/ECC_PREVIEW_DEPENDENCY_CLOSURE_UNQUALIFIED/);
-    // Counts and the run that produced them are the evidence; losing either
-    // would leave a verdict with nothing behind it.
-    expect(entry("ecc-candidate").reason).toMatch(/run 31922381993/);
-    expect(entry("ecc-candidate").reason).toMatch(/137 ECC components/);
-    expect(entry("ecc-candidate").reason).toMatch(/109 pass and 28 blocked/);
-    expect(entry("ecc-candidate").reason).toMatch(/NO newly blocked component ids/);
-    expect(entry("ecc-candidate").reason).toMatch(/15\/15 pass/);
-    expect(entry("ecc-candidate").reason).toMatch(/js-yaml@4\.3\.1/);
-    // These two disclaimers are the entry's load-bearing scope limits. Dropping
-    // either would overstate the finding into a content or execution claim.
-    expect(entry("ecc-candidate").reason).toMatch(/not a new malicious-content finding/i);
-    expect(entry("ecc-candidate").reason).toMatch(/not evidence that js-yaml executes/i);
-    expect(entry("ecc-candidate").reason).toMatch(/lexical/i);
+    expect(entry("ecc-candidate").reason).toMatch(
+      /ECC_OPENCODE_HOOK_CONSENT_AND_FULL_VET_UNQUALIFIED/,
+    );
+    // Live exact-SHA state, the local evidence boundary, and the consent defect
+    // are all load-bearing. Losing any one would make the HOLD unauditable.
+    expect(entry("ecc-candidate").reason).toMatch(/33 completed successes, 12 queued.*45/i);
+    expect(entry("ecc-candidate").reason).toMatch(/static AIH baseline preflight passed/i);
+    expect(entry("ecc-candidate").reason).toMatch(/full vet emitted no evidence/i);
+    expect(entry("ecc-candidate").reason).toMatch(/Docker.*link\.exe/i);
+    expect(entry("ecc-candidate").reason).toMatch(/opencode\.json auto-loads plugins/i);
+    expect(entry("ecc-candidate").reason).toMatch(/not evidence of a categorical block/i);
+    expect(entry("ecc-candidate").reason).toMatch(/production lock.*unchanged/i);
+    expect(entry("ecc-candidate").reason).toMatch(/dcbf95bf.*immutable history/i);
   });
 });

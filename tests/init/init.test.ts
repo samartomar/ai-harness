@@ -79,15 +79,18 @@ function seedOrgPolicy(allowedServers = ["code-review-graph"]): void {
   );
 }
 
-function externalPolicyBundle(
-  supportedClis: string[] = ["claude"],
-  expiresAt = "2026-09-01T00:00:00Z",
-): string {
+function externalPolicyBundle(supportedClis: string[] = ["claude"], expiresAt?: string): string {
+  const issuedAt =
+    expiresAt === undefined
+      ? new Date(Date.now() - 24 * 60 * 60 * 1_000).toISOString()
+      : "2026-08-25T00:00:00Z";
+  const receiptExpiresAt =
+    expiresAt ?? new Date(Date.now() + 30 * 24 * 60 * 60 * 1_000).toISOString();
   return JSON.stringify({
     schemaVersion: 2,
     bundleVersion: "2026.08.1",
     issuer: "Acme platform security",
-    issuedAt: "2026-08-25T00:00:00Z",
+    issuedAt,
     policy: {
       schemaVersion: 2,
       minimumPosture: "enterprise",
@@ -105,8 +108,8 @@ function externalPolicyBundle(
       format: "aih-policy-authority-receipt",
       version: 3,
       issuerRepository: "acme/governance",
-      issuedAt: "2026-08-25T00:00:00Z",
-      expiresAt,
+      issuedAt,
+      expiresAt: receiptExpiresAt,
       trustedIssuers: [{ id: "platform-security", githubRepository: "acme/governance" }],
       targets: supportedClis,
       decisions: [],

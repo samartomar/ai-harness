@@ -708,6 +708,19 @@
                           "framework"
                         ]
                       },
+                      "accountableOwner": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 254,
+                            "pattern": "^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$"
+                          },
+                          {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                          }
+                        ]
+                      },
                       "description": {
                         "type": "string",
                         "minLength": 1,
@@ -776,7 +789,8 @@
                               },
                               "package": {
                                 "type": "string",
-                                "pattern": "^@?[A-Za-z0-9][A-Za-z0-9._/-]*$"
+                                "maxLength": 214,
+                                "pattern": "^(?:@[A-Za-z0-9][A-Za-z0-9._-]*\\/)?[A-Za-z0-9][A-Za-z0-9._-]*$"
                               },
                               "version": {
                                 "type": "string",
@@ -850,7 +864,8 @@
                               },
                               "package": {
                                 "type": "string",
-                                "pattern": "^@?[A-Za-z0-9][A-Za-z0-9._/-]*$"
+                                "maxLength": 214,
+                                "pattern": "^(?:@[A-Za-z0-9][A-Za-z0-9._-]*\\/)?[A-Za-z0-9][A-Za-z0-9._-]*$"
                               },
                               "version": {
                                 "type": "string",
@@ -888,8 +903,17 @@
                                     "type": "object",
                                     "properties": {
                                       "approvedBy": {
-                                        "type": "string",
-                                        "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                                        "anyOf": [
+                                          {
+                                            "type": "string",
+                                            "maxLength": 254,
+                                            "pattern": "^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$"
+                                          },
+                                          {
+                                            "type": "string",
+                                            "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                                          }
+                                        ]
                                       },
                                       "authenticationMode": {
                                         "type": "string",
@@ -949,8 +973,17 @@
                                     "type": "object",
                                     "properties": {
                                       "approvedBy": {
-                                        "type": "string",
-                                        "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                                        "anyOf": [
+                                          {
+                                            "type": "string",
+                                            "maxLength": 254,
+                                            "pattern": "^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$"
+                                          },
+                                          {
+                                            "type": "string",
+                                            "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                                          }
+                                        ]
                                       },
                                       "authenticationMode": {
                                         "type": "string",
@@ -1169,6 +1202,19 @@
                           "framework"
                         ]
                       },
+                      "accountableOwner": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "maxLength": 254,
+                            "pattern": "^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$"
+                          },
+                          {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                          }
+                        ]
+                      },
                       "description": {
                         "type": "string",
                         "minLength": 1,
@@ -1237,7 +1283,8 @@
                               },
                               "package": {
                                 "type": "string",
-                                "pattern": "^@?[A-Za-z0-9][A-Za-z0-9._/-]*$"
+                                "maxLength": 214,
+                                "pattern": "^(?:@[A-Za-z0-9][A-Za-z0-9._-]*\\/)?[A-Za-z0-9][A-Za-z0-9._-]*$"
                               },
                               "version": {
                                 "type": "string",
@@ -1311,7 +1358,8 @@
                               },
                               "package": {
                                 "type": "string",
-                                "pattern": "^@?[A-Za-z0-9][A-Za-z0-9._/-]*$"
+                                "maxLength": 214,
+                                "pattern": "^(?:@[A-Za-z0-9][A-Za-z0-9._-]*\\/)?[A-Za-z0-9][A-Za-z0-9._-]*$"
                               },
                               "version": {
                                 "type": "string",
@@ -1349,8 +1397,17 @@
                                     "type": "object",
                                     "properties": {
                                       "approvedBy": {
-                                        "type": "string",
-                                        "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                                        "anyOf": [
+                                          {
+                                            "type": "string",
+                                            "maxLength": 254,
+                                            "pattern": "^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$"
+                                          },
+                                          {
+                                            "type": "string",
+                                            "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                                          }
+                                        ]
                                       },
                                       "authenticationMode": {
                                         "type": "string",
@@ -1410,8 +1467,17 @@
                                     "type": "object",
                                     "properties": {
                                       "approvedBy": {
-                                        "type": "string",
-                                        "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                                        "anyOf": [
+                                          {
+                                            "type": "string",
+                                            "maxLength": 254,
+                                            "pattern": "^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$"
+                                          },
+                                          {
+                                            "type": "string",
+                                            "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                                          }
+                                        ]
                                       },
                                       "authenticationMode": {
                                         "type": "string",
@@ -1727,7 +1793,8 @@
                               },
                               "package": {
                                 "type": "string",
-                                "pattern": "^@?[A-Za-z0-9][A-Za-z0-9._/-]*$"
+                                "maxLength": 214,
+                                "pattern": "^(?:@[A-Za-z0-9][A-Za-z0-9._-]*\\/)?[A-Za-z0-9][A-Za-z0-9._-]*$"
                               },
                               "version": {
                                 "type": "string",
@@ -1801,7 +1868,8 @@
                               },
                               "package": {
                                 "type": "string",
-                                "pattern": "^@?[A-Za-z0-9][A-Za-z0-9._/-]*$"
+                                "maxLength": 214,
+                                "pattern": "^(?:@[A-Za-z0-9][A-Za-z0-9._-]*\\/)?[A-Za-z0-9][A-Za-z0-9._-]*$"
                               },
                               "version": {
                                 "type": "string",
@@ -1839,8 +1907,17 @@
                                     "type": "object",
                                     "properties": {
                                       "approvedBy": {
-                                        "type": "string",
-                                        "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                                        "anyOf": [
+                                          {
+                                            "type": "string",
+                                            "maxLength": 254,
+                                            "pattern": "^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$"
+                                          },
+                                          {
+                                            "type": "string",
+                                            "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                                          }
+                                        ]
                                       },
                                       "authenticationMode": {
                                         "type": "string",
@@ -1900,8 +1977,17 @@
                                     "type": "object",
                                     "properties": {
                                       "approvedBy": {
-                                        "type": "string",
-                                        "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                                        "anyOf": [
+                                          {
+                                            "type": "string",
+                                            "maxLength": 254,
+                                            "pattern": "^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$"
+                                          },
+                                          {
+                                            "type": "string",
+                                            "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                                          }
+                                        ]
                                       },
                                       "authenticationMode": {
                                         "type": "string",
@@ -2152,6 +2238,19 @@
                           "minLength": 1,
                           "maxLength": 500
                         },
+                        "accountableOwner": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "maxLength": 254,
+                              "pattern": "^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$"
+                            },
+                            {
+                              "type": "string",
+                              "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                            }
+                          ]
+                        },
                         "source": {
                           "type": "object",
                           "properties": {
@@ -2285,6 +2384,22 @@
                       ],
                       "additionalProperties": false
                     }
+                  },
+                  "roots": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 500
+                    }
+                  },
+                  "unattributedItems": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 500
+                    }
                   }
                 },
                 "required": [
@@ -2347,8 +2462,17 @@
                     ]
                   },
                   "approvedBy": {
-                    "type": "string",
-                    "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 254,
+                        "pattern": "^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$"
+                      },
+                      {
+                        "type": "string",
+                        "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                      }
+                    ]
                   },
                   "authenticationMode": {
                     "type": "string",
@@ -2406,6 +2530,8 @@
                       "post:dispatcher:sync",
                       "post:dispatcher:async",
                       "post:mcp-health-check",
+                      "post:skill:track",
+                      "stop:plan-canvas-pending",
                       "stop:format-typecheck",
                       "stop:check-console-log",
                       "stop:session-end",

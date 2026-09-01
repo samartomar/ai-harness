@@ -691,6 +691,12 @@ build); `validate --require-signature` then
 Starter seeding, portable authoring, effective-resolution, schema, projection, and trusted-channel gates for the org policy.
 `aih policy generate` is deliberately rootless with respect to a governed target repository: it writes a self-contained
 Policy Workbench and does not inspect a target repository, resolve repository state, or append a repository run ledger. Its
+Bring Your Own guides link to public MCP, Skill, npm, and GitHub search surfaces only for discovery. A directory page,
+README, popularity count, advertised install command, or third-party audit is never imported as identity, evidence, or
+authority. After an administrator enters a canonical npm package or exact GitHub repository/commit/path, the Workbench
+renders the matching `npm view`, `aih trust scan`, or `aih skill vet` command. Those commands obtain metadata or preflight
+evidence without granting approval, installation, or activation; the protected-file authority and target evaluation remain
+separate gates.
 parsed `--root` and `AIH_ROOT` compatibility inputs are ignored; the current directory is used only to contain a relative
 `--out` path. Its one optional positional is an administrator root rather than a target repository — see
 "Administrator catalog consumption" below. The remaining `policy`
@@ -703,8 +709,8 @@ contains only the exact decision binding and code-owned target.
 `aih-org-policy.json` schema, with schema-backed audit references for ECC or Superpowers agents, skills, and commands.
 At Enterprise posture, its protected-file form also authors organization-qualified Decision V2
 records for exact GitHub, npm, PyPI, OCI, remote-content, or AIH source identities classified
-as tools, skills, MCP servers, packages, or profiles. The administrator enters ordinary fields for targets, effects, evidence,
-issuer, actor, policy, and control; Web Crypto computes the domain-separated source, subject, and
+as tools, skills, agents, MCP servers, packages, or profiles. The administrator enters ordinary fields for targets, effects, evidence,
+issuer, accountable owner email, policy, and control; Web Crypto computes the domain-separated source, subject, and
 revocation digests. The read-only preview and `aih-policy-bundle.json` download are PolicyBundle V2,
 and Core's exported parser accepts the same bytes. This surface accepts no editable raw-JSON decision
 or bundle input. Vibe continues to export only ordinary repo-local policy and cannot generate
@@ -730,7 +736,7 @@ replacement reads fail closed without changing the decision displayed when the l
 Target-repository `evaluate` remains the source of effective state. Both custom-MCP forms remain pending,
 hard-blocked candidates with no activation affordance until supported scanning, evidence, and projection exist.
 
-The left rail is the sole selection surface for ECC languages, frameworks, capabilities, and modules; those controls are not repeated in the main inventory, preset toolbar, or inspector. The flat Ledger paper-and-ink presentation reserves colour for evidence state, supports a neutral dark theme, and keeps that canonical rail available on compact screens. The inspector contains no policy mutation controls: it narrates the selected-to-materialized journey and routes one next action to the canonical selection or a separate authoring sidebar. A separate Add MCP sidebar authors approved/revoked `governance.eccMcpApprovals` records at the pinned catalog digest. It lists all 31 external ECC entries and records declarative permission. Only entries labeled HTTPS-configurable can use the later `aih ecc mcp add <id> --cli <client>` path; manual entries remain approval-only. The browser does not install, contact, scan, attest, or observe the endpoint.
+The left rail is the sole selection surface for ECC languages, frameworks, capabilities, and modules; those controls are not repeated in the main inventory, preset toolbar, or inspector. A separate source-locked skills plane lists all 286 canonical `skills/*/SKILL.md` identities at the pinned ECC commit. Its 12 existing governed components retain their selection controls; the other 274 entries are visibly availability-only and cannot author policy. The flat Ledger paper-and-ink presentation reserves colour for evidence state, supports a neutral dark theme, and keeps that canonical rail available on compact screens. The inspector contains no policy mutation controls: it narrates the selected-to-materialized journey and routes one next action to the canonical selection or a separate authoring sidebar. The MCP availability planes list all 35 entries from ECC's pinned source: 31 ECC-owned entries route to the separate Add MCP sidebar, which authors approved/revoked `governance.eccMcpApprovals` records at the pinned catalog digest; the four AIH-owned source declarations are read-only and do not claim that this Core build ships a matching control. Only entries labeled HTTPS-configurable can use the later `aih ecc mcp add <id> --cli <client>` path; manual entries remain approval-only. The browser does not install, contact, scan, attest, or observe the endpoint.
 
 A separate adoption-recipe panel is the first bounded, code-owned routing guide rather than another
 inventory or authoring surface. It gives exactly one question class to each of Token Savior, Serena,
@@ -770,7 +776,7 @@ visible Workbench provenance line then shows verified tier, source, channel, res
 provenance. The embedded safe model also carries sequence, digests, posture, and verification time; neither surface carries
 locators, filesystem paths, tokens, signatures, raw attestations, signer identities, root digests, or machine detail.
 
-The Workbench's ECC hook-controls panel is bound to the pinned runtime inventory: 40 individually gated hook IDs plus one non-disableable Bash wrapper. It authors a required Minimal, Standard, or Strict profile and an optional canonical disabled-ID list, prunes disables that are ineligible after a profile change, and offers a clear inverse back to the policy baseline. AIH configures supported Claude environment intent; ECC executes and enforces it after process spawn.
+The Workbench's ECC hook-controls panel is bound to the pinned runtime inventory: 42 individually gated hook IDs plus one non-disableable Bash wrapper. It authors a required Minimal, Standard, or Strict profile and an optional canonical disabled-ID list, prunes disables that are ineligible after a profile change, and offers a clear inverse back to the policy baseline. AIH configures supported Claude environment intent; ECC executes and enforces it after process spawn.
 
 The headless schema also accepts a declarative remote record with an
 administrator-managed `approved` or `revoked` status and no tool-surface digest.
@@ -933,7 +939,7 @@ is not copied into the policy or receipt, cannot create authority, and cannot de
 The public library and package schemas expose `GovernanceDecisionV2`, digest-bound
 `GovernanceDecisionRevocationV2`, authority receipt V3, and
 `UpstreamObservationReceiptV1`. The decision can identify an exact organization-chosen
-tool, skill, MCP server, package, or profile through immutable GitHub, npm, PyPI,
+tool, skill, agent, MCP server, package, or profile through immutable GitHub, npm, PyPI,
 OCI, remote-content, or AIH identity. Private npm/PyPI registry paths and complete
 remote HTTPS endpoint paths remain part of the identity. Canonical library helpers
 derive the source and subject digests; portable JSON Schema validates the closed shape,
@@ -1045,7 +1051,7 @@ reports `qualification: "unqualified"` when qualification was not established. I
 `observed-effective`, append a run ledger, return a qualification capability, or scan,
 install, configure, or execute the candidate. Policy evaluation does not treat a V3 decision alone
 as effective. Exact npm installations use the separately persisted, freshly reverified npm lifecycle
-described below. Organization-managed tool, skill, MCP, or package files absent from AIH catalogs use
+described below. Organization-managed tool, skill, agent, MCP, or package files absent from AIH catalogs use
 the fixed `upstream-artifact` observer/lifecycle described after it; those subjects remain
 non-projectable because observation is not configuration. The
 verifier's only process/provider observation is the bounded external GitHub attestation check, and
@@ -1245,7 +1251,7 @@ and perform no package effect.
 
 This remains a narrow root npm lifecycle for organization-qualified or durably accepted
 AIH-supported decisions. Neither the lifecycle command nor evaluate/report makes a candidate
-projectable. Catalog-independent organization-qualified tool, skill, MCP, and package files use the
+projectable. Catalog-independent organization-qualified tool, skill, agent, MCP, and package files use the
 separate fixed route below.
 
 ### Catalog-independent organization-managed artifact observation
@@ -1253,7 +1259,7 @@ separate fixed route below.
 `aih policy observe upstream-artifact [root] --decision <id> --decision-digest <sha256>
 --target <id> --evidence <root-relative-file> --manifest <root-relative-file>` observes exact files
 the organization already placed below the governed root. The Decision V2 must be
-`organization-qualified` and name a tool, skill, MCP server, or package; `aih-supported` is not
+`organization-qualified` and name a tool, skill, agent, MCP server, or package; `aih-supported` is not
 accepted on this route. The canonical `UpstreamArtifactManifestV1` is bounded to 512 KiB and 256
 sorted, portable-case-unique file entries. It accepts exact mixed-case paths while rejecting any
 segment with a trailing dot/space or Windows device alias. It exact-matches the decision id, subject
@@ -1595,7 +1601,7 @@ Generate a devcontainer + managed sandbox settings (egress allowlist, `failIfUna
 Read-only BetterDoc documentation lint. It scans the public-facing Markdown surface <!-- aih:claim CM-12 -->
 (`README.md`, `CONTRIBUTING.md`, `SECURITY.md`, `docs/`, and `guides/`, excluding internal
 report specs under `docs/specs/`) using the phrase and claim guidance in
-`packs/docs-quality/betterdoc/references/slop-lint.md`. Prose
+`packs/docs-quality/aih-betterdoc/references/slop-lint.md`. Prose
 guidance emits coded advisory findings (`docs.banned-phrase`, `docs.vague-absolute`,
 `docs.unsupported-callout-claim`) without failing the run. Hard claim-ledger orphans fail closed:
 `<!-- aih:claim CM-xx -->` markers must resolve to `docs/CONTROL_MATRIX.md`, each matrix row must
@@ -1682,7 +1688,7 @@ top-level route rather than a mode of `aih doctor`, because the internal operati
 drives already plans and probes the Doctor command; a Doctor sub-route would re-enter Doctor.
 
 The command reads one artifact: the canonical profile shipped inside this package at
-`packs/governance-quality/governance-doctor-audit-guide/profile.json`. The loader takes no
+`packs/governance-quality/aih-gov-doctor/profile.json`. The loader takes no
 argument, so no flag, option, environment variable, or positional value can name a different
 profile, supply profile bytes, or point at another registry entry. Non-canonical bytes are
 rejected by the shared profile parser rather than re-canonicalized.

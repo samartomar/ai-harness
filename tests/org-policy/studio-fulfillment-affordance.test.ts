@@ -1,18 +1,16 @@
 import { Window } from "happy-dom";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { OrgPolicy } from "../../src/org-policy/schema.js";
 import type { PolicyStudioModel } from "../../src/org-policy/studio-model.js";
 import { policyStudioModel } from "../../src/org-policy/studio-model.js";
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
 
 const model = policyStudioModel();
+const openWindows = new Set<Window>();
 const assets = model.catalog.frameworks.flatMap((framework) =>
   framework.assets.map((asset) => ({ framework, asset })),
 );
-const mainAssets = assets.filter(
-  ({ framework, asset }) =>
-    framework.id !== "ecc" || !["lang", "framework", "capability", "module"].includes(asset.kind),
-);
+const mainAssets = assets;
 
 // Real, shipped fixtures for the two vet verdicts the vendor lock actually
 // carries at this pin. A second, distinct pass example lets the fulfillment
@@ -34,6 +32,7 @@ type Entry = { framework: { id: string }; asset: { kind: string; id: string } };
 
 function studioWindow(studioModel: PolicyStudioModel): Window {
   const window = new Window({ url: "http://localhost/" });
+  openWindows.add(window);
   const html = policyStudioHtml(studioModel);
   window.document.write(html);
   (window as unknown as { structuredClone: typeof structuredClone }).structuredClone =
@@ -43,6 +42,11 @@ function studioWindow(studioModel: PolicyStudioModel): Window {
   window.eval(scripts.join("\n"));
   return window;
 }
+
+afterEach(async () => {
+  await Promise.all([...openWindows].map((window) => window.happyDOM.close()));
+  openWindows.clear();
+});
 
 function click(window: Window, selector: string): void {
   const node = window.document.querySelector(selector);
@@ -73,6 +77,35 @@ function reportPreview(window: Window): string {
   } | null;
   if (node === null) throw new Error("expected #report-preview");
   return node.value;
+}
+
+function fulfillmentCounts(window: Window): {
+  materializing: number;
+  blocked: number;
+  owed: number;
+  missing: number;
+} {
+  const preview = window.document.getElementById("config-preview") as unknown as {
+    value: string;
+  } | null;
+  if (preview === null) throw new Error("expected policy preview");
+  const policy = JSON.parse(preview.value) as {
+    governance: {
+      externalSelections: Array<{ framework: string; items: Array<{ id: string }> }>;
+    };
+  };
+  const counts = { materializing: 0, blocked: 0, owed: 0, missing: 0 };
+  for (const group of policy.governance.externalSelections) {
+    const framework = model.catalog.frameworks.find((item) => item.id === group.framework);
+    for (const item of group.items) {
+      const asset = framework?.assets.find((candidate) => candidate.id === item.id);
+      if (asset === undefined) counts.missing += 1;
+      else if (asset.vet?.verdict === "pass") counts.materializing += 1;
+      else if (asset.vet?.verdict === "blocked") counts.blocked += 1;
+      else counts.owed += 1;
+    }
+  }
+  return counts;
 }
 
 /**
@@ -363,10 +396,13 @@ describe("selection to fulfillment affordance", () => {
       click(window, selectSelector(passExample2));
       click(window, selectSelector(blockedExample));
       const preview = reportPreview(window);
+      const counts = fulfillmentCounts(window);
       expect(preview).toContain(
         "Fulfillment summary (governed projection, engine-evaluated): " +
-          "2 would materialize directly, 1 vet-blocked and recorded as intent only, " +
-          "0 with evidence still owed, 0 selected but not shown as a row at this pin.",
+          `${counts.materializing} would materialize directly, ` +
+          `${counts.blocked} vet-blocked and recorded as intent only, ` +
+          `${counts.owed} with evidence still owed, ` +
+          `${counts.missing} selected but not shown as a row at this pin.`,
       );
     });
 
@@ -405,14 +441,19 @@ describe("selection to fulfillment affordance", () => {
     // a row this change added.
     const window = studioWindow(model);
     click(window, selectSelector(passExample));
-    const rowCountAfterFirstSelection =
-      window.document.querySelectorAll("#framework-rows .row").length;
+    const rowCountAfterFirstSelection = window.document.querySelectorAll(
+      "#framework-rows .row, #ecc-mcp-declaration-rows .row",
+    ).length;
     expect(rowCountAfterFirstSelection).toBe(
-      mainAssets.filter(({ framework }) => framework.id === passExample.framework.id).length,
+      mainAssets.filter(
+        ({ framework, asset }) =>
+          framework.id === passExample.framework.id && asset.kind !== "skill",
+      ).length,
     );
     click(window, selectSelector(blockedExample));
-    const rowCountAfterSecondSelection =
-      window.document.querySelectorAll("#framework-rows .row").length;
+    const rowCountAfterSecondSelection = window.document.querySelectorAll(
+      "#framework-rows .row, #ecc-mcp-declaration-rows .row",
+    ).length;
     expect(rowCountAfterSecondSelection).toBe(rowCountAfterFirstSelection);
   });
 
@@ -430,16 +471,26 @@ describe("selection to fulfillment affordance", () => {
     const document = window.document;
     const chip = (owner: string): string | null | undefined =>
       document.querySelector(`#owner-ticker [data-owner-focus="${owner}"] b`)?.textContent;
-    const aihControls = model.catalog.mcp.length + model.catalog.hooks.length;
+    const aihControls =
+      model.catalog.mcp.length +
+      model.catalog.hooks.length +
+      model.catalog.aihSkills.length +
+      model.catalog.aihAgents.length;
     const ecc = model.catalog.frameworks.find((framework) => framework.id === "ecc");
     if (ecc === undefined) throw new Error("expected the ecc framework in the catalog");
     // Selecting an ecc component makes ecc the active framework, which hides
     // superpowers' groups from the plane entirely (pre-existing exclusivity,
     // unrelated to this row) - the ticker must agree with that, not with 15.
     expect(chip("AIH")).toBe(String(aihControls));
-    expect(chip("ECC")).toBe(String(ecc.assets.length));
+    const governedSkills = ecc.assets.filter((asset) => asset.kind === "skill").length;
+    const visibleEccInventory =
+      ecc.assets.length -
+      governedSkills +
+      model.catalog.eccSkills.length +
+      model.catalog.externalMcp.length;
+    expect(chip("ECC")).toBe(String(visibleEccInventory));
     expect(chip("Superpowers")).toBe("0");
     expect(chip("You")).toBe("0");
-    expect(chip("all")).toBe(String(aihControls + ecc.assets.length));
+    expect(chip("all")).toBe(String(aihControls + visibleEccInventory));
   });
 });

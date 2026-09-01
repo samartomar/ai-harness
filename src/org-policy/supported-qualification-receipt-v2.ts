@@ -93,7 +93,7 @@ const QualificationBasisSchema = z
     catalogDigest: digest,
     catalogHeadDigest: digest,
     catalogMemberDigest: digest,
-    subjectKind: z.enum(["tool", "skill", "mcp", "package", "profile"]),
+    subjectKind: z.enum(["tool", "skill", "agent", "mcp", "package", "profile"]),
     subjectDigest: digest,
   })
   .strict();

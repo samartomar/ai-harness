@@ -345,6 +345,8 @@ export interface EffectiveOrgPolicy {
    */
   externalSelections: Array<{
     framework: "ecc" | "superpowers";
+    /** Explicit administrator choices; absent on legacy schema-v2 policies. */
+    roots?: string[];
     items: Array<{
       kind: string;
       id: string;
@@ -1388,6 +1390,10 @@ export function resolveEffectiveOrgPolicy(
     })),
     externalSelections: governance.externalSelections.map((selection) => ({
       framework: selection.framework,
+      ...(selection.roots === undefined ? {} : { roots: [...selection.roots] }),
+      ...(selection.unattributedItems === undefined
+        ? {}
+        : { unattributedItems: [...selection.unattributedItems] }),
       items: selection.items.map((item) => ({ ...item, source: { ...item.source } })),
       status: "requested-evidence-needed" as const,
     })),
@@ -1414,6 +1420,7 @@ export function resolveEffectiveOrgPolicy(
 }
 
 const CANDIDATE_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
+  accountableOwner: "effective report: accountable candidate owner identity only",
   annotation: "effective report metadata consumer",
   autoExecute: "effective resolver: uncontrolled hook danger gate",
   "capabilities.*": "effective report metadata consumer",
@@ -1525,6 +1532,7 @@ const AUTHORITY_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
 
 const EXTERNAL_CURATION_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
   framework: "effective report: external framework identity only",
+  "items.*.accountableOwner": "effective report: accountable curation owner identity only",
   "items.*.audit.digest": "effective report: external audit reference digest only",
   "items.*.audit.record": "effective report: external audit reference locator only",
   "items.*.clarification": "effective report: external curation clarification only",
@@ -1537,6 +1545,9 @@ const EXTERNAL_CURATION_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
 
 const EXTERNAL_SELECTION_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
   framework: "effective report: requested external framework identity only",
+  "roots.*": "effective report: explicit external selection root identity only",
+  "unattributedItems.*":
+    "effective report: retained external selection with unavailable root provenance only",
   "items.*.id": "effective report: requested external component identity only",
   "items.*.kind": "effective report: requested external component kind only",
   "items.*.source.commit": "effective report: requested external source pin only",

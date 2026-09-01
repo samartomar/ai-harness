@@ -165,7 +165,7 @@ export const eccProfileSchema = z
       z.literal("/project-init"),
     ]),
     localPlannedSkills: z.tuple([z.literal("learn-eval"), z.literal("session-continuity")]),
-    repoCuratedSkills: z.tuple([z.literal("betterdoc"), z.literal("decision-partner")]),
+    repoCuratedSkills: z.tuple([z.literal("aih-betterdoc"), z.literal("decision-partner")]),
     ownership: z.array(ownershipSchema).min(1),
     state: z.object({ schemaVersion: z.literal(1), lifecycle: z.literal("active") }).strict(),
   })
@@ -299,7 +299,7 @@ export const AIH_ECC_PROFILE_TEMPLATE = {
   },
   aihAdaptedWorkflows: ["/auto-update", "/hookify", "/hookify-configure", "/project-init"],
   localPlannedSkills: ["learn-eval", "session-continuity"],
-  repoCuratedSkills: ["betterdoc", "decision-partner"],
+  repoCuratedSkills: ["aih-betterdoc", "decision-partner"],
   ownership: [
     {
       sourcePin: "0c1d7be9a750627fb2a6534c78a998cc46d03f9c",

@@ -239,7 +239,7 @@ try {
     const decision = {
       acceptedFindings: [],
       acceptedGaps: [],
-      actor: "cold-admin",
+      actor: "cold.admin@acme.example",
       allowedEffects: ["use"],
       conditions: [],
       control: { digest: sha256("organization tool review control"), id: "review-control" },

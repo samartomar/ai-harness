@@ -21,7 +21,7 @@ const script = join(
   process.cwd(),
   "packs",
   "review-quality",
-  "bugbounty-pr-scan",
+  "aih-bugbounty",
   "scripts",
   "scan_ecc_pr.py",
 );
@@ -109,7 +109,7 @@ function write(rel: string, body: string): void {
 }
 
 function initRepo(): void {
-  repo = mkdtempSync(join(tmpdir(), "aih-bugbounty-pr-scan-"));
+  repo = mkdtempSync(join(tmpdir(), "aih-bugbounty-"));
   run("git", ["init"], repo);
   run("git", ["config", "user.email", "aih@example.invalid"], repo);
   run("git", ["config", "user.name", "AIH Test"], repo);
@@ -236,7 +236,7 @@ describe("spawn diagnostics", () => {
   });
 });
 
-describe("bugbounty-pr-scan", () => {
+describe("aih-bugbounty", () => {
   it("skips sensitive changed paths without reading their contents", () => {
     initRepo();
     write(".env", "SECRET_SENTINEL=do-not-read\n");

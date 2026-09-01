@@ -14,10 +14,7 @@ const model = policyStudioModel();
 const assets = model.catalog.frameworks.flatMap((framework) =>
   framework.assets.map((asset) => ({ framework, asset })),
 );
-const mainAssets = assets.filter(
-  ({ framework, asset }) =>
-    framework.id !== "ecc" || !["lang", "framework", "capability", "module"].includes(asset.kind),
-);
+const mainAssets = assets;
 type InventoryEntry = (typeof assets)[number];
 
 /**
@@ -45,6 +42,7 @@ function studio(): Window {
 
 interface SelectionGroup {
   framework: string;
+  roots?: string[];
   items: Array<{ kind: string; id: string; source: Record<string, string> }>;
 }
 
@@ -80,9 +78,11 @@ function inventoryRows(window: Window): Array<{
   textContent: string | null;
   querySelector(selector: string): { textContent: string | null } | null;
 }> {
-  const container = window.document.getElementById("framework-rows");
-  if (container === null) throw new Error("workbench renders no framework inventory");
-  return [...container.querySelectorAll(".row")] as unknown as Array<{
+  return [
+    ...window.document.querySelectorAll(
+      "#framework-rows .row, #ecc-skill-rows .row, #ecc-mcp-declaration-rows .row",
+    ),
+  ].filter((row) => row.querySelector("[data-framework-select]") !== null) as unknown as Array<{
     textContent: string | null;
     querySelector(selector: string): { textContent: string | null } | null;
   }>;
@@ -108,8 +108,11 @@ describe("policy studio framework selection", () => {
   });
 
   it("leaves no row without a next action", () => {
-    const container = studio().document.getElementById("framework-rows");
-    expect(container?.textContent ?? "").not.toContain("No next action");
+    expect(
+      inventoryRows(studio())
+        .map((row) => row.textContent)
+        .join(" "),
+    ).not.toContain("No next action");
   });
 
   // The strongest case for the model: a kind the external-curation grammar
@@ -183,6 +186,7 @@ describe("policy studio framework selection", () => {
           externalSelections: [
             {
               framework: uncuratable.framework.id,
+              roots: [uncuratable.asset.id],
               items: [
                 {
                   kind: uncuratable.asset.kind,
@@ -198,6 +202,7 @@ describe("policy studio framework selection", () => {
     expect(resolved.externalSelections).toEqual([
       {
         framework: uncuratable.framework.id,
+        roots: [uncuratable.asset.id],
         items: [
           {
             kind: uncuratable.asset.kind,
@@ -210,6 +215,88 @@ describe("policy studio framework selection", () => {
     ]);
     expect(resolved.candidates).toHaveLength(0);
     expect(resolved.blocking).toBe(false);
+  });
+
+  it("rejects an explicit selection root that is absent from the dependency closure", () => {
+    const policy = defaultStudioPolicy();
+    const governance = policy.governance;
+    if (governance === undefined) throw new Error("expected default studio governance");
+    expect(() =>
+      parseOrgPolicy({
+        ...policy,
+        governance: {
+          supportedClis: ["claude"],
+          ...governance,
+          externalSelections: [
+            {
+              framework: uncuratable.framework.id,
+              roots: ["lang:not-in-items"],
+              items: [
+                {
+                  kind: uncuratable.asset.kind,
+                  id: uncuratable.asset.id,
+                  source: { ...uncuratable.asset.source },
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    ).toThrow(/selection root lang:not-in-items is not present in items/i);
+  });
+
+  it("rejects duplicate explicit selection roots", () => {
+    const policy = defaultStudioPolicy();
+    const governance = policy.governance;
+    if (governance === undefined) throw new Error("expected default studio governance");
+    expect(() =>
+      parseOrgPolicy({
+        ...policy,
+        governance: {
+          supportedClis: ["claude"],
+          ...governance,
+          externalSelections: [
+            {
+              framework: uncuratable.framework.id,
+              roots: [uncuratable.asset.id, uncuratable.asset.id],
+              items: [
+                {
+                  kind: uncuratable.asset.kind,
+                  id: uncuratable.asset.id,
+                  source: { ...uncuratable.asset.source },
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    ).toThrow(/duplicate external selection root/i);
+  });
+
+  it("accepts legacy selections that omit explicit roots without inventing them", () => {
+    const policy = defaultStudioPolicy();
+    const governance = policy.governance;
+    if (governance === undefined) throw new Error("expected default studio governance");
+    const parsed = parseOrgPolicy({
+      ...policy,
+      governance: {
+        supportedClis: ["claude"],
+        ...governance,
+        externalSelections: [
+          {
+            framework: uncuratable.framework.id,
+            items: [
+              {
+                kind: uncuratable.asset.kind,
+                id: uncuratable.asset.id,
+                source: { ...uncuratable.asset.source },
+              },
+            ],
+          },
+        ],
+      },
+    });
+    expect(parsed.governance?.externalSelections[0]).not.toHaveProperty("roots");
   });
 
   // The grammar defaults this array, so a policy document written before it

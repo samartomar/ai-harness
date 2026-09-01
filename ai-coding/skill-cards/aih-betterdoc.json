@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "name": "betterdoc",
-  "source": "packs/docs-quality/betterdoc",
+  "name": "aih-betterdoc",
+  "source": "packs/docs-quality/aih-betterdoc",
   "commit": "local",
   "license": "Apache-2.0",
   "owner": "aih-maintainers",
@@ -13,7 +13,7 @@
   "requiresMcp": false,
   "requiresShell": false,
   "scanEvidence": [
-    ".aih/skill-reports/betterdoc-local.json"
+    ".aih/skill-reports/aih-betterdoc-local.json"
   ],
   "approval": {
     "verdict": "YELLOW",

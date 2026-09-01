@@ -13,6 +13,57 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   every tag workflow publishes first under npm `next`, and the same immutable version
   reaches `latest` only after public installed acceptance and separate authorization.
 
+### Fixed
+
+- Place the pinned Python shared library in Ubuntu amd64's default loader directory and prove the
+  interpreter inside Scanner's clear-environment Bubblewrap boundary, so detached baseline
+  acquisition cannot fail on a missing `libpython3.13.so.1.0` mapping without exposing `/etc` or
+  inherited loader variables.
+- Reconcile the ECC hook-control inventory to the exact active source pin, adding the
+  `post:skill:track` and `stop:plan-canvas-pending` controls so administrators can disable every
+  currently gated hook through the Workbench's source-locked profile surface.
+- Classify ECC's complete OpenCode package tree as host runtime during governed
+  materialization, so executable plugins and their auto-loading configuration cannot be
+  mistaken for ordinary content when hook/runtime operations are excluded.
+- Preserve explicit ECC and Superpowers Workbench selection roots separately from their complete
+  dependency closure, so exported and effective-policy review can distinguish administrator
+  choices from automatically required Skills, Agents, baselines, and modules. Legacy policies may
+  omit roots; malformed, duplicate, or out-of-closure roots fail closed. The no-repository
+  Workbench also exposes AIH's conditional Playwright MCP as an initially unrequested control,
+  while bulk profiles leave it additive and target-repository runtime resolution still refuses it
+  outside a detected web stack. Selected AIH MCP and Hook controls remain directly reversible
+  instead of becoming disabled after the first request.
+- Show Allowed CLI counts as selected over available, add explicit Select all and Done controls,
+  and refuse a manual Enterprise-posture transition until at least one CLI is explicitly
+  sanctioned. This prevents the misleading zero-selected `11` badge and the invalid draft state
+  that caused every subsequent Workbench selection to be rejected.
+- Keep the Allowed CLI popover open while administrators make consecutive selections. Repainting
+  the policy no longer turns an in-panel selection into an outside click; explicit outside clicks
+  and Escape still dismiss the panel.
+
+### Changed
+
+- Correct the active code-review-graph source repository without changing its `2.3.7` bytes, and
+  hold `2.3.8` because inherited OpenAI-compatible environment can silently enable network egress.
+- Advance the exact SBOM, CodeQL, and opt-in Claude workflow actions after reviewing their
+  immutable tags, unchanged AIH input surfaces, and upstream security or bounded-execution fixes.
+- Advance the exact uv toolchain from `0.12.5` to `0.12.7` across both scanner workflows and the
+  controlled SkillSpector build after all five committed locks and offline exports remained stable.
+- Make ECC Workbench selections dependency-closed. Selecting a module now visibly selects its
+  corresponding selectable Skills, Agents, and baselines; selecting a language first brings the
+  canonical ECC Core module closure. Whole-module semantic components, module prerequisites, and
+  declared riders use the same mapping, export the same complete set, and safely prune only
+  unshared derived requirements when the root is removed. Policy import, browser validation, and
+  governed materialization all refuse incomplete closures before acquisition or installation.
+- Rename the three first-party skill identities to the concise AIH-owned names
+  `aih-betterdoc`, `aih-gov-doctor`, and `aih-bugbounty`. Their committed pack paths,
+  manifests, self-hosting references, runtime lookups, and public examples now use the same
+  canonical names. The Policy Workbench binds these first-party selections to AIH's managed
+  Catalog automatically and shows packaged-source proof without claiming missing qualification,
+  promotion, custody, or target-repository evidence. It presents `aih-betterdoc` as the
+  context-preserving AIH Skill and presents `aih-gov-doctor` plus `aih-bugbounty` separately as
+  AIH Agent workflows whose governed instruction sources are packaged as skills; selecting them
+  records package intent but does not claim the browser launched an isolated worker.
 ## [Core 0.3.0] - 2026-08-27
 
 ### Fixed

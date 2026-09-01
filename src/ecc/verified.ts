@@ -179,6 +179,7 @@ if (spec.excludeAihOwnedSurfaces === true) {
   };
   const mcpPath = (value) => /(?:^|\/)(?:\.mcp\.json|mcp\.json|mcp-servers\.json)$/i.test(value) || /^(?:mcp-configs|mcp)(?:\/|$)/i.test(value);
   const hostRuntimePath = (value) => /(?:^|\/)(?:\.claude|\.codex|\.cursor|\.kiro|\.gemini|\.opencode|\.zed)\/(?:hooks(?:\/|$)|(?:settings(?:\.local)?\.json|config\.(?:json|toml)))$/i.test(value) || /^(?:hooks|scripts\/hooks)(?:\/|$)/i.test(value);
+  const openCodeRuntimeTree = (value) => /(?:^|\/)(?:\.opencode|\.config\/opencode)(?:\/|$)/i.test(value);
   const eccContentPath = (value) => value === "AGENTS.md" || /^(?:\.agents\/(?:plugins|skills)\/|agents\/|skills\/|commands\/|rules\/|\.claude\/commands\/|\.codex\/AGENTS\.md$)/.test(value);
   const eccContentDestination = (source, destination) => {
     const mapping = (() => {
@@ -201,7 +202,7 @@ if (spec.excludeAihOwnedSurfaces === true) {
     const source = assertSourcePath(operation.sourceRelativePath);
     const destination = assertDestinationPath(operation.destinationPath);
     if (mcpPath(source) || mcpPath(destination)) return "mcp";
-    if (operation.moduleId === "hooks-runtime" || hostRuntimePath(source) || hostRuntimePath(destination)) return "host-runtime";
+    if (operation.moduleId === "hooks-runtime" || hostRuntimePath(source) || hostRuntimePath(destination) || openCodeRuntimeTree(source) || (!eccContentPath(source) && openCodeRuntimeTree(destination))) return "host-runtime";
     if (operation.kind === "merge-json") throw new Error("unclassifiable governed ECC merge-json operation: " + operation.moduleId + ":" + destination);
     if (!eccContentPath(source) || !eccContentDestination(source, destination)) throw new Error("unclassifiable governed ECC content operation: " + operation.moduleId + ":" + source + " -> " + destination);
     return "ecc-content";

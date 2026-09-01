@@ -53,9 +53,16 @@ export async function authorProtectedPolicyViaPackedWorkbench({
   if (scripts.length === 0) throw new Error("packed-workbench-script-missing");
   window.eval(scripts.join("\n"));
 
+  const presetSelect = window.document.getElementById("preset-select");
   const enterprise = window.document.querySelector('[data-preset="enterprise"]');
-  if (!enterprise) throw new Error("packed-workbench-enterprise-preset-missing");
-  enterprise.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  if (presetSelect && "value" in presetSelect) {
+    presetSelect.value = "enterprise";
+    presetSelect.dispatchEvent(new window.Event("change", { bubbles: true }));
+  } else if (enterprise) {
+    enterprise.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  } else {
+    throw new Error("packed-workbench-enterprise-preset-missing");
+  }
 
   const form = window.document.getElementById("protected-form");
   if (!form) throw new Error("packed-workbench-protected-form-missing");

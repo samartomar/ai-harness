@@ -27,7 +27,7 @@ const approval = {
   id: "vercel",
   sourceContentSha256: ECC_MCP_CATALOG_PROVENANCE.contentSha256,
   state: "approved",
-  approvedBy: "security-admin",
+  approvedBy: "approver@example.com",
   authenticationMode: "oauth",
   allowedDataClasses: ["deployment-metadata"],
 };
@@ -48,11 +48,22 @@ describe("declarative ECC external MCP approvals", () => {
     });
   });
 
+  it("keeps existing stable approver identifiers readable while new approvals use email", () => {
+    const legacyApproval = { ...approval, approvedBy: "security-admin" };
+    const parsed = parseOrgPolicy(policy([legacyApproval]));
+    expect(parsed.governance?.eccMcpApprovals).toEqual([legacyApproval]);
+    expect(resolveEccMcpApproval([legacyApproval], "vercel")).toEqual({
+      state: "approved",
+      approval: legacyApproval,
+    });
+  });
+
   it.each([
     ["AIH-owned id", { ...approval, id: "github" }],
     ["unknown id", { ...approval, id: "not-in-pinned-ecc" }],
     ["source digest mismatch", { ...approval, sourceContentSha256: "0".repeat(64) }],
     ["empty allowed data", { ...approval, allowedDataClasses: [] }],
+    ["unverifiable approver identity", { ...approval, approvedBy: "Samar" }],
     ["extra field", { ...approval, extra: true }],
   ])("rejects %s", (_label, invalid) => {
     expect(OrgPolicySchema.safeParse(policy([invalid])).success).toBe(false);

@@ -111,7 +111,7 @@ afterEach(() => {
 });
 
 function fixture(
-  kind: "tool" | "skill" | "mcp" | "package" = "mcp",
+  kind: "tool" | "skill" | "agent" | "mcp" | "package" = "mcp",
   revision = "v1",
   effect: "configure" | "use" = "configure",
 ) {
@@ -291,7 +291,7 @@ function fixtureFile(value: ReturnType<typeof fixture>, index: number) {
 }
 
 describe("upstream artifact observer V1", () => {
-  it.each(["tool", "skill", "mcp", "package"] as const)(
+  it.each(["tool", "skill", "agent", "mcp", "package"] as const)(
     "observes an organization-qualified catalog-absent %s without writing or executing it",
     async (kind) => {
       const value = fixture(kind);
@@ -765,6 +765,38 @@ describe("upstream artifact observer V1", () => {
       expect(readFileSync(join(root, file.path))).toEqual(observedBefore[index]);
     }
     expect(upstreamArtifactLifecycleCommand.requireExplicitApply).toBe(true);
+  });
+
+  it("records an organization-owned Agent in the same exact durable lifecycle", async () => {
+    const value = fixture("agent");
+    writeFixture(value);
+    const apply = context(options(value), [], true);
+    const applied = await executePlan(await upstreamArtifactLifecyclePlan(apply), apply, {
+      skipWorktreeGate: true,
+    });
+
+    expect(applied.digests[0]?.data).toMatchObject({
+      applied: true,
+      outcome: "fulfilled",
+      state: "observed-effective",
+    });
+    expect(readUpstreamArtifactLifecycleStoreV1(root)).toMatchObject({
+      kind: "complete",
+      records: [
+        {
+          state: "observed-effective",
+          subject: { kind: "agent", id: "custom-agent" },
+        },
+      ],
+    });
+    await expect(resolveUpstreamArtifactEffectiveStateV1(context(options(value)))).resolves.toEqual(
+      [
+        expect.objectContaining({
+          state: "observed-effective",
+          subject: { kind: "agent", id: "custom-agent" },
+        }),
+      ],
+    );
   });
 
   it("does not promote a lifecycle record after its live inputs disappear", async () => {

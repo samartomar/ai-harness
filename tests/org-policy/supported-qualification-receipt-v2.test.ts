@@ -1214,7 +1214,67 @@ describe("AihSupportedQualificationReceiptV2", () => {
     }
   });
 
-  it("requires the supported receipt validity window to stay within the current decision", async () => {
+  it("accepts a current exact receipt issued before a truthful post-publication organization decision", async () => {
+    const value = decision({
+      issuedAt: "2026-08-02T00:00:00Z",
+      notBefore: "2026-08-02T00:00:00Z",
+    });
+    const verifiedAuthority = await authority(value, undefined, {
+      issuedAt: "2026-08-02T00:00:00Z",
+    });
+    writeReceipt(receipt(value));
+
+    const result = await verifyAihSupportedQualificationReceiptV2(
+      context((argv) => ({ code: argv[0] === trustedSupportedGh ? 0 : 1 })),
+      {
+        authority: verifiedAuthority,
+        decisionReference: {
+          id: value.id,
+          digest: governanceDecisionDigestV2(value as never),
+        },
+        subject: value.subject,
+        target: "claude",
+        effect: "configure",
+        supportedTargets: ["claude"],
+        now: "2026-08-02T12:00:00Z",
+      },
+    );
+
+    expect(result.problem).toBeUndefined();
+    expect(result.qualification).toBeDefined();
+  });
+
+  it("refuses a dormant organization decision that predates support publication", async () => {
+    const value = decision();
+    const verifiedAuthority = await authority(value);
+    writeReceipt(
+      receipt(value, {
+        issuedAt: "2026-08-02T00:00:00Z",
+        notBefore: "2026-08-02T00:00:00Z",
+      }),
+    );
+
+    const result = await verifyAihSupportedQualificationReceiptV2(
+      context((argv) => ({ code: argv[0] === trustedSupportedGh ? 0 : 1 })),
+      {
+        authority: verifiedAuthority,
+        decisionReference: {
+          id: value.id,
+          digest: governanceDecisionDigestV2(value as never),
+        },
+        subject: value.subject,
+        target: "claude",
+        effect: "configure",
+        supportedTargets: ["claude"],
+        now: "2026-08-02T12:00:00Z",
+      },
+    );
+
+    expect(result.problem).toBeDefined();
+    expect(result.qualification).toBeUndefined();
+  });
+
+  it("requires the supported receipt to expire no later than the current decision", async () => {
     const value = decision();
     const verifiedAuthority = await authority(value);
     const input = {
@@ -1231,13 +1291,6 @@ describe("AihSupportedQualificationReceiptV2", () => {
     };
     const outsideDecisionWindows: Array<[string, ReturnType<typeof receipt>]> = [
       ["expires after the current decision", receipt(value, { expiresAt: "2026-08-10T00:00:01Z" })],
-      [
-        "starts before the current decision",
-        receipt(value, {
-          issuedAt: "2026-07-31T00:00:00Z",
-          notBefore: "2026-07-31T00:00:00Z",
-        }),
-      ],
     ];
     for (const [condition, outsideDecisionWindow] of outsideDecisionWindows) {
       writeReceipt(outsideDecisionWindow);

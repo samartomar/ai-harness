@@ -212,7 +212,7 @@ aih pack install --pack docs-quality --posture enterprise --apply
 aih pack status --pack enterprise-skills
 aih pack install --pack enterprise-skills --posture enterprise --apply
 aih skill inventory
-aih skill sync --name betterdoc --cli claude,codex --posture enterprise --apply
+aih skill sync --name aih-betterdoc --cli claude,codex --posture enterprise --apply
 aih skill sync --name frontend-design --cli claude,codex --posture enterprise --apply
 aih skill sync --name ui-ux-pro-max --cli claude,codex --posture enterprise --apply
 ```

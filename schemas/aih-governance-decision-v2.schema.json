@@ -53,6 +53,7 @@
                   "enum": [
                     "tool",
                     "skill",
+                    "agent",
                     "mcp",
                     "package",
                     "profile"
@@ -107,6 +108,7 @@
               "enum": [
                 "tool",
                 "skill",
+                "agent",
                 "mcp",
                 "package",
                 "profile"
@@ -429,8 +431,17 @@
           "pattern": "^[a-z][a-z0-9-]{0,63}$"
         },
         "actor": {
-          "type": "string",
-          "pattern": "^[a-z][a-z0-9-]{0,63}$"
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,63}$"
+            },
+            {
+              "type": "string",
+              "maxLength": 254,
+              "pattern": "^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$"
+            }
+          ]
         },
         "reason": {
           "type": "string",
@@ -552,6 +563,7 @@
                   "enum": [
                     "tool",
                     "skill",
+                    "agent",
                     "mcp",
                     "package",
                     "profile"
@@ -606,6 +618,7 @@
               "enum": [
                 "tool",
                 "skill",
+                "agent",
                 "mcp",
                 "package",
                 "profile"
@@ -928,8 +941,17 @@
           "pattern": "^[a-z][a-z0-9-]{0,63}$"
         },
         "actor": {
-          "type": "string",
-          "pattern": "^[a-z][a-z0-9-]{0,63}$"
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,63}$"
+            },
+            {
+              "type": "string",
+              "maxLength": 254,
+              "pattern": "^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$"
+            }
+          ]
         },
         "reason": {
           "type": "string",
@@ -1056,6 +1078,7 @@
                   "enum": [
                     "tool",
                     "skill",
+                    "agent",
                     "mcp",
                     "package",
                     "profile"
@@ -1110,6 +1133,7 @@
               "enum": [
                 "tool",
                 "skill",
+                "agent",
                 "mcp",
                 "package",
                 "profile"
@@ -1432,8 +1456,17 @@
           "pattern": "^[a-z][a-z0-9-]{0,63}$"
         },
         "actor": {
-          "type": "string",
-          "pattern": "^[a-z][a-z0-9-]{0,63}$"
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9-]{0,63}$"
+            },
+            {
+              "type": "string",
+              "maxLength": 254,
+              "pattern": "^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$"
+            }
+          ]
         },
         "reason": {
           "type": "string",

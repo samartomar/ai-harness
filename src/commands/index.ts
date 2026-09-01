@@ -693,7 +693,7 @@ export function registerCommands(
     .description(trustScanCommand.summary)
     .argument(
       "<target>",
-      "local path, GitHub owner/repo, or policy-pinned npm package trust source",
+      "local path, GitHub owner/repo, policy-pinned npm package, or artifact intake JSON",
     );
   addFlagsForSpec(scan, trustScanCommand);
   addOptionsForSpec(scan, trustScanCommand);

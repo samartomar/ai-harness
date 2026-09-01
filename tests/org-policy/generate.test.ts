@@ -24,6 +24,18 @@ import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 
 let dir: string;
+const openWindows = new Set<Window>();
+
+function workbenchWindow(): Window {
+  const window = new Window({ url: "http://localhost/" });
+  openWindows.add(window);
+  return window;
+}
+
+async function closeWorkbenchWindow(window: Window): Promise<void> {
+  openWindows.delete(window);
+  await window.happyDOM.close();
+}
 
 /**
  * FileReader resolves on its own schedule, so a fixed sleep is a race the suite
@@ -42,7 +54,9 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "aih-policy-generate-"));
 });
 
-afterEach(() => {
+afterEach(async () => {
+  await Promise.all([...openWindows].map(closeWorkbenchWindow));
+  openWindows.clear();
   rmSync(dir, { recursive: true, force: true });
 });
 
@@ -317,7 +331,7 @@ describe("policy generate", () => {
   });
 
   it("keeps standalone decision import strict, inert, and parity-checked in the browser", async () => {
-    const window = new Window({ url: "http://localhost/" });
+    const window = workbenchWindow();
     const html = policyStudioHtml(policyStudioModel());
     window.document.write(html);
     loadStudio(window, html);
@@ -416,7 +430,7 @@ describe("policy generate", () => {
   });
 
   it("keeps decision import deterministic across out-of-order file reads", async () => {
-    const window = new Window({ url: "http://localhost/" });
+    const window = workbenchWindow();
     const readers: Array<{
       result: string | null;
       onload: (() => void) | null;
@@ -543,7 +557,7 @@ describe("policy generate", () => {
     for (const policy of invalidPolicies) {
       expect(() => parseStudioPolicyImport(JSON.stringify(policy))).toThrow();
     }
-    const window = new Window({ url: "http://localhost/" });
+    const window = workbenchWindow();
     const html = policyStudioHtml(policyStudioModel());
     window.document.write(html);
     loadStudio(window, html);
@@ -613,7 +627,7 @@ describe("policy generate", () => {
         type: "remote",
         origin: "https://mcp.figma.com",
         approval: {
-          approvedBy: "security-admin",
+          approvedBy: "approver@example.com",
           authenticationMode: "oauth",
           allowedDataClasses: ["design-metadata"],
         },
@@ -626,7 +640,7 @@ describe("policy generate", () => {
       evidence: { record: "audit-remote-2026" },
     });
 
-    const window = new Window({ url: "http://localhost/" });
+    const window = workbenchWindow();
     const html = policyStudioHtml(policyStudioModel());
     window.document.write(html);
     loadStudio(window, html);
@@ -744,17 +758,19 @@ describe("policy generate", () => {
     const html = policyStudioHtml(model);
     expect(html).toContain('aria-live="polite"');
     expect(html).toContain('role="tooltip"');
+    expect(html).toContain('<link rel="icon" href="data:,">');
     expect(html).toContain("Escape");
     expect(html).toContain("Blocked - evidence owed at this pin");
     expect(html).toContain("report-only and not enforced by AIH");
     expect(html).toContain("Preserve approval subjects in policy (not effective)");
-    expect(html).toContain("summary{min-height:32px}");
+    expect(html).toContain("summary{cursor:pointer");
+    expect(html).toContain("min-height:28px");
     expect(html).toContain("const unsafePath=");
     expect(html).not.toMatch(/gstack/i);
   });
 
   it("has semantic controls and a usable accessible help interaction in the generated DOM", () => {
-    const window = new Window({ url: "http://localhost/" });
+    const window = workbenchWindow();
     const html = policyStudioHtml(policyStudioModel());
     window.document.write(html);
     loadStudio(window, html);
@@ -764,8 +780,11 @@ describe("policy generate", () => {
     expect(document.querySelector("button#add-curation")).not.toBeNull();
     expect(document.querySelector("textarea#config-preview")).not.toBeNull();
     expect(document.querySelector("textarea#report-preview")).not.toBeNull();
+    expect(document.querySelector("summary button, summary input, summary select")).toBeNull();
     const help = document.querySelector("button[data-tooltip-button]");
-    expect(help?.getAttribute("aria-describedby")).toMatch(/^tooltip-/);
+    const describedBy = help?.getAttribute("aria-describedby") ?? "";
+    expect(describedBy).not.toBe("");
+    expect(document.getElementById(describedBy)?.getAttribute("role")).toBe("tooltip");
     expect(document.querySelector(".tooltip")?.getAttribute("role")).toBe("tooltip");
     help?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
     expect(
@@ -789,7 +808,7 @@ describe("policy generate", () => {
   });
 
   it("rejects invalid browser imports and invalid authored custom text before it can become downloadable policy", async () => {
-    const window = new Window({ url: "http://localhost/" });
+    const window = workbenchWindow();
     const html = policyStudioHtml(policyStudioModel());
     window.document.write(html);
     loadStudio(window, html);
@@ -851,6 +870,7 @@ describe("policy generate", () => {
       (input as unknown as { value: string }).value = value;
     };
     setValue("custom-id", "custom-mcp");
+    setValue("custom-owner", "mcp.owner@example.com");
     setValue("custom-package", "@example/custom-mcp");
     setValue("custom-version", "1.2.3");
     setValue("custom-integrity", sha("a"));
@@ -867,7 +887,7 @@ describe("policy generate", () => {
     expect(document.getElementById("custom-rows")?.textContent).toContain("No custom candidates");
     setValue("remote-custom-id", "figma-remote");
     setValue("remote-custom-origin", "https://mcp.figma.com/mcp");
-    setValue("remote-custom-approved-by", "security-admin");
+    setValue("remote-custom-approved-by", "approver@example.com");
     setValue("remote-custom-authentication-mode", "oauth");
     setValue("remote-custom-data-classes", "design-metadata");
     setValue("remote-custom-evidence", "audit-remote-2026");
@@ -887,7 +907,7 @@ describe("policy generate", () => {
   });
 
   it("provides field recovery and safe edit/remove disclosures for pending and report-only rows", async () => {
-    const window = new Window({ url: "http://localhost/" });
+    const window = workbenchWindow();
     const html = policyStudioHtml(policyStudioModel());
     window.document.write(html);
     loadStudio(window, html);
@@ -915,6 +935,7 @@ describe("policy generate", () => {
       input.dispatchEvent(new window.Event("input", { bubbles: true }));
     };
     set("curation-id", "review-agent");
+    set("curation-owner", "framework.owner@acme.example");
     expect(document.getElementById("curation-id")?.getAttribute("aria-invalid")).toBeNull();
     expect(document.getElementById("curation-id")?.getAttribute("aria-describedby")).toBeNull();
     set("curation-repository", "acme/catalog");
@@ -955,7 +976,9 @@ describe("policy generate", () => {
       .getElementById("cancel-curation-edit")
       ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
     expect(framework.disabled).toBe(false);
-    expect(document.getElementById("curation-framework-label")?.textContent).toBe("Framework");
+    expect(document.getElementById("curation-framework-label")?.textContent).toBe(
+      "External framework owner",
+    );
     editCuration?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
     expect(framework.disabled).toBe(true);
     framework.value = "superpowers";
@@ -967,7 +990,9 @@ describe("policy generate", () => {
       "ecc: agent / review-agent",
     );
     expect(framework.disabled).toBe(false);
-    expect(document.getElementById("curation-framework-label")?.textContent).toBe("Framework");
+    expect(document.getElementById("curation-framework-label")?.textContent).toBe(
+      "External framework owner",
+    );
     expect(
       (document.getElementById("cancel-curation-edit") as unknown as { hidden: boolean } | null)
         ?.hidden,
@@ -981,6 +1006,7 @@ describe("policy generate", () => {
     );
 
     set("custom-id", "custom-mcp");
+    set("custom-owner", "mcp.owner@example.com");
     set("custom-package", "@example/custom-mcp");
     set("custom-version", "1.2.3");
     set("custom-integrity", sha("c"));
@@ -1001,7 +1027,7 @@ describe("policy generate", () => {
     );
     set("remote-custom-id", "figma-remote");
     set("remote-custom-origin", "https://mcp.figma.com");
-    set("remote-custom-approved-by", "security-admin");
+    set("remote-custom-approved-by", "approver@example.com");
     set("remote-custom-authentication-mode", "oauth");
     set("remote-custom-data-classes", "design-metadata");
     set("remote-custom-administrative-status", "approved");
@@ -1031,7 +1057,7 @@ describe("policy generate", () => {
   });
 
   it("keeps curation and preserved evidence detail in compact accessible disclosures", async () => {
-    const window = new Window({ url: "http://localhost/" });
+    const window = workbenchWindow();
     const html = policyStudioHtml(policyStudioModel());
     window.document.write(html);
     loadStudio(window, html);
@@ -1154,6 +1180,87 @@ describe("policy generate", () => {
         },
       },
       {
+        name: "external selection duplicate item refinement",
+        mutate: (policy) => {
+          const governance = policy.governance as {
+            externalSelections?: Array<{ framework: string; items: unknown[] }>;
+          };
+          const item = {
+            kind: "skill",
+            id: "duplicate-skill",
+            source: {
+              repository: "acme/ecc-catalog",
+              commit: "e".repeat(40),
+              path: "skills/duplicate-skill.md",
+            },
+          };
+          governance.externalSelections = [
+            { framework: "ecc", items: [item, structuredClone(item)] },
+          ];
+        },
+      },
+      {
+        name: "multiple selected framework refinement",
+        mutate: (policy) => {
+          const governance = policy.governance as {
+            externalSelections?: Array<{ framework: string; items: unknown[] }>;
+          };
+          governance.externalSelections = [
+            {
+              framework: "ecc",
+              items: [
+                {
+                  kind: "skill",
+                  id: "ecc-skill",
+                  source: {
+                    repository: "acme/ecc-catalog",
+                    commit: "e".repeat(40),
+                    path: "skills/ecc-skill.md",
+                  },
+                },
+              ],
+            },
+            {
+              framework: "superpowers",
+              items: [
+                {
+                  kind: "skill",
+                  id: "superpowers-skill",
+                  source: {
+                    repository: "acme/superpowers-catalog",
+                    commit: "f".repeat(40),
+                    path: "skills/superpowers-skill.md",
+                  },
+                },
+              ],
+            },
+          ];
+        },
+      },
+      {
+        name: "selection and curation overlap refinement",
+        mutate: (policy) => {
+          const governance = policy.governance as {
+            externalCuration: Array<{ items: Array<Record<string, unknown>> }>;
+            externalSelections?: Array<{ framework: string; items: unknown[] }>;
+          };
+          const curated = governance.externalCuration[0]?.items[1];
+          if (curated === undefined) throw new Error("expected curated Skill fixture");
+          governance.externalSelections = [
+            {
+              framework: "ecc",
+              items: [
+                {
+                  kind: curated.kind,
+                  id: curated.id,
+                  source: structuredClone(curated.source),
+                },
+              ],
+            },
+          ];
+        },
+      },
+      {
         name: "governance activation reference refinement",
         mutate: (policy) => {
           const governance = policy.governance as { activations: unknown[] };
@@ -1169,7 +1276,7 @@ describe("policy generate", () => {
       const policy = fullAuthoringPolicy();
       fixture.mutate(policy);
       expect(() => parseStudioPolicyImport(JSON.stringify(policy)), fixture.name).toThrow();
-      const window = new Window({ url: "http://localhost/" });
+      const window = workbenchWindow();
       const html = policyStudioHtml(policyStudioModel());
       window.document.write(html);
       loadStudio(window, html);
@@ -1190,8 +1297,9 @@ describe("policy generate", () => {
       expect(window.document.getElementById("announcement")?.textContent, fixture.name).toContain(
         "Policy import rejected",
       );
+      await closeWorkbenchWindow(window);
     }
-  });
+  }, 30_000);
 
   it("keeps browser import, validate, and download parity with command registry/index argument grammar", async () => {
     const cases = [
@@ -1218,7 +1326,7 @@ describe("policy generate", () => {
       } else {
         expect(() => parseStudioPolicyImport(JSON.stringify(policy))).toThrow();
       }
-      const window = new Window({ url: "http://localhost/" });
+      const window = workbenchWindow();
       const html = policyStudioHtml(policyStudioModel());
       window.document.write(html);
       loadStudio(window, html, fixture.accepted ? "" : `state.policy=${JSON.stringify(policy)};`);
@@ -1241,11 +1349,15 @@ describe("policy generate", () => {
           .getElementById("validate")
           ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
         expect(announcement?.textContent).toContain("validation passed");
-        const preset = document.querySelector('[data-preset="vibe"]');
+        const preset = document.getElementById("preset-select") as unknown as {
+          value: string;
+          dispatchEvent(event: unknown): boolean;
+        } | null;
         if (preset === null) throw new Error("expected Vibe preset");
         // Presets compose selections; posture-only behavior is covered separately.
         // This assertion is about the canonical rail control still working after an import.
-        preset.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+        preset.value = "vibe";
+        preset.dispatchEvent(new window.Event("change", { bubbles: true }));
         expect(announcement?.textContent).toContain("Vibe composed:");
       } else {
         expect(
@@ -1260,6 +1372,7 @@ describe("policy generate", () => {
           ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
         expect(announcement?.textContent).toContain("Download blocked");
       }
+      await closeWorkbenchWindow(window);
     }
-  });
+  }, 10_000);
 });

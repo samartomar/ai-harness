@@ -690,10 +690,15 @@ function assertContained(root: string, absPath: string): void {
  * {@link FsTransaction}. Re-writing identical bytes is a no-op (no rewrite, no
  * backup churn), matching {@link executePlan}'s idempotency contract.
  */
-export function writeArtifact(ctx: PlanContext, relPath: string, contents: string): string[] {
+export function assertArtifactOutputPath(ctx: PlanContext, relPath: string): void {
   const absPath = resolvePath(ctx, relPath);
   assertContained(ctx.root, absPath);
   assertNoSymlinkParents(ctx.root, absPath, relPath);
+}
+
+export function writeArtifact(ctx: PlanContext, relPath: string, contents: string): string[] {
+  assertArtifactOutputPath(ctx, relPath);
+  const absPath = resolvePath(ctx, relPath);
   const next = ensureTrailingNewline(contents);
   if (readIfExists(absPath) === next) return [];
   const txn = new FsTransaction();

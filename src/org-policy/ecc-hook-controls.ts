@@ -1,11 +1,11 @@
 /** Exact pinned sources for ECC hook-profile and per-hook-disable semantics. */
 export const ECC_HOOK_CONTROL_PROVENANCE = {
-  repository: "affaan-m/ECC",
-  commit: "623f2c020f052319657674e4e6c29ab5d0ad566b",
+  repository: "samartomar/ECC",
+  commit: "5caf398a91599029a176ca6d806409b00d1052c4",
   sources: [
     {
       path: "hooks/hooks.json",
-      sha256: "57d7e373deb8551169db88b5b6bc473c972177e496b682c8274d56af16aa882f",
+      sha256: "ddf283b6f0e0ce262008145f1a258ceb0a50b6836060e5b7bdaab60694018faf",
     },
     {
       path: "scripts/hooks/session-start-bootstrap.js",
@@ -17,22 +17,22 @@ export const ECC_HOOK_CONTROL_PROVENANCE = {
     },
     {
       path: "scripts/hooks/posttooluse-dispatcher.js",
-      sha256: "79b841ca3106ea891dc7df22faa2e6fb8b20ec8fbc8a33407f745cade2d1765c",
+      sha256: "65ca4075bed8fdc85c290e8299f76f25795fcd1595d47b41feb3985b7113d433",
     },
     {
       path: "scripts/hooks/run-with-flags.js",
-      sha256: "0f13516dbc51e6443c504d5f84cc531dae35b1eba7b993b6427207c224fd0e2f",
+      sha256: "0b30fae9163681b118307e62f23d055682d42faf004218b11d3ce76378f2f209",
     },
     {
       path: "scripts/lib/hook-flags.js",
-      sha256: "16f5288b4e242d5bbbfc98c5ffc331ac8699049d616be136086363baaba9c294",
+      sha256: "1f5fbf2d2ebd0ab07a3e54406db18c2932ae7bf965513ec12c521da1be54425d",
     },
   ],
   /**
    * SHA-256 of JSON.stringify(sources.map(({ path, sha256 }) => [path, sha256])).
    * This binds the reviewed inventory and the runtime flag grammar together.
    */
-  contentSha256: "1aef3f95cb5e91c0248998c26889c1a7806ecee76d10e8338107a849963cd7eb",
+  contentSha256: "7c58c4d611b9b8724690f0f018405e491965d5749b7ad82797a37e0c61d5955b",
 } as const;
 
 export const ECC_HOOK_CONTROL_SOURCE_CONTENT_SHA256 = ECC_HOOK_CONTROL_PROVENANCE.contentSha256;
@@ -120,6 +120,18 @@ export const eccHookControlCatalog: readonly EccHookControlCatalogEntry[] = [
     id: "post:mcp-health-check",
     event: "PostToolUseFailure",
     profiles: STANDARD_STRICT,
+    disableEligible: true,
+  },
+  {
+    id: "post:skill:track",
+    event: "PostToolUseFailure",
+    profiles: STANDARD_STRICT,
+    disableEligible: true,
+  },
+  {
+    id: "stop:plan-canvas-pending",
+    event: "Stop",
+    profiles: ALL,
     disableEligible: true,
   },
   {
@@ -254,15 +266,15 @@ function invalid(message: string): never {
 const uniqueIds = new Set(eccHookControlCatalog.map((hook) => hook.id));
 const eligible = eccHookControlCatalog.filter((hook) => hook.disableEligible);
 if (
-  eccHookControlCatalog.length !== 41 ||
-  uniqueIds.size !== 41 ||
-  eligible.length !== 40 ||
-  eligible.filter((hook) => hook.profiles.includes("minimal")).length !== 10 ||
-  eligible.filter((hook) => hook.profiles.includes("standard")).length !== 37 ||
-  eligible.filter((hook) => hook.profiles.includes("strict")).length !== 40
+  eccHookControlCatalog.length !== 43 ||
+  uniqueIds.size !== 43 ||
+  eligible.length !== 42 ||
+  eligible.filter((hook) => hook.profiles.includes("minimal")).length !== 11 ||
+  eligible.filter((hook) => hook.profiles.includes("standard")).length !== 39 ||
+  eligible.filter((hook) => hook.profiles.includes("strict")).length !== 42
 ) {
   invalid(
-    "the pinned inventory must contain 41 distinct rows, 40 gated ids, and 10/37/40 profile eligibility",
+    "the pinned inventory must contain 43 distinct rows, 42 gated ids, and 11/39/42 profile eligibility",
   );
 }
 

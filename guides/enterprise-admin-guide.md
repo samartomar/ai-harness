@@ -491,8 +491,8 @@ Use the first-party docs-quality pack in a governed repo only after local approv
 
 ```console
 aih pack scaffold --pack docs-quality --apply
-aih skill vet packs/docs-quality/betterdoc --apply
-aih skill approve packs/docs-quality/betterdoc --owner <security-or-platform-owner> --pack docs-quality --apply
+aih skill vet packs/docs-quality/aih-betterdoc --apply
+aih skill approve packs/docs-quality/aih-betterdoc --owner <security-or-platform-owner> --pack docs-quality --apply
 aih pack validate --pack docs-quality
 ```
 
@@ -624,8 +624,8 @@ Balanced:
 aih ecc --cli claude,codex --profile core --posture enterprise
 aih ecc --cli claude,codex --profile core --posture enterprise --apply
 aih pack scaffold --pack docs-quality --posture enterprise --apply
-aih skill vet packs/docs-quality/betterdoc --posture enterprise --apply
-aih skill approve packs/docs-quality/betterdoc --owner docs-platform --pack docs-quality --mode review-only --intended-use "Source-grounded documentation editing." --posture enterprise --apply
+aih skill vet packs/docs-quality/aih-betterdoc --posture enterprise --apply
+aih skill approve packs/docs-quality/aih-betterdoc --owner docs-platform --pack docs-quality --mode review-only --intended-use "Source-grounded documentation editing." --posture enterprise --apply
 aih pack install --pack docs-quality --posture enterprise --apply
 aih pack validate --pack docs-quality
 aih mcp approve figma --accept-egress --reason "Approved Figma remote MCP for reviewed design-context workflows; file permissions remain in Figma." --reviewer design-platform --posture enterprise --apply

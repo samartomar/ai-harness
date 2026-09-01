@@ -172,14 +172,14 @@ export interface GovernanceDoctorPresentationV1 {
 
 /** The one artifact this command may read, relative to the harness package root. */
 export const SHIPPED_GOVERNANCE_DOCTOR_PROFILE_RELATIVE_PATH_V1 =
-  "packs/governance-quality/governance-doctor-audit-guide/profile.json";
+  "packs/governance-quality/aih-gov-doctor/profile.json";
 
 const POLICY_DECISIONS = ["allowed", "denied"] as const;
 const POLICY_SOURCES = ["absent", "governed", "ungoverned", "unreadable"] as const;
 const UNAVAILABLE_STATES = ["adapter-unavailable", "profile-unavailable"] as const;
 const POLICY_REVISION_DOMAIN = "aih.governance-doctor-command-policy-revision-v1";
 const PROTOCOL = "GovernanceDoctorPresentationV1";
-const CHECK_NAME = "governance-doctor-audit-guide";
+const CHECK_NAME = "aih-gov-doctor";
 const CORE_PACKAGE_NAME = "@aihq/core";
 
 /**

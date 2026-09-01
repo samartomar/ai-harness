@@ -600,6 +600,47 @@ describe("verifiedEccInstallPlan", () => {
     expect(codexProgram).toContain("mergeCodexConfigCandidate");
   });
 
+  it("carries OpenCode package runtime suppression into both governed execution drivers", () => {
+    const selected = selection();
+    const direct = verifiedEccInstallPlan(
+      ctx(),
+      join(root, "quarantine", "tree"),
+      {
+        clis: ["opencode"],
+        profile: "core",
+        packs: [],
+        selection: selected,
+        governance: true,
+      },
+      eccEvidenceComponentIdsForSelection("opencode", selected).map(authorization),
+    );
+    const directProgram = driverSteps(direct.actions).find((step) =>
+      step.argv[2]?.includes("scoped ECC materialization payload"),
+    )?.argv[2];
+    if (directProgram === undefined) throw new Error("missing governed materialization driver");
+
+    const codex = verifiedEccInstallPlan(
+      ctx(),
+      join(root, "quarantine", "tree"),
+      {
+        clis: ["codex"],
+        profile: "core",
+        packs: [],
+        selection: selected,
+        governance: true,
+      },
+      authorizationsForSelection("codex", selected),
+    );
+    const codexStep = driverSteps(codex.actions).find((step) =>
+      codexInstallProgram(step).includes("codex-install-merge"),
+    );
+    if (codexStep === undefined) throw new Error("missing governed Codex merge driver");
+
+    const completeOpenCodeTree = "(?:\\.opencode|\\.config\\/opencode)(?:\\/|$)";
+    expect(directProgram).toContain(completeOpenCodeTree);
+    expect(codexInstallProgram(codexStep)).toContain(completeOpenCodeTree);
+  });
+
   it("projects Core's exact Chrome DevTools default through the unscoped verified Codex path", () => {
     const plan = verifiedEccInstallPlan(
       ctx(),

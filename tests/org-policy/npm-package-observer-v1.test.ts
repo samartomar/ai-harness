@@ -168,8 +168,8 @@ function supportedFixture() {
       headValidFrom: "2026-08-01T00:00:00Z",
       headValidUntil: "2026-08-05T00:00:00Z",
     },
-    issuedAt: "2026-08-02T00:00:00Z",
-    notBefore: "2026-08-02T00:00:00Z",
+    issuedAt: "2026-08-01T00:00:00Z",
+    notBefore: "2026-08-01T00:00:00Z",
     expiresAt: "2026-08-05T00:00:00Z",
   };
   return {

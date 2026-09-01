@@ -10,7 +10,10 @@ const model = policyStudioModel();
  * than listed, so a catalog change fails these tests instead of silently
  * shrinking what a profile composes.
  */
-const controls = [...model.catalog.mcp.map((item) => item.control), ...model.catalog.hooks];
+const controls = [
+  ...model.catalog.mcp.filter((item) => item.availability === "always").map((item) => item.control),
+  ...model.catalog.hooks,
+];
 const frameworkAssets = model.catalog.frameworks.flatMap((framework) =>
   framework.assets.map((asset) => ({ framework, asset })),
 );
@@ -38,9 +41,13 @@ function studio(): Window {
 }
 
 function selectProfile(window: Window, value: string): void {
-  const preset = window.document.querySelector(`[data-preset="${value}"]`);
+  const preset = window.document.getElementById("preset-select") as unknown as {
+    value: string;
+    dispatchEvent(event: unknown): boolean;
+  } | null;
   if (preset === null) throw new Error(`expected ${value} preset`);
-  preset.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  preset.value = value;
+  preset.dispatchEvent(new window.Event("change", { bubbles: true }));
 }
 
 /** The authored policy exactly as the surface shows it, not internal state. */
@@ -108,7 +115,10 @@ function curateFromFirstRow(window: Window): string {
     window.document.getElementById(id) as unknown as { value: string } | null;
   const record = field("audit-record");
   const digest = field("audit-digest");
-  if (record === null || digest === null) throw new Error("expected audit evidence fields");
+  const owner = field("curation-owner");
+  if (record === null || digest === null || owner === null)
+    throw new Error("expected audit evidence fields");
+  owner.value = "curator@acme.example";
   record.value = "audit-vibe-fixture";
   digest.value = `sha256:${"c".repeat(64)}`;
   window.document
@@ -123,7 +133,7 @@ describe("policy studio profile composition", () => {
   // Recorded product failure 1: Vibe changed a label and nothing else, so the
   // administrator got a posture rename in place of the complete selection the
   // profile names.
-  it("composes Vibe into requested intent for every AIH control", () => {
+  it("composes Vibe into requested intent for every always-available AIH control", () => {
     const window = studio();
     selectProfile(window, "vibe");
     const policy = authoredPolicy(window);
@@ -139,20 +149,29 @@ describe("policy studio profile composition", () => {
     ).toEqual(controls.map((control) => control.id).sort());
   });
 
+  it("leaves target-conditional Playwright as an explicit administrator choice", () => {
+    const window = studio();
+    selectProfile(window, "vibe");
+    expect(authoredPolicy(window).governance.catalog.reviewed.map((item) => item.id)).not.toContain(
+      "playwright",
+    );
+    const playwright = window.document.querySelector('[data-reviewed="playwright"]');
+    expect(playwright?.getAttribute("aria-pressed")).toBe("false");
+    expect(playwright?.hasAttribute("disabled")).toBe(false);
+    expect(playwright?.closest(".row")?.textContent).toContain("Web target only");
+  });
+
   it("shows every composed control as requested in the rows it composed", () => {
     const window = studio();
     selectProfile(window, "vibe");
-    for (const container of ["mcp-rows", "hook-rows"]) {
-      const rows = [...(window.document.getElementById(container)?.querySelectorAll(".row") ?? [])];
-      expect(rows.length, container).toBeGreaterThan(0);
-      for (const row of rows) {
-        expect(row.querySelector(".badge")?.textContent ?? "", container).toContain(
-          "Requested intent",
-        );
-        const inverse = row.querySelector("[data-reviewed]");
-        expect(inverse?.hasAttribute("disabled") ?? true).toBe(false);
-        expect(inverse?.getAttribute("aria-label")).toContain("Deselect");
-      }
+    for (const control of controls) {
+      const inverse = window.document.querySelector(`[data-reviewed="${control.id}"]`);
+      const row = inverse?.closest(".row");
+      expect(row?.querySelector(".badge")?.textContent ?? "", control.id).toContain(
+        "Requested intent",
+      );
+      expect(inverse?.hasAttribute("disabled") ?? true).toBe(false);
+      expect(inverse?.getAttribute("aria-label")).toContain("Deselect");
     }
   });
 
@@ -185,16 +204,18 @@ describe("policy studio profile composition", () => {
     expect(authoredPolicy(window).governance.externalCuration).toEqual([]);
   });
 
-  // A curated component already carries its evidence. Composing over it must not
-  // downgrade it to a bare selection, and the grammar forbids holding both.
-  it("leaves an already-curated component curated rather than selecting it", () => {
+  // A curated component is report-only evidence, not a module selection. Vibe
+  // cannot silently install a whole module while one of the members it must
+  // select is held only as curation, so the preset fails closed atomically.
+  it("blocks Vibe when curation prevents a dependency-closed selection", () => {
     const window = studio();
     const curated = curateFromFirstRow(window);
     selectProfile(window, "vibe");
     expect(curatedIds(window), "stays curated").toContain(curated);
     expect(selectedIds(window), "not also selected").not.toContain(curated);
-    expect(announcement(window)).not.toContain("rejected");
-    expect(selectedIds(window)).toHaveLength(eccAssetCount - 1);
+    expect(announcement(window)).toContain("Vibe composition blocked");
+    expect(announcement(window)).toContain("Nothing changed");
+    expect(selectedIds(window)).toEqual([]);
   });
 
   it("states what Vibe composed and what the one-framework rule left out", () => {

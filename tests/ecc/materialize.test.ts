@@ -38,6 +38,7 @@ function fixturePlan() {
     operation("rules/typescript/testing.md", "rules-core"),
     operation("commands/tdd.md", "commands-core"),
     operation("hooks/pretooluse.js", "hooks-runtime"),
+    operation(".mcp.json", "platform-configs"),
     operation("mcp-configs/mcp-servers.json", "platform-configs"),
     operation("scaffolds/cursor/hooks.json", "platform-configs", "merge-json"),
     operation("AGENTS.md", "agents-core"),
@@ -93,6 +94,23 @@ function scopedSelection(): EccComponentSelection {
 }
 
 describe("filterEccManifestPlan", () => {
+  it("materializes the governed MCP configuration for a bare MCP selection", () => {
+    const selected: EccComponentSelection = {
+      scope: "scoped",
+      components: [],
+      mcps: ["mcp:sequential-thinking"],
+      recommendations: [],
+    };
+    const filtered = fixturePlan();
+
+    filterEccManifestPlan(filtered, selected);
+
+    expect(filtered.operations.map((entry) => entry.sourceRelativePath).sort()).toEqual([
+      ".mcp.json",
+      "mcp-configs/mcp-servers.json",
+    ]);
+  });
+
   it("deduplicates materialized module ids while retaining the first trusted selection order", () => {
     const spec = eccMaterializationSpec({
       ...scopedSelection(),
@@ -192,6 +210,7 @@ describe("filterEccManifestPlan", () => {
       "rules/react/testing.md",
       "rules/web/security.md",
       "commands/tdd.md",
+      ".mcp.json",
       "mcp-configs/mcp-servers.json",
       "scaffolds/cursor/hooks.json",
       "AGENTS.md",
@@ -502,6 +521,23 @@ describe("filterEccManifestPlan", () => {
       ),
     ).toBe("ecc-content");
   });
+
+  it.each([
+    [".opencode/index.ts", "/home/aih/.config/opencode/index.ts"],
+    [".opencode/opencode.json", "/home/aih/.config/opencode/opencode.json"],
+    [".opencode/plugins/ecc-hooks.ts", "/home/aih/.config/opencode/plugins/ecc-hooks.ts"],
+    [".opencode/dist/plugins/ecc-hooks.js", "/home/aih/.config/opencode/dist/plugins/ecc-hooks.js"],
+  ])(
+    "classifies OpenCode executable package content as host runtime: %s",
+    (source, destination) => {
+      expect(
+        classifyGovernedEccOperation(
+          operation(source, "platform-configs", "copy-file", destination),
+          { projectRoot: "/fixture", homeDir: "/home/aih", target: "opencode" },
+        ),
+      ).toBe("host-runtime");
+    },
+  );
 
   it("fails closed when operation and state-preview inputs drift", () => {
     const plan = fixturePlan();

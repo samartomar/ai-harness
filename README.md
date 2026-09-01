@@ -280,6 +280,12 @@ distribution and process-configuration boundary; Core does not certify that host
 For an `aih-supported` basis, the administrator first supplies the separately controlled support
 repository/workflow roots and applies the exact decision binding to durable custody:
 
+In Policy Workbench, choose **AIH-supported Catalog receipt** as the qualification basis and copy
+the exact Catalog signer, Catalog digest, Catalog head digest, and Catalog member digest from the
+independently verified Qualification Receipt V2. The Workbench computes and embeds the matching
+subject kind and subject digest. The receipt qualifies those exact subject bytes; it does not grant
+organization admission or replace the accountable organization approval in the protected file.
+
 ```bash
 aih policy supported accept \
   --root <governed-target> \
@@ -648,7 +654,7 @@ receipt-owned entries with `aih ecc mcp remove <id> --cli <client> --apply`, and
 receipt/config ownership state. It does not contact the endpoint, scan the remote tool list, or install all
 approved entries.
 
-The portable Policy Workbench uses a flat Ledger paper-and-ink identity in light and dark themes. Its left rail remains the canonical selection surface, including on compact screens; the inspector is mutation-free, narrates the selected-to-materialized journey, and offers one routed next action. At Enterprise posture, the protected-file form is the administrator-facing authority authoring surface: it accepts structured exact-source and evidence fields, computes the existing Decision V2 digests, and downloads the existing PolicyBundle V2 without exposing editable raw JSON. Curation and custom-source forms live in a separate authoring sidebar. The separate Add MCP sidebar records the exact `governance.eccMcpApprovals` decision; it does not choose a client or configure one. For an entry marked HTTPS-configurable, the seat operator still selects one client explicitly with the command above; manual entries remain approval-only until a supported lifecycle exists.
+The portable Policy Workbench uses a flat Ledger paper-and-ink identity in light and dark themes. Its left rail remains the canonical selection surface, including on compact screens; the inspector is mutation-free, narrates the selected-to-materialized journey, and offers one routed next action. Its source-locked availability planes show all 286 canonical ECC skills and all 35 entries in ECC's pinned MCP source. Only the 12 existing governed skill components are selectable; the other 274 skill rows are explicitly availability-only. The 31 ECC-owned MCP entries route to approval authoring, while the four AIH-owned declarations remain read-only availability and do not imply that Core ships a matching control. At Enterprise posture, the protected-file form is the administrator-facing authority authoring surface: it accepts structured exact-source and evidence fields, computes the existing Decision V2 digests, and downloads the existing PolicyBundle V2 without exposing editable raw JSON. Curation and custom-source forms live in a separate authoring sidebar. The separate Add MCP sidebar records the exact `governance.eccMcpApprovals` decision; it does not choose a client or configure one. For an entry marked HTTPS-configurable, the seat operator still selects one client explicitly with the command above; manual entries remain approval-only until a supported lifecycle exists.
 
 The Workbench also shows the first bounded adoption recipe for Token Savior, Serena,
 code-review-graph, codebase-memory-mcp, and Token Optimizer. It assigns one question class to each

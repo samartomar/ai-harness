@@ -16,10 +16,10 @@
     {
       "surface": "ecc-candidate",
       "identity": "affaan-m/ECC",
-      "version": "untagged, 100 commits past v2.1.0",
-      "commit": "dcbf95bf63dc67701564198df9c3451940a2ca83",
+      "version": "v2.2.0-128-gce64e417",
+      "commit": "ce64e417fd420a0df98ed0aa00809eea5e74e127",
       "disposition": "blocked",
-      "reason": "ECC_PREVIEW_DEPENDENCY_CLOSURE_UNQUALIFIED. Candidate dcbf95bf63dc67701564198df9c3451940a2ca83 is recorded blocked for promotion. The from-scratch four-shard vet, run 31922381993 on 2026-08-16 UTC, completed every shard successfully: 137 ECC components resolved 109 pass and 28 blocked, with NO newly blocked component ids relative to the active 623f2c02 pin, and obra/Superpowers held 15/15 pass. The assemble step then failed because js-yaml@4.3.1 is not a qualified package in the install-preview generator dependency closure. This is not a new malicious-content finding: the blocked set is the same 28 component ids as the active pin and none was added. It is also not evidence that js-yaml executes during preview generation. AIH calls createManifestInstallPlan, and the current closure check is lexical -- it follows literal requires out of scripts/lib/install-executor.js, including an apply-only chain through install/apply.js to install/antigravity-agent.js, and rejects the bare package import conservatively rather than showing the planning path reaches it. Nothing was promoted and nothing moved: no runtime execution, no pin movement, no projection, no lock. src/internals/baseline-sources.ts remains pinned to 623f2c02. The remedy is upstream-shaped -- expose createManifestInstallPlan through a pure planning module that imports neither apply-only transforms nor third-party packages -- and is deliberately NOT an allowlist, dynamic-require bypass, vendored shim, or custom YAML parser, each of which would widen an evidence boundary inside a pin rotation."
+      "reason": "ECC_OPENCODE_HOOK_CONSENT_AND_FULL_VET_UNQUALIFIED. Candidate ce64e417fd420a0df98ed0aa00809eea5e74e127 is the signed upstream main revision observed on 2026-08-30 and is recorded blocked for promotion. Exact-SHA GitHub checks showed 33 completed successes, 12 queued, and no failures out of 45; static AIH baseline preflight passed. The local from-scratch full vet emitted no evidence because Docker was unavailable for SkillSpector and the Cisco uv build could not compile litellm without MSVC link.exe. Security review also found that upstream PR #2913 restores OpenCode tests by excluding .opencode/plugins from hook-runtime consent even though platform-configs copies .opencode, opencode.json auto-loads plugins, and ecc-hooks.ts writes source with Prettier, launches npx tsc, mutates process environment, and participates in permission decisions. That permits executable OpenCode runtime to cross the new-install or --no-hooks consent boundary as passive platform configuration. AIH now classifies the complete .opencode and .config/opencode trees as host-runtime during governed materialization, but that is not evidence of a categorical block across every install, repair, and activation path. Nothing was promoted and nothing moved: the active source remains samartomar/ECC@5caf398a91599029a176ca6d806409b00d1052c4, and production lock, preview, catalog, hook inventory, and policy surfaces remain unchanged. The prior dcbf95bf candidate receipt remains immutable history."
     },
     {
       "surface": "ecc-codex-chrome-devtools-mcp",
@@ -44,7 +44,7 @@
       "commit": "6a1ee1c7063cc35cfa5ff12b8198c29360f3e4ad",
       "integrity": "sha256:12196dce3e673bdec7fba97ae5c4dff7589adee73a721374f62efae76e0fdd88",
       "disposition": "active",
-      "reason": "The exact wheel and CLI identify 2.3.7, but its MCP initialize response reports FastMCP 3.4.5 because upstream does not pass its package version to FastMCP. Keep the fail-closed mcp.version-drift warning until upstream self-attestation is corrected."
+      "reason": "The exact wheel and CLI identify 2.3.7, and its dereferenced v2.3.7 source commit is still verified at the PyPI-advertised tirth8205/code-review-graph repository; the older DeusData URL no longer resolves and was corrected without changing package bytes. Its MCP initialize response reports FastMCP 3.4.5 because upstream does not pass its package version to FastMCP, so keep the fail-closed mcp.version-drift warning until upstream self-attestation is corrected. The 2.3.8 candidate remains on hold: its new implicit-provider path turns ambient CRG_OPENAI_API_KEY plus CRG_OPENAI_BASE_URL into silent network egress when an MCP call omits provider, while AIH currently inherits that environment and classifies this launch as local-only."
     },
     {
       "surface": "codebase-memory-mcp",
@@ -216,9 +216,9 @@
     {
       "surface": "uv",
       "identity": "uv",
-      "version": "0.12.5",
+      "version": "0.12.7",
       "disposition": "active",
-      "reason": "Toolchain pin for the locked scanner projects and the SkillSpector image build, moved 0.12.2 -> 0.12.5. Vetted locally before the fleet was provisioned: all five committed uv.lock files pass uv lock --check under 0.12.5 with unchanged resolution and byte-stable locks, and their offline exports are byte-identical to 0.12.2 including every recorded hash. On Linux the four locked scanners run --locked --offline at their pinned versions. 0.12.4's post-quantum TLS preference cannot reach offline resolution, which opens no sockets, and the networked path resolves normally. Runners are provisioned to this exact version via the versioned standalone installer, never `uv self update`."
+      "reason": "Toolchain pin for the locked scanner projects and the SkillSpector image build, moved 0.12.5 -> 0.12.7 on 2026-08-30. The exact 0.12.7 executable reports its pinned version; all five committed locks pass offline uv lock --check under both versions, and each 0.12.7 offline requirements export is byte-identical to 0.12.5. The cached Snyk Agent Scan, Semgrep, and Serena runtimes report their exact locked versions under 0.12.7. Cisco MCP Scanner could not be re-executed offline because its wheel was absent from the local cache, while Cisco Skill Scanner reached the same known litellm source build and failed because MSVC link.exe is unavailable; these named host limits do not alter lock or export identity, and Linux workflow materialization remains a required CI check. 0.12.6 fixes full 40-character commit pins resolving to a SHA-named branch instead of the requested object, and 0.12.7 rejects source-archive hash mismatches before extracted content is persisted to cache. Both workflows and the controlled SkillSpector build provision this exact version; setup-uv itself remains at its reviewed immutable SHA."
     },
     {
       "surface": "actions-checkout",
@@ -238,10 +238,10 @@
     {
       "surface": "claude-code-action",
       "identity": "anthropics/claude-code-action",
-      "version": "v1.0.201",
-      "commit": "c81e3bc69d1b18badbb63ba39581218f02421678",
+      "version": "v1.0.210",
+      "commit": "a874e9ecd7bb36efdad65429c6b35815f5a08f10",
       "disposition": "active",
-      "reason": "The official v1.0.201 annotated tag dereferences to this immutable SHA. The opt-in maintainer workflow remains pinned to the commit rather than the movable v1 tag, and its permissions and secret input are unchanged."
+      "reason": "The official v1.0.210 annotated tag dereferences to this immutable SHA. The target commit and tag are unsigned, matching the prior Claude action pin's signature posture rather than introducing a new regression. The opt-in maintainer workflow remains pinned to the commit rather than the movable v1 tag; its action inputs, permissions, and secret input are unchanged. The reviewed range bounds stalled job-log downloads, encodes branch names in generated GitHub links, corrects delete-file path guidance, and advances the embedded Claude Code and Agent SDK together."
     },
     {
       "surface": "setup-node-action",
@@ -270,10 +270,10 @@
     {
       "surface": "codeql-action",
       "identity": "github/codeql-action",
-      "version": "v4.37.8",
-      "commit": "db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28",
+      "version": "v4.37.9",
+      "commit": "cdf488f595d80d6e07e03d4674febd5ab45fa938",
       "disposition": "active",
-      "reason": "The official v4.37.8 annotated tag dereferences to this immutable SHA, and the upstream release reports no user-facing changes. All three governed call sites -- init and analyze in codeql.yml and upload-sarif in scorecard.yml -- move together because one ledger identity covers them."
+      "reason": "The official v4.37.9 annotated tag dereferences to this immutable SHA. The action input surfaces used by this repository are unchanged; the default analysis engine advances to codeql-bundle-v2.26.4 and supported GitHub Enterprise Server metadata is refreshed. All three governed call sites -- init and analyze in codeql.yml and upload-sarif in scorecard.yml -- move together because one ledger identity covers them."
     },
     {
       "surface": "scorecard-action",
@@ -294,10 +294,10 @@
     {
       "surface": "sbom-action",
       "identity": "anchore/sbom-action",
-      "version": "v0.24.0",
-      "commit": "e22c389904149dbc22b58101806040fa8d37a610",
-      "disposition": "retained",
-      "reason": "Latest stable action release resolves to the existing immutable SHA."
+      "version": "v0.24.2",
+      "commit": "3ad7283483fc7af8ff2b4ea19663c2d5ca935e26",
+      "disposition": "active",
+      "reason": "The official v0.24.2 annotated tag dereferences to this immutable SHA. The reviewed action keeps AIH's tarball-scoped SPDX inputs unchanged, advances its default Syft from v1.42.3 to v1.51.1, pins the downloaded Syft installer to the requested release tag, and validates the entire version string before interpolating it into the installer URL."
     },
     {
       "surface": "attest-build-provenance-action",
@@ -321,7 +321,7 @@
       "version": "v10.0.1",
       "commit": "20cfd1bf945f4377ade1205e4dbc17946fc9a30d",
       "disposition": "active",
-      "reason": "Moved v9.0.0 -> v10.0.1 on 2026-08-15, crossing one major; the entry leaves the retained disposition because the newest stable release no longer resolves to the previously recorded SHA. v10.0.1 is a lightweight tag, so the recorded commit is the tag target itself rather than a dereferenced annotated tag. v10.0.0's only breaking change is that the default enable-cache: auto now DISABLES the cache for pull_request_target, workflow_run and release events, as a cache-poisoning defense. Neither governed workflow is affected: baseline-evidence.yml triggers on push to main, pull_request and workflow_dispatch, and snyk-agent-qualification.yml on workflow_dispatch only, so none of the three affected events is in use and caching behavior is unchanged for this repository. The release's other additions do not apply either: both call sites pin version 0.12.5 explicitly, so the new latest-known resolution and the .tool-versions Python inference are never reached. v10.0.1 adds only a transient manifest-timeout tolerance over v10.0.0. Both governed call sites move together so one uv version provisions every locked scanner."
+      "reason": "Moved v9.0.0 -> v10.0.1 on 2026-08-15, crossing one major; the entry leaves the retained disposition because the newest stable release no longer resolves to the previously recorded SHA. v10.0.1 is a lightweight tag, so the recorded commit is the tag target itself rather than a dereferenced annotated tag. v10.0.0's only breaking change is that the default enable-cache: auto now DISABLES the cache for pull_request_target, workflow_run and release events, as a cache-poisoning defense. Neither governed workflow is affected: baseline-evidence.yml triggers on push to main, pull_request and workflow_dispatch, and snyk-agent-qualification.yml on workflow_dispatch only, so none of the three affected events is in use and caching behavior is unchanged for this repository. The release's other additions do not apply either: both call sites pin version 0.12.7 explicitly, so the new latest-known resolution and the .tool-versions Python inference are never reached. v10.0.1 adds only a transient manifest-timeout tolerance over v10.0.0. Both governed call sites move together so one uv version provisions every locked scanner."
     }
   ]
 }

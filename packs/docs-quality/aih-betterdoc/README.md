@@ -18,7 +18,7 @@ It does not assume a particular product, repo, brand, maturity level, architectu
 ## Files
 
 ```text
-packs/docs-quality/betterdoc/
+packs/docs-quality/aih-betterdoc/
 ├── SKILL.md
 ├── README.md
 ├── CHANGELOG.md
@@ -37,7 +37,7 @@ packs/docs-quality/betterdoc/
 ## Recommended default prompt
 
 ```text
-Use $betterdoc.
+Use $aih-betterdoc.
 
 Edit this documentation for clarity, usefulness, and source-grounded accuracy.
 Do not invent product, maturity, security, compliance, roadmap, customer, deployment, performance, license, or audit claims.

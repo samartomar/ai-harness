@@ -55,7 +55,7 @@ export const UpstreamObservationReceiptV1Schema = z
     decision: z.object({ id: stableId, digest }).strict(),
     subject: z
       .object({
-        kind: z.enum(["tool", "skill", "mcp", "package", "profile"]),
+        kind: z.enum(["tool", "skill", "agent", "mcp", "package", "profile"]),
         id: stableId,
         sourceDigest: digest,
         subjectDigest: digest,

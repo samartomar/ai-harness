@@ -50,7 +50,7 @@ export const UpstreamArtifactManifestV1Schema = z
     decisionId: stableId,
     subject: z
       .object({
-        kind: z.enum(["tool", "skill", "mcp", "package"]),
+        kind: z.enum(["tool", "skill", "agent", "mcp", "package"]),
         id: stableId,
         sourceDigest: digest,
         subjectDigest: digest,

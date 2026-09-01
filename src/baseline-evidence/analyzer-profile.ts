@@ -27,6 +27,7 @@ import {
 } from "../trust/images.js";
 import type { BaselineCatalogComponent } from "./catalog.js";
 import { nativeAnalyzerIdentity } from "./native-identity.js";
+import { SCANNER_BASELINE_ANALYZER_VERSIONS } from "./scanner-profile.js";
 import type { VetBaselineCatalogOptions } from "./vet.js";
 
 export {
@@ -123,6 +124,15 @@ export function requiredBaselineDetectorsForComponent(
 
 export function baselineAnalyzerVersions(): Readonly<Record<string, string>> {
   return {
+    ...SCANNER_BASELINE_ANALYZER_VERSIONS,
+    [CISCO_MCP_SCANNER_ANALYZER]: uvLockIdentity(CISCO_MCP_SCANNER_VERSION, CISCO_MCP_SCANNER_LOCK),
+    [SNYK_AGENT_SCAN_ANALYZER]: uvLockIdentity(SNYK_AGENT_SCAN_VERSION, SNYK_AGENT_SCAN_LOCK),
+  };
+}
+
+/** Analyzer identities for the retired in-Core execution implementation. */
+function legacyCoreBaselineAnalyzerVersions(): Readonly<Record<string, string>> {
+  return {
     // A content digest, not the package VERSION (see native-identity.ts): the
     // identity's job is behavioral discrimination, and a version prefix would
     // invalidate all receipts at every release version bump even when no
@@ -154,7 +164,7 @@ export function requiredBaselineVetOptions(runtime: {
     },
     requiredAnalyzers: requiredBaselineAnalyzersForComponent,
     requiredDetectorsForComponent: requiredBaselineDetectorsForComponent,
-    analyzerVersions: baselineAnalyzerVersions(),
+    analyzerVersions: legacyCoreBaselineAnalyzerVersions(),
     sourceWideScan: true,
     sourceWideCisco: {
       analyzerLockSha256: ciscoSkillScannerLockSha256(),

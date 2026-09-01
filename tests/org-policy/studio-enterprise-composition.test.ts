@@ -5,7 +5,10 @@ import { policyStudioModel } from "../../src/org-policy/studio-model.js";
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
 
 const model = policyStudioModel();
-const controls = [...model.catalog.mcp.map((item) => item.control), ...model.catalog.hooks];
+const controls = [
+  ...model.catalog.mcp.filter((item) => item.availability === "always").map((item) => item.control),
+  ...model.catalog.hooks,
+];
 const ecc = model.catalog.frameworks.find((framework) => framework.id === "ecc");
 if (ecc === undefined) throw new Error("expected an ecc framework in the catalog");
 const eccAssetIds = new Set(ecc.assets.map((asset) => asset.id));
@@ -23,9 +26,13 @@ function studio(): Window {
 }
 
 function selectProfile(window: Window, value: string): void {
-  const preset = window.document.querySelector(`[data-preset="${value}"]`);
+  const preset = window.document.getElementById("preset-select") as unknown as {
+    value: string;
+    dispatchEvent(event: unknown): boolean;
+  } | null;
   if (preset === null) throw new Error(`expected ${value} preset`);
-  preset.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+  preset.value = value;
+  preset.dispatchEvent(new window.Event("change", { bubbles: true }));
 }
 
 function authoredPolicy(window: Window): {
@@ -35,7 +42,11 @@ function authoredPolicy(window: Window): {
     catalog: { reviewed: { id: string }[] };
     activations: { candidate: string; state: string }[];
     externalCuration: unknown[];
-    externalSelections: Array<{ framework: string; items: Array<{ id: string }> }>;
+    externalSelections: Array<{
+      framework: string;
+      roots?: string[];
+      items: Array<{ id: string }>;
+    }>;
   };
 } {
   const preview = window.document.getElementById("config-preview") as unknown as {
@@ -55,6 +66,26 @@ function selectedIds(window: Window): string[] {
   return authoredPolicy(window).governance.externalSelections.flatMap((group) =>
     group.items.map((item) => item.id),
   );
+}
+
+function eccSelectionClosure(rootIds: readonly string[]): string[] {
+  const selected = new Set(rootIds);
+  const pending = [...rootIds];
+  while (pending.length > 0) {
+    const id = pending.shift();
+    const asset = ecc?.assets.find((candidate) => candidate.id === id);
+    if (asset === undefined) throw new Error(`expected ECC asset ${id}`);
+    for (const required of [
+      ...(asset.dependencies ?? []),
+      ...(asset.members ?? []),
+      ...(asset.riders ?? []),
+    ]) {
+      if (selected.has(required)) continue;
+      selected.add(required);
+      pending.push(required);
+    }
+  }
+  return [...selected];
 }
 
 describe("policy studio enterprise composition", () => {
@@ -134,7 +165,10 @@ describe("policy studio enterprise composition", () => {
         .map((item) => item.candidate)
         .sort(),
     ).toEqual(controls.map((control) => control.id).sort());
-    expect(selectedIds(window).sort()).toEqual([...partIds("composed")].sort());
+    expect(selectedIds(window).sort()).toEqual(eccSelectionClosure(partIds("composed")).sort());
+    expect(policy.governance.externalSelections[0]?.roots?.sort()).toEqual(
+      partIds("composed").sort(),
+    );
     const announcement = window.document.getElementById("announcement")?.textContent ?? "";
     expect(announcement).toContain(`${controls.length} AIH control`);
     expect(announcement).toContain(`${partIds("composed").length} ECC Core component`);
@@ -154,7 +188,9 @@ describe("policy studio enterprise composition", () => {
     expect(button, "a control to add the language composition").not.toBeNull();
     button?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
     const language = composition.parts.find((part) => part.id === "language")?.componentIds ?? [];
-    expect(selectedIds(window).sort()).toEqual([...before, ...language].sort());
+    expect(selectedIds(window).sort()).toEqual(
+      [...new Set([...before, ...eccSelectionClosure(language)])].sort(),
+    );
     window.document
       .querySelector('[data-composition-add="security"]')
       ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
@@ -175,6 +211,26 @@ describe("policy studio enterprise composition", () => {
     expect(selectedIds(window).sort()).toEqual(before);
   });
 
+  it("does not remove a root selected individually when reversing an additive part", () => {
+    const window = studio();
+    selectProfile(window, "enterprise");
+    window.document
+      .querySelector('[data-framework-select="ecc|module|module:security"]')
+      ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    const add = () =>
+      window.document
+        .querySelector('[data-composition-add="security"]')
+        ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+
+    add();
+    add();
+
+    const policy = authoredPolicy(window);
+    expect(policy.governance.externalSelections[0]?.roots).toContain("module:security");
+    expect(selectedIds(window)).toContain("module:security");
+    window.close();
+  });
+
   // Row 12's ruling: a preset must never author an audit record it did not
   // receive. Asserted directly rather than inferred from a count.
   it("authors no external curation when Enterprise is composed", () => {
@@ -189,12 +245,13 @@ describe("policy studio enterprise composition", () => {
   it("leaves the composed framework's inventory intact and accounts for the rest", () => {
     const window = studio();
     selectProfile(window, "enterprise");
-    const rows =
+    const frameworkRows =
       window.document.getElementById("framework-rows")?.querySelectorAll(".row").length ?? 0;
-    const railOwned = ecc.assets.filter((asset) =>
-      ["lang", "framework", "capability", "module"].includes(asset.kind),
-    ).length;
-    expect(rows).toBe(ecc.assets.length - railOwned);
+    const governedSkillRows = [
+      ...window.document.querySelectorAll("[data-ecc-skill-availability]"),
+    ].filter((row) => row.querySelector("[data-framework-select]") !== null).length;
+    const mcpDeclarations = ecc.assets.filter((asset) => asset.kind === "mcp").length;
+    expect(frameworkRows + governedSkillRows).toBe(ecc.assets.length - mcpDeclarations);
     const others = model.catalog.frameworks
       .filter((framework) => framework.id !== "ecc")
       .reduce((total, framework) => total + framework.assets.length, 0);

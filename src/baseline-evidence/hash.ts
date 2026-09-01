@@ -29,6 +29,10 @@ interface TreeEntry {
   target?: string;
 }
 
+function codeUnitCompare(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
 function refuse(message: string): never {
   throw new AihError(message, "AIH_TRUST");
 }
@@ -108,7 +112,7 @@ export function hashComponentTree(
       entries.set(rel, { type: "directory", path: rel });
       let children: string[];
       try {
-        children = readdirSync(path).sort((left, right) => left.localeCompare(right));
+        children = readdirSync(path).sort(codeUnitCompare);
       } catch (err) {
         refuse(`baseline component directory is unreadable: ${rel} (${(err as Error).message})`);
       }
@@ -121,13 +125,15 @@ export function hashComponentTree(
     entries.set(rel, { type: "file", path: rel, ...digest });
   };
 
-  for (const declared of [...uniqueRoots].sort((left, right) => left.localeCompare(right))) {
+  for (const declared of [...uniqueRoots].sort(codeUnitCompare)) {
     const target = resolve(root, ...declared.split("/"));
     sourceRelative(root, target);
     visit(target);
   }
 
-  const ordered = [...entries.values()].sort((left, right) => left.path.localeCompare(right.path));
+  const ordered = [...entries.values()].sort((left, right) =>
+    codeUnitCompare(left.path, right.path),
+  );
   const serialized = JSON.stringify(ordered);
   return {
     treeSha256: createHash("sha256").update(serialized, "utf8").digest("hex"),
@@ -169,7 +175,7 @@ export function hashSourceTree(sourceRoot: string): BaselineTreeHash {
     }
     if (stat.isDirectory()) {
       entries.set(rel, { type: "directory", path: rel });
-      for (const child of readdirSync(path).sort((left, right) => left.localeCompare(right))) {
+      for (const child of readdirSync(path).sort(codeUnitCompare)) {
         visit(resolve(path, child));
       }
       return;
@@ -181,11 +187,13 @@ export function hashSourceTree(sourceRoot: string): BaselineTreeHash {
 
   const paths = readdirSync(root)
     .filter((name) => name !== ".git")
-    .sort((left, right) => left.localeCompare(right));
+    .sort(codeUnitCompare);
   if (paths.length === 0) refuse("baseline source tree has no content");
   for (const path of paths) visit(resolve(root, path));
 
-  const ordered = [...entries.values()].sort((left, right) => left.path.localeCompare(right.path));
+  const ordered = [...entries.values()].sort((left, right) =>
+    codeUnitCompare(left.path, right.path),
+  );
   return {
     treeSha256: createHash("sha256").update(JSON.stringify(ordered), "utf8").digest("hex"),
     files: ordered.flatMap((entry) =>

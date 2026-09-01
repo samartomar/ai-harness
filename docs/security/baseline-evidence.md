@@ -394,23 +394,43 @@ first.
 
 ## Maintainer drift check
 
-The vet-once workflow checks out both canonical upstream SHAs, runs the same
-vetter, and fails when component hashes, analyzer receipts, or verdicts drift. It
-pulls the controlled SkillSpector image by digest and verifies that digest, proves
-the exact Cisco package can execute offline, and never commits regenerated
-evidence. No workflow builds the image; building is the local audit path only. The pure
-`check:baseline-analyzers` gate also runs in normal verification and before
-release packaging, so a stale or partial receipt set cannot reach a cut.
+The required `vet-once` job is deliberately cheap. It runs
+`npm run baseline:check`, which compares the declared source and analyzer pins
+with the committed lock and verifies that every required receipt and install
+preview is complete. It never provisions Docker, uv, Python analyzers, or a
+source checkout. A stale or partial receipt set therefore fails ordinary CI and
+release preflight without making Core CI execute Scanner.
 
 ```bash
-npm run baseline:check -- \
-  --ecc-root /path/to/exact/ECC \
-  --superpowers-root /path/to/exact/Superpowers
+npm run baseline:check
 ```
 
-Use `npm run baseline:vet -- ...` only when intentionally regenerating the lock
-for a reviewed pin change. A release or pin bump must review the resulting lock
-diff; a signed `blocked` entry is not a successful install baseline.
+An intentional refresh is the manual `baseline-evidence` workflow with
+`refresh=true`. Core authors canonical requests for both exact checkouts. The
+exact approved `@aihq/scan@0.2.5` candidate then runs the fixed `aih-baseline-v1` analyzer
+set and emits detached bundles. A separate job signs those bytes with
+short-lived test custody; the signature proves integrity and confers no approval,
+organization authority, or provenance. Core finally verifies the requests,
+source hashes, annexes, signature, freshness, replay state, and analyzer
+identities before interpreting the detached SARIF. Core's consumer cannot spawn
+an analyzer process.
+
+The refresh executor runs on a dedicated ephemeral Linux runner. It requires
+Ubuntu's global unprivileged-user-namespace restriction to remain enabled, loads
+the distribution's constrained `bwrap-userns-restrict` AppArmor profile, and
+checks the profile's unprivileged-child capability denial before use. It then
+proves the child profile label, zero effective capabilities, positive
+containment, and negative nested-user-namespace behavior before any analyzer
+executes. Scanner and host analyzer processes run as the
+unprivileged runner account. SkillSpector may use container UID 0, but it has no
+network, a read-only root, `no-new-privileges`, and all capabilities dropped
+except `DAC_OVERRIDE`; it receives no host user-namespace permission.
+
+The workflow uploads `scanner-baseline-core-candidate`; it does not commit,
+push, publish, or modify the protected branch. A maintainer downloads that
+candidate, reviews the lock and preview diff, and commits those exact bytes only
+when every required component passed. A signed `blocked` result is not a
+successful install baseline.
 
 ### The vetted identity is one exact upstream commit
 
@@ -471,108 +491,30 @@ emitted, 87 new advisory observations, and 0 critical findings. Issue #804
 removed only those 62 obsolete ledger rows. The current observations were not
 translated into acceptance, and the shipped ledger is now intentionally empty.
 
-### Incremental reuse and `--full`
+### Refresh ownership and scaling
 
-By default, `baseline:vet` and `baseline:check` reuse a component's prior receipt
-verbatim when its content hash and every required analyzer identity are
-unchanged from the lock currently on disk, and rescan only what changed. Every
-run prints a `baseline reuse [...]` summary naming what was reused and what was
-rescanned, and why. `--full` (`npm run baseline:vet -- --full` /
-`baseline:check -- --full`) disables reuse and rescans every component from
-scratch. Reuse never fabricates: a spliced receipt is byte-identical to the prior
-one, and a `blocked` verdict can never flip to `pass` without an actual
-rescan.
+Scanner owns baseline execution as an independent batch. Core owns the fixed
+catalog request, trust roots, verification policy, interpretation of verified
+annexes, and the committed release lock. Scanner never approves installation or
+activation, and Core never substitutes local execution for missing Scanner
+evidence.
 
-### Where the from-scratch vet runs, and when
+The workflow matrix scans ECC and Superpowers in parallel. Adding another source
+means adding one bounded catalog request and one matrix entry; it does not add an
+in-Core analyzer implementation. Exact duplicate source bytes remain
+content-addressed, but this version intentionally performs no cross-run receipt
+reuse or sharded receipt splicing. Those optimizations require their own public
+Scanner protocol before Core may rely on them.
 
-The from-scratch `--full` vet is **anchored to the pin set, not to a schedule**,
-and it does not run in CI.
+Two states remain fail-closed:
 
-Every input the vet consumes is content-addressed: sources by commit SHA,
-SkillSpector by image digest, the scanner environments by hash-pinned `uv.lock`,
-and `aih-native` by a content digest over its own detector source closure.
-Between two runs at an unchanged pin set there is nothing that can differ except
-the machine. Re-running the scan therefore does not re-test the supply chain; it
-samples the runner image. Content-addressed evidence does not expire — a receipt
-asserts that these exact bytes, scanned by these exact analyzers, produced this
-verdict, and that does not become less true with time.
+- **Pins unchanged** — the committed evidence is the release input, and the
+  cheap required job verifies its declared pins, analyzer floor, and installable
+  preview.
+- **A source or analyzer pin moved** — the committed lock is stale. Required CI
+  fails until the detached Scanner refresh produces a reviewed replacement.
 
-So the model is two states:
-
-- **Pins unchanged** — the committed evidence *is* the answer. CI proves two
-  cheap things: `npm run check:baseline-pins` compares the pin set this build
-  declares against the pin set the committed lock recorded, and `baseline:check`
-  proves the lock still reproduces from the pinned sources. Neither rescans
-  unchanged content.
-- **A pin moved** — the committed lock is stale evidence rather than a verdict
-  about what ships. `check:baseline-pins` fails closed and names the re-vet as
-  the remedy. That re-vet is a required, blocking step, not an advisory one.
-
-`check:baseline-pins` replaces an earlier path-pattern gate that inferred
-relevance from which files a diff touched. A path pattern is a proxy; comparing
-recorded identities against declared ones is the fact itself, and it catches the
-case a path pattern is worst at — the sources are untouched but the analyzer
-doing the scanning is no longer the analyzer that scanned.
-
-The pair is also tamper-resistant. Hand-editing the lock's recorded pins to fake
-agreement does not work: `baseline:check` then re-derives evidence at those pins
-and the receipts do not reproduce.
-
-Because the from-scratch run is now rare and blocking rather than routine, it is
-worth making it fast. `baseline:vet --shard <i>/<n> --receipts-out <file>` scans
-one slice of each catalog on one host, and `--reuse-from <a,b,c>` merges the
-resulting receipt bundles for a single assembly run that re-hashes every
-component tree and re-checks every analyzer identity before splicing. Sharding
-distributes the cost of producing a receipt and never the authority to assert
-one.
-
-Before asking an external dispatcher to fan out those shards, create one static
-ECC preflight receipt and carry that file to every shard host and to the fan-in
-host:
-
-```bash
-npm run baseline:vet -- \
-  --ecc-root /path/to/exact/ECC \
-  --preflight-only \
-  --preflight-receipt-out /path/to/ecc-preflight.json
-
-npm run baseline:vet -- \
-  --ecc-root /path/to/exact/ECC \
-  --superpowers-root /path/to/exact/Superpowers \
-  --shard 1/4 \
-  --receipts-out /path/to/shard-1.json \
-  --preflight-receipt /path/to/ecc-preflight.json
-
-npm run baseline:vet -- \
-  --ecc-root /path/to/exact/ECC \
-  --superpowers-root /path/to/exact/Superpowers \
-  --reuse-from /path/to/shard-1.json,/path/to/shard-2.json,/path/to/shard-3.json,/path/to/shard-4.json \
-  --preflight-receipt /path/to/ecc-preflight.json
-```
-
-The static receipt binds the exact ECC checkout and pinned source identity; it
-does not run analyzers, vet Superpowers, or authorize an install. Every shard
-must provide `--preflight-receipt` with `--shard` and `--receipts-out`, and the
-fan-in must provide it with `--reuse-from`. The final assembly boundary
-re-validates that receipt before work starts, requires the completed ECC evidence
-to carry the same whole-source digest, and re-checks each component hash and
-analyzer identity before reusing its evidence. Missing, stale, or mismatched
-receipts fail closed.
-
-Both the receipt output and every later receipt input must live outside the ECC
-source root. Writing the receipt into the tree would change the bytes it just
-attested and make it unusable; resolving through a linked parent into that tree
-is refused for the same reason.
-
-The receipt proves the non-executing lexical dependency closure only. Dynamic
-adapter compatibility remains behind analyzer evidence: final preview assembly
-loads the upstream generator there, repeats the closure check independently,
-and validates the generated operations against the code-owned target contract.
-
-This static preflight receipt is distinct from the analyzer-availability
-preflight that runs before an ordinary vet; the latter still checks that all
-required runtimes are provisioned and fails closed when they are not. Ordinary
-non-sharded `baseline:vet` and `baseline:check` invocations remain unchanged
-and do not require a receipt. This repository commits no dispatcher, scheduler,
-transport, or receipt-collection service: external orchestration owns host
-fan-out, file handoff, and invocation of the fan-in command.
+Hand-editing recorded pins cannot substitute for a refresh: receipt content
+hashes and fixed analyzer identities must match the exact Core-authored request,
+and candidate assembly rechecks the canonical source checkout before writing
+new files.

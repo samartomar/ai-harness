@@ -3,22 +3,20 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parseDocument } from "yaml";
-import {
-  CISCO_SKILL_SCANNER_SPEC,
-  CISCO_SKILL_SCANNER_VERSION,
-} from "../../src/baseline-evidence/analyzer-profile.js";
+import { CISCO_SKILL_SCANNER_SPEC } from "../../src/baseline-evidence/analyzer-profile.js";
 import { baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
-import { SKILLSPECTOR_IMAGE, SKILLSPECTOR_IMAGE_DIGEST } from "../../src/trust/images.js";
 
 const repo = process.cwd();
 
 function packageJson(): {
   files: string[];
   scripts: Record<string, string>;
+  devDependencies: Record<string, string>;
 } {
   return JSON.parse(readFileSync(join(repo, "package.json"), "utf8")) as {
     files: string[];
     scripts: Record<string, string>;
+    devDependencies: Record<string, string>;
   };
 }
 
@@ -44,11 +42,17 @@ describe("baseline evidence release payload", () => {
     expect(files).toContain("tools/trust-scanners/snyk-agent-scan/uv.lock");
   });
 
-  it("exposes explicit write and check scripts for the same deterministic generator", () => {
-    const scripts = packageJson().scripts;
-    expect(scripts["baseline:vet"]).toContain("baseline-evidence/generate.ts");
-    expect(scripts["baseline:check"]).toContain("baseline-evidence/generate.ts");
-    expect(scripts["baseline:check"]).toContain("--check");
+  it("delegates baseline execution to the exact public Scanner and keeps Core consumption explicit", () => {
+    const manifest = packageJson();
+    const scripts = manifest.scripts;
+    expect(manifest.devDependencies["@aihq/scan"]).toBe("0.2.5");
+    expect(scripts["baseline:request"]).toContain("scanner-cli.ts request");
+    expect(scripts["baseline:vet"]).toBe("aih-scan baseline-vet");
+    expect(scripts["baseline:consume"]).toContain("scanner-cli.ts consume");
+    expect(scripts["baseline:assemble"]).toContain("scanner-cli.ts assemble");
+    expect(scripts["baseline:check"]).toContain("check:baseline-pins");
+    expect(scripts["baseline:check"]).toContain("check:baseline-analyzers");
+    expect(scripts["baseline:check"]).toContain("check:baseline-installable");
     expect(scripts["check:baseline-analyzers"]).toContain("check-baseline-analyzers.ts");
     expect(scripts.verify).toContain("check:baseline-analyzers");
   });
@@ -59,52 +63,60 @@ describe("baseline evidence release payload", () => {
     const workflow = readFileSync(path, "utf8");
     expect(workflow).toContain(baselineCatalogById("ecc").pinnedSha);
     expect(workflow).toContain(baselineCatalogById("superpowers").pinnedSha);
-    // CI proves the committed evidence is CURRENT and REPRODUCES; it no longer
-    // rescans from scratch. The inputs are content-addressed, so a repeat scan
-    // at an unchanged pin set could only have sampled the runner image. The
-    // from-scratch run is owned by the vet fleet and triggered by pin drift.
-    expect(workflow).toContain("npm run check:baseline-pins");
-    expect(workflow).toContain("npm run baseline:check");
-    expect(workflow).not.toContain("npm run baseline:vet");
     const workflowDocument = parseDocument(workflow);
     expect(workflowDocument.errors).toEqual([]);
-    const steps = (
+    const jobs = (
       workflowDocument.toJSON() as {
-        jobs?: { "vet-once"?: { steps?: Array<{ if?: unknown; run?: unknown }> } };
+        jobs?: Record<
+          string,
+          { if?: unknown; steps?: Array<{ if?: unknown; name?: unknown; run?: unknown }> }
+        >;
       }
-    ).jobs?.["vet-once"]?.steps;
-    if (!steps) throw new Error("baseline-evidence workflow must define vet-once steps");
-    for (const command of ["npm run check:baseline-pins", "npm run baseline:check"]) {
-      const step = steps.find(
-        (candidate) => typeof candidate.run === "string" && candidate.run.includes(command),
-      );
-      if (!step) throw new Error(`baseline-evidence workflow must run ${command}`);
-      expect(step).not.toHaveProperty("if");
-    }
-    expect(workflow).not.toContain("--full");
-    expect(workflow).toContain(SKILLSPECTOR_IMAGE_DIGEST);
-    // The image is pulled content-addressed by digest from GHCR, then tagged to
-    // the local runtime name so SKILLSPECTOR_IMAGE selection (src/trust/images.ts)
-    // keeps working unmodified. Verification is store-agnostic: it checks the
-    // pulled image's RepoDigests rather than depending on the runner's Docker
-    // image-store type (containerd vs legacy graphdriver).
-    expect(workflow).toContain("docker pull");
-    expect(workflow).toContain(`ghcr.io/samartomar/skillspector@${SKILLSPECTOR_IMAGE_DIGEST}`);
-    expect(workflow).toContain("docker tag");
-    expect(workflow).toContain(SKILLSPECTOR_IMAGE);
-    expect(workflow).toContain("RepoDigests");
-    expect(workflow).not.toContain("/etc/docker/daemon.json");
-    expect(workflow).not.toContain("containerd-snapshotter");
-    expect(workflow).not.toContain("systemctl restart docker");
-    expect(workflow).not.toContain("docker build");
+    ).jobs;
+    const requiredSteps = jobs?.["vet-once"]?.steps;
+    if (!requiredSteps) throw new Error("baseline-evidence workflow must define vet-once steps");
+    const requiredCommands = JSON.stringify(requiredSteps);
+    expect(requiredCommands).toContain("npm run baseline:check");
+    expect(requiredCommands).not.toContain("baseline:vet");
+    expect(requiredCommands).not.toContain("setup-uv");
+    expect(requiredCommands).not.toContain("docker");
+
+    const refreshJob = jobs?.["refresh-execute"];
+    expect(refreshJob?.if).toBe(
+      "${{ github.event_name == 'workflow_dispatch' && inputs.refresh }}",
+    );
+    const refreshSteps = refreshJob?.steps ?? [];
+    const refreshStepNames = refreshSteps.map((step) => step.name);
+    expect(refreshStepNames).toEqual(
+      expect.arrayContaining([
+        "Bind Scanner's fixed analyzer runtime paths",
+        "Author the exact Core request",
+        "Execute the public Scanner baseline",
+      ]),
+    );
+    expect(refreshStepNames.indexOf("Bind Scanner's fixed analyzer runtime paths")).toBeLessThan(
+      refreshStepNames.indexOf("Author the exact Core request"),
+    );
+    expect(refreshStepNames.indexOf("Author the exact Core request")).toBeLessThan(
+      refreshStepNames.indexOf("Execute the public Scanner baseline"),
+    );
+    const refreshCommands = JSON.stringify(refreshSteps);
+    expect(refreshCommands).toContain("npm run baseline:request");
+    expect(refreshCommands).toContain("npm run baseline:vet");
+    expect(workflow).toContain("npm run baseline:consume");
+    expect(workflow).toContain("npm run baseline:assemble");
+    expect(workflow).toContain(`@aihq/scan@\${SCANNER_VERSION}`);
     expect(workflow).toContain("astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d");
-    expect(workflow).toContain(`skill-scanner ${CISCO_SKILL_SCANNER_VERSION}`);
+    expect(workflow).toContain('version: "0.12.7"');
+    expect(workflow).toContain(
+      "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
+    );
     expect(workflow).toContain("actions/upload-artifact@");
     expect(workflow).toContain("src/baseline-evidence/vendor-lock.json");
     expect(workflow).not.toMatch(/git\s+(commit|push)|npm\s+publish/);
   });
 
-  it("provisions Cisco from a committed uv lock and uploads the generated evidence candidate", () => {
+  it("keeps legacy analyzer locks auditable while Scanner owns refresh execution", () => {
     const runtimeRoot = join(repo, "tools", "cisco-skill-scanner");
     const pyproject = join(runtimeRoot, "pyproject.toml");
     const lock = join(runtimeRoot, "uv.lock");
@@ -116,27 +128,29 @@ describe("baseline evidence release payload", () => {
       join(repo, ".github", "workflows", "baseline-evidence.yml"),
       "utf8",
     );
-    expect(workflow).toContain("tools/cisco-skill-scanner/uv.lock");
-    expect(workflow).toContain("tools/trust-scanners/semgrep/uv.lock");
-    expect(workflow).toContain("tools/trust-scanners/snyk-agent-scan/uv.lock");
-    expect(workflow).toContain("tools/trust-scanners/cisco-mcp/uv.lock");
     expect(workflow).toContain("actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97");
-    expect(workflow).toContain('python-version: "3.12"');
-    expect(workflow.match(/--python 3\.12/g)?.length).toBeGreaterThanOrEqual(6);
-    expect(workflow).toContain("uv run");
-    expect(workflow).toContain("--project tools/cisco-skill-scanner");
-    expect(workflow).toContain("--project tools/trust-scanners/semgrep");
-    expect(workflow).toContain("--project tools/trust-scanners/snyk-agent-scan");
-    expect(workflow).toContain("--project tools/trust-scanners/cisco-mcp");
-    expect(workflow).toContain('test "$semgrep_version" = "1.173.0"');
-    expect(workflow).toContain("snyk-agent-scan help");
-    expect(workflow).toContain("mcp-scanner --help");
-    expect(workflow).toContain("--locked");
-    expect(workflow).toContain("--offline");
-    // `baseline:check` byte-compares the regenerated artifacts itself, so the
-    // separate `git diff --exit-code` the old from-scratch step needed is gone.
+    expect(workflow).toContain('python-version: "3.13"');
+    expect(workflow).toContain("/usr/bin/python3.13");
+    expect(workflow).toContain('"${python_prefix}/lib/libpython3.13.so.1.0"');
+    expect(workflow).toContain("/usr/lib/x86_64-linux-gnu/libpython3.13.so.1.0");
+    expect(workflow).toContain("/usr/local/bin/uv");
+    expect(workflow).toContain("/usr/bin/bwrap");
+    expect(workflow).toContain("/usr/share/apparmor/extra-profiles/bwrap-userns-restrict");
+    expect(workflow).toContain("profile bwrap /usr/bin/bwrap flags=(attach_disconnected)");
+    expect(workflow).toContain("audit deny capability");
+    expect(workflow).toContain("sudo apparmor_parser --replace");
+    expect(workflow).not.toContain("sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0");
+    expect(workflow).toContain("/usr/bin/bwrap --unshare-all --unshare-user");
+    expect(workflow).toContain("--disable-userns --assert-userns-disabled");
+    expect(workflow).toContain("--ro-bind-try /lib64 /lib64");
+    expect(workflow).toContain("nested user namespace unexpectedly available");
+    expect(workflow).toContain("sandbox child did not enter unpriv_bwrap");
+    expect(workflow).toContain("sandbox child retained effective capabilities");
+    expect(workflow).toContain("test -x /usr/bin/unshare");
+    expect(workflow).toContain("/usr/bin/unshare --help");
+    expect(workflow).toContain("--proc /proc --dev /dev /usr/bin/python3.13 -c");
     expect(workflow).toContain("npm run baseline:check");
-    expect(workflow).not.toContain("git diff --exit-code");
+    expect(workflow).toContain("scanner-baseline-core-candidate");
   });
 
   it("builds SkillSpector from its committed lock on a digest-pinned base", () => {
@@ -146,7 +160,7 @@ describe("baseline evidence release payload", () => {
     expect(dockerfile).toContain(
       "python:3.12-slim-bookworm@sha256:a116514e19457bcb7af7efe9c3dd0b9b71e85b317694e7882a1c52aa15a78134",
     );
-    expect(dockerfile).toContain("uv==0.12.5");
+    expect(dockerfile).toContain("uv==0.12.7");
     expect(dockerfile).toContain(
       'org.opencontainers.image.revision="2d198ab910add401cad658d1087e7c7ba24fd640"',
     );

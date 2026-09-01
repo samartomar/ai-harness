@@ -17,6 +17,11 @@ import { AihError, PathContainmentError } from "../errors.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
 import { type ExecAction, exec, type PlanContext } from "../internals/plan.js";
 import type { RunResult } from "../internals/proc.js";
+import { execArgv } from "../tools/install.js";
+import {
+  DIRECTORY_REGISTRY_ORIGIN,
+  type DirectoryDiscoverySourceV1,
+} from "./directory-resolution.js";
 
 export type TrustSource = LocalTrustSource | GitHubTrustSource;
 
@@ -64,6 +69,50 @@ export interface PackageTrustSource {
   treePath: string;
   metadataPath: string;
   display: string;
+}
+
+export interface ArtifactIntakePackageTrustSource {
+  kind: "artifact-intake-package";
+  id: string;
+  source: string;
+  package: string;
+  version: string;
+  registry: string;
+  registryIntegrity?: string;
+  quarantineRoot: string;
+  treePath: string;
+  metadataPath: string;
+  display: string;
+}
+
+export interface ArtifactDirectoryTrustSource {
+  kind: "artifact-directory";
+  id: string;
+  source: string;
+  provider: DirectoryDiscoverySourceV1["provider"];
+  slug: string;
+  directoryUrl: string;
+  registryUrl: string;
+  quarantineRoot: string;
+  directoryPath: string;
+  registryPath: string;
+  metadataPath: string;
+  display: string;
+}
+
+export interface ArtifactIntakePackageTrustFetchMetadata {
+  kind: "artifact-intake-npm";
+  package: string;
+  version: string;
+  registry: string;
+  registryIntegrity: string;
+  tarballSha256: string;
+  treePath: string;
+}
+
+export interface ArtifactDirectoryTrustFetch {
+  directoryHtml: string;
+  registryJson: string;
 }
 
 export interface TrustFetchMetadata {
@@ -141,9 +190,20 @@ function quarantineRoot(): string {
 }
 
 export function cleanupQuarantine(
-  source: TrustSource | PackageTrustSource | undefined,
+  source:
+    | TrustSource
+    | PackageTrustSource
+    | ArtifactIntakePackageTrustSource
+    | ArtifactDirectoryTrustSource
+    | undefined,
 ): Error | undefined {
-  if (source?.kind !== "github" && source?.kind !== "package") return;
+  if (
+    source?.kind !== "github" &&
+    source?.kind !== "package" &&
+    source?.kind !== "artifact-intake-package" &&
+    source?.kind !== "artifact-directory"
+  )
+    return;
   try {
     rmSync(source.quarantineRoot, { recursive: true, force: true });
     return undefined;
@@ -172,6 +232,28 @@ export function scrubFetchEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   for (const [key, value] of Object.entries(env)) {
     if (value === undefined || isSecretEnvKey(key)) continue;
     if (SAFE_ENV_KEYS.has(key.toUpperCase())) out[key] = value;
+  }
+  return out;
+}
+
+const SAFE_NPM_FETCH_ENV_KEYS = new Set([
+  "COMSPEC",
+  "LANG",
+  "PATH",
+  "PATHEXT",
+  "SYSTEMDRIVE",
+  "SYSTEMROOT",
+  "TEMP",
+  "TMP",
+  "TMPDIR",
+  "WINDIR",
+]);
+
+/** Public-registry acquisition must not inherit user npm credentials, proxy, CA, or home config. */
+export function scrubNpmFetchEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const out: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (value !== undefined && SAFE_NPM_FETCH_ENV_KEYS.has(key.toUpperCase())) out[key] = value;
   }
   return out;
 }
@@ -218,27 +300,11 @@ export function isSafeGitRefName(ref: string): boolean {
     .every((part) => part.length > 0 && !part.startsWith(".") && !part.endsWith(".lock"));
 }
 
-export function resolveTrustSource(
+function githubTrustSource(
   raw: string,
-  opts: { root: string; ref?: string; pin?: string; skipDirs?: ReadonlySet<string> } = {
-    root: process.cwd(),
-  },
-): TrustSource {
+  opts: { root: string; ref?: string; pin?: string; skipDirs?: ReadonlySet<string> },
+): GitHubTrustSource {
   const trimmed = raw.trim();
-  if (trimmed.length === 0) throw new AihError("workspace add requires a source", "AIH_TRUST");
-
-  const local = isAbsolute(trimmed) ? trimmed : resolve(opts.root, trimmed);
-  if (existsSync(local)) {
-    const root = assertTrustTreeSafe(local, { skipDirs: opts.skipDirs });
-    return {
-      kind: "local",
-      id: sourceIdForLocal(root),
-      source: root,
-      root,
-      display: root,
-    };
-  }
-
   const gh = GITHUB_SOURCE.exec(trimmed);
   if (!gh) {
     throw new AihError(
@@ -277,6 +343,39 @@ export function resolveTrustSource(
   };
 }
 
+/** Resolve an intake field whose schema already declares an exact GitHub identity. */
+export function resolveGitHubTrustSource(
+  raw: string,
+  opts: { root: string; ref?: string; pin?: string; skipDirs?: ReadonlySet<string> } = {
+    root: process.cwd(),
+  },
+): GitHubTrustSource {
+  return githubTrustSource(raw, opts);
+}
+
+export function resolveTrustSource(
+  raw: string,
+  opts: { root: string; ref?: string; pin?: string; skipDirs?: ReadonlySet<string> } = {
+    root: process.cwd(),
+  },
+): TrustSource {
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) throw new AihError("workspace add requires a source", "AIH_TRUST");
+
+  const local = isAbsolute(trimmed) ? trimmed : resolve(opts.root, trimmed);
+  if (existsSync(local)) {
+    const root = assertTrustTreeSafe(local, { skipDirs: opts.skipDirs });
+    return {
+      kind: "local",
+      id: sourceIdForLocal(root),
+      source: root,
+      root,
+      display: root,
+    };
+  }
+  return githubTrustSource(trimmed, opts);
+}
+
 export function resolvePackageTrustSource(input: {
   package: string;
   version: string;
@@ -302,6 +401,58 @@ export function resolvePackageTrustSource(input: {
     treePath: join(root, "tree"),
     metadataPath: join(root, "metadata.json"),
     display: `${input.package}@${input.version}`,
+  };
+}
+
+export function resolveArtifactIntakePackageTrustSource(input: {
+  package: string;
+  version: string;
+  registry: string;
+  registryIntegrity?: string;
+}): ArtifactIntakePackageTrustSource {
+  const root = quarantineRoot();
+  return {
+    kind: "artifact-intake-package",
+    id: slugify(`${input.package}-${input.version}`),
+    source: `${input.package}@${input.version}`,
+    package: input.package,
+    version: input.version,
+    registry: input.registry,
+    ...(input.registryIntegrity === undefined
+      ? {}
+      : { registryIntegrity: input.registryIntegrity }),
+    quarantineRoot: root,
+    treePath: join(root, "tree"),
+    metadataPath: join(root, "metadata.json"),
+    display: `${input.package}@${input.version}`,
+  };
+}
+
+function directoryRegistryQuery(slug: string): string {
+  return slug.split("-").find((part) => part.length >= 2) ?? slug;
+}
+
+export function resolveArtifactDirectoryTrustSource(
+  input: DirectoryDiscoverySourceV1,
+): ArtifactDirectoryTrustSource {
+  const root = quarantineRoot();
+  const registryUrl = new URL("/v0.1/servers", DIRECTORY_REGISTRY_ORIGIN);
+  registryUrl.searchParams.set("limit", "100");
+  registryUrl.searchParams.set("version", "latest");
+  registryUrl.searchParams.set("search", directoryRegistryQuery(input.slug));
+  return {
+    kind: "artifact-directory",
+    id: slugify(`${input.provider}-${input.slug}`),
+    source: input.url,
+    provider: input.provider,
+    slug: input.slug,
+    directoryUrl: input.url,
+    registryUrl: registryUrl.toString(),
+    quarantineRoot: root,
+    directoryPath: join(root, "directory.html"),
+    registryPath: join(root, "registry.json"),
+    metadataPath: join(root, "metadata.json"),
+    display: `${input.provider === "pulsemcp" ? "PulseMCP" : "MCP Market"} ${input.slug}`,
   };
 }
 
@@ -461,6 +612,169 @@ export function sameGitHubTrustFetchMetadata(
   );
 }
 
+export function readArtifactIntakePackageTrustFetchMetadata(
+  source: ArtifactIntakePackageTrustSource,
+): ArtifactIntakePackageTrustFetchMetadata {
+  let listed: Stats;
+  try {
+    listed = lstatSync(source.metadataPath);
+  } catch {
+    throw new AihError("artifact intake npm fetch metadata is missing", "AIH_TRUST");
+  }
+  if (!listed.isFile() || listed.isSymbolicLink() || listed.nlink !== 1) {
+    throw new AihError("artifact intake npm fetch metadata is unreadable", "AIH_TRUST");
+  }
+  const opened = readRegularFileWithStats(source.metadataPath, { maxBytes: 64 * 1024 });
+  if (opened === undefined || opened.stats.nlink !== 1) {
+    throw new AihError("artifact intake npm fetch metadata is unreadable", "AIH_TRUST");
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(opened.contents.toString("utf8"));
+  } catch {
+    throw new AihError("artifact intake npm fetch metadata is malformed", "AIH_TRUST");
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new AihError("artifact intake npm fetch metadata is malformed", "AIH_TRUST");
+  }
+  const metadata = value as Record<string, unknown>;
+  const keys = Object.keys(metadata).sort();
+  const expected = [
+    "kind",
+    "package",
+    "registry",
+    "registryIntegrity",
+    "tarballSha256",
+    "treePath",
+    "version",
+  ];
+  const registryIntegrity = metadata.registryIntegrity;
+  const encodedIntegrity =
+    typeof registryIntegrity === "string"
+      ? /^sha512-([A-Za-z0-9+/]+={0,2})$/.exec(registryIntegrity)?.[1]
+      : undefined;
+  const decodedIntegrity =
+    encodedIntegrity === undefined ? undefined : Buffer.from(encodedIntegrity, "base64");
+  if (
+    keys.length !== expected.length ||
+    !keys.every((key, index) => key === expected[index]) ||
+    metadata.kind !== "artifact-intake-npm" ||
+    metadata.package !== source.package ||
+    metadata.version !== source.version ||
+    metadata.registry !== source.registry ||
+    metadata.treePath !== source.treePath ||
+    typeof registryIntegrity !== "string" ||
+    encodedIntegrity === undefined ||
+    decodedIntegrity?.length !== 64 ||
+    decodedIntegrity.toString("base64") !== encodedIntegrity ||
+    (source.registryIntegrity !== undefined && registryIntegrity !== source.registryIntegrity) ||
+    typeof metadata.tarballSha256 !== "string" ||
+    !/^sha256:[a-f0-9]{64}$/.test(metadata.tarballSha256)
+  ) {
+    throw new AihError("artifact intake npm fetch metadata is mismatched", "AIH_TRUST");
+  }
+  return {
+    kind: "artifact-intake-npm",
+    package: source.package,
+    version: source.version,
+    registry: source.registry,
+    registryIntegrity,
+    tarballSha256: metadata.tarballSha256,
+    treePath: source.treePath,
+  };
+}
+
+function readDirectoryArtifactFile(
+  path: string,
+  maxBytes: number,
+  label: string,
+): { contents: Buffer; sha256: string } {
+  let listed: Stats;
+  try {
+    listed = lstatSync(path);
+  } catch {
+    throw new AihError(`${label} is missing`, "AIH_TRUST");
+  }
+  if (!listed.isFile() || listed.isSymbolicLink() || listed.nlink !== 1) {
+    throw new AihError(`${label} is unreadable`, "AIH_TRUST");
+  }
+  const opened = readRegularFileWithStats(path, { maxBytes });
+  if (opened === undefined || opened.stats.nlink !== 1) {
+    throw new AihError(`${label} is unreadable`, "AIH_TRUST");
+  }
+  return {
+    contents: opened.contents,
+    sha256: `sha256:${createHash("sha256").update(opened.contents).digest("hex")}`,
+  };
+}
+
+export function readArtifactDirectoryTrustFetch(
+  source: ArtifactDirectoryTrustSource,
+): ArtifactDirectoryTrustFetch {
+  const openedMetadata = readDirectoryArtifactFile(
+    source.metadataPath,
+    64 * 1024,
+    "artifact directory fetch metadata",
+  );
+  let value: unknown;
+  try {
+    value = JSON.parse(openedMetadata.contents.toString("utf8"));
+  } catch {
+    throw new AihError("artifact directory fetch metadata is malformed", "AIH_TRUST");
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new AihError("artifact directory fetch metadata is malformed", "AIH_TRUST");
+  }
+  const metadata = value as Record<string, unknown>;
+  const expectedKeys = [
+    "directoryPath",
+    "directorySha256",
+    "directoryUrl",
+    "kind",
+    "provider",
+    "registryPath",
+    "registrySha256",
+    "registryUrl",
+  ];
+  const keys = Object.keys(metadata).sort();
+  if (
+    keys.length !== expectedKeys.length ||
+    !keys.every((key, index) => key === expectedKeys[index]) ||
+    metadata.kind !== source.kind ||
+    metadata.provider !== source.provider ||
+    metadata.directoryUrl !== source.directoryUrl ||
+    metadata.registryUrl !== source.registryUrl ||
+    metadata.directoryPath !== source.directoryPath ||
+    metadata.registryPath !== source.registryPath ||
+    typeof metadata.directorySha256 !== "string" ||
+    !/^sha256:[a-f0-9]{64}$/.test(metadata.directorySha256) ||
+    typeof metadata.registrySha256 !== "string" ||
+    !/^sha256:[a-f0-9]{64}$/.test(metadata.registrySha256)
+  ) {
+    throw new AihError("artifact directory fetch metadata is mismatched", "AIH_TRUST");
+  }
+  const directory = readDirectoryArtifactFile(
+    source.directoryPath,
+    1024 * 1024,
+    "artifact directory response",
+  );
+  const registry = readDirectoryArtifactFile(
+    source.registryPath,
+    4 * 1024 * 1024,
+    "official MCP registry response",
+  );
+  if (
+    directory.sha256 !== metadata.directorySha256 ||
+    registry.sha256 !== metadata.registrySha256
+  ) {
+    throw new AihError("artifact directory fetch content digest is mismatched", "AIH_TRUST");
+  }
+  return {
+    directoryHtml: directory.contents.toString("utf8"),
+    registryJson: registry.contents.toString("utf8"),
+  };
+}
+
 const GITHUB_FETCH_SCRIPT = String.raw`
 const crypto = require("node:crypto");
 const fs = require("node:fs");
@@ -474,7 +788,14 @@ const input = JSON.parse(process.argv[1]);
 const OWNER_DIR_MODE = 0o700;
 const OWNER_FILE_MODE = 0o600;
 const TRUSTED_GITHUB_FETCH_HOSTS = new Set(["api.github.com", "codeload.github.com"]);
+const TRUSTED_PULSE_FETCH_HOSTS = new Set(["www.pulsemcp.com"]);
+const TRUSTED_MARKET_FETCH_HOSTS = new Set(["mcpmarket.com"]);
+const TRUSTED_MCP_REGISTRY_FETCH_HOSTS = new Set(["registry.modelcontextprotocol.io"]);
 const MAX_GITHUB_FETCH_REDIRECTS = 3;
+const MAX_COMPRESSED_ARCHIVE_BYTES = 64 * 1024 * 1024;
+const MAX_EXPANDED_ARCHIVE_BYTES = 256 * 1024 * 1024;
+const MAX_TAR_ENTRY_BYTES = 16 * 1024 * 1024;
+const MAX_TAR_ENTRIES = 100000;
 
 function fail(message) {
   process.stderr.write(message + "\n");
@@ -549,7 +870,7 @@ function proxyFor(target) {
     fail("invalid proxy URL in HTTPS_PROXY/HTTP_PROXY");
   }
   if (proxy.protocol !== "http:") {
-    fail("only http:// proxy URLs are supported for quarantined GitHub fetches");
+    fail("only http:// proxy URLs are supported for quarantined trust fetches");
   }
   return proxy;
 }
@@ -591,7 +912,12 @@ function connectThroughProxy(target, proxy) {
   });
 }
 
-function trustedRedirectTarget(location, currentUrl, redirects) {
+function trustedRedirectTarget(
+  location,
+  currentUrl,
+  redirects,
+  allowedHosts = TRUSTED_GITHUB_FETCH_HOSTS,
+) {
   if (redirects >= MAX_GITHUB_FETCH_REDIRECTS) {
     fail("refusing redirect chain longer than " + MAX_GITHUB_FETCH_REDIRECTS + " hops");
   }
@@ -599,54 +925,105 @@ function trustedRedirectTarget(location, currentUrl, redirects) {
   try {
     target = new URL(location, currentUrl);
   } catch {
-    fail("refusing malformed GitHub fetch redirect");
+    fail("refusing malformed trust fetch redirect");
   }
   if (
     target.protocol !== "https:" ||
     target.port ||
     target.username ||
     target.password ||
-    !TRUSTED_GITHUB_FETCH_HOSTS.has(target.hostname.toLowerCase())
+    !allowedHosts.has(target.hostname.toLowerCase())
   ) {
-    fail("refusing redirect outside trusted GitHub endpoints");
+    fail(
+      allowedHosts === TRUSTED_GITHUB_FETCH_HOSTS
+        ? "refusing redirect outside trusted GitHub endpoints"
+        : "refusing redirect outside the expected trust source",
+    );
   }
   return target;
 }
 
-function collectResponse(url, res, resolve, reject, redirects) {
+function collectResponse(
+  url,
+  res,
+  resolve,
+  reject,
+  redirects,
+  options = { allowedHosts: TRUSTED_GITHUB_FETCH_HOSTS },
+) {
   if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
     res.resume();
-    requestBuffer(trustedRedirectTarget(res.headers.location, url, redirects).toString(), redirects + 1).then(resolve, reject);
+    requestBuffer(
+      trustedRedirectTarget(res.headers.location, url, redirects, options.allowedHosts).toString(),
+      redirects + 1,
+      options,
+    ).then(resolve, reject);
     return;
   }
   if (res.statusCode !== 200) {
-    const chunks = [];
-    res.on("data", (chunk) => chunks.push(chunk));
-    res.on("end", () => reject(new Error("HTTP " + res.statusCode + " from " + url + ": " + Buffer.concat(chunks).toString("utf8").slice(0, 400))));
+    res.resume();
+    reject(new Error("HTTP " + res.statusCode + " from " + new URL(url).hostname));
     return;
   }
   const chunks = [];
-  res.on("data", (chunk) => chunks.push(chunk));
+  let received = 0;
+  res.on("data", (chunk) => {
+    received += chunk.length;
+    if (options.maxBytes !== undefined && received > options.maxBytes) {
+      res.destroy();
+      reject(new Error("response exceeded the configured byte limit"));
+      return;
+    }
+    chunks.push(chunk);
+  });
   res.on("end", () => resolve(Buffer.concat(chunks)));
+  res.on("error", reject);
 }
 
-function requestBuffer(url, redirects = 0) {
+function requestBuffer(
+  url,
+  redirects = 0,
+  options = { allowedHosts: TRUSTED_GITHUB_FETCH_HOSTS },
+) {
   return new Promise((resolve, reject) => {
     const target = new URL(url);
-    const headers = { "user-agent": "aih-trust-fetch", accept: "application/vnd.github+json" };
+    if (
+      target.protocol !== "https:" ||
+      target.port ||
+      target.username ||
+      target.password ||
+      !options.allowedHosts.has(target.hostname.toLowerCase())
+    ) {
+      reject(new Error("refusing fetch outside the expected trust source"));
+      return;
+    }
+    const headers = {
+      "user-agent": "aih-trust-fetch",
+      accept: options.accept || "application/vnd.github+json",
+    };
     const proxy = proxyFor(target);
-    const start = (options) => {
-      const req = https.request(target, options, (res) => collectResponse(url, res, resolve, reject, redirects));
+    if (!proxy) {
+      const requestOptions = options;
+      const req = https.request(target, { headers }, (res) =>
+        collectResponse(url, res, resolve, reject, redirects, requestOptions),
+      );
       req.on("error", reject);
       req.setTimeout(30000, () => req.destroy(new Error("request timed out: " + url)));
       req.end();
-    };
-    if (!proxy) {
-      start({ headers });
       return;
     }
     connectThroughProxy(target, proxy)
-      .then((socket) => start({ headers, createConnection: () => socket }))
+      .then((socket) => {
+        const requestOptions = options;
+        const req = https.request(
+          target,
+          { headers, createConnection: () => socket },
+          (res) => collectResponse(url, res, resolve, reject, redirects, requestOptions),
+        );
+        req.on("error", reject);
+        req.setTimeout(30000, () => req.destroy(new Error("request timed out: " + url)));
+        req.end();
+      })
       .catch(reject);
   });
 }
@@ -699,15 +1076,97 @@ function prepareQuarantine(root, treePath, metadataPath) {
   mkdirOwner(resolvedTree);
 }
 
+function prepareDirectoryQuarantine(root, directoryPath, registryPath, metadataPath) {
+  const resolvedRoot = path.resolve(root);
+  let st;
+  try {
+    st = fs.lstatSync(resolvedRoot);
+  } catch {
+    fail("quarantine root is missing: " + resolvedRoot);
+  }
+  if (!st.isDirectory() || st.isSymbolicLink()) {
+    fail("quarantine root is not a regular directory: " + resolvedRoot);
+  }
+  chmodBestEffort(resolvedRoot, OWNER_DIR_MODE);
+  for (const target of [directoryPath, registryPath, metadataPath]) {
+    const resolvedTarget = path.resolve(target);
+    ensureContained(resolvedRoot, resolvedTarget);
+    fs.rmSync(resolvedTarget, { force: true });
+  }
+}
+
+function directoryFetchInputs() {
+  if (
+    !/^[a-z0-9](?:[a-z0-9-]{0,126}[a-z0-9])?$/.test(input.slug || "") ||
+    (input.provider !== "pulsemcp" && input.provider !== "mcpmarket")
+  ) {
+    fail("artifact directory source is malformed");
+  }
+  const directory = new URL(input.directoryUrl);
+  const expectedHost = input.provider === "pulsemcp" ? "www.pulsemcp.com" : "mcpmarket.com";
+  const expectedPrefix = input.provider === "pulsemcp" ? "/servers/" : "/server/";
+  if (
+    directory.protocol !== "https:" ||
+    directory.hostname.toLowerCase() !== expectedHost ||
+    directory.port ||
+    directory.username ||
+    directory.password ||
+    directory.search ||
+    directory.hash ||
+    directory.pathname !== expectedPrefix + input.slug ||
+    directory.toString() !== input.directoryUrl
+  ) {
+    fail("artifact directory URL is not canonical");
+  }
+  const registry = new URL(input.registryUrl);
+  const expectedSearch = input.slug.split("-").find((part) => part.length >= 2) || input.slug;
+  const registryKeys = [...registry.searchParams.keys()].sort();
+  if (
+    registry.protocol !== "https:" ||
+    registry.hostname.toLowerCase() !== "registry.modelcontextprotocol.io" ||
+    registry.port ||
+    registry.username ||
+    registry.password ||
+    registry.pathname !== "/v0.1/servers" ||
+    registry.hash ||
+    registryKeys.join(",") !== "limit,search,version" ||
+    registry.searchParams.get("limit") !== "100" ||
+    registry.searchParams.get("version") !== "latest" ||
+    registry.searchParams.get("search") !== expectedSearch ||
+    registry.toString() !== input.registryUrl
+  ) {
+    fail("official MCP registry URL is not canonical");
+  }
+  return {
+    directory,
+    directoryHosts:
+      input.provider === "pulsemcp" ? TRUSTED_PULSE_FETCH_HOSTS : TRUSTED_MARKET_FETCH_HOSTS,
+    registry,
+  };
+}
+
 function isTarMetadata(type) {
   return type === "g" || type === "x";
 }
 
+function validTarHeaderChecksum(header) {
+  const declared = octal(header, 148, 8);
+  let actual = 0;
+  for (let index = 0; index < header.length; index += 1) {
+    actual += index >= 148 && index < 156 ? 32 : header[index];
+  }
+  return declared === actual;
+}
+
 function extractTar(buffer, outRoot) {
+  if (buffer.length > MAX_EXPANDED_ARCHIVE_BYTES) fail("expanded archive exceeded the byte limit");
+  const pendingLinks = [];
   let offset = 0;
+  let entries = 0;
   while (offset + 512 <= buffer.length) {
     const header = buffer.subarray(offset, offset + 512);
     if (header.every((byte) => byte === 0)) break;
+    if (!validTarHeaderChecksum(header)) fail("refusing tar entry with an invalid header checksum");
     const name = text(header, 0, 100);
     const prefix = text(header, 345, 155);
     const fullName = prefix ? prefix + "/" + name : name;
@@ -715,16 +1174,20 @@ function extractTar(buffer, outRoot) {
     const size = octal(header, 124, 12);
     const type = text(header, 156, 1) || "0";
     offset += 512;
+    entries += 1;
+    if (entries > MAX_TAR_ENTRIES) fail("tar archive exceeded the entry limit");
+    if (size > MAX_TAR_ENTRY_BYTES) fail("tar entry exceeded the byte limit: " + fullName);
+    const paddedSize = Math.ceil(size / 512) * 512;
+    if (!Number.isSafeInteger(paddedSize) || offset + paddedSize > buffer.length) {
+      fail("tar entry contents are truncated: " + fullName);
+    }
     const rel = safeRel(fullName);
     if (!rel) {
       if (type !== "5" && !isTarMetadata(type)) fail("refusing unsafe tar entry: " + fullName);
-      offset += Math.ceil(size / 512) * 512;
+      offset += paddedSize;
       continue;
     }
-    if (isTarMetadata(type)) {
-      offset += Math.ceil(size / 512) * 512;
-      continue;
-    }
+    if (isTarMetadata(type)) fail("refusing unsupported tar metadata: " + fullName);
     const target = path.resolve(outRoot, rel);
     ensureContained(outRoot, target);
     if (type === "5") {
@@ -733,17 +1196,79 @@ function extractTar(buffer, outRoot) {
       mkdirOwner(path.dirname(target));
       writeFileOwner(target, buffer.subarray(offset, offset + size));
     } else if (type === "2") {
-      fail("refusing tar symlink entry: " + fullName + " -> " + linkName);
+      if (!linkName || linkName.includes("\\") || path.isAbsolute(linkName)) {
+        fail("refusing tar symlink outside quarantine: " + fullName + " -> " + linkName);
+      }
+      const resolvedTarget = path.resolve(path.dirname(target), linkName);
+      const linkRel = path.relative(outRoot, resolvedTarget);
+      if (linkRel === "" || linkRel.startsWith("..") || path.isAbsolute(linkRel)) {
+        fail("refusing tar symlink outside quarantine: " + fullName + " -> " + linkName);
+      }
+      pendingLinks.push({ fullName, linkName, target, resolvedTarget });
     } else {
       fail("refusing non-regular tar entry: " + fullName);
     }
-    offset += Math.ceil(size / 512) * 512;
+    offset += paddedSize;
+  }
+  for (const link of pendingLinks) {
+    let targetStats;
+    try {
+      targetStats = fs.lstatSync(link.resolvedTarget);
+    } catch {
+      fail("refusing tar symlink without a regular in-tree target: " + link.fullName + " -> " + link.linkName);
+    }
+    if (!targetStats.isFile() || targetStats.isSymbolicLink() || targetStats.nlink !== 1) {
+      fail("refusing tar symlink without a regular in-tree target: " + link.fullName + " -> " + link.linkName);
+    }
+    ensureContained(fs.realpathSync(outRoot), fs.realpathSync(link.resolvedTarget));
+    mkdirOwner(path.dirname(link.target));
+    writeFileOwner(link.target, fs.readFileSync(link.resolvedTarget));
   }
 }
 
 (async () => {
+  if (input.kind === "artifact-directory") {
+    const targets = directoryFetchInputs();
+    prepareDirectoryQuarantine(
+      input.quarantineRoot,
+      input.directoryPath,
+      input.registryPath,
+      input.metadataPath,
+    );
+    const directory = await requestBuffer(input.directoryUrl, 0, {
+      allowedHosts: targets.directoryHosts,
+      accept: "text/html,application/xhtml+xml",
+      maxBytes: 1024 * 1024,
+    });
+    const registry = await requestBuffer(input.registryUrl, 0, {
+      allowedHosts: TRUSTED_MCP_REGISTRY_FETCH_HOSTS,
+      accept: "application/json",
+      maxBytes: 4 * 1024 * 1024,
+    });
+    writeFileOwner(input.directoryPath, directory);
+    writeFileOwner(input.registryPath, registry);
+    writeFileOwner(
+      input.metadataPath,
+      JSON.stringify(
+        {
+          directoryPath: input.directoryPath,
+          directorySha256: "sha256:" + crypto.createHash("sha256").update(directory).digest("hex"),
+          directoryUrl: input.directoryUrl,
+          kind: input.kind,
+          provider: input.provider,
+          registryPath: input.registryPath,
+          registrySha256: "sha256:" + crypto.createHash("sha256").update(registry).digest("hex"),
+          registryUrl: input.registryUrl,
+        },
+        null,
+        2,
+      ) + "\n",
+      "utf8",
+    );
+    return;
+  }
   prepareQuarantine(input.quarantineRoot, input.treePath, input.metadataPath);
-  if (input.kind === "npm") {
+  if (input.kind === "npm" || input.kind === "artifact-intake-npm") {
     const tarballs = fs
       .readdirSync(input.quarantineRoot, { withFileTypes: true })
       .filter((entry) => entry.isFile() && entry.name.endsWith(".tgz"))
@@ -751,12 +1276,55 @@ function extractTar(buffer, outRoot) {
     if (tarballs.length !== 1) fail("expected exactly one npm tarball in quarantine");
     const tarballPath = path.resolve(input.quarantineRoot, tarballs[0]);
     ensureContained(path.resolve(input.quarantineRoot), tarballPath);
+    const tarballStat = fs.lstatSync(tarballPath);
+    if (!tarballStat.isFile() || tarballStat.isSymbolicLink() || tarballStat.nlink !== 1 || tarballStat.size > MAX_COMPRESSED_ARCHIVE_BYTES) {
+      fail("npm tarball exceeded the compressed byte limit or had an unsafe file shape");
+    }
     const tarball = fs.readFileSync(tarballPath);
     const actualSha256 = "sha256:" + crypto.createHash("sha256").update(tarball).digest("hex");
-    if (actualSha256 !== input.expectedSha256) {
+    const actualRegistryIntegrity = "sha512-" + crypto.createHash("sha512").update(tarball).digest("base64");
+    if (input.expectedSha256 && actualSha256 !== input.expectedSha256) {
       fail("npm tarball SHA-256 does not match the policy pin: expected " + input.expectedSha256 + ", got " + actualSha256);
     }
-    extractTar(zlib.gunzipSync(tarball), input.treePath);
+    if (input.registryIntegrity && actualRegistryIntegrity !== input.registryIntegrity) {
+      fail("npm tarball SHA-512 does not match the registry integrity: expected " + input.registryIntegrity + ", got " + actualRegistryIntegrity);
+    }
+    let expanded;
+    try {
+      expanded = zlib.gunzipSync(tarball, { maxOutputLength: MAX_EXPANDED_ARCHIVE_BYTES });
+    } catch {
+      fail("npm tarball decompression failed or exceeded the expanded byte limit");
+    }
+    extractTar(expanded, input.treePath);
+    if (input.kind === "artifact-intake-npm") {
+      let manifest;
+      try {
+        manifest = JSON.parse(fs.readFileSync(path.join(input.treePath, "package.json"), "utf8"));
+      } catch {
+        fail("npm tarball package.json is missing or malformed");
+      }
+      if (manifest.name !== input.package || manifest.version !== input.version) {
+        fail("npm tarball package identity does not match the requested exact package and version");
+      }
+      writeFileOwner(
+        input.metadataPath,
+        JSON.stringify(
+          {
+            kind: "artifact-intake-npm",
+            package: input.package,
+            registry: input.registry,
+            registryIntegrity: actualRegistryIntegrity,
+            tarballSha256: actualSha256,
+            treePath: input.treePath,
+            version: input.version,
+          },
+          null,
+          2,
+        ) + "\n",
+        "utf8",
+      );
+      return;
+    }
     writeFileOwner(
       input.metadataPath,
       JSON.stringify(
@@ -789,6 +1357,8 @@ function extractTar(buffer, outRoot) {
           encodeURIComponent(input.repo) +
           "/commits/" +
           encodeURIComponent(input.ref || "HEAD"),
+        0,
+        { allowedHosts: TRUSTED_GITHUB_FETCH_HOSTS, maxBytes: 2 * 1024 * 1024 },
       )).toString("utf8"),
     ).sha;
   if (!/^[a-f0-9]{40}$/i.test(resolvedSha)) fail("GitHub did not return a commit SHA");
@@ -799,8 +1369,16 @@ function extractTar(buffer, outRoot) {
       encodeURIComponent(input.repo) +
       "/tar.gz/" +
       resolvedSha,
+    0,
+    { allowedHosts: TRUSTED_GITHUB_FETCH_HOSTS, maxBytes: MAX_COMPRESSED_ARCHIVE_BYTES },
   );
-  extractTar(zlib.gunzipSync(tarball), input.treePath);
+  let expanded;
+  try {
+    expanded = zlib.gunzipSync(tarball, { maxOutputLength: MAX_EXPANDED_ARCHIVE_BYTES });
+  } catch {
+    fail("GitHub tarball decompression failed or exceeded the expanded byte limit");
+  }
+  extractTar(expanded, input.treePath);
   writeFileOwner(
     input.metadataPath,
     JSON.stringify(
@@ -859,10 +1437,55 @@ export function trustFetchExec(source: GitHubTrustSource, ctx: PlanContext): Exe
   );
 }
 
+export function trustDirectoryFetchExec(
+  source: ArtifactDirectoryTrustSource,
+  ctx: PlanContext,
+): ExecAction {
+  return exec(
+    `fetch ${source.display} claim and official MCP Registry metadata into quarantine`,
+    [
+      process.execPath,
+      "-e",
+      GITHUB_FETCH_SCRIPT,
+      JSON.stringify({
+        kind: source.kind,
+        provider: source.provider,
+        slug: source.slug,
+        directoryUrl: source.directoryUrl,
+        registryUrl: source.registryUrl,
+        quarantineRoot: source.quarantineRoot,
+        directoryPath: source.directoryPath,
+        registryPath: source.registryPath,
+        metadataPath: source.metadataPath,
+      }),
+    ],
+    {
+      cwd: source.quarantineRoot,
+      env: scrubFetchEnv(ctx.env),
+      timeoutMs: 120_000,
+      blockProbesOnFailure: true,
+      failureCheck: (result) => {
+        const reason = (result.stderr || result.stdout || "fetch command failed")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 400);
+        return {
+          name: "trust.fetch-blocked",
+          verdict: "fail",
+          code: "trust.fetch-blocked",
+          detail: `could not fetch ${source.display} into quarantine (exit ${result.code ?? "signal"}): ${reason}`,
+        };
+      },
+    },
+  );
+}
+
 export function trustPackageFetchActions(
-  source: PackageTrustSource,
+  source: PackageTrustSource | ArtifactIntakePackageTrustSource,
   ctx: PlanContext,
 ): ExecAction[] {
+  const isolatedNpmConfig = join(source.quarantineRoot, ".aih-empty-npmrc");
+  const isolatedNpmCache = join(source.quarantineRoot, "npm-cache");
   const failureCheck = (stage: string) => (result: RunResult) => {
     const reason = (result.stderr || result.stdout || `${stage} command failed`)
       .replace(/\s+/g, " ")
@@ -886,7 +1509,7 @@ export function trustPackageFetchActions(
   return [
     exec(
       `fetch ${source.display} pinned npm tarball into quarantine`,
-      [
+      execArgv(ctx.host.platform, [
         "npm",
         "pack",
         source.display,
@@ -895,10 +1518,13 @@ export function trustPackageFetchActions(
         "--json",
         "--pack-destination",
         source.quarantineRoot,
-      ],
+        `--userconfig=${isolatedNpmConfig}`,
+        `--globalconfig=${isolatedNpmConfig}`,
+        `--cache=${isolatedNpmCache}`,
+      ]),
       {
         cwd: source.quarantineRoot,
-        env: scrubFetchEnv(ctx.env),
+        env: scrubNpmFetchEnv(ctx.env),
         timeoutMs: 120_000,
         blockProbesOnFailure: true,
         failureCheck: failureCheck("fetch pinned npm tarball for"),
@@ -911,11 +1537,15 @@ export function trustPackageFetchActions(
         "-e",
         GITHUB_FETCH_SCRIPT,
         JSON.stringify({
-          kind: "npm",
-          candidate: source.candidate,
-          evidenceRecord: source.evidenceRecord,
-          source: source.candidateSource,
-          expectedSha256: source.integrity,
+          kind: source.kind === "package" ? "npm" : "artifact-intake-npm",
+          ...(source.kind === "package"
+            ? {
+                candidate: source.candidate,
+                evidenceRecord: source.evidenceRecord,
+                source: source.candidateSource,
+                expectedSha256: source.integrity,
+              }
+            : { registryIntegrity: source.registryIntegrity }),
           package: source.package,
           registry: source.registry,
           version: source.version,

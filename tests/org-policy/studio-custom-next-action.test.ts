@@ -6,6 +6,7 @@ import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
 const model = policyStudioModel();
 const CANDIDATE = {
   id: "acme-mcp",
+  owner: "mcp.owner@acme.example",
   pkg: "@acme/mcp-server",
   version: "1.4.2",
   integrity: `sha256:${"a".repeat(64)}`,
@@ -27,6 +28,7 @@ function studioWithCustomCandidate(): Window {
     input.value = value;
   };
   set("custom-id", CANDIDATE.id);
+  set("custom-owner", CANDIDATE.owner);
   set("custom-package", CANDIDATE.pkg);
   set("custom-version", CANDIDATE.version);
   set("custom-integrity", CANDIDATE.integrity);
@@ -58,6 +60,7 @@ describe("policy studio custom candidate next action", () => {
     expect(text, "package").toContain(CANDIDATE.pkg);
     expect(text, "version").toContain(CANDIDATE.version);
     expect(text, "integrity").toContain(CANDIDATE.integrity);
+    expect(text, "accountable owner").toContain(CANDIDATE.owner);
   });
 
   it("makes the pinned npm tarball itself the exact scan target", () => {
@@ -94,9 +97,7 @@ describe("policy studio custom candidate next action", () => {
     const window = studioWithCustomCandidate();
     const document = window.document;
     expect(document.getElementById("import-policy")?.textContent).toContain("replaces current");
-    expect(document.getElementById("import-evidence")?.textContent).toContain(
-      "non-destructive preflight",
-    );
+    expect(document.getElementById("import-evidence")?.textContent).toContain("inspection only");
 
     const input = document.getElementById("evidence-file");
     if (input === null) throw new Error("expected evidence import input");
@@ -111,7 +112,11 @@ describe("policy studio custom candidate next action", () => {
       ],
     });
     input.dispatchEvent(new window.Event("change", { bubbles: true }));
-    await new Promise((resolve) => window.setTimeout(resolve, 50));
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      if (document.querySelectorAll(`[data-evidence-record="${CANDIDATE.evidence}"]`).length === 2)
+        break;
+      await new Promise((resolve) => window.setTimeout(resolve, 10));
+    }
 
     const associated = document.querySelectorAll(`[data-evidence-record="${CANDIDATE.evidence}"]`);
     expect(associated).toHaveLength(2);

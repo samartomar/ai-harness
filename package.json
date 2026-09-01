@@ -71,8 +71,11 @@
     "check:baseline-installable": "tsx src/internals/check-baseline-installable.ts",
     "check:packed-doc-links": "tsx src/internals/check-packed-doc-links.ts",
     "check:lock-migration": "tsx src/internals/assert-identity-only-lock-migration.ts",
-    "baseline:vet": "tsx src/baseline-evidence/generate.ts",
-    "baseline:check": "tsx src/baseline-evidence/generate.ts --check",
+    "baseline:request": "tsx src/baseline-evidence/scanner-cli.ts request",
+    "baseline:vet": "aih-scan baseline-vet",
+    "baseline:consume": "tsx src/baseline-evidence/scanner-cli.ts consume",
+    "baseline:assemble": "tsx src/baseline-evidence/scanner-cli.ts assemble",
+    "baseline:check": "npm run check:baseline-pins && npm run check:baseline-analyzers && npm run check:baseline-installable",
     "baseline:artifact": "tsx src/baseline-evidence/vendor-artifact.ts",
     "release:preflight": "tsx src/internals/release-preflight.ts",
     "check:published-bin": "node dist/cli.js --version && node dist/cli.js --help",
@@ -108,6 +111,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@aihq/scan": "0.2.5",
     "@biomejs/biome": "^2.5.1",
     "@types/node": "^26.1.1",
     "@vitest/coverage-v8": "^4.1.10",
