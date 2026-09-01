@@ -6,6 +6,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [Core 0.4.2] - 2026-09-01
+
+### Fixed
+
+- Make the center Workbench inventory the administrator's final selection authority. Left-panel
+  composition still checks the exact related dependency closure, but a center deselection now
+  removes every dependent root, preserves unrelated selections, recomputes the remaining closure,
+  and exports a policy that still validates. Database plus React selects only their five related
+  ECC Agents rather than the complete Agent inventory ([#916]).
+
 ## [Core 0.4.1] - 2026-08-31
 
 ### Changed
@@ -3061,7 +3071,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v-core-0.4.1...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v-core-0.4.2...HEAD
+[Core 0.4.2]: https://github.com/samartomar/ai-harness/compare/v-core-0.4.1...v-core-0.4.2
 [Core 0.4.1]: https://github.com/samartomar/ai-harness/compare/v-core-0.4.0...v-core-0.4.1
 [Core 0.4.0]: https://github.com/samartomar/ai-harness/compare/v-core-0.3.0...v-core-0.4.0
 [Core 0.3.0]: https://github.com/samartomar/ai-harness/compare/v-core-0.2.0...v-core-0.3.0
