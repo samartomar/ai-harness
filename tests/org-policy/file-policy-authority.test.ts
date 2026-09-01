@@ -55,12 +55,13 @@ function authorityBundle(
   expiresAt = "2026-09-01T00:00:00Z",
   repoContract = "ai-coding/project.json",
   eccMcp = false,
+  issuedAt = "2026-08-25T00:00:00Z",
 ): string {
   return JSON.stringify({
     schemaVersion: 2,
     bundleVersion: "2026.08.1",
     issuer: "Acme platform security",
-    issuedAt: "2026-08-25T00:00:00Z",
+    issuedAt,
     policy: {
       schemaVersion: 2,
       minimumPosture: "enterprise",
@@ -89,7 +90,7 @@ function authorityBundle(
       format: "aih-policy-authority-receipt",
       version: 3,
       issuerRepository: "acme/governance",
-      issuedAt: "2026-08-25T00:00:00Z",
+      issuedAt,
       expiresAt,
       trustedIssuers: [{ id: "platform-security", githubRepository: "acme/governance" }],
       targets: ["claude"],
@@ -586,7 +587,17 @@ describe("administrator-protected policy-file authority", () => {
 
   it("refuses a protected-policy A-to-B swap before ordinary ECC lifecycle effects", async () => {
     vi.useRealTimers();
-    const bundle = JSON.parse(authorityBundle()) as { policy: Record<string, unknown> };
+    const now = Date.now();
+    const bundle = JSON.parse(
+      authorityBundle(
+        new Date(now + 30 * 24 * 60 * 60 * 1_000).toISOString(),
+        "ai-coding/project.json",
+        false,
+        new Date(now - 24 * 60 * 60 * 1_000).toISOString(),
+      ),
+    ) as {
+      policy: Record<string, unknown>;
+    };
     bundle.policy.governance = { supportedClis: ["claude"] };
     const initialBytes = JSON.stringify(bundle);
     writeFileSync(policyPath, initialBytes, "utf8");
