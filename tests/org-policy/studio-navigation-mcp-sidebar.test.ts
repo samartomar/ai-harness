@@ -158,6 +158,8 @@ describe("policy studio navigation ownership and ECC MCP authoring", () => {
         .querySelector(`.rail [data-framework-select="${key}"]`)
         ?.getAttribute("aria-pressed"),
     ).toBe("false");
+    click(window, window.document.getElementById("clear-policy"), "reset center exclusions");
+    expect(JSON.stringify(policy(window))).toBe(baseline);
     for (const preset of ["vibe", "enterprise"]) {
       setValue(window, "preset-select", preset);
       window.document
