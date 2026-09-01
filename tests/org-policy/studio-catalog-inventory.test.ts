@@ -187,7 +187,7 @@ describe("policy authoring catalog inventory", () => {
       click(window, `[data-detail="${item.skill}"]`);
       const drawer = window.document.getElementById("drawer-detail");
       expect(drawer?.querySelector("h2")?.textContent).toBe(item.skill);
-      expect(drawer?.textContent).toContain("@aihq/core@0.3.0");
+      expect(drawer?.textContent).toContain("@aihq/core@0.4.0");
       expect(drawer?.textContent).toContain(item.root);
       expect(drawer?.textContent).toContain(item.source);
       expect(drawer?.textContent).toContain("Manifest identitylocal");
