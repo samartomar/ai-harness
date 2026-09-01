@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [Core 0.4.3] - 2026-09-01
+
 ### Fixed
 
 - Keep center-panel ECC Skill and Agent deselections authoritative for the current Workbench
@@ -3089,7 +3091,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v-core-0.4.2...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v-core-0.4.3...HEAD
+[Core 0.4.3]: https://github.com/samartomar/ai-harness/compare/v-core-0.4.2...v-core-0.4.3
 [Core 0.4.2]: https://github.com/samartomar/ai-harness/compare/v-core-0.4.1...v-core-0.4.2
 [Core 0.4.1]: https://github.com/samartomar/ai-harness/compare/v-core-0.4.0...v-core-0.4.1
 [Core 0.4.0]: https://github.com/samartomar/ai-harness/compare/v-core-0.3.0...v-core-0.4.0

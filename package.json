@@ -1,6 +1,6 @@
 {
   "name": "@aihq/core",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "description": "AI Development Assurance governance core for exact tools, skills, MCP servers, packages, evidence, approval, observation, and audit history",
   "repository": {
     "type": "git",

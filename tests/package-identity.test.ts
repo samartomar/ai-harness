@@ -10,11 +10,11 @@ function read(path: string): string {
 }
 
 describe("Core package identity (#866)", () => {
-  it("uses the 0.4.2 release identity without changing the command or exports", () => {
+  it("uses the 0.4.3 release identity without changing the command or exports", () => {
     const manifest = JSON.parse(read("package.json")) as Record<string, unknown>;
 
     expect(manifest.name).toBe("@aihq/core");
-    expect(manifest.version).toBe("0.4.2");
+    expect(manifest.version).toBe("0.4.3");
     expect(manifest.bin).toEqual({ aih: "dist/cli.js" });
     expect(manifest.exports).toEqual({
       ".": {
@@ -61,10 +61,10 @@ describe("Core package identity (#866)", () => {
 
     expect(packed).toHaveLength(1);
     expect(packed[0]).toMatchObject({
-      filename: "aihq-core-0.4.2.tgz",
-      id: "@aihq/core@0.4.2",
+      filename: "aihq-core-0.4.3.tgz",
+      id: "@aihq/core@0.4.3",
       name: "@aihq/core",
-      version: "0.4.2",
+      version: "0.4.3",
     });
   });
 });

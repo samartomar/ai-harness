@@ -126,7 +126,7 @@ Read governance output as a chain of separate proofs, not as one broad approval:
 | Is this the authoritative organization policy? | A current PolicyBundle V2 selected through `AIH_ORG_POLICY`, or the optional separately attested authority receipt | A readable JSON file, Workbench draft, or Catalog entry is not authority. |
 | What execution is permitted? | The exact decision target/effect plus a code-owned projector or adapter | Qualification or observation alone does not install, activate, or run a candidate. |
 | What independently verifiable evidence exists? | Canonical evidence/qualification receipts, exact digests, custody records, and fresh observations | Catalog membership is provenance; it is not organization admission or live-state proof. |
-| Which public claim does that proof support? | [`docs/CONTROL_MATRIX.md`](docs/CONTROL_MATRIX.md) maps the scoped claim to implementation and named regressions | A passing test supports its named assertion, not general maturity, compliance, or deployment claims. |
+| Which public claim does that proof support? | [`docs/CONTROL_MATRIX.md`](https://github.com/samartomar/ai-harness/blob/main/docs/CONTROL_MATRIX.md) maps the scoped claim to implementation and named regressions | A passing test supports its named assertion, not general maturity, compliance, or deployment claims. |
 
 Accordingly, reports keep Catalog membership, qualification route (`aih-supported` or
 `organization-qualified`), organization authority, durable custody, live observation, and the
