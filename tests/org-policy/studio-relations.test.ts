@@ -273,6 +273,58 @@ describe("policy studio component relations", () => {
     expect(selectedIds(window)).toEqual([]);
   });
 
+  it("reimports exact Skill directory paths emitted by the previous Workbench", async () => {
+    const authored = studio();
+    click(authored, '[data-framework-select="ecc|lang|lang:typescript"]');
+    click(authored, '[data-framework-select="ecc|lang|lang:python"]');
+    const authoredPreview = authored.document.getElementById("config-preview") as unknown as {
+      value: string;
+    } | null;
+    if (authoredPreview === null) throw new Error("expected authored policy preview");
+    const importedPolicy = JSON.parse(authoredPreview.value) as {
+      governance: {
+        externalSelections: Array<{
+          items: Array<{ id: string; source: { path: string } }>;
+        }>;
+      };
+    };
+    const legacySkillIds = new Set([
+      "skill:api-design",
+      "skill:nestjs-patterns",
+      "skill:python-patterns",
+    ]);
+    for (const group of importedPolicy.governance.externalSelections) {
+      for (const item of group.items) {
+        if (legacySkillIds.has(item.id)) {
+          item.source.path = `skills/${item.id.slice("skill:".length)}`;
+        }
+      }
+    }
+
+    const window = studio();
+    const policyFile = window.document.getElementById("policy-file");
+    if (policyFile === null) throw new Error("expected policy file input");
+    Object.defineProperty(policyFile, "files", {
+      configurable: true,
+      value: [
+        new window.File([JSON.stringify(importedPolicy)], "policy.json", {
+          type: "application/json",
+        }),
+      ],
+    });
+    policyFile.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await settle(window, () =>
+      (window.document.getElementById("announcement")?.textContent ?? "").includes(
+        "without transformation",
+      ),
+    );
+
+    expect(window.document.getElementById("announcement")?.textContent).toContain(
+      "without transformation",
+    );
+    expect(selectedIds(window)).toEqual(expect.arrayContaining([...legacySkillIds]));
+  });
+
   it("selects a declaration without turning its curated rider into selected authority", () => {
     const blockedModel = structuredClone(model);
     blockedModel.initialPolicy.governance?.externalCuration.push({
