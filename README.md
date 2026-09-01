@@ -119,6 +119,20 @@ member records remain in custody for replay and audit truth and continue to coun
 capacity; this route does not prune them automatically.
 Receipt V1 is unsupported.
 
+Read governance output as a chain of separate proofs, not as one broad approval:
+
+| Question | AIH surface | Boundary |
+| --- | --- | --- |
+| Is this the authoritative organization policy? | A current PolicyBundle V2 selected through `AIH_ORG_POLICY`, or the optional separately attested authority receipt | A readable JSON file, Workbench draft, or Catalog entry is not authority. |
+| What execution is permitted? | The exact decision target/effect plus a code-owned projector or adapter | Qualification or observation alone does not install, activate, or run a candidate. |
+| What independently verifiable evidence exists? | Canonical evidence/qualification receipts, exact digests, custody records, and fresh observations | Catalog membership is provenance; it is not organization admission or live-state proof. |
+| Which public claim does that proof support? | [`docs/CONTROL_MATRIX.md`](docs/CONTROL_MATRIX.md) maps the scoped claim to implementation and named regressions | A passing test supports its named assertion, not general maturity, compliance, or deployment claims. |
+
+Accordingly, reports keep Catalog membership, qualification route (`aih-supported` or
+`organization-qualified`), organization authority, durable custody, live observation, and the
+effective result distinct. A later failure preserves the established provenance but remains
+non-effective; no earlier stage substitutes for a missing later one.
+
 Cold administrators can follow the packed
 [exact governance command map](guides/enterprise-admin-guide.md#exact-governance-command-map)
 from organization or supported evidence through approval, observation, version update, revocation,
