@@ -562,6 +562,35 @@ describe("policy studio dependency-closed selection", () => {
     window.close();
   });
 
+  it("preserves a center-deselected language rider after reopening the exported policy", () => {
+    const window = studio();
+
+    click(window, '.rail [data-framework-select="ecc|lang|lang:python"]');
+    clickCanonical(window, "ecc|agent|agent:python-reviewer");
+
+    const preview = window.document.getElementById("config-preview") as unknown as {
+      value: string;
+    } | null;
+    if (preview === null) throw new Error("expected policy preview");
+    const editedPolicy = parseOrgPolicy(JSON.parse(preview.value));
+    window.close();
+
+    const reopenedModel = structuredClone(model);
+    reopenedModel.initialPolicy = editedPolicy;
+    const reopened = studio(reopenedModel);
+
+    expect(selectionRoots(reopened)).toEqual(["lang:python"]);
+    expect(selectedIds(reopened)).not.toContain("agent:python-reviewer");
+    click(reopened, '.rail [data-framework-select="ecc|lang|lang:python"]');
+    click(reopened, '.rail [data-framework-select="ecc|lang|lang:python"]');
+
+    expect(selectedIds(reopened)).toContain("lang:python");
+    expect(selectedIds(reopened)).not.toContain("agent:python-reviewer");
+    clickCanonical(reopened, "ecc|agent|agent:python-reviewer");
+    expect(selectedIds(reopened)).toContain("agent:python-reviewer");
+    reopened.close();
+  });
+
   it("keeps a center-deselected Skill excluded from later module suggestions", () => {
     const module = ecc.assets.find(
       (asset) =>
