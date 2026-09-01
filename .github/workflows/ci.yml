@@ -11,7 +11,7 @@ permissions:
 jobs:
   verify:
     # Ubuntu owns coverage and OS-independent gates; macOS keeps its complete
-    # platform suite in two sequential processes so DOM-heavy Workbench files
+    # platform suite in four sequential processes so DOM-heavy Workbench files
     # release their heap between shards. Windows is sharded below without
     # dropping any test files.
     strategy:
@@ -59,12 +59,18 @@ jobs:
         with:
           files: coverage/lcov.info
           fail_ci_if_error: false
-      - name: Test macOS shard 1/2
+      - name: Test macOS shard 1/4
         if: matrix.os == 'macos-latest'
-        run: npx vitest run --shard=1/2
-      - name: Test macOS shard 2/2
+        run: npx vitest run --shard=1/4
+      - name: Test macOS shard 2/4
         if: matrix.os == 'macos-latest'
-        run: npx vitest run --shard=2/2
+        run: npx vitest run --shard=2/4
+      - name: Test macOS shard 3/4
+        if: matrix.os == 'macos-latest'
+        run: npx vitest run --shard=3/4
+      - name: Test macOS shard 4/4
+        if: matrix.os == 'macos-latest'
+        run: npx vitest run --shard=4/4
       - name: Build
         run: npx tsup
       - name: Check installable baseline

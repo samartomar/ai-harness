@@ -97,7 +97,12 @@ describe("ai-harness self-hosting boundary", () => {
     expect(workflow.jobs.verify.strategy.matrix.os).toEqual(["ubuntu-latest", "macos-latest"]);
     expect(workflow.jobs.verify.env.NODE_OPTIONS).toBe("--max-old-space-size=4096");
     expect(workflow.jobs.verify.steps.map((step) => step.run)).toEqual(
-      expect.arrayContaining(["npx vitest run --shard=1/2", "npx vitest run --shard=2/2"]),
+      expect.arrayContaining([
+        "npx vitest run --shard=1/4",
+        "npx vitest run --shard=2/4",
+        "npx vitest run --shard=3/4",
+        "npx vitest run --shard=4/4",
+      ]),
     );
     expect(windows.name).toBe(`windows test (${githubExpression("matrix.shard")}/2)`);
     expect(windows.strategy.matrix.shard).toEqual([1, 2]);
