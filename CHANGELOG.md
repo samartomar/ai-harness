@@ -6,12 +6,35 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [Core 0.4.0] - 2026-08-31
+
 ### Changed
 
 - Separate merge, release cut, candidate publication, installed acceptance, and stable
   promotion. Repository-only work uses `semver:none` and cannot trigger package bytes;
   every tag workflow publishes first under npm `next`, and the same immutable version
   reaches `latest` only after public installed acceptance and separate authorization.
+- Correct the active code-review-graph source repository without changing its `2.3.7` bytes, and
+  hold `2.3.8` because inherited OpenAI-compatible environment can silently enable network egress.
+- Advance the exact SBOM, CodeQL, and opt-in Claude workflow actions after reviewing their
+  immutable tags, unchanged AIH input surfaces, and upstream security or bounded-execution fixes.
+- Advance the exact uv toolchain from `0.12.5` to `0.12.7` across both scanner workflows and the
+  controlled SkillSpector build after all five committed locks and offline exports remained stable.
+- Make ECC Workbench selections dependency-closed. Selecting a module now visibly selects its
+  corresponding selectable Skills, Agents, and baselines; selecting a language first brings the
+  canonical ECC Core module closure. Whole-module semantic components, module prerequisites, and
+  declared riders use the same mapping, export the same complete set, and safely prune only
+  unshared derived requirements when the root is removed. Policy import, browser validation, and
+  governed materialization all refuse incomplete closures before acquisition or installation.
+- Rename the three first-party skill identities to the concise AIH-owned names
+  `aih-betterdoc`, `aih-gov-doctor`, and `aih-bugbounty`. Their committed pack paths,
+  manifests, self-hosting references, runtime lookups, and public examples now use the same
+  canonical names. The Policy Workbench binds these first-party selections to AIH's managed
+  Catalog automatically and shows packaged-source proof without claiming missing qualification,
+  promotion, custody, or target-repository evidence. It presents `aih-betterdoc` as the
+  context-preserving AIH Skill and presents `aih-gov-doctor` plus `aih-bugbounty` separately as
+  AIH Agent workflows whose governed instruction sources are packaged as skills; selecting them
+  records package intent but does not claim the browser launched an isolated worker.
 
 ### Fixed
 
@@ -41,29 +64,6 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the policy no longer turns an in-panel selection into an outside click; explicit outside clicks
   and Escape still dismiss the panel.
 
-### Changed
-
-- Correct the active code-review-graph source repository without changing its `2.3.7` bytes, and
-  hold `2.3.8` because inherited OpenAI-compatible environment can silently enable network egress.
-- Advance the exact SBOM, CodeQL, and opt-in Claude workflow actions after reviewing their
-  immutable tags, unchanged AIH input surfaces, and upstream security or bounded-execution fixes.
-- Advance the exact uv toolchain from `0.12.5` to `0.12.7` across both scanner workflows and the
-  controlled SkillSpector build after all five committed locks and offline exports remained stable.
-- Make ECC Workbench selections dependency-closed. Selecting a module now visibly selects its
-  corresponding selectable Skills, Agents, and baselines; selecting a language first brings the
-  canonical ECC Core module closure. Whole-module semantic components, module prerequisites, and
-  declared riders use the same mapping, export the same complete set, and safely prune only
-  unshared derived requirements when the root is removed. Policy import, browser validation, and
-  governed materialization all refuse incomplete closures before acquisition or installation.
-- Rename the three first-party skill identities to the concise AIH-owned names
-  `aih-betterdoc`, `aih-gov-doctor`, and `aih-bugbounty`. Their committed pack paths,
-  manifests, self-hosting references, runtime lookups, and public examples now use the same
-  canonical names. The Policy Workbench binds these first-party selections to AIH's managed
-  Catalog automatically and shows packaged-source proof without claiming missing qualification,
-  promotion, custody, or target-repository evidence. It presents `aih-betterdoc` as the
-  context-preserving AIH Skill and presents `aih-gov-doctor` plus `aih-bugbounty` separately as
-  AIH Agent workflows whose governed instruction sources are packaged as skills; selecting them
-  records package intent but does not claim the browser launched an isolated worker.
 ## [Core 0.3.0] - 2026-08-27
 
 ### Fixed
@@ -3047,7 +3047,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v-core-0.3.0...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v-core-0.4.0...HEAD
+[Core 0.4.0]: https://github.com/samartomar/ai-harness/compare/v-core-0.3.0...v-core-0.4.0
 [Core 0.3.0]: https://github.com/samartomar/ai-harness/compare/v-core-0.2.0...v-core-0.3.0
 [Core 0.2.0]: https://github.com/samartomar/ai-harness/compare/v-core-0.1.1...v-core-0.2.0
 [Core 0.1.1]: https://github.com/samartomar/ai-harness/compare/v6.1.0...v-core-0.1.1

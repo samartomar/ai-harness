@@ -390,9 +390,9 @@ describe("aih capability resolve", () => {
   it("fails closed when the mandatory security-review capability is engine-incompatible", async () => {
     seedNodeRepo();
     vi.resetModules();
-    // In pre-1.0 SemVer, `^0.3.0` admits only 0.3.x. A later minor must review
+    // In pre-1.0 SemVer, `^0.4.0` admits only 0.4.x. A later minor must review
     // and deliberately advance the built-in catalog's Core engine contract.
-    vi.doMock("../../src/version.js", () => ({ VERSION: "0.4.0" }));
+    vi.doMock("../../src/version.js", () => ({ VERSION: "0.5.0" }));
     try {
       const module = await import("../../src/capability/index.js");
       await expect(async () => {
