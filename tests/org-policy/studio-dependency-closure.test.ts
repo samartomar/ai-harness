@@ -386,6 +386,86 @@ describe("policy studio dependency-closed selection", () => {
     window.close();
   });
 
+  it("keeps a center-deselected language rider excluded until the center restores it", () => {
+    const window = studio();
+
+    click(window, '.rail [data-framework-select="ecc|lang|lang:python"]');
+    expect(selectedIds(window)).toContain("agent:python-reviewer");
+
+    clickCanonical(window, "ecc|agent|agent:python-reviewer");
+    expect(selectedIds(window)).not.toContain("agent:python-reviewer");
+    expect(selectedIds(window)).not.toContain("lang:python");
+
+    click(window, '.rail [data-framework-select="ecc|lang|lang:python"]');
+    expect(selectedIds(window)).not.toContain("agent:python-reviewer");
+    expect(selectedIds(window)).not.toContain("lang:python");
+    expect(window.document.getElementById("announcement")?.textContent).toMatch(
+      /selection blocked.*agent:python-reviewer.*center/i,
+    );
+
+    clickCanonical(window, "ecc|agent|agent:python-reviewer");
+    expect(selectedIds(window)).toContain("agent:python-reviewer");
+    click(window, '.rail [data-framework-select="ecc|lang|lang:python"]');
+    expect(selectedIds(window)).toEqual(
+      expect.arrayContaining(["lang:python", "agent:python-reviewer"]),
+    );
+    click(window, "#validate");
+    expect(window.document.getElementById("announcement")?.textContent).toMatch(
+      /validation passed/i,
+    );
+    window.close();
+  });
+
+  it("keeps a center-deselected Skill excluded from later module suggestions", () => {
+    const module = ecc.assets.find(
+      (asset) =>
+        asset.kind === "module" && asset.members?.some((member) => member.startsWith("skill:")),
+    );
+    const skillId = module?.members?.find((member) => member.startsWith("skill:"));
+    if (module === undefined || skillId === undefined) {
+      throw new Error("expected an ECC module with a Skill member");
+    }
+    const window = studio();
+
+    click(window, `.rail [data-framework-select="ecc|module|${module.id}"]`);
+    expect(selectedIds(window)).toContain(skillId);
+
+    clickCanonical(window, `ecc|skill|${skillId}`);
+    expect(selectedIds(window)).not.toContain(skillId);
+    expect(selectedIds(window)).not.toContain(module.id);
+
+    click(window, `.rail [data-framework-select="ecc|module|${module.id}"]`);
+    expect(selectedIds(window)).not.toContain(skillId);
+    expect(selectedIds(window)).not.toContain(module.id);
+    expect(window.document.getElementById("announcement")?.textContent).toMatch(
+      new RegExp(`selection blocked.*${skillId}.*center`, "i"),
+    );
+
+    clickCanonical(window, `ecc|skill|${skillId}`);
+    expect(selectedIds(window)).toContain(skillId);
+    click(window, `.rail [data-framework-select="ecc|module|${module.id}"]`);
+    expect(selectedIds(window)).toEqual(expect.arrayContaining([module.id, skillId]));
+    click(window, "#validate");
+    expect(window.document.getElementById("announcement")?.textContent).toMatch(
+      /validation passed/i,
+    );
+    window.close();
+  });
+
+  it("clears session-only center exclusions when the administrator clears the policy", () => {
+    const window = studio();
+
+    click(window, '.rail [data-framework-select="ecc|lang|lang:python"]');
+    clickCanonical(window, "ecc|agent|agent:python-reviewer");
+    click(window, "#clear-policy");
+    click(window, '.rail [data-framework-select="ecc|lang|lang:python"]');
+
+    expect(selectedIds(window)).toEqual(
+      expect.arrayContaining(["lang:python", "agent:python-reviewer"]),
+    );
+    window.close();
+  });
+
   it("lets center removal of a required module prune its dependent root", () => {
     const window = studio();
     const module = ecc.assets.find(
