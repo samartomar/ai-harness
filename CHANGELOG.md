@@ -29,6 +29,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   accept only source paths proven by those pins, including strict legacy Workbench migrations.
 - Reject stale managed-MCP authority, skipped-as-verified evidence, oversized review history, and
   ambiguous policy or bundle selectors instead of silently continuing.
+- Advance the built-in capability catalog's pre-1.0 Core engine range so `aih init` remains
+  available on the `0.5.x` line while a future minor still requires an explicit compatibility review.
 
 ## [Core 0.4.3] - 2026-09-01
 
