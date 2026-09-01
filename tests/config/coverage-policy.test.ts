@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import vitestConfig from "../../vitest.config.js";
+import vitestConfig, { testTimeoutForPlatform } from "../../vitest.config.js";
 
 interface CoverageShape {
   include?: string[];
@@ -137,5 +137,11 @@ describe("coverage policy", () => {
     expect(pkg.scripts?.verify).toContain(
       "npm run test:cov && npm run build && npm run check:published-bin && npm run check:published-library",
     );
+  });
+
+  it("matches the required Windows timeout without weakening other platforms", () => {
+    expect(testTimeoutForPlatform("win32")).toBe(15_000);
+    expect(testTimeoutForPlatform("linux")).toBe(5_000);
+    expect(testTimeoutForPlatform("darwin")).toBe(5_000);
   });
 });

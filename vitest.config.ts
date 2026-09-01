@@ -1,6 +1,10 @@
 import { availableParallelism } from "node:os";
 import { defineConfig } from "vitest/config";
 
+export function testTimeoutForPlatform(platform: NodeJS.Platform): number {
+  return platform === "win32" ? 15_000 : 5_000;
+}
+
 export default defineConfig({
   test: {
     globals: false,
@@ -15,6 +19,7 @@ export default defineConfig({
     // derived default while capping high-core dev machines, whose uncapped
     // worker counts overcommit CPU/RAM and blow per-test budgets (#509).
     maxWorkers: Math.min(8, Math.max(availableParallelism() - 1, 1)),
+    testTimeout: testTimeoutForPlatform(process.platform),
     include: ["tests/**/*.test.ts"],
     coverage: {
       provider: "v8",
