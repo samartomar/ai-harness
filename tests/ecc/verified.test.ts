@@ -23,6 +23,7 @@ import {
   registrationLedgerPath,
 } from "../../src/ecc/registration.js";
 import { verifiedEccInstallPlan } from "../../src/ecc/verified.js";
+import { registeredExecStdinPayload } from "../../src/internals/exec-stdin.js";
 import type {
   Action,
   DigestAction,
@@ -84,7 +85,7 @@ function driverSteps(actions: Action[]): Array<{
 }> {
   const driver = execs(actions).find((action) => action.describe.includes("verified ECC checkout"));
   expect(driver).toBeDefined();
-  const serialized = driver?.stdin?.data;
+  const serialized = driver === undefined ? undefined : registeredExecStdinPayload(driver)?.data;
   if (serialized === undefined) throw new Error("missing verified ECC steps stdin");
   return JSON.parse(serialized) as Array<{
     argv: string[];
@@ -157,7 +158,11 @@ describe("verifiedEccInstallPlan", () => {
         action.describe.includes("verified ECC checkout"),
       );
       expect(driver?.argv).toEqual([process.execPath, "-e", expect.any(String)]);
-      expect(driver?.stdin?.data.length).toBeGreaterThan(0);
+      expect(driver?.stdin).toEqual({ maxBytes: 16 * 1024 * 1024 });
+      const serialized =
+        driver === undefined ? undefined : registeredExecStdinPayload(driver)?.data;
+      expect(serialized?.length).toBeGreaterThan(0);
+      expect(JSON.stringify(built)).not.toContain(serialized as string);
       expect(readdirSync(isolatedTemp)).toEqual([]);
     } finally {
       for (const [key, value] of Object.entries(original)) {

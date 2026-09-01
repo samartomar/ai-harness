@@ -1299,6 +1299,8 @@ describe("executePlan", () => {
     const action = exec("consume private payload", ["node", "consume.mjs"], {
       stdin: { data: payload, maxBytes: 64 * 1024 },
     });
+    expect(JSON.stringify(plan("t", action))).not.toContain(payload);
+    expect(action.stdin).toEqual({ maxBytes: 64 * 1024 });
 
     const dry = await executePlan(plan("t", action), ctx({ apply: false, run }));
     expect(inputs).toEqual([]);
@@ -1343,26 +1345,82 @@ describe("executePlan", () => {
 
   it("refuses oversized exec stdin before spawning the child", async () => {
     const run = vi.fn(fakeRunner(() => ({ code: 0 })));
+    const output = join(dir, "must-not-exist.txt");
     const action = exec("consume bounded payload", ["node", "consume.mjs"], {
       stdin: { data: "é".repeat(33), maxBytes: 64 },
     });
 
-    await expect(executePlan(plan("t", action), ctx({ apply: true, run }))).rejects.toThrow(
-      /exec stdin exceeds its byte limit/i,
-    );
+    await expect(
+      executePlan(
+        plan("t", writeText(output, "must not commit", "pre-exec write"), action),
+        ctx({ apply: true, run }),
+      ),
+    ).rejects.toThrow(/exec stdin exceeds its byte limit/i);
+    expect(existsSync(output)).toBe(false);
     expect(run).not.toHaveBeenCalled();
   });
 
-  it("refuses an invalid exec stdin limit before spawning the child", async () => {
+  it("refuses a copied exec stdin descriptor whose private payload is absent", async () => {
     const run = vi.fn(fakeRunner(() => ({ code: 0 })));
+    const output = join(dir, "must-not-exist.txt");
+    const original = exec("consume bounded payload", ["node", "consume.mjs"], {
+      stdin: { data: "payload", maxBytes: 64 },
+    });
+    const copied = structuredClone(original);
+
+    await expect(
+      executePlan(
+        plan("t", writeText(output, "must not commit", "pre-exec write"), copied),
+        ctx({ apply: true, run }),
+      ),
+    ).rejects.toThrow(/invalid exec stdin channel/i);
+    expect(existsSync(output)).toBe(false);
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("refuses an invalid exec stdin limit before writes or child execution", async () => {
+    const run = vi.fn(fakeRunner(() => ({ code: 0 })));
+    const output = join(dir, "must-not-exist.txt");
     const action = exec("consume bounded payload", ["node", "consume.mjs"], {
       stdin: { data: "payload", maxBytes: 0 },
     });
 
-    await expect(executePlan(plan("t", action), ctx({ apply: true, run }))).rejects.toThrow(
-      /invalid exec stdin byte limit/i,
-    );
+    await expect(
+      executePlan(
+        plan("t", writeText(output, "must not commit", "pre-exec write"), action),
+        ctx({ apply: true, run }),
+      ),
+    ).rejects.toThrow(/invalid exec stdin channel/i);
+    expect(existsSync(output)).toBe(false);
     expect(run).not.toHaveBeenCalled();
+  });
+
+  it("suppresses bounded-stdin bytes reflected by failed and throwing runners", async () => {
+    const payload = `private:${"y".repeat(100)}`;
+    const action = exec("consume protected payload", ["node", "consume.mjs"], {
+      stdin: { data: payload, maxBytes: 1024 },
+      failureCheck: (result) => ({
+        name: "protected stdin failure",
+        verdict: "fail",
+        detail: result.stderr,
+      }),
+    });
+    const reflected = fakeRunner((_argv, opts) => ({ code: 1, stderr: opts?.input }));
+
+    const failed = await executePlan(plan("t", action), ctx({ apply: true, run: reflected }));
+    expect(JSON.stringify(failed)).not.toContain(payload);
+    expect(summarizeResult(failed)).not.toContain(payload);
+    expect(failed.execs[0]?.stderr).toBe("bounded-stdin child failed");
+
+    const throwing: PlanContext["run"] = async (_argv, opts) => {
+      throw new Error(opts?.input);
+    };
+    const thrown = await executePlan(plan("t", action), ctx({ apply: true, run: throwing })).catch(
+      (error: unknown) => error,
+    );
+    expect(thrown).toBeInstanceOf(AihError);
+    expect(String(thrown)).toContain("runner failed while consuming bounded stdin");
+    expect(String(thrown)).not.toContain(payload);
   });
 
   it("surfaces the child diagnostic when an exec action fails", async () => {

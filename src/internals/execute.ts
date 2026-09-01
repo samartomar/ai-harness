@@ -25,6 +25,7 @@ import type {
 } from "../verification/types.js";
 import { isWellFormedUtf16 } from "../verification/validation.js";
 import { upsertManagedBlock } from "./envfile.js";
+import { registeredExecStdinPayload } from "./exec-stdin.js";
 import { FsTransaction, readIfExists } from "./fsxn.js";
 import { deepMerge, duplicateRootKeys, isPlainObject, parseJsoncText } from "./merge.js";
 import type {
@@ -859,6 +860,31 @@ export async function executePlan(
 ): Promise<PlanResult> {
   const commitNotAfter = parseCommitNotAfter(plan.commitNotAfter);
   const commitLock = resolveCommitLock(plan, ctx);
+  // Bind every apply-only stdin payload before the first await or filesystem
+  // transaction. The exported Plan contains only its byte limit; a cloned,
+  // malformed, or oversized channel therefore fails before any write or spawn.
+  const execInputs = new Map<ExecAction, string>();
+  for (const action of plan.actions) {
+    if (action.kind !== "exec" || action.stdin === undefined) continue;
+    const payload = registeredExecStdinPayload(action);
+    if (
+      payload === undefined ||
+      typeof payload.data !== "string" ||
+      !Number.isSafeInteger(action.stdin.maxBytes) ||
+      action.stdin.maxBytes <= 0 ||
+      payload.maxBytes !== action.stdin.maxBytes
+    ) {
+      throw new AihError("invalid exec stdin channel", "AIH_CONFIG");
+    }
+    const inputBytes = Buffer.byteLength(payload.data, "utf8");
+    if (inputBytes > action.stdin.maxBytes) {
+      throw new AihError(
+        `exec stdin exceeds its byte limit (${inputBytes} > ${action.stdin.maxBytes})`,
+        "AIH_TRUST",
+      );
+    }
+    execInputs.set(action, payload.data);
+  }
   // Dirty-worktree --apply preflight: refuse only when this apply would write over a
   // file that ITSELF has uncommitted changes — the precise "clobber your work" case —
   // not merely because some unrelated file in the repo is dirty. So creating a new
@@ -1238,25 +1264,8 @@ export async function executePlan(
       revalidate();
       let res: Awaited<ReturnType<PlanContext["run"]>> | undefined;
       let runnerError: unknown;
+      const input = execInputs.get(a);
       try {
-        let input: string | undefined;
-        if (a.stdin !== undefined) {
-          if (
-            typeof a.stdin.data !== "string" ||
-            !Number.isSafeInteger(a.stdin.maxBytes) ||
-            a.stdin.maxBytes <= 0
-          ) {
-            throw new AihError("invalid exec stdin byte limit", "AIH_CONFIG");
-          }
-          const inputBytes = Buffer.byteLength(a.stdin.data, "utf8");
-          if (inputBytes > a.stdin.maxBytes) {
-            throw new AihError(
-              `exec stdin exceeds its byte limit (${inputBytes} > ${a.stdin.maxBytes})`,
-              "AIH_TRUST",
-            );
-          }
-          input = a.stdin.data;
-        }
         res = await ctx.run(a.argv, {
           cwd: a.cwd,
           env: a.env,
@@ -1276,15 +1285,25 @@ export async function executePlan(
           "AIH_TRUST",
         );
       }
-      if (runnerError !== undefined) throw runnerError;
+      if (runnerError !== undefined) {
+        if (input !== undefined) {
+          throw new AihError(
+            `child "${a.describe}" runner failed while consuming bounded stdin`,
+            "AIH_TRUST",
+          );
+        }
+        throw runnerError;
+      }
       if (res === undefined)
         throw new AihError(`child "${a.describe}" returned no result`, "AIH_TRUST");
       const ok = res.code === 0 || Boolean(a.allowFailure);
       // A failing child already wrote a good diagnostic; carry it so the exit
       // code is not the only evidence the operator gets. Successful runs stay
       // out of the envelope — that output is noise, and children can be chatty.
-      const stderr = ok ? undefined : surfacedChildOutput(res.stderr);
-      const stdout = ok ? undefined : surfacedChildOutput(res.stdout);
+      const collectedResult =
+        input === undefined ? res : { ...res, stdout: "", stderr: "bounded-stdin child failed" };
+      const stderr = ok ? undefined : surfacedChildOutput(collectedResult.stderr);
+      const stdout = ok ? undefined : surfacedChildOutput(collectedResult.stdout);
       execs.push({
         describe: a.describe,
         argv: collectedArgv(a),
@@ -1298,7 +1317,7 @@ export async function executePlan(
         priorExecFailed = true;
         if (a.failureCheck) {
           execFailureChecks.push(
-            typeof a.failureCheck === "function" ? a.failureCheck(res) : a.failureCheck,
+            typeof a.failureCheck === "function" ? a.failureCheck(collectedResult) : a.failureCheck,
           );
         }
         if (a.blockProbesOnFailure) skipProbesAfterExecFailure = true;

@@ -9,6 +9,7 @@ import {
 import type { VerificationPipelineRun } from "../verification/types.js";
 import type { Cli } from "./clis.js";
 import type { EnvVar } from "./envfile.js";
+import { registerExecStdinPayload } from "./exec-stdin.js";
 import type { Runner, RunResult } from "./proc.js";
 import type { Prompter } from "./prompt.js";
 import type { Check } from "./verify.js";
@@ -166,10 +167,10 @@ export interface ExecAction {
   /** Optional scrubbed environment for local helper commands. */
   env?: NodeJS.ProcessEnv;
   /**
-   * Apply-only stdin kept outside argv and collected plan results. The executor
-   * refuses malformed limits and payloads whose UTF-8 bytes exceed `maxBytes`.
+   * Safe, enumerable metadata for apply-only stdin. The bytes remain in an
+   * executor-private channel outside the exported Plan object.
    */
-  stdin?: { data: string; maxBytes: number };
+  stdin?: { maxBytes: number };
   /** Optional timeout override for long-but-bounded local helpers. */
   timeoutMs?: number;
   /** Optional verification check to emit when the command exits non-zero. */
@@ -643,7 +644,7 @@ export function exec(
     allowFailure?: boolean;
     cwd?: string;
     env?: NodeJS.ProcessEnv;
-    stdin?: ExecAction["stdin"];
+    stdin?: { data: string; maxBytes: number };
     timeoutMs?: number;
     failureCheck?: ExecAction["failureCheck"];
     blockProbesOnFailure?: boolean;
@@ -652,13 +653,13 @@ export function exec(
     sensitive?: ActionSensitivity;
   } = {},
 ): ExecAction {
-  return {
+  const action: ExecAction = {
     kind: "exec",
     describe,
     argv,
     cwd: opts.cwd,
     env: opts.env,
-    stdin: opts.stdin,
+    ...(opts.stdin === undefined ? {} : { stdin: { maxBytes: opts.stdin.maxBytes } }),
     timeoutMs: opts.timeoutMs,
     failureCheck: opts.failureCheck,
     blockProbesOnFailure: opts.blockProbesOnFailure,
@@ -667,6 +668,8 @@ export function exec(
     expect: opts.expect,
     ...(opts.sensitive === undefined ? {} : { sensitive: opts.sensitive }),
   };
+  if (opts.stdin !== undefined) registerExecStdinPayload(action, opts.stdin);
+  return action;
 }
 
 export function envBlock(
