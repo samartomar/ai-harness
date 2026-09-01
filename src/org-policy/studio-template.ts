@@ -926,7 +926,7 @@ const composeVibeProfile=function(){const previous=structuredClone(state.policy)
    already in play, or ECC when nothing is selected yet, and states what that
    leaves out rather than dropping it silently. */
 const chosen=model.catalog.frameworks.find(function(item){return item.id===(activeSelectionFramework(g)||"ecc")})||model.catalog.frameworks[0];
-  let blocked=null;chosen.assets.some(function(asset){const result=selectFrameworkAssetClosure(g,chosen,asset);blocked=result.blocked;return Boolean(blocked)});if(blocked){state.policy=previous;activePreset="custom";announce("Vibe composition blocked because "+blocked+" cannot be selected with its required closure; remove conflicting curation or choose a narrower custom selection. Nothing changed.",true);render();return}
+  let blocked=null;chosen.assets.some(function(asset){const result=selectFrameworkAssetClosure(g,chosen,asset);blocked=result.blocked;return Boolean(blocked)});if(blocked){const blockedByCenter=frameworkAssetExcluded(chosen.id,blocked);state.policy=previous;activePreset="custom";announce("Vibe composition blocked because "+blocked+" cannot be selected with its required closure; "+(blockedByCenter?"it remains excluded by your center inventory choice, so re-select it there or choose a narrower custom selection.":"remove conflicting curation or choose a narrower custom selection.")+" Nothing changed.",true);render();return}
   const excluded=model.catalog.frameworks.filter(function(item){return item.id!==chosen.id}).reduce(function(total,item){return total+item.assets.length},0);
   state.policy.minimumPosture="vibe";
 /* Report the resulting selection, never the delta: composing over an existing
