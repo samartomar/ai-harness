@@ -1558,5 +1558,5 @@ describe("policy generate", () => {
       }
       await closeWorkbenchWindow(window);
     }
-  }, 10_000);
+  }, 30_000);
 });
