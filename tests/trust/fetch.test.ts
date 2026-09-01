@@ -489,8 +489,8 @@ describe("trust fetch source resolution", () => {
         "--json",
         "--pack-destination",
         source.quarantineRoot,
-        `--userconfig=${join(source.quarantineRoot, ".aih-empty-npmrc")}`,
-        `--globalconfig=${join(source.quarantineRoot, ".aih-empty-npmrc")}`,
+        `--userconfig=${join(source.quarantineRoot, ".aih-user-npmrc")}`,
+        `--globalconfig=${join(source.quarantineRoot, ".aih-global-npmrc")}`,
         `--cache=${join(source.quarantineRoot, "npm-cache")}`,
       ]);
       expect(fetch?.env).not.toHaveProperty("HOME");

@@ -79,6 +79,7 @@ function command(argv: string[]): Command {
     .option("--verify")
     .option("--json")
     .option("--root <dir>")
+    .option("--policy <file>")
     .option("--context-dir <dir>", "", "ai-coding")
     .option("--posture <posture>", "", "vibe")
     // Mirror heal/certs: a commander DEFAULT of "Zscaler" so opts.caPattern is never
@@ -285,6 +286,66 @@ describe("runCapability — posture precedence ladder (org floor > flag > marker
     expect(await resolvedPosture(["--posture", "enterprise", "--root", dir], {})).toContain(
       "enterprise:org-floor",
     );
+  });
+
+  it("lets an explicit --policy file select the org floor and override AIH_ORG_POLICY", async () => {
+    writeFileSync(
+      join(dir, "team-policy.json"),
+      JSON.stringify({
+        schemaVersion: 2,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        governance: { supportedClis: ["claude"] },
+      }),
+    );
+    writeFileSync(
+      join(dir, "other-policy.json"),
+      JSON.stringify({
+        schemaVersion: 2,
+        minimumPosture: "vibe",
+        references: { repoContract: "ai-coding/project.json" },
+      }),
+    );
+
+    const out = await resolvedPosture(
+      ["--policy", "team-policy.json", "--posture", "vibe", "--root", dir],
+      { AIH_ORG_POLICY: "other-policy.json" },
+    );
+
+    expect(out).toContain("enterprise:org-floor");
+  });
+
+  it("fails closed when an explicit --policy file is missing", async () => {
+    const result = await run(["--policy", "missing-team-policy.json", "--root", dir], echoSpec);
+
+    expect(result.code).toBe(1);
+    expect(result.out).toContain("--policy points at");
+    expect(result.out).toContain("missing-team-policy.json");
+    expect(result.out).toContain("omit --policy");
+    expect(result.out).not.toContain("unset --policy");
+  });
+
+  it("attributes a structured policy validation failure to --policy instead of the environment", async () => {
+    let out = "";
+    const code = await runCapability(
+      policyValidateCommand,
+      command(["--json", "--policy", "missing-team-policy.json", "--root", dir]),
+      {
+        run: fakeRunner(() => undefined),
+        env: { AIH_ORG_POLICY: "different-environment-policy.json" },
+        write: (text) => {
+          out += text;
+        },
+      },
+    );
+
+    expect(code).toBe(1);
+    expect(out).toContain("--policy points at");
+    expect(out).not.toContain("AIH_ORG_POLICY points at");
+    expect(out).toContain("omit --policy");
+    expect(out).not.toContain("unset --policy");
+    expect(out).toContain("Fix the file selected by `--policy`");
+    expect(out).not.toContain("Fix aih-org-policy.json");
   });
 
   it("read-only specs accept --posture but ignore it as a posture source", async () => {

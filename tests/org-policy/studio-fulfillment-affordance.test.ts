@@ -475,7 +475,11 @@ describe("selection to fulfillment affordance", () => {
       model.catalog.mcp.length +
       model.catalog.hooks.length +
       model.catalog.aihSkills.length +
-      model.catalog.aihAgents.length;
+      model.catalog.aihAgents.length +
+      model.catalog.eccMcpInventory.filter(
+        (entry) =>
+          entry.owner === "aih" && !model.catalog.mcp.some((control) => control.id === entry.id),
+      ).length;
     const ecc = model.catalog.frameworks.find((framework) => framework.id === "ecc");
     if (ecc === undefined) throw new Error("expected the ecc framework in the catalog");
     // Selecting an ecc component makes ecc the active framework, which hides

@@ -56,6 +56,9 @@
           "flags": "--no-log"
         },
         {
+          "flags": "--policy <file>"
+        },
+        {
           "flags": "--posture <posture>",
           "defaultValue": "vibe"
         },
@@ -111,6 +114,9 @@
         },
         {
           "flags": "--phase <n>"
+        },
+        {
+          "flags": "--policy <file>"
         },
         {
           "flags": "--posture <posture>",
@@ -177,6 +183,9 @@
           "flags": "--no-log"
         },
         {
+          "flags": "--policy <file>"
+        },
+        {
           "flags": "--posture <posture>",
           "defaultValue": "vibe"
         },
@@ -241,6 +250,9 @@
           "defaultValue": ".aih/fleet-bundle"
         },
         {
+          "flags": "--policy <file>"
+        },
+        {
           "flags": "--posture <posture>",
           "defaultValue": "vibe"
         },
@@ -295,6 +307,9 @@
                   "flags": "--json"
                 },
                 {
+                  "flags": "--policy <file>"
+                },
+                {
                   "flags": "--posture <posture>",
                   "defaultValue": "vibe"
                 },
@@ -317,6 +332,9 @@
                   "flags": "--json"
                 },
                 {
+                  "flags": "--policy <file>"
+                },
+                {
                   "flags": "--posture <posture>",
                   "defaultValue": "vibe"
                 },
@@ -337,6 +355,9 @@
                 },
                 {
                   "flags": "--json"
+                },
+                {
+                  "flags": "--policy <file>"
                 },
                 {
                   "flags": "--posture <posture>",
@@ -369,6 +390,9 @@
                   "flags": "--json"
                 },
                 {
+                  "flags": "--policy <file>"
+                },
+                {
                   "flags": "--posture <posture>",
                   "defaultValue": "vibe"
                 },
@@ -396,6 +420,9 @@
                   "flags": "--json"
                 },
                 {
+                  "flags": "--policy <file>"
+                },
+                {
                   "flags": "--posture <posture>",
                   "defaultValue": "vibe"
                 },
@@ -421,6 +448,9 @@
                 },
                 {
                   "flags": "--json"
+                },
+                {
+                  "flags": "--policy <file>"
                 },
                 {
                   "flags": "--posture <posture>",
@@ -451,6 +481,9 @@
                 },
                 {
                   "flags": "--json"
+                },
+                {
+                  "flags": "--policy <file>"
                 },
                 {
                   "flags": "--posture <posture>",
@@ -493,6 +526,9 @@
             },
             {
               "flags": "--no-log"
+            },
+            {
+              "flags": "--policy <file>"
             },
             {
               "flags": "--posture <posture>",
@@ -542,6 +578,9 @@
             },
             {
               "flags": "--no-log"
+            },
+            {
+              "flags": "--policy <file>"
             },
             {
               "flags": "--posture <posture>",
@@ -608,6 +647,9 @@
           "defaultValue": "~/.config/enterprise-ca"
         },
         {
+          "flags": "--policy <file>"
+        },
+        {
           "flags": "--posture <posture>",
           "defaultValue": "vibe"
         },
@@ -648,6 +690,9 @@
         },
         {
           "flags": "--no-log"
+        },
+        {
+          "flags": "--policy <file>"
         },
         {
           "flags": "--posture <posture>",
@@ -699,6 +744,9 @@
         },
         {
           "flags": "--no-log"
+        },
+        {
+          "flags": "--policy <file>"
         },
         {
           "flags": "--posture <posture>",
@@ -758,6 +806,9 @@
           "flags": "--no-log"
         },
         {
+          "flags": "--policy <file>"
+        },
+        {
           "flags": "--posture <posture>",
           "defaultValue": "vibe"
         },
@@ -815,6 +866,9 @@
           "flags": "--no-log"
         },
         {
+          "flags": "--policy <file>"
+        },
+        {
           "flags": "--posture <posture>",
           "defaultValue": "vibe"
         },
@@ -857,6 +911,9 @@
           "flags": "--no-log"
         },
         {
+          "flags": "--policy <file>"
+        },
+        {
           "flags": "--posture <posture>",
           "defaultValue": "vibe"
         },
@@ -894,6 +951,9 @@
         },
         {
           "flags": "--no-log"
+        },
+        {
+          "flags": "--policy <file>"
         },
         {
           "flags": "--posture <posture>",
@@ -951,6 +1011,9 @@
         },
         {
           "flags": "--no-log"
+        },
+        {
+          "flags": "--policy <file>"
         },
         {
           "flags": "--posture <posture>",
@@ -1019,6 +1082,9 @@
                   "flags": "--no-log"
                 },
                 {
+                  "flags": "--policy <file>"
+                },
+                {
                   "flags": "--posture <posture>",
                   "defaultValue": "vibe"
                 },
@@ -1071,6 +1137,9 @@
                 },
                 {
                   "flags": "--no-log"
+                },
+                {
+                  "flags": "--policy <file>"
                 },
                 {
                   "flags": "--posture <posture>",
@@ -1134,6 +1203,9 @@
             {
               "flags": "--out <dir>",
               "defaultValue": ".aih/evidence-bundle"
+            },
+            {
+              "flags": "--policy <file>"
             },
             {
               "flags": "--posture <posture>",
@@ -1205,6 +1277,9 @@
               "flags": "--pin <sha>"
             },
             {
+              "flags": "--policy <file>"
+            },
+            {
               "flags": "--posture <posture>",
               "defaultValue": "vibe"
             },
@@ -1244,6 +1319,9 @@
         },
         {
           "flags": "--json"
+        },
+        {
+          "flags": "--policy <file>"
         },
         {
           "flags": "--posture <posture>",
@@ -1296,6 +1374,9 @@
         },
         {
           "flags": "--no-log"
+        },
+        {
+          "flags": "--policy <file>"
         },
         {
           "flags": "--posture <posture>",
@@ -1360,6 +1441,9 @@
           "flags": "--no-log"
         },
         {
+          "flags": "--policy <file>"
+        },
+        {
           "flags": "--posture <posture>",
           "defaultValue": "vibe"
         },
@@ -1416,6 +1500,9 @@
         },
         {
           "flags": "--no-log"
+        },
+        {
+          "flags": "--policy <file>"
         },
         {
           "flags": "--posture <posture>",
@@ -1496,6 +1583,9 @@
           "flags": "--no-log"
         },
         {
+          "flags": "--policy <file>"
+        },
+        {
           "flags": "--posture <posture>",
           "defaultValue": "vibe"
         },
@@ -1548,6 +1638,9 @@
         },
         {
           "flags": "--no-log"
+        },
+        {
+          "flags": "--policy <file>"
         },
         {
           "flags": "--posture <posture>",
@@ -1613,6 +1706,9 @@
               "defaultValue": ".aih/marketplace"
             },
             {
+              "flags": "--policy <file>"
+            },
+            {
               "flags": "--posture <posture>",
               "defaultValue": "vibe"
             },
@@ -1672,6 +1768,9 @@
               "flags": "--no-log"
             },
             {
+              "flags": "--policy <file>"
+            },
+            {
               "flags": "--posture <posture>",
               "defaultValue": "vibe"
             },
@@ -1720,6 +1819,9 @@
             },
             {
               "flags": "--no-log"
+            },
+            {
+              "flags": "--policy <file>"
             },
             {
               "flags": "--posture <posture>",
@@ -1795,6 +1897,9 @@
           "flags": "--no-log"
         },
         {
+          "flags": "--policy <file>"
+        },
+        {
           "flags": "--posture <posture>",
           "defaultValue": "vibe"
         },
@@ -1856,6 +1961,9 @@
             },
             {
               "flags": "--no-log"
+            },
+            {
+              "flags": "--policy <file>"
             },
             {
               "flags": "--posture <posture>",
@@ -1927,6 +2035,9 @@
               "flags": "--pack <pack>"
             },
             {
+              "flags": "--policy <file>"
+            },
+            {
               "flags": "--posture <posture>",
               "defaultValue": "vibe"
             },
@@ -1983,6 +2094,9 @@
             },
             {
               "flags": "--pack <pack>"
+            },
+            {
+              "flags": "--policy <file>"
             },
             {
               "flags": "--posture <posture>",
@@ -2043,6 +2157,9 @@
               "flags": "--pack <name>"
             },
             {
+              "flags": "--policy <file>"
+            },
+            {
               "flags": "--posture <posture>",
               "defaultValue": "vibe"
             },
@@ -2078,6 +2195,9 @@
             },
             {
               "flags": "--pack <name>"
+            },
+            {
+              "flags": "--policy <file>"
             },
             {
               "flags": "--posture <posture>",
@@ -2124,6 +2244,9 @@
             },
             {
               "flags": "--pack <pack>"
+            },
+            {
+              "flags": "--policy <file>"
             },
             {
               "flags": "--posture <posture>",
@@ -2181,6 +2304,9 @@
               "flags": "--pack <pack>"
             },
             {
+              "flags": "--policy <file>"
+            },
+            {
               "flags": "--posture <posture>",
               "defaultValue": "vibe"
             },
@@ -2216,6 +2342,9 @@
             },
             {
               "flags": "--pack <name>"
+            },
+            {
+              "flags": "--policy <file>"
             },
             {
               "flags": "--posture <posture>",
@@ -2267,6 +2396,9 @@
               "flags": "--pack <name>"
             },
             {
+              "flags": "--policy <file>"
+            },
+            {
               "flags": "--posture <posture>",
               "defaultValue": "vibe"
             },
@@ -2302,6 +2434,9 @@
             },
             {
               "flags": "--pack <name>"
+            },
+            {
+              "flags": "--policy <file>"
             },
             {
               "flags": "--posture <posture>",
@@ -2346,6 +2481,9 @@
             },
             {
               "flags": "--no-log"
+            },
+            {
+              "flags": "--policy <file>"
             },
             {
               "flags": "--posture <posture>",
@@ -2398,6 +2536,9 @@
             {
               "flags": "--out <path>",
               "defaultValue": "aih-policy-workbench.html"
+            },
+            {
+              "flags": "--policy <file>"
             },
             {
               "flags": "--posture <posture>",
@@ -2454,6 +2595,9 @@
               "flags": "--no-log"
             },
             {
+              "flags": "--policy <file>"
+            },
+            {
               "flags": "--posture <posture>",
               "defaultValue": "vibe"
             },
@@ -2508,6 +2652,9 @@
                   "flags": "--json"
                 },
                 {
+                  "flags": "--policy <file>"
+                },
+                {
                   "flags": "--posture <posture>",
                   "defaultValue": "vibe"
                 },
@@ -2553,6 +2700,9 @@
                   "flags": "--manifest <path>"
                 },
                 {
+                  "flags": "--policy <file>"
+                },
+                {
                   "flags": "--posture <posture>",
                   "defaultValue": "vibe"
                 },
@@ -2592,6 +2742,9 @@
                       "flags": "--json"
                     },
                     {
+                      "flags": "--policy <file>"
+                    },
+                    {
                       "flags": "--posture <posture>",
                       "defaultValue": "vibe"
                     },
@@ -2617,6 +2770,9 @@
                     },
                     {
                       "flags": "--json"
+                    },
+                    {
+                      "flags": "--policy <file>"
                     },
                     {
                       "flags": "--posture <posture>",
@@ -2656,6 +2812,9 @@
                     },
                     {
                       "flags": "--json"
+                    },
+                    {
+                      "flags": "--policy <file>"
                     },
                     {
                       "flags": "--posture <posture>",
@@ -2707,6 +2866,9 @@
                   "flags": "--json"
                 },
                 {
+                  "flags": "--policy <file>"
+                },
+                {
                   "flags": "--posture <posture>",
                   "defaultValue": "vibe"
                 },
@@ -2747,6 +2909,9 @@
                 },
                 {
                   "flags": "--manifest <path>"
+                },
+                {
+                  "flags": "--policy <file>"
                 },
                 {
                   "flags": "--posture <posture>",
@@ -2799,6 +2964,9 @@
               "flags": "--no-log"
             },
             {
+              "flags": "--policy <file>"
+            },
+            {
               "flags": "--posture <posture>",
               "defaultValue": "vibe"
             },
@@ -2847,6 +3015,9 @@
               "flags": "--json"
             },
             {
+              "flags": "--policy <file>"
+            },
+            {
               "flags": "--posture <posture>",
               "defaultValue": "vibe"
             },
@@ -2887,6 +3058,9 @@
                   "flags": "--json"
                 },
                 {
+                  "flags": "--policy <file>"
+                },
+                {
                   "flags": "--posture <posture>",
                   "defaultValue": "vibe"
                 },
@@ -2910,6 +3084,9 @@
                 },
                 {
                   "flags": "--json"
+                },
+                {
+                  "flags": "--policy <file>"
                 },
                 {
                   "flags": "--posture <posture>",
@@ -2947,6 +3124,9 @@
               "flags": "--no-log"
             },
             {
+              "flags": "--policy <file>"
+            },
+            {
               "flags": "--posture <posture>",
               "defaultValue": "vibe"
             },
@@ -2981,6 +3161,9 @@
             },
             {
               "flags": "--no-log"
+            },
+            {
+              "flags": "--policy <file>"
             },
             {
               "flags": "--posture <posture>",
@@ -3035,6 +3218,9 @@
         },
         {
           "flags": "--no-log"
+        },
+        {
+          "flags": "--policy <file>"
         },
         {
           "flags": "--posture <posture>",
@@ -3094,6 +3280,9 @@
           "flags": "--no-log"
         },
         {
+          "flags": "--policy <file>"
+        },
+        {
           "flags": "--posture <posture>",
           "defaultValue": "vibe"
         },
@@ -3151,6 +3340,9 @@
           "flags": "--no-log"
         },
         {
+          "flags": "--policy <file>"
+        },
+        {
           "flags": "--posture <posture>",
           "defaultValue": "vibe"
         },
@@ -3188,6 +3380,9 @@
         },
         {
           "flags": "--json"
+        },
+        {
+          "flags": "--policy <file>"
         },
         {
           "flags": "--posture <posture>",
@@ -3258,6 +3453,9 @@
         },
         {
           "flags": "--out <path>"
+        },
+        {
+          "flags": "--policy <file>"
         },
         {
           "flags": "--posture <posture>",
@@ -3336,6 +3534,9 @@
           "flags": "--no-log"
         },
         {
+          "flags": "--policy <file>"
+        },
+        {
           "flags": "--posture <posture>",
           "defaultValue": "vibe"
         },
@@ -3397,6 +3598,9 @@
           "flags": "--no-log"
         },
         {
+          "flags": "--policy <file>"
+        },
+        {
           "flags": "--posture <posture>",
           "defaultValue": "vibe"
         },
@@ -3451,6 +3655,9 @@
           "flags": "--no-log"
         },
         {
+          "flags": "--policy <file>"
+        },
+        {
           "flags": "--posture <posture>",
           "defaultValue": "vibe"
         },
@@ -3497,6 +3704,9 @@
         },
         {
           "flags": "--no-log"
+        },
+        {
+          "flags": "--policy <file>"
         },
         {
           "flags": "--posture <posture>",
@@ -3578,6 +3788,9 @@
               "flags": "--pin <sha>"
             },
             {
+              "flags": "--policy <file>"
+            },
+            {
               "flags": "--posture <posture>",
               "defaultValue": "vibe"
             },
@@ -3650,6 +3863,9 @@
               "flags": "--pin <sha>"
             },
             {
+              "flags": "--policy <file>"
+            },
+            {
               "flags": "--posture <posture>",
               "defaultValue": "vibe"
             },
@@ -3682,6 +3898,9 @@
             },
             {
               "flags": "--no-log"
+            },
+            {
+              "flags": "--policy <file>"
             },
             {
               "flags": "--posture <posture>",
@@ -3728,6 +3947,9 @@
             },
             {
               "flags": "--no-log"
+            },
+            {
+              "flags": "--policy <file>"
             },
             {
               "flags": "--posture <posture>",
@@ -3785,6 +4007,9 @@
               "flags": "--no-log"
             },
             {
+              "flags": "--policy <file>"
+            },
+            {
               "flags": "--posture <posture>",
               "defaultValue": "vibe"
             },
@@ -3835,6 +4060,9 @@
             },
             {
               "flags": "--no-log"
+            },
+            {
+              "flags": "--policy <file>"
             },
             {
               "flags": "--posture <posture>",
@@ -3903,6 +4131,9 @@
               "flags": "--pin <sha>"
             },
             {
+              "flags": "--policy <file>"
+            },
+            {
               "flags": "--posture <posture>",
               "defaultValue": "vibe"
             },
@@ -3948,6 +4179,9 @@
         },
         {
           "flags": "--no-log"
+        },
+        {
+          "flags": "--policy <file>"
         },
         {
           "flags": "--posture <posture>",
@@ -3996,6 +4230,9 @@
         },
         {
           "flags": "--no-log"
+        },
+        {
+          "flags": "--policy <file>"
         },
         {
           "flags": "--posture <posture>",
@@ -4062,6 +4299,9 @@
           "flags": "--no-log"
         },
         {
+          "flags": "--policy <file>"
+        },
+        {
           "flags": "--posture <posture>",
           "defaultValue": "vibe"
         },
@@ -4116,6 +4356,9 @@
           "flags": "--no-log"
         },
         {
+          "flags": "--policy <file>"
+        },
+        {
           "flags": "--posture <posture>",
           "defaultValue": "vibe"
         },
@@ -4168,6 +4411,9 @@
         },
         {
           "flags": "--no-log"
+        },
+        {
+          "flags": "--policy <file>"
         },
         {
           "flags": "--posture <posture>",
@@ -4233,6 +4479,9 @@
               "flags": "--pin <sha>"
             },
             {
+              "flags": "--policy <file>"
+            },
+            {
               "flags": "--posture <posture>",
               "defaultValue": "vibe"
             },
@@ -4280,6 +4529,9 @@
             },
             {
               "flags": "--no-log"
+            },
+            {
+              "flags": "--policy <file>"
             },
             {
               "flags": "--posture <posture>",
@@ -4337,6 +4589,9 @@
             },
             {
               "flags": "--pin <sha>"
+            },
+            {
+              "flags": "--policy <file>"
             },
             {
               "flags": "--posture <posture>",
@@ -4406,6 +4661,9 @@
             },
             {
               "flags": "--pin <sha>"
+            },
+            {
+              "flags": "--policy <file>"
             },
             {
               "flags": "--posture <posture>",
@@ -4478,6 +4736,9 @@
               "flags": "--no-log"
             },
             {
+              "flags": "--policy <file>"
+            },
+            {
               "flags": "--posture <posture>",
               "defaultValue": "vibe"
             },
@@ -4536,6 +4797,9 @@
             },
             {
               "flags": "--no-log"
+            },
+            {
+              "flags": "--policy <file>"
             },
             {
               "flags": "--posture <posture>",
@@ -4598,6 +4862,9 @@
               "flags": "--no-log"
             },
             {
+              "flags": "--policy <file>"
+            },
+            {
               "flags": "--posture <posture>",
               "defaultValue": "vibe"
             },
@@ -4652,6 +4919,9 @@
             },
             {
               "flags": "--no-log"
+            },
+            {
+              "flags": "--policy <file>"
             },
             {
               "flags": "--posture <posture>",
@@ -4716,6 +4986,9 @@
           "flags": "--no-log"
         },
         {
+          "flags": "--policy <file>"
+        },
+        {
           "flags": "--posture <posture>",
           "defaultValue": "vibe"
         },
@@ -4771,6 +5044,9 @@
         },
         {
           "flags": "--no-log"
+        },
+        {
+          "flags": "--policy <file>"
         },
         {
           "flags": "--posture <posture>",
@@ -4833,6 +5109,9 @@
           "flags": "--no-log"
         },
         {
+          "flags": "--policy <file>"
+        },
+        {
           "flags": "--posture <posture>",
           "defaultValue": "vibe"
         },
@@ -4879,6 +5158,9 @@
           "flags": "--no-log"
         },
         {
+          "flags": "--policy <file>"
+        },
+        {
           "flags": "--posture <posture>",
           "defaultValue": "vibe"
         },
@@ -4919,6 +5201,9 @@
         },
         {
           "flags": "--no-log"
+        },
+        {
+          "flags": "--policy <file>"
         },
         {
           "flags": "--posture <posture>",
@@ -4970,6 +5255,9 @@
         },
         {
           "flags": "--no-log"
+        },
+        {
+          "flags": "--policy <file>"
         },
         {
           "flags": "--posture <posture>",
@@ -5035,6 +5323,9 @@
             },
             {
               "flags": "--pin <sha>"
+            },
+            {
+              "flags": "--policy <file>"
             },
             {
               "flags": "--posture <posture>",
@@ -5103,6 +5394,9 @@
               "flags": "--no-log"
             },
             {
+              "flags": "--policy <file>"
+            },
+            {
               "flags": "--posture <posture>",
               "defaultValue": "vibe"
             },
@@ -5163,6 +5457,9 @@
               "flags": "--no-log"
             },
             {
+              "flags": "--policy <file>"
+            },
+            {
               "flags": "--posture <posture>",
               "defaultValue": "vibe"
             },
@@ -5218,6 +5515,9 @@
             },
             {
               "flags": "--no-log"
+            },
+            {
+              "flags": "--policy <file>"
             },
             {
               "flags": "--posture <posture>",
@@ -5298,6 +5598,9 @@
               "flags": "--owner <team>"
             },
             {
+              "flags": "--policy <file>"
+            },
+            {
               "flags": "--posture <posture>",
               "defaultValue": "vibe"
             },
@@ -5361,6 +5664,9 @@
               "flags": "--no-log"
             },
             {
+              "flags": "--policy <file>"
+            },
+            {
               "flags": "--posture <posture>",
               "defaultValue": "vibe"
             },
@@ -5420,6 +5726,9 @@
             },
             {
               "flags": "--open"
+            },
+            {
+              "flags": "--policy <file>"
             },
             {
               "flags": "--posture <posture>",
@@ -5486,6 +5795,9 @@
             },
             {
               "flags": "--no-log"
+            },
+            {
+              "flags": "--policy <file>"
             },
             {
               "flags": "--posture <posture>",

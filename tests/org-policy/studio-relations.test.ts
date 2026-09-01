@@ -122,15 +122,14 @@ async function settle(window: Window, done: () => boolean, budgetMs = 2000): Pro
 }
 
 describe("policy studio component relations", () => {
-  // ECC declares that picking a language brings agents with it. That relation
-  // existed only inside a non-exported constant, so the surface could not state
-  // it and an administrator met the extra components after the fact.
+  // ECC's declared riders remain present beside exact Skill suggestions derived
+  // from the pinned materialization descriptor.
   it("carries ECC's declaration riders into the authoring catalog", () => {
     for (const [id, riders] of Object.entries(ECC_DECLARATION_RIDERS)) {
       const asset = ecc.assets.find((item) => item.id === id);
       if (asset === undefined) continue;
       const usable = riders.filter((rider) => present.has(rider));
-      expect(asset.riders ?? [], id).toEqual(usable.length ? usable : (asset.riders ?? []));
+      expect(asset.riders ?? [], id).toEqual(expect.arrayContaining(usable));
     }
     const typescript = ecc.assets.find((asset) => asset.id === "lang:typescript");
     expect(typescript?.riders).toContain("agent:typescript-reviewer");
@@ -272,6 +271,58 @@ describe("policy studio component relations", () => {
     click(window, `[data-framework-select="ecc|${declarer.kind}|${declarer.id}"]`);
 
     expect(selectedIds(window)).toEqual([]);
+  });
+
+  it("reimports exact Skill directory paths emitted by the previous Workbench", async () => {
+    const authored = studio();
+    click(authored, '[data-framework-select="ecc|lang|lang:typescript"]');
+    click(authored, '[data-framework-select="ecc|lang|lang:python"]');
+    const authoredPreview = authored.document.getElementById("config-preview") as unknown as {
+      value: string;
+    } | null;
+    if (authoredPreview === null) throw new Error("expected authored policy preview");
+    const importedPolicy = JSON.parse(authoredPreview.value) as {
+      governance: {
+        externalSelections: Array<{
+          items: Array<{ id: string; source: { path: string } }>;
+        }>;
+      };
+    };
+    const legacySkillIds = new Set([
+      "skill:api-design",
+      "skill:nestjs-patterns",
+      "skill:python-patterns",
+    ]);
+    for (const group of importedPolicy.governance.externalSelections) {
+      for (const item of group.items) {
+        if (legacySkillIds.has(item.id)) {
+          item.source.path = `skills/${item.id.slice("skill:".length)}`;
+        }
+      }
+    }
+
+    const window = studio();
+    const policyFile = window.document.getElementById("policy-file");
+    if (policyFile === null) throw new Error("expected policy file input");
+    Object.defineProperty(policyFile, "files", {
+      configurable: true,
+      value: [
+        new window.File([JSON.stringify(importedPolicy)], "policy.json", {
+          type: "application/json",
+        }),
+      ],
+    });
+    policyFile.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await settle(window, () =>
+      (window.document.getElementById("announcement")?.textContent ?? "").includes(
+        "without transformation",
+      ),
+    );
+
+    expect(window.document.getElementById("announcement")?.textContent).toContain(
+      "without transformation",
+    );
+    expect(selectedIds(window)).toEqual(expect.arrayContaining([...legacySkillIds]));
   });
 
   it("selects a declaration without turning its curated rider into selected authority", () => {

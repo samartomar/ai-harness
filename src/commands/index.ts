@@ -334,6 +334,10 @@ export function addSharedFlags(cmd: Command): Command {
     .option("--no-log", "do not append a row to the local run ledger (.aih/runs/)")
     .option("--context-dir <dir>", "canonical context directory name (any name works)", "ai-coding")
     .option("--root <dir>", "target repository/workstation root")
+    .option(
+      "--policy <file>",
+      "use this organization policy JSON or PolicyBundle instead of AIH_ORG_POLICY or aih-org-policy.json",
+    )
     .option("--cli <list>", "target AI CLIs (comma-separated): claude,codex,cursor,antigravity,…")
     .option("--all-tools", "target every supported AI CLI")
     .option(
@@ -351,6 +355,10 @@ function addReadOnlyFlags(cmd: Command): Command {
     .option("--json", "emit machine-readable JSON")
     .option("--posture <posture>", "governance posture: vibe | enterprise", "vibe")
     .option("--root <dir>", "target root")
+    .option(
+      "--policy <file>",
+      "use this organization policy JSON or PolicyBundle instead of AIH_ORG_POLICY or aih-org-policy.json",
+    )
     .option("--support-out <dir>", "write IT/support tickets for failed checks to <dir>")
     .option("--no-log", "do not append a row to the local run ledger (.aih/runs/)")
     .option(
@@ -365,6 +373,10 @@ function addZeroWriteFlags(cmd: Command): Command {
     .option("--json", "emit machine-readable JSON")
     .option("--posture <posture>", "governance posture: vibe | enterprise", "vibe")
     .option("--root <dir>", "target root")
+    .option(
+      "--policy <file>",
+      "use this organization policy JSON or PolicyBundle instead of AIH_ORG_POLICY or aih-org-policy.json",
+    )
     .option(
       "--context-dir <dir>",
       "canonical context directory name (any name works)",

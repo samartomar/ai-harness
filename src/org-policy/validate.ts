@@ -273,6 +273,13 @@ function policyVerifyCheck(ctx: PlanContext, against: string | undefined): Check
 
 function policyValidatePlan(ctx: PlanContext): Plan {
   const bundlePath = optionString(ctx, "bundle");
+  const policyPath = optionString(ctx, "policy");
+  if (bundlePath !== undefined && policyPath !== undefined) {
+    throw new AihError(
+      "policy validate accepts either --policy <file> or --bundle <file>, not both",
+      "AIH_CONFIG",
+    );
+  }
   if (bundlePath !== undefined) {
     return plan(
       "policy validate",
@@ -354,14 +361,14 @@ export const policyProjectCommand: CommandSpec = {
 export const policyValidateCommand: CommandSpec = {
   name: "validate",
   summary:
-    "Validate the local aih-org-policy.json — or a policy-bundle envelope — against its schema (read-only gate)",
+    "Validate the selected organization policy JSON or PolicyBundle against its schema (read-only gate)",
   readOnly: true,
   skipOrgPolicyFloor: true,
   options: [
     {
       flags: "--bundle <path>",
       description:
-        "validate a policy-bundle envelope file instead of the local aih-org-policy.json",
+        "validate a PolicyBundle file directly instead of resolving the active policy source",
     },
   ],
   plan: policyValidatePlan,

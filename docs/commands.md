@@ -705,8 +705,12 @@ like `aih init .` (`--root` and `AIH_ROOT` still apply). The `policy supported a
 administrator commands use `--root <target>` instead of a positional root so their input surface
 contains only the exact decision binding and code-owned target.
 
-`generate --apply` writes `aih-policy-workbench.html` (or `--out <path>`). The workbench authors and downloads the actual
-`aih-org-policy.json` schema, with schema-backed audit references for ECC or Superpowers agents, skills, and commands.
+`generate --apply` writes `aih-policy-workbench.html` (or `--out <path>`). The workbench authors the actual
+org-policy schema and downloads it under a safe administrator-chosen JSON filename. The default remains
+`aih-org-policy.json`; a project or team can use a distinct filename and select it explicitly with
+`aih <command> --policy <file>`. The browser download attribute accepts a filename, not a folder path; the
+administrator chooses or moves the file into the intended policy directory. Schema-backed audit references
+for ECC or Superpowers agents, skills, and commands remain part of the policy.
 At Enterprise posture, its protected-file form also authors organization-qualified Decision V2
 records for exact GitHub, npm, PyPI, OCI, remote-content, or AIH source identities classified
 as tools, skills, agents, MCP servers, packages, or profiles. The administrator enters ordinary fields for targets, effects, evidence,
@@ -733,10 +737,33 @@ untrusted fields as text, and download the same deterministic canonical bytes as
 The record stays outside the policy and receipt state and is always labeled unverified and not effective;
 the browser cannot edit, verify, sign, fetch, resolve, project, or materialize it. Invalid and out-of-order
 replacement reads fail closed without changing the decision displayed when the latest import began.
+Scanner evidence imported through the Artifacts workspace remains a separate preflight record. The browser
+can create one mixed intake for up to 100 MCP, Skill, and Agent items; `aih trust scan` emits one evidence
+bundle for that intake. After merging the bundle, **Save team review workspace** downloads one resumable,
+strictly non-authoritative file containing the current draft policy, intake, and evidence history. Opening that
+workspace restores the review, but it is not a deployable policy or an evidence authority. Download the
+protected policy separately. The browser does not embed raw scanner output into that policy, verify
+organization authority, or make a reviewed subject effective. At runtime, commands that require
+`--evidence <file>` accept an explicit root-relative evidence file and revalidate its custody and bindings.
 Target-repository `evaluate` remains the source of effective state. Both custom-MCP forms remain pending,
 hard-blocked candidates with no activation affordance until supported scanning, evidence, and projection exist.
 
-The left rail is the sole selection surface for ECC languages, frameworks, capabilities, and modules; those controls are not repeated in the main inventory, preset toolbar, or inspector. A separate source-locked skills plane lists all 286 canonical `skills/*/SKILL.md` identities at the pinned ECC commit. Its 12 existing governed components retain their selection controls; the other 274 entries are visibly availability-only and cannot author policy. The flat Ledger paper-and-ink presentation reserves colour for evidence state, supports a neutral dark theme, and keeps that canonical rail available on compact screens. The inspector contains no policy mutation controls: it narrates the selected-to-materialized journey and routes one next action to the canonical selection or a separate authoring sidebar. The MCP availability planes list all 35 entries from ECC's pinned source: 31 ECC-owned entries route to the separate Add MCP sidebar, which authors approved/revoked `governance.eccMcpApprovals` records at the pinned catalog digest; the four AIH-owned source declarations are read-only and do not claim that this Core build ships a matching control. Only entries labeled HTTPS-configurable can use the later `aih ecc mcp add <id> --cli <client>` path; manual entries remain approval-only. The browser does not install, contact, scan, attest, or observe the endpoint.
+The left rail suggests aggregate ECC language, framework, capability, and module choices. The center inventory
+is final authority for every individual Agent and Skill: a suggested row can always be deselected, and an
+explicit center deselection is not silently restored by a later aggregate choice. The source-locked skills plane
+lists all 286 canonical `skills/*/SKILL.md` identities at the pinned ECC commit and lets each exact row author
+reversible, source-bound requested intent against an independently scannable baseline subject. Selection is
+not evidence, approval, installation, materialization, or support; the governed lifecycle remains held until
+exact evidence clears.
+The flat Ledger paper-and-ink presentation reserves colour for evidence state, supports a neutral dark theme,
+and keeps the rail available on compact screens. The inspector contains no policy mutation controls: it
+narrates the selected-to-materialized journey and routes one next action to the canonical selection or a
+separate authoring sidebar. The MCP availability planes list all 35 entries from ECC's pinned source: 31
+ECC-owned entries route to the separate Add MCP sidebar, which authors approved/revoked
+`governance.eccMcpApprovals` records at the pinned catalog digest; the four AIH-owned source declarations are
+read-only and do not claim that this Core build ships a matching control. Only entries labeled
+HTTPS-configurable can use the later `aih ecc mcp add <id> --cli <client>` path; manual entries remain
+approval-only. The browser does not install, contact, scan, attest, or observe the endpoint.
 
 A separate adoption-recipe panel is the first bounded, code-owned routing guide rather than another
 inventory or authoring surface. It gives exactly one question class to each of Token Savior, Serena,
@@ -803,8 +830,8 @@ attestation force-undeclares (stale generated residue, non-catalog servers) are 
 never silently declared; and marketplace surfaces are **never auto-trusted** — `trust.approvedSources`
 grants acquisition trust beyond registry membership, so those entries stay an explicit review step.
 Fail-closed boundaries: an existing policy is never overwritten (plan-time refusal plus an
-apply-time absent pin), an active `AIH_ORG_POLICY` override refuses outright (the starter only
-targets the committed default file), and an unreadable MCP config aborts the plan. The starter
+apply-time absent pin), an active `--policy` or `AIH_ORG_POLICY` selection refuses outright (the
+starter only targets the committed default file), and an unreadable MCP config aborts the plan. The starter
 records the resolved posture as `minimumPosture`, and `--verify` grades the written file with the
 same schema gate as `validate`. Declaring `mcp.allowedServers` records registry membership only;
 `aih mcp approve` is a legacy, non-governed approval path. Governed operators use an externally
@@ -812,7 +839,10 @@ verified evidence/approval receipt, then `aih policy evaluate` and `aih policy p
 
 `project --apply` compiles the active verified org policy into generated policy artifacts. The source
 may be the committed `aih-org-policy.json` or an Enterprise PolicyBundle V2 at an absolute external
-`AIH_ORG_POLICY` path whose authority, custody, freshness, and exact file identity Core verifies. For
+path selected by `--policy <file>` or `AIH_ORG_POLICY`, whose authority, custody, freshness, and exact file
+identity Core verifies. A relative `--policy` value resolves from the target root. The explicit CLI flag wins
+over the environment variable, and a missing selected file fails closed rather than falling back to the
+default filename. For
 Claude this includes `.claude/managed-settings.json` and, at enterprise posture, the two system-path
 examples; selected Kiro reviewed stdio MCP candidates are distributed separately to
 `.kiro/settings/mcp.json`. An active
@@ -1723,7 +1753,7 @@ read-only Audit/Guide presentation.
 
 **Flags**
 
-The shared zero-write set — `--json`, `--posture <posture>`, `--root <dir>`, and
+The shared zero-write set — `--json`, `--posture <posture>`, `--root <dir>`, `--policy <file>`, and
 `--context-dir <dir>` — plus the preview-only `--repair-plan`. There is no apply, force, verify,
 support-output, ledger, or SARIF flag on this route. `--posture` is validated and participates in
 its posture-scoped policy resolution; the shared organization floor can still raise the resolved

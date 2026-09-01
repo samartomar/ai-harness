@@ -15,15 +15,20 @@ function lockComponents(sourceId: string) {
 }
 
 describe("vet verdicts on the authoring surface", () => {
-  // The vet produces a verdict for every pinned component. A surface that still
-  // says "evidence needed" for all of them is telling an administrator to
-  // generate evidence this build already ships.
-  it("carries the vetted verdict for every component", () => {
+  // The vet lock covers the components it actually scanned. Newly surfaced
+  // source-locked Skills remain selectable but evidence-owed until a later vet
+  // names them; assigning a neighboring verdict would fabricate evidence.
+  it("carries verdicts only for components present in the pinned vet lock", () => {
     for (const framework of policyAuthoringCatalog().frameworks) {
       const byId = new Map(lockComponents(framework.id).components.map((c) => [c.id, c]));
       for (const asset of framework.assets) {
-        expect(asset.vet, `${asset.id} has no vet verdict`).toBeDefined();
-        expect(asset.vet?.verdict).toBe(byId.get(asset.id)?.verdict);
+        const locked = byId.get(asset.id);
+        if (locked === undefined) {
+          expect(asset.vet, `${asset.id} must not inherit unrelated vet evidence`).toBeUndefined();
+        } else {
+          expect(asset.vet, `${asset.id} lost its pinned vet verdict`).toBeDefined();
+          expect(asset.vet?.verdict).toBe(locked.verdict);
+        }
       }
     }
   });

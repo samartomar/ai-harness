@@ -147,8 +147,8 @@ protected-file form, and download `aih-policy-bundle.json`. The administrator su
 fields for the issuer, an exact GitHub, npm, PyPI, OCI, remote-content, or AIH source identity, artifact kind, targets, effects, and
 attributable evidence; the browser computes the canonical Decision V2 source and subject digests.
 The administrator does not write JSON. Store the generated **PolicyBundle V2** file at an
-administrator-controlled read-only path selected by an absolute
-`AIH_ORG_POLICY` path outside the governed target. It contains the ordinary org policy plus the
+administrator-controlled read-only path outside the governed target, then select it with an explicit
+`--policy <file>` or `AIH_ORG_POLICY` path. The CLI flag wins when both are present. It contains the ordinary org policy plus the
 existing V3 decision-authority payload; no approval workflow or second policy store is required.
 Core requires Enterprise posture, bounded strict JSON, a current 90-day-or-shorter authority window,
 a regular single-link file reached without symlinked parents, and exact byte re-observation before
@@ -495,7 +495,7 @@ for the vet/sign/policy flow. <!-- aih:claim CM-20 -->
 | [`aih repair`](docs/commands.md#aih-repair) | Preview and, with exact local TTY digest confirmation, apply the one code-owned `ai-coding` repair when its live branded precondition is eligible; indeterminate occupancy refuses distinctly before consent, while `aih governance-doctor --repair-plan` remains preview-only (`executable: false`). A verified effect with a partial fresh Audit reports qualified success. <!-- aih:claim CM-74 --> |
 | [`aih status`](docs/commands.md#aih-status) | Show a read-only inventory of what the harness has configured. |
 
-Shared flags: `--apply`, `--force`, `--verify`, `--json`, `--posture <vibe|enterprise>`, `--support-out <dir>`, `--no-log`, `--context-dir <dir>`, `--root <dir>`, `--cli <list>`, `--all-tools`, `--detect`, `--yes` (read-only commands take the relevant subset).
+Shared flags: `--apply`, `--force`, `--verify`, `--json`, `--posture <vibe|enterprise>`, `--support-out <dir>`, `--no-log`, `--context-dir <dir>`, `--root <dir>`, `--policy <file>`, `--cli <list>`, `--all-tools`, `--detect`, `--yes` (read-only commands take the relevant subset). `--policy` selects one explicit organization-policy JSON or PolicyBundle for the invocation; it overrides `AIH_ORG_POLICY` and the default repo-local `aih-org-policy.json` lookup.
 Settings also read from `AIH_*` env vars (`AIH_APPLY`, `AIH_CONTEXT_DIR`, `AIH_LOG`, …).
 
 ### Plugins
@@ -668,7 +668,24 @@ receipt-owned entries with `aih ecc mcp remove <id> --cli <client> --apply`, and
 receipt/config ownership state. It does not contact the endpoint, scan the remote tool list, or install all
 approved entries.
 
-The portable Policy Workbench uses a flat Ledger paper-and-ink identity in light and dark themes. Its left rail remains the canonical selection surface, including on compact screens; the inspector is mutation-free, narrates the selected-to-materialized journey, and offers one routed next action. Its source-locked availability planes show all 286 canonical ECC skills and all 35 entries in ECC's pinned MCP source. Only the 12 existing governed skill components are selectable; the other 274 skill rows are explicitly availability-only. The 31 ECC-owned MCP entries route to approval authoring, while the four AIH-owned declarations remain read-only availability and do not imply that Core ships a matching control. At Enterprise posture, the protected-file form is the administrator-facing authority authoring surface: it accepts structured exact-source and evidence fields, computes the existing Decision V2 digests, and downloads the existing PolicyBundle V2 without exposing editable raw JSON. Curation and custom-source forms live in a separate authoring sidebar. The separate Add MCP sidebar records the exact `governance.eccMcpApprovals` decision; it does not choose a client or configure one. For an entry marked HTTPS-configurable, the seat operator still selects one client explicitly with the command above; manual entries remain approval-only until a supported lifecycle exists.
+The portable Policy Workbench uses a flat Ledger paper-and-ink identity in light and dark themes. Its left
+rail suggests aggregate choices, while the center inventory remains final authority for individual Agent and
+Skill rows; the inspector is mutation-free, narrates the selected-to-materialized journey, and offers one routed
+next action. Its source-locked planes show all 286 canonical ECC skills and all 35 entries in ECC's pinned MCP
+source. Every exact Skill row authors reversible, source-bound requested intent against an independently
+scannable baseline subject. Selection alone still grants no evidence, approval, installation,
+materialization, or support; the governed lifecycle remains held until exact evidence clears. The 31
+ECC-owned MCP entries route to approval authoring, while the
+four AIH-owned declarations remain read-only availability and do not imply that Core ships a matching control.
+The Artifacts workspace creates one intake and one scanner evidence bundle for up to 100 mixed items, then can
+save the draft policy, intake, and evidence history in one resumable, explicitly non-authoritative team review
+workspace. The deployable protected policy remains a separate download. At Enterprise posture, the
+protected-file form is the administrator-facing authority authoring surface: it accepts structured exact-source
+and evidence fields, computes the existing Decision V2 digests, and downloads the existing PolicyBundle V2
+without exposing editable raw JSON. Curation and custom-source forms live in a separate authoring sidebar. The
+separate Add MCP sidebar records the exact `governance.eccMcpApprovals` decision; it does not choose a client or
+configure one. For an entry marked HTTPS-configurable, the seat operator still selects one client explicitly
+with the command above; manual entries remain approval-only until a supported lifecycle exists.
 
 The Workbench also shows the first bounded adoption recipe for Token Savior, Serena,
 code-review-graph, codebase-memory-mcp, and Token Optimizer. It assigns one question class to each

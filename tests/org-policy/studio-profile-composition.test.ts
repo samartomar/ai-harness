@@ -83,6 +83,15 @@ function selectedIds(window: Window): string[] {
   );
 }
 
+function clickCanonicalAsset(window: Window, kind: string, id: string): void {
+  const key = `ecc|${kind}|${id}`;
+  const control = [...window.document.querySelectorAll(`[data-framework-select="${key}"]`)].find(
+    (candidate) => candidate.closest(".rail") === null,
+  );
+  if (control === undefined) throw new Error(`expected canonical ${key}`);
+  control.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+}
+
 function curatedIds(window: Window): string[] {
   return authoredPolicy(window).governance.externalCuration.flatMap((group) =>
     group.items.map((item) => item.id),
@@ -193,6 +202,22 @@ describe("policy studio profile composition", () => {
         source: { ...asset.source },
       });
     }
+  });
+
+  it("names a center exclusion when that final authority blocks Vibe", () => {
+    const window = studio();
+    selectProfile(window, "vibe");
+    const excluded = ecc.assets.find((asset) => asset.kind === "skill");
+    if (excluded === undefined) throw new Error("expected an ECC Skill");
+
+    clickCanonicalAsset(window, excluded.kind, excluded.id);
+    const beforeRetry = authoredPolicy(window);
+    selectProfile(window, "vibe");
+
+    expect(authoredPolicy(window)).toEqual(beforeRetry);
+    expect(selectedIds(window)).not.toContain(excluded.id);
+    expect(announcement(window)).toContain("center inventory");
+    expect(announcement(window)).toContain("Nothing changed");
   });
 
   // This row's real ruling, preserved intact: a preset must never author audit

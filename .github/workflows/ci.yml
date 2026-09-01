@@ -11,12 +11,18 @@ permissions:
 jobs:
   verify:
     # Ubuntu owns coverage and OS-independent gates; macOS keeps its complete
-    # platform suite. Windows is sharded below without dropping any test files.
+    # platform suite in four sequential processes so DOM-heavy Workbench files
+    # release their heap between shards. Windows is sharded below without
+    # dropping any test files.
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    # The complete Workbench catalog is intentionally exercised on both
+    # platforms. Keep enough V8 heap for the 411-subject DOM/model suite.
+    env:
+      NODE_OPTIONS: --max-old-space-size=4096
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -40,10 +46,12 @@ jobs:
         if: matrix.os == 'ubuntu-latest' # biome is OS-independent — run once
         run: npx biome ci src tests
       # Enforce the coverage thresholds on one OS (deterministic line/branch hits);
-      # the other OSes run the suite to validate cross-platform behavior.
+      # the other OSes run the suite to validate cross-platform behavior. Keep
+      # two workers here: coverage plus the complete Workbench catalog otherwise
+      # starves unrelated filesystem and DOM tests past their own time budgets.
       - name: Test + coverage gate
         if: matrix.os == 'ubuntu-latest'
-        run: npx vitest run --coverage
+        run: npx vitest run --coverage --maxWorkers=2 --testTimeout=15000
       # Tokenless upload works for public repos; installing the Codecov GitHub
       # App (or a CODECOV_TOKEN secret) upgrades reliability. Never fails CI —
       # the coverage GATE is the vitest thresholds above, not the upload.
@@ -53,9 +61,18 @@ jobs:
         with:
           files: coverage/lcov.info
           fail_ci_if_error: false
-      - name: Test
-        if: matrix.os != 'ubuntu-latest'
-        run: npx vitest run
+      - name: Test macOS shard 1/4
+        if: matrix.os == 'macos-latest'
+        run: npx vitest run --shard=1/4
+      - name: Test macOS shard 2/4
+        if: matrix.os == 'macos-latest'
+        run: npx vitest run --shard=2/4
+      - name: Test macOS shard 3/4
+        if: matrix.os == 'macos-latest'
+        run: npx vitest run --shard=3/4
+      - name: Test macOS shard 4/4
+        if: matrix.os == 'macos-latest'
+        run: npx vitest run --shard=4/4
       - name: Build
         run: npx tsup
       - name: Check installable baseline

@@ -227,7 +227,11 @@ describe("policy studio adoption recipe", () => {
       model.catalog.mcp.length +
       model.catalog.hooks.length +
       model.catalog.aihSkills.length +
-      model.catalog.aihAgents.length;
+      model.catalog.aihAgents.length +
+      model.catalog.eccMcpInventory.filter(
+        (entry) =>
+          entry.owner === "aih" && !model.catalog.mcp.some((control) => control.id === entry.id),
+      ).length;
     const governedSkills = eccAssets.filter((asset) => asset.kind === "skill").length;
     const visibleEccInventory =
       eccAssets.length -

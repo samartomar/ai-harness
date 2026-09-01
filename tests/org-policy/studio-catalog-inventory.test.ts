@@ -1,6 +1,8 @@
 import { type Element, Window } from "happy-dom";
 import { describe, expect, it } from "vitest";
 import { baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
+import { ECC_DECLARABLE_COMPONENT_IDS, type EccComponentId } from "../../src/ecc/components.js";
+import { eccComponentSourcePaths } from "../../src/ecc/materialize.js";
 import { mcpServers } from "../../src/mcp/servers.js";
 import { policyAuthoringCatalog } from "../../src/org-policy/catalog.js";
 import {
@@ -244,17 +246,74 @@ describe("policy authoring catalog inventory", () => {
         .sort(),
     ).toEqual(eccMcpCatalogInventory.map((entry) => entry.id).sort());
 
-    for (const skill of eccSkillCatalogInventory.filter((item) => !item.governable)) {
-      const row = window.document.querySelector(`[data-ecc-skill-availability="${skill.id}"]`);
-      expect(row?.querySelector("[data-framework-select]")).toBeNull();
-      expect(row?.textContent).toContain("not individually governable");
-    }
+    expect(eccSkillCatalogInventory.every((item) => item.governable)).toBe(true);
+    expect(ECC_DECLARABLE_COMPONENT_IDS).not.toContain("skill:accessibility");
     for (const mcp of eccMcpCatalogInventory.filter((item) => item.owner === "aih")) {
       const row = window.document.querySelector(`[data-ecc-mcp-availability="${mcp.id}"]`);
       const hasAihControl = model.catalog.mcp.some((control) => control.id === mcp.id);
       expect(row?.getAttribute("data-state")).toBe(hasAihControl ? "pending" : "availability");
       expect(row?.querySelector(`[data-reviewed="${mcp.id}"]`) !== null).toBe(hasAihControl);
       expect(row?.querySelector("[data-ecc-mcp-approval]")).toBeNull();
+    }
+  });
+
+  it("keeps every ECC Skill under center-panel authority", () => {
+    const window = new Window({ url: "http://localhost/" });
+    const model = policyStudioModel();
+    const html = policyStudioHtml(model);
+    window.document.write(html);
+    loadStudio(window, html);
+
+    const rows = [
+      ...window.document.querySelectorAll("#ecc-skill-rows [data-ecc-skill-availability]"),
+    ];
+    expect(rows).toHaveLength(eccSkillCatalogInventory.length);
+    for (const skill of eccSkillCatalogInventory) {
+      const control = window.document.querySelector(
+        `[data-ecc-skill-availability="${skill.id}"] [data-framework-select="ecc|skill|skill:${skill.id}"]`,
+      );
+      expect(control, `${skill.id} has a center selection control`).not.toBeNull();
+      expect(control?.hasAttribute("disabled"), `${skill.id} is enabled`).toBe(false);
+      expect(control?.getAttribute("aria-disabled"), `${skill.id} is not aria-disabled`).not.toBe(
+        "true",
+      );
+    }
+
+    const accessibility =
+      '[data-ecc-skill-availability="accessibility"] [data-framework-select="ecc|skill|skill:accessibility"]';
+    click(window, accessibility);
+    let policy = JSON.parse(
+      (window.document.getElementById("config-preview") as unknown as { value: string }).value,
+    ) as {
+      governance?: {
+        externalSelections?: Array<{ roots?: string[]; items: Array<{ id: string }> }>;
+      };
+    };
+    expect(policy.governance?.externalSelections?.[0]?.roots).toContain("skill:accessibility");
+    expect(policy.governance?.externalSelections?.[0]?.items.map((item) => item.id)).toContain(
+      "skill:accessibility",
+    );
+
+    click(window, accessibility);
+    policy = JSON.parse(
+      (window.document.getElementById("config-preview") as unknown as { value: string }).value,
+    );
+    expect(policy.governance?.externalSelections ?? []).toHaveLength(0);
+  });
+
+  it("binds every selectable ECC Skill to the authoritative lifecycle catalog", () => {
+    const baselineSkills = baselineCatalogById("ecc").components.filter((component) =>
+      component.id.startsWith("skill:"),
+    );
+    const baselineSkillIds = baselineSkills.map((component) => component.id).sort();
+
+    expect(baselineSkillIds).toEqual(
+      eccSkillCatalogInventory.map((skill) => `skill:${skill.id}`).sort(),
+    );
+    for (const component of baselineSkills) {
+      expect(component.paths, `${component.id} binds every materialized source root`).toEqual(
+        eccComponentSourcePaths(component.id as EccComponentId),
+      );
     }
   });
 
@@ -347,7 +406,7 @@ describe("policy authoring catalog inventory", () => {
         `#mcp-rows > [data-ecc-mcp-availability="${declaration.id}"]`,
       );
       expect(row?.getAttribute("data-state")).toBe("availability");
-      expect(row?.textContent).toContain("ECC availability only");
+      expect(row?.textContent).toContain("Runtime availability only");
       expect(
         row?.querySelector("[data-reviewed], [data-framework-select], [data-ecc-mcp-approval]"),
       ).toBeNull();
@@ -382,14 +441,31 @@ describe("policy authoring catalog inventory", () => {
     ).toHaveLength(0);
   });
 
-  it("keeps availability-only skills inspectable and routes every MCP through approval authoring", () => {
+  it("offers only projector-backed MCP identities as center-panel controls", () => {
     const window = new Window({ url: "http://localhost/" });
     const model = policyStudioModel();
     const html = policyStudioHtml(model);
     window.document.write(html);
     loadStudio(window, html);
-    const skill = eccSkillCatalogInventory.find((item) => !item.governable);
-    if (skill === undefined) throw new Error("expected an availability-only skill");
+
+    expect(model.catalog.mcp.every((item) => item.server.type === "stdio")).toBe(true);
+    for (const id of ["github", "context7"]) {
+      expect(model.catalog.mcp.some((item) => item.id === id)).toBe(false);
+      const row = window.document.querySelector(`#mcp-rows [data-ecc-mcp-availability="${id}"]`);
+      expect(row, `${id} remains visible as availability`).not.toBeNull();
+      expect(row?.querySelector("[data-reviewed]")).toBeNull();
+      expect(row?.textContent).toContain("not policy-projectable");
+    }
+  });
+
+  it("keeps selectable Skills inspectable and routes every MCP through approval authoring", () => {
+    const window = new Window({ url: "http://localhost/" });
+    const model = policyStudioModel();
+    const html = policyStudioHtml(model);
+    window.document.write(html);
+    loadStudio(window, html);
+    const skill = eccSkillCatalogInventory.find((item) => item.id === "accessibility");
+    if (skill === undefined) throw new Error("expected the accessibility Skill");
 
     click(window, "#seek");
     const query = window.document.getElementById("spot-q") as unknown as {
@@ -402,7 +478,10 @@ describe("policy authoring catalog inventory", () => {
     click(window, "#hits .hit");
     expect(window.document.getElementById("drawer-detail")?.textContent).toContain(skill.path);
     expect(window.document.getElementById("drawer-detail")?.textContent).toContain(
-      "not individually governable",
+      "Authored intent: not selected",
+    );
+    expect(window.document.getElementById("drawer-detail")?.textContent).toContain(
+      "--components skill:accessibility --apply",
     );
 
     for (const mcp of eccExternalMcpCatalog) {
@@ -825,16 +904,17 @@ describe("policy authoring catalog inventory", () => {
   it("carries every pinned baseline component, dropping none", () => {
     for (const framework of policyAuthoringCatalog().frameworks) {
       const components = baselineCatalogById(framework.id).components.map((item) => item.id);
-      expect(
-        framework.assets.map((asset) => asset.id).sort(),
-        `${framework.id} drops ${components.length - framework.assets.length} component(s)`,
-      ).toStrictEqual([...components].sort());
+      const assetIds = framework.assets.map((asset) => asset.id);
+      expect(assetIds, `${framework.id} drops a pinned baseline component`).toEqual(
+        expect.arrayContaining(components),
+      );
+      expect(assetIds.filter((assetId) => !components.includes(assetId))).toStrictEqual([]);
     }
   });
 
   it("kinds the whole component-id namespace, not three prefixes", () => {
     const assets = allAssets();
-    expect(assets.length).toBe(152);
+    expect(assets.length).toBe(426);
     expect(countByKind(assets.map((asset) => asset.kind))).toStrictEqual({
       agent: 44,
       baseline: 6,
@@ -844,7 +924,7 @@ describe("policy authoring catalog inventory", () => {
       mcp: 6,
       module: 26,
       runtime: 3,
-      skill: 26,
+      skill: 300,
     });
     for (const asset of assets) {
       expect(asset.kind).toBe(asset.id.slice(0, asset.id.indexOf(":")));
@@ -866,7 +946,7 @@ describe("policy authoring catalog inventory", () => {
       expect(asset.curationKind, `curationKind for ${asset.id}`).toBe(expected);
     }
     const curatable = assets.filter((asset) => asset.curationKind !== undefined);
-    expect(curatable.length).toBe(72);
+    expect(curatable.length).toBe(346);
     for (const asset of curatable) {
       expect(CURATION_KINDS).toContain(asset.curationKind);
     }

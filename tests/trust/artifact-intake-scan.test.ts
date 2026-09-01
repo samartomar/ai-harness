@@ -294,6 +294,7 @@ describe("trust scan artifact intake", () => {
     expect(bundle.evidence.every((record) => record.authority.state === "not-authority")).toBe(
       true,
     );
+    expect(bundle.evidence.some((record) => record.state === "missing")).toBe(true);
   });
 
   it("requires an explicit evidence output on apply", async () => {

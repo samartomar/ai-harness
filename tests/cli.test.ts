@@ -43,6 +43,7 @@ describe("CLI program", () => {
       "--apply",
       "--context-dir <dir>",
       "--json",
+      "--policy <file>",
       "--posture <posture>",
       "--root <dir>",
     ]);

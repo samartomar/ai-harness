@@ -6,6 +6,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Select one project- or team-specific organization policy per invocation with `--policy <file>`.
+  The explicit flag overrides `AIH_ORG_POLICY` and the default `aih-org-policy.json` lookup, while a
+  missing selected file fails closed. The Policy Workbench now downloads ordinary policy JSON under
+  a safe administrator-chosen filename and shows the matching validation command; scanner evidence
+  remains a separate preflight record rather than becoming browser-verified authority. Its Artifacts
+  workspace can also save and reopen one strictly non-authoritative team review file containing the
+  draft policy, mixed artifact intake, and validated scan-evidence history; protected policy export
+  remains separate.
+
 ## [Core 0.4.3] - 2026-09-01
 
 ### Fixed

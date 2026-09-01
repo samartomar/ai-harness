@@ -1,4 +1,8 @@
-import { ECC_DECLARABLE_COMPONENT_IDS, ECC_EXPLICIT_MCP_COMPONENT_IDS } from "../ecc/components.js";
+import {
+  ECC_DECLARABLE_COMPONENT_IDS,
+  ECC_EXPLICIT_MCP_COMPONENT_IDS,
+  type EccComponentId,
+} from "../ecc/components.js";
 import { eccComponentSourcePaths } from "../ecc/materialize.js";
 import { BASELINE_SOURCES } from "../internals/baseline-sources.js";
 import {
@@ -57,6 +61,47 @@ function moduleContainsSkillContent(module: { id: string; paths: readonly string
   );
 }
 
+const ECC_DECLARABLE_COMPONENTS: readonly BaselineCatalogComponent[] = [
+  ...ECC_DECLARABLE_COMPONENT_IDS,
+  ...ECC_EXPLICIT_MCP_COMPONENT_IDS,
+].map((id) => {
+  const paths = eccComponentSourcePaths(id);
+  return {
+    id,
+    paths,
+    ...(id === "baseline:platform" ||
+    paths.some((path) => path.includes("/skills/") || path.startsWith("skills/"))
+      ? { skillContent: true as const }
+      : {}),
+  };
+});
+
+/**
+ * Individually selectable ECC Skills are baseline subjects too. The module
+ * snapshot is the source-locked inventory used by the installer, so derive
+ * the direct Skill subjects from those exact roots and retain the richer
+ * explicit component definition when one already exists.
+ */
+function additionalEccSkillComponents(): BaselineCatalogComponent[] {
+  const explicitIds = new Set(ECC_DECLARABLE_COMPONENTS.map((component) => component.id));
+  const byId = new Map<string, BaselineCatalogComponent>();
+  for (const module of eccModules.modules) {
+    for (const path of module.paths) {
+      const name = /^skills\/([a-z0-9][a-z0-9-]*)$/.exec(path)?.[1];
+      if (name === undefined) continue;
+      const id: EccComponentId = `skill:${name}`;
+      if (explicitIds.has(id)) continue;
+      const paths = eccComponentSourcePaths(id);
+      const existing = byId.get(id);
+      if (existing !== undefined && JSON.stringify(existing.paths) !== JSON.stringify(paths)) {
+        throw new Error(`ECC skill ${id} has conflicting source roots`);
+      }
+      byId.set(id, { id, paths, skillContent: true });
+    }
+  }
+  return [...byId.values()].sort((left, right) => left.id.localeCompare(right.id));
+}
+
 const ECC_COMPONENTS: readonly BaselineCatalogComponent[] = [
   {
     id: "runtime:ecc-installer",
@@ -86,17 +131,8 @@ const ECC_COMPONENTS: readonly BaselineCatalogComponent[] = [
     paths: module.paths,
     ...(moduleContainsSkillContent(module) ? { skillContent: true as const } : {}),
   })),
-  ...[...ECC_DECLARABLE_COMPONENT_IDS, ...ECC_EXPLICIT_MCP_COMPONENT_IDS].map((id) => {
-    const paths = eccComponentSourcePaths(id);
-    return {
-      id,
-      paths,
-      ...(id === "baseline:platform" ||
-      paths.some((path) => path.includes("/skills/") || path.startsWith("skills/"))
-        ? { skillContent: true as const }
-        : {}),
-    };
-  }),
+  ...ECC_DECLARABLE_COMPONENTS,
+  ...additionalEccSkillComponents(),
 ];
 
 const SUPERPOWERS_COMPONENTS: readonly BaselineCatalogComponent[] = [

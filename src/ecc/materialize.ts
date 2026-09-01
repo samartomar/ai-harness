@@ -160,20 +160,23 @@ const FRAMEWORK_RULES: Readonly<Record<string, readonly string[]>> = {
   "framework:laravel": ["rules/php"],
 };
 
-const SKILL_MODULES: Readonly<Record<string, string>> = {
-  "tdd-workflow": "workflow-quality",
-  "verification-loop": "workflow-quality",
-  "strategic-compact": "workflow-quality",
-  "continuous-learning": "workflow-quality",
-  "eval-harness": "workflow-quality",
-  "windows-desktop-e2e": "workflow-quality",
-  "coding-standards": "framework-language",
-  "frontend-patterns": "framework-language",
-  "backend-patterns": "framework-language",
-  "security-review": "security",
-  "deep-research": "research-apis",
-  "mle-workflow": "machine-learning",
-};
+function skillModules(): Readonly<Record<string, string>> {
+  const result: Record<string, string> = {};
+  for (const module of eccModules.modules) {
+    for (const path of module.paths) {
+      const skill = /^skills\/([a-z0-9][a-z0-9-]*)$/.exec(path)?.[1];
+      if (skill === undefined) continue;
+      const existing = result[skill];
+      if (existing !== undefined && existing !== module.id) {
+        throw new Error(`ECC skill ${skill} belongs to both ${existing} and ${module.id}`);
+      }
+      result[skill] = module.id;
+    }
+  }
+  return Object.freeze(result);
+}
+
+const SKILL_MODULES = skillModules();
 
 /** Skills that have a second, source-controlled `.agents/skills` copy at the v2.1.0 pin. */
 const AGENT_SKILL_COPIES = new Set([

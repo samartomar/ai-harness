@@ -542,6 +542,90 @@ describe("policy studio dependency-closed selection", () => {
     window.close();
   });
 
+  it("projects exact Skill suggestions from left-side Language, Framework, and Capability choices", () => {
+    const roots = ["lang:typescript", "framework:react", "capability:database"];
+    const expectedSkills = new Set<string>();
+    for (const root of roots) {
+      const descriptor = eccComponentInstallDescriptor(root as EccComponentId);
+      for (const skill of descriptor.skills ?? []) expectedSkills.add(`skill:${skill}`);
+      for (const moduleId of descriptor.wholeModules ?? []) {
+        for (const asset of ecc.assets.filter((candidate) => candidate.kind === "skill")) {
+          if (
+            eccComponentInstallDescriptor(asset.id as EccComponentId).containingModuleId ===
+            moduleId
+          ) {
+            expectedSkills.add(asset.id);
+          }
+        }
+      }
+    }
+    expect(expectedSkills.size).toBeGreaterThan(0);
+
+    const window = studio();
+    click(window, '.rail [data-framework-select="ecc|lang|lang:typescript"]');
+    click(window, '.rail [data-framework-select="ecc|framework|framework:react"]');
+    click(window, '.rail [data-framework-select="ecc|capability|capability:database"]');
+
+    expect(
+      selectedIds(window)
+        .filter((id) => id.startsWith("skill:"))
+        .sort(),
+    ).toEqual([...expectedSkills].sort());
+    for (const skillId of expectedSkills) {
+      expect(
+        window.document
+          .querySelector(`[data-framework-select="ecc|skill|${skillId}"]`)
+          ?.getAttribute("aria-pressed"),
+        `${skillId} is visibly suggested in the center inventory`,
+      ).toBe("true");
+    }
+
+    const removed = [...expectedSkills][0];
+    if (removed === undefined) throw new Error("expected a suggested Skill");
+    clickCanonical(window, `ecc|skill|${removed}`);
+    expect(selectedIds(window)).not.toContain(removed);
+    expect(selectionRoots(window)).toEqual(roots);
+
+    click(window, "#validate");
+    expect(window.document.getElementById("announcement")?.textContent).toMatch(
+      /validation passed/i,
+    );
+    window.close();
+  }, 20_000);
+
+  it("preserves focus and viewport when a center Skill selection rerenders the inventory", () => {
+    const window = studio();
+    click(window, '.rail [data-framework-select="ecc|lang|lang:typescript"]');
+
+    const skillId = selectedIds(window).find((id) => id.startsWith("skill:"));
+    if (skillId === undefined) throw new Error("expected a suggested Skill");
+    const key = `ecc|skill|${skillId}`;
+    const original = [...window.document.querySelectorAll(`[data-framework-select="${key}"]`)].find(
+      (candidate) => candidate.closest(".rail") === null,
+    );
+    if (original === undefined) throw new Error(`expected canonical ${key}`);
+
+    const scrollCalls: Array<[number, number]> = [];
+    Object.defineProperty(window, "scrollX", { configurable: true, get: () => 37 });
+    Object.defineProperty(window, "scrollY", { configurable: true, get: () => 911 });
+    (window as unknown as { scrollTo: (x: number, y: number) => void }).scrollTo = (x, y) => {
+      scrollCalls.push([x, y]);
+    };
+
+    (original as unknown as { focus: () => void }).focus();
+    expect(window.document.activeElement).toBe(original);
+    original.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+
+    const replacement = [
+      ...window.document.querySelectorAll(`[data-framework-select="${key}"]`),
+    ].find((candidate) => candidate.closest(".rail") === null);
+    expect(replacement).toBeDefined();
+    expect(replacement).not.toBe(original);
+    expect(window.document.activeElement).toBe(replacement);
+    expect(scrollCalls).toContainEqual([37, 911]);
+    window.close();
+  });
+
   it("keeps a center-deselected language rider excluded until the center restores it", () => {
     const window = studio();
 

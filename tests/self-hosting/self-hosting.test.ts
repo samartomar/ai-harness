@@ -72,7 +72,11 @@ describe("ai-harness self-hosting boundary", () => {
     const ci = read(".github/workflows/ci.yml");
     const workflow = parseYaml(ci) as {
       jobs: {
-        verify: { strategy: { matrix: { os: string[] } } };
+        verify: {
+          env: Record<string, string>;
+          strategy: { matrix: { os: string[] } };
+          steps: Array<{ if?: string; run?: string }>;
+        };
         windows_tests: {
           name: string;
           strategy: { matrix: { shard: number[] } };
@@ -91,6 +95,16 @@ describe("ai-harness self-hosting boundary", () => {
     const aggregate = workflow.jobs.windows_verify;
 
     expect(workflow.jobs.verify.strategy.matrix.os).toEqual(["ubuntu-latest", "macos-latest"]);
+    expect(workflow.jobs.verify.env.NODE_OPTIONS).toBe("--max-old-space-size=4096");
+    expect(workflow.jobs.verify.steps.map((step) => step.run)).toEqual(
+      expect.arrayContaining([
+        "npx vitest run --coverage --maxWorkers=2 --testTimeout=15000",
+        "npx vitest run --shard=1/4",
+        "npx vitest run --shard=2/4",
+        "npx vitest run --shard=3/4",
+        "npx vitest run --shard=4/4",
+      ]),
+    );
     expect(windows.name).toBe(`windows test (${githubExpression("matrix.shard")}/2)`);
     expect(windows.strategy.matrix.shard).toEqual([1, 2]);
     expect(windows["runs-on"]).toBe("windows-latest");

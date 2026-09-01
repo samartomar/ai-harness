@@ -1484,7 +1484,8 @@ export function trustPackageFetchActions(
   source: PackageTrustSource | ArtifactIntakePackageTrustSource,
   ctx: PlanContext,
 ): ExecAction[] {
-  const isolatedNpmConfig = join(source.quarantineRoot, ".aih-empty-npmrc");
+  const isolatedNpmUserConfig = join(source.quarantineRoot, ".aih-user-npmrc");
+  const isolatedNpmGlobalConfig = join(source.quarantineRoot, ".aih-global-npmrc");
   const isolatedNpmCache = join(source.quarantineRoot, "npm-cache");
   const failureCheck = (stage: string) => (result: RunResult) => {
     const reason = (result.stderr || result.stdout || `${stage} command failed`)
@@ -1518,8 +1519,8 @@ export function trustPackageFetchActions(
         "--json",
         "--pack-destination",
         source.quarantineRoot,
-        `--userconfig=${isolatedNpmConfig}`,
-        `--globalconfig=${isolatedNpmConfig}`,
+        `--userconfig=${isolatedNpmUserConfig}`,
+        `--globalconfig=${isolatedNpmGlobalConfig}`,
         `--cache=${isolatedNpmCache}`,
       ]),
       {

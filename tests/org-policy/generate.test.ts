@@ -612,6 +612,190 @@ describe("policy generate", () => {
     }
   });
 
+  it("rejects an imported governed MCP selection whose managed gate is absent", async () => {
+    const window = workbenchWindow();
+    const html = policyStudioHtml(policyStudioModel());
+    window.document.write(html);
+    loadStudio(window, html);
+    const control = window.document.querySelector("[data-reviewed]");
+    if (control === null) throw new Error("expected a managed MCP selection control");
+    control.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    const preview = window.document.getElementById("config-preview") as unknown as {
+      value: string;
+    };
+    const valid = JSON.parse(preview.value) as Record<string, unknown>;
+    expect(valid.mcp).toMatchObject({ allowManagedOnly: true });
+    const malformed = structuredClone(valid);
+    delete malformed.mcp;
+
+    const policyFile = window.document.getElementById("policy-file");
+    if (policyFile === null) throw new Error("expected policy file input");
+    Object.defineProperty(policyFile, "files", {
+      configurable: true,
+      value: [new window.File([JSON.stringify(malformed)], "missing-mcp-gate.json")],
+    });
+    policyFile.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await settle(window, () =>
+      Boolean(
+        window.document
+          .getElementById("announcement")
+          ?.textContent?.includes("Policy import rejected"),
+      ),
+    );
+
+    expect(window.document.getElementById("announcement")?.textContent).toContain(
+      "selected center-panel MCP controls require managed MCP projection",
+    );
+    expect(JSON.parse(preview.value)).toEqual(valid);
+  });
+
+  it("rejects stale managed MCP authority even when its synchronized gate is present", async () => {
+    const window = workbenchWindow();
+    const html = policyStudioHtml(policyStudioModel());
+    window.document.write(html);
+    loadStudio(window, html);
+    const preset = window.document.getElementById("preset-select") as unknown as {
+      value: string;
+      dispatchEvent(event: unknown): boolean;
+    } | null;
+    if (preset === null) throw new Error("expected enterprise preset");
+    preset.value = "enterprise";
+    preset.dispatchEvent(new window.Event("change", { bubbles: true }));
+    const preview = window.document.getElementById("config-preview") as unknown as {
+      value: string;
+    };
+    const valid = JSON.parse(preview.value) as {
+      mcp?: { allowedServers: string[]; allowManagedOnly: boolean };
+      governance: {
+        catalog: { reviewed: Array<Record<string, unknown>> };
+        activations: Array<Record<string, unknown>>;
+      };
+    };
+    const stale = structuredClone(valid);
+    stale.governance.catalog.reviewed.push({
+      id: "context7",
+      kind: "mcp",
+      description: "Legacy hosted documentation MCP",
+      capabilities: [],
+      risks: [],
+      source: {
+        type: "mcp",
+        server: "context7",
+        subject: `mcp-server-sha256:${"a".repeat(64)}`,
+      },
+      targets: ["claude"],
+      projector: "mcp-managed-settings",
+      lifecycle: "supported",
+      evidence: { record: "aih-context7" },
+    });
+    stale.governance.activations.push({
+      candidate: "context7",
+      state: "active",
+      targets: ["claude"],
+      clarification: "Requested by: administrator",
+    });
+    stale.mcp = {
+      allowedServers: [...new Set([...(stale.mcp?.allowedServers ?? []), "context7"])].sort(),
+      allowManagedOnly: true,
+    };
+
+    const policyFile = window.document.getElementById("policy-file");
+    if (policyFile === null) throw new Error("expected policy file input");
+    Object.defineProperty(policyFile, "files", {
+      configurable: true,
+      value: [new window.File([JSON.stringify(stale)], "stale-mcp-policy.json")],
+    });
+    policyFile.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await settle(window, () =>
+      Boolean(
+        window.document
+          .getElementById("announcement")
+          ?.textContent?.includes("Policy import rejected"),
+      ),
+    );
+
+    expect(window.document.getElementById("announcement")?.textContent).toMatch(
+      /context7.*current.*managed MCP catalog|managed MCP catalog.*context7/i,
+    );
+    expect(JSON.parse(preview.value)).toEqual(valid);
+  });
+
+  it("migrates the exact legacy enterprise Workbench MCP footprint without retaining unavailable authority", async () => {
+    const window = workbenchWindow();
+    const html = policyStudioHtml(policyStudioModel());
+    window.document.write(html);
+    loadStudio(window, html);
+    const preset = window.document.getElementById("preset-select") as unknown as {
+      value: string;
+      dispatchEvent(event: unknown): boolean;
+    } | null;
+    if (preset === null) throw new Error("expected enterprise preset");
+    preset.value = "enterprise";
+    preset.dispatchEvent(new window.Event("change", { bubbles: true }));
+    const preview = window.document.getElementById("config-preview") as unknown as {
+      value: string;
+    };
+    const legacy = JSON.parse(preview.value) as {
+      mcp?: { allowedServers: string[]; allowManagedOnly: boolean };
+      governance: {
+        catalog: { reviewed: Array<Record<string, unknown>> };
+        activations: Array<Record<string, unknown>>;
+      };
+    };
+    const expectedServers = [...(legacy.mcp?.allowedServers ?? [])];
+    delete legacy.mcp;
+    legacy.governance.catalog.reviewed.push({
+      id: "context7",
+      kind: "mcp",
+      description: "Legacy hosted documentation MCP",
+      capabilities: [],
+      risks: [],
+      source: {
+        type: "mcp",
+        server: "context7",
+        subject: `mcp-server-sha256:${"a".repeat(64)}`,
+      },
+      targets: ["claude"],
+      projector: "mcp-managed-settings",
+      lifecycle: "supported",
+      evidence: { record: "aih-context7" },
+    });
+    legacy.governance.activations.push({
+      candidate: "context7",
+      state: "active",
+      targets: ["claude"],
+      clarification: "Requested by: enterprise profile",
+    });
+
+    const policyFile = window.document.getElementById("policy-file");
+    if (policyFile === null) throw new Error("expected policy file input");
+    Object.defineProperty(policyFile, "files", {
+      configurable: true,
+      value: [new window.File([JSON.stringify(legacy)], "legacy-enterprise-policy.json")],
+    });
+    policyFile.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await settle(window, () =>
+      Boolean(window.document.getElementById("announcement")?.textContent?.includes("migrated")),
+    );
+
+    expect(window.document.getElementById("announcement")?.textContent).toContain(
+      "Legacy Workbench policy migrated",
+    );
+    const migrated = JSON.parse(preview.value) as typeof legacy & {
+      mcp: { allowedServers: string[]; allowManagedOnly: boolean };
+    };
+    expect(migrated.mcp).toEqual({
+      allowedServers: expectedServers,
+      allowManagedOnly: true,
+    });
+    expect(migrated.governance.catalog.reviewed).not.toContainEqual(
+      expect.objectContaining({ id: "context7" }),
+    );
+    expect(migrated.governance.activations).not.toContainEqual(
+      expect.objectContaining({ candidate: "context7" }),
+    );
+  });
+
   it("round-trips administrator-managed remote status without inventing legacy drift fields", async () => {
     const imported = fullAuthoringPolicy();
     const governance = imported.governance as {
@@ -1374,5 +1558,5 @@ describe("policy generate", () => {
       }
       await closeWorkbenchWindow(window);
     }
-  }, 10_000);
+  }, 30_000);
 });

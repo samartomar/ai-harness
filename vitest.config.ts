@@ -11,7 +11,7 @@ export function maxWorkersForPlatform(platform: NodeJS.Platform, parallelism: nu
 }
 
 export function workerExecArgvForPlatform(platform: NodeJS.Platform): string[] {
-  return platform === "darwin" ? ["--max-old-space-size=3072"] : [];
+  return platform === "darwin" ? ["--max-old-space-size=4096"] : [];
 }
 
 export function testRuntimeForPlatform(platform: NodeJS.Platform, parallelism: number) {
@@ -38,9 +38,9 @@ export default defineConfig({
     // derived default while capping high-core dev machines, whose uncapped
     // worker counts overcommit CPU/RAM and blow per-test budgets (#509).
     // The complete macOS suite renders many portable Workbench instances in
-    // isolated workers. Hosted arm64 runners otherwise hit Node's 2 GiB worker
-    // heap before assertions finish; keep the parallel footprint bounded while
-    // preserving every test and assertion.
+    // isolated workers. Hosted arm64 runners otherwise exhaust their worker heap
+    // before assertions finish; keep two workers within the job's 4 GiB ceiling
+    // while preserving every test and assertion.
     ...testRuntime,
     include: ["tests/**/*.test.ts"],
     coverage: {

@@ -154,13 +154,13 @@ describe("coverage policy", () => {
     expect(maxWorkersForPlatform("linux", 12)).toBe(8);
     expect(maxWorkersForPlatform("win32", 2)).toBe(1);
 
-    expect(workerExecArgvForPlatform("darwin")).toEqual(["--max-old-space-size=3072"]);
+    expect(workerExecArgvForPlatform("darwin")).toEqual(["--max-old-space-size=4096"]);
     expect(workerExecArgvForPlatform("linux")).toEqual([]);
     expect(workerExecArgvForPlatform("win32")).toEqual([]);
 
     expect(testRuntimeForPlatform("darwin", 12)).toEqual({
       maxWorkers: 2,
-      execArgv: ["--max-old-space-size=3072"],
+      execArgv: ["--max-old-space-size=4096"],
       testTimeout: 15_000,
     });
   });

@@ -34,7 +34,9 @@ import {
 } from "../../src/trust/directory-resolution.js";
 
 interface IntakeApi {
+  exportWorkspaceValue(policyFilename?: string): Record<string, unknown>;
   importIntakeText(text: string): Promise<void>;
+  importWorkspaceText(text: string): Promise<void>;
   mergeEvidenceText(text: string): Promise<void>;
   snapshot(): { intake: Record<string, unknown> | null; bundleCount: number };
 }
@@ -293,7 +295,7 @@ describe("Policy Workbench artifact intake", () => {
     expect(card?.textContent).toContain("Add and review MCP, Skill, or Agent sources");
     expect(card?.textContent).toContain("one accountable owner email");
     expect(card?.textContent).toContain(
-      "aih trust scan aih-artifact-intake.json --apply --evidence-out aih-artifact-evidence.json",
+      "aih trust scan aih-artifact-intake.json --posture enterprise --apply --evidence-out aih-artifact-evidence.json",
     );
     expect(card?.textContent).toContain("Preflight only");
     expect(card?.textContent).toContain("limited to 1 MiB");
@@ -317,6 +319,98 @@ describe("Policy Workbench artifact intake", () => {
     expect(
       window.document.getElementById("panel-imports")?.querySelector("#artifact-intake-review"),
     ).toBeNull();
+
+    window.close();
+  });
+
+  it("saves and restores one non-authoritative team workspace with policy, intake, and evidence", async () => {
+    const window = studio();
+    const source = intake();
+    const bundle = evidence("team review");
+    await api(window).importIntakeText(JSON.stringify(source));
+    await api(window).mergeEvidenceText(JSON.stringify(bundle));
+
+    const workspace = api(window).exportWorkspaceValue("payments-platform-policy.json");
+    expect(workspace).toMatchObject({
+      format: "aih-policy-workbench-workspace",
+      version: 1,
+      authority: { state: "not-authority" },
+      policyFilename: "payments-platform-policy.json",
+      artifactIntake: source,
+      evidenceBundles: [bundle],
+    });
+    expect(workspace).toHaveProperty("policy");
+
+    const restored = studio();
+    await api(restored).importWorkspaceText(JSON.stringify(workspace));
+    expect(api(restored).snapshot()).toMatchObject({ intake: source, bundleCount: 1 });
+    expect(
+      (restored.document.getElementById("policy-download-name") as unknown as { value: string })
+        .value,
+    ).toBe("payments-platform-policy.json");
+    expect(
+      JSON.parse(
+        (restored.document.getElementById("config-preview") as unknown as { value: string }).value,
+      ),
+    ).toEqual(workspace.policy);
+    expect(restored.document.getElementById("artifact-intake-message")?.textContent).toContain(
+      "policy, intake, and 1 evidence bundle",
+    );
+
+    window.close();
+    restored.close();
+  });
+
+  it("rejects an unsafe or corrupted team workspace without partially replacing review state", async () => {
+    const source = intake();
+    const bundle = evidence("team review");
+    const sourceWindow = studio();
+    await api(sourceWindow).importIntakeText(JSON.stringify(source));
+    await api(sourceWindow).mergeEvidenceText(JSON.stringify(bundle));
+    const workspace = api(sourceWindow).exportWorkspaceValue("payments-platform-policy.json");
+
+    const unsafeName = structuredClone(workspace);
+    unsafeName.policyFilename = "teams/payments-platform-policy.json";
+    const target = studio();
+    await expect(api(target).importWorkspaceText(JSON.stringify(unsafeName))).rejects.toThrow(
+      /policy filename/i,
+    );
+
+    const corrupted = structuredClone(workspace) as {
+      evidenceBundles: Array<{ bundleDigest: string }>;
+    };
+    const corruptedBundle = corrupted.evidenceBundles[0];
+    if (corruptedBundle === undefined) throw new Error("expected exported evidence bundle");
+    corruptedBundle.bundleDigest = `sha256:${"0".repeat(64)}`;
+    await expect(api(target).importWorkspaceText(JSON.stringify(corrupted))).rejects.toThrow(
+      /digest mismatch/i,
+    );
+    expect(api(target).snapshot()).toEqual({ intake: null, bundleCount: 0 });
+
+    sourceWindow.close();
+    target.close();
+  });
+
+  it("caps cumulative evidence history at 100 bundles without losing resumable state", async () => {
+    const window = studio();
+    const workspace = api(window).exportWorkspaceValue("payments-platform-policy.json") as {
+      evidenceBundles: Array<Record<string, unknown>>;
+    };
+    workspace.evidenceBundles = Array.from({ length: 100 }, (_value, index) =>
+      evidence(`history-${String(index).padStart(3, "0")}`),
+    );
+    await api(window).importWorkspaceText(JSON.stringify(workspace));
+
+    await expect(
+      api(window).mergeEvidenceText(JSON.stringify(evidence("history-overflow"))),
+    ).rejects.toThrow(/at most 100|limited to 100/i);
+    expect(api(window).snapshot().bundleCount).toBe(100);
+    expect(
+      (
+        api(window).exportWorkspaceValue("payments-platform-policy.json")
+          .evidenceBundles as unknown[]
+      ).length,
+    ).toBe(100);
 
     window.close();
   });
@@ -1320,7 +1414,36 @@ describe("Policy Workbench artifact intake", () => {
     expect(remoteButtons).toHaveLength(2);
     expect(
       remoteButtons.every((button) => (button as unknown as { disabled: boolean }).disabled),
-    ).toBe(true);
+    ).toBe(false);
+    click(window, remoteButtons[0] ?? null);
+    expect((window.document.body as unknown as { dataset: { view: string } }).dataset.view).toBe(
+      "author",
+    );
+    expect(
+      (window.document.getElementById("protected-subject-id") as unknown as { value: string })
+        .value,
+    ).toBe("atlassian-directory");
+    expect(
+      (window.document.getElementById("protected-source-type") as unknown as { value: string })
+        .value,
+    ).toBe("remote");
+    expect(
+      (window.document.getElementById("protected-source-endpoint") as unknown as { value: string })
+        .value,
+    ).toBe("https://mcp.atlassian.com/v1/mcp");
+    expect(
+      (
+        window.document.getElementById("protected-source-content-digest") as unknown as {
+          value: string;
+        }
+      ).value,
+    ).toBe("");
+    expect(
+      (window.document.getElementById("protected-actor") as unknown as { value: string }).value,
+    ).toBe("");
+    expect(window.document.getElementById("artifact-intake-message")?.textContent).toContain(
+      "Exact hosted endpoint",
+    );
     expect(api(window).snapshot().intake).toEqual(intake);
 
     window.close();

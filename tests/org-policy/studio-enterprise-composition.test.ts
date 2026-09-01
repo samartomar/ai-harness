@@ -37,6 +37,7 @@ function selectProfile(window: Window, value: string): void {
 
 function authoredPolicy(window: Window): {
   minimumPosture: string;
+  capabilityPackages?: unknown;
   governance: {
     supportedClis: ["claude"];
     catalog: { reviewed: { id: string }[] };
@@ -70,16 +71,33 @@ function selectedIds(window: Window): string[] {
 
 function eccSelectionClosure(rootIds: readonly string[]): string[] {
   const selected = new Set(rootIds);
+  const pending = rootIds.map((id) => ({ id, includeSuggestions: true }));
+  while (pending.length > 0) {
+    const next = pending.shift();
+    if (next === undefined) continue;
+    const asset = ecc?.assets.find((candidate) => candidate.id === next.id);
+    if (asset === undefined) throw new Error(`expected ECC asset ${next.id}`);
+    for (const required of [
+      ...(asset.dependencies ?? []),
+      ...(next.includeSuggestions ? (asset.members ?? []) : []),
+      ...(next.includeSuggestions ? (asset.riders ?? []) : []),
+    ]) {
+      if (selected.has(required)) continue;
+      selected.add(required);
+      pending.push({ id: required, includeSuggestions: false });
+    }
+  }
+  return [...selected];
+}
+
+function eccStructuralClosure(rootIds: readonly string[]): string[] {
+  const selected = new Set(rootIds);
   const pending = [...rootIds];
   while (pending.length > 0) {
     const id = pending.shift();
     const asset = ecc?.assets.find((candidate) => candidate.id === id);
     if (asset === undefined) throw new Error(`expected ECC asset ${id}`);
-    for (const required of [
-      ...(asset.dependencies ?? []),
-      ...(asset.members ?? []),
-      ...(asset.riders ?? []),
-    ]) {
+    for (const required of asset.dependencies ?? []) {
       if (selected.has(required)) continue;
       selected.add(required);
       pending.push(required);
@@ -149,9 +167,49 @@ describe("policy studio enterprise composition", () => {
   it("marks Core as composed and languages and security as additive", () => {
     const byId = new Map(composition.parts.map((part) => [part.id, part.selection]));
     expect(byId.get("ecc-install-core")).toBe("composed");
-    expect(byId.get("aih-core-closure")).toBe("composed");
+    expect(byId.get("aih-core-closure")).toBe("additive");
     expect(byId.get("language")).toBe("additive");
     expect(byId.get("security")).toBe("additive");
+  });
+
+  it("keeps Enterprise structural and every selected center control removable", () => {
+    const window = studio();
+    selectProfile(window, "enterprise");
+
+    const policy = authoredPolicy(window);
+    const selected = selectedIds(window);
+    const coreModules = UPSTREAM_CORE_ECC_MODULE_IDS.map((id) => `module:${id}`);
+
+    expect(policy.governance.externalSelections[0]?.roots?.sort()).toEqual(coreModules.sort());
+    expect(selected.filter((id) => id.startsWith("agent:"))).toEqual([]);
+    expect(selected.filter((id) => id.startsWith("skill:"))).toEqual([]);
+    expect(policy.capabilityPackages).toBeUndefined();
+
+    for (const id of selected) {
+      const asset = ecc.assets.find((candidate) => candidate.id === id);
+      if (asset === undefined) throw new Error(`expected ECC asset ${id}`);
+      const controls = [
+        ...window.document.querySelectorAll(
+          `[data-framework-select="ecc|${asset.kind}|${asset.id}"]`,
+        ),
+      ].filter((control) => control.closest(".rail") === null);
+      expect(controls.length, `${id} has a center control`).toBeGreaterThan(0);
+      for (const control of controls) {
+        expect(control.hasAttribute("disabled"), `${id} is not disabled`).toBe(false);
+        expect(control.getAttribute("aria-disabled"), `${id} is not aria-disabled`).not.toBe(
+          "true",
+        );
+      }
+    }
+
+    const removable = coreModules.find((id) => id === "module:agents-core");
+    if (removable === undefined) throw new Error("expected module:agents-core in ECC Core");
+    window.document
+      .querySelector('[data-framework-select="ecc|module|module:agents-core"]:not(.rail *)')
+      ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    expect(selectedIds(window)).not.toContain(removable);
+
+    window.close();
   });
 
   it("composes Enterprise into ECC Core as requested intent and states the composition", () => {
@@ -165,13 +223,13 @@ describe("policy studio enterprise composition", () => {
         .map((item) => item.candidate)
         .sort(),
     ).toEqual(controls.map((control) => control.id).sort());
-    expect(selectedIds(window).sort()).toEqual(eccSelectionClosure(partIds("composed")).sort());
+    expect(selectedIds(window).sort()).toEqual(eccStructuralClosure(partIds("composed")).sort());
     expect(policy.governance.externalSelections[0]?.roots?.sort()).toEqual(
       partIds("composed").sort(),
     );
     const announcement = window.document.getElementById("announcement")?.textContent ?? "";
     expect(announcement).toContain(`${controls.length} AIH control`);
-    expect(announcement).toContain(`${partIds("composed").length} ECC Core component`);
+    expect(announcement).toContain(`${partIds("composed").length} structural ECC Core module`);
     expect(announcement).toContain(`${partIds("additive").length}`);
     expect(announcement).not.toContain("no projector");
     expect(announcement).toContain("not effective until runtime evaluation");

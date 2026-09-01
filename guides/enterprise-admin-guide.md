@@ -60,8 +60,17 @@ skills, MCP servers, or packages absent from the Catalog; use a new exact decisi
 change and the row's Revoke action for revocation. The `issuerRepository` value is attribution in the
 reused V3 contract—it does not require a GitHub workflow or dictate where the file is stored.
 
+For MCP, Skill, or Agent scanning, use the Workbench **Artifacts** tab to create one mixed intake of
+up to 100 items. Run the displayed `aih trust scan ... --evidence-out ...` command; Scanner returns one
+evidence bundle to merge into the same review. **Save team review workspace** then preserves the draft
+policy, intake, and evidence history in one file for another review session. That workspace explicitly is
+not authority and is not the deployable policy. Keep the scanner output as an attributable record and
+download the protected policy separately after approval.
+
 The adopter stores the generated PolicyBundle V2 document in an administrator-only directory outside
-the governed repository and supplies its absolute path as `AIH_ORG_POLICY`. The document reuses the
+the governed repository and supplies its absolute path with `--policy <file>` for one invocation or
+`AIH_ORG_POLICY` for a managed process environment. The CLI flag takes precedence over the environment
+variable and the default repo-local `aih-org-policy.json` lookup. The document reuses the
 existing org policy, `GovernanceDecisionV2`, decision revocations, and V3 authority envelope. It is
 not a new policy plane, workflow, or durable store. Vibe remains unchanged and a repo-local policy
 never becomes authority merely because it contains an `approved` field.
@@ -120,6 +129,11 @@ rechecks them at the effect boundary.
 
 The packed [command reference](../docs/commands.md#aih-policy) is authoritative for flags. Use the
 closed route selected by the exact decision; do not treat a command's reachability as approval:
+
+Add `--policy <team-policy-file>` to any command below when the target does not use the default
+repo-local filename. Keep scanner evidence as separate JSON records. Every `--evidence <file>` value
+is root-relative to the governed target and is revalidated by the consuming command; importing that
+record into the Workbench is preflight inspection, not organization authority or approval.
 
 | Journey step | Exact command |
 |---|---|
