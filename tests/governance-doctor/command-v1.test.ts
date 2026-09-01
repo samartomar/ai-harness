@@ -208,6 +208,7 @@ describe("aih governance-doctor — command registration", () => {
     expect(node?.options.map((option) => option.flags).sort()).toEqual([
       "--context-dir <dir>",
       "--json",
+      "--policy <file>",
       "--posture <posture>",
       "--repair-plan",
       "--root <dir>",
