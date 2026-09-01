@@ -194,6 +194,24 @@ describe("v1 contract — CLI command surface", () => {
     }
   });
 
+  it("exposes one explicit policy-file selector on repo-scoped policy consumers", () => {
+    const root = liveSurface();
+    const paths = [
+      ["policy", "validate"],
+      ["policy", "evaluate"],
+      ["policy", "project"],
+      ["policy", "resolve"],
+      ["trust", "scan"],
+    ];
+    for (const [parentName, childName] of paths) {
+      const parent = root.commands.find((command) => command.name === parentName);
+      const child = parent?.commands.find((command) => command.name === childName);
+      expect(child?.options.map((option) => option.flags), `${parentName} ${childName}`).toContain(
+        "--policy <file>",
+      );
+    }
+  });
+
   it("keeps the zero-write governance-doctor route free of mutating and artifact flags", () => {
     const node = liveSurface().commands.find((c) => c.name === "governance-doctor");
     const flags = node?.options.map((o) => o.flags) ?? [];

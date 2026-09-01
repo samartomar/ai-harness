@@ -79,6 +79,7 @@ function command(argv: string[]): Command {
     .option("--verify")
     .option("--json")
     .option("--root <dir>")
+    .option("--policy <file>")
     .option("--context-dir <dir>", "", "ai-coding")
     .option("--posture <posture>", "", "vibe")
     // Mirror heal/certs: a commander DEFAULT of "Zscaler" so opts.caPattern is never
@@ -285,6 +286,41 @@ describe("runCapability — posture precedence ladder (org floor > flag > marker
     expect(await resolvedPosture(["--posture", "enterprise", "--root", dir], {})).toContain(
       "enterprise:org-floor",
     );
+  });
+
+  it("lets an explicit --policy file select the org floor and override AIH_ORG_POLICY", async () => {
+    writeFileSync(
+      join(dir, "team-policy.json"),
+      JSON.stringify({
+        schemaVersion: 2,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        governance: { supportedClis: ["claude"] },
+      }),
+    );
+    writeFileSync(
+      join(dir, "other-policy.json"),
+      JSON.stringify({
+        schemaVersion: 2,
+        minimumPosture: "vibe",
+        references: { repoContract: "ai-coding/project.json" },
+      }),
+    );
+
+    const out = await resolvedPosture(
+      ["--policy", "team-policy.json", "--posture", "vibe", "--root", dir],
+      { AIH_ORG_POLICY: "other-policy.json" },
+    );
+
+    expect(out).toContain("enterprise:org-floor");
+  });
+
+  it("fails closed when an explicit --policy file is missing", async () => {
+    const result = await run(["--policy", "missing-team-policy.json", "--root", dir], echoSpec);
+
+    expect(result.code).toBe(1);
+    expect(result.out).toContain("--policy points at");
+    expect(result.out).toContain("missing-team-policy.json");
   });
 
   it("read-only specs accept --posture but ignore it as a posture source", async () => {

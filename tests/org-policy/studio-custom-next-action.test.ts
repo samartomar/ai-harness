@@ -46,6 +46,49 @@ function customRowsText(window: Window): string {
 }
 
 describe("policy studio custom candidate next action", () => {
+  it("downloads a safe team-specific policy filename and rejects folder paths", () => {
+    const window = studioWithCustomCandidate();
+    const document = window.document;
+    const filename = document.getElementById("policy-download-name") as unknown as {
+      value: string;
+      dispatchEvent(event: unknown): boolean;
+    } | null;
+    expect(filename).not.toBeNull();
+    if (filename === null) return;
+
+    let downloadedAs = "";
+    const anchor = document.createElement("a");
+    const anchorPrototype = Object.getPrototypeOf(anchor) as { click: () => void };
+    const originalClick = anchorPrototype.click;
+    anchorPrototype.click = function (this: { download: string }): void {
+      downloadedAs = this.download;
+    };
+    try {
+      filename.value = "payments-team-policy.json";
+      filename.dispatchEvent(new window.Event("input", { bubbles: true }));
+      document
+        .getElementById("download")
+        ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      expect(downloadedAs).toBe("payments-team-policy.json");
+      expect(document.getElementById("announcement")?.textContent).toContain(
+        "--policy payments-team-policy.json",
+      );
+
+      downloadedAs = "";
+      filename.value = "policies/payments-team-policy.json";
+      filename.dispatchEvent(new window.Event("input", { bubbles: true }));
+      document
+        .getElementById("download")
+        ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      expect(downloadedAs).toBe("");
+      expect(document.getElementById("announcement")?.textContent).toContain(
+        "Use a JSON filename without folders",
+      );
+    } finally {
+      anchorPrototype.click = originalClick;
+    }
+  });
+
   // Recorded product failure 7: a custom addition dead-ended. It was accepted,
   // shown as blocked, and then the administrator had nothing to do next.
   it("gives a pinned custom candidate an exact next command", () => {
