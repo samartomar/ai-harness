@@ -477,12 +477,7 @@ function vetVerdicts(sourceId: string, pinnedSha: string): Map<string, PolicyAut
 
 function frameworkCatalog(id: "ecc" | "superpowers"): PolicyAuthoringFramework {
   const catalog = baselineCatalogById(id);
-  const supplementalSkillIds =
-    id === "ecc" ? eccSkillCatalogInventory.map((skill) => `skill:${skill.id}`) : [];
-  const present = new Set([
-    ...catalog.components.map((component) => component.id),
-    ...supplementalSkillIds,
-  ]);
+  const present = new Set(catalog.components.map((component) => component.id));
   const vetted = vetVerdicts(id, catalog.pinnedSha);
   // Only name riders the pinned catalog actually contains: a relation that
   // points at a component this framework does not carry is a claim its own
@@ -576,36 +571,6 @@ function frameworkCatalog(id: "ecc" | "superpowers"): PolicyAuthoringFramework {
       sourcePaths: eccSelectionSourcePaths(component.id, component.paths),
     };
   });
-  if (id === "ecc") {
-    const baselineIds = new Set(assets.map((asset) => asset.id));
-    for (const skill of eccSkillCatalogInventory) {
-      const skillId = `skill:${skill.id}`;
-      if (baselineIds.has(skillId)) continue;
-      const metadata = eccContentMetadata("skill", skill.id);
-      if (metadata === undefined) {
-        throw new Error(`ECC skill ${skillId} has no source-authored metadata`);
-      }
-      assets.push({
-        kind: "skill",
-        id: skillId,
-        curationKind: "skill",
-        source: {
-          repository: `${catalog.owner}/${catalog.repo}`,
-          commit: catalog.pinnedSha,
-          path: skill.path,
-        },
-        sourcePaths: eccSelectionSourcePaths(skillId, [skill.path]),
-        metadata: {
-          title: metadata.title,
-          summary: metadata.summary,
-          usageContext: metadata.usageContext,
-          allowedTools: metadata.allowedTools,
-          sourcePath: metadata.path,
-          sourceSha256: metadata.sourceSha256,
-        },
-      });
-    }
-  }
   return {
     id,
     repository: `${catalog.owner}/${catalog.repo}`,

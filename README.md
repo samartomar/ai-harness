@@ -672,8 +672,10 @@ The portable Policy Workbench uses a flat Ledger paper-and-ink identity in light
 rail suggests aggregate choices, while the center inventory remains final authority for individual Agent and
 Skill rows; the inspector is mutation-free, narrates the selected-to-materialized journey, and offers one routed
 next action. Its source-locked planes show all 286 canonical ECC skills and all 35 entries in ECC's pinned MCP
-source. Every exact Skill row can record reversible requested intent without claiming evidence, approval,
-installation, materialization, or support. The 31 ECC-owned MCP entries route to approval authoring, while the
+source. Every exact Skill row authors reversible, source-bound requested intent against an independently
+scannable baseline subject. Selection alone still grants no evidence, approval, installation,
+materialization, or support; the governed lifecycle remains held until exact evidence clears. The 31
+ECC-owned MCP entries route to approval authoring, while the
 four AIH-owned declarations remain read-only availability and do not imply that Core ships a matching control.
 The Artifacts workspace creates one intake and one scanner evidence bundle for up to 100 mixed items, then can
 save the draft policy, intake, and evidence history in one resumable, explicitly non-authoritative team review

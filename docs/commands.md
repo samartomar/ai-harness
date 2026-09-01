@@ -751,8 +751,10 @@ hard-blocked candidates with no activation affordance until supported scanning, 
 The left rail suggests aggregate ECC language, framework, capability, and module choices. The center inventory
 is final authority for every individual Agent and Skill: a suggested row can always be deselected, and an
 explicit center deselection is not silently restored by a later aggregate choice. The source-locked skills plane
-lists all 286 canonical `skills/*/SKILL.md` identities at the pinned ECC commit and lets each exact row record
-reversible requested intent. Selection is not evidence, approval, installation, materialization, or support.
+lists all 286 canonical `skills/*/SKILL.md` identities at the pinned ECC commit and lets each exact row author
+reversible, source-bound requested intent against an independently scannable baseline subject. Selection is
+not evidence, approval, installation, materialization, or support; the governed lifecycle remains held until
+exact evidence clears.
 The flat Ledger paper-and-ink presentation reserves colour for evidence state, supports a neutral dark theme,
 and keeps the rail available on compact screens. The inspector contains no policy mutation controls: it
 narrates the selected-to-materialized journey and routes one next action to the canonical selection or a

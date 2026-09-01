@@ -263,6 +263,14 @@ describe("policy validate — local aih-org-policy.json", () => {
 });
 
 describe("policy validate — --bundle envelope mode", () => {
+  it("rejects ambiguous simultaneous --policy and --bundle selectors", () => {
+    expect(() =>
+      policyValidateCommand.plan(
+        ctx({ options: { policy: "policies/team.json", bundle: "org-bundle.json" } }),
+      ),
+    ).toThrow(/either --policy.*or --bundle|not both/i);
+  });
+
   it("passes a valid bundle and names issuer + embedded posture", async () => {
     write("org-bundle.json", validBundle({ rings: [{ name: "canary" }] }));
     const [check] = await checks(ctx({ options: { bundle: "org-bundle.json" } }));

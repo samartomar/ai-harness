@@ -273,6 +273,13 @@ function policyVerifyCheck(ctx: PlanContext, against: string | undefined): Check
 
 function policyValidatePlan(ctx: PlanContext): Plan {
   const bundlePath = optionString(ctx, "bundle");
+  const policyPath = optionString(ctx, "policy");
+  if (bundlePath !== undefined && policyPath !== undefined) {
+    throw new AihError(
+      "policy validate accepts either --policy <file> or --bundle <file>, not both",
+      "AIH_CONFIG",
+    );
+  }
   if (bundlePath !== undefined) {
     return plan(
       "policy validate",

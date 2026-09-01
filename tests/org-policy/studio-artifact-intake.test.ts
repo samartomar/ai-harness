@@ -391,6 +391,30 @@ describe("Policy Workbench artifact intake", () => {
     target.close();
   });
 
+  it("caps cumulative evidence history at 100 bundles without losing resumable state", async () => {
+    const window = studio();
+    const workspace = api(window).exportWorkspaceValue("payments-platform-policy.json") as {
+      evidenceBundles: Array<Record<string, unknown>>;
+    };
+    workspace.evidenceBundles = Array.from({ length: 100 }, (_value, index) =>
+      evidence(`history-${String(index).padStart(3, "0")}`),
+    );
+    await api(window).importWorkspaceText(JSON.stringify(workspace));
+
+    await expect(
+      api(window).mergeEvidenceText(JSON.stringify(evidence("history-overflow"))),
+    ).rejects.toThrow(/at most 100|limited to 100/i);
+    expect(api(window).snapshot().bundleCount).toBe(100);
+    expect(
+      (
+        api(window).exportWorkspaceValue("payments-platform-policy.json")
+          .evidenceBundles as unknown[]
+      ).length,
+    ).toBe(100);
+
+    window.close();
+  });
+
   it("opens one dedicated Artifacts workspace and chooses kind inside it", () => {
     const window = studio();
 

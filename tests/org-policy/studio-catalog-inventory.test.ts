@@ -300,6 +300,17 @@ describe("policy authoring catalog inventory", () => {
     expect(policy.governance?.externalSelections ?? []).toHaveLength(0);
   });
 
+  it("binds every selectable ECC Skill to the authoritative lifecycle catalog", () => {
+    const baselineSkillIds = baselineCatalogById("ecc")
+      .components.filter((component) => component.id.startsWith("skill:"))
+      .map((component) => component.id)
+      .sort();
+
+    expect(baselineSkillIds).toEqual(
+      eccSkillCatalogInventory.map((skill) => `skill:${skill.id}`).sort(),
+    );
+  });
+
   it("places selectable ECC MCP declarations inside the ECC MCP catalog", () => {
     const window = new Window({ url: "http://localhost/" });
     const model = policyStudioModel();
@@ -891,15 +902,7 @@ describe("policy authoring catalog inventory", () => {
       expect(assetIds, `${framework.id} drops a pinned baseline component`).toEqual(
         expect.arrayContaining(components),
       );
-      const supplemental = assetIds.filter((assetId) => !components.includes(assetId));
-      expect(supplemental.sort()).toStrictEqual(
-        framework.id === "ecc"
-          ? eccSkillCatalogInventory
-              .map((skill) => `skill:${skill.id}`)
-              .filter((skillId) => !components.includes(skillId))
-              .sort()
-          : [],
-      );
+      expect(assetIds.filter((assetId) => !components.includes(assetId))).toStrictEqual([]);
     }
   });
 
