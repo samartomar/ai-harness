@@ -2,8 +2,27 @@ import { availableParallelism } from "node:os";
 import { defineConfig } from "vitest/config";
 
 export function testTimeoutForPlatform(platform: NodeJS.Platform): number {
-  return platform === "win32" ? 15_000 : 5_000;
+  return platform === "win32" || platform === "darwin" ? 15_000 : 5_000;
 }
+
+export function maxWorkersForPlatform(platform: NodeJS.Platform, parallelism: number): number {
+  const derivedWorkers = Math.max(parallelism - 1, 1);
+  return Math.min(platform === "darwin" ? 2 : 8, derivedWorkers);
+}
+
+export function workerExecArgvForPlatform(platform: NodeJS.Platform): string[] {
+  return platform === "darwin" ? ["--max-old-space-size=3072"] : [];
+}
+
+export function testRuntimeForPlatform(platform: NodeJS.Platform, parallelism: number) {
+  return {
+    maxWorkers: maxWorkersForPlatform(platform, parallelism),
+    execArgv: workerExecArgvForPlatform(platform),
+    testTimeout: testTimeoutForPlatform(platform),
+  };
+}
+
+const testRuntime = testRuntimeForPlatform(process.platform, availableParallelism());
 
 export default defineConfig({
   test: {
@@ -18,8 +37,11 @@ export default defineConfig({
     // (no core-count clamp), so min() keeps low-core CI runners at their
     // derived default while capping high-core dev machines, whose uncapped
     // worker counts overcommit CPU/RAM and blow per-test budgets (#509).
-    maxWorkers: Math.min(8, Math.max(availableParallelism() - 1, 1)),
-    testTimeout: testTimeoutForPlatform(process.platform),
+    // The complete macOS suite renders many portable Workbench instances in
+    // isolated workers. Hosted arm64 runners otherwise hit Node's 2 GiB worker
+    // heap before assertions finish; keep the parallel footprint bounded while
+    // preserving every test and assertion.
+    ...testRuntime,
     include: ["tests/**/*.test.ts"],
     coverage: {
       provider: "v8",

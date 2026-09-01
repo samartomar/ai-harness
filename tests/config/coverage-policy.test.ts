@@ -1,7 +1,12 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import vitestConfig, { testTimeoutForPlatform } from "../../vitest.config.js";
+import vitestConfig, {
+  maxWorkersForPlatform,
+  testRuntimeForPlatform,
+  testTimeoutForPlatform,
+  workerExecArgvForPlatform,
+} from "../../vitest.config.js";
 
 interface CoverageShape {
   include?: string[];
@@ -139,9 +144,24 @@ describe("coverage policy", () => {
     );
   });
 
-  it("matches the required Windows timeout without weakening other platforms", () => {
+  it("matches the required hosted-runner budgets without weakening Linux", () => {
     expect(testTimeoutForPlatform("win32")).toBe(15_000);
     expect(testTimeoutForPlatform("linux")).toBe(5_000);
-    expect(testTimeoutForPlatform("darwin")).toBe(5_000);
+    expect(testTimeoutForPlatform("darwin")).toBe(15_000);
+    expect(testTimeoutForPlatform("freebsd")).toBe(5_000);
+
+    expect(maxWorkersForPlatform("darwin", 12)).toBe(2);
+    expect(maxWorkersForPlatform("linux", 12)).toBe(8);
+    expect(maxWorkersForPlatform("win32", 2)).toBe(1);
+
+    expect(workerExecArgvForPlatform("darwin")).toEqual(["--max-old-space-size=3072"]);
+    expect(workerExecArgvForPlatform("linux")).toEqual([]);
+    expect(workerExecArgvForPlatform("win32")).toEqual([]);
+
+    expect(testRuntimeForPlatform("darwin", 12)).toEqual({
+      maxWorkers: 2,
+      execArgv: ["--max-old-space-size=3072"],
+      testTimeout: 15_000,
+    });
   });
 });
