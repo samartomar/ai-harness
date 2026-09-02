@@ -8,6 +8,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Decoupled fast staged and pull-request feedback from release evidence: CI now emits a deterministic,
+  fail-closed impact receipt in shadow mode while the complete required checks remain authoritative.
+- Split annotated-tag candidate qualification, artifact-bound owner-authorized npm publication,
+  exact public installed acceptance, and acceptance-bound promotion authorization into separate
+  auditable effects. Release preparation is mechanically limited to version and adoption evidence.
+- Added a complete enterprise adoption decision manifest and cumulative-delta format so organizations
+  can review what changes from their approved version without treating every repository merge as an
+  upgrade instruction.
+
 - Keep the README release badge and overview SVG tied to npm's promoted stable
   train without hardcoding a mutable Core version.
 - Document npm-supported, user-owned prefix recovery for macOS and Linux global

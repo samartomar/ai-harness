@@ -47,6 +47,9 @@ that carry their own status line.
 
 ## Security and governance
 
+- [DELIVERY_GOVERNANCE.md](DELIVERY_GOVERNANCE.md) — fast engineering feedback,
+  enterprise adoption manifests, candidate qualification, publication, installed acceptance,
+  promotion, and rollback boundaries.
 - [security/skill-card-schema.md](security/skill-card-schema.md) — shipped committed
   skill-card schema and card/approve lifecycle.
 - [security/approved-skills-lockfile.md](security/approved-skills-lockfile.md) —

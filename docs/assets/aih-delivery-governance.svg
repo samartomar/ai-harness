@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="430" viewBox="0 0 1200 430" role="img" aria-labelledby="title desc">
+  <title id="title">AIH delivery governance lanes</title>
+  <desc id="desc">Fast local and pull request feedback leads to protected main. A coherent enterprise adoption decision is then qualified from an immutable tag, separately authorized for candidate publication, tested from exact public packages, and separately authorized for stable promotion.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#57606a"/>
+    </marker>
+    <style>
+      .title { font: 700 26px system-ui, sans-serif; fill: #24292f; }
+      .lane { font: 700 17px system-ui, sans-serif; fill: #24292f; }
+      .body { font: 14px system-ui, sans-serif; fill: #57606a; }
+      .small { font: 12px ui-monospace, SFMono-Regular, Consolas, monospace; fill: #57606a; }
+      .box { stroke-width: 2; rx: 12; }
+      .fast { fill: #ddf4ff; stroke: #0969da; }
+      .truth { fill: #dafbe1; stroke: #1a7f37; }
+      .decision { fill: #fff8c5; stroke: #9a6700; }
+      .effect { fill: #fbefff; stroke: #8250df; }
+      .line { stroke: #57606a; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect width="1200" height="430" fill="#ffffff"/>
+  <text x="40" y="48" class="title">Fast feedback is not release authority</text>
+
+  <rect x="40" y="90" width="200" height="112" class="box fast"/>
+  <text x="60" y="120" class="lane">Local staged</text>
+  <text x="60" y="147" class="body">Format · docs · focused tests</text>
+  <text x="60" y="174" class="small">bounded, fail-fast</text>
+
+  <rect x="280" y="90" width="200" height="112" class="box fast"/>
+  <text x="300" y="120" class="lane">Pull request</text>
+  <text x="300" y="147" class="body">Impact receipt · shadow suite</text>
+  <text x="300" y="174" class="small">full checks stay required</text>
+
+  <rect x="520" y="90" width="200" height="112" class="box truth"/>
+  <text x="540" y="120" class="lane">Protected main</text>
+  <text x="540" y="147" class="body">Complete CI · nightly matrix</text>
+  <text x="540" y="174" class="small">exact-SHA integration truth</text>
+
+  <path d="M240 146 H270" class="line"/>
+  <path d="M480 146 H510" class="line"/>
+
+  <rect x="760" y="75" width="400" height="142" class="box decision"/>
+  <text x="780" y="108" class="lane">Enterprise adoption decision unit</text>
+  <text x="780" y="137" class="body">Cohort · outcome · migration · rollback · owner</text>
+  <text x="780" y="164" class="body">Every release surface has evidence and disposition</text>
+  <text x="780" y="191" class="small">mechanical semver:none release-prep PR</text>
+  <path d="M720 146 H750" class="line"/>
+
+  <rect x="40" y="276" width="235" height="110" class="box truth"/>
+  <text x="60" y="306" class="lane">1 · Qualify tag</text>
+  <text x="60" y="333" class="body">Pack once · matrix · SBOM</text>
+  <text x="60" y="360" class="small">no npm authority</text>
+
+  <rect x="315" y="276" width="235" height="110" class="box effect"/>
+  <text x="335" y="306" class="lane">2 · Publish candidate</text>
+  <text x="335" y="333" class="body">Exact owner receipt token</text>
+  <text x="335" y="360" class="small">immutable bytes → next</text>
+
+  <rect x="590" y="276" width="235" height="110" class="box truth"/>
+  <text x="610" y="306" class="lane">3 · Installed acceptance</text>
+  <text x="610" y="333" class="body">Public exact packages · zero skips</text>
+  <text x="610" y="360" class="small">disposable OS/Node roots</text>
+
+  <rect x="865" y="276" width="295" height="110" class="box effect"/>
+  <text x="885" y="306" class="lane">4 · Promote stable</text>
+  <text x="885" y="333" class="body">Separate acceptance-bound owner token</text>
+  <text x="885" y="360" class="small">same bytes → latest · no rebuild</text>
+
+  <path d="M960 217 V246 H158 V266" class="line"/>
+  <path d="M275 331 H305" class="line"/>
+  <path d="M550 331 H580" class="line"/>
+  <path d="M825 331 H855" class="line"/>
+</svg>

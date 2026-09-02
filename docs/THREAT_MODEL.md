@@ -17,6 +17,8 @@
 
 - **Developer/operator:** intentionally runs `aih` commands.
 - **Repo contributor:** can propose code, config, docs, and skill metadata.
+- **Release owner:** may freeze a protected candidate and make separately attributable publication,
+  rejection, promotion, deprecation, and rollback decisions.
 - **External skill author:** controls a remote skill/plugin/source repo until it
   is pinned and approved.
 - **Compromised dependency or mirror:** can serve unexpected package bytes.
@@ -58,6 +60,13 @@
 | Remote mutation by automation | The action model is local-only except explicit signing/provenance flows. |
 | Secrets exposure | Secret paths are denied to agents and checked with `aih secrets --verify`. |
 | Supply-chain release drift | `aih verify-release` checks npm signatures, release checksums, cosign bundle, and tarball hash. |
+| Scoped CI silently misses an affected test or platform | The selector emits an exact-SHA receipt, fails unknown and high-risk inputs to the complete suite, and remains shadow-only while complete branch-protection checks are authoritative. |
+| A merge, label, milestone, or tag directly publishes npm bytes | PRs are read-only, release preparation is mechanically scoped and `semver:none`, and an annotated tag can only create a content-addressed qualification receipt. Publication requires a separate tagged-revision dispatch and exact owner comment. |
+| Authorization is replayed for different candidate bytes | Publication and promotion tokens bind source, tag, artifact, manifest/SBOM, workflow, registry, and acceptance digests; the workflow resolves the exact GitHub comment and rejects non-owner association. |
+| A rejected candidate publishes after an old approval | Every tracker comment is read with pagination; owner rejection and supersession tokens are checked during authorization and immediately before npm publication. |
+| A newer workflow revision changes an older candidate's controls | Publication, installed acceptance, and promotion authorization must dispatch from the qualified tag revision recorded in the receipt. |
+| Mutable GitHub Release assets redefine accepted bytes | GitHub assets are explicitly non-authoritative mirrors. Exact npm bytes/provenance, receipt digests, checksums, signatures, and registry integrity remain the verification boundary. |
+| Promotion implies repair for pinned enterprise consumers | Promotion changes only mutable default-channel and GitHub stable/latest signals; rollback guidance separately addresses pinned, locked, cached, and installed consumers and requires forward repair under a new version. |
 | Tampering with local audit logs | Logs are local diagnostics; `aih evidence build` packages checksummed evidence for sharing. |
 | Policy source drift or override tampering | `aih doctor`/`aih report` surface active policy source and HEAD drift; `aih policy verify --against <sha256|bundle>` pins the trusted channel. |
 | Missing evidence or fleet-bundle signature in gated environments | `aih evidence build --require-signature` and `aih verify-bundle --require-signature` fail with coded `bundle.signature` findings instead of skipping. |

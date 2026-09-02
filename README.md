@@ -34,7 +34,10 @@ committed approval lock (`aih-skills.lock.json`).
 
 See [docs/ARCHITECTURE.md](https://github.com/samartomar/ai-harness/blob/main/docs/ARCHITECTURE.md) for the shipped architecture and
 current trust boundaries, and [docs/CONTROL_MATRIX.md](https://github.com/samartomar/ai-harness/blob/main/docs/CONTROL_MATRIX.md) for
-the claim -> implementation -> test proof map.
+the claim -> implementation -> test proof map. Maintainers use
+[delivery governance](https://github.com/samartomar/ai-harness/blob/main/docs/DELIVERY_GOVERNANCE.md)
+to keep fast engineering feedback separate from candidate qualification, publication, installed
+acceptance, and promotion.
 
 > **Provided as open-source software under Apache-2.0 on an "AS IS" basis.** No warranty,
 > support obligation, SLA, indemnity, consulting, or professional advice is provided. `aih`
@@ -831,12 +834,16 @@ aih usage --rollup ../repo-a,../repo-b
   [Releases](https://github.com/samartomar/ai-harness/releases).
 - **Versioning & support** — [VERSIONING.md](https://github.com/samartomar/ai-harness/blob/main/VERSIONING.md). SemVer; security fixes
   land on the **promoted stable train**, and release notes state the required adoption action.
+- **Delivery governance** — [docs/DELIVERY_GOVERNANCE.md](https://github.com/samartomar/ai-harness/blob/main/docs/DELIVERY_GOVERNANCE.md).
+  An annotated tag qualifies but cannot publish; artifact-bound publication, exact public installed
+  acceptance, and promotion are separately authorized effects.
 - **Supply chain** — the Core release workflow is configured to publish via npm **Trusted Publishing** with build
   **provenance** and ships an **SPDX SBOM**, a **SHA256 checksum**, its keyless **cosign
   signature bundle** (`SHA256SUMS.txt.sigstore.json`), and the Sigstore **build-provenance
-  bundle** on the GitHub Release. Candidate build and smoke execution stay in a read-only job;
-  the protected publication job verifies the workflow-artifact digest, original tarball digest,
-  and packed identity without executing Core package code. Tokenless npm Trusted Publishing is the
+  bundle** on the GitHub Release. Tag-triggered qualification and exact-artifact matrix execution stay
+  read-only; a later owner-authorized dispatch verifies the workflow-artifact digest, original tarball
+  digest, active candidate state, and packed identity without executing Core package code in the npm
+  job. Tokenless npm Trusted Publishing is the
   steady-state publication path, and the workflow fails closed unless the exact binding documented in
   [RELEASING.md](RELEASING.md) remains present and matches. Releases from `v0.6.0` onward include
   the sigstore/provenance assets; earlier historical tags have a narrower asset set. The tagged Core tarball

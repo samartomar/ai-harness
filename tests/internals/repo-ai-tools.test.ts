@@ -366,7 +366,8 @@ describe("ai-harness repo AI tooling", () => {
     const routing = readFileSync(resolve(root, "ai-coding/rules/repo-ai-tools.md"), "utf8");
 
     expect(hook.startsWith("#!/bin/sh")).toBe(true);
-    expect(hook).toContain("pre-commit: policy + lint + test");
+    expect(hook).toContain("pre-commit: staged policy + lint + focused tests");
+    expect(hook).toContain("npm run --silent check:staged");
     expect(existsSync(resolve(root, ".githooks/post-merge"))).toBe(false);
     expect(routing).not.toContain(".githooks/post-merge");
   });
