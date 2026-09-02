@@ -112,6 +112,25 @@ describe("README docs currency", () => {
     expect(readme).not.toContain("img.shields.io/badge/%40aihq%2Fcore-");
   });
 
+  it("routes global install permission failures to the user-owned npm prefix recovery", () => {
+    const readme = read("README.md");
+    const linkedInstallDocs = [
+      "guides/vibe-developer-guide.md",
+      "guides/enterprise-developer-guide.md",
+      "guides/enterprise-admin-guide.md",
+      "docs/ENTERPRISE_ONBOARDING.md",
+    ];
+
+    expect(readme).toContain("npm config set prefix ~/.local");
+    expect(readme).toContain(
+      "resolving-eacces-permissions-errors-when-installing-packages-globally",
+    );
+    expect(readme).toContain("do not rerun the install with\n`sudo`");
+    for (const path of linkedInstallDocs) {
+      expect(read(path)).toContain("README.md#macoslinux-global-install-permission-errors");
+    }
+  });
+
   it("keeps the README and command docs aligned with the contract command surface", () => {
     const readme = read("README.md");
     const commandsDoc = read("docs/commands.md");

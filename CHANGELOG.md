@@ -10,6 +10,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Keep the README release badge and overview SVG tied to npm's promoted stable
   train without hardcoding a mutable Core version.
+- Document npm-supported, user-owned prefix recovery for macOS and Linux global
+  install permission errors, and route every public quickstart to it.
 
 ## [Core 0.5.0] - 2026-09-01
 

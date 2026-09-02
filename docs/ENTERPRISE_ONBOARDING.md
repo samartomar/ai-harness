@@ -13,6 +13,10 @@ npm install -g "@aihq/core@$CORE_VERSION"
 aih verify-release "$CORE_VERSION"
    ```
 
+   If an unmanaged macOS or Linux evaluation host reports npm `EACCES`, use the
+   [user-owned npm prefix recovery](../README.md#macoslinux-global-install-permission-errors);
+   do not rerun the global install with `sudo`.
+
    `aih verify-release` is the provenance gate for a global install. Do not add a
    bare `npm audit signatures` step here: it cannot audit a global install (npm
    refuses with `EAUDITGLOBAL`), so the verifier instead installs the exact release
