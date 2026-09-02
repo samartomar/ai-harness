@@ -6,6 +6,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Keep the README release badge and overview SVG tied to npm's promoted stable
+  train without hardcoding a mutable Core version.
+
 ## [Core 0.5.0] - 2026-09-01
 
 ### Added
