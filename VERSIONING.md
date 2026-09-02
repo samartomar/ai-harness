@@ -67,19 +67,22 @@ A **patch** (`0.2.0 → 0.2.1`) never breaks.
 ## Release train and promotion
 
 Merging, cutting, publishing, and promoting are separate effects. Related changes
-accumulate in one coherent train. A release PR assigns one version to that train; the
-protected tag workflow publishes the immutable candidate under npm `next` and marks the
-GitHub Release as a prerelease. It never changes `latest`. Public installed acceptance
-must exercise those exact registry bytes with the compatible Scanner and Catalog
-baseline. A separate owner authorization may then promote the same version—without a
-rebuild or republish—to npm `latest` and stable GitHub Release status.
+accumulate around one enterprise adoption decision unit. A release PR assigns one version to that
+coherent outcome. An annotated protected tag only qualifies and seals a candidate; it cannot publish.
+An exact artifact-bound owner authorization permits a later dispatch to publish those immutable bytes
+under npm `next` and mark the GitHub Release as a prerelease. Public installed acceptance must exercise
+those exact registry bytes with compatible exact Scanner and Catalog versions. A separate
+acceptance-bound owner authorization may then promote the same version—without a rebuild or
+republish—to npm `latest` and stable GitHub Release status. The complete lane and evidence model is in
+[Delivery governance](https://github.com/samartomar/ai-harness/blob/main/docs/DELIVERY_GOVERNANCE.md).
 
 An ordinary defect discovered during candidate acceptance joins the same open train when
 the candidate has not been published. If immutable candidate bytes are already public,
 the correction uses a new version but remains off `latest` until its own acceptance.
-Immediate hotfix trains are reserved for security defects, installation blockers,
-evidence corruption, data loss, or comparable material user harm. Documentation and CI
-cleanup do not create a release on their own.
+A maintainer may narrow a train when delay would cause material installed-user harm, but the same
+qualification, authorization, installed-acceptance, and promotion boundaries apply. Documentation and
+CI cleanup do not create a release on their own. There is no fixed release calendar or generic soak
+duration; evidence and an accountable decision control advancement.
 
 ## Supported versions
 

@@ -71,7 +71,11 @@ describe("release readiness metadata", () => {
     // The Release body leads with a tag-pinned link, so it can never drift or 404.
     const release = read(".github/workflows/release.yml");
     expect(release).toContain(
-      'notes="Curated release notes: [CHANGELOG.md](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/CHANGELOG.md)"',
+      [
+        'notes="Curated release notes: [CHANGELOG.md](https://github.com/$',
+        "{GITHUB_REPOSITORY}/blob/$",
+        '{TAG}/CHANGELOG.md)"',
+      ].join(""),
     );
     expect(release).toContain("--generate-notes");
     expect(release).toContain('--notes "$notes"');
@@ -88,6 +92,44 @@ describe("release readiness metadata", () => {
     expect(read("README.md")).toContain("[RELEASING.md](RELEASING.md)");
     expect(read("RELEASING.md")).toContain(
       "https://github.com/samartomar/ai-harness/blob/main/.github/workflows/release.yml",
+    );
+  });
+
+  it("detects release preparation from changed content instead of trusting branch naming", () => {
+    const workflow = read(".github/workflows/ci.yml");
+    const guardStart = workflow.indexOf("  release_prep_guard:\n");
+    const verifyStart = workflow.indexOf("  verify:\n", guardStart);
+    const guard = workflow.slice(guardStart, verifyStart);
+
+    expect(workflow).toContain(
+      ["release_preparation: $", "{{ steps.impact.outputs.release_preparation }}"].join(""),
+    );
+    expect(guard).toContain("needs: classify");
+    expect(guard).toContain("needs.classify.outputs.release_preparation == 'true'");
+    expect(guard).not.toContain(
+      ["if: $", "{{ startsWith(github.head_ref, 'release/v-core-') }}"].join(""),
+    );
+  });
+
+  it("binds every release tracker lookup to the executing repository", () => {
+    const release = read(".github/workflows/release.yml");
+    const acceptance = read(".github/workflows/installed-acceptance.yml");
+    const promotion = read(".github/workflows/promotion-authorization.yml");
+
+    expect(release).toContain(
+      'release:governance -- manifest release/enterprise-change.json "$GITHUB_REPOSITORY"',
+    );
+    expect(release).toContain(
+      'release:governance -- resolve-publication authorized/qualification.json "$GITHUB_REPOSITORY"',
+    );
+    expect(release).toContain(
+      'release:governance -- assert-active authorized/qualification.json "$GITHUB_REPOSITORY"',
+    );
+    expect(acceptance).toContain(
+      'release:governance -- qualification qualification/qualification.json "$GITHUB_REPOSITORY"',
+    );
+    expect(promotion).toContain(
+      'release:governance -- assert-active "$qualification" "$GITHUB_REPOSITORY"',
     );
   });
 
@@ -177,16 +219,21 @@ describe("release readiness metadata", () => {
     try {
       const packageRoot = join(fixtureRoot, "package");
       mkdirSync(packageRoot);
+      const candidateRoot = join(fixtureRoot, "sealed", "candidate");
+      mkdirSync(candidateRoot, { recursive: true });
       const validate = (publishConfig: Record<string, unknown>) => {
         writeFileSync(
           join(packageRoot, "package.json"),
           JSON.stringify({ name: "@aihq/core", version: "0.1.1", publishConfig }),
         );
-        execFileSync("tar", ["-czf", "candidate.tgz", "package"], { cwd: fixtureRoot });
-        return spawnSync(process.execPath, ["--input-type=module", "-", "candidate.tgz", "0.1.1"], {
+        execFileSync("tar", ["-czf", "sealed/candidate/candidate.tgz", "package"], {
+          cwd: fixtureRoot,
+        });
+        return spawnSync(process.execPath, ["--input-type=module", "-"], {
           cwd: fixtureRoot,
           input: validator,
           encoding: "utf8",
+          env: { ...process.env, TAG: "v-core-0.1.1", TARBALL: "candidate.tgz" },
         });
       };
 
@@ -202,12 +249,17 @@ describe("release readiness metadata", () => {
   it("isolates candidate execution from protected publication permissions", () => {
     const release = read(".github/workflows/release.yml");
     const verificationStart = release.indexOf("  verify-and-pack:\n");
+    const authorizationStart = release.indexOf("  authorize-publication:\n");
+    const sealingStart = release.indexOf("  seal-publication-evidence:\n");
     const publishStart = release.indexOf("  npm-publish:\n");
-    expect(verificationStart).toBeGreaterThanOrEqual(0);
-    expect(publishStart).toBeGreaterThan(verificationStart);
+    const releaseStart = release.indexOf("  github-release:\n");
+    expect(authorizationStart).toBeGreaterThan(verificationStart);
+    expect(sealingStart).toBeGreaterThan(authorizationStart);
+    expect(publishStart).toBeGreaterThan(sealingStart);
 
-    const verification = release.slice(verificationStart, publishStart);
-    const publication = release.slice(publishStart);
+    const verification = release.slice(verificationStart, authorizationStart);
+    const sealing = release.slice(sealingStart, publishStart);
+    const publication = release.slice(publishStart, releaseStart);
 
     expect(verification).toMatch(/permissions:\n(?:\s+[a-z-]+:\s*\w+\n)*\s+contents:\s*read/);
     expect(verification).not.toMatch(/(?:id-token|attestations):\s*write/);
@@ -216,16 +268,17 @@ describe("release readiness metadata", () => {
     expect(verification).not.toMatch(/run:\s*npm run verify\s*$/mu);
     expect(verification).not.toContain("test:cov");
     expect(verification).toContain("npm pack --ignore-scripts");
-    expect(verification).toContain("Smoke-install the exact packed tarball");
-    expect(verification).toContain("Upload immutable exact release candidate");
+    expect(verification).toContain("Install and execute only the exact packed artifact");
+    expect(verification).toContain("Upload digest-bound candidate packet");
 
-    expect(publication).toContain("needs: verify-and-pack");
+    expect(sealing).toMatch(/attestations:\s*write/u);
+    expect(sealing).not.toContain("environment:\n      name: npm-publish");
+    expect(publication).toContain("needs: [authorize-publication, seal-publication-evidence]");
     expect(publication).toMatch(/id-token:\s*write/);
-    expect(publication).toMatch(/attestations:\s*write/);
-    expect(publication).toMatch(/contents:\s*write/);
+    expect(publication).not.toMatch(/attestations:\s*write/);
+    expect(publication).not.toMatch(/contents:\s*write/);
     expect(publication).not.toMatch(/npm (?:ci|run|install|pack)/);
     expect(publication).not.toContain("actions/checkout");
-    expect(publication).not.toContain("sha256sum -c");
     expect(publication).toContain('node-version: "24"');
     expect(publication).toContain("package-manager-cache: false");
   });
@@ -235,17 +288,23 @@ describe("release readiness metadata", () => {
     const verificationStart = release.indexOf("  verify-and-pack:\n");
     const publishStart = release.indexOf("  npm-publish:\n");
     const verification = release.slice(verificationStart, publishStart);
-    const tagGateIndex = verification.indexOf("Assert tag commit is current main");
-    const ciReceiptIndex = verification.indexOf("Require successful exact-SHA CI");
+    const tagGateIndex = verification.indexOf("Assert annotated tag is a protected-main candidate");
+    const ciReceiptIndex = verification.indexOf("Require successful exact protected-main checks");
     const setupNodeIndex = verification.indexOf("actions/setup-node");
     const npmCiIndex = verification.indexOf("npm ci --ignore-scripts");
 
     expect(verification).toContain(
       "git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main",
     );
-    expect(verification).toContain('if [ "$GITHUB_SHA" != "$main_sha" ]; then');
+    expect(verification).toContain(
+      'git merge-base --is-ancestor "$tag_sha" refs/remotes/origin/main',
+    );
+    expect(verification).toContain(
+      'test "$(git cat-file -t "refs/tags/$GITHUB_REF_NAME")" = "tag"',
+    );
+    expect(verification).not.toContain('test "$GITHUB_SHA" = "$(git rev-parse origin/main)"');
     expect(verification).toContain("actions: read");
-    expect(verification).toContain("Require successful exact-SHA CI");
+    expect(verification).toContain("Require successful exact protected-main checks");
     expect(verification).toContain("npm run verify:release-candidate");
     expect(verification).not.toMatch(/run:\s*npm run verify\s*$/mu);
     expect(verification).not.toContain("npx vitest run --coverage");
@@ -255,51 +314,22 @@ describe("release readiness metadata", () => {
     expect(npmCiIndex).toBeGreaterThan(tagGateIndex);
   });
 
-  it("rejects a CI receipt unless it is a completed successful main push for the exact SHA", () => {
+  it("records required protected-main checks and a completed successful exact-SHA main push", () => {
     const release = read(".github/workflows/release.yml");
-    const validator = inlineModuleFollowing(release, "Validate exact-SHA CI receipt");
-    const fixtureRoot = mkdtempSync(join(tmpdir(), "aih-release-ci-receipt-"));
-    const receiptPath = join(fixtureRoot, "receipt.json");
-    const exactSha = "a".repeat(40);
-    const baseRun = {
-      conclusion: "success",
-      event: "push",
-      head_branch: "main",
-      head_sha: exactSha,
-      html_url: "https://github.com/example/project/actions/runs/1",
-      id: 1,
-      run_number: 1,
-      status: "completed",
-    };
-    const validate = (workflowRuns: unknown[]) => {
-      writeFileSync(receiptPath, JSON.stringify({ workflow_runs: workflowRuns }));
-      return spawnSync(
-        process.execPath,
-        ["--input-type=module", "-", receiptPath, exactSha, "example/project"],
-        {
-          encoding: "utf8",
-          input: validator,
-        },
-      );
-    };
-
-    try {
-      expect(validate([baseRun]).status).toBe(0);
-      for (const mutation of [
-        { conclusion: "failure" },
-        { event: "pull_request" },
-        { head_branch: "release" },
-        { head_sha: "b".repeat(40) },
-        { status: "in_progress" },
-        { html_url: "https://github.com/attacker/project/actions/runs/1" },
-        { html_url: "https://github.com/example/project/actions/runs/1\n::warning::spoofed" },
-      ]) {
-        expect(validate([{ ...baseRun, ...mutation }]).status).not.toBe(0);
-      }
-      expect(validate([]).status).not.toBe(0);
-    } finally {
-      rmSync(fixtureRoot, { recursive: true, force: true });
+    for (const name of [
+      "analyze",
+      "verify (ubuntu-latest)",
+      "verify (macos-latest)",
+      "verify (windows-latest)",
+    ]) {
+      expect(release).toContain(`"${name}"`);
     }
+    expect(release).toContain("run?.head_sha === process.env.GITHUB_SHA");
+    expect(release).toContain('run?.head_branch === "main"');
+    expect(release).toContain('run?.event === "push"');
+    expect(release).toContain('run?.status === "completed"');
+    expect(release).toContain('run?.conclusion === "success"');
+    expect(release).toContain('writeFileSync("protected-main-ci.json"');
   });
 
   it("carries immutable artifact identity and rechecks exact custody before every effect", () => {
@@ -309,78 +339,83 @@ describe("release readiness metadata", () => {
     expect(release).toContain("artifact-id");
     expect(release).toContain("artifact-digest");
     expect(release).toContain("artifact-ids:");
-    expect(release).toContain("EXPECTED_TARBALL_SHA256");
-    expect(release).toContain("EXPECTED_ARTIFACT_SHA256");
-    expect(release).toContain('test "$actual_sha256" = "$EXPECTED_TARBALL_SHA256"');
+    expect(release).toContain("publication_authorization_comment");
+    expect(release).toContain("resolve-publication");
+    expect(release).toContain("assert-active");
     expect(release).toContain(
-      ['test "$api_digest" = "sha256:$', '{EXPECTED_ARTIFACT_SHA256}"'].join(""),
+      "publication must dispatch the workflow from the qualified tag revision",
     );
+    expect(release).toContain("Upload recovery evidence before npm effect");
     expect(release).toContain(
-      'printf \'%s  %s\\n\' "$EXPECTED_TARBALL_SHA256" "$(basename "$TARBALL")" > SHA256SUMS.txt',
+      'test "$(git -C "$observation" cat-file -t "refs/tags/$TAG")" = "tag"',
     );
+    expect(release).toContain('git -C "$observation" merge-base --is-ancestor');
     expect(release).toContain('manifest.name !== "@aihq/core"');
-    expect(release).toContain("manifest.version !== tag");
     expect(release).toContain("upload-artifact: false");
     expect(release).toContain("upload-release-assets: false");
 
     const publication = release.slice(release.indexOf("  npm-publish:\n"));
-    expect(publication).toContain("Revalidate current main and tag before publication");
-    expect(publication).toContain('tag_sha="$(git rev-parse "refs/tags/$GITHUB_REF_NAME^{}")"');
     expect(publication).toContain(
-      'if [ "$GITHUB_SHA" != "$main_sha" ] || [ "$GITHUB_SHA" != "$tag_sha" ]; then',
+      "Revalidate custody, candidate state, tag, and ancestry immediately before effect",
     );
-    expect(publication).toContain('test "$GITHUB_REF" = "refs/tags/$GITHUB_REF_NAME"');
+    expect(publication).toContain("publication authorization identity changed before effect");
+    expect(publication).not.toContain("current main or tag no longer matches");
     expect(publication).toContain('--repo "$GITHUB_REPOSITORY"');
 
-    const sbomIndex = publication.indexOf("Generate tarball-scoped SPDX SBOM");
-    const attestIndex = publication.indexOf("Attest build provenance for the exact tarball");
-    const signIndex = publication.indexOf("Sign trusted checksum and retain provenance bundle");
-    const liveRefIndex = publication.indexOf("Revalidate current main and tag before publication");
+    const sealIndex = release.indexOf("Upload recovery evidence before npm effect");
     const publishIndex = publication.indexOf(
       "Publish exact tarball through npm Trusted Publishing",
     );
-    const releaseIndex = publication.indexOf("Create immutable GitHub Release evidence");
-    const verificationIndexes = [...publication.matchAll(/Verify exact tarball before/gmu)].map(
-      (match) => match.index ?? -1,
-    );
-    expect(verificationIndexes).toHaveLength(5);
-    expect(verificationIndexes[0]).toBeLessThan(sbomIndex);
-    expect(verificationIndexes[1]).toBeLessThan(attestIndex);
-    expect(verificationIndexes[2]).toBeLessThan(signIndex);
-    expect(verificationIndexes[3]).toBeLessThan(publishIndex);
-    expect(verificationIndexes[4]).toBeLessThan(releaseIndex);
-
-    expect(liveRefIndex).toBeGreaterThan(signIndex);
-    expect(publishIndex).toBeGreaterThan(liveRefIndex);
-
-    const trustedPublishStep = publication.slice(publishIndex, releaseIndex);
-    const finalLiveRefIndex = trustedPublishStep.indexOf(
-      "Revalidate live main and tag immediately before the effect",
-    );
-    const finalHashIndex = trustedPublishStep.indexOf('actual_sha256="$(sha256sum "$TARBALL"');
-    const effectIndex = trustedPublishStep.indexOf('npm publish "$tarball"');
-    expect(finalLiveRefIndex).toBeGreaterThanOrEqual(0);
-    expect(finalHashIndex).toBeGreaterThan(finalLiveRefIndex);
-    expect(effectIndex).toBeGreaterThan(finalHashIndex);
-    expect(trustedPublishStep).not.toContain("NPM_BOOTSTRAP_TOKEN");
-    expect(trustedPublishStep).not.toContain("secrets.");
-    expect(trustedPublishStep).not.toContain('npm view "@aihq/core"');
+    expect(sealIndex).toBeLessThan(release.indexOf("  npm-publish:\n"));
+    expect(publishIndex).toBeGreaterThan(0);
+    expect(publication).not.toContain("NPM_BOOTSTRAP_TOKEN");
+    expect(publication).not.toContain("secrets.");
+    expect(publication).not.toContain('npm view "@aihq/core"');
   });
 
   it("publishes every candidate to next and requires separate installed-evidence promotion", () => {
     const releasing = read("RELEASING.md");
     const workflow = read(".github/workflows/release.yml");
+    const promotion = read(".github/workflows/promotion-authorization.yml");
 
     expect(releasing).toContain("Candidate-first is mandatory");
-    expect(releasing).toContain("SHA-bound publication approval");
-    expect(releasing).toContain("public installed acceptance");
+    expect(releasing).toContain("Authorize and publish exact qualified bytes");
+    expect(releasing).toContain("Run public installed acceptance");
     expect(releasing).toContain("promote the same\nimmutable version");
-    expect(releasing).toContain("separate SHA-bound promotion authorization");
-    expect(releasing).toContain("read-only `verify-and-pack` job");
-    expect(releasing).toContain("runs no Core package code");
+    expect(releasing).toContain("Authorize promotion separately");
+    expect(releasing).toContain("A tag push cannot publish");
     expect(workflow).toContain("dist_tag=next");
     expect(workflow).not.toContain("dist_tag=latest");
     expect(workflow).toContain("--prerelease");
+    expect(promotion).toContain("no registry or GitHub state changed");
+    expect(promotion).toContain("npm dist-tag add @aihq/core@%s latest");
+  });
+
+  it("makes exact-version public installed acceptance a retained promotion prerequisite", () => {
+    const workflow = read(".github/workflows/installed-acceptance.yml");
+    expect(parseDocument(workflow).errors).toEqual([]);
+    expect(workflow).toContain("@aihq/core@$CORE_VERSION");
+    expect(workflow).toContain("@aihq/scan@$SCANNER_VERSION");
+    expect(workflow).toContain("@aihq/catalog@$CATALOG_VERSION");
+    expect(workflow).not.toContain("@aihq/core@next");
+    expect(workflow).not.toContain("@aihq/core@latest");
+    expect(workflow).toContain("aih verify-release");
+    expect(workflow).toContain("skippedLegs: 0");
+    expect(workflow).toContain("aih-installed-acceptance-v1");
+    expect(workflow).toContain("promotion-token");
+    expect(workflow).toContain(
+      "acceptance must dispatch the workflow from the qualified tag revision",
+    );
+    expect(workflow).toContain("retention-days: 90");
+    for (const os of ["ubuntu-latest", "macos-latest", "windows-latest"]) {
+      expect(workflow).toContain(os);
+    }
+    for (const node of ['node: "20"', 'node: "22"', 'node: "24"']) {
+      expect(workflow).toContain(node);
+    }
+    expect(read(".github/workflows/promotion-authorization.yml")).toContain(
+      "promotion authorization must dispatch the workflow from the qualified tag revision",
+    );
   });
 
   it("scopes the SLSA Build L2 claim to the Core tarball and documents the Build L3 gap", () => {

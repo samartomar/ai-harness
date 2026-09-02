@@ -1,9 +1,10 @@
 #!/bin/sh
-# Repository-owned self-hosting guardrail: block a commit that fails the
-# pre-commit policy, lint, or tests. Enable with: git config core.hooksPath .githooks
+# Repository-owned self-hosting guardrail: keep the commit loop bounded while
+# preserving complete integration and release evidence in CI. Enable with:
+# git config core.hooksPath .githooks
 set -eu
 
-echo "[ai-harness] pre-commit: policy + lint + test"
+echo "[ai-harness] pre-commit: staged policy + lint + focused tests"
 
 # If a repository pre-commit policy exists, run it through the same hook path.
 if [ -f .pre-commit-config.yaml ]; then
@@ -15,8 +16,14 @@ if [ -f .pre-commit-config.yaml ]; then
   fi
 fi
 
-# Prefer the repo's package scripts; skip gracefully if a script is absent.
+# Prefer the repository's staged checker. It emits the same fail-closed impact
+# receipt used in PR shadow mode, but intentionally substitutes bounded contract
+# tests when the authoritative CI classifier escalates to the complete suite.
 if [ -f package.json ]; then
-  if node -e "process.exit(require(\"./package.json\").scripts?.lint ? 0 : 1)"; then npm run --silent lint; fi
-  if node -e "process.exit(require(\"./package.json\").scripts?.test ? 0 : 1)"; then npm test --silent; fi
+  if node -e "process.exit(require(\"./package.json\").scripts?.['check:staged'] ? 0 : 1)"; then
+    npm run --silent check:staged
+  else
+    echo "[ai-harness] package.json is missing required check:staged script" >&2
+    exit 1
+  fi
 fi

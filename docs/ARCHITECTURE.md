@@ -119,9 +119,11 @@ CLIs, and an uninstall failure blocks the dependent ledger transaction.
 
 Steady-state releases use npm Trusted Publishing, GitHub release assets, SPDX
 SBOMs, checksums, a keyless cosign bundle for `SHA256SUMS.txt`, and GitHub
-build provenance. Candidate verification and execution run without publication authority;
-the protected job accepts only a workflow-artifact- and tarball-digest-bound package,
-checks its packed identity, and re-observes the tag and `main` before publication.
+build provenance. An annotated tag can only qualify: candidate verification and exact-artifact
+execution run without publication authority across the supported OS/Node matrix and seal a
+qualification receipt. A later dispatch resolves an exact owner comment bound to that receipt before
+the protected job accepts the workflow-artifact- and tarball-digest-bound package, checks its packed
+identity and active state, and re-observes protected-main ancestry and the tag before publication.
 The separately authorized `@aihq/core@0.1.1` package-creation fix-forward used
 one protected, one-use token path. That path and its GitHub secret are now absent;
 the workflow rejects token credentials. Future tags fail closed until the owner
@@ -133,4 +135,5 @@ in
 [security/release-slsa.md](security/release-slsa.md). Operators can run
 `aih verify-release [version]` to verify npm signatures, the GitHub release
 cosign bundle, and the npm tarball hash, and can verify the release provenance
-attestation with `gh attestation verify`.
+attestation with `gh attestation verify`. The complete adoption and promotion boundary is documented
+in [DELIVERY_GOVERNANCE.md](DELIVERY_GOVERNANCE.md).

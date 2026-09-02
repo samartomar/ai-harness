@@ -1,0 +1,113 @@
+name: promotion-authorization
+
+on:
+  workflow_dispatch:
+    inputs:
+      qualification_run_id:
+        description: Successful release qualification run ID
+        required: true
+        type: string
+      qualification_run_attempt:
+        description: Qualification run attempt
+        required: true
+        default: "1"
+        type: string
+      acceptance_run_id:
+        description: Successful installed-acceptance run ID
+        required: true
+        type: string
+      acceptance_run_attempt:
+        description: Installed-acceptance run attempt
+        required: true
+        default: "1"
+        type: string
+      promotion_authorization_comment:
+        description: Exact promotion authorization comment URL on the release tracker
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+  issues: read
+
+jobs:
+  authorize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Download qualification receipt
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: core-release-evidence-${{ inputs.qualification_run_id }}-${{ inputs.qualification_run_attempt }}
+          path: promotion/qualification
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.qualification_run_id }}
+      - name: Download installed acceptance receipt
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: installed-acceptance-${{ inputs.acceptance_run_id }}-${{ inputs.acceptance_run_attempt }}
+          path: promotion/acceptance
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.acceptance_run_id }}
+      - name: Resolve exact promotion authorization and active state
+        env:
+          AUTHORIZATION_COMMENT: ${{ inputs.promotion_authorization_comment }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          qualification=promotion/qualification/qualification.json
+          acceptance=promotion/acceptance/installed-acceptance.json
+          npm run release:governance -- qualification "$qualification" "$GITHUB_REPOSITORY"
+          npm run release:governance -- acceptance "$acceptance"
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+          const receipt = JSON.parse(readFileSync("promotion/qualification/qualification.json", "utf8"));
+          if (process.env.GITHUB_REF_TYPE !== "tag" || process.env.GITHUB_REF_NAME !== receipt.source.tag || process.env.GITHUB_SHA !== receipt.workflow.revision) throw new Error("promotion authorization must dispatch the workflow from the qualified tag revision");
+          NODE
+          npm run release:governance -- resolve-promotion \
+            "$qualification" "$acceptance" "$GITHUB_REPOSITORY" "$AUTHORIZATION_COMMENT" promotion-authorization.json
+          npm run release:governance -- assert-active "$qualification" "$GITHUB_REPOSITORY"
+      - name: Reobserve npm candidate and GitHub prerelease identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          qualification=promotion/qualification/qualification.json
+          acceptance=promotion/acceptance/installed-acceptance.json
+          version="$(node -p "require('./promotion/acceptance/installed-acceptance.json').package.version")"
+          tag="$(node -p "require('./promotion/qualification/qualification.json').source.tag")"
+          expected_integrity="$(node -p "require('./promotion/acceptance/installed-acceptance.json').package.integrity")"
+          test "$(npm view "@aihq/core@$version" dist.integrity --json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s)))')" = "$expected_integrity"
+          test "$(npm view @aihq/core dist-tags.next)" = "$version"
+          test "$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq .isPrerelease)" = "true"
+          {
+            echo '### Promotion receipt verified; no registry or GitHub state changed'
+            echo
+            echo 'npm Trusted Publishing does not authorize dist-tag commands. In an interactive npm session that satisfies package 2FA, run:'
+            echo
+            echo '```bash'
+            printf 'npm dist-tag add @aihq/core@%s latest\n' "$version"
+            echo 'npm dist-tag rm @aihq/core next'
+            printf 'gh release edit %s --repo %s --prerelease=false --latest\n' "$tag" "$GITHUB_REPOSITORY"
+            echo 'npm view @aihq/core dist-tags --json'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Retain authorized promotion packet
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: authorized-promotion-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            promotion/qualification/qualification.json
+            promotion/acceptance/installed-acceptance.json
+            promotion-authorization.json
+          if-no-files-found: error
+          retention-days: 90

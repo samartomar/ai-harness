@@ -9,7 +9,40 @@ permissions:
   contents: read
 
 jobs:
+  integration:
+    name: full integration (${{ matrix.os }}, node-${{ matrix.node }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, node: "20" }
+          - { os: ubuntu-latest, node: "22", coverage: true }
+          - { os: ubuntu-latest, node: "24" }
+          - { os: macos-latest, node: "22" }
+          - { os: windows-latest, node: "22" }
+    runs-on: ${{ matrix.os }}
+    env:
+      NODE_OPTIONS: --max-old-space-size=4096
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Complete test and coverage evidence
+        if: matrix.coverage == true
+        run: npm run test:cov -- --maxWorkers=2 --testTimeout=15000
+      - name: Complete cross-platform test evidence
+        if: matrix.coverage != true
+        run: npm test -- --testTimeout=15000
+      - name: Build and cold packed lifecycle
+        run: npm run verify:release-candidate
+
   evidence:
+    needs: integration
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

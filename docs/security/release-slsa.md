@@ -41,11 +41,11 @@ platform with stronger isolation controls for L3.
 
 | SLSA v1.2 Build requirement | Repo evidence | Assessment |
 | --- | --- | --- |
-| Producer chooses an appropriate build platform | `.github/workflows/release.yml` runs both release jobs on GitHub-hosted `ubuntu-latest` and publishes through the protected `npm-publish` environment. | Meets L1/L2 scope. |
-| Producer follows a consistent build process | The workflow runs only on `v-core-*` tags. Its read-only job verifies current `origin/main` and package/tag identity, requires a successful post-merge CI run bound to the exact tag SHA, runs package/evidence-receipt/installed-Workbench checks without repeating the complete engineering suite, packs once, records the tarball digest, and smoke-installs the exact tarball. The protected job verifies the workflow-artifact digest, original tarball digest, and packed identity; runs no Core package code; re-observes `main` and the tag immediately before publication; and publishes only under npm `next` with a prerelease GitHub Release. Promotion is a separate authorization after public installed acceptance and changes no bytes. | Meets L1/L2 scope. |
+| Producer chooses an appropriate build platform | `.github/workflows/release.yml` qualifies on GitHub-hosted runners, including its installed-artifact OS/Node matrix, and publishes through a separately dispatched job in the protected `npm-publish` environment. | Meets L1/L2 scope. |
+| Producer follows a consistent build process | An annotated `v-core-*` tag triggers read-only qualification. The workflow verifies protected-main ancestry and exact-SHA CI, validates the enterprise manifest, runs package checks, packs once, records the tarball digest, and installs the exact artifact across the supported OS/Node matrix. A separate dispatch resolves an artifact-bound owner authorization, verifies candidate state and artifact custody, runs no Core package code in the npm job, re-observes the tag and protected-main ancestry immediately before publication, and publishes only under npm `next` with a prerelease GitHub Release. Promotion is separately authorized after public installed acceptance and changes no bytes. | Meets L1/L2 scope. |
 | Producer distributes provenance | The workflow publishes npm provenance with `npm publish "$tarball" --ignore-scripts --provenance --access public`, generates GitHub build provenance with `actions/attest-build-provenance`, copies the bundle to `provenance.intoto.jsonl`, and attaches it to the GitHub Release. | Meets L1/L2 scope. |
 | Build platform generates provenance | `actions/attest-build-provenance` targets the exact digest-checked tarball, while npm emits registry provenance for the same `--provenance` publication. The exact `@aihq/core@0.1.1` package-creation fix-forward used the separately authorized, protected one-use path; steady-state workflow source permits only npm Trusted Publishing. | Meets L1/L2 scope. |
-| Provenance is authentic | Only the protected publication job has `id-token: write` and `attestations: write`; it signs a checksum reconstructed from the carried tarball digest with GitHub OIDC. Packed publication overrides are rejected, the npmjs registry is explicit, the one-use source and GitHub secret are absent, and steady-state publication rejects token credentials. | Meets L2 scope. The exact npm Trusted Publisher binding is the observed steady-state authentication path, and the workflow fails closed if it is absent or mismatched. |
+| Provenance is authentic | The evidence-sealing job has `id-token: write` plus `attestations: write` but no npm environment; it attests the digest-checked artifact and signs its checksum with GitHub OIDC before the npm effect. The later protected npm job has `id-token: write` but no attestation or repository-write permission. Packed publication overrides are rejected, the npmjs registry is explicit, and publication rejects token credentials. | Meets L2 scope. The exact npm Trusted Publisher binding is the observed steady-state authentication path, and the workflow fails closed if it is absent or mismatched. |
 | Hosted build platform | Both jobs use GitHub-hosted `ubuntu-latest`; artifacts are not produced on a developer workstation. | Meets L2 scope. |
 | Consumer verification path | `aih verify-release [version]` verifies npm signatures, GitHub release checksums, the cosign bundle over `SHA256SUMS.txt`, and the packed tarball hash. Consumers that enforce provenance policy can also verify the GitHub attestation for the tarball with `gh attestation verify`. | Supports L2 verification. |
 
@@ -61,11 +61,13 @@ secret material used by the build platform to authenticate provenance.
 The workflow is still intentionally hardened for an L2 claim:
 
 - release actions are pinned by full commit SHA;
-- candidate execution is isolated in a read-only job without publication authority;
+- tag-triggered candidate execution and qualification are isolated from publication authority;
 - the protected job verifies the GitHub artifact digest, original tarball digest, and
   packed identity, then rechecks the tarball before each custody effect;
-- the tag workflow fails closed unless current `main`, the tag, the workflow SHA, and a completed
-  successful post-merge CI receipt all bind the exact same commit;
+- qualification fails closed unless the source is an ancestor of protected `main`, the annotated tag
+  resolves to that source, and a completed successful protected-main CI receipt binds the exact SHA;
+- publication requires a later exact owner comment bound to the sealed qualification and artifact,
+  and rechecks paginated rejection/supersession state immediately before the effect;
 - candidate publication cannot change npm `latest` or create a stable GitHub Release;
 - the exact `@aihq/core@0.1.1` package-creation exception is spent; its workflow
   source and GitHub secret are absent, the exact npm Trusted Publisher binding

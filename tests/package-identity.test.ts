@@ -39,8 +39,8 @@ describe("Core package identity (#866)", () => {
     const releaseWorkflow = read(".github/workflows/release.yml");
     expect(releaseWorkflow).toContain("https://www.npmjs.com/package/@aihq/core");
     expect(releaseWorkflow).not.toContain("https://www.npmjs.com/package/@aihq/harness");
-    expect(releaseWorkflow).toContain('- "v-core-*"');
-    expect(releaseWorkflow).toContain(['tag="$', '{GITHUB_REF_NAME#v-core-}"'].join(""));
+    expect(releaseWorkflow).toContain('tags: ["v-core-*"]');
+    expect(releaseWorkflow).toContain('test "$GITHUB_REF_NAME" = "v-core-$version"');
   });
 
   it("packs under the Core identity without running lifecycle scripts", () => {

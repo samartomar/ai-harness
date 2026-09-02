@@ -9,6 +9,137 @@ permissions:
   contents: read
 
 jobs:
+  classify:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      full_suite: ${{ steps.impact.outputs.full_suite }}
+      risk_class: ${{ steps.impact.outputs.risk_class }}
+      selected_tests_json: ${{ steps.impact.outputs.selected_tests_json }}
+      operating_systems_json: ${{ steps.impact.outputs.operating_systems_json }}
+      release_preparation: ${{ steps.impact.outputs.release_preparation }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Classify changed paths and emit shadow receipt
+        id: impact
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: npm run ci:classify -- --base "$BASE_SHA" --head "$HEAD_SHA" --output ci-impact.json
+      - name: Upload CI impact receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-impact-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ci-impact.json
+          if-no-files-found: error
+          retention-days: 30
+
+  # Shadow-only until selector replay and live evidence are reviewed. The full
+  # existing verify jobs remain authoritative and required by branch protection.
+  shadow_selected_tests:
+    name: shadow selected (${{ matrix.os }})
+    if: github.event_name == 'pull_request'
+    needs: classify
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(needs.classify.outputs.operating_systems_json) }}
+    runs-on: ${{ matrix.os }}
+    env:
+      SELECTED_TESTS_JSON: ${{ needs.classify.outputs.selected_tests_json }}
+      FULL_SUITE: ${{ needs.classify.outputs.full_suite }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Run the selected shadow suite
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import { spawnSync } from "node:child_process";
+
+          if (process.env.FULL_SUITE === "true") {
+            console.log("Classifier selected the complete suite; authoritative matrix owns it.");
+            process.exit(0);
+          }
+          const tests = JSON.parse(process.env.SELECTED_TESTS_JSON ?? "null");
+          if (!Array.isArray(tests) || tests.some((value) => typeof value !== "string")) {
+            throw new Error("classifier emitted an invalid selected-test list");
+          }
+          if (tests.length === 0) {
+            console.log("No Vitest file selected; static and documentation gates remain authoritative.");
+            process.exit(0);
+          }
+          const executable = process.platform === "win32" ? "npx.cmd" : "npx";
+          const result = spawnSync(executable, ["--no-install", "vitest", "run", ...tests], {
+            encoding: "utf8",
+            stdio: "inherit",
+          });
+          process.exit(result.status ?? 1);
+          NODE
+
+  release_prep_guard:
+    name: release preparation allowlist
+    if: github.event_name == 'pull_request'
+    needs: classify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Skip ordinary pull requests
+        if: ${{ needs.classify.outputs.release_preparation != 'true' && !startsWith(github.head_ref, 'release/v-core-') }}
+        run: echo "Not a Core release-preparation PR."
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: ${{ needs.classify.outputs.release_preparation == 'true' || startsWith(github.head_ref, 'release/v-core-') }}
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: ${{ needs.classify.outputs.release_preparation == 'true' || startsWith(github.head_ref, 'release/v-core-') }}
+        with:
+          node-version: "22"
+          cache: npm
+      - if: ${{ needs.classify.outputs.release_preparation == 'true' || startsWith(github.head_ref, 'release/v-core-') }}
+        run: npm ci --ignore-scripts
+      - name: Reject non-mechanical release preparation
+        if: ${{ needs.classify.outputs.release_preparation == 'true' || startsWith(github.head_ref, 'release/v-core-') }}
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/labels?per_page=100" > label-pages.json
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+          const pages = JSON.parse(readFileSync("label-pages.json", "utf8"));
+          if (!Array.isArray(pages) || pages.some((page) => !Array.isArray(page))) throw new Error("label response is invalid");
+          const semver = pages.flat()
+            .map((label) => label?.name)
+            .filter((name) => typeof name === "string" && name.startsWith("semver:"));
+          if (semver.length !== 1 || semver[0] !== "semver:none") {
+            throw new Error("Core release-preparation PR must carry exactly semver:none");
+          }
+          NODE
+          npm run release:governance -- release-prep "$BASE_SHA" "$HEAD_SHA"
+
   verify:
     # Ubuntu owns coverage and OS-independent gates; macOS keeps its complete
     # platform suite in four sequential processes so DOM-heavy Workbench files
@@ -131,3 +262,28 @@ jobs:
             echo "Windows shards did not all succeed: $WINDOWS_SHARDS_RESULT" >&2
             exit 1
           fi
+
+  # Stable future branch-protection context. While selection is in shadow mode,
+  # this fan-in intentionally requires both the selected replay and every current
+  # complete OS result. Skipped, cancelled, failed, or missing dependencies fail.
+  pr_gate:
+    name: pr-gate
+    if: ${{ always() && github.event_name == 'pull_request' }}
+    needs: [classify, shadow_selected_tests, release_prep_guard, verify, windows_verify]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require all authoritative and shadow jobs
+        env:
+          CLASSIFY_RESULT: ${{ needs.classify.result }}
+          SHADOW_RESULT: ${{ needs.shadow_selected_tests.result }}
+          RELEASE_PREP_RESULT: ${{ needs.release_prep_guard.result }}
+          VERIFY_RESULT: ${{ needs.verify.result }}
+          WINDOWS_RESULT: ${{ needs.windows_verify.result }}
+        run: |
+          set -euo pipefail
+          for result in "$CLASSIFY_RESULT" "$SHADOW_RESULT" "$RELEASE_PREP_RESULT" "$VERIFY_RESULT" "$WINDOWS_RESULT"; do
+            if [ "$result" != "success" ]; then
+              echo "::error::required PR lane result is $result"
+              exit 1
+            fi
+          done

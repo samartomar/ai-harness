@@ -1,0 +1,201 @@
+name: installed-acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      core_version:
+        description: Exact public @aihq/core candidate version
+        required: true
+        type: string
+      scanner_version:
+        description: Exact compatible @aihq/scan version
+        required: true
+        type: string
+      catalog_version:
+        description: Exact compatible @aihq/catalog version
+        required: true
+        type: string
+      qualification_run_id:
+        description: Successful release qualification run ID
+        required: true
+        type: string
+      qualification_run_attempt:
+        description: Qualification run attempt
+        required: true
+        default: "1"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  exact-installed:
+    name: exact installed (${{ matrix.os }}, node-${{ matrix.node }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, node: "20" }
+          - { os: ubuntu-latest, node: "22" }
+          - { os: ubuntu-latest, node: "24" }
+          - { os: macos-latest, node: "22" }
+          - { os: windows-latest, node: "22" }
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node }}
+          registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
+      - name: Install cosign for the release-verifier signature leg
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: Install and verify exact public packages in a disposable root
+        shell: bash
+        env:
+          CORE_VERSION: ${{ inputs.core_version }}
+          SCANNER_VERSION: ${{ inputs.scanner_version }}
+          CATALOG_VERSION: ${{ inputs.catalog_version }}
+          MATRIX_OS: ${{ matrix.os }}
+          MATRIX_NODE: ${{ matrix.node }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          for (const value of [process.env.CORE_VERSION, process.env.SCANNER_VERSION, process.env.CATALOG_VERSION]) {
+            if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(value ?? "")) throw new Error("acceptance requires exact stable versions");
+          }
+          NODE
+          consumer="$(mktemp -d)"
+          (cd "$consumer" && npm init --yes > /dev/null)
+          npm install --prefix "$consumer" --ignore-scripts --save-exact --no-audit --no-fund \
+            "@aihq/core@$CORE_VERSION" "@aihq/scan@$SCANNER_VERSION" "@aihq/catalog@$CATALOG_VERSION"
+          npm --prefix "$consumer" audit signatures
+          "$consumer/node_modules/.bin/aih" --version
+          "$consumer/node_modules/.bin/aih" --help > /dev/null
+          "$consumer/node_modules/.bin/aih" verify-release "$CORE_VERSION" --json > verify-release.json
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from "node:fs";
+          const report = JSON.parse(readFileSync("verify-release.json", "utf8"));
+          if (report?.counts?.fail !== 0 || report?.counts?.skip !== 0) throw new Error("aih verify-release did not complete all three legs");
+          const receipt = {
+            os: process.env.MATRIX_OS,
+            node: process.env.MATRIX_NODE,
+            core: process.env.CORE_VERSION,
+            scanner: process.env.SCANNER_VERSION,
+            catalog: process.env.CATALOG_VERSION,
+            conclusion: "success",
+            releaseVerification: { passed: true, skippedLegs: 0 },
+          };
+          writeFileSync(`installed-${process.env.MATRIX_OS}-node-${process.env.MATRIX_NODE}.json`, `${JSON.stringify(receipt, null, 2)}\n`, { flag: "wx" });
+          NODE
+      - name: Upload exact installed leg evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: installed-leg-${{ github.run_id }}-${{ matrix.os }}-node-${{ matrix.node }}
+          path: installed-${{ matrix.os }}-node-${{ matrix.node }}.json
+          if-no-files-found: error
+          retention-days: 90
+
+  seal-acceptance:
+    needs: exact-installed
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org"
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Download qualification evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: core-release-evidence-${{ inputs.qualification_run_id }}-${{ inputs.qualification_run_attempt }}
+          path: qualification
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.qualification_run_id }}
+      - name: Download every installed matrix receipt
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: installed-leg-${{ github.run_id }}-*
+          path: installed-legs
+          merge-multiple: true
+      - name: Reobserve exact registry identity and seal acceptance
+        env:
+          CORE_VERSION: ${{ inputs.core_version }}
+          SCANNER_VERSION: ${{ inputs.scanner_version }}
+          CATALOG_VERSION: ${{ inputs.catalog_version }}
+        run: |
+          set -euo pipefail
+          npm run release:governance -- qualification qualification/qualification.json "$GITHUB_REPOSITORY"
+          node --input-type=module <<'NODE'
+          import { readFileSync } from "node:fs";
+          const receipt = JSON.parse(readFileSync("qualification/qualification.json", "utf8"));
+          if (receipt.package.version !== process.env.CORE_VERSION) throw new Error("acceptance version does not match qualification");
+          if (process.env.GITHUB_REF_TYPE !== "tag" || process.env.GITHUB_REF_NAME !== receipt.source.tag || process.env.GITHUB_SHA !== receipt.workflow.revision) throw new Error("acceptance must dispatch the workflow from the qualified tag revision");
+          NODE
+          integrity="$(npm view "@aihq/core@$CORE_VERSION" dist.integrity --json | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s)))')"
+          npm pack "@aihq/core@$CORE_VERSION" --ignore-scripts --json > registry-pack.json
+          tarball="$(node -e 'const fs=require("node:fs");const v=JSON.parse(fs.readFileSync("registry-pack.json","utf8"));if(v.length!==1||typeof v[0]?.filename!=="string")process.exit(1);process.stdout.write(v[0].filename)')"
+          bytes_sha="$(sha256sum "$tarball" | awk '{print $1}')"
+          qualification_digest="$(npm run --silent release:governance -- digest qualification/qualification.json)"
+          node --input-type=module - "$qualification_digest" "$integrity" "$bytes_sha" <<'NODE'
+          import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+          const [qualificationDigest, integrity, registryBytesSha256] = process.argv.slice(2);
+          const legs = readdirSync("installed-legs").filter((name) => name.endsWith(".json"));
+          if (legs.length !== 5) throw new Error(`expected five installed matrix receipts, found ${legs.length}`);
+          const expected = new Set([
+            "ubuntu-latest/node-20",
+            "ubuntu-latest/node-22",
+            "ubuntu-latest/node-24",
+            "macos-latest/node-22",
+            "windows-latest/node-22",
+          ]);
+          for (const path of legs) {
+            const leg = JSON.parse(readFileSync(`installed-legs/${path}`, "utf8"));
+            const key = `${leg.os}/node-${leg.node}`;
+            if (!expected.delete(key)) throw new Error(`unexpected or duplicate installed leg ${key}`);
+            if (leg.core !== process.env.CORE_VERSION || leg.scanner !== process.env.SCANNER_VERSION || leg.catalog !== process.env.CATALOG_VERSION) throw new Error(`installed leg ${path} used different package bytes`);
+            if (leg.conclusion !== "success" || leg.releaseVerification?.passed !== true || leg.releaseVerification?.skippedLegs !== 0) throw new Error(`invalid installed leg ${path}`);
+          }
+          if (expected.size !== 0) throw new Error(`missing installed legs: ${[...expected].join(", ")}`);
+          const receipt = {
+            schemaVersion: "aih-installed-acceptance-v1",
+            qualificationDigest,
+            package: { name: "@aihq/core", version: process.env.CORE_VERSION, integrity },
+            companions: { scanner: process.env.SCANNER_VERSION, catalog: process.env.CATALOG_VERSION },
+            registryBytesSha256,
+            provenanceVerified: true,
+            releaseVerification: { passed: true, skippedLegs: 0 },
+            matrix: [
+              { os: "ubuntu-latest", node: "20", conclusion: "success" },
+              { os: "ubuntu-latest", node: "22", conclusion: "success" },
+              { os: "ubuntu-latest", node: "24", conclusion: "success" },
+              { os: "macos-latest", node: "22", conclusion: "success" },
+              { os: "windows-latest", node: "22", conclusion: "success" },
+            ],
+            evidenceUrl: `https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`,
+            createdAt: new Date().toISOString().replace(/\.\d{3}Z$/u, "Z"),
+          };
+          writeFileSync("installed-acceptance.json", `${JSON.stringify(receipt, null, 2)}\n`, { flag: "wx" });
+          NODE
+          npm run release:governance -- acceptance installed-acceptance.json
+          token="$(npm run --silent release:governance -- promotion-token qualification/qualification.json installed-acceptance.json)"
+          printf '### Exact public installed acceptance passed\n\nPost this exact promotion authorization on the tracker:\n\n`%s`\n' "$token" >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload durable installed acceptance receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: installed-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            installed-acceptance.json
+            qualification/qualification.json
+            registry-pack.json
+          if-no-files-found: error
+          retention-days: 90
