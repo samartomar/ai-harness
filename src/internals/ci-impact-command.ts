@@ -1,29 +1,43 @@
 import { appendFileSync, writeFileSync } from "node:fs";
-import { classifyCiImpact } from "./ci-impact.js";
-import { defaultRunner } from "./proc.js";
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+import { type CiImpactReceipt, classifyCiImpact } from "./ci-impact.js";
+import { defaultRunner, type Runner } from "./proc.js";
 
-function option(name: string): string | undefined {
-  const index = process.argv.indexOf(name);
-  return index >= 0 ? process.argv[index + 1] : undefined;
+function option(args: readonly string[], name: string): string | undefined {
+  const index = args.indexOf(name);
+  return index >= 0 ? args[index + 1] : undefined;
 }
 
-async function checkedGit(args: string[]): Promise<string> {
-  const result = await defaultRunner(["git", ...args], { cwd: process.cwd() });
+async function checkedGit(args: string[], run: Runner, cwd: string): Promise<string> {
+  const result = await run(["git", ...args], { cwd });
   if (result.code !== 0 || result.spawnError || result.truncated) {
     throw new Error(result.stderr.trim() || `git ${args[0] ?? "command"} failed`);
   }
   return result.stdout;
 }
 
-async function main(): Promise<void> {
-  const baseSha = option("--base");
-  const headSha = option("--head");
-  const output = option("--output") ?? "ci-impact.json";
+export interface CiImpactCommandOptions {
+  cwd?: string;
+  githubOutput?: string;
+  run?: Runner;
+  writeStdout?: (value: string) => void;
+}
+
+export async function runCiImpactCommand(
+  args: readonly string[],
+  options: CiImpactCommandOptions = {},
+): Promise<CiImpactReceipt> {
+  const baseSha = option(args, "--base");
+  const headSha = option(args, "--head");
+  const output = option(args, "--output") ?? "ci-impact.json";
   if (!baseSha || !headSha) throw new Error("usage: --base <sha> --head <sha> [--output <path>]");
 
+  const run = options.run ?? defaultRunner;
+  const cwd = options.cwd ?? process.cwd();
   const [changedRaw, testsRaw] = await Promise.all([
-    checkedGit(["diff", "--name-only", "-z", `${baseSha}...${headSha}`]),
-    checkedGit(["ls-files", "-z", "--", "tests"]),
+    checkedGit(["diff", "--name-only", "-z", `${baseSha}...${headSha}`], run, cwd),
+    checkedGit(["ls-files", "-z", "--", "tests"], run, cwd),
   ]);
   const receipt = classifyCiImpact({
     baseSha,
@@ -32,9 +46,11 @@ async function main(): Promise<void> {
     testFiles: testsRaw.split("\0").filter((path) => path.endsWith(".test.ts")),
   });
   writeFileSync(output, `${JSON.stringify(receipt, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
-  process.stdout.write(`${JSON.stringify(receipt, null, 2)}\n`);
+  (options.writeStdout ?? ((value) => process.stdout.write(value)))(
+    `${JSON.stringify(receipt, null, 2)}\n`,
+  );
 
-  const githubOutput = process.env.GITHUB_OUTPUT;
+  const githubOutput = options.githubOutput ?? process.env.GITHUB_OUTPUT;
   if (githubOutput) {
     appendFileSync(
       githubOutput,
@@ -49,9 +65,13 @@ async function main(): Promise<void> {
       "utf8",
     );
   }
+  return receipt;
 }
 
-main().catch((error: unknown) => {
-  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-  process.exitCode = 1;
-});
+const invokedPath = process.argv[1];
+if (invokedPath && import.meta.url === pathToFileURL(resolve(invokedPath)).href) {
+  runCiImpactCommand(process.argv.slice(2)).catch((error: unknown) => {
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    process.exitCode = 1;
+  });
+}

@@ -1,3 +1,6 @@
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   assertCandidateActive,
@@ -17,6 +20,7 @@ import {
   validateQualificationReceiptForRepository,
   validateReleasePreparation,
 } from "../../src/internals/delivery-governance.js";
+import { runDeliveryGovernanceCommand } from "../../src/internals/delivery-governance-command.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 
 const sha = "a".repeat(40);
@@ -142,6 +146,112 @@ function acceptance() {
 }
 
 describe("enterprise release decision manifest", () => {
+  it("validates repository-bound manifests through the command boundary", async () => {
+    const root = mkdtempSync(join(tmpdir(), "aih-delivery-governance-command-"));
+    const manifestPath = join(root, "enterprise-change.json");
+    const qualificationPath = join(root, "qualification.json");
+    const acceptancePath = join(root, "acceptance.json");
+    const cumulativePath = join(root, "cumulative.json");
+    const receipt = qualification();
+    const installed = acceptance();
+    installed.qualificationDigest = `sha256:${evidenceSha256(receipt)}`;
+    writeFileSync(manifestPath, `${JSON.stringify(candidate())}\n`, "utf8");
+    writeFileSync(qualificationPath, `${JSON.stringify(receipt)}\n`, "utf8");
+    writeFileSync(acceptancePath, `${JSON.stringify(installed)}\n`, "utf8");
+    const stdout: string[] = [];
+    const options = { writeStdout: (value: string) => stdout.push(value) };
+
+    try {
+      await runDeliveryGovernanceCommand(
+        ["manifest", manifestPath, "samartomar/ai-harness"],
+        options,
+      );
+      await runDeliveryGovernanceCommand(
+        ["qualification", qualificationPath, "samartomar/ai-harness"],
+        options,
+      );
+      await runDeliveryGovernanceCommand(["acceptance", acceptancePath], options);
+      await runDeliveryGovernanceCommand(["digest", manifestPath], options);
+      await runDeliveryGovernanceCommand(["publication-token", qualificationPath], options);
+      await runDeliveryGovernanceCommand(
+        ["promotion-token", qualificationPath, acceptancePath],
+        options,
+      );
+      await runDeliveryGovernanceCommand(
+        ["cumulative", "0.5.0", "0.6.0", cumulativePath, manifestPath],
+        options,
+      );
+
+      expect(stdout).toHaveLength(3);
+      expect(stdout[0]).toMatch(/^sha256:[0-9a-f]{64}\n$/u);
+      expect(stdout[1]).toContain("AIH-PUBLISH-V1");
+      expect(stdout[2]).toContain("AIH-PROMOTE-V1");
+      expect(JSON.parse(readFileSync(cumulativePath, "utf8"))).toMatchObject({
+        fromVersion: "0.5.0",
+        toVersion: "0.6.0",
+      });
+      await expect(
+        runDeliveryGovernanceCommand(
+          ["manifest", manifestPath, "attacker/quiet-repository"],
+          options,
+        ),
+      ).rejects.toThrow(/tracker repository/u);
+      await expect(runDeliveryGovernanceCommand([], options)).rejects.toThrow(/usage/u);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("routes release preparation, candidate state, and owner authorization through one runner", async () => {
+    const root = mkdtempSync(join(tmpdir(), "aih-delivery-governance-runner-"));
+    const qualificationPath = join(root, "qualification.json");
+    const publicationPath = join(root, "publication.json");
+    const receipt = qualification();
+    writeFileSync(qualificationPath, `${JSON.stringify(receipt)}\n`, "utf8");
+    const commentUrl = "https://github.com/samartomar/ai-harness/issues/950#issuecomment-42";
+    const comment = {
+      id: 42,
+      html_url: commentUrl,
+      issue_url: "https://api.github.com/repos/samartomar/ai-harness/issues/950",
+      body: publicationAuthorizationToken(receipt),
+      user: { login: "samartomar" },
+      author_association: "OWNER",
+      created_at: "2026-09-02T12:30:00Z",
+    };
+    const run = fakeRunner((argv, options) => {
+      if (argv[0] === "gh" && argv.includes("--slurp")) return { stdout: "[[]]" };
+      if (argv[0] === "gh") return { stdout: JSON.stringify(comment) };
+      expect(options?.cwd).toBe(root);
+      if (argv[1] === "diff") return { stdout: "src/version.ts\0" };
+      if (argv[1] === "show" && argv[2]?.startsWith(`${sha}:`)) {
+        return { stdout: 'export const VERSION = "0.5.0";\n' };
+      }
+      if (argv[1] === "show") return { stdout: 'export const VERSION = "0.6.0";\n' };
+      throw new Error(`unexpected command: ${argv.join(" ")}`);
+    });
+
+    try {
+      await runDeliveryGovernanceCommand(["release-prep", sha, "b".repeat(40)], { cwd: root, run });
+      await runDeliveryGovernanceCommand(
+        ["assert-active", qualificationPath, "samartomar/ai-harness"],
+        { run },
+      );
+      await runDeliveryGovernanceCommand(
+        [
+          "resolve-publication",
+          qualificationPath,
+          "samartomar/ai-harness",
+          commentUrl,
+          publicationPath,
+        ],
+        { run },
+      );
+      expect(existsSync(publicationPath)).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("requires one complete decision unit and an explicit disposition for every surface", () => {
     const value = candidate();
     expect(validateCandidateManifest(value)).toEqual(value);

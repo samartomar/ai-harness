@@ -42,13 +42,18 @@ lockfile, workflow, schema, fixture, selector, and global-tooling changes.
    repository during candidate invalidation. Regression tests now require a content-derived release
    signal regardless of branch name and reject any manifest, qualification, authorization, or state
    lookup whose tracker differs from the repository executing the workflow.
+9. The first live pull-request run passed every test but reported 90.4% statement coverage against the
+   required 90.5%. The new command adapters had no direct coverage. Command-boundary tests now execute
+   their receipt output, repository binding, cumulative delta, qualification, authorization token,
+   candidate-state, and release-preparation routes. The threshold and coverage scope were not changed.
 
 ## Focused green checkpoint
 
 The combined focused checkpoint passed 47 tests across the four new or amended suites. After the
 workflow and hook contract assertions were brought forward, the checkpoint passed 72 tests across
 six suites. Review hardening added eight regression cases; the post-review focused checkpoint passed
-80 tests across the same six suites. TypeScript completed with no errors after the hardening changes.
+80 tests across the same six suites. Coverage hardening added three command-boundary cases; the final
+focused checkpoint passed 83 tests. TypeScript completed with no errors after the hardening changes.
 
 The complete 497-file coverage run passed 8,617 of 8,684 tests and exposed 21 failures. Two were
 stale assertions for the intentionally changed release trigger and pre-commit hook and were corrected

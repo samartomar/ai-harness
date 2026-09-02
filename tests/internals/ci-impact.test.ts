@@ -1,9 +1,14 @@
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   CI_SELECTOR_VERSION,
   classifyCiImpact,
   validateCiImpactReceipt,
 } from "../../src/internals/ci-impact.js";
+import { runCiImpactCommand } from "../../src/internals/ci-impact-command.js";
+import { fakeRunner } from "../../src/internals/proc.js";
 
 const baseSha = "a".repeat(40);
 const headSha = "b".repeat(40);
@@ -15,6 +20,38 @@ const testFiles = [
 ];
 
 describe("CI impact classifier", () => {
+  it("writes the receipt and GitHub outputs from bounded git observations", async () => {
+    const root = mkdtempSync(join(tmpdir(), "aih-ci-impact-command-"));
+    const receiptPath = join(root, "receipt.json");
+    const githubOutput = join(root, "github-output.txt");
+    const stdout: string[] = [];
+    const run = fakeRunner((argv, options) => {
+      expect(options?.cwd).toBe(root);
+      if (argv[1] === "diff") return { stdout: "src/version.ts\0" };
+      if (argv[1] === "ls-files") return { stdout: `${testFiles.join("\0")}\0` };
+      throw new Error(`unexpected command: ${argv.join(" ")}`);
+    });
+
+    try {
+      const receipt = await runCiImpactCommand(
+        ["--base", baseSha, "--head", headSha, "--output", receiptPath],
+        {
+          cwd: root,
+          githubOutput,
+          run,
+          writeStdout: (value) => stdout.push(value),
+        },
+      );
+
+      expect(receipt.releasePreparation).toBe(true);
+      expect(JSON.parse(readFileSync(receiptPath, "utf8"))).toEqual(receipt);
+      expect(stdout.join("")).toContain('"releasePreparation": true');
+      expect(readFileSync(githubOutput, "utf8")).toContain("release_preparation=true\n");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("emits a deterministic auditable receipt for a focused domain change", () => {
     const receipt = classifyCiImpact({
       baseSha,
