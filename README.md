@@ -4,6 +4,7 @@
 [![CodeQL](https://github.com/samartomar/ai-harness/actions/workflows/codeql.yml/badge.svg)](https://github.com/samartomar/ai-harness/actions/workflows/codeql.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/samartomar/ai-harness/badge)](https://scorecard.dev/viewer/?uri=github.com/samartomar/ai-harness)
 [![codecov](https://codecov.io/gh/samartomar/ai-harness/graph/badge.svg)](https://app.codecov.io/gh/samartomar/ai-harness)
+[![npm: @aihq/core](https://img.shields.io/npm/v/@aihq/core?label=%40aihq%2Fcore)](https://www.npmjs.com/package/@aihq/core)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Node ≥20](https://img.shields.io/badge/node-%E2%89%A520-339933.svg)](package.json)
 
@@ -76,6 +77,28 @@ CORE_VERSION="$(npm view @aihq/core dist-tags.latest)"
 npm install -g "@aihq/core@$CORE_VERSION"
 aih verify-release "$CORE_VERSION"   # npm signatures, GitHub sums, and cosign evidence
 ```
+
+### macOS/Linux global-install permission errors
+
+If npm reports `EACCES` while installing globally, do not rerun the install with
+`sudo`. npm recommends installing Node through a version manager. If the current
+Node installation must remain, move npm's global prefix into the current user's
+home directory:
+
+```bash
+npm config set prefix ~/.local
+printf '\nPATH="$HOME/.local/bin:$PATH"\nexport PATH\n' >> ~/.profile
+printf '\nsource "$HOME/.profile"\n' >> ~/.zprofile  # macOS default zsh
+source ~/.profile
+hash -r
+```
+
+This follows npm's [official `EACCES` recovery guidance](https://docs.npmjs.com/resolving-eacces-permissions-errors-when-installing-packages-globally).
+After changing the prefix, rerun the complete version-pinned install and
+`aih verify-release` block immediately above.
+If installation succeeds but the shell still cannot run `aih`, open a new shell
+and inspect `command -v aih` plus `npm config get prefix`; the configured
+`<prefix>/bin` directory must be on `PATH`.
 
 The frozen legacy package is npm-deprecated and remains installable only for
 existing consumers that have not yet migrated. npm warns those consumers to use

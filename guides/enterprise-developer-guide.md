@@ -1,7 +1,7 @@
 ---
 status: guide
 owner: AI-Harness maintainers
-last_verified: 2026-08-25
+last_verified: 2026-09-02
 truth_home: true
 purpose: Developer guide for consuming admin-authored AI-Harness enterprise configuration.
 ---
@@ -30,6 +30,10 @@ $CoreVersion = npm view @aihq/core dist-tags.latest
 npm install -g "@aihq/core@$CoreVersion"
 aih verify-release $CoreVersion
 ```
+
+If a macOS or Linux global install reports `EACCES`, use the
+[user-owned npm prefix recovery](../README.md#macoslinux-global-install-permission-errors);
+do not install AI-Harness with `sudo`.
 
 Full release verification requires local `npm`, `gh`, and `cosign`; proceed only when all three legs
 pass. A skipped leg is incomplete evidence, not a successful rollout gate.

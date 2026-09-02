@@ -1,7 +1,7 @@
 ---
 status: guide
 owner: AI-Harness maintainers
-last_verified: 2026-08-25
+last_verified: 2026-09-02
 truth_home: true
 purpose: Entry point for AI-Harness guides by reader persona and workflow.
 ---

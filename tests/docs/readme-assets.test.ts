@@ -84,7 +84,9 @@ describe("README docs currency", () => {
     expect(overview).not.toContain("release-candidate");
     expect(overview).not.toContain("pending release");
     expect(overview).toContain("AIH · Core");
+    expect(overview).toContain("current promoted stable Core train");
     expect(overview).toContain("promoted stable train");
+    expect(overview).not.toContain("UPDATE PER RELEASE");
     expect(overview).not.toContain("· candidate");
 
     const overviewAlt = imageAlt(readme, "docs/assets/aih-overview.svg").toLowerCase();
@@ -100,6 +102,33 @@ describe("README docs currency", () => {
 
     expect(enterprisePacks).toContain("GREEN or reviewed YELLOW verdict scope");
     expect(enterprisePacks).not.toContain("GREEN verdict scope,");
+  });
+
+  it("links an evergreen npm badge without hardcoding the mutable stable version", () => {
+    const readme = read("README.md");
+
+    expect(readme).toContain("https://img.shields.io/npm/v/@aihq/core?label=%40aihq%2Fcore");
+    expect(readme).toContain("https://www.npmjs.com/package/@aihq/core");
+    expect(readme).not.toContain("img.shields.io/badge/%40aihq%2Fcore-");
+  });
+
+  it("routes global install permission failures to the user-owned npm prefix recovery", () => {
+    const readme = read("README.md");
+    const linkedInstallDocs = [
+      "guides/vibe-developer-guide.md",
+      "guides/enterprise-developer-guide.md",
+      "guides/enterprise-admin-guide.md",
+      "docs/ENTERPRISE_ONBOARDING.md",
+    ];
+
+    expect(readme).toContain("npm config set prefix ~/.local");
+    expect(readme).toContain(
+      "resolving-eacces-permissions-errors-when-installing-packages-globally",
+    );
+    expect(readme).toContain("do not rerun the install with\n`sudo`");
+    for (const path of linkedInstallDocs) {
+      expect(read(path)).toContain("README.md#macoslinux-global-install-permission-errors");
+    }
   });
 
   it("keeps the README and command docs aligned with the contract command surface", () => {
