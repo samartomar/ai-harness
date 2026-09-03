@@ -1,5 +1,13 @@
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, parse } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -19,9 +27,20 @@ let projected = "";
 
 function temporaryRoot(prefix: string): string {
   // macOS exposes /var as a system alias; resolve so ancestor checks see real paths.
-  const root = realpathSync(mkdtempSync(join(tmpdir(), prefix)));
-  scratch.push(root);
-  return root;
+  let parent = realpathSync(tmpdir());
+  for (;;) {
+    const root = realpathSync(mkdtempSync(join(parent, prefix)));
+    if (nearestNodeModules(root) === undefined) {
+      scratch.push(root);
+      return root;
+    }
+    rmSync(root, { recursive: true, force: true });
+    const next = dirname(parent);
+    if (next === parent || next === parse(parent).root) {
+      throw new Error(`could not create ${prefix} outside a node_modules ancestor`);
+    }
+    parent = next;
+  }
 }
 
 function nearestNodeModules(from: string): string | undefined {
@@ -61,8 +80,12 @@ afterAll(() => {
 });
 
 describe("projected native ECC runtime", () => {
-  it("is projected outside any dependency closure", () => {
+  it("has an explicit ESM marker outside any dependency closure", () => {
     expect(nearestNodeModules(projected)).toBeUndefined();
+    expect(existsSync(join(projected, "node_modules"))).toBe(false);
+    const marker = readFileSync(join(projected, "package.json"), "utf8");
+    expect(marker).toBe('{"type":"module"}\n');
+    expect(JSON.parse(marker)).toEqual({ type: "module" });
   });
 
   it("starts the hook path without resolving a bare dependency import", () => {

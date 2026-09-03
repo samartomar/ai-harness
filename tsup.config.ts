@@ -18,7 +18,9 @@ export default defineConfig({
   sourcemap: false,
   minify: true,
   keepNames: true,
-  // Templates are pure TS string builders (no asset loading), so nothing to copy.
+  // The projected runtime keeps its ESM identity after its JS chunks are copied
+  // outside the package, so ship a package marker beside those chunks.
+  publicDir: "src/ecc-profile/runtime-package",
   //
   // The native ECC runtime (`ecc-runtime.js`) is executed from wherever it was
   // projected, outside the installed package and with no dependency closure
