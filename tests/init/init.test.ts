@@ -128,7 +128,7 @@ function seedGovernedUsage(state: "active" | "disabled", targets: string[] = ["c
       references: { repoContract: ".ai-context/project.json" },
       governance: {
         policyVersion: "2026.08.0",
-        supportedClis: ["claude", "codex"],
+        supportedClis: targets,
         catalog: {
           reviewed: [
             {
@@ -464,8 +464,13 @@ describe("aih init — command surface", () => {
 
   it("honors governed hook target narrowing without generic Codex hook writes", async () => {
     seedGovernedUsage("active", ["claude"]);
+    await expect(
+      command.plan(
+        ctx({ posture: "enterprise", postureSource: "flag", options: { cli: "claude,codex" } }),
+      ),
+    ).rejects.toThrow(/organization sanction gate refused selected CLI target\(s\): codex/i);
     const claudeOnly = await command.plan(
-      ctx({ posture: "enterprise", postureSource: "flag", options: { cli: "claude,codex" } }),
+      ctx({ posture: "enterprise", postureSource: "flag", options: { cli: "claude" } }),
     );
     expect(writePaths(claudeOnly.actions)).toContain(".claude/settings.json");
     expect(writePaths(claudeOnly.actions)).not.toContain(".codex/hooks.json");

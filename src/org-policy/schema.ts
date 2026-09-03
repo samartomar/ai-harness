@@ -1209,6 +1209,20 @@ const GovernedPolicyGovernanceSchema = z
           message:
             "reviewed catalog entries must reference an AIH-shipped MCP or AIH-owned hook; organization additions belong in catalog.custom",
         });
+        continue;
+      }
+      if (
+        candidate.source.type === "hook" &&
+        (candidate.targets.length !== 2 ||
+          !candidate.targets.includes("claude") ||
+          !candidate.targets.includes("codex"))
+      ) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["catalog", "reviewed", index, "targets"],
+          message:
+            "reviewed control targets must exactly match AIH's shipped projector targets: claude, codex",
+        });
       }
     }
     for (const [index, candidate] of governance.catalog.custom.entries()) {
@@ -1273,6 +1287,34 @@ const GovernedPolicyGovernanceSchema = z
           code: "custom",
           message: `activation targets exceed candidate target support for ${activation.candidate}`,
         });
+      }
+      const reviewedCandidate = governance.catalog.reviewed.find(
+        (item) => item.id === activation.candidate,
+      );
+      if (reviewedCandidate !== undefined && governance.supportedClis !== undefined) {
+        const sanctionedTargets = reviewedCandidate.targets.filter((target) =>
+          governance.supportedClis?.includes(target),
+        );
+        if (sanctionedTargets.length === 0) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["activations", activationIds.indexOf(activation.candidate), "targets"],
+            message:
+              `${activation.candidate} has no projector for the organization-sanctioned CLI set ` +
+              `${governance.supportedClis.join(", ")}; control projector targets: ${reviewedCandidate.targets.join(", ")}`,
+          });
+        } else if (
+          activation.targets.length !== sanctionedTargets.length ||
+          sanctionedTargets.some((target) => !activation.targets.includes(target))
+        ) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["activations", activationIds.indexOf(activation.candidate), "targets"],
+            message:
+              `activation targets for ${activation.candidate} must exactly match the organization-sanctioned projector targets: ` +
+              sanctionedTargets.join(", "),
+          });
+        }
       }
     }
     const activeFrameworks = governance.activations.filter((activation) => {

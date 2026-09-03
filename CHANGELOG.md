@@ -6,6 +6,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Scope each Policy Workbench reviewed activation to the exact intersection of the control's
+  projector targets and the organization's sanctioned CLIs. Unsupported combinations now fail
+  closed by name, requested targets are visible before export, and exact legacy Workbench records
+  can only narrow during import without changing catalog support metadata or imported authority.
+
 ### Changed
 
 - Advance the exact uv toolchain from `0.12.7` to `0.12.8` across both scanner workflows and the

@@ -608,15 +608,10 @@ function aihShippedEvidence(
 ): EvidenceRecord | undefined {
   const sourceDigest = candidateIdentityDigest(candidate);
   const reviewed = context.aihReviewedControls?.[candidate.id];
-  const candidateAtShippedTargetCoverage = {
-    ...candidate,
-    targets: reviewed?.control.targets ?? candidate.targets,
-  };
   if (
     reviewed === undefined ||
     reviewed.controlDigest !== reviewedControlDigest(reviewed.control) ||
-    reviewed.controlDigest !== reviewedControlDigest(candidateAtShippedTargetCoverage) ||
-    !candidate.targets.every((target) => reviewed.control.targets.includes(target))
+    reviewed.controlDigest !== reviewedControlDigest(candidate)
   ) {
     return undefined;
   }

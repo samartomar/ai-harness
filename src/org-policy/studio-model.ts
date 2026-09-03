@@ -9,6 +9,7 @@ import { POLICY_APPROVER_EMAIL_PATTERN } from "./ecc-mcp-approval.js";
 import {
   DISPOSITIONABLE_POLICY_FINDING_CODES,
   FENCED_POLICY_PREREQUISITE_CODES,
+  stableJson,
   UNWAIVABLE_POLICY_DANGER_CODES,
 } from "./effective.js";
 import {
@@ -44,9 +45,10 @@ export function defaultStudioPolicy(): OrgPolicy {
 }
 
 /**
- * The generator's import/export boundary. It uses the product Zod grammar,
- * rejects unknown fields, and emits only the parsed policy shape — no Studio
- * DTO or lossy adapter exists between a policy and its download.
+ * The generator's import/export boundary. It applies only the source-bound,
+ * narrowing legacy Workbench migration below, then uses the product Zod
+ * grammar and emits only the parsed policy shape. No generic or broadening
+ * Studio adapter exists between a policy and its download.
  */
 export function parseStudioPolicyImport(text: string): OrgPolicy {
   let value: unknown;
@@ -55,7 +57,70 @@ export function parseStudioPolicyImport(text: string): OrgPolicy {
   } catch {
     throw new Error("Policy import is not valid JSON");
   }
-  return parseOrgPolicy(value);
+  return parseOrgPolicy(narrowLegacyStudioActivationTargets(value));
+}
+
+function narrowLegacyStudioActivationTargets(value: unknown): unknown {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return value;
+  const policy = value as Record<string, unknown>;
+  if (typeof policy.governance !== "object" || policy.governance === null) return value;
+  const governance = policy.governance as Record<string, unknown>;
+  if (!Array.isArray(governance.supportedClis) || governance.supportedClis.length === 0)
+    return value;
+  const supportedClis = governance.supportedClis;
+  if (typeof governance.catalog !== "object" || governance.catalog === null) return value;
+  const catalog = governance.catalog as Record<string, unknown>;
+  if (!Array.isArray(catalog.reviewed) || !Array.isArray(governance.activations)) return value;
+
+  const authored = policyAuthoringCatalog();
+  const controls = [
+    ...authored.mcp.map((item) => item.control),
+    ...authored.hooks.map((item) => item.control),
+  ];
+  const controlById = new Map(controls.map((control) => [control.id, control]));
+  const reviewedById = new Map(
+    catalog.reviewed.flatMap((candidate) => {
+      if (typeof candidate !== "object" || candidate === null || Array.isArray(candidate))
+        return [];
+      const id = (candidate as Record<string, unknown>).id;
+      return typeof id === "string" ? [[id, candidate] as const] : [];
+    }),
+  );
+  const clone = structuredClone(value) as Record<string, unknown>;
+  const clonedGovernance = clone.governance as Record<string, unknown>;
+  const clonedActivations = clonedGovernance.activations as Array<Record<string, unknown>>;
+  let changed = false;
+
+  for (const activation of clonedActivations) {
+    if (typeof activation !== "object" || activation === null || Array.isArray(activation))
+      continue;
+    const candidateId = activation.candidate;
+    if (typeof candidateId !== "string") continue;
+    const control = controlById.get(candidateId);
+    const candidate = reviewedById.get(candidateId);
+    if (control === undefined || candidate === undefined) continue;
+    const expectedCandidate = {
+      id: control.id,
+      kind: control.kind,
+      description: "AIH-provided governed control",
+      capabilities: [],
+      risks: [],
+      source: control.source,
+      targets: control.targets,
+      projector: control.projector,
+      lifecycle: control.lifecycle,
+      evidence: { record: `aih-${control.id}` },
+    };
+    if (stableJson(candidate) !== stableJson(expectedCandidate)) continue;
+    if (stableJson(activation.targets) !== stableJson(control.targets)) continue;
+    const sanctionedTargets = control.targets.filter((target) => supportedClis.includes(target));
+    if (sanctionedTargets.length === 0 || sanctionedTargets.length === control.targets.length)
+      continue;
+    activation.targets = sanctionedTargets;
+    changed = true;
+  }
+
+  return changed ? clone : value;
 }
 
 export function exportStudioPolicy(policy: unknown): string {

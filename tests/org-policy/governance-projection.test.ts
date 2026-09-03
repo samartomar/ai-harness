@@ -528,7 +528,7 @@ function usageHookPolicy(state: "active" | "disabled", targets: string[] = ["cla
     references: { repoContract: "ai-coding/project.json" },
     governance: {
       policyVersion: "2026.08.0",
-      supportedClis: ["claude"],
+      supportedClis: targets,
       catalog: {
         reviewed: [
           {
@@ -591,7 +591,7 @@ function reviewedMcpPolicy({
             capabilities: [],
             risks: [],
             source,
-            targets,
+            targets: ["claude", "kiro"],
             projector: "mcp-managed-settings",
             lifecycle: "supported",
             evidence: { record: "ignored-self-assertion" },
@@ -2446,7 +2446,7 @@ describe("governed candidate projection", () => {
               capabilities: [],
               risks: [],
               source,
-              targets: ["claude"],
+              targets: ["claude", "kiro"],
               projector: "mcp-managed-settings",
               lifecycle: "supported",
               evidence: { record: "ignored-self-assertion" },
