@@ -21,6 +21,7 @@ jobs:
     outputs:
       full_suite: ${{ steps.impact.outputs.full_suite }}
       risk_class: ${{ steps.impact.outputs.risk_class }}
+      test_lane: ${{ steps.impact.outputs.test_lane }}
       selected_tests_json: ${{ steps.impact.outputs.selected_tests_json }}
       operating_systems_json: ${{ steps.impact.outputs.operating_systems_json }}
       release_preparation: ${{ steps.impact.outputs.release_preparation }}

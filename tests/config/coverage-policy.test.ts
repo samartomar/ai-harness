@@ -7,6 +7,8 @@ import vitestConfig, {
   testTimeoutForPlatform,
   workerExecArgvForPlatform,
 } from "../../vitest.config.js";
+import coreVitestConfig from "../../vitest.core.config.js";
+import workbenchVitestConfig from "../../vitest.workbench.config.js";
 
 interface CoverageShape {
   include?: string[];
@@ -71,6 +73,19 @@ function coverageConfig(): CoverageShape {
   return config.test?.coverage ?? {};
 }
 
+function laneConfig(config: unknown): {
+  include: string[];
+  exclude: string[];
+  coverage: CoverageShape & { reportsDirectory?: string };
+} {
+  const test = (config as { test?: Record<string, unknown> }).test ?? {};
+  return {
+    include: test.include as string[],
+    exclude: test.exclude as string[],
+    coverage: test.coverage as CoverageShape & { reportsDirectory?: string },
+  };
+}
+
 function numericMetric(thresholds: Record<string, unknown>, metric: string): number {
   const value = thresholds[metric];
   if (typeof value !== "number") {
@@ -121,6 +136,45 @@ describe("coverage policy", () => {
     }
   });
 
+  it("partitions Core and Workbench tests without overlapping source coverage", () => {
+    const core = laneConfig(coreVitestConfig);
+    const workbench = laneConfig(workbenchVitestConfig);
+
+    expect(core.include).toEqual(["tests/**/*.test.ts"]);
+    expect(core.exclude).toEqual(workbench.include);
+    expect(core.coverage.include).toEqual(["src/**/*.ts"]);
+    expect(core.coverage.exclude).toEqual(
+      expect.arrayContaining(["src/org-policy/studio-*.ts", "src/org-policy/generate.ts"]),
+    );
+    expect(workbench.coverage.include).toEqual([
+      "src/org-policy/adoption-recipe.ts",
+      "src/org-policy/generate.ts",
+      "src/org-policy/studio-*.ts",
+      "src/org-policy/ui-server.ts",
+    ]);
+    expect(core.coverage.reportsDirectory).toBe("coverage/core");
+    expect(workbench.coverage.reportsDirectory).toBe("coverage/workbench");
+
+    for (const lane of [core, workbench]) {
+      const thresholds = lane.coverage.thresholds ?? {};
+      for (const metric of ["statements", "branches", "functions", "lines"]) {
+        expect(numericMetric(thresholds, metric)).toBeGreaterThan(0);
+      }
+    }
+    expect(workbench.coverage.thresholds).toMatchObject({
+      statements: 89,
+      branches: 80,
+      functions: 94,
+      lines: 92,
+    });
+    expect(core.coverage.thresholds).toMatchObject({
+      statements: 90,
+      branches: 83,
+      functions: 96,
+      lines: 92.5,
+    });
+  });
+
   it("runs the published dist CLI smoke after build in verify", () => {
     const pkg = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8")) as {
       main?: string;
@@ -141,6 +195,14 @@ describe("coverage policy", () => {
     expect(pkg.scripts?.["check:published-library"]).toContain("import('@aihq/core')");
     expect(pkg.scripts?.verify).toContain(
       "npm run test:cov && npm run build && npm run check:published-bin && npm run check:published-library",
+    );
+    expect(pkg.scripts?.["test:core"]).toBe("vitest run --config vitest.core.config.ts");
+    expect(pkg.scripts?.["test:core:cov"]).toBe(
+      "vitest run --config vitest.core.config.ts --coverage",
+    );
+    expect(pkg.scripts?.["test:workbench"]).toBe("vitest run --config vitest.workbench.config.ts");
+    expect(pkg.scripts?.["test:workbench:cov"]).toBe(
+      "vitest run --config vitest.workbench.config.ts --coverage",
     );
   });
 
