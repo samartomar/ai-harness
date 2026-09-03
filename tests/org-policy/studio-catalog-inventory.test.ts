@@ -406,7 +406,14 @@ describe("policy authoring catalog inventory", () => {
         `#mcp-rows > [data-ecc-mcp-availability="${declaration.id}"]`,
       );
       expect(row?.getAttribute("data-state")).toBe("availability");
-      expect(row?.textContent).toContain("Runtime availability only");
+      const unavailable = model.catalog.unavailableMcp.find(
+        (candidate) => candidate.id === declaration.id,
+      );
+      expect(row?.textContent).toContain(
+        unavailable === undefined
+          ? "Runtime availability only"
+          : "Unavailable — AIH evidence required",
+      );
       expect(
         row?.querySelector("[data-reviewed], [data-framework-select], [data-ecc-mcp-approval]"),
       ).toBeNull();
@@ -497,40 +504,39 @@ describe("policy authoring catalog inventory", () => {
     }
   });
 
-  it("offers AIH-delivered Playwright as an unrequested, selectable web control", () => {
+  it("keeps the exact Playwright runtime pin but makes its AIH-reviewed control unavailable", () => {
     const window = new Window({ url: "http://localhost/" });
     const model = policyStudioModel();
     const html = policyStudioHtml(model);
     window.document.write(html);
     loadStudio(window, html);
 
-    expect(model.catalog.mcp.find((entry) => entry.id === "playwright")?.availability).toBe(
-      "web-target",
-    );
+    const stack = {
+      languages: [],
+      frameworks: ["React"],
+      cloud: [],
+      databases: [],
+      deployment: [],
+      hasTypeScript: false,
+      scripts: {},
+      entryPoints: [],
+      browserTest: false,
+      isMonorepo: false,
+      virtualEnvPaths: [],
+    };
+    const configured = mcpServers("project", stack).playwright;
+    expect(configured?.type).toBe("stdio");
+    if (configured?.type !== "stdio") throw new Error("expected configured Playwright stdio MCP");
+    expect(configured.args).toEqual(["@playwright/mcp@0.0.79"]);
+    expect(model.catalog.mcp.some((entry) => entry.id === "playwright")).toBe(false);
+
     const control = window.document.querySelector('[data-reviewed="playwright"]');
-    expect(control).not.toBeNull();
-    expect(control?.getAttribute("aria-pressed")).toBe("false");
-    expect(control?.hasAttribute("disabled")).toBe(false);
-
-    control?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
-    const authored = JSON.parse(
-      (window.document.getElementById("config-preview") as unknown as { value: string }).value,
-    ) as { governance?: { catalog?: { reviewed?: Array<{ id: string }> } } };
-    expect(authored.governance?.catalog?.reviewed?.map((entry) => entry.id)).toContain(
-      "playwright",
-    );
-
-    const selected = window.document.querySelector('[data-reviewed="playwright"]');
-    expect(selected?.getAttribute("aria-pressed")).toBe("true");
-    expect(selected?.hasAttribute("disabled")).toBe(false);
-    selected?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
-
-    const removed = JSON.parse(
-      (window.document.getElementById("config-preview") as unknown as { value: string }).value,
-    ) as { governance?: { catalog?: { reviewed?: Array<{ id: string }> } } };
-    expect(removed.governance?.catalog?.reviewed?.map((entry) => entry.id)).not.toContain(
-      "playwright",
-    );
+    expect(control).toBeNull();
+    const availability = window.document.querySelector('[data-ecc-mcp-availability="playwright"]');
+    expect(availability?.getAttribute("data-state")).toBe("availability");
+    expect(availability?.textContent).toContain("@playwright/mcp@0.0.79");
+    expect(availability?.textContent).toContain("no current protected Scanner evidence record");
+    expect(availability?.textContent).toContain("AIH-owned evidence gap");
   });
 
   it("keeps Playwright target-derived after the no-repository Workbench authors it", () => {

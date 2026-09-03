@@ -33,6 +33,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Document npm-supported, user-owned prefix recovery for macOS and Linux global
   install permission errors, and route every public quickstart to it.
 
+### Fixed
+
+- Keep the configured `@playwright/mcp@0.0.79` runtime identity unchanged while withholding its
+  AIH-reviewed Workbench and evaluator control until current protected Scanner evidence exists. Exact
+  legacy Core 0.5.0 enterprise imports remove the unavailable authority without broadening other targets or
+  approvals ([#936]).
+
 ## [Core 0.5.0] - 2026-09-01
 
 ### Added

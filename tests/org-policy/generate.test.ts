@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
+import { mcpApprovalSubject } from "../../src/mcp/policy.js";
+import { mcpServers } from "../../src/mcp/servers.js";
 import { policyGenerateCommand } from "../../src/org-policy/generate.js";
 import {
   canonicalGovernanceDecisionV1,
@@ -744,6 +746,42 @@ describe("policy generate", () => {
     };
     const expectedServers = [...(legacy.mcp?.allowedServers ?? [])];
     delete legacy.mcp;
+    const playwright = mcpServers("project", {
+      languages: [],
+      frameworks: ["React"],
+      cloud: [],
+      databases: [],
+      deployment: [],
+      hasTypeScript: false,
+      scripts: {},
+      entryPoints: [],
+      browserTest: false,
+      isMonorepo: false,
+      virtualEnvPaths: [],
+    }).playwright;
+    if (playwright === undefined) throw new Error("expected the 0.5.0 Playwright runtime pin");
+    legacy.governance.catalog.reviewed.push({
+      id: "playwright",
+      kind: "mcp",
+      description: "AIH-provided governed control",
+      capabilities: [],
+      risks: [],
+      source: {
+        type: "mcp",
+        server: "playwright",
+        subject: mcpApprovalSubject(playwright),
+      },
+      targets: ["claude", "kiro"],
+      projector: "mcp-managed-settings",
+      lifecycle: "supported",
+      evidence: { record: "aih-playwright" },
+    });
+    legacy.governance.activations.push({
+      candidate: "playwright",
+      state: "active",
+      targets: ["claude", "kiro"],
+      clarification: "Requested by: administrator",
+    });
     legacy.governance.catalog.reviewed.push({
       id: "context7",
       kind: "mcp",
@@ -766,6 +804,20 @@ describe("policy generate", () => {
       targets: ["claude"],
       clarification: "Requested by: enterprise profile",
     });
+    const retainedReviewed = structuredClone(
+      legacy.governance.catalog.reviewed.filter(
+        (candidate) => candidate.id !== "playwright" && candidate.id !== "context7",
+      ),
+    );
+    const retainedActivations = structuredClone(
+      legacy.governance.activations.filter(
+        (activation) =>
+          activation.candidate !== "playwright" && activation.candidate !== "context7",
+      ),
+    );
+    const retainedAuthority = structuredClone(
+      (legacy.governance as unknown as { authority: unknown }).authority,
+    );
 
     const policyFile = window.document.getElementById("policy-file");
     if (policyFile === null) throw new Error("expected policy file input");
@@ -781,6 +833,9 @@ describe("policy generate", () => {
     expect(window.document.getElementById("announcement")?.textContent).toContain(
       "Legacy Workbench policy migrated",
     );
+    expect(window.document.getElementById("announcement")?.textContent).toContain(
+      "unavailable AIH-owned MCP authority removed: playwright (no current protected Scanner evidence record)",
+    );
     const migrated = JSON.parse(preview.value) as typeof legacy & {
       mcp: { allowedServers: string[]; allowManagedOnly: boolean };
     };
@@ -794,6 +849,31 @@ describe("policy generate", () => {
     expect(migrated.governance.activations).not.toContainEqual(
       expect.objectContaining({ candidate: "context7" }),
     );
+    expect(migrated.governance.catalog.reviewed).not.toContainEqual(
+      expect.objectContaining({ id: "playwright" }),
+    );
+    expect(migrated.governance.activations).not.toContainEqual(
+      expect.objectContaining({ candidate: "playwright" }),
+    );
+    expect(migrated.mcp.allowedServers).not.toContain("playwright");
+    expect(migrated.governance.catalog.reviewed).toEqual(retainedReviewed);
+    expect(migrated.governance.activations).toEqual(retainedActivations);
+    expect((migrated.governance as unknown as { authority: unknown }).authority).toEqual(
+      retainedAuthority,
+    );
+
+    const firstMigration = preview.value;
+    const announcement = window.document.getElementById("announcement");
+    if (announcement !== null) announcement.textContent = "";
+    Object.defineProperty(policyFile, "files", {
+      configurable: true,
+      value: [new window.File([JSON.stringify(legacy)], "legacy-enterprise-policy.json")],
+    });
+    policyFile.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await settle(window, () =>
+      Boolean(window.document.getElementById("announcement")?.textContent?.includes("migrated")),
+    );
+    expect(preview.value).toBe(firstMigration);
   });
 
   it("round-trips administrator-managed remote status without inventing legacy drift fields", async () => {

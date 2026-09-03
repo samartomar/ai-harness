@@ -15,6 +15,7 @@ const workbenchScripts = [...workbenchHtml.matchAll(/<script>([\s\S]*?)<\/script
   (match) => match[1],
 );
 const WORKBENCH_TEST_TIMEOUT_MS = 45_000;
+const WORKBENCH_IMPORT_TIMEOUT_MS = 15_000;
 const controls = [model.catalog.mcp[0]?.control, model.catalog.hooks[0]?.control].filter(
   (control): control is NonNullable<typeof control> => control !== undefined,
 );
@@ -110,11 +111,12 @@ async function importPolicy(window: Window, value: unknown): Promise<void> {
   input.dispatchEvent(new window.Event("change", { bubbles: true }));
   const pending = window as unknown as { __aihPolicyWorkbenchPending?: Promise<void> };
   if (pending.__aihPolicyWorkbenchPending !== undefined) await pending.__aihPolicyWorkbenchPending;
-  const deadline = Date.now() + 2_000;
+  const deadline = Date.now() + WORKBENCH_IMPORT_TIMEOUT_MS;
   while (Date.now() < deadline) {
     if ((window.document.getElementById("announcement")?.textContent ?? "").length > 0) return;
     await new Promise((resolve) => window.setTimeout(resolve, 10));
   }
+  throw new Error("timed out waiting for the policy import announcement");
 }
 
 describe("organization-selected CLI activation scope", () => {

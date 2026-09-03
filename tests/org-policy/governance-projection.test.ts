@@ -562,7 +562,7 @@ function reviewedMcpPolicy({
   allowManagedOnly?: boolean;
   allowedServers?: string[];
   disabledServers?: string[];
-  serverId?: "code-review-graph" | "sequential-thinking";
+  serverId?: "code-review-graph" | "playwright" | "sequential-thinking";
   targets?: ("claude" | "kiro")[];
 } = {}) {
   const server = mcpServers("project", scanRepo(dir, { maxDepth: 8, contextDir: "ai-coding" }))[
@@ -606,6 +606,33 @@ function reviewedMcpPolicy({
 }
 
 describe("governed candidate projection", () => {
+  it("keeps the exact Playwright runtime identity blocked while protected evidence is absent", async () => {
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ name: "web-fixture", dependencies: { next: "14.0.0" } }),
+    );
+    const policy = reviewedMcpPolicy({
+      serverId: "playwright",
+      targets: ["claude", "kiro"],
+      allowedServers: ["playwright"],
+      disabledServers: [],
+    });
+
+    const runtime = await resolveRuntimeOrgPolicy(ctx({ targets: ["claude", "kiro"] }), policy);
+    const playwright = runtime.catalog.playwright;
+    expect(playwright?.type).toBe("stdio");
+    if (playwright?.type !== "stdio") throw new Error("expected configured Playwright stdio MCP");
+    expect(playwright.args).toEqual(["@playwright/mcp@0.0.79"]);
+    expect(runtime.effective.candidates[0]).toMatchObject({
+      id: "playwright",
+      requested: true,
+      effective: false,
+      evidence: "missing",
+      blockingCodes: expect.arrayContaining(["authority-receipt-unverified", "evidence-missing"]),
+    });
+    expect(runtime.effective.activeMcpServerIds).toEqual([]);
+  });
+
   it("keeps accepted findings visible while an exact current reviewed decision unlocks", async () => {
     const policy = reviewedMcpPolicy();
     const candidate = policy.governance?.catalog.reviewed[0];

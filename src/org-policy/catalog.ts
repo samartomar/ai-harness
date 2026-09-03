@@ -332,6 +332,12 @@ export interface PolicyAuthoringCatalog {
     control: AihPolicyControl;
     availability: "always" | "web-target";
   }>;
+  /** AIH-owned runtime identities withheld from policy authoring until AIH evidence exists. */
+  unavailableMcp: Array<{
+    id: string;
+    configuredIdentity: string;
+    reason: string;
+  }>;
   /** Complete source-locked MCP availability inventory, including AIH-owned declarations. */
   eccMcpInventory: readonly EccMcpCatalogEntry[];
   externalMcp: readonly EccMcpCatalogEntry[];
@@ -360,16 +366,29 @@ export interface PolicyAuthoringCatalog {
 
 export function policyAuthoringMcpCatalog(): Record<string, McpServer> {
   const generic = mcpServers("project", EMPTY_REPO_STACK);
+  return generic;
+}
+
+function policyAuthoringUnavailableMcpCatalog(): PolicyAuthoringCatalog["unavailableMcp"] {
   const web = mcpServers("project", { ...EMPTY_REPO_STACK, frameworks: ["React"] });
   const playwright = web.playwright;
-  if (playwright === undefined) {
+  if (
+    playwright?.type !== "stdio" ||
+    playwright.args.length !== 1 ||
+    playwright.args[0] === undefined
+  ) {
     throw new Error("AIH's web MCP catalog is missing Playwright");
   }
-  // The Workbench has no target repository to scan. Offer the one conditional
-  // AIH control explicitly so an administrator can request it; runtime policy
-  // resolution still uses the real target stack and refuses the request when
-  // that target does not expose Playwright.
-  return { ...generic, playwright };
+  const configuredIdentity = playwright.args[0];
+  return [
+    {
+      id: "playwright",
+      configuredIdentity,
+      reason:
+        `Unavailable for policy authoring: AIH has no current protected Scanner evidence record for ${configuredIdentity}. ` +
+        "This is an AIH-owned evidence gap; an administrator cannot waive it or manufacture organization approval for it.",
+    },
+  ];
 }
 
 function usageMeteringControl(): AihPolicyControl {
@@ -409,9 +428,12 @@ const AIH_HOOK_DISCLOSURES: Record<string, { description: string; behaviour: Aih
 export function aihPolicyControls(
   catalog: Record<string, McpServer> = policyAuthoringMcpCatalog(),
 ): AihPolicyControl[] {
+  const unavailableMcpIds = new Set(
+    policyAuthoringUnavailableMcpCatalog().map((entry) => entry.id),
+  );
   return [
     ...Object.entries(catalog).flatMap(([id, server]) =>
-      server.type !== "stdio"
+      server.type !== "stdio" || unavailableMcpIds.has(id)
         ? []
         : [
             {
@@ -769,6 +791,7 @@ function hookRegistry(
  */
 export function policyAuthoringCatalog(): PolicyAuthoringCatalog {
   const mcp = policyAuthoringMcpCatalog();
+  const unavailableMcp = policyAuthoringUnavailableMcpCatalog();
   const controls = aihPolicyControls(mcp);
   const firstPartyPacks = PacksFileSchema.parse(firstPartyPacksManifest);
   const firstPartyCapabilityPacks = firstPartyPacks.packs.map((pack) => ({
@@ -815,6 +838,7 @@ export function policyAuthoringCatalog(): PolicyAuthoringCatalog {
     },
     hookRegistry: hookRegistry(frameworks),
     enterpriseComposition: enterpriseComposition(ecc),
+    unavailableMcp,
     mcp: Object.entries(mcp).flatMap(([id, server]) => {
       const control = controls.find((candidate) => candidate.id === id);
       return control === undefined
