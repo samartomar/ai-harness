@@ -24,10 +24,15 @@ import {
 } from "./materialization-receipt.js";
 import type { EccEffectiveSelectionComponent } from "./materialization-selection.js";
 import { eccComponentSourcePaths } from "./materialize.js";
+import { eccSelectionSourcePaths } from "./selection-closure.js";
 
 const SHA40 = /^[a-f0-9]{40}$/;
 const REPOSITORY = /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/;
 const MAX_KIRO_AGENT_JSON_DEPTH = 100;
+
+export const KIRO_BASELINE_RULES_PROVENANCE_PATHS = Object.freeze(
+  eccSelectionSourcePaths("baseline:rules", eccComponentSourcePaths("baseline:rules")),
+);
 
 const ProvenanceSchema = z
   .object({
@@ -346,9 +351,7 @@ function assertCommonEvidenceIdentity(
 
 function assertSupportedComponent(component: ParsedComponent): void {
   if (component.id === "baseline:rules") {
-    if (
-      !["rules", "rules/README.md", "rules/common"].includes(component.provenance.componentPath)
-    ) {
+    if (!KIRO_BASELINE_RULES_PROVENANCE_PATHS.includes(component.provenance.componentPath)) {
       fail("baseline:rules provenance does not match the selected component");
     }
     return;
