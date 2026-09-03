@@ -61,6 +61,16 @@ function byAttribute(root: Document | Element, attribute: string, value: string)
   );
 }
 
+function attributeValues(root: Document | Element, attribute: string): string[] {
+  return [
+    ...new Set(
+      [...root.querySelectorAll(`[${attribute}]`)]
+        .map((node) => node.getAttribute(attribute))
+        .filter((value): value is string => value !== null),
+    ),
+  ].sort();
+}
+
 function assertRoundTrip(
   window: Window,
   root: () => Document | Element,
@@ -76,17 +86,58 @@ function assertRoundTrip(
   expect(policyText(window), `${value} returns to baseline`).toBe(baseline);
 }
 
-function openDetail(window: Window, key: string): void {
-  click(window, byAttribute(window.document, "data-detail", key), `detail ${key}`);
+function detailControls(window: Window): ReadonlyMap<string, Element> {
+  const controls = new Map<string, Element>();
+  for (const control of window.document.querySelectorAll("[data-detail]")) {
+    const key = control.getAttribute("data-detail");
+    if (key === null) throw new Error("expected detail control identity");
+    if (!controls.has(key)) controls.set(key, control);
+  }
+  return controls;
 }
 
-function detailNarration(window: Window, key: string): string {
-  openDetail(window, key);
+function detailNarration(
+  window: Window,
+  controls: ReadonlyMap<string, Element>,
+  key: string,
+): string {
+  click(window, controls.get(key) ?? null, `detail ${key}`);
   return window.document.querySelector("#drawer-detail .journey-effective")?.textContent ?? "";
 }
 
 function frameworkDetailKey(frameworkId: string, kind: string, id: string): string {
   return `${frameworkId} / ${kind}: ${id}`;
+}
+
+function narratedFrameworkAssets(framework: PolicyStudioModel["catalog"]["frameworks"][number]) {
+  return framework.assets.filter(
+    (asset) => !["lang", "framework", "capability", "module"].includes(asset.kind),
+  );
+}
+
+function representativeAssetsByKind(framework: PolicyStudioModel["catalog"]["frameworks"][number]) {
+  return [
+    ...new Map(narratedFrameworkAssets(framework).map((asset) => [asset.kind, asset])).values(),
+  ];
+}
+
+function selectedFrameworkAssetIds(window: Window, frameworkId: string): ReadonlySet<string> {
+  const policy = JSON.parse(policyText(window)) as {
+    governance?: {
+      externalSelections?: Array<{
+        framework?: unknown;
+        items?: Array<{ id?: unknown }>;
+      }>;
+    };
+  };
+  const group = policy.governance?.externalSelections?.find(
+    (selection) => selection.framework === frameworkId,
+  );
+  return new Set(
+    (group?.items ?? [])
+      .map((item) => item.id)
+      .filter((id): id is string => typeof id === "string"),
+  );
 }
 
 function modelWithFrameworkSelected(frameworkId: string): PolicyStudioModel {
@@ -181,10 +232,14 @@ describe("policy studio surface invariants", () => {
     const window = studio();
     const document = window.document;
 
-    for (const control of [
+    const controls = [
       ...model.catalog.mcp.map((item) => item.control),
       ...model.catalog.hooks.map((item) => item.control),
-    ]) {
+    ];
+    expect(attributeValues(document, "data-reviewed")).toEqual(
+      controls.map((control) => control.id).sort(),
+    );
+    for (const control of controls) {
       assertRoundTrip(window, () => document, "data-reviewed", control.id);
     }
     const inventoryKeys = [
@@ -211,17 +266,34 @@ describe("policy studio surface invariants", () => {
       );
       await closeWindow(frameworkWindow);
     }
-    for (const part of model.catalog.enterpriseComposition.parts.filter(
+    const additiveParts = model.catalog.enterpriseComposition.parts.filter(
       (item) => item.selection === "additive",
-    )) {
+    );
+    expect(attributeValues(document, "data-composition-add")).toEqual(
+      additiveParts.map((part) => part.id).sort(),
+    );
+    for (const part of additiveParts) {
       assertRoundTrip(window, () => document, "data-composition-add", part.id);
     }
-    for (const host of model.catalog.hosts) {
-      assertRoundTrip(window, () => document, "data-sanctioned-cli", host.id);
-    }
-    for (const capability of [...model.catalog.aihSkills, ...model.catalog.aihAgents]) {
-      assertRoundTrip(window, () => document, "data-aih-capability-package", capability.id);
-    }
+    expect(attributeValues(document, "data-sanctioned-cli")).toEqual(
+      model.catalog.hosts.map((host) => host.id).sort(),
+    );
+    const representativeHost = model.catalog.hosts[0];
+    if (representativeHost === undefined) throw new Error("expected a host");
+    assertRoundTrip(window, () => document, "data-sanctioned-cli", representativeHost.id);
+
+    const capabilities = [...model.catalog.aihSkills, ...model.catalog.aihAgents];
+    expect(attributeValues(document, "data-aih-capability-package")).toEqual(
+      capabilities.map((capability) => capability.id).sort(),
+    );
+    const representativeCapability = capabilities[0];
+    if (representativeCapability === undefined) throw new Error("expected an AIH capability");
+    assertRoundTrip(
+      window,
+      () => document,
+      "data-aih-capability-package",
+      representativeCapability.id,
+    );
     for (const preset of ["vibe", "enterprise"]) {
       const presetWindow = studio();
       const baseline = policyText(presetWindow);
@@ -270,16 +342,20 @@ describe("policy studio surface invariants", () => {
 
   it("narrates authored selection without inventing a target-evaluated state", async () => {
     const baseline = studio();
+    const baselineControls = detailControls(baseline);
     const baselineNarration = new Map<string, string>();
     for (const item of [...model.catalog.mcp, ...model.catalog.hooks]) {
-      baselineNarration.set(item.id, detailNarration(baseline, item.id));
+      baselineNarration.set(item.id, detailNarration(baseline, baselineControls, item.id));
     }
     for (const framework of model.catalog.frameworks) {
-      for (const asset of framework.assets.filter(
-        (candidate) => !["lang", "framework", "capability", "module"].includes(candidate.kind),
-      )) {
+      const narratedAssets = narratedFrameworkAssets(framework);
+      for (const asset of narratedAssets) {
         const key = frameworkDetailKey(framework.id, asset.kind, asset.id);
-        baselineNarration.set(key, detailNarration(baseline, key));
+        expect(baselineControls.has(key), `${key} resolves to a detail control`).toBe(true);
+      }
+      for (const asset of representativeAssetsByKind(framework)) {
+        const key = frameworkDetailKey(framework.id, asset.kind, asset.id);
+        baselineNarration.set(key, detailNarration(baseline, baselineControls, key));
       }
     }
     await closeWindow(baseline);
@@ -295,24 +371,30 @@ describe("policy studio surface invariants", () => {
         `conditional MCP ${item.id}`,
       );
     }
+    const selectedEccControls = detailControls(selectedEcc);
 
     for (const item of [...model.catalog.mcp, ...model.catalog.hooks]) {
       expectDetailNarrationToVary(
         item.id,
         baselineNarration.get(item.id) ?? "",
-        detailNarration(selectedEcc, item.id),
+        detailNarration(selectedEcc, selectedEccControls, item.id),
       );
     }
     const ecc = model.catalog.frameworks.find((framework) => framework.id === "ecc");
     if (ecc === undefined) throw new Error("expected ECC framework");
-    for (const asset of ecc.assets.filter(
-      (asset) => !["lang", "framework", "capability", "module"].includes(asset.kind),
-    )) {
+    const selectedEccIds = selectedFrameworkAssetIds(selectedEcc, ecc.id);
+    expect(
+      narratedFrameworkAssets(ecc)
+        .filter((asset) => !selectedEccIds.has(asset.id))
+        .map((asset) => asset.id),
+      "Vibe selects every narrated ECC asset",
+    ).toEqual([]);
+    for (const asset of representativeAssetsByKind(ecc)) {
       const key = frameworkDetailKey(ecc.id, asset.kind, asset.id);
       expectDetailNarrationToVary(
         key,
         baselineNarration.get(key) ?? "",
-        detailNarration(selectedEcc, key),
+        detailNarration(selectedEcc, selectedEccControls, key),
       );
     }
     await closeWindow(selectedEcc);
@@ -322,12 +404,20 @@ describe("policy studio surface invariants", () => {
     );
     if (superpowers === undefined) throw new Error("expected Superpowers framework");
     const selectedSuperpowers = studio(modelWithFrameworkSelected(superpowers.id));
-    for (const asset of superpowers.assets) {
+    const selectedSuperpowersControls = detailControls(selectedSuperpowers);
+    const selectedSuperpowersIds = selectedFrameworkAssetIds(selectedSuperpowers, superpowers.id);
+    expect(
+      narratedFrameworkAssets(superpowers)
+        .filter((asset) => !selectedSuperpowersIds.has(asset.id))
+        .map((asset) => asset.id),
+      "the selected Superpowers model includes every narrated asset",
+    ).toEqual([]);
+    for (const asset of representativeAssetsByKind(superpowers)) {
       const key = frameworkDetailKey(superpowers.id, asset.kind, asset.id);
       expectDetailNarrationToVary(
         key,
         baselineNarration.get(key) ?? "",
-        detailNarration(selectedSuperpowers, key),
+        detailNarration(selectedSuperpowers, selectedSuperpowersControls, key),
       );
     }
     await closeWindow(selectedSuperpowers);
