@@ -7,8 +7,6 @@ on:
   branch_protection_rule:
   schedule:
     - cron: "30 6 * * 1" # Mondays 06:30 UTC
-  push:
-    branches: [main]
 
 permissions: read-all
 

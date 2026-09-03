@@ -5,6 +5,10 @@ on:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
@@ -50,6 +54,7 @@ jobs:
     name: shadow selected (${{ matrix.os }})
     if: github.event_name == 'pull_request'
     needs: classify
+    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
@@ -143,7 +148,7 @@ jobs:
       - name: ECC installer package check
         run: npm run check:ecc-installer
       # Self-hosting boundary: compare the manually maintained shared block,
-      # bootloaders, contract mirror, live tracked-file count, package scripts, and
+      # bootloaders, contract mirror, bounded tracked-file snapshot, package scripts, and
       # CI wiring without invoking the AIH CLI against its own checkout.
       - name: Self-hosting canon gate
         if: matrix.os == 'ubuntu-latest'
@@ -241,24 +246,24 @@ jobs:
           fi
 
   # Stable future branch-protection context. While selection is in shadow mode,
-  # this fan-in intentionally requires both the selected replay and every current
-  # complete OS result. Skipped, cancelled, failed, or missing dependencies fail.
+  # this fan-in requires every authoritative job but deliberately excludes the
+  # advisory selected replay. Skipped, cancelled, failed, or missing required
+  # dependencies fail.
   pr_gate:
     name: pr-gate
     if: ${{ always() && github.event_name == 'pull_request' }}
-    needs: [classify, shadow_selected_tests, release_prep_guard, verify, windows_verify]
+    needs: [classify, release_prep_guard, verify, windows_verify]
     runs-on: ubuntu-latest
     steps:
-      - name: Require all authoritative and shadow jobs
+      - name: Require all authoritative jobs
         env:
           CLASSIFY_RESULT: ${{ needs.classify.result }}
-          SHADOW_RESULT: ${{ needs.shadow_selected_tests.result }}
           RELEASE_PREP_RESULT: ${{ needs.release_prep_guard.result }}
           VERIFY_RESULT: ${{ needs.verify.result }}
           WINDOWS_RESULT: ${{ needs.windows_verify.result }}
         run: |
           set -euo pipefail
-          for result in "$CLASSIFY_RESULT" "$SHADOW_RESULT" "$RELEASE_PREP_RESULT" "$VERIFY_RESULT" "$WINDOWS_RESULT"; do
+          for result in "$CLASSIFY_RESULT" "$RELEASE_PREP_RESULT" "$VERIFY_RESULT" "$WINDOWS_RESULT"; do
             if [ "$result" != "success" ]; then
               echo "::error::required PR lane result is $result"
               exit 1

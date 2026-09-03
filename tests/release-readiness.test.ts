@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { parseDocument } from "yaml";
 
 const root = process.cwd();
+const githubExpression = (body: string): string => `\${{ ${body} }}`;
 
 function read(path: string): string {
   return readFileSync(join(root, path), "utf8");
@@ -128,6 +129,50 @@ describe("release readiness metadata", () => {
     expect(runner).toContain('"--maxWorkers=2"');
     expect(runner).toContain('"--testTimeout=15000"');
     expect(runner).toContain("if (result.error) throw result.error;");
+  });
+
+  it("keeps shadow replay advisory and cancels superseded pull-request workflows", () => {
+    const ci = parseDocument(read(".github/workflows/ci.yml")).toJSON() as {
+      concurrency?: { group?: string; "cancel-in-progress"?: string };
+      jobs?: {
+        shadow_selected_tests?: { "continue-on-error"?: boolean };
+        pr_gate?: { needs?: string[]; steps?: WorkflowStep[] };
+      };
+    };
+    const expectedConcurrency = {
+      group: `${githubExpression("github.workflow")}-${githubExpression("github.event.pull_request.number || github.run_id")}`,
+      "cancel-in-progress": githubExpression("github.event_name == 'pull_request'"),
+    };
+
+    expect(ci.concurrency).toEqual(expectedConcurrency);
+    expect(ci.jobs?.shadow_selected_tests?.["continue-on-error"]).toBe(true);
+    expect(ci.jobs?.pr_gate?.needs).toEqual([
+      "classify",
+      "release_prep_guard",
+      "verify",
+      "windows_verify",
+    ]);
+    expect(JSON.stringify(ci.jobs?.pr_gate?.steps)).not.toContain("SHADOW_RESULT");
+
+    for (const path of [
+      ".github/workflows/codeql.yml",
+      ".github/workflows/baseline-evidence.yml",
+    ]) {
+      const workflow = parseDocument(read(path)).toJSON() as {
+        concurrency?: { group?: string; "cancel-in-progress"?: string };
+      };
+      expect(workflow.concurrency, path).toEqual(expectedConcurrency);
+    }
+  });
+
+  it("does not rerun OpenSSF Scorecard after every protected-main merge", () => {
+    const scorecard = parseDocument(read(".github/workflows/scorecard.yml")).toJSON() as {
+      on?: Record<string, unknown>;
+    };
+
+    expect(scorecard.on).toHaveProperty("branch_protection_rule");
+    expect(scorecard.on).toHaveProperty("schedule");
+    expect(scorecard.on).not.toHaveProperty("push");
   });
 
   it("binds every release tracker lookup to the executing repository", () => {
