@@ -111,6 +111,25 @@ describe("release readiness metadata", () => {
     );
   });
 
+  it("launches selected shadow tests through Node on every runner", () => {
+    const workflow = read(".github/workflows/ci.yml");
+    const runner = read(".github/scripts/run-selected-tests.mjs");
+    const pkg = JSON.parse(read("package.json")) as { scripts: Record<string, string> };
+    const shadowStart = workflow.indexOf("  shadow_selected_tests:\n");
+    const guardStart = workflow.indexOf("  release_prep_guard:\n", shadowStart);
+    const shadow = workflow.slice(shadowStart, guardStart);
+
+    expect(shadow).toContain("run: npm run --silent ci:run-selected");
+    expect(shadow).not.toContain("shell: bash");
+    expect(shadow).not.toContain('"npx.cmd"');
+    expect(pkg.scripts["ci:run-selected"]).toBe("node .github/scripts/run-selected-tests.mjs");
+    expect(runner).toContain("const executable = process.execPath;");
+    expect(runner).toContain('resolve("node_modules/vitest/vitest.mjs")');
+    expect(runner).toContain('"--maxWorkers=2"');
+    expect(runner).toContain('"--testTimeout=15000"');
+    expect(runner).toContain("if (result.error) throw result.error;");
+  });
+
   it("binds every release tracker lookup to the executing repository", () => {
     const release = read(".github/workflows/release.yml");
     const acceptance = read(".github/workflows/installed-acceptance.yml");

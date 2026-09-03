@@ -62,6 +62,7 @@
     "check:artifacts": "tsx src/internals/check-tracked-artifacts.ts",
     "check:staged": "tsx src/internals/staged-check.ts",
     "ci:classify": "tsx src/internals/ci-impact-command.ts",
+    "ci:run-selected": "node .github/scripts/run-selected-tests.mjs",
     "check:ai-runtime": "tsx src/internals/ai-runtime-inventory.ts --root .",
     "check:bugbounty-report": "tsx src/internals/bugbounty-report.ts --source .internal/defects/BUGBOUNTY.md",
     "check:self-hosting-canon": "vitest run tests/self-hosting/self-hosting.test.ts",
