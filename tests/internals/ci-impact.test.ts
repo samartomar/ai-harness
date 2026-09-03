@@ -125,6 +125,7 @@ describe("CI impact classifier", () => {
     ["empty change set", [], "empty-change-set"],
     ["lockfile", ["package-lock.json"], "global-input:package-lock.json"],
     ["workflow", [".github/workflows/ci.yml"], "global-input:.github/workflows/ci.yml"],
+    ["lane config", ["vitest.workbench.config.ts"], "global-input:vitest.workbench.config.ts"],
     ["schema", ["schemas/report.schema.json"], "global-input:schemas/report.schema.json"],
     [
       "fixture",

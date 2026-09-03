@@ -59,6 +59,8 @@ const GLOBAL_FILES = new Set([
   "tsconfig.json",
   "tsup.config.ts",
   "vitest.config.ts",
+  "vitest.core.config.ts",
+  "vitest.workbench.config.ts",
 ]);
 
 const GLOBAL_PREFIXES = [".github/workflows/", "schemas/", "tests/fixtures/", "tools/"];
