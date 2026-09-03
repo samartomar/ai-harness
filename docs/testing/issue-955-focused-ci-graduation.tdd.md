@@ -30,6 +30,11 @@ fan-in still represented only Windows. The implemented contract then passed 70 t
 three files plus `tests/internals/ci-lane-gate.test.ts`. The executable lane-gate tests reject failed,
 cancelled, skipped, missing, contradictory, and unsupported result combinations.
 
+The first hosted run exposed a checkout-depth defect that a full-history local worktree could not:
+the extracted static-quality job used the checkout action's one-commit default, so the documentation
+drift check could not resolve `origin/main` and correctly failed closed. A regression assertion now
+requires `fetch-depth: 0` on that job, matching the drift check's merge-base contract.
+
 ## Replay and live pilot
 
 The current selector was replayed over the latest 25 first-parent merges using each adjacent commit

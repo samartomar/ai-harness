@@ -171,6 +171,10 @@ describe("release readiness metadata", () => {
     const qualitySteps = JSON.stringify(ci.jobs?.quality?.steps);
     expect(qualitySteps).toContain("npm run docs:lint");
     expect(qualitySteps).toContain("npm run check:packed-doc-links");
+    const qualityCheckout = ci.jobs?.quality?.steps?.find((step) =>
+      step.uses?.startsWith("actions/checkout@"),
+    );
+    expect(qualityCheckout?.with?.["fetch-depth"]).toBe(0);
     expect(ci.jobs?.required_verify?.name).toBe(`verify (${githubExpression("matrix.os")})`);
     expect(ci.jobs?.required_verify?.if).toBe(githubExpression("always()"));
     expect(ci.jobs?.required_verify?.strategy?.matrix?.os).toEqual([
