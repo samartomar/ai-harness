@@ -68,6 +68,25 @@ function selectionRoots(window: Window): string[] | undefined {
   return policy.governance.externalSelections[0]?.roots;
 }
 
+function nestedRiderModel(): { studioModel: PolicyStudioModel; riderId: string } {
+  const studioModel = structuredClone(model);
+  const framework = studioModel.catalog.frameworks.find((candidate) => candidate.id === "ecc");
+  const owner = framework?.assets.find((asset) => asset.id === "module:agents-core");
+  const template = framework?.assets.find((asset) => asset.id === "agent:code-reviewer");
+  if (framework === undefined || owner === undefined || template === undefined) {
+    throw new Error("expected future-rider fixture assets");
+  }
+  const riderId = "agent:future-non-root-rider";
+  framework.assets.push({
+    ...structuredClone(template),
+    id: riderId,
+    source: { ...template.source, path: "agents/future-non-root-rider.md" },
+    sourcePaths: ["agents/future-non-root-rider.md"],
+  });
+  owner.riders = [...(owner.riders ?? []), riderId];
+  return { studioModel, riderId };
+}
+
 function legacyAssetClosure(rootIds: readonly string[]): string[] {
   const selected = new Set(rootIds);
   const pending = [...rootIds];
@@ -110,6 +129,42 @@ function assetClosure(rootIds: readonly string[]): string[] {
 }
 
 describe("policy studio dependency-closed selection", () => {
+  it("keeps a future non-root rider reachable and preserves its center exclusion", () => {
+    const { studioModel, riderId } = nestedRiderModel();
+    const window = studio(studioModel);
+
+    click(window, '.rail [data-framework-select="ecc|lang|lang:typescript"]');
+    expect(selectedIds(window)).toContain(riderId);
+    click(window, "#validate");
+    expect(window.document.getElementById("announcement")?.textContent).toMatch(
+      /validation passed/i,
+    );
+
+    clickCanonical(window, `ecc|agent|${riderId}`);
+    expect(selectedIds(window)).not.toContain(riderId);
+    click(window, "#validate");
+    expect(window.document.getElementById("announcement")?.textContent).toMatch(
+      /validation passed/i,
+    );
+    const preview = window.document.getElementById("config-preview") as unknown as {
+      value: string;
+    } | null;
+    if (preview === null) throw new Error("expected policy preview");
+    const editedPolicy = parseOrgPolicy(JSON.parse(preview.value));
+    window.close();
+
+    const reopenedModel = structuredClone(studioModel);
+    reopenedModel.initialPolicy = editedPolicy;
+    const reopened = studio(reopenedModel);
+    click(reopened, '.rail [data-framework-select="ecc|lang|lang:python"]');
+    expect(selectedIds(reopened)).not.toContain(riderId);
+    click(reopened, "#validate");
+    expect(reopened.document.getElementById("announcement")?.textContent).toMatch(
+      /validation passed/i,
+    );
+    reopened.close();
+  });
+
   it("maps an ECC module to its selectable Skill, Agent, and baseline members", () => {
     const module = ecc.assets.find((asset) => asset.id === "module:agents-core");
     if (module === undefined) throw new Error("expected module:agents-core");
