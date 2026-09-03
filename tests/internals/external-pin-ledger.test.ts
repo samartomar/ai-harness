@@ -312,12 +312,12 @@ describe("active external-pin ledger", () => {
     });
     expect(entry("claude-code-action").version).toBe("v1.0.210");
 
-    const baselineWorkflow = readFileSync(
-      resolve(root, ".github/workflows/baseline-evidence.yml"),
+    const snykQualificationWorkflow = readFileSync(
+      resolve(root, ".github/workflows/snyk-agent-qualification.yml"),
       "utf8",
     );
     expect(entry("setup-python-action")).toMatchObject(
-      workflowActionPin(baselineWorkflow, "actions/setup-python"),
+      workflowActionPin(snykQualificationWorkflow, "actions/setup-python"),
     );
   });
 

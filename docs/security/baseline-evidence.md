@@ -410,32 +410,33 @@ release preflight without making Core CI execute Scanner.
 npm run baseline:check
 ```
 
-An intentional refresh is the manual `baseline-evidence` workflow with
-`refresh=true`. Core authors canonical requests for both exact checkouts. The
-exact approved `@aihq/scan@0.2.5` candidate then runs the fixed `aih-baseline-v1` analyzer
-set and emits detached bundles. A separate job signs those bytes with
-short-lived test custody; the signature proves integrity and confers no approval,
-organization authority, or provenance. Core finally verifies the requests,
-source hashes, annexes, signature, freshness, replay state, and analyzer
-identities before interpreting the detached SARIF. Core's consumer cannot spawn
-an analyzer process.
+An intentional refresh is a two-repository operation. Scanner's manual
+`baseline-publication` workflow accepts one canonical Core request, executes the
+fixed `aih-baseline-v1` analyzer set in the Scanner repository, and publishes
+canonical `publication.json` and authority-free `discovery.json` assets at the
+immutable release tag `baseline-v1-<request-sha256>`. The publication carries
+the exact request, receipt, annexes, detached Scanner signature, and its public
+verification root. Its GitHub artifact attestation binds the publication digest
+to the protected Scanner workflow and exact Scanner source commit. Publication
+is evidence transport, not installation or organization authority.
 
-The refresh executor runs on a dedicated ephemeral Linux runner. It requires
-Ubuntu's global unprivileged-user-namespace restriction to remain enabled, loads
-the distribution's constrained `bwrap-userns-restrict` AppArmor profile, and
-checks the profile's unprivileged-child capability denial before use. It then
-proves the child profile label, zero effective capabilities, positive
-containment, and negative nested-user-namespace behavior before any analyzer
-executes. Scanner and host analyzer processes run as the
-unprivileged runner account. SkillSpector may use container UID 0, but it has no
-network, a read-only root, `no-new-privileges`, and all capabilities dropped
-except `DAC_OVERRIDE`; it receives no host user-namespace permission.
+Core's manual `.github/workflows/baseline-publication-consume.yml` authors the
+requests for the exact ECC and Superpowers checkouts, downloads only the matching
+request-addressed release, and asks GitHub CLI to verify the exact Scanner
+repository, workflow, `main` ref, source commit, and GitHub-hosted runner. The
+Core consumer then independently rejects noncanonical or substituted bytes,
+mutable locators, wrong requests or publishers, stale attestations, missing
+annexes, replay, and receipt-continuity conflicts. It re-hashes the checked-out
+source and verifies Scanner custody and analyzer identities before interpreting
+the annexes. Neither this workflow nor the consumer provisions or executes an
+analyzer.
 
-The workflow uploads `scanner-baseline-core-candidate`; it does not commit,
-push, publish, or modify the protected branch. A maintainer downloads that
-candidate, reviews the lock and preview diff, and commits those exact bytes only
-when every required component passed. A signed `blocked` result is not a
-successful install baseline.
+After both source publications verify, Core assembles the candidate lock and ECC
+install preview and compares them byte-for-byte with the committed artifacts.
+The workflow uploads the candidate evidence and authority-free publication
+provenance for review; it does not commit, push, publish an npm package, or modify
+the protected branch. A verified `blocked` result is not a successful install
+baseline.
 
 ### The vetted identity is one exact upstream commit
 
@@ -462,9 +463,10 @@ follow, and both are load-bearing:
    that change already vetted on a fork — voids the acceptance set and is its own
    work package, never a pin swap.
 
-The maintainer drift check above exists to enforce exactly this: it re-runs the
-vetter against the canonical upstream SHAs and fails on any hash, receipt, or
-verdict divergence.
+The maintainer drift check above exists to enforce exactly this: required CI
+fails when the committed source pins, analyzer identities, receipts, or preview
+are internally inconsistent. Re-vetting changed bytes remains Scanner's job;
+Core accepts only the immutable publication for the exact replacement request.
 
 To reproduce the separate Superpowers content-acceptance observations, use a
 dedicated upstream checkout whose canonical Git root is clean and detached at
@@ -498,18 +500,20 @@ translated into acceptance, and the shipped ledger is now intentionally empty.
 
 ### Refresh ownership and scaling
 
-Scanner owns baseline execution as an independent batch. Core owns the fixed
-catalog request, trust roots, verification policy, interpretation of verified
-annexes, and the committed release lock. Scanner never approves installation or
-activation, and Core never substitutes local execution for missing Scanner
-evidence.
+Scanner owns baseline execution and publication as an independent batch. Core
+owns the fixed catalog request, pinned publication-workflow identity,
+verification policy, interpretation of verified annexes, and the committed
+release lock. Scanner never approves installation or activation, and Core never
+substitutes local execution for missing Scanner evidence.
 
-The workflow matrix scans ECC and Superpowers in parallel. Adding another source
-means adding one bounded catalog request and one matrix entry; it does not add an
-in-Core analyzer implementation. Exact duplicate source bytes remain
-content-addressed, but this version intentionally performs no cross-run receipt
-reuse or sharded receipt splicing. Those optimizations require their own public
-Scanner protocol before Core may rely on them.
+Scanner publishes each request independently. Core's consumption matrix verifies
+ECC and Superpowers publications in parallel, then assembles their verified
+evidence in one job. Adding another source means adding one bounded catalog
+request and one consumption-matrix entry; it does not add an in-Core analyzer
+implementation. Exact duplicate source bytes remain content-addressed, but this
+version intentionally performs no cross-run receipt reuse or sharded receipt
+splicing. Those optimizations require their own public Scanner protocol before
+Core may rely on them.
 
 Two states remain fail-closed:
 
@@ -517,7 +521,8 @@ Two states remain fail-closed:
   cheap required job verifies its declared pins, analyzer floor, and installable
   preview.
 - **A source or analyzer pin moved** — the committed lock is stale. Required CI
-  fails until the detached Scanner refresh produces a reviewed replacement.
+  fails until Scanner publishes the exact request and Core consumes and commits
+  a reviewed replacement.
 
 Hand-editing recorded pins cannot substitute for a refresh: receipt content
 hashes and fixed analyzer identities must match the exact Core-authored request,

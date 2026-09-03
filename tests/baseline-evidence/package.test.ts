@@ -49,6 +49,7 @@ describe("baseline evidence release payload", () => {
     expect(scripts["baseline:request"]).toContain("scanner-cli.ts request");
     expect(scripts["baseline:vet"]).toBe("aih-scan baseline-vet");
     expect(scripts["baseline:consume"]).toContain("scanner-cli.ts consume");
+    expect(scripts["baseline:consume-publication"]).toContain("scanner-cli.ts consume-publication");
     expect(scripts["baseline:assemble"]).toContain("scanner-cli.ts assemble");
     expect(scripts["baseline:check"]).toContain("check:baseline-pins");
     expect(scripts["baseline:check"]).toContain("check:baseline-analyzers");
@@ -65,63 +66,48 @@ describe("baseline evidence release payload", () => {
     );
   });
 
-  it("runs a non-publishing vet-once workflow at both canonical source pins", () => {
-    const path = join(repo, ".github", "workflows", "baseline-evidence.yml");
-    expect(existsSync(path)).toBe(true);
-    const workflow = readFileSync(path, "utf8");
-    expect(workflow).toContain(baselineCatalogById("ecc").pinnedSha);
-    expect(workflow).toContain(baselineCatalogById("superpowers").pinnedSha);
-    const workflowDocument = parseDocument(workflow);
-    expect(workflowDocument.errors).toEqual([]);
-    const jobs = (
-      workflowDocument.toJSON() as {
-        jobs?: Record<
-          string,
-          { if?: unknown; steps?: Array<{ if?: unknown; name?: unknown; run?: unknown }> }
-        >;
+  it("keeps required CI on committed evidence and immutable consumption explicit", () => {
+    const requiredPath = join(repo, ".github", "workflows", "baseline-evidence.yml");
+    expect(existsSync(requiredPath)).toBe(true);
+    const requiredWorkflow = readFileSync(requiredPath, "utf8");
+    const requiredDocument = parseDocument(requiredWorkflow);
+    expect(requiredDocument.errors).toEqual([]);
+    const requiredJobs = (
+      requiredDocument.toJSON() as {
+        jobs?: Record<string, { steps?: Array<{ name?: unknown; run?: unknown }> }>;
       }
     ).jobs;
-    const requiredSteps = jobs?.["vet-once"]?.steps;
+    const requiredSteps = requiredJobs?.["vet-once"]?.steps;
     if (!requiredSteps) throw new Error("baseline-evidence workflow must define vet-once steps");
     const requiredCommands = JSON.stringify(requiredSteps);
     expect(requiredCommands).toContain("npm run baseline:check");
     expect(requiredCommands).not.toContain("baseline:vet");
     expect(requiredCommands).not.toContain("setup-uv");
     expect(requiredCommands).not.toContain("docker");
+    expect(Object.keys(requiredJobs ?? {})).toEqual(["vet-once"]);
 
-    const refreshJob = jobs?.["refresh-execute"];
-    expect(refreshJob?.if).toBe(
-      "${{ github.event_name == 'workflow_dispatch' && inputs.refresh }}",
-    );
-    const refreshSteps = refreshJob?.steps ?? [];
-    const refreshStepNames = refreshSteps.map((step) => step.name);
-    expect(refreshStepNames).toEqual(
-      expect.arrayContaining([
-        "Bind Scanner's fixed analyzer runtime paths",
-        "Author the exact Core request",
-        "Execute the public Scanner baseline",
-      ]),
-    );
-    expect(refreshStepNames.indexOf("Bind Scanner's fixed analyzer runtime paths")).toBeLessThan(
-      refreshStepNames.indexOf("Author the exact Core request"),
-    );
-    expect(refreshStepNames.indexOf("Author the exact Core request")).toBeLessThan(
-      refreshStepNames.indexOf("Execute the public Scanner baseline"),
-    );
-    const refreshCommands = JSON.stringify(refreshSteps);
-    expect(refreshCommands).toContain("npm run baseline:request");
-    expect(refreshCommands).toContain("npm run baseline:vet");
-    expect(workflow).toContain("npm run baseline:consume");
-    expect(workflow).toContain("npm run baseline:assemble");
-    expect(workflow).toContain(`@aihq/scan@\${SCANNER_VERSION}`);
-    expect(workflow).toContain("astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d");
-    expect(workflow).toContain('version: "0.12.8"');
-    expect(workflow).toContain(
+    const consumePath = join(repo, ".github", "workflows", "baseline-publication-consume.yml");
+    expect(existsSync(consumePath)).toBe(true);
+    const consumeWorkflow = readFileSync(consumePath, "utf8");
+    expect(parseDocument(consumeWorkflow).errors).toEqual([]);
+    expect(consumeWorkflow).toContain(baselineCatalogById("ecc").pinnedSha);
+    expect(consumeWorkflow).toContain(baselineCatalogById("superpowers").pinnedSha);
+    expect(consumeWorkflow).toContain("92679b827d8346294b5fc557056fa838bdba709d");
+    expect(consumeWorkflow).toContain("npm run baseline:request");
+    expect(consumeWorkflow).toContain("npm run baseline:consume-publication");
+    expect(consumeWorkflow).toContain("npm run baseline:assemble");
+    expect(consumeWorkflow).toContain("gh release download");
+    expect(consumeWorkflow).toContain("gh attestation verify");
+    expect(consumeWorkflow).toContain("baseline-v1-$request_sha256");
+    expect(consumeWorkflow).toContain(
       "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
     );
-    expect(workflow).toContain("actions/upload-artifact@");
-    expect(workflow).toContain("src/baseline-evidence/vendor-lock.json");
-    expect(workflow).not.toMatch(/git\s+(commit|push)|npm\s+publish/);
+    expect(consumeWorkflow).toContain("actions/upload-artifact@");
+    expect(consumeWorkflow).not.toMatch(/git\s+(commit|push)|npm\s+publish/);
+    expect(consumeWorkflow).not.toContain("baseline:vet");
+    expect(consumeWorkflow).not.toContain("setup-python");
+    expect(consumeWorkflow).not.toContain("setup-uv");
+    expect(consumeWorkflow).not.toContain("docker");
   });
 
   it("keeps legacy analyzer locks auditable while Scanner owns refresh execution", () => {
@@ -132,33 +118,21 @@ describe("baseline evidence release payload", () => {
     expect(existsSync(lock)).toBe(true);
     expect(readFileSync(pyproject, "utf8")).toContain(CISCO_SKILL_SCANNER_SPEC);
 
-    const workflow = readFileSync(
+    const requiredWorkflow = readFileSync(
       join(repo, ".github", "workflows", "baseline-evidence.yml"),
       "utf8",
     );
-    expect(workflow).toContain("actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97");
-    expect(workflow).toContain('python-version: "3.13"');
-    expect(workflow).toContain("/usr/bin/python3.13");
-    expect(workflow).toContain('"${python_prefix}/lib/libpython3.13.so.1.0"');
-    expect(workflow).toContain("/usr/lib/x86_64-linux-gnu/libpython3.13.so.1.0");
-    expect(workflow).toContain("/usr/local/bin/uv");
-    expect(workflow).toContain("/usr/bin/bwrap");
-    expect(workflow).toContain("/usr/share/apparmor/extra-profiles/bwrap-userns-restrict");
-    expect(workflow).toContain("profile bwrap /usr/bin/bwrap flags=(attach_disconnected)");
-    expect(workflow).toContain("audit deny capability");
-    expect(workflow).toContain("sudo apparmor_parser --replace");
-    expect(workflow).not.toContain("sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0");
-    expect(workflow).toContain("/usr/bin/bwrap --unshare-all --unshare-user");
-    expect(workflow).toContain("--disable-userns --assert-userns-disabled");
-    expect(workflow).toContain("--ro-bind-try /lib64 /lib64");
-    expect(workflow).toContain("nested user namespace unexpectedly available");
-    expect(workflow).toContain("sandbox child did not enter unpriv_bwrap");
-    expect(workflow).toContain("sandbox child retained effective capabilities");
-    expect(workflow).toContain("test -x /usr/bin/unshare");
-    expect(workflow).toContain("/usr/bin/unshare --help");
-    expect(workflow).toContain("--proc /proc --dev /dev /usr/bin/python3.13 -c");
-    expect(workflow).toContain("npm run baseline:check");
-    expect(workflow).toContain("scanner-baseline-core-candidate");
+    const consumeWorkflow = readFileSync(
+      join(repo, ".github", "workflows", "baseline-publication-consume.yml"),
+      "utf8",
+    );
+    for (const workflow of [requiredWorkflow, consumeWorkflow]) {
+      expect(workflow).not.toContain("setup-python");
+      expect(workflow).not.toContain("setup-uv");
+      expect(workflow).not.toContain("/usr/bin/python");
+      expect(workflow).not.toContain("/usr/bin/bwrap");
+      expect(workflow).not.toContain("docker");
+    }
   });
 
   it("builds SkillSpector from its committed lock on a digest-pinned base", () => {

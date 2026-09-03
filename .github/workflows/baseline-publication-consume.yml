@@ -1,0 +1,170 @@
+name: consume immutable Scanner baseline publications
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  attestations: read
+
+env:
+  SCANNER_REPOSITORY: samartomar/aih-scan
+  SCANNER_PUBLISHER_WORKFLOW: samartomar/aih-scan/.github/workflows/baseline-publication.yml
+  SCANNER_PUBLISHER_COMMIT: 92679b827d8346294b5fc557056fa838bdba709d
+
+jobs:
+  consume:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: ecc
+            repository: samartomar/ECC
+            sha: 5caf398a91599029a176ca6d806409b00d1052c4
+          - id: superpowers
+            repository: obra/Superpowers
+            sha: 3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9
+    steps:
+      - name: Check out current protected Core main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Bind manual consumption to current protected Core main
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/main"
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          test "$GITHUB_SHA" = "$(git rev-parse origin/main)"
+      - name: Check out exact catalog source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ matrix.repository }}
+          ref: ${{ matrix.sha }}
+          path: .baseline-source
+          persist-credentials: false
+      - name: Prove exact source checkout
+        shell: bash
+        run: test "${{ matrix.sha }}" = "$(git -C .baseline-source rev-parse HEAD)"
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Author the exact request and derive its immutable release
+        id: request
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir request
+          npm run baseline:request -- \
+            --catalog "${{ matrix.id }}" \
+            --source .baseline-source \
+            --output request
+          test "$(find request -maxdepth 1 -type f -name '*.request.json' | wc -l)" -eq 1
+          request_sha256="$(jq -er '.requestSha256 | select(test("^[0-9a-f]{64}$"))' request/batch-001.request.json)"
+          tag="baseline-v1-$request_sha256"
+          printf 'request_sha256=%s\n' "$request_sha256" >> "$GITHUB_OUTPUT"
+          printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
+      - name: Download only the exact request-addressed publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.request.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir publication
+          gh release download "$RELEASE_TAG" \
+            --repo "$SCANNER_REPOSITORY" \
+            --pattern publication.json \
+            --pattern discovery.json \
+            --dir publication
+          test "$(find publication -maxdepth 1 -type f | wc -l)" -eq 2
+      - name: Verify exact Scanner workflow provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh attestation verify publication/publication.json \
+            --repo "$SCANNER_REPOSITORY" \
+            --signer-workflow "$SCANNER_PUBLISHER_WORKFLOW" \
+            --source-ref refs/heads/main \
+            --source-digest "$SCANNER_PUBLISHER_COMMIT" \
+            --deny-self-hosted-runners \
+            --format json > publication/attestation.json
+          test -s publication/attestation.json
+      - name: Consume verified bytes without executing analyzers
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir candidate
+          npm run baseline:consume-publication -- \
+            --catalog "${{ matrix.id }}" \
+            --source .baseline-source \
+            --discovery publication/discovery.json \
+            --publication publication/publication.json \
+            --attestation publication/attestation.json \
+            --request-sha256 "${{ steps.request.outputs.request_sha256 }}" \
+            --output "candidate/${{ matrix.id }}.json" \
+            --provenance-output "candidate/${{ matrix.id }}.provenance.json"
+      - name: Upload verified Core source evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: scanner-publication-${{ matrix.id }}
+          path: candidate
+          if-no-files-found: error
+          retention-days: 7
+
+  assemble:
+    needs: consume
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out current protected Core main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check out exact ECC source for deterministic preview
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: samartomar/ECC
+          ref: 5caf398a91599029a176ca6d806409b00d1052c4
+          path: .baseline-ecc
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Download verified source evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: scanner-publication-*
+          path: candidate
+          merge-multiple: true
+      - name: Assemble and verify the deterministic Core candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run baseline:assemble -- \
+            --ecc-root .baseline-ecc \
+            --ecc-evidence candidate/ecc.json \
+            --superpowers-evidence candidate/superpowers.json \
+            --out candidate/vendor-lock.json \
+            --preview-out candidate/ecc-install-preview.json
+          cmp candidate/vendor-lock.json src/baseline-evidence/vendor-lock.json
+          cmp candidate/ecc-install-preview.json src/baseline-evidence/ecc-install-preview.json
+          npm run baseline:check
+      - name: Upload deterministic Core baseline candidate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: scanner-baseline-core-candidate
+          path: |
+            candidate/vendor-lock.json
+            candidate/ecc-install-preview.json
+            candidate/*.provenance.json
+          if-no-files-found: error
+          retention-days: 7

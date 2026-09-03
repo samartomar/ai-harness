@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   baselineCatalogById: vi.fn(),
   canonicalRequest: vi.fn(),
   consumeBatches: vi.fn(),
+  consumePublication: vi.fn(),
   createPublicKey: vi.fn(),
   createRequests: vi.fn(),
   execFileSync: vi.fn(),
@@ -35,6 +36,16 @@ vi.mock("../../src/baseline-evidence/ecc-preview-boundary.js", () => ({
 vi.mock("../../src/baseline-evidence/scanner-consumer.js", () => ({
   consumeVerifiedScannerBaselineBatches: mocks.consumeBatches,
   createCoreBaselineVetRequests: mocks.createRequests,
+}));
+vi.mock("../../src/baseline-evidence/scanner-publication.js", () => ({
+  SCANNER_BASELINE_PUBLICATION_MAX_AGE_SECONDS_V1: 604800,
+  SCANNER_BASELINE_PUBLICATION_PUBLISHER_V1: {
+    repository: "samartomar/aih-scan",
+    workflow: "samartomar/aih-scan/.github/workflows/baseline-publication.yml",
+    ref: "refs/heads/main",
+    commit: "92679b827d8346294b5fc557056fa838bdba709d",
+  },
+  consumeScannerBaselinePublicationV1: mocks.consumePublication,
 }));
 vi.mock("../../src/baseline-evidence/schema.js", () => ({
   BaselineSourceEvidenceSchema: { parse: mocks.sourceParse },
@@ -109,7 +120,7 @@ describe("baseline Scanner bridge CLI", () => {
 
   it("rejects ambiguous flags, unknown commands, and a checkout at the wrong commit", async () => {
     await expect(runScannerBridge([])).rejects.toThrow(
-      "baseline Scanner bridge: expected request, consume, or assemble",
+      "baseline Scanner bridge: expected request, consume, consume-publication, or assemble",
     );
     await expect(
       runScannerBridge(["request", "--catalog", "ecc", "--catalog", "ecc"]),
@@ -206,6 +217,64 @@ describe("baseline Scanner bridge CLI", () => {
     );
     expect(JSON.parse(readFileSync(output, "utf8"))).toMatchObject({ id: "ecc", pinnedSha: PIN });
     expect(stdout).toHaveBeenCalledWith(`ecc@${PIN}\n`);
+  });
+
+  it("consumes independently published bytes with the pinned Scanner publisher", async () => {
+    const source = makeDirectory("published-source");
+    const discovery = join(root, "discovery.json");
+    const publication = join(root, "publication.json");
+    const attestation = join(root, "attestation.json");
+    const output = join(root, "published-source-evidence.json");
+    const provenanceOutput = join(root, "published-provenance.json");
+    writeFileSync(discovery, '{"discovery":1}');
+    writeFileSync(publication, '{"publication":1}');
+    writeFileSync(attestation, '[{"attestation":1}]');
+    mocks.consumePublication.mockResolvedValue({
+      evidence: { id: "ecc", pinnedSha: PIN, components: [] },
+      provenance: {
+        authority: "none",
+        sourceCommit: "92679b827d8346294b5fc557056fa838bdba709d",
+      },
+    });
+
+    await runScannerBridge([
+      "consume-publication",
+      "--catalog",
+      "ecc",
+      "--source",
+      source,
+      "--discovery",
+      discovery,
+      "--publication",
+      publication,
+      "--attestation",
+      attestation,
+      "--request-sha256",
+      "d".repeat(64),
+      "--output",
+      output,
+      "--provenance-output",
+      provenanceOutput,
+    ]);
+
+    expect(mocks.consumePublication).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceRoot: source,
+        expectedRequestSha256: "d".repeat(64),
+        discoveryBytes: Buffer.from('{"discovery":1}'),
+        publicationBytes: Buffer.from('{"publication":1}'),
+        attestationResultBytes: Buffer.from('[{"attestation":1}]'),
+        maxAgeSeconds: 604800,
+        publisher: expect.objectContaining({
+          commit: "92679b827d8346294b5fc557056fa838bdba709d",
+        }),
+      }),
+    );
+    expect(JSON.parse(readFileSync(output, "utf8"))).toMatchObject({ id: "ecc" });
+    expect(JSON.parse(readFileSync(provenanceOutput, "utf8"))).toMatchObject({
+      authority: "none",
+    });
+    expect(stdout).toHaveBeenCalledWith(`consumed published ecc@${PIN}\n`);
   });
 
   it("fails closed for non-canonical or incomplete batch directories", async () => {

@@ -81,6 +81,7 @@
     "baseline:request": "tsx src/baseline-evidence/scanner-cli.ts request",
     "baseline:vet": "aih-scan baseline-vet",
     "baseline:consume": "tsx src/baseline-evidence/scanner-cli.ts consume",
+    "baseline:consume-publication": "tsx src/baseline-evidence/scanner-cli.ts consume-publication",
     "baseline:assemble": "tsx src/baseline-evidence/scanner-cli.ts assemble",
     "baseline:check": "npm run check:baseline-pins && npm run check:baseline-analyzers && npm run check:baseline-installable",
     "baseline:artifact": "tsx src/baseline-evidence/vendor-artifact.ts",
