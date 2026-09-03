@@ -6,26 +6,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   baselineCatalogById: vi.fn(),
   canonicalRequest: vi.fn(),
-  consumeBatches: vi.fn(),
   consumePublication: vi.fn(),
-  createPublicKey: vi.fn(),
   createRequests: vi.fn(),
   execFileSync: vi.fn(),
   generatePreview: vi.fn(),
   lockParse: vi.fn(),
-  parseEnvelope: vi.fn(),
-  parseRequest: vi.fn(),
-  readBundle: vi.fn(),
   sourceParse: vi.fn(),
 }));
 
 vi.mock("node:child_process", () => ({ execFileSync: mocks.execFileSync }));
-vi.mock("node:crypto", () => ({ createPublicKey: mocks.createPublicKey }));
 vi.mock("@aihq/scan", () => ({
   canonicalBaselineVetRequestV1Bytes: mocks.canonicalRequest,
-  parseBaselineVetAttestationEnvelopeV1Json: mocks.parseEnvelope,
-  parseBaselineVetRequestV1Json: mocks.parseRequest,
-  readBaselineVetBundleV1: mocks.readBundle,
 }));
 vi.mock("../../src/baseline-evidence/catalogs.js", () => ({
   baselineCatalogById: mocks.baselineCatalogById,
@@ -34,7 +25,6 @@ vi.mock("../../src/baseline-evidence/ecc-preview-boundary.js", () => ({
   generateAuthorizedEccInstallPreview: mocks.generatePreview,
 }));
 vi.mock("../../src/baseline-evidence/scanner-consumer.js", () => ({
-  consumeVerifiedScannerBaselineBatches: mocks.consumeBatches,
   createCoreBaselineVetRequests: mocks.createRequests,
 }));
 vi.mock("../../src/baseline-evidence/scanner-publication.js", () => ({
@@ -43,7 +33,7 @@ vi.mock("../../src/baseline-evidence/scanner-publication.js", () => ({
     repository: "samartomar/aih-scan",
     workflow: "samartomar/aih-scan/.github/workflows/baseline-publication.yml",
     ref: "refs/heads/main",
-    commit: "92679b827d8346294b5fc557056fa838bdba709d",
+    commit: "869806438a39a002763659a2708a1ae7fcc3431d",
   },
   consumeScannerBaselinePublicationV1: mocks.consumePublication,
 }));
@@ -55,7 +45,6 @@ vi.mock("../../src/baseline-evidence/schema.js", () => ({
 import { runScannerBridge } from "../../src/baseline-evidence/scanner-cli.js";
 
 const PIN = "a".repeat(40);
-const KEY_ID = `ed25519:${"b".repeat(64)}`;
 
 let root: string;
 let stdout: ReturnType<typeof vi.spyOn>;
@@ -80,12 +69,6 @@ beforeEach(() => {
   mocks.canonicalRequest.mockImplementation((value: unknown) =>
     Buffer.from(`${JSON.stringify(value)}\n`),
   );
-  mocks.parseRequest.mockImplementation((value: string) => ({ request: value.trim() }));
-  mocks.readBundle.mockImplementation(({ bundleDirectory }: { bundleDirectory: string }) => ({
-    bundleDirectory,
-  }));
-  mocks.parseEnvelope.mockImplementation((value: string) => ({ envelope: value.trim() }));
-  mocks.createPublicKey.mockReturnValue({ type: "public" });
   mocks.sourceParse.mockImplementation((value: unknown) => value);
   mocks.lockParse.mockImplementation((value: unknown) => value);
   mocks.generatePreview.mockReturnValue({ format: "aih-ecc-install-preview", version: 1 });
@@ -120,7 +103,10 @@ describe("baseline Scanner bridge CLI", () => {
 
   it("rejects ambiguous flags, unknown commands, and a checkout at the wrong commit", async () => {
     await expect(runScannerBridge([])).rejects.toThrow(
-      "baseline Scanner bridge: expected request, consume, consume-publication, or assemble",
+      "baseline Scanner bridge: expected request, consume-publication, or assemble",
+    );
+    await expect(runScannerBridge(["consume"])).rejects.toThrow(
+      "baseline Scanner bridge: expected request, consume-publication, or assemble",
     );
     await expect(
       runScannerBridge(["request", "--catalog", "ecc", "--catalog", "ecc"]),
@@ -144,81 +130,6 @@ describe("baseline Scanner bridge CLI", () => {
     ).rejects.toThrow(`ecc checkout is ${"c".repeat(40)}, expected ${PIN}`);
   });
 
-  it("consumes one canonical batch with explicit trust roots and replay state", async () => {
-    const source = makeDirectory("consume-source");
-    const requests = makeDirectory("consume-requests");
-    const bundles = makeDirectory("consume-bundles");
-    const evidence = makeDirectory("consume-evidence");
-    mkdirSync(join(bundles, "batch-001.bundle"));
-    writeFileSync(join(requests, "batch-001.request.json"), '{"request":1}\n');
-    writeFileSync(join(evidence, "batch-001.evidence.json"), '{"envelope":1}\n');
-    const expected = join(root, "expected.json");
-    const roots = join(root, "roots.json");
-    const seen = join(root, "seen.json");
-    const output = join(root, "source-evidence.json");
-    writeFileSync(
-      expected,
-      JSON.stringify({
-        now: "2026-09-01T00:00:00Z",
-        signer: { identity: "aih-vet", class: "organization", keyId: KEY_ID },
-      }),
-    );
-    writeFileSync(
-      roots,
-      JSON.stringify({
-        roots: [
-          {
-            identity: "aih-vet",
-            class: "organization",
-            keyId: KEY_ID,
-            publicKeySpkiBase64: "AQ==",
-          },
-        ],
-      }),
-    );
-    writeFileSync(
-      seen,
-      JSON.stringify({
-        digests: ["d".repeat(64)],
-        receipts: [{ requestSha256: "e".repeat(64), receiptSha256: "f".repeat(64) }],
-      }),
-    );
-    mocks.consumeBatches.mockResolvedValue({ id: "ecc", pinnedSha: PIN, components: [] });
-
-    await runScannerBridge([
-      "consume",
-      "--catalog",
-      "ecc",
-      "--source",
-      source,
-      "--requests",
-      requests,
-      "--bundles",
-      bundles,
-      "--evidence",
-      evidence,
-      "--expected",
-      expected,
-      "--roots",
-      roots,
-      "--seen",
-      seen,
-      "--output",
-      output,
-    ]);
-
-    expect(mocks.consumeBatches).toHaveBeenCalledWith(
-      expect.objectContaining({
-        sourceRoot: source,
-        seenEvidenceDigests: ["d".repeat(64)],
-        seenReceiptBindings: [{ requestSha256: "e".repeat(64), receiptSha256: "f".repeat(64) }],
-        roots: [expect.objectContaining({ identity: "aih-vet", publicKey: { type: "public" } })],
-      }),
-    );
-    expect(JSON.parse(readFileSync(output, "utf8"))).toMatchObject({ id: "ecc", pinnedSha: PIN });
-    expect(stdout).toHaveBeenCalledWith(`ecc@${PIN}\n`);
-  });
-
   it("consumes independently published bytes with the pinned Scanner publisher", async () => {
     const source = makeDirectory("published-source");
     const discovery = join(root, "discovery.json");
@@ -233,7 +144,7 @@ describe("baseline Scanner bridge CLI", () => {
       evidence: { id: "ecc", pinnedSha: PIN, components: [] },
       provenance: {
         authority: "none",
-        sourceCommit: "92679b827d8346294b5fc557056fa838bdba709d",
+        sourceCommit: "869806438a39a002763659a2708a1ae7fcc3431d",
       },
     });
 
@@ -266,7 +177,7 @@ describe("baseline Scanner bridge CLI", () => {
         attestationResultBytes: Buffer.from('[{"attestation":1}]'),
         maxAgeSeconds: 604800,
         publisher: expect.objectContaining({
-          commit: "92679b827d8346294b5fc557056fa838bdba709d",
+          commit: "869806438a39a002763659a2708a1ae7fcc3431d",
         }),
       }),
     );
@@ -275,51 +186,6 @@ describe("baseline Scanner bridge CLI", () => {
       authority: "none",
     });
     expect(stdout).toHaveBeenCalledWith(`consumed published ecc@${PIN}\n`);
-  });
-
-  it("fails closed for non-canonical or incomplete batch directories", async () => {
-    const source = makeDirectory("unsafe-source");
-    const requests = makeDirectory("unsafe-requests");
-    const bundles = makeDirectory("unsafe-bundles");
-    const evidence = makeDirectory("unsafe-evidence");
-    writeFileSync(join(requests, "request.json"), "{}\n");
-    mkdirSync(join(bundles, "batch-001.bundle"));
-    writeFileSync(join(evidence, "batch-001.evidence.json"), "{}\n");
-
-    await expect(
-      runScannerBridge([
-        "consume",
-        "--catalog",
-        "ecc",
-        "--source",
-        source,
-        "--requests",
-        requests,
-        "--bundles",
-        bundles,
-        "--evidence",
-        evidence,
-      ]),
-    ).rejects.toThrow("request batches must contain contiguous canonical batch names");
-
-    rmSync(join(requests, "request.json"));
-    writeFileSync(join(requests, "batch-001.request.json"), "{}\n");
-    writeFileSync(join(evidence, "batch-002.evidence.json"), "{}\n");
-    await expect(
-      runScannerBridge([
-        "consume",
-        "--catalog",
-        "ecc",
-        "--source",
-        source,
-        "--requests",
-        requests,
-        "--bundles",
-        bundles,
-        "--evidence",
-        evidence,
-      ]),
-    ).rejects.toThrow("request, bundle, and evidence batch counts differ");
   });
 
   it("assembles exact source evidence and the authorized ECC preview without overwriting", async () => {

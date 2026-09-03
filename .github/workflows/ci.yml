@@ -104,8 +104,8 @@ jobs:
         run: npm run check:packed-doc-links
       - name: Build
         run: npx tsup
-      - name: Check installable baseline
-        run: npm run check:baseline-installable
+      - name: Verify committed baseline evidence
+        run: npm run baseline:check
 
   release_prep_guard:
     name: release preparation allowlist

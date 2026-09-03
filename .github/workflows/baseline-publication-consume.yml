@@ -10,7 +10,7 @@ permissions:
 env:
   SCANNER_REPOSITORY: samartomar/aih-scan
   SCANNER_PUBLISHER_WORKFLOW: samartomar/aih-scan/.github/workflows/baseline-publication.yml
-  SCANNER_PUBLISHER_COMMIT: 92679b827d8346294b5fc557056fa838bdba709d
+  SCANNER_PUBLISHER_COMMIT: 869806438a39a002763659a2708a1ae7fcc3431d
 
 jobs:
   consume:

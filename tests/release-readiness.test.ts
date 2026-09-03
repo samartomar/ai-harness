@@ -171,6 +171,7 @@ describe("release readiness metadata", () => {
     const qualitySteps = JSON.stringify(ci.jobs?.quality?.steps);
     expect(qualitySteps).toContain("npm run docs:lint");
     expect(qualitySteps).toContain("npm run check:packed-doc-links");
+    expect(qualitySteps).toContain("npm run baseline:check");
     const qualityCheckout = ci.jobs?.quality?.steps?.find((step) =>
       step.uses?.startsWith("actions/checkout@"),
     );
@@ -204,10 +205,8 @@ describe("release readiness metadata", () => {
     expect(ci.jobs?.pr_gate?.needs).toEqual(["classify", "release_prep_guard", "required_verify"]);
     expect(JSON.stringify(ci.jobs?.pr_gate?.steps)).toContain("VERIFY_RESULT");
 
-    for (const path of [
-      ".github/workflows/codeql.yml",
-      ".github/workflows/baseline-evidence.yml",
-    ]) {
+    expect(existsSync(join(root, ".github", "workflows", "baseline-evidence.yml"))).toBe(false);
+    for (const path of [".github/workflows/codeql.yml"]) {
       const workflow = parseDocument(read(path)).toJSON() as {
         concurrency?: { group?: string; "cancel-in-progress"?: string };
       };
