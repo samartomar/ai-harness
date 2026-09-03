@@ -68,35 +68,40 @@ describe("ai-harness self-hosting boundary", () => {
     }
   });
 
-  it("shards the complete Windows suite behind the fail-closed required context", () => {
+  it("runs the complete fallback suite behind fail-closed protected contexts", () => {
     const ci = read(".github/workflows/ci.yml");
     const workflow = parseYaml(ci) as {
       jobs: {
-        verify: {
+        full_verify: {
+          if: string;
           env: Record<string, string>;
           strategy: { matrix: { os: string[] } };
           steps: Array<{ if?: string; run?: string }>;
         };
-        windows_tests: {
+        windows_full_tests: {
+          if: string;
           name: string;
           strategy: { matrix: { shard: number[] } };
           "runs-on": string;
           steps: Array<{ if?: string; run?: string }>;
         };
-        windows_verify: {
+        required_verify: {
           name: string;
           if: string;
-          needs: string;
+          needs: string[];
+          strategy: { matrix: { os: string[] } };
           steps: Array<{ env?: Record<string, string>; run?: string }>;
         };
       };
     };
-    const windows = workflow.jobs.windows_tests;
-    const aggregate = workflow.jobs.windows_verify;
+    const full = workflow.jobs.full_verify;
+    const windows = workflow.jobs.windows_full_tests;
+    const aggregate = workflow.jobs.required_verify;
 
-    expect(workflow.jobs.verify.strategy.matrix.os).toEqual(["ubuntu-latest", "macos-latest"]);
-    expect(workflow.jobs.verify.env.NODE_OPTIONS).toBe("--max-old-space-size=4096");
-    expect(workflow.jobs.verify.steps.map((step) => step.run)).toEqual(
+    expect(full.if).toContain("needs.classify.outputs.full_suite == 'true'");
+    expect(full.strategy.matrix.os).toEqual(["ubuntu-latest", "macos-latest"]);
+    expect(full.env.NODE_OPTIONS).toBe("--max-old-space-size=4096");
+    expect(full.steps.map((step) => step.run)).toEqual(
       expect.arrayContaining([
         "npx vitest run --coverage --maxWorkers=2 --testTimeout=15000",
         "npx vitest run --shard=1/4",
@@ -106,24 +111,27 @@ describe("ai-harness self-hosting boundary", () => {
       ]),
     );
     expect(windows.name).toBe(`windows test (${githubExpression("matrix.shard")}/2)`);
+    expect(windows.if).toContain("needs.classify.outputs.full_suite == 'true'");
     expect(windows.strategy.matrix.shard).toEqual([1, 2]);
     expect(windows["runs-on"]).toBe("windows-latest");
     expect(windows.steps.map((step) => step.run)).toContain(
       `npx vitest run --testTimeout=15000 --shard=${githubExpression("matrix.shard")}/2`,
     );
-    expect(windows.steps.filter((step) => step.if === "matrix.shard == 1")).toHaveLength(5);
-
-    expect(aggregate.name).toBe("verify (windows-latest)");
+    expect(aggregate.name).toBe(`verify (${githubExpression("matrix.os")})`);
     expect(aggregate.if).toBe(githubExpression("always()"));
-    expect(aggregate.needs).toBe("windows_tests");
-    expect(aggregate.steps[0]?.env?.WINDOWS_SHARDS_RESULT).toBe(
-      githubExpression("needs.windows_tests.result"),
-    );
-    expect(aggregate.steps[0]?.run).toContain('if [ "$WINDOWS_SHARDS_RESULT" != "success" ]; then');
+    expect(aggregate.strategy.matrix.os).toEqual([
+      "ubuntu-latest",
+      "macos-latest",
+      "windows-latest",
+    ]);
+    expect(aggregate.needs).toContain("windows_full_tests");
+    const gate = aggregate.steps.find((step) => step.run?.includes("require-ci-lane.mjs"));
+    expect(gate?.env?.WINDOWS_RESULT).toBe(githubExpression("needs.windows_full_tests.result"));
+    expect(gate?.run).toBe("node .github/scripts/require-ci-lane.mjs");
     for (const [name, job] of Object.entries({
-      verify: workflow.jobs.verify,
-      windows_tests: windows,
-      windows_verify: aggregate,
+      full_verify: full,
+      windows_full_tests: windows,
+      required_verify: aggregate,
     })) {
       expect(JSON.stringify(job), name).not.toContain("continue-on-error");
     }

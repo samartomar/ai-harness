@@ -14,7 +14,6 @@ permissions:
 
 jobs:
   classify:
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -35,11 +34,11 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci --ignore-scripts
-      - name: Classify changed paths and emit shadow receipt
+      - name: Classify changed paths and emit impact receipt
         id: impact
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: npm run ci:classify -- --base "$BASE_SHA" --head "$HEAD_SHA" --output ci-impact.json
       - name: Upload CI impact receipt
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -49,19 +48,17 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  # Shadow-only until selector replay and live evidence are reviewed. The full
-  # existing verify jobs remain authoritative and required by branch protection.
-  shadow_selected_tests:
-    name: shadow selected (${{ matrix.os }})
-    if: github.event_name == 'pull_request'
+  selected_tests:
+    name: selected tests (${{ matrix.os }})
+    if: ${{ needs.classify.outputs.full_suite != 'true' }}
     needs: classify
-    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
         os: ${{ fromJSON(needs.classify.outputs.operating_systems_json) }}
     runs-on: ${{ matrix.os }}
     env:
+      NODE_OPTIONS: --max-old-space-size=4096
       SELECTED_TESTS_JSON: ${{ needs.classify.outputs.selected_tests_json }}
       FULL_SUITE: ${{ needs.classify.outputs.full_suite }}
     steps:
@@ -73,8 +70,41 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci --ignore-scripts
-      - name: Run the selected shadow suite
+      - name: Run the authoritative selected suite
         run: npm run --silent ci:run-selected
+
+  quality:
+    name: static quality and build
+    runs-on: ubuntu-latest
+    env:
+      NODE_OPTIONS: --max-old-space-size=4096
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Tracked artifact guard
+        run: npm run check:artifacts
+      - name: ECC installer package check
+        run: npm run check:ecc-installer
+      - name: Self-hosting canon gate
+        run: npm run check:self-hosting-canon
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Lint and format check
+        run: npx biome ci src tests
+      - name: Documentation lint
+        run: npm run docs:lint
+      - name: Packed documentation links
+        run: npm run check:packed-doc-links
+      - name: Build
+        run: npx tsup
+      - name: Check installable baseline
+        run: npm run check:baseline-installable
 
   release_prep_guard:
     name: release preparation allowlist
@@ -123,11 +153,10 @@ jobs:
           NODE
           npm run release:governance -- release-prep "$BASE_SHA" "$HEAD_SHA"
 
-  verify:
-    # Ubuntu owns coverage and OS-independent gates; macOS keeps its complete
-    # platform suite in four sequential processes so DOM-heavy Workbench files
-    # release their heap between shards. Windows is sharded below without
-    # dropping any test files.
+  full_verify:
+    name: full test (${{ matrix.os }})
+    if: ${{ needs.classify.outputs.full_suite == 'true' }}
+    needs: classify
     strategy:
       fail-fast: false
       matrix:
@@ -143,22 +172,7 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-      - run: npm ci
-      - name: Tracked artifact guard
-        run: npm run check:artifacts
-      - name: ECC installer package check
-        run: npm run check:ecc-installer
-      # Self-hosting boundary: compare the manually maintained shared block,
-      # bootloaders, contract mirror, bounded tracked-file snapshot, package scripts, and
-      # CI wiring without invoking the AIH CLI against its own checkout.
-      - name: Self-hosting canon gate
-        if: matrix.os == 'ubuntu-latest'
-        run: npm run check:self-hosting-canon
-      - name: Typecheck
-        run: npx tsc --noEmit
-      - name: Lint & format check
-        if: matrix.os == 'ubuntu-latest' # biome is OS-independent — run once
-        run: npx biome ci src tests
+      - run: npm ci --ignore-scripts
       # Enforce the coverage thresholds on one OS (deterministic line/branch hits);
       # the other OSes run the suite to validate cross-platform behavior. Keep
       # two workers here: coverage plus the complete Workbench catalog otherwise
@@ -187,13 +201,11 @@ jobs:
       - name: Test macOS shard 4/4
         if: matrix.os == 'macos-latest'
         run: npx vitest run --shard=4/4
-      - name: Build
-        run: npx tsup
-      - name: Check installable baseline
-        run: npm run check:baseline-installable
 
-  windows_tests:
+  windows_full_tests:
     name: windows test (${{ matrix.shard }}/2)
+    if: ${{ needs.classify.outputs.full_suite == 'true' }}
+    needs: classify
     strategy:
       fail-fast: false
       matrix:
@@ -205,66 +217,60 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-      - run: npm ci
-      # Run the non-test Windows checks once. Both shards still execute their
-      # deterministic half of the complete Vitest file set.
-      - name: Tracked artifact guard
-        if: matrix.shard == 1
-        run: npm run check:artifacts
-      - name: ECC installer package check
-        if: matrix.shard == 1
-        run: npm run check:ecc-installer
-      - name: Typecheck
-        if: matrix.shard == 1
-        run: npx tsc --noEmit
+      - run: npm ci --ignore-scripts
       - name: Test Windows shard
         # Hosted Windows load can push filesystem-heavy cases past Vitest's
         # 5-second default without changing their assertions or file coverage.
         run: npx vitest run --testTimeout=15000 --shard=${{ matrix.shard }}/2
-      - name: Build
-        if: matrix.shard == 1
-        run: npx tsup
-      - name: Check installable baseline
-        if: matrix.shard == 1
-        run: npm run check:baseline-installable
 
-  # Branch protection requires this exact context. It is deliberately a
-  # fail-closed fan-in: a failed, cancelled, skipped, or missing matrix result
-  # cannot be converted into a green Windows verification result.
-  windows_verify:
-    name: verify (windows-latest)
+  # Branch protection keeps these exact context names. Every context fails
+  # closed over the selected lane or the complete fallback matrix, so a failed,
+  # cancelled, skipped, or missing dependency cannot be converted to green.
+  required_verify:
+    name: verify (${{ matrix.os }})
     if: ${{ always() }}
-    needs: windows_tests
+    needs:
+      - classify
+      - release_prep_guard
+      - quality
+      - selected_tests
+      - full_verify
+      - windows_full_tests
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ubuntu-latest
     steps:
-      - name: Require every Windows shard
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Require the classified lane
         env:
-          WINDOWS_SHARDS_RESULT: ${{ needs.windows_tests.result }}
-        run: |
-          if [ "$WINDOWS_SHARDS_RESULT" != "success" ]; then
-            echo "Windows shards did not all succeed: $WINDOWS_SHARDS_RESULT" >&2
-            exit 1
-          fi
+          EVENT_NAME: ${{ github.event_name }}
+          FULL_SUITE: ${{ needs.classify.outputs.full_suite }}
+          CLASSIFY_RESULT: ${{ needs.classify.result }}
+          RELEASE_PREP_RESULT: ${{ needs.release_prep_guard.result }}
+          QUALITY_RESULT: ${{ needs.quality.result }}
+          SELECTED_RESULT: ${{ needs.selected_tests.result }}
+          FULL_RESULT: ${{ needs.full_verify.result }}
+          WINDOWS_RESULT: ${{ needs.windows_full_tests.result }}
+        run: node .github/scripts/require-ci-lane.mjs
 
-  # Stable future branch-protection context. While selection is in shadow mode,
-  # this fan-in requires every authoritative job but deliberately excludes the
-  # advisory selected replay. Skipped, cancelled, failed, or missing required
-  # dependencies fail.
   pr_gate:
     name: pr-gate
     if: ${{ always() && github.event_name == 'pull_request' }}
-    needs: [classify, release_prep_guard, verify, windows_verify]
+    needs: [classify, release_prep_guard, required_verify]
     runs-on: ubuntu-latest
     steps:
       - name: Require all authoritative jobs
         env:
           CLASSIFY_RESULT: ${{ needs.classify.result }}
           RELEASE_PREP_RESULT: ${{ needs.release_prep_guard.result }}
-          VERIFY_RESULT: ${{ needs.verify.result }}
-          WINDOWS_RESULT: ${{ needs.windows_verify.result }}
+          VERIFY_RESULT: ${{ needs.required_verify.result }}
         run: |
           set -euo pipefail
-          for result in "$CLASSIFY_RESULT" "$RELEASE_PREP_RESULT" "$VERIFY_RESULT" "$WINDOWS_RESULT"; do
+          for result in "$CLASSIFY_RESULT" "$RELEASE_PREP_RESULT" "$VERIFY_RESULT"; do
             if [ "$result" != "success" ]; then
               echo "::error::required PR lane result is $result"
               exit 1

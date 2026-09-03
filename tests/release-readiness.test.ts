@@ -112,17 +112,19 @@ describe("release readiness metadata", () => {
     );
   });
 
-  it("launches selected shadow tests through Node on every runner", () => {
+  it("launches authoritative selected tests through Node on every selected runner", () => {
     const workflow = read(".github/workflows/ci.yml");
     const runner = read(".github/scripts/run-selected-tests.mjs");
     const pkg = JSON.parse(read("package.json")) as { scripts: Record<string, string> };
-    const shadowStart = workflow.indexOf("  shadow_selected_tests:\n");
-    const guardStart = workflow.indexOf("  release_prep_guard:\n", shadowStart);
-    const shadow = workflow.slice(shadowStart, guardStart);
+    const selectedStart = workflow.indexOf("  selected_tests:\n");
+    const guardStart = workflow.indexOf("  release_prep_guard:\n", selectedStart);
+    const selected = workflow.slice(selectedStart, guardStart);
 
-    expect(shadow).toContain("run: npm run --silent ci:run-selected");
-    expect(shadow).not.toContain("shell: bash");
-    expect(shadow).not.toContain('"npx.cmd"');
+    expect(selected).toContain("run: npm run --silent ci:run-selected");
+    expect(selected).toContain("needs.classify.outputs.full_suite != 'true'");
+    expect(selected).not.toContain("continue-on-error");
+    expect(selected).not.toContain("shell: bash");
+    expect(selected).not.toContain('"npx.cmd"');
     expect(pkg.scripts["ci:run-selected"]).toBe("node .github/scripts/run-selected-tests.mjs");
     expect(runner).toContain("const executable = process.execPath;");
     expect(runner).toContain('resolve("node_modules/vitest/vitest.mjs")');
@@ -131,11 +133,25 @@ describe("release readiness metadata", () => {
     expect(runner).toContain("if (result.error) throw result.error;");
   });
 
-  it("keeps shadow replay advisory and cancels superseded pull-request workflows", () => {
+  it("graduates selected replay behind fail-closed protected contexts", () => {
     const ci = parseDocument(read(".github/workflows/ci.yml")).toJSON() as {
       concurrency?: { group?: string; "cancel-in-progress"?: string };
       jobs?: {
-        shadow_selected_tests?: { "continue-on-error"?: boolean };
+        selected_tests?: {
+          "continue-on-error"?: boolean;
+          needs?: string;
+          env?: Record<string, string>;
+        };
+        full_verify?: { if?: string };
+        windows_full_tests?: { if?: string };
+        quality?: { steps?: WorkflowStep[] };
+        required_verify?: {
+          name?: string;
+          if?: string;
+          needs?: string[];
+          strategy?: { matrix?: { os?: string[] } };
+          steps?: WorkflowStep[];
+        };
         pr_gate?: { needs?: string[]; steps?: WorkflowStep[] };
       };
     };
@@ -145,14 +161,44 @@ describe("release readiness metadata", () => {
     };
 
     expect(ci.concurrency).toEqual(expectedConcurrency);
-    expect(ci.jobs?.shadow_selected_tests?.["continue-on-error"]).toBe(true);
-    expect(ci.jobs?.pr_gate?.needs).toEqual([
+    expect(ci.jobs?.selected_tests?.["continue-on-error"]).toBeUndefined();
+    expect(ci.jobs?.selected_tests?.needs).toBe("classify");
+    expect(ci.jobs?.selected_tests?.env?.NODE_OPTIONS).toBe("--max-old-space-size=4096");
+    expect(ci.jobs?.full_verify?.if).toContain("needs.classify.outputs.full_suite == 'true'");
+    expect(ci.jobs?.windows_full_tests?.if).toContain(
+      "needs.classify.outputs.full_suite == 'true'",
+    );
+    const qualitySteps = JSON.stringify(ci.jobs?.quality?.steps);
+    expect(qualitySteps).toContain("npm run docs:lint");
+    expect(qualitySteps).toContain("npm run check:packed-doc-links");
+    expect(ci.jobs?.required_verify?.name).toBe(`verify (${githubExpression("matrix.os")})`);
+    expect(ci.jobs?.required_verify?.if).toBe(githubExpression("always()"));
+    expect(ci.jobs?.required_verify?.strategy?.matrix?.os).toEqual([
+      "ubuntu-latest",
+      "macos-latest",
+      "windows-latest",
+    ]);
+    expect(ci.jobs?.required_verify?.needs).toEqual([
       "classify",
       "release_prep_guard",
-      "verify",
-      "windows_verify",
+      "quality",
+      "selected_tests",
+      "full_verify",
+      "windows_full_tests",
     ]);
-    expect(JSON.stringify(ci.jobs?.pr_gate?.steps)).not.toContain("SHADOW_RESULT");
+    const requiredSteps = JSON.stringify(ci.jobs?.required_verify?.steps);
+    expect(requiredSteps).toContain("node .github/scripts/require-ci-lane.mjs");
+    for (const result of [
+      "CLASSIFY_RESULT",
+      "QUALITY_RESULT",
+      "SELECTED_RESULT",
+      "FULL_RESULT",
+      "WINDOWS_RESULT",
+    ]) {
+      expect(requiredSteps).toContain(result);
+    }
+    expect(ci.jobs?.pr_gate?.needs).toEqual(["classify", "release_prep_guard", "required_verify"]);
+    expect(JSON.stringify(ci.jobs?.pr_gate?.steps)).toContain("VERIFY_RESULT");
 
     for (const path of [
       ".github/workflows/codeql.yml",

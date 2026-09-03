@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,12 +10,15 @@ import {
 } from "../../src/internals/ci-impact.js";
 import { runCiImpactCommand } from "../../src/internals/ci-impact-command.js";
 import { fakeRunner } from "../../src/internals/proc.js";
+import { WORKBENCH_TEST_PATTERNS } from "../../vitest.workbench.config.js";
 
 const baseSha = "a".repeat(40);
 const headSha = "b".repeat(40);
 const testFiles = [
   "tests/docs/readme-assets.test.ts",
   "tests/org-policy/catalog.test.ts",
+  "tests/org-policy/generate.test.ts",
+  "tests/org-policy/studio-model.test.ts",
   "tests/org-policy/studio-surface-invariants.test.ts",
   "tests/release-readiness.test.ts",
   "tests/workspace/manifest.test.ts",
@@ -75,6 +79,8 @@ describe("CI impact classifier", () => {
       operatingSystems: ["ubuntu-latest", "macos-latest", "windows-latest"],
       selectedTests: [
         "tests/org-policy/catalog.test.ts",
+        "tests/org-policy/generate.test.ts",
+        "tests/org-policy/studio-model.test.ts",
         "tests/org-policy/studio-surface-invariants.test.ts",
       ],
     });
@@ -120,6 +126,55 @@ describe("CI impact classifier", () => {
     expect(receipt.selectedTests).toEqual(["tests/docs/readme-assets.test.ts"]);
   });
 
+  it("selects only the complete owned Workbench test lane for Workbench source", () => {
+    const receipt = classifyCiImpact({
+      baseSha,
+      headSha,
+      changedPaths: ["src/org-policy/studio-template.ts"],
+      testFiles,
+    });
+
+    expect(receipt).toMatchObject({
+      riskClass: "cross-platform",
+      testLane: "workbench",
+      fullSuite: false,
+      selectedTests: [
+        "tests/org-policy/generate.test.ts",
+        "tests/org-policy/studio-model.test.ts",
+        "tests/org-policy/studio-surface-invariants.test.ts",
+      ],
+    });
+    expect(receipt.selectedTests).not.toContain("tests/org-policy/catalog.test.ts");
+  });
+
+  it("keeps selector ownership identical to the 37-file Workbench project", () => {
+    const repositoryTests = execFileSync("git", ["ls-files", "--", "tests"], {
+      encoding: "utf8",
+    })
+      .split(/\r?\n/u)
+      .filter((path) => path.endsWith(".test.ts"));
+    const expectedWorkbenchTests = repositoryTests
+      .filter((path) =>
+        WORKBENCH_TEST_PATTERNS.some((pattern) => {
+          const wildcard = pattern.indexOf("*");
+          return wildcard < 0
+            ? path === pattern
+            : path.startsWith(pattern.slice(0, wildcard)) &&
+                path.endsWith(pattern.slice(wildcard + 1));
+        }),
+      )
+      .sort((left, right) => left.localeCompare(right));
+    const receipt = classifyCiImpact({
+      baseSha,
+      headSha,
+      changedPaths: ["src/org-policy/studio-template.ts"],
+      testFiles: repositoryTests,
+    });
+
+    expect(expectedWorkbenchTests).toHaveLength(37);
+    expect(receipt.selectedTests).toEqual(expectedWorkbenchTests);
+  });
+
   it.each([
     ["unknown path", ["new-surface/thing.ts"], "unknown-path:new-surface/thing.ts"],
     ["empty change set", [], "empty-change-set"],
@@ -133,6 +188,8 @@ describe("CI impact classifier", () => {
       "global-input:tests/fixtures/ecc-profile/install.json",
     ],
     ["selector", ["src/internals/ci-impact.ts"], "selector-self-change"],
+    ["selected-test launcher", [".github/scripts/run-selected-tests.mjs"], "selector-self-change"],
+    ["lane gate", [".github/scripts/require-ci-lane.mjs"], "selector-self-change"],
   ])("falls back to the complete matrix for %s", (_name, changedPaths, reason) => {
     const receipt = classifyCiImpact({ baseSha, headSha, changedPaths, testFiles });
 
@@ -158,6 +215,7 @@ describe("CI impact classifier", () => {
 
   it.each([
     ["Workbench source", ["src/org-policy/studio-template.ts"], "workbench"],
+    ["future Workbench source", ["src/org-policy/studio-new-surface.ts"], "workbench"],
     ["Workbench entry point", ["src/org-policy/generate.ts"], "workbench"],
     ["Workbench test", ["tests/org-policy/studio-surface-invariants.test.ts"], "workbench"],
     ["Core source", ["src/workspace/manifest.ts"], "core"],
