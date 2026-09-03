@@ -111,6 +111,18 @@ describe("release readiness metadata", () => {
     );
   });
 
+  it("launches selected shadow tests through Node on every runner", () => {
+    const workflow = read(".github/workflows/ci.yml");
+    const shadowStart = workflow.indexOf("  shadow_selected_tests:\n");
+    const guardStart = workflow.indexOf("  release_prep_guard:\n", shadowStart);
+    const shadow = workflow.slice(shadowStart, guardStart);
+
+    expect(shadow).toContain("const executable = process.execPath;");
+    expect(shadow).toContain('resolve("node_modules/vitest/vitest.mjs")');
+    expect(shadow).toContain("if (result.error) throw result.error;");
+    expect(shadow).not.toContain('"npx.cmd"');
+  });
+
   it("binds every release tracker lookup to the executing repository", () => {
     const release = read(".github/workflows/release.yml");
     const acceptance = read(".github/workflows/installed-acceptance.yml");

@@ -72,6 +72,7 @@ jobs:
         run: |
           node --input-type=module <<'NODE'
           import { spawnSync } from "node:child_process";
+          import { resolve } from "node:path";
 
           if (process.env.FULL_SUITE === "true") {
             console.log("Classifier selected the complete suite; authoritative matrix owns it.");
@@ -85,11 +86,13 @@ jobs:
             console.log("No Vitest file selected; static and documentation gates remain authoritative.");
             process.exit(0);
           }
-          const executable = process.platform === "win32" ? "npx.cmd" : "npx";
-          const result = spawnSync(executable, ["--no-install", "vitest", "run", ...tests], {
+          const executable = process.execPath;
+          const vitestEntrypoint = resolve("node_modules/vitest/vitest.mjs");
+          const result = spawnSync(executable, [vitestEntrypoint, "run", ...tests], {
             encoding: "utf8",
             stdio: "inherit",
           });
+          if (result.error) throw result.error;
           process.exit(result.status ?? 1);
           NODE
 
