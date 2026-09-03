@@ -1,4 +1,4 @@
-export const CI_SELECTOR_VERSION = "1.2.0";
+export const CI_SELECTOR_VERSION = "1.3.0";
 
 export type CiRiskClass = "docs" | "focused" | "cross-platform" | "full";
 export type CiTestLane = "docs" | "core" | "workbench" | "both" | "full";
@@ -66,6 +66,8 @@ const GLOBAL_FILES = new Set([
 const GLOBAL_PREFIXES = [".github/workflows/", "schemas/", "tests/fixtures/", "tools/"];
 
 const SELECTOR_PATHS = new Set([
+  ".github/scripts/require-ci-lane.mjs",
+  ".github/scripts/run-selected-tests.mjs",
   ".githooks/pre-commit",
   "src/internals/ci-impact-command.ts",
   "src/internals/ci-impact.ts",
@@ -101,7 +103,9 @@ const WORKBENCH_TEST_PATHS = new Set([
   "tests/org-policy/ecc-hook-controls.test.ts",
   "tests/org-policy/ecc-mcp-approval.test.ts",
   "tests/org-policy/generate.test.ts",
+  "tests/org-policy/packed-workbench-cleanup.test.ts",
   "tests/org-policy/supported-cli-subsets.test.ts",
+  "tests/org-policy/ui-server.test.ts",
 ]);
 
 const CROSS_PLATFORM_DOMAINS = new Set([
@@ -178,12 +182,19 @@ function isWorkbenchTest(path: string): boolean {
   );
 }
 
+function isWorkbenchSource(path: string): boolean {
+  return (
+    WORKBENCH_SOURCE_PATHS.has(path) ||
+    (path.startsWith("src/org-policy/studio-") && path.endsWith(".ts"))
+  );
+}
+
 function scopedTestLane(changedPaths: readonly string[]): Exclude<CiTestLane, "docs" | "full"> {
   let core = false;
   let workbench = false;
   for (const path of changedPaths) {
     if (isDocumentation(path)) continue;
-    if (WORKBENCH_SOURCE_PATHS.has(path) || isWorkbenchTest(path)) {
+    if (isWorkbenchSource(path) || isWorkbenchTest(path)) {
       workbench = true;
     } else if (path.startsWith("src/org-policy/")) {
       // Conservatively treat every non-Workbench org-policy source as shared:
@@ -264,7 +275,10 @@ export function classifyCiImpact(input: CiImpactInput): CiImpactReceipt {
     if (sourceDomain !== undefined) {
       matchedRules.push(`source-domain:${sourceDomain}`);
       selectedDomains.add(sourceDomain);
-      for (const test of testsForDomain(sourceDomain, testFiles)) selectedTests.add(test);
+      const ownedTests = isWorkbenchSource(path)
+        ? testFiles.filter(isWorkbenchTest)
+        : testsForDomain(sourceDomain, testFiles);
+      for (const test of ownedTests) selectedTests.add(test);
       if (CROSS_PLATFORM_DOMAINS.has(sourceDomain)) crossPlatform = true;
       continue;
     }

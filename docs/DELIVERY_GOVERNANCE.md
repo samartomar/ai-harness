@@ -142,10 +142,16 @@ required, or security-urgent.
 
 ## Selector graduation evidence
 
-The pull-request selector starts in shadow mode. It may replace a complete required test context only
-after representative replay demonstrates zero missed failures, deterministic receipts, bounded
-runtime reduction, and reliable full-suite fallback for unknown and high-risk changes. Review also
-compares false negatives, fallback rate, selected-test precision, operating-system coverage, and time
-to useful feedback. No numeric target or time window is invented in advance; owners record the
-observed pilot evidence and the explicit graduation decision. Until then, branch protection continues
-to require the complete existing checks.
+The pull-request selector graduated from shadow mode after the deterministic replay and live pilot
+recorded in `docs/testing/issue-955-focused-ci-graduation.tdd.md`. The protected context names did not
+change. Each is now a fail-closed fan-in over one of two mutually exclusive paths: a bounded selected
+lane on the receipt's operating systems, or the complete three-OS suite for global, unknown,
+selector-control, schema, fixture, dependency, and workflow inputs. Static analysis, typecheck, lint,
+build, artifact, installer, self-hosting, and baseline-installability checks remain required on every
+change.
+
+The complete coverage ratchet remains required for every full-fallback change and in the five-way
+nightly safety matrix. Bounded changes run every test selected by their owned domain; Workbench source
+changes select the complete 37-file Workbench project rather than unrelated policy tests. A protected
+main push classifies the merged delta again and emits the same exact required contexts for release
+qualification without automatically expanding a bounded change to the complete suite.
