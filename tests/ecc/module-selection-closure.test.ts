@@ -10,6 +10,7 @@ import {
   eccComponentSourcePaths,
   eccModuleSelectableMemberIds,
 } from "../../src/ecc/materialize.js";
+import { eccMandatoryRequirementIds } from "../../src/ecc/selection-closure.js";
 import { defaultStudioPolicy } from "../../src/org-policy/studio-model.js";
 
 const catalog = baselineCatalogById("ecc");
@@ -169,6 +170,20 @@ function withTypescriptLanguageAndCore(includeRider = true) {
 }
 
 describe("governed ECC module selection closure", () => {
+  it("keeps lower-level synthetic identifiers total while the governed boundary refuses them", () => {
+    expect(eccMandatoryRequirementIds("synthetic:future-component")).toEqual([]);
+
+    const policy = policyWithBareModule("agents-core");
+    const item = policy.governance?.externalSelections[0]?.items[0];
+    if (item === undefined) throw new Error("missing module:agents-core");
+    item.id = "synthetic:future-component";
+    item.kind = "capability";
+
+    expect(() => governedEccComponentIds(policy, catalog)).toThrow(
+      /policy selects component.*synthetic:future-component/i,
+    );
+  });
+
   it("refuses a module selection whose pinned dependency closure is incomplete", () => {
     expect(() => governedEccComponentIds(policyWithModules(["machine-learning"]), catalog)).toThrow(
       /incomplete.*dependency|requires.*module:/i,
