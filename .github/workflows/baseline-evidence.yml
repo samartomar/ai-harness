@@ -83,7 +83,7 @@ jobs:
       - name: Set up fixed uv runtime
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
-          version: "0.12.7"
+          version: "0.12.8"
       - run: npm ci
       - name: Bind Scanner's fixed analyzer runtime paths
         shell: bash

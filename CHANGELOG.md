@@ -8,6 +8,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Advance the exact uv toolchain from `0.12.7` to `0.12.8` across both scanner workflows and the
+  controlled SkillSpector build after all five committed locks and requirements exports remained
+  unchanged, adopting the upstream required-hash authorization fix without changing the locked
+  dependency graphs.
 - Decoupled fast staged and pull-request feedback from release evidence: CI now emits a deterministic,
   fail-closed impact receipt in shadow mode while the complete required checks remain authoritative.
 - Split annotated-tag candidate qualification, artifact-bound owner-authorized npm publication,
