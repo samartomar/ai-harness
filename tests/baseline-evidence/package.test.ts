@@ -57,6 +57,14 @@ describe("baseline evidence release payload", () => {
     expect(scripts.verify).toContain("check:baseline-analyzers");
   });
 
+  it("does not retain a second baseline refresh executor inside Core", () => {
+    expect(existsSync(join(repo, "src", "baseline-evidence", "generate.ts"))).toBe(false);
+    expect(existsSync(join(repo, "src", "baseline-evidence", "shard.ts"))).toBe(false);
+    expect(existsSync(join(repo, "src", "baseline-evidence", "ecc-preflight-receipt.ts"))).toBe(
+      false,
+    );
+  });
+
   it("runs a non-publishing vet-once workflow at both canonical source pins", () => {
     const path = join(repo, ".github", "workflows", "baseline-evidence.yml");
     expect(existsSync(path)).toBe(true);

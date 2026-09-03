@@ -41,6 +41,11 @@ covered by the release checksum/provenance/signing envelope. A user seat with an
 exact vendor-covered component verifies the source bytes and lock entry; it does
 not need to install or rerun the analyzers.
 
+Refresh execution belongs to `@aihq/scan`: Core authors bounded requests from its
+exact catalogs, Scanner runs and signs the analyzers, and Core verifies and
+interprets those results before assembling the lock. Core retains policy and
+authorization; it does not carry a second refresh or sharding implementation.
+
 An organization can authorize a newer exact pin or a net-new component with a
 GitHub-attested evidence bundle. The org artifact uses the same component schema
 and vetter. aih verifies `SHA256SUMS`, verifies the GitHub attestation against the

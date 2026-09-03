@@ -23,12 +23,6 @@ export interface BaselineComponentReuseDecision {
   readonly priorEntry?: BaselineComponentEvidence;
 }
 
-export interface ReuseTally {
-  readonly total: number;
-  readonly reused: number;
-  readonly rescanned: number;
-}
-
 export interface ComponentReuseRecord {
   readonly componentId: string;
   readonly decision: BaselineComponentReuseDecision;
@@ -39,10 +33,9 @@ export interface ComponentReuseRecord {
 
 /**
  * Find the prior evidence for one catalog source, matched by (id, owner, repo) —
- * deliberately NOT `pinnedSha` (Decision 4). `generate.ts` always vets a source at
- * its catalog's pinned SHA, so a real content change can only arrive via a pin
- * rebind; keying reuse on the pin would make every rebind reuse nothing and fail
- * acceptance bullet 2.
+ * deliberately NOT `pinnedSha` (Decision 4). The vetter always scans a source at
+ * its catalog's pinned SHA, so a real content change can arrive via a pin rebind;
+ * keying reuse on the pin would make every rebind reuse nothing.
  */
 export function findPriorSource(
   priorLock: Pick<BaselineEvidenceLock, "sources"> | undefined,
@@ -118,9 +111,8 @@ export function decideComponentReuse(input: {
 
 /**
  * Reconstruct a reused receipt in canonical schema field order so a fully-reused
- * lock serializes byte-identical to the prior one — `generate.ts`'s `--check`
- * byte-diff and the migration verdict-stability gate both depend on this. Never
- * fabricates: every field is copied verbatim from `prior`.
+ * result serializes byte-identical to the prior one. Never fabricates: every field
+ * is copied verbatim from `prior`.
  */
 export function spliceReusedComponent(prior: BaselineComponentEvidence): BaselineComponentEvidence {
   return {
@@ -137,34 +129,6 @@ export function spliceReusedComponent(prior: BaselineComponentEvidence): Baselin
       ...(finding.fingerprints !== undefined ? { fingerprints: [...finding.fingerprints] } : {}),
     })),
   };
-}
-
-/**
- * Post-hoc reuse tally for a whole source, derived from the FINAL evidence rather
- * than from live per-component decisions — this is what lets `generate.ts` report
- * a cross-catalog TOTAL line without `vetBaselineCatalog` widening its return type.
- * Sound because reuse always splices the prior entry verbatim: whenever a rescan
- * happens (content or analyzer identity changed), the fresh receipt provably
- * differs from the prior one in the very field that changed, so byte-equality to
- * the prior entry is exactly equivalent to "this component was reused."
- */
-export function tallyReuse(
-  priorSource: BaselineSourceEvidence | undefined,
-  evidence: BaselineSourceEvidence,
-  full: boolean,
-): ReuseTally {
-  const total = evidence.components.length;
-  if (full || priorSource === undefined) return { total, reused: 0, rescanned: total };
-  const priorById = new Map(priorSource.components.map((component) => [component.id, component]));
-  const reused = evidence.components.filter((component) => {
-    const prior = priorById.get(component.id);
-    return (
-      prior !== undefined &&
-      JSON.stringify(spliceReusedComponent(prior)) ===
-        JSON.stringify(spliceReusedComponent(component))
-    );
-  }).length;
-  return { total, reused, rescanned: total - reused };
 }
 
 function shortHash(hash: string): string {
@@ -202,12 +166,4 @@ export function formatCatalogReuseSummary(
     return `  ${label.padEnd(7)} ${record.componentId}    ${detail ? `${reasonPart} ${detail}` : reasonPart}`;
   });
   return [header, ...lines];
-}
-
-/** Cross-catalog TOTAL line (Decision 5), summed from each source's `tallyReuse`. */
-export function formatTotalReuseSummary(tallies: readonly ReuseTally[], full: boolean): string {
-  const total = tallies.reduce((sum, tally) => sum + tally.total, 0);
-  const reused = tallies.reduce((sum, tally) => sum + tally.reused, 0);
-  const rescanned = total - reused;
-  return `baseline reuse TOTAL: reused ${reused}/${total}, rescanned ${rescanned}/${total}   (mode=${full ? "full" : "incremental"})`;
 }
