@@ -754,9 +754,11 @@ explicit center deselection is not silently restored by a later aggregate choice
 lists all 286 canonical `skills/*/SKILL.md` identities at the pinned ECC commit and lets each exact row author
 reversible, source-bound requested intent against an independently scannable baseline subject. Selection is
 not evidence, approval, installation, materialization, or support; the governed lifecycle remains held until
-exact evidence clears. Dependency reachability follows required edges and declaration riders at every depth,
-while direct aggregate members remain suggestions that the center inventory can exclude. Reopening a saved
-policy preserves those exclusions.
+<<<<<<< HEAD
+exact evidence clears. Before governed materialization computes closure, Core validates every selected
+identifier against the active pinned catalog. Dependency reachability follows required edges and declaration
+riders at every depth, while direct aggregate members remain suggestions that the center inventory can exclude.
+Reopening a saved policy preserves those exclusions.
 The flat Ledger paper-and-ink presentation reserves colour for evidence state, supports a neutral dark theme,
 and keeps the rail available on compact screens. The inspector contains no policy mutation controls: it
 narrates the selected-to-materialized journey and routes one next action to the canonical selection or a

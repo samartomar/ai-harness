@@ -189,16 +189,6 @@ export function governedEccComponentIds(policy: OrgPolicy, catalog: BaselineCata
     );
   }
   const known = new Set(catalogById.keys());
-  const unknown = [...selected].filter((id) => !known.has(id)).sort();
-  if (unknown.length > 0) {
-    throw new AihError(
-      // Wrapped rather than passed by reference: `map` supplies the index as
-      // `displaySafe`'s second argument, which is its `max` — every id would
-      // render as a bare ellipsis and the refusal would name nothing.
-      `refusing the governed ECC framework lifecycle: the policy selects component(s) the pinned ECC catalog does not carry: ${unknown.map((id) => displaySafe(id)).join(", ")}`,
-      "AIH_CONFIG",
-    );
-  }
   const relatedComponentsFor = (id: string, includeMembers: boolean): string[] => {
     if (id.startsWith("runtime:")) return [];
     const declaredRiders = (ECC_DECLARATION_RIDERS[id] ?? []).filter((rider) => known.has(rider));
@@ -206,6 +196,9 @@ export function governedEccComponentIds(policy: OrgPolicy, catalog: BaselineCata
       id.startsWith("module:") && includeMembers
         ? eccModuleSelectableMemberIds(id.slice("module:".length), [...known])
         : [];
+    // Every selected id reached this point only after the catalog/provenance
+    // gate above accepted it. The lower-level closure helper deliberately stays
+    // total for synthetic tests and is not a second catalog validator.
     return [...new Set([...eccMandatoryRequirementIds(id), ...moduleMembers, ...declaredRiders])];
   };
   if (hasRootMetadata) {

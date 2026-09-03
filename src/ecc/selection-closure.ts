@@ -28,9 +28,11 @@ export function eccPreferredSelectionSourcePath(
 }
 
 /**
- * Structural module requirements for one catalog-validated ECC component.
+ * Structural module requirements for one caller-validated ECC component.
  * Optional declaration riders and aggregate members are deliberately absent:
  * administrators may remove those suggestions in the Workbench.
+ * Trust-boundary callers must first prove the identifier belongs to the active
+ * pinned catalog; this lower-level helper stays total for synthetic tests.
  */
 export function eccMandatoryRequirementIds(id: string): string[] {
   if (id.startsWith("runtime:")) return [];
