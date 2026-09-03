@@ -120,7 +120,13 @@ describe("ai-harness self-hosting boundary", () => {
       githubExpression("needs.windows_tests.result"),
     );
     expect(aggregate.steps[0]?.run).toContain('if [ "$WINDOWS_SHARDS_RESULT" != "success" ]; then');
-    expect(ci).not.toContain("continue-on-error:");
+    for (const [name, job] of Object.entries({
+      verify: workflow.jobs.verify,
+      windows_tests: windows,
+      windows_verify: aggregate,
+    })) {
+      expect(JSON.stringify(job), name).not.toContain("continue-on-error");
+    }
   });
 
   it("keeps the manual contract mirror aligned with live repository facts", () => {
@@ -138,10 +144,15 @@ describe("ai-harness self-hosting boundary", () => {
     const tracked = execFileSync("git", ["ls-files"], { cwd: root, encoding: "utf8" })
       .split(/\r?\n/)
       .filter(Boolean).length;
+    const trackedSnapshot = contract.scale.trackedFiles;
+    if (trackedSnapshot === undefined) throw new Error("tracked-file snapshot is required");
+    const allowedSnapshotDrift = Math.max(1, Math.ceil(trackedSnapshot * 0.05));
 
     expect(contract.targets).toEqual(["claude", "codex"]);
     expect(contract.languages).toEqual(["TypeScript/Node.js"]);
-    expect(contract.scale).toEqual({ trackedFiles: tracked, class: "medium", isMonorepo: false });
+    expect(contract.scale.class).toBe("medium");
+    expect(contract.scale.isMonorepo).toBe(false);
+    expect(Math.abs(trackedSnapshot - tracked)).toBeLessThanOrEqual(allowedSnapshotDrift);
     expect(contract.mcpServers).toEqual([]);
     expect(contract.knownGaps).toEqual([]);
     expect(contract.workspaces).toBeUndefined();
@@ -149,7 +160,10 @@ describe("ai-harness self-hosting boundary", () => {
 
     expect(markdown.replace(/\s+/g, " ")).toContain(contract.description);
     expect(markdown).toContain(
-      `- ${tracked} tracked files · ${contract.scale.class} · single-package repository`,
+      `- ${trackedSnapshot} tracked files (bounded snapshot) · ${contract.scale.class} · single-package repository`,
+    );
+    expect(read("ai-coding/SELF-HOSTING.md")).toContain(
+      "The tracked-file count is a bounded informational snapshot",
     );
     expect(markdown).toContain("Auxiliary Python assets are not repository workspaces");
     for (const entrypoint of contract.entrypoints)

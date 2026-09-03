@@ -15,6 +15,7 @@ const headSha = "b".repeat(40);
 const testFiles = [
   "tests/docs/readme-assets.test.ts",
   "tests/org-policy/catalog.test.ts",
+  "tests/org-policy/studio-surface-invariants.test.ts",
   "tests/release-readiness.test.ts",
   "tests/workspace/manifest.test.ts",
 ];
@@ -47,6 +48,7 @@ describe("CI impact classifier", () => {
       expect(JSON.parse(readFileSync(receiptPath, "utf8"))).toEqual(receipt);
       expect(stdout.join("")).toContain('"releasePreparation": true');
       expect(readFileSync(githubOutput, "utf8")).toContain("release_preparation=true\n");
+      expect(readFileSync(githubOutput, "utf8")).toContain("test_lane=core\n");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -67,10 +69,14 @@ describe("CI impact classifier", () => {
       headSha,
       changedPaths: ["src/org-policy/catalog.ts"],
       riskClass: "cross-platform",
+      testLane: "both",
       fullSuite: false,
       releasePreparation: false,
       operatingSystems: ["ubuntu-latest", "macos-latest", "windows-latest"],
-      selectedTests: ["tests/org-policy/catalog.test.ts"],
+      selectedTests: [
+        "tests/org-policy/catalog.test.ts",
+        "tests/org-policy/studio-surface-invariants.test.ts",
+      ],
     });
     expect(receipt.matchedRules).toContain("source-domain:org-policy");
     expect(validateCiImpactReceipt(receipt)).toEqual(receipt);
@@ -108,6 +114,7 @@ describe("CI impact classifier", () => {
     });
 
     expect(receipt.riskClass).toBe("docs");
+    expect(receipt).toMatchObject({ testLane: "docs" });
     expect(receipt.fullSuite).toBe(false);
     expect(receipt.operatingSystems).toEqual(["ubuntu-latest"]);
     expect(receipt.selectedTests).toEqual(["tests/docs/readme-assets.test.ts"]);
@@ -118,6 +125,7 @@ describe("CI impact classifier", () => {
     ["empty change set", [], "empty-change-set"],
     ["lockfile", ["package-lock.json"], "global-input:package-lock.json"],
     ["workflow", [".github/workflows/ci.yml"], "global-input:.github/workflows/ci.yml"],
+    ["lane config", ["vitest.workbench.config.ts"], "global-input:vitest.workbench.config.ts"],
     ["schema", ["schemas/report.schema.json"], "global-input:schemas/report.schema.json"],
     [
       "fixture",
@@ -129,6 +137,7 @@ describe("CI impact classifier", () => {
     const receipt = classifyCiImpact({ baseSha, headSha, changedPaths, testFiles });
 
     expect(receipt.riskClass).toBe("full");
+    expect(receipt).toMatchObject({ testLane: "full" });
     expect(receipt.fullSuite).toBe(true);
     expect(receipt.operatingSystems).toEqual(["ubuntu-latest", "macos-latest", "windows-latest"]);
     expect(receipt.fallbackReasons).toContain(reason);
@@ -145,6 +154,24 @@ describe("CI impact classifier", () => {
 
     expect(receipt.fullSuite).toBe(true);
     expect(receipt.fallbackReasons).toContain("unexpected-empty-test-selection");
+  });
+
+  it.each([
+    ["Workbench source", ["src/org-policy/studio-template.ts"], "workbench"],
+    ["Workbench entry point", ["src/org-policy/generate.ts"], "workbench"],
+    ["Workbench test", ["tests/org-policy/studio-surface-invariants.test.ts"], "workbench"],
+    ["Core source", ["src/workspace/manifest.ts"], "core"],
+    ["Core test", ["tests/workspace/manifest.test.ts"], "core"],
+    ["shared policy source", ["src/org-policy/schema.ts"], "both"],
+    [
+      "mixed Core and Workbench change",
+      ["src/workspace/manifest.ts", "src/org-policy/studio-template.ts"],
+      "both",
+    ],
+  ])("assigns the %s change to the %s test lane", (_name, changedPaths, testLane) => {
+    const receipt = classifyCiImpact({ baseSha, headSha, changedPaths, testFiles });
+
+    expect(receipt).toMatchObject({ testLane, fullSuite: false });
   });
 
   it("rejects receipts whose claimed selection is internally inconsistent", () => {
@@ -165,6 +192,9 @@ describe("CI impact classifier", () => {
     expect(() =>
       validateCiImpactReceipt({ ...receipt, operatingSystems: ["ubuntu-latest"] }),
     ).toThrow(/operating systems/u);
+    expect(() => validateCiImpactReceipt({ ...receipt, testLane: "workbench" } as never)).toThrow(
+      /test lane/u,
+    );
     expect(() =>
       validateCiImpactReceipt({
         ...receipt,

@@ -22,7 +22,7 @@ the current facts without letting AIH manage itself:
 | Context directory | `ai-coding` | all durable repo AI truth stays under `ai-coding/` |
 | Targets | Claude and Codex | `CLAUDE.md`, `AGENTS.md`, and two adapters only |
 | Stack | TypeScript/Node.js product + auxiliary Python assets | npm owns the root lifecycle; pinned uv analyzer manifests are runtime inputs, not workspaces |
-| Repository shape | medium single-package repository | tracked count and package-shape facts stay mirrored in `project.json` / `project.md` |
+| Repository shape | medium single-package repository | size class and package shape stay mirrored; the tracked-file count is an informational snapshot |
 | Root MCP config | absent from Git | `mcpServers: []`; `repo:init` generates an ignored, operator-owned Codex projection |
 | Client hooks/config | uncommitted | no client-specific launcher, settings, or hook registry becomes repo truth |
 | Brownfield extension | present | `rules/project-canon-extension.md` remains repo-owned and manually maintained |
@@ -43,6 +43,11 @@ the current facts without letting AIH manage itself:
   into the fenced blocks in `AGENTS.md` and `CLAUDE.md`.
 - `adapters/claude.md` and `adapters/codex.md` contain only client-loading notes.
 
+The tracked-file count is a bounded informational snapshot, not a per-change
+invariant. Refresh it during an explicit canon audit when it drifts by more than
+5% or when the declared repository size class changes. Ordinary file additions
+and removals do not require a snapshot update.
+
 Do not add `.aih-config.json`, `.mcp.json`, generated client directories, AIH
 state, or lifecycle receipts merely to make this checkout resemble an installed
 consumer repository. `npm run repo:init` may write the ignored
@@ -54,7 +59,8 @@ neither becomes repository truth. Committed source and tests remain authoritativ
 1. Inspect the relevant generator, schema, registry, and tests as source
    evidence. Never execute the generator against this checkout.
 2. Update `project.json` directly, then update `project.md` and `setup.md` in the
-   same change when their displayed facts change.
+   same change when their displayed facts change. Refresh the tracked-file
+   snapshot only under the bounded policy above.
 3. Edit the shared block source first, then copy its body exactly into both root
    bootloaders. Keep repo-specific preamble text outside the fenced block.
 4. Add or remove adapters and bootloaders only when the target list changes.
