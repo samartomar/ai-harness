@@ -11,10 +11,12 @@ import type { EccComponentId } from "../../src/ecc/components.js";
 import type { EccEffectiveSelectionComponent } from "../../src/ecc/materialization-selection.js";
 import {
   foldedKiroProjectionCollision,
+  KIRO_BASELINE_RULES_PROVENANCE_PATHS,
   kiroAgentSemanticIdentity,
   resolveVerifiedKiroMaterialization,
 } from "../../src/ecc/materialization-target-kiro.js";
 import { eccComponentSourcePaths } from "../../src/ecc/materialize.js";
+import { eccSelectionSourcePaths } from "../../src/ecc/selection-closure.js";
 
 const REPOSITORY = "affaan-m/ECC";
 const COMMIT = "a".repeat(40);
@@ -304,7 +306,10 @@ describe("the verified-source Kiro projection", () => {
   });
 
   it("accepts every exact catalog provenance path for baseline rules", () => {
-    for (const path of ["rules", "rules/README.md", "rules/common"]) {
+    expect([...KIRO_BASELINE_RULES_PROVENANCE_PATHS].sort()).toEqual(
+      eccSelectionSourcePaths("baseline:rules", eccComponentSourcePaths("baseline:rules")).sort(),
+    );
+    for (const path of KIRO_BASELINE_RULES_PROVENANCE_PATHS) {
       const rules = selected("baseline:rules", path);
       expect(() => resolveVerifiedKiroMaterialization(request([rules]))).not.toThrow();
     }
