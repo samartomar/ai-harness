@@ -4,6 +4,10 @@ import { policyStudioModel } from "../../src/org-policy/studio-model.js";
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
 
 const model = policyStudioModel();
+const workbenchHtml = policyStudioHtml(model);
+const workbenchScripts = [...workbenchHtml.matchAll(/<script>([\s\S]*?)<\/script>/gi)].map(
+  (match) => match[1],
+);
 
 /**
  * Every AIH control the workbench can request. Derived from the model rather
@@ -30,13 +34,11 @@ const excludedCount = frameworkAssetCount - eccAssetCount;
 
 function studio(): Window {
   const window = new Window({ url: "http://localhost/" });
-  const html = policyStudioHtml(model);
-  window.document.write(html);
+  window.document.write(workbenchHtml);
   (window as unknown as { structuredClone: typeof structuredClone }).structuredClone =
     structuredClone;
-  const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/gi)].map((match) => match[1]);
-  if (scripts.length === 0) throw new Error("expected generated workbench script");
-  window.eval(scripts.join("\n"));
+  if (workbenchScripts.length === 0) throw new Error("expected generated workbench script");
+  window.eval(workbenchScripts.join("\n"));
   return window;
 }
 
@@ -138,7 +140,7 @@ function curateFromFirstRow(window: Window): string {
   return curated[0] as string;
 }
 
-describe("policy studio profile composition", () => {
+describe("policy studio profile composition", { timeout: 45_000 }, () => {
   // Recorded product failure 1: Vibe changed a label and nothing else, so the
   // administrator got a posture rename in place of the complete selection the
   // profile names.

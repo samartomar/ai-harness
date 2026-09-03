@@ -294,6 +294,19 @@ describe("headless effective org policy", () => {
     expect(exact.candidates[0]).toMatchObject({ effective: true, evidence: "verified" });
     expect(exact.activeMcpServerIds).toEqual(["catalog-mcp"]);
 
+    const handNarrowed = resolveEffectiveOrgPolicy(policy(), {
+      targets: ["claude"],
+      aihReviewedControls: reviewedControls(["claude", "kiro"]),
+      mcpIdentities: {
+        "catalog-mcp": { subject: SUBJECT, projectable: true, kiroProjectable: true },
+      },
+    });
+    expect(handNarrowed.candidates[0]).toMatchObject({
+      effective: false,
+      evidence: "missing",
+    });
+    expect(handNarrowed.blocking).toBe(true);
+
     expect(() => resolve(candidate({ id: "catalog-alias" }))).toThrow(
       /built-in MCP candidate id must exactly match source.server/,
     );
