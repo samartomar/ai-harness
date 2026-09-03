@@ -768,6 +768,13 @@ ECC-owned entries route to the separate Add MCP sidebar, which authors approved/
 read-only and do not claim that this Core build ships a matching control. Only entries labeled
 HTTPS-configurable can use the later `aih ecc mcp add <id> --cli <client>` path; manual entries remain
 approval-only. The browser does not install, contact, scan, attest, or observe the endpoint.
+The configured Playwright runtime identity remains exactly `@playwright/mcp@0.0.79`, but its
+AIH-reviewed control is unavailable for policy authoring because AIH has no current protected Scanner
+evidence record for that identity. The Workbench identifies this as an AIH-owned evidence gap; an
+administrator cannot waive it or substitute organization approval, and runtime evaluation does not infer
+reviewed evidence from a matching npm identity. Importing the exact legacy Core 0.5.0 enterprise Workbench
+footprint removes the unavailable Playwright candidate and activation, rebuilds the managed MCP allow-list
+from current projectable controls, and preserves all remaining targets and authority.
 
 A separate adoption-recipe panel is the first bounded, code-owned routing guide rather than another
 inventory or authoring surface. It gives exactly one question class to each of Token Savior, Serena,

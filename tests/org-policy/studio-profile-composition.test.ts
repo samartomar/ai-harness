@@ -160,16 +160,27 @@ describe("policy studio profile composition", { timeout: 45_000 }, () => {
     ).toEqual(controls.map((control) => control.id).sort());
   });
 
-  it("leaves target-conditional Playwright as an explicit administrator choice", () => {
+  it("keeps Playwright unavailable when a profile is composed", () => {
     const window = studio();
     selectProfile(window, "vibe");
     expect(authoredPolicy(window).governance.catalog.reviewed.map((item) => item.id)).not.toContain(
       "playwright",
     );
     const playwright = window.document.querySelector('[data-reviewed="playwright"]');
-    expect(playwright?.getAttribute("aria-pressed")).toBe("false");
-    expect(playwright?.hasAttribute("disabled")).toBe(false);
-    expect(playwright?.closest(".row")?.textContent).toContain("Web target only");
+    expect(playwright).toBeNull();
+    const availability = window.document.querySelector('[data-ecc-mcp-availability="playwright"]');
+    expect(availability?.getAttribute("data-state")).toBe("availability");
+    expect(availability?.textContent).toContain("Unavailable — AIH evidence required");
+  });
+
+  it("does not describe unavailable Playwright as addable after Enterprise composition", () => {
+    const window = studio();
+    selectProfile(window, "enterprise");
+
+    expect(announcement(window)).not.toContain("Playwright remain yours to add");
+    expect(announcement(window)).toContain(
+      "Playwright remains unavailable until current protected Scanner evidence exists",
+    );
   });
 
   it("shows every composed control as requested in the rows it composed", () => {
