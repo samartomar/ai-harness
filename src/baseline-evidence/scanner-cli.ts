@@ -9,6 +9,7 @@ import {
   readBaselineVetBundleV1,
 } from "@aihq/scan";
 import { z } from "zod";
+import { readRegularFileWithStats } from "../internals/fsxn.js";
 import { hermeticGitEnv } from "../internals/git-env.js";
 import { baselineCatalogById } from "./catalogs.js";
 import { generateAuthorizedEccInstallPreview } from "./ecc-preview-boundary.js";
@@ -16,6 +17,11 @@ import {
   consumeVerifiedScannerBaselineBatches,
   createCoreBaselineVetRequests,
 } from "./scanner-consumer.js";
+import {
+  consumeScannerBaselinePublicationV1,
+  SCANNER_BASELINE_PUBLICATION_MAX_AGE_SECONDS_V1,
+  SCANNER_BASELINE_PUBLICATION_PUBLISHER_V1,
+} from "./scanner-publication.js";
 import {
   type BaselineSourceEvidence,
   BaselineSourceEvidenceSchema,
@@ -81,6 +87,13 @@ function readJson(path: string, maximum = 2 * 1024 * 1024): unknown {
   } catch {
     return fail(`invalid JSON file: ${path}`);
   }
+}
+
+function readPublishedBytes(path: string, maximum: number, label: string): Buffer {
+  const opened = readRegularFileWithStats(resolve(path), { maxBytes: maximum });
+  if (opened === undefined || opened.contents.length === 0 || opened.identity.nlink !== 1n)
+    fail(`${label} file shape`);
+  return opened.contents;
 }
 
 function checkoutHead(root: string): string {
@@ -202,6 +215,44 @@ async function consume(args: readonly string[]): Promise<void> {
   process.stdout.write(`${evidence.id}@${evidence.pinnedSha}\n`);
 }
 
+async function consumePublication(args: readonly string[]): Promise<void> {
+  const catalogId = flag(args, "--catalog");
+  const sourceRoot = resolve(flag(args, "--source"));
+  const catalog = assertCheckout(sourceRoot, catalogId);
+  const seenPath = optionalFlag(args, "--seen");
+  const seen =
+    seenPath === undefined ? { digests: [], receipts: [] } : replayWire.parse(readJson(seenPath));
+  const consumed = await consumeScannerBaselinePublicationV1({
+    sourceRoot,
+    catalog,
+    expectedRequestSha256: flag(args, "--request-sha256"),
+    discoveryBytes: readPublishedBytes(flag(args, "--discovery"), 8 * 1024, "discovery"),
+    publicationBytes: readPublishedBytes(
+      flag(args, "--publication"),
+      96 * 1024 * 1024,
+      "publication",
+    ),
+    attestationResultBytes: readPublishedBytes(
+      flag(args, "--attestation"),
+      256 * 1024,
+      "attestation",
+    ),
+    publisher: SCANNER_BASELINE_PUBLICATION_PUBLISHER_V1,
+    now: new Date().toISOString(),
+    maxAgeSeconds: SCANNER_BASELINE_PUBLICATION_MAX_AGE_SECONDS_V1,
+    seenEvidenceDigests: seen.digests,
+    seenReceiptBindings: seen.receipts,
+  });
+  const output = resolve(flag(args, "--output"));
+  const provenanceOutput = resolve(flag(args, "--provenance-output"));
+  if (output === provenanceOutput) fail("evidence and provenance outputs must differ");
+  writeJson(output, consumed.evidence);
+  writeJson(provenanceOutput, consumed.provenance);
+  process.stdout.write(
+    `consumed published ${consumed.evidence.id}@${consumed.evidence.pinnedSha}\n`,
+  );
+}
+
 function sourceEvidence(path: string): BaselineSourceEvidence {
   return BaselineSourceEvidenceSchema.parse(readJson(path, 16 * 1024 * 1024));
 }
@@ -226,8 +277,9 @@ export async function runScannerBridge(argv: readonly string[]): Promise<void> {
   const [command, ...args] = argv;
   if (command === "request") request(args);
   else if (command === "consume") await consume(args);
+  else if (command === "consume-publication") await consumePublication(args);
   else if (command === "assemble") assemble(args);
-  else fail("expected request, consume, or assemble");
+  else fail("expected request, consume, consume-publication, or assemble");
 }
 
 if (process.argv[1] && import.meta.url === new URL(`file://${resolve(process.argv[1])}`).href) {

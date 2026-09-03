@@ -234,7 +234,7 @@
       "version": "v7.0.0",
       "commit": "5fda3b95a4ea91299a34e894583c3862153e4b97",
       "disposition": "active",
-      "reason": "The baseline workflow provisions the explicit Python 3.12 scanner ABI so a newly installed newer interpreter cannot silently change offline uv cache selection."
+      "reason": "The explicit Snyk agent qualification workflow provisions its reviewed Python runtime so a newly installed interpreter cannot silently change the locked qualification environment. Core baseline publication consumption is analyzer-free and does not use this action."
     },
     {
       "surface": "claude-code-action",

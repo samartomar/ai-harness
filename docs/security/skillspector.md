@@ -24,10 +24,10 @@ sha256:c5d4a1816419f129ae85ff96b3e366d4a062c1859997e26b7ab87341a43d4800
 
 ## Acquire the Image
 
-The default acquisition path — used by the `vet-once` CI workflow
-(`.github/workflows/baseline-evidence.yml`) and recommended for local use — is
-a content-addressed pull from GHCR, re-tagged to the local runtime name `aih`
-expects:
+The default acquisition path for local scans and Scanner-owned baseline
+publication is a content-addressed pull from GHCR, re-tagged to the local runtime
+name `aih` expects. Core's required `vet-once` workflow verifies committed
+evidence and does not acquire or execute this image:
 
 ```bash
 docker pull ghcr.io/samartomar/skillspector@sha256:c5d4a1816419f129ae85ff96b3e366d4a062c1859997e26b7ab87341a43d4800
@@ -166,8 +166,8 @@ order:
    change, so the source commit and the digest it produced are reviewed and
    move as one unit.
 
-Only after all four steps land does the `vet-once` workflow's pull-by-digest
-step (and any local `docker pull`) resolve to the new, re-verified image. See
+Only after all four steps land do Scanner's publication runtime and any local
+`docker pull` resolve to the new, re-verified image. See
 [Acquire the Image](#acquire-the-image) for the public-visibility posture that
 governs how the pull is authenticated.
 
