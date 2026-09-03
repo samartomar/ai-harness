@@ -312,7 +312,7 @@ describe("ECC install preview execution boundary", () => {
     expect(() => assertPreviewGeneratorDependenciesCovered(root, RUNTIME_PATHS)).not.toThrow();
   });
 
-  it("keeps the authorized preview boundary check independent of any preflight receipt", () => {
+  it("rechecks the authorized preview boundary after Scanner evidence", () => {
     writeFileSync(resolve(root, "outside.js"), "module.exports = {};\n");
     writeFileSync(
       resolve(root, "scripts/lib/install/plan.js"),

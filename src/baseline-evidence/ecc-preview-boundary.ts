@@ -12,8 +12,8 @@ import type { BaselineSourceEvidence } from "./schema.js";
 
 /**
  * Static entry shapes inspected before the authorized preview generator is ever
- * loaded. Receipt versions bind this ordered list, so extending the generator
- * surface invalidates preflight receipts made under the old contract.
+ * loaded. Core binds this ordered list to the catalog's runtime component and
+ * rechecks it after Scanner evidence has been verified.
  */
 export const GENERATOR_ENTRY_PATHS = [
   "package.json",

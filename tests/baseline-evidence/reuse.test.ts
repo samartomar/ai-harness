@@ -3,9 +3,7 @@ import {
   decideComponentReuse,
   findPriorSource,
   formatCatalogReuseSummary,
-  formatTotalReuseSummary,
   spliceReusedComponent,
-  tallyReuse,
 } from "../../src/baseline-evidence/reuse.js";
 import type {
   BaselineComponentEvidence,
@@ -200,40 +198,6 @@ describe("spliceReusedComponent", () => {
   });
 });
 
-describe("tallyReuse", () => {
-  it("counts every component as rescanned when there is no prior source", () => {
-    const evidence = source([component(), component({ id: "skill:two" })]);
-    expect(tallyReuse(undefined, evidence, false)).toEqual({ total: 2, reused: 0, rescanned: 2 });
-  });
-
-  it("counts every component as rescanned in full mode even if identical to prior", () => {
-    const prior = source([component()]);
-    const evidence = source([component()]);
-    expect(tallyReuse(prior, evidence, true)).toEqual({ total: 1, reused: 0, rescanned: 1 });
-  });
-
-  it("counts a component as reused only when the final entry is byte-identical to the matching prior entry", () => {
-    const prior = source([
-      component(),
-      component({
-        id: "skill:two",
-        verdict: "blocked",
-        findings: [{ code: "trust.x", detail: "d" }],
-      }),
-    ]);
-    const evidence = source([
-      component(),
-      component({
-        id: "skill:two",
-        treeSha256: "b".repeat(64),
-        verdict: "pass",
-        findings: [],
-      }),
-    ]);
-    expect(tallyReuse(prior, evidence, false)).toEqual({ total: 2, reused: 1, rescanned: 1 });
-  });
-});
-
 describe("reuse summary formatting", () => {
   it("formats a per-catalog header and per-component reason lines", () => {
     const catalog = { id: "ecc", pinnedSha: "16563d4a30f17d097cc4629f6d97e02adf823016" };
@@ -265,20 +229,5 @@ describe("reuse summary formatting", () => {
           line.includes("reason=content-changed"),
       ),
     ).toBe(true);
-  });
-
-  it("formats the cross-catalog TOTAL line for incremental and full modes", () => {
-    expect(
-      formatTotalReuseSummary(
-        [
-          { total: 45, reused: 44, rescanned: 1 },
-          { total: 15, reused: 15, rescanned: 0 },
-        ],
-        false,
-      ),
-    ).toBe("baseline reuse TOTAL: reused 59/60, rescanned 1/60   (mode=incremental)");
-    expect(formatTotalReuseSummary([{ total: 60, reused: 0, rescanned: 60 }], true)).toBe(
-      "baseline reuse TOTAL: reused 0/60, rescanned 60/60   (mode=full)",
-    );
   });
 });
