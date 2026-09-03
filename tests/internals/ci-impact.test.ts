@@ -67,6 +67,7 @@ describe("CI impact classifier", () => {
       headSha,
       changedPaths: ["src/org-policy/catalog.ts"],
       riskClass: "cross-platform",
+      testLane: "both",
       fullSuite: false,
       releasePreparation: false,
       operatingSystems: ["ubuntu-latest", "macos-latest", "windows-latest"],
@@ -108,6 +109,7 @@ describe("CI impact classifier", () => {
     });
 
     expect(receipt.riskClass).toBe("docs");
+    expect(receipt).toMatchObject({ testLane: "docs" });
     expect(receipt.fullSuite).toBe(false);
     expect(receipt.operatingSystems).toEqual(["ubuntu-latest"]);
     expect(receipt.selectedTests).toEqual(["tests/docs/readme-assets.test.ts"]);
@@ -129,6 +131,7 @@ describe("CI impact classifier", () => {
     const receipt = classifyCiImpact({ baseSha, headSha, changedPaths, testFiles });
 
     expect(receipt.riskClass).toBe("full");
+    expect(receipt).toMatchObject({ testLane: "full" });
     expect(receipt.fullSuite).toBe(true);
     expect(receipt.operatingSystems).toEqual(["ubuntu-latest", "macos-latest", "windows-latest"]);
     expect(receipt.fallbackReasons).toContain(reason);
@@ -145,6 +148,24 @@ describe("CI impact classifier", () => {
 
     expect(receipt.fullSuite).toBe(true);
     expect(receipt.fallbackReasons).toContain("unexpected-empty-test-selection");
+  });
+
+  it.each([
+    ["Workbench source", ["src/org-policy/studio-template.ts"], "workbench"],
+    ["Workbench entry point", ["src/org-policy/generate.ts"], "workbench"],
+    ["Workbench test", ["tests/org-policy/studio-surface-invariants.test.ts"], "workbench"],
+    ["Core source", ["src/workspace/manifest.ts"], "core"],
+    ["Core test", ["tests/workspace/manifest.test.ts"], "core"],
+    ["shared policy source", ["src/org-policy/schema.ts"], "both"],
+    [
+      "mixed Core and Workbench change",
+      ["src/workspace/manifest.ts", "src/org-policy/studio-template.ts"],
+      "both",
+    ],
+  ])("assigns the %s change to the %s test lane", (_name, changedPaths, testLane) => {
+    const receipt = classifyCiImpact({ baseSha, headSha, changedPaths, testFiles });
+
+    expect(receipt).toMatchObject({ testLane, fullSuite: false });
   });
 
   it("rejects receipts whose claimed selection is internally inconsistent", () => {
@@ -165,6 +186,9 @@ describe("CI impact classifier", () => {
     expect(() =>
       validateCiImpactReceipt({ ...receipt, operatingSystems: ["ubuntu-latest"] }),
     ).toThrow(/operating systems/u);
+    expect(() => validateCiImpactReceipt({ ...receipt, testLane: "workbench" } as never)).toThrow(
+      /test lane/u,
+    );
     expect(() =>
       validateCiImpactReceipt({
         ...receipt,
