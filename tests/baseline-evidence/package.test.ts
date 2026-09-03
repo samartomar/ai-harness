@@ -107,7 +107,7 @@ describe("baseline evidence release payload", () => {
     expect(workflow).toContain("npm run baseline:assemble");
     expect(workflow).toContain(`@aihq/scan@\${SCANNER_VERSION}`);
     expect(workflow).toContain("astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d");
-    expect(workflow).toContain('version: "0.12.7"');
+    expect(workflow).toContain('version: "0.12.8"');
     expect(workflow).toContain(
       "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
     );
@@ -160,7 +160,7 @@ describe("baseline evidence release payload", () => {
     expect(dockerfile).toContain(
       "python:3.12-slim-bookworm@sha256:a116514e19457bcb7af7efe9c3dd0b9b71e85b317694e7882a1c52aa15a78134",
     );
-    expect(dockerfile).toContain("uv==0.12.7");
+    expect(dockerfile).toContain("uv==0.12.8");
     expect(dockerfile).toContain(
       'org.opencontainers.image.revision="2d198ab910add401cad658d1087e7c7ba24fd640"',
     );

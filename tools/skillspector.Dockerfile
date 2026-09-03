@@ -15,7 +15,7 @@ ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH} \
     UV_NO_PROGRESS=1 \
     UV_EXCLUDE_NEWER=2026-08-15T00:00:00Z
 WORKDIR /app
-RUN pip install --no-cache-dir uv==0.12.7
+RUN pip install --no-cache-dir uv==0.12.8
 COPY pyproject.toml uv.lock README.md ./
 COPY src/ src/
 RUN uv sync --frozen --no-dev --no-editable \

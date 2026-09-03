@@ -111,7 +111,7 @@ describe("Snyk Agent Scan behavioral qualification workflow", () => {
       "astral-sh/setup-uv",
     );
     expect(steps.find((step) => step.uses?.startsWith("astral-sh/setup-uv@"))?.with).toMatchObject({
-      version: "0.12.7",
+      version: "0.12.8",
     });
     expectPinnedAction(upload?.uses, "actions/upload-artifact");
     expect(checkout?.with).toMatchObject({ "persist-credentials": false });
