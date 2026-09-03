@@ -1,6 +1,7 @@
-export const CI_SELECTOR_VERSION = "1.1.0";
+export const CI_SELECTOR_VERSION = "1.2.0";
 
 export type CiRiskClass = "docs" | "focused" | "cross-platform" | "full";
+export type CiTestLane = "docs" | "core" | "workbench" | "both" | "full";
 export type CiOperatingSystem = "ubuntu-latest" | "macos-latest" | "windows-latest";
 
 export interface CiImpactInput {
@@ -20,6 +21,7 @@ export interface CiImpactReceipt {
   selectedTests: string[];
   operatingSystems: CiOperatingSystem[];
   riskClass: CiRiskClass;
+  testLane: CiTestLane;
   fullSuite: boolean;
   releasePreparation: boolean;
   fallbackReasons: string[];
@@ -76,6 +78,28 @@ const SELECTOR_PATHS = new Set([
 const RELEASE_PREPARATION_SIGNAL_PATHS = new Set([
   "release/enterprise-change.json",
   "src/version.ts",
+]);
+
+const WORKBENCH_SOURCE_PATHS = new Set([
+  "src/org-policy/adoption-recipe.ts",
+  "src/org-policy/generate.ts",
+  "src/org-policy/studio-artifact-intake.ts",
+  "src/org-policy/studio-model.ts",
+  "src/org-policy/studio-protected-authority.ts",
+  "src/org-policy/studio-template.ts",
+  "src/org-policy/ui-server.ts",
+]);
+
+const WORKBENCH_TEST_PATHS = new Set([
+  "tests/ecc/module-selection-closure.test.ts",
+  "tests/org-policy/acceptance-hook-registrar.test.ts",
+  "tests/org-policy/admin-baseline-evidence-cli-route.test.ts",
+  "tests/org-policy/admin-catalog-cli-route.test.ts",
+  "tests/org-policy/admin-catalog-fetch-v1.test.ts",
+  "tests/org-policy/ecc-hook-controls.test.ts",
+  "tests/org-policy/ecc-mcp-approval.test.ts",
+  "tests/org-policy/generate.test.ts",
+  "tests/org-policy/supported-cli-subsets.test.ts",
 ]);
 
 const CROSS_PLATFORM_DOMAINS = new Set([
@@ -145,6 +169,32 @@ function isDocumentation(path: string): boolean {
   );
 }
 
+function isWorkbenchTest(path: string): boolean {
+  return (
+    WORKBENCH_TEST_PATHS.has(path) ||
+    (path.startsWith("tests/org-policy/studio-") && path.endsWith(".test.ts"))
+  );
+}
+
+function scopedTestLane(changedPaths: readonly string[]): Exclude<CiTestLane, "docs" | "full"> {
+  let core = false;
+  let workbench = false;
+  for (const path of changedPaths) {
+    if (isDocumentation(path)) continue;
+    if (WORKBENCH_SOURCE_PATHS.has(path) || isWorkbenchTest(path)) {
+      workbench = true;
+    } else if (path.startsWith("src/org-policy/")) {
+      // Conservatively treat every non-Workbench org-policy source as shared:
+      // the Workbench model consumes policy schemas, catalogs, and decisions.
+      core = true;
+      workbench = true;
+    } else {
+      core = true;
+    }
+  }
+  return core && workbench ? "both" : workbench ? "workbench" : "core";
+}
+
 function fullReceipt(
   input: Pick<CiImpactInput, "baseSha" | "headSha">,
   changedPaths: string[],
@@ -162,6 +212,7 @@ function fullReceipt(
     selectedTests: testFiles,
     operatingSystems: [...ALL_OPERATING_SYSTEMS],
     riskClass: "full",
+    testLane: "full",
     fullSuite: true,
     releasePreparation: changedPaths.some((path) => RELEASE_PREPARATION_SIGNAL_PATHS.has(path)),
     fallbackReasons: sortedUnique(fallbackReasons),
@@ -264,6 +315,7 @@ export function classifyCiImpact(input: CiImpactInput): CiImpactReceipt {
     selectedTests: sortedUnique([...selectedTests]),
     operatingSystems: crossPlatform ? [...ALL_OPERATING_SYSTEMS] : ["ubuntu-latest"],
     riskClass: docsOnly ? "docs" : crossPlatform ? "cross-platform" : "focused",
+    testLane: docsOnly ? "docs" : scopedTestLane(changedPaths),
     fullSuite: false,
     releasePreparation: changedPaths.some((path) => RELEASE_PREPARATION_SIGNAL_PATHS.has(path)),
     fallbackReasons: [],
@@ -288,6 +340,7 @@ export function validateCiImpactReceipt(value: CiImpactReceipt): CiImpactReceipt
     "schemaVersion",
     "selectedTests",
     "selectorVersion",
+    "testLane",
   ];
   if (JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(expectedKeys)) {
     throw new Error("CI receipt fields do not match the schema");
@@ -331,6 +384,16 @@ export function validateCiImpactReceipt(value: CiImpactReceipt): CiImpactReceipt
   if (!["docs", "focused", "cross-platform", "full"].includes(value.riskClass)) {
     throw new Error("invalid CI risk class");
   }
+  if (!["docs", "core", "workbench", "both", "full"].includes(value.testLane)) {
+    throw new Error("invalid CI test lane");
+  }
+  const expectedTestLane = value.fullSuite
+    ? "full"
+    : value.riskClass === "docs"
+      ? "docs"
+      : scopedTestLane(value.changedPaths);
+  if (value.testLane !== expectedTestLane)
+    throw new Error("CI test lane does not match changed paths");
   if (!Array.isArray(value.operatingSystems)) throw new Error("invalid CI operating systems");
   if (
     typeof value.releasePreparation !== "boolean" ||

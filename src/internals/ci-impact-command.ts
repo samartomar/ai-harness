@@ -57,6 +57,7 @@ export async function runCiImpactCommand(
       [
         `full_suite=${String(receipt.fullSuite)}`,
         `risk_class=${receipt.riskClass}`,
+        `test_lane=${receipt.testLane}`,
         `release_preparation=${String(receipt.releasePreparation)}`,
         `selected_tests_json=${JSON.stringify(receipt.selectedTests)}`,
         `operating_systems_json=${JSON.stringify(receipt.operatingSystems)}`,

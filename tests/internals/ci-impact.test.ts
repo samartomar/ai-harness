@@ -15,6 +15,7 @@ const headSha = "b".repeat(40);
 const testFiles = [
   "tests/docs/readme-assets.test.ts",
   "tests/org-policy/catalog.test.ts",
+  "tests/org-policy/studio-surface-invariants.test.ts",
   "tests/release-readiness.test.ts",
   "tests/workspace/manifest.test.ts",
 ];
@@ -47,6 +48,7 @@ describe("CI impact classifier", () => {
       expect(JSON.parse(readFileSync(receiptPath, "utf8"))).toEqual(receipt);
       expect(stdout.join("")).toContain('"releasePreparation": true');
       expect(readFileSync(githubOutput, "utf8")).toContain("release_preparation=true\n");
+      expect(readFileSync(githubOutput, "utf8")).toContain("test_lane=core\n");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -71,7 +73,10 @@ describe("CI impact classifier", () => {
       fullSuite: false,
       releasePreparation: false,
       operatingSystems: ["ubuntu-latest", "macos-latest", "windows-latest"],
-      selectedTests: ["tests/org-policy/catalog.test.ts"],
+      selectedTests: [
+        "tests/org-policy/catalog.test.ts",
+        "tests/org-policy/studio-surface-invariants.test.ts",
+      ],
     });
     expect(receipt.matchedRules).toContain("source-domain:org-policy");
     expect(validateCiImpactReceipt(receipt)).toEqual(receipt);
