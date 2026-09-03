@@ -15,6 +15,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Retire Core's duplicate local Scanner execution and bundle-consumption shortcuts, move the
+  committed-evidence gate into the existing CI quality job, and bind publication consumption to
+  `@aihq/scan@0.3.0` at its corrected immutable publisher commit. The public cross-platform
+  `aih evidence vet-baseline` compatibility command remains available, but release refreshes use
+  Scanner publications exclusively.
 - Advance the exact uv toolchain from `0.12.7` to `0.12.8` across both scanner workflows and the
   controlled SkillSpector build after all five committed locks and requirements exports remained
   unchanged, adopting the upstream required-hash authorization fix without changing the locked

@@ -1,22 +1,13 @@
 import { execFileSync } from "node:child_process";
-import { createPublicKey } from "node:crypto";
-import { lstatSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import {
-  canonicalBaselineVetRequestV1Bytes,
-  parseBaselineVetAttestationEnvelopeV1Json,
-  parseBaselineVetRequestV1Json,
-  readBaselineVetBundleV1,
-} from "@aihq/scan";
+import { canonicalBaselineVetRequestV1Bytes } from "@aihq/scan";
 import { z } from "zod";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
 import { hermeticGitEnv } from "../internals/git-env.js";
 import { baselineCatalogById } from "./catalogs.js";
 import { generateAuthorizedEccInstallPreview } from "./ecc-preview-boundary.js";
-import {
-  consumeVerifiedScannerBaselineBatches,
-  createCoreBaselineVetRequests,
-} from "./scanner-consumer.js";
+import { createCoreBaselineVetRequests } from "./scanner-consumer.js";
 import {
   consumeScannerBaselinePublicationV1,
   SCANNER_BASELINE_PUBLICATION_MAX_AGE_SECONDS_V1,
@@ -28,23 +19,6 @@ import {
   parseBaselineEvidenceLock,
 } from "./schema.js";
 
-const rootWire = z
-  .object({
-    identity: z.string().min(1).max(256),
-    class: z.enum(["test-ephemeral", "organization"]),
-    keyId: z.string().regex(/^ed25519:[0-9a-f]{64}$/),
-    publicKeySpkiBase64: z.string().min(1).max(8_192),
-  })
-  .strict();
-const rootsWire = z.object({ roots: z.array(rootWire).min(1).max(64) }).strict();
-const signerWire = z
-  .object({
-    identity: z.string().min(1).max(256),
-    class: z.enum(["test-ephemeral", "organization"]),
-    keyId: z.string().regex(/^ed25519:[0-9a-f]{64}$/),
-  })
-  .strict();
-const expectedWire = z.object({ now: z.string(), signer: signerWire }).strict();
 const replayWire = z
   .object({
     digests: z.array(z.string().regex(/^[0-9a-f]{64}$/)).max(10_000),
@@ -113,19 +87,6 @@ function assertCheckout(root: string, catalogId: string) {
   return catalog;
 }
 
-function roots(path: string) {
-  return rootsWire.parse(readJson(path)).roots.map((root) => ({
-    identity: root.identity,
-    class: root.class,
-    keyId: root.keyId,
-    publicKey: createPublicKey({
-      key: Buffer.from(root.publicKeySpkiBase64, "base64"),
-      format: "der",
-      type: "spki",
-    }),
-  }));
-}
-
 function writeJson(path: string, value: unknown): void {
   writeFileSync(resolve(path), `${JSON.stringify(value, null, 2)}\n`, {
     encoding: "utf8",
@@ -139,30 +100,6 @@ function newDirectory(path: string): string {
   return resolved;
 }
 
-function existingDirectory(path: string, label: string): string {
-  const resolved = resolve(path);
-  const stat = lstatSync(resolved);
-  if (!stat.isDirectory() || stat.isSymbolicLink()) fail(`${label} must be a real directory`);
-  return resolved;
-}
-
-function batchNames(path: string, suffix: string, label: string): readonly string[] {
-  const root = existingDirectory(path, label);
-  const names = readdirSync(root).sort();
-  if (names.length === 0) fail(`${label} is empty`);
-  for (const [index, name] of names.entries()) {
-    const expected = `batch-${String(index + 1).padStart(3, "0")}${suffix}`;
-    if (name !== expected) fail(`${label} must contain contiguous canonical batch names`);
-    const stat = lstatSync(join(root, name));
-    const validShape =
-      suffix === ".bundle"
-        ? stat.isDirectory() && !stat.isSymbolicLink()
-        : stat.isFile() && !stat.isSymbolicLink() && stat.nlink === 1;
-    if (!validShape) fail(`${label} contains an unsafe batch entry`);
-  }
-  return names;
-}
-
 function request(args: readonly string[]): void {
   const catalogId = flag(args, "--catalog");
   const sourceRoot = resolve(flag(args, "--source"));
@@ -174,45 +111,6 @@ function request(args: readonly string[]): void {
     writeFileSync(join(output, name), canonicalBaselineVetRequestV1Bytes(batch), { flag: "wx" });
   }
   process.stdout.write(`authored ${authored.length} bounded Scanner request(s)\n`);
-}
-
-async function consume(args: readonly string[]): Promise<void> {
-  const catalogId = flag(args, "--catalog");
-  const sourceRoot = resolve(flag(args, "--source"));
-  const catalog = assertCheckout(sourceRoot, catalogId);
-  const requestsRoot = existingDirectory(flag(args, "--requests"), "request batches");
-  const bundlesRoot = existingDirectory(flag(args, "--bundles"), "bundle batches");
-  const evidenceRoot = existingDirectory(flag(args, "--evidence"), "evidence batches");
-  const requestNames = batchNames(requestsRoot, ".request.json", "request batches");
-  const bundleNames = batchNames(bundlesRoot, ".bundle", "bundle batches");
-  const evidenceNames = batchNames(evidenceRoot, ".evidence.json", "evidence batches");
-  if (requestNames.length !== bundleNames.length || requestNames.length !== evidenceNames.length) {
-    fail("request, bundle, and evidence batch counts differ");
-  }
-  const batches = requestNames.map((requestName, index) => ({
-    request: parseBaselineVetRequestV1Json(readFileSync(join(requestsRoot, requestName), "utf8")),
-    result: readBaselineVetBundleV1({
-      bundleDirectory: join(bundlesRoot, bundleNames[index] ?? ""),
-    }),
-    envelope: parseBaselineVetAttestationEnvelopeV1Json(
-      readFileSync(join(evidenceRoot, evidenceNames[index] ?? ""), "utf8"),
-    ),
-  }));
-  const expected = expectedWire.parse(readJson(flag(args, "--expected")));
-  const seenPath = optionalFlag(args, "--seen");
-  const seen =
-    seenPath === undefined ? { digests: [], receipts: [] } : replayWire.parse(readJson(seenPath));
-  const evidence = await consumeVerifiedScannerBaselineBatches({
-    sourceRoot,
-    catalog,
-    batches,
-    roots: roots(flag(args, "--roots")),
-    expected,
-    seenEvidenceDigests: seen.digests,
-    seenReceiptBindings: seen.receipts,
-  });
-  writeJson(flag(args, "--output"), evidence);
-  process.stdout.write(`${evidence.id}@${evidence.pinnedSha}\n`);
 }
 
 async function consumePublication(args: readonly string[]): Promise<void> {
@@ -276,10 +174,9 @@ function assemble(args: readonly string[]): void {
 export async function runScannerBridge(argv: readonly string[]): Promise<void> {
   const [command, ...args] = argv;
   if (command === "request") request(args);
-  else if (command === "consume") await consume(args);
   else if (command === "consume-publication") await consumePublication(args);
   else if (command === "assemble") assemble(args);
-  else fail("expected request, consume, consume-publication, or assemble");
+  else fail("expected request, consume-publication, or assemble");
 }
 
 if (process.argv[1] && import.meta.url === new URL(`file://${resolve(process.argv[1])}`).href) {

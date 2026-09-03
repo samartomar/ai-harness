@@ -45,6 +45,11 @@ Refresh execution belongs to `@aihq/scan`: Core authors bounded requests from it
 exact catalogs, Scanner runs and signs the analyzers, and Core verifies and
 interprets those results before assembling the lock. Core retains policy and
 authorization; it does not carry a second refresh or sharding implementation.
+Core's repo-only scripts expose request authoring, immutable-publication
+consumption, and assembly; there is no second local Scanner execution or raw
+bundle-consumption shortcut. The public `aih evidence vet-baseline` command
+remains a cross-platform compatibility and diagnostic surface and is not used
+by the release-refresh workflow.
 
 An organization can authorize a newer exact pin or a net-new component with a
 GitHub-attested evidence bundle. The org artifact uses the same component schema
@@ -399,12 +404,12 @@ first.
 
 ## Maintainer drift check
 
-The required `vet-once` job is deliberately cheap. It runs
-`npm run baseline:check`, which compares the declared source and analyzer pins
-with the committed lock and verifies that every required receipt and install
-preview is complete. It never provisions Docker, uv, Python analyzers, or a
-source checkout. A stale or partial receipt set therefore fails ordinary CI and
-release preflight without making Core CI execute Scanner.
+The existing CI `quality` job runs `npm run baseline:check`. It compares the
+declared source and analyzer pins with the committed lock and verifies that every
+required receipt and install preview is complete. It never provisions Docker,
+uv, Python analyzers, or a source checkout. A stale or partial receipt set
+therefore fails ordinary CI and release preflight without making Core CI execute
+Scanner or requiring a separate baseline workflow.
 
 ```bash
 npm run baseline:check

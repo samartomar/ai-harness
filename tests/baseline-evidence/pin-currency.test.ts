@@ -108,8 +108,11 @@ describe("baseline pin currency", () => {
       { kind: "source", id: "ecc", declared: "a".repeat(40), recorded: "b".repeat(40) },
     ]);
     expect(report).toContain("stale evidence");
-    expect(report).toContain("baseline:vet");
-    expect(report).toContain("--full");
+    expect(report).toContain("baseline:request");
+    expect(report).toContain("immutable Scanner publications");
+    expect(report).toContain("baseline-publication-consume");
+    expect(report).not.toContain("baseline:vet");
+    expect(report).not.toContain("--full");
   });
 
   it("does not compare component content hashes — that is baseline:check's job", () => {

@@ -45,10 +45,10 @@ describe("baseline evidence release payload", () => {
   it("delegates baseline execution to the exact public Scanner and keeps Core consumption explicit", () => {
     const manifest = packageJson();
     const scripts = manifest.scripts;
-    expect(manifest.devDependencies["@aihq/scan"]).toBe("0.2.5");
+    expect(manifest.devDependencies["@aihq/scan"]).toBe("0.3.0");
     expect(scripts["baseline:request"]).toContain("scanner-cli.ts request");
-    expect(scripts["baseline:vet"]).toBe("aih-scan baseline-vet");
-    expect(scripts["baseline:consume"]).toContain("scanner-cli.ts consume");
+    expect(scripts["baseline:vet"]).toBeUndefined();
+    expect(scripts["baseline:consume"]).toBeUndefined();
     expect(scripts["baseline:consume-publication"]).toContain("scanner-cli.ts consume-publication");
     expect(scripts["baseline:assemble"]).toContain("scanner-cli.ts assemble");
     expect(scripts["baseline:check"]).toContain("check:baseline-pins");
@@ -68,23 +68,21 @@ describe("baseline evidence release payload", () => {
 
   it("keeps required CI on committed evidence and immutable consumption explicit", () => {
     const requiredPath = join(repo, ".github", "workflows", "baseline-evidence.yml");
-    expect(existsSync(requiredPath)).toBe(true);
-    const requiredWorkflow = readFileSync(requiredPath, "utf8");
-    const requiredDocument = parseDocument(requiredWorkflow);
-    expect(requiredDocument.errors).toEqual([]);
-    const requiredJobs = (
-      requiredDocument.toJSON() as {
-        jobs?: Record<string, { steps?: Array<{ name?: unknown; run?: unknown }> }>;
+    expect(existsSync(requiredPath)).toBe(false);
+    const ciWorkflow = readFileSync(join(repo, ".github", "workflows", "ci.yml"), "utf8");
+    const ciDocument = parseDocument(ciWorkflow);
+    expect(ciDocument.errors).toEqual([]);
+    const qualitySteps = (
+      ciDocument.toJSON() as {
+        jobs?: { quality?: { steps?: Array<{ name?: unknown; run?: unknown }> } };
       }
-    ).jobs;
-    const requiredSteps = requiredJobs?.["vet-once"]?.steps;
-    if (!requiredSteps) throw new Error("baseline-evidence workflow must define vet-once steps");
-    const requiredCommands = JSON.stringify(requiredSteps);
+    ).jobs?.quality?.steps;
+    if (!qualitySteps) throw new Error("ci workflow must define quality steps");
+    const requiredCommands = JSON.stringify(qualitySteps);
     expect(requiredCommands).toContain("npm run baseline:check");
     expect(requiredCommands).not.toContain("baseline:vet");
     expect(requiredCommands).not.toContain("setup-uv");
     expect(requiredCommands).not.toContain("docker");
-    expect(Object.keys(requiredJobs ?? {})).toEqual(["vet-once"]);
 
     const consumePath = join(repo, ".github", "workflows", "baseline-publication-consume.yml");
     expect(existsSync(consumePath)).toBe(true);
@@ -92,7 +90,7 @@ describe("baseline evidence release payload", () => {
     expect(parseDocument(consumeWorkflow).errors).toEqual([]);
     expect(consumeWorkflow).toContain(baselineCatalogById("ecc").pinnedSha);
     expect(consumeWorkflow).toContain(baselineCatalogById("superpowers").pinnedSha);
-    expect(consumeWorkflow).toContain("92679b827d8346294b5fc557056fa838bdba709d");
+    expect(consumeWorkflow).toContain("869806438a39a002763659a2708a1ae7fcc3431d");
     expect(consumeWorkflow).toContain("npm run baseline:request");
     expect(consumeWorkflow).toContain("npm run baseline:consume-publication");
     expect(consumeWorkflow).toContain("npm run baseline:assemble");
@@ -118,15 +116,12 @@ describe("baseline evidence release payload", () => {
     expect(existsSync(lock)).toBe(true);
     expect(readFileSync(pyproject, "utf8")).toContain(CISCO_SKILL_SCANNER_SPEC);
 
-    const requiredWorkflow = readFileSync(
-      join(repo, ".github", "workflows", "baseline-evidence.yml"),
-      "utf8",
-    );
+    const ciWorkflow = readFileSync(join(repo, ".github", "workflows", "ci.yml"), "utf8");
     const consumeWorkflow = readFileSync(
       join(repo, ".github", "workflows", "baseline-publication-consume.yml"),
       "utf8",
     );
-    for (const workflow of [requiredWorkflow, consumeWorkflow]) {
+    for (const workflow of [ciWorkflow, consumeWorkflow]) {
       expect(workflow).not.toContain("setup-python");
       expect(workflow).not.toContain("setup-uv");
       expect(workflow).not.toContain("/usr/bin/python");

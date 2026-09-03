@@ -23,7 +23,7 @@ export const SCANNER_BASELINE_PUBLICATION_PUBLISHER_V1 = Object.freeze({
   repository: "samartomar/aih-scan",
   workflow: "samartomar/aih-scan/.github/workflows/baseline-publication.yml",
   ref: "refs/heads/main",
-  commit: "92679b827d8346294b5fc557056fa838bdba709d",
+  commit: "869806438a39a002763659a2708a1ae7fcc3431d",
 } satisfies ScannerBaselinePublicationPublisherV1);
 
 const signerWire = z

@@ -3,3 +3,4 @@
 * text=auto eol=lf
 *.png binary
 *.ico binary
+src/baseline-evidence/pin-currency.ts text eol=lf diff
