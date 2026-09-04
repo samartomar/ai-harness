@@ -8,6 +8,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Every AIH MCP row in the portable Policy Workbench now accepts requested intent, recorded in the
+  new optional `governance.aihMcpRequests` array. The policy-projector and AIH-evidence gates stay
+  as row labels and next routes: they hold at export and again at target evaluation, and a recorded
+  request never becomes a candidate, an activation, an allow-list entry, or a blocking condition.
 - Scope each Policy Workbench reviewed activation to the exact intersection of the control's
   projector targets and the organization's sanctioned CLIs. Unsupported combinations now fail
   closed by name, requested targets are visible before export, and exact legacy Workbench records

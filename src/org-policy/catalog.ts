@@ -34,6 +34,7 @@ import {
   eccHookControlCatalog,
 } from "./ecc-hook-controls.js";
 import {
+  AIH_OWNED_ECC_MCP_EXCLUSIONS,
   ECC_MCP_CATALOG_PROVENANCE,
   type EccMcpCatalogEntry,
   eccExternalMcpCatalog,
@@ -332,12 +333,21 @@ export interface PolicyAuthoringCatalog {
     control: AihPolicyControl;
     availability: "always" | "web-target";
   }>;
-  /** AIH-owned runtime identities withheld from policy authoring until AIH evidence exists. */
+  /** AIH-owned runtime identities the managed stdio projector cannot own. */
+  nonProjectableMcp: Array<{
+    id: string;
+    transport: string;
+    reason: string;
+  }>;
+  /** AIH-owned runtime identities withheld from AIH control until AIH evidence exists. */
   unavailableMcp: Array<{
     id: string;
     configuredIdentity: string;
+    transport: string;
     reason: string;
   }>;
+  /** Pinned order the Workbench sorts `governance.aihMcpRequests` into. */
+  aihMcpRequestIds: typeof AIH_OWNED_ECC_MCP_EXCLUSIONS;
   /** Complete source-locked MCP availability inventory, including AIH-owned declarations. */
   eccMcpInventory: readonly EccMcpCatalogEntry[];
   externalMcp: readonly EccMcpCatalogEntry[];
@@ -369,6 +379,29 @@ export function policyAuthoringMcpCatalog(): Record<string, McpServer> {
   return generic;
 }
 
+/**
+ * The gate is read from AIH's own runtime catalog, never inferred from an
+ * identity's absence in the projectable set: an id whose AIH runtime transport
+ * is not stdio cannot be owned by the managed stdio projector.
+ */
+function policyAuthoringNonProjectableMcpCatalog(
+  catalog: Record<string, McpServer>,
+): PolicyAuthoringCatalog["nonProjectableMcp"] {
+  return Object.entries(catalog).flatMap(([id, server]) =>
+    server.type === "stdio"
+      ? []
+      : [
+          {
+            id,
+            transport: server.type,
+            reason:
+              `Not policy-projectable: AIH's runtime identity for this id uses the ${server.type} transport ` +
+              "and the managed stdio projector cannot own it. Selecting it records requested intent only.",
+          },
+        ],
+  );
+}
+
 function policyAuthoringUnavailableMcpCatalog(): PolicyAuthoringCatalog["unavailableMcp"] {
   const web = mcpServers("project", { ...EMPTY_REPO_STACK, frameworks: ["React"] });
   const playwright = web.playwright;
@@ -384,8 +417,9 @@ function policyAuthoringUnavailableMcpCatalog(): PolicyAuthoringCatalog["unavail
     {
       id: "playwright",
       configuredIdentity,
+      transport: playwright.type,
       reason:
-        `Unavailable for policy authoring: AIH has no current protected Scanner evidence record for ${configuredIdentity}. ` +
+        `Unavailable as an AIH control: AIH has no current protected Scanner evidence record for ${configuredIdentity}. ` +
         "This is an AIH-owned evidence gap; an administrator cannot waive it or manufacture organization approval for it.",
     },
   ];
@@ -838,7 +872,9 @@ export function policyAuthoringCatalog(): PolicyAuthoringCatalog {
     },
     hookRegistry: hookRegistry(frameworks),
     enterpriseComposition: enterpriseComposition(ecc),
+    nonProjectableMcp: policyAuthoringNonProjectableMcpCatalog(mcp),
     unavailableMcp,
+    aihMcpRequestIds: AIH_OWNED_ECC_MCP_EXCLUSIONS,
     mcp: Object.entries(mcp).flatMap(([id, server]) => {
       const control = controls.find((candidate) => candidate.id === id);
       return control === undefined

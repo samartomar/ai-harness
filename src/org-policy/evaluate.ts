@@ -351,6 +351,11 @@ export async function orgPolicyEffectiveDigest(
       `Kiro workspace-MCP receipt: ${kiroMcpReceipt.state} — ${kiroMcpReceipt.detail}.`,
       `Hook registrar: ${hookRegistrar.state} — ${hookRegistrar.detail}.`,
       `Policy decision blockers: ${publicPolicyDecisionBlockers(effective)}.`,
+      ...((effective.aihMcpRequests ?? []).length === 0
+        ? []
+        : [
+            `Requested AIH-owned MCP identities (recorded intent only, never effective): ${(effective.aihMcpRequests ?? []).map((request) => (request.controlShipped ? `${request.id} (this build ships a selectable AIH control; select the control instead)` : request.id)).join(", ")}.`,
+          ]),
       "",
       "Observed npm package lifecycle (read-only; never installed, configured, projected, or executed):",
       ...lifecycle.map(

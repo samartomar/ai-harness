@@ -354,6 +354,19 @@ export interface EffectiveOrgPolicy {
     }>;
     status: "requested-evidence-needed";
   }>;
+  /**
+   * Admin-requested intent over AIH-owned MCP identities this Core build gates.
+   * It is reported so a target repository sees exactly what was asked for; it is
+   * never a candidate, never an active MCP server id, and never blocking.
+   * `controlShipped` marks a request for an identity this runtime ships as a
+   * reviewed control (from `aihReviewedControls`); the truthful route is then
+   * to select the control, and the request still grants nothing.
+   */
+  aihMcpRequests?: Array<{
+    id: string;
+    status: "requested-not-effective";
+    controlShipped?: true;
+  }>;
   /** Observed package state only; it is never a projector or runtime control. */
   npmPackageLifecycle?: readonly NpmPackageEffectiveStateV1[];
   /** Observed organization-managed artifact state; it never installs or projects the artifact. */
@@ -1392,6 +1405,17 @@ export function resolveEffectiveOrgPolicy(
       items: selection.items.map((item) => ({ ...item, source: { ...item.source } })),
       status: "requested-evidence-needed" as const,
     })),
+    ...(governance.aihMcpRequests === undefined
+      ? {}
+      : {
+          aihMcpRequests: governance.aihMcpRequests.map((request) => ({
+            id: request.id,
+            status: "requested-not-effective" as const,
+            ...(context.aihReviewedControls?.[request.id] === undefined
+              ? {}
+              : { controlShipped: true as const }),
+          })),
+        }),
     npmPackageLifecycle: [...(context.npmPackageLifecycle ?? [])],
     upstreamArtifactLifecycle: [...(context.upstreamArtifactLifecycle ?? [])],
     decisionBlockers,
@@ -1551,6 +1575,15 @@ const EXTERNAL_SELECTION_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
 };
 
 /**
+ * Recorded intent only. A request names an AIH-owned MCP identity this build
+ * gates; it reaches the effective report and nothing else.
+ */
+const AIH_MCP_REQUEST_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
+  clarification: "effective report: requesting-origin provenance only",
+  id: "effective report: requested AIH-owned MCP identity only; no projector, allow-list, installer, or scanner consumer is wired",
+};
+
+/**
  * Seat-side Add authority only. These fields deliberately do not feed the
  * effective candidate resolver, a projector, a scanner, or any network action.
  */
@@ -1631,6 +1664,7 @@ export const POLICY_ENGINE_FIELD_CONSUMERS: Readonly<Record<string, string>> = O
   ...prefixedConsumers("governance.authority", AUTHORITY_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.externalCuration.*", EXTERNAL_CURATION_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.externalSelections.*", EXTERNAL_SELECTION_LEAF_CONSUMERS),
+  ...prefixedConsumers("governance.aihMcpRequests.*", AIH_MCP_REQUEST_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.eccMcpApprovals.*", ECC_MCP_APPROVAL_LEAF_CONSUMERS),
   "governance.eccHookControls.profile":
     "ECC hook-controls resolver and Claude settings receipt-backed projection; no launcher execution or enforcement claim",

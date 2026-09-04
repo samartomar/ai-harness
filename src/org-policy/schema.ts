@@ -19,7 +19,7 @@ import {
   ECC_EXTERNAL_MCP_APPROVAL_IDS,
   POLICY_APPROVER_EMAIL_PATTERN,
 } from "./ecc-mcp-approval.js";
-import { ECC_MCP_CATALOG_PROVENANCE } from "./ecc-mcp-catalog.js";
+import { AIH_OWNED_ECC_MCP_EXCLUSIONS, ECC_MCP_CATALOG_PROVENANCE } from "./ecc-mcp-catalog.js";
 import { GovernanceDecisionIdSchema } from "./governance-decision-v1.js";
 
 const PostureSchema = z.enum(["vibe", "enterprise"]);
@@ -407,6 +407,19 @@ const EccMcpApprovalSchema = z
     approvedBy: PolicyApproverIdentitySchema,
     authenticationMode: SafePolicyTextSchema,
     allowedDataClasses: z.array(SafePolicyIdentifierSchema).min(1).max(20),
+  })
+  .strict();
+
+/**
+ * An administrator's requested intent over an AIH-owned MCP identity this Core
+ * build gates. It carries the identity and the requesting origin and nothing
+ * else: which gate an identity is behind is build knowledge read from the
+ * catalog, never a note frozen into policy bytes.
+ */
+const AihMcpRequestSchema = z
+  .object({
+    id: z.enum(AIH_OWNED_ECC_MCP_EXCLUSIONS),
+    clarification: z.literal("Requested by: administrator"),
   })
   .strict();
 
@@ -1175,6 +1188,18 @@ const GovernedPolicyGovernanceSchema = z
      */
     externalSelections: z.array(ExternalFrameworkSelectionSchema).default([]),
     /**
+     * Requested intent over AIH-owned MCP identities this Core build gates.
+     * Recording is not installation, evidence, approval, projection,
+     * activation, or reachability; the gate holds at export and at target
+     * evaluation, and no consumer turns a request into a candidate, an
+     * activation, or an allow-list entry. Absence is the only "not requested".
+     * Which identities a build gates is catalog knowledge held where the
+     * catalog exists: the Workbench refuses a request for an identity it ships
+     * as a control, and the resolver marks such a request `controlShipped`
+     * from its runtime context.
+     */
+    aihMcpRequests: z.array(AihMcpRequestSchema).min(1).optional(),
+    /**
      * Source-locked, declarative approval records for ECC external MCP options.
      * A later explicit Add flow must resolve these; this grammar has no runtime
      * side effect and deliberately creates no candidate or activation.
@@ -1374,6 +1399,46 @@ const GovernedPolicyGovernanceSchema = z
         code: "custom",
         path: ["eccMcpApprovals"],
         message: `ECC MCP approval ${duplicateEccMcpApproval} is duplicated`,
+      });
+    }
+    const aihMcpRequestIds = (governance.aihMcpRequests ?? []).map((request) => request.id);
+    const duplicateAihMcpRequest = aihMcpRequestIds.find(
+      (id, index) => aihMcpRequestIds.indexOf(id) !== index,
+    );
+    if (duplicateAihMcpRequest !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["aihMcpRequests"],
+        message: `AIH MCP request ${duplicateAihMcpRequest} is duplicated`,
+      });
+    } else if (
+      aihMcpRequestIds.some(
+        (id, index) =>
+          index > 0 &&
+          AIH_OWNED_ECC_MCP_EXCLUSIONS.indexOf(id) <=
+            AIH_OWNED_ECC_MCP_EXCLUSIONS.indexOf(aihMcpRequestIds[index - 1] as typeof id),
+      )
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["aihMcpRequests"],
+        message: "AIH MCP requests must follow the pinned AIH-owned MCP declaration order",
+      });
+    }
+    // A request records intent over an identity this build gates. An identity
+    // that carries a control is selected as a control, so the two records
+    // cannot both describe the same id without contradicting each other.
+    const requestCollisionIds = new Set(
+      [...governance.catalog.reviewed, ...governance.catalog.custom].map(
+        (candidate) => candidate.id,
+      ),
+    );
+    for (const [index, id] of aihMcpRequestIds.entries()) {
+      if (!requestCollisionIds.has(id)) continue;
+      ctx.addIssue({
+        code: "custom",
+        path: ["aihMcpRequests", index],
+        message: `${id} is recorded as both an AIH MCP request and a policy candidate; one identity keeps one record — remove either the request or the candidate`,
       });
     }
     // The same contradiction the activation rule above already forbids, one

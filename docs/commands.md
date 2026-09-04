@@ -765,14 +765,18 @@ narrates the selected-to-materialized journey and routes one next action to the 
 separate authoring sidebar. The MCP availability planes list all 35 entries from ECC's pinned source: 31
 ECC-owned entries route to the separate Add MCP sidebar, which authors approved/revoked
 `governance.eccMcpApprovals` records at the pinned catalog digest; the four AIH-owned source declarations are
-read-only and do not claim that this Core build ships a matching control. Only entries labeled
+all selectable. One is represented by the shared AIH control row recorded in `governance.catalog.reviewed`;
+the other three record requested intent in `governance.aihMcpRequests` and name the AIH gate a selection does
+not satisfy — either no policy projector or AIH evidence required. A request never creates or implies a
+matching Core control. Only entries labeled
 HTTPS-configurable can use the later `aih ecc mcp add <id> --cli <client>` path; manual entries remain
 approval-only. The browser does not install, contact, scan, attest, or observe the endpoint.
-The configured Playwright runtime identity remains exactly `@playwright/mcp@0.0.79`, but its
-AIH-reviewed control is unavailable for policy authoring because AIH has no current protected Scanner
-evidence record for that identity. The Workbench identifies this as an AIH-owned evidence gap; an
+The configured Playwright runtime identity remains exactly `@playwright/mcp@0.0.79`, but AIH ships no
+reviewed control for it because AIH has no current protected Scanner evidence record for that identity. The Workbench identifies this as an AIH-owned evidence gap; an
 administrator cannot waive it or substitute organization approval, and runtime evaluation does not infer
-reviewed evidence from a matching npm identity. Importing the exact legacy Core 0.5.0 enterprise Workbench
+reviewed evidence from a matching npm identity. The row remains selectable; an administrator can record the
+request in `governance.aihMcpRequests`, which changes no gate and grants no evidence, approval, projection,
+activation, or reachability. Importing the exact legacy Core 0.5.0 enterprise Workbench
 footprint removes the unavailable Playwright candidate and activation, rebuilds the managed MCP allow-list
 from current projectable controls, and preserves all remaining targets and authority.
 
