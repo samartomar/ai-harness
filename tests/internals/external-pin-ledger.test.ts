@@ -278,19 +278,19 @@ describe("active external-pin ledger", () => {
       skillspectorDockerfile.match(/pip install --no-cache-dir uv==([^\s]+)/)?.[1],
     );
     expect(entry("uv")).toMatchObject({
-      version: "0.12.8",
-      commit: "68209e5c61ce4b76c2e685bea7913876bc929dc9",
+      version: "0.12.9",
+      commit: "9f928602938ac5cf1cd6b294a725833c16f5720e",
       disposition: "active",
     });
     expect(entry("uv").reason).toMatch(/five committed locks.*byte-identical/i);
     expect(entry("uv").reason).toContain(
-      "e07acf3f8a29fe41f9e04b799c3325cb0e0893836bb222bf102829b45c679ad6",
+      "ddbfcee1ac615a0499f6aa97b5ec8ebdf3ee4a7714a48055ec2ba0030e3cf810",
     );
     expect(entry("uv").reason).toContain(
-      "2e2b37e9811e17675a9e70bed5e1a58fc8c0388be63d751d72cc735188c149ff",
+      "ec7a99cd05e0cd7f80243f135ce1361c76835cb0ee60055d14d20eba8eba1460",
     );
     expect(entry("uv").reason).toContain(
-      "9d63d046051d33b36260146df5aef03e9166b30b4546e9b6e554be152b69f9f9",
+      "5badfd805fd88bf99b4b4f044f6e8f762f1892cab27477f4427bb473e93dd049",
     );
     expect(skillspectorDockerfile).toContain(
       `LABEL org.opencontainers.image.revision="${SKILLSPECTOR_SOURCE_REVISION}"`,
