@@ -42,7 +42,7 @@ function manifest(shardCount = 3) {
     },
     analyzer: {
       name: "cisco",
-      version: "2.0.13",
+      version: "2.0.14",
       lockSha256: ciscoSkillScannerLockSha256(),
     },
     policy: {
@@ -219,13 +219,13 @@ describe("Cisco exact-source shard evidence", () => {
     }
     const plan = buildCiscoSourceShardManifest(root, {
       source: { id: "ecc", pinnedSha: SOURCE_SHA },
-      analyzer: { version: "2.0.13", lockSha256: ciscoSkillScannerLockSha256() },
+      analyzer: { version: "2.0.14", lockSha256: ciscoSkillScannerLockSha256() },
       policy: { version: "native.test", profile: "ecc-full" },
       shardCount: 2,
     });
     const run: Runner = async (argv) => {
       if (argv.includes("--version")) {
-        return { code: 0, stdout: "skill-scanner 2.0.13\n", stderr: "" };
+        return { code: 0, stdout: "skill-scanner 2.0.14\n", stderr: "" };
       }
       const scanIndex = argv.indexOf("scan");
       const outputIndex = argv.indexOf("--output-sarif");
@@ -304,7 +304,7 @@ describe("Cisco exact-source shard evidence", () => {
     writeFileSync(join(skillDir, "SKILL.md"), "# alpha\n", "utf8");
     const plan = buildCiscoSourceShardManifest(root, {
       source: { id: "ecc", pinnedSha: SOURCE_SHA },
-      analyzer: { version: "2.0.13", lockSha256: ciscoSkillScannerLockSha256() },
+      analyzer: { version: "2.0.14", lockSha256: ciscoSkillScannerLockSha256() },
       policy: { version: "native.test", profile: "ecc-full" },
       shardCount: 1,
     });
@@ -314,7 +314,7 @@ describe("Cisco exact-source shard evidence", () => {
 
     await expect(
       runCiscoSourceShard(root, plan, shard.id, {
-        run: async () => ({ code: 0, stdout: "skill-scanner 2.0.13\n", stderr: "" }),
+        run: async () => ({ code: 0, stdout: "skill-scanner 2.0.14\n", stderr: "" }),
         platform: "linux",
         env: {},
       }),
@@ -329,14 +329,14 @@ describe("Cisco exact-source shard evidence", () => {
     writeFileSync(join(skillDir, "SKILL.md"), "# alpha\n", "utf8");
     const plan = buildCiscoSourceShardManifest(root, {
       source: { id: "ecc", pinnedSha: SOURCE_SHA },
-      analyzer: { version: "2.0.13", lockSha256: ciscoSkillScannerLockSha256() },
+      analyzer: { version: "2.0.14", lockSha256: ciscoSkillScannerLockSha256() },
       policy: { version: "native.test", profile: "ecc-full" },
       shardCount: 1,
     });
     let scanCount = 0;
     const run: Runner = async (argv) => {
       if (argv.includes("--version")) {
-        return { code: 0, stdout: "skill-scanner 2.0.13\n", stderr: "" };
+        return { code: 0, stdout: "skill-scanner 2.0.14\n", stderr: "" };
       }
       const output = argv[argv.indexOf("--output-sarif") + 1];
       if (output === undefined) return { code: 2, stdout: "", stderr: "missing SARIF path" };

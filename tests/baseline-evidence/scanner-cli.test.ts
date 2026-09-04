@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   baselineCatalogById: vi.fn(),
   canonicalRequest: vi.fn(),
   consumePublication: vi.fn(),
+  consumePublications: vi.fn(),
   createRequests: vi.fn(),
   execFileSync: vi.fn(),
   generatePreview: vi.fn(),
@@ -33,9 +34,10 @@ vi.mock("../../src/baseline-evidence/scanner-publication.js", () => ({
     repository: "samartomar/aih-scan",
     workflow: "samartomar/aih-scan/.github/workflows/baseline-publication.yml",
     ref: "refs/heads/main",
-    commit: "869806438a39a002763659a2708a1ae7fcc3431d",
+    commit: "ba0f0bfc46f2634da71e125bf3bbcefb3493389c",
   },
   consumeScannerBaselinePublicationV1: mocks.consumePublication,
+  consumeScannerBaselinePublicationsV1: mocks.consumePublications,
 }));
 vi.mock("../../src/baseline-evidence/schema.js", () => ({
   BaselineSourceEvidenceSchema: { parse: mocks.sourceParse },
@@ -103,10 +105,10 @@ describe("baseline Scanner bridge CLI", () => {
 
   it("rejects ambiguous flags, unknown commands, and a checkout at the wrong commit", async () => {
     await expect(runScannerBridge([])).rejects.toThrow(
-      "baseline Scanner bridge: expected request, consume-publication, or assemble",
+      "baseline Scanner bridge: expected request, consume-publication, consume-publications, or assemble",
     );
     await expect(runScannerBridge(["consume"])).rejects.toThrow(
-      "baseline Scanner bridge: expected request, consume-publication, or assemble",
+      "baseline Scanner bridge: expected request, consume-publication, consume-publications, or assemble",
     );
     await expect(
       runScannerBridge(["request", "--catalog", "ecc", "--catalog", "ecc"]),
@@ -144,7 +146,7 @@ describe("baseline Scanner bridge CLI", () => {
       evidence: { id: "ecc", pinnedSha: PIN, components: [] },
       provenance: {
         authority: "none",
-        sourceCommit: "869806438a39a002763659a2708a1ae7fcc3431d",
+        sourceCommit: "ba0f0bfc46f2634da71e125bf3bbcefb3493389c",
       },
     });
 
@@ -177,7 +179,7 @@ describe("baseline Scanner bridge CLI", () => {
         attestationResultBytes: Buffer.from('[{"attestation":1}]'),
         maxAgeSeconds: 604800,
         publisher: expect.objectContaining({
-          commit: "869806438a39a002763659a2708a1ae7fcc3431d",
+          commit: "ba0f0bfc46f2634da71e125bf3bbcefb3493389c",
         }),
       }),
     );
@@ -186,6 +188,86 @@ describe("baseline Scanner bridge CLI", () => {
       authority: "none",
     });
     expect(stdout).toHaveBeenCalledWith(`consumed published ecc@${PIN}\n`);
+  });
+
+  it("consumes a closed contiguous set of independently published batches", async () => {
+    const source = makeDirectory("published-batch-source");
+    const publicationRoot = makeDirectory("published-batches");
+    const output = join(root, "published-batch-evidence.json");
+    const provenanceOutput = join(root, "published-batch-provenance.json");
+    const requestDigests = ["1".repeat(64), "2".repeat(64)];
+    mocks.createRequests.mockReturnValue(
+      requestDigests.map((requestSha256) => ({ requestSha256 })),
+    );
+    for (const [index, requestSha256] of requestDigests.entries()) {
+      const batch = join(publicationRoot, `batch-${String(index + 1).padStart(3, "0")}`);
+      mkdirSync(batch);
+      writeFileSync(join(batch, "discovery.json"), `{"request":"${requestSha256}"}`);
+      writeFileSync(join(batch, "publication.json"), `{"batch":${index + 1}}`);
+      writeFileSync(join(batch, "attestation.json"), `[{"batch":${index + 1}}]`);
+    }
+    mocks.consumePublications.mockResolvedValue({
+      evidence: { id: "ecc", pinnedSha: PIN, components: [] },
+      provenance: requestDigests.map((requestSha256) => ({ requestSha256 })),
+    });
+
+    await runScannerBridge([
+      "consume-publications",
+      "--catalog",
+      "ecc",
+      "--source",
+      source,
+      "--publication-root",
+      publicationRoot,
+      "--output",
+      output,
+      "--provenance-output",
+      provenanceOutput,
+    ]);
+
+    expect(mocks.consumePublications).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sourceRoot: source,
+        publications: requestDigests.map((expectedRequestSha256, index) => ({
+          expectedRequestSha256,
+          discoveryBytes: Buffer.from(`{"request":"${expectedRequestSha256}"}`),
+          publicationBytes: Buffer.from(`{"batch":${index + 1}}`),
+          attestationResultBytes: Buffer.from(`[{"batch":${index + 1}}]`),
+        })),
+      }),
+    );
+    expect(JSON.parse(readFileSync(output, "utf8"))).toMatchObject({ id: "ecc" });
+    expect(JSON.parse(readFileSync(provenanceOutput, "utf8"))).toHaveLength(2);
+    expect(stdout).toHaveBeenCalledWith(`consumed 2 published ecc batch(es)@${PIN}\n`);
+  });
+
+  it("rejects extra entries in a publication batch set", async () => {
+    const source = makeDirectory("closed-batch-source");
+    const publicationRoot = makeDirectory("closed-batches");
+    const batch = join(publicationRoot, "batch-001");
+    mkdirSync(batch);
+    writeFileSync(join(batch, "discovery.json"), "{}");
+    writeFileSync(join(batch, "publication.json"), "{}");
+    writeFileSync(join(batch, "attestation.json"), "[]");
+    writeFileSync(join(publicationRoot, "unexpected.json"), "{}");
+    mocks.createRequests.mockReturnValue([{ requestSha256: "1".repeat(64) }]);
+
+    await expect(
+      runScannerBridge([
+        "consume-publications",
+        "--catalog",
+        "ecc",
+        "--source",
+        source,
+        "--publication-root",
+        publicationRoot,
+        "--output",
+        join(root, "closed-evidence.json"),
+        "--provenance-output",
+        join(root, "closed-provenance.json"),
+      ]),
+    ).rejects.toThrow("publication batch layout");
+    expect(mocks.consumePublications).not.toHaveBeenCalled();
   });
 
   it("assembles exact source evidence and the authorized ECC preview without overwriting", async () => {

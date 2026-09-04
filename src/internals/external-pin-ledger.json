@@ -145,10 +145,11 @@
     {
       "surface": "cisco-skill-scanner",
       "identity": "cisco-ai-skill-scanner",
-      "version": "2.0.13",
-      "integrity": "sha256:d81fde291d60b6f8134375c33b49a2f41f5bb3072b74153dafea4774d627a837",
+      "version": "2.0.14",
+      "commit": "a49c8d9f7555dd99a9f5e4430c3bb8d4fe4a9371",
+      "integrity": "sha256:30b5c8a5108307981e0299e6cde0da869be64deb5da0ca66cf9f0022c3c48fc2",
       "disposition": "active",
-      "reason": "The committed uv 0.12.2 lock now resolves aiohttp 3.14.3 and cryptography 50.0.0 without overrides. Its scanner pin remains 2.0.13; locked version checks remain required before release."
+      "reason": "Advance to the exact 2.0.14 wheel published 2026-09-01 after Scanner qualification bound tag commit a49c8d9f7555dd99a9f5e4430c3bb8d4fe4a9371, PyPI wheel sha256:30b5c8a5108307981e0299e6cde0da869be64deb5da0ca66cf9f0022c3c48fc2, and the committed uv 0.12.9 lock sha256:aaba1f3260494b09dfc62fd6c309558b901b8ad9411587d534a4f09721d3b4a1. Protected Scanner publisher ba0f0bfc46f2634da71e125bf3bbcefb3493389c produced request-bound ECC and Superpowers evidence with analyzer identity 2.0.14+uvlock.aaba1f326049; locked version checks remain required before release."
     },
     {
       "surface": "cisco-mcp-scanner",

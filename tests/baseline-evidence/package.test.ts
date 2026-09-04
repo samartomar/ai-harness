@@ -90,13 +90,14 @@ describe("baseline evidence release payload", () => {
     expect(parseDocument(consumeWorkflow).errors).toEqual([]);
     expect(consumeWorkflow).toContain(baselineCatalogById("ecc").pinnedSha);
     expect(consumeWorkflow).toContain(baselineCatalogById("superpowers").pinnedSha);
-    expect(consumeWorkflow).toContain("869806438a39a002763659a2708a1ae7fcc3431d");
+    expect(consumeWorkflow).toContain("ba0f0bfc46f2634da71e125bf3bbcefb3493389c");
     expect(consumeWorkflow).toContain("npm run baseline:request");
-    expect(consumeWorkflow).toContain("npm run baseline:consume-publication");
+    expect(consumeWorkflow).toContain("npm run baseline:consume-publications");
     expect(consumeWorkflow).toContain("npm run baseline:assemble");
     expect(consumeWorkflow).toContain("gh release download");
     expect(consumeWorkflow).toContain("gh attestation verify");
-    expect(consumeWorkflow).toContain("baseline-v1-$request_sha256");
+    expect(consumeWorkflow).toContain("baseline-v1-$SCANNER_PUBLISHER_COMMIT-$request_sha256");
+    expect(consumeWorkflow).not.toContain('tag="baseline-v1-$request_sha256"');
     expect(consumeWorkflow).toContain(
       "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
     );

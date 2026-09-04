@@ -18,7 +18,7 @@ dependencies = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "cisco-ai-skill-scanner", specifier = "==2.0.13" }]
+requires-dist = [{ name = "cisco-ai-skill-scanner", specifier = "==2.0.14" }]
 
 [[package]]
 name = "aiohappyeyeballs"
@@ -456,7 +456,7 @@ wheels = [
 
 [[package]]
 name = "cisco-ai-skill-scanner"
-version = "2.0.13"
+version = "2.0.14"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anthropic" },
@@ -480,9 +480,9 @@ dependencies = [
     { name = "uvicorn", extra = ["standard"] },
     { name = "yara-x" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b3/33/08ad270e37ef006aac043ee63f4a94c144f94246166af0c3ebdf9c92c7e8/cisco_ai_skill_scanner-2.0.13.tar.gz", hash = "sha256:e84ec8bedf6e57d8fc96a0ed9244692e618c8bd3a064fbade29695ffb8480695", size = 1470669, upload-time = "2026-08-03T22:42:16.611Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ed/81/123b054b3f857951200042d55d4e1c11168bf4153f3751ba37087130a6ac/cisco_ai_skill_scanner-2.0.14.tar.gz", hash = "sha256:532ead551e1599c186e762fc6dcec6fb1c3b45aef084701564957db60adccae3", size = 1519436, upload-time = "2026-09-01T23:35:32.46Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8d/72/e10809b1205523427364c526f806bc1db5c0eeb434c78a133743b24cc5f5/cisco_ai_skill_scanner-2.0.13-py3-none-any.whl", hash = "sha256:d81fde291d60b6f8134375c33b49a2f41f5bb3072b74153dafea4774d627a837", size = 875343, upload-time = "2026-08-03T22:42:15.107Z" },
+    { url = "https://files.pythonhosted.org/packages/93/db/4ee95f579c4a55b3505f16812bae3410044e161a56467427f54094dc74d9/cisco_ai_skill_scanner-2.0.14-py3-none-any.whl", hash = "sha256:30b5c8a5108307981e0299e6cde0da869be64deb5da0ca66cf9f0022c3c48fc2", size = 901006, upload-time = "2026-09-01T23:35:30.383Z" },
 ]
 
 [[package]]

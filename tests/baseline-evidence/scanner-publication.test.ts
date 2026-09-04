@@ -12,7 +12,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import { defineBaselineCatalog } from "../../src/baseline-evidence/catalog.js";
 import { createCoreBaselineVetRequest } from "../../src/baseline-evidence/scanner-consumer.js";
 import { SCANNER_BASELINE_ANALYZER_VERSIONS } from "../../src/baseline-evidence/scanner-profile.js";
-import { consumeScannerBaselinePublicationV1 } from "../../src/baseline-evidence/scanner-publication.js";
+import {
+  consumeScannerBaselinePublicationsV1,
+  consumeScannerBaselinePublicationV1,
+} from "../../src/baseline-evidence/scanner-publication.js";
 import { canonicalStrictJsonBytesV1 } from "../../src/contract/strict-json-v1.js";
 
 const temporaryRoots: string[] = [];
@@ -146,7 +149,7 @@ function fixture() {
     receiptSha256: result.receipt.receiptSha256,
     evidenceDigestSha256: sha256(canonicalStrictJsonBytesV1(envelope)),
     publicationSha256: sha256(publicationBytes),
-    locator: `https://github.com/${publisher.repository}/releases/download/baseline-v1-${request.requestSha256}/publication.json`,
+    locator: `https://github.com/${publisher.repository}/releases/download/baseline-v1-${publisher.commit}-${request.requestSha256}/publication.json`,
   };
   const workflowUri = `https://github.com/${publisher.workflow}@${publisher.ref}`;
   const attestation = [
@@ -169,7 +172,7 @@ function fixture() {
         statement: {
           _type: "https://in-toto.io/Statement/v1",
           predicateType: "https://slsa.dev/provenance/v1",
-          subject: [{ digest: { sha256: sha256(publicationBytes) } }],
+          subject: [{ name: "publication.json", digest: { sha256: sha256(publicationBytes) } }],
         },
         verifiedTimestamps: [
           {
@@ -193,7 +196,7 @@ function fixture() {
   };
 }
 
-function consume(input = fixture()) {
+function consume(input = fixture(), now = "2026-09-03T13:10:00.000Z") {
   return consumeScannerBaselinePublicationV1({
     sourceRoot: input.sourceRoot,
     catalog: input.catalog,
@@ -202,7 +205,7 @@ function consume(input = fixture()) {
     publicationBytes: input.publicationBytes,
     attestationResultBytes: canonicalStrictJsonBytesV1(input.attestation),
     publisher,
-    now: "2026-09-03T13:10:00.000Z",
+    now,
     maxAgeSeconds: 3600,
     seenEvidenceDigests: [],
     seenReceiptBindings: [],
@@ -221,6 +224,47 @@ describe("independently published Scanner baseline consumption", () => {
         ageSeconds: 300,
       },
     });
+  });
+
+  it("accepts a fresh CLI verification when the consumer clock has subsecond precision", async () => {
+    await expect(consume(fixture(), "2026-09-03T13:10:00.751Z")).resolves.toMatchObject({
+      provenance: { ageSeconds: 300 },
+    });
+  });
+
+  it("verifies the complete publication-set boundary before returning batch provenance", async () => {
+    const value = fixture();
+    await expect(
+      consumeScannerBaselinePublicationsV1({
+        sourceRoot: value.sourceRoot,
+        catalog: value.catalog,
+        publications: [
+          {
+            expectedRequestSha256: value.request.requestSha256,
+            discoveryBytes: canonicalStrictJsonBytesV1(value.discovery),
+            publicationBytes: value.publicationBytes,
+            attestationResultBytes: canonicalStrictJsonBytesV1(value.attestation),
+          },
+        ],
+        publisher,
+        now: "2026-09-03T13:10:00.751Z",
+        maxAgeSeconds: 3600,
+      }),
+    ).resolves.toMatchObject({
+      evidence: { id: "fixture" },
+      provenance: [{ requestSha256: value.request.requestSha256, ageSeconds: 300 }],
+    });
+  });
+
+  it("accepts a bounded multi-subject workflow attestation that uniquely covers this publication", async () => {
+    const value = fixture();
+    const result = value.attestation[0];
+    if (result === undefined) throw new Error("fixture attestation missing");
+    result.verificationResult.statement.subject.unshift({
+      name: "publication.json",
+      digest: { sha256: "b".repeat(64) },
+    });
+    await expect(consume(value)).resolves.toMatchObject({ evidence: { id: "fixture" } });
   });
 
   it.each([
@@ -257,6 +301,22 @@ describe("independently published Scanner baseline consumption", () => {
         attestation.verificationResult.signature.certificate.sourceRepositoryDigest = "e".repeat(
           40,
         );
+      },
+    ],
+    [
+      "unexpected attestation subject name",
+      (value: ReturnType<typeof fixture>) => {
+        const subject = value.attestation[0]?.verificationResult.statement.subject[0];
+        if (subject === undefined) throw new Error("fixture subject missing");
+        subject.name = "other.json";
+      },
+    ],
+    [
+      "duplicate attestation subject digest",
+      (value: ReturnType<typeof fixture>) => {
+        const subject = value.attestation[0]?.verificationResult.statement.subject[0];
+        if (subject === undefined) throw new Error("fixture subject missing");
+        value.attestation[0]?.verificationResult.statement.subject.push(structuredClone(subject));
       },
     ],
     [

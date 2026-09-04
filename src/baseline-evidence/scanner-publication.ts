@@ -8,7 +8,10 @@ import { z } from "zod";
 import { canonicalStrictJsonBytesV1, parseStrictJsonObjectV1 } from "../contract/strict-json-v1.js";
 import { AihError } from "../errors.js";
 import type { BaselineCatalog } from "./catalog.js";
-import { consumeVerifiedScannerBaseline } from "./scanner-consumer.js";
+import {
+  consumeVerifiedScannerBaseline,
+  consumeVerifiedScannerBaselineBatches,
+} from "./scanner-consumer.js";
 import type { BaselineSourceEvidence } from "./schema.js";
 
 const SHA256 = /^[0-9a-f]{64}$/;
@@ -23,7 +26,7 @@ export const SCANNER_BASELINE_PUBLICATION_PUBLISHER_V1 = Object.freeze({
   repository: "samartomar/aih-scan",
   workflow: "samartomar/aih-scan/.github/workflows/baseline-publication.yml",
   ref: "refs/heads/main",
-  commit: "869806438a39a002763659a2708a1ae7fcc3431d",
+  commit: "ba0f0bfc46f2634da71e125bf3bbcefb3493389c",
 } satisfies ScannerBaselinePublicationPublisherV1);
 
 const signerWire = z
@@ -99,19 +102,47 @@ export interface ConsumeScannerBaselinePublicationV1Input {
 
 export interface ConsumedScannerBaselinePublicationV1 {
   readonly evidence: BaselineSourceEvidence;
-  readonly provenance: Readonly<{
-    authority: "none";
-    repository: string;
-    workflow: string;
-    ref: string;
-    sourceCommit: string;
-    publicationSha256: string;
+  readonly provenance: ScannerBaselinePublicationProvenanceV1;
+}
+
+export interface ScannerBaselinePublicationBatchV1 {
+  readonly expectedRequestSha256: string;
+  readonly discoveryBytes: Buffer;
+  readonly publicationBytes: Buffer;
+  readonly attestationResultBytes: Buffer;
+}
+
+export interface ConsumeScannerBaselinePublicationsV1Input {
+  readonly sourceRoot: string;
+  readonly catalog: BaselineCatalog;
+  readonly publications: readonly ScannerBaselinePublicationBatchV1[];
+  readonly publisher: ScannerBaselinePublicationPublisherV1;
+  readonly now: string;
+  readonly maxAgeSeconds: number;
+  readonly seenEvidenceDigests?: readonly string[];
+  readonly seenReceiptBindings?: readonly Readonly<{
     requestSha256: string;
     receiptSha256: string;
-    attestedAt: string;
-    ageSeconds: number;
-  }>;
+  }>[];
 }
+
+export interface ConsumedScannerBaselinePublicationsV1 {
+  readonly evidence: BaselineSourceEvidence;
+  readonly provenance: readonly ScannerBaselinePublicationProvenanceV1[];
+}
+
+export type ScannerBaselinePublicationProvenanceV1 = Readonly<{
+  authority: "none";
+  repository: string;
+  workflow: string;
+  ref: string;
+  sourceCommit: string;
+  publicationSha256: string;
+  requestSha256: string;
+  receiptSha256: string;
+  attestedAt: string;
+  ageSeconds: number;
+}>;
 
 function fail(reason: string): never {
   throw new AihError(
@@ -227,13 +258,27 @@ function verifiedPublicationAttestation(input: {
     statement._type !== "https://in-toto.io/Statement/v1" ||
     statement.predicateType !== "https://slsa.dev/provenance/v1" ||
     !Array.isArray(statement.subject) ||
-    statement.subject.length !== 1
+    statement.subject.length === 0 ||
+    statement.subject.length > 1_000
   )
     fail("attestation statement");
-  const subject = record(statement.subject[0], "attestation subject");
-  const digest = record(subject.digest, "attestation subject digest");
-  if (Object.keys(digest).length !== 1 || digest.sha256 !== input.publicationSha256)
-    fail("attestation subject digest");
+  const subjectDigests = new Set<string>();
+  let matchingSubjects = 0;
+  for (const entry of statement.subject) {
+    const subject = record(entry, "attestation subject");
+    const digest = record(subject.digest, "attestation subject digest");
+    if (
+      subject.name !== "publication.json" ||
+      Object.keys(digest).length !== 1 ||
+      typeof digest.sha256 !== "string" ||
+      !SHA256.test(digest.sha256) ||
+      subjectDigests.has(digest.sha256)
+    )
+      fail("attestation subject digest");
+    subjectDigests.add(digest.sha256);
+    if (digest.sha256 === input.publicationSha256) matchingSubjects += 1;
+  }
+  if (matchingSubjects !== 1) fail("attestation subject digest");
   if (
     !Array.isArray(verification.verifiedTimestamps) ||
     verification.verifiedTimestamps.length === 0 ||
@@ -252,9 +297,14 @@ function verifiedPublicationAttestation(input: {
   });
   const now = timestamp(input.now, "clock");
   const earliest = Math.min(...moments);
-  const ageSeconds = (now - earliest) / 1000;
-  if (!Number.isSafeInteger(ageSeconds) || ageSeconds < 0 || ageSeconds > input.maxAgeSeconds)
+  const ageMilliseconds = now - earliest;
+  if (
+    !Number.isSafeInteger(ageMilliseconds) ||
+    ageMilliseconds < 0 ||
+    ageMilliseconds > input.maxAgeSeconds * 1000
+  )
     fail("publication freshness");
+  const ageSeconds = Math.floor(ageMilliseconds / 1000);
   return { attestedAt: new Date(earliest).toISOString(), ageSeconds };
 }
 
@@ -267,7 +317,7 @@ function internalPublication(input: ConsumeScannerBaselinePublicationV1Input) {
     discoveryWire,
   );
   if (discovery.requestSha256 !== input.expectedRequestSha256) fail("request digest");
-  const expectedLocator = `https://github.com/${input.publisher.repository}/releases/download/baseline-v1-${input.expectedRequestSha256}/publication.json`;
+  const expectedLocator = `https://github.com/${input.publisher.repository}/releases/download/baseline-v1-${input.publisher.commit}-${input.expectedRequestSha256}/publication.json`;
   if (discovery.locator !== expectedLocator) fail("mutable or unexpected locator");
   const publicationSha256 = sha256(input.publicationBytes);
   if (publicationSha256 !== discovery.publicationSha256) fail("publication digest");
@@ -327,6 +377,91 @@ function internalPublication(input: ConsumeScannerBaselinePublicationV1Input) {
   };
 }
 
+function provenanceFor(
+  publisher: ScannerBaselinePublicationPublisherV1,
+  verified: ReturnType<typeof internalPublication>,
+): ScannerBaselinePublicationProvenanceV1 {
+  return Object.freeze({
+    authority: "none" as const,
+    repository: publisher.repository,
+    workflow: publisher.workflow,
+    ref: publisher.ref,
+    sourceCommit: publisher.commit,
+    publicationSha256: verified.publicationSha256,
+    requestSha256: verified.discovery.requestSha256,
+    receiptSha256: verified.discovery.receiptSha256,
+    attestedAt: verified.attestation.attestedAt,
+    ageSeconds: verified.attestation.ageSeconds,
+  });
+}
+
+/**
+ * Consume a complete ordered set of independently published Scanner batches.
+ * Each transport and GitHub provenance result is verified independently before
+ * the already-verified annexes are joined by the multi-batch Core consumer.
+ */
+export async function consumeScannerBaselinePublicationsV1(
+  input: ConsumeScannerBaselinePublicationsV1Input,
+): Promise<ConsumedScannerBaselinePublicationsV1> {
+  try {
+    if (input.publications.length === 0 || input.publications.length > 1_000)
+      fail("publication batch count");
+    const verified = input.publications.map((publication) =>
+      internalPublication({
+        sourceRoot: input.sourceRoot,
+        catalog: input.catalog,
+        ...publication,
+        publisher: input.publisher,
+        now: input.now,
+        maxAgeSeconds: input.maxAgeSeconds,
+        seenEvidenceDigests: input.seenEvidenceDigests,
+        seenReceiptBindings: input.seenReceiptBindings,
+      }),
+    );
+    const first = verified[0];
+    if (first === undefined) fail("publication batch count");
+    const expectedSigningPolicy = canonicalStrictJsonBytesV1(first.expected);
+    const requests = new Set<string>();
+    const receipts = new Set<string>();
+    const evidence = new Set<string>();
+    const publications = new Set<string>();
+    for (const batch of verified) {
+      if (!canonicalStrictJsonBytesV1(batch.expected).equals(expectedSigningPolicy))
+        fail("mixed batch signing policy");
+      const bindings = [
+        [requests, batch.discovery.requestSha256],
+        [receipts, batch.discovery.receiptSha256],
+        [evidence, batch.discovery.evidenceDigestSha256],
+        [publications, batch.publicationSha256],
+      ] as const;
+      for (const [seen, digest] of bindings) {
+        if (seen.has(digest)) fail("duplicate publication batch");
+        seen.add(digest);
+      }
+    }
+    const sourceEvidence = await consumeVerifiedScannerBaselineBatches({
+      sourceRoot: input.sourceRoot,
+      catalog: input.catalog,
+      batches: verified.map((batch) => ({
+        request: batch.request,
+        result: batch.result,
+        envelope: batch.envelope,
+      })),
+      roots: first.roots,
+      expected: first.expected,
+      seenEvidenceDigests: input.seenEvidenceDigests,
+      seenReceiptBindings: input.seenReceiptBindings,
+    });
+    return Object.freeze({
+      evidence: sourceEvidence,
+      provenance: Object.freeze(verified.map((batch) => provenanceFor(input.publisher, batch))),
+    });
+  } catch (error) {
+    if (error instanceof AihError && error.code === "AIH_SCANNER_BASELINE_PUBLICATION") throw error;
+    fail("content or Scanner verification");
+  }
+}
+
 /**
  * Consume one independently published Scanner result after every transport,
  * provenance, custody, replay, source, and analyzer identity join succeeds.
@@ -348,21 +483,7 @@ export async function consumeScannerBaselinePublicationV1(
       seenEvidenceDigests: input.seenEvidenceDigests,
       seenReceiptBindings: input.seenReceiptBindings,
     });
-    return Object.freeze({
-      evidence,
-      provenance: Object.freeze({
-        authority: "none" as const,
-        repository: input.publisher.repository,
-        workflow: input.publisher.workflow,
-        ref: input.publisher.ref,
-        sourceCommit: input.publisher.commit,
-        publicationSha256: verified.publicationSha256,
-        requestSha256: verified.discovery.requestSha256,
-        receiptSha256: verified.discovery.receiptSha256,
-        attestedAt: verified.attestation.attestedAt,
-        ageSeconds: verified.attestation.ageSeconds,
-      }),
-    });
+    return Object.freeze({ evidence, provenance: provenanceFor(input.publisher, verified) });
   } catch (error) {
     if (error instanceof AihError && error.code === "AIH_SCANNER_BASELINE_PUBLICATION") throw error;
     fail("content or Scanner verification");

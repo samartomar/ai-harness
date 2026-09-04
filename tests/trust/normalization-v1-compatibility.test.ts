@@ -399,12 +399,12 @@ const EXPECTED_COMPATIBILITY_DESCRIPTORS = [
   {
     detectorClass: "cisco",
     analyzerLabel: "cisco@uvx",
-    analyzerIdentity: "2.0.13+uvlock.3ba245280507",
+    analyzerIdentity: "2.0.14+uvlock.aaba1f326049",
     scannerManifestIdentityDescriptor: {
       protocol: "NormalizationCompatibilityScannerIdentityV1",
       detectorClass: "cisco",
       analyzerLabel: "cisco@uvx",
-      analyzerIdentity: "2.0.13+uvlock.3ba245280507",
+      analyzerIdentity: "2.0.14+uvlock.aaba1f326049",
       adapterIdentity: "aih.trust.sarif-normalizer.current",
     },
     normalizationConfigurationIdentityDescriptor: {
