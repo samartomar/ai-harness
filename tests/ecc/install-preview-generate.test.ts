@@ -53,7 +53,7 @@ describe("ECC install preview generation", () => {
     writeFileSync(
       resolve(root, "scripts/lib/install-targets/registry.js"),
       `exports.getInstallTargetAdapter = (target) => ({
-        resolveRoot: ({ homeDir }) => homeDir + "/." + target,
+        resolveRoot: ({ homeDir }) => (target === "opencode" ? "C:" : "") + homeDir + "/." + target,
       });\n`,
     );
 
@@ -82,6 +82,17 @@ describe("ECC install preview generation", () => {
     );
     expect(result.operations).not.toContainEqual(
       expect.objectContaining({ target: "opencode", componentId: "baseline:rules" }),
+    );
+    expect(result.operations).toContainEqual(
+      expect.objectContaining({
+        target: "opencode",
+        componentId: "runtime:ecc-installer",
+        kind: "exec",
+        destination: "<home>/.opencode",
+      }),
+    );
+    expect(result.operations.some((operation) => operation.destination.startsWith("C:<"))).toBe(
+      false,
     );
     expect(result.operations).not.toContainEqual(
       expect.objectContaining({ componentId: "unknown:ignored" }),

@@ -10,7 +10,7 @@ permissions:
 env:
   SCANNER_REPOSITORY: samartomar/aih-scan
   SCANNER_PUBLISHER_WORKFLOW: samartomar/aih-scan/.github/workflows/baseline-publication.yml
-  SCANNER_PUBLISHER_COMMIT: 869806438a39a002763659a2708a1ae7fcc3431d
+  SCANNER_PUBLISHER_COMMIT: ba0f0bfc46f2634da71e125bf3bbcefb3493389c
 
 jobs:
   consume:
@@ -53,8 +53,7 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci --ignore-scripts
-      - name: Author the exact request and derive its immutable release
-        id: request
+      - name: Author the exact bounded requests
         shell: bash
         run: |
           set -euo pipefail
@@ -63,51 +62,46 @@ jobs:
             --catalog "${{ matrix.id }}" \
             --source .baseline-source \
             --output request
-          test "$(find request -maxdepth 1 -type f -name '*.request.json' | wc -l)" -eq 1
-          request_sha256="$(jq -er '.requestSha256 | select(test("^[0-9a-f]{64}$"))' request/batch-001.request.json)"
-          tag="baseline-v1-$request_sha256"
-          printf 'request_sha256=%s\n' "$request_sha256" >> "$GITHUB_OUTPUT"
-          printf 'tag=%s\n' "$tag" >> "$GITHUB_OUTPUT"
-      - name: Download only the exact request-addressed publication
+      - name: Download and verify every exact request-addressed publication
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ steps.request.outputs.tag }}
         shell: bash
         run: |
           set -euo pipefail
+          shopt -s nullglob
+          requests=(request/*.request.json)
+          test "${#requests[@]}" -gt 0
+          [[ "$SCANNER_PUBLISHER_COMMIT" =~ ^[0-9a-f]{40}$ ]]
           mkdir publication
-          gh release download "$RELEASE_TAG" \
-            --repo "$SCANNER_REPOSITORY" \
-            --pattern publication.json \
-            --pattern discovery.json \
-            --dir publication
-          test "$(find publication -maxdepth 1 -type f | wc -l)" -eq 2
-      - name: Verify exact Scanner workflow provenance
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          gh attestation verify publication/publication.json \
-            --repo "$SCANNER_REPOSITORY" \
-            --signer-workflow "$SCANNER_PUBLISHER_WORKFLOW" \
-            --source-ref refs/heads/main \
-            --source-digest "$SCANNER_PUBLISHER_COMMIT" \
-            --deny-self-hosted-runners \
-            --format json > publication/attestation.json
-          test -s publication/attestation.json
+          for index in "${!requests[@]}"; do
+            request="${requests[$index]}"
+            batch="$(printf 'batch-%03d' "$((index + 1))")"
+            request_sha256="$(jq -er '.requestSha256 | select(test("^[0-9a-f]{64}$"))' "$request")"
+            tag="baseline-v1-$SCANNER_PUBLISHER_COMMIT-$request_sha256"
+            mkdir "publication/$batch"
+            gh release download "$tag" \
+              --repo "$SCANNER_REPOSITORY" \
+              --pattern publication.json \
+              --pattern discovery.json \
+              --dir "publication/$batch"
+            gh attestation verify "publication/$batch/publication.json" \
+              --repo "$SCANNER_REPOSITORY" \
+              --signer-workflow "$SCANNER_PUBLISHER_WORKFLOW" \
+              --source-ref refs/heads/main \
+              --source-digest "$SCANNER_PUBLISHER_COMMIT" \
+              --deny-self-hosted-runners \
+              --format json > "publication/$batch/attestation.json"
+            test "$(find "publication/$batch" -maxdepth 1 -type f | wc -l)" -eq 3
+          done
       - name: Consume verified bytes without executing analyzers
         shell: bash
         run: |
           set -euo pipefail
           mkdir candidate
-          npm run baseline:consume-publication -- \
+          npm run baseline:consume-publications -- \
             --catalog "${{ matrix.id }}" \
             --source .baseline-source \
-            --discovery publication/discovery.json \
-            --publication publication/publication.json \
-            --attestation publication/attestation.json \
-            --request-sha256 "${{ steps.request.outputs.request_sha256 }}" \
+            --publication-root publication \
             --output "candidate/${{ matrix.id }}.json" \
             --provenance-output "candidate/${{ matrix.id }}.provenance.json"
       - name: Upload verified Core source evidence

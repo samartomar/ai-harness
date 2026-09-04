@@ -172,7 +172,7 @@ describe("checkDetectorsAvailable", () => {
 
   it("returns no probe when Cisco resolves offline", async () => {
     const run = fakeRunner((argv) =>
-      argv.includes("--version") ? { code: 0, stdout: "skill-scanner 2.0.13" } : undefined,
+      argv.includes("--version") ? { code: 0, stdout: "skill-scanner 2.0.14" } : undefined,
     );
     expect(await checkDetectorsAvailable(["cisco"], { run, platform: "linux", env: {} })).toEqual(
       [],
@@ -199,7 +199,7 @@ describe("checkDetectorsAvailable", () => {
       {
         name: "cisco",
         analyzerLabel: "cisco@uvx",
-        reason: expect.stringContaining("does not match 2.0.13"),
+        reason: expect.stringContaining("does not match 2.0.14"),
       },
       {
         name: "snyk-agent-scan",

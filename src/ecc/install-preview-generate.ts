@@ -57,7 +57,11 @@ interface UpstreamTargetRegistry {
 
 function destinationTemplate(path: string): string {
   const normalized = path.replace(/\\/g, "/");
-  return normalized.replace(HOME_FIXTURE, "<home>").replace(PROJECT_FIXTURE, "<project>");
+  const fixturePath = normalized.replace(
+    /^[A-Za-z]:(?=\/(?:home\/aih|workspace\/project)(?:\/|$))/,
+    "",
+  );
+  return fixturePath.replace(HOME_FIXTURE, "<home>").replace(PROJECT_FIXTURE, "<project>");
 }
 
 function configDestinationTemplate(path: string): string {

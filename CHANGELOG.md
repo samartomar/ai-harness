@@ -15,6 +15,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Advance the governed Cisco skill analyzer to `2.0.14` and bind Core's analyzer-free
+  baseline consumption to Scanner publisher commit `ba0f0bfc46f2634da71e125bf3bbcefb3493389c`.
+  Immutable publication release names now include both that publisher commit and the exact
+  Core request digest, preventing a later publisher epoch from colliding with retained evidence.
 - Advance the exact uv toolchain from `0.12.8` to `0.12.9` in the Snyk qualification workflow and
   across all five committed locks after their requirements exports remained unchanged, adopting the
   upstream untrusted-wheel memory-safety, cross-realm redirect header, and lock-mode precedence fixes

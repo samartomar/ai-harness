@@ -380,7 +380,8 @@ describe("active external-pin ledger", () => {
   it("records governed scanner identities and fails closed on AgentShield provenance", () => {
     expect(entry("cisco-skill-scanner")).toMatchObject({
       version: CISCO_SKILL_SCANNER_VERSION,
-      integrity: "sha256:d81fde291d60b6f8134375c33b49a2f41f5bb3072b74153dafea4774d627a837",
+      commit: "a49c8d9f7555dd99a9f5e4430c3bb8d4fe4a9371",
+      integrity: "sha256:30b5c8a5108307981e0299e6cde0da869be64deb5da0ca66cf9f0022c3c48fc2",
       disposition: "active",
     });
     expect(entry("cisco-mcp-scanner")).toMatchObject({

@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { type Dirent, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { canonicalBaselineVetRequestV1Bytes } from "@aihq/scan";
 import { z } from "zod";
@@ -9,6 +9,7 @@ import { baselineCatalogById } from "./catalogs.js";
 import { generateAuthorizedEccInstallPreview } from "./ecc-preview-boundary.js";
 import { createCoreBaselineVetRequests } from "./scanner-consumer.js";
 import {
+  consumeScannerBaselinePublicationsV1,
   consumeScannerBaselinePublicationV1,
   SCANNER_BASELINE_PUBLICATION_MAX_AGE_SECONDS_V1,
   SCANNER_BASELINE_PUBLICATION_PUBLISHER_V1,
@@ -151,6 +152,91 @@ async function consumePublication(args: readonly string[]): Promise<void> {
   );
 }
 
+function closedPublicationBatches(
+  root: string,
+  requestDigests: readonly string[],
+): readonly Readonly<{
+  expectedRequestSha256: string;
+  discoveryBytes: Buffer;
+  publicationBytes: Buffer;
+  attestationResultBytes: Buffer;
+}>[] {
+  const expectedNames = requestDigests.map(
+    (_, index) => `batch-${String(index + 1).padStart(3, "0")}`,
+  );
+  let entries: Dirent<string>[];
+  try {
+    entries = readdirSync(root, { withFileTypes: true });
+  } catch {
+    return fail("publication root shape");
+  }
+  const actualNames = entries.map((entry) => entry.name).sort();
+  if (
+    entries.some((entry) => !entry.isDirectory() || entry.isSymbolicLink()) ||
+    actualNames.length !== expectedNames.length ||
+    actualNames.some((name, index) => name !== expectedNames[index])
+  )
+    fail("publication batch layout");
+  return expectedNames.map((name, index) => {
+    const batch = join(root, name);
+    const children = readdirSync(batch, { withFileTypes: true });
+    const expectedFiles = ["attestation.json", "discovery.json", "publication.json"];
+    const actualFiles = children.map((entry) => entry.name).sort();
+    if (
+      children.some((entry) => !entry.isFile() || entry.isSymbolicLink()) ||
+      actualFiles.length !== expectedFiles.length ||
+      actualFiles.some((entry, fileIndex) => entry !== expectedFiles[fileIndex])
+    )
+      fail(`publication ${name} layout`);
+    return {
+      expectedRequestSha256: requestDigests[index] as string,
+      discoveryBytes: readPublishedBytes(join(batch, "discovery.json"), 8 * 1024, "discovery"),
+      publicationBytes: readPublishedBytes(
+        join(batch, "publication.json"),
+        96 * 1024 * 1024,
+        "publication",
+      ),
+      attestationResultBytes: readPublishedBytes(
+        join(batch, "attestation.json"),
+        256 * 1024,
+        "attestation",
+      ),
+    };
+  });
+}
+
+async function consumePublications(args: readonly string[]): Promise<void> {
+  const catalogId = flag(args, "--catalog");
+  const sourceRoot = resolve(flag(args, "--source"));
+  const publicationRoot = resolve(flag(args, "--publication-root"));
+  const catalog = assertCheckout(sourceRoot, catalogId);
+  const requests = createCoreBaselineVetRequests(sourceRoot, catalog);
+  const seenPath = optionalFlag(args, "--seen");
+  const seen =
+    seenPath === undefined ? { digests: [], receipts: [] } : replayWire.parse(readJson(seenPath));
+  const consumed = await consumeScannerBaselinePublicationsV1({
+    sourceRoot,
+    catalog,
+    publications: closedPublicationBatches(
+      publicationRoot,
+      requests.map((request) => request.requestSha256),
+    ),
+    publisher: SCANNER_BASELINE_PUBLICATION_PUBLISHER_V1,
+    now: new Date().toISOString(),
+    maxAgeSeconds: SCANNER_BASELINE_PUBLICATION_MAX_AGE_SECONDS_V1,
+    seenEvidenceDigests: seen.digests,
+    seenReceiptBindings: seen.receipts,
+  });
+  const output = resolve(flag(args, "--output"));
+  const provenanceOutput = resolve(flag(args, "--provenance-output"));
+  if (output === provenanceOutput) fail("evidence and provenance outputs must differ");
+  writeJson(output, consumed.evidence);
+  writeJson(provenanceOutput, consumed.provenance);
+  process.stdout.write(
+    `consumed ${requests.length} published ${consumed.evidence.id} batch(es)@${consumed.evidence.pinnedSha}\n`,
+  );
+}
+
 function sourceEvidence(path: string): BaselineSourceEvidence {
   return BaselineSourceEvidenceSchema.parse(readJson(path, 16 * 1024 * 1024));
 }
@@ -175,8 +261,9 @@ export async function runScannerBridge(argv: readonly string[]): Promise<void> {
   const [command, ...args] = argv;
   if (command === "request") request(args);
   else if (command === "consume-publication") await consumePublication(args);
+  else if (command === "consume-publications") await consumePublications(args);
   else if (command === "assemble") assemble(args);
-  else fail("expected request, consume-publication, or assemble");
+  else fail("expected request, consume-publication, consume-publications, or assemble");
 }
 
 if (process.argv[1] && import.meta.url === new URL(`file://${resolve(process.argv[1])}`).href) {

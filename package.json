@@ -80,6 +80,7 @@
     "check:lock-migration": "tsx src/internals/assert-identity-only-lock-migration.ts",
     "baseline:request": "tsx src/baseline-evidence/scanner-cli.ts request",
     "baseline:consume-publication": "tsx src/baseline-evidence/scanner-cli.ts consume-publication",
+    "baseline:consume-publications": "tsx src/baseline-evidence/scanner-cli.ts consume-publications",
     "baseline:assemble": "tsx src/baseline-evidence/scanner-cli.ts assemble",
     "baseline:check": "npm run check:baseline-pins && npm run check:baseline-analyzers && npm run check:baseline-installable",
     "baseline:artifact": "tsx src/baseline-evidence/vendor-artifact.ts",
