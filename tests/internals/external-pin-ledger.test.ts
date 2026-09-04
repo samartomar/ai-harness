@@ -274,7 +274,13 @@ describe("active external-pin ledger", () => {
       version: pythonBase?.[1],
       integrity: pythonBase?.[2],
     });
-    expect(entry("uv").version).toBe(
+    expect(entry("skillspector-build-uv")).toMatchObject({
+      identity: "uv",
+      version: "0.12.8",
+      commit: "68209e5c61ce4b76c2e685bea7913876bc929dc9",
+      disposition: "retained",
+    });
+    expect(entry("skillspector-build-uv").version).toBe(
       skillspectorDockerfile.match(/pip install --no-cache-dir uv==([^\s]+)/)?.[1],
     );
     expect(entry("uv")).toMatchObject({
@@ -283,6 +289,7 @@ describe("active external-pin ledger", () => {
       disposition: "active",
     });
     expect(entry("uv").reason).toMatch(/five committed locks.*byte-identical/i);
+    expect(entry("uv").reason).not.toMatch(/SkillSpector build/i);
     expect(entry("uv").reason).toContain(
       "ddbfcee1ac615a0499f6aa97b5ec8ebdf3ee4a7714a48055ec2ba0030e3cf810",
     );

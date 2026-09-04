@@ -135,6 +135,14 @@
       "reason": "Pulled by digest for the controlled SkillSpector v2.9.4 OCI build. The 3.12-slim-bookworm tag moved 3.12.13 -> 3.12.14, so the digest is repinned; the interpreter minor is unchanged, which is what the Dockerfile's hardcoded .venv/lib/python3.12 path depends on."
     },
     {
+      "surface": "skillspector-build-uv",
+      "identity": "uv",
+      "version": "0.12.8",
+      "commit": "68209e5c61ce4b76c2e685bea7913876bc929dc9",
+      "disposition": "retained",
+      "reason": "Exact build-tool input for the currently published SkillSpector v2.9.4 image digest sha256:c5d4a1816419f129ae85ff96b3e366d4a062c1859997e26b7ab87341a43d4800. The controlled five-way reproduction used uv 0.12.8; changing this Dockerfile input without rebuilding and re-vetting the image makes the committed recipe cease to reproduce the trusted digest. The 0.12.8 tag resolves to commit 68209e5c61ce4b76c2e685bea7913876bc929dc9. This build-only pin is retained until the next controlled SkillSpector rebuild; the independent general uv toolchain remains 0.12.9."
+    },
+    {
       "surface": "cisco-skill-scanner",
       "identity": "cisco-ai-skill-scanner",
       "version": "2.0.13",
@@ -219,7 +227,7 @@
       "version": "0.12.9",
       "commit": "9f928602938ac5cf1cd6b294a725833c16f5720e",
       "disposition": "active",
-      "reason": "Toolchain pin for the five locked scanner/runtime projects and the SkillSpector image build, moved 0.12.8 -> 0.12.9 on 2026-09-04. The official tag resolves to verified commit 9f928602938ac5cf1cd6b294a725833c16f5720e. The exact Windows x86_64 executable reports that commit and version; its official archive SHA-256 ddbfcee1ac615a0499f6aa97b5ec8ebdf3ee4a7714a48055ec2ba0030e3cf810 matches both the release checksum sidecar and GitHub artifact attestation. The same attestation binds the Linux x86_64 setup-uv archive at SHA-256 ec7a99cd05e0cd7f80243f135ce1361c76835cb0ee60055d14d20eba8eba1460, and the downloaded PyPI manylinux x86_64 wheel matches PyPI's SHA-256 5badfd805fd88bf99b4b4f044f6e8f762f1892cab27477f4427bb473e93dd049. All five committed locks pass offline uv lock --check without mutation under 0.12.9, and every requirements export is byte-identical to checksum-verified 0.12.8 when each version writes the same scratch path. Source review confirms 0.12.9 is a security and correctness release: it updates async_http_range_reader to 0.11.1 against a potential memory-safety defect when reading metadata ranges from untrusted wheels, drops sensitive headers when a redirect crosses an authentication realm, redacts secrets in signed URLs from retry diagnostics, and gives --locked, --frozen, and --check precedence over conflicting UV_LOCKED and UV_FROZEN values; none of these changes the locked dependency graphs or the offline lock and export results. The Snyk qualification workflow and the controlled SkillSpector build provision this exact version; setup-uv itself remains at its reviewed immutable SHA."
+      "reason": "Toolchain pin for the five locked scanner/runtime projects, moved 0.12.8 -> 0.12.9 on 2026-09-04. The official tag resolves to verified commit 9f928602938ac5cf1cd6b294a725833c16f5720e. The exact Windows x86_64 executable reports that commit and version; its official archive SHA-256 ddbfcee1ac615a0499f6aa97b5ec8ebdf3ee4a7714a48055ec2ba0030e3cf810 matches both the release checksum sidecar and GitHub artifact attestation. The same attestation binds the Linux x86_64 setup-uv archive at SHA-256 ec7a99cd05e0cd7f80243f135ce1361c76835cb0ee60055d14d20eba8eba1460, and the downloaded PyPI manylinux x86_64 wheel matches PyPI's SHA-256 5badfd805fd88bf99b4b4f044f6e8f762f1892cab27477f4427bb473e93dd049. All five committed locks pass offline uv lock --check without mutation under 0.12.9, and every requirements export is byte-identical to checksum-verified 0.12.8 when each version writes the same scratch path. Source review confirms 0.12.9 is a security and correctness release: it updates async_http_range_reader to 0.11.1 against a potential memory-safety defect when reading metadata ranges from untrusted wheels, drops sensitive headers when a redirect crosses an authentication realm, redacts secrets in signed URLs from retry diagnostics, and gives --locked, --frozen, and --check precedence over conflicting UV_LOCKED and UV_FROZEN values; none of these changes the locked dependency graphs or the offline lock and export results. The Snyk qualification workflow provisions this exact version; the controlled SkillSpector recipe retains its separately recorded 0.12.8 build input until the next rebuild, and setup-uv itself remains at its reviewed immutable SHA."
     },
     {
       "surface": "actions-checkout",
