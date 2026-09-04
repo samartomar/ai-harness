@@ -2408,6 +2408,33 @@
                 "additionalProperties": false
               }
             },
+            "aihMcpRequests": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "enum": [
+                      "github",
+                      "sequential-thinking",
+                      "context7",
+                      "playwright"
+                    ]
+                  },
+                  "clarification": {
+                    "type": "string",
+                    "const": "Requested by: administrator"
+                  }
+                },
+                "required": [
+                  "id",
+                  "clarification"
+                ],
+                "additionalProperties": false
+              }
+            },
             "eccMcpApprovals": {
               "default": [],
               "type": "array",

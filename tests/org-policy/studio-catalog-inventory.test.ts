@@ -45,6 +45,18 @@ function click(window: Window, selector: string): void {
   node.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
 }
 
+function policyPreview(window: Window): string {
+  const preview = window.document.getElementById("config-preview") as unknown as {
+    value: string;
+  } | null;
+  if (preview === null) throw new Error("expected authored policy preview");
+  return preview.value;
+}
+
+function authoredPolicy(window: Window): { governance: Record<string, unknown> } {
+  return JSON.parse(policyPreview(window));
+}
+
 describe("policy authoring catalog inventory", () => {
   it("classifies the exact first-party Core packs as one AIH Skill and two AIH Agents", () => {
     expect(policyStudioModel().catalog.aihSkills).toEqual([
@@ -251,8 +263,9 @@ describe("policy authoring catalog inventory", () => {
     for (const mcp of eccMcpCatalogInventory.filter((item) => item.owner === "aih")) {
       const row = window.document.querySelector(`[data-ecc-mcp-availability="${mcp.id}"]`);
       const hasAihControl = model.catalog.mcp.some((control) => control.id === mcp.id);
-      expect(row?.getAttribute("data-state")).toBe(hasAihControl ? "pending" : "availability");
+      expect(row?.getAttribute("data-state")).toBe(hasAihControl ? "pending" : "external");
       expect(row?.querySelector(`[data-reviewed="${mcp.id}"]`) !== null).toBe(hasAihControl);
+      expect(row?.querySelector(`[data-mcp-request="${mcp.id}"]`) !== null).toBe(!hasAihControl);
       expect(row?.querySelector("[data-ecc-mcp-approval]")).toBeNull();
     }
   });
@@ -405,18 +418,22 @@ describe("policy authoring catalog inventory", () => {
       const row = servers?.querySelector(
         `#mcp-rows > [data-ecc-mcp-availability="${declaration.id}"]`,
       );
-      expect(row?.getAttribute("data-state")).toBe("availability");
+      expect(row?.getAttribute("data-state")).toBe("external");
       const unavailable = model.catalog.unavailableMcp.find(
         (candidate) => candidate.id === declaration.id,
       );
       expect(row?.textContent).toContain(
         unavailable === undefined
-          ? "Runtime availability only"
-          : "Unavailable — AIH evidence required",
+          ? "Selectable — not policy-projectable"
+          : "Selectable — AIH evidence required",
+      );
+      expect(row?.querySelector(".source-mark")?.textContent).toBe(
+        unavailable === undefined ? "No AIH projector" : "AIH evidence required",
       );
       expect(
         row?.querySelector("[data-reviewed], [data-framework-select], [data-ecc-mcp-approval]"),
       ).toBeNull();
+      expect(row?.querySelector(`[data-mcp-request="${declaration.id}"]`)).not.toBeNull();
     }
 
     const firstShared = shared[0];
@@ -448,20 +465,98 @@ describe("policy authoring catalog inventory", () => {
     ).toHaveLength(0);
   });
 
-  it("offers only projector-backed MCP identities as center-panel controls", () => {
+  it("records requested intent for gated AIH identities that carry no policy projector", () => {
     const window = new Window({ url: "http://localhost/" });
     const model = policyStudioModel();
     const html = policyStudioHtml(model);
     window.document.write(html);
     loadStudio(window, html);
+    const unrequested = policyPreview(window);
 
     expect(model.catalog.mcp.every((item) => item.server.type === "stdio")).toBe(true);
     for (const id of ["github", "context7"]) {
       expect(model.catalog.mcp.some((item) => item.id === id)).toBe(false);
       const row = window.document.querySelector(`#mcp-rows [data-ecc-mcp-availability="${id}"]`);
-      expect(row, `${id} remains visible as availability`).not.toBeNull();
+      expect(row, `${id} remains visible`).not.toBeNull();
       expect(row?.querySelector("[data-reviewed]")).toBeNull();
-      expect(row?.textContent).toContain("not policy-projectable");
+      expect(row?.querySelector(`[data-mcp-request="${id}"]`)).not.toBeNull();
+      expect(row?.textContent).toContain("Selectable — not policy-projectable");
+
+      click(window, `#mcp-rows [data-mcp-request="${id}"]`);
+      const requested = window.document.querySelector(
+        `#mcp-rows [data-ecc-mcp-availability="${id}"]`,
+      );
+      expect(requested?.getAttribute("data-state")).toBe("requested");
+      expect(requested?.querySelector(".badge")?.textContent).toBe(
+        "Requested intent — not policy-projectable",
+      );
+    }
+
+    expect(authoredPolicy(window).governance.aihMcpRequests).toEqual([
+      { id: "github", clarification: "Requested by: administrator" },
+      { id: "context7", clarification: "Requested by: administrator" },
+    ]);
+
+    for (const id of ["github", "context7"]) {
+      click(window, `#mcp-rows [data-mcp-request="${id}"]`);
+    }
+    expect(authoredPolicy(window).governance).not.toHaveProperty("aihMcpRequests");
+    expect(policyPreview(window)).toBe(unrequested);
+  });
+
+  it("gives every AIH MCP row a selection control, gated or not, before and after a request", () => {
+    const window = new Window({ url: "http://localhost/" });
+    const model = policyStudioModel();
+    const html = policyStudioHtml(model);
+    window.document.write(html);
+    loadStudio(window, html);
+    const expectedRows =
+      model.catalog.mcp.length +
+      model.catalog.nonProjectableMcp.length +
+      model.catalog.unavailableMcp.length;
+
+    const everyRowHasATick = () => {
+      const rows = [...(window.document.querySelectorAll("#mcp-rows > .row") ?? [])];
+      expect(rows).toHaveLength(expectedRows);
+      for (const row of rows) {
+        expect(
+          row.querySelector(".tick[aria-pressed]"),
+          row.getAttribute("data-row") ?? "",
+        ).not.toBeNull();
+      }
+    };
+
+    everyRowHasATick();
+    const requestIds = [...window.document.querySelectorAll("#mcp-rows [data-mcp-request]")].map(
+      (control) => control.getAttribute("data-mcp-request") ?? "",
+    );
+    expect(requestIds).toHaveLength(
+      model.catalog.nonProjectableMcp.length + model.catalog.unavailableMcp.length,
+    );
+    for (const id of requestIds) {
+      click(window, `#mcp-rows [data-mcp-request="${id}"]`);
+    }
+    everyRowHasATick();
+  });
+
+  it("describes every AIH-owned MCP declaration in exactly one catalog partition", () => {
+    const catalog = policyAuthoringCatalog();
+    const controls = catalog.mcp.map((item) => item.id);
+    const nonProjectable = catalog.nonProjectableMcp.map((item) => item.id);
+    const unavailable = catalog.unavailableMcp.map((item) => item.id);
+    const partitions = [controls, nonProjectable, unavailable];
+
+    for (const [index, left] of partitions.entries()) {
+      for (const right of partitions.slice(index + 1)) {
+        expect(left.filter((id) => right.includes(id))).toEqual([]);
+      }
+    }
+    expect(nonProjectable).toEqual(["github", "context7"]);
+    for (const declaration of catalog.eccMcpInventory.filter((entry) => entry.owner === "aih")) {
+      expect(
+        partitions.filter((partition) => partition.includes(declaration.id)),
+        declaration.id,
+      ).toHaveLength(1);
     }
   });
 
@@ -533,7 +628,8 @@ describe("policy authoring catalog inventory", () => {
     const control = window.document.querySelector('[data-reviewed="playwright"]');
     expect(control).toBeNull();
     const availability = window.document.querySelector('[data-ecc-mcp-availability="playwright"]');
-    expect(availability?.getAttribute("data-state")).toBe("availability");
+    expect(availability?.getAttribute("data-state")).toBe("external");
+    expect(availability?.querySelector('[data-mcp-request="playwright"]')).not.toBeNull();
     expect(availability?.textContent).toContain("@playwright/mcp@0.0.79");
     expect(availability?.textContent).toContain("no current protected Scanner evidence record");
     expect(availability?.textContent).toContain("AIH-owned evidence gap");

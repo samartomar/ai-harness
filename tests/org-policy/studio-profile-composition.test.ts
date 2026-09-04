@@ -66,6 +66,7 @@ function authoredPolicy(window: Window): {
     activations: { candidate: string; state: string }[];
     externalSelections: FrameworkGroup[];
     externalCuration: Array<{ framework: string; items: Array<{ id: string }> }>;
+    aihMcpRequests?: Array<{ id: string; clarification: string }>;
   };
 } {
   const preview = window.document.getElementById("config-preview") as unknown as {
@@ -160,17 +161,24 @@ describe("policy studio profile composition", { timeout: 45_000 }, () => {
     ).toEqual(controls.map((control) => control.id).sort());
   });
 
-  it("keeps Playwright unavailable when a profile is composed", () => {
-    const window = studio();
-    selectProfile(window, "vibe");
-    expect(authoredPolicy(window).governance.catalog.reviewed.map((item) => item.id)).not.toContain(
-      "playwright",
-    );
-    const playwright = window.document.querySelector('[data-reviewed="playwright"]');
-    expect(playwright).toBeNull();
-    const availability = window.document.querySelector('[data-ecc-mcp-availability="playwright"]');
-    expect(availability?.getAttribute("data-state")).toBe("availability");
-    expect(availability?.textContent).toContain("Unavailable — AIH evidence required");
+  it("leaves the Playwright request to the administrator when a profile is composed", () => {
+    for (const profile of ["vibe", "enterprise"] as const) {
+      const window = studio();
+      selectProfile(window, profile);
+      const authored = authoredPolicy(window);
+      expect(authored.governance.catalog.reviewed.map((item) => item.id)).not.toContain(
+        "playwright",
+      );
+      expect(authored.governance.aihMcpRequests, profile).toBeUndefined();
+      expect(window.document.querySelector('[data-reviewed="playwright"]')).toBeNull();
+      const row = window.document.querySelector('[data-ecc-mcp-availability="playwright"]');
+      expect(row?.getAttribute("data-state"), profile).toBe("external");
+      expect(row?.textContent).toContain("Selectable — AIH evidence required");
+      expect(row?.querySelector(".source-mark")?.textContent, profile).toBe(
+        "AIH evidence required",
+      );
+      expect(row?.querySelector('[data-mcp-request="playwright"]')).not.toBeNull();
+    }
   });
 
   it("does not describe unavailable Playwright as addable after Enterprise composition", () => {
