@@ -148,12 +148,12 @@ describe("active external-pin ledger", () => {
     expect(entry("ecc").reason).toMatch(/administrator-owned fork.*governed run 33147078833/i);
     expect(entry("ecc-candidate")).toMatchObject({
       identity: "affaan-m/ECC",
-      version: "v2.2.0-128-gce64e417",
-      commit: "ce64e417fd420a0df98ed0aa00809eea5e74e127",
+      version: "v2.2.0-147-ge04ea0b9",
+      commit: "e04ea0b9cc8248686edf5ac751cadff550e162b8",
       disposition: "blocked",
     });
     expect(entry("ecc-candidate").reason).toMatch(/OpenCode.*hook-runtime consent/i);
-    expect(entry("ecc-candidate").reason).toMatch(/Docker.*link\.exe/i);
+    expect(entry("ecc-candidate").reason).toMatch(/accepts only samartomar\/ECC/i);
     expect(entry("ecc-candidate").reason).toMatch(/nothing was promoted/i);
     expect(entry("superpowers")).toMatchObject({
       identity: "obra/Superpowers",
@@ -481,8 +481,8 @@ describe("active external-pin ledger", () => {
     // matched baseline-sources would mean the rotation happened.
     expect(entry("ecc-candidate")).toMatchObject({
       identity: "affaan-m/ECC",
-      version: "v2.2.0-128-gce64e417",
-      commit: "ce64e417fd420a0df98ed0aa00809eea5e74e127",
+      version: "v2.2.0-147-ge04ea0b9",
+      commit: "e04ea0b9cc8248686edf5ac751cadff550e162b8",
       disposition: "blocked",
     });
     expect(entry("ecc-candidate").commit).not.toBe(entry("ecc").commit);
@@ -491,12 +491,18 @@ describe("active external-pin ledger", () => {
     );
     // Live exact-SHA state, the local evidence boundary, and the consent defect
     // are all load-bearing. Losing any one would make the HOLD unauditable.
-    expect(entry("ecc-candidate").reason).toMatch(/33 completed successes, 12 queued.*45/i);
-    expect(entry("ecc-candidate").reason).toMatch(/static AIH baseline preflight passed/i);
-    expect(entry("ecc-candidate").reason).toMatch(/full vet emitted no evidence/i);
-    expect(entry("ecc-candidate").reason).toMatch(/Docker.*link\.exe/i);
-    expect(entry("ecc-candidate").reason).toMatch(/opencode\.json auto-loads plugins/i);
-    expect(entry("ecc-candidate").reason).toMatch(/not evidence of a categorical block/i);
+    expect(entry("ecc-candidate").reason).toMatch(
+      /GitHub-verified signature.*46 of 46 check runs/i,
+    );
+    expect(entry("ecc-candidate").reason).toMatch(
+      /hook-consent\.js gates only the hooks-runtime module/i,
+    );
+    expect(entry("ecc-candidate").reason).toMatch(
+      /platform-configs.*\.opencode\/plugins\/ecc-hooks\.ts/i,
+    );
+    expect(entry("ecc-candidate").reason).toMatch(/no single choke point/i);
+    expect(entry("ecc-candidate").reason).toMatch(/No Scanner publication was requested/i);
+    expect(entry("ecc-candidate").reason).toMatch(/not a categorical block/i);
     expect(entry("ecc-candidate").reason).toMatch(/production lock.*unchanged/i);
     expect(entry("ecc-candidate").reason).toMatch(/dcbf95bf.*immutable history/i);
   });
