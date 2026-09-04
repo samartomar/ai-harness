@@ -459,6 +459,34 @@ describe("committed JSON Schemas", () => {
     }
   });
 
+  it("models gated AIH-owned MCP requests as a recorded-intent leaf", () => {
+    const policy = (aihMcpRequests: unknown[]) => ({
+      schemaVersion: 2,
+      minimumPosture: "vibe",
+      references: { repoContract: "ai-coding/project.json" },
+      governance: {
+        policyVersion: "2026.08",
+        supportedClis: ["claude"],
+        catalog: { reviewed: [], custom: [] },
+        activations: [],
+        authority: { approvals: [] },
+        aihMcpRequests,
+      },
+    });
+    const request = { id: "context7", clarification: "Requested by: administrator" };
+
+    validateCommittedSchema("schemas/aih-org-policy.schema.json", policy([request]));
+    rejectCommittedSchema("schemas/aih-org-policy.schema.json", policy([]));
+    for (const invalid of [
+      { ...request, id: "vercel" },
+      { ...request, clarification: "Requested by: vibe profile" },
+      { id: "context7" },
+      { ...request, gap: "no-projector" },
+    ]) {
+      rejectCommittedSchema("schemas/aih-org-policy.schema.json", policy([invalid]));
+    }
+  });
+
   it("models source-locked ECC hook controls in the committed editor schema", () => {
     const base = {
       schemaVersion: 2,
