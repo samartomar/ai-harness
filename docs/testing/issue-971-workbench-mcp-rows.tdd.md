@@ -75,7 +75,23 @@ validator, the export path, and the drawer.
 | `npm run docs:lint` | exit 0 |
 | `npm run check:self-hosting-canon` | 6 passed |
 | `npm run check:artifacts` | passed |
-| `npm test` (implementer run, default heap, 8 workers) | 848.09 s; 484 files passed, 12 failed on timeouts or `spawnSync ETIMEDOUT`, each passing alone with `--maxWorkers=1`; no failing file touches this change |
+| `npm test` (same PC, 4 GiB heap, alone; see below) | 661.84 s; 485 files passed, 11 failed on timeouts or `spawnSync ETIMEDOUT`; the identical 11 files fail on the untouched baseline |
+
+## Full suite, same conditions
+
+Both trees ran `npm test` alone on the same PC with `NODE_OPTIONS=--max-old-space-size=4096`, one
+after the other, from clean detached worktrees sharing one `node_modules`. The eleven failing files
+are the same set on both trees, every failure is a 15 to 180 second test timeout or a
+`spawnSync ETIMEDOUT` from a bounded child process, and none of them is touched by this change.
+
+| Full suite | Untouched `origin/main` (`e833fc64`) | This change (`098f3569`) |
+|---|---:|---:|
+| Test files | 498 (483 passed, 11 failed, 4 skipped) | 500 (485 passed, 11 failed, 4 skipped) |
+| Tests | 8711 (8647 passed, 18 failed, 46 skipped) | 8734 (8670 passed, 18 failed, 46 skipped) |
+| Wall time | 686.74 s | 661.84 s |
+
+The 25 second difference is run-to-run variance on a suite dominated by load-dependent timeouts,
+not an effect of this change; the change adds two test files and 23 tests.
 
 ## Residual cost
 
