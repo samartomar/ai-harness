@@ -137,7 +137,8 @@ describe("baseline evidence release payload", () => {
     expect(dockerfile).toContain(
       "python:3.12-slim-bookworm@sha256:a116514e19457bcb7af7efe9c3dd0b9b71e85b317694e7882a1c52aa15a78134",
     );
-    expect(dockerfile).toContain("uv==0.12.9");
+    expect(dockerfile).toContain("uv==0.12.8");
+    expect(dockerfile).not.toContain("uv==0.12.9");
     expect(dockerfile).toContain(
       'org.opencontainers.image.revision="2d198ab910add401cad658d1087e7c7ba24fd640"',
     );

@@ -15,10 +15,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- Advance the exact uv toolchain from `0.12.8` to `0.12.9` in the Snyk qualification workflow and the
-  controlled SkillSpector build after all five committed locks and requirements exports remained
-  unchanged, adopting the upstream untrusted-wheel memory-safety, cross-realm redirect header, and
-  lock-mode precedence fixes without changing the locked dependency graphs.
+- Advance the exact uv toolchain from `0.12.8` to `0.12.9` in the Snyk qualification workflow and
+  across all five committed locks after their requirements exports remained unchanged, adopting the
+  upstream untrusted-wheel memory-safety, cross-realm redirect header, and lock-mode precedence fixes
+  without changing the locked dependency graphs. Retain uv `0.12.8` as the separately recorded
+  SkillSpector build input that produced its current controlled image digest; that recipe moves only
+  with a rebuilt, reproduced, and re-vetted image.
 - Retire Core's duplicate local Scanner execution and bundle-consumption shortcuts, move the
   committed-evidence gate into the existing CI quality job, and bind publication consumption to
   `@aihq/scan@0.3.0` at its corrected immutable publisher commit. The public cross-platform
