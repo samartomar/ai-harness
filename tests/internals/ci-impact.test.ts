@@ -147,7 +147,7 @@ describe("CI impact classifier", () => {
     expect(receipt.selectedTests).not.toContain("tests/org-policy/catalog.test.ts");
   });
 
-  it("keeps selector ownership identical to the 37-file Workbench project", () => {
+  it("keeps selector ownership identical to the 38-file Workbench project", () => {
     const repositoryTests = execFileSync("git", ["ls-files", "--", "tests"], {
       encoding: "utf8",
     })
@@ -171,7 +171,7 @@ describe("CI impact classifier", () => {
       testFiles: repositoryTests,
     });
 
-    expect(expectedWorkbenchTests).toHaveLength(37);
+    expect(expectedWorkbenchTests).toHaveLength(38);
     expect(receipt.selectedTests).toEqual(expectedWorkbenchTests);
   });
 
