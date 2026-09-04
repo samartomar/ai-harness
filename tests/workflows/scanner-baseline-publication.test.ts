@@ -26,6 +26,7 @@ describe("independent Scanner publication lifecycle", () => {
     expect(workflow).toContain('--source-digest "$SCANNER_PUBLISHER_COMMIT"');
     expect(workflow).toContain("npm run baseline:consume-publications");
     expect(workflow).toContain("requests=(request/*.request.json)");
+    expect(workflow).not.toContain("mkdir request");
     expect(workflow).toContain("publication/$batch");
     expect(workflow).not.toContain("-eq 1");
     expect(workflow).toContain("npm run baseline:assemble");
