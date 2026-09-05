@@ -73,25 +73,31 @@ Testing `151.0.7922.34`. This is not an Ubuntu CI result.
 
 | Run | Pure | Build | Parallel acceptance | Total | Peak process-tree resident memory |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| 1 | 3.035 s | 3.824 s | 49.394 s | 56.259 s | 2,981.3 MiB |
-| 2 | 2.946 s | 3.901 s | 49.274 s | 56.128 s | 3,289.4 MiB |
-| 3 | 2.965 s | 3.843 s | 49.066 s | 55.880 s | 3,235.7 MiB |
-| 4 | 2.936 s | 3.803 s | 49.131 s | 55.874 s | 3,293.6 MiB |
-| 5 | 2.966 s | 3.947 s | 49.780 s | 56.700 s | 3,301.7 MiB |
+| 1 | 3.123 s | 3.930 s | 45.736 s | 52.795 s | 2,370.8 MiB |
+| 2 | 3.325 s | 4.003 s | 43.916 s | 51.249 s | 2,354.9 MiB |
+| 3 | 3.374 s | 3.936 s | 44.472 s | 51.789 s | 2,296.9 MiB |
+| 4 | 2.977 s | 3.916 s | 43.713 s | 50.612 s | 2,422.7 MiB |
+| 5 | 3.011 s | 3.879 s | 43.786 s | 50.682 s | 2,475.4 MiB |
 
-The median total was 56.128 s; the slowest total was 56.700 s. The maximum pure
-stage wall time was 3.035 s, and the largest sampled process-tree resident peak
-was 3,462,115,328 bytes (3,301.7 MiB).
+The median total was 51.249 s; the slowest total was 52.795 s. The maximum pure
+stage wall time was 3.374 s, and the largest sampled process-tree resident peak
+was 2,595,618,816 bytes (2,475.4 MiB).
 
-Each run recorded 84 pure tests, 303 retained/contracts tests, and seven
+Each run recorded 84 pure tests, 221 retained/contracts tests, and seven
 Chromium tests as passed. Pure coverage was 91.12% statements, 85.91% branches,
 92.85% functions, and 91.97% lines. Retained/contracts coverage was 90.14%
 statements, 83.58% branches, 94.44% functions, and 92.94% lines. The generic DOM
 receipt recorded 920 initial nodes and 13 changed nodes for each synthetic
 catalog size: 10, 1,000, and 10,000 assets.
+## Broader local evidence
+
+A separate full local unit-suite run passed 8,631 tests, including its coverage,
+build, published-package, and packed-document stages. It is not a successful
+`npm run verify` receipt: that command currently reaches its final cold helper
+and fails because the helper still names a removed preset. The fix is in progress.
+Hosted CI remains pending a new push.
 
 ## Commands and pending gates
-
 ```sh
 npm run test:workbench:pr
 npm run verify
