@@ -2,7 +2,7 @@
 
 Status: **final local Workbench lane evidenced.** Five fresh
 `npm run test:workbench:pr` runs at
-`8daf7da54eab43e042a1b2bebac6cf77f7a5d4c9` exited 0. This receipt covers the
+`675a1e1ed15019b1299c3f83466af93cdaf3716c` exited 0. This receipt covers the
 Workbench lane only; repository-wide verification and current PR readiness are
 recorded in PR #974's validation section.
 
@@ -68,10 +68,10 @@ still does not create organization authority, approvals, or runtime effects.
 
 ## Final local PR-lane receipt
 
-Receipts are `\.aih-scratch/workbench-evidence/pr-lane-final-run-1.json` through
-`pr-lane-final-run-5.json`, with matching logs and
-`five-run-final-summary.json`. They ran at source
-`8daf7da54eab43e042a1b2bebac6cf77f7a5d4c9` on the local Windows reference:
+Receipts are `.aih-scratch/workbench-evidence/pr-lane-snapshot-run-1.json`
+through `pr-lane-snapshot-run-5.json`, with matching logs and
+`five-run-snapshot-summary.json`. They ran at source
+`675a1e1ed15019b1299c3f83466af93cdaf3716c` on the local Windows reference:
 Node `v24.18.0`, Windows `10.0.26200`, 24 processors, and Chrome for Testing
 `151.0.7922.34`.
 
@@ -81,19 +81,25 @@ The 24-CPU local reference therefore used four retained workers; the four-CPU
 host used two. This retained-lane setting is distinct from the general suite
 runtime.
 
+The pinned-baseline compiler reads one defensive vendor-lock snapshot for each
+source compilation and reuses it for source identity, declarations, and
+evidence. This optimization preserves the canonical ECC and Superpowers catalog
+bytes; `registry.test.ts` also verifies the single read and retained exact
+evidence-pin rejection.
+
 | Run | Pure | Build | Parallel acceptance | Total | Peak process-tree resident memory |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| 1 | 3.197 s | 3.978 s | 41.515 s | 48.696 s | 2,299.0 MiB |
-| 2 | 3.073 s | 3.953 s | 40.127 s | 47.159 s | 2,421.9 MiB |
-| 3 | 3.038 s | 3.920 s | 39.713 s | 46.676 s | 2,214.7 MiB |
-| 4 | 3.125 s | 4.000 s | 39.529 s | 46.659 s | 2,389.0 MiB |
-| 5 | 3.108 s | 4.048 s | 41.039 s | 48.201 s | 2,402.7 MiB |
+| 1 | 3.220 s | 4.177 s | 36.148 s | 43.551 s | 2,153.5 MiB |
+| 2 | 3.258 s | 4.075 s | 35.732 s | 43.070 s | 2,376.1 MiB |
+| 3 | 3.105 s | 4.076 s | 35.142 s | 42.329 s | 2,430.5 MiB |
+| 4 | 3.158 s | 4.037 s | 35.310 s | 42.511 s | 2,605.1 MiB |
+| 5 | 3.136 s | 3.975 s | 35.867 s | 42.983 s | 2,181.5 MiB |
 
-The median total was 47.159 s; the slowest total was 48.696 s. The maximum pure
-stage wall time was 3.197 s, and the largest sampled process-tree resident peak
-was 2,539,503,616 bytes (2,421.9 MiB).
+All five runs exited 0. The median total was 42.983 s; the slowest total was
+43.551 s. The maximum pure stage wall time was 3.258 s, and the largest sampled
+process-tree resident peak was 2,731,655,168 bytes (2,605.1 MiB).
 
-Each run recorded 84 pure tests, 223 retained/contracts tests, and seven
+Each run recorded 84 pure tests, 224 retained/contracts tests, and seven
 Chromium tests as passed. Pure coverage was 91.12% statements, 85.91% branches,
 92.85% functions, and 91.97% lines. Retained/contracts coverage was 90.14%
 statements, 83.58% branches, 94.44% functions, and 92.94% lines. The generic DOM
@@ -102,12 +108,15 @@ catalog size: 10, 1,000, and 10,000 assets.
 
 ## Hosted Workbench confirmation
 
-CI run `33948840550` passed the Workbench lane at source `cb08456d`. Its single
-Ubuntu 24 hosted receipt is
-`.aih-scratch/workbench-evidence/ci-balanced/workbench-evidence/pr-lane.json`:
-48.015 s total, 1.858 s pure stage, and 2,699,272,192 bytes peak summed
-process-tree resident memory. It recorded 84 pure tests, 223 retained/contracts
-tests, and seven Chromium tests. This is one hosted run, not five hosted runs.
+CI run `33953023879` passed one Workbench lane at the same source
+`675a1e1ed15019b1299c3f83466af93cdaf3716c`. Its Ubuntu 24 receipt is
+`.aih-scratch/workbench-evidence/ci-snapshot-final/workbench-evidence/pr-lane.json`:
+58.671 s total, 2.408 s pure stage, and 2,888,839,168 bytes peak summed
+process-tree resident memory. The matching job log
+`.aih-scratch/workbench-evidence/ci-snapshot-final-workbench.log` reports 84 pure
+tests, 224 retained/contracts tests, and seven Chromium tests. This is one
+hosted run, separate from the five
+local measurements.
 
 ## Reproducing the local receipt
 
