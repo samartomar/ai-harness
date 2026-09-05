@@ -21,11 +21,18 @@ import {
 } from "./ecc-mcp-approval.js";
 import { AIH_OWNED_ECC_MCP_EXCLUSIONS, ECC_MCP_CATALOG_PROVENANCE } from "./ecc-mcp-catalog.js";
 import { GovernanceDecisionIdSchema } from "./governance-decision-v1.js";
+import { safePolicyCommandArgument as safeBrowserPolicyCommandArgument } from "./workbench/command-arguments.js";
+import {
+  WORKBENCH_MAX_POLICY_BYTES,
+  WORKBENCH_MINIMUM_CORE_VERSION,
+  WorkbenchAuthoringSourcesV1Schema,
+  WorkbenchStateV1Schema,
+} from "./workbench/contracts.js";
 
 const PostureSchema = z.enum(["vibe", "enterprise"]);
 
 /** Bounded before decoding or parsing, including explicitly selected policy bundles. */
-export const MAX_ORG_POLICY_BYTES = 1_000_000;
+export const MAX_ORG_POLICY_BYTES = WORKBENCH_MAX_POLICY_BYTES;
 
 const CommandRuleSchema = z
   .object({
@@ -357,21 +364,7 @@ const SafeCommandTokenSchema = z
 export const HTTPS_ORIGIN_ARGUMENT_PREFIXES = ["--registry=", "--index-url="] as const;
 
 export function safePolicyCommandArgument(value: string): boolean {
-  const prefix = HTTPS_ORIGIN_ARGUMENT_PREFIXES.find((candidate) => value.startsWith(candidate));
-  if (prefix !== undefined) {
-    try {
-      normalizeHttpsOrigin(value.slice(prefix.length), "registry argument");
-      return true;
-    } catch {
-      return false;
-    }
-  }
-  return (
-    !value.startsWith("/") &&
-    !value.startsWith("\\") &&
-    !value.includes("..") &&
-    !/[\\/;|&`$<>\p{C}]/u.test(value)
-  );
+  return safeBrowserPolicyCommandArgument(value, HTTPS_ORIGIN_ARGUMENT_PREFIXES);
 }
 const SafeCommandArgumentSchema = z
   .string()
@@ -1441,42 +1434,11 @@ const GovernedPolicyGovernanceSchema = z
         message: `${id} is recorded as both an AIH MCP request and a policy candidate; one identity keeps one record — remove either the request or the candidate`,
       });
     }
-    // The same contradiction the activation rule above already forbids, one
-    // level down: a policy that selects components from two pinned frameworks
-    // at once has not chosen a framework.
-    const distinctSelection = [...new Set(selectionFrameworks)].sort();
-    if (distinctSelection.length > 1) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["externalSelections"],
-        message: `only one framework may be selected at a time; this policy selects from ${distinctSelection.join(" and ")}`,
-      });
-    }
     for (const issue of hookRegistrationSetIssues(governance.hookRegistrations)) {
       ctx.addIssue({
         code: "custom",
         path: ["hookRegistrations", issue.index],
         message: issue.message,
-      });
-    }
-    // The exclusivity rule mirrored onto the registration surface: harness
-    // hooks and harness selections must name one framework between them.
-    // Owners that are not harnesses — aih, a repository's own hook — coexist,
-    // so the measured multi-writer workstation state stays expressible.
-    const harnessOwners = governance.hookRegistrations
-      .map((registration) =>
-        registration.owner.kind === "third-party" ? registration.owner.framework : undefined,
-      )
-      .filter(
-        (framework): framework is "ecc" | "superpowers" =>
-          framework === "ecc" || framework === "superpowers",
-      );
-    const namedHarnesses = [...new Set([...distinctSelection, ...harnessOwners])].sort();
-    if (harnessOwners.length > 0 && namedHarnesses.length > 1) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["hookRegistrations"],
-        message: `only one framework may be selected at a time; this policy's selections and hook registrations name ${namedHarnesses.join(" and ")}`,
       });
     }
     // Selection and curation are two stages of one thing. A component sitting
@@ -1581,7 +1543,7 @@ export function policySecurityLeafPaths(): string[] {
   );
 }
 
-export const OrgPolicySchema = z
+const OrgPolicyBaseSchema = z
   .object({
     schemaVersion: z.literal(2),
     minimumPosture: PostureSchema,
@@ -1657,23 +1619,65 @@ export const OrgPolicySchema = z
      */
     governance: PolicyGovernanceSchema.optional(),
   })
-  .strict()
-  .superRefine((policy, ctx) => {
-    if (policy.minimumPosture !== "enterprise" || policy.governance?.supportedClis?.length) return;
-    ctx.addIssue({
-      code: "custom",
-      path: ["governance", "supportedClis"],
-      message:
-        "enterprise posture requires a non-empty governance.supportedClis allow-list; current registry ids: " +
-        SUPPORTED_CLIS.join(", ") +
-        ". To sanction every supported CLI, paste every id; wildcard sentinels are not supported",
-    });
-  });
+  .strict();
 
-type ParsedOrgPolicy = z.infer<typeof OrgPolicySchema>;
-export type OrgPolicy = Omit<ParsedOrgPolicy, "governance"> & {
-  governance?: z.infer<typeof GovernedPolicyGovernanceSchema>;
+const refineOrgPolicy = (rawPolicy: unknown, ctx: z.RefinementCtx) => {
+  const policy = rawPolicy as z.infer<typeof OrgPolicyBaseSchema>;
+  if (
+    policy.schemaVersion === 2 &&
+    policy.governance !== undefined &&
+    "externalSelections" in policy.governance
+  ) {
+    const legacy = policy.governance;
+    const selections = legacy.externalSelections.map((item) => item.framework);
+    const owners = legacy.hookRegistrations
+      .map((registration) =>
+        registration.owner.kind === "third-party" ? registration.owner.framework : undefined,
+      )
+      .filter(
+        (framework): framework is "ecc" | "superpowers" =>
+          framework === "ecc" || framework === "superpowers",
+      );
+    const named = [...new Set([...selections, ...owners])].sort();
+    if (named.length > 1) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["governance", "externalSelections"],
+        message: `only one framework may be selected at a time; this policy selects from ${named.join(" and ")}`,
+      });
+    }
+  }
+  if (policy.minimumPosture !== "enterprise" || policy.governance?.supportedClis?.length) return;
+  ctx.addIssue({
+    code: "custom",
+    path: ["governance", "supportedClis"],
+    message:
+      "enterprise posture requires a non-empty governance.supportedClis allow-list; current registry ids: " +
+      SUPPORTED_CLIS.join(", ") +
+      ". To sanction every supported CLI, paste every id; wildcard sentinels are not supported",
+  });
 };
+
+export const AuthoringSelectionsV1Schema = WorkbenchStateV1Schema.extend({
+  selectionVersion: z.literal("workbench-selection/v1"),
+});
+const OrgPolicyV3Schema = OrgPolicyBaseSchema.extend({
+  schemaVersion: z.literal(3),
+  minimumCoreVersion: z.literal(WORKBENCH_MINIMUM_CORE_VERSION),
+  authoringSelections: AuthoringSelectionsV1Schema,
+  authoringSources: WorkbenchAuthoringSourcesV1Schema.optional(),
+});
+
+/** V2 remains an exact legacy contract; V3 adds one required, strict authoring envelope. */
+export const OrgPolicySchema = z
+  .discriminatedUnion("schemaVersion", [OrgPolicyBaseSchema, OrgPolicyV3Schema])
+  .superRefine(refineOrgPolicy);
+type ParsedOrgPolicy = z.infer<typeof OrgPolicySchema>;
+export type AuthoringSelectionsV1 = z.infer<typeof AuthoringSelectionsV1Schema>;
+type NarrowGovernance<T> = T extends unknown
+  ? Omit<T, "governance"> & { governance?: z.infer<typeof GovernedPolicyGovernanceSchema> }
+  : never;
+export type OrgPolicy = NarrowGovernance<ParsedOrgPolicy>;
 
 const PolicyRingSchema = z
   .object({

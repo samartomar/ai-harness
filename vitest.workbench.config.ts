@@ -1,21 +1,9 @@
 import { availableParallelism } from "node:os";
 import { defineConfig } from "vitest/config";
+import { WORKBENCH_TEST_PATTERNS } from "./src/internals/workbench-test-ownership.js";
 import { testRuntimeForPlatform } from "./vitest.config.js";
 
-export const WORKBENCH_TEST_PATTERNS = [
-  "tests/ecc/module-selection-closure.test.ts",
-  "tests/org-policy/acceptance-hook-registrar.test.ts",
-  "tests/org-policy/admin-baseline-evidence-cli-route.test.ts",
-  "tests/org-policy/admin-catalog-cli-route.test.ts",
-  "tests/org-policy/admin-catalog-fetch-v1.test.ts",
-  "tests/org-policy/ecc-hook-controls.test.ts",
-  "tests/org-policy/ecc-mcp-approval.test.ts",
-  "tests/org-policy/generate.test.ts",
-  "tests/org-policy/packed-workbench-cleanup.test.ts",
-  "tests/org-policy/studio-*.test.ts",
-  "tests/org-policy/supported-cli-subsets.test.ts",
-  "tests/org-policy/ui-server.test.ts",
-] as const;
+export { WORKBENCH_TEST_PATTERNS } from "./src/internals/workbench-test-ownership.js";
 
 const testRuntime = testRuntimeForPlatform(process.platform, availableParallelism());
 

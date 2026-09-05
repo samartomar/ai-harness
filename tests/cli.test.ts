@@ -166,8 +166,18 @@ describe("CLI program", () => {
         // positional is the administrator root that opts into signed supported
         // catalog consumption, never the conventional repo-scoped [root].
         expect(
-          sub.registeredArguments.map((a) => ({ name: a.name(), required: a.required })),
+          sub.registeredArguments.map((a) => ({
+            name: a.name(),
+            required: a.required,
+          })),
         ).toEqual([{ name: "admin-root", required: false }]);
+        expect(sub.options.map((option) => option.flags)).toEqual(
+          expect.arrayContaining([
+            "--organization-manifest <path>",
+            "--fresh-organization-manifest <path>",
+            "--fresh-artifact-intake <path>",
+          ]),
+        );
         continue;
       }
       if (sub.name() === "observe" || sub.name() === "lifecycle") {
@@ -189,7 +199,10 @@ describe("CLI program", () => {
         continue;
       }
       expect(
-        sub.registeredArguments.map((a) => ({ name: a.name(), required: a.required })),
+        sub.registeredArguments.map((a) => ({
+          name: a.name(),
+          required: a.required,
+        })),
         `policy ${sub.name()} should take an optional [root]`,
       ).toEqual([{ name: "root", required: false }]);
     }
@@ -202,7 +215,9 @@ describe("CLI program", () => {
     const priorRoot = process.env.AIH_ROOT;
     const priorExitCode = process.exitCode;
     try {
-      const staleConfig = JSON.stringify({ binding: { framework: { id: "gstack" } } });
+      const staleConfig = JSON.stringify({
+        binding: { framework: { id: "gstack" } },
+      });
       mkdirSync(join(repo, ".git"));
       mkdirSync(join(repo, ".aih"));
       writeFileSync(join(repo, ".aih-config.json"), staleConfig);
@@ -320,7 +335,11 @@ describe("CLI program", () => {
     try {
       writeFileSync(
         join(dir, ".aih-config.json"),
-        JSON.stringify({ contextDir: "ai-coding", schemaVersion: 1, targets: [] }),
+        JSON.stringify({
+          contextDir: "ai-coding",
+          schemaVersion: 1,
+          targets: [],
+        }),
       );
       const program = buildProgram();
       program.configureOutput({ writeOut: () => {}, writeErr: () => {} });

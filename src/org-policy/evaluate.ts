@@ -357,6 +357,19 @@ export async function orgPolicyEffectiveDigest(
             `Requested AIH-owned MCP identities (recorded intent only, never effective): ${(effective.aihMcpRequests ?? []).map((request) => (request.controlShipped ? `${request.id} (this build ships a selectable AIH control; select the control instead)` : request.id)).join(", ")}.`,
           ]),
       "",
+      ...(effective.authoringIntent === undefined
+        ? []
+        : [
+            `Workbench generic requests (recorded intent only, never effective): ${effective.authoringIntent.requestedIntent.join(", ") || "none"}.`,
+            `Workbench selected Core controls after required closure (selection report; effects resolve separately): ${effective.authoringIntent.selectedControls.join(", ") || "none"}.`,
+          ]),
+      ...(effective.authoringDiagnostics === undefined ||
+      effective.authoringDiagnostics.length === 0
+        ? []
+        : [
+            "Workbench authoring selection diagnostics (the selection is inert until corrected):",
+            ...effective.authoringDiagnostics.map((diagnostic) => "- " + diagnostic),
+          ]),
       "Observed npm package lifecycle (read-only; never installed, configured, projected, or executed):",
       ...lifecycle.map(
         (item) =>
@@ -406,6 +419,8 @@ export async function orgPolicyEffectiveDigest(
         activeMcpServerIds: effective.activeMcpServerIds,
         frameworkSelections: effective.frameworkSelections,
         externalCuration: effective.externalCuration,
+        authoringIntent: effective.authoringIntent,
+        authoringDiagnostics: effective.authoringDiagnostics,
         npmPackageLifecycle: lifecycle,
         upstreamArtifactLifecycle: upstreamLifecycle,
         authority: effective.authority,

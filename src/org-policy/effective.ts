@@ -8,6 +8,8 @@ import { type GovernanceDecisionV1, governanceDecisionDigestV1 } from "./governa
 import type { NpmPackageEffectiveStateV1 } from "./npm-package-effective-state-v1.js";
 import { governanceOwnsAihSurfaces, type OrgPolicy } from "./schema.js";
 import type { UpstreamArtifactEffectiveStateV1 } from "./upstream-artifact-effective-state-v1.js";
+import { consumeWorkbenchPolicy } from "./workbench/policy-consumption.js";
+import type { PreparedWorkbenchCatalogV1 } from "./workbench/prepared-catalog.js";
 
 /**
  * Assertions a detector made about a completed scan. A severe label is
@@ -86,6 +88,7 @@ export type ResolutionBlockCode =
   | "framework-contract-unavailable";
 
 export type PolicyDecisionBlockCode =
+  | "authoring-selection-invalid"
   | "decision-receipt-missing"
   | "decision-receipt-version"
   | "decision-receipt-expired"
@@ -166,6 +169,8 @@ export interface EffectivePolicyContext {
   authority?: VerifiedPolicyAuthority;
   /** Actual adapter target set for this invocation; omitted means Claude's leaf-command default. */
   targets?: readonly string[];
+  /** Optional Core-prepared catalog for a portable offline authoring artifact. */
+  preparedWorkbenchCatalog?: PreparedWorkbenchCatalogV1;
   /** Whether this invocation can emit managed adapter actions at all. */
   projectorsEnabled?: boolean;
   /** Exact runtime reason when projectors are intentionally unavailable. */
@@ -371,11 +376,27 @@ export interface EffectiveOrgPolicy {
   npmPackageLifecycle?: readonly NpmPackageEffectiveStateV1[];
   /** Observed organization-managed artifact state; it never installs or projects the artifact. */
   upstreamArtifactLifecycle?: readonly UpstreamArtifactEffectiveStateV1[];
+  /** Catalog-pinned authoring intent reported separately from policy effects. */
+  authoringIntent?: { requestedIntent: string[]; selectedControls: string[] };
+  /** Bounded diagnostics for invalid v3 authoring intent; never policy effect. */
+  authoringDiagnostics?: string[];
   decisionBlockers: PolicyDecisionBlocker[];
   /** Projection has a narrower lifecycle gate than evaluate/doctor. */
   projectionBlocking?: boolean;
   blocking: boolean;
   authority: { verified: boolean; receiptDigest?: string; problem?: string };
+}
+
+function boundedAuthoringDiagnostics(diagnostics: readonly string[]): string[] {
+  return [
+    ...new Set(
+      diagnostics
+        .map((diagnostic) => diagnostic.normalize("NFC").replace(/\p{C}/gu, " ").slice(0, 500))
+        .filter((diagnostic) => diagnostic.length > 0),
+    ),
+  ]
+    .sort()
+    .slice(0, 100);
 }
 
 export function stableJson(value: unknown): string {
@@ -1290,7 +1311,7 @@ function resolveCandidate(
 }
 
 /** Resolve requested candidates against freshly verified authority and live adapters. */
-export function resolveEffectiveOrgPolicy(
+function resolveConsumedEffectiveOrgPolicy(
   policy: OrgPolicy,
   context: EffectivePolicyContext = {},
 ): EffectiveOrgPolicy {
@@ -1674,3 +1695,49 @@ export const POLICY_ENGINE_FIELD_CONSUMERS: Readonly<Record<string, string>> = O
   ...prefixedConsumers("governance.catalog.reviewed.*", CANDIDATE_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.catalog.custom.*", CANDIDATE_LEAF_CONSUMERS),
 });
+
+/** Consumes schema-v3 authoring intent once before any direct effective-policy caller can project it. */
+export function resolveEffectiveOrgPolicy(
+  policy: OrgPolicy,
+  context: EffectivePolicyContext = {},
+): EffectiveOrgPolicy {
+  if (policy.schemaVersion !== 3) return resolveConsumedEffectiveOrgPolicy(policy, context);
+  const authoringSelections = policy.authoringSelections;
+  const consumed =
+    authoringSelections === undefined
+      ? undefined
+      : consumeWorkbenchPolicy(
+          policy as Record<string, unknown>,
+          authoringSelections as Parameters<typeof consumeWorkbenchPolicy>[1],
+          context.preparedWorkbenchCatalog,
+        );
+  if (consumed?.accepted && consumed.policy !== undefined) {
+    return {
+      ...resolveConsumedEffectiveOrgPolicy(consumed.policy, context),
+      authoringIntent: {
+        requestedIntent: consumed.requestedIntent,
+        selectedControls: consumed.selectedControls,
+      },
+    };
+  }
+  const legacyPolicy = { ...(policy as Record<string, unknown>) };
+  delete legacyPolicy.authoringSelections;
+  delete legacyPolicy.capabilityPackages;
+  delete legacyPolicy.governance;
+  const inert = resolveConsumedEffectiveOrgPolicy(
+    { ...legacyPolicy, schemaVersion: 2 } as OrgPolicy,
+    context,
+  );
+  return {
+    ...inert,
+    authoringDiagnostics: boundedAuthoringDiagnostics(
+      consumed?.diagnostics ?? ["Missing authoring selection envelope"],
+    ),
+    blocking: true,
+    projectionBlocking: true,
+    decisionBlockers: [
+      ...inert.decisionBlockers,
+      { scope: "policy", code: "authoring-selection-invalid", decision: undefined },
+    ],
+  };
+}

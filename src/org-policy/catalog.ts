@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import firstPartyPacksManifest from "../../aih-packs.json";
 import { baselineCatalogById } from "../baseline-evidence/catalogs.js";
 import { readVendorBaselineLock } from "../baseline-evidence/vendor.js";
 import {
@@ -21,7 +20,6 @@ import {
 import { CLI_REGISTRY, REGISTRY_IDS } from "../internals/cli-registry.js";
 import { mcpApprovalSubject } from "../mcp/policy.js";
 import { type McpServer, mcpServers } from "../mcp/servers.js";
-import { PacksFileSchema } from "../pack/manifest.js";
 import { usageRecorderScript } from "../usage/capture.js";
 import { claudeUsageHookCommand } from "../usage/hooks.js";
 import { PACKAGE_NAME, VERSION } from "../version.js";
@@ -827,29 +825,68 @@ export function policyAuthoringCatalog(): PolicyAuthoringCatalog {
   const mcp = policyAuthoringMcpCatalog();
   const unavailableMcp = policyAuthoringUnavailableMcpCatalog();
   const controls = aihPolicyControls(mcp);
-  const firstPartyPacks = PacksFileSchema.parse(firstPartyPacksManifest);
-  const firstPartyCapabilityPacks = firstPartyPacks.packs.map((pack) => ({
-    id: `package:skill-pack/${pack.name}`,
-    pack: pack.name,
-    description: pack.description ?? `AIH first-party ${pack.name} capability pack`,
-    skills: pack.skills.map((skill) => skill.name),
-    sources: pack.skills.map((skill) => ({
-      skill: skill.name,
-      path: skill.source,
-      manifestIdentity: skill.commit,
-    })),
-  }));
-  const agentSkillNames = new Set(["aih-bugbounty", "aih-gov-doctor"]);
-  const isAgentPack = (pack: (typeof firstPartyCapabilityPacks)[number]): boolean =>
-    pack.skills.some((skill) => agentSkillNames.has(skill));
+  // This packaged authoring projection is intentionally independent of the
+  // optional repository-local aih-packs.json curation file. A deleted curation
+  // file must not make Core's shipped capability inventory unbuildable.
+  const firstPartyCapabilityPacks = [
+    {
+      kind: "skill" as const,
+      id: "package:skill-pack/docs-quality",
+      pack: "docs-quality",
+      description:
+        "First-party claim-first, evidence-grounded documentation skill (BetterDoc) — edits, reviews, and creates source-grounded docs with a bounded anti-slop lint that never overrides source truth.",
+      skills: ["aih-betterdoc"],
+      sources: [
+        {
+          skill: "aih-betterdoc",
+          path: "packs/docs-quality/aih-betterdoc",
+          manifestIdentity: "local",
+        },
+      ],
+    },
+    {
+      kind: "agent" as const,
+      id: "package:skill-pack/governance-quality",
+      pack: "governance-quality",
+      description:
+        "First-party read-only Governance Doctor agent workflow for isolated destination lifecycle review, backed by declarative Audit and Guide source material.",
+      skills: ["aih-gov-doctor"],
+      sources: [
+        {
+          skill: "aih-gov-doctor",
+          path: "packs/governance-quality/aih-gov-doctor",
+          manifestIdentity: "local",
+        },
+      ],
+    },
+    {
+      kind: "agent" as const,
+      id: "package:skill-pack/review-quality",
+      pack: "review-quality",
+      description:
+        "First-party isolated BUGBOUNTY agent workflow for high-coverage generated-agent, skill, MCP, workflow, and evidence review.",
+      skills: ["aih-bugbounty"],
+      sources: [
+        {
+          skill: "aih-bugbounty",
+          path: "packs/review-quality/aih-bugbounty",
+          manifestIdentity: "local",
+        },
+      ],
+    },
+  ];
   const ecc = frameworkCatalog("ecc");
   const frameworks = [ecc, frameworkCatalog("superpowers")];
   validateEccSkillCatalog(ecc, eccSkillCatalogInventory);
   return {
     aihCapabilityCatalog: { provider: "github", repository: "samartomar/aih-catalog" },
     aihCapabilityPackage: { name: PACKAGE_NAME, version: VERSION },
-    aihSkills: firstPartyCapabilityPacks.filter((pack) => !isAgentPack(pack)),
-    aihAgents: firstPartyCapabilityPacks.filter(isAgentPack),
+    aihSkills: firstPartyCapabilityPacks
+      .filter((pack) => pack.kind === "skill")
+      .map(({ kind: _, ...pack }) => pack),
+    aihAgents: firstPartyCapabilityPacks
+      .filter((pack) => pack.kind === "agent")
+      .map(({ kind: _, ...pack }) => pack),
     hosts: policyAuthoringHosts(),
     eccMcpInventory: eccMcpCatalogInventory,
     externalMcp: eccExternalMcpCatalog,

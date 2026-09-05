@@ -1,10 +1,15 @@
 import { isProxy } from "node:util/types";
 import { z } from "zod";
+import { canonicalStrictJsonSha256V1 } from "../contract/strict-json-v1.js";
 import { AihError } from "../errors.js";
-import type { AdminBaselineEvidenceProvenanceV1 } from "./admin-baseline-evidence-operations-v1.js";
+import {
+  type AdminBaselineEvidenceProvenanceV1,
+  type ResolvedAdminBaselineEvidenceV1,
+  workbenchEvidenceFromVerifiedBaselineV1,
+} from "./admin-baseline-evidence-operations-v1.js";
 import type { AdminCatalogProvenanceV1 } from "./admin-catalog-operations-v1.js";
 import { type AdoptionRecipe, buildAdoptionRecipe } from "./adoption-recipe.js";
-import { policyAuthoringCatalog } from "./catalog.js";
+import { type PolicyAuthoringCatalog, policyAuthoringCatalog } from "./catalog.js";
 import { POLICY_APPROVER_EMAIL_PATTERN } from "./ecc-mcp-approval.js";
 import {
   DISPOSITIONABLE_POLICY_FINDING_CODES,
@@ -26,6 +31,15 @@ import {
   PolicyBundleSchema,
   parseOrgPolicy,
 } from "./schema.js";
+import { verifyAuthoringCatalogBundleIntegrityV1 } from "./workbench/catalog-bundle.js";
+import type { WorkbenchPolicyBindingsV1 } from "./workbench/compile-policy.js";
+import type { AuthoringCatalogBundleV1, WorkbenchSourceInputsV1 } from "./workbench/contracts.js";
+import type { FreshOrganizationPreparationV1 } from "./workbench/core/organization-preparation.js";
+import { withLegacyPolicyCandidateDefaultsV1 } from "./workbench/policy-import.js";
+import {
+  defaultPreparedWorkbenchCatalog,
+  prepareWorkbenchCatalog,
+} from "./workbench/prepared-catalog.js";
 
 /** Valid, no-repository starting point for the generated Policy Workbench. */
 export function defaultStudioPolicy(): OrgPolicy {
@@ -63,6 +77,7 @@ export function parseStudioPolicyImport(text: string): OrgPolicy {
 function narrowLegacyStudioActivationTargets(value: unknown): unknown {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return value;
   const policy = value as Record<string, unknown>;
+  if (policy.schemaVersion !== 2) return value;
   if (typeof policy.governance !== "object" || policy.governance === null) return value;
   const governance = policy.governance as Record<string, unknown>;
   if (!Array.isArray(governance.supportedClis) || governance.supportedClis.length === 0)
@@ -99,6 +114,10 @@ function narrowLegacyStudioActivationTargets(value: unknown): unknown {
     const control = controlById.get(candidateId);
     const candidate = reviewedById.get(candidateId);
     if (control === undefined || candidate === undefined) continue;
+    // Legacy schema-v2 policy text can omit fields whose grammar supplies
+    // canonical defaults. Compare those semantic defaults, while retaining the
+    // exact identity check for every explicit or extra candidate field.
+    const normalizedCandidate = withLegacyPolicyCandidateDefaultsV1(candidate);
     const expectedCandidate = {
       id: control.id,
       kind: control.kind,
@@ -110,8 +129,10 @@ function narrowLegacyStudioActivationTargets(value: unknown): unknown {
       projector: control.projector,
       lifecycle: control.lifecycle,
       evidence: { record: `aih-${control.id}` },
+      findings: [],
+      autoExecute: false,
     };
-    if (stableJson(candidate) !== stableJson(expectedCandidate)) continue;
+    if (stableJson(normalizedCandidate) !== stableJson(expectedCandidate)) continue;
     if (stableJson(activation.targets) !== stableJson(control.targets)) continue;
     const sanctionedTargets = control.targets.filter((target) => supportedClis.includes(target));
     if (sanctionedTargets.length === 0 || sanctionedTargets.length === control.targets.length)
@@ -143,9 +164,41 @@ export function exportStudioDecision(decision: unknown): string {
   return `${canonicalGovernanceDecisionV1(parseGovernanceDecisionV1(decision))}\n`;
 }
 
+/**
+ * Browser data for legacy governance forms. All selectable source assets live
+ * only in the workbench bundle, so this projection cannot duplicate an
+ * inventory or grant a browser a Core projection binding.
+ */
+export type StudioFormCatalogV1 = Pick<
+  PolicyAuthoringCatalog,
+  "hosts" | "eccHookControls" | "externalMcp" | "eccMcpApproval"
+> & {
+  frameworks: Array<{ id: string; repository: string; commit: string }>;
+};
+
+function studioFormCatalog(catalog: PolicyAuthoringCatalog): StudioFormCatalogV1 {
+  return {
+    hosts: catalog.hosts,
+    eccHookControls: catalog.eccHookControls,
+    externalMcp: catalog.externalMcp,
+    eccMcpApproval: catalog.eccMcpApproval,
+    frameworks: catalog.frameworks.map(({ id, repository, commit }) => ({
+      id,
+      repository,
+      commit,
+    })),
+  };
+}
+
 export interface PolicyStudioModel {
   initialPolicy: OrgPolicy;
-  catalog: ReturnType<typeof policyAuthoringCatalog>;
+  /** The sole browser inventory for portable authoring selections. */
+  workbenchBundle: AuthoringCatalogBundleV1;
+  /** Compact compatibility mapping; Core reconstructs and verifies it on consume. */
+  workbenchBindings: WorkbenchPolicyBindingsV1;
+  /** Exact organization compiler inputs for portable V3 source reconstruction. */
+  workbenchSourceInputs: WorkbenchSourceInputsV1;
+  catalog: StudioFormCatalogV1;
   /** Code-owned inert guidance; policy bytes never carry or depend on it. */
   adoptionRecipe: AdoptionRecipe;
   /**
@@ -276,10 +329,32 @@ function baselineEvidenceWorkbenchProvenance(
 export function policyStudioModel(
   catalogProvenance?: AdminCatalogProvenanceV1,
   baselineEvidenceProvenance?: AdminBaselineEvidenceProvenanceV1,
+  options?: {
+    organizationManifestBytes?: readonly string[];
+    freshOrganizationPreparations?: readonly FreshOrganizationPreparationV1[];
+    verifiedBaseline?: { resolved: ResolvedAdminBaselineEvidenceV1; now: string };
+  },
 ): PolicyStudioModel {
+  const prepared =
+    options?.organizationManifestBytes?.length || options?.freshOrganizationPreparations?.length
+      ? prepareWorkbenchCatalog(undefined, options)
+      : defaultPreparedWorkbenchCatalog();
+  if (options?.verifiedBaseline !== undefined) {
+    const evidence = workbenchEvidenceFromVerifiedBaselineV1(
+      options.verifiedBaseline.resolved,
+      prepared.bundle,
+      options.verifiedBaseline.now,
+    );
+    prepared.bundle.evidence = { ...prepared.bundle.evidence, ...evidence };
+    prepared.bundle.provenance.bundleDigest = `sha256:${canonicalStrictJsonSha256V1({ ...prepared.bundle, provenance: {} })}`;
+    verifyAuthoringCatalogBundleIntegrityV1(prepared.bundle);
+  }
   return {
     initialPolicy: defaultStudioPolicy(),
-    catalog: policyAuthoringCatalog(),
+    catalog: studioFormCatalog(prepared.catalog),
+    workbenchBundle: prepared.bundle,
+    workbenchBindings: prepared.bindings,
+    workbenchSourceInputs: prepared.sourceInputs,
     adoptionRecipe: buildAdoptionRecipe(),
     ...(catalogProvenance === undefined ? {} : { catalogProvenance }),
     ...(baselineEvidenceProvenance === undefined

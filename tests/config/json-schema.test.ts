@@ -21,6 +21,40 @@ describe("committed JSON Schemas", () => {
     expect(validate(value)).toBe(false);
   }
 
+  it("requires the V3 Core floor and authoring envelope without widening legacy V2", () => {
+    const legacy = {
+      schemaVersion: 2,
+      minimumPosture: "vibe",
+      references: { repoContract: "ai-coding/project.json" },
+    };
+    const authoringSelections = {
+      selectionVersion: "workbench-selection/v1",
+      roots: [],
+      requests: [],
+      exclusions: [],
+      drafts: [],
+    };
+    const versioned = {
+      ...legacy,
+      schemaVersion: 3,
+      minimumCoreVersion: "0.6.0",
+      authoringSelections,
+    };
+    validateCommittedSchema("schemas/aih-org-policy.schema.json", legacy);
+    validateCommittedSchema("schemas/aih-org-policy.schema.json", versioned);
+    const { minimumCoreVersion: floor, ...withoutFloor } = versioned;
+    const { authoringSelections: selections, ...withoutSelections } = versioned;
+    expect(floor).toBe("0.6.0");
+    expect(selections).toEqual(authoringSelections);
+    for (const invalid of [
+      withoutFloor,
+      withoutSelections,
+      { ...versioned, minimumCoreVersion: "9.0.0" },
+      { ...legacy, authoringSelections },
+    ])
+      rejectCommittedSchema("schemas/aih-org-policy.schema.json", invalid);
+  });
+
   it("emits editor schemas for config, governed policy, authority receipt, decision, observation, qualification evidence, and package graph", () => {
     const schemas = generatedConfigSchemas();
 
@@ -44,7 +78,7 @@ describe("committed JSON Schemas", () => {
     expect(schemas[1]?.schema).toMatchObject({
       $schema: "https://json-schema.org/draft/2020-12/schema",
       title: "aih-org-policy.json",
-      type: "object",
+      oneOf: expect.any(Array),
     });
     expect(schemas[2]?.schema).toMatchObject({
       $schema: "https://json-schema.org/draft/2020-12/schema",

@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.workbench.json",
+  "compilerOptions": {
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "tests/org-policy/workbench/browser/**/*.ts"
+  ]
+}

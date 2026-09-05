@@ -50,3 +50,6 @@ ai-coding/skills/
 
 # local vet provisioning (pinned vendor checkouts; CI recreates its own)
 .baseline-sources/
+
+# Workbench browser bundle is generated only by UI/package lanes.
+/src/org-policy/workbench/bundle.generated.cjs

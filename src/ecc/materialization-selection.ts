@@ -132,6 +132,7 @@ export function resolveEccMaterializationSelection(
   const excludedItems: EccSelectionExclusion[] = [];
 
   for (const selection of policy.externalSelections) {
+    if (selection.framework !== "ecc") continue;
     for (const item of selection.items) {
       const authorization = authorizationById.get(item.id);
       const held = heldById.get(item.id);

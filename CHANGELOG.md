@@ -6,6 +6,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Begin the unreleased #967 Policy Workbench authoring-core transition: the browser consumes an offline normalized authoring catalog bundle, preserves exact source and asset identities in generic authoring selections, and emits schema-v3 policy intent with a `minimumCoreVersion` floor of `0.6.0`. This is an unreleased feature floor only; it does not change the package version or release cut. Final acceptance evidence remains pending.
+
 ### Fixed
 
 - Every AIH MCP row in the portable Policy Workbench now accepts requested intent, recorded in the

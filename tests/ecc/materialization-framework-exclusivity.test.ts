@@ -18,30 +18,20 @@ import {
 import { parseOrgPolicy } from "../../src/org-policy/schema.js";
 
 /**
- * F3: "One framework per policy (ruling 7); the lifecycle inherits the
- * schema's exclusivity, never re-implements it."
+ * F3 V2 compatibility preserves the old one-framework parsing rule. Schema
+ * V3 permits portable source identity across owners, so the ECC materializer
+ * has a separate, supported routing responsibility: it consumes only ECC
+ * external selections and never treats other frameworks as ECC components.
  *
- * The schema's own rule lives at `src/org-policy/schema.ts` (the
- * `distinctSelection.length > 1` check inside `PolicyGovernanceSchema`'s
- * `superRefine`, exercised through `parseOrgPolicy`). This suite does not
- * touch that file or restate its logic. It pins three things about the
- * lifecycle side instead:
+ * This suite keeps both facts visible:
  *
- * 1. A policy selecting from two frameworks never survives long enough to
- *    reach the F2 resolver — `parseOrgPolicy` refuses it first, with the
- *    schema's own message. (If the schema rule is ever weakened or removed,
- *    this test fails too — it does not hold its own copy of the check.)
- * 2. A positive control: an ordinary single-framework policy runs the full
- *    chain — parse, resolve-effective, resolve-selection, materialize — and
- *    the component actually lands on disk. This is what proves test 1 isn't
- *    vacuously passing because the chain is broken end to end.
- * 3. The resolver's own code has no framework-comparison branch to remove:
- *    fed a two-framework input directly (the only way to observe this, since
- *    step 1 proves no real policy ever reaches it that way), it filters
- *    purely by evidence, and the engine beneath it — which never receives a
- *    framework label at all, see `EccEffectiveSelectionComponent` — has
- *    nothing to check either. That is the "never re-implements it" half made
- *    observable: there is no second gate anywhere below the schema to find.
+ * 1. Historical V2 mixed-framework policies still fail in the schema before
+ *    effective resolution or materialization.
+ * 2. A V2 ECC-only policy still traverses parse, effective resolution,
+ *    selection, and materialization to an on-disk component.
+ * 3. A mixed selection supplied directly to the scoped resolver yields only
+ *    the ECC item. Superpowers input is ignored by this ECC pipeline and is
+ *    never materialized into its destination.
  */
 
 const COMMIT = "a".repeat(40);
@@ -98,8 +88,8 @@ function resolveLifecycleSelection(
   return resolveEccMaterializationSelection(effective, evidence);
 }
 
-describe("F3 — the lifecycle inherits the schema's one-framework-per-policy rule", () => {
-  it("POSITIVE CONTROL: a single-framework policy resolves through the full chain and materializes", () => {
+describe("F3 — V2 compatibility and ECC-scoped materialization routing", () => {
+  it("V2 compatibility: an ECC-only policy resolves through the full chain and materializes", () => {
     const item = selectionItem("skill", "tdd-workflow");
 
     const result = resolveLifecycleSelection(
@@ -126,7 +116,7 @@ describe("F3 — the lifecycle inherits the schema's one-framework-per-policy ru
     }
   });
 
-  it("refuses a policy selecting from two frameworks before the lifecycle resolver ever runs, with the schema's own message", () => {
+  it("V2 compatibility: refuses a policy selecting from two frameworks before the lifecycle resolver runs", () => {
     const rawPolicy = governedPolicy({
       externalSelections: [
         { framework: "ecc", items: [] },
@@ -144,14 +134,10 @@ describe("F3 — the lifecycle inherits the schema's one-framework-per-policy ru
     ).toThrowError(ONE_FRAMEWORK_MESSAGE);
   });
 
-  it("the resolver carries no framework-comparison logic of its own, and neither does the engine beneath it", () => {
-    // The schema's superRefine is the only reason a caller never builds the
-    // input used below from a real policy (proven by the test above). Built
-    // directly here, bypassing parseOrgPolicy entirely, purely to show that
-    // nothing at THIS layer would catch it either — so if this test ever
-    // starts failing because someone added a framework check inside
-    // resolveEccMaterializationSelection, that is a second implementation of
-    // ruling 7 growing where F3 says none may exist.
+  it("routes only ECC selections into the ECC materializer and ignores Superpowers", () => {
+    // V3 permits source identity across owners. This resolver is intentionally
+    // an ECC-only route, so a direct mixed input proves its routing boundary
+    // without treating source ownership as a methodology conflict.
     const eccItem = selectionItem("skill", "tdd-workflow");
     const spItem = selectionItem("skill", "brainstorming");
     const evidence: EccSelectionEvidence = {
@@ -170,12 +156,9 @@ describe("F3 — the lifecycle inherits the schema's one-framework-per-policy ru
     );
 
     expect(result.excluded).toEqual([]);
-    expect(result.included.map((component) => component.id).sort()).toEqual(
-      [eccItem.id, spItem.id].sort(),
-    );
-    // EccEffectiveSelectionComponent (the `included` shape) carries no
-    // `framework` field — by the time evidence has passed, the engine below
-    // has no framework label left to check even if it wanted to.
+    expect(result.included.map((component) => component.id)).toEqual([eccItem.id]);
+    // Included components are already ECC-scoped; the materializer receives
+    // no Superpowers component to write.
     expect(Object.keys(result.included[0] ?? {}).sort()).toEqual(
       ["authorization", "id", "provenance"].sort(),
     );
@@ -201,9 +184,8 @@ describe("F3 — the lifecycle inherits the schema's one-framework-per-policy ru
 
       applyEccMaterialization({ root, components });
 
-      // Both land — the engine has no framework dimension to refuse on.
       expect(existsSync(join(root, ECC_PATH))).toBe(true);
-      expect(existsSync(join(root, SP_PATH))).toBe(true);
+      expect(existsSync(join(root, SP_PATH))).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
