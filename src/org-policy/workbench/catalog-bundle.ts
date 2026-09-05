@@ -211,6 +211,7 @@ function compileTemplates(catalog: PolicyAuthoringCatalog): AuthoringCatalogBund
   const templates = [
     ...catalog.enterpriseComposition.parts.map((part) => ({
       id: `template:ecc/${part.id}`,
+      label: part.label,
       roots: part.componentIds.map((componentId) => ({
         assetId: `ecc/${componentId}`,
         mode: "select" as const,
@@ -220,6 +221,7 @@ function compileTemplates(catalog: PolicyAuthoringCatalog): AuthoringCatalogBund
     })),
     ...catalog.frameworks.map((framework) => ({
       id: `template:${framework.id}/methodology`,
+      label: `${framework.repository.split("/").at(-1)} methodology`,
       roots: [
         {
           assetId: `${framework.id}/profile:methodology`,

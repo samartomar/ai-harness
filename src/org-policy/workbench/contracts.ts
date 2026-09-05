@@ -326,6 +326,10 @@ export const SelectionTemplateRootV1Schema = z
 export const SelectionTemplateV1Schema = z
   .object({
     id: CatalogIdSchema,
+    label: BoundedTextSchema.refine(
+      (value) => value.trim() === value,
+      "must not have surrounding whitespace",
+    ).optional(),
     digest: DigestSchema,
     roots: z.array(SelectionTemplateRootV1Schema).min(1).max(1_000),
     exclusions: z.array(CatalogIdSchema).max(10_000),

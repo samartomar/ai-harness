@@ -48,13 +48,14 @@ describe("generic Workbench fulfillment boundary", () => {
       `article[data-workbench-asset-id='${requestAsset.id}']`,
     );
     if (row === null) throw new Error("expected prepared request asset");
-    expect(row.textContent).toContain("action: record-request");
+    expect(row.textContent).toContain("Status: Available");
     expect(row.textContent).toContain("evidence: none prepared");
 
     const request = row.querySelector<HTMLButtonElement>("button[data-workbench-asset-id]");
     if (request === null) throw new Error("expected generic request control");
     expect(request.textContent).toBe("Request");
     request.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    expect(row.textContent).toContain("Status: Requested");
 
     expect(window.document.querySelector("#framework-rows .help")?.textContent).toBe(
       "0 selected controls · 0 direct roots · 1 requested · effective: not evaluated — needs a target repository",

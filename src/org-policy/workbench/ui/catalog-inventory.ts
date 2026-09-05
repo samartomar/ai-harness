@@ -1,3 +1,10 @@
+import {
+  type CatalogBrowseFilters,
+  catalogBrowse,
+  catalogKindLabel,
+  catalogSourceDisplayName,
+  CATALOG_BROWSE_PAGE_SIZE as PAGE_SIZE,
+} from "../catalog-browse.js";
 import type {
   AuthoringAssetV1,
   AuthoringCatalogBundleV1,
@@ -11,8 +18,6 @@ import {
   workbenchSelectionCounts,
 } from "../selection-engine.js";
 import { evidenceDisplayFor } from "./evidence-display.js";
-
-const PAGE_SIZE = 50;
 
 export interface WorkbenchMountOptions {
   bundle: AuthoringCatalogBundleV1;
@@ -37,6 +42,8 @@ interface SourceGroup {
 }
 
 interface GroupView {
+  section: HTMLElement;
+  heading: HTMLButtonElement;
   body: HTMLElement;
   expanded: boolean;
   page: number;
@@ -55,7 +62,7 @@ function sourceGroups(bundle: AuthoringCatalogBundleV1): SourceGroup[] {
   return [...assetIdsBySource.entries()]
     .map(([id, assetIds]) => ({
       id,
-      label: bundle.sources[id]?.upstreamOrigin.locator ?? id,
+      label: catalogSourceDisplayName(bundle, id),
       assetIds: assetIds.sort(
         (left, right) =>
           Number(related.has(right)) - Number(related.has(left)) ||
@@ -97,7 +104,11 @@ function actionFor(
         candidate.assetId === asset.id && candidate.origin.kind === "legacy-unattributed",
     );
   if (request !== undefined)
-    return { type: "remove-request", assetId: asset.id, origin: request.origin };
+    return {
+      type: "remove-request",
+      assetId: asset.id,
+      origin: request.origin,
+    };
   const root =
     state.roots.find(
       (candidate) => candidate.assetId === asset.id && candidate.origin.kind === "administrator",
@@ -108,20 +119,21 @@ function actionFor(
     );
   if (root !== undefined) return { type: "remove-root", assetId: asset.id, origin: root.origin };
   if (asset.authoring.action === "record-request")
-    return { type: "record-request", assetId: asset.id, origin: administratorOrigin };
+    return {
+      type: "record-request",
+      assetId: asset.id,
+      origin: administratorOrigin,
+    };
   if (asset.authoring.action === "select-control" || asset.authoring.action === "record-selection")
-    return { type: "select-root", assetId: asset.id, origin: administratorOrigin };
+    return {
+      type: "select-root",
+      assetId: asset.id,
+      origin: administratorOrigin,
+    };
   return undefined;
 }
 function pageItems<T>(items: readonly T[], page: number): readonly T[] {
   return items.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
-}
-
-function inventoryText(bundle: AuthoringCatalogBundleV1, asset: AuthoringAssetV1): string {
-  const source = bundle.sources[asset.sourceId];
-  return [asset.id, asset.label, asset.kind, source?.upstreamOrigin.locator ?? ""]
-    .join(" ")
-    .toLowerCase();
 }
 
 /**
@@ -137,8 +149,12 @@ export function mountWorkbench(
   const groupViews = new Map<string, GroupView>();
   const teardown = new AbortController();
   const counts = document.createElement("p");
+  const filters = document.createElement("div");
+  const sourceFilter = document.createElement("select");
+  const typeFilter = document.createElement("select");
   const search = document.createElement("input");
   const inventory = document.createElement("section");
+  const browseResults = document.createElement("section");
   const diagnostics = document.createElement("p");
   const templates = document.createElement("div");
   const repairs = document.createElement("div");
@@ -146,21 +162,32 @@ export function mountWorkbench(
   const details = document.createElement("pre");
   details.className = "workbench-detail";
   details.hidden = true;
-  let query = "";
+  let filtersState: CatalogBrowseFilters = {};
 
   root.replaceChildren();
   root.classList.add("workbench-inventory");
   counts.className = "help";
   counts.setAttribute("aria-live", "polite");
+  filters.className = "workbench-catalog-filters";
+  const sourceLabel = document.createElement("label");
+  sourceLabel.textContent = "Source ";
+  sourceLabel.append(sourceFilter);
+  const typeLabel = document.createElement("label");
+  typeLabel.textContent = "Type ";
+  typeLabel.append(typeFilter);
+  filters.append(sourceLabel, typeLabel);
+  sourceFilter.setAttribute("aria-label", "Source");
+  typeFilter.setAttribute("aria-label", "Type");
   search.type = "search";
   search.placeholder = "Search catalog";
   search.setAttribute("aria-label", "Search catalog");
   inventory.setAttribute("aria-label", "Catalog inventory");
+  browseResults.setAttribute("aria-label", "Catalog browse results");
   templates.setAttribute("aria-label", "Selection templates");
   repairs.setAttribute("aria-label", "Saved selections needing review");
   drafts.setAttribute("aria-label", "Prepared local drafts");
   diagnostics.className = "help error";
-  root.append(counts, search, diagnostics, templates, repairs, drafts, inventory, details);
+  root.append(counts, filters, search, diagnostics, templates, repairs, drafts, inventory, details);
 
   const refreshCounts = (): void => {
     const value = workbenchSelectionCounts(options.bundle, state);
@@ -187,8 +214,12 @@ export function mountWorkbench(
     next.textContent = "Next 50";
     previous.disabled = page === 0;
     next.disabled = (page + 1) * PAGE_SIZE >= total;
-    previous.addEventListener("click", () => onPage(page - 1), { signal: teardown.signal });
-    next.addEventListener("click", () => onPage(page + 1), { signal: teardown.signal });
+    previous.addEventListener("click", () => onPage(page - 1), {
+      signal: teardown.signal,
+    });
+    next.addEventListener("click", () => onPage(page + 1), {
+      signal: teardown.signal,
+    });
     controls.append(
       previous,
       document.createTextNode(` ${page + 1} / ${Math.ceil(total / PAGE_SIZE)} `),
@@ -218,13 +249,14 @@ export function mountWorkbench(
     const exclusion = row.querySelector<HTMLButtonElement>("[data-workbench-row-exclusion]");
     if (detail === null || action === null || exclusion === null) return;
     const selected = new Set(resolveWorkbenchSelection(options.bundle, state).assetIds);
-    const requested = new Set(state.requests.map((request) => request.assetId));
-    const directOrigins = [
-      ...state.roots.filter((root) => root.assetId === asset.id).map((root) => root.origin),
-      ...state.requests
-        .filter((request) => request.assetId === asset.id)
-        .map((request) => request.origin),
-    ];
+    const directRoots = state.roots.filter((root) => root.assetId === asset.id);
+    const directRequests = state.requests.filter((request) => request.assetId === asset.id);
+    const requested = directRequests.length > 0;
+    const directOrigins = [...directRoots, ...directRequests].map((entry) => entry.origin);
+    const administratorDirect = directOrigins.some(
+      (origin) => origin.kind === "administrator" || origin.kind === "legacy-unattributed",
+    );
+    const structuralDirect = directRoots.some((root) => root.mode === "structural");
     const nextAction = actionFor(asset, state);
     const detailHandler =
       asset.authoring.action === "inspect-evidence"
@@ -232,7 +264,21 @@ export function mountWorkbench(
         : asset.authoring.action === "prepare-approval"
           ? options.prepareApproval
           : undefined;
-    detail.textContent = `${asset.kind} · action: ${asset.authoring.action} · ${evidenceFor(asset)}`;
+    const excluded = state.exclusions.some((item) => item.assetId === asset.id);
+    const status = excluded
+      ? "Excluded"
+      : requested
+        ? "Requested"
+        : structuralDirect
+          ? "Structural root"
+          : administratorDirect
+            ? "Selected"
+            : selected.has(asset.id)
+              ? directOrigins.length > 0
+                ? "Selected"
+                : "Selected (dependency)"
+              : "Available";
+    detail.textContent = `Source: ${catalogSourceDisplayName(options.bundle, asset.sourceId)} · Type: ${catalogKindLabel(asset.kind)} · Status: ${status} · ${evidenceFor(asset)}`;
     if (directOrigins.length > 0)
       detail.textContent += ` · origin: ${[...new Map(directOrigins.map((origin) => [originKey(origin), originLabel(origin)])).values()].sort(compareText).join(", ")}`;
     exclusion.textContent = state.exclusions.some(
@@ -249,18 +295,25 @@ export function mountWorkbench(
             ? asset.authoring.action === "inspect-evidence"
               ? "Inspect evidence"
               : "Prepare approval"
-            : requested.has(asset.id)
+            : requested
               ? "Add administrator request"
               : asset.authoring.action === "record-request"
                 ? "Request"
-                : "Select";
+                : selected.has(asset.id)
+                  ? "Add administrator selection"
+                  : "Select";
     action.disabled = nextAction === undefined && detailHandler === undefined;
     const pressed =
       asset.authoring.action === "record-request"
-        ? state.requests.some(
-            (request) => request.assetId === asset.id && request.origin.kind === "administrator",
+        ? directRequests.some(
+            (request) =>
+              request.origin.kind === "administrator" ||
+              request.origin.kind === "legacy-unattributed",
           )
-        : selected.has(asset.id);
+        : directRoots.some(
+            (root) =>
+              root.origin.kind === "administrator" || root.origin.kind === "legacy-unattributed",
+          );
     action.setAttribute("aria-pressed", pressed ? "true" : "false");
   };
 
@@ -312,6 +365,8 @@ export function mountWorkbench(
     assetIds: readonly string[],
     page: number,
     setPage: (next: number) => void,
+    total = assetIds.length,
+    alreadyPaged = false,
   ): void => {
     const active = document.activeElement;
     const focusTarget =
@@ -324,7 +379,7 @@ export function mountWorkbench(
         : undefined;
     const rows = document.createElement("div");
     rows.className = "workbench-inventory-rows";
-    for (const assetId of pageItems(assetIds, page)) {
+    for (const assetId of alreadyPaged ? assetIds : pageItems(assetIds, page)) {
       const asset = options.bundle.assets[assetId];
       if (asset === undefined) continue;
       const row = document.createElement("article");
@@ -332,9 +387,13 @@ export function mountWorkbench(
       const detailsButton = document.createElement("button");
       const exclusionButton = document.createElement("button");
       const label = document.createElement("span");
+      const methodology = document.createElement("span");
       const detail = document.createElement("span");
       row.dataset.workbenchAssetId = asset.id;
       label.textContent = asset.label;
+      methodology.className = "workbench-methodology-badge";
+      methodology.textContent = "Optional: choose up to one methodology.";
+      methodology.hidden = asset.exclusiveSlot !== "methodology";
       action.type = "button";
       action.dataset.workbenchAssetId = asset.id;
       action.dataset.workbenchRowAction = "true";
@@ -345,12 +404,12 @@ export function mountWorkbench(
       exclusionButton.dataset.workbenchExclusionId = asset.id;
       exclusionButton.dataset.workbenchRowExclusion = "true";
       detail.dataset.workbenchRowDetail = "true";
-      row.append(label, detail, action, exclusionButton, detailsButton);
+      row.append(label, methodology, detail, action, exclusionButton, detailsButton);
       updateRow(row, asset);
       rows.append(row);
     }
     host.replaceChildren(rows);
-    renderPageControls(host, page, assetIds.length, setPage);
+    renderPageControls(host, page, total, setPage);
     if (focusTarget !== undefined) {
       const replacement = [...host.querySelectorAll<HTMLButtonElement>("button")].find(
         (button) =>
@@ -373,48 +432,92 @@ export function mountWorkbench(
     });
   };
 
-  const matchingAssetIds = (): readonly string[] =>
-    query.length === 0
-      ? []
-      : Object.values(options.bundle.assets)
-          .filter((asset) => inventoryText(options.bundle, asset).includes(query))
-          .map((asset) => asset.id)
-          .sort((left, right) =>
-            compareText(
-              assetLabel(options.bundle.assets[left]!),
-              assetLabel(options.bundle.assets[right]!),
-            ),
-          );
+  const renderFilterOptions = (browse: ReturnType<typeof catalogBrowse>): void => {
+    const sourceTotal = browse.sourceOptions.reduce((total, option) => total + option.count, 0);
+    const typeTotal = browse.typeOptions.reduce((total, option) => total + option.count, 0);
+    const option = (text: string, value: string): HTMLOptionElement => {
+      const element = document.createElement("option");
+      element.textContent = text;
+      element.value = value;
+      return element;
+    };
+    sourceFilter.replaceChildren(
+      option(`All sources (${sourceTotal})`, ""),
+      ...browse.sourceOptions.map((item) => option(`${item.label} (${item.count})`, item.id)),
+    );
+    typeFilter.replaceChildren(
+      option(`All types (${typeTotal})`, ""),
+      ...browse.typeOptions.map((item) => option(`${item.label} (${item.count})`, item.id)),
+    );
+    sourceFilter.value = filtersState.sourceId ?? "";
+    typeFilter.value = filtersState.kind ?? "";
+  };
 
-  const renderSearchResults = (): void => {
-    const searchView = groupViews.get("search");
-    if (searchView === undefined) return;
-    const matches = matchingAssetIds();
-    searchView.expanded = matches.length > 0;
-    searchView.body.hidden = matches.length === 0;
-    const searchHeading = searchView.body.previousElementSibling;
-    if (searchHeading instanceof HTMLButtonElement) {
-      searchHeading.setAttribute("aria-expanded", String(searchView.expanded));
+  const emptyBrowseMessage = (): string => {
+    const query = filtersState.query?.trim();
+    if (query) return `No catalog items match "${query}" in the selected prepared catalog.`;
+    if (filtersState.sourceId !== undefined && filtersState.kind !== undefined)
+      return `No ${catalogKindLabel(filtersState.kind).toLowerCase()} are present in the prepared source ${catalogSourceDisplayName(options.bundle, filtersState.sourceId)}.`;
+    if (filtersState.sourceId !== undefined)
+      return `No catalog items are present in the prepared source ${catalogSourceDisplayName(options.bundle, filtersState.sourceId)}.`;
+    return `No ${catalogKindLabel(filtersState.kind ?? "item").toLowerCase()} are present in this prepared catalog.`;
+  };
+
+  const renderBrowseResults = (browse: ReturnType<typeof catalogBrowse>): void => {
+    renderFilterOptions(browse);
+    browseResults.hidden = !browse.active;
+    if (!browse.active) {
+      browseResults.replaceChildren();
+      return;
     }
-    renderRows(searchView.body, matches, searchView.page, (next) => {
-      searchView.page = Math.max(0, next);
-      renderSearchResults();
-    });
+    if (browse.total === 0) {
+      const empty = document.createElement("p");
+      empty.className = "help";
+      empty.textContent = emptyBrowseMessage();
+      browseResults.replaceChildren(empty);
+      return;
+    }
+    renderRows(
+      browseResults,
+      browse.pageAssetIds,
+      browse.page,
+      (next) => {
+        filtersState = { ...filtersState, page: next };
+        renderInventory();
+      },
+      browse.total,
+      true,
+    );
   };
 
   const renderInventory = (): void => {
+    const browse = catalogBrowse(options.bundle, filtersState);
     for (const group of groups) {
       const view = groupViews.get(group.id);
-      if (view !== undefined) renderGroup(group, view);
+      if (view === undefined) continue;
+      view.section.hidden = browse.active;
+      if (browse.active) {
+        view.body.hidden = true;
+        view.body.replaceChildren();
+      } else {
+        view.body.hidden = !view.expanded;
+        view.heading.setAttribute("aria-expanded", String(view.expanded));
+        renderGroup(group, view);
+      }
     }
-    renderSearchResults();
+    renderBrowseResults(browse);
   };
-
   const addGroup = (group: SourceGroup): void => {
     const section = document.createElement("section");
     const heading = document.createElement("button");
     const body = document.createElement("div");
-    const view: GroupView = { body, expanded: false, page: 0 };
+    const view: GroupView = {
+      section,
+      heading,
+      body,
+      expanded: false,
+      page: 0,
+    };
     heading.type = "button";
     heading.textContent = `${group.label} (${group.assetIds.length})`;
     heading.setAttribute("aria-expanded", "false");
@@ -445,10 +548,15 @@ export function mountWorkbench(
       compareText(left.id, right.id),
     )) {
       const apply = document.createElement("button");
+      const inspect = document.createElement("button");
       apply.type = "button";
       apply.dataset.workbenchTemplateId = template.id;
-      apply.textContent = `Apply ${template.id} (${template.roots.length} roots)`;
-      templates.append(apply);
+      apply.title = template.id;
+      apply.textContent = `Apply ${template.label ?? template.id} (${template.roots.length} roots)`;
+      inspect.type = "button";
+      inspect.dataset.workbenchTemplateDetailId = template.id;
+      inspect.textContent = "Details";
+      templates.append(apply, inspect);
     }
     for (const origin of [...appliedOrigins.values()].sort((left, right) =>
       compareText(originKey(left), originKey(right)),
@@ -457,7 +565,11 @@ export function mountWorkbench(
       remove.type = "button";
       remove.dataset.workbenchTemplateRemoveId = origin.id;
       remove.dataset.workbenchTemplateRemoveDigest = origin.digest;
-      remove.textContent = `Remove ${origin.id}`;
+      const template = options.bundle.templates[origin.id];
+      const templateLabel =
+        template?.digest === origin.digest ? (template.label ?? origin.id) : origin.id;
+      remove.title = origin.id;
+      remove.textContent = `Remove ${templateLabel}`;
       templates.append(remove);
     }
     templates.hidden = !templates.hasChildNodes();
@@ -540,11 +652,8 @@ export function mountWorkbench(
   renderTemplates();
   renderRepairs();
 
-  const searchGroup: SourceGroup = { id: "search", label: "Search results", assetIds: [] };
   for (const group of groups) addGroup(group);
-  addGroup(searchGroup);
-  const searchSection = inventory.lastElementChild;
-  if (searchSection instanceof HTMLElement) searchSection.hidden = true;
+  inventory.append(browseResults);
 
   root.addEventListener(
     "click",
@@ -601,8 +710,16 @@ export function mountWorkbench(
             (exclusion) =>
               exclusion.assetId === exclusionId && exclusion.origin.kind === "administrator",
           )
-            ? { type: "remove-exclusion", assetId: exclusionId, origin: administratorOrigin }
-            : { type: "add-exclusion", assetId: exclusionId, origin: administratorOrigin },
+            ? {
+                type: "remove-exclusion",
+                assetId: exclusionId,
+                origin: administratorOrigin,
+              }
+            : {
+                type: "add-exclusion",
+                assetId: exclusionId,
+                origin: administratorOrigin,
+              },
         );
         if (result.accepted) {
           const previous = state;
@@ -635,6 +752,17 @@ export function mountWorkbench(
           diagnostics.textContent =
             result.diagnostics?.map((diagnostic) => diagnostic.message).join(" ") ??
             "Template removal rejected.";
+        return;
+      }
+      const templateDetailId = target.closest<HTMLButtonElement>(
+        "[data-workbench-template-detail-id]",
+      )?.dataset.workbenchTemplateDetailId;
+      if (templateDetailId !== undefined) {
+        const template = options.bundle.templates[templateDetailId];
+        if (template !== undefined) {
+          details.textContent = JSON.stringify(template, null, 2);
+          details.hidden = false;
+        }
         return;
       }
       const templateId = target.closest<HTMLButtonElement>("[data-workbench-template-id]")?.dataset
@@ -688,15 +816,27 @@ export function mountWorkbench(
     },
     { signal: teardown.signal },
   );
+  const updateFilters = (next: CatalogBrowseFilters): void => {
+    filtersState = { ...next, page: 0 };
+    renderInventory();
+  };
+  sourceFilter.addEventListener(
+    "change",
+    () =>
+      updateFilters({
+        ...filtersState,
+        sourceId: sourceFilter.value || undefined,
+      }),
+    { signal: teardown.signal },
+  );
+  typeFilter.addEventListener(
+    "change",
+    () => updateFilters({ ...filtersState, kind: typeFilter.value || undefined }),
+    { signal: teardown.signal },
+  );
   search.addEventListener(
     "input",
-    () => {
-      query = search.value.trim().toLowerCase();
-      const searchView = groupViews.get("search");
-      if (searchView !== undefined) searchView.page = 0;
-      if (searchSection instanceof HTMLElement) searchSection.hidden = query.length === 0;
-      renderSearchResults();
-    },
+    () => updateFilters({ ...filtersState, query: search.value || undefined }),
     { signal: teardown.signal },
   );
 

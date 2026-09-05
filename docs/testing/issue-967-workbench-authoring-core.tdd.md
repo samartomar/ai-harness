@@ -123,3 +123,50 @@ npm run docs:lint
 The PR-lane command records the pure coverage stage, `npm run build`, and the
 parallel acceptance projects. Repository-wide verification and PR readiness are
 outside this Workbench receipt and remain in PR #974's validation section.
+## Catalog discovery follow-up
+
+The Source and Type filters expose the prepared catalog's skills, agents,
+profiles, and every observed asset kind. Source identity includes the exact
+source id so inputs with the same upstream locator remain distinguishable.
+Filtering and paging leave policy intent unchanged, preserve source disclosure
+state, and render at most 50 matching rows. Empty categories describe the
+prepared catalog. Structural roots retain their explicit status and removal
+intent. Templates display optional readable labels while their exact ids remain
+inspectable; labels are validated and bound into template digests. Previously
+expanded roots remain independent of later template label changes.
+
+The existing generic browser journey first failed because the Source combobox
+was absent (one failed, two passed). The template contract test first failed on
+its missing label, then on a whitespace-only label that had been accepted. The
+local RED logs are navigation-browser-red.log, navigation-label-red.log, and
+navigation-label-whitespace-red.log under .aih-scratch/workbench-evidence.
+The repository pre-commit gate rejected a RED-only checkpoint, so these failure
+receipts accompany a combined GREEN implementation commit; no hook was bypassed.
+
+The added pure browse contract uses tinyStudioModel and does not import the
+production catalog compiler graph. The existing browser journey covers Source,
+Type, the second result page, an empty category, filter reset, unchanged policy
+bytes, disclosure restoration, structural selection status, and template label
+inspection. The browser suite remains six generic journeys and one packed smoke.
+Production contracts verify ECC and Superpowers template names and that the
+prepared Superpowers pin contains 14 skills, one runtime, one methodology
+profile, and no standalone agent. Its reviewer prompt is included beneath the
+requesting-code-review skill.
+
+The first combined navigation lane passed all 87 pure contracts and all seven
+Chromium journeys, but 56 retained assertions failed because their lightweight
+DOM did not expose the global Option constructor. The repair creates option
+nodes through document.createElement, assigns inert text and values, and avoids
+introducing a test-only polyfill. The preserved failing receipt is
+navigation-option-red.log with navigation-option-red.json.
+
+The completed navigation PR lane passed 87 pure tests, 226 retained/contracts
+tests, and all seven Chromium journeys. Its pure stage was 3.218 s;
+the complete lane was 44.673 s. Peak sampled process-tree resident memory
+was 2,319,560,704 bytes, without a heap override. Pure coverage was
+91.35% statements, 86.00% branches, 92.89% functions, and 92.15% lines;
+retained coverage stayed above all existing thresholds. The DOM receipt records
+933 initial nodes and 13 changed nodes for a request action at each of
+10, 1,000, and 10,000 assets. The local receipts are navigation-pr-lane.json,
+navigation-acceptance-projects.json, and navigation-dom-scale.json. These are
+one follow-up measurement, separate from the five historical local runs above.

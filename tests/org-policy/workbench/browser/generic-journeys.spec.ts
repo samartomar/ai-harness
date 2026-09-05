@@ -5,7 +5,7 @@ import { expect, test } from "./fixture.js";
 
 test.use({ artifact: "synthetic-10.html" });
 
-test("keeps startup DOM bounded while groups, search, details, and keyboard navigation work at scale", async ({
+test("keeps startup DOM bounded while groups, browse filters, details, and keyboard navigation work at scale", async ({
   page,
   workbench,
 }, testInfo) => {
@@ -18,6 +18,10 @@ test("keeps startup DOM bounded while groups, search, details, and keyboard navi
     );
     await expect(page.locator("#framework-rows")).toHaveClass(/workbench-inventory/u);
     await expect(page.locator("article[data-workbench-asset-id]")).toHaveCount(0);
+    const source = page.getByRole("combobox", { name: "Source" });
+    const type = page.getByRole("combobox", { name: "Type" });
+    await expect(source).toBeVisible({ timeout: 1_000 });
+    await expect(type).toBeVisible({ timeout: 1_000 });
     const initial = await page.locator("*").count();
     const group = page.getByRole("button", { name: /^source:a \(/u });
     await group.focus();
@@ -27,16 +31,37 @@ test("keeps startup DOM bounded while groups, search, details, and keyboard navi
     expect(await rows.count()).toBeLessThanOrEqual(50);
     await page.locator('button[data-workbench-detail-id="mcp:request"]').click();
     await expect(page.locator("pre.workbench-detail")).toContainText("Offline fixture details");
-    await group.click();
-    await expect(rows).toHaveCount(0);
-    const search = page.getByRole("searchbox", { name: "Search catalog" });
-    await search.fill("mcp:request");
-    await expect(rows).toHaveCount(1);
-    await page.getByRole("button", { name: /^source:b \(/u }).click();
+    const policyBeforeFilters = await page.locator("#config-preview").inputValue();
+
+    await source.selectOption("source:a");
+    await expect(group).toBeHidden();
+    await source.focus();
+    await page.keyboard.press("Tab");
+    await expect(type).toBeFocused();
+    await type.selectOption("skill");
+    await expect(page.locator('article[data-workbench-asset-id="approval-item"]')).toBeVisible();
+    await expect(page.locator('article[data-workbench-asset-id="profile:alpha"]')).toContainText(
+      "Optional: choose up to one methodology.",
+    );
+    if (size > 50) {
+      await page.getByRole("button", { name: "Next 50" }).click();
+      await expect(page.getByRole("button", { name: "Previous 50" })).toBeEnabled();
+    }
+    await source.selectOption("source:b");
+    await type.selectOption("agent");
+    await expect(page.locator('[aria-label="Catalog browse results"]')).toContainText(
+      /No agents are present in the prepared source source:b\./u,
+    );
+    await source.selectOption("source:a");
+    await type.selectOption("");
+    await expect(page.locator("#config-preview")).toHaveValue(policyBeforeFilters);
+
     const unrelated = await page
-      .locator('article[data-workbench-asset-id="skill:dependency"]')
+      .locator('article[data-workbench-asset-id="approval-item"]')
       .elementHandle();
     expect(unrelated).not.toBeNull();
+    await page.locator('button[data-workbench-detail-id="mcp:request"]').click();
+    await expect(page.locator("pre.workbench-detail")).toContainText("Offline fixture details");
     await page.evaluate(() => {
       const changed = new Set<Node>();
       const observer = new MutationObserver((records) => {
@@ -57,7 +82,10 @@ test("keeps startup DOM bounded while groups, search, details, and keyboard navi
       });
       (
         window as unknown as {
-          workbenchMutationProbe: { observer: MutationObserver; changed: Set<Node> };
+          workbenchMutationProbe: {
+            observer: MutationObserver;
+            changed: Set<Node>;
+          };
         }
       ).workbenchMutationProbe = { observer, changed };
     });
@@ -66,17 +94,32 @@ test("keeps startup DOM bounded while groups, search, details, and keyboard navi
     await page.keyboard.press("Enter");
     await expect(page.locator('button[data-workbench-asset-id="mcp:request"]')).toBeFocused();
     await expect(page.locator("#framework-rows > .help[aria-live]")).toContainText("1 requested");
+    await expect(page.locator('article[data-workbench-asset-id="mcp:request"]')).toContainText(
+      "Status: Requested",
+    );
     const changed = await page.evaluate(() => {
       const probe = (
         window as unknown as {
-          workbenchMutationProbe: { observer: MutationObserver; changed: Set<Node> };
+          workbenchMutationProbe: {
+            observer: MutationObserver;
+            changed: Set<Node>;
+          };
         }
       ).workbenchMutationProbe;
       probe.observer.disconnect();
       return probe.changed.size;
     });
-    expect(await unrelated!.evaluate((element) => element.isConnected)).toBe(true);
+    expect(await unrelated?.evaluate((element) => element.isConnected)).toBe(true);
     expect(changed).toBeLessThan(1000);
+    const search = page.getByRole("searchbox", { name: "Search catalog" });
+    await search.fill("mcp:request");
+    await expect(rows).toHaveCount(1);
+    const policyBeforeClear = await page.locator("#config-preview").inputValue();
+    await search.fill("");
+    await source.selectOption("");
+    await expect(group).toBeVisible();
+    await expect(group).toHaveAttribute("aria-expanded", "true");
+    await expect(page.locator("#config-preview")).toHaveValue(policyBeforeClear);
     receipts.push({ size, initial, changed });
   }
   expect(new Set(receipts.map((item) => item.initial)).size).toBe(1);
@@ -97,7 +140,10 @@ test("keeps startup DOM bounded while groups, search, details, and keyboard navi
     await expect(page.locator("#validate")).toBeDisabled();
     await expect(page.locator("#download")).toBeDisabled();
     const before = await page.locator("#config-preview").inputValue();
-    const rejected = { ...JSON.parse(before), references: { repoContract: "rejected.json" } };
+    const rejected = {
+      ...JSON.parse(before),
+      references: { repoContract: "rejected.json" },
+    };
     await page.locator("#policy-file").setInputFiles({
       name: "rejected.json",
       mimeType: "application/json",
@@ -120,12 +166,20 @@ test("keeps startup DOM bounded while groups, search, details, and keyboard navi
   expect(downloads).toEqual([]);
   expect(await page.locator("#config-preview").inputValue()).toBe(invalidInitial);
 });
-
 test("expands templates, rejects methodology conflicts atomically, and preserves other origins on removal", async ({
   page,
   workbench,
 }) => {
   expect(workbench.networkRequests).toEqual([]);
+  const alpha = page.getByRole("button", {
+    name: /Apply Alpha ready set \(2 roots\)/u,
+  });
+  await expect(alpha).toHaveAttribute("title", "template:alpha");
+  await page.locator('[data-workbench-template-detail-id="template:alpha"]').click();
+  await expect(page.locator("pre.workbench-detail")).toContainText("template:alpha");
+  await expect(
+    page.getByRole("button", { name: /Apply template:beta \(1 roots\)/u }),
+  ).toHaveAttribute("title", "template:beta");
   const search = page.getByRole("searchbox", { name: "Search catalog" });
   await search.fill("skill:dependency");
   await page.locator('button[data-workbench-asset-id="skill:dependency"]').click();
@@ -133,6 +187,35 @@ test("expands templates, rejects methodology conflicts atomically, and preserves
   const before = await page.locator("#config-preview").inputValue();
   const policy = JSON.parse(before);
   expect(policy.schemaVersion).toBe(3);
+  const structural = structuredClone(policy);
+  const directRoot = structural.authoringSelections.roots.find(
+    (root: { assetId: string; origin: { kind: string } }) =>
+      root.assetId === "skill:dependency" && root.origin.kind === "administrator",
+  );
+  expect(directRoot).toBeDefined();
+  directRoot.mode = "structural";
+  await page.locator("#policy-file").setInputFiles({
+    name: "structural-root.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(structural)),
+  });
+  expect(JSON.parse(await page.locator("#config-preview").inputValue())).toEqual(structural);
+  await search.fill("");
+  await page.getByRole("button", { name: /^source:b \(/u }).click();
+  const structuralAction = page.locator(
+    'button[data-workbench-row-action][data-workbench-asset-id="skill:dependency"]',
+  );
+  await expect(structuralAction).toHaveAccessibleName("Remove administrator selection");
+  await expect(structuralAction).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator('article[data-workbench-asset-id="skill:dependency"]')).toContainText(
+    "Status: Structural root",
+  );
+  await page.locator("#policy-file").setInputFiles({
+    name: "template-selection.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(before),
+  });
+  await expect(page.locator("#config-preview")).toHaveValue(before);
   expect(
     policy.authoringSelections.roots.some(
       (root: { origin: { kind: string } }) => root.origin.kind === "template",
@@ -154,7 +237,12 @@ test("expands templates, rejects methodology conflicts atomically, and preserves
           workbenchBundle: {
             assets: Record<
               string,
-              { id: string; sourceId: string; sourceRevisionId: string; contentDigest: string }
+              {
+                id: string;
+                sourceId: string;
+                sourceRevisionId: string;
+                contentDigest: string;
+              }
             >;
           };
         };
@@ -186,7 +274,7 @@ test("expands templates, rejects methodology conflicts atomically, and preserves
   });
   await expect(page.locator("#announcement")).toContainText(/rejected/i);
   await expect(page.locator("#config-preview")).toHaveValue(before);
-  await page.getByRole("button", { name: /Remove template:alpha/u }).click();
+  await page.getByRole("button", { name: /Remove Alpha ready set/u }).click();
   const after = JSON.parse(await page.locator("#config-preview").inputValue());
   expect(after.authoringSelections.roots).toHaveLength(1);
   expect(after.authoringSelections.roots[0]).toMatchObject({

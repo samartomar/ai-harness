@@ -35,7 +35,7 @@ export function syntheticWorkbenchModel(size: number): PolicyStudioModel {
   assets["profile:alpha"]!.exclusiveSlot = "methodology"; assets["profile:alpha"]!.methodologyKey = "alpha";
   assets["profile:beta"]!.exclusiveSlot = "methodology"; assets["profile:beta"]!.methodologyKey = "beta";
   const templates = Object.fromEntries([
-    { id: "template:alpha", roots: ["profile:alpha", "skill:root"].map(assetId => ({ assetId, mode: "select" as const, includeOptionalMembers: false })), exclusions: [] },
+    { id: "template:alpha", label: "Alpha ready set", roots: ["profile:alpha", "skill:root"].map(assetId => ({ assetId, mode: "select" as const, includeOptionalMembers: false })), exclusions: [] },
     { id: "template:beta", roots: [{ assetId: "profile:beta", mode: "select" as const, includeOptionalMembers: false }], exclusions: [] },
   ].map(template => [template.id, { ...template, digest: "sha256:" + canonicalStrictJsonSha256V1(template) }]));
   const bundle: AuthoringCatalogBundleV1 = {

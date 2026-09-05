@@ -6,7 +6,10 @@ import {
   policyAuthoringCatalogBundle,
   verifyAuthoringCatalogBundleIntegrityV1,
 } from "../../../src/org-policy/workbench/catalog-bundle.js";
-import { parseAuthoringCatalogBundleV1 } from "../../../src/org-policy/workbench/contracts.js";
+import {
+  parseAuthoringCatalogBundleV1,
+  SelectionTemplateV1Schema,
+} from "../../../src/org-policy/workbench/contracts.js";
 import {
   createWorkbenchState,
   reduceWorkbenchAction,
@@ -169,6 +172,71 @@ describe("policy authoring catalog bundle", () => {
       bundle.evidence[`evidence:${candidate.framework.id}/${candidate.asset.id}`]?.coveredPaths,
     ).toEqual([...exactPaths].sort());
     expect(candidate.asset.sourcePaths.some((path) => !exactPaths.includes(path))).toBe(true);
+  });
+
+  it("carries readable bounded template labels while preserving exact root intent", () => {
+    const { catalog, bundle } = productionCatalogBundle();
+    for (const part of catalog.enterpriseComposition.parts) {
+      expect(bundle.templates[`template:ecc/${part.id}`]?.label).toBe(part.label);
+    }
+    expect(bundle.templates["template:ecc/methodology"]?.label).toBe("ECC methodology");
+    expect(bundle.templates["template:superpowers/methodology"]?.label).toBe(
+      "Superpowers methodology",
+    );
+    const template = bundle.templates["template:ecc/methodology"];
+    if (!template) throw new Error("missing methodology template");
+    expect(
+      SelectionTemplateV1Schema.parse({ ...template, label: "Organization review" }).label,
+    ).toBe("Organization review");
+    for (const label of [
+      "",
+      " ",
+      " leading",
+      "trailing ",
+      "a".repeat(1001),
+      "hidden\u0000label",
+      "e\u0301",
+    ]) {
+      expect(() => SelectionTemplateV1Schema.parse({ ...template, label })).toThrow();
+    }
+    const { label: ignoredLabel, ...withoutLabel } = template;
+    expect(ignoredLabel).toBe("ECC methodology");
+    expect(() => SelectionTemplateV1Schema.parse(withoutLabel)).not.toThrow();
+    const composition = catalog.enterpriseComposition.parts[0];
+    if (!composition) throw new Error("missing composition");
+    const applied = reduceWorkbenchAction(bundle, createWorkbenchState(), {
+      type: "apply-template",
+      templateId: `template:ecc/${composition.id}`,
+    });
+    expect(applied.accepted).toBe(true);
+    const renamedCatalog = policyAuthoringCatalog();
+    const renamedComposition = renamedCatalog.enterpriseComposition.parts[0];
+    if (!renamedComposition) throw new Error("missing renamed composition");
+    renamedComposition.label = "Renamed presentation";
+    const renamedBundle = policyAuthoringCatalogBundle(renamedCatalog);
+    expect(renamedBundle.templates[`template:ecc/${composition.id}`]?.digest).not.toBe(
+      bundle.templates[`template:ecc/${composition.id}`]?.digest,
+    );
+    expect(resolveWorkbenchSelection(renamedBundle, applied.state)).toEqual(
+      resolveWorkbenchSelection(bundle, applied.state),
+    );
+  });
+
+  it("keeps the pinned Superpowers reviewer inside its skill component", () => {
+    const { bundle } = productionCatalogBundle();
+    const assets = Object.values(bundle.assets).filter(
+      (asset) => asset.sourceId === "source:superpowers",
+    );
+    const count = (kind: string) => assets.filter((asset) => asset.kind === kind).length;
+    expect({
+      skill: count("skill"),
+      runtime: count("runtime"),
+      profile: count("profile"),
+      agent: count("agent"),
+    }).toEqual({ skill: 14, runtime: 1, profile: 1, agent: 0 });
+    expect(bundle.assets["superpowers/skill:requesting-code-review"]?.originalPath).toBe(
+      "skills/requesting-code-review",
+    );
   });
 
   it("compiles production composition templates as exact inert roots", () => {

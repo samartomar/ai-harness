@@ -698,7 +698,7 @@ A schema-v3 policy stores generic authoring intent in `authoringSelections` with
 
 `compilePolicy` and `compileOrganizationManifestV1` are build-time/Core APIs, not public `aih policy` authoring commands. The organization manifest compiler accepts bounded declaration bytes and cannot nominate a Core projector or authoring action. Core reconstructs bindings from its pinned catalog and prepares display-safe evidence only after its own verification. Browser imports, scanner intake, and organization declarations are not approval, authority, or effective state.
 
-The browser artifact has separate pure-contract, browser-journey, and packed-artifact lanes. Run `npm run test:workbench:pr` for the required budgeted PR lane; use `npm run test:workbench:pure`, `npm run test:workbench:contracts`, `npm run build:workbench`, and `npm run test:workbench:ui` for their individual scopes. The final #967 acceptance evidence is pending in `docs/testing/issue-967-workbench-authoring-core.tdd.md`.
+The browser artifact has separate pure-contract, browser-journey, and packed-artifact lanes. Run `npm run test:workbench:pr` for the required budgeted PR lane; use `npm run test:workbench:pure`, `npm run test:workbench:contracts`, `npm run build:workbench`, and `npm run test:workbench:ui` for their individual scopes. The #967 acceptance evidence is recorded in `docs/testing/issue-967-workbench-authoring-core.tdd.md`.
 
 Starter seeding, portable authoring, effective-resolution, schema, projection, and trusted-channel gates for the org policy.
 `aih policy generate` is deliberately rootless with respect to a governed target repository: it writes a self-contained
@@ -729,6 +729,8 @@ subcommands are repo-scoped and accept the conventional optional `[root]` positi
 like `aih init .` (`--root` and `AIH_ROOT` still apply). The `policy supported accept|inspect`
 administrator commands use `--root <target>` instead of a positional root so their input surface
 contains only the exact decision binding and code-owned target.
+
+The **Compose** catalog has **Source** and **Type** filters with counts. Choose a source and a type such as Skills, Agents, or Profiles, then search by name within that selection. Empty categories describe only the prepared catalog. Results remain paged at 50 entries and details load when opened. Methodology profiles are optional and permit at most one methodology; additive skill and agent selections can span sources. Selection templates display readable names when supplied, with technical identities retained for inspection.
 
 `generate --apply` writes `aih-policy-workbench.html` (or `--out <path>`). The workbench authors the actual
 org-policy schema and downloads it under a safe administrator-chosen JSON filename. The default remains

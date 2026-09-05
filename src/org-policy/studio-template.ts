@@ -196,6 +196,16 @@ body[data-view="imports"] .ticker,body[data-view="imports"] .plane:not(.pane),bo
 .plane>*{flex:0 0 auto}
 .pane{max-width:1060px;width:100%;margin:0 auto}
 #framework-rows{display:contents}
+.workbench-catalog-filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.workbench-catalog-filters label{display:flex;align-items:center;gap:5px;color:var(--ink-2);font:600 var(--cap)/1 var(--sans)}
+.workbench-catalog-filters select{max-width:min(100%,28rem)}
+.workbench-methodology-badge{display:inline-flex;align-items:center;width:max-content;padding:3px 6px;border:1px solid var(--rule);border-radius:3px;color:var(--ink-2);background:var(--fill);font:600 var(--cap)/1.25 var(--sans)}
+.workbench-inventory-rows{display:grid;gap:0}
+.workbench-inventory-rows article{display:grid;grid-template-columns:minmax(0,1fr) auto auto auto;gap:8px;align-items:center;padding:12px 0;border-top:1px solid var(--rule)}
+.workbench-inventory-rows article>span:first-child{grid-column:1/-1;font-weight:700;overflow-wrap:anywhere}
+.workbench-inventory-rows [data-workbench-row-detail]{grid-column:1/-1;color:var(--ink-2);overflow-wrap:anywhere}
+.workbench-inventory-rows .workbench-methodology-badge{grid-column:1/-1}
+.workbench-inventory-rows article>button{margin-top:2px}
 .plane:not(.pane) .ticker{order:-2}
 .plane:not(.pane) .planetop{order:-1}
 .planetop{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:8px 10px;position:sticky;top:var(--barh);z-index:40}

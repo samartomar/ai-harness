@@ -23,6 +23,7 @@ export default defineConfig({
         "src/org-policy/workbench/authoring-sources.ts",
         "src/org-policy/workbench/command-arguments.ts",
         "src/org-policy/workbench/selection-engine.ts",
+        "src/org-policy/workbench/catalog-browse.ts",
         "src/org-policy/workbench/compile-policy.ts",
         "src/org-policy/workbench/policy-import.ts",
       ],
