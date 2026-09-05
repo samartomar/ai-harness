@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 // The generated package is immutable during these independent test projects.
 // One parent process lets the lane measure their combined resident memory.
 const projects = [
-  ["contracts-and-retained-forms", ["node_modules/vitest/vitest.mjs", "run", "--config", "vitest.workbench.config.ts", "--coverage"]],
+  ["contracts-and-retained-forms", ["node_modules/vitest/vitest.mjs", "run", "--config", "vitest.workbench-retained.config.ts", "--coverage"]],
   ["chromium-and-packed", ["node_modules/@playwright/test/cli.js", "test", "--config", "playwright.workbench.config.ts"]],
 ];
 const children = new Set();

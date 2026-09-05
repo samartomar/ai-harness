@@ -7,7 +7,7 @@ import { defaultPreparedWorkbenchCatalog } from "../../src/org-policy/workbench/
  * Keeps generic Workbench UI tests independent of the production catalog size.
  * Source-specific inventory and selector tests retain their production fixtures.
  */
-export function tinyStudioModel(): PolicyStudioModel {
+function createTinyStudioModelPrototype(): PolicyStudioModel {
   const model = structuredClone(policyStudioModel());
   const legacyCatalog = defaultPreparedWorkbenchCatalog().catalog;
   const preparedAssetId = (label: string, predicate: (id: string) => boolean): string => {
@@ -97,6 +97,13 @@ export function tinyStudioModel(): PolicyStudioModel {
     }),
   );
   return model;
+}
+
+// Build and verify once before handing callers independent mutable clones.
+const verifiedTinyStudioModelPrototype = createTinyStudioModelPrototype();
+
+export function tinyStudioModel(): PolicyStudioModel {
+  return structuredClone(verifiedTinyStudioModelPrototype);
 }
 
 export function tinyEnterpriseStudioModel(): PolicyStudioModel {

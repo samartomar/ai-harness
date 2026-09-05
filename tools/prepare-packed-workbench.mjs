@@ -1,6 +1,111 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { basename, dirname, resolve, sep } from "node:path";
+
+const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+function clone(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function rootPackageLock() {
+  const lock = JSON.parse(readFileSync(resolve(sourceRoot, "package-lock.json"), "utf8"));
+  if (lock.lockfileVersion !== 3 || !lock.packages || !lock.packages[""])
+    throw new Error("Packed Workbench requires the root npm lockfile v3");
+  return lock;
+}
+
+function packagePathFor(packages, parentPath, dependency) {
+  let current = parentPath;
+  for (;;) {
+    const candidate = current
+      ? current + "/node_modules/" + dependency
+      : "node_modules/" + dependency;
+    if (packages[candidate]) return candidate;
+    if (current === "") return undefined;
+    const parent = current.lastIndexOf("/node_modules/");
+    current = parent < 0 ? "" : current.slice(0, parent);
+  }
+}
+
+export function productionClosure(lock) {
+  const root = lock.packages[""];
+  const selected = {};
+  const pending = Object.keys({ ...(root.dependencies ?? {}), ...(root.optionalDependencies ?? {}) }).map((name) => ({
+    name,
+    parentPath: "",
+  }));
+
+  while (pending.length > 0) {
+    const next = pending.pop();
+    if (!next) continue;
+    const path = packagePathFor(lock.packages, next.parentPath, next.name);
+    if (!path) throw new Error("Missing production dependency in root npm lock: " + next.name);
+    if (selected[path]) continue;
+
+    const record = lock.packages[path];
+    if (
+      !record ||
+      typeof record.version !== "string" ||
+      typeof record.resolved !== "string" ||
+      typeof record.integrity !== "string"
+    )
+      throw new Error("Root npm lock lacks exact tarball identity for " + path);
+
+    selected[path] = clone(record);
+    for (const name of Object.keys({ ...(record.dependencies ?? {}), ...(record.optionalDependencies ?? {}) }))
+      pending.push({ name, parentPath: path });
+  }
+  return selected;
+}
+
+export function packedConsumerInstallFiles(entry) {
+  if (
+    !entry ||
+    entry.name !== "@aihq/core" ||
+    typeof entry.filename !== "string" ||
+    typeof entry.version !== "string" ||
+    typeof entry.integrity !== "string" ||
+    basename(entry.filename) !== entry.filename
+  )
+    throw new Error("Unexpected packed Core manifest");
+
+  const lock = rootPackageLock();
+  const core = lock.packages[""];
+  if (entry.version !== core.version)
+    throw new Error("Packed Core version does not match the root npm lock");
+  const tarball = "file:../" + entry.filename;
+  const dependency = { "@aihq/core": tarball };
+  return {
+    manifest: {
+      name: "workbench-packed-consumer",
+      private: true,
+      dependencies: dependency,
+    },
+    lock: {
+      name: "workbench-packed-consumer",
+      lockfileVersion: 3,
+      requires: true,
+      packages: {
+        "": {
+          name: "workbench-packed-consumer",
+          dependencies: dependency,
+        },
+        "node_modules/@aihq/core": {
+          version: entry.version,
+          resolved: tarball,
+          integrity: entry.integrity,
+          ...(core.bin ? { bin: clone(core.bin) } : {}),
+          ...(core.engines ? { engines: clone(core.engines) } : {}),
+          dependencies: clone(core.dependencies ?? {}),
+          ...(core.optionalDependencies ? { optionalDependencies: clone(core.optionalDependencies) } : {}),
+        },
+        ...productionClosure(lock),
+      },
+    },
+  };
+}
 
 /** A cold package consumer: no product command ever targets the source checkout. */
 export function preparePackedWorkbench(directory) {
@@ -22,18 +127,18 @@ export function preparePackedWorkbench(directory) {
     if (result.status !== 0) throw new Error("Packed Workbench fixture failed: " + (result.stderr || result.stdout).slice(0, 1000));
     return result.stdout;
   }
-  const manifest = JSON.parse(run(process.cwd(), [npmCli, "pack", "--ignore-scripts", "--json", "--pack-destination", target]));
+  const manifest = JSON.parse(run(sourceRoot, [npmCli, "pack", "--ignore-scripts", "--json", "--pack-destination", target]));
   const entry = manifest?.[0];
-  if (entry?.name !== "@aihq/core" || typeof entry.filename !== "string" || basename(entry.filename) !== entry.filename)
-    throw new Error("Unexpected packed Core manifest");
-  const paths = entry.files.map(file => file.path);
-  if (!paths.includes("dist/bundle.generated.cjs")) throw new Error("Packed Core is missing the browser bundle");
+  const paths = entry?.files?.map(file => file.path);
+  if (!Array.isArray(paths) || !paths.includes("dist/bundle.generated.cjs")) throw new Error("Packed Core is missing the browser bundle");
   if (paths.includes("aih-packs.json")) throw new Error("Removed aih-packs.json leaked into the package");
   const consumer = resolve(target, "packed-consumer");
   const admin = resolve(target, "packed-administrator");
   mkdirSync(consumer); mkdirSync(admin);
-  writeFileSync(resolve(consumer, "package.json"), '{"name":"workbench-packed-consumer","private":true}\n');
-  run(consumer, [npmCli, "install", "--offline", "--ignore-scripts", "--no-audit", "--no-fund", resolve(target, entry.filename)]);
+  const install = packedConsumerInstallFiles(entry);
+  writeFileSync(resolve(consumer, "package.json"), JSON.stringify(install.manifest) + "\n");
+  writeFileSync(resolve(consumer, "package-lock.json"), JSON.stringify(install.lock, null, 2) + "\n");
+  run(consumer, [npmCli, "ci", "--offline", "--ignore-scripts", "--no-audit", "--no-fund"]);
   const cli = resolve(consumer, "node_modules/@aihq/core/dist/cli.js");
   if (!cli.startsWith(target + sep) || !existsSync(cli)) throw new Error("Invalid packed Core CLI");
   const organizationManifest = resolve(admin, "organization-manifest.json");

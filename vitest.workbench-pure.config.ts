@@ -1,18 +1,16 @@
 import { defineConfig } from "vitest/config";
+import {
+  WORKBENCH_PURE_TEST_EXCLUDE_PATTERNS,
+  WORKBENCH_PURE_TEST_PATTERNS,
+} from "./src/internals/workbench-test-ownership.js";
 
 export default defineConfig({
   test: {
     globals: false,
     environment: "node",
     setupFiles: ["./tests/setup-git-env.ts"],
-    include: ["tests/org-policy/workbench/**/*.test.ts"],
-    exclude: [
-      "tests/org-policy/workbench/compilers/**",
-      "tests/org-policy/workbench/catalog-bundle.test.ts",
-      "tests/org-policy/workbench/prepared-catalog.test.ts",
-      "tests/org-policy/workbench/core/**",
-      "tests/org-policy/workbench/policy-consumption.test.ts",
-    ],
+    include: [...WORKBENCH_PURE_TEST_PATTERNS],
+    exclude: [...WORKBENCH_PURE_TEST_EXCLUDE_PATTERNS],
     maxWorkers: 2,
     execArgv: [],
     coverage: {
