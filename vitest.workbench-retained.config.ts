@@ -12,8 +12,8 @@ export default defineConfig({
     environment: "node",
     setupFiles: ["./tests/setup-git-env.ts"],
     ...testRuntime,
-    // Two Vitest workers leave CPU capacity for simultaneous Chromium and fixture preparation on four-core runners.
-    maxWorkers: Math.min(2, availableParallelism()),
+    // Reserve two CPUs for concurrent browser/setup work while retaining a four-worker ceiling on larger machines.
+    maxWorkers: Math.max(1, Math.min(4, availableParallelism() - 2)),
     include: [...WORKBENCH_RETAINED_TEST_PATTERNS],
     coverage: workbenchCoverage,
   },

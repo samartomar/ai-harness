@@ -3,10 +3,11 @@
 This is an evidence map for the current worktree. It maps the Studio suites
 deleted in the current diff to named tests that remain. A successor may replace
 a semantic contract while deliberately retiring a source-specific layout or copy
-assertion. The current five local `npm run test:workbench:pr` receipts passed:
-84 pure tests, 221 retained/contracts tests, and seven Chromium tests per run.
-Original receipts are retained separately. This map does not certify full
-verification, Ubuntu CI, release, or publication.
+assertion. Five final local `npm run test:workbench:pr` receipts passed at
+`8daf7da54eab43e042a1b2bebac6cf77f7a5d4c9`: 84 pure tests, 223
+retained/contracts tests, and seven Chromium tests per run. Superseded local
+receipts are retained separately. Repository-wide verification and PR readiness
+are recorded in PR #974's validation section.
 
 ## Current generic browser contract
 
@@ -27,11 +28,13 @@ package smoke; those are the browser successors for generic UI behavior:
 The first generic journey is the replacement evidence for bounded group/search/
 detail/navigation rendering. It uses synthetic 10, 1,000, and 10,000 asset
 fixtures, asserts a bounded initial and expanded DOM, and records a DOM receipt.
-Across the five current local PR-lane receipts, all seven Chromium tests passed;
+Across the five final local PR-lane receipts, all seven Chromium tests passed;
 the DOM receipt recorded 920 initial nodes and 13 changed nodes at every
-synthetic size. The revised timing and memory table is recorded in
-`docs/testing/issue-967-workbench-authoring-core.tdd.md`; Ubuntu CI remains
-pending.
+synthetic size. The final timing and memory table is recorded in
+`docs/testing/issue-967-workbench-authoring-core.tdd.md`. One hosted Ubuntu 24
+Workbench receipt, CI run `33948840550` at `cb08456d`, also passed: 48.015 s,
+84 pure tests, 223 retained/contracts tests, and seven Chromium tests. It is one
+hosted run, separate from the five local measurements.
 
 ## Deleted-suite successors
 
