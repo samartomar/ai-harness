@@ -1,5 +1,16 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+const vendorBaselineLockRead = vi.hoisted(() => vi.fn());
+
+vi.mock("../../../../src/baseline-evidence/vendor.js", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../../../src/baseline-evidence/vendor.js")>();
+  vendorBaselineLockRead.mockImplementation(actual.readVendorBaselineLock);
+  return { ...actual, readVendorBaselineLock: vendorBaselineLockRead };
+});
+
 import { canonicalStrictJsonSha256V1 } from "../../../../src/contract/strict-json-v1.js";
+import { policyAuthoringCatalog } from "../../../../src/org-policy/catalog.js";
 import {
   assembleAuthoringCatalogBundleFromCompilerOutputsV1,
   type CatalogCompilerAssemblyInputV1,
@@ -8,6 +19,7 @@ import {
 } from "../../../../src/org-policy/workbench/catalog-bundle.js";
 import { registeredCatalogCompilersV1 } from "../../../../src/org-policy/workbench/compilers/index.js";
 import { compileOrganizationManifestV1 } from "../../../../src/org-policy/workbench/compilers/organization-manifest.js";
+import { compilePinnedBaselineV1 } from "../../../../src/org-policy/workbench/compilers/pinned-baseline.js";
 import {
   actionForCompilerDeclarationV1,
   assemblyRegistryForCompiledDeclarationsV1,
@@ -167,6 +179,32 @@ describe("registered catalog compilers", () => {
       ),
     ).toHaveLength(2);
     expect(() => verifyAuthoringCatalogBundleIntegrityV1(bundle)).not.toThrow();
+  });
+
+  it("snapshots the baseline lock once per source compile and retains exact evidence pin rejection", () => {
+    const framework = policyAuthoringCatalog().frameworks.find(
+      (candidate) => candidate.id === "ecc",
+    );
+    if (framework === undefined) throw new Error("expected ECC framework");
+
+    vendorBaselineLockRead.mockClear();
+    const compiled = compilePinnedBaselineV1(framework);
+    expect(Object.keys(compiled.evidence)).toHaveLength(
+      framework.assets.filter((asset) => asset.vet !== undefined).length,
+    );
+    expect(vendorBaselineLockRead).toHaveBeenCalledTimes(1);
+
+    const mismatched = structuredClone(framework);
+    const vetted = mismatched.assets.find((asset) => asset.vet !== undefined);
+    if (vetted?.vet === undefined) throw new Error("expected vetted ECC asset");
+    const original = vetted.vet.treeSha256;
+    vetted.vet.treeSha256 = original === "0".repeat(64) ? "1".repeat(64) : "0".repeat(64);
+
+    vendorBaselineLockRead.mockClear();
+    expect(() => compilePinnedBaselineV1(mismatched)).toThrow(
+      new Error(`pinned asset ${vetted.id} has no matching evidence component`),
+    );
+    expect(vendorBaselineLockRead).toHaveBeenCalledTimes(1);
   });
 
   it("rejects future compiler versions, caller capability injection, and relation collisions", () => {

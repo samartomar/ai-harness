@@ -57,6 +57,7 @@ import {
 } from "../../src/org-policy/studio-model.js";
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
+import { tinyStudioModel } from "./studio-test-fixture.js";
 
 let dir: string;
 const openWindows = new Set<Window>();
@@ -845,7 +846,7 @@ describe("policy generate", () => {
 
   it("keeps standalone decision import strict, inert, and parity-checked in the browser", async () => {
     const window = workbenchWindow();
-    const html = policyStudioHtml(policyStudioModel());
+    const html = policyStudioHtml(tinyStudioModel());
     window.document.write(html);
     loadStudio(window, html);
     const document = window.document;
@@ -982,7 +983,7 @@ describe("policy generate", () => {
       configurable: true,
       value: ControlledFileReader,
     });
-    const html = policyStudioHtml(policyStudioModel());
+    const html = policyStudioHtml(tinyStudioModel());
     window.document.write(html);
     loadStudio(window, html);
     const document = window.document;
@@ -1077,7 +1078,7 @@ describe("policy generate", () => {
       expect(() => parseStudioPolicyImport(JSON.stringify(policy))).toThrow();
     }
     const window = workbenchWindow();
-    const html = policyStudioHtml(policyStudioModel());
+    const html = policyStudioHtml(tinyStudioModel());
     window.document.write(html);
     loadStudio(window, html);
     const policyFile = window.document.getElementById("policy-file");
@@ -1520,7 +1521,7 @@ describe("policy generate", () => {
 
   it("resets generic Workbench state before the next catalog selection", async () => {
     const window = workbenchWindow();
-    const html = policyStudioHtml(policyStudioModel());
+    const html = policyStudioHtml(tinyStudioModel());
     window.document.write(html);
     loadStudio(window, html);
     const document = window.document;
@@ -1599,7 +1600,7 @@ describe("policy generate", () => {
     });
 
     const window = workbenchWindow();
-    const html = policyStudioHtml(policyStudioModel());
+    const html = policyStudioHtml(tinyStudioModel());
     window.document.write(html);
     loadStudio(window, html);
     const document = window.document;
@@ -1751,7 +1752,7 @@ describe("policy generate", () => {
 
   it("has semantic controls and a usable accessible help interaction in the generated DOM", () => {
     const window = workbenchWindow();
-    const html = policyStudioHtml(policyStudioModel());
+    const html = policyStudioHtml(tinyStudioModel());
     window.document.write(html);
     loadStudio(window, html);
     const document = window.document;
@@ -1789,7 +1790,7 @@ describe("policy generate", () => {
 
   it("rejects invalid browser imports and invalid authored custom text before it can become downloadable policy", async () => {
     const window = workbenchWindow();
-    const html = policyStudioHtml(policyStudioModel());
+    const html = policyStudioHtml(tinyStudioModel());
     window.document.write(html);
     loadStudio(window, html);
     const document = window.document;
@@ -2060,7 +2061,7 @@ describe("policy generate", () => {
 
   it("keeps curation and preserved evidence detail in compact accessible disclosures", async () => {
     const window = workbenchWindow();
-    const html = policyStudioHtml(policyStudioModel());
+    const html = policyStudioHtml(tinyStudioModel());
     window.document.write(html);
     loadStudio(window, html);
     const document = window.document;
@@ -2286,12 +2287,13 @@ describe("policy generate", () => {
         },
       },
     ];
+    const html = policyStudioHtml(tinyStudioModel());
     for (const fixture of cases) {
       const policy = fullAuthoringPolicy();
       fixture.mutate(policy);
       expect(() => parseStudioPolicyImport(JSON.stringify(policy)), fixture.name).toThrow();
       const window = workbenchWindow();
-      const html = policyStudioHtml(policyStudioModel());
+
       window.document.write(html);
       loadStudio(window, html);
       const policyFile = window.document.getElementById("policy-file");
@@ -2335,6 +2337,7 @@ describe("policy generate", () => {
         accepted: false,
       },
     ];
+    const html = policyStudioHtml(tinyStudioModel());
     for (const fixture of cases) {
       const policy = policyWithCommandArgument(fixture.argument, fixture.sourceRegistry);
       if (fixture.accepted) {
@@ -2343,7 +2346,7 @@ describe("policy generate", () => {
         expect(() => parseStudioPolicyImport(JSON.stringify(policy))).toThrow();
       }
       const window = workbenchWindow();
-      const html = policyStudioHtml(policyStudioModel());
+
       window.document.write(html);
       loadStudio(window, html);
       const document = window.document;

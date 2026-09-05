@@ -17,6 +17,21 @@ function sha256(bytes: string): string {
   return `sha256:${createHash("sha256").update(bytes, "utf8").digest("hex")}`;
 }
 
+let productionFixture:
+  | {
+      catalog: ReturnType<typeof policyAuthoringCatalog>;
+      bundle: ReturnType<typeof policyAuthoringCatalogBundle>;
+    }
+  | undefined;
+
+function productionCatalogBundle() {
+  productionFixture ??= (() => {
+    const catalog = policyAuthoringCatalog();
+    return { catalog, bundle: policyAuthoringCatalogBundle(catalog) };
+  })();
+  return structuredClone(productionFixture);
+}
+
 describe("policy authoring catalog bundle", () => {
   it("normalizes pinned sources without giving source metadata projector authority", () => {
     const bundle = policyAuthoringCatalogBundle();
@@ -36,14 +51,14 @@ describe("policy authoring catalog bundle", () => {
   });
 
   it("binds pinned assets to their pinned component or declaration identities", () => {
-    const catalog = policyAuthoringCatalog();
-    const bundle = policyAuthoringCatalogBundle(catalog);
+    const { catalog, bundle } = productionCatalogBundle();
+    const vendorSources = new Map(
+      readVendorBaselineLock().sources.map((source) => [source.id, source]),
+    );
 
     for (const framework of catalog.frameworks) {
       const source = bundle.sources[`source:${framework.id}`];
-      const verifiedSource = readVendorBaselineLock().sources.find(
-        (entry) => entry.id === framework.id,
-      );
+      const verifiedSource = vendorSources.get(framework.id);
       expect(source?.revision.contentDigest).toBe(`sha256:${verifiedSource?.sourceTreeSha256}`);
       for (const item of framework.assets) {
         const asset = bundle.assets[`${framework.id}/${item.id}`];
@@ -55,28 +70,49 @@ describe("policy authoring catalog bundle", () => {
   });
 
   it("preserves catalog closure and maps every vetted subject to exact source content", () => {
-    const catalog = policyAuthoringCatalog();
-    const bundle = policyAuthoringCatalogBundle(catalog);
+    const { catalog, bundle } = productionCatalogBundle();
+    const vendorComponents = new Map(
+      readVendorBaselineLock().sources.map((source) => [
+        source.id,
+        new Map(source.components.map((component) => [component.id, component])),
+      ]),
+    );
+    const relationsByFromAssetId = new Map<string, (typeof bundle.relations)[number][]>();
+    for (const relation of bundle.relations) {
+      const relations = relationsByFromAssetId.get(relation.fromAssetId) ?? [];
+      relations.push(relation);
+      relationsByFromAssetId.set(relation.fromAssetId, relations);
+    }
+    const evidenceBySubjectAssetId = new Map<string, (typeof bundle.evidence)[string][]>();
+    for (const evidence of Object.values(bundle.evidence)) {
+      for (const subject of evidence.subjects) {
+        const entries = evidenceBySubjectAssetId.get(subject.assetId) ?? [];
+        entries.push(evidence);
+        evidenceBySubjectAssetId.set(subject.assetId, entries);
+      }
+    }
 
     for (const framework of catalog.frameworks) {
+      const components = vendorComponents.get(framework.id);
       for (const item of framework.assets) {
         const assetId = `${framework.id}/${item.id}`;
+        const relations = relationsByFromAssetId.get(assetId) ?? [];
         for (const dependency of item.dependencies ?? []) {
-          expect(bundle.relations).toContainEqual({
+          expect(relations).toContainEqual({
             fromAssetId: assetId,
             toAssetId: `${framework.id}/${dependency}`,
             kind: "requires",
           });
         }
         for (const rider of item.riders ?? []) {
-          expect(bundle.relations).toContainEqual({
+          expect(relations).toContainEqual({
             fromAssetId: assetId,
             toAssetId: `${framework.id}/${rider}`,
             kind: "requires",
           });
         }
         for (const member of item.members ?? []) {
-          expect(bundle.relations).toContainEqual({
+          expect(relations).toContainEqual({
             fromAssetId: assetId,
             toAssetId: `${framework.id}/${member}`,
             kind: "member",
@@ -84,11 +120,9 @@ describe("policy authoring catalog bundle", () => {
           });
         }
         if (item.vet !== undefined) {
-          const coveredPaths = readVendorBaselineLock()
-            .sources.find((source) => source.id === framework.id)
-            ?.components.find((component) => component.id === item.id)?.paths;
+          const coveredPaths = components?.get(item.id)?.paths;
           if (coveredPaths === undefined) throw new Error(`missing evidence paths for ${item.id}`);
-          expect(Object.values(bundle.evidence)).toEqual(
+          expect(evidenceBySubjectAssetId.get(assetId) ?? []).toEqual(
             expect.arrayContaining([
               expect.objectContaining({
                 coveredPaths: [...coveredPaths].sort(),
@@ -110,14 +144,17 @@ describe("policy authoring catalog bundle", () => {
   });
 
   it("uses exact vendor-lock component paths for complete evidence coverage", () => {
-    const catalog = policyAuthoringCatalog();
-    const bundle = policyAuthoringCatalogBundle(catalog);
+    const { catalog, bundle } = productionCatalogBundle();
+    const vendorComponents = new Map(
+      readVendorBaselineLock().sources.map((source) => [
+        source.id,
+        new Map(source.components.map((component) => [component.id, component])),
+      ]),
+    );
     const candidate = catalog.frameworks
       .flatMap((framework) => framework.assets.map((asset) => ({ framework, asset })))
       .find(({ framework, asset }) => {
-        const paths = readVendorBaselineLock()
-          .sources.find((source) => source.id === framework.id)
-          ?.components.find((component) => component.id === asset.id)?.paths;
+        const paths = vendorComponents.get(framework.id)?.get(asset.id)?.paths;
         return (
           asset.vet !== undefined &&
           paths !== undefined &&
@@ -126,9 +163,7 @@ describe("policy authoring catalog bundle", () => {
       });
     expect(candidate).toBeDefined();
     if (candidate === undefined) throw new Error("expected a provenance alias fixture");
-    const exactPaths = readVendorBaselineLock()
-      .sources.find((source) => source.id === candidate.framework.id)
-      ?.components.find((component) => component.id === candidate.asset.id)?.paths;
+    const exactPaths = vendorComponents.get(candidate.framework.id)?.get(candidate.asset.id)?.paths;
     if (exactPaths === undefined) throw new Error("expected exact component paths");
     expect(
       bundle.evidence[`evidence:${candidate.framework.id}/${candidate.asset.id}`]?.coveredPaths,
@@ -137,8 +172,7 @@ describe("policy authoring catalog bundle", () => {
   });
 
   it("compiles production composition templates as exact inert roots", () => {
-    const catalog = policyAuthoringCatalog();
-    const bundle = policyAuthoringCatalogBundle(catalog);
+    const { catalog, bundle } = productionCatalogBundle();
     for (const part of catalog.enterpriseComposition.parts) {
       const templateId = "template:ecc/" + part.id;
       const template = bundle.templates[templateId];
@@ -171,7 +205,7 @@ describe("policy authoring catalog bundle", () => {
   });
 
   it("keeps methodology on explicit profiles rather than technology framework assets", () => {
-    const bundle = policyAuthoringCatalogBundle();
+    const { bundle } = productionCatalogBundle();
     for (const framework of ["ecc", "superpowers"]) {
       expect(bundle.assets[`${framework}/profile:methodology`]).toMatchObject({
         exclusiveSlot: "methodology",
@@ -185,7 +219,7 @@ describe("policy authoring catalog bundle", () => {
     ).toBe(true);
   });
   it("binds every detail chunk and the bundle digest to its exact bytes", () => {
-    const bundle = policyAuthoringCatalogBundle();
+    const { bundle } = productionCatalogBundle();
     for (const chunk of Object.values(bundle.detailChunks)) {
       expect(chunk.digest).toBe(sha256(chunk.bytes));
     }

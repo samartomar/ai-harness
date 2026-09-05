@@ -9,10 +9,13 @@ function digest(bytes: Uint8Array | string): string {
   return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 }
 
-function sourceContentDigest(framework: PolicyAuthoringFramework): string {
-  const source = readVendorBaselineLock().sources.find(
-    (candidate) => candidate.id === framework.id,
-  );
+type VendorBaselineSourceV1 = ReturnType<typeof readVendorBaselineLock>["sources"][number];
+type VendorBaselineComponentV1 = VendorBaselineSourceV1["components"][number];
+
+function sourceContentDigest(
+  framework: PolicyAuthoringFramework,
+  source: VendorBaselineSourceV1 | undefined,
+): string {
   if (source?.sourceTreeSha256 === undefined) {
     throw new Error(`pinned ${framework.id} source has no declared source-tree identity`);
   }
@@ -29,15 +32,24 @@ function assetContentDigest(asset: PolicyAuthoringAsset): string {
   return `sha256:${pinnedIdentity}`;
 }
 
+function evidenceComponentsByIdV1(
+  source: VendorBaselineSourceV1 | undefined,
+): Map<string, VendorBaselineComponentV1> {
+  const components = new Map<string, VendorBaselineComponentV1>();
+  for (const component of source?.components ?? []) {
+    // Array.find() chose the first matching declaration. Preserve that behavior
+    // while avoiding a full lock clone and linear scan for every vetted asset.
+    if (!components.has(component.id)) components.set(component.id, component);
+  }
+  return components;
+}
+
 function evidenceCoveredPaths(
-  framework: PolicyAuthoringFramework,
   asset: PolicyAuthoringAsset,
+  componentsById: ReadonlyMap<string, VendorBaselineComponentV1>,
 ): string[] {
   if (asset.vet === undefined) return [];
-  const source = readVendorBaselineLock().sources.find(
-    (candidate) => candidate.id === framework.id,
-  );
-  const component = source?.components.find((candidate) => candidate.id === asset.id);
+  const component = componentsById.get(asset.id);
   if (component === undefined || component.treeSha256 !== asset.vet.treeSha256) {
     throw new Error(`pinned asset ${asset.id} has no matching evidence component`);
   }
@@ -68,6 +80,12 @@ export interface CompiledPinnedBaselineV1 {
 export function compilePinnedBaselineV1(
   framework: PolicyAuthoringFramework,
 ): CompiledPinnedBaselineV1 {
+  // readVendorBaselineLock() returns a defensive clone. Keep that one exact
+  // snapshot for all declaration, evidence, and source-identity lookups.
+  const source = readVendorBaselineLock().sources.find(
+    (candidate) => candidate.id === framework.id,
+  );
+  const componentsById = evidenceComponentsByIdV1(source);
   const sourceId = `source:${framework.id}`;
   const detailBytes: Record<string, string> = {};
   const declarations = framework.assets.map((asset): CompiledDeclarationV1 => {
@@ -179,7 +197,7 @@ export function compilePinnedBaselineV1(
     framework.assets.flatMap((asset) => {
       if (asset.vet === undefined) return [];
       const assetId = `${framework.id}/${asset.id}`;
-      const coveredPaths = evidenceCoveredPaths(framework, asset);
+      const coveredPaths = evidenceCoveredPaths(asset, componentsById);
       const evidenceBytes = canonicalStrictJsonBytesV1({
         version: "pinned-baseline-evidence/v1",
         source: { repository: framework.repository, commit: framework.commit },
@@ -220,7 +238,7 @@ export function compilePinnedBaselineV1(
     source: {
       id: sourceId,
       revisionId: framework.commit,
-      contentDigest: sourceContentDigest(framework),
+      contentDigest: sourceContentDigest(framework, source),
       frameworkId: framework.id,
       repository: framework.repository,
     },
