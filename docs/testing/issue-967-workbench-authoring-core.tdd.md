@@ -2,7 +2,7 @@
 
 Status: **final local Workbench lane evidenced.** Five fresh
 `npm run test:workbench:pr` runs at
-`675a1e1ed15019b1299c3f83466af93cdaf3716c` exited 0. This receipt covers the
+`f79bc5347c6b0456ce2c9fd744f755903f765cc6` exited 0. This receipt covers the
 Workbench lane only; repository-wide verification and current PR readiness are
 recorded in PR #974's validation section.
 
@@ -68,36 +68,37 @@ still does not create organization authority, approvals, or runtime effects.
 
 ## Final local PR-lane receipt
 
-Receipts are `.aih-scratch/workbench-evidence/pr-lane-snapshot-run-1.json`
-through `pr-lane-snapshot-run-5.json`, with matching logs and
-`five-run-snapshot-summary.json`. They ran at source
-`675a1e1ed15019b1299c3f83466af93cdaf3716c` on the local Windows reference:
+Receipts are `.aih-scratch/workbench-evidence/pr-lane-leaf-run-1.json` through
+`pr-lane-leaf-run-5.json`, with matching logs and
+`five-run-leaf-summary.json`. They ran at source
+`f79bc5347c6b0456ce2c9fd744f755903f765cc6` on the local Windows reference:
 Node `v24.18.0`, Windows `10.0.26200`, 24 processors, and Chrome for Testing
 `151.0.7922.34`.
 
 `vitest.workbench-retained.config.ts` reserves two available CPUs and caps
 retained-test workers at four: `max(1, min(4, availableParallelism() - 2))`.
-The 24-CPU local reference therefore used four retained workers; the four-CPU
-host used two. This retained-lane setting is distinct from the general suite
-runtime.
+The 24-CPU local reference therefore used four retained workers. This
+retained-lane setting is distinct from the general suite runtime.
 
 The pinned-baseline compiler reads one defensive vendor-lock snapshot for each
 source compilation and reuses it for source identity, declarations, and
-evidence. This optimization preserves the canonical ECC and Superpowers catalog
-bytes; `registry.test.ts` also verifies the single read and retained exact
-evidence-pin rejection.
+evidence. This preserves the canonical ECC and Superpowers catalog bytes;
+`registry.test.ts` also verifies the single read and retained exact evidence-pin
+rejection. The unchanged integrity verifier and finding arrays live in two
+small modules, reducing the tiny fixture's local dependency inputs from 122 to
+21 while preserving the existing module exports.
 
 | Run | Pure | Build | Parallel acceptance | Total | Peak process-tree resident memory |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| 1 | 3.220 s | 4.177 s | 36.148 s | 43.551 s | 2,153.5 MiB |
-| 2 | 3.258 s | 4.075 s | 35.732 s | 43.070 s | 2,376.1 MiB |
-| 3 | 3.105 s | 4.076 s | 35.142 s | 42.329 s | 2,430.5 MiB |
-| 4 | 3.158 s | 4.037 s | 35.310 s | 42.511 s | 2,605.1 MiB |
-| 5 | 3.136 s | 3.975 s | 35.867 s | 42.983 s | 2,181.5 MiB |
+| 1 | 3.224 s | 4.015 s | 35.446 s | 42.690 s | 2,094.6 MiB |
+| 2 | 3.109 s | 4.005 s | 35.067 s | 42.187 s | 2,204.3 MiB |
+| 3 | 3.149 s | 4.019 s | 35.325 s | 42.499 s | 2,194.4 MiB |
+| 4 | 3.127 s | 4.022 s | 34.989 s | 42.144 s | 2,301.3 MiB |
+| 5 | 3.076 s | 3.960 s | 35.117 s | 42.158 s | 2,138.8 MiB |
 
-All five runs exited 0. The median total was 42.983 s; the slowest total was
-43.551 s. The maximum pure stage wall time was 3.258 s, and the largest sampled
-process-tree resident peak was 2,731,655,168 bytes (2,605.1 MiB).
+All five runs exited 0. The median total was 42.187 s; the slowest total was
+42.690 s. The maximum pure stage wall time was 3.224 s, and the largest sampled
+process-tree resident peak was 2,413,068,288 bytes (2,301.3 MiB).
 
 Each run recorded 84 pure tests, 224 retained/contracts tests, and seven
 Chromium tests as passed. Pure coverage was 91.12% statements, 85.91% branches,
@@ -106,17 +107,11 @@ statements, 83.58% branches, 94.44% functions, and 92.94% lines. The generic DOM
 receipt recorded 920 initial nodes and 13 changed nodes for each synthetic
 catalog size: 10, 1,000, and 10,000 assets.
 
-## Hosted Workbench confirmation
+## Hosted Workbench status
 
-CI run `33953023879` passed one Workbench lane at the same source
-`675a1e1ed15019b1299c3f83466af93cdaf3716c`. Its Ubuntu 24 receipt is
-`.aih-scratch/workbench-evidence/ci-snapshot-final/workbench-evidence/pr-lane.json`:
-58.671 s total, 2.408 s pure stage, and 2,888,839,168 bytes peak summed
-process-tree resident memory. The matching job log
-`.aih-scratch/workbench-evidence/ci-snapshot-final-workbench.log` reports 84 pure
-tests, 224 retained/contracts tests, and seven Chromium tests. This is one
-hosted run, separate from the five
-local measurements.
+Hosted CI status and its receipts are recorded in PR #974's Validation section.
+This tracked receipt preserves the five local reference runs and does not carry a
+fixed hosted snapshot.
 
 ## Reproducing the local receipt
 

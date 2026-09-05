@@ -4,7 +4,7 @@ This is an evidence map for the current worktree. It maps the Studio suites
 deleted in the current diff to named tests that remain. A successor may replace
 a semantic contract while deliberately retiring a source-specific layout or copy
 assertion. Five final local `npm run test:workbench:pr` receipts passed at
-`675a1e1ed15019b1299c3f83466af93cdaf3716c`: 84 pure tests, 224
+`f79bc5347c6b0456ce2c9fd744f755903f765cc6`: 84 pure tests, 224
 retained/contracts tests, and seven Chromium tests per run. Superseded local
 receipts are retained separately. Repository-wide verification and PR readiness
 are recorded in PR #974's validation section.
@@ -31,12 +31,9 @@ fixtures, asserts a bounded initial and expanded DOM, and records a DOM receipt.
 Across the five final local PR-lane receipts, all seven Chromium tests passed;
 the DOM receipt recorded 920 initial nodes and 13 changed nodes at every
 synthetic size. The final timing and memory table is recorded in
-`docs/testing/issue-967-workbench-authoring-core.tdd.md`. One hosted Ubuntu 24
-Workbench receipt, CI run `33953023879` at
-`675a1e1ed15019b1299c3f83466af93cdaf3716c`, also passed: 58.671 s. The matching
-job log `.aih-scratch/workbench-evidence/ci-snapshot-final-workbench.log` reports
-84 pure tests, 224 retained/contracts tests, and seven Chromium tests. It is one
-hosted run, separate from the five local measurements.
+`docs/testing/issue-967-workbench-authoring-core.tdd.md`. Hosted CI status and
+receipts are recorded in PR #974's Validation section; this map records the five
+local measurements only.
 
 ## Deleted-suite successors
 
