@@ -1,10 +1,10 @@
 # #967 legacy Studio test obligation map
 
-This is an evidence map for the current worktree, not an acceptance receipt. It
-maps the Studio suites deleted in the current diff to named tests that remain.
-A successor may replace a semantic contract while deliberately retiring a
-source-specific layout or copy assertion. No row claims that the complete
-Workbench lane has passed.
+This is an evidence map for the current worktree. It maps the Studio suites
+deleted in the current diff to named tests that remain. A successor may replace
+a semantic contract while deliberately retiring a source-specific layout or copy
+assertion. Five fresh local `npm run test:workbench:pr` receipts passed; this
+map does not certify full verification, Ubuntu CI, release, or publication.
 
 ## Current generic browser contract
 
@@ -24,8 +24,12 @@ package smoke; those are the browser successors for generic UI behavior:
 
 The first generic journey is the replacement evidence for bounded group/search/
 detail/navigation rendering. It uses synthetic 10, 1,000, and 10,000 asset
-fixtures, asserts a bounded initial and expanded DOM, and records a DOM receipt;
-it does not establish a performance acceptance result in this map.
+fixtures, asserts a bounded initial and expanded DOM, and records a DOM receipt.
+Across the five local PR-lane receipts, all seven Chromium tests passed; the DOM
+receipt recorded 920 initial nodes and 13 changed nodes at every synthetic size.
+The timing and memory table is recorded in
+`docs/testing/issue-967-workbench-authoring-core.tdd.md`; Ubuntu CI remains
+pending.
 
 ## Deleted-suite successors
 
