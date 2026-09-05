@@ -12,9 +12,8 @@ export default defineConfig({
     environment: "node",
     setupFiles: ["./tests/setup-git-env.ts"],
     ...testRuntime,
-    // The PR acceptance project shares the four-core hosted runner with Chromium.
-    // Use the available fourth core while retaining the fixed upper bound.
-    maxWorkers: Math.min(4, availableParallelism()),
+    // Two Vitest workers leave CPU capacity for simultaneous Chromium and fixture preparation on four-core runners.
+    maxWorkers: Math.min(2, availableParallelism()),
     include: [...WORKBENCH_RETAINED_TEST_PATTERNS],
     coverage: workbenchCoverage,
   },
