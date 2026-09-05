@@ -1,5 +1,5 @@
 import { Window } from "happy-dom";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   ECC_MCP_DISABLED,
   ECC_MCP_SELECTED,
@@ -10,11 +10,18 @@ import {
   buildAdoptionRecipe,
 } from "../../src/org-policy/adoption-recipe.js";
 import { ECC_MCP_CATALOG_IDS } from "../../src/org-policy/ecc-mcp-catalog.js";
-import { policyStudioModel } from "../../src/org-policy/studio-model.js";
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
+import { tinyStudioModel } from "./studio-test-fixture.js";
 
-function studio(model = policyStudioModel()): Window {
+const windows: Window[] = [];
+
+afterEach(() => {
+  for (const window of windows.splice(0)) window.close();
+});
+
+function studio(model = tinyStudioModel()): Window {
   const window = new Window({ url: "http://localhost/" });
+  windows.push(window);
   const html = policyStudioHtml(model);
   window.document.write(html);
   (window as unknown as { structuredClone: typeof structuredClone }).structuredClone =
@@ -25,12 +32,12 @@ function studio(model = policyStudioModel()): Window {
   return window;
 }
 function sources(): AdoptionRecipeSources {
-  return structuredClone(policyStudioModel().adoptionRecipe.sources);
+  return structuredClone(tinyStudioModel().adoptionRecipe.sources);
 }
 
 describe("policy studio adoption recipe", () => {
   it("assigns exactly one bounded owner and route to every adoption question", () => {
-    const recipe = policyStudioModel().adoptionRecipe;
+    const recipe = tinyStudioModel().adoptionRecipe;
     expect(recipe.roles.map((role) => role.id)).toEqual([
       "token-savior",
       "serena",
@@ -167,7 +174,7 @@ describe("policy studio adoption recipe", () => {
     expect(() => buildAdoptionRecipe(serenaDisabled)).toThrow(/serena.*selected.*disabled/i);
   });
   it("renders a separate escaped, inert panel without altering authored policy or ticker counts", () => {
-    const model = structuredClone(policyStudioModel());
+    const model = tinyStudioModel();
     const role = model.adoptionRecipe.roles[0];
     if (role === undefined) throw new Error("expected Token Savior recipe role");
     role.guidance = '<img src=x onerror="globalThis.__unsafe=true"> hostile';

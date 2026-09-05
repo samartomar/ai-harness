@@ -3,8 +3,12 @@ import { policyStudioModel, type PolicyStudioModel } from "../src/org-policy/stu
 import type { AuthoringAssetV1, AuthoringCatalogBundleV1 } from "../src/org-policy/workbench/contracts.js";
 import { canonicalStrictJsonSha256V1 } from "../src/contract/strict-json-v1.js";
 const digest = (value: string) => "sha256:" + createHash("sha256").update(value).digest("hex");
+let syntheticPrototype: PolicyStudioModel | undefined;
+function detachedSyntheticPrototype(): PolicyStudioModel {
+  return structuredClone(syntheticPrototype ??= policyStudioModel());
+}
 export function syntheticWorkbenchModel(size: number): PolicyStudioModel {
-  const model = policyStudioModel();
+  const model = detachedSyntheticPrototype();
   const control = Object.values(model.workbenchBundle.assets).find(asset => asset.authoring.action === "select-control")!;
   const sources: AuthoringCatalogBundleV1["sources"] = { [control.sourceId]: model.workbenchBundle.sources[control.sourceId]! };
   for (const id of ["source:a", "source:b"]) sources[id] = {

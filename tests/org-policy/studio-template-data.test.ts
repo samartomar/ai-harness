@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { policyStudioModel } from "../../src/org-policy/studio-model.js";
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
+import { tinyStudioModel } from "./studio-test-fixture.js";
 
 /**
  * The template's own escaping, restated here so the test pins the bytes that
@@ -16,7 +17,7 @@ function scriptCloseCount(html: string): number {
 
 describe("policy workbench data embedding", () => {
   it("embeds a model carrying replacement-pattern characters verbatim", () => {
-    const model = structuredClone(policyStudioModel());
+    const model = tinyStudioModel();
     const hooks = model.catalog.eccHookControls as unknown as {
       disabledHooks: { detail: string };
     };
@@ -29,7 +30,7 @@ describe("policy workbench data embedding", () => {
     const html = policyStudioHtml(model);
     expect(html).toContain(embeddedJson(model));
     // Nothing spliced a second copy of the template's tail into the page.
-    expect(scriptCloseCount(html)).toBe(scriptCloseCount(policyStudioHtml(policyStudioModel())));
+    expect(scriptCloseCount(html)).toBe(scriptCloseCount(policyStudioHtml(tinyStudioModel())));
   });
 
   it("embeds only bounded baseline evidence provenance fields", () => {
