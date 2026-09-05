@@ -125,7 +125,9 @@ describe("release readiness metadata", () => {
     expect(selected).not.toContain("continue-on-error");
     expect(selected).not.toContain("shell: bash");
     expect(selected).not.toContain('"npx.cmd"');
-    expect(pkg.scripts["ci:run-selected"]).toBe("node .github/scripts/run-selected-tests.mjs");
+    expect(pkg.scripts["ci:run-selected"]).toBe(
+      "node --import tsx .github/scripts/run-selected-tests.mjs",
+    );
     expect(runner).toContain("const executable = process.execPath;");
     expect(runner).toContain('resolve("node_modules/vitest/vitest.mjs")');
     expect(runner).toContain('"--maxWorkers=2"');
@@ -163,7 +165,7 @@ describe("release readiness metadata", () => {
     expect(ci.concurrency).toEqual(expectedConcurrency);
     expect(ci.jobs?.selected_tests?.["continue-on-error"]).toBeUndefined();
     expect(ci.jobs?.selected_tests?.needs).toBe("classify");
-    expect(ci.jobs?.selected_tests?.env?.NODE_OPTIONS).toBe("--max-old-space-size=4096");
+    expect(ci.jobs?.selected_tests?.env?.NODE_OPTIONS).toBeUndefined();
     expect(ci.jobs?.full_verify?.if).toContain("needs.classify.outputs.full_suite == 'true'");
     expect(ci.jobs?.windows_full_tests?.if).toContain(
       "needs.classify.outputs.full_suite == 'true'",
@@ -190,6 +192,7 @@ describe("release readiness metadata", () => {
       "selected_tests",
       "full_verify",
       "windows_full_tests",
+      "workbench_browser",
     ]);
     const requiredSteps = JSON.stringify(ci.jobs?.required_verify?.steps);
     expect(requiredSteps).toContain("node .github/scripts/require-ci-lane.mjs");

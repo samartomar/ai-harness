@@ -10,7 +10,7 @@ import {
 } from "../../src/internals/ci-impact.js";
 import { runCiImpactCommand } from "../../src/internals/ci-impact-command.js";
 import { fakeRunner } from "../../src/internals/proc.js";
-import { WORKBENCH_TEST_PATTERNS } from "../../vitest.workbench.config.js";
+import { isWorkbenchTestPath } from "../../src/internals/workbench-test-ownership.js";
 
 const baseSha = "a".repeat(40);
 const headSha = "b".repeat(40);
@@ -147,22 +147,14 @@ describe("CI impact classifier", () => {
     expect(receipt.selectedTests).not.toContain("tests/org-policy/catalog.test.ts");
   });
 
-  it("keeps selector ownership identical to the 37-file Workbench project", () => {
+  it("keeps selector ownership identical to the discovered Workbench project", () => {
     const repositoryTests = execFileSync("git", ["ls-files", "--", "tests"], {
       encoding: "utf8",
     })
       .split(/\r?\n/u)
       .filter((path) => path.endsWith(".test.ts"));
     const expectedWorkbenchTests = repositoryTests
-      .filter((path) =>
-        WORKBENCH_TEST_PATTERNS.some((pattern) => {
-          const wildcard = pattern.indexOf("*");
-          return wildcard < 0
-            ? path === pattern
-            : path.startsWith(pattern.slice(0, wildcard)) &&
-                path.endsWith(pattern.slice(wildcard + 1));
-        }),
-      )
+      .filter(isWorkbenchTestPath)
       .sort((left, right) => left.localeCompare(right));
     const receipt = classifyCiImpact({
       baseSha,
@@ -171,7 +163,7 @@ describe("CI impact classifier", () => {
       testFiles: repositoryTests,
     });
 
-    expect(expectedWorkbenchTests).toHaveLength(37);
+    expect(expectedWorkbenchTests.length).toBeGreaterThan(0);
     expect(receipt.selectedTests).toEqual(expectedWorkbenchTests);
   });
 

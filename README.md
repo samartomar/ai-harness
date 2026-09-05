@@ -702,7 +702,8 @@ source. Every exact Skill row authors reversible, source-bound requested intent 
 scannable baseline subject. Selection alone still grants no evidence, approval, installation,
 materialization, or support; the governed lifecycle remains held until exact evidence clears. The 31
 ECC-owned MCP entries route to approval authoring, while the
-four AIH-owned declarations remain read-only availability and do not imply that Core ships a matching control.
+four AIH-owned declarations are all selectable: one is the shared AIH control row, and the other three record
+requested intent that never implies a matching Core control.
 The Artifacts workspace creates one intake and one scanner evidence bundle for up to 100 mixed items, then can
 save the draft policy, intake, and evidence history in one resumable, explicitly non-authoritative team review
 workspace. The deployable protected policy remains a separate download. At Enterprise posture, the

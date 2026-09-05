@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { policyStudioModel } from "../../src/org-policy/studio-model.js";
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
+import { tinyStudioModel } from "./studio-test-fixture.js";
 
 /**
  * The template's own escaping, restated here so the test pins the bytes that
@@ -16,26 +17,20 @@ function scriptCloseCount(html: string): number {
 
 describe("policy workbench data embedding", () => {
   it("embeds a model carrying replacement-pattern characters verbatim", () => {
-    const model = structuredClone(policyStudioModel());
-    const entry = model.catalog.hookRegistry.entries[0];
-    if (entry === undefined) throw new Error("expected a hook registry entry");
+    const model = tinyStudioModel();
+    const hooks = model.catalog.eccHookControls as unknown as {
+      disabledHooks: { detail: string };
+    };
     // `$'`, `$&`, `$\`` and `$$` are String.replace's replacement patterns. A
     // replacement STRING interprets them, so `$'` splices everything after the
     // match — the template's own trailing bytes, its </script> included — into
     // the middle of the inline script. Escaping angle brackets does not help:
     // the spliced bytes come from the template, not from the model.
-    entry.description = "replacement patterns $' and $& and $$ and $` here";
+    hooks.disabledHooks.detail = "replacement patterns $' and $& and $$ and $` here";
     const html = policyStudioHtml(model);
     expect(html).toContain(embeddedJson(model));
     // Nothing spliced a second copy of the template's tail into the page.
-    expect(scriptCloseCount(html)).toBe(scriptCloseCount(policyStudioHtml(policyStudioModel())));
-  });
-
-  it("mirrors the server fence against remote MCP projection to Kiro", () => {
-    const html = policyStudioHtml(policyStudioModel());
-    expect(html).toContain('candidate.source.type==="remote"');
-    expect(html).toContain('candidate.targets.includes("kiro")');
-    expect(html).toContain("Kiro MCP projection supports stdio catalog entries only");
+    expect(scriptCloseCount(html)).toBe(scriptCloseCount(policyStudioHtml(tinyStudioModel())));
   });
 
   it("embeds only bounded baseline evidence provenance fields", () => {

@@ -517,6 +517,102 @@ describe("headless effective org policy", () => {
     });
   });
 
+  it("reports requested AIH-owned MCP identities without turning one into a candidate", () => {
+    const effective = resolveEffectiveOrgPolicy(
+      policy({
+        governance: {
+          policyVersion: "2026.08.0",
+          supportedClis: ["claude"],
+          catalog: { reviewed: [], custom: [] },
+          activations: [],
+          authority: { approvals: [] },
+          aihMcpRequests: [
+            { id: "context7", clarification: "Requested by: administrator" },
+            { id: "playwright", clarification: "Requested by: administrator" },
+          ],
+        },
+      }),
+      { targets: ["claude"] },
+    );
+    expect(effective.aihMcpRequests).toEqual([
+      { id: "context7", status: "requested-not-effective" },
+      { id: "playwright", status: "requested-not-effective" },
+    ]);
+    expect(effective.candidates).toEqual([]);
+    expect(effective.activeMcpServerIds).toEqual([]);
+    expect(effective.blocking).toBe(false);
+    expect(effective.projectionBlocking).toBe(false);
+  });
+
+  it("omits the key entirely when a policy requests no AIH-owned MCP identity", () => {
+    const effective = resolveEffectiveOrgPolicy(policy(), { targets: ["claude"] });
+    expect("aihMcpRequests" in effective).toBe(false);
+  });
+
+  it("keeps a real control effective while the requests beside it stay recorded intent", () => {
+    const effective = resolveEffectiveOrgPolicy(
+      policy({
+        governance: {
+          policyVersion: "2026.08.0",
+          supportedClis: ["claude"],
+          catalog: { reviewed: [candidate()], custom: [] },
+          activations: [{ candidate: "catalog-mcp", state: "active", targets: ["claude"] }],
+          authority: { approvals: [] },
+          aihMcpRequests: [{ id: "context7", clarification: "Requested by: administrator" }],
+        },
+      }),
+      {
+        targets: ["claude"],
+        aihReviewedControls: reviewedControls(),
+        mcpIdentities: { "catalog-mcp": { subject: SUBJECT, projectable: true } },
+      },
+    );
+    expect(effective.activeMcpServerIds).toEqual(["catalog-mcp"]);
+    expect(effective.aihMcpRequests).toEqual([
+      { id: "context7", status: "requested-not-effective" },
+    ]);
+    expect(effective.candidates.map((item) => item.id)).toEqual(["catalog-mcp"]);
+  });
+
+  it("marks a request for an identity this runtime ships as a control, without making it effective", () => {
+    const control = {
+      id: "sequential-thinking",
+      kind: "mcp" as const,
+      source: { type: "mcp" as const, server: "sequential-thinking", subject: SUBJECT },
+      targets: ["claude" as const],
+      projector: "mcp-managed-settings" as const,
+      lifecycle: "supported" as const,
+    };
+    const effective = resolveEffectiveOrgPolicy(
+      policy({
+        governance: {
+          policyVersion: "2026.08.0",
+          supportedClis: ["claude"],
+          catalog: { reviewed: [], custom: [] },
+          activations: [],
+          authority: { approvals: [] },
+          aihMcpRequests: [
+            { id: "sequential-thinking", clarification: "Requested by: administrator" },
+            { id: "context7", clarification: "Requested by: administrator" },
+          ],
+        },
+      }),
+      {
+        targets: ["claude"],
+        aihReviewedControls: {
+          "sequential-thinking": { control, controlDigest: reviewedControlDigest(control) },
+        },
+      },
+    );
+    expect(effective.aihMcpRequests).toEqual([
+      { id: "sequential-thinking", status: "requested-not-effective", controlShipped: true },
+      { id: "context7", status: "requested-not-effective" },
+    ]);
+    expect(effective.activeMcpServerIds).toEqual([]);
+    expect(effective.candidates).toEqual([]);
+    expect(effective.blocking).toBe(false);
+  });
+
   it("binds the complete approval subject while excluding the post-signing transport locator", () => {
     const signed = approval({ clarification: "The signed approval includes this clarification." });
     expect(approvalAttestationDigest(signed as never)).toBe(signed.github.subjectDigest);

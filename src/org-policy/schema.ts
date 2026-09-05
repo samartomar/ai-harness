@@ -19,13 +19,20 @@ import {
   ECC_EXTERNAL_MCP_APPROVAL_IDS,
   POLICY_APPROVER_EMAIL_PATTERN,
 } from "./ecc-mcp-approval.js";
-import { ECC_MCP_CATALOG_PROVENANCE } from "./ecc-mcp-catalog.js";
+import { AIH_OWNED_ECC_MCP_EXCLUSIONS, ECC_MCP_CATALOG_PROVENANCE } from "./ecc-mcp-catalog.js";
 import { GovernanceDecisionIdSchema } from "./governance-decision-v1.js";
+import { safePolicyCommandArgument as safeBrowserPolicyCommandArgument } from "./workbench/command-arguments.js";
+import {
+  WORKBENCH_MAX_POLICY_BYTES,
+  WORKBENCH_MINIMUM_CORE_VERSION,
+  WorkbenchAuthoringSourcesV1Schema,
+  WorkbenchStateV1Schema,
+} from "./workbench/contracts.js";
 
 const PostureSchema = z.enum(["vibe", "enterprise"]);
 
 /** Bounded before decoding or parsing, including explicitly selected policy bundles. */
-export const MAX_ORG_POLICY_BYTES = 1_000_000;
+export const MAX_ORG_POLICY_BYTES = WORKBENCH_MAX_POLICY_BYTES;
 
 const CommandRuleSchema = z
   .object({
@@ -357,21 +364,7 @@ const SafeCommandTokenSchema = z
 export const HTTPS_ORIGIN_ARGUMENT_PREFIXES = ["--registry=", "--index-url="] as const;
 
 export function safePolicyCommandArgument(value: string): boolean {
-  const prefix = HTTPS_ORIGIN_ARGUMENT_PREFIXES.find((candidate) => value.startsWith(candidate));
-  if (prefix !== undefined) {
-    try {
-      normalizeHttpsOrigin(value.slice(prefix.length), "registry argument");
-      return true;
-    } catch {
-      return false;
-    }
-  }
-  return (
-    !value.startsWith("/") &&
-    !value.startsWith("\\") &&
-    !value.includes("..") &&
-    !/[\\/;|&`$<>\p{C}]/u.test(value)
-  );
+  return safeBrowserPolicyCommandArgument(value, HTTPS_ORIGIN_ARGUMENT_PREFIXES);
 }
 const SafeCommandArgumentSchema = z
   .string()
@@ -407,6 +400,19 @@ const EccMcpApprovalSchema = z
     approvedBy: PolicyApproverIdentitySchema,
     authenticationMode: SafePolicyTextSchema,
     allowedDataClasses: z.array(SafePolicyIdentifierSchema).min(1).max(20),
+  })
+  .strict();
+
+/**
+ * An administrator's requested intent over an AIH-owned MCP identity this Core
+ * build gates. It carries the identity and the requesting origin and nothing
+ * else: which gate an identity is behind is build knowledge read from the
+ * catalog, never a note frozen into policy bytes.
+ */
+const AihMcpRequestSchema = z
+  .object({
+    id: z.enum(AIH_OWNED_ECC_MCP_EXCLUSIONS),
+    clarification: z.literal("Requested by: administrator"),
   })
   .strict();
 
@@ -1175,6 +1181,18 @@ const GovernedPolicyGovernanceSchema = z
      */
     externalSelections: z.array(ExternalFrameworkSelectionSchema).default([]),
     /**
+     * Requested intent over AIH-owned MCP identities this Core build gates.
+     * Recording is not installation, evidence, approval, projection,
+     * activation, or reachability; the gate holds at export and at target
+     * evaluation, and no consumer turns a request into a candidate, an
+     * activation, or an allow-list entry. Absence is the only "not requested".
+     * Which identities a build gates is catalog knowledge held where the
+     * catalog exists: the Workbench refuses a request for an identity it ships
+     * as a control, and the resolver marks such a request `controlShipped`
+     * from its runtime context.
+     */
+    aihMcpRequests: z.array(AihMcpRequestSchema).min(1).optional(),
+    /**
      * Source-locked, declarative approval records for ECC external MCP options.
      * A later explicit Add flow must resolve these; this grammar has no runtime
      * side effect and deliberately creates no candidate or activation.
@@ -1376,15 +1394,44 @@ const GovernedPolicyGovernanceSchema = z
         message: `ECC MCP approval ${duplicateEccMcpApproval} is duplicated`,
       });
     }
-    // The same contradiction the activation rule above already forbids, one
-    // level down: a policy that selects components from two pinned frameworks
-    // at once has not chosen a framework.
-    const distinctSelection = [...new Set(selectionFrameworks)].sort();
-    if (distinctSelection.length > 1) {
+    const aihMcpRequestIds = (governance.aihMcpRequests ?? []).map((request) => request.id);
+    const duplicateAihMcpRequest = aihMcpRequestIds.find(
+      (id, index) => aihMcpRequestIds.indexOf(id) !== index,
+    );
+    if (duplicateAihMcpRequest !== undefined) {
       ctx.addIssue({
         code: "custom",
-        path: ["externalSelections"],
-        message: `only one framework may be selected at a time; this policy selects from ${distinctSelection.join(" and ")}`,
+        path: ["aihMcpRequests"],
+        message: `AIH MCP request ${duplicateAihMcpRequest} is duplicated`,
+      });
+    } else if (
+      aihMcpRequestIds.some(
+        (id, index) =>
+          index > 0 &&
+          AIH_OWNED_ECC_MCP_EXCLUSIONS.indexOf(id) <=
+            AIH_OWNED_ECC_MCP_EXCLUSIONS.indexOf(aihMcpRequestIds[index - 1] as typeof id),
+      )
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["aihMcpRequests"],
+        message: "AIH MCP requests must follow the pinned AIH-owned MCP declaration order",
+      });
+    }
+    // A request records intent over an identity this build gates. An identity
+    // that carries a control is selected as a control, so the two records
+    // cannot both describe the same id without contradicting each other.
+    const requestCollisionIds = new Set(
+      [...governance.catalog.reviewed, ...governance.catalog.custom].map(
+        (candidate) => candidate.id,
+      ),
+    );
+    for (const [index, id] of aihMcpRequestIds.entries()) {
+      if (!requestCollisionIds.has(id)) continue;
+      ctx.addIssue({
+        code: "custom",
+        path: ["aihMcpRequests", index],
+        message: `${id} is recorded as both an AIH MCP request and a policy candidate; one identity keeps one record — remove either the request or the candidate`,
       });
     }
     for (const issue of hookRegistrationSetIssues(governance.hookRegistrations)) {
@@ -1392,26 +1439,6 @@ const GovernedPolicyGovernanceSchema = z
         code: "custom",
         path: ["hookRegistrations", issue.index],
         message: issue.message,
-      });
-    }
-    // The exclusivity rule mirrored onto the registration surface: harness
-    // hooks and harness selections must name one framework between them.
-    // Owners that are not harnesses — aih, a repository's own hook — coexist,
-    // so the measured multi-writer workstation state stays expressible.
-    const harnessOwners = governance.hookRegistrations
-      .map((registration) =>
-        registration.owner.kind === "third-party" ? registration.owner.framework : undefined,
-      )
-      .filter(
-        (framework): framework is "ecc" | "superpowers" =>
-          framework === "ecc" || framework === "superpowers",
-      );
-    const namedHarnesses = [...new Set([...distinctSelection, ...harnessOwners])].sort();
-    if (harnessOwners.length > 0 && namedHarnesses.length > 1) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["hookRegistrations"],
-        message: `only one framework may be selected at a time; this policy's selections and hook registrations name ${namedHarnesses.join(" and ")}`,
       });
     }
     // Selection and curation are two stages of one thing. A component sitting
@@ -1516,7 +1543,7 @@ export function policySecurityLeafPaths(): string[] {
   );
 }
 
-export const OrgPolicySchema = z
+const OrgPolicyBaseSchema = z
   .object({
     schemaVersion: z.literal(2),
     minimumPosture: PostureSchema,
@@ -1592,23 +1619,65 @@ export const OrgPolicySchema = z
      */
     governance: PolicyGovernanceSchema.optional(),
   })
-  .strict()
-  .superRefine((policy, ctx) => {
-    if (policy.minimumPosture !== "enterprise" || policy.governance?.supportedClis?.length) return;
-    ctx.addIssue({
-      code: "custom",
-      path: ["governance", "supportedClis"],
-      message:
-        "enterprise posture requires a non-empty governance.supportedClis allow-list; current registry ids: " +
-        SUPPORTED_CLIS.join(", ") +
-        ". To sanction every supported CLI, paste every id; wildcard sentinels are not supported",
-    });
-  });
+  .strict();
 
-type ParsedOrgPolicy = z.infer<typeof OrgPolicySchema>;
-export type OrgPolicy = Omit<ParsedOrgPolicy, "governance"> & {
-  governance?: z.infer<typeof GovernedPolicyGovernanceSchema>;
+const refineOrgPolicy = (rawPolicy: unknown, ctx: z.RefinementCtx) => {
+  const policy = rawPolicy as z.infer<typeof OrgPolicyBaseSchema>;
+  if (
+    policy.schemaVersion === 2 &&
+    policy.governance !== undefined &&
+    "externalSelections" in policy.governance
+  ) {
+    const legacy = policy.governance;
+    const selections = legacy.externalSelections.map((item) => item.framework);
+    const owners = legacy.hookRegistrations
+      .map((registration) =>
+        registration.owner.kind === "third-party" ? registration.owner.framework : undefined,
+      )
+      .filter(
+        (framework): framework is "ecc" | "superpowers" =>
+          framework === "ecc" || framework === "superpowers",
+      );
+    const named = [...new Set([...selections, ...owners])].sort();
+    if (named.length > 1) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["governance", "externalSelections"],
+        message: `only one framework may be selected at a time; this policy selects from ${named.join(" and ")}`,
+      });
+    }
+  }
+  if (policy.minimumPosture !== "enterprise" || policy.governance?.supportedClis?.length) return;
+  ctx.addIssue({
+    code: "custom",
+    path: ["governance", "supportedClis"],
+    message:
+      "enterprise posture requires a non-empty governance.supportedClis allow-list; current registry ids: " +
+      SUPPORTED_CLIS.join(", ") +
+      ". To sanction every supported CLI, paste every id; wildcard sentinels are not supported",
+  });
 };
+
+export const AuthoringSelectionsV1Schema = WorkbenchStateV1Schema.extend({
+  selectionVersion: z.literal("workbench-selection/v1"),
+});
+const OrgPolicyV3Schema = OrgPolicyBaseSchema.extend({
+  schemaVersion: z.literal(3),
+  minimumCoreVersion: z.literal(WORKBENCH_MINIMUM_CORE_VERSION),
+  authoringSelections: AuthoringSelectionsV1Schema,
+  authoringSources: WorkbenchAuthoringSourcesV1Schema.optional(),
+});
+
+/** V2 remains an exact legacy contract; V3 adds one required, strict authoring envelope. */
+export const OrgPolicySchema = z
+  .discriminatedUnion("schemaVersion", [OrgPolicyBaseSchema, OrgPolicyV3Schema])
+  .superRefine(refineOrgPolicy);
+type ParsedOrgPolicy = z.infer<typeof OrgPolicySchema>;
+export type AuthoringSelectionsV1 = z.infer<typeof AuthoringSelectionsV1Schema>;
+type NarrowGovernance<T> = T extends unknown
+  ? Omit<T, "governance"> & { governance?: z.infer<typeof GovernedPolicyGovernanceSchema> }
+  : never;
+export type OrgPolicy = NarrowGovernance<ParsedOrgPolicy>;
 
 const PolicyRingSchema = z
   .object({

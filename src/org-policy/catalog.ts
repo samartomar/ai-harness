@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import firstPartyPacksManifest from "../../aih-packs.json";
 import { baselineCatalogById } from "../baseline-evidence/catalogs.js";
 import { readVendorBaselineLock } from "../baseline-evidence/vendor.js";
 import {
@@ -21,7 +20,6 @@ import {
 import { CLI_REGISTRY, REGISTRY_IDS } from "../internals/cli-registry.js";
 import { mcpApprovalSubject } from "../mcp/policy.js";
 import { type McpServer, mcpServers } from "../mcp/servers.js";
-import { PacksFileSchema } from "../pack/manifest.js";
 import { usageRecorderScript } from "../usage/capture.js";
 import { claudeUsageHookCommand } from "../usage/hooks.js";
 import { PACKAGE_NAME, VERSION } from "../version.js";
@@ -34,6 +32,7 @@ import {
   eccHookControlCatalog,
 } from "./ecc-hook-controls.js";
 import {
+  AIH_OWNED_ECC_MCP_EXCLUSIONS,
   ECC_MCP_CATALOG_PROVENANCE,
   type EccMcpCatalogEntry,
   eccExternalMcpCatalog,
@@ -332,12 +331,21 @@ export interface PolicyAuthoringCatalog {
     control: AihPolicyControl;
     availability: "always" | "web-target";
   }>;
-  /** AIH-owned runtime identities withheld from policy authoring until AIH evidence exists. */
+  /** AIH-owned runtime identities the managed stdio projector cannot own. */
+  nonProjectableMcp: Array<{
+    id: string;
+    transport: string;
+    reason: string;
+  }>;
+  /** AIH-owned runtime identities withheld from AIH control until AIH evidence exists. */
   unavailableMcp: Array<{
     id: string;
     configuredIdentity: string;
+    transport: string;
     reason: string;
   }>;
+  /** Pinned order the Workbench sorts `governance.aihMcpRequests` into. */
+  aihMcpRequestIds: typeof AIH_OWNED_ECC_MCP_EXCLUSIONS;
   /** Complete source-locked MCP availability inventory, including AIH-owned declarations. */
   eccMcpInventory: readonly EccMcpCatalogEntry[];
   externalMcp: readonly EccMcpCatalogEntry[];
@@ -369,6 +377,29 @@ export function policyAuthoringMcpCatalog(): Record<string, McpServer> {
   return generic;
 }
 
+/**
+ * The gate is read from AIH's own runtime catalog, never inferred from an
+ * identity's absence in the projectable set: an id whose AIH runtime transport
+ * is not stdio cannot be owned by the managed stdio projector.
+ */
+function policyAuthoringNonProjectableMcpCatalog(
+  catalog: Record<string, McpServer>,
+): PolicyAuthoringCatalog["nonProjectableMcp"] {
+  return Object.entries(catalog).flatMap(([id, server]) =>
+    server.type === "stdio"
+      ? []
+      : [
+          {
+            id,
+            transport: server.type,
+            reason:
+              `Not policy-projectable: AIH's runtime identity for this id uses the ${server.type} transport ` +
+              "and the managed stdio projector cannot own it. Selecting it records requested intent only.",
+          },
+        ],
+  );
+}
+
 function policyAuthoringUnavailableMcpCatalog(): PolicyAuthoringCatalog["unavailableMcp"] {
   const web = mcpServers("project", { ...EMPTY_REPO_STACK, frameworks: ["React"] });
   const playwright = web.playwright;
@@ -384,8 +415,9 @@ function policyAuthoringUnavailableMcpCatalog(): PolicyAuthoringCatalog["unavail
     {
       id: "playwright",
       configuredIdentity,
+      transport: playwright.type,
       reason:
-        `Unavailable for policy authoring: AIH has no current protected Scanner evidence record for ${configuredIdentity}. ` +
+        `Unavailable as an AIH control: AIH has no current protected Scanner evidence record for ${configuredIdentity}. ` +
         "This is an AIH-owned evidence gap; an administrator cannot waive it or manufacture organization approval for it.",
     },
   ];
@@ -793,29 +825,68 @@ export function policyAuthoringCatalog(): PolicyAuthoringCatalog {
   const mcp = policyAuthoringMcpCatalog();
   const unavailableMcp = policyAuthoringUnavailableMcpCatalog();
   const controls = aihPolicyControls(mcp);
-  const firstPartyPacks = PacksFileSchema.parse(firstPartyPacksManifest);
-  const firstPartyCapabilityPacks = firstPartyPacks.packs.map((pack) => ({
-    id: `package:skill-pack/${pack.name}`,
-    pack: pack.name,
-    description: pack.description ?? `AIH first-party ${pack.name} capability pack`,
-    skills: pack.skills.map((skill) => skill.name),
-    sources: pack.skills.map((skill) => ({
-      skill: skill.name,
-      path: skill.source,
-      manifestIdentity: skill.commit,
-    })),
-  }));
-  const agentSkillNames = new Set(["aih-bugbounty", "aih-gov-doctor"]);
-  const isAgentPack = (pack: (typeof firstPartyCapabilityPacks)[number]): boolean =>
-    pack.skills.some((skill) => agentSkillNames.has(skill));
+  // This packaged authoring projection is intentionally independent of the
+  // optional repository-local aih-packs.json curation file. A deleted curation
+  // file must not make Core's shipped capability inventory unbuildable.
+  const firstPartyCapabilityPacks = [
+    {
+      kind: "skill" as const,
+      id: "package:skill-pack/docs-quality",
+      pack: "docs-quality",
+      description:
+        "First-party claim-first, evidence-grounded documentation skill (BetterDoc) — edits, reviews, and creates source-grounded docs with a bounded anti-slop lint that never overrides source truth.",
+      skills: ["aih-betterdoc"],
+      sources: [
+        {
+          skill: "aih-betterdoc",
+          path: "packs/docs-quality/aih-betterdoc",
+          manifestIdentity: "local",
+        },
+      ],
+    },
+    {
+      kind: "agent" as const,
+      id: "package:skill-pack/governance-quality",
+      pack: "governance-quality",
+      description:
+        "First-party read-only Governance Doctor agent workflow for isolated destination lifecycle review, backed by declarative Audit and Guide source material.",
+      skills: ["aih-gov-doctor"],
+      sources: [
+        {
+          skill: "aih-gov-doctor",
+          path: "packs/governance-quality/aih-gov-doctor",
+          manifestIdentity: "local",
+        },
+      ],
+    },
+    {
+      kind: "agent" as const,
+      id: "package:skill-pack/review-quality",
+      pack: "review-quality",
+      description:
+        "First-party isolated BUGBOUNTY agent workflow for high-coverage generated-agent, skill, MCP, workflow, and evidence review.",
+      skills: ["aih-bugbounty"],
+      sources: [
+        {
+          skill: "aih-bugbounty",
+          path: "packs/review-quality/aih-bugbounty",
+          manifestIdentity: "local",
+        },
+      ],
+    },
+  ];
   const ecc = frameworkCatalog("ecc");
   const frameworks = [ecc, frameworkCatalog("superpowers")];
   validateEccSkillCatalog(ecc, eccSkillCatalogInventory);
   return {
     aihCapabilityCatalog: { provider: "github", repository: "samartomar/aih-catalog" },
     aihCapabilityPackage: { name: PACKAGE_NAME, version: VERSION },
-    aihSkills: firstPartyCapabilityPacks.filter((pack) => !isAgentPack(pack)),
-    aihAgents: firstPartyCapabilityPacks.filter(isAgentPack),
+    aihSkills: firstPartyCapabilityPacks
+      .filter((pack) => pack.kind === "skill")
+      .map(({ kind: _, ...pack }) => pack),
+    aihAgents: firstPartyCapabilityPacks
+      .filter((pack) => pack.kind === "agent")
+      .map(({ kind: _, ...pack }) => pack),
     hosts: policyAuthoringHosts(),
     eccMcpInventory: eccMcpCatalogInventory,
     externalMcp: eccExternalMcpCatalog,
@@ -838,7 +909,9 @@ export function policyAuthoringCatalog(): PolicyAuthoringCatalog {
     },
     hookRegistry: hookRegistry(frameworks),
     enterpriseComposition: enterpriseComposition(ecc),
+    nonProjectableMcp: policyAuthoringNonProjectableMcpCatalog(mcp),
     unavailableMcp,
+    aihMcpRequestIds: AIH_OWNED_ECC_MCP_EXCLUSIONS,
     mcp: Object.entries(mcp).flatMap(([id, server]) => {
       const control = controls.find((candidate) => candidate.id === id);
       return control === undefined

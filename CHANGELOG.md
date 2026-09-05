@@ -6,8 +6,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Introduce the unreleased #967 Policy Workbench authoring core: the browser consumes an offline normalized authoring catalog bundle, preserves exact source and asset identities in generic authoring selections, and emits schema-v3 policy intent with a `minimumCoreVersion` floor of `0.6.0`. This is an unreleased feature floor only; it does not change the package version or release cut.
+
 ### Fixed
 
+- Make the Policy Workbench catalog browsable by source and asset type, with counts, ordinary name search, readable selection-template labels, and explicit empty categories. Filtering retains lazy details and bounded result pages.
+- Every AIH MCP row in the portable Policy Workbench now accepts requested intent, recorded in the
+  new optional `governance.aihMcpRequests` array. The policy-projector and AIH-evidence gates stay
+  as row labels and next routes: they hold at export and again at target evaluation, and a recorded
+  request never becomes a candidate, an activation, an allow-list entry, or a blocking condition.
 - Scope each Policy Workbench reviewed activation to the exact intersection of the control's
   projector targets and the organization's sanctioned CLIs. Unsupported combinations now fail
   closed by name, requested targets are visible before export, and exact legacy Workbench records

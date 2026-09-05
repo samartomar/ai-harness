@@ -1,7 +1,7 @@
 import { availableParallelism } from "node:os";
 import { defineConfig } from "vitest/config";
 import fullConfig, { testRuntimeForPlatform } from "./vitest.config.js";
-import { WORKBENCH_TEST_PATTERNS } from "./vitest.workbench.config.js";
+import { WORKBENCH_TEST_PATTERNS } from "./src/internals/workbench-test-ownership.js";
 
 const testRuntime = testRuntimeForPlatform(process.platform, availableParallelism());
 const fullCoverage = (fullConfig as { test?: { coverage?: Record<string, unknown> } }).test
@@ -30,6 +30,7 @@ export default defineConfig({
         "src/org-policy/generate.ts",
         "src/org-policy/studio-*.ts",
         "src/org-policy/ui-server.ts",
+        "src/org-policy/workbench/**",
       ],
       thresholds: {
         ...(fullCoverage.thresholds as Record<string, unknown>),

@@ -20,6 +20,8 @@ const qualityResult = required("QUALITY_RESULT");
 const selectedResult = required("SELECTED_RESULT");
 const fullResult = required("FULL_RESULT");
 const windowsResult = required("WINDOWS_RESULT");
+const testLane = required("TEST_LANE");
+const workbenchResult = required("WORKBENCH_RESULT");
 
 if (eventName !== "pull_request" && eventName !== "push") {
   throw new Error(`unsupported CI event: ${eventName}`);
@@ -27,6 +29,12 @@ if (eventName !== "pull_request" && eventName !== "push") {
 if (fullSuite !== "true" && fullSuite !== "false") {
   throw new Error(`invalid full-suite decision: ${fullSuite}`);
 }
+
+if (!["docs", "core", "workbench", "both", "full"].includes(testLane)) {
+  throw new Error("invalid test lane: " + testLane);
+}
+const workbenchRequired = fullSuite === "true" || testLane === "workbench" || testLane === "both";
+requireResult("Workbench browser lane", workbenchResult, workbenchRequired ? "success" : "skipped");
 
 requireResult("classifier", classifyResult, "success");
 requireResult("quality", qualityResult, "success");

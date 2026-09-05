@@ -1,4 +1,6 @@
-export const CI_SELECTOR_VERSION = "1.3.0";
+import { isWorkbenchTestPath } from "./workbench-test-ownership.js";
+
+export const CI_SELECTOR_VERSION = "1.4.0";
 
 export type CiRiskClass = "docs" | "focused" | "cross-platform" | "full";
 export type CiTestLane = "docs" | "core" | "workbench" | "both" | "full";
@@ -61,6 +63,11 @@ const GLOBAL_FILES = new Set([
   "vitest.config.ts",
   "vitest.core.config.ts",
   "vitest.workbench.config.ts",
+  "vitest.workbench-pure.config.ts",
+  "vitest.workbench-contracts.config.ts",
+  "playwright.workbench.config.ts",
+  "tsconfig.workbench.json",
+  "tsconfig.workbench-browser-tests.json",
 ]);
 
 const GLOBAL_PREFIXES = [".github/workflows/", "schemas/", "tests/fixtures/", "tools/"];
@@ -71,6 +78,7 @@ const SELECTOR_PATHS = new Set([
   ".githooks/pre-commit",
   "src/internals/ci-impact-command.ts",
   "src/internals/ci-impact.ts",
+  "src/internals/workbench-test-ownership.ts",
   "src/internals/delivery-governance-command.ts",
   "src/internals/delivery-governance.ts",
   "src/internals/staged-check.ts",
@@ -92,20 +100,6 @@ const WORKBENCH_SOURCE_PATHS = new Set([
   "src/org-policy/studio-protected-authority.ts",
   "src/org-policy/studio-template.ts",
   "src/org-policy/ui-server.ts",
-]);
-
-const WORKBENCH_TEST_PATHS = new Set([
-  "tests/ecc/module-selection-closure.test.ts",
-  "tests/org-policy/acceptance-hook-registrar.test.ts",
-  "tests/org-policy/admin-baseline-evidence-cli-route.test.ts",
-  "tests/org-policy/admin-catalog-cli-route.test.ts",
-  "tests/org-policy/admin-catalog-fetch-v1.test.ts",
-  "tests/org-policy/ecc-hook-controls.test.ts",
-  "tests/org-policy/ecc-mcp-approval.test.ts",
-  "tests/org-policy/generate.test.ts",
-  "tests/org-policy/packed-workbench-cleanup.test.ts",
-  "tests/org-policy/supported-cli-subsets.test.ts",
-  "tests/org-policy/ui-server.test.ts",
 ]);
 
 const CROSS_PLATFORM_DOMAINS = new Set([
@@ -176,15 +170,14 @@ function isDocumentation(path: string): boolean {
 }
 
 function isWorkbenchTest(path: string): boolean {
-  return (
-    WORKBENCH_TEST_PATHS.has(path) ||
-    (path.startsWith("tests/org-policy/studio-") && path.endsWith(".test.ts"))
-  );
+  return isWorkbenchTestPath(path);
 }
 
 function isWorkbenchSource(path: string): boolean {
   return (
     WORKBENCH_SOURCE_PATHS.has(path) ||
+    path.startsWith("src/org-policy/workbench/ui/") ||
+    path === "src/org-policy/workbench/template.ts" ||
     (path.startsWith("src/org-policy/studio-") && path.endsWith(".ts"))
   );
 }
@@ -279,6 +272,10 @@ export function classifyCiImpact(input: CiImpactInput): CiImpactReceipt {
         ? testFiles.filter(isWorkbenchTest)
         : testsForDomain(sourceDomain, testFiles);
       for (const test of ownedTests) selectedTests.add(test);
+      // Shared policy code can affect source contracts owned outside org-policy.
+      if (sourceDomain === "org-policy" && !isWorkbenchSource(path)) {
+        for (const test of testFiles.filter(isWorkbenchTest)) selectedTests.add(test);
+      }
       if (CROSS_PLATFORM_DOMAINS.has(sourceDomain)) crossPlatform = true;
       continue;
     }

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
+import { hashSourceTree } from "../baseline-evidence/hash.js";
 import { nativeAnalyzerIdentity } from "../baseline-evidence/native-identity.js";
 import { type Posture, postureFromContext } from "../config/posture.js";
 import {
@@ -8,11 +9,11 @@ import {
   parseStrictJsonObjectV1,
 } from "../contract/strict-json-v1.js";
 import { AihError } from "../errors.js";
-import { assertArtifactOutputPath, writeArtifact } from "../internals/execute.js";
+import { assertArtifactOutputPath, executePlan, writeArtifact } from "../internals/execute.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
 import type { Action, CommandSpec, PlanContext, ProbeAction } from "../internals/plan.js";
 import { digest, dynamicDigest, plan, structuredChecksProbe } from "../internals/plan.js";
-import type { Runner } from "../internals/proc.js";
+import { defaultRunner, type Runner } from "../internals/proc.js";
 import type { Check } from "../internals/verify.js";
 import { evaluateMcpPolicy, mcpPolicyOptionsFromConfig } from "../mcp/policy.js";
 import type { McpServer } from "../mcp/servers.js";
@@ -42,6 +43,7 @@ import {
   artifactIntakeSourceGroupsV1,
   type EffectiveArtifactIntakeItemV1,
   parseArtifactIntakeText,
+  parseArtifactIntakeV1Text,
 } from "./artifact-intake.js";
 import { resolveInternalScopes, scanTrustDependencyNames } from "./depnames.js";
 import {
@@ -115,6 +117,25 @@ const PACKAGE_MANIFESTS = [
   "go.mod",
 ];
 const INSTALL_SCRIPT_HOOKS = ["preinstall", "postinstall", "install"];
+const TRUST_DETECTOR_NAMES = new Set<TrustDetectorName>([
+  "skillspector",
+  "cisco",
+  "mcp-scanner",
+  "semgrep",
+  "snyk-agent-scan",
+]);
+
+function requiredTrustDetectorFloor(
+  requiredDetectors: readonly string[] | undefined,
+): readonly TrustDetectorName[] | undefined {
+  if (requiredDetectors === undefined) return undefined;
+  return requiredDetectors.map((detector) => {
+    if (!TRUST_DETECTOR_NAMES.has(detector as TrustDetectorName)) {
+      throw new TypeError(`unsupported required trust detector: ${detector}`);
+    }
+    return detector as TrustDetectorName;
+  });
+}
 
 export interface ScanTrustTreeOptions {
   env?: NodeJS.ProcessEnv;
@@ -150,6 +171,12 @@ interface IncomingMcpServerMap {
 
 type ScannableTrustSource = TrustSource | PackageTrustSource | ArtifactIntakePackageTrustSource;
 
+interface OperationalTrustExecutionPolicyV1 {
+  posture: Posture;
+  requiredDetectors: readonly TrustDetectorName[];
+  internalScopes: readonly string[];
+}
+
 interface TrustScanPlanOptions {
   cleanupQuarantine?: boolean;
   sandboxSmokeShape?: (root: string) => SandboxSmokeShape | undefined;
@@ -159,7 +186,13 @@ interface TrustScanPlanOptions {
     records: Map<string, ArtifactEvidenceRecordV1>;
     problems: Record<string, string>;
     scan: ArtifactEvidenceRecordInputV1["scan"];
+    treeDigests?: Map<string, string>;
   };
+}
+
+interface InternalTrustScanPlanOptions extends TrustScanPlanOptions {
+  /** Private operational composition only; public callers cannot pass this through. */
+  operationalExecutionPolicy?: OperationalTrustExecutionPolicyV1;
 }
 
 // npm accepts several non-registry specs (paths, git URLs) in `npm pack`.
@@ -273,12 +306,26 @@ function artifactEvidenceState(
   scan: TrustScanResult,
   item: EffectiveArtifactIntakeItemV1,
   treePath: string,
+  requiredDetectorFloor?: readonly TrustDetectorName[],
 ): "verified" | "failed" | "missing" {
   const sourcePath = item.source.path;
   if (sourcePath !== undefined && !existsSync(join(treePath, sourcePath))) return "missing";
   if (scan.checks.some((check) => check.verdict === "fail")) return "failed";
-  if (scan.checks.some((check) => check.verdict === "skip")) return "missing";
-  return "verified";
+  const skipped = scan.checks.filter((check) => check.verdict === "skip");
+  if (requiredDetectorFloor === undefined) {
+    // Generic artifact evidence has no code-owned detector profile. Every
+    // skipped check therefore leaves its public batch coverage incomplete.
+    return skipped.length > 0 ? "missing" : "verified";
+  }
+  const requiredDetectorSkipped = skipped.some(
+    (check) =>
+      check.code === "trust.detector-unavailable" &&
+      requiredDetectorFloor.includes(
+        check.name.replace("trust detector ", "") as TrustDetectorName,
+      ),
+  );
+  const sandboxSkipped = skipped.some((check) => check.code === "trust.sandbox-smoke-unavailable");
+  return requiredDetectorSkipped || sandboxSkipped ? "missing" : "verified";
 }
 
 function artifactEvidenceFindings(scan: TrustScanResult): string[] {
@@ -1101,19 +1148,24 @@ function requiredDetectorsFromPolicy(ctx: PlanContext): {
 export function scanOptionsFromContext(
   ctx: PlanContext,
   base: ScanTrustTreeOptions = {},
+  operationalExecutionPolicy?: OperationalTrustExecutionPolicyV1,
 ): ScanTrustTreeOptions {
-  const policy = requiredDetectorsFromPolicy(ctx);
+  const policy =
+    operationalExecutionPolicy === undefined ? requiredDetectorsFromPolicy(ctx) : undefined;
   return {
     ...base,
     env: ctx.env,
     platform: ctx.host.platform,
-    posture: base.posture ?? postureFromContext(ctx),
-    mcpPolicy: base.mcpPolicy ?? policy.mcpPolicy,
-    requiredDetectors: policy.requiredDetectors,
+    posture: base.posture ?? operationalExecutionPolicy?.posture ?? postureFromContext(ctx),
+    mcpPolicy: base.mcpPolicy ?? policy?.mcpPolicy,
+    requiredDetectors:
+      base.requiredDetectors ??
+      operationalExecutionPolicy?.requiredDetectors ??
+      policy?.requiredDetectors,
     run: ctx.run,
     progress: ctx.progress,
     skillspectorImageApprovals: [
-      ...policy.skillspectorImageApprovals,
+      ...(policy?.skillspectorImageApprovals ?? []),
       ...(base.skillspectorImageApprovals ?? []),
     ],
   };
@@ -1153,10 +1205,24 @@ export async function trustScanProbes(
   ];
 }
 
+/** Public planner: ignores unrecognized runtime properties such as forged operational policy. */
 export async function trustScanPlanForSource(
   ctx: PlanContext,
   source: ScannableTrustSource,
   options: TrustScanPlanOptions = {},
+): Promise<ReturnType<typeof plan>> {
+  const { cleanupQuarantine, sandboxSmokeShape, artifactEvidence } = options;
+  return trustScanPlanForSourceInternal(ctx, source, {
+    ...(cleanupQuarantine === undefined ? {} : { cleanupQuarantine }),
+    ...(sandboxSmokeShape === undefined ? {} : { sandboxSmokeShape }),
+    ...(artifactEvidence === undefined ? {} : { artifactEvidence }),
+  });
+}
+
+async function trustScanPlanForSourceInternal(
+  ctx: PlanContext,
+  source: ScannableTrustSource,
+  options: InternalTrustScanPlanOptions = {},
 ): Promise<ReturnType<typeof plan>> {
   const actions: Action[] = [];
   const keepQuarantine = ctx.options.keepQuarantine === true;
@@ -1170,11 +1236,16 @@ export async function trustScanPlanForSource(
     });
   }
   const sandboxSmokeShape = options.sandboxSmokeShape ?? sandboxSmokeShapeForTrustScan;
-  const policy = requiredDetectorsFromPolicy(ctx);
+  const operationalExecutionPolicy = options.operationalExecutionPolicy;
+  const policy =
+    operationalExecutionPolicy === undefined ? requiredDetectorsFromPolicy(ctx) : undefined;
   const scanOptions = {
-    internalScopes: resolveInternalScopes(ctx),
-    posture: postureFromContext(ctx),
-    requiredDetectors: policy.requiredDetectors,
+    internalScopes: operationalExecutionPolicy?.internalScopes ?? resolveInternalScopes(ctx),
+    posture: operationalExecutionPolicy?.posture ?? postureFromContext(ctx),
+    requiredDetectors:
+      requiredTrustDetectorFloor(options.artifactEvidence?.scan.requiredDetectors) ??
+      operationalExecutionPolicy?.requiredDetectors ??
+      policy?.requiredDetectors,
   } satisfies ScanTrustTreeOptions;
   if (source.kind === "github") actions.push(trustFetchExec(source, ctx));
   if (source.kind === "package" || source.kind === "artifact-intake-package") {
@@ -1183,7 +1254,11 @@ export async function trustScanPlanForSource(
   actions.push(
     structuredChecksProbe("trust source origin", (probeCtx) =>
       acknowledgeChecks(
-        policy.checks.length > 0 ? policy.checks : trustSourceOriginChecks(probeCtx, source),
+        policy === undefined
+          ? []
+          : policy.checks.length > 0
+            ? policy.checks
+            : trustSourceOriginChecks(probeCtx, source),
         probeCtx,
       ),
     ),
@@ -1191,10 +1266,11 @@ export async function trustScanPlanForSource(
   if (source.kind === "local") {
     const scan = await scanTrustTreeWithAnalyzers(
       source.root,
-      scanOptionsFromContext(ctx, {
-        ...scanOptions,
-        sandboxSmokeShape: sandboxSmokeShape(source.root),
-      }),
+      scanOptionsFromContext(
+        ctx,
+        { ...scanOptions, sandboxSmokeShape: sandboxSmokeShape(source.root) },
+        operationalExecutionPolicy,
+      ),
     );
     actions.push(
       ...probesForStaticChecks(acknowledgeChecks(scan.checks, ctx)),
@@ -1202,6 +1278,7 @@ export async function trustScanPlanForSource(
     );
   } else {
     let remoteScan: Promise<TrustScanResult> | undefined;
+    let scannedTreeDigest: string | undefined;
     const scanRemoteSource = (probeCtx: PlanContext): Promise<TrustScanResult> => {
       if (remoteScan !== undefined) return remoteScan;
       let metadataBeforeScan: TrustFetchMetadata | undefined;
@@ -1216,13 +1293,19 @@ export async function trustScanPlanForSource(
         metadataBeforeScan = validation.metadata;
       }
       remoteScan = (async () => {
+        const treeBefore = hashSourceTree(source.treePath).treeSha256;
         const scan = await scanTrustTreeWithAnalyzers(
           source.treePath,
-          scanOptionsFromContext(probeCtx, {
-            ...scanOptions,
-            sandboxSmokeShape: sandboxSmokeShape(source.treePath),
-          }),
+          scanOptionsFromContext(
+            probeCtx,
+            { ...scanOptions, sandboxSmokeShape: sandboxSmokeShape(source.treePath) },
+            operationalExecutionPolicy,
+          ),
         );
+        const treeAfter = hashSourceTree(source.treePath).treeSha256;
+        if (treeBefore !== treeAfter) {
+          throw new Error(`trust source tree changed during scan: ${source.display}`);
+        }
         if (source.kind === "github") {
           const validation = validateGitHubTrustFetchMetadata(source);
           if (
@@ -1238,6 +1321,7 @@ export async function trustScanPlanForSource(
             return { checks: [metadataCheck], analyzersRun: [] };
           }
         }
+        scannedTreeDigest = treeAfter;
         return scan;
       })();
       return remoteScan;
@@ -1279,7 +1363,12 @@ export async function trustScanPlanForSource(
                 const record = artifactEvidenceRecordV1({
                   intake: options.artifactEvidence?.intake as ArtifactIntakeV1,
                   item,
-                  state: artifactEvidenceState(scan, item, source.treePath),
+                  state: artifactEvidenceState(
+                    scan,
+                    item,
+                    source.treePath,
+                    operationalExecutionPolicy?.requiredDetectors,
+                  ),
                   observed,
                   analyzersRun: scan.analyzersRun,
                   checks: scan.checks,
@@ -1287,6 +1376,9 @@ export async function trustScanPlanForSource(
                   scan: options.artifactEvidence?.scan as ArtifactEvidenceRecordInputV1["scan"],
                 });
                 options.artifactEvidence?.records.set(item.id, record);
+                if (scannedTreeDigest === undefined)
+                  throw new Error("exact trust tree digest is unavailable after scan");
+                options.artifactEvidence?.treeDigests?.set(item.id, scannedTreeDigest);
                 delete options.artifactEvidence?.problems[item.id];
               }
               return `Prepared ${String(options.artifactEvidence?.items.length ?? 0)} preflight evidence record(s) for ${source.display}; these records are not authority, approval, installation, or activation.`;
@@ -1371,6 +1463,8 @@ async function appendExactArtifactScanActions(
   problems: Record<string, string>,
   actions: Action[],
   scan: ArtifactEvidenceRecordInputV1["scan"],
+  treeDigests?: Map<string, string>,
+  operationalExecutionPolicy?: OperationalTrustExecutionPolicyV1,
 ): Promise<void> {
   for (const group of artifactIntakeSourceGroupsV1(intake)) {
     const source: Exclude<ScannableTrustSource, { kind: "local" | "package" }> =
@@ -1388,16 +1482,23 @@ async function appendExactArtifactScanActions(
               ? {}
               : { registryIntegrity: group.source.integrity }),
           });
-    const sourcePlan = await trustScanPlanForSource(ctx, source, {
+    const sourcePlan = await trustScanPlanForSourceInternal(ctx, source, {
       cleanupQuarantine: true,
-      artifactEvidence: { intake, items: group.items, records, problems, scan },
+      artifactEvidence: { intake, items: group.items, records, problems, scan, treeDigests },
+      ...(operationalExecutionPolicy === undefined ? {} : { operationalExecutionPolicy }),
     });
     actions.push(...sourcePlan.actions);
   }
 }
 
-function artifactEvidenceScanContext(ctx: PlanContext): ArtifactEvidenceRecordInputV1["scan"] {
-  const requiredDetectors = [...requiredDetectorsFromPolicy(ctx).requiredDetectors].sort();
+function artifactEvidenceScanContext(
+  ctx: PlanContext,
+  requiredDetectorFloor?: readonly TrustDetectorName[],
+  trustedScanPolicy: unknown = readOrgPolicy(ctx.root, ctx.env)?.trust ?? null,
+): ArtifactEvidenceRecordInputV1["scan"] {
+  const requiredDetectors = [
+    ...(requiredDetectorFloor ?? requiredDetectorsFromPolicy(ctx).requiredDetectors),
+  ].sort();
   const observedAt = new Date().toISOString();
   const posture = postureFromContext(ctx);
   return {
@@ -1414,8 +1515,115 @@ function artifactEvidenceScanContext(ctx: PlanContext): ArtifactEvidenceRecordIn
       domain: "aih-artifact-scan-policy/v1",
       posture,
       requiredDetectors,
-      trust: readOrgPolicy(ctx.root, ctx.env)?.trust ?? null,
+      trust: trustedScanPolicy,
     })}`,
+  };
+}
+
+const operationalExactArtifactScanWitnesses = new WeakMap<
+  object,
+  Readonly<{
+    intakeBytes: string;
+    intake: ArtifactIntakeV1;
+    records: ReadonlyMap<string, ArtifactEvidenceRecordV1>;
+    treeDigests: ReadonlyMap<string, string>;
+    problems: Readonly<Record<string, string>>;
+  }>
+>();
+
+/** Opaque same-process witness minted only by the default-runner operational scan. */
+export interface OperationalExactArtifactScanV1 {
+  readonly kind: "operational-exact-artifact-scan/v1";
+}
+
+/**
+ * Runs a fresh exact npm/GitHub artifact scan for Core preparation. It deliberately
+ * replaces every caller runner with the process default and accepts no serialized
+ * records, precomputed analyzer output, or result factory.
+ */
+export async function scanExactArtifactIntakeOperationalV1(
+  context: Omit<PlanContext, "apply" | "run">,
+  intakeBytes: string,
+): Promise<OperationalExactArtifactScanV1> {
+  if (Buffer.byteLength(intakeBytes, "utf8") > 1_000_000)
+    throw new TypeError("fresh artifact intake exceeds 1 MiB");
+  const intake = parseArtifactIntakeV1Text(intakeBytes);
+  const records = new Map<string, ArtifactEvidenceRecordV1>();
+  const treeDigests = new Map<string, string>();
+  const problems: Record<string, string> = Object.fromEntries(
+    intake.items.map((item) => [item.id, "not scanned"]),
+  );
+  const actions: Action[] = [];
+  const operationalContext: PlanContext = {
+    ...context,
+    apply: true,
+    run: defaultRunner,
+    options: { ...context.options, keepQuarantine: false },
+  };
+  // Rootless policy generation may have no detector requirements. Fresh Core
+  // preparation has a code-owned floor and hashes that exact floor into policyDigest.
+  // Fresh preparation has an explicit posture and code-owned detector floor.
+  // It must never inherit a policy file or environment override from the
+  // administrator root being scanned.
+  if (operationalContext.posture === undefined) {
+    throw new TypeError("fresh artifact scan requires an explicit posture");
+  }
+  const operationalExecutionPolicy: OperationalTrustExecutionPolicyV1 = {
+    posture: operationalContext.posture,
+    requiredDetectors: ["semgrep"],
+    internalScopes: [],
+  };
+  const scan = artifactEvidenceScanContext(
+    operationalContext,
+    operationalExecutionPolicy.requiredDetectors,
+    null,
+  );
+  await appendExactArtifactScanActions(
+    operationalContext,
+    intake,
+    records,
+    problems,
+    actions,
+    scan,
+    treeDigests,
+    operationalExecutionPolicy,
+  );
+  await executePlan(plan("fresh organization artifact scan", ...actions), operationalContext);
+  const witness: OperationalExactArtifactScanV1 = Object.freeze({
+    kind: "operational-exact-artifact-scan/v1",
+  });
+  operationalExactArtifactScanWitnesses.set(
+    witness,
+    Object.freeze({
+      intakeBytes,
+      intake: structuredClone(intake),
+      records: new Map([...records].map(([id, record]) => [id, structuredClone(record)])),
+      treeDigests: new Map(treeDigests),
+      problems: Object.freeze({ ...problems }),
+    }),
+  );
+  return witness;
+}
+
+/** Internal Core consumer seam; cloned or serialized witnesses have no payload. */
+export function operationalExactArtifactScanPayloadV1(witness: unknown):
+  | Readonly<{
+      intakeBytes: string;
+      intake: ArtifactIntakeV1;
+      records: ReadonlyMap<string, ArtifactEvidenceRecordV1>;
+      treeDigests: ReadonlyMap<string, string>;
+      problems: Readonly<Record<string, string>>;
+    }>
+  | undefined {
+  if (typeof witness !== "object" || witness === null) return undefined;
+  const payload = operationalExactArtifactScanWitnesses.get(witness);
+  if (payload === undefined) return undefined;
+  return {
+    intakeBytes: payload.intakeBytes,
+    intake: structuredClone(payload.intake),
+    records: new Map([...payload.records].map(([id, record]) => [id, structuredClone(record)])),
+    treeDigests: new Map(payload.treeDigests),
+    problems: { ...payload.problems },
   };
 }
 

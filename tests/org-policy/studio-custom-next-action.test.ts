@@ -1,9 +1,10 @@
+import { TextEncoder } from "node:util";
 import { Window } from "happy-dom";
 import { describe, expect, it } from "vitest";
-import { policyStudioModel } from "../../src/org-policy/studio-model.js";
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
+import { tinyStudioModel } from "./studio-test-fixture.js";
 
-const model = policyStudioModel();
+const model = tinyStudioModel();
 const CANDIDATE = {
   id: "acme-mcp",
   owner: "mcp.owner@acme.example",
@@ -17,6 +18,8 @@ function studioWithCustomCandidate(): Window {
   const window = new Window({ url: "http://localhost/" });
   const html = policyStudioHtml(model);
   window.document.write(html);
+  Object.defineProperty(window, "crypto", { configurable: true, value: globalThis.crypto });
+  Object.defineProperty(window, "TextEncoder", { configurable: true, value: TextEncoder });
   (window as unknown as { structuredClone: typeof structuredClone }).structuredClone =
     structuredClone;
   const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/gi)].map((match) => match[1]);
@@ -136,37 +139,48 @@ describe("policy studio custom candidate next action", () => {
     expect(customRowsText(window)).toContain("Blocked");
   });
 
-  it("labels each import blast radius and visually associates matching preflight evidence", async () => {
+  it("keeps raw evidence as an opaque draft without granting authority", async () => {
     const window = studioWithCustomCandidate();
     const document = window.document;
     expect(document.getElementById("import-policy")?.textContent).toContain("replaces current");
     expect(document.getElementById("import-evidence")?.textContent).toContain("inspection only");
 
-    const input = document.getElementById("evidence-file");
+    const input = document.getElementById("artifact-evidence-file");
     if (input === null) throw new Error("expected evidence import input");
+    const raw = JSON.stringify({
+      verified: true,
+      state: "verified",
+      approvals: [{ allowedEffects: ["install"] }],
+    });
     Object.defineProperty(input, "files", {
       configurable: true,
-      value: [
-        new window.File(
-          [JSON.stringify({ evidence: [{ id: CANDIDATE.evidence, state: "verified" }] })],
-          "preflight-evidence.json",
-          { type: "application/json" },
-        ),
-      ],
+      value: [new window.File([raw], "preflight-evidence.json", { type: "application/json" })],
     });
     input.dispatchEvent(new window.Event("change", { bubbles: true }));
     for (let attempt = 0; attempt < 20; attempt += 1) {
-      if (document.querySelectorAll(`[data-evidence-record="${CANDIDATE.evidence}"]`).length === 2)
+      if (
+        document
+          .getElementById("artifact-intake-message")
+          ?.textContent?.includes("Core preparation")
+      )
         break;
       await new Promise((resolve) => window.setTimeout(resolve, 10));
     }
 
-    const associated = document.querySelectorAll(`[data-evidence-record="${CANDIDATE.evidence}"]`);
-    expect(associated).toHaveLength(2);
-    for (const row of associated) {
-      expect(row.classList.contains("evidence-linked")).toBe(true);
-      expect(row.getAttribute("data-evidence-association")).toBeTruthy();
-      expect(row.getAttribute("aria-label")).toContain("not verified or effective");
-    }
+    const policy = JSON.parse(
+      (document.getElementById("config-preview") as { value: string } | null)?.value ?? "{}",
+    ) as {
+      authoringSelections?: { drafts?: unknown[] };
+      governance?: { authority?: { approvals?: unknown[] } };
+    };
+    expect(document.getElementById("artifact-intake-message")?.textContent).toContain(
+      "Core preparation",
+    );
+    expect(JSON.stringify(policy.authoringSelections?.drafts)).toContain(
+      Buffer.from(raw, "utf8").toString("base64"),
+    );
+    expect(policy.governance?.authority?.approvals).toEqual([]);
+    expect(document.body.textContent).not.toContain("Verified preflight");
+    expect(document.querySelector("[data-artifact-approve]")).toBeNull();
   });
 });

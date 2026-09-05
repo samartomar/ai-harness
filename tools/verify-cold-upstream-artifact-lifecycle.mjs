@@ -447,7 +447,7 @@ try {
     target,
     cli,
     bin,
-    ["policy", "evaluate", target, "--no-log", "--json"],
+    ["policy", "evaluate", target, "--cli", "codex", "--no-log", "--json"],
     true,
     authorityEnv,
   );

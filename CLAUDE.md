@@ -30,11 +30,14 @@ not a gate**. Never describe third-party inventory as unsupported, blocked,
 fenced, or unable to become effective: aih is not withholding it, aih simply does
 not install it. Reserve *unsupported* and *blocked* for items where an aih-owned
 gate actually fails — which is aih's own MCP controls, hooks, and custom
-candidates, not someone else's catalog.
+candidates, not someone else's catalog. Even then, the gate is a **label and a
+next route on a selectable row**, never a control-less row: the administrator can
+always record requested intent from the main window, and the gate holds at
+export and at target evaluation (owner decision 2026-09-04, issue #971).
 
-Consent happens on the visible inventory: selecting a third-party item records
-requested intent, and absence of aih enforcement is a **label on a selectable
-item**, never a disabled authoring experience.
+Consent happens on the visible inventory: selecting an item, third-party or
+aih-owned, records requested intent, and absence of aih enforcement is a
+**label on a selectable item**, never a disabled authoring experience.
 
 ## Read the source, not a summary of it
 

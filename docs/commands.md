@@ -496,9 +496,9 @@ the bytes, aih attributes ownership by what a run CREATES: it snapshots `.kiro/`
 installer, re-walks it after a successful install, and records each created file's sha256 plus the
 ECC commit it came from into repo-local `.aih/ecc/install-manifest.json`. That location survives
 target-directory cleanup and is never committed. A later run re-checks each recorded path: a matching
-hash from an older commit is *stale*, a changed hash is *locally modified* and is never
-auto-replaced, a recorded path that is gone is *removed*, and anything with no record is *unknown
-provenance* and is never claimed or touched. Kiro's installer copies only absent destinations, so a
+hash from an older commit is _stale_, a changed hash is _locally modified_ and is never
+auto-replaced, a recorded path that is gone is _removed_, and anything with no record is _unknown
+provenance_ and is never claimed or touched. Kiro's installer copies only absent destinations, so a
 rerun cannot clear a stale finding — replacing that content is deliberate operator work and is not
 automated.
 
@@ -626,8 +626,8 @@ contradiction is suppressed. Corroborated danger remains blocking and cannot be 
 `card`/`approve --pin --owner` turn that evidence into committed governance: a skill card + a root
 **`aih-skills.lock.json`** entry, behind a fail-closed chain (pin → evidence → approvable verdict →
 license → owner; RED blocked, UNKNOWN refused, YELLOW = the manual review). The lockfile has
-**install-time teeth**: `workspace add` refuses promoting a skill with no committed approval *for
-that source's pinned commit* at `enterprise` posture (advisory at `vibe`) — a same-named
+**install-time teeth**: `workspace add` refuses promoting a skill with no committed approval _for
+that source's pinned commit_ at `enterprise` posture (advisory at `vibe`) — a same-named
 skill from an unrelated source never inherits an approval, and stale approvals are refused.
 `inventory` joins on-disk skills against the approvals — approved / unapproved / stale-pin /
 quarantined, one row per physical install — and feeds a "Skill governance" panel in `report --v9`.
@@ -644,6 +644,8 @@ collateral, machine-root installs, and stranding a parked copy's approval; clean
 approvals.
 
 ## aih pack
+
+**Repository note.** This repository intentionally has no root `aih-packs.json`. For an AIH target without that optional manifest, `aih pack status` reports no packs and `aih pack validate` skips the pack-manifest check; it does not reconstruct a manifest from unrelated files. The Workbench's offline catalog comes from its catalog source files and is independent of pack curation. Teams that want named packs create and maintain their own manifest through the documented pack commands.
 
 **Curation manifests** on top of the per-skill lifecycle — a committed root `aih-packs.json` names
 sets of approved skills so a team installs "the docs-quality pack", not N individual approvals. The
@@ -688,6 +690,16 @@ build); `validate --require-signature` then
 
 ## aih policy
 
+### Unreleased Workbench authoring core (#967)
+
+The in-progress authoring core is an offline, typed browser over `authoring-catalog-bundle/v1`. Its normalized bundle has source descriptors, immutable source and asset identities, relations, groups, templates, evidence summaries, provenance, and lazy detail chunks. Source identity records where an asset came from; it does not decide methodology. A resolved closure permits zero or one distinct methodology key, while assets in the same exclusive methodology slot may share the same key.
+
+A schema-v3 policy stores generic authoring intent in `authoringSelections` with `selectionVersion: "workbench-selection/v1"`. Roots bind the source id, source revision, and content digest; templates expand pinned roots with required and optional member semantics, exclusions, and provenance. Requests remain request-only intent, and `selectedControlCount` describes only Core-selectable controls in the resolved closure. The compiler writes `minimumCoreVersion: "0.6.0"` as an unreleased feature floor. That floor does not change the package version or release process. Legacy schema-v2 policy input remains accepted unchanged.
+
+`compilePolicy` and `compileOrganizationManifestV1` are build-time/Core APIs, not public `aih policy` authoring commands. The organization manifest compiler accepts bounded declaration bytes and cannot nominate a Core projector or authoring action. Core reconstructs bindings from its pinned catalog and prepares display-safe evidence only after its own verification. Browser imports, scanner intake, and organization declarations are not approval, authority, or effective state.
+
+The browser artifact has separate pure-contract, browser-journey, and packed-artifact lanes. Run `npm run test:workbench:pr` for the required budgeted PR lane; use `npm run test:workbench:pure`, `npm run test:workbench:contracts`, `npm run build:workbench`, and `npm run test:workbench:ui` for their individual scopes. The #967 acceptance evidence is recorded in `docs/testing/issue-967-workbench-authoring-core.tdd.md`.
+
 Starter seeding, portable authoring, effective-resolution, schema, projection, and trusted-channel gates for the org policy.
 `aih policy generate` is deliberately rootless with respect to a governed target repository: it writes a self-contained
 Policy Workbench and does not inspect a target repository, resolve repository state, or append a repository run ledger. Its
@@ -698,12 +710,27 @@ renders the matching `npm view`, `aih trust scan`, or `aih skill vet` command. T
 evidence without granting approval, installation, or activation; the protected-file authority and target evaluation remain
 separate gates.
 parsed `--root` and `AIH_ROOT` compatibility inputs are ignored; the current directory is used only to contain a relative
-`--out` path. Its one optional positional is an administrator root rather than a target repository — see
+`--out` path. `--organization-manifest <path>` may be repeated to prepare bounded local
+`organization-authoring-manifest/v1` declaration bytes into the Workbench before it is written.
+Each input must be a readable non-symlink regular file no larger than 1 MiB and must pass the
+strict organization-manifest compiler. This offline preparation does not scan, fetch, verify,
+approve, activate, or make the declared assets effective.
+
+For a deliberate fresh preparation, an administrator invokes `aih policy generate <admin-root> --apply`
+with paired, repeatable `--fresh-organization-manifest <path>` and `--fresh-artifact-intake <path>`
+inputs. Each pair is bounded and strictly parsed before the Core-owned fresh scan prepares the
+manifest. The portable rootless route never runs that scan. The resulting same-process preparation
+is catalog input only; it does not make a scan record, organization declaration, browser import, or
+saved bundle an approval or effective state.
+
+Its one optional positional is an administrator root rather than a target repository — see
 "Administrator catalog consumption" below. The remaining `policy`
 subcommands are repo-scoped and accept the conventional optional `[root]` positional — `aih policy validate .` works exactly
 like `aih init .` (`--root` and `AIH_ROOT` still apply). The `policy supported accept|inspect`
 administrator commands use `--root <target>` instead of a positional root so their input surface
 contains only the exact decision binding and code-owned target.
+
+The **Compose** catalog has **Source** and **Type** filters with counts. Choose a source and a type such as Skills, Agents, or Profiles, then search by name within that selection. Empty categories describe only the prepared catalog. Results remain paged at 50 entries and details load when opened. Methodology profiles are optional and permit at most one methodology; additive skill and agent selections can span sources. Selection templates display readable names when supplied, with technical identities retained for inspection.
 
 `generate --apply` writes `aih-policy-workbench.html` (or `--out <path>`). The workbench authors the actual
 org-policy schema and downloads it under a safe administrator-chosen JSON filename. The default remains
@@ -765,14 +792,18 @@ narrates the selected-to-materialized journey and routes one next action to the 
 separate authoring sidebar. The MCP availability planes list all 35 entries from ECC's pinned source: 31
 ECC-owned entries route to the separate Add MCP sidebar, which authors approved/revoked
 `governance.eccMcpApprovals` records at the pinned catalog digest; the four AIH-owned source declarations are
-read-only and do not claim that this Core build ships a matching control. Only entries labeled
+all selectable. One is represented by the shared AIH control row recorded in `governance.catalog.reviewed`;
+the other three record requested intent in `governance.aihMcpRequests` and name the AIH gate a selection does
+not satisfy — either no policy projector or AIH evidence required. A request never creates or implies a
+matching Core control. Only entries labeled
 HTTPS-configurable can use the later `aih ecc mcp add <id> --cli <client>` path; manual entries remain
 approval-only. The browser does not install, contact, scan, attest, or observe the endpoint.
-The configured Playwright runtime identity remains exactly `@playwright/mcp@0.0.79`, but its
-AIH-reviewed control is unavailable for policy authoring because AIH has no current protected Scanner
-evidence record for that identity. The Workbench identifies this as an AIH-owned evidence gap; an
+The configured Playwright runtime identity remains exactly `@playwright/mcp@0.0.79`, but AIH ships no
+reviewed control for it because AIH has no current protected Scanner evidence record for that identity. The Workbench identifies this as an AIH-owned evidence gap; an
 administrator cannot waive it or substitute organization approval, and runtime evaluation does not infer
-reviewed evidence from a matching npm identity. Importing the exact legacy Core 0.5.0 enterprise Workbench
+reviewed evidence from a matching npm identity. The row remains selectable; an administrator can record the
+request in `governance.aihMcpRequests`, which changes no gate and grants no evidence, approval, projection,
+activation, or reachability. Importing the exact legacy Core 0.5.0 enterprise Workbench
 footprint removes the unavailable Playwright candidate and activation, rebuilds the managed MCP allow-list
 from current projectable controls, and preserves all remaining targets and authority.
 
@@ -1609,6 +1640,7 @@ names. Existing collisions, drift, malformed files, and linked paths fail closed
 ownership. This is workspace distribution, not managed enforcement: Kiro custom agents can supply
 their own `mcpServers` or decline workspace inheritance.
 <!-- aih:claim CM-18 -->
+
 GitHub auth defaults to `--github-auth oauth`, which works for clients with a registered OAuth
 app; use `--github-auth token` for clients that need a PAT-backed `Authorization` header. The token
 value is never written into MCP config — the header references `${GITHUB_PERSONAL_ACCESS_TOKEN}`
@@ -1756,7 +1788,7 @@ neither appears in the report.
 
 **This does not widen the general Audit mapping.** The mapping is all-or-nothing per diagnostic: if
 any other Doctor check also skips or fails, the whole diagnostic still collapses into `evidence-gap`
-exactly as before. Doctor's canon markdown lint check skips on *exactly* the same condition as this
+exactly as before. Doctor's canon markdown lint check skips on _exactly_ the same condition as this
 one — both test whether the context directory exists — so the mapped tuple is still subject to the
 same closed Audit rule. The separate `aih repair` route does not use that mapping as its execution
 license; it uses the branded live precondition documented below, while this command remains a
@@ -1790,7 +1822,7 @@ consent, spends no claim, runs no executor or verifier, and writes nothing.
 The one mappable finding is `AIH_CANON_CONTEXT_DIR_MISSING`, and it derives one
 `create-managed-directory` effect at the fixed path `ai-coding`. That path is a constant in the
 code: it is never taken from the committed marker, from `--context-dir`, from the environment, or
-from the diagnostic's own text. Those inputs are only ever *gates*. A plan is previewed only when
+from the diagnostic's own text. Those inputs are only ever _gates_. A plan is previewed only when
 this repository's committed `.aih-config.json` is present and valid, its context directory is
 exactly `ai-coding`, and the run's resolved context directory is exactly `ai-coding` too — so a
 `--context-dir` override that disagrees with the committed marker previews `unavailable` rather
@@ -1807,17 +1839,17 @@ prerequisites, conflicts, guidance, and findings rendered as quoted, source-attr
 `authority: "none"`. It carries no raw diagnostic check text, argv, environment value, filesystem
 location, child-process output, support ticket, or run-ledger row.
 
-| `outcome` | `state` | Exit |
-| --- | --- | --- |
-| `completed` | `null` | 0 |
-| `partial` | `null` (per-diagnostic states in `refusals`) | 1 |
-| `evidence-gap` | `null` (per-diagnostic states in `refusals`) | 1 |
-| `refused` | `policy-denied` or `compatibility-required` | 1 |
-| `unavailable` | `profile-unavailable` or `adapter-unavailable` | 1 |
+| `outcome`      | `state`                                        | Exit |
+| -------------- | ---------------------------------------------- | ---- |
+| `completed`    | `null`                                         | 0    |
+| `partial`      | `null` (per-diagnostic states in `refusals`)   | 1    |
+| `evidence-gap` | `null` (per-diagnostic states in `refusals`)   | 1    |
+| `refused`      | `policy-denied` or `compatibility-required`    | 1    |
+| `unavailable`  | `profile-unavailable` or `adapter-unavailable` | 1    |
 
 `completed` means every declared diagnostic resolved — findings may be present or absent.
 `partial` means some diagnostics produced findings and some did not resolve: the run found
-real problems *and* could not see part of the workstation, so it is neither a completed
+real problems _and_ could not see part of the workstation, so it is neither a completed
 audit nor an absence of evidence. `evidence-gap` means nothing resolved into a finding and
 at least one diagnostic did not resolve. Only `completed` exits zero, so a `partial` run
 exits the same way it always did. A diagnostic fails to resolve in five distinct ways —
@@ -1831,6 +1863,7 @@ produces no repository or workstation file.
 
 Preview and, when explicitly confirmed, apply the single local Governance Doctor mechanical repair.
 <!-- aih:claim CM-74 --> This is a separate mutating command, not an apply mode of
+
 `aih governance-doctor`; the Governance Doctor presentation remains read-only and its
 `--repair-plan` payload remains `executable: false`.
 
@@ -1930,7 +1963,7 @@ top-level `support: { findings, templates }` key. Support output is **suppressed
 (`--sarif -`) so stdout stays a clean code-scanning artifact.
 
 **External tickets are tool-neutral by contract** — they never name aih or its commands; they describe
-the failed *internal configuration* the recipient must fix at the system level. Each follows the
+the failed _internal configuration_ the recipient must fix at the system level. Each follows the
 structure **Summary → Impact → Issue → Observed evidence → Environment → Requested fix → Acceptance
 criteria**, and every escalation ends with a security work-around guard (keep TLS verification and secret
 controls enabled; don't change project code). Evidence, affected area, and acceptance criteria are canned
@@ -1940,7 +1973,7 @@ scrubbed, secret-aware argv masking).
 **Project context (`SETUP.md`).** A project can shape the tickets with opt-in HTML-comment markers in
 `SETUP.md`, `docs/SETUP.md`, or `.aih/SETUP.md` (first found wins):
 
-- `<!-- support:why -->…<!-- /support:why -->` — *why a correct environment matters for this project*,
+- `<!-- support:why -->…<!-- /support:why -->` — _why a correct environment matters for this project_,
   woven into the ticket's Impact / "Why this helps" section. Falls back to the first paragraph under a
   `## Why` / `## Overview` / `## Purpose` / `## Background` / `## About` heading, so existing setup files
   contribute without edits.

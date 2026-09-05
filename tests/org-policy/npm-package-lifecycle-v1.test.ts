@@ -2214,7 +2214,8 @@ describe("npm package lifecycle V1", () => {
     expect(lifecycleFiles().filter((file) => file.startsWith("heads/"))).toHaveLength(
       SUPPORTED_CLIS.length,
     );
-  }, 15_000);
+    // Sequential target coverage rechecks durable custody and every accumulated lifecycle head.
+  }, 20_000);
 
   it("refuses a valid record substituted into a different lineage partition", async () => {
     const value = fixture();

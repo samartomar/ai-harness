@@ -12,6 +12,8 @@ const selectedPullRequest = {
   SELECTED_RESULT: "success",
   FULL_RESULT: "skipped",
   WINDOWS_RESULT: "skipped",
+  TEST_LANE: "core",
+  WORKBENCH_RESULT: "skipped",
 } as const;
 
 function runGate(overrides: Record<string, string> = {}) {
@@ -33,6 +35,8 @@ describe("required CI lane gate", () => {
     const result = runGate({
       EVENT_NAME: "push",
       FULL_SUITE: "true",
+      TEST_LANE: "full",
+      WORKBENCH_RESULT: "success",
       RELEASE_PREP_RESULT: "skipped",
       SELECTED_RESULT: "skipped",
       FULL_RESULT: "success",
@@ -65,6 +69,8 @@ describe("required CI lane gate", () => {
     const result = runGate({
       EVENT_NAME: "push",
       FULL_SUITE: "true",
+      TEST_LANE: "full",
+      WORKBENCH_RESULT: "success",
       RELEASE_PREP_RESULT: "skipped",
       SELECTED_RESULT: "skipped",
       FULL_RESULT: "success",
@@ -80,6 +86,8 @@ describe("required CI lane gate", () => {
     const result = runGate({
       EVENT_NAME: "push",
       FULL_SUITE: "true",
+      TEST_LANE: "full",
+      WORKBENCH_RESULT: "success",
       RELEASE_PREP_RESULT: "skipped",
       SELECTED_RESULT: "skipped",
       FULL_RESULT: "success",

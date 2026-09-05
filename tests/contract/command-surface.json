@@ -2528,10 +2528,19 @@
               "flags": "--force"
             },
             {
+              "flags": "--fresh-artifact-intake <path>"
+            },
+            {
+              "flags": "--fresh-organization-manifest <path>"
+            },
+            {
               "flags": "--json"
             },
             {
               "flags": "--no-log"
+            },
+            {
+              "flags": "--organization-manifest <path>"
             },
             {
               "flags": "--out <path>",

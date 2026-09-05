@@ -32,7 +32,6 @@
     "src/ecc-profile/serena-runtime",
     "tools/cisco-skill-scanner",
     "tools/trust-scanners",
-    "aih-packs.json",
     "packs",
     "!packs/**/__pycache__",
     "!packs/**/*.py[cod]",
@@ -50,23 +49,23 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "tsup && tsc -p tsconfig.dts.json",
+    "build": "npm run build:workbench && tsup && node tools/build-workbench.mjs --copy-to-dist && tsc -p tsconfig.dts.json",
     "dev": "tsx src/cli.ts",
     "repo:init": "node tools/repo-ai-tools.mjs setup-codex",
     "repo:doctor": "node tools/repo-ai-tools.mjs doctor-codex",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:cov": "vitest run --coverage",
+    "test": "npm run build:workbench && vitest run",
+    "test:watch": "npm run build:workbench && vitest",
+    "test:cov": "npm run build:workbench && vitest run --coverage",
     "test:core": "vitest run --config vitest.core.config.ts",
     "test:core:cov": "vitest run --config vitest.core.config.ts --coverage",
-    "test:workbench": "vitest run --config vitest.workbench.config.ts",
-    "test:workbench:cov": "vitest run --config vitest.workbench.config.ts --coverage",
+    "test:workbench": "npm run build:workbench && vitest run --config vitest.workbench.config.ts",
+    "test:workbench:cov": "npm run build:workbench && vitest run --config vitest.workbench.config.ts --coverage",
     "check:scan-acceptance": "tsx src/binding/scan-acceptance-check.ts",
     "regen:scan-acceptance": "tsx src/binding/scan-acceptance-regenerate.ts",
     "check:artifacts": "tsx src/internals/check-tracked-artifacts.ts",
     "check:staged": "tsx src/internals/staged-check.ts",
     "ci:classify": "tsx src/internals/ci-impact-command.ts",
-    "ci:run-selected": "node .github/scripts/run-selected-tests.mjs",
+    "ci:run-selected": "node --import tsx .github/scripts/run-selected-tests.mjs",
     "check:ai-runtime": "tsx src/internals/ai-runtime-inventory.ts --root .",
     "check:bugbounty-report": "tsx src/internals/bugbounty-report.ts --source .internal/defects/BUGBOUNTY.md",
     "check:self-hosting-canon": "vitest run tests/self-hosting/self-hosting.test.ts",
@@ -97,8 +96,14 @@
     "lint:fix": "biome check --write src tests",
     "lint:ci": "biome ci src tests",
     "format": "biome format --write src tests",
-    "typecheck": "tsc --noEmit",
-    "verify": "npm run check:artifacts && npm run check:self-hosting-canon && npm run check:ecc-installer && npm run check:baseline-analyzers && npm run check:native-identity && npm run check:baseline-pins && npm run check:baseline-installable && npm run check:ai-runtime && npm run check:bugbounty-report && npm run docs:lint && npm run check:packed-doc-links && npm run typecheck && npm run lint:ci && npm run test:cov && npm run build && npm run check:published-bin && npm run check:published-library && npm run verify:packed-admin-docs && node tools/verify-cold-upstream-artifact-lifecycle.mjs"
+    "typecheck": "tsc --noEmit && npm run typecheck:workbench",
+    "verify": "npm run check:artifacts && npm run check:self-hosting-canon && npm run check:ecc-installer && npm run check:baseline-analyzers && npm run check:native-identity && npm run check:baseline-pins && npm run check:baseline-installable && npm run check:ai-runtime && npm run check:bugbounty-report && npm run docs:lint && npm run check:packed-doc-links && npm run typecheck && npm run lint:ci && npm run test:cov && npm run build && npm run check:published-bin && npm run check:published-library && npm run verify:packed-admin-docs && node tools/verify-cold-upstream-artifact-lifecycle.mjs",
+    "build:workbench": "node tools/build-workbench.mjs",
+    "test:workbench:pure": "vitest run --config vitest.workbench-pure.config.ts --coverage",
+    "test:workbench:ui": "npm run build && playwright test --config playwright.workbench.config.ts",
+    "typecheck:workbench": "tsc -p tsconfig.workbench.json && tsc -p tsconfig.workbench-browser-tests.json",
+    "test:workbench:contracts": "vitest run --config vitest.workbench-contracts.config.ts",
+    "test:workbench:pr": "node tools/run-workbench-pr-lane.mjs"
   },
   "keywords": [
     "ai",
@@ -122,6 +127,7 @@
   "devDependencies": {
     "@aihq/scan": "0.3.0",
     "@biomejs/biome": "^2.5.1",
+    "@playwright/test": "1.62.1",
     "@types/node": "^26.1.1",
     "@vitest/coverage-v8": "^4.1.10",
     "acorn": "^8.17.0",
@@ -132,9 +138,10 @@
     "tsup": "^8.5.1",
     "tsx": "^4.23.0",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "esbuild": "0.28.1"
   },
   "overrides": {
-    "esbuild": "^0.28.1"
+    "esbuild": "0.28.1"
   }
 }

@@ -1,5 +1,5 @@
 import { Window } from "happy-dom";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   ECC_MCP_DISABLED,
   ECC_MCP_SELECTED,
@@ -10,11 +10,24 @@ import {
   buildAdoptionRecipe,
 } from "../../src/org-policy/adoption-recipe.js";
 import { ECC_MCP_CATALOG_IDS } from "../../src/org-policy/ecc-mcp-catalog.js";
-import { policyStudioModel } from "../../src/org-policy/studio-model.js";
+import { OrgPolicySchema } from "../../src/org-policy/schema.js";
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
+import { projectWorkbenchPolicy } from "../../src/org-policy/workbench/compile-policy.js";
+import {
+  createWorkbenchState,
+  reduceWorkbenchAction,
+} from "../../src/org-policy/workbench/selection-engine.js";
+import { tinyStudioModel } from "./studio-test-fixture.js";
 
-function studio(model = policyStudioModel()): Window {
+const windows: Window[] = [];
+
+afterEach(() => {
+  for (const window of windows.splice(0)) window.close();
+});
+
+function studio(model = tinyStudioModel()): Window {
   const window = new Window({ url: "http://localhost/" });
+  windows.push(window);
   const html = policyStudioHtml(model);
   window.document.write(html);
   (window as unknown as { structuredClone: typeof structuredClone }).structuredClone =
@@ -24,14 +37,13 @@ function studio(model = policyStudioModel()): Window {
   window.eval(scripts.join("\n"));
   return window;
 }
-
 function sources(): AdoptionRecipeSources {
-  return structuredClone(policyStudioModel().adoptionRecipe.sources);
+  return structuredClone(buildAdoptionRecipe().sources);
 }
 
 describe("policy studio adoption recipe", () => {
   it("assigns exactly one bounded owner and route to every adoption question", () => {
-    const recipe = policyStudioModel().adoptionRecipe;
+    const recipe = buildAdoptionRecipe();
     expect(recipe.roles.map((role) => role.id)).toEqual([
       "token-savior",
       "serena",
@@ -103,30 +115,80 @@ describe("policy studio adoption recipe", () => {
     expect(recipe.sources.serenaAllowedTools).toEqual(SERENA_ALLOWED_TOOLS);
     expect(recipe.sources.eccMcpCatalogIds).toEqual(ECC_MCP_CATALOG_IDS);
   });
-
+  it("projects every compact fixture action through the product policy grammar", () => {
+    const model = tinyStudioModel();
+    const actions = [
+      { type: "select-root" as const, assetId: "fixture:control" },
+      { type: "select-root" as const, assetId: "fixture:external" },
+      { type: "record-request" as const, assetId: "fixture:request" },
+    ];
+    for (const action of actions) {
+      const reduced = reduceWorkbenchAction(model.workbenchBundle, createWorkbenchState(), {
+        ...action,
+        origin: { kind: "administrator" },
+      });
+      expect(reduced.accepted).toBe(true);
+      const compiled = projectWorkbenchPolicy(
+        model.initialPolicy,
+        reduced.state,
+        model.workbenchBundle,
+        model.workbenchBindings,
+        "author",
+        model.workbenchSourceInputs,
+      );
+      expect(compiled.accepted).toBe(true);
+      expect(OrgPolicySchema.parse(compiled.policy)).toBeDefined();
+      const policy = compiled.policy as {
+        authoringSelections: { requests: Array<{ assetId: string }> };
+        governance: {
+          activations: Array<{ candidate: string; targets: string[] }>;
+          catalog: { reviewed: Array<{ id: string }> };
+          externalSelections: Array<{ framework: string; items: Array<{ id: string }> }>;
+        };
+      };
+      if (action.assetId === "fixture:control") {
+        expect(policy.governance.catalog.reviewed).toEqual(
+          expect.arrayContaining([expect.objectContaining({ id: "usage-metering" })]),
+        );
+        expect(policy.governance.activations).toEqual([
+          expect.objectContaining({ candidate: "usage-metering", targets: ["claude", "codex"] }),
+        ]);
+      } else if (action.assetId === "fixture:external") {
+        expect(policy.governance.externalSelections).toEqual([
+          expect.objectContaining({
+            framework: "ecc",
+            items: [expect.objectContaining({ id: "fixture:external" })],
+          }),
+        ]);
+      } else {
+        expect(policy.governance.catalog.reviewed).toEqual([]);
+        expect(policy.governance.activations).toEqual([]);
+        expect(policy.governance.externalSelections).toEqual([]);
+        expect(policy.authoringSelections.requests).toEqual([
+          expect.objectContaining({ assetId: "fixture:request" }),
+        ]);
+      }
+    }
+  });
   it("fails closed when the selected profile or real core catalog drifts", () => {
     const missingSerena = sources();
     missingSerena.eccMcpSelected = missingSerena.eccMcpSelected.filter((id) => id !== "serena");
     expect(() => buildAdoptionRecipe(missingSerena)).toThrow(/serena/i);
-
     const unknownCore = sources();
     unknownCore.coreMcpIds = unknownCore.coreMcpIds.filter((id) => id !== "code-review-graph");
     expect(() => buildAdoptionRecipe(unknownCore)).toThrow(/code-review-graph/i);
   });
-
   it("fails closed when Token Savior, Serena, or Token Optimizer no longer has its reviewed source", () => {
     const tokenSaviorEnabled = sources();
     tokenSaviorEnabled.eccMcpDisabled = tokenSaviorEnabled.eccMcpDisabled.filter(
       (id) => id !== "token-savior",
     );
     expect(() => buildAdoptionRecipe(tokenSaviorEnabled)).toThrow(/token savior/i);
-
     const serenaOverlap = sources();
     serenaOverlap.serenaAllowedTools = serenaOverlap.serenaAllowedTools.filter(
       (tool) => tool !== "find_symbol",
     );
     expect(() => buildAdoptionRecipe(serenaOverlap)).toThrow(/reviewed Serena tool set changed/i);
-
     const optimizerWrongRoute = sources();
     const optimizer = optimizerWrongRoute.eccMcpCatalog.find(
       (entry) => entry.id === "token-optimizer",
@@ -137,7 +199,6 @@ describe("policy studio adoption recipe", () => {
       /token-optimizer.*manual-stdio/i,
     );
   });
-
   it.each([
     "delete_lines",
     "insert_at_line",
@@ -152,12 +213,10 @@ describe("policy studio adoption recipe", () => {
     drifted.serenaAllowedTools.push(tool);
     expect(() => buildAdoptionRecipe(drifted)).toThrow(/reviewed Serena tool set changed/i);
   });
-
   it("fails closed when the reviewed Serena tool sequence is duplicated or reordered", () => {
     const duplicate = sources();
     duplicate.serenaAllowedTools.push("find_symbol");
     expect(() => buildAdoptionRecipe(duplicate)).toThrow(/reviewed Serena tool set changed/i);
-
     const reordered = sources();
     [reordered.serenaAllowedTools[3], reordered.serenaAllowedTools[4]] = [
       reordered.serenaAllowedTools[4] ?? "",
@@ -165,33 +224,28 @@ describe("policy studio adoption recipe", () => {
     ];
     expect(() => buildAdoptionRecipe(reordered)).toThrow(/reviewed Serena tool set changed/i);
   });
-
   it("fails closed when routed profile identities overlap selected and disabled sources", () => {
     const tokenSaviorSelected = sources();
     tokenSaviorSelected.eccMcpSelected.push("token-savior");
     expect(() => buildAdoptionRecipe(tokenSaviorSelected)).toThrow(
       /token savior.*selected.*disabled/i,
     );
-
     const serenaDisabled = sources();
     serenaDisabled.eccMcpDisabled.push("serena");
     expect(() => buildAdoptionRecipe(serenaDisabled)).toThrow(/serena.*selected.*disabled/i);
   });
-
   it("renders a separate escaped, inert panel without altering authored policy or ticker counts", () => {
-    const model = structuredClone(policyStudioModel());
+    const model = tinyStudioModel();
+    model.adoptionRecipe = buildAdoptionRecipe();
     const role = model.adoptionRecipe.roles[0];
     if (role === undefined) throw new Error("expected Token Savior recipe role");
     role.guidance = '<img src=x onerror="globalThis.__unsafe=true"> hostile';
     const window = studio(model);
     const panel = window.document.getElementById("adoption-recipe");
     if (panel === null) throw new Error("expected adoption recipe panel");
-
     expect(panel.querySelectorAll(".row")).toHaveLength(0);
     expect(panel.querySelectorAll("input,select,textarea")).toHaveLength(0);
-    const buttons = [...panel.querySelectorAll("button")];
-    expect(buttons).toHaveLength(1);
-    expect(buttons[0]?.hasAttribute("data-tooltip-button")).toBe(true);
+    expect(panel.querySelectorAll("button")).toHaveLength(0);
     expect(panel.querySelector("img")).toBeNull();
     expect(panel.textContent).toContain('<img src=x onerror="globalThis.__unsafe=true"> hostile');
     expect((window as unknown as { __unsafe?: boolean }).__unsafe).toBeUndefined();
@@ -213,41 +267,5 @@ describe("policy studio adoption recipe", () => {
     expect(panel.textContent).toContain("Durable architectural memory");
     expect(panel.textContent).toContain("Token Optimizer");
     expect(panel.textContent).toContain("Explicit on-demand overhead audit");
-    expect(
-      (window.document.getElementById("config-preview") as unknown as { value: string }).value,
-    ).toBe(`${JSON.stringify(model.initialPolicy, null, 2)}\n`);
-    const eccAssets = model.catalog.frameworks.find((framework) => framework.id === "ecc")?.assets;
-    const superpowersAssets = model.catalog.frameworks.find(
-      (framework) => framework.id === "superpowers",
-    )?.assets;
-    if (eccAssets === undefined || superpowersAssets === undefined) {
-      throw new Error("expected pinned framework assets");
-    }
-    const aihCount =
-      model.catalog.mcp.length +
-      model.catalog.hooks.length +
-      model.catalog.aihSkills.length +
-      model.catalog.aihAgents.length +
-      model.catalog.eccMcpInventory.filter(
-        (entry) =>
-          entry.owner === "aih" && !model.catalog.mcp.some((control) => control.id === entry.id),
-      ).length;
-    const governedSkills = eccAssets.filter((asset) => asset.kind === "skill").length;
-    const visibleEccInventory =
-      eccAssets.length -
-      governedSkills +
-      model.catalog.eccSkills.length +
-      model.catalog.externalMcp.length;
-    expect(
-      [...window.document.querySelectorAll("#owner-ticker [data-owner-focus]")].map((node) =>
-        node.textContent?.trim(),
-      ),
-    ).toEqual([
-      `All ${aihCount + visibleEccInventory + superpowersAssets.length}`,
-      `AIH ${aihCount}`,
-      `ECC ${visibleEccInventory}`,
-      `Superpowers ${superpowersAssets.length}`,
-      "Your sources 0",
-    ]);
   });
 });

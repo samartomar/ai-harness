@@ -3,11 +3,15 @@ import type { Command } from "commander";
 import { type Posture, parsePostureInput } from "../config/posture.js";
 import { AihError } from "../errors.js";
 import { executePlan, summarizeResult } from "../internals/execute.js";
+import { readRegularFile } from "../internals/fsxn.js";
 import { type CommandSpec, digest, type PlanContext, plan, writeText } from "../internals/plan.js";
 import { defaultRunner, type Runner } from "../internals/proc.js";
 import { makeHostAdapter } from "../platform/detect.js";
+import { parseArtifactIntakeV1Text } from "../trust/artifact-intake.js";
+import { scanExactArtifactIntakeOperationalV1 } from "../trust/scan.js";
 import {
   type AdminBaselineEvidenceProvenanceV1,
+  type ResolvedAdminBaselineEvidenceV1,
   type ResolveOperationalAdminBaselineEvidenceV1Input,
   resolveOperationalAdminBaselineEvidenceV1,
 } from "./admin-baseline-evidence-operations-v1.js";
@@ -18,6 +22,11 @@ import {
 } from "./admin-catalog-operations-v1.js";
 import { policyStudioModel } from "./studio-model.js";
 import { policyStudioHtml } from "./studio-template.js";
+import { compileOrganizationManifestV1 } from "./workbench/compilers/organization-manifest.js";
+import {
+  type FreshOrganizationPreparationV1,
+  prepareOrganizationManifestWithFreshScanV1,
+} from "./workbench/core/organization-preparation.js";
 
 export const DEFAULT_POLICY_WORKBENCH_PATH = "aih-policy-workbench.html";
 
@@ -42,9 +51,16 @@ function policyGeneratePlan(
   ctx: PlanContext,
   catalogProvenance?: AdminCatalogProvenanceV1,
   baselineEvidenceProvenance?: AdminBaselineEvidenceProvenanceV1,
+  verifiedBaseline?: { resolved: ResolvedAdminBaselineEvidenceV1; now: string },
+  organizationManifestBytes: readonly string[] = [],
+  freshOrganizationPreparations: readonly FreshOrganizationPreparationV1[] = [],
 ) {
   const path = outputPath(ctx);
-  const model = policyStudioModel(catalogProvenance, baselineEvidenceProvenance);
+  const model = policyStudioModel(catalogProvenance, baselineEvidenceProvenance, {
+    verifiedBaseline,
+    ...(organizationManifestBytes.length === 0 ? {} : { organizationManifestBytes }),
+    ...(freshOrganizationPreparations.length === 0 ? {} : { freshOrganizationPreparations }),
+  });
   return plan(
     "policy generate",
     writeText(
@@ -68,7 +84,10 @@ function policyGeneratePlan(
       {
         output: path.replace(/\\/g, "/"),
         frameworks: model.catalog.frameworks.map((framework) => framework.id),
-        mcpCandidates: model.catalog.mcp.map((candidate) => candidate.id),
+        mcpCandidates: Object.values(model.workbenchBundle.assets)
+          .filter((asset) => asset.kind === "mcp" && asset.authoring.action === "select-control")
+          .map((asset) => asset.id)
+          .sort(),
         ...(catalogProvenance === undefined ? {} : { catalogTier: catalogProvenance.tier }),
       },
     ),
@@ -85,6 +104,24 @@ export const policyGenerateCommand: CommandSpec = {
       flags: "--out <path>",
       description: `workbench HTML output path (default ${DEFAULT_POLICY_WORKBENCH_PATH})`,
       default: DEFAULT_POLICY_WORKBENCH_PATH,
+    },
+    {
+      flags: "--organization-manifest <path>",
+      description:
+        "bounded offline organization authoring manifest to prepare (repeatable; unverified declaration input)",
+      repeatable: true,
+    },
+    {
+      flags: "--fresh-organization-manifest <path>",
+      description:
+        "manifest for explicit applied administrator fresh preparation (repeatable; pairs with --fresh-artifact-intake)",
+      repeatable: true,
+    },
+    {
+      flags: "--fresh-artifact-intake <path>",
+      description:
+        "exact artifact intake for one fresh organization manifest (repeatable; pairs in order)",
+      repeatable: true,
     },
   ],
   plan: policyGeneratePlan,
@@ -118,6 +155,137 @@ export interface PolicyGenerateRunDeps {
   >;
 }
 
+const ORGANIZATION_MANIFEST_MAX_BYTES = 1_000_000;
+
+/**
+ * Reads declared organization manifests through the same no-follow regular-file
+ * boundary used for other Core inputs. These local declarations are compiled
+ * before planning an output, but do not establish scanner evidence, approval,
+ * authority, or effect.
+ */
+function repeatableInputPaths(
+  opts: Record<string, unknown>,
+  property: string,
+  flag: string,
+): string[] {
+  const raw = opts[property];
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw) || raw.length > 64) {
+    throw new AihError(
+      `${flag} must be supplied at most 64 times as file paths`,
+      "AIH_POLICY_GENERATE",
+    );
+  }
+  return raw.map((value, index) => {
+    if (
+      typeof value !== "string" ||
+      value.trim().length === 0 ||
+      value !== value.trim() ||
+      value.includes("\0")
+    ) {
+      throw new AihError(
+        `${flag} ${index + 1} must be a non-empty path without surrounding whitespace`,
+        "AIH_POLICY_GENERATE",
+      );
+    }
+    return value;
+  });
+}
+
+function boundedUtf8Input(root: string, path: string, flag: string, index: number): string {
+  const bytes = readRegularFile(resolve(root, path), {
+    maxBytes: ORGANIZATION_MANIFEST_MAX_BYTES,
+  });
+  if (bytes === undefined) {
+    throw new AihError(
+      `${flag} ${index + 1} must name a readable non-symlink regular file no larger than 1 MiB`,
+      "AIH_POLICY_GENERATE",
+    );
+  }
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    throw new AihError(`${flag} ${index + 1} must contain valid UTF-8`, "AIH_POLICY_GENERATE");
+  }
+}
+function organizationManifestBytes(opts: Record<string, unknown>, root: string): string[] {
+  const paths = repeatableInputPaths(opts, "organizationManifest", "--organization-manifest");
+  return paths.map((path, index) => {
+    const manifest = boundedUtf8Input(root, path, "--organization-manifest", index);
+    try {
+      compileOrganizationManifestV1(manifest);
+    } catch (error) {
+      throw new AihError(
+        `--organization-manifest ${index + 1} is invalid: ${error instanceof Error ? error.message : String(error)}`,
+        "AIH_POLICY_GENERATE",
+      );
+    }
+    return manifest;
+  });
+}
+
+async function freshOrganizationPreparations(
+  opts: Record<string, unknown>,
+  ctx: PlanContext,
+  adminRoot: string | undefined,
+  posture: Posture,
+): Promise<FreshOrganizationPreparationV1[]> {
+  const manifestPaths = repeatableInputPaths(
+    opts,
+    "freshOrganizationManifest",
+    "--fresh-organization-manifest",
+  );
+  const intakePaths = repeatableInputPaths(opts, "freshArtifactIntake", "--fresh-artifact-intake");
+  if (manifestPaths.length === 0 && intakePaths.length === 0) return [];
+  if (adminRoot === undefined || !ctx.apply) {
+    throw new AihError(
+      "fresh organization preparation requires <admin-root> and --apply",
+      "AIH_POLICY_GENERATE",
+    );
+  }
+  if (manifestPaths.length === 0 || manifestPaths.length !== intakePaths.length) {
+    throw new AihError(
+      "--fresh-organization-manifest and --fresh-artifact-intake must be supplied in equal non-empty pairs",
+      "AIH_POLICY_GENERATE",
+    );
+  }
+  const scanContext: Omit<PlanContext, "apply" | "run"> = {
+    root: adminRoot,
+    contextDir: ctx.contextDir,
+    verify: ctx.verify,
+    json: ctx.json,
+    host: ctx.host,
+    env: ctx.env,
+    posture,
+    options: { ...ctx.options, posture },
+  };
+  const preparations: FreshOrganizationPreparationV1[] = [];
+  for (const [index, manifestPath] of manifestPaths.entries()) {
+    const intakePath = intakePaths[index];
+    if (intakePath === undefined) throw new Error("fresh preparation input pairing was lost");
+    const manifest = boundedUtf8Input(
+      ctx.root,
+      manifestPath,
+      "--fresh-organization-manifest",
+      index,
+    );
+    const intake = boundedUtf8Input(ctx.root, intakePath, "--fresh-artifact-intake", index);
+    try {
+      compileOrganizationManifestV1(manifest);
+      parseArtifactIntakeV1Text(intake);
+      const witness = await scanExactArtifactIntakeOperationalV1(scanContext, intake);
+      preparations.push(
+        prepareOrganizationManifestWithFreshScanV1(manifest, witness, new Date().toISOString()),
+      );
+    } catch (error) {
+      throw new AihError(
+        `fresh organization preparation ${index + 1} is invalid: ${error instanceof Error ? error.message : String(error)}`,
+        "AIH_POLICY_GENERATE",
+      );
+    }
+  }
+  return preparations;
+}
 /** UTC second precision — the only clock granularity the contracts accept. */
 function utcSecondNow(): string {
   return `${new Date().toISOString().slice(0, 19)}Z`;
@@ -187,23 +355,28 @@ export async function runPolicyGenerate(
     const adminRoot =
       deps.adminRoot === undefined ? undefined : adminRootArgument(root, deps.adminRoot);
     const posture = policyGeneratePosture(opts);
+    const manifests = organizationManifestBytes(opts, root);
+    const freshPreparations = await freshOrganizationPreparations(opts, ctx, adminRoot, posture);
+    const evidenceNow = deps.baselineOperational?.now ?? utcSecondNow();
+    const resolvedBaselineEvidence =
+      adminRoot === undefined || deps.baseline !== undefined
+        ? undefined
+        : await resolveOperationalAdminBaselineEvidenceV1({
+            adminRoot,
+            env,
+            fetchHttps: deps.baselineOperational?.fetchHttps,
+            now: evidenceNow,
+            platformAdminRoot: deps.baselineOperational?.platformAdminRoot,
+            posture,
+            run,
+            tempRoot: deps.baselineOperational?.tempRoot,
+          });
     const baselineEvidenceProvenance =
       adminRoot === undefined
         ? undefined
         : deps.baseline !== undefined
           ? await deps.baseline()
-          : (
-              await resolveOperationalAdminBaselineEvidenceV1({
-                adminRoot,
-                env,
-                fetchHttps: deps.baselineOperational?.fetchHttps,
-                now: deps.baselineOperational?.now ?? utcSecondNow(),
-                platformAdminRoot: deps.baselineOperational?.platformAdminRoot,
-                posture,
-                run,
-                tempRoot: deps.baselineOperational?.tempRoot,
-              })
-            ).provenance;
+          : resolvedBaselineEvidence?.provenance;
     const catalogProvenance =
       adminRoot === undefined
         ? undefined
@@ -218,7 +391,16 @@ export async function runPolicyGenerate(
             tempRoot: deps.catalog?.tempRoot,
           });
     const result = await executePlan(
-      policyGeneratePlan(ctx, catalogProvenance, baselineEvidenceProvenance),
+      policyGeneratePlan(
+        ctx,
+        catalogProvenance,
+        baselineEvidenceProvenance,
+        resolvedBaselineEvidence === undefined
+          ? undefined
+          : { resolved: resolvedBaselineEvidence, now: evidenceNow },
+        manifests,
+        freshPreparations,
+      ),
       ctx,
       {
         skipWorktreeGate: true,

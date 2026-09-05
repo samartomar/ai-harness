@@ -13,6 +13,7 @@ import {
 import { resolveNpmPackageEffectiveStateWithAuthorityV1 } from "./npm-package-effective-state-v1.js";
 import { governanceOwnsAihSurfaces, type OrgPolicy } from "./schema.js";
 import { resolveUpstreamArtifactEffectiveStateWithAuthorityV1 } from "./upstream-artifact-effective-state-v1.js";
+import { consumeWorkbenchPolicy } from "./workbench/policy-consumption.js";
 
 export interface RuntimeOrgPolicyResolution {
   catalog: Record<string, McpServer>;
@@ -30,11 +31,30 @@ export async function resolveRuntimeOrgPolicy(
   policy: OrgPolicy,
   authorityVerification?: PolicyAuthorityVerification,
 ): Promise<RuntimeOrgPolicyResolution> {
+  const authoringSelections = policy.schemaVersion === 3 ? policy.authoringSelections : undefined;
+  if (policy.schemaVersion === 3 && authoringSelections === undefined)
+    throw new Error(
+      "refusing invalid Workbench authoring selection: selection envelope is missing",
+    );
+  const consumed =
+    authoringSelections === undefined
+      ? undefined
+      : consumeWorkbenchPolicy(
+          policy as Record<string, unknown>,
+          authoringSelections as Parameters<typeof consumeWorkbenchPolicy>[1],
+        );
+  if (consumed !== undefined && (!consumed.accepted || consumed.policy === undefined))
+    throw new Error(
+      `refusing invalid Workbench authoring selection: ${(consumed.diagnostics ?? []).join("; ")}`,
+    );
+  const evaluatedPolicy = consumed?.policy ?? policy;
   const catalog = mcpServers(
     "project",
     scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir }),
   );
-  const governance = governanceOwnsAihSurfaces(policy) ? policy.governance : undefined;
+  const governance = governanceOwnsAihSurfaces(evaluatedPolicy)
+    ? evaluatedPolicy.governance
+    : undefined;
   const policyCandidates = [
     ...(governance?.catalog.reviewed ?? []),
     ...(governance?.catalog.custom ?? []),
@@ -50,15 +70,15 @@ export async function resolveRuntimeOrgPolicy(
     throw new Error("AIH policy catalog is missing the usage-metering hook control");
   }
   const verification = authorityVerification ?? (await verifyPolicyAuthorityReceipt(ctx));
-  const npmPackageLifecycle = governanceOwnsAihSurfaces(policy)
+  const npmPackageLifecycle = governanceOwnsAihSurfaces(evaluatedPolicy)
     ? resolveNpmPackageEffectiveStateWithAuthorityV1(ctx.root, verification)
     : [];
   const upstreamArtifactLifecycle = await resolveUpstreamArtifactEffectiveStateWithAuthorityV1(
     ctx,
     verification,
   );
-  const projectorsDisabledAtVibe = (ctx.posture ?? policy.minimumPosture) === "vibe";
-  const effective = resolveEffectiveOrgPolicy(policy, {
+  const projectorsDisabledAtVibe = (ctx.posture ?? evaluatedPolicy.minimumPosture) === "vibe";
+  const effective = resolveEffectiveOrgPolicy(evaluatedPolicy, {
     authority: verification.authority,
     targets: ctx.targets ?? ["claude"],
     projectorsEnabled: !projectorsDisabledAtVibe,

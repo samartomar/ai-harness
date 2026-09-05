@@ -53,6 +53,34 @@ describe("staged repository checks", () => {
     expect(calls.flat().join(" ")).not.toMatch(/--coverage/u);
   });
 
+  it("reserves the extended process budget for exact staged Vitest commands", async () => {
+    const calls: Array<{ argv: string[]; timeoutMs: number | undefined }> = [];
+    const run = fakeRunner((argv, options) => {
+      calls.push({ argv, timeoutMs: options?.timeoutMs });
+      return {};
+    });
+
+    await runStagedChecks(
+      {
+        baseSha,
+        headSha,
+        stagedPaths: ["README.md", "src/org-policy/catalog.ts"],
+        testFiles: ["tests/org-policy/catalog.test.ts"],
+      },
+      run,
+      toolchain,
+    );
+
+    expect(calls).toEqual(
+      expect.arrayContaining([
+        { argv: npmRun("--silent", "check:artifacts"), timeoutMs: 120_000 },
+        { argv: npmExec("biome", "check", "src/org-policy/catalog.ts"), timeoutMs: 120_000 },
+        { argv: npmRun("--silent", "docs:lint"), timeoutMs: 120_000 },
+        { argv: npmExec("vitest", "run", "tests/org-policy/catalog.test.ts"), timeoutMs: 300_000 },
+      ]),
+    );
+  });
+
   it("uses absolute Node and npm CLI argv without Windows command shims", async () => {
     const calls: string[][] = [];
     const run = fakeRunner((argv) => {
