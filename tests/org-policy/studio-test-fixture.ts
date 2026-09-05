@@ -7,7 +7,7 @@ import {
   DISPOSITIONABLE_POLICY_FINDING_CODES,
   FENCED_POLICY_PREREQUISITE_CODES,
   UNWAIVABLE_POLICY_DANGER_CODES,
-} from "../../src/org-policy/effective.js";
+} from "../../src/org-policy/finding-codes.js";
 import { GovernanceDecisionV1Schema } from "../../src/org-policy/governance-decision-v1.js";
 import {
   HTTPS_ORIGIN_ARGUMENT_PREFIXES,
@@ -17,7 +17,7 @@ import {
   parseOrgPolicy,
 } from "../../src/org-policy/schema.js";
 import type { PolicyStudioModel } from "../../src/org-policy/studio-model.js";
-import { verifyAuthoringCatalogBundleIntegrityV1 } from "../../src/org-policy/workbench/catalog-bundle.js";
+import { verifyAuthoringCatalogBundleIntegrityV1 } from "../../src/org-policy/workbench/catalog-integrity.js";
 import type { WorkbenchPolicyBindingsV1 } from "../../src/org-policy/workbench/compile-policy.js";
 import {
   type AuthoringCatalogBundleV1,

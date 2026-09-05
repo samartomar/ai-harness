@@ -1,9 +1,12 @@
-import { createHash } from "node:crypto";
 import {
   canonicalStrictJsonSha256V1,
   deepFreezeStrictJsonV1,
 } from "../../contract/strict-json-v1.js";
 import { type PolicyAuthoringCatalog, policyAuthoringCatalog } from "../catalog.js";
+import {
+  authoringCatalogDigestV1 as digest,
+  verifyAuthoringCatalogBundleIntegrityV1,
+} from "./catalog-integrity.js";
 import { compileBuiltInCatalogV1 } from "./compilers/built-in.js";
 import { compileOrganizationManifestV1 } from "./compilers/organization-manifest.js";
 import { compilePinnedBaselineV1 } from "./compilers/pinned-baseline.js";
@@ -24,28 +27,11 @@ import {
   type FreshOrganizationPreparationV1,
 } from "./core/organization-preparation.js";
 
-function digest(bytes: Uint8Array | string): string {
-  return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
-}
+export { verifyAuthoringCatalogBundleIntegrityV1 } from "./catalog-integrity.js";
 
 function bundleDigest(bundle: Omit<AuthoringCatalogBundleV1, "provenance">): string {
   return `sha256:${canonicalStrictJsonSha256V1({ ...bundle, provenance: {} })}`;
 }
-
-/**
- * Core-only integrity gate for prepared catalog payloads. Browser consumers read
- * the prepared bundle; they neither hash nor grant trust to it.
- */
-export function verifyAuthoringCatalogBundleIntegrityV1(bundle: AuthoringCatalogBundleV1): void {
-  for (const [chunkId, chunk] of Object.entries(bundle.detailChunks)) {
-    if (digest(chunk.bytes) !== chunk.digest)
-      throw new Error(`detail chunk digest mismatch: ${chunkId}`);
-  }
-  const { bundleDigest: declaredDigest, ...provenance } = bundle.provenance;
-  const expectedDigest = `sha256:${canonicalStrictJsonSha256V1({ ...bundle, provenance })}`;
-  if (declaredDigest !== expectedDigest) throw new Error("bundle digest mismatch");
-}
-
 function mergeRecords<T>(label: string, records: readonly Record<string, T>[]): Record<string, T> {
   const merged: Record<string, T> = {};
   for (const record of records) {
