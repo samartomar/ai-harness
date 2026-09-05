@@ -10,7 +10,13 @@ import {
   buildAdoptionRecipe,
 } from "../../src/org-policy/adoption-recipe.js";
 import { ECC_MCP_CATALOG_IDS } from "../../src/org-policy/ecc-mcp-catalog.js";
+import { OrgPolicySchema } from "../../src/org-policy/schema.js";
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
+import { projectWorkbenchPolicy } from "../../src/org-policy/workbench/compile-policy.js";
+import {
+  createWorkbenchState,
+  reduceWorkbenchAction,
+} from "../../src/org-policy/workbench/selection-engine.js";
 import { tinyStudioModel } from "./studio-test-fixture.js";
 
 const windows: Window[] = [];
@@ -32,12 +38,12 @@ function studio(model = tinyStudioModel()): Window {
   return window;
 }
 function sources(): AdoptionRecipeSources {
-  return structuredClone(tinyStudioModel().adoptionRecipe.sources);
+  return structuredClone(buildAdoptionRecipe().sources);
 }
 
 describe("policy studio adoption recipe", () => {
   it("assigns exactly one bounded owner and route to every adoption question", () => {
-    const recipe = tinyStudioModel().adoptionRecipe;
+    const recipe = buildAdoptionRecipe();
     expect(recipe.roles.map((role) => role.id)).toEqual([
       "token-savior",
       "serena",
@@ -109,6 +115,61 @@ describe("policy studio adoption recipe", () => {
     expect(recipe.sources.serenaAllowedTools).toEqual(SERENA_ALLOWED_TOOLS);
     expect(recipe.sources.eccMcpCatalogIds).toEqual(ECC_MCP_CATALOG_IDS);
   });
+  it("projects every compact fixture action through the product policy grammar", () => {
+    const model = tinyStudioModel();
+    const actions = [
+      { type: "select-root" as const, assetId: "fixture:control" },
+      { type: "select-root" as const, assetId: "fixture:external" },
+      { type: "record-request" as const, assetId: "fixture:request" },
+    ];
+    for (const action of actions) {
+      const reduced = reduceWorkbenchAction(model.workbenchBundle, createWorkbenchState(), {
+        ...action,
+        origin: { kind: "administrator" },
+      });
+      expect(reduced.accepted).toBe(true);
+      const compiled = projectWorkbenchPolicy(
+        model.initialPolicy,
+        reduced.state,
+        model.workbenchBundle,
+        model.workbenchBindings,
+        "author",
+        model.workbenchSourceInputs,
+      );
+      expect(compiled.accepted).toBe(true);
+      expect(OrgPolicySchema.parse(compiled.policy)).toBeDefined();
+      const policy = compiled.policy as {
+        authoringSelections: { requests: Array<{ assetId: string }> };
+        governance: {
+          activations: Array<{ candidate: string; targets: string[] }>;
+          catalog: { reviewed: Array<{ id: string }> };
+          externalSelections: Array<{ framework: string; items: Array<{ id: string }> }>;
+        };
+      };
+      if (action.assetId === "fixture:control") {
+        expect(policy.governance.catalog.reviewed).toEqual(
+          expect.arrayContaining([expect.objectContaining({ id: "usage-metering" })]),
+        );
+        expect(policy.governance.activations).toEqual([
+          expect.objectContaining({ candidate: "usage-metering", targets: ["claude", "codex"] }),
+        ]);
+      } else if (action.assetId === "fixture:external") {
+        expect(policy.governance.externalSelections).toEqual([
+          expect.objectContaining({
+            framework: "ecc",
+            items: [expect.objectContaining({ id: "fixture:external" })],
+          }),
+        ]);
+      } else {
+        expect(policy.governance.catalog.reviewed).toEqual([]);
+        expect(policy.governance.activations).toEqual([]);
+        expect(policy.governance.externalSelections).toEqual([]);
+        expect(policy.authoringSelections.requests).toEqual([
+          expect.objectContaining({ assetId: "fixture:request" }),
+        ]);
+      }
+    }
+  });
   it("fails closed when the selected profile or real core catalog drifts", () => {
     const missingSerena = sources();
     missingSerena.eccMcpSelected = missingSerena.eccMcpSelected.filter((id) => id !== "serena");
@@ -175,6 +236,7 @@ describe("policy studio adoption recipe", () => {
   });
   it("renders a separate escaped, inert panel without altering authored policy or ticker counts", () => {
     const model = tinyStudioModel();
+    model.adoptionRecipe = buildAdoptionRecipe();
     const role = model.adoptionRecipe.roles[0];
     if (role === undefined) throw new Error("expected Token Savior recipe role");
     role.guidance = '<img src=x onerror="globalThis.__unsafe=true"> hostile';

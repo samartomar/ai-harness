@@ -3,6 +3,8 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { expect, test } from "./fixture.js";
 
+test.use({ artifact: "journeys-compact.html" });
+
 test("opens offline and keeps exact prepared evidence separate from permission across expiry", async ({
   page,
   workbench,
@@ -274,19 +276,26 @@ test("imports legacy policy, rolls back invalid input, and downloads exact bytes
         };
       }
     ).__aihWorkbenchModel;
-    return ["source:ecc", "source:superpowers"].map((sourceId) => {
-      const asset = Object.values(model.workbenchBundle.assets).find(
-        (asset) =>
-          asset.sourceId === sourceId &&
-          asset.kind === "skill" &&
-          !asset.exclusiveSlot &&
-          asset.authoring.action === "record-selection",
-      );
-      if (!asset) throw new Error("missing compatible source fixture");
-      return asset.id;
+    const bySource = new Map<string, string>();
+    for (const asset of Object.values(model.workbenchBundle.assets).sort((left, right) =>
+      left.id < right.id ? -1 : left.id > right.id ? 1 : 0,
+    )) {
+      if (
+        asset.kind === "skill" &&
+        !asset.exclusiveSlot &&
+        asset.authoring.action === "record-selection"
+      )
+        bySource.set(asset.sourceId, asset.id);
+    }
+    const sourceIds = [...bySource.keys()].sort();
+    if (sourceIds.length !== 2) throw new Error("expected two additive source fixtures");
+    return sourceIds.map((sourceId) => {
+      const assetId = bySource.get(sourceId);
+      if (assetId === undefined) throw new Error(`missing additive fixture asset: ${sourceId}`);
+      return { assetId, sourceId };
     });
   });
-  for (const assetId of compatibleAssets) {
+  for (const { assetId } of compatibleAssets) {
     await page.getByRole("searchbox", { name: "Search catalog" }).fill(assetId);
     await page
       .locator('button[data-workbench-row-action][data-workbench-asset-id="' + assetId + '"]')
@@ -295,7 +304,7 @@ test("imports legacy policy, rolls back invalid input, and downloads exact bytes
   const mixedPolicy = JSON.parse(await page.locator("#config-preview").inputValue());
   expect(
     mixedPolicy.authoringSelections.roots.map((root: { sourceId: string }) => root.sourceId).sort(),
-  ).toEqual(["source:ecc", "source:superpowers"]);
+  ).toEqual(compatibleAssets.map((asset) => asset.sourceId));
   await page.locator('[data-view-tab="author"]').click();
   await page.locator('[data-sanctioned-cli="codex"]').click();
   const editedMixed = await page.locator("#config-preview").inputValue();

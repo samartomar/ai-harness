@@ -1,15 +1,21 @@
 import { syntheticWorkbenchModel, syntheticEvidenceWorkbenchModel } from "./workbench-synthetic-fixture.js";
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { policyStudioModel } from "../src/org-policy/studio-model.js";
+import { compactJourneyWorkbenchModel } from "./workbench-journey-fixture.js";
 import { policyStudioHtml } from "../src/org-policy/studio-template.js";
 
 const directory = process.argv[2];
 if (!directory) throw new Error("Workbench fixture output directory is required");
 await mkdir(directory, { recursive: true });
-const html = policyStudioHtml(policyStudioModel());
-await writeFile(resolve(directory, "aih-policy-workbench.html"), html, "utf8");
-console.log("Prepared offline Workbench fixture: " + Buffer.byteLength(html) + " bytes");
+const journeyHtml = policyStudioHtml(compactJourneyWorkbenchModel());
+const repeatedJourneyHtml = policyStudioHtml(compactJourneyWorkbenchModel());
+if (journeyHtml !== repeatedJourneyHtml)
+  throw new Error("Compact Workbench fixture generation is not byte-stable");
+await Promise.all([
+  writeFile(resolve(directory, "aih-policy-workbench.html"), journeyHtml, "utf8"),
+  writeFile(resolve(directory, "journeys-compact.html"), journeyHtml, "utf8"),
+]);
+console.log("Prepared compact offline Workbench fixture: " + Buffer.byteLength(journeyHtml) + " bytes");
 
 for (const size of [10, 1000, 10000]) await writeFile(resolve(directory, `synthetic-${size}.html`), policyStudioHtml(syntheticWorkbenchModel(size)), "utf8");
 
