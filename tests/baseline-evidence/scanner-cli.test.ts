@@ -34,7 +34,7 @@ vi.mock("../../src/baseline-evidence/scanner-publication.js", () => ({
     repository: "samartomar/aih-scan",
     workflow: "samartomar/aih-scan/.github/workflows/baseline-publication.yml",
     ref: "refs/heads/main",
-    commit: "ba0f0bfc46f2634da71e125bf3bbcefb3493389c",
+    commit: "f6189c0211fe27369fb15672f00da76c2072361c",
   },
   consumeScannerBaselinePublicationV1: mocks.consumePublication,
   consumeScannerBaselinePublicationsV1: mocks.consumePublications,
@@ -146,7 +146,7 @@ describe("baseline Scanner bridge CLI", () => {
       evidence: { id: "ecc", pinnedSha: PIN, components: [] },
       provenance: {
         authority: "none",
-        sourceCommit: "ba0f0bfc46f2634da71e125bf3bbcefb3493389c",
+        sourceCommit: "f6189c0211fe27369fb15672f00da76c2072361c",
       },
     });
 
@@ -179,7 +179,7 @@ describe("baseline Scanner bridge CLI", () => {
         attestationResultBytes: Buffer.from('[{"attestation":1}]'),
         maxAgeSeconds: 604800,
         publisher: expect.objectContaining({
-          commit: "ba0f0bfc46f2634da71e125bf3bbcefb3493389c",
+          commit: "f6189c0211fe27369fb15672f00da76c2072361c",
         }),
       }),
     );

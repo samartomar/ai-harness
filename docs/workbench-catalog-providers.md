@@ -25,6 +25,14 @@ matching vendor-lock source snapshots. The ECC provider derives source paths,
 relations, members, metadata, and its enterprise composition from the pinned
 inputs. The Superpowers provider is isolated from ECC implementation imports.
 
+The ECC product source is `affaan-m/ECC` at an exact qualified commit. A fork is
+a contribution workspace, not an alternate catalog or installation source.
+Required ECC changes go through upstream pull requests; consuming their merged
+commits requires fresh source-bound evidence. Repository ownership remains part
+of the evidence identity even when the commit and content digests are unchanged.
+The separate ECC MCP reference inventory and packaged profile retain their own
+reviewed pins; a baseline migration does not upgrade either surface.
+
 The AIH source provider takes an explicit capability catalog and package
 identity, then supplies the static AIH skill and agent declarations. Core-owned
 MCP controls, global hooks, legacy compatibility bindings, and authority paths

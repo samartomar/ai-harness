@@ -10,7 +10,7 @@ permissions:
 env:
   SCANNER_REPOSITORY: samartomar/aih-scan
   SCANNER_PUBLISHER_WORKFLOW: samartomar/aih-scan/.github/workflows/baseline-publication.yml
-  SCANNER_PUBLISHER_COMMIT: ba0f0bfc46f2634da71e125bf3bbcefb3493389c
+  SCANNER_PUBLISHER_COMMIT: f6189c0211fe27369fb15672f00da76c2072361c
 
 jobs:
   consume:
@@ -20,7 +20,7 @@ jobs:
       matrix:
         include:
           - id: ecc
-            repository: samartomar/ECC
+            repository: affaan-m/ECC
             sha: 5caf398a91599029a176ca6d806409b00d1052c4
           - id: superpowers
             repository: obra/Superpowers
@@ -122,7 +122,7 @@ jobs:
       - name: Check out exact ECC source for deterministic preview
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: samartomar/ECC
+          repository: affaan-m/ECC
           ref: 5caf398a91599029a176ca6d806409b00d1052c4
           path: .baseline-ecc
           persist-credentials: false

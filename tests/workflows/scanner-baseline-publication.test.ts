@@ -18,7 +18,7 @@ describe("independent Scanner publication lifecycle", () => {
     const workflow = read(".github/workflows/baseline-publication-consume.yml");
     expect(workflow).toMatch(/^on:\n {2}workflow_dispatch:\s*$/m);
     expect(workflow).not.toMatch(/^ {2}(push|pull_request|schedule):/m);
-    expect(workflow).toContain("ba0f0bfc46f2634da71e125bf3bbcefb3493389c");
+    expect(workflow).toContain("f6189c0211fe27369fb15672f00da76c2072361c");
     expect(workflow).toContain('tag="baseline-v1-$SCANNER_PUBLISHER_COMMIT-$request_sha256"');
     expect(workflow).not.toContain('tag="baseline-v1-$request_sha256"');
     expect(workflow).toContain("gh release download");

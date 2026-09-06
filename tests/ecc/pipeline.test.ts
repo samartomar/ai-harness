@@ -665,7 +665,7 @@ describe("ECC baseline evidence pipeline", () => {
           baselineOverrides: [
             {
               catalog: "ecc",
-              owner: "samartomar",
+              owner: "affaan-m",
               repo: "ECC",
               pinnedSha: stalePin,
               bundle: ".aih/org-evidence/ecc-stale",

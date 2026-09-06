@@ -21,6 +21,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Restore the repository's first-party `aih-packs.json` curation manifest for
+  the existing documentation, governance, and review skill packs.
+- Accept timezone-qualified timestamps from GitHub CLI's verified Scanner
+  attestations on Windows, while retaining exact publisher and freshness checks.
 - Make the Policy Workbench catalog browsable by source and asset type, with counts, ordinary name search, readable selection-template labels, and explicit empty categories. Filtering retains lazy details and bounded result pages.
 - Every AIH MCP row in the portable Policy Workbench now accepts requested intent, recorded in the
   new optional `governance.aihMcpRequests` array. The policy-projector and AIH-evidence gates stay
@@ -32,6 +36,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   can only narrow during import without changing catalog support metadata or imported authority.
 
 ### Changed
+
+- Use canonical `affaan-m/ECC` for the ECC baseline at the unchanged exact
+  `5caf398a91599029a176ca6d806409b00d1052c4` revision, with fresh repository-bound
+  Scanner publications. Retired fork evidence is rejected even at the same
+  commit. ECC fixes require upstream pull requests; forks are contribution
+  workspaces. Existing component findings and runtime consent restrictions
+  remain in force, and the separate MCP inventory and packaged-profile pins
+  do not move.
 
 - Isolate unreleased Workbench catalog preparation behind registered ECC,
   Superpowers, AIH, and organization providers with explicit inputs and automatic
