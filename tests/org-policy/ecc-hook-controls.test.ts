@@ -1,11 +1,13 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
+import { ECC_CONTENT_METADATA_PROVENANCE } from "../../src/org-policy/ecc-content-metadata.js";
 import {
   ECC_DISABLE_ELIGIBLE_HOOK_IDS,
   ECC_HOOK_CONTROL_PROVENANCE,
   ECC_HOOK_CONTROL_SOURCE_CONTENT_SHA256,
   eccHookControlCatalog,
 } from "../../src/org-policy/ecc-hook-controls.js";
+import { ECC_SKILL_CATALOG_PROVENANCE } from "../../src/org-policy/ecc-skill-catalog.js";
 import { POLICY_ENGINE_FIELD_CONSUMERS } from "../../src/org-policy/effective.js";
 import { parseOrgPolicy } from "../../src/org-policy/schema.js";
 import { policyStudioModel } from "../../src/org-policy/studio-model.js";
@@ -68,8 +70,18 @@ describe("source-locked ECC hook controls", () => {
   });
 
   it("binds all reviewed source files and the exact 43-row, 42-gated active-pin inventory", () => {
+    for (const provenance of [
+      ECC_CONTENT_METADATA_PROVENANCE,
+      ECC_SKILL_CATALOG_PROVENANCE,
+      ECC_HOOK_CONTROL_PROVENANCE,
+    ]) {
+      expect(provenance).toMatchObject({
+        repository: "affaan-m/ECC",
+        commit: "5caf398a91599029a176ca6d806409b00d1052c4",
+      });
+    }
     expect(ECC_HOOK_CONTROL_PROVENANCE).toMatchObject({
-      repository: "samartomar/ECC",
+      repository: "affaan-m/ECC",
       commit: "5caf398a91599029a176ca6d806409b00d1052c4",
     });
     const sourcePairs = ECC_HOOK_CONTROL_PROVENANCE.sources.map(({ path, sha256 }) => [

@@ -43,6 +43,8 @@ export function prepareEccCatalogSourceV1(
   const { baseline, sourceSnapshot } = input;
   if (
     baseline.id !== "ecc" ||
+    baseline.owner !== sourceSnapshot.owner ||
+    baseline.repo !== sourceSnapshot.repo ||
     baseline.pinnedSha !== sourceSnapshot.pinnedSha ||
     sourceSnapshot.id !== baseline.id
   )

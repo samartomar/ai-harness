@@ -159,10 +159,23 @@ describe("baseline vet command plan", () => {
     expect(vetCatalog).not.toHaveBeenCalled();
   });
 
-  it("previews a remote exact-pin fetch without network or report writes", async () => {
+  it("rejects the retired fork even when its pin matches the canonical catalog", async () => {
     const c = ctx(false);
     c.options = {
       source: "samartomar/ECC",
+      pin: "5caf398a91599029a176ca6d806409b00d1052c4",
+      catalog: "ecc",
+      components: "runtime:ecc-installer",
+    };
+
+    await expect(vetBaselineCommand.plan(c)).rejects.toThrow(
+      "--catalog ecc requires source affaan-m/ECC",
+    );
+  });
+  it("previews a remote exact-pin fetch without network or report writes", async () => {
+    const c = ctx(false);
+    c.options = {
+      source: "affaan-m/ECC",
       pin: "a".repeat(40),
       catalog: "ecc",
       components: "runtime:ecc-installer",

@@ -96,6 +96,13 @@ export function pinnedProviderFixtureV1(id: "ecc" | "superpowers"): PinnedProvid
         },
       ],
     },
-    source: { id, pinnedSha: "a".repeat(40), sourceTreeSha256: "c".repeat(64), components: [] },
+    source: {
+      id,
+      owner: "fixture",
+      repo: id,
+      pinnedSha: "a".repeat(40),
+      sourceTreeSha256: "c".repeat(64),
+      components: [],
+    },
   };
 }

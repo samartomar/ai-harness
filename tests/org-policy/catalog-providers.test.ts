@@ -27,6 +27,7 @@ describe("catalog source providers", () => {
   const snapshots = new Map(readVendorBaselineLock().sources.map((source) => [source.id, source]));
   const eccSnapshot = snapshots.get("ecc")!;
   const superpowersSnapshot = snapshots.get("superpowers")!;
+  const canonicalEccSnapshot = { ...eccSnapshot, owner: "affaan-m", repo: "ECC" };
 
   it("prepares first-party content from an explicit package identity", () => {
     const catalog = policyAuthoringCatalog();
@@ -49,7 +50,7 @@ describe("catalog source providers", () => {
     expect(
       prepareEccCatalogSourceV1({
         baseline: eccBaselineCatalogV1(),
-        sourceSnapshot: eccSnapshot,
+        sourceSnapshot: canonicalEccSnapshot,
       }),
     ).toEqual(frameworks.get("ecc"));
     expect(
@@ -68,6 +69,12 @@ describe("catalog source providers", () => {
       }),
     ).toThrow("does not match");
     expect(() =>
+      prepareEccCatalogSourceV1({
+        baseline: eccBaselineCatalogV1(),
+        sourceSnapshot: { ...canonicalEccSnapshot, owner: "samartomar" },
+      }),
+    ).toThrow("does not match");
+    expect(() =>
       prepareSuperpowersCatalogSourceV1({
         baseline: superpowersBaselineCatalogV1(),
         sourceSnapshot: { ...superpowersSnapshot, pinnedSha: "0".repeat(40) },
@@ -76,7 +83,7 @@ describe("catalog source providers", () => {
     expect(
       prepareEccCatalogSourceV1({
         baseline: eccBaselineCatalogV1(),
-        sourceSnapshot: eccSnapshot,
+        sourceSnapshot: canonicalEccSnapshot,
       }).assets.find((asset) => asset.vet?.verdict === "blocked")?.vet?.verdict,
     ).toBe("blocked");
     expect(policyAuthoringCurationKind("baseline:rules")).toBeUndefined();

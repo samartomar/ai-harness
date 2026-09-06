@@ -1,6 +1,6 @@
 /** Exact pinned sources for ECC hook-profile and per-hook-disable semantics. */
 export const ECC_HOOK_CONTROL_PROVENANCE = {
-  repository: "samartomar/ECC",
+  repository: "affaan-m/ECC",
   commit: "5caf398a91599029a176ca6d806409b00d1052c4",
   sources: [
     {

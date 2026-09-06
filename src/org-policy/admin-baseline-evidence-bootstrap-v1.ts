@@ -33,7 +33,7 @@ const FIELDS = [
 const REQUIRED_SOURCES = [
   {
     id: "ecc",
-    owner: "samartomar",
+    owner: "affaan-m",
     pinnedSha: "5caf398a91599029a176ca6d806409b00d1052c4",
     repo: "ECC",
   },
