@@ -9,6 +9,7 @@ import vitestConfig, {
 } from "../../vitest.config.js";
 import coreVitestConfig from "../../vitest.core.config.js";
 import workbenchVitestConfig from "../../vitest.workbench.config.js";
+import { workbenchRetainedWorkersForParallelAcceptance } from "../../vitest.workbench-retained.config.js";
 
 interface CoverageShape {
   include?: string[];
@@ -232,5 +233,11 @@ describe("coverage policy", () => {
       execArgv: [],
       testTimeout: 15_000,
     });
+
+    // Chromium and retained coverage run concurrently in the PR lane. On the
+    // four-core hosted runner, reserve one CPU for Chromium and its setup.
+    expect(workbenchRetainedWorkersForParallelAcceptance(4)).toBe(3);
+    expect(workbenchRetainedWorkersForParallelAcceptance(2)).toBe(1);
+    expect(workbenchRetainedWorkersForParallelAcceptance(24)).toBe(4);
   });
 });

@@ -15,7 +15,7 @@ function digest(bytes: Uint8Array | string): string {
 type VendorBaselineSourceV1 = ReturnType<typeof readVendorBaselineLock>["sources"][number];
 export type PinnedBaselineSourceInputV1 = Pick<
   VendorBaselineSourceV1,
-  "id" | "pinnedSha" | "sourceTreeSha256" | "components"
+  "id" | "owner" | "repo" | "pinnedSha" | "sourceTreeSha256" | "components"
 >;
 type VendorBaselineComponentV1 = VendorBaselineSourceV1["components"][number];
 
@@ -93,7 +93,12 @@ export function compilePinnedBaselineV1(
   const source =
     sourceInput ??
     readVendorBaselineLock().sources.find((candidate) => candidate.id === framework.id);
-  if (source !== undefined && (source.id !== framework.id || source.pinnedSha !== framework.commit))
+  if (
+    source !== undefined &&
+    (source.id !== framework.id ||
+      source.pinnedSha !== framework.commit ||
+      `${source.owner}/${source.repo}` !== framework.repository)
+  )
     throw new Error(`pinned ${framework.id} source identity mismatch`);
   const componentsById = evidenceComponentsByIdV1(source);
   const sourceId = `source:${framework.id}`;

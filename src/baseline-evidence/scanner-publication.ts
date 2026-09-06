@@ -26,7 +26,7 @@ export const SCANNER_BASELINE_PUBLICATION_PUBLISHER_V1 = Object.freeze({
   repository: "samartomar/aih-scan",
   workflow: "samartomar/aih-scan/.github/workflows/baseline-publication.yml",
   ref: "refs/heads/main",
-  commit: "ba0f0bfc46f2634da71e125bf3bbcefb3493389c",
+  commit: "f6189c0211fe27369fb15672f00da76c2072361c",
 } satisfies ScannerBaselinePublicationPublisherV1);
 
 const signerWire = z
@@ -196,6 +196,15 @@ function timestamp(value: string, label: string): number {
   return epoch;
 }
 
+function attestationTimestamp(value: string, label: string): number {
+  if (
+    !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d{3})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/.test(value)
+  )
+    fail(label);
+  const epoch = Date.parse(value);
+  if (!Number.isFinite(epoch)) fail(label);
+  return epoch;
+}
 function record(value: unknown, label: string): Record<string, unknown> {
   if (
     typeof value !== "object" ||
@@ -293,7 +302,7 @@ function verifiedPublicationAttestation(input: {
       typeof value.timestamp !== "string"
     )
       fail("attestation timestamp");
-    return timestamp(value.timestamp, "attestation timestamp");
+    return attestationTimestamp(value.timestamp, "attestation timestamp");
   });
   const now = timestamp(input.now, "clock");
   const earliest = Math.min(...moments);

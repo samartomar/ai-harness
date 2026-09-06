@@ -416,10 +416,10 @@ npm run baseline:check
 ```
 
 An intentional refresh is a two-repository operation. Scanner's manual
-`baseline-publication` workflow accepts one canonical Core request, executes the
+`baseline-publication` workflow authors bounded requests for the exact source, executes the
 fixed `aih-baseline-v1` analyzer set in the Scanner repository, and publishes
 canonical `publication.json` and authority-free `discovery.json` assets at the
-immutable release tag `baseline-v1-<request-sha256>`. The publication carries
+immutable release tag `baseline-v1-<publisher-commit>-<request-sha256>`. The publication carries
 the exact request, receipt, annexes, detached Scanner signature, and its public
 verification root. Its GitHub artifact attestation binds the publication digest
 to the protected Scanner workflow and exact Scanner source commit. Publication
@@ -427,7 +427,7 @@ is evidence transport, not installation or organization authority.
 
 Core's manual `.github/workflows/baseline-publication-consume.yml` authors the
 requests for the exact ECC and Superpowers checkouts, downloads only the matching
-request-addressed release, and asks GitHub CLI to verify the exact Scanner
+publisher-and-request-addressed release, and asks GitHub CLI to verify the exact Scanner
 repository, workflow, `main` ref, source commit, and GitHub-hosted runner. The
 Core consumer then independently rejects noncanonical or substituted bytes,
 mutable locators, wrong requests or publishers, stale attestations, missing
@@ -449,9 +449,9 @@ Every receipt is keyed to the exact file content at the pinned commit, so the
 identity that was vetted is the only identity the evidence covers. Two rules
 follow, and both are load-bearing:
 
-1. **Vet what you ship, at its exact named source.** The active temporary ECC
-   bridge is the explicitly authorized administrator-owned
-   `samartomar/ECC@5caf398a91599029a176ca6d806409b00d1052c4`, alongside
+1. **Vet what you ship, at its exact named source.** The ECC product source is
+   canonical upstream
+   `affaan-m/ECC@5caf398a91599029a176ca6d806409b00d1052c4`, alongside
    `obra/Superpowers@3dcbd5c4…`, in `src/internals/baseline-sources.ts` and
    recorded with their acceptance disposition in
    `src/internals/external-pin-ledger.json`. Any working checkout used to
@@ -459,7 +459,10 @@ follow, and both are load-bearing:
    must resolve to that named source identity and exact commit. A different fork
    or SHA is a different artifact, and evidence generated from it does not
    describe the shipped pin, however similar the trees look.
-2. **Fixes go upstream, not into the pin's blast radius.** When a defect is found
+2. **Fixes go upstream, not into the pin's blast radius.** ECC forks are
+   contribution workspaces, not product-source fallbacks. Required ECC changes
+   must have upstream pull requests; unavailable capabilities stay pending or
+   unsupported until merged upstream commits qualify. When a defect is found
    in a pinned component, the change is raised against the upstream project and
    the pin moves only after the new commit passes a full re-vet with fresh human
    review of every finding. Patching a local or forked checkout in place produces

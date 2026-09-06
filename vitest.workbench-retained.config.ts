@@ -6,14 +6,19 @@ import { workbenchCoverage } from "./vitest.workbench.config.js";
 
 const testRuntime = testRuntimeForPlatform(process.platform, availableParallelism());
 
+/** Reserves one CPU for concurrent Chromium setup and browser processes. */
+export function workbenchRetainedWorkersForParallelAcceptance(parallelism: number): number {
+  return Math.max(1, Math.min(4, parallelism - 1));
+}
+
 export default defineConfig({
   test: {
     globals: false,
     environment: "node",
     setupFiles: ["./tests/setup-git-env.ts"],
     ...testRuntime,
-    // Reserve one CPU for concurrent browser/setup work while retaining a four-worker ceiling.
-    maxWorkers: Math.max(1, Math.min(4, availableParallelism() - 1)),
+    // Chromium and retained coverage run concurrently in the PR lane.
+    maxWorkers: workbenchRetainedWorkersForParallelAcceptance(availableParallelism()),
     include: [...WORKBENCH_RETAINED_TEST_PATTERNS],
     coverage: workbenchCoverage,
   },

@@ -7,11 +7,11 @@
   "entries": [
     {
       "surface": "ecc",
-      "identity": "samartomar/ECC",
+      "identity": "affaan-m/ECC",
       "version": "v2.2.0-1-g5caf398a",
       "commit": "5caf398a91599029a176ca6d806409b00d1052c4",
       "disposition": "active",
-      "reason": "Explicitly authorized temporary bridge to the administrator-owned fork. The exact one-commit v2.2.0 descendant exposes the upstream pure manifest planner required for fail-closed preview generation; Core's lexical closure covers the planner and its two explicit non-directory dependencies. Governed run 33147078833 regenerated the lock and install preview from this exact checkout: ECC recorded 109 pass and 28 blocked raw verdicts, including the newly passing nasiko-control-plane module, and Superpowers recorded 15 pass verdicts. Archived affaan-m/ECC candidate evidence remains immutable history."
+      "reason": "Canonical upstream identity at the unchanged exact one-commit v2.2.0 descendant. On 2026-09-06, affaan-m/ECC and the retired fork were verified to expose the same commit and Git tree a3020783b227226d6b2f8380018c7404a3c8a5e2, with source content digest 3f337f6fd97082fe5a2ba64f7f6b5c339ec2e6295f08e5ff7abaed319d667a2e. Fresh repository-bound Scanner publications from protected publisher f6189c0211fe27369fb15672f00da76c2072361c, runs 34050612224 (ECC) and 34050618353 (Superpowers), passed GitHub attestation verification and Core consumption. ECC retains exactly 411 components, 369 pass and 42 blocked, with unchanged paths, analyzer identities, findings, and content digests; Superpowers retains its identical 15 passing components. Required ECC changes must merge through upstream pull requests and qualify there; contribution forks are never product fallback sources. The newer e04ea0b9 candidate remains blocked under #961, and the independent ECC MCP and packaged-profile pins do not move. Prior fork and candidate evidence remains immutable history."
     },
     {
       "surface": "ecc-candidate",

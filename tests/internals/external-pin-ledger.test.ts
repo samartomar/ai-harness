@@ -117,7 +117,7 @@ describe("active external-pin ledger", () => {
     if (baseline === undefined) throw new Error("missing ECC baseline source");
 
     const ecc = baseline.sources.find(
-      (source) => source.owner === "samartomar" && source.repo === "ECC",
+      (source) => source.owner === "affaan-m" && source.repo === "ECC",
     );
     const superpowers = baseline.sources.find(
       (source) => source.owner === "obra" && source.repo.toLowerCase() === "superpowers",
@@ -138,14 +138,14 @@ describe("active external-pin ledger", () => {
     expect(ledger.verifiedAtPolicy).toMatch(/does not move this field/i);
     expect(ledger.historicalEvidencePolicy).toMatch(/immutable history/i);
 
-    // The explicit temporary bridge is exactly one commit past upstream v2.2.0.
+    // Canonical upstream retains the same exact v2.2.0 descendant.
     expect(entry("ecc")).toMatchObject({
-      identity: "samartomar/ECC",
+      identity: "affaan-m/ECC",
       version: "v2.2.0-1-g5caf398a",
       commit: "5caf398a91599029a176ca6d806409b00d1052c4",
       disposition: "active",
     });
-    expect(entry("ecc").reason).toMatch(/administrator-owned fork.*governed run 33147078833/i);
+    expect(entry("ecc").reason).toMatch(/canonical upstream.*unchanged/i);
     expect(entry("ecc-candidate")).toMatchObject({
       identity: "affaan-m/ECC",
       version: "v2.2.0-147-ge04ea0b9",

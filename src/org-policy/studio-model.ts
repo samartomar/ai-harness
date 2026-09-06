@@ -1,6 +1,6 @@
 import { isProxy } from "node:util/types";
 import { z } from "zod";
-import { canonicalStrictJsonSha256V1 } from "../contract/strict-json-v1.js";
+import { canonicalStrictJsonSha256V1, deepFreezeStrictJsonV1 } from "../contract/strict-json-v1.js";
 import { AihError } from "../errors.js";
 import {
   type AdminBaselineEvidenceProvenanceV1,
@@ -326,7 +326,7 @@ function baselineEvidenceWorkbenchProvenance(
 }
 
 /** Serializable payload embedded in every portable workbench artifact. */
-export function policyStudioModel(
+function buildPolicyStudioModel(
   catalogProvenance?: AdminCatalogProvenanceV1,
   baselineEvidenceProvenance?: AdminBaselineEvidenceProvenanceV1,
   options?: {
@@ -384,4 +384,31 @@ export function policyStudioModel(
       approverEmailPattern: POLICY_APPROVER_EMAIL_PATTERN,
     },
   };
+}
+
+let defaultStudioModelPrototype: Readonly<PolicyStudioModel> | undefined;
+
+function defaultStudioModelV1(): PolicyStudioModel {
+  defaultStudioModelPrototype ??= deepFreezeStrictJsonV1(structuredClone(buildPolicyStudioModel()));
+  return structuredClone(defaultStudioModelPrototype);
+}
+
+/** Serializable payload embedded in every portable workbench artifact. */
+export function policyStudioModel(
+  catalogProvenance?: AdminCatalogProvenanceV1,
+  baselineEvidenceProvenance?: AdminBaselineEvidenceProvenanceV1,
+  options?: {
+    organizationManifestBytes?: readonly string[];
+    freshOrganizationPreparations?: readonly FreshOrganizationPreparationV1[];
+    verifiedBaseline?: { resolved: ResolvedAdminBaselineEvidenceV1; now: string };
+  },
+): PolicyStudioModel {
+  if (
+    catalogProvenance === undefined &&
+    baselineEvidenceProvenance === undefined &&
+    options === undefined
+  ) {
+    return defaultStudioModelV1();
+  }
+  return buildPolicyStudioModel(catalogProvenance, baselineEvidenceProvenance, options);
 }

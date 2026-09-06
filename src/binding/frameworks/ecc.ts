@@ -223,8 +223,8 @@ export class EccLeanInstallerUnavailableError extends AihError {
 }
 
 /**
- * samartomar/ECC pin — the maintainer-locked commit this binding is pinned to.
- * MIRRORS (deliberately does not import) the "samartomar"/"ECC" entry in
+ * affaan-m/ECC pin — the maintainer-locked commit this binding is pinned to.
+ * MIRRORS (deliberately does not import) the "affaan-m"/"ECC" entry in
  * `src/internals/baseline-sources.ts` — also the pin of the shipped
  * `src/baseline-evidence/ecc-install-preview.json` and of
  * `baselineCatalogById("ecc").pinnedSha`. Mirrored rather than imported for the
@@ -248,7 +248,7 @@ export const ECC_PIN_COMMIT = "5caf398a91599029a176ca6d806409b00d1052c4";
 export const ADAPTER_VERSION = 1 as const;
 
 /** The pinned git source location (`owner/repo` shape; see `isPlausibleGitRepository`). */
-export const ECC_REPOSITORY = "samartomar/ECC";
+export const ECC_REPOSITORY = "affaan-m/ECC";
 
 /** The single ECC install target for the `claude` host (the preview's `target`). */
 export const ECC_HOST_TARGET = "claude";

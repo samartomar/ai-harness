@@ -232,6 +232,17 @@ describe("independently published Scanner baseline consumption", () => {
     });
   });
 
+  it("accepts a fresh RFC3339 offset attestation timestamp", async () => {
+    const value = fixture();
+    const verifiedAt = value.attestation[0]?.verificationResult.verifiedTimestamps[0];
+    if (verifiedAt === undefined) throw new Error("fixture timestamp missing");
+    verifiedAt.timestamp = "2026-09-03T08:05:00-05:00";
+
+    await expect(consume(value)).resolves.toMatchObject({
+      provenance: { attestedAt: "2026-09-03T13:05:00.000Z", ageSeconds: 300 },
+    });
+  });
+
   it("verifies the complete publication-set boundary before returning batch provenance", async () => {
     const value = fixture();
     await expect(
@@ -326,6 +337,22 @@ describe("independently published Scanner baseline consumption", () => {
         const verifiedAt = attestation?.verificationResult.verifiedTimestamps[0];
         if (verifiedAt === undefined) throw new Error("fixture timestamp missing");
         verifiedAt.timestamp = "2026-09-03T11:00:00Z";
+      },
+    ],
+    [
+      "malformed attestation timestamp offset",
+      (value: ReturnType<typeof fixture>) => {
+        const verifiedAt = value.attestation[0]?.verificationResult.verifiedTimestamps[0];
+        if (verifiedAt === undefined) throw new Error("fixture timestamp missing");
+        verifiedAt.timestamp = "2026-09-03T08:05:00-5:00";
+      },
+    ],
+    [
+      "future offset attestation timestamp",
+      (value: ReturnType<typeof fixture>) => {
+        const verifiedAt = value.attestation[0]?.verificationResult.verifiedTimestamps[0];
+        if (verifiedAt === undefined) throw new Error("fixture timestamp missing");
+        verifiedAt.timestamp = "2026-09-03T08:11:00-05:00";
       },
     ],
     [

@@ -645,7 +645,7 @@ approvals.
 
 ## aih pack
 
-**Repository note.** This repository intentionally has no root `aih-packs.json`. For an AIH target without that optional manifest, `aih pack status` reports no packs and `aih pack validate` skips the pack-manifest check; it does not reconstruct a manifest from unrelated files. The Workbench's offline catalog comes from its catalog source files and is independent of pack curation. Teams that want named packs create and maintain their own manifest through the documented pack commands.
+**Repository note.** This repository commits `aih-packs.json` to curate its first-party documentation, governance, and review skill packs. Curation grants no approval or install authority; each target still needs its own verified per-skill approvals. The Workbench's offline catalog comes from its catalog source files and is independent of pack curation. On an AIH target without the optional manifest, `aih pack status` reports no packs and `aih pack validate` skips the pack-manifest check; neither reconstructs a manifest from unrelated files.
 
 **Curation manifests** on top of the per-skill lifecycle — a committed root `aih-packs.json` names
 sets of approved skills so a team installs "the docs-quality pack", not N individual approvals. The

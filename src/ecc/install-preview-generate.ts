@@ -227,7 +227,7 @@ export function generateEccInstallPreviewArtifact(
   operations.sort((left, right) => operationKey(left).localeCompare(operationKey(right)));
   return parseEccInstallPreview({
     schemaVersion: 1,
-    source: { owner: "samartomar", repo: "ECC", pinnedSha },
+    source: { owner: "affaan-m", repo: "ECC", pinnedSha },
     operations,
   });
 }

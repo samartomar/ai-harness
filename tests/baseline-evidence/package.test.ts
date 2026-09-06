@@ -90,7 +90,7 @@ describe("baseline evidence release payload", () => {
     expect(parseDocument(consumeWorkflow).errors).toEqual([]);
     expect(consumeWorkflow).toContain(baselineCatalogById("ecc").pinnedSha);
     expect(consumeWorkflow).toContain(baselineCatalogById("superpowers").pinnedSha);
-    expect(consumeWorkflow).toContain("ba0f0bfc46f2634da71e125bf3bbcefb3493389c");
+    expect(consumeWorkflow).toContain("f6189c0211fe27369fb15672f00da76c2072361c");
     expect(consumeWorkflow).toContain("npm run baseline:request");
     expect(consumeWorkflow).toContain("npm run baseline:consume-publications");
     expect(consumeWorkflow).toContain("npm run baseline:assemble");

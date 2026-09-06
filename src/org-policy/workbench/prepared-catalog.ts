@@ -51,10 +51,7 @@ function cachePreparedBaselineV1(
   return structuredClone(snapshot);
 }
 
-function cachedPreparedBaselineV1(
-  catalog: PolicyAuthoringCatalog,
-): PreparedWorkbenchCatalogV1 | undefined {
-  const digest = canonicalStrictJsonSha256V1(catalog);
+function cachedPreparedBaselineV1(digest: string): PreparedWorkbenchCatalogV1 | undefined {
   const cached = preparedBaselineByDigest.get(digest);
   if (cached === undefined) return undefined;
   preparedBaselineByDigest.delete(digest);
@@ -106,8 +103,12 @@ export function prepareWorkbenchCatalog(
 ): PreparedWorkbenchCatalogV1 {
   const organizationManifestBytes = options.organizationManifestBytes ?? [];
   const freshOrganizationPreparations = options.freshOrganizationPreparations ?? [];
-  if (organizationManifestBytes.length === 0 && freshOrganizationPreparations.length === 0) {
-    const cached = cachedPreparedBaselineV1(catalog);
+  const baselineDigest =
+    organizationManifestBytes.length === 0 && freshOrganizationPreparations.length === 0
+      ? canonicalStrictJsonSha256V1(catalog)
+      : undefined;
+  if (baselineDigest !== undefined) {
+    const cached = cachedPreparedBaselineV1(baselineDigest);
     if (cached !== undefined) return cached;
   }
   const bundle =
@@ -196,9 +197,9 @@ export function prepareWorkbenchCatalog(
   // Organization compiler output cannot carry Core capabilities, so its assets remain intent-only.
   for (const asset of Object.values(bundle.assets)) bindings[asset.id] ??= { kind: "intent" };
   const preparedCatalog = { catalog, bundle, bindings, sourceInputs };
-  return organizationManifestBytes.length === 0 && freshOrganizationPreparations.length === 0
-    ? cachePreparedBaselineV1(canonicalStrictJsonSha256V1(catalog), preparedCatalog)
-    : preparedCatalog;
+  return baselineDigest === undefined
+    ? preparedCatalog
+    : cachePreparedBaselineV1(baselineDigest, preparedCatalog);
 }
 
 let prepared: PreparedWorkbenchCatalogV1 | undefined;

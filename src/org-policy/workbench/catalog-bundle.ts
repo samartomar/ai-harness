@@ -42,7 +42,7 @@ const compiledBaselineInputsByDigest = new Map<string, Readonly<CompiledPolicyCa
 function cacheCompiledBaselineInputsV1(
   digest: string,
   value: CompiledPolicyCatalogInputsV1,
-): CompiledPolicyCatalogInputsV1 {
+): Readonly<CompiledPolicyCatalogInputsV1> {
   const snapshot = deepFreezeStrictJsonV1(structuredClone(value));
   compiledBaselineInputsByDigest.delete(digest);
   compiledBaselineInputsByDigest.set(digest, snapshot);
@@ -50,25 +50,24 @@ function cacheCompiledBaselineInputsV1(
     const oldest = compiledBaselineInputsByDigest.keys().next().value;
     if (oldest !== undefined) compiledBaselineInputsByDigest.delete(oldest);
   }
-  return structuredClone(snapshot);
+  return snapshot;
 }
 
 /**
  * Compiling the pinned baseline is pure but comparatively expensive. Cache a
- * sealed snapshot keyed by the canonical catalog bytes, then hand every
- * assembler a detached clone. Recomputing the key makes mutations to a caller
- * supplied catalog a cache miss, while the private snapshot cannot be mutated
- * through a returned bundle.
+ * sealed snapshot keyed by the canonical catalog bytes for the private,
+ * read-only assembler. Public bundle functions still parse and verify a fresh
+ * output, while mutations to a caller-supplied catalog cause a cache miss.
  */
 function compiledPolicyCatalogInputsV1(
   catalog: PolicyAuthoringCatalog,
-): CompiledPolicyCatalogInputsV1 {
+): Readonly<CompiledPolicyCatalogInputsV1> {
   const cacheKey = canonicalStrictJsonSha256V1(catalog);
   const cached = compiledBaselineInputsByDigest.get(cacheKey);
   if (cached !== undefined) {
     compiledBaselineInputsByDigest.delete(cacheKey);
     compiledBaselineInputsByDigest.set(cacheKey, cached);
-    return structuredClone(cached);
+    return cached;
   }
   const sources = readVendorBaselineLock().sources;
   const builtIn = compileBuiltInCatalogV1(catalog);

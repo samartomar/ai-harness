@@ -1,6 +1,6 @@
 /**
  * Exact analyzer identities emitted by the protected Scanner publisher
- * ba0f0bfc46f2634da71e125bf3bbcefb3493389c for the `aih-baseline-v1` profile.
+ * f6189c0211fe27369fb15672f00da76c2072361c for the `aih-baseline-v1` profile.
  *
  * These values are a consumer-side allow-list, not facts copied from an
  * incoming receipt. A Scanner bundle with any other identity fails closed

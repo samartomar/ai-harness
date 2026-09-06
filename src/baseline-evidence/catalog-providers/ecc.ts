@@ -99,17 +99,17 @@ const components: readonly BaselineCatalogComponent[] = [
 function sourcePin(): string {
   for (const baseline of BASELINE_SOURCES) {
     const source = baseline.sources.find(
-      (candidate) => candidate.owner === "samartomar" && candidate.repo === "ECC",
+      (candidate) => candidate.owner === "affaan-m" && candidate.repo === "ECC",
     );
     if (source) return source.pinnedSha;
   }
-  throw new Error("baseline source registry is missing samartomar/ECC");
+  throw new Error("baseline source registry is missing affaan-m/ECC");
 }
 /** Source-local normalized ECC baseline input. */
 export function eccBaselineCatalogV1(pin?: string): BaselineCatalog {
   return defineBaselineCatalog({
     id: "ecc",
-    owner: "samartomar",
+    owner: "affaan-m",
     repo: "ECC",
     pinnedSha: pin ?? sourcePin(),
     components,

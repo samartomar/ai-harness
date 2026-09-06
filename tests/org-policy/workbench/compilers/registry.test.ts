@@ -207,6 +207,25 @@ describe("registered catalog compilers", () => {
     expect(vendorBaselineLockRead).toHaveBeenCalledTimes(1);
   });
 
+  it("rejects a same-pin fork source from backing compiled ECC evidence", () => {
+    const framework = policyAuthoringCatalog().frameworks.find(
+      (candidate) => candidate.id === "ecc",
+    );
+    const source = vendorBaselineLockRead().sources.find(
+      (candidate: { id: string }) => candidate.id === "ecc",
+    );
+    if (framework === undefined || source === undefined)
+      throw new Error("expected ECC source fixture");
+
+    expect(() =>
+      compilePinnedBaselineV1(framework, {
+        ...source,
+        owner: "samartomar",
+        repo: "ECC",
+        pinnedSha: framework.commit,
+      }),
+    ).toThrow(/source identity mismatch/);
+  });
   it("rejects future compiler versions, caller capability injection, and relation collisions", () => {
     const future = organizationInput("source:future");
     const futureSource = future.sources["source:future"];

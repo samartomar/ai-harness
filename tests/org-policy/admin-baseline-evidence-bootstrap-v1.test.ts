@@ -26,7 +26,7 @@ const record: AdminBaselineEvidenceBootstrapV1 = {
   sources: [
     {
       id: "ecc",
-      owner: "samartomar",
+      owner: "affaan-m",
       pinnedSha: "5caf398a91599029a176ca6d806409b00d1052c4",
       repo: "ECC",
     },
@@ -63,6 +63,10 @@ describe("admin baseline evidence bootstrap V1", () => {
         ...record,
         sources: [{ ...record.sources[0], pinnedSha: "A".repeat(40) }, record.sources[1]],
       },
+    ],
+    [
+      "same-pin retired ECC fork",
+      { ...record, sources: [{ ...record.sources[0], owner: "samartomar" }, record.sources[1]] },
     ],
     ["incomplete sources", { ...record, sources: [record.sources[0]] }],
     ["unordered sources", { ...record, sources: [record.sources[1], record.sources[0]] }],
