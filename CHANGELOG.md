@@ -8,6 +8,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Add 25 pinned Matt Pocock skills to the unreleased Policy Workbench catalog,
+  with exact source and content pins, required support files, and MIT attribution.
+  Selection records additive requested intent through the existing `--ui` entry.
+
 - Introduce the unreleased #967 Policy Workbench authoring core: the browser consumes an offline normalized authoring catalog bundle, preserves exact source and asset identities in generic authoring selections, and emits schema-v3 policy intent with a `minimumCoreVersion` floor of `0.6.0`. This is an unreleased feature floor only; it does not change the package version or release cut.
 
 ### Fixed

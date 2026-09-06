@@ -4,6 +4,7 @@ import type { PinnedBaselineSourceInputV1 } from "../compilers/pinned-baseline.j
 import { aihCatalogProviderV1 } from "./aih.js";
 import { type CatalogProviderCompilationV1, compileCatalogProviderV1 } from "./contracts.js";
 import { eccCatalogProviderV1 } from "./ecc.js";
+import { mattPocockPinnedSkillCollectionV1, mattpocockCatalogProviderV1 } from "./mattpocock.js";
 import { organizationCatalogProviderV1 } from "./organization.js";
 import { superpowersCatalogProviderV1 } from "./superpowers.js";
 export interface RegisteredCatalogProviderV1 {
@@ -58,4 +59,9 @@ export const registeredCatalogProvidersV1: readonly RegisteredCatalogProviderV1[
       }),
   },
   organizationCatalogProviderV1,
+  {
+    ...mattpocockCatalogProviderV1,
+    prepareBaseline: () =>
+      compileCatalogProviderV1(mattpocockCatalogProviderV1, mattPocockPinnedSkillCollectionV1),
+  },
 ]);
