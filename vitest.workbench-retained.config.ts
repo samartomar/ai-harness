@@ -6,9 +6,9 @@ import { workbenchCoverage } from "./vitest.workbench.config.js";
 
 const testRuntime = testRuntimeForPlatform(process.platform, availableParallelism());
 
-/** Keeps two CPUs free for concurrent Chromium setup and browser processes. */
+/** Reserves one CPU for concurrent Chromium setup and browser processes. */
 export function workbenchRetainedWorkersForParallelAcceptance(parallelism: number): number {
-  return Math.max(1, Math.min(4, parallelism - 2));
+  return Math.max(1, Math.min(4, parallelism - 1));
 }
 
 export default defineConfig({

@@ -286,6 +286,32 @@ describe("policy authoring catalog bundle", () => {
         .every((asset) => asset.exclusiveSlot === undefined),
     ).toBe(true);
   });
+  it("keeps compiled baseline inputs private and invalidates them by catalog bytes", () => {
+    const catalog = policyAuthoringCatalog();
+    const first = policyAuthoringCatalogBundle(catalog);
+    const assetId = Object.keys(first.assets)[0];
+    if (assetId === undefined) throw new Error("expected catalog asset");
+    const asset = first.assets[assetId];
+    if (asset === undefined) throw new Error("expected catalog asset record");
+    asset.label = "caller mutation";
+    const sourceId = Object.keys(first.sources)[0];
+    if (sourceId === undefined) throw new Error("expected catalog source");
+    const source = first.sources[sourceId];
+    if (source === undefined) throw new Error("expected catalog source record");
+    source.revision.id = "caller mutation";
+
+    const second = policyAuthoringCatalogBundle(catalog);
+    expect(second.assets[assetId]?.label).not.toBe("caller mutation");
+    expect(second.sources[sourceId]?.revision.id).not.toBe("caller mutation");
+
+    const changed = structuredClone(catalog);
+    const firstMcp = changed.mcp[0];
+    if (firstMcp === undefined) throw new Error("expected built-in MCP catalog entry");
+    firstMcp.description = `${firstMcp.description} changed`;
+    expect(policyAuthoringCatalogBundle(changed).provenance.bundleDigest).not.toBe(
+      policyAuthoringCatalogBundle(catalog).provenance.bundleDigest,
+    );
+  });
   it("binds every detail chunk and the bundle digest to its exact bytes", () => {
     const { bundle } = productionCatalogBundle();
     for (const chunk of Object.values(bundle.detailChunks)) {

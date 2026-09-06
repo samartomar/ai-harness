@@ -77,9 +77,15 @@ describe("prepared workbench catalog", () => {
     const asset = first.bundle.assets[assetId];
     if (asset === undefined) throw new Error("expected prepared catalog asset");
     asset.label = "mutated caller copy";
+    const firstFramework = first.catalog.frameworks[0];
+    if (firstFramework === undefined) throw new Error("expected framework catalog entry");
+    firstFramework.repository = "https://mutated.example.test/catalog";
 
     const second = prepareWorkbenchCatalog(catalog);
     expect(second.bundle.assets[assetId]?.label).not.toBe("mutated caller copy");
+    expect(second.catalog.frameworks[0]?.repository).not.toBe(
+      "https://mutated.example.test/catalog",
+    );
 
     const changed = structuredClone(catalog);
     const firstMcp = changed.mcp[0];
