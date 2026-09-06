@@ -9,10 +9,13 @@ import {
   compilePinnedComponentCollectionV1,
   type PinnedComponentCollectionInputV1,
 } from "../compilers/pinned-component-collection.js";
-import { defineCatalogProviderV1 } from "./contracts.js";
+import {
+  type CatalogProviderCompilationV1,
+  compileCatalogProviderV1,
+  defineCatalogProviderV1,
+} from "./contracts.js";
 import snapshot from "./ponytail.snapshot.json";
 
-const REVIEWED_SNAPSHOT = deepFreezeStrictJsonV1(snapshot) as PinnedComponentCollectionInputV1;
 const PONYTAIL_FIXTURE: PinnedComponentCollectionInputV1 = {
   version: "pinned-component-collection/v1",
   source: {
@@ -55,7 +58,8 @@ const PONYTAIL_FIXTURE: PinnedComponentCollectionInputV1 = {
 };
 const REVIEWED_DIGEST = "ca06d43e8a2818ad277ca870113b0b98470080c3a0cf0aee49614f82485622cf";
 const FIXTURE_DIGEST = "f781af36c963c9d824b1b0e6a8bfc1ee8c1cde56ec8475ff4c1660c75a5afef5";
-let cachedSnapshot: PinnedComponentCollectionInputV1 | undefined;
+let packagedSnapshot: PinnedComponentCollectionInputV1 | undefined;
+let packagedBaselineCompilation: CatalogProviderCompilationV1 | undefined;
 
 function assertReviewedPonytailInput(
   value: unknown,
@@ -68,13 +72,19 @@ function assertReviewedPonytailInput(
     );
 }
 
-/** Returns the packaged, reviewed source snapshot only when default preparation needs it. */
-export function ponytailPinnedComponentCollectionV1(): PinnedComponentCollectionInputV1 {
-  if (cachedSnapshot === undefined) {
-    assertReviewedPonytailInput(REVIEWED_SNAPSHOT);
-    cachedSnapshot = REVIEWED_SNAPSHOT;
+/** Lazily seals the static JSON only when a packaged source path is requested. */
+function packagedPonytailComponentCollectionV1(): PinnedComponentCollectionInputV1 {
+  if (packagedSnapshot === undefined) {
+    assertReviewedPonytailInput(snapshot);
+    const candidate = structuredClone(snapshot);
+    packagedSnapshot = deepFreezeStrictJsonV1(candidate) as PinnedComponentCollectionInputV1;
   }
-  return structuredClone(cachedSnapshot);
+  return packagedSnapshot;
+}
+
+/** Returns a detached copy of the packaged, reviewed source snapshot. */
+export function ponytailPinnedComponentCollectionV1(): PinnedComponentCollectionInputV1 {
+  return structuredClone(packagedPonytailComponentCollectionV1());
 }
 
 /** Tiny synthetic contract input; it is separate from the packaged Ponytail source inventory. */
@@ -114,3 +124,13 @@ export const ponytailCatalogProviderV1 = defineCatalogProviderV1({
     compilePonytailComponentCollectionV1(input),
   ],
 });
+
+/** Reuses only the sealed packaged baseline and always returns a detached provider compilation. */
+export function preparePonytailCatalogProviderV1(): CatalogProviderCompilationV1 {
+  if (packagedBaselineCompilation === undefined) {
+    packagedBaselineCompilation = deepFreezeStrictJsonV1(
+      compileCatalogProviderV1(ponytailCatalogProviderV1, packagedPonytailComponentCollectionV1()),
+    ) as CatalogProviderCompilationV1;
+  }
+  return structuredClone(packagedBaselineCompilation);
+}

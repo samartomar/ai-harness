@@ -1,14 +1,43 @@
 import { describe, expect, it } from "vitest";
 import { actionForCompilerDeclarationV1 } from "../../../../src/org-policy/workbench/compilers/formats.js";
 import { compilePinnedComponentCollectionV1 } from "../../../../src/org-policy/workbench/compilers/pinned-component-collection.js";
+import { compileCatalogProviderV1 } from "../../../../src/org-policy/workbench/providers/contracts.js";
 import {
   compilePonytailComponentCollectionV1,
   ponytailCatalogProviderV1,
   ponytailComponentCollectionFixtureV1,
   ponytailPinnedComponentCollectionV1,
+  preparePonytailCatalogProviderV1,
 } from "../../../../src/org-policy/workbench/providers/ponytail.js";
+import snapshot from "../../../../src/org-policy/workbench/providers/ponytail.snapshot.json";
 
 describe("Ponytail catalog provider", () => {
+  it("keeps the imported snapshot detached from the private sealed baseline", () => {
+    expect(Object.isFrozen(snapshot)).toBe(false);
+  });
+
+  it("rejects an imported accessor before cloning the packaged snapshot", () => {
+    const descriptor = Object.getOwnPropertyDescriptor(snapshot, "files");
+    if (descriptor === undefined || !("value" in descriptor)) {
+      throw new Error("expected snapshot files");
+    }
+    let reads = 0;
+    Object.defineProperty(snapshot, "files", {
+      configurable: true,
+      enumerable: true,
+      get: () => {
+        reads += 1;
+        return descriptor.value;
+      },
+    });
+    try {
+      expect(() => ponytailPinnedComponentCollectionV1()).toThrow(/own data property/u);
+      expect(reads).toBe(0);
+    } finally {
+      Object.defineProperty(snapshot, "files", descriptor);
+    }
+  });
+
   it("keeps its tiny synthetic fixture separate from the packaged pinned inventory", () => {
     const fixture = ponytailComponentCollectionFixtureV1();
     expect(fixture.files).toHaveLength(1);
@@ -64,6 +93,29 @@ describe("Ponytail catalog provider", () => {
     expect(input.templates?.["template:ponytail/methodology"]?.roots).toEqual([
       { assetId: "ponytail/profile:methodology", mode: "select", includeOptionalMembers: false },
     ]);
+  });
+
+  it("returns clone-isolated cached baseline compilations while cloned inputs compile independently", () => {
+    const first = preparePonytailCatalogProviderV1();
+    const baseline = structuredClone(first);
+    const detail = first.inputs[0]?.detailBytes;
+    const detailId = detail === undefined ? undefined : Object.keys(detail)[0];
+    if (detail === undefined || detailId === undefined) {
+      throw new Error("expected cached Ponytail detail");
+    }
+    detail[detailId] = "corrupted caller output";
+
+    const next = preparePonytailCatalogProviderV1();
+    expect(next).toEqual(baseline);
+    expect(next).not.toBe(first);
+    expect(next.inputs).not.toBe(first.inputs);
+    expect(next.inputs[0]?.detailBytes).not.toBe(detail);
+
+    const explicit = structuredClone(ponytailPinnedComponentCollectionV1());
+    const direct = compileCatalogProviderV1(ponytailCatalogProviderV1, explicit);
+    expect(direct).toEqual(baseline);
+    expect(direct).not.toBe(next);
+    expect(direct.inputs).not.toBe(next.inputs);
   });
 
   it.each([
