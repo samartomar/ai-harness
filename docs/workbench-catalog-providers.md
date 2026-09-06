@@ -116,10 +116,15 @@ ownership is proven; TypeScript builds, packaging, and release remain shared.
 
 Providers are statically registered at build time. There is no arbitrary
 runtime provider loader, independent provider availability when one included
-provider fails, independent provider release, or persistent provider cache.
-Process-local compilation caches remain implementation details. Matt validates
-its packaged snapshot on first use and reuses a sealed compilation with detached
-outputs; explicit caller inputs are always revalidated.
+provider fails, independent provider release, or persistent cross-process
+provider cache. Process-local compilation caches remain implementation details.
+Matt validates its packaged snapshot on first use and reuses a sealed compilation
+with detached outputs. Ponytail lazily validates its private packaged snapshot,
+rejects malformed or accessor-bearing values before cloning, and caches the
+complete sealed provider compilation while returning detached copies. Explicit
+caller inputs are always revalidated and are not admitted through that cache.
+A local recurring-preparation measurement fell from 23.205 ms to 0.059 ms; it
+does not establish a total Workbench-lane improvement.
 
 Adding an ordinary provider requires a reviewed provider module, static
 registry enrollment, declared ownership and dependencies, and a mandatory

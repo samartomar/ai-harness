@@ -60,3 +60,25 @@ in 4.32 s. The complete Workbench lane passed in 50.865 s; pure coverage took
 4.776 s, and peak summed RSS was 2,914,615,296 bytes with no heap override. All
 seven existing Chromium journeys passed, including the installed-package UI and
 deterministic offline artifact. No source-specific browser test was added.
+
+## Cache correction and final local Workbench receipt
+
+Ponytail now lazily seals its private packaged snapshot, rejects malformed or
+accessor-bearing values before cloning, and caches the complete provider
+compilation with detached returns. Explicit caller inputs remain subject to the
+same reviewed-input validation and are not served from the packaged cache. The
+measured recurring preparation changed from 23.205 ms to 0.059 ms. That is a
+provider-preparation measurement only; it does not claim a total-lane
+improvement.
+
+The final local Workbench receipt passed in 50.945 s: pure coverage took 4.822 s,
+peak summed RSS was 3,047,321,600 bytes, and the run recorded 87 pure tests, 296
+retained tests, and seven Chromium journeys. This is the cache-local Workbench
+receipt, not a replacement for the earlier full verification checkpoint.
+
+## Full verification checkpoint before the cache correction
+
+At commit `7b21ab3e`, before the cache correction, `npm run verify` passed in
+1,113.105 s with 8,745 tests passed and 46 skipped across 521 test files passed
+and four skipped. The cache correction is supported by the final local Workbench
+receipt above; this document does not claim a later full `npm run verify` run.
