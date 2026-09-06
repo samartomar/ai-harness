@@ -117,8 +117,9 @@ ownership is proven; TypeScript builds, packaging, and release remain shared.
 Providers are statically registered at build time. There is no arbitrary
 runtime provider loader, independent provider availability when one included
 provider fails, independent provider release, or persistent provider cache.
-The existing process-local compilation cache remains a combined-artifact
-implementation detail.
+Process-local compilation caches remain implementation details. Matt validates
+its packaged snapshot on first use and reuses a sealed compilation with detached
+outputs; explicit caller inputs are always revalidated.
 
 Adding an ordinary provider requires a reviewed provider module, static
 registry enrollment, declared ownership and dependencies, and a mandatory

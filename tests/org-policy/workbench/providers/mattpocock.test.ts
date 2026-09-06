@@ -1,9 +1,9 @@
 import { expect, it } from "vitest";
 import {
   compileMattPocockSkillCollectionV1,
+  getMattPocockPinnedSkillCollectionV1,
   MATTPOCOCK_SUPPORT_OWNERSHIP_V1,
   mattPocockPinnedSkillCollectionFixtureV1,
-  mattPocockPinnedSkillCollectionV1,
   mattpocockCatalogProviderV1,
   prepareMattPocockSnapshotV1,
 } from "../../../../src/org-policy/workbench/providers/mattpocock.js";
@@ -33,16 +33,17 @@ function upstreamOf(value: SnapshotObject): SnapshotObject {
 }
 
 it("uses a single synthetic fixture while the packaged catalog retains every pinned skill", () => {
+  const packaged = getMattPocockPinnedSkillCollectionV1();
   expect(mattPocockPinnedSkillCollectionFixtureV1().skills).toHaveLength(1);
-  expect(mattPocockPinnedSkillCollectionV1.skills).toHaveLength(25);
+  expect(packaged.skills).toHaveLength(25);
   expect(MATTPOCOCK_SUPPORT_OWNERSHIP_V1).toHaveLength(23);
-  const output = compileMattPocockSkillCollectionV1(mattPocockPinnedSkillCollectionV1);
+  const output = compileMattPocockSkillCollectionV1(packaged);
   expect(output.declarations).toHaveLength(25);
   expect(output.declarations.some((entry) => entry.declaration.id === "mattpocock/skill:tdd")).toBe(
     true,
   );
   expect(
-    mattPocockPinnedSkillCollectionV1.skills
+    packaged.skills
       .find((skill) => skill.id === "diagnosing-bugs")
       ?.files.some(
         (file) => file.path === "skills/engineering/diagnosing-bugs/scripts/hitl-loop.template.sh",
@@ -50,8 +51,26 @@ it("uses a single synthetic fixture while the packaged catalog retains every pin
   ).toBe(true);
 });
 
+it("returns clone-isolated cached outputs only for the sealed packaged input", () => {
+  const packaged = getMattPocockPinnedSkillCollectionV1();
+  const first = compileMattPocockSkillCollectionV1(packaged);
+  const baseline = structuredClone(first);
+  const detailId = Object.keys(first.detailBytes)[0];
+  if (detailId === undefined) throw new Error("expected compiled detail");
+  first.detailBytes[detailId] = "corrupted caller output";
+
+  const next = compileMattPocockSkillCollectionV1(packaged);
+  expect(next).toEqual(baseline);
+  expect(next).not.toBe(first);
+  expect(next.detailBytes).not.toBe(first.detailBytes);
+
+  const explicit = structuredClone(packaged);
+  const explicitOutput = compileMattPocockSkillCollectionV1(explicit);
+  expect(explicitOutput).toEqual(baseline);
+  expect(explicitOutput).not.toBe(next);
+});
 it("rejects stale source descriptors before compilation", () => {
-  const stale = structuredClone(mattPocockPinnedSkillCollectionV1);
+  const stale = structuredClone(getMattPocockPinnedSkillCollectionV1());
   stale.source.commit = "a".repeat(40);
   expect(() => mattpocockCatalogProviderV1.compile(stale)).toThrow(/exact pinned descriptor/);
 });
@@ -89,10 +108,11 @@ it("prepares only the exact sealed snapshot structure", () => {
 });
 
 it("deep-freezes the packaged baseline before it is enrolled", () => {
-  const skill = mattPocockPinnedSkillCollectionV1.skills[0];
+  const packaged = getMattPocockPinnedSkillCollectionV1();
+  const skill = packaged.skills[0];
   const file = skill?.files[0];
-  expect(Object.isFrozen(mattPocockPinnedSkillCollectionV1)).toBe(true);
-  expect(Object.isFrozen(mattPocockPinnedSkillCollectionV1.skills)).toBe(true);
+  expect(Object.isFrozen(packaged)).toBe(true);
+  expect(Object.isFrozen(packaged.skills)).toBe(true);
   expect(Object.isFrozen(skill)).toBe(true);
   expect(Object.isFrozen(file)).toBe(true);
 });

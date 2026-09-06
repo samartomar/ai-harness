@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
-import { parseDocument } from "yaml";
+import { createRequire } from "node:module";
+import type { parseDocument as parseYamlDocument } from "yaml";
 import { z } from "zod";
 import {
   assertSafeRelativePosixPathV1,
@@ -53,6 +54,20 @@ export interface CompiledPinnedSkillCollectionV1 {
   detailBytes: Record<string, string>;
 }
 
+const requireFromPinnedSkillCollection = createRequire(import.meta.url);
+type ParseYamlDocument = typeof parseYamlDocument;
+let parseYamlDocumentV1: ParseYamlDocument | undefined;
+
+function parseSkillYamlV1(value: string) {
+  if (parseYamlDocumentV1 === undefined) {
+    const yamlModule = requireFromPinnedSkillCollection("yaml") as { parseDocument?: unknown };
+    if (typeof yamlModule.parseDocument !== "function") {
+      throw new TypeError("pinned skill collection YAML parser is unavailable");
+    }
+    parseYamlDocumentV1 = yamlModule.parseDocument as ParseYamlDocument;
+  }
+  return parseYamlDocumentV1(value);
+}
 type PinnedFileV1 = z.infer<typeof FileSchema>;
 type PinnedSkillV1 = z.infer<typeof SkillSchema>;
 
@@ -120,7 +135,7 @@ function frontmatterForSkill(text: string, label: string): { name: string; descr
   if (lines[0] !== "---") throw new TypeError(`${label} is missing YAML frontmatter`);
   const closing = lines.indexOf("---", 1);
   if (closing < 1) throw new TypeError(`${label} has unterminated YAML frontmatter`);
-  const document = parseDocument(lines.slice(1, closing).join("\n"));
+  const document = parseSkillYamlV1(lines.slice(1, closing).join("\n"));
   if (document.errors.length > 0 || document.warnings.length > 0) {
     throw new TypeError(`${label} has invalid YAML frontmatter`);
   }

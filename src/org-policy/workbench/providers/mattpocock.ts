@@ -330,14 +330,30 @@ export function mattPocockPinnedSkillCollectionFixtureV1(): PinnedSkillCollectio
   return { ...value, collectionDigest: pinnedSkillCollectionDigestV1(value) };
 }
 
-export const mattPocockPinnedSkillCollectionV1 = deepFreezeStrictJsonV1(
-  prepareMattPocockSnapshotV1(snapshot),
-);
+let packagedSkillCollectionV1: PinnedSkillCollectionInputV1 | undefined;
+let packagedSnapshotDigestV1: string | undefined;
+let packagedCompilationCacheV1: CatalogCompilerAssemblyInputV1 | undefined;
 
-export function compileMattPocockSkillCollectionV1(
+/** Lazily validates the sealed package only when a baseline or caller requests it. */
+export function getMattPocockPinnedSkillCollectionV1(): PinnedSkillCollectionInputV1 {
+  if (packagedSkillCollectionV1 === undefined) {
+    packagedSkillCollectionV1 = deepFreezeStrictJsonV1(prepareMattPocockSnapshotV1(snapshot));
+  }
+  return packagedSkillCollectionV1;
+}
+
+export function getMattPocockPackagedSnapshotDigestV1(): string {
+  if (packagedSnapshotDigestV1 === undefined) {
+    packagedSnapshotDigestV1 = `sha256:${canonicalStrictJsonSha256V1(
+      getMattPocockPinnedSkillCollectionV1(),
+    )}`;
+  }
+  return packagedSnapshotDigestV1;
+}
+
+function compileMattPocockInputV1(
   input: PinnedSkillCollectionInputV1,
 ): CatalogCompilerAssemblyInputV1 {
-  assertMattSource(input);
   const result = compilePinnedSkillCollectionV1(input);
   return {
     sources: {
@@ -355,11 +371,26 @@ export function compileMattPocockSkillCollectionV1(
   };
 }
 
+/**
+ * The immutable packaged input may share a process-local compiled snapshot.
+ * Caller-supplied inputs are always revalidated and compiled independently.
+ */
+export function compileMattPocockSkillCollectionV1(
+  input: PinnedSkillCollectionInputV1,
+): CatalogCompilerAssemblyInputV1 {
+  assertMattSource(input);
+  if (input !== packagedSkillCollectionV1) {
+    return compileMattPocockInputV1(input);
+  }
+  if (packagedCompilationCacheV1 === undefined) {
+    packagedCompilationCacheV1 = deepFreezeStrictJsonV1(compileMattPocockInputV1(input));
+  }
+  return structuredClone(packagedCompilationCacheV1);
+}
+
 export const mattpocockCatalogProviderV1 = defineCatalogProviderV1({
   providerId: "mattpocock",
   providerVersion: "1",
   fixture: mattPocockPinnedSkillCollectionFixtureV1,
   compile: (input) => [compileMattPocockSkillCollectionV1(input)],
 });
-
-export const mattPocockPackagedSnapshotDigestV1 = `sha256:${canonicalStrictJsonSha256V1(mattPocockPinnedSkillCollectionV1)}`;
