@@ -1,11 +1,28 @@
 import { createHash } from "node:crypto";
 import { canonicalStrictJsonBytesV1 } from "../../../contract/strict-json-v1.js";
-import type { PolicyAuthoringCatalog } from "../../catalog.js";
+import type {
+  AihCatalogSourceV1,
+  AihPolicyControl,
+  PolicyAuthoringHook,
+} from "../../catalog-provider-types.js";
 import type {
   CompilerAssetDeclarationV1,
   CoreAuthoringCapabilityRegistryEntryV1,
 } from "../contracts.js";
-import type { CompiledDeclarationV1 } from "./registry.js";
+import type { CompiledDeclarationV1 } from "./formats.js";
+
+export interface BuiltInCatalogInputV1
+  extends Pick<AihCatalogSourceV1, "aihCapabilityPackage" | "aihSkills" | "aihAgents"> {
+  mcp: readonly { id: string; description: string; control: AihPolicyControl }[];
+  hooks: readonly PolicyAuthoringHook[];
+  unavailableMcp: readonly {
+    id: string;
+    configuredIdentity: string;
+    transport: string;
+    reason: string;
+  }[];
+  nonProjectableMcp: readonly { id: string; transport: string; reason: string }[];
+}
 
 function digest(bytes: Uint8Array | string): string {
   return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
@@ -23,7 +40,7 @@ export interface CompiledBuiltInCatalogV1 {
  * digests bind the compiler input manifest, never claim to be upstream package
  * bytes or scanner evidence.
  */
-export function compileBuiltInCatalogV1(catalog: PolicyAuthoringCatalog): CompiledBuiltInCatalogV1 {
+export function compileBuiltInCatalogV1(catalog: BuiltInCatalogInputV1): CompiledBuiltInCatalogV1 {
   const sourceId = "source:aih-core";
   const revisionId = `package:${catalog.aihCapabilityPackage.name}@${catalog.aihCapabilityPackage.version}`;
   const sourceManifest = canonicalStrictJsonBytesV1({

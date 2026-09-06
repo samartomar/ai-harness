@@ -23,6 +23,10 @@ jobs:
       test_lane: ${{ steps.impact.outputs.test_lane }}
       selected_tests_json: ${{ steps.impact.outputs.selected_tests_json }}
       operating_systems_json: ${{ steps.impact.outputs.operating_systems_json }}
+      affected_providers_json: ${{ steps.impact.outputs.affected_providers_json }}
+      provider_tests_json: ${{ steps.impact.outputs.provider_tests_json }}
+      requires_packed_artifact: ${{ steps.impact.outputs.requires_packed_artifact }}
+      requires_generic_browser_journeys: ${{ steps.impact.outputs.requires_generic_browser_journeys }}
       release_preparation: ${{ steps.impact.outputs.release_preparation }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -61,6 +65,8 @@ jobs:
       SELECTED_TESTS_JSON: ${{ needs.classify.outputs.selected_tests_json }}
       FULL_SUITE: ${{ needs.classify.outputs.full_suite }}
       TEST_LANE: ${{ needs.classify.outputs.test_lane }}
+      PROVIDER_TESTS_JSON: ${{ needs.classify.outputs.provider_tests_json }}
+      REQUIRES_GENERIC_BROWSER_JOURNEYS: ${{ needs.classify.outputs.requires_generic_browser_journeys }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -75,7 +81,7 @@ jobs:
 
   workbench_browser:
     name: Workbench Chromium and packed artifact
-    if: ${{ needs.classify.outputs.full_suite == 'true' || needs.classify.outputs.test_lane == 'workbench' || needs.classify.outputs.test_lane == 'both' }}
+    if: ${{ needs.classify.outputs.requires_generic_browser_journeys == 'true' }}
     needs: classify
     runs-on: ubuntu-24.04
     steps:
@@ -99,6 +105,36 @@ jobs:
           path: |
             .aih-scratch/workbench-evidence/
             .aih-scratch/workbench-browser-results/
+          if-no-files-found: error
+          retention-days: 7
+
+  workbench_provider:
+    name: Workbench provider contracts and packed artifact
+    if: ${{ needs.classify.outputs.full_suite != 'true' && needs.classify.outputs.affected_providers_json != '[]' && needs.classify.outputs.requires_generic_browser_journeys != 'true' }}
+    needs: classify
+    runs-on: ubuntu-24.04
+    env:
+      AFFECTED_PROVIDERS_JSON: ${{ needs.classify.outputs.affected_providers_json }}
+      PROVIDER_TESTS_JSON: ${{ needs.classify.outputs.provider_tests_json }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24.18.0"
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Install pinned Chromium
+        run: npx --no-install playwright install --with-deps chromium
+      - name: Verify exact provider contracts and packed artifact
+        run: npm run test:workbench:providers
+      - name: Upload provider lane evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: workbench-provider-lane
+          path: .aih-scratch/workbench-evidence/provider-lane.json
           if-no-files-found: error
           retention-days: 7
 
@@ -265,6 +301,7 @@ jobs:
       - full_verify
       - windows_full_tests
       - workbench_browser
+      - workbench_provider
     strategy:
       fail-fast: false
       matrix:
@@ -286,6 +323,10 @@ jobs:
           WINDOWS_RESULT: ${{ needs.windows_full_tests.result }}
           TEST_LANE: ${{ needs.classify.outputs.test_lane }}
           WORKBENCH_RESULT: ${{ needs.workbench_browser.result }}
+          PROVIDER_RESULT: ${{ needs.workbench_provider.result }}
+          AFFECTED_PROVIDERS_JSON: ${{ needs.classify.outputs.affected_providers_json }}
+          REQUIRES_PACKED_ARTIFACT: ${{ needs.classify.outputs.requires_packed_artifact }}
+          REQUIRES_GENERIC_BROWSER_JOURNEYS: ${{ needs.classify.outputs.requires_generic_browser_journeys }}
         run: node .github/scripts/require-ci-lane.mjs
 
   pr_gate:

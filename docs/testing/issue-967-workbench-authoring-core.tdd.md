@@ -170,3 +170,46 @@ retained coverage stayed above all existing thresholds. The DOM receipt records
 10, 1,000, and 10,000 assets. The local receipts are navigation-pr-lane.json,
 navigation-acceptance-projects.json, and navigation-dom-scale.json. These are
 one follow-up measurement, separate from the five historical local runs above.
+
+## Catalog provider isolation follow-up
+
+Source preparation now has direct ECC, Superpowers, and AIH entries with explicit
+inputs. Registered Workbench providers compile those inputs and organization
+manifests through neutral format contracts. Normal provider contributions pass
+an evidence/field gate before privileged assembly; Core alone consumes fresh
+organization custody and joins exact first-party capabilities. The browser
+continues to receive one offline artifact.
+
+The migration comparison preserves canonical catalog, bundle, bindings, and
+twelve representative policy projections byte-for-byte against the prior pinned
+inputs. The canonical catalog SHA-256 is
+`f9dc6e94a91ebd5ee24a799990586cc1353a94b4f73103c89cf5e563b38c3774`;
+the bundle SHA-256 is
+`f75b233706609af02f497703fb447eeac838262a9bf7a86560bb532ac032c386`.
+These are migration evidence, not permanent aggregate snapshot assertions.
+
+The source/module and assembly contract tests cover exact pin rejection,
+provider-minted evidence and capability refusal, opaque-token lookalikes,
+additional provider enrollment, malformed composition, and an ECC metadata or
+provider-version change that leaves Superpowers output unchanged. Babel parses
+all registered provider entries for recursive runtime imports and checks
+separate type-only endpoints. Ownership enrollment and source/test/dependency
+paths are checked from the registry; unreviewed runtime dependencies fail.
+
+The CI receipt now separates provider contracts, the packed smoke, and generic
+browser requirements. Tests reproduce an omitted provider consumer, skipped
+mandatory lanes, unknown ownership, baseline consumers requiring full coverage,
+and provider-only versus mixed selected-test execution. The final focused CI
+check passed 84 tests across five files. Shared and legacy consumers intentionally
+retain broader routing. No independent cache or release was introduced.
+
+The installed-package smoke now starts the actual `--ui` entry in a fresh
+temporary administrator directory, checks loopback HTML, and reaps the server.
+Only the OS browser-opening side effect is stubbed; unexpected spawn attempts
+fail. HTTP and shutdown waits are bounded. The existing six generic Chromium
+journeys and one packed artifact smoke remain the browser contract.
+
+RED/GREEN receipts for provider extraction, assembly, source pins, launcher
+startup, and selected execution are retained in the local Workbench evidence
+directory. Repository-wide verification and final performance receipts are
+reported in PR #974's Validation section.

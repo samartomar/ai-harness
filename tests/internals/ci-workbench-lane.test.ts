@@ -19,6 +19,10 @@ const baseEnvironment = {
   FULL_RESULT: "skipped",
   WINDOWS_RESULT: "skipped",
   WORKBENCH_RESULT: "success",
+  PROVIDER_RESULT: "skipped",
+  AFFECTED_PROVIDERS_JSON: "[]",
+  REQUIRES_PACKED_ARTIFACT: "true",
+  REQUIRES_GENERIC_BROWSER_JOURNEYS: "true",
 };
 
 function gate(environment: Record<string, string>) {
@@ -33,7 +37,7 @@ describe("Workbench CI browser ownership", () => {
     const job = workflow.jobs.workbench_browser;
     expect(job).toBeDefined();
     expect(job["runs-on"]).toBe("ubuntu-24.04");
-    expect(job.if).toContain("needs.classify.outputs.test_lane");
+    expect(job.if).toContain("needs.classify.outputs.requires_generic_browser_journeys");
     expect(
       job.steps.some((step: { run?: string }) => step.run?.includes("test:workbench:pr")),
     ).toBe(true);
@@ -42,6 +46,27 @@ describe("Workbench CI browser ownership", () => {
       step.run?.includes("require-ci-lane.mjs"),
     );
     expect(gateStep.env.WORKBENCH_RESULT).toContain("needs.workbench_browser.result");
+    expect(gateStep.env.REQUIRES_GENERIC_BROWSER_JOURNEYS).toContain(
+      "needs.classify.outputs.requires_generic_browser_journeys",
+    );
+  });
+
+  it("runs provider-local contracts and a packed Chromium smoke as an independent required job", () => {
+    const job = workflow.jobs.workbench_provider;
+    expect(job).toBeDefined();
+    expect(job.if).toContain("affected_providers_json");
+    expect(job.if).toContain("requires_generic_browser_journeys != 'true'");
+    expect(
+      job.steps.some((step: { run?: string }) => step.run?.includes("test:workbench:providers")),
+    ).toBe(true);
+    expect(workflow.jobs.required_verify.needs).toContain("workbench_provider");
+    const gateStep = workflow.jobs.required_verify.steps.find((step: { run?: string }) =>
+      step.run?.includes("require-ci-lane.mjs"),
+    );
+    expect(gateStep.env.PROVIDER_RESULT).toContain("needs.workbench_provider.result");
+    expect(gateStep.env.AFFECTED_PROVIDERS_JSON).toContain(
+      "needs.classify.outputs.affected_providers_json",
+    );
   });
 
   it("keeps every CI job and nightly matrix free of heap enlargements", () => {
@@ -61,9 +86,16 @@ describe("Workbench CI browser ownership", () => {
   );
 
   it("accepts a skipped browser job only for a non-Workbench lane", () => {
-    expect(gate({ TEST_LANE: "core", WORKBENCH_RESULT: "skipped" }).status).toBe(0);
-    expect(gate({ TEST_LANE: "core", WORKBENCH_RESULT: "failure" }).status).not.toBe(0);
-    expect(gate({ TEST_LANE: "invalid", WORKBENCH_RESULT: "skipped" }).status).not.toBe(0);
+    const nonBrowser = {
+      TEST_LANE: "core",
+      REQUIRES_GENERIC_BROWSER_JOURNEYS: "false",
+      REQUIRES_PACKED_ARTIFACT: "false",
+    };
+    expect(gate({ ...nonBrowser, WORKBENCH_RESULT: "skipped" }).status).toBe(0);
+    expect(gate({ ...nonBrowser, WORKBENCH_RESULT: "failure" }).status).not.toBe(0);
+    expect(
+      gate({ ...nonBrowser, TEST_LANE: "invalid", WORKBENCH_RESULT: "skipped" }).status,
+    ).not.toBe(0);
   });
 
   it("requires browser success for complete fallback matrices too", () => {
@@ -90,7 +122,7 @@ describe("selected Core and Workbench execution ownership", () => {
         join(directory, "node_modules/vitest/vitest.mjs"),
         "console.log(JSON.stringify(process.argv.slice(2)));",
       );
-      const execute = (lane: string) =>
+      const execute = (lane: string, providerTests: string[] = [], genericBrowser = "true") =>
         spawnSync(
           process.execPath,
           [
@@ -105,6 +137,8 @@ describe("selected Core and Workbench execution ownership", () => {
               ...process.env,
               FULL_SUITE: "false",
               TEST_LANE: lane,
+              PROVIDER_TESTS_JSON: JSON.stringify(providerTests),
+              REQUIRES_GENERIC_BROWSER_JOURNEYS: genericBrowser,
               SELECTED_TESTS_JSON: JSON.stringify([
                 "tests/org-policy/studio-new.test.ts",
                 "tests/org-policy/schema.test.ts",
@@ -120,6 +154,12 @@ describe("selected Core and Workbench execution ownership", () => {
         "--testTimeout=15000",
         "tests/org-policy/schema.test.ts",
       ]);
+      const providerOnly = execute("both", ["tests/org-policy/schema.test.ts"], "false");
+      expect(providerOnly.status, providerOnly.stderr).toBe(0);
+      expect(providerOnly.stdout).toContain("required Workbench lane owns all selected tests");
+      const mixed = execute("both", ["tests/org-policy/schema.test.ts"]);
+      expect(mixed.status, mixed.stderr).toBe(0);
+      expect(JSON.parse(mixed.stdout.trim())).toContain("tests/org-policy/schema.test.ts");
       const inconsistent = execute("core");
       expect(inconsistent.status).not.toBe(0);
       expect(inconsistent.stderr).toContain("Workbench tests require");

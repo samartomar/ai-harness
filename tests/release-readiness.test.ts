@@ -193,6 +193,7 @@ describe("release readiness metadata", () => {
       "full_verify",
       "windows_full_tests",
       "workbench_browser",
+      "workbench_provider",
     ]);
     const requiredSteps = JSON.stringify(ci.jobs?.required_verify?.steps);
     expect(requiredSteps).toContain("node .github/scripts/require-ci-lane.mjs");
@@ -202,6 +203,10 @@ describe("release readiness metadata", () => {
       "SELECTED_RESULT",
       "FULL_RESULT",
       "WINDOWS_RESULT",
+      "WORKBENCH_RESULT",
+      "PROVIDER_RESULT",
+      "REQUIRES_PACKED_ARTIFACT",
+      "REQUIRES_GENERIC_BROWSER_JOURNEYS",
     ]) {
       expect(requiredSteps).toContain(result);
     }

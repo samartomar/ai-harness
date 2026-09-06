@@ -1,20 +1,27 @@
 import { createHash } from "node:crypto";
 import { readVendorBaselineLock } from "../../../baseline-evidence/vendor.js";
 import { canonicalStrictJsonBytesV1 } from "../../../contract/strict-json-v1.js";
-import type { PolicyAuthoringAsset, PolicyAuthoringFramework } from "../../catalog.js";
+import type {
+  PolicyAuthoringAsset,
+  PolicyAuthoringFramework,
+} from "../../catalog-provider-types.js";
 import type { CompilerAssetDeclarationV1 } from "../contracts.js";
-import type { CompiledDeclarationV1 } from "./registry.js";
+import type { CompiledDeclarationV1 } from "./formats.js";
 
 function digest(bytes: Uint8Array | string): string {
   return `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 }
 
 type VendorBaselineSourceV1 = ReturnType<typeof readVendorBaselineLock>["sources"][number];
+export type PinnedBaselineSourceInputV1 = Pick<
+  VendorBaselineSourceV1,
+  "id" | "pinnedSha" | "sourceTreeSha256" | "components"
+>;
 type VendorBaselineComponentV1 = VendorBaselineSourceV1["components"][number];
 
 function sourceContentDigest(
   framework: PolicyAuthoringFramework,
-  source: VendorBaselineSourceV1 | undefined,
+  source: PinnedBaselineSourceInputV1 | undefined,
 ): string {
   if (source?.sourceTreeSha256 === undefined) {
     throw new Error(`pinned ${framework.id} source has no declared source-tree identity`);
@@ -33,7 +40,7 @@ function assetContentDigest(asset: PolicyAuthoringAsset): string {
 }
 
 function evidenceComponentsByIdV1(
-  source: VendorBaselineSourceV1 | undefined,
+  source: PinnedBaselineSourceInputV1 | undefined,
 ): Map<string, VendorBaselineComponentV1> {
   const components = new Map<string, VendorBaselineComponentV1>();
   for (const component of source?.components ?? []) {
@@ -79,12 +86,15 @@ export interface CompiledPinnedBaselineV1 {
 /** Compile source-locked upstream inventory without fetching, installing, or executing it. */
 export function compilePinnedBaselineV1(
   framework: PolicyAuthoringFramework,
+  sourceInput?: PinnedBaselineSourceInputV1,
 ): CompiledPinnedBaselineV1 {
   // readVendorBaselineLock() returns a defensive clone. Keep that one exact
   // snapshot for all declaration, evidence, and source-identity lookups.
-  const source = readVendorBaselineLock().sources.find(
-    (candidate) => candidate.id === framework.id,
-  );
+  const source =
+    sourceInput ??
+    readVendorBaselineLock().sources.find((candidate) => candidate.id === framework.id);
+  if (source !== undefined && (source.id !== framework.id || source.pinnedSha !== framework.commit))
+    throw new Error(`pinned ${framework.id} source identity mismatch`);
   const componentsById = evidenceComponentsByIdV1(source);
   const sourceId = `source:${framework.id}`;
   const detailBytes: Record<string, string> = {};

@@ -103,7 +103,8 @@
     "test:workbench:ui": "npm run build && playwright test --config playwright.workbench.config.ts",
     "typecheck:workbench": "tsc -p tsconfig.workbench.json && tsc -p tsconfig.workbench-browser-tests.json",
     "test:workbench:contracts": "vitest run --config vitest.workbench-contracts.config.ts",
-    "test:workbench:pr": "node tools/run-workbench-pr-lane.mjs"
+    "test:workbench:pr": "node tools/run-workbench-pr-lane.mjs",
+    "test:workbench:providers": "node --import tsx tools/run-workbench-provider-lane.mjs"
   },
   "keywords": [
     "ai",
@@ -126,6 +127,7 @@
   },
   "devDependencies": {
     "@aihq/scan": "0.3.0",
+    "@babel/parser": "7.29.7",
     "@biomejs/biome": "^2.5.1",
     "@playwright/test": "1.62.1",
     "@types/node": "^26.1.1",

@@ -10,6 +10,7 @@ import {
 } from "../../src/internals/ci-impact.js";
 import { runCiImpactCommand } from "../../src/internals/ci-impact-command.js";
 import { fakeRunner } from "../../src/internals/proc.js";
+import { providerTestsFor } from "../../src/internals/workbench-provider-ownership.js";
 import { isWorkbenchTestPath } from "../../src/internals/workbench-test-ownership.js";
 
 const baseSha = "a".repeat(40);
@@ -52,7 +53,7 @@ describe("CI impact classifier", () => {
       expect(JSON.parse(readFileSync(receiptPath, "utf8"))).toEqual(receipt);
       expect(stdout.join("")).toContain('"releasePreparation": true');
       expect(readFileSync(githubOutput, "utf8")).toContain("release_preparation=true\n");
-      expect(readFileSync(githubOutput, "utf8")).toContain("test_lane=core\n");
+      expect(readFileSync(githubOutput, "utf8")).toContain("test_lane=both\n");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -67,7 +68,7 @@ describe("CI impact classifier", () => {
     });
 
     expect(receipt).toMatchObject({
-      schemaVersion: "aih-ci-impact-v1",
+      schemaVersion: "aih-ci-impact-v2",
       selectorVersion: CI_SELECTOR_VERSION,
       baseSha,
       headSha,
@@ -147,6 +148,54 @@ describe("CI impact classifier", () => {
     expect(receipt.selectedTests).not.toContain("tests/org-policy/catalog.test.ts");
   });
 
+  it("keeps a provider-local change out of generic browser journeys while requiring its exact tests and packed artifact", () => {
+    const providerTests = providerTestsFor(["ecc"]);
+    const receipt = classifyCiImpact({
+      baseSha,
+      headSha,
+      changedPaths: ["src/org-policy/catalog-providers/ecc.ts"],
+      testFiles: [...testFiles, ...providerTests],
+    });
+
+    expect(receipt).toMatchObject({
+      testLane: "workbench",
+      affectedProviders: ["ecc"],
+      providerTests,
+      requiresPackedArtifact: true,
+      requiresGenericBrowserJourneys: false,
+    });
+  });
+
+  it("falls back for baseline extractors until their cross-domain consumer union is explicit", () => {
+    const receipt = classifyCiImpact({
+      baseSha,
+      headSha,
+      changedPaths: ["src/baseline-evidence/catalog-providers/ecc.ts"],
+      testFiles,
+    });
+
+    expect(receipt).toMatchObject({ fullSuite: true, testLane: "full" });
+    expect(receipt.fallbackReasons).toContain(
+      "baseline-provider-consumers:src/baseline-evidence/catalog-providers/ecc.ts",
+    );
+  });
+
+  it("keeps direct shared catalog inputs in the conservative Workbench scope", () => {
+    const receipt = classifyCiImpact({
+      baseSha,
+      headSha,
+      changedPaths: ["src/ecc/materialize.ts", "src/usage/capture.ts"],
+      testFiles,
+    });
+
+    expect(receipt).toMatchObject({
+      testLane: "both",
+      affectedProviders: [],
+      requiresPackedArtifact: true,
+      requiresGenericBrowserJourneys: true,
+    });
+  });
+
   it("keeps selector ownership identical to the discovered Workbench project", () => {
     const repositoryTests = execFileSync("git", ["ls-files", "--", "tests"], {
       encoding: "utf8",
@@ -169,6 +218,11 @@ describe("CI impact classifier", () => {
 
   it.each([
     ["unknown path", ["new-surface/thing.ts"], "unknown-path:new-surface/thing.ts"],
+    [
+      "unknown compiled provider",
+      ["src/org-policy/workbench/providers/future.ts"],
+      "unknown-provider-path:src/org-policy/workbench/providers/future.ts",
+    ],
     ["empty change set", [], "empty-change-set"],
     ["lockfile", ["package-lock.json"], "global-input:package-lock.json"],
     ["workflow", [".github/workflows/ci.yml"], "global-input:.github/workflows/ci.yml"],

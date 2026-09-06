@@ -7,7 +7,7 @@ import {
   parseStrictJsonObjectV1,
 } from "../../../contract/strict-json-v1.js";
 import type { CompilerAssetDeclarationV1 } from "../contracts.js";
-import type { CompiledDeclarationV1 } from "./registry.js";
+import type { CompiledDeclarationV1 } from "./formats.js";
 
 const CatalogIdSchema = z
   .string()

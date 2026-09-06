@@ -24,6 +24,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Isolate unreleased Workbench catalog preparation behind registered ECC,
+  Superpowers, AIH, and organization providers with explicit inputs and automatic
+  contracts. Provider-local CI runs its reviewed consumers and the shared packed
+  smoke; shared inputs retain broader checks. Core keeps evidence and policy
+  authority, and the existing `npx @aihq/core --ui` entry is unchanged.
+
 - Advance the governed Cisco skill analyzer to `2.0.14` and bind Core's analyzer-free
   baseline consumption to Scanner publisher commit `ba0f0bfc46f2634da71e125bf3bbcefb3493389c`.
   Immutable publication release names now include both that publisher commit and the exact

@@ -2,6 +2,7 @@
 export const WORKBENCH_EXPLICIT_TEST_PATHS = [
   "tests/ecc/module-selection-closure.test.ts",
   "tests/org-policy/acceptance-hook-registrar.test.ts",
+  "tests/org-policy/catalog-providers.test.ts",
   "tests/org-policy/admin-baseline-evidence-cli-route.test.ts",
   "tests/org-policy/admin-catalog-cli-route.test.ts",
   "tests/org-policy/admin-catalog-fetch-v1.test.ts",
@@ -25,6 +26,8 @@ export const WORKBENCH_CONTRACT_TEST_PATTERNS = [
   "tests/org-policy/workbench/prepared-catalog.test.ts",
   "tests/org-policy/workbench/core/**/*.test.ts",
   "tests/org-policy/workbench/policy-consumption.test.ts",
+  "tests/org-policy/workbench/providers/**/*.test.ts",
+  "tests/org-policy/catalog-providers.test.ts",
 ] as const;
 
 /** New typed root tests are pure by default unless they are a retained contract risk. */

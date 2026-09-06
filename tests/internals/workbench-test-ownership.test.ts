@@ -40,6 +40,12 @@ describe("Workbench lane ownership", () => {
     expect(WORKBENCH_PURE_TEST_PATTERNS).toContain("tests/org-policy/workbench/**/*.test.ts");
     expect(WORKBENCH_PURE_TEST_EXCLUDE_PATTERNS).toEqual(WORKBENCH_CONTRACT_TEST_PATTERNS);
     expect(WORKBENCH_CONTRACT_TEST_PATTERNS).not.toContain(newPureTest);
+    expect(WORKBENCH_CONTRACT_TEST_PATTERNS).toContain(
+      "tests/org-policy/workbench/providers/**/*.test.ts",
+    );
+    expect(WORKBENCH_CONTRACT_TEST_PATTERNS).toContain(
+      "tests/org-policy/catalog-providers.test.ts",
+    );
     expect(WORKBENCH_RETAINED_TEST_PATTERNS).not.toContain(
       "tests/org-policy/workbench/**/*.test.ts",
     );

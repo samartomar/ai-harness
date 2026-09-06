@@ -8,16 +8,14 @@ import {
   type OperationalExactArtifactScanV1,
   operationalExactArtifactScanPayloadV1,
 } from "../../../trust/scan.js";
-import {
-  type CatalogCompilerAssemblyInputV1,
-  compileOrganizationManifestAssemblyInputV1,
-} from "../catalog-bundle.js";
+import type { CatalogCompilerAssemblyInputV1 } from "../compiler-input.js";
 import { compileOrganizationManifestV1 } from "../compilers/organization-manifest.js";
 import type {
   AuthoringCatalogBundleV1,
   WorkbenchAuthoringSourceV1,
   WorkbenchSourceInputsV1,
 } from "../contracts.js";
+import { compileOrganizationManifestAssemblyInputV1 } from "../providers/organization.js";
 
 function sha256(value: string): string {
   return `sha256:${createHash("sha256").update(value, "utf8").digest("hex")}`;
