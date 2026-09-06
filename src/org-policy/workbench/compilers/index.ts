@@ -26,6 +26,7 @@ const compilerFixtureFactoriesV1: {
   "pinned-baseline/v1": () => fixturesForFormat("pinned-baseline/v1"),
   "built-in/v1": () => fixturesForFormat("built-in/v1"),
   "pinned-skill-collection/v1": () => fixturesForFormat("pinned-skill-collection/v1"),
+  "pinned-component-collection/v1": () => fixturesForFormat("pinned-component-collection/v1"),
   "organization-authoring-manifest/v1": () =>
     fixturesForFormat("organization-authoring-manifest/v1"),
 };

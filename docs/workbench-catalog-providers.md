@@ -5,7 +5,7 @@
 
 The Policy Workbench builds one offline `authoring-catalog-bundle/v1` from a
 fixed registry of build-time providers. The registry currently enrolls `ecc`,
-`superpowers`, `aih`, `organization`, and `mattpocock`. A provider prepares explicit
+`superpowers`, `aih`, `organization`, `mattpocock`, and `ponytail`. A provider prepares explicit
 typed inputs for a registered compiler.
 The registry is fixed in the package; it does not load arbitrary executable plugins.
 
@@ -116,12 +116,53 @@ ownership is proven; TypeScript builds, packaging, and release remain shared.
 
 Providers are statically registered at build time. There is no arbitrary
 runtime provider loader, independent provider availability when one included
-provider fails, independent provider release, or persistent provider cache.
-Process-local compilation caches remain implementation details. Matt validates
-its packaged snapshot on first use and reuses a sealed compilation with detached
-outputs; explicit caller inputs are always revalidated.
+provider fails, independent provider release, or persistent cross-process
+provider cache. Process-local compilation caches remain implementation details.
+Matt validates its packaged snapshot on first use and reuses a sealed compilation
+with detached outputs. Ponytail lazily validates its private packaged snapshot,
+rejects malformed or accessor-bearing values before cloning, and caches the
+complete sealed provider compilation while returning detached copies. Explicit
+caller inputs are always revalidated and are not admitted through that cache.
+A local recurring-preparation measurement fell from 23.205 ms to 0.059 ms; it
+does not establish a total Workbench-lane improvement.
 
 Adding an ordinary provider requires a reviewed provider module, static
 registry enrollment, declared ownership and dependencies, and a mandatory
 fixture and contract coverage. New executable behavior, projectors, policy
 rules, or authority semantics require separate Core contracts.
+
+## Ponytail collection
+
+The Ponytail provider packages six skills, three hook declarations, and one MCP
+declaration from commit `974d940a1c5344210874150b98ff0d2c861fab6a` (v4.9.0). Its
+56-file source inventory includes the exact MIT license and referenced support
+files. A literal reviewed digest binds the complete snapshot, including component
+metadata and file references. Snapshot validation happens on first preparation.
+
+Use the existing Source selector for `source:ponytail` and the Type selector to
+browse Skills, Profiles, Hooks, or MCP. The main Ponytail skill and optional
+methodology profile share one methodology key; the five auxiliary skills are
+additive. Applying the methodology template selects its pinned skill closure.
+Hook and MCP requests must be recorded explicitly and have separate counts from
+selected controls. They never become implicit template dependencies.
+
+Hook details preserve the upstream command, event, matcher where present, status
+message, five-second timeout, and declared Claude Code/Codex hosts. MCP details
+record its stdio launch, prompt and tool names, modes, and declared dependency
+ranges. These fields describe upstream source; they do not establish Core runtime
+support, a locked dependency closure, organization approval, or scanner evidence.
+
+The root upstream npm package does not include the private MCP subtree, which has
+no dependency lock. A future Core runtime adapter would need an exact acquisition
+source, independently locked dependencies, and its own reviewed installation and
+activation contracts. The Workbench currently records pinned requests only.
+
+File references identify covered source bytes. In particular, the gain skill's
+benchmark files are supporting material, not an installation or execution list.
+Any future materialization must define a separate Core-owned file allow-list.
+
+The neutral `pinned-component-collection/v1` format stores shared files once and
+expresses primary paths, component metadata, relations, profiles, and templates
+as data. It uses a tiny synthetic fixture for automatic contracts. Source-local
+Ponytail changes use the provider lane and existing packed smoke; changes to the
+shared format use broader Workbench coverage.

@@ -12,6 +12,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   with exact source and content pins, required support files, and MIT attribution.
   Selection records additive requested intent through the existing `--ui` entry.
 
+- Add the unreleased pinned Ponytail catalog: six skills, an optional methodology
+  profile, three hook requests, and one MCP request. Export/import preserves exact
+  source and content pins. Hook and MCP metadata records declared upstream behavior;
+  selection does not install, activate, approve, or execute it.
+
 - Introduce the unreleased #967 Policy Workbench authoring core: the browser consumes an offline normalized authoring catalog bundle, preserves exact source and asset identities in generic authoring selections, and emits schema-v3 policy intent with a `minimumCoreVersion` floor of `0.6.0`. This is an unreleased feature floor only; it does not change the package version or release cut.
 
 ### Fixed

@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
-import { policyStudioModel, type PolicyStudioModel } from "../src/org-policy/studio-model.js";
+import type { PolicyStudioModel } from "../src/org-policy/studio-model.js";
+import { tinyStudioModel } from "../tests/org-policy/studio-test-fixture.js";
 import type { AuthoringAssetV1, AuthoringCatalogBundleV1 } from "../src/org-policy/workbench/contracts.js";
 import { canonicalStrictJsonSha256V1 } from "../src/contract/strict-json-v1.js";
 const digest = (value: string) => "sha256:" + createHash("sha256").update(value).digest("hex");
-let syntheticPrototype: PolicyStudioModel | undefined;
 function detachedSyntheticPrototype(): PolicyStudioModel {
-  return structuredClone(syntheticPrototype ??= policyStudioModel());
+  return tinyStudioModel();
 }
 export function syntheticWorkbenchModel(size: number): PolicyStudioModel {
   const model = detachedSyntheticPrototype();

@@ -25,7 +25,7 @@ const genericBrowserRequired = required("REQUIRES_GENERIC_BROWSER_JOURNEYS");
 
 if (eventName !== "pull_request" && eventName !== "push") throw new Error(`unsupported CI event: ${eventName}`);
 if (fullSuite !== "true" && fullSuite !== "false") throw new Error(`invalid full-suite decision: ${fullSuite}`);
-const knownProviders = new Set(["aih", "ecc", "mattpocock", "organization", "superpowers"]);
+const knownProviders = new Set(["aih", "ecc", "mattpocock", "organization", "ponytail", "superpowers"]);
 if (
   !Array.isArray(affectedProviders) ||
   affectedProviders.some((provider) => typeof provider !== "string" || !knownProviders.has(provider)) ||
