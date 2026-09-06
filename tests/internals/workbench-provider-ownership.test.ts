@@ -225,7 +225,9 @@ describe("Workbench provider ownership", () => {
           "src/baseline-evidence/ecc-modules.json",
         ]) {
           mutableRecord.sourceRoots = [...originalRoots, path];
-          expect(() => validateWorkbenchProviderOwnership()).toThrow(/invalid provider source root/u);
+          expect(() => validateWorkbenchProviderOwnership()).toThrow(
+            /invalid provider source root/u,
+          );
         }
       } finally {
         mutableRecord.sourceRoots = originalRoots;
