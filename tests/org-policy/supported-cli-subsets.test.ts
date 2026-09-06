@@ -1,26 +1,117 @@
 import { Window } from "happy-dom";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { canonicalStrictJsonSha256V1 } from "../../src/contract/strict-json-v1.js";
 import { SUPPORTED_CLIS } from "../../src/internals/clis.js";
-import { policyAuthoringCatalog } from "../../src/org-policy/catalog.js";
 import { parseOrgPolicy } from "../../src/org-policy/schema.js";
 import {
   exportStudioPolicy,
+  type PolicyStudioModel,
   parseStudioPolicyImport,
   policyStudioModel,
 } from "../../src/org-policy/studio-model.js";
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
+import { verifyAuthoringCatalogBundleIntegrityV1 } from "../../src/org-policy/workbench/catalog-bundle.js";
+import { parseAuthoringCatalogBundleV1 } from "../../src/org-policy/workbench/contracts.js";
 
-const model = policyStudioModel();
+function compactCliControlsModel(): PolicyStudioModel {
+  const model = policyStudioModel();
+  const bundle = model.workbenchBundle;
+  const retainedAssets = ["code-review-graph", "usage-metering"].map((candidateId) => {
+    const asset = Object.values(bundle.assets).find(
+      (candidate) =>
+        candidate.authoring.action === "select-control" &&
+        model.workbenchBindings[candidate.id]?.kind === "control" &&
+        model.workbenchBindings[candidate.id]?.candidate?.id === candidateId,
+    );
+    if (asset === undefined) throw new Error(`missing compact real control: ${candidateId}`);
+    return asset;
+  });
+  for (const asset of retainedAssets) {
+    if (
+      bundle.relations.some(
+        (relation) =>
+          relation.fromAssetId === asset.id &&
+          (relation.kind === "requires" || relation.membership === "required"),
+      )
+    )
+      throw new Error(`compact real control gained a required relation: ${asset.id}`);
+  }
+  const assets = Object.fromEntries(retainedAssets.map((asset) => [asset.id, asset]));
+  const sourceIds = new Set(retainedAssets.map((asset) => asset.sourceId));
+  const sources = Object.fromEntries(
+    [...sourceIds].sort().map((sourceId) => {
+      const source = bundle.sources[sourceId];
+      if (source === undefined) throw new Error(`missing compact source: ${sourceId}`);
+      return [sourceId, source];
+    }),
+  );
+  const detailChunks = Object.fromEntries(
+    retainedAssets.map((asset) => {
+      const chunk = bundle.detailChunks[asset.detailChunkId];
+      if (chunk === undefined)
+        throw new Error(`missing compact detail chunk: ${asset.detailChunkId}`);
+      return [asset.detailChunkId, chunk];
+    }),
+  );
+  const groups = Object.fromEntries(
+    Object.values(bundle.groups).flatMap((group) => {
+      const assetIds = group.assetIds.filter((assetId) => assets[assetId] !== undefined);
+      return assetIds.length === 0 ? [] : [[group.id, { ...group, assetIds }]];
+    }),
+  );
+  const compactBundle = {
+    version: bundle.version,
+    sources,
+    assets,
+    groups,
+    relations: bundle.relations.filter(
+      (relation) =>
+        assets[relation.fromAssetId] !== undefined && assets[relation.toAssetId] !== undefined,
+    ),
+    templates: {},
+    evidence: {},
+    provenance: { bundleDigest: "" },
+    detailChunks,
+  };
+  compactBundle.provenance.bundleDigest = `sha256:${canonicalStrictJsonSha256V1({
+    ...compactBundle,
+    provenance: {},
+  })}`;
+  const parsedBundle = parseAuthoringCatalogBundleV1(compactBundle);
+  verifyAuthoringCatalogBundleIntegrityV1(parsedBundle);
+  model.workbenchBundle = parsedBundle;
+  model.workbenchBindings = Object.fromEntries(
+    retainedAssets.map((asset) => {
+      const binding = model.workbenchBindings[asset.id];
+      if (binding === undefined) throw new Error(`missing compact binding: ${asset.id}`);
+      return [asset.id, binding];
+    }),
+  );
+  model.workbenchSourceInputs = Object.fromEntries(
+    [...sourceIds].sort().flatMap((sourceId) => {
+      const sourceInput = model.workbenchSourceInputs[sourceId];
+      return sourceInput === undefined ? [] : [[sourceId, sourceInput]];
+    }),
+  );
+  return model;
+}
+
+const model = compactCliControlsModel();
 const workbenchHtml = policyStudioHtml(model);
 const workbenchScripts = [...workbenchHtml.matchAll(/<script>([\s\S]*?)<\/script>/gi)].map(
   (match) => match[1],
 );
 const WORKBENCH_TEST_TIMEOUT_MS = 45_000;
 const WORKBENCH_IMPORT_TIMEOUT_MS = 15_000;
-const authoredCatalog = policyAuthoringCatalog();
-const controls = [authoredCatalog.mcp[0]?.control, authoredCatalog.hooks[0]?.control].filter(
-  (control): control is NonNullable<typeof control> => control !== undefined,
-);
+const controls = ["code-review-graph", "usage-metering"].map((candidateId) => {
+  const binding = Object.values(model.workbenchBindings).find(
+    (candidate) => candidate.kind === "control" && candidate.candidate?.id === candidateId,
+  );
+  if (binding?.candidate === undefined)
+    throw new Error(`missing compact real control binding: ${candidateId}`);
+  return binding.candidate;
+});
+const openWindows = new Set<Window>();
 
 function subsets<T>(values: readonly T[]): T[][] {
   return Array.from({ length: 2 ** values.length - 1 }, (_, bits) =>
@@ -31,7 +122,7 @@ function subsets<T>(values: readonly T[]): T[][] {
 function policyFor(
   control: (typeof controls)[number],
   supportedClis: readonly (typeof SUPPORTED_CLIS)[number][],
-  targets: readonly ("claude" | "codex" | "kiro")[],
+  targets: readonly string[],
 ) {
   return {
     schemaVersion: 2,
@@ -65,6 +156,7 @@ function policyFor(
 
 function studio(): Window {
   const window = new Window({ url: "http://localhost/" });
+  openWindows.add(window);
   window.document.write(workbenchHtml);
   (window as unknown as { structuredClone: typeof structuredClone }).structuredClone =
     structuredClone;
@@ -72,6 +164,15 @@ function studio(): Window {
   window.eval(workbenchScripts.join("\n"));
   return window;
 }
+
+afterEach(async () => {
+  await Promise.all(
+    [...openWindows].map(async (window) => {
+      await window.happyDOM.close();
+    }),
+  );
+  openWindows.clear();
+});
 
 function click(window: Window, selector: string): void {
   const node = window.document.querySelector(selector);
@@ -142,7 +243,9 @@ describe("organization-selected CLI activation scope", () => {
   it("accepts only the exact supported-target intersection for every non-empty registry subset", () => {
     for (const supportedClis of subsets(SUPPORTED_CLIS)) {
       for (const control of controls) {
-        const exact = control.targets.filter((target) => supportedClis.includes(target));
+        const exact = control.targets.filter((target) =>
+          supportedClis.some((cli) => cli === target),
+        );
         if (exact.length === 0) {
           expect(
             () => parseOrgPolicy(policyFor(control, supportedClis, control.targets)),
@@ -183,8 +286,12 @@ describe("organization-selected CLI activation scope", () => {
       const [first, second] = controls;
       if (first === undefined || second === undefined)
         throw new Error("expected MCP and hook controls");
-      const firstTargets = first.targets.filter((target) => supportedClis.includes(target));
-      const secondTargets = second.targets.filter((target) => supportedClis.includes(target));
+      const firstTargets = first.targets.filter((target) =>
+        supportedClis.some((cli) => cli === target),
+      );
+      const secondTargets = second.targets.filter((target) =>
+        supportedClis.some((cli) => cli === target),
+      );
       const policy = policyFor(first, supportedClis, firstTargets);
       const secondPolicy = policyFor(second, supportedClis, secondTargets);
       policy.governance.catalog.reviewed.push(...secondPolicy.governance.catalog.reviewed);
@@ -307,9 +414,7 @@ describe("organization-selected CLI activation scope", () => {
   it(
     "deterministically narrows a legacy Workbench activation without changing support metadata",
     async () => {
-      const control = authoredCatalog.mcp.find(
-        (item) => item.control.id === "code-review-graph",
-      )?.control;
+      const control = controls.find((item) => item.id === "code-review-graph");
       if (control === undefined) throw new Error("expected code-review-graph control");
       const source = studio();
       click(source, '[data-sanctioned-cli="claude"]');

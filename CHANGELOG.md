@@ -21,6 +21,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Reduce Workbench acceptance overhead by closing test browser windows,
+  retaining only the exact controls exercised by CLI-subset tests, and reserving
+  runner capacity for concurrent Chromium. Existing coverage and time budgets remain.
 - Restore the repository's first-party `aih-packs.json` curation manifest for
   the existing documentation, governance, and review skill packs.
 - Accept timezone-qualified timestamps from GitHub CLI's verified Scanner
