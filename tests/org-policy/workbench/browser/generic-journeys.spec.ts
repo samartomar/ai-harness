@@ -12,10 +12,14 @@ test("keeps startup DOM bounded while groups, browse filters, details, and keybo
   expect(workbench.networkRequests).toEqual([]);
   const receipts: Array<{ size: number; initial: number; changed: number }> = [];
   for (const size of [10, 1000, 10000]) {
-    await page.goto(
-      pathToFileURL(resolve(process.env.AIH_WORKBENCH_FIXTURE_DIR!, "synthetic-" + size + ".html"))
-        .href,
-    );
+    // The automatic fixture has already opened the ten-asset artifact.
+    if (size !== 10) {
+      await page.goto(
+        pathToFileURL(
+          resolve(process.env.AIH_WORKBENCH_FIXTURE_DIR!, "synthetic-" + size + ".html"),
+        ).href,
+      );
+    }
     await expect(page.locator("#framework-rows")).toHaveClass(/workbench-inventory/u);
     await expect(page.locator("article[data-workbench-asset-id]")).toHaveCount(0);
     const source = page.getByRole("combobox", { name: "Source" });

@@ -28,30 +28,47 @@ const basePolicy = {
   references: { repoContract: "repo" },
 };
 
+let preparedCatalog: ReturnType<typeof defaultPreparedWorkbenchCatalog> | undefined;
+let authoredPonytailBaseline:
+  | { state: WorkbenchStateV1; policy: ReturnType<typeof compilePolicy>["policy"] }
+  | undefined;
+
+function realDefaultPreparedCatalog() {
+  preparedCatalog ??= defaultPreparedWorkbenchCatalog();
+  return preparedCatalog;
+}
+
 function authoredPonytailIntent() {
-  const prepared = defaultPreparedWorkbenchCatalog();
-  let state = createWorkbenchState();
-  for (const assetId of [auxiliarySkill, ...requestIds]) {
-    if (prepared.bundle.assets[assetId] === undefined)
-      throw new Error(`Missing packaged Ponytail asset ${assetId}`);
-    const result = reduceWorkbenchAction(prepared.bundle, state, {
-      type: assetId === auxiliarySkill ? "select-root" : "record-request",
-      assetId,
-      origin: administrator,
-    });
-    expect(result.accepted).toBe(true);
-    state = result.state;
+  const prepared = realDefaultPreparedCatalog();
+  if (authoredPonytailBaseline === undefined) {
+    let state = createWorkbenchState();
+    for (const assetId of [auxiliarySkill, ...requestIds]) {
+      if (prepared.bundle.assets[assetId] === undefined)
+        throw new Error(`Missing packaged Ponytail asset ${assetId}`);
+      const result = reduceWorkbenchAction(prepared.bundle, state, {
+        type: assetId === auxiliarySkill ? "select-root" : "record-request",
+        assetId,
+        origin: administrator,
+      });
+      expect(result.accepted).toBe(true);
+      state = result.state;
+    }
+    const authored = compilePolicy(
+      basePolicy,
+      state,
+      prepared.bundle,
+      prepared.bindings,
+      "author",
+      prepared.sourceInputs,
+    );
+    expect(authored.accepted).toBe(true);
+    authoredPonytailBaseline = { state, policy: authored.policy };
   }
-  const authored = compilePolicy(
-    basePolicy,
-    state,
-    prepared.bundle,
-    prepared.bindings,
-    "author",
-    prepared.sourceInputs,
-  );
-  expect(authored.accepted).toBe(true);
-  return { prepared, state, policy: authored.policy };
+  return {
+    prepared,
+    state: structuredClone(authoredPonytailBaseline.state),
+    policy: structuredClone(authoredPonytailBaseline.policy),
+  };
 }
 
 describe("packaged Ponytail intent", () => {
@@ -167,7 +184,7 @@ describe("packaged Ponytail intent", () => {
   });
 
   it("keeps methodology optional and auxiliary skills additive beside ECC", () => {
-    const prepared = defaultPreparedWorkbenchCatalog();
+    const prepared = realDefaultPreparedCatalog();
     const empty = createWorkbenchState();
     expect(compilePolicy(basePolicy, empty, prepared.bundle, prepared.bindings).accepted).toBe(
       true,
@@ -200,7 +217,7 @@ describe("packaged Ponytail intent", () => {
   });
 
   it("expands the methodology template into pinned skills without implicit hook or MCP requests", () => {
-    const prepared = defaultPreparedWorkbenchCatalog();
+    const prepared = realDefaultPreparedCatalog();
     const template = Object.values(prepared.bundle.templates).find((value) =>
       value.roots.some((root) => root.assetId === profileId),
     );

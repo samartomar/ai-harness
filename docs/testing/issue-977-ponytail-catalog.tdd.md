@@ -82,3 +82,20 @@ At commit `7b21ab3e`, before the cache correction, `npm run verify` passed in
 1,113.105 s with 8,745 tests passed and 46 skipped across 521 test files passed
 and four skipped. The cache correction is supported by the final local Workbench
 receipt above; this document does not claim a later full `npm run verify` run.
+
+## Fixture reuse correction
+
+A later test-only correction reuses one real prepared catalog and one authored
+Ponytail baseline while cloning each case's policy and selection state. Generic
+compiler rejection cases use tiny inputs; the complete 56-file compiler and
+provider custody tests remain. Synthetic browser artifacts now start from the
+existing validated tiny model, and the scale journey reuses its already-open
+10-asset page. Every existing assertion and all seven journeys remain.
+
+`npm run test:workbench:pr` passed locally in 44.974 s after these changes, with
+pure coverage at 3.772 s and peak summed RSS of 2,666,086,400 bytes. All 87 pure
+tests, 296 retained tests, and seven Chromium journeys passed. This is one
+observed run with unchanged coverage, workers, isolation, and timing budgets.
+The preceding product revision `4eb760d1` also passed hosted Linux, macOS, and
+Windows functional suites; its 63.430 s Workbench timing failure prompted this
+fixture correction.
