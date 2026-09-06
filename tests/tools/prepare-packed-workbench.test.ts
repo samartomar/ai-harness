@@ -7,7 +7,6 @@ import { expect, it } from "vitest";
 import {
   packedConsumerInstallFiles,
   packedUiBrowserPreload,
-  preparePackedWorkbench,
   productionClosure,
 } from "../../tools/prepare-packed-workbench.mjs";
 
@@ -55,30 +54,6 @@ it("rejects a packed Core tarball version that differs from the root lock", () =
       integrity: "sha512-test",
     }),
   ).toThrow("Packed Core version does not match the root npm lock");
-});
-
-it("starts and stops the installed packed CLI UI on loopback without writing the admin fixture", () => {
-  const directory = mkdtempSync(join(tmpdir(), "aih-packed-ui-"));
-  try {
-    const packed = preparePackedWorkbench(directory);
-    expect(packed.ui).toMatchObject({
-      url: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/aih-policy-workbench\.html$/u),
-      catalogSourceIds: expect.arrayContaining([
-        "source:aih-core",
-        "source:ecc",
-        "source:superpowers",
-      ]),
-      browserOpenRequested: true,
-      adminWrites: [],
-    });
-    expect(packed.ui.initialRows).toBeLessThanOrEqual(50);
-    expect(
-      (packed.ui.shutdown.code === 0 && packed.ui.shutdown.signal === null) ||
-        (packed.ui.shutdown.code === null && packed.ui.shutdown.signal === "SIGTERM"),
-    ).toBe(true);
-  } finally {
-    removeTemporaryDirectory(directory);
-  }
 });
 
 it("fails closed when the UI child attempts an unexpected spawn", () => {

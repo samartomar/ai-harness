@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { expect, test } from "./fixture.js";
 
 test.use({ artifact: "packed-policy-workbench.html" });
@@ -6,6 +7,30 @@ test("installed package generates a complete offline artifact with usable export
   page,
   workbench,
 }, testInfo) => {
+  const fixtureDirectory = process.env.AIH_WORKBENCH_FIXTURE_DIR;
+  if (!fixtureDirectory) throw new Error("Missing packed fixture directory");
+  const receipt = JSON.parse(
+    await readFile(resolve(fixtureDirectory, "package-receipt.json"), "utf8"),
+  );
+  expect(receipt.ui).toMatchObject({
+    url: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/aih-policy-workbench\.html$/u),
+    catalogSourceIds: expect.arrayContaining([
+      "source:aih-core",
+      "source:ecc",
+      "source:superpowers",
+    ]),
+    browserOpenRequested: true,
+    adminWrites: [],
+  });
+  expect(receipt.ui.initialRows).toBeLessThanOrEqual(50);
+  expect(
+    (receipt.ui.shutdown.code === 0 && receipt.ui.shutdown.signal === null) ||
+      (receipt.ui.shutdown.code === null && receipt.ui.shutdown.signal === "SIGTERM"),
+  ).toBe(true);
+  await testInfo.attach("installed-ui-launcher", {
+    body: JSON.stringify(receipt.ui, null, 2),
+    contentType: "application/json",
+  });
   expect(workbench.networkRequests).toEqual([]);
   await expect(page.locator("article[data-workbench-asset-id]")).toHaveCount(0);
   await expect(page.locator("#preset-select, #skill-rows, #agent-rows, #mcp-rows")).toHaveCount(0);
