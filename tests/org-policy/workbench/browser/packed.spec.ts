@@ -12,6 +12,10 @@ test("installed package generates a complete offline artifact with usable export
   const receipt = JSON.parse(
     await readFile(resolve(fixtureDirectory, "package-receipt.json"), "utf8"),
   );
+  await testInfo.attach("packed-preparation", {
+    body: JSON.stringify(receipt, null, 2),
+    contentType: "application/json",
+  });
   expect(receipt.ui).toMatchObject({
     url: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/aih-policy-workbench\.html$/u),
     catalogSourceIds: expect.arrayContaining([

@@ -300,6 +300,13 @@ function packedUiSmoke(target, admin, cli, run) {
 }
 /** A cold package consumer: no product command ever targets the source checkout. */
 export function preparePackedWorkbench(directory) {
+  const started = performance.now();
+  const stages = [];
+  function timed(name, action) {
+    const stageStarted = performance.now();
+    try { return action(); }
+    finally { stages.push({ name, wallMs: performance.now() - stageStarted }); }
+  }
   const target = resolve(directory);
   const npmCandidate = process.env.npm_execpath?.replace(/npx-cli\.js$/u, "npm-cli.js");
   const npmCli = npmCandidate && existsSync(npmCandidate) ? npmCandidate
@@ -318,7 +325,7 @@ export function preparePackedWorkbench(directory) {
     if (result.status !== 0) throw new Error("Packed Workbench fixture failed: " + (result.stderr || result.stdout).slice(0, 1000));
     return result.stdout;
   }
-  const manifest = JSON.parse(run(sourceRoot, [npmCli, "pack", "--ignore-scripts", "--json", "--pack-destination", target]));
+  const manifest = timed("pack", () => JSON.parse(run(sourceRoot, [npmCli, "pack", "--ignore-scripts", "--json", "--pack-destination", target])));
   const entry = manifest?.[0];
   const paths = entry?.files?.map(file => file.path);
   if (!Array.isArray(paths) || !paths.includes("dist/bundle.generated.cjs")) throw new Error("Packed Core is missing the browser bundle");
@@ -329,12 +336,12 @@ export function preparePackedWorkbench(directory) {
   const install = packedConsumerInstallFiles(entry);
   writeFileSync(resolve(consumer, "package.json"), JSON.stringify(install.manifest) + "\n");
   writeFileSync(resolve(consumer, "package-lock.json"), JSON.stringify(install.lock, null, 2) + "\n");
-  run(consumer, [npmCli, "ci", "--offline", "--ignore-scripts", "--no-audit", "--no-fund"]);
+  timed("install", () => run(consumer, [npmCli, "ci", "--offline", "--ignore-scripts", "--no-audit", "--no-fund"]));
   const cli = resolve(consumer, "node_modules/@aihq/core/dist/cli.js");
   if (!cli.startsWith(target + sep) || !existsSync(cli)) throw new Error("Invalid packed Core CLI");
   const installedPackage = JSON.parse(readFileSync(resolve(consumer, "node_modules/@aihq/core/package.json"), "utf8"));
   if (installedPackage.bin?.aih !== "dist/cli.js") throw new Error("Installed Core does not expose the aih package bin");
-  const ui = packedUiSmoke(target, admin, cli, run);
+  const ui = timed("ui", () => packedUiSmoke(target, admin, cli, run));
   const organizationManifest = resolve(admin, "organization-manifest.json");
   writeFileSync(organizationManifest, JSON.stringify({
     version: "organization-authoring-manifest/v1",
@@ -347,10 +354,10 @@ export function preparePackedWorkbench(directory) {
   }) + "\n");
   const output = resolve(target, "packed-policy-workbench.html");
   const argumentsFor = out => [cli, "policy", "generate", "--apply", "--out", out, "--organization-manifest", organizationManifest];
-  run(admin, argumentsFor(output));
+  timed("generate", () => run(admin, argumentsFor(output)));
   const repeated = resolve(target, "packed-policy-workbench-repeat.html");
-  run(admin, argumentsFor(repeated));
+  timed("repeat", () => run(admin, argumentsFor(repeated)));
   if (!readFileSync(output).equals(readFileSync(repeated))) throw new Error("Identical pinned inputs generated different offline artifact bytes");
   if (!existsSync(output)) throw new Error("Installed Core did not generate its Workbench");
-  return { output, packageIntegrity: entry.integrity, ui };
+  return { output, packageIntegrity: entry.integrity, ui, stages, wallMs: performance.now() - started };
 }
