@@ -1,4 +1,13 @@
-export const CI_SELECTOR_VERSION = "1.3.0";
+import {
+  isWorkbenchCatalogSharedInputPath,
+  providerForWorkbenchPath,
+  providerTestsFor,
+  WORKBENCH_PROVIDER_IDS,
+  type WorkbenchProviderId,
+} from "./workbench-provider-ownership.js";
+import { isWorkbenchTestPath } from "./workbench-test-ownership.js";
+
+export const CI_SELECTOR_VERSION = "1.5.0";
 
 export type CiRiskClass = "docs" | "focused" | "cross-platform" | "full";
 export type CiTestLane = "docs" | "core" | "workbench" | "both" | "full";
@@ -12,7 +21,7 @@ export interface CiImpactInput {
 }
 
 export interface CiImpactReceipt {
-  schemaVersion: "aih-ci-impact-v1";
+  schemaVersion: "aih-ci-impact-v2";
   selectorVersion: string;
   baseSha: string;
   headSha: string;
@@ -25,6 +34,10 @@ export interface CiImpactReceipt {
   fullSuite: boolean;
   releasePreparation: boolean;
   fallbackReasons: string[];
+  affectedProviders: WorkbenchProviderId[];
+  providerTests: string[];
+  requiresPackedArtifact: boolean;
+  requiresGenericBrowserJourneys: boolean;
 }
 
 const SHA = /^[0-9a-f]{40}$/u;
@@ -61,6 +74,11 @@ const GLOBAL_FILES = new Set([
   "vitest.config.ts",
   "vitest.core.config.ts",
   "vitest.workbench.config.ts",
+  "vitest.workbench-pure.config.ts",
+  "vitest.workbench-contracts.config.ts",
+  "playwright.workbench.config.ts",
+  "tsconfig.workbench.json",
+  "tsconfig.workbench-browser-tests.json",
 ]);
 
 const GLOBAL_PREFIXES = [".github/workflows/", "schemas/", "tests/fixtures/", "tools/"];
@@ -71,10 +89,13 @@ const SELECTOR_PATHS = new Set([
   ".githooks/pre-commit",
   "src/internals/ci-impact-command.ts",
   "src/internals/ci-impact.ts",
+  "src/internals/workbench-test-ownership.ts",
+  "src/internals/workbench-provider-ownership.ts",
   "src/internals/delivery-governance-command.ts",
   "src/internals/delivery-governance.ts",
   "src/internals/staged-check.ts",
   "tests/internals/ci-impact.test.ts",
+  "tests/internals/workbench-provider-ownership.test.ts",
   "tests/internals/staged-check.test.ts",
   "tests/release/delivery-governance.test.ts",
 ]);
@@ -92,20 +113,6 @@ const WORKBENCH_SOURCE_PATHS = new Set([
   "src/org-policy/studio-protected-authority.ts",
   "src/org-policy/studio-template.ts",
   "src/org-policy/ui-server.ts",
-]);
-
-const WORKBENCH_TEST_PATHS = new Set([
-  "tests/ecc/module-selection-closure.test.ts",
-  "tests/org-policy/acceptance-hook-registrar.test.ts",
-  "tests/org-policy/admin-baseline-evidence-cli-route.test.ts",
-  "tests/org-policy/admin-catalog-cli-route.test.ts",
-  "tests/org-policy/admin-catalog-fetch-v1.test.ts",
-  "tests/org-policy/ecc-hook-controls.test.ts",
-  "tests/org-policy/ecc-mcp-approval.test.ts",
-  "tests/org-policy/generate.test.ts",
-  "tests/org-policy/packed-workbench-cleanup.test.ts",
-  "tests/org-policy/supported-cli-subsets.test.ts",
-  "tests/org-policy/ui-server.test.ts",
 ]);
 
 const CROSS_PLATFORM_DOMAINS = new Set([
@@ -176,15 +183,14 @@ function isDocumentation(path: string): boolean {
 }
 
 function isWorkbenchTest(path: string): boolean {
-  return (
-    WORKBENCH_TEST_PATHS.has(path) ||
-    (path.startsWith("tests/org-policy/studio-") && path.endsWith(".test.ts"))
-  );
+  return isWorkbenchTestPath(path);
 }
 
 function isWorkbenchSource(path: string): boolean {
   return (
     WORKBENCH_SOURCE_PATHS.has(path) ||
+    path.startsWith("src/org-policy/workbench/ui/") ||
+    path === "src/org-policy/workbench/template.ts" ||
     (path.startsWith("src/org-policy/studio-") && path.endsWith(".ts"))
   );
 }
@@ -194,6 +200,15 @@ function scopedTestLane(changedPaths: readonly string[]): Exclude<CiTestLane, "d
   let workbench = false;
   for (const path of changedPaths) {
     if (isDocumentation(path)) continue;
+    if (isWorkbenchCatalogSharedInputPath(path)) {
+      core = true;
+      workbench = true;
+      continue;
+    }
+    if (providerForWorkbenchPath(path) !== undefined) {
+      workbench = true;
+      continue;
+    }
     if (isWorkbenchSource(path) || isWorkbenchTest(path)) {
       workbench = true;
     } else if (path.startsWith("src/org-policy/")) {
@@ -216,7 +231,7 @@ function fullReceipt(
   fallbackReasons: readonly string[],
 ): CiImpactReceipt {
   return {
-    schemaVersion: "aih-ci-impact-v1",
+    schemaVersion: "aih-ci-impact-v2",
     selectorVersion: CI_SELECTOR_VERSION,
     baseSha: input.baseSha,
     headSha: input.headSha,
@@ -229,6 +244,10 @@ function fullReceipt(
     fullSuite: true,
     releasePreparation: changedPaths.some((path) => RELEASE_PREPARATION_SIGNAL_PATHS.has(path)),
     fallbackReasons: sortedUnique(fallbackReasons),
+    affectedProviders: [],
+    providerTests: [],
+    requiresPackedArtifact: true,
+    requiresGenericBrowserJourneys: true,
   };
 }
 
@@ -241,6 +260,8 @@ export function classifyCiImpact(input: CiImpactInput): CiImpactReceipt {
   const selectedDomains = new Set<string>();
   let docsOnly = changedPaths.length > 0;
   let crossPlatform = false;
+  const affectedProviders = new Set<WorkbenchProviderId>();
+  let requiresGenericBrowserJourneys = false;
 
   if (changedPaths.length === 0) fallbackReasons.push("empty-change-set");
 
@@ -270,6 +291,38 @@ export function classifyCiImpact(input: CiImpactInput): CiImpactReceipt {
       continue;
     }
     docsOnly = false;
+    const providerId = providerForWorkbenchPath(path);
+    if (providerId !== undefined) {
+      matchedRules.push(`provider:${providerId}`);
+      affectedProviders.add(providerId);
+      selectedDomains.add("org-policy");
+      continue;
+    }
+    if (path.startsWith("src/baseline-evidence/catalog-providers/")) {
+      fallbackReasons.push(`baseline-provider-consumers:${path}`);
+      continue;
+    }
+    if (
+      path.startsWith("src/org-policy/catalog-providers/") ||
+      path.startsWith("src/org-policy/workbench/providers/")
+    ) {
+      fallbackReasons.push(`unknown-provider-path:${path}`);
+      continue;
+    }
+    if (isWorkbenchCatalogSharedInputPath(path)) {
+      matchedRules.push("workbench-shared-input");
+      selectedDomains.add("org-policy");
+      const sourceDomain = domainOf(path, "src");
+      if (sourceDomain !== undefined) {
+        for (const test of testsForDomain(sourceDomain, testFiles)) selectedTests.add(test);
+      }
+      for (const test of testFiles.filter(isWorkbenchTest)) selectedTests.add(test);
+      crossPlatform = true;
+      requiresGenericBrowserJourneys = true;
+      continue;
+    }
+    if (isWorkbenchSource(path) || path.startsWith("src/org-policy/"))
+      requiresGenericBrowserJourneys = true;
 
     const sourceDomain = domainOf(path, "src");
     if (sourceDomain !== undefined) {
@@ -279,12 +332,17 @@ export function classifyCiImpact(input: CiImpactInput): CiImpactReceipt {
         ? testFiles.filter(isWorkbenchTest)
         : testsForDomain(sourceDomain, testFiles);
       for (const test of ownedTests) selectedTests.add(test);
+      // Shared policy code can affect source contracts owned outside org-policy.
+      if (sourceDomain === "org-policy" && !isWorkbenchSource(path)) {
+        for (const test of testFiles.filter(isWorkbenchTest)) selectedTests.add(test);
+      }
       if (CROSS_PLATFORM_DOMAINS.has(sourceDomain)) crossPlatform = true;
       continue;
     }
 
     const testDomain = domainOf(path, "tests");
     if (testDomain !== undefined && path.endsWith(".test.ts")) {
+      if (isWorkbenchTest(path)) requiresGenericBrowserJourneys = true;
       matchedRules.push(`test-domain:${testDomain}`);
       selectedDomains.add(testDomain);
       if (testFiles.includes(path)) selectedTests.add(path);
@@ -306,6 +364,17 @@ export function classifyCiImpact(input: CiImpactInput): CiImpactReceipt {
 
     fallbackReasons.push(`unknown-path:${path}`);
   }
+  const providerIds = [...affectedProviders].sort((left, right) => left.localeCompare(right));
+  const providerTests = providerTestsFor(providerIds);
+  const missingProviderTest = providerTests.find((path) => !testFiles.includes(path));
+  if (missingProviderTest !== undefined) {
+    return validateCiImpactReceipt(
+      fullReceipt(input, changedPaths, testFiles, matchedRules, [
+        `missing-provider-test:${missingProviderTest}`,
+      ]),
+    );
+  }
+  for (const test of providerTests) selectedTests.add(test);
 
   if (fallbackReasons.length > 0) {
     return validateCiImpactReceipt(
@@ -322,7 +391,7 @@ export function classifyCiImpact(input: CiImpactInput): CiImpactReceipt {
   }
 
   const receipt: CiImpactReceipt = {
-    schemaVersion: "aih-ci-impact-v1",
+    schemaVersion: "aih-ci-impact-v2",
     selectorVersion: CI_SELECTOR_VERSION,
     baseSha: input.baseSha,
     headSha: input.headSha,
@@ -335,6 +404,10 @@ export function classifyCiImpact(input: CiImpactInput): CiImpactReceipt {
     fullSuite: false,
     releasePreparation: changedPaths.some((path) => RELEASE_PREPARATION_SIGNAL_PATHS.has(path)),
     fallbackReasons: [],
+    affectedProviders: providerIds,
+    providerTests,
+    requiresPackedArtifact: providerIds.length > 0 || requiresGenericBrowserJourneys,
+    requiresGenericBrowserJourneys,
   };
   return validateCiImpactReceipt(receipt);
 }
@@ -344,6 +417,7 @@ export function validateCiImpactReceipt(value: CiImpactReceipt): CiImpactReceipt
     throw new Error("invalid CI receipt");
   }
   const expectedKeys = [
+    "affectedProviders",
     "baseSha",
     "changedPaths",
     "fallbackReasons",
@@ -351,7 +425,10 @@ export function validateCiImpactReceipt(value: CiImpactReceipt): CiImpactReceipt
     "headSha",
     "matchedRules",
     "operatingSystems",
+    "providerTests",
     "releasePreparation",
+    "requiresGenericBrowserJourneys",
+    "requiresPackedArtifact",
     "riskClass",
     "schemaVersion",
     "selectedTests",
@@ -361,7 +438,7 @@ export function validateCiImpactReceipt(value: CiImpactReceipt): CiImpactReceipt
   if (JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(expectedKeys)) {
     throw new Error("CI receipt fields do not match the schema");
   }
-  if (value.schemaVersion !== "aih-ci-impact-v1") throw new Error("invalid CI receipt schema");
+  if (value.schemaVersion !== "aih-ci-impact-v2") throw new Error("invalid CI receipt schema");
   if (value.selectorVersion !== CI_SELECTOR_VERSION) throw new Error("unknown selector version");
   if (!SHA.test(value.baseSha) || !SHA.test(value.headSha))
     throw new Error("invalid CI receipt SHA");
@@ -382,6 +459,50 @@ export function validateCiImpactReceipt(value: CiImpactReceipt): CiImpactReceipt
     value.selectedTests.some((path) => !path.startsWith("tests/") || !path.endsWith(".test.ts"))
   ) {
     throw new Error("selected tests must be repository test files");
+  }
+  if (
+    !Array.isArray(value.affectedProviders) ||
+    value.affectedProviders.some((provider) => !WORKBENCH_PROVIDER_IDS.includes(provider)) ||
+    JSON.stringify(value.affectedProviders) !==
+      JSON.stringify(sortedUnique(value.affectedProviders))
+  ) {
+    throw new Error("affected providers must be known, sorted, and unique");
+  }
+  const expectedProviders = value.fullSuite
+    ? []
+    : sortedUnique(
+        value.changedPaths.flatMap((path) => {
+          const provider = providerForWorkbenchPath(path);
+          return provider === undefined ? [] : [provider];
+        }),
+      );
+  if (JSON.stringify(value.affectedProviders) !== JSON.stringify(expectedProviders)) {
+    throw new Error("affected providers do not match changed paths");
+  }
+  const expectedProviderTests = providerTestsFor(value.affectedProviders);
+  if (
+    !Array.isArray(value.providerTests) ||
+    JSON.stringify(value.providerTests) !== JSON.stringify(expectedProviderTests)
+  ) {
+    throw new Error("provider tests do not match provider ownership");
+  }
+  const expectedGenericBrowserJourneys =
+    value.fullSuite ||
+    value.changedPaths.some(
+      (path) =>
+        isWorkbenchCatalogSharedInputPath(path) ||
+        isWorkbenchSource(path) ||
+        isWorkbenchTest(path) ||
+        (path.startsWith("src/org-policy/") && providerForWorkbenchPath(path) === undefined),
+    );
+  if (value.requiresGenericBrowserJourneys !== expectedGenericBrowserJourneys) {
+    throw new Error("generic browser requirement does not match changed paths");
+  }
+  if (
+    value.requiresPackedArtifact !==
+    (value.fullSuite || value.affectedProviders.length > 0 || expectedGenericBrowserJourneys)
+  ) {
+    throw new Error("packed artifact requirement does not match changed paths");
   }
   for (const [name, values] of [
     ["matched rules", value.matchedRules],
@@ -443,7 +564,8 @@ export function validateCiImpactReceipt(value: CiImpactReceipt): CiImpactReceipt
 
   for (const path of value.changedPaths) {
     const domain = domainOf(path, "src");
-    if (domain === undefined || value.fullSuite) continue;
+    if (domain === undefined || value.fullSuite || isWorkbenchCatalogSharedInputPath(path))
+      continue;
     if (!value.selectedTests.some((test) => testsForDomain(domain, [test]).length > 0)) {
       throw new Error(`selected tests do not cover source domain ${domain}`);
     }

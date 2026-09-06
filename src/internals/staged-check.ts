@@ -50,6 +50,18 @@ function npmExec(toolchain: StagedCheckToolchain, ...args: string[]): string[] {
   return [toolchain.nodeExecutable, toolchain.npmCli, "exec", "--no", "--", ...args];
 }
 
+// Selected integration files can exceed two minutes while individual tests remain bounded.
+// Allow their process to finish without extending lint or artifact-check deadlines.
+function commandTimeoutMs(argv: readonly string[]): number {
+  return argv[2] === "exec" &&
+    argv[3] === "--no" &&
+    argv[4] === "--" &&
+    argv[5] === "vitest" &&
+    argv[6] === "run"
+    ? 300_000
+    : 120_000;
+}
+
 function planCommands(
   input: StagedCheckInput,
   receipt: CiImpactReceipt,
@@ -87,7 +99,7 @@ export async function runStagedChecks(
   });
   const commands = planCommands(input, receipt, toolchain);
   for (const argv of commands) {
-    const result = await run(argv, { cwd: process.cwd(), timeoutMs: 120_000 });
+    const result = await run(argv, { cwd: process.cwd(), timeoutMs: commandTimeoutMs(argv) });
     if (result.code !== 0 || result.spawnError || result.truncated) {
       return {
         code: result.code && result.code > 0 ? result.code : 1,

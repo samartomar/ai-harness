@@ -152,6 +152,6 @@ change.
 
 The complete coverage ratchet remains required for every full-fallback change and in the five-way
 nightly safety matrix. Bounded changes run every test selected by their owned domain; Workbench source
-changes select the complete 37-file Workbench project rather than unrelated policy tests. A protected
+changes select the complete 38-file Workbench project rather than unrelated policy tests. A protected
 main push classifies the merged delta again and emits the same exact required contexts for release
 qualification without automatically expanding a bounded change to the complete suite.

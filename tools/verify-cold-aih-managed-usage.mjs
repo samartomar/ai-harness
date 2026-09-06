@@ -236,7 +236,7 @@ try {
   const decision = {
     acceptedFindings: [],
     acceptedGaps: [],
-    actor: "cold-admin",
+    actor: "cold-admin@example.invalid",
     allowedEffects: ["configure"],
     conditions: [],
     control: { digest: `sha256:${"b".repeat(64)}`, id: "review-control" },

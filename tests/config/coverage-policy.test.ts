@@ -118,6 +118,7 @@ describe("coverage policy", () => {
       "src/cli.ts",
       "src/ecc-runtime.ts",
       "**/*.d.ts",
+      "src/org-policy/workbench/ui/**",
     ]);
   });
 
@@ -144,7 +145,11 @@ describe("coverage policy", () => {
     expect(core.exclude).toEqual(workbench.include);
     expect(core.coverage.include).toEqual(["src/**/*.ts"]);
     expect(core.coverage.exclude).toEqual(
-      expect.arrayContaining(["src/org-policy/studio-*.ts", "src/org-policy/generate.ts"]),
+      expect.arrayContaining([
+        "src/org-policy/studio-*.ts",
+        "src/org-policy/generate.ts",
+        "src/org-policy/workbench/**",
+      ]),
     );
     expect(workbench.coverage.include).toEqual([
       "src/org-policy/adoption-recipe.ts",
@@ -200,9 +205,11 @@ describe("coverage policy", () => {
     expect(pkg.scripts?.["test:core:cov"]).toBe(
       "vitest run --config vitest.core.config.ts --coverage",
     );
-    expect(pkg.scripts?.["test:workbench"]).toBe("vitest run --config vitest.workbench.config.ts");
+    expect(pkg.scripts?.["test:workbench"]).toBe(
+      "npm run build:workbench && vitest run --config vitest.workbench.config.ts",
+    );
     expect(pkg.scripts?.["test:workbench:cov"]).toBe(
-      "vitest run --config vitest.workbench.config.ts --coverage",
+      "npm run build:workbench && vitest run --config vitest.workbench.config.ts --coverage",
     );
   });
 
@@ -216,13 +223,13 @@ describe("coverage policy", () => {
     expect(maxWorkersForPlatform("linux", 12)).toBe(8);
     expect(maxWorkersForPlatform("win32", 2)).toBe(1);
 
-    expect(workerExecArgvForPlatform("darwin")).toEqual(["--max-old-space-size=4096"]);
+    expect(workerExecArgvForPlatform("darwin")).toEqual([]);
     expect(workerExecArgvForPlatform("linux")).toEqual([]);
     expect(workerExecArgvForPlatform("win32")).toEqual([]);
 
     expect(testRuntimeForPlatform("darwin", 12)).toEqual({
       maxWorkers: 2,
-      execArgv: ["--max-old-space-size=4096"],
+      execArgv: [],
       testTimeout: 15_000,
     });
   });

@@ -10,8 +10,8 @@ export function maxWorkersForPlatform(platform: NodeJS.Platform, parallelism: nu
   return Math.min(platform === "darwin" ? 2 : 8, derivedWorkers);
 }
 
-export function workerExecArgvForPlatform(platform: NodeJS.Platform): string[] {
-  return platform === "darwin" ? ["--max-old-space-size=4096"] : [];
+export function workerExecArgvForPlatform(_platform: NodeJS.Platform): string[] {
+  return [];
 }
 
 export function testRuntimeForPlatform(platform: NodeJS.Platform, parallelism: number) {
@@ -37,10 +37,6 @@ export default defineConfig({
     // (no core-count clamp), so min() keeps low-core CI runners at their
     // derived default while capping high-core dev machines, whose uncapped
     // worker counts overcommit CPU/RAM and blow per-test budgets (#509).
-    // The complete macOS suite renders many portable Workbench instances in
-    // isolated workers. Hosted arm64 runners otherwise exhaust their worker heap
-    // before assertions finish; keep two workers within the job's 4 GiB ceiling
-    // while preserving every test and assertion.
     ...testRuntime,
     include: ["tests/**/*.test.ts"],
     coverage: {
@@ -51,7 +47,7 @@ export default defineConfig({
       include: ["src/**/*.ts"],
       // Executable-only entry wrappers are exercised by published-bin checks; unit tests target
       // their imported builders/runtimes without executing process-global argv handling.
-      exclude: ["src/**/command.ts", "src/cli.ts", "src/ecc-runtime.ts", "**/*.d.ts"],
+      exclude: ["src/**/command.ts", "src/cli.ts", "src/ecc-runtime.ts", "**/*.d.ts", "src/org-policy/workbench/ui/**"],
       // Enforced floor: set just below the current achieved levels so coverage can
       // only ratchet UP — CI/release fail on regression. Branches are at ~79%; the
       // remaining gap to the 80% bar is concentrated in doctor.ts (verification

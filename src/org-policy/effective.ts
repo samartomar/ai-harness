@@ -4,52 +4,23 @@ import {
   type PolicyAuthorityReceipt,
   type VerifiedPolicyAuthority,
 } from "./authority.js";
+import {
+  DISPOSITIONABLE_POLICY_FINDING_CODES,
+  FENCED_POLICY_PREREQUISITE_CODES,
+  UNWAIVABLE_POLICY_DANGER_CODES,
+} from "./finding-codes.js";
 import { type GovernanceDecisionV1, governanceDecisionDigestV1 } from "./governance-decision-v1.js";
 import type { NpmPackageEffectiveStateV1 } from "./npm-package-effective-state-v1.js";
 import { governanceOwnsAihSurfaces, type OrgPolicy } from "./schema.js";
 import type { UpstreamArtifactEffectiveStateV1 } from "./upstream-artifact-effective-state-v1.js";
+import { consumeWorkbenchPolicy } from "./workbench/policy-consumption.js";
+import type { PreparedWorkbenchCatalogV1 } from "./workbench/prepared-catalog.js";
 
-/**
- * Assertions a detector made about a completed scan. A severe label is
- * evidence, not a verdict, so the accountable administrator decides each one:
- * reject the candidate, record a false positive, or accept the residual risk
- * with an attributable signed reason.
- */
-export const DISPOSITIONABLE_POLICY_FINDING_CODES = [
-  "malicious-code",
-  "prompt-injection",
-  "auto-executing-hook",
-  "hidden-unicode",
-  "secrets",
-  "unpinned-source",
-  "dependency-confusion",
-  "unsafe-path",
-] as const;
-
-/**
- * Prerequisites AIH needs before it can evaluate or project at all. Each marks
- * something absent or untrustworthy rather than something a detector asserted,
- * so no signature substitutes for it and approval cannot invent it.
- */
-export const FENCED_POLICY_PREREQUISITE_CODES = [
-  "mandatory-detector-failed",
-  "evidence-identity-drift",
-  "missing-projector",
-  "unsupported-target",
-  "normalized-collision",
-  "ownership-conflict",
-] as const;
-
-/**
- * The partition's union — the same 14 codes, none renamed or added. Resolution
- * still blocks on every one of them: separating the halves is what lets a
- * consumer tell a disposable finding from a hard prerequisite, and is not by
- * itself the administrator disposition flow, which does not exist yet.
- */
-export const UNWAIVABLE_POLICY_DANGER_CODES = [
-  ...DISPOSITIONABLE_POLICY_FINDING_CODES,
-  ...FENCED_POLICY_PREREQUISITE_CODES,
-] as const;
+export {
+  DISPOSITIONABLE_POLICY_FINDING_CODES,
+  FENCED_POLICY_PREREQUISITE_CODES,
+  UNWAIVABLE_POLICY_DANGER_CODES,
+} from "./finding-codes.js";
 
 export type DispositionableFindingCode = (typeof DISPOSITIONABLE_POLICY_FINDING_CODES)[number];
 export type FencedPrerequisiteCode = (typeof FENCED_POLICY_PREREQUISITE_CODES)[number];
@@ -86,6 +57,7 @@ export type ResolutionBlockCode =
   | "framework-contract-unavailable";
 
 export type PolicyDecisionBlockCode =
+  | "authoring-selection-invalid"
   | "decision-receipt-missing"
   | "decision-receipt-version"
   | "decision-receipt-expired"
@@ -166,6 +138,8 @@ export interface EffectivePolicyContext {
   authority?: VerifiedPolicyAuthority;
   /** Actual adapter target set for this invocation; omitted means Claude's leaf-command default. */
   targets?: readonly string[];
+  /** Optional Core-prepared catalog for a portable offline authoring artifact. */
+  preparedWorkbenchCatalog?: PreparedWorkbenchCatalogV1;
   /** Whether this invocation can emit managed adapter actions at all. */
   projectorsEnabled?: boolean;
   /** Exact runtime reason when projectors are intentionally unavailable. */
@@ -354,15 +328,44 @@ export interface EffectiveOrgPolicy {
     }>;
     status: "requested-evidence-needed";
   }>;
+  /**
+   * Admin-requested intent over AIH-owned MCP identities this Core build gates.
+   * It is reported so a target repository sees exactly what was asked for; it is
+   * never a candidate, never an active MCP server id, and never blocking.
+   * `controlShipped` marks a request for an identity this runtime ships as a
+   * reviewed control (from `aihReviewedControls`); the truthful route is then
+   * to select the control, and the request still grants nothing.
+   */
+  aihMcpRequests?: Array<{
+    id: string;
+    status: "requested-not-effective";
+    controlShipped?: true;
+  }>;
   /** Observed package state only; it is never a projector or runtime control. */
   npmPackageLifecycle?: readonly NpmPackageEffectiveStateV1[];
   /** Observed organization-managed artifact state; it never installs or projects the artifact. */
   upstreamArtifactLifecycle?: readonly UpstreamArtifactEffectiveStateV1[];
+  /** Catalog-pinned authoring intent reported separately from policy effects. */
+  authoringIntent?: { requestedIntent: string[]; selectedControls: string[] };
+  /** Bounded diagnostics for invalid v3 authoring intent; never policy effect. */
+  authoringDiagnostics?: string[];
   decisionBlockers: PolicyDecisionBlocker[];
   /** Projection has a narrower lifecycle gate than evaluate/doctor. */
   projectionBlocking?: boolean;
   blocking: boolean;
   authority: { verified: boolean; receiptDigest?: string; problem?: string };
+}
+
+function boundedAuthoringDiagnostics(diagnostics: readonly string[]): string[] {
+  return [
+    ...new Set(
+      diagnostics
+        .map((diagnostic) => diagnostic.normalize("NFC").replace(/\p{C}/gu, " ").slice(0, 500))
+        .filter((diagnostic) => diagnostic.length > 0),
+    ),
+  ]
+    .sort()
+    .slice(0, 100);
 }
 
 export function stableJson(value: unknown): string {
@@ -1277,7 +1280,7 @@ function resolveCandidate(
 }
 
 /** Resolve requested candidates against freshly verified authority and live adapters. */
-export function resolveEffectiveOrgPolicy(
+function resolveConsumedEffectiveOrgPolicy(
   policy: OrgPolicy,
   context: EffectivePolicyContext = {},
 ): EffectiveOrgPolicy {
@@ -1392,6 +1395,17 @@ export function resolveEffectiveOrgPolicy(
       items: selection.items.map((item) => ({ ...item, source: { ...item.source } })),
       status: "requested-evidence-needed" as const,
     })),
+    ...(governance.aihMcpRequests === undefined
+      ? {}
+      : {
+          aihMcpRequests: governance.aihMcpRequests.map((request) => ({
+            id: request.id,
+            status: "requested-not-effective" as const,
+            ...(context.aihReviewedControls?.[request.id] === undefined
+              ? {}
+              : { controlShipped: true as const }),
+          })),
+        }),
     npmPackageLifecycle: [...(context.npmPackageLifecycle ?? [])],
     upstreamArtifactLifecycle: [...(context.upstreamArtifactLifecycle ?? [])],
     decisionBlockers,
@@ -1551,6 +1565,15 @@ const EXTERNAL_SELECTION_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
 };
 
 /**
+ * Recorded intent only. A request names an AIH-owned MCP identity this build
+ * gates; it reaches the effective report and nothing else.
+ */
+const AIH_MCP_REQUEST_LEAF_CONSUMERS: Readonly<Record<string, string>> = {
+  clarification: "effective report: requesting-origin provenance only",
+  id: "effective report: requested AIH-owned MCP identity only; no projector, allow-list, installer, or scanner consumer is wired",
+};
+
+/**
  * Seat-side Add authority only. These fields deliberately do not feed the
  * effective candidate resolver, a projector, a scanner, or any network action.
  */
@@ -1631,6 +1654,7 @@ export const POLICY_ENGINE_FIELD_CONSUMERS: Readonly<Record<string, string>> = O
   ...prefixedConsumers("governance.authority", AUTHORITY_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.externalCuration.*", EXTERNAL_CURATION_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.externalSelections.*", EXTERNAL_SELECTION_LEAF_CONSUMERS),
+  ...prefixedConsumers("governance.aihMcpRequests.*", AIH_MCP_REQUEST_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.eccMcpApprovals.*", ECC_MCP_APPROVAL_LEAF_CONSUMERS),
   "governance.eccHookControls.profile":
     "ECC hook-controls resolver and Claude settings receipt-backed projection; no launcher execution or enforcement claim",
@@ -1640,3 +1664,49 @@ export const POLICY_ENGINE_FIELD_CONSUMERS: Readonly<Record<string, string>> = O
   ...prefixedConsumers("governance.catalog.reviewed.*", CANDIDATE_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.catalog.custom.*", CANDIDATE_LEAF_CONSUMERS),
 });
+
+/** Consumes schema-v3 authoring intent once before any direct effective-policy caller can project it. */
+export function resolveEffectiveOrgPolicy(
+  policy: OrgPolicy,
+  context: EffectivePolicyContext = {},
+): EffectiveOrgPolicy {
+  if (policy.schemaVersion !== 3) return resolveConsumedEffectiveOrgPolicy(policy, context);
+  const authoringSelections = policy.authoringSelections;
+  const consumed =
+    authoringSelections === undefined
+      ? undefined
+      : consumeWorkbenchPolicy(
+          policy as Record<string, unknown>,
+          authoringSelections as Parameters<typeof consumeWorkbenchPolicy>[1],
+          context.preparedWorkbenchCatalog,
+        );
+  if (consumed?.accepted && consumed.policy !== undefined) {
+    return {
+      ...resolveConsumedEffectiveOrgPolicy(consumed.policy, context),
+      authoringIntent: {
+        requestedIntent: consumed.requestedIntent,
+        selectedControls: consumed.selectedControls,
+      },
+    };
+  }
+  const legacyPolicy = { ...(policy as Record<string, unknown>) };
+  delete legacyPolicy.authoringSelections;
+  delete legacyPolicy.capabilityPackages;
+  delete legacyPolicy.governance;
+  const inert = resolveConsumedEffectiveOrgPolicy(
+    { ...legacyPolicy, schemaVersion: 2 } as OrgPolicy,
+    context,
+  );
+  return {
+    ...inert,
+    authoringDiagnostics: boundedAuthoringDiagnostics(
+      consumed?.diagnostics ?? ["Missing authoring selection envelope"],
+    ),
+    blocking: true,
+    projectionBlocking: true,
+    decisionBlockers: [
+      ...inert.decisionBlockers,
+      { scope: "policy", code: "authoring-selection-invalid", decision: undefined },
+    ],
+  };
+}

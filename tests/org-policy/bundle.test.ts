@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parsePolicyBundle as parsePublishedPolicyBundle } from "../../src/index.js";
 import { PolicyBundleSchema, parsePolicyBundle } from "../../src/org-policy/bundle.js";
+import { WORKBENCH_MINIMUM_CORE_VERSION } from "../../src/org-policy/workbench/contracts.js";
 
 /** A minimal valid embedded org policy (the local `aih-org-policy.json` shape). */
 function policy(overrides: Record<string, unknown> = {}): Record<string, unknown> {
@@ -80,6 +81,24 @@ describe("PolicyBundleSchema", () => {
     expect(PolicyBundleSchema.safeParse(bundle({ schemaVersion: 3 })).success).toBe(false);
   });
 
+  it("keeps the authority envelope at V2 while allowing an embedded V3 policy", () => {
+    const v3Policy = {
+      ...(authorityBundle().policy as Record<string, unknown>),
+      schemaVersion: 3,
+      minimumCoreVersion: WORKBENCH_MINIMUM_CORE_VERSION,
+      authoringSelections: {
+        selectionVersion: "workbench-selection/v1",
+        roots: [],
+        exclusions: [],
+        requests: [],
+        drafts: [],
+      },
+    };
+    expect(parsePolicyBundle(authorityBundle({ policy: v3Policy }))).toMatchObject({ ok: true });
+    expect(parsePolicyBundle(authorityBundle({ schemaVersion: 3, policy: v3Policy })).ok).toBe(
+      false,
+    );
+  });
   it("rejects a V2 envelope without its exact V3 decision authority", () => {
     const { authorityReceipt: _dropped, ...withoutAuthority } = authorityBundle();
     expect(parsePolicyBundle(withoutAuthority).ok).toBe(false);

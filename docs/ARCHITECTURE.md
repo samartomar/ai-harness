@@ -56,6 +56,13 @@ and the executor is the only layer that performs filesystem or process effects.
 - **Reporting and local telemetry** (`src/report/`, `src/logging/`,
   `src/usage/`) render local diagnostics. They do not transmit prompts or costs.
 
+## Policy Workbench catalog providers
+
+The Policy Workbench composes its offline catalog from a fixed set of typed
+build-time providers. See [Policy Workbench catalog providers](workbench-catalog-providers.md)
+for source snapshots, Core evidence boundaries, fixture and test ownership, and
+its deliberate extension limits.
+
 ## Data Boundaries
 
 - `.aih-config.json`, `ai-coding/`, lock files, `aih-capabilities.json`, and

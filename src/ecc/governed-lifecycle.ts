@@ -10,6 +10,7 @@ import { digest, type Plan, type PlanContext, plan } from "../internals/plan.js"
 import { lines } from "../internals/render.js";
 import { resolveEffectiveOrgPolicy } from "../org-policy/effective.js";
 import type { OrgPolicy } from "../org-policy/schema.js";
+import { consumeWorkbenchPolicy } from "../org-policy/workbench/policy-consumption.js";
 import { cleanupQuarantine, type TrustSource } from "../trust/fetch.js";
 import { ECC_DECLARATION_RIDERS } from "./components.js";
 import {
@@ -125,6 +126,27 @@ interface GovernedMaterializationReport {
  * create nothing.
  */
 export function governedEccComponentIds(policy: OrgPolicy, catalog: BaselineCatalog): string[] {
+  const v3 = policy as OrgPolicy & { schemaVersion?: number; authoringSelections?: unknown };
+  if (v3.schemaVersion === 3) {
+    const state = v3.authoringSelections;
+    if (state === undefined || typeof state !== "object" || Array.isArray(state))
+      throw new AihError(
+        "refusing the governed ECC framework lifecycle: schema-v3 Workbench selections are missing",
+        "AIH_CONFIG",
+      );
+    const consumed = consumeWorkbenchPolicy(policy as Record<string, unknown>, state as never);
+    if (!consumed.accepted)
+      throw new AihError(
+        `refusing the governed ECC framework lifecycle: invalid Workbench selections: ${consumed.diagnostics.slice(0, 10).join("; ")}`,
+        "AIH_CONFIG",
+      );
+    if (consumed.policy === undefined)
+      throw new AihError(
+        "refusing the governed ECC framework lifecycle: consumed Workbench policy is absent",
+        "AIH_CONFIG",
+      );
+    policy = consumed.policy;
+  }
   const expectedRepository = `${catalog.owner}/${catalog.repo}`;
   const catalogById = new Map(catalog.components.map((component) => [component.id, component]));
   const selected = new Set<string>();

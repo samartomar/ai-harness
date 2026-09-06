@@ -21,7 +21,7 @@ import {
   ArtifactEvidenceBundleV2Schema,
 } from "../../src/trust/artifact-evidence.js";
 import { resolveTrustSource } from "../../src/trust/fetch.js";
-import { trustScanCommand, trustScanProbes } from "../../src/trust/scan.js";
+import { trustScanCommand, trustScanPlanForSource, trustScanProbes } from "../../src/trust/scan.js";
 
 const COMMIT = "a".repeat(40);
 const REGISTRY_INTEGRITY = `sha512-${Buffer.alloc(64, 1).toString("base64")}`;
@@ -275,6 +275,23 @@ describe("trust scan artifact intake", () => {
     );
   });
 
+  it("does not accept a forged operational policy through the public scan planner", async () => {
+    write("aih-org-policy.json", "{ malformed");
+    const ctx = context(true);
+    const source = resolveTrustSource("acme/security-assets", { root, pin: COMMIT });
+    if (source.kind !== "github") throw new Error("expected GitHub source");
+    const commandPlan = await trustScanPlanForSource(ctx, source, {
+      operationalExecutionPolicy: {
+        posture: "vibe",
+        requiredDetectors: [],
+        internalScopes: [],
+      },
+    } as never);
+    const result = await executePlan(commandPlan, ctx);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "org-policy.drift" })]),
+    );
+  });
   it("writes one reviewable evidence bundle for the entire batch", async () => {
     write("artifact-intake.json", JSON.stringify(intake()));
     const ctx = context(true);

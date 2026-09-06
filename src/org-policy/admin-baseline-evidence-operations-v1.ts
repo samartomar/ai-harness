@@ -3,7 +3,10 @@ import { chmodSync, lstatSync, mkdtempSync, rmSync, writeFileSync } from "node:f
 import { request as httpsRequest } from "node:https";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseBaselineEvidenceLock } from "../baseline-evidence/schema.js";
+import {
+  type BaselineEvidenceLock,
+  parseBaselineEvidenceLock,
+} from "../baseline-evidence/schema.js";
 import { vendorBaselineLockBytes } from "../baseline-evidence/vendor.js";
 import {
   BASELINE_EVIDENCE_ARTIFACT_SUMS_PATH_V1,
@@ -13,6 +16,7 @@ import {
 } from "../baseline-evidence/vendor-artifact-v1.js";
 import { codeUnitCompare } from "../capability/package-graph/canonical.js";
 import type { Posture } from "../config/posture.js";
+import { canonicalStrictJsonSha256V1 } from "../contract/strict-json-v1.js";
 import { AihError } from "../errors.js";
 import { defaultRunner, type Runner } from "../internals/proc.js";
 import { findOnPath } from "../live/runner.js";
@@ -28,6 +32,7 @@ import {
   type DownloadedEvidenceV1,
   readAdminBaselineEvidenceCacheV1,
 } from "./admin-baseline-evidence-cache-v1.js";
+import { type AuthoringCatalogBundleV1, EvidenceSummaryV1Schema } from "./workbench/contracts.js";
 
 const ATTESTATION_LIMIT = 256 * 1024;
 const ARTIFACT_FILE_LIMIT = 1024 * 1024;
@@ -82,6 +87,111 @@ export interface ResolveAdminBaselineEvidenceV1Input {
 
 export interface ResolvedAdminBaselineEvidenceV1 {
   readonly provenance: AdminBaselineEvidenceProvenanceV1;
+}
+
+interface VerifiedWorkbenchBaselineFactsV1 {
+  readonly lock: BaselineEvidenceLock;
+  readonly contextDigest: string;
+  readonly evidenceDigest: string;
+  readonly verifiedAt: string;
+  readonly validUntil: string;
+}
+// Only the production-owned operational composition can issue this witness.
+const operationalCustody = Symbol("verified-baseline-operation");
+const verifiedDownloads = new WeakMap<DownloadedEvidenceV1, VerifiedWorkbenchBaselineFactsV1>();
+const verifiedResolutions = new WeakMap<
+  ResolvedAdminBaselineEvidenceV1,
+  VerifiedWorkbenchBaselineFactsV1
+>();
+
+function resolvedEvidence(
+  provenance: AdminBaselineEvidenceProvenanceV1,
+  downloaded?: DownloadedEvidenceV1,
+): ResolvedAdminBaselineEvidenceV1 {
+  const result: ResolvedAdminBaselineEvidenceV1 = { provenance };
+  const facts = downloaded === undefined ? undefined : verifiedDownloads.get(downloaded);
+  if (facts !== undefined) verifiedResolutions.set(result, facts);
+  return result;
+}
+
+/**
+ * Only an in-process result of the actual attestation resolver can carry custody.
+ * Cloning/serializing the result loses custody. All displayed scan facts are
+ * derived from the checked lock; no caller-supplied summary can nominate them.
+ */
+export function workbenchEvidenceFromVerifiedBaselineV1(
+  resolved: ResolvedAdminBaselineEvidenceV1,
+  bundle: AuthoringCatalogBundleV1,
+  now: string,
+): AuthoringCatalogBundleV1["evidence"] {
+  const facts = verifiedResolutions.get(resolved);
+  if (facts === undefined) return {};
+  const current = epoch(now, "Workbench evidence clock");
+  const fresh =
+    current >= epoch(facts.verifiedAt, "verification clock") &&
+    current < epoch(facts.validUntil, "evidence validity");
+  const result: AuthoringCatalogBundleV1["evidence"] = {};
+  for (const source of facts.lock.sources) {
+    const sourceId = `source:${source.id}`;
+    const descriptor = bundle.sources[sourceId];
+    if (
+      !descriptor ||
+      descriptor.inputFormat !== "pinned-baseline/v1" ||
+      descriptor.upstreamOrigin.kind !== "git" ||
+      descriptor.upstreamOrigin.locator !== `${source.owner}/${source.repo}` ||
+      descriptor.revision.id !== source.pinnedSha ||
+      descriptor.revision.contentDigest !== `sha256:${source.sourceTreeSha256}`
+    )
+      continue;
+    for (const component of source.components) {
+      const assetId = `${source.id}/${component.id}`;
+      const asset = bundle.assets[assetId];
+      if (
+        !asset ||
+        asset.sourceId !== sourceId ||
+        asset.sourceRevisionId !== source.pinnedSha ||
+        asset.contentDigest !== `sha256:${component.treeSha256}` ||
+        asset.derivation !== "upstream"
+      )
+        continue;
+      const id = `evidence:${assetId}`;
+      result[id] = EvidenceSummaryV1Schema.parse({
+        id,
+        projectionVersion: "evidence-summary/v1",
+        subjects: [
+          {
+            assetId,
+            sourceId,
+            sourceRevisionId: source.pinnedSha,
+            contentDigest: asset.contentDigest,
+          },
+        ],
+        evidenceDigest: `sha256:${canonicalStrictJsonSha256V1({
+          artifact: facts.evidenceDigest,
+          source: { id: source.id, pinnedSha: source.pinnedSha },
+          component,
+        })}`,
+        coveredPaths: [...component.paths].sort(),
+        verification: fresh
+          ? {
+              state: "verified",
+              verifiedAt: facts.verifiedAt,
+              validUntil: facts.validUntil,
+              contextDigest: facts.contextDigest,
+            }
+          : { state: "stale" },
+        scan: {
+          outcome: component.verdict === "blocked" ? "failed" : fresh ? "pass" : "unknown",
+          coverage: "complete",
+        },
+        qualification: { state: "unknown" },
+        findings: component.findings
+          .slice(0, 50)
+          .map((finding) => `${finding.code}: ${finding.detail}`.slice(0, 1000)),
+      });
+    }
+  }
+  return result;
 }
 
 export interface ResolveOperationalAdminBaselineEvidenceV1Input {
@@ -468,11 +578,14 @@ export async function verifyGithubBaselineEvidenceAttestationLiveV1(input: {
       Buffer.byteLength(result.stdout) > ATTESTATION_LIMIT
     )
       fail("attestation rejected");
-    return parseGithubBaselineEvidenceAttestationV1(Buffer.from(result.stdout, "utf8"), {
-      ...input.bootstrap,
-      now: input.now,
-      subjectSha256: input.subjectSha256,
-    });
+    const verified = Object.freeze(
+      parseGithubBaselineEvidenceAttestationV1(Buffer.from(result.stdout, "utf8"), {
+        ...input.bootstrap,
+        now: input.now,
+        subjectSha256: input.subjectSha256,
+      }),
+    );
+    return verified;
   } catch (error) {
     if (error instanceof AihError) throw error;
     fail("attestation rejected");
@@ -709,6 +822,8 @@ async function verify(
   downloaded: DownloadedEvidenceV1,
   bootstrap: AdminBaselineEvidenceBootstrapV1,
   verifyAttestation: ResolveAdminBaselineEvidenceV1Input["verifyGithubAttestation"],
+  now: string,
+  witness?: typeof operationalCustody,
 ): Promise<{ digest: string; schemaVersion: number }> {
   if (
     !Buffer.isBuffer(downloaded.attestationBytes) ||
@@ -754,7 +869,31 @@ async function verify(
         return claim;
       },
     });
-    return lockInfo(Buffer.from(`${JSON.stringify(checked.lock, null, 2)}\n`, "utf8"), bootstrap);
+    const info = lockInfo(
+      Buffer.from(`${JSON.stringify(checked.lock, null, 2)}\n`, "utf8"),
+      bootstrap,
+    );
+    // Public parsers, verifiers and resolver injection seams never own this
+    // witness. It comes only from the default operational process boundary.
+    if (witness === operationalCustody) {
+      const signedAt: unknown = Reflect.get(live, "signedAt");
+      if (typeof signedAt !== "string") fail("attestation signing time");
+      if (epoch(signedAt, "attestation signing time") > epoch(now, "verification clock"))
+        fail("attestation signing time");
+      const validUntil = new Date(
+        epoch(downloaded.downloadedAt, "download clock") + bootstrap.cacheMaxAgeSeconds * 1000,
+      )
+        .toISOString()
+        .replace(".000Z", "Z");
+      verifiedDownloads.set(downloaded, {
+        lock: structuredClone(checked.lock),
+        evidenceDigest: info.digest,
+        verifiedAt: now,
+        validUntil,
+        contextDigest: `sha256:${canonicalStrictJsonSha256V1({ claim, signedAt, verifiedAt: now, downloadedAt: downloaded.downloadedAt, validUntil, lockDigest: info.digest, sources: bootstrap.sources })}`,
+      });
+    }
+    return info;
   } catch (error) {
     if (error instanceof AihError) throw error;
     fail("verification");
@@ -763,50 +902,69 @@ async function verify(
 export async function resolveAdminBaselineEvidenceV1(
   input: ResolveAdminBaselineEvidenceV1Input,
 ): Promise<ResolvedAdminBaselineEvidenceV1> {
+  return resolveBaselineEvidence(input);
+}
+
+async function resolveBaselineEvidence(
+  input: ResolveAdminBaselineEvidenceV1Input,
+  witness?: typeof operationalCustody,
+): Promise<ResolvedAdminBaselineEvidenceV1> {
   const now = epoch(input.now, "clock");
   const fresh = await input.fetchFresh();
   if (!isExactUnavailable(fresh)) {
     if (!hasOwnDataKind(fresh, "available")) fail("fresh response");
     const downloaded: DownloadedEvidenceV1 = { ...fresh, downloadedAt: input.now };
-    const info = await verify(downloaded, input.bootstrap, input.verifyGithubAttestation);
+    const info = await verify(
+      downloaded,
+      input.bootstrap,
+      input.verifyGithubAttestation,
+      input.now,
+      witness,
+    );
     if (input.commitLastDownloaded(downloaded) !== true) fail("cache commit failed");
-    return {
-      provenance: {
+    return resolvedEvidence(
+      {
         tier: "fresh",
         ageSeconds: 0,
         resolvedAt: input.now,
         sourceIds: input.bootstrap.sources.map((source) => source.id),
         ...info,
       },
-    };
+      downloaded,
+    );
   }
   const cached = input.readLastDownloaded();
   if (cached !== undefined) {
     const age = (now - epoch(cached.downloadedAt, "cache age")) / 1000;
     if (!Number.isSafeInteger(age) || age < 0 || age > input.bootstrap.cacheMaxAgeSeconds)
       fail("cache age");
-    const info = await verify(cached, input.bootstrap, input.verifyGithubAttestation);
-    return {
-      provenance: {
+    const info = await verify(
+      cached,
+      input.bootstrap,
+      input.verifyGithubAttestation,
+      input.now,
+      witness,
+    );
+    return resolvedEvidence(
+      {
         tier: "last-downloaded",
         ageSeconds: age,
         resolvedAt: input.now,
         sourceIds: input.bootstrap.sources.map((source) => source.id),
         ...info,
       },
-    };
+      cached,
+    );
   }
   const lockBytes = vendorBaselineLockBytes();
   const info = lockInfo(lockBytes, input.bootstrap);
-  return {
-    provenance: {
-      tier: "packaged",
-      ageSeconds: null,
-      resolvedAt: input.now,
-      sourceIds: input.bootstrap.sources.map((source) => source.id),
-      ...info,
-    },
-  };
+  return resolvedEvidence({
+    tier: "packaged",
+    ageSeconds: null,
+    resolvedAt: input.now,
+    sourceIds: input.bootstrap.sources.map((source) => source.id),
+    ...info,
+  });
 }
 
 /**
@@ -827,34 +985,37 @@ export async function resolveOperationalAdminBaselineEvidenceV1(
   const run = input.run ?? defaultRunner;
   const tempRoot = input.tempRoot ?? tmpdir();
   const environment = input.env ?? process.env;
-  return resolveAdminBaselineEvidenceV1({
-    bootstrap: resolved.bootstrap,
-    now: input.now,
-    fetchFresh: () =>
-      fetchAdminBaselineEvidenceArtifactV1({
-        artifactUrl: resolved.bootstrap.artifactUrl,
-        attestationUrl: resolved.bootstrap.attestationUrl,
-        fetchHttps,
-      }),
-    readLastDownloaded: () => readAdminBaselineEvidenceCacheV1(resolved.root, resolved.bootstrap),
-    commitLastDownloaded: (evidence) =>
-      commitAdminBaselineEvidenceCacheV1(resolved.root, resolved.bootstrap, evidence),
-    verifyGithubAttestation: async (request) => {
-      const gh = findOnPath("gh", environment, process.platform, {
-        excludeRoot: resolved.root,
-        windowsExeOnly: true,
-      });
-      if (gh === undefined) fail("GitHub attestation verifier is unavailable on absolute PATH");
-      return verifyGithubBaselineEvidenceAttestationLiveV1({
-        attestationBytes: request.attestationBytes ?? fail("attestation"),
-        bootstrap: resolved.bootstrap,
-        gh,
-        now: input.now,
-        run,
-        subjectBytes: request.subjectBytes,
-        subjectSha256: request.subjectSha256,
-        tempRoot,
-      });
+  return resolveBaselineEvidence(
+    {
+      bootstrap: resolved.bootstrap,
+      now: input.now,
+      fetchFresh: () =>
+        fetchAdminBaselineEvidenceArtifactV1({
+          artifactUrl: resolved.bootstrap.artifactUrl,
+          attestationUrl: resolved.bootstrap.attestationUrl,
+          fetchHttps,
+        }),
+      readLastDownloaded: () => readAdminBaselineEvidenceCacheV1(resolved.root, resolved.bootstrap),
+      commitLastDownloaded: (evidence) =>
+        commitAdminBaselineEvidenceCacheV1(resolved.root, resolved.bootstrap, evidence),
+      verifyGithubAttestation: async (request) => {
+        const gh = findOnPath("gh", environment, process.platform, {
+          excludeRoot: resolved.root,
+          windowsExeOnly: true,
+        });
+        if (gh === undefined) fail("GitHub attestation verifier is unavailable on absolute PATH");
+        return verifyGithubBaselineEvidenceAttestationLiveV1({
+          attestationBytes: request.attestationBytes ?? fail("attestation"),
+          bootstrap: resolved.bootstrap,
+          gh,
+          now: input.now,
+          run,
+          subjectBytes: request.subjectBytes,
+          subjectSha256: request.subjectSha256,
+          tempRoot,
+        });
+      },
     },
-  });
+    run === defaultRunner ? operationalCustody : undefined,
+  );
 }

@@ -4,8 +4,12 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "lib": ["ES2023"],
-    "types": ["node"],
+    "lib": [
+      "ES2023"
+    ],
+    "types": [
+      "node"
+    ],
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
@@ -21,6 +25,16 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src", "tests", "*.config.ts"],
-  "exclude": ["dist", "node_modules", "coverage"]
+  "include": [
+    "src",
+    "tests",
+    "*.config.ts"
+  ],
+  "exclude": [
+    "dist",
+    "node_modules",
+    "coverage",
+    "src/org-policy/workbench/ui",
+    "tests/org-policy/workbench/browser"
+  ]
 }

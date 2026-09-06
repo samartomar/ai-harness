@@ -1,11 +1,14 @@
 import { type Element, Window } from "happy-dom";
-import { describe, expect, it } from "vitest";
-import { policyStudioModel } from "../../src/org-policy/studio-model.js";
+import { afterEach, describe, expect, it } from "vitest";
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
+import { tinyStudioModel } from "./studio-test-fixture.js";
+
+const openWindows: Window[] = [];
 
 function studio(): Window {
   const window = new Window({ url: "http://localhost/" });
-  const html = policyStudioHtml(policyStudioModel());
+  openWindows.push(window);
+  const html = policyStudioHtml(tinyStudioModel());
   window.document.write(html);
   (window as unknown as { structuredClone: typeof structuredClone }).structuredClone =
     structuredClone;
@@ -14,6 +17,10 @@ function studio(): Window {
   window.eval(scripts.join("\n"));
   return window;
 }
+
+afterEach(() => {
+  for (const window of openWindows.splice(0)) window.close();
+});
 
 function click(window: Window, node: Element | null, label: string): void {
   if (node === null) throw new Error(`expected ${label}`);
@@ -79,8 +86,6 @@ describe("policy studio Bring Your Own paths", () => {
     expect(window.document.getElementById("drawer-detail")?.textContent).toContain(
       "Only AIH-owned governance and telemetry identities are authorable here.",
     );
-
-    window.close();
   });
 
   it("guides npm and GitHub discovery without treating directories or READMEs as evidence", () => {
@@ -148,8 +153,6 @@ describe("policy studio Bring Your Own paths", () => {
       `fetches microsoft/playwright-cli at exact commit ${"a".repeat(40)} once`,
     );
     expect(githubGuide).toContain("does not install or approve");
-
-    window.close();
   });
 
   it("binds accountable owner email to pending MCP and framework-curation records", () => {
@@ -195,6 +198,5 @@ describe("policy studio Bring Your Own paths", () => {
     expect(policy.governance.externalCuration[0].items[0].accountableOwner).toBe(
       "framework.owner@acme.example",
     );
-    window.close();
   });
 });

@@ -54,15 +54,34 @@ export async function authorProtectedPolicyViaPackedWorkbench({
     if (scripts.length === 0) throw new Error("packed-workbench-script-missing");
     window.eval(scripts.join("\n"));
 
-    const presetSelect = window.document.getElementById("preset-select");
-    const enterprise = window.document.querySelector('[data-preset="enterprise"]');
-    if (presetSelect && "value" in presetSelect) {
-      presetSelect.value = "enterprise";
-      presetSelect.dispatchEvent(new window.Event("change", { bubbles: true }));
-    } else if (enterprise) {
-      enterprise.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
-    } else {
-      throw new Error("packed-workbench-enterprise-preset-missing");
+    const decisionTargets = new Set(
+      [authorityFields, ...decisions]
+        .flatMap((fields) => String(fields["protected-targets"] ?? "").split(","))
+        .map((target) => target.trim())
+        .filter(Boolean),
+    );
+    const sanctionedCliControls = [...window.document.querySelectorAll("[data-sanctioned-cli]")];
+    if (decisionTargets.size === 0)
+      throw new Error("packed-workbench-supported-cli-missing-for-protected-target");
+    for (const target of decisionTargets) {
+      const matches = sanctionedCliControls.filter(
+        (element) => element.getAttribute("data-sanctioned-cli") === target,
+      );
+      if (matches.length !== 1)
+        throw new Error(
+          "packed-workbench-supported-cli-missing-for-protected-target:" + target,
+        );
+      const control = matches[0];
+      if (control.getAttribute("aria-pressed") !== "true")
+        control.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    }
+
+    const posture = input(window, "posture");
+    posture.value = "enterprise";
+    posture.dispatchEvent(new window.Event("change", { bubbles: true }));
+    if (posture.value !== "enterprise") {
+      const announcement = window.document.getElementById("announcement")?.textContent ?? "unknown";
+      throw new Error("packed-workbench-enterprise-posture-refused:" + announcement);
     }
 
     const form = window.document.getElementById("protected-form");

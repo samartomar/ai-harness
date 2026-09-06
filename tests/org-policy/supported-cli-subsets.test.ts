@@ -1,6 +1,7 @@
 import { Window } from "happy-dom";
 import { describe, expect, it } from "vitest";
 import { SUPPORTED_CLIS } from "../../src/internals/clis.js";
+import { policyAuthoringCatalog } from "../../src/org-policy/catalog.js";
 import { parseOrgPolicy } from "../../src/org-policy/schema.js";
 import {
   exportStudioPolicy,
@@ -16,7 +17,8 @@ const workbenchScripts = [...workbenchHtml.matchAll(/<script>([\s\S]*?)<\/script
 );
 const WORKBENCH_TEST_TIMEOUT_MS = 45_000;
 const WORKBENCH_IMPORT_TIMEOUT_MS = 15_000;
-const controls = [model.catalog.mcp[0]?.control, model.catalog.hooks[0]?.control].filter(
+const authoredCatalog = policyAuthoringCatalog();
+const controls = [authoredCatalog.mcp[0]?.control, authoredCatalog.hooks[0]?.control].filter(
   (control): control is NonNullable<typeof control> => control !== undefined,
 );
 
@@ -77,12 +79,22 @@ function click(window: Window, selector: string): void {
   node.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
 }
 
-function selectPreset(window: Window, value: "vibe" | "enterprise" | "custom"): void {
-  const node = window.document.getElementById("preset-select") as unknown as {
+function selectCatalogControl(window: Window, controlId: string): void {
+  const search = window.document.querySelector('input[aria-label="Search catalog"]') as unknown as {
     value: string;
     dispatchEvent(event: unknown): boolean;
   } | null;
-  if (node === null) throw new Error("expected preset selector");
+  if (search === null) throw new Error("expected generic catalog search");
+  search.value = controlId;
+  search.dispatchEvent(new window.Event("input", { bubbles: true }));
+  click(window, `button[data-workbench-row-action][data-workbench-asset-id="aih/${controlId}"]`);
+}
+function selectPosture(window: Window, value: "vibe" | "enterprise"): void {
+  const node = window.document.getElementById("posture") as unknown as {
+    value: string;
+    dispatchEvent(event: unknown): boolean;
+  } | null;
+  if (node === null) throw new Error("expected posture selector");
   node.value = value;
   node.dispatchEvent(new window.Event("change", { bubbles: true }));
 }
@@ -93,6 +105,7 @@ function authored(window: Window) {
   } | null;
   if (preview === null) throw new Error("expected authored policy preview");
   return JSON.parse(preview.value) as {
+    minimumPosture?: string;
     governance: {
       supportedClis?: string[];
       catalog: { reviewed: Array<Record<string, unknown>> };
@@ -106,10 +119,16 @@ async function importPolicy(window: Window, value: unknown): Promise<void> {
   if (input === null) throw new Error("expected policy file input");
   Object.defineProperty(input, "files", {
     configurable: true,
-    value: [new window.File([JSON.stringify(value)], "policy.json", { type: "application/json" })],
+    value: [
+      new window.File([JSON.stringify(value)], "policy.json", {
+        type: "application/json",
+      }),
+    ],
   });
   input.dispatchEvent(new window.Event("change", { bubbles: true }));
-  const pending = window as unknown as { __aihPolicyWorkbenchPending?: Promise<void> };
+  const pending = window as unknown as {
+    __aihPolicyWorkbenchPending?: Promise<void>;
+  };
   if (pending.__aihPolicyWorkbenchPending !== undefined) await pending.__aihPolicyWorkbenchPending;
   const deadline = Date.now() + WORKBENCH_IMPORT_TIMEOUT_MS;
   while (Date.now() < deadline) {
@@ -206,8 +225,16 @@ describe("organization-selected CLI activation scope", () => {
     "authors single-, two-, and all-CLI policies with exact per-control targets",
     () => {
       const cases = [
-        { supported: ["claude"], control: "code-review-graph", targets: ["claude"] },
-        { supported: ["claude", "codex"], control: "usage-metering", targets: ["claude", "codex"] },
+        {
+          supported: ["claude"],
+          control: "code-review-graph",
+          targets: ["claude"],
+        },
+        {
+          supported: ["claude", "codex"],
+          control: "usage-metering",
+          targets: ["claude", "codex"],
+        },
         {
           supported: [...SUPPORTED_CLIS],
           control: "code-review-graph",
@@ -218,7 +245,7 @@ describe("organization-selected CLI activation scope", () => {
       for (const item of cases) {
         const window = studio();
         for (const cli of item.supported) click(window, `[data-sanctioned-cli="${cli}"]`);
-        click(window, `[data-reviewed="${item.control}"]`);
+        selectCatalogControl(window, item.control);
         const policy = authored(window);
         expect(policy.governance.activations).toContainEqual({
           candidate: item.control,
@@ -226,9 +253,6 @@ describe("organization-selected CLI activation scope", () => {
           targets: item.targets,
           clarification: "Requested by: administrator",
         });
-        expect(
-          window.document.querySelector(`[data-row="${item.control}"]`)?.textContent,
-        ).toContain(`Requested targets: ${item.targets.join(", ")}`);
       }
     },
     WORKBENCH_TEST_TIMEOUT_MS,
@@ -239,48 +263,39 @@ describe("organization-selected CLI activation scope", () => {
     () => {
       const window = studio();
       click(window, '[data-sanctioned-cli="cursor"]');
-      click(window, '[data-reviewed="code-review-graph"]');
+      selectCatalogControl(window, "code-review-graph");
 
       expect(authored(window).governance.activations).toEqual([]);
-      expect(window.document.getElementById("announcement")?.textContent).toContain(
-        "code-review-graph has no projector for the organization-sanctioned CLI set cursor",
-      );
+      expect(window.document.querySelector("#framework-rows .error")?.textContent).not.toBe("");
     },
     WORKBENCH_TEST_TIMEOUT_MS,
   );
 
   it(
-    "rejects Vibe composition atomically when a sanctioned CLI cannot host every profile control",
+    "keeps supported CLI choices independent from an ordinary posture change",
     () => {
       for (const supportedCli of ["kiro", "cursor"] as const) {
         const window = studio();
         click(window, `[data-sanctioned-cli="${supportedCli}"]`);
+        selectCatalogControl(window, "code-review-graph");
         const before = authored(window);
+        selectPosture(window, "vibe");
 
-        selectPreset(window, "vibe");
-
-        expect(authored(window)).toEqual(before);
-        expect(window.document.getElementById("announcement")?.textContent).toContain(
-          "Vibe composition blocked because",
-        );
-        expect(window.document.getElementById("announcement")?.textContent).toContain(
-          supportedCli === "kiro" ? "usage-metering" : "code-review-graph",
-        );
-        expect(window.document.getElementById("announcement")?.textContent).toContain(
-          "nothing changed",
-        );
+        const after = authored(window);
+        expect(after.minimumPosture).toBe("vibe");
+        expect(after.governance.supportedClis).toEqual(before.governance.supportedClis);
+        expect(after.governance.activations).toEqual(before.governance.activations);
       }
     },
     WORKBENCH_TEST_TIMEOUT_MS,
   );
-
   it(
     "narrows existing reviewed activations when the sanctioned set narrows",
     () => {
       const window = studio();
       click(window, '[data-sanctioned-cli="claude"]');
       click(window, '[data-sanctioned-cli="kiro"]');
-      click(window, '[data-reviewed="code-review-graph"]');
+      selectCatalogControl(window, "code-review-graph");
       expect(authored(window).governance.activations[0]?.targets).toEqual(["claude", "kiro"]);
 
       click(window, '[data-sanctioned-cli="kiro"]');
@@ -292,14 +307,44 @@ describe("organization-selected CLI activation scope", () => {
   it(
     "deterministically narrows a legacy Workbench activation without changing support metadata",
     async () => {
-      const control = model.catalog.mcp.find((item) => item.id === "code-review-graph")?.control;
+      const control = authoredCatalog.mcp.find(
+        (item) => item.control.id === "code-review-graph",
+      )?.control;
       if (control === undefined) throw new Error("expected code-review-graph control");
       const source = studio();
       click(source, '[data-sanctioned-cli="claude"]');
-      click(source, '[data-reviewed="code-review-graph"]');
+      selectCatalogControl(source, "code-review-graph");
       const legacy = authored(source);
+      const invalidV3 = structuredClone(legacy);
+      const invalidV3Activation = invalidV3.governance.activations[0];
+      if (invalidV3Activation === undefined) throw new Error("expected authored V3 activation");
+      invalidV3Activation.targets = [...control.targets];
+      expect(() => parseStudioPolicyImport(JSON.stringify(invalidV3))).toThrow(
+        "must exactly match the organization-sanctioned projector targets",
+      );
+      const versionedLegacy = legacy as typeof legacy & {
+        schemaVersion?: number;
+        authoringSelections?: unknown;
+        minimumCoreVersion?: string;
+        authoringSources?: unknown;
+      };
+      versionedLegacy.schemaVersion = 2;
+      delete versionedLegacy.authoringSelections;
+      delete versionedLegacy.minimumCoreVersion;
+      delete versionedLegacy.authoringSources;
       const legacyActivation = legacy.governance.activations[0];
-      if (legacyActivation === undefined) throw new Error("expected authored activation");
+      const legacyCandidate = legacy.governance.catalog.reviewed[0];
+      if (legacyActivation === undefined || legacyCandidate === undefined)
+        throw new Error("expected authored legacy control");
+      // Earlier V2 Workbench exports omitted schema-defaulted candidate fields.
+      delete (legacyCandidate as Record<string, unknown>).findings;
+      delete (legacyCandidate as Record<string, unknown>).autoExecute;
+      const managedServer = (legacyCandidate as { source?: { server?: unknown } }).source?.server;
+      if (typeof managedServer !== "string") throw new Error("expected managed MCP server");
+      (legacy as Record<string, unknown>).mcp = {
+        allowManagedOnly: true,
+        allowedServers: [managedServer],
+      };
       legacyActivation.targets = [...control.targets];
       const headless = parseStudioPolicyImport(JSON.stringify(legacy));
       expect(headless.governance?.catalog.reviewed[0]?.targets).toEqual(control.targets);

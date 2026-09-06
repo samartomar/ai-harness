@@ -74,7 +74,7 @@ describe("ai-harness self-hosting boundary", () => {
       jobs: {
         full_verify: {
           if: string;
-          env: Record<string, string>;
+          env?: Record<string, string>;
           strategy: { matrix: { os: string[] } };
           steps: Array<{ if?: string; run?: string }>;
         };
@@ -100,7 +100,7 @@ describe("ai-harness self-hosting boundary", () => {
 
     expect(full.if).toContain("needs.classify.outputs.full_suite == 'true'");
     expect(full.strategy.matrix.os).toEqual(["ubuntu-latest", "macos-latest"]);
-    expect(full.env.NODE_OPTIONS).toBe("--max-old-space-size=4096");
+    expect(full.env?.NODE_OPTIONS).toBeUndefined();
     expect(full.steps.map((step) => step.run)).toEqual(
       expect.arrayContaining([
         "npx vitest run --coverage --maxWorkers=2 --testTimeout=15000",

@@ -11,7 +11,14 @@ import {
   eccModuleSelectableMemberIds,
 } from "../../src/ecc/materialize.js";
 import { eccMandatoryRequirementIds } from "../../src/ecc/selection-closure.js";
+import { type OrgPolicy, OrgPolicySchema } from "../../src/org-policy/schema.js";
 import { defaultStudioPolicy } from "../../src/org-policy/studio-model.js";
+import { compilePolicy } from "../../src/org-policy/workbench/policy-compiler.js";
+import { defaultPreparedWorkbenchCatalog } from "../../src/org-policy/workbench/prepared-catalog.js";
+import {
+  createWorkbenchState,
+  reduceWorkbenchAction,
+} from "../../src/org-policy/workbench/selection-engine.js";
 
 const catalog = baselineCatalogById("ecc");
 const repository = `${catalog.owner}/${catalog.repo}`;
@@ -169,6 +176,84 @@ function withTypescriptLanguageAndCore(includeRider = true) {
   return policy;
 }
 
+describe("schema-v3 Workbench ECC guard", () => {
+  it("consumes compiled V3 pins and refuses stale or missing intent before using its legacy mirror", () => {
+    const prepared = defaultPreparedWorkbenchCatalog();
+    const asset = prepared.bundle.assets["ecc/module:rules-core"];
+    if (!asset) throw new Error("expected pinned ECC rules-core asset");
+    const selected = reduceWorkbenchAction(prepared.bundle, createWorkbenchState(), {
+      type: "select-root",
+      assetId: asset.id,
+      origin: { kind: "administrator" },
+    });
+    expect(selected.accepted).toBe(true);
+    const compiled = compilePolicy(
+      defaultStudioPolicy(),
+      selected.state,
+      prepared.bundle,
+      prepared.bindings,
+    );
+    expect(compiled.diagnostics).toEqual([]);
+    expect(compiled.accepted).toBe(true);
+    const valid = OrgPolicySchema.parse(compiled.policy) as OrgPolicy;
+    expect(governedEccComponentIds(valid, catalog)).toContain("module:rules-core");
+    const exactMirror = structuredClone(valid.governance?.externalSelections);
+    for (const kind of ["stale", "missing"] as const) {
+      const damaged = structuredClone(valid);
+      if (damaged.schemaVersion !== 3) throw new Error("expected V3 compiler output");
+      const root = damaged.authoringSelections.roots[0];
+      if (!root) throw new Error("expected pinned root");
+      if (kind === "stale") root.contentDigest = "sha256:" + "f".repeat(64);
+      else {
+        root.assetId = "ecc/skill:removed";
+        root.resolvedItems = [
+          {
+            assetId: root.assetId,
+            sourceId: root.sourceId,
+            sourceRevisionId: root.sourceRevisionId,
+            contentDigest: root.contentDigest,
+          },
+        ];
+      }
+      expect(damaged.governance?.externalSelections).toEqual(exactMirror);
+      expect(() => governedEccComponentIds(damaged, catalog)).toThrow(
+        /invalid Workbench selections/,
+      );
+    }
+  });
+
+  it("refuses a forged legacy ECC mirror when V3 selections are empty", () => {
+    const moduleId = catalog.components
+      .find((component) => component.id.startsWith("module:"))
+      ?.id.slice("module:".length);
+    if (moduleId === undefined) throw new Error("expected pinned ECC module");
+    const forged = policyWithModules([moduleId]);
+    const v3 = OrgPolicySchema.parse({
+      ...forged,
+      schemaVersion: 3,
+      minimumCoreVersion: "0.6.0",
+      authoringSelections: {
+        selectionVersion: "workbench-selection/v1",
+        roots: [],
+        requests: [],
+        exclusions: [],
+        drafts: [],
+      },
+    }) as OrgPolicy;
+    expect(() => governedEccComponentIds(v3, catalog)).toThrow(
+      /Legacy external selections disagree with pinned authoring selections/,
+    );
+  });
+  it("keeps schema-v2 component resolution unchanged", () => {
+    const moduleId = catalog.components
+      .find((component) => component.id.startsWith("module:"))
+      ?.id.slice("module:".length);
+    if (moduleId === undefined) throw new Error("expected pinned ECC module");
+    expect(governedEccComponentIds(policyWithModules([moduleId]), catalog)).toContain(
+      `module:${moduleId}`,
+    );
+  });
+});
 describe("governed ECC module selection closure", () => {
   it("keeps lower-level synthetic identifiers total while the governed boundary refuses them", () => {
     expect(eccMandatoryRequirementIds("synthetic:future-component")).toEqual([]);
