@@ -1,4 +1,10 @@
-export const WORKBENCH_PROVIDER_IDS = ["aih", "ecc", "organization", "superpowers"] as const;
+export const WORKBENCH_PROVIDER_IDS = [
+  "aih",
+  "ecc",
+  "mattpocock",
+  "organization",
+  "superpowers",
+] as const;
 export type WorkbenchProviderId = (typeof WORKBENCH_PROVIDER_IDS)[number];
 
 export interface WorkbenchProviderOwnership {
@@ -35,10 +41,13 @@ export const WORKBENCH_CATALOG_SHARED_INPUT_PATHS = [
   "src/org-policy/workbench/compilers/formats.ts",
   "src/org-policy/workbench/compilers/organization-manifest.ts",
   "src/org-policy/workbench/compilers/pinned-baseline.ts",
+  "src/org-policy/workbench/compilers/pinned-skill-collection.ts",
   "src/org-policy/workbench/providers/contracts.ts",
   "src/org-policy/workbench/providers/pinned.ts",
   "src/org-policy/workbench/providers/registry.ts",
 ] as const;
+
+const MATTPOCOCK_SNAPSHOT_PATH = "src/org-policy/workbench/providers/mattpocock.snapshot.json";
 
 const commonConsumerTests = [
   "tests/internals/workbench-provider-ownership.test.ts",
@@ -69,6 +78,16 @@ export const WORKBENCH_PROVIDER_OWNERSHIP: readonly WorkbenchProviderOwnership[]
     consumerTests: commonConsumerTests,
   },
   {
+    id: "mattpocock",
+    sourceRoots: ["src/org-policy/workbench/providers/mattpocock.ts", MATTPOCOCK_SNAPSHOT_PATH],
+    testPath: "tests/org-policy/workbench/providers/mattpocock.test.ts",
+    consumerTests: [
+      ...commonConsumerTests,
+      "tests/org-policy/workbench/compilers/pinned-skill-collection.test.ts",
+      "tests/org-policy/workbench/core/mattpocock-consumption.test.ts",
+    ],
+  },
+  {
     id: "organization",
     sourceRoots: ["src/org-policy/workbench/providers/organization.ts"],
     testPath: "tests/org-policy/workbench/providers/organization.test.ts",
@@ -87,6 +106,7 @@ export const WORKBENCH_PROVIDER_OWNERSHIP: readonly WorkbenchProviderOwnership[]
 
 const providerById = new Map(WORKBENCH_PROVIDER_OWNERSHIP.map((record) => [record.id, record]));
 const sharedInputs = new Set<string>(WORKBENCH_CATALOG_SHARED_INPUT_PATHS);
+const approvedJsonSourceRoots = new Set([MATTPOCOCK_SNAPSHOT_PATH]);
 
 /** Provider import authority is narrower than the CI trigger scope above. */
 const NEUTRAL_PROVIDER_IMPORT_PATHS = [
@@ -130,6 +150,11 @@ const PROVIDER_IMPORT_ALLOWED_PATHS: Readonly<Record<WorkbenchProviderId, Readon
     "src/org-policy/ecc-skill-catalog.ts",
     "src/org-policy/workbench/compilers/pinned-baseline.ts",
     "src/org-policy/workbench/providers/pinned.ts",
+  ]),
+  mattpocock: new Set([
+    ...NEUTRAL_PROVIDER_IMPORT_PATHS,
+    "src/capability/package-graph/canonical.ts",
+    "src/org-policy/workbench/compilers/pinned-skill-collection.ts",
   ]),
   organization: new Set([
     ...NEUTRAL_PROVIDER_IMPORT_PATHS,
@@ -232,7 +257,7 @@ export function validateWorkbenchProviderOwnership(): void {
     for (const root of record.sourceRoots) {
       if (
         !root.startsWith("src/") ||
-        !(root.endsWith("/") || root.endsWith(".ts")) ||
+        !(root.endsWith("/") || root.endsWith(".ts") || approvedJsonSourceRoots.has(root)) ||
         roots.has(root)
       )
         throw new Error(`invalid provider source root ${root}`);

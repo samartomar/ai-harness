@@ -36,6 +36,12 @@ export const compilerFormatRegistrationsV1 = [
     },
   },
   {
+    id: "pinned-skill-collection",
+    version: "1",
+    inputFormat: "pinned-skill-collection/v1",
+    actions: { skill: "record-selection" },
+  },
+  {
     id: "organization-manifest",
     version: "1",
     inputFormat: "organization-authoring-manifest/v1",

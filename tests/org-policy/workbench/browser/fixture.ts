@@ -2,20 +2,46 @@ import { copyFile, mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { test as base, expect } from "@playwright/test";
+import { preparePackedWorkbench } from "../../../../tools/prepare-packed-workbench.mjs";
 
 type BrowserFixtures = {
   artifact: string;
+  preparedArtifact: string;
   workbench: { path: string; networkRequests: string[] };
 };
 
+const packedArtifacts = new Map<string, Promise<void>>();
+
 export const test = base.extend<BrowserFixtures>({
   artifact: ["aih-policy-workbench.html", { option: true }],
-  workbench: async ({ page, context, artifact }, use, testInfo) => {
-    const directory = process.env.AIH_WORKBENCH_FIXTURE_DIR;
-    if (!directory) throw new Error("Workbench fixtures were not prepared");
+  // Automatic fixtures finish before page/context setup. Only the packed journey
+  // pays for the cold package consumer; global teardown still owns its cleanup.
+  preparedArtifact: [
+    async ({ artifact }, use) => {
+      const directory = process.env.AIH_WORKBENCH_FIXTURE_DIR;
+      if (!directory) throw new Error("Workbench fixtures were not prepared");
+      if (artifact === "packed-policy-workbench.html") {
+        let preparation = packedArtifacts.get(directory);
+        if (!preparation) {
+          preparation = Promise.resolve().then(async () => {
+            const packed = preparePackedWorkbench(directory);
+            await writeFile(
+              resolve(directory, "package-receipt.json"),
+              JSON.stringify(packed, null, 2),
+            );
+          });
+          packedArtifacts.set(directory, preparation);
+        }
+        await preparation;
+      }
+      await use(resolve(directory, artifact));
+    },
+    { auto: true },
+  ],
+  workbench: async ({ page, context, preparedArtifact }, use, testInfo) => {
     const path = testInfo.outputPath("aih-policy-workbench.html");
     await mkdir(dirname(path), { recursive: true });
-    await copyFile(resolve(directory, artifact), path);
+    await copyFile(preparedArtifact, path);
     const networkRequests: string[] = [];
     const pageErrors: string[] = [];
     page.on("pageerror", (error) => pageErrors.push(error.stack ?? error.message));

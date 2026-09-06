@@ -145,6 +145,22 @@ describe("Workbench provider ownership", () => {
     ]);
   });
 
+  it("routes the pinned Matt provider source and data payload through its exact contract set", () => {
+    expect(providerForWorkbenchPath("src/org-policy/workbench/providers/mattpocock.ts")).toBe(
+      "mattpocock",
+    );
+    expect(
+      providerForWorkbenchPath("src/org-policy/workbench/providers/mattpocock.snapshot.json"),
+    ).toBe("mattpocock");
+    expect(providerTestsFor(["mattpocock"] as never)).toEqual(
+      expect.arrayContaining([
+        "tests/org-policy/workbench/providers/mattpocock.test.ts",
+        "tests/org-policy/workbench/compilers/pinned-skill-collection.test.ts",
+        "tests/org-policy/workbench/core/mattpocock-consumption.test.ts",
+      ]),
+    );
+  });
+
   it("does not turn a broad CI trigger into provider import authority", () => {
     expect(() => assertProviderImportTarget("ecc", "src/org-policy/workbench/assembly.ts")).toThrow(
       /forbidden authority/u,
@@ -168,8 +184,35 @@ describe("Workbench provider ownership", () => {
 
   it("mechanically validates every provider's recursive static import closure", () => {
     for (const record of WORKBENCH_PROVIDER_OWNERSHIP) {
-      for (const sourceRoot of record.sourceRoots)
-        validateProviderSourceImports(record.id, sourceRoot, staticImportClosure([sourceRoot]));
+      const staticTargets = new Set<string>();
+      for (const sourceRoot of record.sourceRoots) {
+        // Data payloads are not TypeScript modules, but must be imported by an owned entry.
+        if (sourceRoot.endsWith(".json")) continue;
+        const targets = staticImportClosure([sourceRoot]);
+        for (const target of targets) staticTargets.add(target);
+        validateProviderSourceImports(record.id, sourceRoot, targets);
+      }
+      for (const sourceRoot of record.sourceRoots) {
+        if (sourceRoot.endsWith(".json")) expect(staticTargets.has(sourceRoot)).toBe(true);
+      }
+    }
+  });
+
+  it("rejects unreviewed and shared JSON as provider source ownership", () => {
+    const record = WORKBENCH_PROVIDER_OWNERSHIP.find(({ id }) => id === "mattpocock");
+    if (record === undefined) throw new Error("Missing Matt provider ownership");
+    const mutableRecord = record as unknown as { sourceRoots: string[] };
+    const originalRoots = mutableRecord.sourceRoots;
+    try {
+      for (const path of [
+        "src/org-policy/workbench/providers/unreviewed.snapshot.json",
+        "src/baseline-evidence/ecc-modules.json",
+      ]) {
+        mutableRecord.sourceRoots = [...originalRoots, path];
+        expect(() => validateWorkbenchProviderOwnership()).toThrow(/invalid provider source root/u);
+      }
+    } finally {
+      mutableRecord.sourceRoots = originalRoots;
     }
   });
 

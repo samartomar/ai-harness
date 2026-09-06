@@ -166,6 +166,45 @@ describe("CI impact classifier", () => {
     });
   });
 
+  it("routes Matt source and snapshot changes to its exact provider lane without generic browser journeys", () => {
+    const providerTests = providerTestsFor(["mattpocock"] as never);
+    for (const changedPath of [
+      "src/org-policy/workbench/providers/mattpocock.ts",
+      "src/org-policy/workbench/providers/mattpocock.snapshot.json",
+    ]) {
+      const receipt = classifyCiImpact({
+        baseSha,
+        headSha,
+        changedPaths: [changedPath],
+        testFiles: [...testFiles, ...providerTests],
+      });
+      expect(receipt).toMatchObject({
+        affectedProviders: ["mattpocock"],
+        providerTests,
+        testLane: "workbench",
+        requiresPackedArtifact: true,
+        requiresGenericBrowserJourneys: false,
+      });
+    }
+  });
+
+  it("broadens generic pinned-skill compiler changes to the shared Workbench lane", () => {
+    const receipt = classifyCiImpact({
+      baseSha,
+      headSha,
+      changedPaths: ["src/org-policy/workbench/compilers/pinned-skill-collection.ts"],
+      testFiles,
+    });
+
+    expect(receipt).toMatchObject({
+      affectedProviders: [],
+      riskClass: "cross-platform",
+      testLane: "both",
+      requiresPackedArtifact: true,
+      requiresGenericBrowserJourneys: true,
+    });
+  });
+
   it("falls back for baseline extractors until their cross-domain consumer union is explicit", () => {
     const receipt = classifyCiImpact({
       baseSha,

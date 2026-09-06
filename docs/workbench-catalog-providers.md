@@ -5,7 +5,8 @@
 
 The Policy Workbench builds one offline `authoring-catalog-bundle/v1` from a
 fixed registry of build-time providers. The registry currently enrolls `ecc`,
-`superpowers`, `aih`, and `organization`. A provider prepares explicit typed inputs for a registered compiler.
+`superpowers`, `aih`, `organization`, and `mattpocock`. A provider prepares explicit
+typed inputs for a registered compiler.
 The registry is fixed in the package; it does not load arbitrary executable plugins.
 
 The existing root entry remains the user-facing UI route:
@@ -29,6 +30,21 @@ identity, then supplies the static AIH skill and agent declarations. Core-owned
 MCP controls, global hooks, legacy compatibility bindings, and authority paths
 remain outside that provider. The organization provider compiles an
 organization authoring manifest through the same generic assembly shape.
+
+The Matt Pocock provider packages the 25 skills listed in the upstream plugin
+manifest at commit `3cca18b368ae95cdbdebbff572ccafa662551015` (version `1.2.3`).
+It includes each `SKILL.md`, its explicitly referenced local support files, and
+the MIT license. The skill-only compiler checks exact bytes and content hashes;
+source pinning and the curated inventory belong to the provider. Development
+files and unpublished skills are excluded.
+
+In the Workbench, choose the source containing `source:mattpocock` and type
+**Skills**, then select the skills to request. Exported schema-v3 policy preserves their exact source and
+content pins; Core validates those pins again when consuming the policy. Matt
+skills are additive and do not occupy the optional methodology slot. Selection
+records requested intent: it does not install a skill, run its instructions,
+or grant organization approval. Scanner evidence remains missing until Core
+has verified evidence bound to the same content.
 
 Shared provider-facing shapes live in
 `src/org-policy/catalog-provider-types.ts`. They include catalog assets and
@@ -87,7 +103,9 @@ build, and the shared packed smoke. A shared UI or contract change uses the full
 Workbench lane. Mixed changes use that broader lane once; the required-check
 gate rejects a skipped mandatory lane.
 
-Provider ownership is intentionally limited to the registered entry modules.
+Provider ownership covers reviewed entry modules and explicitly enrolled data
+snapshots. Matt snapshot changes run Matt provider and consumer checks; the
+shared skill compiler retains broader Workbench coverage.
 ECC metadata and skill-catalog snapshots still feed legacy aggregate consumers,
 so their changes retain broader checks. Baseline inventory providers used by
 installers retain a full-suite fallback. Unknown provider paths and selector or
@@ -99,8 +117,9 @@ ownership is proven; TypeScript builds, packaging, and release remain shared.
 Providers are statically registered at build time. There is no arbitrary
 runtime provider loader, independent provider availability when one included
 provider fails, independent provider release, or persistent provider cache.
-The existing process-local compilation cache remains a combined-artifact
-implementation detail.
+Process-local compilation caches remain implementation details. Matt validates
+its packaged snapshot on first use and reuses a sealed compilation with detached
+outputs; explicit caller inputs are always revalidated.
 
 Adding an ordinary provider requires a reviewed provider module, static
 registry enrollment, declared ownership and dependencies, and a mandatory
