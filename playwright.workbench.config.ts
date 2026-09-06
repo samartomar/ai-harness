@@ -14,6 +14,15 @@ export default defineConfig({
     browserName: "chromium",
     headless: true,
     viewport: { width: 1280, height: 900 },
-    trace: "retain-on-failure",
+    // Keep step/error traces without repeatedly copying large catalog DOMs or
+    // duplicating V8 coverage attachments, which remain in the test results.
+    trace: {
+      mode: "retain-on-failure",
+      attachments: false,
+      screenshots: false,
+      snapshots: false,
+      sources: false,
+    },
+    screenshot: "only-on-failure",
   },
 });

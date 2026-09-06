@@ -1,7 +1,9 @@
 import { EventEmitter } from "node:events";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   type PolicyWorkbenchUi,
@@ -62,14 +64,56 @@ describe("Policy Workbench UI server", () => {
 
   it("does not inspect or write the current repository", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "aih-ui-rootless-"));
-    const priorCwd = process.cwd();
+    const probe = join(cwd, "ui-server-probe.mts");
+    const sourceUrl = new URL("../../src/org-policy/ui-server.ts", import.meta.url).href;
     try {
-      process.chdir(cwd);
-      running = await startPolicyWorkbenchUi({ openBrowser: async () => {} });
+      writeFileSync(
+        probe,
+        [
+          `import { existsSync } from "node:fs";`,
+          `import { join } from "node:path";`,
+          `import { startPolicyWorkbenchUi } from ${JSON.stringify(sourceUrl)};`,
+          "",
+          "const ui = await startPolicyWorkbenchUi({ openBrowser: async () => {} });",
+          "let observed;",
+          "try {",
+          "  observed = {",
+          '    policyHtml: existsSync(join(process.cwd(), "aih-policy-workbench.html")),',
+          '    aih: existsSync(join(process.cwd(), ".aih")),',
+          "    url: ui.url,",
+          "  };",
+          "} finally {",
+          "  await ui.close();",
+          "}",
+          "process.stdout.write(JSON.stringify(observed));",
+        ].join("\n"),
+      );
+
+      const childProcess =
+        await vi.importActual<typeof import("node:child_process")>("node:child_process");
+      const output = childProcess.execFileSync(
+        process.execPath,
+        ["--import", pathToFileURL(createRequire(import.meta.url).resolve("tsx")).href, probe],
+        {
+          cwd,
+          encoding: "utf8",
+          windowsHide: true,
+          timeout: 10_000,
+          maxBuffer: 1024 * 1024,
+        },
+      );
+      const observed = JSON.parse(output) as {
+        policyHtml: boolean;
+        aih: boolean;
+        url: string;
+      };
+
+      expect(observed.policyHtml).toBe(false);
+      expect(observed.aih).toBe(false);
+      expect(observed.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/aih-policy-workbench\.html$/);
       expect(existsSync(join(cwd, "aih-policy-workbench.html"))).toBe(false);
       expect(existsSync(join(cwd, ".aih"))).toBe(false);
     } finally {
-      process.chdir(priorCwd);
       rmSync(cwd, { recursive: true, force: true });
     }
   });

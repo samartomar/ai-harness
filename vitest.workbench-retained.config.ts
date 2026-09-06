@@ -15,6 +15,9 @@ export default defineConfig({
   test: {
     globals: false,
     environment: "node",
+    // Each file keeps a fresh Worker and module environment without fork IPC.
+    pool: "threads",
+    isolate: true,
     setupFiles: ["./tests/setup-git-env.ts"],
     ...testRuntime,
     // Chromium and retained coverage run concurrently in the PR lane.
