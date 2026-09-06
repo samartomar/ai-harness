@@ -12,8 +12,8 @@ export default defineConfig({
     environment: "node",
     setupFiles: ["./tests/setup-git-env.ts"],
     ...testRuntime,
-    // Reserve two CPUs for concurrent browser/setup work while retaining a four-worker ceiling on larger machines.
-    maxWorkers: Math.max(1, Math.min(4, availableParallelism() - 2)),
+    // Reserve one CPU for concurrent browser/setup work while retaining a four-worker ceiling.
+    maxWorkers: Math.max(1, Math.min(4, availableParallelism() - 1)),
     include: [...WORKBENCH_RETAINED_TEST_PATTERNS],
     coverage: workbenchCoverage,
   },
