@@ -161,6 +161,21 @@ describe("Workbench provider ownership", () => {
     );
   });
 
+  it("routes the static Ponytail provider source and data payload through its exact contract set", () => {
+    expect(providerForWorkbenchPath("src/org-policy/workbench/providers/ponytail.ts")).toBe(
+      "ponytail",
+    );
+    expect(
+      providerForWorkbenchPath("src/org-policy/workbench/providers/ponytail.snapshot.json"),
+    ).toBe("ponytail");
+    expect(providerTestsFor(["ponytail"] as never)).toEqual(
+      expect.arrayContaining([
+        "tests/org-policy/workbench/providers/ponytail.test.ts",
+        "tests/org-policy/workbench/compilers/pinned-component-collection.test.ts",
+        "tests/org-policy/workbench/core/ponytail-consumption.test.ts",
+      ]),
+    );
+  });
   it("does not turn a broad CI trigger into provider import authority", () => {
     expect(() => assertProviderImportTarget("ecc", "src/org-policy/workbench/assembly.ts")).toThrow(
       /forbidden authority/u,
@@ -199,20 +214,22 @@ describe("Workbench provider ownership", () => {
   });
 
   it("rejects unreviewed and shared JSON as provider source ownership", () => {
-    const record = WORKBENCH_PROVIDER_OWNERSHIP.find(({ id }) => id === "mattpocock");
-    if (record === undefined) throw new Error("Missing Matt provider ownership");
-    const mutableRecord = record as unknown as { sourceRoots: string[] };
-    const originalRoots = mutableRecord.sourceRoots;
-    try {
-      for (const path of [
-        "src/org-policy/workbench/providers/unreviewed.snapshot.json",
-        "src/baseline-evidence/ecc-modules.json",
-      ]) {
-        mutableRecord.sourceRoots = [...originalRoots, path];
-        expect(() => validateWorkbenchProviderOwnership()).toThrow(/invalid provider source root/u);
+    for (const providerId of ["mattpocock", "ponytail"] as const) {
+      const record = WORKBENCH_PROVIDER_OWNERSHIP.find(({ id }) => id === providerId);
+      if (record === undefined) throw new Error("Missing " + providerId + " provider ownership");
+      const mutableRecord = record as unknown as { sourceRoots: string[] };
+      const originalRoots = mutableRecord.sourceRoots;
+      try {
+        for (const path of [
+          "src/org-policy/workbench/providers/unreviewed.snapshot.json",
+          "src/baseline-evidence/ecc-modules.json",
+        ]) {
+          mutableRecord.sourceRoots = [...originalRoots, path];
+          expect(() => validateWorkbenchProviderOwnership()).toThrow(/invalid provider source root/u);
+        }
+      } finally {
+        mutableRecord.sourceRoots = originalRoots;
       }
-    } finally {
-      mutableRecord.sourceRoots = originalRoots;
     }
   });
 

@@ -108,6 +108,17 @@ describe("required CI lane gate", () => {
     expect(runGate({ ...matt, PROVIDER_RESULT: "skipped" }).status).not.toBe(0);
   });
 
+  it("accepts the exact Ponytail provider receipt only when its required lane succeeds", () => {
+    const ponytail = {
+      TEST_LANE: "workbench",
+      WORKBENCH_RESULT: "skipped",
+      AFFECTED_PROVIDERS_JSON: '["ponytail"]',
+      REQUIRES_PACKED_ARTIFACT: "true",
+      REQUIRES_GENERIC_BROWSER_JOURNEYS: "false",
+    };
+    expect(runGate({ ...ponytail, PROVIDER_RESULT: "success" }).status).toBe(0);
+    expect(runGate({ ...ponytail, PROVIDER_RESULT: "skipped" }).status).not.toBe(0);
+  });
   it("uses the generic browser lane once when a mixed change already owns provider contracts", () => {
     const mixed = {
       TEST_LANE: "both",

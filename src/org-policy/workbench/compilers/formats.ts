@@ -42,6 +42,17 @@ export const compilerFormatRegistrationsV1 = [
     actions: { skill: "record-selection" },
   },
   {
+    id: "pinned-component-collection",
+    version: "1",
+    inputFormat: "pinned-component-collection/v1",
+    actions: {
+      hook: "record-request",
+      mcp: "record-request",
+      profile: "record-selection",
+      skill: "record-selection",
+    },
+  },
+  {
     id: "organization-manifest",
     version: "1",
     inputFormat: "organization-authoring-manifest/v1",

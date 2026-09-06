@@ -6,6 +6,7 @@ import { type CatalogProviderCompilationV1, compileCatalogProviderV1 } from "./c
 import { eccCatalogProviderV1 } from "./ecc.js";
 import { getMattPocockPinnedSkillCollectionV1, mattpocockCatalogProviderV1 } from "./mattpocock.js";
 import { organizationCatalogProviderV1 } from "./organization.js";
+import { ponytailCatalogProviderV1, ponytailPinnedComponentCollectionV1 } from "./ponytail.js";
 import { superpowersCatalogProviderV1 } from "./superpowers.js";
 export interface RegisteredCatalogProviderV1 {
   readonly providerId: string;
@@ -63,5 +64,10 @@ export const registeredCatalogProvidersV1: readonly RegisteredCatalogProviderV1[
     ...mattpocockCatalogProviderV1,
     prepareBaseline: () =>
       compileCatalogProviderV1(mattpocockCatalogProviderV1, getMattPocockPinnedSkillCollectionV1()),
+  },
+  {
+    ...ponytailCatalogProviderV1,
+    prepareBaseline: () =>
+      compileCatalogProviderV1(ponytailCatalogProviderV1, ponytailPinnedComponentCollectionV1()),
   },
 ]);
