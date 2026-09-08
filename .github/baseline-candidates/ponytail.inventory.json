@@ -1,0 +1,317 @@
+{
+  "protocol": "CandidateBaselineInventoryV1",
+  "producer": {
+    "id": "aih-core-candidate-preparation-v1"
+  },
+  "source": {
+    "id": "ponytail",
+    "owner": "DietrichGebert",
+    "repository": "ponytail",
+    "pinnedCommit": "356918eba965ee1eac64bd3a7f0dd02108350de5",
+    "treeSha256": "71744a820b85a3232a2d2515dba90caaf430973eb1220e2a72a55d659a6bf164"
+  },
+  "components": [
+    {
+      "id": "runtime:agents-2b6873defee3",
+      "paths": [
+        ".agents"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:assets-8bf729ffe074",
+      "paths": [
+        "assets"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:benchmarks-cb1d2fdcc86c",
+      "paths": [
+        "benchmarks"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:claude-plugin-216ddf49c509",
+      "paths": [
+        ".claude-plugin"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:clinerules-327ad2697caf",
+      "paths": [
+        ".clinerules"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:codex-plugin-22d18f2daf51",
+      "paths": [
+        ".codex-plugin"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:commands-10f5f77eef9a",
+      "paths": [
+        "commands"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:cursor-86ec29493134",
+      "paths": [
+        ".cursor"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:devin-plugin-84ef37c38a65",
+      "paths": [
+        ".devin-plugin"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:docs-46b42b4229cd",
+      "paths": [
+        "docs"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:examples-c590b3c924c3",
+      "paths": [
+        "examples"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:github-bdcc6a2a85f6",
+      "paths": [
+        ".github"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:grok-plugin-a49f62293fd0",
+      "paths": [
+        ".grok-plugin"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:hooks-a9fa9fda98d7",
+      "paths": [
+        "hooks"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:kiro-0b4f1539bf94",
+      "paths": [
+        ".kiro"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:opencode-5e2dd251c591",
+      "paths": [
+        ".opencode"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:pi-extension-48fb599660de",
+      "paths": [
+        "pi-extension"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:ponytail-mcp-1ec79541862c",
+      "paths": [
+        "ponytail-mcp"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:qoder-953838d6a07c",
+      "paths": [
+        ".qoder"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:qoder-plugin-8c9bc0997a06",
+      "paths": [
+        ".qoder-plugin"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:root-4813494d137e",
+      "paths": [
+        "__init__.py",
+        ".env.example",
+        ".gitignore",
+        "after-install.md",
+        "AGENTS.md",
+        "gemini-extension.json",
+        "LICENSE",
+        "opencode.json",
+        "package.json",
+        "plugin.json",
+        "plugin.yaml",
+        "README.es.md",
+        "README.ko.md",
+        "README.md"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:scripts-8c5967fd8486",
+      "paths": [
+        "scripts"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:tests-59830ebc3a41",
+      "paths": [
+        "tests"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:windsurf-3dea8547906d",
+      "paths": [
+        ".windsurf"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "skill:openclaw-skills-ponytail-339f269e7984",
+      "paths": [
+        ".openclaw/skills/ponytail"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:openclaw-skills-ponytail-audit-c2801ddb4e92",
+      "paths": [
+        ".openclaw/skills/ponytail-audit"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:openclaw-skills-ponytail-debt-623362e6e5df",
+      "paths": [
+        ".openclaw/skills/ponytail-debt"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:openclaw-skills-ponytail-gain-521ca1b047c4",
+      "paths": [
+        ".openclaw/skills/ponytail-gain"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:openclaw-skills-ponytail-help-3b3c11679135",
+      "paths": [
+        ".openclaw/skills/ponytail-help"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:openclaw-skills-ponytail-review-0b7db4e60dc1",
+      "paths": [
+        ".openclaw/skills/ponytail-review"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-ponytail-audit-0d2f67855434",
+      "paths": [
+        "skills/ponytail-audit"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-ponytail-bff0420d5308",
+      "paths": [
+        "skills/ponytail"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-ponytail-debt-4239beda66e5",
+      "paths": [
+        "skills/ponytail-debt"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-ponytail-gain-ad9decf3912a",
+      "paths": [
+        "skills/ponytail-gain"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-ponytail-help-6d8337128315",
+      "paths": [
+        "skills/ponytail-help"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-ponytail-review-69a9d8ab505b",
+      "paths": [
+        "skills/ponytail-review"
+      ],
+      "content": "skill"
+    }
+  ],
+  "exclusions": [],
+  "facets": {
+    "skills": [
+      ".openclaw/skills/ponytail",
+      ".openclaw/skills/ponytail-audit",
+      ".openclaw/skills/ponytail-debt",
+      ".openclaw/skills/ponytail-gain",
+      ".openclaw/skills/ponytail-help",
+      ".openclaw/skills/ponytail-review",
+      "skills/ponytail",
+      "skills/ponytail-audit",
+      "skills/ponytail-debt",
+      "skills/ponytail-gain",
+      "skills/ponytail-help",
+      "skills/ponytail-review"
+    ],
+    "agents": [
+      "AGENTS.md"
+    ],
+    "hooks": [
+      "hooks/claude-codex-hooks.json",
+      "hooks/copilot-hooks.json",
+      "hooks/ponytail-activate.js",
+      "hooks/ponytail-config.js",
+      "hooks/ponytail-instructions.js",
+      "hooks/ponytail-mode-tracker.js",
+      "hooks/ponytail-runtime.js",
+      "hooks/ponytail-statusline.ps1",
+      "hooks/ponytail-statusline.sh",
+      "hooks/ponytail-subagent.js",
+      "hooks/qoder-hooks.json",
+      "tests/hooks-windows.test.js",
+      "tests/hooks.test.js"
+    ],
+    "mcp": [],
+    "sourceSymlinks": []
+  }
+}

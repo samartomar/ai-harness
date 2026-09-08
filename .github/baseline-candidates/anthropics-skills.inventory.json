@@ -1,0 +1,213 @@
+{
+  "protocol": "CandidateBaselineInventoryV1",
+  "producer": {
+    "id": "aih-core-candidate-preparation-v1"
+  },
+  "source": {
+    "id": "anthropics-skills",
+    "owner": "anthropics",
+    "repository": "skills",
+    "pinnedCommit": "41bbe19d1a1a7eaab5e7bb9050a417e5c6cffc8f",
+    "treeSha256": "56abee1f4354f3a2aeca1aa8d565a5a17bded3bf5c3949688858f9902b6e1221"
+  },
+  "components": [
+    {
+      "id": "runtime:claude-plugin-216ddf49c509",
+      "paths": [
+        ".claude-plugin"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:root-4813494d137e",
+      "paths": [
+        ".gitignore",
+        "README.md",
+        "THIRD_PARTY_NOTICES.md"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:spec-d4f02eaafd1a",
+      "paths": [
+        "spec"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "skill:skills-academy-guide-cc621012a1c0",
+      "paths": [
+        "skills/academy-guide"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-algorithmic-art-ea5c149403ae",
+      "paths": [
+        "skills/algorithmic-art"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-brand-guidelines-1ce8345bc22a",
+      "paths": [
+        "skills/brand-guidelines"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-canvas-design-6ccb3ac2e0e4",
+      "paths": [
+        "skills/canvas-design"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-claude-api-fb783324c43a",
+      "paths": [
+        "skills/claude-api"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-discernment-nudge-ba54dafe1901",
+      "paths": [
+        "skills/discernment-nudge"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-doc-coauthoring-42e980c42680",
+      "paths": [
+        "skills/doc-coauthoring"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-docx-d36d07847a81",
+      "paths": [
+        "skills/docx"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-frontend-design-e78908800190",
+      "paths": [
+        "skills/frontend-design"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-internal-comms-c74ca82493a9",
+      "paths": [
+        "skills/internal-comms"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-mcp-builder-7a819dbef351",
+      "paths": [
+        "skills/mcp-builder"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-pdf-ffdd2aa08b2c",
+      "paths": [
+        "skills/pdf"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-pptx-e175048aebf8",
+      "paths": [
+        "skills/pptx"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-skill-creator-88345d4f8c9a",
+      "paths": [
+        "skills/skill-creator"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-slack-gif-creator-e800928fe944",
+      "paths": [
+        "skills/slack-gif-creator"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-theme-factory-859bd9d295c0",
+      "paths": [
+        "skills/theme-factory"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-web-artifacts-builder-6e050c7dcfb8",
+      "paths": [
+        "skills/web-artifacts-builder"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-webapp-testing-6a6be760c5d8",
+      "paths": [
+        "skills/webapp-testing"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-xlsx-f4d41de92c4b",
+      "paths": [
+        "skills/xlsx"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:template-5cde0f1298f4",
+      "paths": [
+        "template"
+      ],
+      "content": "skill"
+    }
+  ],
+  "exclusions": [],
+  "facets": {
+    "skills": [
+      "skills/academy-guide",
+      "skills/algorithmic-art",
+      "skills/brand-guidelines",
+      "skills/canvas-design",
+      "skills/claude-api",
+      "skills/discernment-nudge",
+      "skills/doc-coauthoring",
+      "skills/docx",
+      "skills/frontend-design",
+      "skills/internal-comms",
+      "skills/mcp-builder",
+      "skills/pdf",
+      "skills/pptx",
+      "skills/skill-creator",
+      "skills/slack-gif-creator",
+      "skills/theme-factory",
+      "skills/web-artifacts-builder",
+      "skills/webapp-testing",
+      "skills/xlsx",
+      "template"
+    ],
+    "agents": [
+      "skills/skill-creator/agents/analyzer.md",
+      "skills/skill-creator/agents/comparator.md",
+      "skills/skill-creator/agents/grader.md"
+    ],
+    "hooks": [
+      "skills/claude-api/shared/managed-agents-webhooks.md"
+    ],
+    "mcp": [],
+    "sourceSymlinks": []
+  }
+}

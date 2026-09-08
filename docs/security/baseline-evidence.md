@@ -443,6 +443,25 @@ provenance for review; it does not commit, push, publish an npm package, or modi
 the protected branch. A verified `blocked` result is not a successful install
 baseline.
 
+### Candidate inventories before a baseline update
+
+Core's repository-only `tools/prepare-candidate-baseline-requests.mjs` authors
+requests from a `CandidateBaselineInventoryV1` under
+`.github/baseline-candidates/`. The six reviewed inventories cover Core,
+Anthropic skills, ECC, Matt Pocock skills, Ponytail, and Superpowers. Each binds
+an exact repository, commit, source tree digest, component paths, and explicit
+source symlink exclusions. Preparation rejects source drift and requires every
+regular source file to belong to exactly one component before writing canonical
+request batches of at most 100 components into a new output directory.
+
+`assessCandidateWorkbenchCoverage` compares those requests with supplied
+Workbench asset paths and revisions. It reports path intersections, missing
+assets, and whether the candidate revision matches the offered revision. Path
+intersections are review context; they do not establish equivalent content or
+qualification. Its result carries `authority:none` and `activePinAction:preserve`.
+The source inventory and this assessment do not replace the authenticated
+publication, independent qualification, or baseline update checks above.
+
 ### The vetted identity is one exact upstream commit
 
 Every receipt is keyed to the exact file content at the pinned commit, so the

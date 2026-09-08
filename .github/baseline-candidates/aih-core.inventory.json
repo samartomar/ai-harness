@@ -1,0 +1,241 @@
+{
+  "protocol": "CandidateBaselineInventoryV1",
+  "producer": {
+    "id": "aih-core-candidate-preparation-v1"
+  },
+  "source": {
+    "id": "aih-core",
+    "owner": "samartomar",
+    "repository": "ai-harness",
+    "pinnedCommit": "c31741602b3dbd5f228dafe00591e5679c782878",
+    "treeSha256": "070a4fcaa7024fba129dcf913e51d4269515f3e4c0ddab71b344f30a3557779a"
+  },
+  "components": [
+    {
+      "id": "runtime:ai-coding-0439f312cfab",
+      "paths": [
+        "ai-coding/adapters/_shared-canonical-block.md",
+        "ai-coding/adapters/claude.md",
+        "ai-coding/adapters/codex.md",
+        "ai-coding/project.json",
+        "ai-coding/project.md",
+        "ai-coding/RULE_ROUTER.md",
+        "ai-coding/rules/agent-behavior-core.md",
+        "ai-coding/rules/doc-and-truth-homes.md",
+        "ai-coding/rules/engine-invariants.md",
+        "ai-coding/rules/environment.md",
+        "ai-coding/rules/git-ci-discipline.md",
+        "ai-coding/rules/product-principles.md",
+        "ai-coding/rules/project-canon-extension.md",
+        "ai-coding/rules/repo-ai-tools.md",
+        "ai-coding/rules/review-protocol.md",
+        "ai-coding/rules/tracking-and-done.md",
+        "ai-coding/SELF-HOSTING.md",
+        "ai-coding/setup.md",
+        "ai-coding/skill-cards/aih-betterdoc.json",
+        "ai-coding/skill-cards/aih-bugbounty.json"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:docs-46b42b4229cd",
+      "paths": [
+        "docs"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:examples-c590b3c924c3",
+      "paths": [
+        "examples"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:githooks-a1aea44889b8",
+      "paths": [
+        ".githooks"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:github-bdcc6a2a85f6",
+      "paths": [
+        ".github"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:guides-9893ff995bf3",
+      "paths": [
+        "guides"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:root-4813494d137e",
+      "paths": [
+        ".gitattributes",
+        ".gitignore",
+        ".npmignore",
+        "AGENTS.md",
+        "aih-packs.json",
+        "biome.json",
+        "CHANGELOG.md",
+        "CLAUDE.md",
+        "CODE_OF_CONDUCT.md",
+        "codecov.yml",
+        "CONTRIBUTING.md",
+        "DCO.md",
+        "DISCLAIMER.md",
+        "LICENSE",
+        "NOTICE",
+        "package-lock.json",
+        "package.json",
+        "playwright.workbench.config.ts",
+        "PUBLIC_DOCS_POLICY.md",
+        "README.md",
+        "RELEASING.md",
+        "ROADMAP.md",
+        "SECURITY.md",
+        "STABILITY.md",
+        "SUPPORT.md",
+        "TRADEMARKS.md",
+        "tsconfig.dts.json",
+        "tsconfig.json",
+        "tsconfig.workbench-browser-tests.json",
+        "tsconfig.workbench.json",
+        "tsup.config.ts",
+        "VERSIONING.md",
+        "vitest.config.ts",
+        "vitest.core.config.ts",
+        "vitest.workbench-contracts.config.ts",
+        "vitest.workbench-pure.config.ts",
+        "vitest.workbench-retained.config.ts",
+        "vitest.workbench.config.ts"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:schemas-fd70ea1de98f",
+      "paths": [
+        "schemas"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:src-25a6634263c1",
+      "paths": [
+        "src"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:tests-59830ebc3a41",
+      "paths": [
+        "tests"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:tools-f9d35d43770d",
+      "paths": [
+        "tools"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "skill:ai-coding-curated-skills-aih-betterdoc-02d84b7339ff",
+      "paths": [
+        "ai-coding/curated-skills/aih-betterdoc"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:ai-coding-curated-skills-decision-partner-a84dffe49e33",
+      "paths": [
+        "ai-coding/curated-skills/decision-partner"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:packs-docs-quality-aih-betterdoc-82b803df517d",
+      "paths": [
+        "packs/docs-quality/aih-betterdoc"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:packs-governance-quality-aih-gov-doctor-a1f1493d0744",
+      "paths": [
+        "packs/governance-quality/aih-gov-doctor"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:packs-review-quality-aih-bugbounty-45bd9b60a433",
+      "paths": [
+        "packs/review-quality/aih-bugbounty"
+      ],
+      "content": "skill"
+    }
+  ],
+  "exclusions": [],
+  "facets": {
+    "skills": [
+      "ai-coding/curated-skills/aih-betterdoc",
+      "ai-coding/curated-skills/decision-partner",
+      "packs/docs-quality/aih-betterdoc",
+      "packs/governance-quality/aih-gov-doctor",
+      "packs/review-quality/aih-bugbounty"
+    ],
+    "agents": [
+      "AGENTS.md",
+      "ai-coding/adapters/claude.md",
+      "CLAUDE.md",
+      "packs/review-quality/aih-bugbounty/agents/openai.yaml"
+    ],
+    "hooks": [
+      ".githooks/pre-commit",
+      "docs/reference/claude-hook-settings.snapshot.json",
+      "src/ecc-profile/default-hooks.ts",
+      "src/ecc-profile/hook-core.ts",
+      "src/ecc-profile/opt-in-hooks.ts",
+      "src/internals/git-hooks.ts",
+      "src/kiro/hook-projection.ts",
+      "src/org-policy/ecc-hook-controls-projection.ts",
+      "src/org-policy/ecc-hook-controls-receipt.ts",
+      "src/org-policy/ecc-hook-controls.ts",
+      "src/org-policy/hook-registrar-adoption.ts",
+      "src/org-policy/hook-registrar-native.ts",
+      "src/org-policy/hook-registrar-read.ts",
+      "src/org-policy/hook-registrar-receipt.ts",
+      "src/org-policy/hook-registrar.ts",
+      "src/scaffold/hooks.ts",
+      "src/usage/hook-health.ts",
+      "src/usage/hooks.ts",
+      "tests/ecc-profile/default-hooks.test.ts",
+      "tests/ecc-profile/fixtures/token-savior-native-hook.cjs",
+      "tests/ecc-profile/hook-core.test.ts",
+      "tests/ecc-profile/opt-in-hooks.test.ts",
+      "tests/fixtures/ecc-profile/hook-vectors.json",
+      "tests/org-policy/acceptance-hook-registrar.test.ts",
+      "tests/org-policy/ecc-hook-controls-projection.test.ts",
+      "tests/org-policy/ecc-hook-controls.test.ts",
+      "tests/org-policy/governed-hook-wiring.test.ts",
+      "tests/org-policy/hook-adoption.test.ts",
+      "tests/org-policy/hook-registrar-fixtures.ts",
+      "tests/org-policy/hook-registrar-hardening.test.ts",
+      "tests/org-policy/hook-registrar-lifecycle.test.ts",
+      "tests/org-policy/hook-registrar-reference-capture.test.ts",
+      "tests/org-policy/hook-registrar-single-read.test.ts",
+      "tests/org-policy/hook-registrar.test.ts",
+      "tests/org-policy/hook-registration-grammar.test.ts",
+      "tests/org-policy/studio-ecc-hook-profile.test.ts",
+      "tests/uninstall/hook-registrar-revocation.test.ts",
+      "tests/usage/hook-health.test.ts"
+    ],
+    "mcp": [],
+    "sourceSymlinks": []
+  }
+}
