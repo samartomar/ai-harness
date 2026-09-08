@@ -5,7 +5,7 @@ import {
   realpathSync,
   writeFileSync,
 } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 import { canonicalBaselineVetRequestV1Bytes } from "@aihq/scan";
 import {
   defineCandidateSourceInventory,
@@ -52,11 +52,9 @@ function sourceDirectory(path) {
 function outputDirectory(path) {
   const absolute = resolve(path);
   const parent = realpathSync(dirname(absolute));
-  if (resolve(parent, absolute.slice(dirname(absolute).length + 1)) !== absolute) {
-    fail("output path is not canonical");
-  }
-  mkdirSync(absolute, { recursive: false });
-  return absolute;
+  const output = resolve(parent, basename(absolute));
+  mkdirSync(output, { recursive: false });
+  return output;
 }
 
 const args = argumentsByFlag(process.argv.slice(2));

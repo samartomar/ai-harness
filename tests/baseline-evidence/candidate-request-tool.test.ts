@@ -1,5 +1,13 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseBaselineVetRequestV1Json } from "@aihq/scan";
@@ -86,6 +94,26 @@ describe("candidate request preparation tool", () => {
       "runtime:root",
       "skill:demo",
     ]);
+  });
+
+  it("accepts an output directory whose existing parent resolves through a symlink", () => {
+    const { root, source, inventory } = fixture();
+    const realParent = join(root, "real-parent");
+    const linkedParent = join(root, "linked-parent");
+    mkdirSync(realParent);
+    symlinkSync(realParent, linkedParent, "dir");
+
+    const result = run([
+      "--inventory",
+      inventory,
+      "--source",
+      source,
+      "--output",
+      join(linkedParent, "requests"),
+    ]);
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(readdirSync(join(realParent, "requests"))).toEqual(["batch-001.request.json"]);
   });
 
   it("fails closed on source drift, unknown arguments, and an existing output", () => {
