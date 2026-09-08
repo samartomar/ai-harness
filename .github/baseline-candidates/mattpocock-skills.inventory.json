@@ -1,0 +1,440 @@
+{
+  "protocol": "CandidateBaselineInventoryV1",
+  "producer": {
+    "id": "aih-core-candidate-preparation-v1"
+  },
+  "source": {
+    "id": "mattpocock-skills",
+    "owner": "mattpocock",
+    "repository": "skills",
+    "pinnedCommit": "3cca18b368ae95cdbdebbff572ccafa662551015",
+    "treeSha256": "a690f5a953fccede69d8b5724db9b26e71a87fc5e18b90c57b53b0b64209bd1f"
+  },
+  "components": [
+    {
+      "id": "runtime:agents-2b6873defee3",
+      "paths": [
+        ".agents"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:changeset-6c3fa2db460a",
+      "paths": [
+        ".changeset"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:claude-plugin-216ddf49c509",
+      "paths": [
+        ".claude-plugin"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:docs-46b42b4229cd",
+      "paths": [
+        "docs"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:github-bdcc6a2a85f6",
+      "paths": [
+        ".github"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:out-of-scope-274399538fcf",
+      "paths": [
+        ".out-of-scope"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:root-4813494d137e",
+      "paths": [
+        ".gitignore",
+        "CHANGELOG.md",
+        "CLAUDE.md",
+        "CONTEXT.md",
+        "LICENSE",
+        "package-lock.json",
+        "package.json",
+        "README.md"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:scripts-8c5967fd8486",
+      "paths": [
+        "scripts"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:skills-32c1cf49a2fe",
+      "paths": [
+        "skills/deprecated/README.md",
+        "skills/engineering/README.md",
+        "skills/in-progress/README.md",
+        "skills/misc/README.md",
+        "skills/productivity/README.md"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "skill:skills-engineering-ask-matt-2f72cd9acb86",
+      "paths": [
+        "skills/engineering/ask-matt"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-engineering-code-review-2c6c127a3c17",
+      "paths": [
+        "skills/engineering/code-review"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-engineering-codebase-design-d04bed3220e0",
+      "paths": [
+        "skills/engineering/codebase-design"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-engineering-diagnosing-bugs-24d298aec1c4",
+      "paths": [
+        "skills/engineering/diagnosing-bugs"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-engineering-domain-modeling-217ce20720f2",
+      "paths": [
+        "skills/engineering/domain-modeling"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-engineering-grill-with-docs-430624180a55",
+      "paths": [
+        "skills/engineering/grill-with-docs"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-engineering-implement-0843511a757f",
+      "paths": [
+        "skills/engineering/implement"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-engineering-improve-codebase-architecture-e7226b032c93",
+      "paths": [
+        "skills/engineering/improve-codebase-architecture"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-engineering-prototype-5a1959be90e0",
+      "paths": [
+        "skills/engineering/prototype"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-engineering-research-ae85723b9168",
+      "paths": [
+        "skills/engineering/research"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-engineering-resolving-merge-conflicts-2fd7c24ab425",
+      "paths": [
+        "skills/engineering/resolving-merge-conflicts"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-engineering-setup-matt-pocock-skills-cb3de6521644",
+      "paths": [
+        "skills/engineering/setup-matt-pocock-skills"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-engineering-tdd-0e9de3ac540d",
+      "paths": [
+        "skills/engineering/tdd"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-engineering-to-spec-fe27f9349465",
+      "paths": [
+        "skills/engineering/to-spec"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-engineering-to-tickets-72b16542dbb4",
+      "paths": [
+        "skills/engineering/to-tickets"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-engineering-triage-b7f3e36b87ea",
+      "paths": [
+        "skills/engineering/triage"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-engineering-wayfinder-f2ae929153cc",
+      "paths": [
+        "skills/engineering/wayfinder"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-engineering-wizard-a0e8cc3d2cd9",
+      "paths": [
+        "skills/engineering/wizard"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-in-progress-claude-handoff-046b307a193b",
+      "paths": [
+        "skills/in-progress/claude-handoff"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-in-progress-implement-spec-f88069dd5b49",
+      "paths": [
+        "skills/in-progress/implement-spec"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-in-progress-loop-me-8bb07f6a058d",
+      "paths": [
+        "skills/in-progress/loop-me"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-in-progress-retro-0c5696c66538",
+      "paths": [
+        "skills/in-progress/retro"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-in-progress-setup-ts-deep-modules-d65b5b448f3f",
+      "paths": [
+        "skills/in-progress/setup-ts-deep-modules"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-in-progress-writing-beats-1e823095cbd5",
+      "paths": [
+        "skills/in-progress/writing-beats"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-in-progress-writing-fragments-2b39acca7b20",
+      "paths": [
+        "skills/in-progress/writing-fragments"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-in-progress-writing-shape-951c6b8a1a7b",
+      "paths": [
+        "skills/in-progress/writing-shape"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-misc-git-guardrails-claude-code-712cdc030c39",
+      "paths": [
+        "skills/misc/git-guardrails-claude-code"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-misc-migrate-to-shoehorn-f9e11e28314c",
+      "paths": [
+        "skills/misc/migrate-to-shoehorn"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-misc-scaffold-exercises-82593959e90e",
+      "paths": [
+        "skills/misc/scaffold-exercises"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-misc-setup-pre-commit-6c67b54e7a07",
+      "paths": [
+        "skills/misc/setup-pre-commit"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-productivity-grill-me-705b48473e2d",
+      "paths": [
+        "skills/productivity/grill-me"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-productivity-grilling-876f6564135f",
+      "paths": [
+        "skills/productivity/grilling"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-productivity-handoff-493a33d9456b",
+      "paths": [
+        "skills/productivity/handoff"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-productivity-teach-8ab59cd00a14",
+      "paths": [
+        "skills/productivity/teach"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-productivity-to-questionnaire-761e90087449",
+      "paths": [
+        "skills/productivity/to-questionnaire"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-productivity-wait-what-235dec3b784f",
+      "paths": [
+        "skills/productivity/wait-what"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-productivity-writing-for-agents-6a85011b09f2",
+      "paths": [
+        "skills/productivity/writing-for-agents"
+      ],
+      "content": "skill"
+    }
+  ],
+  "exclusions": [
+    {
+      "path": "AGENTS.md",
+      "reason": "source-symlink"
+    }
+  ],
+  "facets": {
+    "skills": [
+      "skills/engineering/ask-matt",
+      "skills/engineering/code-review",
+      "skills/engineering/codebase-design",
+      "skills/engineering/diagnosing-bugs",
+      "skills/engineering/domain-modeling",
+      "skills/engineering/grill-with-docs",
+      "skills/engineering/implement",
+      "skills/engineering/improve-codebase-architecture",
+      "skills/engineering/prototype",
+      "skills/engineering/research",
+      "skills/engineering/resolving-merge-conflicts",
+      "skills/engineering/setup-matt-pocock-skills",
+      "skills/engineering/tdd",
+      "skills/engineering/to-spec",
+      "skills/engineering/to-tickets",
+      "skills/engineering/triage",
+      "skills/engineering/wayfinder",
+      "skills/engineering/wizard",
+      "skills/in-progress/claude-handoff",
+      "skills/in-progress/implement-spec",
+      "skills/in-progress/loop-me",
+      "skills/in-progress/retro",
+      "skills/in-progress/setup-ts-deep-modules",
+      "skills/in-progress/writing-beats",
+      "skills/in-progress/writing-fragments",
+      "skills/in-progress/writing-shape",
+      "skills/misc/git-guardrails-claude-code",
+      "skills/misc/migrate-to-shoehorn",
+      "skills/misc/scaffold-exercises",
+      "skills/misc/setup-pre-commit",
+      "skills/productivity/grill-me",
+      "skills/productivity/grilling",
+      "skills/productivity/handoff",
+      "skills/productivity/teach",
+      "skills/productivity/to-questionnaire",
+      "skills/productivity/wait-what",
+      "skills/productivity/writing-for-agents"
+    ],
+    "agents": [
+      "CLAUDE.md",
+      "skills/engineering/ask-matt/agents/openai.yaml",
+      "skills/engineering/code-review/agents/openai.yaml",
+      "skills/engineering/codebase-design/agents/openai.yaml",
+      "skills/engineering/diagnosing-bugs/agents/openai.yaml",
+      "skills/engineering/domain-modeling/agents/openai.yaml",
+      "skills/engineering/grill-with-docs/agents/openai.yaml",
+      "skills/engineering/implement/agents/openai.yaml",
+      "skills/engineering/improve-codebase-architecture/agents/openai.yaml",
+      "skills/engineering/prototype/agents/openai.yaml",
+      "skills/engineering/research/agents/openai.yaml",
+      "skills/engineering/resolving-merge-conflicts/agents/openai.yaml",
+      "skills/engineering/setup-matt-pocock-skills/agents/openai.yaml",
+      "skills/engineering/tdd/agents/openai.yaml",
+      "skills/engineering/to-spec/agents/openai.yaml",
+      "skills/engineering/to-tickets/agents/openai.yaml",
+      "skills/engineering/triage/agents/openai.yaml",
+      "skills/engineering/wayfinder/agents/openai.yaml",
+      "skills/engineering/wizard/agents/openai.yaml",
+      "skills/in-progress/claude-handoff/agents/openai.yaml",
+      "skills/in-progress/implement-spec/agents/openai.yaml",
+      "skills/in-progress/loop-me/agents/openai.yaml",
+      "skills/in-progress/retro/agents/openai.yaml",
+      "skills/in-progress/setup-ts-deep-modules/agents/openai.yaml",
+      "skills/in-progress/writing-beats/agents/openai.yaml",
+      "skills/in-progress/writing-fragments/agents/openai.yaml",
+      "skills/in-progress/writing-shape/agents/openai.yaml",
+      "skills/misc/git-guardrails-claude-code/agents/openai.yaml",
+      "skills/misc/migrate-to-shoehorn/agents/openai.yaml",
+      "skills/misc/scaffold-exercises/agents/openai.yaml",
+      "skills/misc/setup-pre-commit/agents/openai.yaml",
+      "skills/productivity/grill-me/agents/openai.yaml",
+      "skills/productivity/grilling/agents/openai.yaml",
+      "skills/productivity/handoff/agents/openai.yaml",
+      "skills/productivity/teach/agents/openai.yaml",
+      "skills/productivity/to-questionnaire/agents/openai.yaml",
+      "skills/productivity/wait-what/agents/openai.yaml",
+      "skills/productivity/writing-for-agents/agents/openai.yaml"
+    ],
+    "hooks": [],
+    "mcp": [],
+    "sourceSymlinks": [
+      "AGENTS.md"
+    ]
+  }
+}

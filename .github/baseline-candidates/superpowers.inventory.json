@@ -1,0 +1,275 @@
+{
+  "protocol": "CandidateBaselineInventoryV1",
+  "producer": {
+    "id": "aih-core-candidate-preparation-v1"
+  },
+  "source": {
+    "id": "superpowers",
+    "owner": "obra",
+    "repository": "Superpowers",
+    "pinnedCommit": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797",
+    "treeSha256": "3420d68292184fe345d2e3121ed2b3cb192d367ea6fb5f23d9d0fb3629a284b5"
+  },
+  "components": [
+    {
+      "id": "runtime:agents-2b6873defee3",
+      "paths": [
+        ".agents"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:assets-8bf729ffe074",
+      "paths": [
+        "assets"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:claude-plugin-216ddf49c509",
+      "paths": [
+        ".claude-plugin"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:codex-plugin-22d18f2daf51",
+      "paths": [
+        ".codex-plugin"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:cursor-plugin-353a148eefbe",
+      "paths": [
+        ".cursor-plugin"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:devin-plugin-84ef37c38a65",
+      "paths": [
+        ".devin-plugin"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:docs-46b42b4229cd",
+      "paths": [
+        "docs"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:github-bdcc6a2a85f6",
+      "paths": [
+        ".github"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:hermes-plugin-4023f9c294a1",
+      "paths": [
+        ".hermes-plugin"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:hooks-a9fa9fda98d7",
+      "paths": [
+        "hooks"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:kimi-plugin-c405cbd46ce1",
+      "paths": [
+        ".kimi-plugin"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:opencode-5e2dd251c591",
+      "paths": [
+        ".opencode"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:pi-3f95c2c04fa4",
+      "paths": [
+        ".pi"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:root-4813494d137e",
+      "paths": [
+        ".gitattributes",
+        ".gitignore",
+        ".pre-commit-config.yaml",
+        ".version-bump.json",
+        "CLAUDE.md",
+        "CODE_OF_CONDUCT.md",
+        "gemini-extension.json",
+        "GEMINI.md",
+        "LICENSE",
+        "package.json",
+        "README.md",
+        "RELEASE-NOTES.md"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:scripts-8c5967fd8486",
+      "paths": [
+        "scripts"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "runtime:tests-59830ebc3a41",
+      "paths": [
+        "tests"
+      ],
+      "content": "general"
+    },
+    {
+      "id": "skill:skills-brainstorming-f5b3dedd4df0",
+      "paths": [
+        "skills/brainstorming"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-dispatching-parallel-agents-1d95ffaa55c7",
+      "paths": [
+        "skills/dispatching-parallel-agents"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-executing-plans-5a5f31349dc7",
+      "paths": [
+        "skills/executing-plans"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-finishing-a-development-branch-94504a9deb98",
+      "paths": [
+        "skills/finishing-a-development-branch"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-receiving-code-review-f44a448d1a01",
+      "paths": [
+        "skills/receiving-code-review"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-requesting-code-review-9e9b7868dd03",
+      "paths": [
+        "skills/requesting-code-review"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-subagent-driven-development-bc91356e16d7",
+      "paths": [
+        "skills/subagent-driven-development"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-systematic-debugging-f91fd4e27bea",
+      "paths": [
+        "skills/systematic-debugging"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-test-driven-development-17339e4f3327",
+      "paths": [
+        "skills/test-driven-development"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-using-git-worktrees-a4fbd9583e86",
+      "paths": [
+        "skills/using-git-worktrees"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-using-superpowers-15d3fef150b0",
+      "paths": [
+        "skills/using-superpowers"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-verification-before-completion-e1752c1296b9",
+      "paths": [
+        "skills/verification-before-completion"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-writing-plans-bc4143bc75ac",
+      "paths": [
+        "skills/writing-plans"
+      ],
+      "content": "skill"
+    },
+    {
+      "id": "skill:skills-writing-skills-74fbf339541d",
+      "paths": [
+        "skills/writing-skills"
+      ],
+      "content": "skill"
+    }
+  ],
+  "exclusions": [
+    {
+      "path": "AGENTS.md",
+      "reason": "source-symlink"
+    }
+  ],
+  "facets": {
+    "skills": [
+      "skills/brainstorming",
+      "skills/dispatching-parallel-agents",
+      "skills/executing-plans",
+      "skills/finishing-a-development-branch",
+      "skills/receiving-code-review",
+      "skills/requesting-code-review",
+      "skills/subagent-driven-development",
+      "skills/systematic-debugging",
+      "skills/test-driven-development",
+      "skills/using-git-worktrees",
+      "skills/using-superpowers",
+      "skills/verification-before-completion",
+      "skills/writing-plans",
+      "skills/writing-skills"
+    ],
+    "agents": [
+      "CLAUDE.md"
+    ],
+    "hooks": [
+      "docs/windows/polyglot-hooks.md",
+      "hooks/hooks-cursor.json",
+      "hooks/hooks.json",
+      "hooks/run-hook.cmd",
+      "hooks/session-start",
+      "tests/hooks/test-session-start.sh"
+    ],
+    "mcp": [],
+    "sourceSymlinks": [
+      "AGENTS.md"
+    ]
+  }
+}
