@@ -203,7 +203,9 @@ test("expands templates, rejects methodology conflicts atomically, and preserves
     mimeType: "application/json",
     buffer: Buffer.from(JSON.stringify(structural)),
   });
-  expect(JSON.parse(await page.locator("#config-preview").inputValue())).toEqual(structural);
+  await expect
+    .poll(async () => JSON.parse(await page.locator("#config-preview").inputValue()))
+    .toEqual(structural);
   await search.fill("");
   await page.getByRole("button", { name: /^source:b \(/u }).click();
   const structuralAction = page.locator(
