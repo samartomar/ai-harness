@@ -1,16 +1,26 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
+
+vi.mock("../../../src/org-policy/workbench/prepared-catalog.js", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../../src/org-policy/workbench/prepared-catalog.js")>();
+  const fixture = await import("./source-data-test-fixture.js");
+  // This diagnostic only needs an admitted Git source to prove the recovery
+  // message. Package admission is exercised by prepared-catalog tests.
+  return { ...actual, prepareWorkbenchCatalog: fixture.tinySourceDataPreparedCatalogV1 };
+});
+
 import { prepareAuthoringSourcesForConsumptionV1 } from "../../../src/org-policy/workbench/core/authoring-sources.js";
-import { packagedPreparedWorkbenchCatalogV1 } from "../../../src/org-policy/workbench/prepared-catalog.js";
 import {
   createWorkbenchState,
   reduceWorkbenchAction,
 } from "../../../src/org-policy/workbench/selection-engine.js";
+import { fixtureAssetId, tinySourceDataPreparedCatalogV1 } from "./source-data-test-fixture.js";
 
 it("names the exact missing Git snapshot and independent import recovery without moving saved pins", () => {
-  const base = packagedPreparedWorkbenchCatalogV1();
+  const base = tinySourceDataPreparedCatalogV1();
   const state = reduceWorkbenchAction(base.bundle, createWorkbenchState(), {
     type: "select-root",
-    assetId: "mattpocock/skill:tdd",
+    assetId: fixtureAssetId,
     origin: { kind: "administrator" },
   }).state;
   const root = state.roots[0];

@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { policyAuthoringCatalog } from "../../../src/org-policy/catalog.js";
 import * as packagedSourceData from "../../../src/org-policy/workbench/core/packaged-source-data.js";
 import {
@@ -10,9 +10,18 @@ import {
   prepareWorkbenchCatalog,
 } from "../../../src/org-policy/workbench/prepared-catalog.js";
 
+let admittedPackage: ReturnType<typeof packagedPreparedWorkbenchCatalogV1>;
+
+beforeAll(() => {
+  // The reuse contract starts from a package that has already been admitted.
+  // Cold package admission is covered independently; keep this assertion focused
+  // on the live exact-pin reuse path.
+  admittedPackage = packagedPreparedWorkbenchCatalogV1();
+});
+
 describe("prepared workbench catalog", () => {
   it("reuses the admitted package for current exact pins without rebuilding its overlays", () => {
-    const baseline = packagedPreparedWorkbenchCatalogV1();
+    const baseline = admittedPackage;
     const asset = baseline.bundle.assets["mattpocock/skill:tdd"];
     if (asset === undefined) throw new Error("Missing packaged Matt skill");
     const pin = {
@@ -51,7 +60,7 @@ describe("prepared workbench catalog", () => {
   });
 
   it("rechecks source-store bytes after reusing an admitted package snapshot", () => {
-    const baseline = packagedPreparedWorkbenchCatalogV1();
+    const baseline = admittedPackage;
     const root = mkdtempSync(join(tmpdir(), "aih-prepared-catalog-live-store-"));
     vi.stubEnv("AIH_WORKBENCH_DATA", root);
     try {
