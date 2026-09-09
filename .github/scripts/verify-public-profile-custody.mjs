@@ -1,12 +1,15 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+  closeSync,
+  constants,
   existsSync,
+  fstatSync,
   mkdirSync,
+  openSync,
   readFileSync,
   readdirSync,
   rmSync,
-  statSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, join, resolve, relative } from "node:path";
@@ -71,11 +74,17 @@ function inventory(path) {
   const walk = (directory) => {
     for (const name of readdirSync(directory).sort()) {
       const absolute = join(directory, name);
-      const stats = statSync(absolute);
-      const entry = { path: relative(path, absolute).replaceAll("\\", "/"), type: stats.isDirectory() ? "directory" : "file" };
-      if (stats.isDirectory()) walk(absolute);
-      else entry.sha256 = sha256(readFileSync(absolute));
-      entries.push(entry);
+      const descriptor = openSync(absolute, constants.O_RDONLY | constants.O_NOFOLLOW);
+      try {
+        const stats = fstatSync(descriptor);
+        if (!stats.isDirectory() && !stats.isFile()) throw new Error("custody-inventory-unsupported-entry");
+        const entry = { path: relative(path, absolute).replaceAll("\\", "/"), type: stats.isDirectory() ? "directory" : "file" };
+        if (stats.isDirectory()) walk(absolute);
+        else entry.sha256 = sha256(readFileSync(descriptor));
+        entries.push(entry);
+      } finally {
+        closeSync(descriptor);
+      }
     }
   };
   walk(path);
@@ -313,7 +322,7 @@ const report = {
   custodyRoot: enterpriseCustodyRoot,
   package: { name: packManifest.name, version: packManifest.version, tarball: packManifest.filename, tarballSha256: sha256(readFileSync(tarball)), gitHead: requireSuccess(run("git", ["rev-parse", "HEAD"], { cwd: root }), "git-head").stdout.trim() },
   policy: { path: policyPath, sha256: sha256(readFileSync(policyPath)), issuedAt, expiresAt, authorityReceiptDigest: sha256(Buffer.from(JSON.stringify(policyBundle.authorityReceipt))) },
-  publicReceipts: receiptRecords.map(({ sequence, run: workflowRun, sourceSha, receipt, receiptSha256 }) => ({ sequence, workflowRun, workflowUrl: `https://github.com/samartomar/aih-catalog/actions/runs/${workflowRun}`, sourceSha, receiptSha256, receiptDigest: packedCore.receiptDigestV2(receipt), catalogSignerIdentity: receipt.qualificationBasis.catalogSignerIdentity, signerKeyId: receipt.catalogContinuity.signerKeyId, catalogHeadDigest: receipt.catalogContinuity.catalogHeadDigest, catalogMemberDigest: receipt.qualificationBasis.catalogMemberDigest })),
+  publicReceipts: receiptRecords.map(({ sequence, run: workflowRun, sourceSha, receipt, receiptSha256 }) => ({ sequence, workflowRun, workflowUrl: `https://github.com/samartomar/aih-catalog/actions/runs/${workflowRun}`, sourceSha, receiptSha256, receiptDigest: sha256(Buffer.from(`aih-supported-qualification-receipt/v2\0${packedCore.canonicalAihSupportedQualificationReceiptV2(receipt)}`, "utf8")), catalogSignerIdentity: receipt.qualificationBasis.catalogSignerIdentity, signerKeyId: receipt.catalogContinuity.signerKeyId, catalogHeadDigest: receipt.catalogContinuity.catalogHeadDigest, catalogMemberDigest: receipt.qualificationBasis.catalogMemberDigest })),
   operations: results,
   exactHeadRepeat: { result: JSON.parse(repeat.stdout), unchangedState: true },
   olderSequenceRollback: { sequence: 2, exitCode: rollbackResult.code, stdout: rollbackResult.stdout, stderr: rollbackResult.stderr, refused: true, unchangedState: true },

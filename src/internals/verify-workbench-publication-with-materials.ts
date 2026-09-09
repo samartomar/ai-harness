@@ -29,6 +29,7 @@ type MaterialTarget = {
   sourceId: string;
   repository: string;
   pin: string;
+  collectionSource?: { repository: string; pin: string };
   publications: readonly string[];
 };
 const fileLimits = {
@@ -63,7 +64,7 @@ export function workbenchPublicationMaterialTargetsV1(): readonly MaterialTarget
       throw new Error("Release material has no registered source.");
     const repository =
       packaged?.source.repository ??
-      record?.catalog.repository ??
+      (record ? `${record.catalog.owner}/${record.catalog.repository}` : undefined) ??
       (source.upstreamOrigin.kind === "aih"
         ? "samartomar/ai-harness"
         : source.upstreamOrigin.locator.replace(/^https:\/\/github\.com\//, ""));
@@ -104,7 +105,21 @@ export function workbenchPublicationMaterialTargetsV1(): readonly MaterialTarget
         );
       return publication.publicationLocator.slice(0, -"publication.json".length);
     });
-    return { id, sourceId, repository, pin, publications };
+    const collectionSource = record
+      ? {
+          repository: `${record.catalog.owner}/${record.catalog.repository}`,
+          pin: record.catalog.pinnedCommit,
+        }
+      : undefined;
+    if (
+      collectionSource &&
+      (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(collectionSource.repository) ||
+        !/^[a-f0-9]{40}$/.test(collectionSource.pin))
+    )
+      throw new Error(
+        "Release collection material requires an exact registered GitHub source pin.",
+      );
+    return { id, sourceId, repository, pin, publications, collectionSource };
   });
 }
 
@@ -222,6 +237,19 @@ export async function verifyWorkbenchPublicPublicationWithMaterialsV1(): Promise
         destination: checkout,
       });
       if (target.id === "aih") assertAihReleaseMaterialEquivalence(checkout, target.pin, root);
+      // A retained report can cover an older pin than the current packaged source.
+      // Replay that report against its original bytes, never the replacement checkout.
+      if (
+        target.collectionSource &&
+        (target.collectionSource.repository !== target.repository ||
+          target.collectionSource.pin !== target.pin)
+      ) {
+        await acquireBoundedGithubSourceArchiveV1({
+          repository: target.collectionSource.repository,
+          commit: target.collectionSource.pin,
+          destination: join(root, target.id, "collection-checkout"),
+        });
+      }
       const packaged = packagedSources.get(target.sourceId);
       if (packaged) {
         packagedSourceQualification.push({
@@ -253,14 +281,24 @@ export async function verifyWorkbenchPublicPublicationWithMaterialsV1(): Promise
       collectionMaterial: targets
         .filter((target) => target.publications.length > 0)
         .map((target) => ({
-          sourceRoot: join(root, target.id, "checkout"),
+          sourceRoot: join(
+            root,
+            target.id,
+            target.collectionSource &&
+              (target.collectionSource.repository !== target.repository ||
+                target.collectionSource.pin !== target.pin)
+              ? "collection-checkout"
+              : "checkout",
+          ),
           catalogId: target.id as WorkbenchCollectionCatalogIdV1,
           publicationRoot: join(root, target.id, "publications"),
         })),
     });
   } finally {
-    for (const target of targets)
+    for (const target of targets) {
       forgetAcquiredGithubSourceArchiveV1(join(root, target.id, "checkout"));
+      forgetAcquiredGithubSourceArchiveV1(join(root, target.id, "collection-checkout"));
+    }
     rmSync(root, { recursive: true, force: true });
   }
 }

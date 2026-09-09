@@ -71,7 +71,8 @@ function aihFixture() {
     {
       catalog: {
         source: { id: "source:aih-core" },
-        repository: "samartomar/ai-harness",
+        owner: "samartomar",
+        repository: "ai-harness",
         pinnedCommit: pin,
       },
       publications: [],
@@ -93,7 +94,8 @@ function sourceFixture(publicationLocator = locator) {
     {
       catalog: {
         source: { id: "source:mattpocock" },
-        repository: "mattpocock/skills",
+        owner: "mattpocock",
+        repository: "skills",
         pinnedCommit: pin,
       },
       publications: [
@@ -309,6 +311,41 @@ describe("release-only pinned publication material acquisition", () => {
     });
     expect(workbenchPublicationMaterialTargetsV1).toThrow(/does not match/);
     expect(mocks.acquire).not.toHaveBeenCalled();
+  });
+  it("replays a retained report at its original pin while deriving the replacement source at its current pin", async () => {
+    sourceFixture();
+    const sourceId = "source:mattpocock";
+    const packaged = {
+      source: { repository: "mattpocock/skills", commit: releasePin },
+      sourceBundle: { sources: { [sourceId]: {} } },
+    };
+    mocks.sourceData.mockReturnValue([packaged]);
+    mocks.catalog().bundle.sources[sourceId].revision.id = releasePin;
+    let reportRoot = "";
+    let currentRoot = "";
+    mocks.verify.mockImplementation(async (options) => {
+      reportRoot = options.collectionMaterial[0].sourceRoot;
+      currentRoot = options.packagedSourceQualification[0].sourceRoot;
+      expect(reportRoot).not.toBe(currentRoot);
+      expect(existsSync(reportRoot)).toBe(true);
+      expect(existsSync(currentRoot)).toBe(true);
+      expect(options.packagedSourceQualification[0].record).toBe(packaged);
+    });
+    await verifyWorkbenchPublicPublicationWithMaterialsV1();
+    expect(mocks.acquire).toHaveBeenCalledWith({
+      repository: "mattpocock/skills",
+      commit: pin,
+      destination: reportRoot,
+    });
+    expect(mocks.acquire).toHaveBeenCalledWith({
+      repository: "mattpocock/skills",
+      commit: releasePin,
+      destination: currentRoot,
+    });
+    expect(mocks.forget).toHaveBeenCalledWith(reportRoot);
+    expect(mocks.forget).toHaveBeenCalledWith(currentRoot);
+    expect(existsSync(reportRoot)).toBe(false);
+    expect(existsSync(currentRoot)).toBe(false);
   });
   it("stops on fetch failure or oversized transport before publication verification", async () => {
     sourceFixture();
