@@ -1,7 +1,14 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { isProxy } from "node:util/types";
 import { z } from "zod";
+import packageMetadata from "../../package.json";
+import { SCANNER_BASELINE_PUBLICATION_PUBLISHER_V1 } from "../baseline-evidence/scanner-publication-policy.js";
+import { vendorBaselineLockSha256 } from "../baseline-evidence/vendor.js";
 import { canonicalStrictJsonSha256V1, deepFreezeStrictJsonV1 } from "../contract/strict-json-v1.js";
 import { AihError } from "../errors.js";
+import { DEFAULT_EVIDENCE_MAX_AGE_DAYS_V1 } from "../evidence-freshness.js";
+import { VERSION } from "../version.js";
 import {
   type AdminBaselineEvidenceProvenanceV1,
   type ResolvedAdminBaselineEvidenceV1,
@@ -24,6 +31,14 @@ import {
   parseGovernanceDecisionV1,
 } from "./governance-decision-v1.js";
 import {
+  packagedScannerCollectionEvidenceV1,
+  packagedScannerCollectionOverlayV1,
+} from "./packaged-collection-evidence-v1.js";
+import {
+  packagedPublicBaselineEvidenceV1,
+  packagedPublicBaselineOverlayV1,
+} from "./packaged-public-baseline-v1.js";
+import {
   HTTPS_ORIGIN_ARGUMENT_PREFIXES,
   type OrgPolicy,
   OrgPolicySchema,
@@ -34,10 +49,22 @@ import {
 import { verifyAuthoringCatalogBundleIntegrityV1 } from "./workbench/catalog-bundle.js";
 import type { WorkbenchPolicyBindingsV1 } from "./workbench/compile-policy.js";
 import type { AuthoringCatalogBundleV1, WorkbenchSourceInputsV1 } from "./workbench/contracts.js";
+import { WorkbenchStateV1Schema } from "./workbench/contracts.js";
+import { referencedWorkbenchSourcePinsV1 } from "./workbench/core/authoring-sources.js";
+import { catalogQualificationReleasePolicyMetadataV1 } from "./workbench/core/catalog-qualification-policy-v1.js";
+import {
+  catalogQualificationPreparedBundleV1,
+  preparePackagedCatalogQualificationV1,
+} from "./workbench/core/catalog-qualification-v1.js";
 import type { FreshOrganizationPreparationV1 } from "./workbench/core/organization-preparation.js";
+import { packagedWorkbenchSourcePublicationsV1 } from "./workbench/core/packaged-source-data.js";
+import {
+  applyWorkbenchSourceDataV1,
+  workbenchSourceDataRootV1,
+} from "./workbench/core/source-data.js";
 import { withLegacyPolicyCandidateDefaultsV1 } from "./workbench/policy-import.js";
 import {
-  defaultPreparedWorkbenchCatalog,
+  packagedPreparedWorkbenchCatalogV1,
   prepareWorkbenchCatalog,
 } from "./workbench/prepared-catalog.js";
 
@@ -191,6 +218,34 @@ function studioFormCatalog(catalog: PolicyAuthoringCatalog): StudioFormCatalogV1
 }
 
 export interface PolicyStudioModel {
+  evidenceDelivery?: {
+    coreVersion: string;
+    workbenchCatalogDigest: string;
+    vendorLockDigest: string;
+    scannerLibraryVersion: string;
+    freshnessDays?: number;
+    expectedCatalogPublisher?: {
+      repository: string;
+      workflow: string;
+      catalogCommit: string;
+      version: number;
+    };
+    scanPublications?: Array<{ source: string; publisher: string; commit: string; digest: string }>;
+    qualificationPublications?: Array<{
+      publisher: string;
+      commit: string;
+      catalogDigest: string;
+      receiptSetDigest: string;
+    }>;
+    expectedScannerPublisher: { repository: string; workflow: string; ref: string; commit: string };
+    publicBaseline?: {
+      publisher: string;
+      workflow: string;
+      artifactDigest: string;
+      verifiedAt: string;
+      validUntil: string;
+    };
+  };
   initialPolicy: OrgPolicy;
   /** The sole browser inventory for portable authoring selections. */
   workbenchBundle: AuthoringCatalogBundleV1;
@@ -333,12 +388,34 @@ function buildPolicyStudioModel(
     organizationManifestBytes?: readonly string[];
     freshOrganizationPreparations?: readonly FreshOrganizationPreparationV1[];
     verifiedBaseline?: { resolved: ResolvedAdminBaselineEvidenceV1; now: string };
+    initialPolicy?: OrgPolicy;
   },
 ): PolicyStudioModel {
-  const prepared =
-    options?.organizationManifestBytes?.length || options?.freshOrganizationPreparations?.length
-      ? prepareWorkbenchCatalog(undefined, options)
-      : defaultPreparedWorkbenchCatalog();
+  const publicBaseline = packagedPublicBaselineEvidenceV1();
+  const initialPolicy = options?.initialPolicy ?? defaultStudioPolicy();
+  const savedState =
+    initialPolicy.schemaVersion === 3 && initialPolicy.authoringSelections
+      ? WorkbenchStateV1Schema.parse(
+          (({ selectionVersion: _version, ...state }) => state)(initialPolicy.authoringSelections),
+        )
+      : undefined;
+  const sourceDataPins =
+    savedState === undefined ? undefined : referencedWorkbenchSourcePinsV1(savedState);
+  let prepared =
+    options?.organizationManifestBytes?.length ||
+    options?.freshOrganizationPreparations?.length ||
+    sourceDataPins !== undefined
+      ? prepareWorkbenchCatalog(undefined, { ...options, sourceDataPins, packageDataOnly: true })
+      : packagedPreparedWorkbenchCatalogV1();
+  const packagedEvidence = {
+    ...packagedPublicBaselineOverlayV1(prepared.bundle),
+    ...packagedScannerCollectionOverlayV1(prepared.bundle),
+  };
+  if (Object.keys(packagedEvidence).length > 0) {
+    prepared.bundle.evidence = { ...prepared.bundle.evidence, ...packagedEvidence };
+    prepared.bundle.provenance.bundleDigest = `sha256:${canonicalStrictJsonSha256V1({ ...prepared.bundle, provenance: {} })}`;
+    verifyAuthoringCatalogBundleIntegrityV1(prepared.bundle);
+  }
   if (options?.verifiedBaseline !== undefined) {
     const evidence = workbenchEvidenceFromVerifiedBaselineV1(
       options.verifiedBaseline.resolved,
@@ -349,8 +426,62 @@ function buildPolicyStudioModel(
     prepared.bundle.provenance.bundleDigest = `sha256:${canonicalStrictJsonSha256V1({ ...prepared.bundle, provenance: {} })}`;
     verifyAuthoringCatalogBundleIntegrityV1(prepared.bundle);
   }
+  const qualification = preparePackagedCatalogQualificationV1(prepared.bundle);
+  if (qualification !== undefined) {
+    const qualified = catalogQualificationPreparedBundleV1(prepared.bundle, qualification);
+    if (qualified === undefined) throw new Error("Prepared Catalog qualification lost custody.");
+    prepared.bundle = qualified;
+    prepared.bundle.provenance.bundleDigest = `sha256:${canonicalStrictJsonSha256V1({ ...prepared.bundle, provenance: {} })}`;
+    verifyAuthoringCatalogBundleIntegrityV1(prepared.bundle);
+  }
+  // Signed external snapshots supersede only their exact source after package overlays.
+  prepared = applyWorkbenchSourceDataV1(prepared, { pins: sourceDataPins });
   return {
-    initialPolicy: defaultStudioPolicy(),
+    evidenceDelivery: {
+      coreVersion: VERSION,
+      workbenchCatalogDigest: prepared.bundle.provenance.bundleDigest,
+      vendorLockDigest: `sha256:${vendorBaselineLockSha256()}`,
+      scannerLibraryVersion: packageMetadata.devDependencies["@aihq/scan"],
+      freshnessDays: DEFAULT_EVIDENCE_MAX_AGE_DAYS_V1,
+      expectedCatalogPublisher: catalogQualificationReleasePolicyMetadataV1,
+      scanPublications: [
+        ...packagedWorkbenchSourcePublicationsV1(prepared.bundle),
+        ...packagedScannerCollectionEvidenceV1().flatMap((record) =>
+          record.publications.map((publication) => ({
+            source: record.catalog.id,
+            publisher: publication.repository,
+            commit: publication.sourceCommit,
+            digest: `sha256:${publication.publicationSha256}`,
+          })),
+        ),
+      ],
+      qualificationPublications: [
+        ...new Map(
+          Object.values(prepared.bundle.qualifications ?? {}).map((summary) => [
+            summary.receiptSetDigest,
+            {
+              publisher: summary.publisher.repository,
+              commit: summary.publisher.commit,
+              catalogDigest: summary.catalogDigest,
+              receiptSetDigest: summary.receiptSetDigest,
+            },
+          ]),
+        ).values(),
+      ],
+      expectedScannerPublisher: SCANNER_BASELINE_PUBLICATION_PUBLISHER_V1,
+      ...(publicBaseline === undefined
+        ? {}
+        : {
+            publicBaseline: {
+              publisher: publicBaseline.publisher.repository,
+              workflow: publicBaseline.publisher.workflow,
+              artifactDigest: publicBaseline.artifactSubjectDigest,
+              verifiedAt: publicBaseline.verifiedAt,
+              validUntil: publicBaseline.validUntil,
+            },
+          }),
+    },
+    initialPolicy,
     catalog: studioFormCatalog(prepared.catalog),
     workbenchBundle: prepared.bundle,
     workbenchBindings: prepared.bindings,
@@ -401,12 +532,14 @@ export function policyStudioModel(
     organizationManifestBytes?: readonly string[];
     freshOrganizationPreparations?: readonly FreshOrganizationPreparationV1[];
     verifiedBaseline?: { resolved: ResolvedAdminBaselineEvidenceV1; now: string };
+    initialPolicy?: OrgPolicy;
   },
 ): PolicyStudioModel {
   if (
     catalogProvenance === undefined &&
     baselineEvidenceProvenance === undefined &&
-    options === undefined
+    options === undefined &&
+    !existsSync(join(workbenchSourceDataRootV1(), "active.json"))
   ) {
     return defaultStudioModelV1();
   }

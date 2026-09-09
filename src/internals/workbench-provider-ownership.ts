@@ -51,6 +51,10 @@ export const WORKBENCH_CATALOG_SHARED_INPUT_PATHS = [
 
 const MATTPOCOCK_SNAPSHOT_PATH = "src/org-policy/workbench/providers/mattpocock.snapshot.json";
 const PONYTAIL_SNAPSHOT_PATH = "src/org-policy/workbench/providers/ponytail.snapshot.json";
+const SUPERPOWERS_CONTENT_METADATA_SNAPSHOT_PATH =
+  "src/org-policy/superpowers-content-metadata.snapshot.json";
+const ECC_MCP_CATALOG_PATH = "src/org-policy/ecc-mcp-catalog.ts";
+const ECC_MCP_CATALOG_SNAPSHOT_PATH = "src/org-policy/ecc-mcp-catalog.snapshot.json";
 
 const commonConsumerTests = [
   "tests/internals/workbench-provider-ownership.test.ts",
@@ -75,10 +79,16 @@ export const WORKBENCH_PROVIDER_OWNERSHIP: readonly WorkbenchProviderOwnership[]
     id: "ecc",
     sourceRoots: [
       "src/org-policy/catalog-providers/ecc.ts",
+      ECC_MCP_CATALOG_PATH,
+      ECC_MCP_CATALOG_SNAPSHOT_PATH,
       "src/org-policy/workbench/providers/ecc.ts",
     ],
     testPath: "tests/org-policy/workbench/providers/ecc.test.ts",
-    consumerTests: commonConsumerTests,
+    consumerTests: [
+      ...commonConsumerTests,
+      "tests/org-policy/ecc-mcp-catalog.test.ts",
+      "tests/org-policy/workbench/policy-consumption.test.ts",
+    ],
   },
   {
     id: "mattpocock",
@@ -110,6 +120,7 @@ export const WORKBENCH_PROVIDER_OWNERSHIP: readonly WorkbenchProviderOwnership[]
     id: "superpowers",
     sourceRoots: [
       "src/org-policy/catalog-providers/superpowers.ts",
+      SUPERPOWERS_CONTENT_METADATA_SNAPSHOT_PATH,
       "src/org-policy/workbench/providers/superpowers.ts",
     ],
     testPath: "tests/org-policy/workbench/providers/superpowers.test.ts",
@@ -119,7 +130,12 @@ export const WORKBENCH_PROVIDER_OWNERSHIP: readonly WorkbenchProviderOwnership[]
 
 const providerById = new Map(WORKBENCH_PROVIDER_OWNERSHIP.map((record) => [record.id, record]));
 const sharedInputs = new Set<string>(WORKBENCH_CATALOG_SHARED_INPUT_PATHS);
-const approvedJsonSourceRoots = new Set([MATTPOCOCK_SNAPSHOT_PATH, PONYTAIL_SNAPSHOT_PATH]);
+const approvedJsonSourceRoots = new Set([
+  MATTPOCOCK_SNAPSHOT_PATH,
+  PONYTAIL_SNAPSHOT_PATH,
+  SUPERPOWERS_CONTENT_METADATA_SNAPSHOT_PATH,
+  ECC_MCP_CATALOG_SNAPSHOT_PATH,
+]);
 
 /** Provider import authority is narrower than the CI trigger scope above. */
 const NEUTRAL_PROVIDER_IMPORT_PATHS = [

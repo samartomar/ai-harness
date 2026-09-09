@@ -8,6 +8,8 @@ export interface CatalogCompilerAssemblyInputV1 {
   groups?: AuthoringCatalogBundleV1["groups"];
   templates?: AuthoringCatalogBundleV1["templates"];
   evidence?: AuthoringCatalogBundleV1["evidence"];
+  /** Compiler output cannot author Core-prepared Catalog qualification facts. */
+  qualifications?: never;
   detailBytes: Record<string, string>;
 }
 
@@ -16,6 +18,8 @@ export function rejectTrustedCompilerEvidence(
   inputs: readonly CatalogCompilerAssemblyInputV1[],
 ): void {
   for (const input of inputs) {
+    if (Object.hasOwn(input, "qualifications"))
+      throw new Error("untrusted compiler input claims Core Catalog qualification");
     for (const evidence of Object.values(input.evidence ?? {})) {
       if (
         evidence.verification.state === "verified" ||

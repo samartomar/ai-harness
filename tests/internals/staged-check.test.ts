@@ -26,6 +26,28 @@ const npmExec = (...args: string[]): string[] => [
 ];
 
 describe("staged repository checks", () => {
+  it("checks every staged file without exceeding Windows command-line bounds", async () => {
+    const paths = Array.from(
+      { length: 200 },
+      (_, index) => `src/large-directory/${"long-name-".repeat(8)}${index}.ts`,
+    );
+    const calls: string[][] = [];
+    const result = await runStagedChecks(
+      { baseSha, headSha, stagedPaths: paths, testFiles: [] },
+      fakeRunner((argv) => {
+        calls.push(argv);
+        return {};
+      }),
+      toolchain,
+    );
+    expect(result.code).toBe(0);
+    const checks = calls.filter((argv) => argv[5] === "biome");
+    expect(checks.length).toBeGreaterThan(1);
+    expect(checks.flatMap((argv) => argv.slice(7))).toEqual([...paths].sort());
+    expect(
+      checks.every((argv) => argv.reduce((size, arg) => size + arg.length * 2 + 3, 0) <= 6000),
+    ).toBe(true);
+  });
   it("runs formatting and focused tests without invoking the complete suite", async () => {
     const calls: string[][] = [];
     const run = fakeRunner((argv) => {

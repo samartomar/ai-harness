@@ -52,7 +52,11 @@ describe("policy studio Bring Your Own paths", () => {
     expect(actions?.textContent).not.toContain("Add organization Agent");
     expect(actions?.textContent).not.toContain("Record external");
     expect(actions?.textContent).toContain("Why custom Hooks are unavailable");
+    expect(actions?.textContent).not.toContain("Approve ECC MCP");
     expect(actions?.textContent).not.toContain("undefined");
+    const eccMcpActions = window.document.getElementById("ecc-mcp-actions");
+    expect(eccMcpActions?.querySelectorAll(".pop-row")).toHaveLength(1);
+    expect(eccMcpActions?.textContent).toContain("Approve ECC MCP");
 
     click(window, window.document.getElementById("open-artifacts"), "organization artifacts");
     expect(

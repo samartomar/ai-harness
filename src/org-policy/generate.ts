@@ -20,13 +20,14 @@ import {
   type ResolveOperationalAdminCatalogV1Input,
   resolveOperationalAdminCatalogV1,
 } from "./admin-catalog-operations-v1.js";
-import { policyStudioModel } from "./studio-model.js";
+import { parseStudioPolicyImport, policyStudioModel } from "./studio-model.js";
 import { policyStudioHtml } from "./studio-template.js";
 import { compileOrganizationManifestV1 } from "./workbench/compilers/organization-manifest.js";
 import {
   type FreshOrganizationPreparationV1,
   prepareOrganizationManifestWithFreshScanV1,
 } from "./workbench/core/organization-preparation.js";
+import { readWorkbenchSourceDataFileV1 } from "./workbench/core/source-data.js";
 
 export const DEFAULT_POLICY_WORKBENCH_PATH = "aih-policy-workbench.html";
 
@@ -41,7 +42,8 @@ function outputPath(ctx: PlanContext): string {
 
 /**
  * Generate a portable, self-contained Policy Workbench. It has no repository
- * scan, policy-floor, runtime projection, or authority-verification dependency.
+ * scan, policy-floor, or runtime projection dependency. Configured source data
+ * must pass machine-local receipt checks before rendering.
  *
  * `catalogProvenance` is supplied ONLY by the administrator route, and only
  * after that route has fully resolved and verified the supported catalog — so
@@ -58,6 +60,13 @@ function policyGeneratePlan(
   const path = outputPath(ctx);
   const model = policyStudioModel(catalogProvenance, baselineEvidenceProvenance, {
     verifiedBaseline,
+    ...(typeof ctx.options.policyInput === "string"
+      ? {
+          initialPolicy: parseStudioPolicyImport(
+            readWorkbenchSourceDataFileV1(resolve(ctx.root, ctx.options.policyInput), 1_000_000),
+          ),
+        }
+      : {}),
     ...(organizationManifestBytes.length === 0 ? {} : { organizationManifestBytes }),
     ...(freshOrganizationPreparations.length === 0 ? {} : { freshOrganizationPreparations }),
   });
@@ -73,7 +82,7 @@ function policyGeneratePlan(
       "Policy Workbench — portable authoring artifact",
       [
         "A self-contained policy authoring artifact is planned.",
-        "It does not scan a repository, verify authority receipts, or project runtime controls.",
+        "It does not scan a repository or project runtime controls; configured source data is checked locally.",
         "Its browser preflight is distinct from target-repository policy evaluation.",
         ...(catalogProvenance === undefined
           ? []
@@ -100,6 +109,11 @@ export const policyGenerateCommand: CommandSpec = {
   skipOrgPolicyFloor: true,
   skipWorktreeGate: true,
   options: [
+    {
+      flags: "--policy-input <path>",
+      description:
+        "saved policy whose exact source pins select retained data snapshots before offline Workbench generation",
+    },
     {
       flags: "--out <path>",
       description: `workbench HTML output path (default ${DEFAULT_POLICY_WORKBENCH_PATH})`,
@@ -134,7 +148,8 @@ export interface PolicyGenerateRunDeps {
   write?: (text: string) => void;
   /**
    * The `<admin-root>` positional. Absent keeps the rootless portable route,
-   * which performs no acquisition, process, or cache work at all.
+   * which performs no acquisition or raw-proof replay. Configured source data
+   * is read and authenticated locally; Windows key checks inspect local ACLs.
    */
   adminRoot?: string;
   /** Injected operational boundaries; production uses the module defaults. */
@@ -341,7 +356,10 @@ export async function runPolicyGenerate(
     run,
     host: makeHostAdapter({ run, env }),
     env,
-    options: typeof opts.out === "string" ? { out: opts.out } : {},
+    options: {
+      ...(typeof opts.out === "string" ? { out: opts.out } : {}),
+      ...(typeof opts.policyInput === "string" ? { policyInput: opts.policyInput } : {}),
+    },
   };
   try {
     if (deps.adminRoot !== undefined && !ctx.apply) {

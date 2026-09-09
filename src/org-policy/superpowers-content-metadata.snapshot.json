@@ -1,0 +1,134 @@
+{
+  "version": 1,
+  "repository": "obra/Superpowers",
+  "commit": "3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9",
+  "agents": [],
+  "skills": [
+    {
+      "id": "brainstorming",
+      "title": "brainstorming",
+      "path": "skills/brainstorming/SKILL.md",
+      "summary": "You MUST use this before any creative work - creating features, building components, adding functionality, or modifying behavior. Explores user intent, requirements and design before implementation.",
+      "usageContext": "You MUST use this before any creative work - creating features, building components, adding functionality, or modifying behavior. Explores user intent, requirements and design before implementation.",
+      "allowedTools": [],
+      "sourceSha256": "4a54a4858b99807f3155ed1614b2f116e35ea5c1b788e793f565dd837fd3891f"
+    },
+    {
+      "id": "dispatching-parallel-agents",
+      "title": "dispatching-parallel-agents",
+      "path": "skills/dispatching-parallel-agents/SKILL.md",
+      "summary": "Use when facing 2+ independent tasks that can be worked on without shared state or sequential dependencies",
+      "usageContext": "Use when: 3+ test files failing with different root causes Multiple subsystems broken independently Each problem can be understood without context from others No shared state between investigations Don't use when: Failures are related (fix one might fix others) Need to understand full system state Agents would interfere with each other",
+      "allowedTools": [],
+      "sourceSha256": "1968923066f3b707eb01d1992cdf4c42284c3855f70253b9cd5000ff45fca13c"
+    },
+    {
+      "id": "executing-plans",
+      "title": "executing-plans",
+      "path": "skills/executing-plans/SKILL.md",
+      "summary": "Use when you have a written implementation plan to execute in a separate session with review checkpoints",
+      "usageContext": "Use when you have a written implementation plan to execute in a separate session with review checkpoints",
+      "allowedTools": [],
+      "sourceSha256": "c4c3d8b628c51114cd165fb8246fe02744cd8be180032328391252e653028d9b"
+    },
+    {
+      "id": "finishing-a-development-branch",
+      "title": "finishing-a-development-branch",
+      "path": "skills/finishing-a-development-branch/SKILL.md",
+      "summary": "Use when implementation is complete, all tests pass, and you need to decide how to integrate the work",
+      "usageContext": "Use when implementation is complete, all tests pass, and you need to decide how to integrate the work",
+      "allowedTools": [],
+      "sourceSha256": "d0ac8360ed9d59121776ef95c84bcb38e9747de0d7ae7e227dca81e437593b9b"
+    },
+    {
+      "id": "receiving-code-review",
+      "title": "receiving-code-review",
+      "path": "skills/receiving-code-review/SKILL.md",
+      "summary": "Use when receiving code review feedback, before implementing suggestions, especially if feedback seems unclear or technically questionable - requires technical rigor and verification, not performative agreement or blind implementation",
+      "usageContext": "Use when receiving code review feedback, before implementing suggestions, especially if feedback seems unclear or technically questionable - requires technical rigor and verification, not performative agreement or blind implementation",
+      "allowedTools": [],
+      "sourceSha256": "091df1629510af1b92fc4abd6f96732ebedb4cb2c0f3457e8f2740b0504a2438"
+    },
+    {
+      "id": "requesting-code-review",
+      "title": "requesting-code-review",
+      "path": "skills/requesting-code-review/SKILL.md",
+      "summary": "Use when completing tasks, implementing major features, or before merging to verify work meets requirements",
+      "usageContext": "Use when completing tasks, implementing major features, or before merging to verify work meets requirements",
+      "allowedTools": [],
+      "sourceSha256": "d71cc01ba56d2325cf8af5f7c11837819b63ecd57de0bfdb812f7f3ff7751df8"
+    },
+    {
+      "id": "subagent-driven-development",
+      "title": "subagent-driven-development",
+      "path": "skills/subagent-driven-development/SKILL.md",
+      "summary": "Use when executing implementation plans with independent tasks in the current session",
+      "usageContext": "vs. Executing Plans (parallel session): Same session (no context switch) Fresh subagent per task (no context pollution) Review after each task (spec compliance + code quality), broad review at the end Faster iteration (no human-in-loop between tasks)",
+      "allowedTools": [],
+      "sourceSha256": "349a08ad8b59b19b86c13a7d2f34a1a38719bf88257004a863eefefa8d9f9e40"
+    },
+    {
+      "id": "systematic-debugging",
+      "title": "systematic-debugging",
+      "path": "skills/systematic-debugging/SKILL.md",
+      "summary": "Use when encountering any bug, test failure, or unexpected behavior, before proposing fixes",
+      "usageContext": "Use for ANY technical issue: Test failures Bugs in production Unexpected behavior Performance problems Build failures Integration issues Use this ESPECIALLY when: Under time pressure (emergencies make guessing tempting) \"Just one quick fix\" seems obvious You've already tried multiple fixes Previous fix didn't work You don't fully understand the issue Don't skip when: Issue seems simple (simple bugs have root causes too) You're in a hurry (rushing guarantees rework) Manager wants it fixed NOW (systematic is faster than thrashing)",
+      "allowedTools": [],
+      "sourceSha256": "808fc5717aa88ad65efff312b11c186294d3e6ee301afb584e2f86599b137787"
+    },
+    {
+      "id": "test-driven-development",
+      "title": "test-driven-development",
+      "path": "skills/test-driven-development/SKILL.md",
+      "summary": "Use when implementing any feature or bugfix, before writing implementation code",
+      "usageContext": "Always: New features Bug fixes Refactoring Behavior changes Exceptions (ask your human partner): Throwaway prototypes Generated code Configuration files Thinking \"skip TDD just this once\"? Stop. That's rationalization.",
+      "allowedTools": [],
+      "sourceSha256": "bf1b8216e523851a411e91d429a7c1c2a173e79d88957bc78e348218d50edd54"
+    },
+    {
+      "id": "using-git-worktrees",
+      "title": "using-git-worktrees",
+      "path": "skills/using-git-worktrees/SKILL.md",
+      "summary": "Use when starting feature work that needs isolation from current workspace or before executing implementation plans - ensures an isolated workspace exists via native tools or git worktree fallback",
+      "usageContext": "Use when starting feature work that needs isolation from current workspace or before executing implementation plans - ensures an isolated workspace exists via native tools or git worktree fallback",
+      "allowedTools": [],
+      "sourceSha256": "8cfb86f121269e8f7f12361e6795c4f6738828340e28964c9229d365666c9edd"
+    },
+    {
+      "id": "using-superpowers",
+      "title": "using-superpowers",
+      "path": "skills/using-superpowers/SKILL.md",
+      "summary": "Use when starting any conversation - establishes how to find and use skills, requiring skill invocation before ANY response including clarifying questions",
+      "usageContext": "Use when starting any conversation - establishes how to find and use skills, requiring skill invocation before ANY response including clarifying questions",
+      "allowedTools": [],
+      "sourceSha256": "55379fe7c1c473a02c61961c822996bff30e1320d6921d9062509bc508482c05"
+    },
+    {
+      "id": "verification-before-completion",
+      "title": "verification-before-completion",
+      "path": "skills/verification-before-completion/SKILL.md",
+      "summary": "Use when about to claim work is complete, fixed, or passing, before committing or creating PRs - requires running verification commands and confirming output before making any success claims; evidence before assertions always",
+      "usageContext": "Use when about to claim work is complete, fixed, or passing, before committing or creating PRs - requires running verification commands and confirming output before making any success claims; evidence before assertions always",
+      "allowedTools": [],
+      "sourceSha256": "2befe7fc55bcadaa3d97dd9e8efeb633d2561c0ebe74c5a8b17c4d9e7e4520b3"
+    },
+    {
+      "id": "writing-plans",
+      "title": "writing-plans",
+      "path": "skills/writing-plans/SKILL.md",
+      "summary": "Use when you have a spec or requirements for a multi-step task, before touching code",
+      "usageContext": "Use when you have a spec or requirements for a multi-step task, before touching code",
+      "allowedTools": [],
+      "sourceSha256": "72190c88b2b5a67a96b91d66aa72b9161913e10e8769da3f28a226f4cc7b99d0"
+    },
+    {
+      "id": "writing-skills",
+      "title": "writing-skills",
+      "path": "skills/writing-skills/SKILL.md",
+      "summary": "Use when creating new skills, editing existing skills, or verifying skills work before deployment",
+      "usageContext": "[Small inline flowchart IF decision non-obvious] Bullet list with SYMPTOMS and use cases When NOT to use",
+      "allowedTools": [],
+      "sourceSha256": "d34db5c8aed6a4e0440132bd0613aace70a693ec7819d5637ad77481d8e10d1b"
+    }
+  ]
+}

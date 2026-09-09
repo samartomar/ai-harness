@@ -6,7 +6,7 @@ export default defineConfig({
   testMatch: "**/*.spec.ts",
   outputDir: ".aih-scratch/workbench-browser-results",
   fullyParallel: false,
-  workers: 1,
+  workers: 2,
   retries: 0,
   timeout: 30_000,
   reporter: [["list"]],

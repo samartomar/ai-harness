@@ -21,6 +21,16 @@ const testFiles = [
 ];
 
 describe("Workbench lane ownership", () => {
+  it("keeps source-store and operator integration checks out of the pure state lane", () => {
+    for (const pattern of [
+      "tests/org-policy/workbench/source-data*.test.ts",
+      "tests/org-policy/workbench/data-command.test.ts",
+      "tests/org-policy/workbench/studio-model-source-data.test.ts",
+    ]) {
+      expect(WORKBENCH_PURE_TEST_EXCLUDE_PATTERNS).toContain(pattern);
+      expect(WORKBENCH_RETAINED_TEST_PATTERNS).toContain(pattern);
+    }
+  });
   it("discovers nested source contracts without maintaining a file count", () => {
     expect(WORKBENCH_TEST_PATTERNS).toContain("tests/org-policy/workbench/**/*.test.ts");
     expect(testFiles.filter(isWorkbenchTestPath)).toEqual(testFiles.slice(1));

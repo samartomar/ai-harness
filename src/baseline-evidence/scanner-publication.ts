@@ -7,12 +7,15 @@ import {
 import { z } from "zod";
 import { canonicalStrictJsonBytesV1, parseStrictJsonObjectV1 } from "../contract/strict-json-v1.js";
 import { AihError } from "../errors.js";
+import { DEFAULT_EVIDENCE_MAX_AGE_SECONDS_V1 } from "../evidence-freshness.js";
 import type { BaselineCatalog } from "./catalog.js";
-import {
-  consumeVerifiedScannerBaseline,
-  consumeVerifiedScannerBaselineBatches,
-} from "./scanner-consumer.js";
+import { consumeVerifiedScannerBaselineBatchesWithClaims } from "./scanner-consumer.js";
 import type { BaselineSourceEvidence } from "./schema.js";
+
+export {
+  SCANNER_BASELINE_PUBLICATION_MAX_AGE_SECONDS_V1,
+  SCANNER_BASELINE_PUBLICATION_PUBLISHER_V1,
+} from "./scanner-publication-policy.js";
 
 const SHA256 = /^[0-9a-f]{64}$/;
 const COMMIT = /^[0-9a-f]{40}$/;
@@ -20,14 +23,6 @@ const PUBLICATION_LIMIT = 96 * 1024 * 1024;
 const DISCOVERY_LIMIT = 8 * 1024;
 const ATTESTATION_LIMIT = 256 * 1024;
 const ANNEX_LIMIT = 16 * 1024 * 1024;
-
-export const SCANNER_BASELINE_PUBLICATION_MAX_AGE_SECONDS_V1 = 7 * 24 * 60 * 60;
-export const SCANNER_BASELINE_PUBLICATION_PUBLISHER_V1 = Object.freeze({
-  repository: "samartomar/aih-scan",
-  workflow: "samartomar/aih-scan/.github/workflows/baseline-publication.yml",
-  ref: "refs/heads/main",
-  commit: "f6189c0211fe27369fb15672f00da76c2072361c",
-} satisfies ScannerBaselinePublicationPublisherV1);
 
 const signerWire = z
   .object({
@@ -140,8 +135,12 @@ export type ScannerBaselinePublicationProvenanceV1 = Readonly<{
   publicationSha256: string;
   requestSha256: string;
   receiptSha256: string;
+  publicationLocator: string;
   attestedAt: string;
   ageSeconds: number;
+  /** Original authenticated Scanner signing claims; neither is a scan execution time. */
+  reportSignedAt: string;
+  reportVerificationExpiresAt: string;
 }>;
 
 function fail(reason: string): never {
@@ -177,11 +176,7 @@ function parseCanonicalObject<T>(
 }
 
 function decodeBase64(value: string, maximum: number, label: string): Buffer {
-  if (
-    value.length === 0 ||
-    value.length % 4 !== 0 ||
-    !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)
-  )
+  if (value.length === 0 || value.length % 4 !== 0 || value.length > Math.ceil(maximum / 3) * 4)
     fail(`${label} base64`);
   const bytes = Buffer.from(value, "base64");
   if (bytes.length === 0 || bytes.length > maximum || bytes.toString("base64") !== value)
@@ -326,8 +321,13 @@ function internalPublication(input: ConsumeScannerBaselinePublicationV1Input) {
     discoveryWire,
   );
   if (discovery.requestSha256 !== input.expectedRequestSha256) fail("request digest");
-  const expectedLocator = `https://github.com/${input.publisher.repository}/releases/download/baseline-v1-${input.publisher.commit}-${input.expectedRequestSha256}/publication.json`;
-  if (discovery.locator !== expectedLocator) fail("mutable or unexpected locator");
+  const locatorPrefix = `https://github.com/${input.publisher.repository}/releases/download/baseline-v1-${input.publisher.commit}-${input.expectedRequestSha256}`;
+  const suffix = discovery.locator.slice(locatorPrefix.length);
+  if (
+    !discovery.locator.startsWith(locatorPrefix) ||
+    (suffix !== "/publication.json" && !/^-r[0-9]{8}\/publication\.json$/u.test(suffix))
+  )
+    fail("mutable or unexpected locator");
   const publicationSha256 = sha256(input.publicationBytes);
   if (publicationSha256 !== discovery.publicationSha256) fail("publication digest");
   const publication = parseCanonicalObject(
@@ -389,7 +389,21 @@ function internalPublication(input: ConsumeScannerBaselinePublicationV1Input) {
 function provenanceFor(
   publisher: ScannerBaselinePublicationPublisherV1,
   verified: ReturnType<typeof internalPublication>,
+  claims: { readonly signedAt: string; readonly expiresAt: string },
+  now: string,
+  maxAgeSeconds: number,
 ): ScannerBaselinePublicationProvenanceV1 {
+  // These are the facts returned by the exact signature verification call.
+  // A later publication or intake cannot renew the original report date.
+  const signed = Date.parse(claims.signedAt);
+  const age = Date.parse(now) - signed;
+  if (
+    signed > Date.parse(verified.attestation.attestedAt) ||
+    !Number.isFinite(age) ||
+    age < 0 ||
+    age >= Math.min(maxAgeSeconds, DEFAULT_EVIDENCE_MAX_AGE_SECONDS_V1) * 1000
+  )
+    fail("report freshness requires a newly signed report for the exact request");
   return Object.freeze({
     authority: "none" as const,
     repository: publisher.repository,
@@ -399,8 +413,11 @@ function provenanceFor(
     publicationSha256: verified.publicationSha256,
     requestSha256: verified.discovery.requestSha256,
     receiptSha256: verified.discovery.receiptSha256,
+    publicationLocator: verified.discovery.locator,
     attestedAt: verified.attestation.attestedAt,
     ageSeconds: verified.attestation.ageSeconds,
+    reportSignedAt: claims.signedAt,
+    reportVerificationExpiresAt: claims.expiresAt,
   });
 }
 
@@ -448,7 +465,7 @@ export async function consumeScannerBaselinePublicationsV1(
         seen.add(digest);
       }
     }
-    const sourceEvidence = await consumeVerifiedScannerBaselineBatches({
+    const consumed = await consumeVerifiedScannerBaselineBatchesWithClaims({
       sourceRoot: input.sourceRoot,
       catalog: input.catalog,
       batches: verified.map((batch) => ({
@@ -462,8 +479,18 @@ export async function consumeScannerBaselinePublicationsV1(
       seenReceiptBindings: input.seenReceiptBindings,
     });
     return Object.freeze({
-      evidence: sourceEvidence,
-      provenance: Object.freeze(verified.map((batch) => provenanceFor(input.publisher, batch))),
+      evidence: consumed.evidence,
+      provenance: Object.freeze(
+        verified.map((batch, index) =>
+          provenanceFor(
+            input.publisher,
+            batch,
+            consumed.claims[index] ?? fail("missing verified report claims"),
+            input.now,
+            input.maxAgeSeconds,
+          ),
+        ),
+      ),
     });
   } catch (error) {
     if (error instanceof AihError && error.code === "AIH_SCANNER_BASELINE_PUBLICATION") throw error;
@@ -481,18 +508,27 @@ export async function consumeScannerBaselinePublicationV1(
 ): Promise<ConsumedScannerBaselinePublicationV1> {
   try {
     const verified = internalPublication(input);
-    const evidence = await consumeVerifiedScannerBaseline({
+    const consumed = await consumeVerifiedScannerBaselineBatchesWithClaims({
       sourceRoot: input.sourceRoot,
       catalog: input.catalog,
-      request: verified.request,
-      result: verified.result,
-      envelope: verified.envelope,
+      batches: [
+        { request: verified.request, result: verified.result, envelope: verified.envelope },
+      ],
       roots: verified.roots,
       expected: verified.expected,
       seenEvidenceDigests: input.seenEvidenceDigests,
       seenReceiptBindings: input.seenReceiptBindings,
     });
-    return Object.freeze({ evidence, provenance: provenanceFor(input.publisher, verified) });
+    return Object.freeze({
+      evidence: consumed.evidence,
+      provenance: provenanceFor(
+        input.publisher,
+        verified,
+        consumed.claims[0] ?? fail("missing verified report claims"),
+        input.now,
+        input.maxAgeSeconds,
+      ),
+    });
   } catch (error) {
     if (error instanceof AihError && error.code === "AIH_SCANNER_BASELINE_PUBLICATION") throw error;
     fail("content or Scanner verification");

@@ -10,8 +10,9 @@ import {
   parseBaselineVetAttestationEnvelopeV1Json,
   signBaselineVetBundleV1,
 } from "@aihq/scan";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { defineBaselineCatalog } from "../../src/baseline-evidence/catalog.js";
+import * as hashes from "../../src/baseline-evidence/hash.js";
 import {
   consumeVerifiedScannerBaseline,
   consumeVerifiedScannerBaselineBatches,
@@ -28,6 +29,7 @@ import {
 const roots: string[] = [];
 
 afterEach(() => {
+  vi.restoreAllMocks();
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
@@ -68,18 +70,15 @@ function sourceFixture() {
   return { root, catalog };
 }
 
-function largeSourceFixture() {
+function largeSourceFixture(count = SCANNER_BASELINE_COMPONENT_BATCH_LIMIT + 1) {
   const root = mkdtempSync(join(tmpdir(), "aih-core-scanner-batches-"));
   roots.push(root);
-  const components = Array.from(
-    { length: SCANNER_BASELINE_COMPONENT_BATCH_LIMIT + 1 },
-    (_, index) => {
-      const id = `component-${String(index + 1).padStart(3, "0")}`;
-      mkdirSync(join(root, id), { recursive: true });
-      writeFileSync(join(root, id, "README.md"), `# ${id}\n`, "utf8");
-      return { id, paths: [id] };
-    },
-  );
+  const components = Array.from({ length: count }, (_, index) => {
+    const id = `component-${String(index + 1).padStart(3, "0")}`;
+    mkdirSync(join(root, id), { recursive: true });
+    writeFileSync(join(root, id, "README.md"), `# ${id}\n`, "utf8");
+    return { id, paths: [id] };
+  });
   const catalog = defineBaselineCatalog({
     id: "large-fixture",
     owner: "example",
@@ -190,6 +189,55 @@ function signedFixture(request: BaselineVetRequestV1, result: BaselineVetBatchRe
 }
 
 describe("Core Scanner baseline consumer", () => {
+  it("rehashes one request set and rejects a mismatched later batch or changed source", async () => {
+    const { root, catalog } = largeSourceFixture(201);
+    const sourceHash = vi.spyOn(hashes, "hashSourceTree");
+    const componentHash = vi.spyOn(hashes, "hashComponentTree");
+    const requests = createCoreBaselineVetRequests(root, catalog);
+    expect(sourceHash).toHaveBeenCalledTimes(1);
+    expect(componentHash).toHaveBeenCalledTimes(201);
+    const keys = generateKeyPairSync("ed25519");
+    const keyId = ed25519KeyIdV2(keys.publicKey);
+    const signer = { identity: "fixture-linear-scanner", class: "test-ephemeral" as const, keyId };
+    const batches = requests.map((request) => {
+      const result = buildResult(request);
+      const signed = signBaselineVetBundleV1({
+        request,
+        result,
+        signer: { ...signer, privateKey: keys.privateKey },
+        claims: { signedAt: "2026-08-31T05:00:00.000Z", expiresAt: "2026-08-31T06:00:00.000Z" },
+      });
+      return {
+        request,
+        result,
+        envelope: parseBaselineVetAttestationEnvelopeV1Json(
+          canonicalBaselineVetAttestationEnvelopeV1Bytes(signed).toString("utf8"),
+        ),
+      };
+    });
+    const input = {
+      sourceRoot: root,
+      catalog,
+      batches,
+      roots: [{ ...signer, publicKey: keys.publicKey }],
+      expected: { now: "2026-08-31T05:30:00.000Z", signer },
+    };
+    const third = batches[2]!;
+    const original = third.request;
+    third.request = { ...original, requestSha256: "0".repeat(64) };
+    sourceHash.mockClear();
+    componentHash.mockClear();
+    await expect(consumeVerifiedScannerBaselineBatches(input)).rejects.toThrow(
+      /batch 3 does not match/,
+    );
+    expect(sourceHash).toHaveBeenCalledTimes(1);
+    expect(componentHash).toHaveBeenCalledTimes(201);
+    third.request = original;
+    writeFileSync(join(root, "component-201", "README.md"), "Changed after signing\n");
+    await expect(consumeVerifiedScannerBaselineBatches(input)).rejects.toThrow(
+      /does not match Core catalog/,
+    );
+  });
   it("batches more than 100 components and requires every signed batch", async () => {
     const { root, catalog } = largeSourceFixture();
     const requests = createCoreBaselineVetRequests(root, catalog);

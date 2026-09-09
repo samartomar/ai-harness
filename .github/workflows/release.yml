@@ -41,6 +41,7 @@ jobs:
     permissions:
       actions: read
       contents: read
+      attestations: read
     outputs:
       tarball: ${{ steps.pack.outputs.tarball }}
       tarball_sha256: ${{ steps.pack.outputs.tarball_sha256 }}
@@ -113,6 +114,8 @@ jobs:
           if (manifest.package.name !== "@aihq/core" || manifest.package.version !== process.env.GITHUB_REF_NAME.slice(7)) throw new Error("candidate package mismatch");
           NODE
       - name: Verify package-specific release candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: npm run verify:release-candidate
       - name: Audit dependencies
         run: npm audit --audit-level=high

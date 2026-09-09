@@ -136,9 +136,11 @@ describe("Workbench provider ownership", () => {
     expect(providerTestsFor(["ecc"])).toEqual([
       "tests/internals/workbench-provider-ownership.test.ts",
       "tests/org-policy/catalog-providers.test.ts",
+      "tests/org-policy/ecc-mcp-catalog.test.ts",
       "tests/org-policy/workbench/catalog-bundle.test.ts",
       "tests/org-policy/workbench/compilers/registry.test.ts",
       "tests/org-policy/workbench/contracts.test.ts",
+      "tests/org-policy/workbench/policy-consumption.test.ts",
       "tests/org-policy/workbench/prepared-catalog.test.ts",
       "tests/org-policy/workbench/providers/assembly.test.ts",
       "tests/org-policy/workbench/providers/ecc.test.ts",
@@ -176,7 +178,19 @@ describe("Workbench provider ownership", () => {
       ]),
     );
   });
+  it("enrolls the static Superpowers metadata snapshot with its provider", () => {
+    expect(
+      providerForWorkbenchPath("src/org-policy/superpowers-content-metadata.snapshot.json"),
+    ).toBe("superpowers");
+  });
+  it("enrolls the source-locked ECC MCP catalog and payload with the ECC provider", () => {
+    expect(providerForWorkbenchPath("src/org-policy/ecc-mcp-catalog.ts")).toBe("ecc");
+    expect(providerForWorkbenchPath("src/org-policy/ecc-mcp-catalog.snapshot.json")).toBe("ecc");
+  });
   it("does not turn a broad CI trigger into provider import authority", () => {
+    expect(() => assertProviderImportTarget("aih", "src/mcp/servers.ts")).toThrow(
+      /unreviewed dependency/u,
+    );
     expect(() => assertProviderImportTarget("ecc", "src/org-policy/workbench/assembly.ts")).toThrow(
       /forbidden authority/u,
     );

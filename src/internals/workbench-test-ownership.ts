@@ -3,6 +3,9 @@ export const WORKBENCH_EXPLICIT_TEST_PATHS = [
   "tests/ecc/module-selection-closure.test.ts",
   "tests/org-policy/acceptance-hook-registrar.test.ts",
   "tests/org-policy/catalog-providers.test.ts",
+  "tests/org-policy/bounded-github-skill-resolver.test.ts",
+  "tests/org-policy/connected-github-skill-bridge.test.ts",
+  "tests/internals/check-workbench-release-compatibility.test.ts",
   "tests/org-policy/admin-baseline-evidence-cli-route.test.ts",
   "tests/org-policy/admin-catalog-cli-route.test.ts",
   "tests/org-policy/admin-catalog-fetch-v1.test.ts",
@@ -25,6 +28,11 @@ export const WORKBENCH_CONTRACT_TEST_PATTERNS = [
   "tests/org-policy/workbench/catalog-bundle.test.ts",
   "tests/org-policy/workbench/prepared-catalog.test.ts",
   "tests/org-policy/workbench/core/**/*.test.ts",
+  // These exercise authenticated disk stores, operator commands, and the
+  // production assembly; they are not synthetic reducer/state assertions.
+  "tests/org-policy/workbench/source-data*.test.ts",
+  "tests/org-policy/workbench/data-command.test.ts",
+  "tests/org-policy/workbench/studio-model-source-data.test.ts",
   "tests/org-policy/workbench/policy-consumption.test.ts",
   "tests/org-policy/workbench/providers/**/*.test.ts",
   "tests/org-policy/catalog-providers.test.ts",

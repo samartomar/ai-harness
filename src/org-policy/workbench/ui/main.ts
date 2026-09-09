@@ -1,3 +1,4 @@
+import "./browser-validation.js";
 import { safePolicyCommandArgument } from "../command-arguments.js";
 import { projectWorkbenchPolicy, type WorkbenchPolicyBindingsV1 } from "../compile-policy.js";
 import {
@@ -6,7 +7,11 @@ import {
   type WorkbenchSourceInputsV1,
 } from "../contracts.js";
 import { importWorkbenchPolicySelections, serializeWorkbenchRepairV1 } from "../policy-import.js";
-import { reduceWorkbenchAction, type WorkbenchReductionV1 } from "../selection-engine.js";
+import {
+  reduceWorkbenchAction,
+  type WorkbenchReductionV1,
+  workbenchStatesEqualV1,
+} from "../selection-engine.js";
 import { mountArtifactIntakeWorkbench } from "./artifact-intake-runtime.js";
 import { mountWorkbench } from "./catalog-inventory.js";
 import { mountLegacyWorkbench } from "./legacy-runtime.js";
@@ -117,6 +122,7 @@ if (preparedCatalogValid) {
   let applyingWorkbenchProjection = false;
   const mounted = mountWorkbench(root, {
     bundle,
+    adoptionBindings: bindings,
     initialState: importedState(browserModel.initialPolicy, bundle, bindings, sourceInputs).state,
     initialDiagnostics: importedState(browserModel.initialPolicy, bundle, bindings, sourceInputs)
       .diagnostics,
@@ -148,7 +154,7 @@ if (preparedCatalogValid) {
         }),
       );
     },
-    dispatch(action) {
+    dispatch(action, expectedState) {
       const imported = importedState(session.snapshotPolicy(), bundle, bindings, sourceInputs);
       const current = imported.state;
       if (!imported.accepted)
@@ -159,6 +165,17 @@ if (preparedCatalogValid) {
             code: "unknown-asset" as const,
             message,
           })),
+        };
+      if (expectedState !== undefined && !workbenchStatesEqualV1(current, expectedState))
+        return {
+          accepted: false,
+          state: current,
+          diagnostics: [
+            {
+              code: "invalid-action" as const,
+              message: "Your draft changed. Review a fresh comparison before applying it.",
+            },
+          ],
         };
       const reduced = reduceWorkbenchAction(bundle, current, action);
       if (!reduced.accepted) return reduced;

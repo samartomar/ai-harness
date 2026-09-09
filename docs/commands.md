@@ -694,6 +694,46 @@ build); `validate --require-signature` then
 
 The in-progress authoring core is an offline, typed browser over `authoring-catalog-bundle/v1`. Its normalized bundle has source descriptors, immutable source and asset identities, relations, groups, templates, evidence summaries, provenance, and lazy detail chunks. Source identity records where an asset came from; it does not decide methodology. A resolved closure permits zero or one distinct methodology key, while assets in the same exclusive methodology slot may share the same key.
 
+The **Source** filter limits **Type** to categories with matching assets. Changing
+source clears a type that is no longer available. The **Adoption recipe** arrow
+opens a reading panel; dismiss it with Escape, its close button, or by moving the
+pointer away. Keyboard focus keeps the guide available while reading it.
+
+Catalog actions describe the policy change they make:
+
+| Action | Meaning |
+| --- | --- |
+| Add to draft | Save this version as a direct choice. Only Core-selectable controls count as controls. |
+| Request review / Remove request | Save or remove a pending request without selecting a control. |
+| Keep as my choice | Keep an item independently of the starting point or dependency that already includes it. |
+| Remove my choice | Remove your direct choice; a template or required dependency can still retain the item. |
+| More options → Exclude from optional groups / Undo my exclusion | Add or remove your own exclusion from optional inclusion. Template exclusions remain until their template is removed; required dependencies cannot be overridden. |
+
+Browse one source at a time; changing source keeps your draft choices and shows
+only that source's catalog, types, and starting points. Expand a catalog row to
+read its purpose, declared access, draft consequence, and security evidence.
+Reports show their reported result, covered paths, findings, and analyzer names
+and versions when supplied. **Reports included** counts attached exact-version
+reports separately from those currently verified by Core. Packaged unverified
+reports remain readable without another scan, with one provenance notice; they
+do not establish a verified passing result or approval. Current verified reports
+also show their Core verification interval; a verification date is not a scanner
+run date. Missing bundled reports are an AIH preparation gap; new or changed
+content needs its own matching report. **Starting points** previews changes before applying
+them; cancel leaves the draft unchanged. **Review draft** lists current choices
+and requests separately. Missing, stale, and unverified
+evidence are identified explicitly. Prepared scan results do not grant organization
+approval or make a control effective. **Advanced prepared metadata** retains the
+raw JSON for technical inspection. Browser validation does not require `eval` or
+browser storage. Report facts and current verification remain separate.
+
+Declared conflicts and incompatible methodology choices offer a replacement
+preview. It lists removed roots, dependencies, requests, and exclusions before
+one atomic draft change. A template-owned conflict requires removing that
+template's whole origin, including its other choices. Cancel changes nothing;
+if the draft changes during review, the comparison must be refreshed. Matching
+names alone do not establish duplicate or equivalent capabilities.
+
 A schema-v3 policy stores generic authoring intent in `authoringSelections` with `selectionVersion: "workbench-selection/v1"`. Roots bind the source id, source revision, and content digest; templates expand pinned roots with required and optional member semantics, exclusions, and provenance. Requests remain request-only intent, and `selectedControlCount` describes only Core-selectable controls in the resolved closure. The compiler writes `minimumCoreVersion: "0.6.0"` as an unreleased feature floor. That floor does not change the package version or release process. Legacy schema-v2 policy input remains accepted unchanged.
 
 `compilePolicy` and `compileOrganizationManifestV1` are build-time/Core APIs, not public `aih policy` authoring commands. The organization manifest compiler accepts bounded declaration bytes and cannot nominate a Core projector or authoring action. Core reconstructs bindings from its pinned catalog and prepares display-safe evidence only after its own verification. Browser imports, scanner intake, and organization declarations are not approval, authority, or effective state.
@@ -715,6 +755,74 @@ parsed `--root` and `AIH_ROOT` compatibility inputs are ignored; the current dir
 Each input must be a readable non-symlink regular file no larger than 1 MiB and must pass the
 strict organization-manifest compiler. This offline preparation does not scan, fetch, verify,
 approve, activate, or make the declared assets effective.
+
+`--policy-input <path>` restores a bounded saved policy while preparing a new HTML artifact.
+For schema-v3 input, Core resolves the saved exact source revisions and content digests
+against retained source data before rendering. It does not silently move selections to
+the current source revision. A missing retained revision fails preparation.
+
+Compatible source data can be updated without replacing the installed Core package.
+The explicit operator commands are `aih policy data prepare`, `aih policy data sign`,
+and `aih policy data import`. Each writes only with a literal `--apply`; otherwise
+it is a dry run. Preparation takes `--source`, `--sequence`, `--out`, an optional
+`--source-bundle`, and `--previous-digest` after the first accepted snapshot.
+`--scanner-proof` and `--qualification-proof` carry raw independent proofs, not new
+authority from the data signer. Signing takes `--input`, `--key`, `--trust`, and
+`--out`; it checks the explicitly configured `workbench-source-data/v1` signer role
+and source scope but does not activate data or establish Scanner or Catalog custody.
+Keep the signing key out of repositories, exported policies, and browser artifacts.
+
+Import takes `--input`, optional `--store`, and `--scanner-source` for exact source
+bytes when replaying Scanner proofs. For digest-addressed proof manifests, supply
+`--proof-root <directory>` containing the original `<sha256>.blob` files. Core
+checks their exact sizes and hashes before independently verifying the original
+publications; the manifest is not a replacement for publication authority. The
+signed snapshot remains bounded to 16 MiB; referenced compiler input and raw proof
+bytes have a separate aggregate 128 MiB ceiling and per-blob limits.
+Raw Scanner refresh currently accepts the
+`pinned-skill-collection/v1` and `pinned-component-collection/v1` compiler formats.
+GitHub CLI (`gh`) must be available during independent raw-proof verification.
+The store's separately configured `trust.json` is never accepted from the imported
+bundle. Compatible data cannot introduce executable compilers or replace Core
+interpretation rules. A new compiler format still needs a Core release.
+
+Where published Scanner components cover a broader source tree than an offered
+asset, Core may verify complete file-and-digest containment against the original
+reports. The UI identifies this as shared source-file coverage. Broader findings
+remain conservative evidence for the asset; this does not establish a narrower
+scan, a dependency-runtime scan, or Catalog qualification.
+
+Accepted snapshots live under the per-user `.aih/workbench-data/v1` directory
+(override: `AIH_WORKBENCH_DATA`). A separate machine-local verifier key and signed
+receipts live under `.aih/workbench-verifier/v1` (override:
+`AIH_WORKBENCH_VERIFIER_HOME`); that private directory must be outside the data store.
+Normal Workbench generation checks the local receipts without `gh` or network
+access. The receipts bind the exact data, current trust configuration, verifier
+policy, original expiry, and protected active/history index. They protect against
+untrusted cache edits, not compromise of the operating-system user account.
+
+Back up the administrator signing key securely, its public root and role policy,
+signed source bundles, raw Scanner/Catalog proofs, and exact source inputs. On a
+replacement machine, configure trust independently and reimport the original proofs;
+do not treat a copied cache as verification authority. Missing local verification
+keys fail closed. When migrating an existing store, reverify retained snapshots
+before accepting their successor. Reverification does not extend report freshness.
+
+Saved policy pins and root rationale preserve selection intent, not a signed claim
+about the report reviewed at that time. Historical approval context belongs to the
+existing governance decision and enclosing signed receipt: source/evidence/control
+digests, policy version, actor, reason, and validity dates. Current security
+reevaluation may use newer valid evidence for the same exact asset identity without
+rewriting that historical decision.
+
+Workbench evidence details distinguish Scanner report signing, publication, and Core
+verification dates. These are historical timestamps, not interchangeable scan execution
+times. Currentness expires independently; revisiting a report does not renew it.
+Catalog qualification is a separate exact-source receipt and receipt-set binding. Neither
+a passing scan nor Catalog qualification grants organization admission or makes a selected
+asset effective. Raw findings remain report facts, including when qualification exists.
+Packaged collection records bind coverage paths and interpreted report components separately
+from license-inclusive material identity; the two tree hashes need not be identical.
 
 For a deliberate fresh preparation, an administrator invokes `aih policy generate <admin-root> --apply`
 with paired, repeatable `--fresh-organization-manifest <path>` and `--fresh-artifact-intake <path>`

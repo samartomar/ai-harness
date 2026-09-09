@@ -3,6 +3,7 @@ import { resolveEffectiveOrgPolicy } from "../../../src/org-policy/effective.js"
 import type { OrgPolicy } from "../../../src/org-policy/schema.js";
 import { compilePolicy } from "../../../src/org-policy/workbench/policy-compiler.js";
 import { consumeWorkbenchPolicy } from "../../../src/org-policy/workbench/policy-consumption.js";
+import { importWorkbenchPolicySelections } from "../../../src/org-policy/workbench/policy-import.js";
 import {
   defaultPreparedWorkbenchCatalog,
   prepareWorkbenchCatalog,
@@ -11,8 +12,45 @@ import {
   createWorkbenchState,
   reduceWorkbenchAction,
 } from "../../../src/org-policy/workbench/selection-engine.js";
+import { mcpRuntimeOverlapPresentation } from "../../../src/org-policy/workbench/ui/selection-comparison.js";
 
 describe("schema-v3 policy consumption", () => {
+  it("advises on the five exact declared AIH and ECC MCP registration-name pairs", () => {
+    const prepared = defaultPreparedWorkbenchCatalog();
+    for (const id of [
+      "code-review-graph",
+      "codebase-memory-mcp",
+      "context7",
+      "github",
+      "sequential-thinking",
+    ]) {
+      const aih = prepared.bundle.assets[`aih/${id}`];
+      const ecc = prepared.bundle.assets[`ecc/mcp:${id}`];
+      if (aih === undefined || ecc === undefined)
+        throw new Error(`expected AIH and ECC ${id} MCP records`);
+      expect(aih.runtimeIdentity).toBe(`mcp:${id}`);
+      expect(ecc.runtimeIdentity).toBe(`mcp:${id}`);
+      const action =
+        aih.authoring.action === "record-request"
+          ? {
+              type: "record-request" as const,
+              assetId: aih.id,
+              origin: { kind: "administrator" as const },
+            }
+          : {
+              type: "select-root" as const,
+              assetId: aih.id,
+              origin: { kind: "administrator" as const },
+            };
+      const result = reduceWorkbenchAction(prepared.bundle, createWorkbenchState(), action);
+      expect(result.accepted).toBe(true);
+      expect(mcpRuntimeOverlapPresentation(ecc, prepared.bundle, result.state)).toMatchObject({
+        kind: "potential-overlap",
+        runtimeIdentity: `mcp:${id}`,
+        candidates: [{ assetId: `aih/${id}` }],
+      });
+    }
+  });
   it("keeps malformed authoring intent inert and blocking for direct effective callers", () => {
     const policy = {
       schemaVersion: 3,
@@ -82,6 +120,49 @@ describe("schema-v3 policy consumption", () => {
     expect(effective.candidates).toEqual([]);
     expect(effective.activeMcpServerIds).toEqual([]);
   });
+  it("round-trips a scanned source-data ECC MCP selection as inert intent", () => {
+    const prepared = defaultPreparedWorkbenchCatalog();
+    const asset = prepared.bundle.assets["ecc/mcp:supabase"];
+    const binding = prepared.bindings["ecc/mcp:supabase"];
+    if (asset === undefined || binding?.kind !== "intent")
+      throw new Error("expected source-data ECC MCP intent binding");
+    expect(
+      Object.values(prepared.bundle.evidence).some((report) =>
+        report.subjects.some((subject) => subject.assetId === asset.id),
+      ),
+    ).toBe(true);
+
+    const state = reduceWorkbenchAction(prepared.bundle, createWorkbenchState(), {
+      type: "select-root",
+      assetId: asset.id,
+      origin: { kind: "administrator" },
+    }).state;
+    const authored = compilePolicy(
+      { schemaVersion: 2, minimumPosture: "vibe", references: { repoContract: "repo" } },
+      state,
+      prepared.bundle,
+      prepared.bindings,
+    );
+    expect(authored.accepted).toBe(true);
+    if (!authored.accepted) throw new Error(authored.diagnostics.join("; "));
+    expect(authored.policy.authoringSelections).toMatchObject({
+      roots: [expect.objectContaining({ assetId: asset.id })],
+    });
+    expect(
+      importWorkbenchPolicySelections(
+        authored.policy,
+        prepared.bundle,
+        prepared.bindings,
+        prepared.sourceInputs,
+      ),
+    ).toEqual({ accepted: true, state, diagnostics: [] });
+    expect(consumeWorkbenchPolicy(authored.policy, state, prepared)).toMatchObject({
+      accepted: true,
+      requestedIntent: [asset.id],
+      selectedControls: [],
+    });
+  });
+
   it("reports a selected organization declaration as inert generic intent", () => {
     const prepared = prepareWorkbenchCatalog(undefined, {
       organizationManifestBytes: [

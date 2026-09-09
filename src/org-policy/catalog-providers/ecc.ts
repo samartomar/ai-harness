@@ -17,12 +17,14 @@ import {
   eccSelectionSourcePaths,
 } from "../../ecc/selection-closure.js";
 import {
+  type PolicyAuthoringAsset,
   type PolicyAuthoringComposition,
   type PolicyAuthoringFramework,
   policyAuthoringAssetKind,
   policyAuthoringCurationKind,
 } from "../catalog-provider-types.js";
 import { eccContentMetadata } from "../ecc-content-metadata.js";
+import { ECC_MCP_CATALOG_PROVENANCE, eccExternalMcpCatalog } from "../ecc-mcp-catalog.js";
 import {
   ECC_SKILL_CATALOG_PROVENANCE,
   type EccSkillCatalogEntry,
@@ -34,6 +36,40 @@ type SourceSnapshot = ReturnType<typeof readVendorBaselineLock>["sources"][numbe
 export interface PrepareEccCatalogSourceV1Input {
   baseline: BaselineCatalog;
   sourceSnapshot: SourceSnapshot;
+}
+
+function externalEccMcpAssets(baseline: BaselineCatalog): PolicyAuthoringAsset[] {
+  if (
+    ECC_MCP_CATALOG_PROVENANCE.repository !== `${baseline.owner}/${baseline.repo}` ||
+    ECC_MCP_CATALOG_PROVENANCE.commit !== baseline.pinnedSha
+  ) {
+    throw new Error("source-locked ECC MCP inventory provenance does not match the policy catalog");
+  }
+  const baselineIds = new Set(baseline.components.map((component) => component.id));
+  return eccExternalMcpCatalog.map((entry) => {
+    const id = `mcp:${entry.id}`;
+    if (baselineIds.has(id))
+      throw new Error(`source-locked ECC MCP inventory duplicates baseline component ${id}`);
+    return {
+      id,
+      kind: "mcp",
+      source: {
+        repository: ECC_MCP_CATALOG_PROVENANCE.repository,
+        commit: ECC_MCP_CATALOG_PROVENANCE.commit,
+        path: ECC_MCP_CATALOG_PROVENANCE.path,
+      },
+      sourcePaths: [ECC_MCP_CATALOG_PROVENANCE.path],
+      runtimeIdentity: `mcp:${entry.id}`,
+      metadata: {
+        title: entry.id,
+        summary: entry.description,
+        usageContext: `ECC declares this as a ${entry.transport} MCP configuration.`,
+        allowedTools: [],
+        sourcePath: ECC_MCP_CATALOG_PROVENANCE.path,
+        sourceSha256: ECC_MCP_CATALOG_PROVENANCE.contentSha256,
+      },
+    };
+  });
 }
 
 /** Direct, source-local ECC preparation from already-normalized pinned input. */
@@ -51,7 +87,7 @@ export function prepareEccCatalogSourceV1(
     throw new Error("ECC baseline input does not match its vetted source snapshot");
   const present = new Set(baseline.components.map((component) => component.id));
   const vetted = new Map(sourceSnapshot.components.map((component) => [component.id, component]));
-  const assets = baseline.components.map((component) => {
+  const assets: PolicyAuthoringAsset[] = baseline.components.map((component) => {
     const id = component.id;
     const kind = policyAuthoringAssetKind(id);
     const path = eccPreferredSelectionSourcePath(id, component.paths);
@@ -99,6 +135,7 @@ export function prepareEccCatalogSourceV1(
       ...(riders.length ? { riders } : {}),
       ...(dependencies.length ? { dependencies } : {}),
       ...(members.length ? { members } : {}),
+      ...(kind === "mcp" ? { runtimeIdentity: `mcp:${id.slice("mcp:".length)}` } : {}),
       ...(vet
         ? {
             vet: {
@@ -136,6 +173,7 @@ export function prepareEccCatalogSourceV1(
       sourcePaths: eccSelectionSourcePaths(id, component.paths),
     };
   });
+  assets.push(...externalEccMcpAssets(baseline));
   const framework = {
     id: "ecc" as const,
     repository: `${baseline.owner}/${baseline.repo}`,

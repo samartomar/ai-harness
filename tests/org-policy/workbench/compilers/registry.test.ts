@@ -17,6 +17,10 @@ import {
   policyAuthoringCatalogBundleWithOrganizationManifestsV1,
   verifyAuthoringCatalogBundleIntegrityV1,
 } from "../../../../src/org-policy/workbench/catalog-bundle.js";
+import {
+  type BuiltInCatalogInputV1,
+  compileBuiltInCatalogV1,
+} from "../../../../src/org-policy/workbench/compilers/built-in.js";
 import { registeredCatalogCompilersV1 } from "../../../../src/org-policy/workbench/compilers/index.js";
 import { compileOrganizationManifestV1 } from "../../../../src/org-policy/workbench/compilers/organization-manifest.js";
 import { compilePinnedBaselineV1 } from "../../../../src/org-policy/workbench/compilers/pinned-baseline.js";
@@ -84,6 +88,73 @@ function organizationInput(sourceId: string): CatalogCompilerAssemblyInputV1 {
 }
 
 describe("registered catalog compilers", () => {
+  it("carries public MCP disclosures without changing control identity or copying process configuration", () => {
+    const input: BuiltInCatalogInputV1 = {
+      aihCapabilityPackage: { name: "fixture", version: "1" },
+      aihSkills: [],
+      aihAgents: [],
+      mcp: [],
+      hooks: [],
+      nonProjectableMcp: [],
+      unavailableMcp: [
+        {
+          id: "docs",
+          configuredIdentity: "docs@1",
+          transport: "http",
+          reason: "Transport needs follow-up.",
+        },
+      ],
+    };
+    const before = compileBuiltInCatalogV1(input);
+    // The compiler accepts this wider runtime shape structurally, but projects
+    // only its disclosure fields into detail bytes.
+    const serverWithSensitiveProcessConfiguration = {
+      type: "http",
+      url: "https://docs.example.test",
+      description: "Find current library documentation.",
+      classification: "third-party-hosted",
+      egress: "third-party",
+      credentials: "token",
+      supplyChain: "hosted-remote",
+      headers: { "X-Fixture": "DO_NOT_PROJECT_PROCESS_CONFIGURATION" },
+    } as const;
+    const after = compileBuiltInCatalogV1({
+      ...input,
+      unavailableMcp: [
+        {
+          ...input.unavailableMcp[0]!,
+          description: "Find current library documentation.",
+          server: serverWithSensitiveProcessConfiguration,
+        },
+      ],
+    });
+    expect(after.declarations).toEqual(before.declarations);
+    const bytes = after.detailBytes["detail:aih/docs"]!;
+    expect(JSON.parse(bytes).decision).toMatchObject({
+      purpose: "Find current library documentation.",
+      access: expect.stringContaining("third-party"),
+    });
+    expect(bytes).not.toContain("DO_NOT_PROJECT_PROCESS_CONFIGURATION");
+    expect(bytes).not.toContain("headers");
+    expect(after.coreCapabilities).toEqual([]);
+    const pack = {
+      id: "pack:docs",
+      pack: "docs",
+      description: "Original declaration description",
+      skills: ["docs"],
+      sources: [{ skill: "docs", path: "packs/docs", manifestIdentity: "local" }],
+    };
+    const originalPack = compileBuiltInCatalogV1({ ...input, aihSkills: [pack] });
+    const readablePack = compileBuiltInCatalogV1({
+      ...input,
+      aihSkills: [{ ...pack, purpose: "Write documentation from source evidence." }],
+    });
+    expect(readablePack.declarations).toEqual(originalPack.declarations);
+    expect(JSON.parse(readablePack.detailBytes["detail:aih/pack:docs"]!).decision).toEqual({
+      purpose: "Write documentation from source evidence.",
+    });
+  });
+
   it("enrolls every registered format through generic source, template, parse, and integrity contracts", () => {
     expect(registeredCatalogCompilersV1.map((compiler) => compiler.inputFormat)).toEqual(
       compilerFormatRegistrationsV1.map((registration) => registration.inputFormat),
@@ -192,6 +263,12 @@ describe("registered catalog compilers", () => {
     expect(Object.keys(compiled.evidence)).toHaveLength(
       framework.assets.filter((asset) => asset.vet !== undefined).length,
     );
+    for (const asset of framework.assets) {
+      if (asset.vet === undefined) continue;
+      expect(compiled.evidence[`evidence:${framework.id}/${asset.id}`]).toMatchObject({
+        scan: { analyzers: asset.vet.analyzers.map(({ name, version }) => ({ name, version })) },
+      });
+    }
     expect(vendorBaselineLockRead).toHaveBeenCalledTimes(1);
 
     const mismatched = structuredClone(framework);

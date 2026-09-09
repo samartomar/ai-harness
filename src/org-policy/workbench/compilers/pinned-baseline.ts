@@ -87,7 +87,19 @@ export interface CompiledPinnedBaselineV1 {
 export function compilePinnedBaselineV1(
   framework: PolicyAuthoringFramework,
   sourceInput?: PinnedBaselineSourceInputV1,
+  materialIdentities?: ReadonlyMap<string, string>,
 ): CompiledPinnedBaselineV1 {
+  // Source-data preparation computes these identities from actual file trees.
+  // This optional input does not import reports or grant verification custody.
+  if (
+    materialIdentities !== undefined &&
+    (materialIdentities.size !== framework.assets.length ||
+      framework.assets.some(
+        (asset) =>
+          asset.vet !== undefined || !/^[a-f0-9]{64}$/.test(materialIdentities.get(asset.id) ?? ""),
+      ))
+  )
+    throw new Error("pinned baseline material identities must exactly cover unvetted declarations");
   // readVendorBaselineLock() returns a defensive clone. Keep that one exact
   // snapshot for all declaration, evidence, and source-identity lookups.
   const source =
@@ -115,6 +127,7 @@ export function compilePinnedBaselineV1(
         ...(asset.riders === undefined ? {} : { riders: asset.riders }),
         ...(asset.dependencies === undefined ? {} : { dependencies: asset.dependencies }),
         ...(asset.members === undefined ? {} : { members: asset.members }),
+        ...(asset.runtimeIdentity === undefined ? {} : { runtimeIdentity: asset.runtimeIdentity }),
         source: asset.source,
         sourcePaths: asset.sourcePaths,
         ...(asset.metadata === undefined ? {} : { metadata: asset.metadata }),
@@ -125,13 +138,17 @@ export function compilePinnedBaselineV1(
       id,
       sourceId,
       sourceRevisionId: framework.commit,
-      contentDigest: assetContentDigest(asset),
+      contentDigest:
+        materialIdentities === undefined
+          ? assetContentDigest(asset)
+          : `sha256:${materialIdentities.get(asset.id)}`,
       originalPath: asset.source.path,
       derivation: "upstream",
       kind: asset.kind,
       label: asset.metadata?.title ?? asset.id,
       detailChunkId,
       declaredHostCapabilities: [],
+      ...(asset.runtimeIdentity === undefined ? {} : { runtimeIdentity: asset.runtimeIdentity }),
     };
     return {
       declaration,
@@ -241,6 +258,7 @@ export function compilePinnedBaselineV1(
             scan: {
               outcome: asset.vet.verdict === "pass" ? "pass" : "failed",
               coverage: "complete",
+              analyzers: asset.vet.analyzers.map(({ name, version }) => ({ name, version })),
             },
             qualification: { state: "unknown" },
             findings: asset.vet.findings.map((finding) => `${finding.code}: ${finding.detail}`),

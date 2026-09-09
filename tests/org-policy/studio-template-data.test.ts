@@ -17,6 +17,76 @@ function scriptCloseCount(html: string): number {
 }
 
 describe("policy workbench data embedding", () => {
+  it("distinguishes preparation pins from evidence and Catalog actually included", () => {
+    const model = tinyStudioModel();
+    model.evidenceDelivery = {
+      coreVersion: "0.5.0",
+      workbenchCatalogDigest: `sha256:${"c".repeat(64)}`,
+      vendorLockDigest: `sha256:${"d".repeat(64)}`,
+      scannerLibraryVersion: "0.3.0",
+      expectedScannerPublisher: {
+        repository: "fixture/scan",
+        workflow: "fixture/scan/.github/workflows/publish.yml",
+        ref: "refs/heads/main",
+        commit: "a".repeat(40),
+      },
+    };
+    const html = policyStudioHtml(model);
+    expect(html).toContain('id="evidence-delivery"');
+    expect(html).toContain("Core 0.5.0");
+    expect(html).toContain(
+      `This Workbench catalog</strong></dt><dd style="overflow-wrap:anywhere">sha256:${"c".repeat(64)}`,
+    );
+    expect(html).toContain(
+      `Bundled report lock</strong></dt><dd style="overflow-wrap:anywhere">sha256:${"d".repeat(64)}`,
+    );
+    expect(html).toContain("@aihq/scan 0.3.0");
+    expect(html).toContain("Allowed Scanner publisher");
+    expect(html).toContain("No verified Catalog head is included");
+    expect(html).toContain("Not included in this build");
+    expect(html).not.toContain("Included evidence publisher</strong>");
+    model.evidenceDelivery.publicBaseline = {
+      publisher: "fixture/core<script>",
+      workflow: "fixture/core/.github/workflows/vendor.yml",
+      artifactDigest: `sha256:${"b".repeat(64)}`,
+      verifiedAt: "2026-09-06T00:00:00Z",
+      validUntil: "2026-09-07T00:00:00Z",
+    };
+    const prepared = policyStudioHtml(model);
+    expect(prepared).toContain("Verification during Core release preparation");
+    expect(prepared).toContain("fixture/core&lt;script&gt;");
+    expect(prepared).not.toContain("fixture/core<script>");
+    delete model.evidenceDelivery.publicBaseline;
+    model.evidenceDelivery.expectedCatalogPublisher = {
+      repository: "fixture/catalog",
+      workflow: "fixture/catalog/.github/workflows/publish.yml",
+      catalogCommit: "b".repeat(40),
+      version: 1,
+    };
+    model.evidenceDelivery.scanPublications = [
+      {
+        source: "fixture",
+        publisher: "fixture/scan",
+        commit: "a".repeat(40),
+        digest: `sha256:${"e".repeat(64)}`,
+      },
+    ];
+    model.evidenceDelivery.qualificationPublications = [
+      {
+        publisher: "fixture/catalog",
+        commit: "b".repeat(40),
+        catalogDigest: `sha256:${"f".repeat(64)}`,
+        receiptSetDigest: `sha256:${"a".repeat(64)}`,
+      },
+    ];
+    const direct = policyStudioHtml(model);
+    expect(direct).toContain("expire after 90 days");
+    expect(direct).toContain("Allowed Catalog publisher");
+    expect(direct).toContain("fixture Scanner publication");
+    expect(direct).toContain("Included Catalog qualification publication");
+    expect(direct).not.toContain("No verified Catalog head is included");
+    expect(direct).not.toContain("Not included in this build");
+  });
   it("embeds a model carrying replacement-pattern characters verbatim", () => {
     const model = tinyStudioModel();
     const hooks = model.catalog.eccHookControls as unknown as {

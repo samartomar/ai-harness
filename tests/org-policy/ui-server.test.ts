@@ -5,14 +5,21 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { policyStudioModel } from "../../src/org-policy/studio-model.js";
 import {
   type PolicyWorkbenchUi,
   runPolicyWorkbenchUi,
   startPolicyWorkbenchUi,
 } from "../../src/org-policy/ui-server.js";
 
-const { spawnMock } = vi.hoisted(() => ({ spawnMock: vi.fn() }));
+const { resolveGithubSkillMock, spawnMock } = vi.hoisted(() => ({
+  resolveGithubSkillMock: vi.fn(),
+  spawnMock: vi.fn(),
+}));
 vi.mock("node:child_process", () => ({ spawn: spawnMock }));
+vi.mock("../../src/org-policy/workbench/core/bounded-github-skill-resolver.js", () => ({
+  resolveConnectedGithubSkillV1: resolveGithubSkillMock,
+}));
 
 describe("Policy Workbench UI server", () => {
   let running: PolicyWorkbenchUi | undefined;
@@ -20,6 +27,7 @@ describe("Policy Workbench UI server", () => {
   afterEach(async () => {
     await running?.close();
     running = undefined;
+    resolveGithubSkillMock.mockReset();
   });
 
   it("serves the packaged portable Workbench on an available loopback port", async () => {
@@ -30,7 +38,9 @@ describe("Policy Workbench UI server", () => {
       },
     });
 
-    expect(running.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/aih-policy-workbench\.html$/);
+    expect(running.url).toMatch(
+      /^http:\/\/127\.0\.0\.1:\d+\/aih-policy-workbench\.html#[a-f0-9]{64}$/,
+    );
     expect(opened).toEqual([running.url]);
 
     const response = await fetch(running.url);
@@ -60,6 +70,200 @@ describe("Policy Workbench UI server", () => {
     const unsupported = await fetch(running.url, { method: "POST" });
     expect(unsupported.status).toBe(405);
     expect(unsupported.headers.get("allow")).toBe("GET, HEAD");
+  });
+
+  it("resolves only a same-origin, token-bound Skill request without accepting a URL proxy", async () => {
+    resolveGithubSkillMock.mockResolvedValue({
+      version: "aih-connected-github-skill/v1" as const,
+      state: "resolved-not-scanned" as const,
+      skill: "frontend-design" as const,
+      source: {
+        type: "github" as const,
+        repository: "anthropics/skills" as const,
+        commit: "41bbe19d1a1a7eaab5e7bb9050a417e5c6cffc8f",
+        path: "skills/frontend-design/SKILL.md" as const,
+      },
+    });
+    running = await startPolicyWorkbenchUi({ openBrowser: async () => {} });
+    const launcher = new URL(running.url);
+    const endpoint = new URL("/api/artifact-intake/github-skill/resolve", running.url);
+    const headers = {
+      Origin: launcher.origin,
+      "Sec-Fetch-Site": "same-origin",
+      "Content-Type": "application/json",
+    };
+
+    const rejected = await fetch(endpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        token: launcher.hash.slice(1),
+        repository: "anthropics/skills",
+        skill: "frontend-design",
+        url: "https://example.invalid/never-fetched",
+      }),
+    });
+    expect(rejected.status).toBe(403);
+    expect(resolveGithubSkillMock).not.toHaveBeenCalled();
+
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        token: launcher.hash.slice(1),
+        repository: "anthropics/skills",
+        skill: "frontend-design",
+      }),
+    });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      state: "resolved-not-scanned",
+      source: { commit: "41bbe19d1a1a7eaab5e7bb9050a417e5c6cffc8f" },
+    });
+    expect(resolveGithubSkillMock).toHaveBeenCalledWith({
+      repository: "anthropics/skills",
+      skill: "frontend-design",
+    });
+  });
+
+  it("rejects API requests that lack the loopback origin or launcher token", async () => {
+    running = await startPolicyWorkbenchUi({ openBrowser: async () => {} });
+    const launcher = new URL(running.url);
+    const endpoint = new URL("/api/artifact-intake/github-skill/resolve", running.url);
+
+    const missingOrigin = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    expect(missingOrigin.status).toBe(403);
+
+    const badToken = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        Origin: launcher.origin,
+        "Sec-Fetch-Site": "same-origin",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        token: "0".repeat(64),
+        repository: "anthropics/skills",
+        skill: "frontend-design",
+      }),
+    });
+    expect(badToken.status).toBe(403);
+    expect(resolveGithubSkillMock).not.toHaveBeenCalled();
+  });
+
+  it("rebuilds the connected Workbench with a Core-prepared pending Skill policy", async () => {
+    const resolved = {
+      version: "aih-connected-github-skill/v1" as const,
+      state: "resolved-not-scanned" as const,
+      skill: "frontend-design",
+      source: {
+        type: "github" as const,
+        repository: "anthropics/skills",
+        commit: "41bbe19d1a1a7eaab5e7bb9050a417e5c6cffc8f",
+        path: "skills/frontend-design/SKILL.md",
+      },
+    };
+    resolveGithubSkillMock.mockResolvedValue(resolved);
+    running = await startPolicyWorkbenchUi({ openBrowser: async () => {} });
+    const launcher = new URL(running.url);
+    const headers = {
+      Origin: launcher.origin,
+      "Sec-Fetch-Site": "same-origin",
+      "Content-Type": "application/json",
+    };
+    const resolve = await fetch(new URL("/api/artifact-intake/github-skill/resolve", running.url), {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        token: launcher.hash.slice(1),
+        repository: resolved.source.repository,
+        skill: resolved.skill,
+      }),
+    });
+    expect(resolve.status).toBe(200);
+
+    const prepared = await fetch(
+      new URL("/api/artifact-intake/github-skill/prepare", running.url),
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          token: launcher.hash.slice(1),
+          policy: policyStudioModel().initialPolicy,
+          source: {
+            repository: resolved.source.repository,
+            skill: resolved.skill,
+            commit: resolved.source.commit,
+            path: resolved.source.path,
+          },
+        }),
+      },
+    );
+    await expect(prepared.json()).resolves.toEqual({
+      version: "aih-connected-github-skill-bridge/v1",
+      state: "prepared-pending-evidence",
+      reload: true,
+    });
+    const refreshed = await (await fetch(running.url)).text();
+    expect(refreshed).toContain("Pending security review: frontend-design");
+    expect(refreshed).toContain(resolved.source.commit);
+    expect(refreshed).not.toContain('"approvals":[{"');
+  });
+
+  it("rejects a stale or substituted resolved Skill before rebuilding the Workbench", async () => {
+    const resolved = {
+      version: "aih-connected-github-skill/v1" as const,
+      state: "resolved-not-scanned" as const,
+      skill: "frontend-design",
+      source: {
+        type: "github" as const,
+        repository: "anthropics/skills",
+        commit: "41bbe19d1a1a7eaab5e7bb9050a417e5c6cffc8f",
+        path: "skills/frontend-design/SKILL.md",
+      },
+    };
+    resolveGithubSkillMock.mockResolvedValue(resolved);
+    running = await startPolicyWorkbenchUi({ openBrowser: async () => {} });
+    const launcher = new URL(running.url);
+    const headers = {
+      Origin: launcher.origin,
+      "Sec-Fetch-Site": "same-origin",
+      "Content-Type": "application/json",
+    };
+    await fetch(new URL("/api/artifact-intake/github-skill/resolve", running.url), {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        token: launcher.hash.slice(1),
+        repository: resolved.source.repository,
+        skill: resolved.skill,
+      }),
+    });
+
+    const before = await (await fetch(running.url)).text();
+    const prepared = await fetch(
+      new URL("/api/artifact-intake/github-skill/prepare", running.url),
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          token: launcher.hash.slice(1),
+          policy: policyStudioModel().initialPolicy,
+          source: {
+            repository: resolved.source.repository,
+            skill: resolved.skill,
+            commit: "a".repeat(40),
+            path: resolved.source.path,
+          },
+        }),
+      },
+    );
+    expect(prepared.status).toBe(409);
+    expect(await (await fetch(running.url)).text()).toBe(before);
   });
 
   it("does not inspect or write the current repository", async () => {
@@ -110,7 +314,9 @@ describe("Policy Workbench UI server", () => {
 
       expect(observed.policyHtml).toBe(false);
       expect(observed.aih).toBe(false);
-      expect(observed.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/aih-policy-workbench\.html$/);
+      expect(observed.url).toMatch(
+        /^http:\/\/127\.0\.0\.1:\d+\/aih-policy-workbench\.html#[a-f0-9]{64}$/,
+      );
       expect(existsSync(join(cwd, "aih-policy-workbench.html"))).toBe(false);
       expect(existsSync(join(cwd, ".aih"))).toBe(false);
     } finally {

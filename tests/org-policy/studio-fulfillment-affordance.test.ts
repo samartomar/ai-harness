@@ -1,10 +1,4 @@
-import {
-  type HTMLButtonElement,
-  type HTMLElement,
-  type HTMLInputElement,
-  type HTMLPreElement,
-  Window,
-} from "happy-dom";
+import { type HTMLButtonElement, type HTMLElement, type HTMLInputElement, Window } from "happy-dom";
 import { afterEach, describe, expect, it } from "vitest";
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
 import { tinyStudioModel } from "./studio-test-fixture.js";
@@ -48,30 +42,35 @@ describe("generic Workbench fulfillment boundary", () => {
       `article[data-workbench-asset-id='${requestAsset.id}']`,
     );
     if (row === null) throw new Error("expected prepared request asset");
-    expect(row.textContent).toContain("Status: Available");
-    expect(row.textContent).toContain("evidence: none prepared");
+    expect(row.textContent).toContain("Status: Not in draft");
+    expect(row.textContent).toContain("Report not attached");
 
     const request = row.querySelector<HTMLButtonElement>("button[data-workbench-asset-id]");
     if (request === null) throw new Error("expected generic request control");
-    expect(request.textContent).toBe("Request");
+    expect(request.textContent).toBe("Request review");
     request.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
-    expect(row.textContent).toContain("Status: Requested");
+    expect(row.textContent).toContain("Status: Pending request");
 
-    expect(window.document.querySelector("#framework-rows .help")?.textContent).toBe(
-      "0 selected controls · 0 direct roots · 1 requested · effective: not evaluated — needs a target repository",
+    expect(window.document.querySelector(".workbench-draft-counts")?.textContent).toBe(
+      "Controls 0Selections 0Requests 1",
     );
     expect(
       window.document
         .querySelector<HTMLButtonElement>(`button[data-workbench-asset-id='${requestAsset.id}']`)
         ?.getAttribute("aria-pressed"),
-    ).toBe("true");
+    ).toBeNull();
 
+    const expand = window.document.querySelector<HTMLButtonElement>(
+      `button[data-workbench-expand-id='${requestAsset.id}']`,
+    );
+    if (expand === null) throw new Error("expected generic expand control");
+    expand.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
     const details = window.document.querySelector<HTMLButtonElement>(
       `button[data-workbench-detail-id='${requestAsset.id}']`,
     );
     if (details === null) throw new Error("expected generic detail control");
     details.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
-    expect(window.document.querySelector<HTMLPreElement>("pre.workbench-detail")?.hidden).toBe(
+    expect(window.document.querySelector<HTMLElement>("[data-workbench-detail]")?.hidden).toBe(
       false,
     );
   });

@@ -10,6 +10,8 @@ const FIRST_PARTY_CAPABILITY_PACKS = [
     kind: "skill" as const,
     id: "package:skill-pack/docs-quality",
     pack: "docs-quality",
+    purpose:
+      "Helps an agent write and review documentation against source evidence, checking claims and keeping the explanation clear.",
     description:
       "First-party claim-first, evidence-grounded documentation skill (BetterDoc) — edits, reviews, and creates source-grounded docs with a bounded anti-slop lint that never overrides source truth.",
     skills: ["aih-betterdoc"],
@@ -25,6 +27,8 @@ const FIRST_PARTY_CAPABILITY_PACKS = [
     kind: "agent" as const,
     id: "package:skill-pack/governance-quality",
     pack: "governance-quality",
+    purpose:
+      "Reviews an AIH setup for governance and adoption problems, then explains what needs attention. The review workflow is read-only.",
     description:
       "First-party read-only Governance Doctor agent workflow for isolated destination lifecycle review, backed by declarative Audit and Guide source material.",
     skills: ["aih-gov-doctor"],
@@ -40,6 +44,8 @@ const FIRST_PARTY_CAPABILITY_PACKS = [
     kind: "agent" as const,
     id: "package:skill-pack/review-quality",
     pack: "review-quality",
+    purpose:
+      "Reviews agents, skills, MCP tools, and workflows for bugs, security issues, and missing evidence.",
     description:
       "First-party isolated BUGBOUNTY agent workflow for high-coverage generated-agent, skill, MCP, workflow, and evidence review.",
     skills: ["aih-bugbounty"],

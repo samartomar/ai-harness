@@ -1559,13 +1559,11 @@ describe("policy generate", () => {
       .getElementById("clear-policy")
       ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
     await settle(window, () =>
-      (document.getElementById("framework-rows")?.textContent ?? "").includes(
-        "0 selected controls",
-      ),
+      (document.getElementById("framework-rows")?.textContent ?? "").includes("Controls 0"),
     );
     expect(JSON.parse(preview.value)).toEqual(defaultStudioPolicy());
-    expect(requestButton()?.getAttribute("aria-pressed")).toBe("false");
-    expect(requestButton()?.textContent).toBe("Request");
+    expect(requestButton()?.hasAttribute("aria-pressed")).toBe(false);
+    expect(requestButton()?.textContent).toBe("Request review");
 
     requestButton()?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
     await settle(window, () => preview.value.includes(request.id));

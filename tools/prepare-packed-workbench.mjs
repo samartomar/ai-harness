@@ -127,7 +127,7 @@ childProcess.spawn = function patchedSpawn(command, args = [], options = {}) {
     Array.isArray(args) &&
     values.length === expectedLength &&
     typeof url === "string" &&
-    url.startsWith("http://127.0.0.1:") &&
+    /^http:\/\/127\.0\.0\.1:\d+\/aih-policy-workbench\.html#[a-f0-9]{64}$/u.test(url) &&
     (expected.prefix === undefined || values[0] === expected.prefix) &&
     options.detached === true &&
     options.shell === false &&
@@ -154,8 +154,9 @@ syncBuiltinESMExports();
 
 function packedUiSmokeController() {
   return String.raw`import { spawn } from "node:child_process";
+import { writeFileSync } from "node:fs";
 
-const [cli, preload] = process.argv.slice(2);
+const [cli, preload, capturedHtml] = process.argv.slice(2);
 if (!cli || !preload) throw new Error("Packed UI smoke requires installed CLI and preload paths");
 const marker = "__AIH_PACKED_UI_BROWSER_OPEN__";
 const child = spawn(process.execPath, ["--import", preload, cli, "--ui"], {
@@ -174,7 +175,7 @@ const ready = new Promise((resolve, reject) => {
   rejectReady = reject;
 });
 function evidence() {
-  const url = stdout.match(/AIH Policy Workbench: (http:\/\/127\.0\.0\.1:\d+\/aih-policy-workbench\.html)/u)?.[1];
+  const url = stdout.match(/AIH Policy Workbench: (http:\/\/127\.0\.0\.1:\d+\/aih-policy-workbench\.html#[a-f0-9]{64})/u)?.[1];
   const line = stderr.split(/\r?\n/u).find((value) => value.startsWith(marker));
   if (!url || !line) return undefined;
   return { url, browser: JSON.parse(line.slice(marker.length)) };
@@ -239,6 +240,7 @@ try {
     initialRows > 50 ||
     !["source:aih-core", "source:ecc", "source:superpowers"].every((sourceId) => catalogSourceIds.includes(sourceId))
   ) throw new Error("Installed CLI UI returned an invalid baseline catalog");
+  if (capturedHtml) writeFileSync(capturedHtml, html, { flag: "wx" });
   const closed = waitForClose(5_000);
   if (!child.kill("SIGTERM")) throw new Error("Installed CLI UI did not accept SIGTERM");
   const shutdown = await closed;
@@ -247,6 +249,7 @@ try {
     url: started.url,
     initialRows,
     catalogSourceIds,
+    catalogSourceRevisions: Object.fromEntries(Object.entries(bundle.sources).map(([id, source]) => [id, source.revision.id])),
     browser: started.browser,
     shutdown,
     response: {

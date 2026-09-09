@@ -5691,6 +5691,11 @@
                     "type": "string",
                     "pattern": "^sha256:[a-f0-9]{64}$"
                   },
+                  "rationale": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1000
+                  },
                   "resolvedItems": {
                     "minItems": 1,
                     "maxItems": 50000,
@@ -5819,6 +5824,11 @@
                   "contentDigest": {
                     "type": "string",
                     "pattern": "^sha256:[a-f0-9]{64}$"
+                  },
+                  "rationale": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1000
                   }
                 },
                 "required": [
@@ -5909,6 +5919,11 @@
                   "contentDigest": {
                     "type": "string",
                     "pattern": "^sha256:[a-f0-9]{64}$"
+                  },
+                  "rationale": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1000
                   }
                 },
                 "required": [

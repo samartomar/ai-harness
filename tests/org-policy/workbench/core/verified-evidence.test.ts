@@ -1,15 +1,49 @@
+import { createHash } from "node:crypto";
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { canonicalStrictJsonBytesV1 } from "../../../../src/contract/strict-json-v1.js";
 import { defaultRunner, type Runner } from "../../../../src/internals/proc.js";
+import { verifyWorkbenchPublicPublicationV1 } from "../../../../src/internals/verify-workbench-publication.js";
+import {
+  inspectPackagedPublicBaselineBytesV1,
+  packagedPublicBaselineOverlayV1,
+} from "../../../../src/org-policy/packaged-public-baseline-v1.js";
+import { evidenceDisplayFor } from "../../../../src/org-policy/workbench/ui/evidence-display.js";
 
 // Interpose the process implementation in this test module only. The product
 // API exposes no witness/factory; runtime-injected verifiers remain untrusted.
 vi.mock("../../../../src/internals/proc.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../../../src/internals/proc.js")>()),
   defaultRunner: vi.fn(),
+}));
+// Baseline-proof tests isolate their fixture from independent release collection records.
+vi.mock("../../../../src/org-policy/workbench/core/packaged-source-data-data.js", () => ({
+  PACKAGED_WORKBENCH_SOURCE_DATA_V1: [],
+}));
+vi.mock("../../../../src/org-policy/packaged-collection-evidence-data.js", () => ({
+  PACKAGED_SCANNER_COLLECTION_EVIDENCE_RECORDS_V1: [],
+}));
+vi.mock("../../../../src/org-policy/workbench/core/catalog-qualification-data.js", () => ({
+  CATALOG_QUALIFICATION_PACKAGE_INPUT_V1: {
+    version: 1,
+    records: [],
+    bindings: [],
+    projections: [],
+  },
+}));
+const packageFixture = vi.hoisted(() => ({
+  bytes: null as string | null,
+  sha256: null as string | null,
+}));
+vi.mock("../../../../src/org-policy/packaged-public-baseline-data.js", () => ({
+  get PACKAGED_PUBLIC_BASELINE_BYTES_V1() {
+    return packageFixture.bytes;
+  },
+  get PACKAGED_PUBLIC_BASELINE_SHA256_V1() {
+    return packageFixture.sha256;
+  },
 }));
 
 import { parseBaselineEvidenceLock } from "../../../../src/baseline-evidence/schema.js";
@@ -22,6 +56,7 @@ import {
 } from "../../../../src/org-policy/admin-baseline-evidence-bootstrap-v1.js";
 import {
   parseGithubBaselineEvidenceAttestationV1,
+  preparePackagedPublicBaselineEvidenceV1,
   type ResolveAdminBaselineEvidenceV1Input,
   resolveAdminBaselineEvidenceV1,
   resolveOperationalAdminBaselineEvidenceV1,
@@ -188,6 +223,124 @@ async function withOperational<T>(
 }
 
 describe("Core verified baseline evidence projection", () => {
+  it("prepares bounded package proof only from operational custody and retains blocked outcomes", async () => {
+    const resolved = await withOperational((run) => run());
+    const { bundle } = defaultPreparedWorkbenchCatalog();
+    expect(() =>
+      preparePackagedPublicBaselineEvidenceV1(structuredClone(resolved), bundle, now),
+    ).toThrow(/custody/);
+    const prepared = preparePackagedPublicBaselineEvidenceV1(resolved, bundle, now);
+    expect(preparePackagedPublicBaselineEvidenceV1(resolved, bundle, now)).toEqual(prepared);
+    const parsed = inspectPackagedPublicBaselineBytesV1(prepared.bytes, prepared.sha256);
+    expect(parsed.publisher.repository).toBe("samartomar/ai-harness");
+    expect(parsed).not.toHaveProperty("evidence");
+    expect(parsed.verifiedAt).toBe(now);
+    expect(parsed.validUntil).toBe("2026-09-04T13:00:00Z");
+    packageFixture.bytes = prepared.bytes;
+    packageFixture.sha256 = prepared.sha256;
+    try {
+      await verifyWorkbenchPublicPublicationV1({
+        now,
+        gh: "fixture-gh",
+        run: async (argv) => {
+          expect(argv).toContain("--deny-self-hosted-runners");
+          expect(argv[argv.indexOf("--repo") + 1]).toBe("samartomar/ai-harness");
+          expect(argv[argv.indexOf("--source-ref") + 1]).toBe("refs/heads/main");
+          expect(argv[argv.indexOf("--cert-oidc-issuer") + 1]).toBe(
+            "https://token.actions.githubusercontent.com",
+          );
+          expect(argv).toContain(
+            "https://github.com/samartomar/ai-harness/.github/workflows/vendor-baseline-evidence.yml@refs/heads/main",
+          );
+          return {
+            code: 0,
+            stderr: "",
+            stdout: verifierBytes(parsed.artifactSubjectDigest.slice(7)).toString("utf8"),
+          };
+        },
+      });
+      await expect(
+        verifyWorkbenchPublicPublicationV1({
+          now,
+          gh: "fixture-gh",
+          run: async () => ({ code: 1, stdout: "", stderr: "verification failed" }),
+        }),
+      ).rejects.toThrow(/attestation verification failed/);
+      await expect(verifyWorkbenchPublicPublicationV1({ now: parsed.validUntil })).rejects.toThrow(
+        /original verification interval/,
+      );
+      const shifted = structuredClone(parsed);
+      shifted.signedAt = "2026-09-04T11:01:00Z";
+      packageFixture.bytes = canonicalStrictJsonBytesV1(shifted).toString("utf8");
+      packageFixture.sha256 = `sha256:${createHash("sha256").update(packageFixture.bytes).digest("hex")}`;
+      await expect(
+        verifyWorkbenchPublicPublicationV1({
+          now,
+          gh: "fixture-gh",
+          run: async () => ({
+            code: 0,
+            stderr: "",
+            stdout: verifierBytes(parsed.artifactSubjectDigest.slice(7)).toString("utf8"),
+          }),
+        }),
+      ).rejects.toThrow(/signing time/);
+      shifted.artifactSubjectDigest = `sha256:${"0".repeat(64)}`;
+      packageFixture.bytes = canonicalStrictJsonBytesV1(shifted).toString("utf8");
+      packageFixture.sha256 = `sha256:${createHash("sha256").update(packageFixture.bytes).digest("hex")}`;
+      await expect(verifyWorkbenchPublicPublicationV1({ now })).rejects.toThrow(
+        /different artifact subject/,
+      );
+      packageFixture.bytes = prepared.bytes;
+      packageFixture.sha256 = prepared.sha256;
+      const overlay = packagedPublicBaselineOverlayV1(bundle);
+      expect(
+        Object.values(overlay).filter((report) => report.scan.outcome === "failed"),
+      ).toHaveLength(42);
+      expect(
+        Object.values(overlay).every((report) => report.qualification.state === "unknown"),
+      ).toBe(true);
+      const first = Object.values(overlay)[0]!;
+      const asset = bundle.assets[first.subjects[0]!.assetId]!;
+      expect(evidenceDisplayFor(asset, [first], Date.parse(parsed.validUntil)).state).toBe("stale");
+      asset.contentDigest = `sha256:${"0".repeat(64)}`;
+      expect(packagedPublicBaselineOverlayV1(bundle)[first.id]).toBeUndefined();
+      bundle.sources[first.subjects[0]!.sourceId]!.revision.id = "wrong-pin";
+      expect(
+        Object.values(packagedPublicBaselineOverlayV1(bundle)).some((report) =>
+          report.subjects.some((subject) => subject.sourceId === first.subjects[0]!.sourceId),
+        ),
+      ).toBe(false);
+    } finally {
+      packageFixture.bytes = null;
+      packageFixture.sha256 = null;
+    }
+    expect(() =>
+      inspectPackagedPublicBaselineBytesV1(prepared.bytes + " ", prepared.sha256),
+    ).toThrow(/seal/);
+    for (const mutate of [
+      (value: typeof parsed) => {
+        value.lockDigest = `sha256:${"0".repeat(64)}`;
+      },
+      (value: typeof parsed) => {
+        value.expectedAnalyzerPolicy["aih-native"] = "wrong";
+      },
+      (value: typeof parsed) => {
+        value.validUntil = value.verifiedAt;
+      },
+      (value: typeof parsed) => {
+        Object.assign(value, { evidence: { forged: { scan: { outcome: "pass" } } } });
+      },
+    ]) {
+      const mutated = structuredClone(parsed);
+      mutate(mutated);
+      const bytes = canonicalStrictJsonBytesV1(mutated).toString("utf8");
+      const seal = `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
+      expect(() => inspectPackagedPublicBaselineBytesV1(bytes, seal)).toThrow();
+    }
+    expect(() =>
+      preparePackagedPublicBaselineEvidenceV1(resolved, bundle, "2026-09-04T13:00:00Z"),
+    ).toThrow(/expired/);
+  });
   it("derives bounded scan facts from checked artifacts, with no qualification or organization permission", async () => {
     const resolved = await withOperational((run) => run());
     const { bundle } = defaultPreparedWorkbenchCatalog();
@@ -216,6 +369,7 @@ describe("Core verified baseline evidence projection", () => {
       expect(summary.scan).toEqual({
         outcome: component.verdict === "blocked" ? "failed" : "pass",
         coverage: "complete",
+        analyzers: component.analyzers.map(({ name, version }) => ({ name, version })),
       });
       expect(summary.qualification).toEqual({ state: "unknown" });
     }

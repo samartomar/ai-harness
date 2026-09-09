@@ -7,8 +7,8 @@ import {
 import { prepareAuthoringSourcesForConsumptionV1 } from "./core/authoring-sources.js";
 import { compilePolicy } from "./policy-compiler.js";
 import {
-  defaultPreparedWorkbenchCatalog,
   type PreparedWorkbenchCatalogV1,
+  packagedPreparedWorkbenchCatalogV1,
 } from "./prepared-catalog.js";
 import { resolveWorkbenchSelection } from "./selection-engine.js";
 
@@ -24,7 +24,7 @@ export interface WorkbenchPolicyConsumptionV1 {
 export function consumeWorkbenchPolicy(
   input: Record<string, unknown>,
   state: WorkbenchStateV1,
-  prepared: PreparedWorkbenchCatalogV1 = defaultPreparedWorkbenchCatalog(),
+  prepared: PreparedWorkbenchCatalogV1 = packagedPreparedWorkbenchCatalogV1(),
 ): WorkbenchPolicyConsumptionV1 {
   // Schema-v3 policy bytes are the selection authority. Callers cannot
   // substitute a separate state object after the policy has been imported.

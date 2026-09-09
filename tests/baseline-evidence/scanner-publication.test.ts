@@ -17,6 +17,10 @@ import {
   consumeScannerBaselinePublicationV1,
 } from "../../src/baseline-evidence/scanner-publication.js";
 import { canonicalStrictJsonBytesV1 } from "../../src/contract/strict-json-v1.js";
+import {
+  DEFAULT_EVIDENCE_MAX_AGE_SECONDS_V1,
+  evidenceExpiryV1,
+} from "../../src/evidence-freshness.js";
 
 const temporaryRoots: string[] = [];
 const publisher = {
@@ -34,7 +38,7 @@ function sha256(bytes: string | Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
-function fixture() {
+function fixture(detail = "") {
   const sourceRoot = mkdtempSync(join(tmpdir(), "aih-core-publication-"));
   temporaryRoots.push(sourceRoot);
   mkdirSync(join(sourceRoot, "rules"));
@@ -53,7 +57,13 @@ function fixture() {
         ? { protocol: "BaselineNativeObservationV1", files: [] }
         : {
             version: "2.1.0",
-            runs: [{ tool: { driver: { name: analyzer } }, results: [] }],
+            runs: [
+              {
+                tool: { driver: { name: analyzer } },
+                results: [],
+                properties: { detail: analyzer === "skillspector" ? detail : "" },
+              },
+            ],
           },
     );
     return { path: `annex/${analyzer}.json`, bytes };
@@ -196,7 +206,7 @@ function fixture() {
   };
 }
 
-function consume(input = fixture(), now = "2026-09-03T13:10:00.000Z") {
+function consume(input = fixture(), now = "2026-09-03T13:10:00.000Z", maxAgeSeconds = 3600) {
   return consumeScannerBaselinePublicationV1({
     sourceRoot: input.sourceRoot,
     catalog: input.catalog,
@@ -206,13 +216,57 @@ function consume(input = fixture(), now = "2026-09-03T13:10:00.000Z") {
     attestationResultBytes: canonicalStrictJsonBytesV1(input.attestation),
     publisher,
     now,
-    maxAgeSeconds: 3600,
+    maxAgeSeconds,
     seenEvidenceDigests: [],
     seenReceiptBindings: [],
   });
 }
 
+it("consumes a bounded large annex without a regular expression stack overflow", async () => {
+  const result = await consume(fixture("x".repeat(4 * 1024 * 1024)));
+  expect(result.provenance.authority).toBe("none");
+  expect(result.evidence.components).toHaveLength(1);
+}, 60_000);
+
 describe("independently published Scanner baseline consumption", () => {
+  it("accepts an explicit immutable renewal without changing source or request identity", async () => {
+    const value = fixture();
+    value.discovery.locator = value.discovery.locator.replace(
+      "/publication.json",
+      "-r20260903/publication.json",
+    );
+    await expect(consume(value)).resolves.toMatchObject({
+      evidence: { pinnedSha: value.catalog.pinnedSha },
+    });
+    value.discovery.locator = value.discovery.locator.replace("-r20260903", "-rlatest");
+    await expect(consume(value)).rejects.toThrow(/locator/);
+  });
+  it("retains the original signed report dates and expires ninety days from signing, not republication", async () => {
+    const value = fixture();
+    const signedAt = "2026-09-03T12:45:00.000Z";
+    const expiry = evidenceExpiryV1(signedAt);
+    await expect(
+      consume(
+        value,
+        new Date(Date.parse(expiry) - 1).toISOString(),
+        DEFAULT_EVIDENCE_MAX_AGE_SECONDS_V1,
+      ),
+    ).resolves.toMatchObject({
+      provenance: {
+        reportSignedAt: signedAt,
+        reportVerificationExpiresAt: "2026-09-03T13:30:00.000Z",
+      },
+    });
+    await expect(consume(value, expiry, DEFAULT_EVIDENCE_MAX_AGE_SECONDS_V1)).rejects.toThrow(
+      /report freshness/,
+    );
+    const publicationTimestamp = value.attestation[0]?.verificationResult.verifiedTimestamps[0];
+    if (publicationTimestamp === undefined) throw new Error("fixture timestamp missing");
+    publicationTimestamp.timestamp = expiry;
+    await expect(consume(value, expiry, DEFAULT_EVIDENCE_MAX_AGE_SECONDS_V1)).rejects.toThrow(
+      /report freshness/,
+    );
+  });
   it("verifies discovery, immutable bytes, workflow provenance, freshness, and Scanner custody", async () => {
     await expect(consume()).resolves.toMatchObject({
       evidence: { id: "fixture", pinnedSha: "a".repeat(40) },

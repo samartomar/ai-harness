@@ -44,7 +44,11 @@ function catalog() {
     evidenceDigest: digest,
     coveredPaths: ["catalog.json"],
     verification: { state: "missing" },
-    scan: { outcome: "unknown", coverage: "none" },
+    scan: {
+      outcome: "unknown",
+      coverage: "none",
+      analyzers: [{ name: "aih-native", version: "1" }],
+    },
     qualification: { state: "unknown" },
     findings: [],
   };
@@ -115,6 +119,38 @@ it("accepts a tiny source-neutral catalog and rejects dangling, conflicting, uno
     },
     (b) => {
       b.evidence.evidence!.scan = { outcome: "pass", coverage: "partial" };
+    },
+    (b) => {
+      b.evidence.evidence!.scan.analyzers = [{ name: "unsafe\u202E", version: "1" }];
+    },
+    (b) => {
+      b.evidence.evidence!.scan.analyzers = [{ name: "cafe\u0301", version: "1" }];
+    },
+    (b) => {
+      b.evidence.evidence!.scan.analyzers = [{ name: "aih-native", version: "v".repeat(257) }];
+    },
+    (b) => {
+      b.evidence.evidence!.scan.analyzers = Array.from({ length: 33 }, (_, index) => ({
+        name: `analyzer-${index.toString().padStart(2, "0")}`,
+        version: "1",
+      }));
+    },
+    (b) => {
+      b.evidence.evidence!.scan.analyzers = [
+        { name: "aih-native", version: "1" },
+        { name: "aih-native", version: "1" },
+      ];
+    },
+    (b) => {
+      b.evidence.evidence!.scan.analyzers = [
+        { name: "zebra", version: "1" },
+        { name: "aih-native", version: "1" },
+      ];
+    },
+    (b) => {
+      b.evidence.evidence!.scan.analyzers = [
+        { name: "aih-native", version: "1", extra: "rejected" },
+      ] as never;
     },
     (b) => {
       b.assets.external!.label = "trusted\u202E";

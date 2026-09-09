@@ -100,7 +100,9 @@ describe("pure policy compilation", () => {
     expect(projectWorkbenchPolicy(input, select("tool"), bundle, bindings)).toMatchObject({
       accepted: false,
       policy: input,
-      diagnostics: ["No organization-sanctioned target for: tool"],
+      diagnostics: [
+        "tool cannot be added for the selected hosts (claude). Supported hosts: codex. Review Deployment setup or leave this item out.",
+      ],
     });
   });
   it("refuses package roots that would require different catalogs", () => {

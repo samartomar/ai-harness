@@ -20,11 +20,21 @@ import {
   type FreshOrganizationPreparationV1,
   freshOrganizationPreparationSourceInputsV1,
 } from "./core/organization-preparation.js";
+import { applyPackagedWorkbenchSourceDataV1 } from "./core/packaged-source-data.js";
+import { applyWorkbenchSourceDataV1 } from "./core/source-data.js";
 
 /** Offline organization manifests accepted by Core preparation, never by the browser shell. */
 export interface PrepareWorkbenchCatalogOptionsV1 {
   organizationManifestBytes?: readonly string[];
   freshOrganizationPreparations?: readonly FreshOrganizationPreparationV1[];
+  sourceDataPins?: readonly {
+    assetId: string;
+    sourceId: string;
+    sourceRevisionId: string;
+    contentDigest: string;
+  }[];
+  /** Internal package preparation only; never an external trust bypass. */
+  packageDataOnly?: boolean;
 }
 
 export interface PreparedWorkbenchCatalogV1 {
@@ -109,7 +119,7 @@ export function prepareWorkbenchCatalog(
       : undefined;
   if (baselineDigest !== undefined) {
     const cached = cachedPreparedBaselineV1(baselineDigest);
-    if (cached !== undefined) return cached;
+    if (cached !== undefined) return finishPreparedCatalogV1(cached, options);
   }
   const bundle =
     freshOrganizationPreparations.length > 0
@@ -197,14 +207,30 @@ export function prepareWorkbenchCatalog(
   // Organization compiler output cannot carry Core capabilities, so its assets remain intent-only.
   for (const asset of Object.values(bundle.assets)) bindings[asset.id] ??= { kind: "intent" };
   const preparedCatalog = { catalog, bundle, bindings, sourceInputs };
-  return baselineDigest === undefined
-    ? preparedCatalog
-    : cachePreparedBaselineV1(baselineDigest, preparedCatalog);
+  const packaged =
+    baselineDigest === undefined
+      ? preparedCatalog
+      : cachePreparedBaselineV1(baselineDigest, preparedCatalog);
+  return finishPreparedCatalogV1(packaged, options);
+}
+
+function finishPreparedCatalogV1(
+  base: PreparedWorkbenchCatalogV1,
+  options: PrepareWorkbenchCatalogOptionsV1,
+) {
+  const packaged = applyPackagedWorkbenchSourceDataV1(base, options.sourceDataPins);
+  return options.packageDataOnly
+    ? packaged
+    : applyWorkbenchSourceDataV1(packaged, { pins: options.sourceDataPins });
 }
 
 let prepared: PreparedWorkbenchCatalogV1 | undefined;
 /** Pinned package data is normalized once per Core process; callers receive a copy. */
 export function defaultPreparedWorkbenchCatalog(): PreparedWorkbenchCatalogV1 {
-  prepared ??= prepareWorkbenchCatalog();
+  return applyWorkbenchSourceDataV1(packagedPreparedWorkbenchCatalogV1());
+}
+
+export function packagedPreparedWorkbenchCatalogV1(): PreparedWorkbenchCatalogV1 {
+  prepared ??= prepareWorkbenchCatalog(undefined, { packageDataOnly: true });
   return structuredClone(prepared);
 }

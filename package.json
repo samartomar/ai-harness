@@ -75,6 +75,8 @@
     "check:baseline-pins": "tsx src/internals/check-baseline-pin-currency.ts",
     "baseline:native-identity": "tsx src/internals/check-native-identity.ts --write",
     "check:baseline-installable": "tsx src/internals/check-baseline-installable.ts",
+    "check:workbench-evidence": "tsx src/internals/check-workbench-evidence.ts",
+    "check:workbench-release-compatibility": "tsx src/internals/check-workbench-release-compatibility.ts",
     "check:packed-doc-links": "tsx src/internals/check-packed-doc-links.ts",
     "check:lock-migration": "tsx src/internals/assert-identity-only-lock-migration.ts",
     "baseline:request": "tsx src/baseline-evidence/scanner-cli.ts request",
@@ -90,7 +92,7 @@
     "verify:cold-aih-managed-usage": "npm run build && node tools/verify-cold-aih-managed-usage.mjs",
     "verify:cold-upstream-artifact-lifecycle": "npm run build && node tools/verify-cold-upstream-artifact-lifecycle.mjs",
     "verify:packed-admin-docs": "tsx tools/verify-packed-administrator-docs.mjs",
-    "verify:release-candidate": "npm run check:baseline-analyzers && npm run check:native-identity && npm run check:baseline-pins && npm run check:baseline-installable && npm run check:ai-runtime && npm run check:bugbounty-report && npm run docs:lint && npm run check:packed-doc-links && npm run build && npm run check:published-bin && npm run check:published-library && npm run verify:packed-admin-docs && node tools/verify-cold-upstream-artifact-lifecycle.mjs",
+    "verify:release-candidate": "npm run check:workbench-release-compatibility && npm run check:workbench-evidence && npm run check:workbench-publication && npm run check:baseline-analyzers && npm run check:native-identity && npm run check:baseline-pins && npm run check:baseline-installable && npm run check:ai-runtime && npm run check:bugbounty-report && npm run docs:lint && npm run check:packed-doc-links && npm run build && npm run check:published-bin && npm run check:published-library && npm run verify:packed-admin-docs && node tools/verify-cold-upstream-artifact-lifecycle.mjs",
     "docs:lint": "tsx src/internals/check-repo-docs.ts",
     "lint": "biome check src tests",
     "lint:fix": "biome check --write src tests",
@@ -104,7 +106,11 @@
     "typecheck:workbench": "tsc -p tsconfig.workbench.json && tsc -p tsconfig.workbench-browser-tests.json",
     "test:workbench:contracts": "vitest run --config vitest.workbench-contracts.config.ts",
     "test:workbench:pr": "node tools/run-workbench-pr-lane.mjs",
-    "test:workbench:providers": "node --import tsx tools/run-workbench-provider-lane.mjs"
+    "test:workbench:providers": "node --import tsx tools/run-workbench-provider-lane.mjs",
+    "check:workbench-publication": "tsx src/internals/verify-workbench-publication-with-materials.ts",
+    "prepare:workbench-evidence": "tsx src/internals/prepare-workbench-public-evidence.ts",
+    "prepare:workbench-collection-evidence": "tsx src/internals/prepare-workbench-collection-evidence.ts",
+    "prepare:workbench-catalog-qualification": "tsx src/internals/prepare-workbench-catalog-qualification.ts"
   },
   "keywords": [
     "ai",
