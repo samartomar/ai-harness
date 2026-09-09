@@ -6,6 +6,17 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [Core 0.6.1] - 2026-09-09
+
+### Fixed
+
+- Preserve the enterprise manifest and qualification evidence at explicit artifact
+  roots throughout release qualification and publication. The immutable Core 0.6.0
+  attempt passed its package checks and installed matrix, then failed receipt
+  sealing before npm publication. This fix-forward candidate includes the complete
+  Core 0.6 Workbench changes listed below; its own qualification and public installed
+  acceptance remain required before stable promotion.
+
 ## [Core 0.6.0] - 2026-09-09
 
 ### Added
@@ -3247,7 +3258,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v-core-0.6.0...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v-core-0.6.1...HEAD
+[Core 0.6.1]: https://github.com/samartomar/ai-harness/compare/v-core-0.6.0...v-core-0.6.1
 [Core 0.6.0]: https://github.com/samartomar/ai-harness/compare/v-core-0.5.0...v-core-0.6.0
 [Core 0.5.0]: https://github.com/samartomar/ai-harness/compare/v-core-0.4.3...v-core-0.5.0
 [Core 0.4.3]: https://github.com/samartomar/ai-harness/compare/v-core-0.4.2...v-core-0.4.3
