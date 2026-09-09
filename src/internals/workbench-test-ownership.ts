@@ -14,9 +14,11 @@ export const WORKBENCH_EXPLICIT_TEST_PATHS = [
   "tests/org-policy/ecc-hook-controls.test.ts",
   "tests/org-policy/ecc-mcp-approval.test.ts",
   "tests/org-policy/generate.test.ts",
+  "tests/org-policy/generate-organization.test.ts",
   "tests/org-policy/packed-workbench-cleanup.test.ts",
   "tests/org-policy/supported-cli-subsets.test.ts",
   "tests/org-policy/ui-server.test.ts",
+  "tests/org-policy/ui-server-connected-policy.test.ts",
   "tests/tools/prepare-packed-workbench.test.ts",
 ] as const;
 

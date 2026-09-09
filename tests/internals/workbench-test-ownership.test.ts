@@ -47,7 +47,9 @@ describe("Workbench lane ownership", () => {
   it.each([
     "tests/internals/workbench-publication-roundtrip.test.ts",
     "tests/internals/workbench-publication-installed-source.test.ts",
-  ])("retains the publication boundary in the Workbench lane: %s", (path) => {
+    "tests/org-policy/generate-organization.test.ts",
+    "tests/org-policy/ui-server-connected-policy.test.ts",
+  ])("retains explicit integration boundaries in the Workbench lane: %s", (path) => {
     expect(isWorkbenchTestPath(path)).toBe(true);
     expect(WORKBENCH_RETAINED_TEST_PATTERNS).toContain(path);
     const receipt = classifyCiImpact({
