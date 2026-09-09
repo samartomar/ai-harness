@@ -39,7 +39,19 @@ describe("packed Workbench authoring cleanup (#911)", () => {
     }
   });
 
-  it("sanctions every protected target before enterprise authoring", () => {
+  it.each([
+    { name: "ordinary fields", textarea: "", allowed: true },
+    {
+      name: "conditions text",
+      textarea: '<textarea id="protected-conditions"></textarea>',
+      allowed: true,
+    },
+    {
+      name: "raw JSON input",
+      textarea: '<textarea id="raw-authority"></textarea>',
+      allowed: false,
+    },
+  ])("sanctions protected targets and checks the form with $name", ({ textarea, allowed }) => {
     const fixtureRoot = mkdtempSync(join(tmpdir(), "aih-workbench-multitarget-"));
     const htmlPath = join(fixtureRoot, "workbench.html");
     const outputPath = join(fixtureRoot, "policy.json");
@@ -50,7 +62,7 @@ describe("packed Workbench authoring cleanup (#911)", () => {
         '<select id="posture"><option value="vibe">Vibe</option><option value="enterprise">Enterprise</option></select>',
         '<button data-sanctioned-cli="claude" aria-pressed="false">claude</button>',
         '<button data-sanctioned-cli="codex" aria-pressed="false">codex</button>',
-        '<form id="protected-form"></form>',
+        `<form id="protected-form">${textarea}</form>`,
         '<button id="download-protected-bundle">download</button>',
         '<textarea id="protected-bundle-preview" readonly></textarea>',
         '<div id="announcement"></div>',
@@ -90,21 +102,27 @@ describe("packed Workbench authoring cleanup (#911)", () => {
         encoding: "utf8",
         input: [
           `import { authorProtectedPolicyViaPackedWorkbench } from ${JSON.stringify(helperUrl)};`,
+          `try {`,
           `const bundle = await authorProtectedPolicyViaPackedWorkbench({`,
           `  htmlPath: ${JSON.stringify(htmlPath)},`,
           `  outputPath: ${JSON.stringify(outputPath)},`,
           `  authorityFields: { "protected-targets": "claude" },`,
           `  decisions: [{ "protected-targets": "codex" }],`,
           `});`,
+          `if (!${String(allowed)}) throw new Error("expected raw JSON refusal");`,
           `if (JSON.stringify(bundle.targets) !== JSON.stringify(["claude", "codex"])) throw new Error("targets not sanctioned");`,
           `process.stdout.write("all-targets-sanctioned");`,
+          `} catch (error) {`,
+          `  if (${String(allowed)} || !String(error?.message).includes("packed-workbench-raw-json-authoring-exposed")) throw error;`,
+          `  process.stdout.write("raw-json-refused");`,
+          `}`,
         ].join("\n"),
         timeout: 3_000,
       });
 
       expect(child.error).toBeUndefined();
       expect(child.status).toBe(0);
-      expect(child.stdout).toBe("all-targets-sanctioned");
+      expect(child.stdout).toBe(allowed ? "all-targets-sanctioned" : "raw-json-refused");
     } finally {
       rmSync(fixtureRoot, { recursive: true, force: true });
     }

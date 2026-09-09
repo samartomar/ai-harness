@@ -58,6 +58,11 @@ export function mountProtectedPolicyWorkbench(runtime) {
     "protected-control-digest",
     "protected-actor",
     "protected-reason",
+    "protected-disposition",
+    "protected-accepted-findings",
+    "protected-accepted-gaps",
+    "protected-conditions",
+    "protected-review-by",
   ];
   const protectedState = {
     decisions: [],
@@ -170,6 +175,27 @@ export function mountProtectedPolicyWorkbench(runtime) {
           .filter(Boolean),
       ),
     ).sort();
+  };
+  const protectedExactList = function (value, separator, predicate) {
+    if (value.trim() === "") {
+      return { items: [], empty: false, invalid: false, duplicate: false };
+    }
+    const entries = value.split(separator).map(function (item) {
+      return item.trim();
+    });
+    const items = entries.slice().sort();
+    return {
+      items: items,
+      empty: entries.some(function (item) {
+        return item === "";
+      }),
+      invalid: entries.some(function (item) {
+        return item === "" || !predicate(item);
+      }),
+      duplicate: items.some(function (item, index) {
+        return index > 0 && items[index - 1] === item;
+      }),
+    };
   };
   const protectedScanGuide = function () {
     const host = byId("protected-scan-guide");
@@ -466,6 +492,23 @@ export function mountProtectedPolicyWorkbench(runtime) {
       controlDigest: byId("protected-control-digest").value.trim(),
       actor: byId("protected-actor").value.trim(),
       reason: byId("protected-reason").value.trim(),
+      disposition: byId("protected-disposition").value,
+      acceptedFindings: protectedExactList(
+        byId("protected-accepted-findings").value,
+        ",",
+        protectedId.test.bind(protectedId),
+      ),
+      acceptedGaps: protectedExactList(
+        byId("protected-accepted-gaps").value,
+        ",",
+        protectedId.test.bind(protectedId),
+      ),
+      conditions: protectedExactList(
+        byId("protected-conditions").value,
+        /\r?\n/,
+        visible,
+      ),
+      reviewBy: byId("protected-review-by").value.trim(),
     };
   };
   const protectedIssues = function (values) {
@@ -727,6 +770,50 @@ export function mountProtectedPolicyWorkbench(runtime) {
     if (!visible(values.reason)) {
       issues["protected-reason"] = "Use a visible accountable approval reason.";
     }
+    if (!/^(approved|accepted-with-conditions)$/.test(values.disposition)) {
+      issues["protected-disposition"] = "Choose an approval disposition.";
+    }
+    if (values.disposition === "accepted-with-conditions") {
+      [
+        ["protected-accepted-findings", values.acceptedFindings],
+        ["protected-accepted-gaps", values.acceptedGaps],
+      ].forEach(function (entry) {
+        if (entry[1].empty || entry[1].invalid) {
+          issues[entry[0]] = "Use comma-separated lowercase stable identifiers.";
+        } else if (entry[1].duplicate) {
+          issues[entry[0]] = "Do not repeat an accepted identifier.";
+        } else if (entry[1].items.length > 64) {
+          issues[entry[0]] = "Use at most 64 accepted identifiers.";
+        }
+      });
+      if (values.acceptedFindings.items.some(function (finding) {
+        return values.acceptedGaps.items.includes(finding);
+      })) {
+        issues["protected-accepted-gaps"] = "Accepted findings and gaps must not overlap.";
+      }
+      if (values.acceptedFindings.items.length + values.acceptedGaps.items.length === 0) {
+        issues["protected-accepted-findings"] = "Name at least one accepted finding or waivable gap.";
+      }
+      if (values.conditions.empty || values.conditions.invalid) {
+        issues["protected-conditions"] = "Use one visible condition per line.";
+      } else if (values.conditions.duplicate) {
+        issues["protected-conditions"] = "Do not repeat a condition.";
+      } else if (values.conditions.items.length === 0) {
+        issues["protected-conditions"] = "Name at least one acceptance condition.";
+      } else if (values.conditions.items.length > 32) {
+        issues["protected-conditions"] = "Use at most 32 conditions.";
+      }
+      if (!protectedTimestamp(values.reviewBy)) {
+        issues["protected-review-by"] = "Use an offset-qualified ISO-8601 review time.";
+      } else if (
+        protectedTimestamp(values.issuedAt) &&
+        protectedTimestamp(values.expiresAt) &&
+        (Date.parse(values.reviewBy) < Date.parse(values.issuedAt) ||
+          Date.parse(values.reviewBy) > Date.parse(values.expiresAt))
+      ) {
+        issues["protected-review-by"] = "Review time must fall inside the authority validity window.";
+      }
+    }
     if (protectedState.decisions.length >= 64) {
       issues["protected-decision-id"] =
         "A protected file can contain at most 64 decisions.";
@@ -872,10 +959,16 @@ export function mountProtectedPolicyWorkbench(runtime) {
         issuedAt: issuedAt,
         notBefore: issuedAt,
         expiresAt: expiresAt,
-        disposition: "approved",
-        acceptedFindings: [],
-        acceptedGaps: [],
-        conditions: [],
+        disposition: values.disposition,
+        acceptedFindings:
+          values.disposition === "accepted-with-conditions" ? values.acceptedFindings.items : [],
+        acceptedGaps:
+          values.disposition === "accepted-with-conditions" ? values.acceptedGaps.items : [],
+        conditions:
+          values.disposition === "accepted-with-conditions" ? values.conditions.items : [],
+        ...(values.disposition === "accepted-with-conditions"
+          ? { reviewBy: protectedCanonicalTimestamp(values.reviewBy) }
+          : {}),
       },
       evidenceEnvelope: evidenceEnvelope,
     };
@@ -915,6 +1008,19 @@ export function mountProtectedPolicyWorkbench(runtime) {
         decision.subject.id +
         " at " +
         protectedSourceLabel(decision.subject.source);
+      if (decision.disposition === "accepted-with-conditions") {
+        summary.textContent +=
+          " · accepted with conditions through " +
+          decision.reviewBy +
+          " · findings: " +
+          decision.acceptedFindings.join(", ") +
+          " · gaps: " +
+          decision.acceptedGaps.join(", ") +
+          " · conditions: " +
+          decision.conditions.join("; ");
+      } else {
+        summary.textContent += " · approved";
+      }
       detail.append(title, summary);
       const remove = document.createElement("button");
       remove.type = "button";
@@ -1181,6 +1287,13 @@ export function mountProtectedPolicyWorkbench(runtime) {
   });
   const protectedSourceVisibility = function () {
     const selected = byId("protected-source-type").value;
+    const effects = byId("protected-effects");
+    const effectsGuide = byId("protected-effects-guide");
+    const npmPackage = selected === "npm" && byId("protected-kind").value === "package";
+    effects.placeholder = npmPackage ? "install" : "observe,use";
+    effectsGuide.textContent = npmPackage
+      ? "The npm package observer and lifecycle require the install effect. AIH observes the already-installed package; it does not install or execute it."
+      : "Use one or more supported effects for this exact artifact approval.";
     document
       .querySelectorAll("[data-protected-source]")
       .forEach(function (label) {
@@ -1211,6 +1324,18 @@ export function mountProtectedPolicyWorkbench(runtime) {
         ? "Copy all four Catalog values from one independently verified AIH-supported qualification receipt. The receipt qualifies exact subject bytes; it does not grant organization admission or replace this accountable approval."
         : "Organization-qualified evidence binds this decision directly to the exact evidence digest and attestor.";
   };
+  const protectedDispositionVisibility = function () {
+    const selected = byId("protected-disposition").value;
+    document
+      .querySelectorAll("[data-protected-disposition]")
+      .forEach(function (group) {
+        const active = group.dataset.protectedDisposition === selected;
+        group.hidden = !active;
+        group.querySelectorAll("input,select,textarea").forEach(function (input) {
+          input.disabled = !active;
+        });
+      });
+  };
   byId("protected-source-type").addEventListener("change", function () {
     protectedSourceVisibility();
     protectedScanGuide();
@@ -1219,7 +1344,11 @@ export function mountProtectedPolicyWorkbench(runtime) {
     "change",
     protectedQualificationVisibility,
   );
-  byId("protected-kind").addEventListener("change", protectedScanGuide);
+  byId("protected-disposition").addEventListener("change", protectedDispositionVisibility);
+  byId("protected-kind").addEventListener("change", function () {
+    protectedSourceVisibility();
+    protectedScanGuide();
+  });
   protectedIds.forEach(function (id) {
     byId(id).addEventListener("input", function () {
       fieldError(id, "");
@@ -1228,5 +1357,6 @@ export function mountProtectedPolicyWorkbench(runtime) {
   });
   protectedSourceVisibility();
   protectedQualificationVisibility();
+  protectedDispositionVisibility();
   protectedScanGuide();
 }

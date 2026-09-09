@@ -856,6 +856,15 @@ or bundle input. Vibe continues to export only ordinary repo-local policy and ca
 authority.
 The protected-file decisions authorize only the effects named in the exact decision and supported by
 a closed Core lifecycle; the Workbench itself performs no install, projection, or execution.
+Choose **Accepted with conditions** when the decision must record named risk acceptance. Enter
+comma-separated stable identifiers in **Accepted findings** and **Accepted waivable gaps**, one
+condition per line, and an offset-qualified ISO-8601 **Review by** date within the authority window.
+The form sorts the entries, rejects duplicates and finding/gap overlap, and requires at least one
+named finding or gap and one condition. The preview and download retain those fields; revocation
+binds the complete conditional decision. Choosing **Approved** emits empty accepted sets and
+conditions and omits the review date. Neither disposition changes a scanner result or bypasses
+Core's evidence and lifecycle checks. The npm observer requires the `install` effect even though
+AIH only observes the already-installed package and does not install or execute it.
 Separately, external-curation records remain guidance only: AIH does not install, project, or enforce those external assets. Its
 catalog is an authoring projection of the same pinned AIH controls and framework catalog data used by the engine; it does
 not scan a repository. The workbench can also author `governance.supportedClis`, the organization-sanctioned CLI

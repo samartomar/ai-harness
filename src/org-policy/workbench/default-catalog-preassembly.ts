@@ -7,7 +7,6 @@ import {
 import {
   canonicalStrictJsonBytesV1,
   canonicalStrictJsonSha256V1,
-  deepFreezeStrictJsonV1,
 } from "../../contract/strict-json-v1.js";
 import { VERSION } from "../../version.js";
 import { policyAuthoringCatalog } from "../catalog.js";
@@ -261,7 +260,9 @@ export function admitDefaultCatalogPreassemblyV1(
   )
     throw new TypeError("Default catalog preassembly output integrity mismatch");
   verifyAuthoringCatalogBundleIntegrityV1(candidate.bundle);
-  return structuredClone(deepFreezeStrictJsonV1(structuredClone(candidate)));
+  // JSON.parse created this private object graph for this admission. No caller
+  // or cache shares it; the consumer owns any later frozen cache snapshot.
+  return candidate;
 }
 
 export function packagedDefaultCatalogPreassemblyCompanionV1():

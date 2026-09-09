@@ -930,9 +930,9 @@ export function admitDefaultStudioPreassemblyV1(
   parseOrgPolicy(base.shell.defaultPolicy);
   const bundle = AuthoringCatalogBundleV1Schema.parse(base.prepared.bundle);
   verifyAuthoringCatalogBundleIntegrityV1(bundle);
-  return structuredClone(
-    deepFreezeStrictJsonV1(structuredClone(base)),
-  ) as DefaultStudioPackageBaseV1;
+  // This graph was parsed privately for this call. Cache consumers freeze their
+  // own snapshot; returning it directly preserves detached mutable output.
+  return base;
 }
 
 let admittedDefaultStudioPackageBaseV1: Readonly<DefaultStudioPackageBaseV1> | undefined;
