@@ -1,4 +1,20 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
+
+vi.mock("../../../../src/org-policy/workbench/prepared-catalog.js", async (importOriginal) => {
+  const actual =
+    await importOriginal<
+      typeof import("../../../../src/org-policy/workbench/prepared-catalog.js")
+    >();
+  const fixture = await import("../source-data-test-fixture.js");
+  // The default Core consumer remains live; this repair test needs only a
+  // sealed baseline that does not contain the unavailable saved source.
+  return {
+    ...actual,
+    packagedPreparedWorkbenchCatalogV1: fixture.tinySourceDataPreparedCatalogV1,
+    prepareWorkbenchCatalog: fixture.tinySourceDataPreparedCatalogV1,
+  };
+});
+
 import { resolveEffectiveOrgPolicy } from "../../../../src/org-policy/effective.js";
 import type { OrgPolicy } from "../../../../src/org-policy/schema.js";
 import { serializeWorkbenchRepairV1 } from "../../../../src/org-policy/workbench/policy-import.js";

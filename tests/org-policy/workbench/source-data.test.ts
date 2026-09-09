@@ -53,6 +53,17 @@ vi.mock("../../../src/org-policy/workbench/core/catalog-qualification-data.js", 
     projections: [],
   }),
 }));
+vi.mock("../../../src/org-policy/packaged-collection-evidence-data.js", async (importOriginal) => {
+  const actual =
+    await importOriginal<
+      typeof import("../../../src/org-policy/packaged-collection-evidence-data.js")
+    >();
+  return {
+    ...actual,
+    packagedScannerCollectionEvidenceInputV1: () =>
+      tinyPreparation.useTiny ? [] : actual.packagedScannerCollectionEvidenceInputV1(),
+  };
+});
 
 vi.mock("../../../src/org-policy/workbench/prepared-catalog.js", async (importOriginal) => {
   const actual =
@@ -200,8 +211,6 @@ describe("authenticated versioned Workbench source data", () => {
       "stale",
     );
   });
-  // Windows verifies the protected store through several ACL subprocesses.
-  // The complete PR lane still independently enforces its 60-second budget.
   it(
     "uses the same default UI preparation and consumption path after a source pin update",
     () => {
@@ -314,7 +323,7 @@ describe("authenticated versioned Workbench source data", () => {
         tinyPreparation.useTiny = false;
       }
     },
-    process.platform === "win32" ? 30_000 : undefined,
+    undefined,
   );
   it("opens dated source data without blocking unrelated authoring and retains exact saved pins", () => {
     const root = store();

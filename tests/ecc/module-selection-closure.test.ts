@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
 import { canonicalStrictJsonSha256V1 } from "../../src/contract/strict-json-v1.js";
 import { ECC_DECLARATION_RIDERS, UPSTREAM_CORE_ECC_MODULE_IDS } from "../../src/ecc/components.js";
@@ -21,6 +21,7 @@ import { verifyAuthoringCatalogBundleIntegrityV1 } from "../../src/org-policy/wo
 import { parseAuthoringCatalogBundleV1 } from "../../src/org-policy/workbench/contracts.js";
 import { packagedWorkbenchSourceDataRecordsV1 } from "../../src/org-policy/workbench/core/packaged-source-data.js";
 import { compilePolicy } from "../../src/org-policy/workbench/policy-compiler.js";
+import { packagedPreparedWorkbenchCatalogV1 } from "../../src/org-policy/workbench/prepared-catalog.js";
 import {
   createWorkbenchState,
   reduceWorkbenchAction,
@@ -91,6 +92,15 @@ function tinyEccPreparedCatalog() {
   };
   return { bundle: sealed, bindings };
 }
+
+let admittedHistoricalEcc: ReturnType<typeof tinyEccPreparedCatalog>;
+
+beforeAll(() => {
+  // The V3 guard receives an already sealed historical catalog snapshot. Its
+  // assertions begin with selection and consumption, not package admission.
+  packagedPreparedWorkbenchCatalogV1();
+  admittedHistoricalEcc = tinyEccPreparedCatalog();
+});
 
 function selectedPolicyIds(policy: ReturnType<typeof defaultStudioPolicy>): string[] {
   return [
@@ -247,7 +257,7 @@ function withTypescriptLanguageAndCore(includeRider = true) {
 
 describe("schema-v3 Workbench ECC guard", () => {
   it("refuses a historical V3 pin without its sealed runtime context, and refuses stale or missing intent", () => {
-    const prepared = tinyEccPreparedCatalog();
+    const prepared = structuredClone(admittedHistoricalEcc);
     const asset = prepared.bundle.assets["ecc/module:rules-core"];
     if (!asset) throw new Error("expected pinned ECC rules-core asset");
     const selected = reduceWorkbenchAction(prepared.bundle, createWorkbenchState(), {
