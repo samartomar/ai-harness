@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -31,6 +31,64 @@ function gate(environment: Record<string, string>) {
     env: { ...process.env, ...baseEnvironment, ...environment },
   });
 }
+
+describe("Workbench runtime reporting", () => {
+  it.each([0, 1])("reports an exceeded target while preserving acceptance exit %s", (code) => {
+    const directory = mkdtempSync(join(tmpdir(), "aih-workbench-runtime-report-"));
+    if (!resolve(directory).startsWith(resolve(tmpdir()) + sep))
+      throw new Error("unsafe test fixture cleanup");
+    try {
+      mkdirSync(join(directory, "tools"));
+      mkdirSync(join(directory, "node_modules/playwright-core"), { recursive: true });
+      mkdirSync(join(directory, ".aih-scratch/workbench-evidence"), { recursive: true });
+      copyFileSync(
+        resolve(root, "tools/run-workbench-pr-lane.mjs"),
+        join(directory, "tools/run.mjs"),
+      );
+      writeFileSync(
+        join(directory, "node_modules/playwright-core/browsers.json"),
+        '{"browsers":[]}',
+      );
+      writeFileSync(
+        join(directory, ".aih-scratch/workbench-evidence/preparation.json"),
+        '{"children":[]}',
+      );
+      // Only the process measurement is controlled. The real orchestrator must
+      // preserve a failing acceptance exit even when elapsed time is advisory.
+      writeFileSync(
+        join(directory, "tools/workbench-process-metrics.mjs"),
+        `
+let elapsed = 0;
+globalThis.performance = { now: () => elapsed };
+export async function measureProcess() {
+  elapsed += 40000;
+  return { code: elapsed === 80000 ? ${code} : 0, signal: null, wallMs: 40000, peakResidentBytes: 1024 };
+}
+`,
+      );
+      const result = spawnSync(process.execPath, [join(directory, "tools/run.mjs")], {
+        cwd: directory,
+        encoding: "utf8",
+        env: { ...process.env, npm_execpath: process.env.npm_execpath ?? "npm" },
+      });
+      expect(result.status, result.stderr).toBe(code);
+      const receipt = JSON.parse(
+        readFileSync(join(directory, ".aih-scratch/workbench-evidence/pr-lane.json"), "utf8"),
+      );
+      expect(receipt.wallMs).toBe(80000);
+      expect(receipt.performanceTarget).toEqual({
+        wallMs: 60000,
+        met: false,
+        releaseBlocking: false,
+      });
+      if (code === 1)
+        expect(result.stderr).toContain("parallel-acceptance-projects failed with exit 1");
+      else expect(result.stderr).toContain("performance target exceeded");
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("Workbench CI browser ownership", () => {
   it("owns Chromium once and makes its result a required dependency", () => {
