@@ -21,6 +21,10 @@ function hasControlCharacter(value: string): boolean {
 }
 
 export function assertWellFormedNfcV1(value: string, label: string, requireNfc = true): void {
+  // ASCII strings are already well formed and NFC, including short ids and keys.
+  // Keep the existing Unicode checks for any non-ASCII input.
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: identifying the complete ASCII range, not rejecting JSON control characters
+  if (!/[^\x00-\x7f]/u.test(value)) return;
   for (let index = 0; index < value.length; index += 1) {
     const current = value.charCodeAt(index);
     if (current >= 0xd800 && current <= 0xdbff) {

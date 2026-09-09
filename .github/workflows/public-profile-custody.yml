@@ -1,0 +1,57 @@
+name: current public profile chain acceptance
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/public-profile-custody.yml
+      - .github/scripts/verify-public-profile-custody.mjs
+      - .github/fixtures/public-profile-custody/**
+
+# This checks the actual published receipt chain at its original signed dates.
+# It is a release acceptance fixture, not a timeless replacement for synthetic
+# continuity tests. Expired receipts must fail; they must never be re-dated.
+
+permissions:
+  contents: read
+
+jobs:
+  public-profile-custody:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24.18.0"
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - name: Install pinned Chromium for the packed Policy Workbench
+        run: npx --no-install playwright install --with-deps chromium
+      - name: Create an isolated Enterprise custody base
+        run: |
+          set -euo pipefail
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          test "$RUNNER_OS" = Linux
+          test ! -e /etc/aih
+          sudo install -d -m 0700 -o "$(id -u)" -g "$(id -g)" /etc/aih
+          test ! -e /etc/aih/supported-qualification/v2
+      - name: Verify public profile custody through packed Core
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AIH_PUBLIC_PROFILE_CUSTODY_ROOT: ${{ github.workspace }}
+          AIH_PUBLIC_PROFILE_CUSTODY_FIXTURES: ${{ github.workspace }}/.github/fixtures/public-profile-custody
+        run: node .github/scripts/verify-public-profile-custody.mjs
+      - name: Retain bounded custody evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: public-profile-custody-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .aih-scratch/public-profile-custody/evidence/
+          if-no-files-found: warn
+          retention-days: 14

@@ -6,3 +6,8 @@ dependencies = ["cisco-ai-mcp-scanner==4.8.2"]
 
 [tool.uv]
 package = false
+constraint-dependencies = [
+  "httpcore2==2.12.0",
+  "httpx2==2.12.0",
+  "pip==26.2",
+]

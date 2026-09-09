@@ -211,7 +211,12 @@ export function projectWorkbenchPolicy(
         (target) => !supported || supported.includes(target),
       );
       if (!targets.length) {
-        diagnostics.push(`No organization-sanctioned target for: ${id}`);
+        const label = bundle.assets[id]?.label ?? id;
+        const selectedHosts = supported?.length ? supported.join(", ") : "none";
+        const supportedHosts = candidate.targets.length ? candidate.targets.join(", ") : "none";
+        diagnostics.push(
+          `${label} cannot be added for the selected hosts (${selectedHosts}). Supported hosts: ${supportedHosts}. Review Deployment setup or leave this item out.`,
+        );
         continue;
       }
       reviewed.push(candidate);

@@ -21,6 +21,16 @@ const testFiles = [
 ];
 
 describe("Workbench lane ownership", () => {
+  it("keeps source-store and operator integration checks out of the pure state lane", () => {
+    for (const pattern of [
+      "tests/org-policy/workbench/source-data*.test.ts",
+      "tests/org-policy/workbench/data-command.test.ts",
+      "tests/org-policy/workbench/studio-model-source-data.test.ts",
+    ]) {
+      expect(WORKBENCH_PURE_TEST_EXCLUDE_PATTERNS).toContain(pattern);
+      expect(WORKBENCH_RETAINED_TEST_PATTERNS).toContain(pattern);
+    }
+  });
   it("discovers nested source contracts without maintaining a file count", () => {
     expect(WORKBENCH_TEST_PATTERNS).toContain("tests/org-policy/workbench/**/*.test.ts");
     expect(testFiles.filter(isWorkbenchTestPath)).toEqual(testFiles.slice(1));
@@ -33,6 +43,22 @@ describe("Workbench lane ownership", () => {
     expect(WORKBENCH_RETAINED_TEST_PATTERNS).toContain(
       "tests/tools/prepare-packed-workbench.test.ts",
     );
+  });
+  it.each([
+    "tests/internals/workbench-publication-roundtrip.test.ts",
+    "tests/internals/workbench-publication-installed-source.test.ts",
+    "tests/org-policy/generate-organization.test.ts",
+    "tests/org-policy/ui-server-connected-policy.test.ts",
+  ])("retains explicit integration boundaries in the Workbench lane: %s", (path) => {
+    expect(isWorkbenchTestPath(path)).toBe(true);
+    expect(WORKBENCH_RETAINED_TEST_PATTERNS).toContain(path);
+    const receipt = classifyCiImpact({
+      baseSha,
+      headSha,
+      changedPaths: ["src/org-policy/workbench/ui/main.ts"],
+      testFiles: [...testFiles, path],
+    });
+    expect(receipt.selectedTests).toContain(path);
   });
   it("routes a newly discovered typed root test through the pure project", () => {
     const newPureTest = "tests/org-policy/workbench/new-source.test.ts";

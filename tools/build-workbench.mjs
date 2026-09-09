@@ -1,13 +1,34 @@
 import { build } from "esbuild";
+import { execFile } from "node:child_process";
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const generatedPath = "src/org-policy/workbench/bundle.generated.cjs";
+const preassemblyPath = "src/org-policy/workbench/default-catalog-preassembly.generated.cjs";
+
+function runPreassemblyBuild(root) {
+  return new Promise((resolveBuild, rejectBuild) => {
+    const child = execFile(
+      process.execPath,
+      ["--import", "tsx", resolve(root, "tools/build-workbench-preassembly.ts")],
+      { cwd: root, windowsHide: true },
+      (error, stdout, stderr) => {
+        if (error) {
+          rejectBuild(new Error(`Default catalog preassembly build failed: ${(stderr || stdout).trim()}`));
+          return;
+        }
+        resolveBuild(stdout);
+      },
+    );
+    child.once("error", rejectBuild);
+  });
+}
 
 /** Explicit UI/package build step; importing a Vitest config never invokes it. */
 export async function buildWorkbench(root = repositoryRoot) {
+  await runPreassemblyBuild(root);
   const result = await build({
     absWorkingDir: root,
     entryPoints: ["src/org-policy/workbench/ui/main.ts"],
@@ -42,6 +63,17 @@ export async function copyWorkbenchToDist(root = repositoryRoot) {
   const target = resolve(root, "dist/bundle.generated.cjs");
   await mkdir(dirname(target), { recursive: true });
   await copyFile(resolve(root, generatedPath), target);
+  await copyFile(
+    resolve(root, preassemblyPath),
+    resolve(root, "dist/default-catalog-preassembly.generated.cjs"),
+  );
+  for (const source of [
+    "src/org-policy/workbench/core/packaged-source-data-data.json",
+    "src/org-policy/workbench/core/catalog-qualification-data.json",
+    "src/org-policy/packaged-collection-evidence-data.json",
+  ]) {
+    await copyFile(resolve(root, source), resolve(root, "dist", source.split("/").at(-1)));
+  }
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

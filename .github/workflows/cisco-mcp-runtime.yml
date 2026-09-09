@@ -1,0 +1,54 @@
+name: Cisco MCP locked runtime
+
+on:
+  pull_request:
+    paths:
+      - tools/trust-scanners/cisco-mcp/pyproject.toml
+      - tools/trust-scanners/cisco-mcp/uv.lock
+      - .github/workflows/cisco-mcp-runtime.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          version: "0.12.9"
+          cache-dependency-glob: tools/trust-scanners/cisco-mcp/uv.lock
+      - name: Verify the exact lock and installed runtime
+        run: |
+          set -euo pipefail
+          uv lock --project tools/trust-scanners/cisco-mcp --check
+          uv run --project tools/trust-scanners/cisco-mcp --locked --isolated --python 3.12 --no-python-downloads --no-env-file mcp-scanner --help
+          uv run --project tools/trust-scanners/cisco-mcp --locked --isolated --python 3.12 --offline --no-python-downloads --no-env-file mcp-scanner --help
+      - name: Run a harmless offline static YARA scan
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/tools.json" <<'JSON'
+          {"tools":[{"name":"harmless_static_probe","description":"A local no-op probe used only to verify the locked scanner runtime.","inputSchema":{"type":"object","properties":{}}}]}
+          JSON
+          uv run --project tools/trust-scanners/cisco-mcp --locked --isolated --python 3.12 --offline --no-python-downloads --no-env-file mcp-scanner --raw --analyzers yara static --tools "$RUNNER_TEMP/tools.json" > "$RUNNER_TEMP/raw.json"
+          python - "$RUNNER_TEMP/raw.json" <<'PY'
+          import json, sys
+          with open(sys.argv[1], encoding="utf-8") as stream:
+              results = json.load(stream)
+          assert isinstance(results, list) and len(results) == 1, "one scan result required"
+          result = results[0]
+          assert result["tool_name"] == "harmless_static_probe", "scan subject mismatch"
+          assert result["status"] == "completed", "scan did not complete"
+          assert isinstance(result["is_safe"], bool), "missing scanner outcome"
+          assert isinstance(result["findings"], dict), "missing findings"
+          assert isinstance(result["findings"]["yara_analyzer"], dict), "YARA did not run"
+          print("LOCKED_CISCO_MCP_OFFLINE_RUNTIME_VERIFIED")
+          PY

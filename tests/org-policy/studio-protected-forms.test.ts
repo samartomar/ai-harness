@@ -1,5 +1,6 @@
 import { Window } from "happy-dom";
 import { afterEach, describe, expect, it } from "vitest";
+import { governanceDecisionDigestV2 } from "../../src/org-policy/governance-decision-v2.js";
 import { parsePolicyBundle } from "../../src/org-policy/schema.js";
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
 import { tinyEnterpriseStudioModel, tinyStudioModel } from "./studio-test-fixture.js";
@@ -138,6 +139,243 @@ describe("retained protected authority form obligations", () => {
       targets: ["codex"],
       allowedEffects: ["observe", "use"],
     });
+  });
+
+  it("authors a Core-accepted named conditional decision through ordinary fields", async () => {
+    const window = studio(true);
+    enableEnterprise(window);
+    fillProtectedFields(window, {
+      "protected-disposition": "accepted-with-conditions",
+      "protected-accepted-findings": "finding-z,finding-a",
+      "protected-accepted-gaps": "gap-b",
+      "protected-conditions": "Review the evidence before renewal\nKeep the artifact pinned",
+      "protected-review-by": "2026-09-10T12:00:00Z",
+      "protected-kind": "package",
+      "protected-source-type": "npm",
+      "protected-source-registry": "https://registry.npmjs.org/",
+      "protected-source-package": "@acme/linter",
+      "protected-source-version": "1.2.3",
+      "protected-source-integrity": `sha512-${Buffer.alloc(64).toString("base64")}`,
+      "protected-effects": "install",
+    });
+    expect(value(window, "protected-effects")).toBe("install");
+    expect(window.document.getElementById("protected-effects")?.getAttribute("placeholder")).toBe(
+      "install",
+    );
+    expect(text(window, "protected-effects-guide")).toContain("require the install effect");
+    expect(text(window, "protected-effects-guide")).toContain("does not install or execute it");
+    await submitProtected(window);
+
+    const bundle = JSON.parse(value(window, "protected-bundle-preview"));
+    expect(parsePolicyBundle(bundle)).toMatchObject({ ok: true });
+    const decision = bundle.authorityReceipt.decisions[0];
+    expect(decision).toMatchObject({
+      disposition: "accepted-with-conditions",
+      acceptedFindings: ["finding-a", "finding-z"],
+      acceptedGaps: ["gap-b"],
+      conditions: ["Keep the artifact pinned", "Review the evidence before renewal"],
+      reviewBy: "2026-09-10T12:00:00.000Z",
+    });
+    expect(decision.subject.source.type).toBe("npm");
+    expect(decision.allowedEffects).toEqual(["install"]);
+    expect(text(window, "protected-decision-rows")).toContain("accepted with conditions through");
+    expect(text(window, "protected-decision-rows")).toContain("finding-a");
+
+    const revoke = window.document.querySelector('[data-protected-revoke="0"]');
+    if (revoke === null) throw new Error("expected conditional revocation control");
+    revoke.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    await (window as unknown as { __aihPolicyWorkbenchPending?: Promise<void> })
+      .__aihPolicyWorkbenchPending;
+    const revokedBundle = JSON.parse(value(window, "protected-bundle-preview"));
+    expect(parsePolicyBundle(revokedBundle)).toMatchObject({ ok: true });
+    expect(revokedBundle.authorityReceipt.decisionRevocations[0].decisionDigest).toBe(
+      governanceDecisionDigestV2(decision),
+    );
+  });
+
+  const invalidConditionalCases = [
+    {
+      name: "requires named findings or waivable gaps",
+      fields: {
+        "protected-conditions": "Review evidence before renewal",
+        "protected-review-by": "2026-09-10T12:00:00Z",
+      },
+      errorId: "protected-accepted-findings",
+      message: "at least one",
+    },
+    {
+      name: "rejects malformed accepted identifiers",
+      fields: {
+        "protected-accepted-findings": "Finding-A",
+        "protected-conditions": "Review evidence before renewal",
+        "protected-review-by": "2026-09-10T12:00:00Z",
+      },
+      errorId: "protected-accepted-findings",
+      message: "lowercase stable identifiers",
+    },
+    {
+      name: "rejects duplicate accepted identifiers",
+      fields: {
+        "protected-accepted-findings": "finding-a,finding-a",
+        "protected-conditions": "Review evidence before renewal",
+        "protected-review-by": "2026-09-10T12:00:00Z",
+      },
+      errorId: "protected-accepted-findings",
+      message: "Do not repeat",
+    },
+    {
+      name: "rejects more than the Core accepted-set limit",
+      fields: {
+        "protected-accepted-findings": Array.from(
+          { length: 65 },
+          (_, index) => `finding-${String(index)}`,
+        ).join(","),
+        "protected-conditions": "Review evidence before renewal",
+        "protected-review-by": "2026-09-10T12:00:00Z",
+      },
+      errorId: "protected-accepted-findings",
+      message: "at most 64",
+    },
+    {
+      name: "rejects overlapping findings and gaps",
+      fields: {
+        "protected-accepted-findings": "finding-a",
+        "protected-accepted-gaps": "finding-a",
+        "protected-conditions": "Review evidence before renewal",
+        "protected-review-by": "2026-09-10T12:00:00Z",
+      },
+      errorId: "protected-accepted-gaps",
+      message: "must not overlap",
+    },
+    {
+      name: "requires an acceptance condition",
+      fields: {
+        "protected-accepted-findings": "finding-a",
+        "protected-review-by": "2026-09-10T12:00:00Z",
+      },
+      errorId: "protected-conditions",
+      message: "at least one",
+    },
+    {
+      name: "rejects duplicate conditions",
+      fields: {
+        "protected-accepted-findings": "finding-a",
+        "protected-conditions": "Review evidence before renewal\nReview evidence before renewal",
+        "protected-review-by": "2026-09-10T12:00:00Z",
+      },
+      errorId: "protected-conditions",
+      message: "Do not repeat",
+    },
+    {
+      name: "rejects more than the Core condition limit",
+      fields: {
+        "protected-accepted-findings": "finding-a",
+        "protected-conditions": Array.from(
+          { length: 33 },
+          (_, index) => `Review condition ${String(index)}`,
+        ).join("\n"),
+        "protected-review-by": "2026-09-10T12:00:00Z",
+      },
+      errorId: "protected-conditions",
+      message: "at most 32",
+    },
+    {
+      name: "rejects a review time before the authority starts",
+      fields: {
+        "protected-accepted-findings": "finding-a",
+        "protected-conditions": "Review evidence before renewal",
+        "protected-review-by": "2026-08-25T12:00:00Z",
+      },
+      errorId: "protected-review-by",
+      message: "inside",
+    },
+    {
+      name: "rejects a review time after the authority expires",
+      fields: {
+        "protected-accepted-findings": "finding-a",
+        "protected-conditions": "Review evidence before renewal",
+        "protected-review-by": "2026-09-26T12:00:00Z",
+      },
+      errorId: "protected-review-by",
+      message: "inside",
+    },
+  ] as const;
+
+  for (const invalid of invalidConditionalCases) {
+    it(`keeps a prior protected bundle when conditional authoring ${invalid.name}`, async () => {
+      const window = studio(true);
+      enableEnterprise(window);
+      fillProtectedFields(window);
+      await submitProtected(window);
+      const prior = value(window, "protected-bundle-preview");
+
+      fillProtectedFields(window, {
+        "protected-decision-id": "decision-acme-linter-2",
+        "protected-disposition": "accepted-with-conditions",
+        ...invalid.fields,
+      });
+      window.document
+        .getElementById("protected-form")
+        ?.dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
+
+      expect(value(window, "protected-bundle-preview")).toBe(prior);
+      expect(text(window, `${invalid.errorId}-error`)).toContain(invalid.message);
+    });
+  }
+
+  it("intentionally clears inactive conditional values when Approved is selected", async () => {
+    const window = studio(true);
+    enableEnterprise(window);
+    fillProtectedFields(window, {
+      "protected-disposition": "accepted-with-conditions",
+      "protected-accepted-findings": "finding-a",
+      "protected-conditions": "Review evidence before renewal",
+      "protected-review-by": "2026-09-10T12:00:00Z",
+    });
+    setValue(window, "protected-disposition", "approved");
+    await submitProtected(window);
+
+    const decision = JSON.parse(value(window, "protected-bundle-preview")).authorityReceipt
+      .decisions[0];
+    expect(decision).toMatchObject({
+      disposition: "approved",
+      acceptedFindings: [],
+      acceptedGaps: [],
+      conditions: [],
+    });
+    expect(decision).not.toHaveProperty("reviewBy");
+    expect(text(window, "protected-decision-rows")).toContain("approved");
+  });
+
+  it("rejects an unrecognized decision disposition without changing a prior bundle", async () => {
+    const window = studio(true);
+    enableEnterprise(window);
+    fillProtectedFields(window);
+    await submitProtected(window);
+    const prior = value(window, "protected-bundle-preview");
+
+    setValue(window, "protected-disposition", "unrecognized");
+    window.document
+      .getElementById("protected-form")
+      ?.dispatchEvent(new window.Event("submit", { bubbles: true, cancelable: true }));
+
+    expect(value(window, "protected-bundle-preview")).toBe(prior);
+    expect(text(window, "protected-disposition-error")).toContain("Choose an approval disposition");
+  });
+
+  it("keeps conditional inputs hidden until named acceptance is selected", () => {
+    const window = studio(true);
+    const findings = window.document.getElementById("protected-accepted-findings") as unknown as {
+      disabled: boolean;
+      closest(selector: string): { hidden: boolean } | null;
+    };
+    const group = findings.closest("[data-protected-disposition]");
+    expect(group?.hidden).toBe(true);
+    expect(findings.disabled).toBe(true);
+
+    setValue(window, "protected-disposition", "accepted-with-conditions");
+    expect(group?.hidden).toBe(false);
+    expect(findings.disabled).toBe(false);
   });
 
   it("authors the exact AIH-supported qualification binding required by a signed receipt", async () => {

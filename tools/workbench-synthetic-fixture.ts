@@ -35,7 +35,7 @@ export function syntheticWorkbenchModel(size: number): PolicyStudioModel {
   assets["profile:alpha"]!.exclusiveSlot = "methodology"; assets["profile:alpha"]!.methodologyKey = "alpha";
   assets["profile:beta"]!.exclusiveSlot = "methodology"; assets["profile:beta"]!.methodologyKey = "beta";
   const templates = Object.fromEntries([
-    { id: "template:alpha", label: "Alpha ready set", roots: ["profile:alpha", "skill:root"].map(assetId => ({ assetId, mode: "select" as const, includeOptionalMembers: false })), exclusions: [] },
+    { id: "template:alpha", label: "Alpha ready set", roots: ["profile:alpha", "skill:root"].map(assetId => ({ assetId, mode: "select" as const, includeOptionalMembers: false })), exclusions: ["scale:000008"] },
     { id: "template:beta", roots: [{ assetId: "profile:beta", mode: "select" as const, includeOptionalMembers: false }], exclusions: [] },
   ].map(template => [template.id, { ...template, digest: "sha256:" + canonicalStrictJsonSha256V1(template) }]));
   const bundle: AuthoringCatalogBundleV1 = {
@@ -53,7 +53,7 @@ export function syntheticWorkbenchModel(size: number): PolicyStudioModel {
 /** Prepared display fixture; actual attestation custody has separate Core contract tests. */
 export function syntheticEvidenceWorkbenchModel(): PolicyStudioModel {
   const model = syntheticWorkbenchModel(10);
-  for (const [assetId, outcome] of [["mcp:request", "pass"], ["skill:root", "failed"]] as const) {
+  for (const [assetId, outcome] of [["mcp:request", "pass"], ["skill:root", "failed"], ["inspect-item", "pass"]] as const) {
     const asset = model.workbenchBundle.assets[assetId];
     if (!asset) throw new Error("missing evidence fixture asset");
     const id = "evidence:" + assetId;
@@ -62,7 +62,8 @@ export function syntheticEvidenceWorkbenchModel(): PolicyStudioModel {
       subjects: [{ assetId, sourceId: asset.sourceId, sourceRevisionId: asset.sourceRevisionId, contentDigest: asset.contentDigest }],
       evidenceDigest: digest(id), coveredPaths: ["catalog.json"],
       verification: { state: "verified", verifiedAt: "2026-09-04T12:00:00Z", validUntil: "2026-09-04T13:00:00Z", contextDigest: digest("fixture-context") },
-      scan: { outcome, coverage: "complete" }, qualification: { state: "unknown" }, findings: [],
+      scan: { outcome, coverage: "complete", ...(assetId === "inspect-item" ? { scope: "published-component-containment" as const } : {}) }, qualification: { state: "unknown" },
+      findings: assetId === "inspect-item" ? ["Review outbound access in shared configuration."] : [],
     };
   }
   model.workbenchBundle.provenance.bundleDigest = "sha256:" + canonicalStrictJsonSha256V1({ ...model.workbenchBundle, provenance: {} });

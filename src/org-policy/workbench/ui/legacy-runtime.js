@@ -14,6 +14,11 @@ export function mountLegacyWorkbench(t) {
       policy: structuredClone(t.initialPolicy),
       receipt: null,
       decision: null,
+      managedMcpOptIn: Boolean(
+        t.initialPolicy &&
+          t.initialPolicy.mcp &&
+          t.initialPolicy.mcp.allowManagedOnly === !0,
+      ),
     },
     n = 0,
     o = function (s) {
@@ -1101,9 +1106,10 @@ export function mountLegacyWorkbench(t) {
       );
     },
     Ye = function () {
-      if (r.policy && r.policy.schemaVersion !== 2) return;
+      if (r.policy && r.policy.schemaVersion !== 2 && r.policy.schemaVersion !== 3) return;
       let s = Ke(r.policy);
       if (s.length) {
+        if (!r.managedMcpOptIn) return;
         r.policy.mcp = Object.assign({}, r.policy.mcp || {}, {
           allowedServers: s,
           allowManagedOnly: !0,
@@ -1973,14 +1979,16 @@ export function mountLegacyWorkbench(t) {
       ));
   });
   let Xe = function () {
-    let c = o("posture");
+    let c = o("posture"), l = o("managed-mcp-projection");
     (c && (c.value = r.policy.minimumPosture || "vibe"),
+      l && (l.checked = r.managedMcpOptIn),
       Es(),
       uy(),
       oy(),
       py(),
       sy(),
       Jf(),
+      Qf(),
       (o("dispositionable-findings").textContent =
         t.findings.dispositionable.join(" | ")),
       (o("hard-blockers").textContent = t.findings.fenced.join(" | ")),
@@ -2005,6 +2013,25 @@ export function mountLegacyWorkbench(t) {
     let d = structuredClone(r.policy);
     ((r.policy.minimumPosture = c),
       commitPolicy(d, "Posture changed without modifying selections."));
+  });
+  o("managed-mcp-projection").addEventListener("change", function (s) {
+    let c = Boolean(s.target.checked), l = r.managedMcpOptIn;
+    if (!c && Ke(r.policy).length) {
+      (p(
+        "Managed MCP projection remains enabled because selected Core MCP controls need it. Remove those controls before disabling this setting.",
+        !0,
+      ),
+        Xe());
+      return;
+    }
+    r.managedMcpOptIn = c;
+    let d = structuredClone(r.policy);
+    commitPolicy(
+      d,
+      c
+        ? "Managed MCP projection enabled for selected Core MCP controls. It is saved only when those controls are present."
+        : "Managed MCP projection disabled. No server was contacted or changed.",
+    ) || (r.managedMcpOptIn = l);
   });
   let ui = function () {
       (document
@@ -2491,6 +2518,9 @@ export function mountLegacyWorkbench(t) {
             return ie(t.schema, f, "").concat(nt(f), Pe(f), et(f), ot(f));
           });
           ((r.policy = d.policy),
+            (r.managedMcpOptIn = Boolean(
+              r.policy.mcp && r.policy.mcp.allowManagedOnly === !0,
+            )),
             p(d.message),
             Xe(),
             window.dispatchEvent(new Event("aih-workbench-policy-change")));
@@ -2581,22 +2611,29 @@ export function mountLegacyWorkbench(t) {
       );
     }),
     o("validate").addEventListener("click", function () {
-      let s = validateCurrentPolicy();
+      let s = validateCurrentPolicy(), c = Qe();
       (s.length
         ? p(
             "Schema and policy-grammar validation failed: " +
               s.slice(0, 3).join("; "),
             !0,
           )
-        : p(
-            "Schema and policy-grammar validation passed. Authority, scans, projection, and effective state require the AIH engine in a target repository.",
-          ),
+        : c.length
+          ? p(
+              "Schema and policy-grammar validation passed, but deployment setup needs attention: " +
+                c.join("; ") +
+                ".",
+              !0,
+            )
+          : p(
+              "Schema and policy-grammar validation passed. Authority, scans, projection, and effective state require the AIH engine in a target repository.",
+            ),
         renderPolicyPreview());
     }),
     o("export").addEventListener("click", function () {
-      let s = validateCurrentPolicy();
-      if (s.length) {
-        p("Export blocked: " + s.slice(0, 3).join("; "), !0);
+      let s = validateCurrentPolicy(), c = Qe();
+      if (s.length || c.length) {
+        p("Export blocked: " + s.concat(c).slice(0, 3).join("; "), !0);
         return;
       }
       (renderPolicyPreview(),
@@ -2605,9 +2642,9 @@ export function mountLegacyWorkbench(t) {
         ));
     }),
     o("download").addEventListener("click", function () {
-      let s = validateCurrentPolicy();
-      if (s.length) {
-        p("Download blocked: " + s.slice(0, 3).join("; "), !0);
+      let s = validateCurrentPolicy(), q = Qe();
+      if (s.length || q.length) {
+        p("Download blocked: " + s.concat(q).slice(0, 3).join("; "), !0);
         return;
       }
       let c = o("policy-download-name"),
@@ -2655,6 +2692,57 @@ export function mountLegacyWorkbench(t) {
       let s = j().supportedClis;
       return Array.isArray(s) ? s : [];
     },
+    Qe = function () {
+      let s = j(), l = s.catalog && Array.isArray(s.catalog.reviewed) ? s.catalog.reviewed : [],
+        d = new Set(
+          (Array.isArray(s.activations) ? s.activations : [])
+            .filter(function (f) {
+              return f && f.state === "active";
+            })
+            .map(function (f) {
+              return f.candidate;
+            }),
+        ),
+        f = l.filter(function (v) {
+          return d.has(v.id) && (v.kind === "mcp" || v.kind === "hook");
+        }),
+        v = [];
+      if (!f.length) return v;
+      s = r.policy.minimumPosture || "vibe";
+      s !== "enterprise" && v.push("selected Core controls need Enterprise posture");
+      Ke(r.policy).length && !r.managedMcpOptIn && v.push("enable managed MCP projection");
+      return v;
+    },
+    Qf = function () {
+      let s = o("deployment-readiness");
+      if (!s) return;
+      let c = Qe(), l = j(), d = l.catalog && Array.isArray(l.catalog.reviewed) ? l.catalog.reviewed : [],
+        f = new Set(
+          (Array.isArray(l.activations) ? l.activations : [])
+            .filter(function (v) {
+              return v && v.state === "active";
+            })
+            .map(function (v) {
+              return v.candidate;
+            }),
+        ),
+        v = d.filter(function (w) {
+          return f.has(w.id) && (w.kind === "mcp" || w.kind === "hook");
+        });
+      let w = v
+        .map(function (y) {
+          let k = (Array.isArray(l.activations) ? l.activations : []).find(function (_) {
+            return _ && _.state === "active" && _.candidate === y.id;
+          });
+          return y.id + " → " + (k && Array.isArray(k.targets) ? k.targets.join(", ") : "none");
+        })
+        .join("; ");
+      s.textContent = v.length
+        ? c.length
+          ? "Deployment setup needs attention before download: " + c.join("; ") + ". Exact selected target intersections: " + w + "."
+          : "Deployment setup is ready for the selected Core controls. Exact selected target intersections: " + w + ". Export records the managed-MCP setting."
+        : "No Core controls selected. Choose controls after setting the hosts and posture you intend to use.";
+    },
     Jf = function () {
       let s = t.catalog.hosts || [],
         c = s.filter(function (f) {
@@ -2688,19 +2776,15 @@ export function mountLegacyWorkbench(t) {
             );
           })
           .join("")),
-        (o("supported-cli-count").textContent = c.length + " of " + s.length),
+        (o("supported-cli-count").textContent = l.size + " selected"),
         (o("supported-cli-note").textContent =
           "AIH supports " +
           s.length +
-          " CLIs. A policy activation can target " +
-          c
-            .map(function (f) {
-              return f.id;
-            })
-            .join(" and ") +
-          "; " +
+          " CLIs; " +
+          c.length +
+          " can receive policy activations. " +
           l.size +
-          " sanctioned by this policy. Sanctioned, materialization-capable, and projector-capable are separate sets."));
+          " are selected by this policy. Sanctioned, materialization-capable, and projector-capable are separate sets."));
     };
   (Jf(),
     document.addEventListener("click", function (s) {
@@ -2769,9 +2853,12 @@ export function mountLegacyWorkbench(t) {
       !s.target.closest ||
         !s.target.closest("#clear-policy") ||
         ((r.policy = structuredClone(t.initialPolicy)),
+        (r.managedMcpOptIn = Boolean(
+          r.policy.mcp && r.policy.mcp.allowManagedOnly === !0,
+        )),
         (r.editing = null),
         p(
-          "Policy cleared. Every selection, requested control and curation record is gone, and either framework can be selected again.",
+          "Policy cleared. All selections, requests and curation records were removed from this draft. You can start again with any source.",
         ),
         Xe(),
         window.dispatchEvent(new Event("aih-workbench-policy-change")));
@@ -2805,10 +2892,14 @@ export function mountLegacyWorkbench(t) {
               restorePolicy: function (D) {
                 var M = genericImportPolicy(D);
                 return (
+                  (r.managedMcpOptIn =
+                    r.managedMcpOptIn ||
+                    Boolean(M.policy.mcp && M.policy.mcp.allowManagedOnly === !0)),
                   (r.policy = M.policy),
+                  Ye(),
                   (r.editing = null),
                   window.__aihWorkbenchApplyingProjection
-                    ? renderPolicyPreview()
+                    ? (renderPolicyPreview(), Jf(), Qf())
                     : Xe(),
                   window.dispatchEvent(
                     new Event("aih-workbench-policy-change"),

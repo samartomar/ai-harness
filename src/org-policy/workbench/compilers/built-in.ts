@@ -11,17 +11,67 @@ import type {
 } from "../contracts.js";
 import type { CompiledDeclarationV1 } from "./formats.js";
 
+/**
+ * The built-in compiler receives only the public fields it renders. Keeping
+ * this structural shape local prevents a provider compiler from coupling to
+ * the runtime MCP-server registry or its configuration authority.
+ */
+interface BuiltInMcpDisclosureV1 {
+  readonly type: "stdio" | "http";
+  readonly description: string;
+  readonly egress: "none" | "local-only" | "vendor-incumbent" | "third-party";
+  readonly credentials: "none" | "oauth" | "token";
+}
+
 export interface BuiltInCatalogInputV1
   extends Pick<AihCatalogSourceV1, "aihCapabilityPackage" | "aihSkills" | "aihAgents"> {
-  mcp: readonly { id: string; description: string; control: AihPolicyControl }[];
+  mcp: readonly {
+    id: string;
+    description: string;
+    control: AihPolicyControl;
+    server?: BuiltInMcpDisclosureV1;
+  }[];
   hooks: readonly PolicyAuthoringHook[];
   unavailableMcp: readonly {
     id: string;
+    description?: string;
+    server?: BuiltInMcpDisclosureV1;
     configuredIdentity: string;
     transport: string;
     reason: string;
   }[];
-  nonProjectableMcp: readonly { id: string; transport: string; reason: string }[];
+  nonProjectableMcp: readonly {
+    id: string;
+    transport: string;
+    reason: string;
+    description?: string;
+    server?: BuiltInMcpDisclosureV1;
+  }[];
+}
+
+/** Only public disclosure fields enter the UI; never commands, headers, or environment values. */
+function mcpDecision(
+  server: BuiltInMcpDisclosureV1 | undefined,
+  description?: string,
+): Record<string, string> {
+  if (server === undefined) return description === undefined ? {} : { purpose: description };
+  const egress = {
+    none: "The source declares no network traffic from this server.",
+    "local-only": "Network activity is directed by the user, such as sites visited in a browser.",
+    "vendor-incumbent":
+      "Connects to a vendor service. Review the source description for the destination and data involved.",
+    "third-party":
+      "Sends data to a third-party service. Review the provider and the information it receives.",
+  }[server.egress];
+  const credentials = {
+    none: "No required credential is declared.",
+    oauth: "Uses sign-in authorization handled by the client.",
+    token: "Requires a token or API key supplied separately.",
+  }[server.credentials];
+  return {
+    purpose: description ?? server.description,
+    access: `${server.type === "stdio" ? "Runs a local process." : "Connects to a service over HTTP."} ${egress} ${credentials}`,
+  };
 }
 
 function digest(bytes: Uint8Array | string): string {
@@ -64,6 +114,8 @@ export function compileBuiltInCatalogV1(catalog: BuiltInCatalogInputV1): Compile
     declarationInput: unknown,
     supportedTargets: readonly ("claude" | "codex" | "kiro")[] = [],
     projectorId?: "mcp-managed-settings" | "usage-hook",
+    decision?: Record<string, string>,
+    runtimeIdentity?: string,
   ): void => {
     if (declarations.some((entry) => entry.declaration.id === id)) {
       throw new Error(`duplicate built-in catalog declaration ${id}`);
@@ -78,6 +130,7 @@ export function compileBuiltInCatalogV1(catalog: BuiltInCatalogInputV1): Compile
       version: "built-in-detail/v1",
       declaration: declarationInput,
       identity: { kind: "declaration", digest: contentDigest },
+      ...(decision === undefined ? {} : { decision }),
     }).toString("utf8");
     const declaration: CompilerAssetDeclarationV1 = {
       id,
@@ -90,6 +143,7 @@ export function compileBuiltInCatalogV1(catalog: BuiltInCatalogInputV1): Compile
       label,
       detailChunkId,
       declaredHostCapabilities: [...supportedTargets],
+      ...(runtimeIdentity === undefined ? {} : { runtimeIdentity }),
     };
     declarations.push({
       declaration,
@@ -107,7 +161,7 @@ export function compileBuiltInCatalogV1(catalog: BuiltInCatalogInputV1): Compile
       });
     }
   };
-  for (const { id, control, description } of catalog.mcp) {
+  for (const { id, control, description, server } of catalog.mcp) {
     add(
       `aih/${id}`,
       control.kind,
@@ -116,6 +170,8 @@ export function compileBuiltInCatalogV1(catalog: BuiltInCatalogInputV1): Compile
       { id, description, control },
       control.targets,
       control.projector,
+      mcpDecision(server, description),
+      control.source.type === "mcp" ? `mcp:${control.source.server}` : undefined,
     );
   }
   for (const hook of catalog.hooks) {
@@ -131,19 +187,61 @@ export function compileBuiltInCatalogV1(catalog: BuiltInCatalogInputV1): Compile
     );
   }
   for (const item of catalog.unavailableMcp) {
-    add(`aih/${item.id}`, "mcp", item.id, `core-request/${item.id}`, item);
+    const { description, server, ...declaration } = item;
+    add(
+      `aih/${item.id}`,
+      "mcp",
+      item.id,
+      `core-request/${item.id}`,
+      declaration,
+      [],
+      undefined,
+      mcpDecision(server, description),
+      `mcp:${item.configuredIdentity}`,
+    );
   }
   for (const item of catalog.nonProjectableMcp) {
     const id = `aih/${item.id}`;
     if (!declarations.some((entry) => entry.declaration.id === id)) {
-      add(id, "mcp", item.id, `core-request/${item.id}`, item);
+      const { description, server, ...declaration } = item;
+      add(
+        id,
+        "mcp",
+        item.id,
+        `core-request/${item.id}`,
+        declaration,
+        [],
+        undefined,
+        mcpDecision(server, description),
+        `mcp:${item.id}`,
+      );
     }
   }
   for (const pack of catalog.aihSkills) {
-    add(`aih/${pack.id}`, "skill", pack.id, pack.sources[0]?.path ?? `packs/${pack.pack}`, pack);
+    const { purpose, ...declaration } = pack;
+    add(
+      `aih/${pack.id}`,
+      "skill",
+      pack.id,
+      pack.sources[0]?.path ?? `packs/${pack.pack}`,
+      declaration,
+      [],
+      undefined,
+      purpose === undefined ? undefined : { purpose },
+    );
   }
   for (const pack of catalog.aihAgents) {
-    add(`aih/${pack.id}`, "agent", pack.id, pack.sources[0]?.path ?? `packs/${pack.pack}`, pack);
+    const { purpose, ...declaration } = pack;
+    add(
+      `aih/${pack.id}`,
+      "agent",
+      pack.id,
+      pack.sources[0]?.path ?? `packs/${pack.pack}`,
+      declaration,
+      [],
+      undefined,
+      purpose === undefined ? undefined : { purpose },
+    );
   }
   return {
     source: {

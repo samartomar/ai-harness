@@ -1684,6 +1684,241 @@ describe("F1/F5 — AIH-direct per-component materialization", () => {
   });
 });
 
+it("writes a version-two receipt only when a historical evidence reference covers the materialized component", () => {
+  const coreDerivedEvidence = {
+    descriptorSha256: `sha256:${"a".repeat(64)}`,
+    rawReportDigest: `sha256:${"b".repeat(64)}`,
+    coreDerivedEvaluationDigest: `sha256:${"c".repeat(64)}`,
+    projectionContractDigest: `sha256:${"d".repeat(64)}`,
+    componentMappings: [{ componentId: "skill:tdd-workflow", rawComponentIds: ["skill:raw-tdd"] }],
+  };
+  const applied = applyEccMaterialization({
+    root,
+    components: [skillComponent()],
+    coreDerivedEvidence,
+  });
+  expect(applied.receipt?.schemaVersion).toBe(2);
+  const read = readEccMaterializationReceipt(root);
+  expect(read.state).toBe("valid");
+  if (read.state !== "valid" || read.receipt.schemaVersion !== 2) {
+    throw new Error("expected a version-two materialization receipt");
+  }
+  expect(read.receipt.coreDerivedEvidence).toEqual({
+    groups: [coreDerivedEvidence],
+    legacyComponentIds: [],
+  });
+});
+function historicalReference(
+  marker: string,
+  componentId: string,
+): NonNullable<EccMaterializationRequest["coreDerivedEvidence"]> {
+  return {
+    descriptorSha256: "sha256:" + marker.repeat(64),
+    rawReportDigest: "sha256:" + "b".repeat(64),
+    coreDerivedEvaluationDigest: "sha256:" + "e".repeat(64),
+    projectionContractDigest: "sha256:" + "f".repeat(64),
+    componentMappings: [{ componentId, rawComponentIds: ["skill:raw-" + marker] }],
+  };
+}
+
+it("retains a V1 component as explicitly legacy when a historical component is added", () => {
+  applyEccMaterialization(request(skillComponent()));
+  writeFileSync(join(root, ...SKILL_PATH.split("/")), "operator changed this file\n", "utf8");
+
+  applyEccMaterialization({
+    root,
+    components: [agentComponent()],
+    coreDerivedEvidence: historicalReference("a", "agent:code-reviewer"),
+  });
+
+  const read = readEccMaterializationReceipt(root);
+  expect(read.state).toBe("valid");
+  if (read.state !== "valid" || read.receipt.schemaVersion !== 2) {
+    throw new Error("expected a version-two materialization receipt");
+  }
+  expect(read.receipt.coreDerivedEvidence.legacyComponentIds).toEqual(["skill:tdd-workflow"]);
+  expect(read.receipt.coreDerivedEvidence.groups).toHaveLength(1);
+  expect(read.receipt.coreDerivedEvidence.groups[0]?.componentMappings).toEqual([
+    { componentId: "agent:code-reviewer", rawComponentIds: ["skill:raw-a"] },
+  ]);
+});
+
+it("retains distinct historical descriptor references for drifted prior ownership", () => {
+  applyEccMaterialization({
+    root,
+    components: [skillComponent()],
+    coreDerivedEvidence: historicalReference("a", "skill:tdd-workflow"),
+  });
+  writeFileSync(join(root, ...SKILL_PATH.split("/")), "operator changed this file\n", "utf8");
+
+  applyEccMaterialization({
+    root,
+    components: [agentComponent()],
+    coreDerivedEvidence: historicalReference("b", "agent:code-reviewer"),
+  });
+
+  const read = readEccMaterializationReceipt(root);
+  expect(read.state).toBe("valid");
+  if (read.state !== "valid" || read.receipt.schemaVersion !== 2) {
+    throw new Error("expected a version-two materialization receipt");
+  }
+  expect(read.receipt.coreDerivedEvidence.legacyComponentIds).toEqual([]);
+  expect(read.receipt.coreDerivedEvidence.groups).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        descriptorSha256: "sha256:" + "a".repeat(64),
+        componentMappings: [
+          { componentId: "skill:tdd-workflow", rawComponentIds: ["skill:raw-a"] },
+        ],
+      }),
+      expect.objectContaining({
+        descriptorSha256: "sha256:" + "b".repeat(64),
+        componentMappings: [
+          { componentId: "agent:code-reviewer", rawComponentIds: ["skill:raw-b"] },
+        ],
+      }),
+    ]),
+  );
+});
+
+it("refuses to attach historical evidence to retained V1 ownership for the same component", () => {
+  const oldPath = ".claude/skills/tdd-workflow/OLD.md";
+  applyEccMaterialization({
+    root,
+    components: [
+      componentInput("skill:tdd-workflow", [
+        { path: SKILL_PATH, contents: SKILL_BODY },
+        { path: oldPath, contents: "# old legacy source\n" },
+      ]),
+    ],
+  });
+  writeFileSync(join(root, ...oldPath.split("/")), "operator changed this file\n", "utf8");
+
+  expect(() =>
+    planEccMaterialization({
+      root,
+      components: [skillComponent()],
+      coreDerivedEvidence: historicalReference("a", "skill:tdd-workflow"),
+    }),
+  ).toThrow(/changed historical evidence provenance/i);
+
+  const read = readEccMaterializationReceipt(root);
+  expect(read.state).toBe("valid");
+  expect(read.state === "valid" && read.receipt.schemaVersion).toBe(1);
+});
+
+it("refuses to downgrade retained historical ownership to active provenance", () => {
+  const oldPath = ".claude/skills/tdd-workflow/OLD.md";
+  applyEccMaterialization({
+    root,
+    components: [
+      componentInput("skill:tdd-workflow", [
+        { path: SKILL_PATH, contents: SKILL_BODY },
+        { path: oldPath, contents: "# old historical source\n" },
+      ]),
+    ],
+    coreDerivedEvidence: historicalReference("a", "skill:tdd-workflow"),
+  });
+  writeFileSync(join(root, ...oldPath.split("/")), "operator changed this file\n", "utf8");
+
+  expect(() =>
+    planEccMaterialization({
+      root,
+      components: [skillComponent()],
+    }),
+  ).toThrow(/changed historical evidence provenance/i);
+
+  const read = readEccMaterializationReceipt(root);
+  expect(read.state).toBe("valid");
+  if (read.state !== "valid" || read.receipt.schemaVersion !== 2) {
+    throw new Error("expected the prior historical receipt to remain");
+  }
+  expect(read.receipt.coreDerivedEvidence.groups[0]?.descriptorSha256).toBe(
+    "sha256:" + "a".repeat(64),
+  );
+});
+
+it("allows retained ownership only when the exact historical mapping is unchanged", () => {
+  const oldPath = ".claude/skills/tdd-workflow/OLD.md";
+  const reference = historicalReference("a", "skill:tdd-workflow");
+  applyEccMaterialization({
+    root,
+    components: [
+      componentInput("skill:tdd-workflow", [
+        { path: SKILL_PATH, contents: SKILL_BODY },
+        { path: oldPath, contents: "# old historical source\n" },
+      ]),
+    ],
+    coreDerivedEvidence: reference,
+  });
+  writeFileSync(join(root, ...oldPath.split("/")), "operator changed this file\n", "utf8");
+
+  expect(() =>
+    planEccMaterialization({
+      root,
+      components: [skillComponent()],
+      coreDerivedEvidence: {
+        ...reference,
+        componentMappings: [
+          { componentId: "skill:tdd-workflow", rawComponentIds: ["skill:raw-a"] },
+        ],
+      },
+    }),
+  ).not.toThrow();
+});
+
+it("refuses to attach a newer historical descriptor to retained files for the same component", () => {
+  const oldPath = ".claude/skills/tdd-workflow/OLD.md";
+  applyEccMaterialization({
+    root,
+    components: [
+      componentInput("skill:tdd-workflow", [
+        { path: SKILL_PATH, contents: SKILL_BODY },
+        { path: oldPath, contents: "# old retained source\n" },
+      ]),
+    ],
+    coreDerivedEvidence: historicalReference("a", "skill:tdd-workflow"),
+  });
+  writeFileSync(join(root, ...oldPath.split("/")), "operator changed this file\n", "utf8");
+
+  expect(() =>
+    planEccMaterialization({
+      root,
+      components: [skillComponent()],
+      coreDerivedEvidence: historicalReference("b", "skill:tdd-workflow"),
+    }),
+  ).toThrow(/retained ownership.*same component/i);
+
+  const read = readEccMaterializationReceipt(root);
+  expect(read.state).toBe("valid");
+  if (read.state !== "valid" || read.receipt.schemaVersion !== 2) {
+    throw new Error("expected the prior version-two receipt to remain");
+  }
+  expect(read.receipt.coreDerivedEvidence.groups[0]?.descriptorSha256).toBe(
+    "sha256:" + "a".repeat(64),
+  );
+});
+
+it("preserves historical provenance if a partial uninstall retains drifted ownership", () => {
+  applyEccMaterialization({
+    root,
+    components: [skillComponent()],
+    coreDerivedEvidence: historicalReference("a", "skill:tdd-workflow"),
+  });
+  writeFileSync(join(root, ...SKILL_PATH.split("/")), "operator changed this file\n", "utf8");
+
+  const outcome = uninstallEccMaterialization(root);
+  expect(outcome.receipt?.schemaVersion).toBe(2);
+  const read = readEccMaterializationReceipt(root);
+  expect(read.state).toBe("valid");
+  if (read.state !== "valid" || read.receipt.schemaVersion !== 2) {
+    throw new Error("expected retained version-two materialization receipt");
+  }
+  expect(read.receipt.coreDerivedEvidence.groups[0]?.componentMappings).toEqual([
+    { componentId: "skill:tdd-workflow", rawComponentIds: ["skill:raw-a"] },
+  ]);
+});
+
 describe("the filesystem boundary's own preconditions", () => {
   afterEach(() => {
     vi.doUnmock("node:fs");

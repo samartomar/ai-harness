@@ -143,6 +143,7 @@ describe("CLI program", () => {
   it("registers policy workbench generation, starter, evidence resolution, evaluation, projection, validation, and pin verification as nested commands", () => {
     const policy = buildProgram().commands.find((c) => c.name() === "policy");
     expect(policy?.commands.map((c) => c.name()).sort()).toEqual([
+      "data",
       "evaluate",
       "generate",
       "init",
@@ -191,6 +192,17 @@ describe("CLI program", () => {
       if (sub.name() === "supported") {
         expect(sub.commands.map((nested) => nested.name())).toEqual(["accept", "inspect"]);
         expect(sub.registeredArguments).toEqual([]);
+        continue;
+      }
+      if (sub.name() === "data") {
+        expect(sub.commands.map((command) => command.name())).toEqual([
+          "prepare",
+          "sign",
+          "import",
+        ]);
+        expect(sub.registeredArguments).toEqual([]);
+        for (const command of sub.commands)
+          expect(command.options.map((option) => option.flags)).toContain("--apply");
         continue;
       }
       if (sub.name() === "managed") {
@@ -300,6 +312,7 @@ describe("CLI program", () => {
       "policy observe",
       "policy lifecycle",
       "policy supported",
+      "policy data",
       "policy managed",
       "policy managed usage-metering",
     ]);

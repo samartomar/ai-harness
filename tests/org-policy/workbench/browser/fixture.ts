@@ -1,4 +1,4 @@
-import { copyFile, mkdir, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { test as base, expect } from "@playwright/test";
@@ -24,7 +24,16 @@ export const test = base.extend<BrowserFixtures>({
         let preparation = packedArtifacts.get(directory);
         if (!preparation) {
           preparation = Promise.resolve().then(async () => {
-            const packed = preparePackedWorkbench(directory);
+            // Playwright replaces a worker after a failed test. Reuse the completed
+            // immutable package fixture rather than creating its directories again.
+            try {
+              JSON.parse(await readFile(resolve(directory, "package-receipt.json"), "utf8"));
+              await readFile(resolve(directory, artifact));
+              return;
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+            }
+            const packed = await preparePackedWorkbench(directory);
             await writeFile(
               resolve(directory, "package-receipt.json"),
               JSON.stringify(packed, null, 2),

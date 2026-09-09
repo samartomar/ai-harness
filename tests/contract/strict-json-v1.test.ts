@@ -32,6 +32,26 @@ describe("strict JSON v1", () => {
     expect(assertStrictJsonValueV1({ value: "règle" }, "fixture")).toEqual({ value: "règle" });
   });
 
+  it.each([1, 32])(
+    "preserves ASCII values repeated %s times and still checks Unicode",
+    (repetitions) => {
+      const ascii = Array.from({ length: 128 }, (_, index) => String.fromCharCode(index))
+        .join("")
+        .repeat(repetitions);
+      expect(canonicalStrictJsonBytesV1({ value: ascii }).toString("utf8")).toBe(
+        JSON.stringify({ value: ascii }),
+      );
+      const prefix = "A".repeat(8192);
+      for (const suffix of ["\ud800", "\udc00", "e\u0301"]) {
+        expect(() => assertStrictJsonValueV1({ value: prefix + suffix }, "fixture")).toThrow(
+          /Unicode|surrogate|NFC/i,
+        );
+      }
+      const valid = { value: `${prefix}règle\u{1f600}` };
+      expect(assertStrictJsonValueV1(valid, "fixture")).toBe(valid);
+    },
+  );
+
   it("rejects non-NFC keys and values plus malformed surrogate pairs at the direct canonical boundary", () => {
     for (const value of [
       { key: "re\u0300gle" },

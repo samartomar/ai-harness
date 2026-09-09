@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { defineBaselineCatalog } from "../../src/baseline-evidence/catalog.js";
-import { hashComponentTree } from "../../src/baseline-evidence/hash.js";
+import { hashComponentTree, hashSourceTree } from "../../src/baseline-evidence/hash.js";
 import type { OrgBaselineEvidence } from "../../src/baseline-evidence/org.js";
 import { parseBaselineEvidenceLock } from "../../src/baseline-evidence/schema.js";
 import { verifyBaselineComponents } from "../../src/baseline-evidence/verify.js";
@@ -94,6 +94,31 @@ describe("verifyBaselineComponents", () => {
     ]);
   });
 
+  it("fails closed when an authenticated historical source tree changes outside a selected component", () => {
+    const expectedSourceTreeSha256 = hashSourceTree(root).treeSha256;
+    writeFileSync(join(root, "unselected.md"), "later source mutation\n");
+
+    const result = verifyBaselineComponents({
+      sourceRoot: root,
+      catalog: catalog(),
+      componentIds: ["skill:clean"],
+      posture: "vibe",
+      vendorLock: lock(),
+      vendorLockSha256: "f".repeat(64),
+      expectedSourceTreeSha256,
+    });
+
+    expect(result.authorizations).toEqual([]);
+    expect(result.held).toEqual([
+      expect.objectContaining({
+        componentId: "skill:clean",
+        routeCode: "baseline.evidence-mismatch",
+      }),
+    ]);
+    expect(result.checks).toEqual([
+      expect.objectContaining({ verdict: "fail", code: "baseline.evidence-mismatch" }),
+    ]);
+  });
   it("partitions mixed signed verdicts into authorized and held components", () => {
     mkdirSync(join(root, "skills", "held"), { recursive: true });
     writeFileSync(join(root, "skills", "held", "SKILL.md"), "# Held\n");

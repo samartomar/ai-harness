@@ -55,6 +55,50 @@ describe("portable selection import", () => {
       ),
     ).toEqual({ accepted: true, state, diagnostics: [] });
   });
+  it("exports and imports exact saved rationales for roots, requests, and exclusions", () => {
+    const { bundle, bindings, policy } = fixture();
+    let state = createWorkbenchState();
+    for (const action of [
+      {
+        type: "select-root" as const,
+        assetId: "other",
+        origin: { kind: "administrator" as const },
+        rationale: "Required by the approved operating model.",
+      },
+      {
+        type: "record-request" as const,
+        assetId: "request",
+        origin: { kind: "administrator" as const },
+        rationale: "Needs a separate review before activation.",
+      },
+      {
+        type: "add-exclusion" as const,
+        assetId: "package",
+        origin: { kind: "administrator" as const },
+        rationale: "Replaced by the selected organization package.",
+      },
+    ]) {
+      const result = reduceWorkbenchAction(bundle, state, action);
+      expect(result.accepted).toBe(true);
+      state = result.state;
+    }
+    const projected = projectWorkbenchPolicy(policy, state, bundle, bindings);
+    expect(projected).toMatchObject({
+      accepted: true,
+      policy: {
+        authoringSelections: {
+          roots: [{ rationale: "Required by the approved operating model." }],
+          requests: [{ rationale: "Needs a separate review before activation." }],
+          exclusions: [{ rationale: "Replaced by the selected organization package." }],
+        },
+      },
+    });
+    expect(importWorkbenchPolicySelections(projected.policy, bundle, bindings)).toEqual({
+      accepted: true,
+      state,
+      diagnostics: [],
+    });
+  });
   it("preserves stale and missing saved roots for review and removal", () => {
     const { bundle, bindings, policy, select } = fixture();
     const state = select("external", "other");

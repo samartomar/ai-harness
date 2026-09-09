@@ -86,7 +86,7 @@ export async function authorProtectedPolicyViaPackedWorkbench({
 
     const form = window.document.getElementById("protected-form");
     if (!form) throw new Error("packed-workbench-protected-form-missing");
-    if (form.querySelectorAll("textarea:not([readonly])").length !== 0)
+    if (form.querySelectorAll("textarea:not([readonly]):not(#protected-conditions)").length !== 0)
       throw new Error("packed-workbench-raw-json-authoring-exposed");
 
     for (const decisionFields of decisions) {

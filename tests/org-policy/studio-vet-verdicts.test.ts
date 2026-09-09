@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { readVendorBaselineLock } from "../../src/baseline-evidence/vendor.js";
 import { policyAuthoringCatalog } from "../../src/org-policy/catalog.js";
-import { policyStudioModel } from "../../src/org-policy/studio-model.js";
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
+import type { EvidenceSummaryV1 } from "../../src/org-policy/workbench/contracts.js";
+import { tinyStudioModel } from "./studio-test-fixture.js";
 
 function allAssets() {
   return policyAuthoringCatalog().frameworks.flatMap((framework) => framework.assets);
@@ -66,7 +67,29 @@ describe("vet verdicts on the authoring surface", () => {
   });
 
   it("renders blocked components as visually distinct, not merely labelled", () => {
-    const html = policyStudioHtml(policyStudioModel());
+    const model = tinyStudioModel();
+    const asset = model.workbenchBundle.assets["fixture:external"];
+    if (asset === undefined) throw new Error("expected fixture asset");
+    const finding: EvidenceSummaryV1 = {
+      id: "evidence:fixture-vet",
+      projectionVersion: "evidence-summary/v1",
+      subjects: [
+        {
+          assetId: asset.id,
+          sourceId: asset.sourceId,
+          sourceRevisionId: asset.sourceRevisionId,
+          contentDigest: asset.contentDigest,
+        },
+      ],
+      evidenceDigest: `sha256:${"b".repeat(64)}`,
+      coveredPaths: [asset.originalPath],
+      verification: { state: "unverified" },
+      scan: { outcome: "failed", coverage: "complete" },
+      qualification: { state: "unknown" },
+      findings: ["trust.permission-risk: Fixture blocked finding"],
+    };
+    model.workbenchBundle.evidence[finding.id] = finding;
+    const html = policyStudioHtml(model);
     // A governance decision needs the verdict, the analyzer that reached it and
     // the finding behind it — a bare word is not a reviewable disclosure.
     expect(html).toContain('data-vet="blocked"');

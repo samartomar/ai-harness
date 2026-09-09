@@ -210,6 +210,12 @@ export interface EccTargetMaterializationRequest {
   components: readonly EccEffectiveSelectionComponent[];
   /** Full current verification result, required only by the governed Kiro target. */
   evidence?: EccSelectionEvidence;
+  /**
+   * Exact paths from an authenticated historical descriptor. When present this
+   * map is closed: missing ids refuse instead of falling back to active static
+   * component metadata.
+   */
+  componentPathsById?: ReadonlyMap<string, readonly string[]>;
 }
 
 export interface EccTargetMaterializationResult {
@@ -314,6 +320,29 @@ function targetDestination(source: string, target: EccMaterializationTarget): st
   }
 }
 
+/**
+ * Pure adapter inspection for sealed historical descriptors. It uses the same
+ * destination resolver as materialization and reads no source bytes.
+ */
+export function inspectEccTargetDestinationV1(
+  source: string,
+  target: EccMaterializationTarget,
+):
+  | { state: "mapped"; scope: "project" | "home"; relative: string }
+  | { state: "refused"; reason: EccTargetRefusalReason } {
+  try {
+    const mapping = targetDestination(source, target);
+    const direct = eccContentDestinationMapping(source, target);
+    if (direct === undefined || direct.scope !== "project" || direct.relative !== mapping) {
+      throw new Error("governed target destination resolver drift");
+    }
+    return { state: "mapped", scope: direct.scope, relative: direct.relative };
+  } catch (error) {
+    if (error instanceof TargetRefusal) return { state: "refused", reason: error.reason };
+    throw error;
+  }
+}
+
 function sourceBytes(file: SourceFile): Buffer {
   const opened = readRegularFileWithStats(file.realPath, {
     maxBytes: MAX_MATERIALIZED_FILE_BYTES,
@@ -356,10 +385,19 @@ function componentFiles(
   sourceRoot: string,
   id: EccComponentId,
   target: EccMaterializationTarget,
+  componentPathsById?: ReadonlyMap<string, readonly string[]>,
 ): EccMaterializationFileInput[] {
   let declared: string[];
   try {
-    declared = eccComponentSourcePaths(id);
+    if (componentPathsById !== undefined) {
+      const historical = componentPathsById.get(id);
+      if (historical === undefined) {
+        throw new Error(`historical ECC descriptor carries no source paths for ${id}`);
+      }
+      declared = [...historical];
+    } else {
+      declared = eccComponentSourcePaths(id);
+    }
   } catch (error) {
     throw new TargetRefusal("no-install-descriptor", (error as Error).message);
   }
@@ -465,7 +503,12 @@ export function resolveEccTargetMaterialization(
     const union = new Map<string, EccMaterializationFileInput>();
     for (const target of genericTargets) {
       try {
-        for (const file of componentFiles(sourceRoot, component.id, target)) {
+        for (const file of componentFiles(
+          sourceRoot,
+          component.id,
+          target,
+          request.componentPathsById,
+        )) {
           const identity = destinationIdentity(file.path);
           if (!union.has(identity)) union.set(identity, file);
         }

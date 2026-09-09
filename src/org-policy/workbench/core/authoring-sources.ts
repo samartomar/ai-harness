@@ -47,6 +47,12 @@ function failures(message: string): PreparedAuthoringSourcesV1 {
   return { accepted: false, diagnostics: [message] };
 }
 
+function missingSource(pin: WorkbenchSourcePinV1): string {
+  const message = `missing authoring source input for ${pin.sourceId}`;
+  if (!/^[a-f0-9]{40}$/.test(pin.sourceRevisionId)) return message;
+  return `${message} at revision ${pin.sourceRevisionId}. Restore its original signed snapshot chain and independently configured public trust, then run aih policy data import --input <snapshot> --scanner-source <exact-checkout> --proof-root <proof-directory> --apply. If this is an organization source, supply its original manifest instead. Saved pins were not changed.`;
+}
+
 /**
  * Rebuilds portable organization declarations from their exact V3 transport
  * inputs. The envelope cannot provide evidence, authoring actions, or Core
@@ -65,7 +71,9 @@ export function prepareAuthoringSourcesForConsumptionV1(
   const savedState = parsedState.data;
   let canonicalBaseline: PreparedWorkbenchCatalogV1;
   try {
-    canonicalBaseline = prepareWorkbenchCatalog(baseline.catalog);
+    canonicalBaseline = prepareWorkbenchCatalog(baseline.catalog, {
+      sourceDataPins: sourcePins(savedState),
+    });
   } catch (error) {
     return failures(error instanceof Error ? error.message : "unable to prepare Core catalog");
   }
@@ -73,7 +81,7 @@ export function prepareAuthoringSourcesForConsumptionV1(
     const baselinePins = sourcePins(savedState);
     for (const pin of baselinePins)
       if (canonicalBaseline.bundle.sources[pin.sourceId] === undefined)
-        return failures(`missing authoring source input for ${pin.sourceId}`);
+        return failures(missingSource(pin));
     return { accepted: true, diagnostics: [], prepared: canonicalBaseline };
   }
   const sourceBudgetIssue = workbenchAuthoringSourcesBudgetIssueV1(authoringSources);
@@ -113,6 +121,7 @@ export function prepareAuthoringSourcesForConsumptionV1(
   try {
     prepared = prepareWorkbenchCatalog(canonicalBaseline.catalog, {
       organizationManifestBytes: manifests,
+      sourceDataPins: sourcePins(savedState),
     });
   } catch (error) {
     return failures(error instanceof Error ? error.message : "unable to prepare authoring sources");
@@ -123,11 +132,7 @@ export function prepareAuthoringSourcesForConsumptionV1(
     const asset = prepared.bundle.assets[pin.assetId];
     if (asset === undefined) {
       const missingInput = canonicalBaseline.bundle.sources[pin.sourceId] === undefined;
-      return failures(
-        missingInput
-          ? `missing authoring source input for ${pin.sourceId}`
-          : `missing catalog asset: ${pin.assetId}`,
-      );
+      return failures(missingInput ? missingSource(pin) : `missing catalog asset: ${pin.assetId}`);
     }
     if (
       asset.sourceId !== pin.sourceId ||

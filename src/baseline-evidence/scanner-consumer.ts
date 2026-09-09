@@ -71,8 +71,8 @@ function createRequest(
   sourceRoot: string,
   catalog: BaselineCatalog,
   components: BaselineCatalog["components"],
+  source: ReturnType<typeof hashSourceTree>,
 ): BaselineVetRequestV1 {
-  const source = hashSourceTree(sourceRoot);
   return createBaselineVetRequestV1({
     protocol: "BaselineVetRequestV1",
     profile: "aih-baseline-v1",
@@ -99,9 +99,13 @@ export function createCoreBaselineVetRequests(
   catalog: BaselineCatalog,
 ): readonly BaselineVetRequestV1[] {
   const requests: BaselineVetRequestV1[] = [];
+  const source = catalog.components.length === 0 ? undefined : hashSourceTree(sourceRoot);
   for (let offset = 0; offset < catalog.components.length; ) {
     const next = offset + SCANNER_BASELINE_COMPONENT_BATCH_LIMIT;
-    requests.push(createRequest(sourceRoot, catalog, catalog.components.slice(offset, next)));
+    if (!source) throw new Error("Scanner request source identity is missing");
+    requests.push(
+      createRequest(sourceRoot, catalog, catalog.components.slice(offset, next), source),
+    );
     offset = next;
   }
   return Object.freeze(requests);
@@ -122,12 +126,11 @@ export function createCoreBaselineVetRequest(
 }
 
 function assertExactRequest(
-  sourceRoot: string,
+  expected: BaselineVetRequestV1 | undefined,
   catalog: BaselineCatalog,
   request: BaselineVetRequestV1,
   batchIndex = 0,
 ): void {
-  const expected = createCoreBaselineVetRequests(sourceRoot, catalog)[batchIndex];
   if (expected === undefined) {
     throw new Error(`Scanner baseline request has no Core catalog batch ${batchIndex + 1}`);
   }
@@ -262,6 +265,16 @@ export async function consumeVerifiedScannerBaseline(
 export async function consumeVerifiedScannerBaselineBatches(
   input: VerifiedScannerBaselineBatchInput,
 ): Promise<BaselineSourceEvidence> {
+  return (await consumeVerifiedScannerBaselineBatchesWithClaims(input)).evidence;
+}
+
+/** Retain dates from the exact signature verification used to consume each batch. */
+export async function consumeVerifiedScannerBaselineBatchesWithClaims(
+  input: VerifiedScannerBaselineBatchInput,
+): Promise<{
+  evidence: BaselineSourceEvidence;
+  claims: readonly ReturnType<typeof verifyBaselineVetAttestationV1>["facts"]["claims"][];
+}> {
   const expectedRequests = createCoreBaselineVetRequests(input.sourceRoot, input.catalog);
   if (input.batches.length !== expectedRequests.length) {
     throw new Error(
@@ -270,9 +283,10 @@ export async function consumeVerifiedScannerBaselineBatches(
   }
   const versions: Record<string, string> = {};
   const precomputedDetectorSarif: Partial<Record<TrustDetectorName, string>> = {};
+  const claims: ReturnType<typeof verifyBaselineVetAttestationV1>["facts"]["claims"][] = [];
   for (const [index, batch] of input.batches.entries()) {
-    assertExactRequest(input.sourceRoot, input.catalog, batch.request, index);
-    verifyBaselineVetAttestationV1({
+    assertExactRequest(expectedRequests[index], input.catalog, batch.request, index);
+    const verified = verifyBaselineVetAttestationV1({
       envelope: batch.envelope,
       request: batch.request,
       result: batch.result,
@@ -281,6 +295,7 @@ export async function consumeVerifiedScannerBaselineBatches(
       seenEvidenceDigests: input.seenEvidenceDigests ?? [],
       seenReceiptBindings: input.seenReceiptBindings ?? [],
     });
+    claims.push(Object.freeze({ ...verified.facts.claims }));
     for (const [name, version] of Object.entries(scannerAnalyzerVersions(batch.result))) {
       const prior = versions[name];
       if (prior !== undefined && prior !== version) {
@@ -303,7 +318,7 @@ export async function consumeVerifiedScannerBaselineBatches(
   const forbiddenRunner = async (): Promise<never> => {
     throw new Error("Core Scanner evidence consumer must not execute analyzer commands");
   };
-  return vetBaselineCatalog(input.sourceRoot, input.catalog, {
+  const evidence = await vetBaselineCatalog(input.sourceRoot, input.catalog, {
     scanTree: (root, options) =>
       scanTrustTreeWithAnalyzers(root, {
         ...options,
@@ -325,4 +340,5 @@ export async function consumeVerifiedScannerBaselineBatches(
     sourceWideScan: true,
     full: true,
   });
+  return { evidence, claims: Object.freeze(claims) };
 }

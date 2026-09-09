@@ -1,3 +1,5 @@
+import { mountWorkspaceInteractions } from "./workspace-interactions.js";
+
 export interface WorkbenchSession {
   snapshotPolicy(): unknown;
   validatePolicy(policy: unknown): { policy: unknown; message?: string };
@@ -78,6 +80,8 @@ declare global {
 export function mountGenericWorkspaceShell(context: GenericWorkspaceShellContext): boolean {
   if (context.model.workbenchBundle === undefined) return false;
 
+  document.body.dataset.workbenchShell = "generic";
+
   const workspace = document.querySelector<HTMLElement>(".work");
   const toolbar = document.querySelector<HTMLElement>(".bar");
   if (workspace === null || toolbar === null) return true;
@@ -117,8 +121,17 @@ export function mountGenericWorkspaceShell(context: GenericWorkspaceShellContext
     const editor = context.byId(id);
     if (editor !== null) panels.author.append(editor);
   }
-  const settings = context.byId("policy-settings");
-  if (settings !== null) panels.author.prepend(settings);
+
+  const eccMcp = document.createElement("section");
+  eccMcp.className = "gcard sect";
+  eccMcp.innerHTML = '<h2>ECC MCP approval</h2><div class="brow" id="ecc-mcp-actions"></div>';
+  const eccMcpActions = eccMcp.querySelector<HTMLElement>("#ecc-mcp-actions");
+  const eccMcpAction = context.byId("open-ecc-mcp");
+  if (eccMcpActions !== null && eccMcpAction !== null) {
+    eccMcpAction.className = "pop-row";
+    eccMcpActions.append(eccMcpAction);
+  }
+  panels.author.append(eccMcp);
 
   const byo = document.createElement("section");
   byo.className = "gcard sect";
@@ -168,5 +181,6 @@ export function mountGenericWorkspaceShell(context: GenericWorkspaceShellContext
 
   window.__aihPolicyWorkbenchSession = context.session;
   addViewTabs(context.byId, tabs);
+  mountWorkspaceInteractions();
   return true;
 }

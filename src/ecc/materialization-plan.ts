@@ -23,6 +23,8 @@ import {
   ECC_MATERIALIZATION_RECEIPT_FORMAT,
   ECC_MATERIALIZATION_RECEIPT_PATH,
   type EccComponentProvenance,
+  type EccCoreDerivedEvidenceReferenceV1,
+  type EccCoreDerivedEvidenceV2,
   type EccMaterializationReceipt,
   type EccMaterializedComponent,
   type EccOwnedFile,
@@ -408,7 +410,13 @@ export function resolveRequest(request: EccMaterializationRequest): ResolvedRequ
       `ECC materialization destination mixes copy-file and merge-json: ${identity} (${wholeOwner}, ${mergeOwner})`,
     );
   }
-  return { root, components: components.sort((left, right) => byText(left.id, right.id)) };
+  return {
+    root,
+    components: components.sort((left, right) => byText(left.id, right.id)),
+    ...(request.coreDerivedEvidence === undefined
+      ? {}
+      : { coreDerivedEvidence: request.coreDerivedEvidence }),
+  };
 }
 
 export function currentReceipt(root: string): EccMaterializationReceipt | undefined {
@@ -868,11 +876,111 @@ function receiptComponents(
  * that cannot be recorded must never reach the filesystem, because content
  * without a receipt is content nothing can ever revoke.
  */
+/**
+ * Preserve descriptor references only for the ownership still recorded in this
+ * receipt. Components without a sealed historical reference remain explicitly
+ * legacy: they may have originated in V1 or an ordinary active lifecycle and
+ * must never be silently relabelled with a newer descriptor.
+ */
+function retainedCoreDerivedEvidence(
+  components: readonly EccMaterializedComponent[],
+  existing: EccMaterializationReceipt | undefined,
+  replacedComponentIds: ReadonlySet<string>,
+  incoming?: EccCoreDerivedEvidenceReferenceV1,
+): EccCoreDerivedEvidenceV2 | undefined {
+  const componentIds = new Set(components.map((component) => component.id));
+  const groups =
+    existing?.schemaVersion === 2
+      ? existing.coreDerivedEvidence.groups
+          .map((group) => ({
+            ...group,
+            componentMappings: group.componentMappings.filter(
+              (mapping) =>
+                componentIds.has(mapping.componentId) &&
+                !replacedComponentIds.has(mapping.componentId),
+            ),
+          }))
+          .filter((group) => group.componentMappings.length > 0)
+      : [];
+  if (incoming !== undefined) {
+    const componentMappings = incoming.componentMappings.filter((mapping) =>
+      componentIds.has(mapping.componentId),
+    );
+    if (componentMappings.length > 0) groups.push({ ...incoming, componentMappings });
+  }
+  if (groups.length === 0) return undefined;
+  const mapped = new Set(
+    groups.flatMap((group) => group.componentMappings.map((mapping) => mapping.componentId)),
+  );
+  return {
+    groups,
+    legacyComponentIds: components.map((component) => component.id).filter((id) => !mapped.has(id)),
+  };
+}
+
+type ComponentEvidenceProvenance =
+  | { state: "absent" }
+  | { state: "unmapped" }
+  | {
+      state: "mapped";
+      descriptorSha256: string;
+      rawReportDigest: string;
+      coreDerivedEvaluationDigest: string;
+      projectionContractDigest: string;
+      rawComponentIds: readonly string[];
+    };
+
+function evidenceProvenanceForReference(
+  reference: EccCoreDerivedEvidenceReferenceV1 | undefined,
+  componentId: string,
+): ComponentEvidenceProvenance {
+  if (reference === undefined) return { state: "absent" };
+  const mapping = reference.componentMappings.find((entry) => entry.componentId === componentId);
+  if (mapping === undefined) return { state: "unmapped" };
+  return {
+    state: "mapped",
+    descriptorSha256: reference.descriptorSha256,
+    rawReportDigest: reference.rawReportDigest,
+    coreDerivedEvaluationDigest: reference.coreDerivedEvaluationDigest,
+    projectionContractDigest: reference.projectionContractDigest,
+    rawComponentIds: [...mapping.rawComponentIds].sort(byText),
+  };
+}
+
+function priorEvidenceProvenance(
+  receipt: EccMaterializationReceipt | undefined,
+  componentId: string,
+): ComponentEvidenceProvenance {
+  if (receipt?.schemaVersion !== 2) return { state: "absent" };
+  const group = receipt.coreDerivedEvidence.groups.find((entry) =>
+    entry.componentMappings.some((mapping) => mapping.componentId === componentId),
+  );
+  return evidenceProvenanceForReference(group, componentId);
+}
+
+function sameComponentEvidenceProvenance(
+  left: ComponentEvidenceProvenance,
+  right: ComponentEvidenceProvenance,
+): boolean {
+  if (left.state !== right.state) return false;
+  if (left.state !== "mapped" || right.state !== "mapped") return true;
+  return (
+    left.descriptorSha256 === right.descriptorSha256 &&
+    left.rawReportDigest === right.rawReportDigest &&
+    left.coreDerivedEvaluationDigest === right.coreDerivedEvaluationDigest &&
+    left.projectionContractDigest === right.projectionContractDigest &&
+    left.rawComponentIds.length === right.rawComponentIds.length &&
+    left.rawComponentIds.every((id, index) => id === right.rawComponentIds[index])
+  );
+}
+
 function planReceipt(
   state: DestinationState,
   root: string,
   components: EccMaterializedComponent[],
   steps: PlannedStep[],
+  coreDerivedEvidence?: EccCoreDerivedEvidenceReferenceV1,
+  replacedComponentIds: ReadonlySet<string> = new Set(),
 ): EccMaterializationReceipt | undefined {
   const existing = readEccMaterializationReceipt(root);
   const raw = existing.state === "valid" ? existing.raw : undefined;
@@ -889,11 +997,21 @@ function planReceipt(
     });
     return undefined;
   }
-  const receipt: EccMaterializationReceipt = {
-    format: ECC_MATERIALIZATION_RECEIPT_FORMAT,
-    schemaVersion: 1,
+  const retainedEvidence = retainedCoreDerivedEvidence(
     components,
-  };
+    existing.state === "valid" ? existing.receipt : undefined,
+    replacedComponentIds,
+    coreDerivedEvidence,
+  );
+  const receipt: EccMaterializationReceipt =
+    retainedEvidence === undefined
+      ? { format: ECC_MATERIALIZATION_RECEIPT_FORMAT, schemaVersion: 1, components }
+      : {
+          format: ECC_MATERIALIZATION_RECEIPT_FORMAT,
+          schemaVersion: 2,
+          components,
+          coreDerivedEvidence: retainedEvidence,
+        };
   const text = serializeEccMaterializationReceipt(receipt);
   if (text === raw) return receipt;
   const { expect, prior } = state.expectation(ECC_MATERIALIZATION_RECEIPT_PATH);
@@ -919,6 +1037,16 @@ export function planEccMaterialization(request: EccMaterializationRequest): Plan
   const receipt = currentReceipt(resolved.root);
   const state = new DestinationState(resolved.root);
   const subtraction = planSubtraction(state, staleOwnership(resolved, receipt));
+  for (const component of resolved.components) {
+    if (!subtraction.retained.has(component.id)) continue;
+    const prior = priorEvidenceProvenance(receipt, component.id);
+    const incoming = evidenceProvenanceForReference(resolved.coreDerivedEvidence, component.id);
+    if (!sameComponentEvidenceProvenance(prior, incoming)) {
+      throw new Error(
+        "refusing to combine retained ownership with a changed historical evidence provenance for the same component",
+      );
+    }
+  }
   assertNoKiroAgentSemanticCollision(resolved, state);
   const materialize = planMaterialize(resolved, receipt, state);
   const components = receiptComponents(
@@ -928,7 +1056,14 @@ export function planEccMaterialization(request: EccMaterializationRequest): Plan
     subtraction.retained,
   );
   const steps = [...subtraction.steps, ...materialize.steps];
-  const committed = planReceipt(state, resolved.root, components, steps);
+  const committed = planReceipt(
+    state,
+    resolved.root,
+    components,
+    steps,
+    resolved.coreDerivedEvidence,
+    new Set(resolved.components.map((component) => component.id)),
+  );
   return {
     root: resolved.root,
     steps,

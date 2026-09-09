@@ -26,6 +26,28 @@ const npmExec = (...args: string[]): string[] => [
 ];
 
 describe("staged repository checks", () => {
+  it("checks every staged file without exceeding Windows command-line bounds", async () => {
+    const paths = Array.from(
+      { length: 200 },
+      (_, index) => `src/large-directory/${"long-name-".repeat(8)}${index}.ts`,
+    );
+    const calls: string[][] = [];
+    const result = await runStagedChecks(
+      { baseSha, headSha, stagedPaths: paths, testFiles: [] },
+      fakeRunner((argv) => {
+        calls.push(argv);
+        return {};
+      }),
+      toolchain,
+    );
+    expect(result.code).toBe(0);
+    const checks = calls.filter((argv) => argv[5] === "biome");
+    expect(checks.length).toBeGreaterThan(1);
+    expect(checks.flatMap((argv) => argv.slice(7))).toEqual([...paths].sort());
+    expect(
+      checks.every((argv) => argv.reduce((size, arg) => size + arg.length * 2 + 3, 0) <= 6000),
+    ).toBe(true);
+  });
   it("runs formatting and focused tests without invoking the complete suite", async () => {
     const calls: string[][] = [];
     const run = fakeRunner((argv) => {
@@ -48,7 +70,9 @@ describe("staged repository checks", () => {
     expect(calls).toContainEqual(
       npmExec("biome", "check", "src/org-policy/catalog.ts", "tests/org-policy/catalog.test.ts"),
     );
-    expect(calls).toContainEqual(npmExec("vitest", "run", "tests/org-policy/catalog.test.ts"));
+    expect(calls).toContainEqual(
+      npmExec("vitest", "run", "--maxWorkers=2", "tests/org-policy/catalog.test.ts"),
+    );
     expect(calls).not.toContainEqual(npmRun("test", "--silent"));
     expect(calls.flat().join(" ")).not.toMatch(/--coverage/u);
   });
@@ -76,7 +100,10 @@ describe("staged repository checks", () => {
         { argv: npmRun("--silent", "check:artifacts"), timeoutMs: 120_000 },
         { argv: npmExec("biome", "check", "src/org-policy/catalog.ts"), timeoutMs: 120_000 },
         { argv: npmRun("--silent", "docs:lint"), timeoutMs: 120_000 },
-        { argv: npmExec("vitest", "run", "tests/org-policy/catalog.test.ts"), timeoutMs: 300_000 },
+        {
+          argv: npmExec("vitest", "run", "--maxWorkers=2", "tests/org-policy/catalog.test.ts"),
+          timeoutMs: 300_000,
+        },
       ]),
     );
   });
@@ -128,7 +155,9 @@ describe("staged repository checks", () => {
 
     expect(result.code).toBe(0);
     expect(calls).toContainEqual(npmRun("--silent", "docs:lint"));
-    expect(calls).toContainEqual(npmExec("vitest", "run", "tests/docs/readme-assets.test.ts"));
+    expect(calls).toContainEqual(
+      npmExec("vitest", "run", "--maxWorkers=2", "tests/docs/readme-assets.test.ts"),
+    );
   });
 
   it("uses bounded repository-contract tests for a full-suite fallback", async () => {
@@ -159,12 +188,15 @@ describe("staged repository checks", () => {
       npmExec(
         "vitest",
         "run",
+        "--maxWorkers=2",
         "tests/package-identity.test.ts",
         "tests/release-readiness.test.ts",
         "tests/release/preflight.test.ts",
       ),
     );
-    expect(calls).not.toContainEqual(npmExec("vitest", "run", ...result.receipt.selectedTests));
+    expect(calls).not.toContainEqual(
+      npmExec("vitest", "run", "--maxWorkers=2", ...result.receipt.selectedTests),
+    );
   });
 
   it("stops at the first failed command", async () => {

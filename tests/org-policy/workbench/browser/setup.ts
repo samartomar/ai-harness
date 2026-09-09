@@ -6,7 +6,15 @@ import { dirname, join, resolve } from "node:path";
 export default function setup(): () => void {
   const directory = mkdtempSync(join(tmpdir(), "aih-workbench-browser-"));
   process.env.AIH_WORKBENCH_FIXTURE_DIR = directory;
+  const previousDataRoot = process.env.AIH_WORKBENCH_DATA;
+  const previousVerifierRoot = process.env.AIH_WORKBENCH_VERIFIER_HOME;
+  process.env.AIH_WORKBENCH_DATA = join(directory, "no-user-source-data");
+  process.env.AIH_WORKBENCH_VERIFIER_HOME = join(directory, "local-verifier");
   const cleanup = () => {
+    if (previousDataRoot === undefined) delete process.env.AIH_WORKBENCH_DATA;
+    else process.env.AIH_WORKBENCH_DATA = previousDataRoot;
+    if (previousVerifierRoot === undefined) delete process.env.AIH_WORKBENCH_VERIFIER_HOME;
+    else process.env.AIH_WORKBENCH_VERIFIER_HOME = previousVerifierRoot;
     const target = realpathSync(directory);
     if (dirname(target) !== realpathSync(tmpdir())) throw new Error("Unsafe fixture cleanup path");
     rmSync(target, { recursive: true, force: true });

@@ -5,9 +5,9 @@ import { canonicalBaselineVetRequestV1Bytes } from "@aihq/scan";
 import { z } from "zod";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
 import { hermeticGitEnv } from "../internals/git-env.js";
-import { baselineCatalogById } from "./catalogs.js";
 import { generateAuthorizedEccInstallPreview } from "./ecc-preview-boundary.js";
 import { createCoreBaselineVetRequests } from "./scanner-consumer.js";
+import { prepareRegisteredScannerCatalogV1 } from "./scanner-provider-catalogs.js";
 import {
   consumeScannerBaselinePublicationsV1,
   consumeScannerBaselinePublicationV1,
@@ -80,12 +80,13 @@ function checkoutHead(root: string): string {
 }
 
 function assertCheckout(root: string, catalogId: string) {
-  const catalog = baselineCatalogById(catalogId);
+  const prepared = prepareRegisteredScannerCatalogV1(root, catalogId);
+  const { catalog } = prepared;
   const head = checkoutHead(root);
   if (head !== catalog.pinnedSha) {
     fail(`${catalog.id} checkout is ${head}, expected ${catalog.pinnedSha}`);
   }
-  return catalog;
+  return prepared;
 }
 
 function writeJson(path: string, value: unknown): void {
@@ -105,11 +106,19 @@ function request(args: readonly string[]): void {
   const catalogId = flag(args, "--catalog");
   const sourceRoot = resolve(flag(args, "--source"));
   const output = newDirectory(flag(args, "--output"));
-  const catalog = assertCheckout(sourceRoot, catalogId);
+  const prepared = assertCheckout(sourceRoot, catalogId);
+  const { catalog } = prepared;
   const authored = createCoreBaselineVetRequests(sourceRoot, catalog);
   for (const [index, batch] of authored.entries()) {
     const name = `batch-${String(index + 1).padStart(3, "0")}.request.json`;
     writeFileSync(join(output, name), canonicalBaselineVetRequestV1Bytes(batch), { flag: "wx" });
+  }
+  if (prepared.coverage !== undefined) {
+    writeJson(join(output, "coverage-map.json"), {
+      ...prepared.coverage,
+      coverageDigest: prepared.coverageDigest,
+      requestSha256: authored.map((batch) => batch.requestSha256),
+    });
   }
   process.stdout.write(`authored ${authored.length} bounded Scanner request(s)\n`);
 }
@@ -117,7 +126,7 @@ function request(args: readonly string[]): void {
 async function consumePublication(args: readonly string[]): Promise<void> {
   const catalogId = flag(args, "--catalog");
   const sourceRoot = resolve(flag(args, "--source"));
-  const catalog = assertCheckout(sourceRoot, catalogId);
+  const { catalog } = assertCheckout(sourceRoot, catalogId);
   const seenPath = optionalFlag(args, "--seen");
   const seen =
     seenPath === undefined ? { digests: [], receipts: [] } : replayWire.parse(readJson(seenPath));
@@ -209,7 +218,7 @@ async function consumePublications(args: readonly string[]): Promise<void> {
   const catalogId = flag(args, "--catalog");
   const sourceRoot = resolve(flag(args, "--source"));
   const publicationRoot = resolve(flag(args, "--publication-root"));
-  const catalog = assertCheckout(sourceRoot, catalogId);
+  const { catalog } = assertCheckout(sourceRoot, catalogId);
   const requests = createCoreBaselineVetRequests(sourceRoot, catalog);
   const seenPath = optionalFlag(args, "--seen");
   const seen =
@@ -243,7 +252,7 @@ function sourceEvidence(path: string): BaselineSourceEvidence {
 
 function assemble(args: readonly string[]): void {
   const eccRoot = resolve(flag(args, "--ecc-root"));
-  const eccCatalog = assertCheckout(eccRoot, "ecc");
+  const { catalog: eccCatalog } = assertCheckout(eccRoot, "ecc");
   const ecc = sourceEvidence(flag(args, "--ecc-evidence"));
   const superpowers = sourceEvidence(flag(args, "--superpowers-evidence"));
   const lock = parseBaselineEvidenceLock({ schemaVersion: 1, sources: [ecc, superpowers] });

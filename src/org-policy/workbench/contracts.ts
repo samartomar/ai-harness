@@ -83,6 +83,7 @@ const BoundedTextSchema = z
   .min(1)
   .max(1_000)
   .refine(noHiddenCharacters, "must be NFC text without hidden characters");
+const SelectionRationaleSchema = BoundedTextSchema.max(1_000);
 const SafeRelativePathSchema = BoundedTextSchema.refine(
   (value) =>
     !value.startsWith("/") &&
@@ -94,6 +95,28 @@ const SafeRelativePathSchema = BoundedTextSchema.refine(
   "must be a safe relative POSIX path",
 );
 const SourceLocatorSchema = BoundedTextSchema;
+const EvidenceAnalyzerSchema = z
+  .object({
+    name: BoundedTextSchema.max(256),
+    version: BoundedTextSchema.max(256),
+  })
+  .strict();
+const EvidenceAnalyzerListSchema = z
+  .array(EvidenceAnalyzerSchema)
+  .max(32)
+  .superRefine((analyzers, ctx) => {
+    let previous: string | undefined;
+    for (const [index, analyzer] of analyzers.entries()) {
+      const pair = `${analyzer.name}\u0000${analyzer.version}`;
+      if (previous !== undefined && previous >= pair)
+        ctx.addIssue({
+          code: "custom",
+          path: [index],
+          message: "analyzers must be uniquely ordered by name and version",
+        });
+      previous = pair;
+    }
+  });
 
 export const SourceRevisionV1Schema = z
   .object({
@@ -156,11 +179,18 @@ export const CompilerAssetDeclarationV1Schema = z
       .refine(noHiddenCharacters, "must be NFC text without hidden characters"),
     detailChunkId: CatalogIdSchema,
     declaredHostCapabilities: z.array(z.string().min(1).max(160)).max(50),
+    runtimeIdentity: CatalogIdSchema.optional(),
     exclusiveSlot: z.enum(["methodology"]).optional(),
     methodologyKey: CatalogIdSchema.optional(),
   })
   .strict()
   .superRefine((asset, ctx) => {
+    if (asset.runtimeIdentity !== undefined && asset.kind !== "mcp")
+      ctx.addIssue({
+        code: "custom",
+        path: ["runtimeIdentity"],
+        message: "Only MCP assets may declare a runtime identity.",
+      });
     if (asset.exclusiveSlot === "methodology" && asset.methodologyKey === undefined) {
       ctx.addIssue({
         code: "custom",
@@ -367,6 +397,15 @@ export const EvidenceSummaryV1Schema = z
       .object({
         outcome: z.enum(["pass", "failed", "unknown"]),
         coverage: z.enum(["complete", "partial", "none"]),
+        analyzers: EvidenceAnalyzerListSchema.optional(),
+        /** Authenticated report provenance; no scan execution time is implied. */
+        reportSignedAt: z.string().datetime().optional(),
+        reportVerificationExpiresAt: z.string().datetime().optional(),
+        publishedAt: z.string().datetime().optional(),
+        /** Exact declared closure contained in original, potentially broader source reports. */
+        scope: z.literal("published-component-containment").optional(),
+        publishedComponentIds: z.array(CatalogIdSchema).min(1).max(1_000).optional(),
+        reportFindingCount: z.number().int().min(0).max(1_000_000).optional(),
       })
       .strict(),
     qualification: z.object({ state: z.enum(["qualified", "unqualified", "unknown"]) }).strict(),
@@ -406,6 +445,91 @@ export const EvidenceSummaryV1Schema = z
         path: ["scan"],
         message: "A passing scan requires complete coverage.",
       });
+    const reportSignedAt = value.scan.reportSignedAt;
+    const reportVerificationExpiresAt = value.scan.reportVerificationExpiresAt;
+    const publishedAt = value.scan.publishedAt;
+    if (
+      (reportVerificationExpiresAt !== undefined && reportSignedAt === undefined) ||
+      (publishedAt !== undefined && reportSignedAt === undefined) ||
+      (reportSignedAt !== undefined &&
+        ((reportVerificationExpiresAt !== undefined &&
+          Date.parse(reportSignedAt) >= Date.parse(reportVerificationExpiresAt)) ||
+          (publishedAt !== undefined && Date.parse(reportSignedAt) > Date.parse(publishedAt))))
+    )
+      ctx.addIssue({
+        code: "custom",
+        path: ["scan"],
+        message: "Authenticated scan provenance dates must be ordered from signing.",
+      });
+  });
+
+/**
+ * Catalog qualification is a display-only, Core-prepared fact. It is separate
+ * from scanner evidence and can never authorize an organization decision.
+ */
+export const CatalogQualificationSummaryV1Schema = z
+  .object({
+    projectionVersion: z.literal("catalog-qualification-summary/v1"),
+    state: z.literal("qualified"),
+    assetId: CatalogIdSchema,
+    sourceId: CatalogIdSchema,
+    sourceRevisionId: CatalogIdSchema,
+    sourceContentDigest: DigestSchema,
+    contentDigest: DigestSchema,
+    subjectDigest: DigestSchema,
+    publisher: z
+      .object({
+        repository: BoundedTextSchema.max(500),
+        workflow: BoundedTextSchema.max(1_000),
+        ref: BoundedTextSchema.max(500),
+        issuer: BoundedTextSchema.max(500),
+        commit: BoundedTextSchema.max(128),
+      })
+      .strict(),
+    receiptDigest: DigestSchema,
+    receiptSetDigest: DigestSchema,
+    catalogDigest: DigestSchema,
+    catalogHeadDigest: DigestSchema,
+    catalogMemberDigest: DigestSchema,
+    closureDigest: DigestSchema,
+    compilerBindingDigest: DigestSchema,
+    contextDigest: DigestSchema,
+    verifiedAt: z.string().datetime(),
+    originalIssuedAt: z.string().datetime(),
+    notBefore: z.string().datetime(),
+    validUntil: z.string().datetime(),
+    scope: z
+      .object({
+        kind: z.enum(["source-files", "configuration-only", "derived-composition"]),
+        description: BoundedTextSchema.max(500),
+      })
+      .strict(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (
+      Date.parse(value.originalIssuedAt) > Date.parse(value.notBefore) ||
+      Date.parse(value.notBefore) >= Date.parse(value.validUntil) ||
+      Date.parse(value.verifiedAt) < Date.parse(value.originalIssuedAt)
+    )
+      ctx.addIssue({
+        code: "custom",
+        path: ["validUntil"],
+        message: "Catalog qualification validity must end after its original issuance.",
+      });
+  });
+export type CatalogQualificationSummaryV1 = z.infer<typeof CatalogQualificationSummaryV1Schema>;
+
+export const CatalogQualificationSummariesV1Schema = z
+  .record(CatalogIdSchema, CatalogQualificationSummaryV1Schema)
+  .superRefine((summaries, ctx) => {
+    for (const [assetId, summary] of Object.entries(summaries))
+      if (assetId !== summary.assetId)
+        ctx.addIssue({
+          code: "custom",
+          path: [assetId, "assetId"],
+          message: "Catalog qualification key must match its asset identity.",
+        });
   });
 
 declare const corePreparedEvidence: unique symbol;
@@ -430,6 +554,7 @@ export const WorkbenchRootV1Schema = SelectionTemplateRootV1Schema.extend({
   sourceId: CatalogIdSchema,
   sourceRevisionId: CatalogIdSchema,
   contentDigest: DigestSchema,
+  rationale: SelectionRationaleSchema.optional(),
   resolvedItems: z
     .array(
       z
@@ -474,6 +599,7 @@ export const WorkbenchRequestV1Schema = z
     sourceId: CatalogIdSchema,
     sourceRevisionId: CatalogIdSchema,
     contentDigest: DigestSchema,
+    rationale: SelectionRationaleSchema.optional(),
   })
   .strict();
 export const WorkbenchDraftV1Schema = z
@@ -576,6 +702,7 @@ export const WorkbenchExclusionV1Schema = z
     sourceId: CatalogIdSchema,
     sourceRevisionId: CatalogIdSchema,
     contentDigest: DigestSchema,
+    rationale: SelectionRationaleSchema.optional(),
   })
   .strict();
 export const WorkbenchStateV1Schema = z
@@ -637,6 +764,7 @@ export const WorkbenchActionV1Schema = z.discriminatedUnion("type", [
       type: z.literal("record-request"),
       assetId: CatalogIdSchema,
       origin: WorkbenchOriginV1Schema,
+      rationale: SelectionRationaleSchema.optional(),
     })
     .strict(),
   z
@@ -653,6 +781,7 @@ export const WorkbenchActionV1Schema = z.discriminatedUnion("type", [
       origin: WorkbenchOriginV1Schema,
       mode: z.enum(["select", "structural"]).optional(),
       includeOptionalMembers: z.boolean().optional(),
+      rationale: SelectionRationaleSchema.optional(),
     })
     .strict(),
   z
@@ -665,9 +794,22 @@ export const WorkbenchActionV1Schema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("apply-template"), templateId: CatalogIdSchema }).strict(),
   z
     .object({
+      type: z.literal("set-rationale"),
+      entry: z.enum(["root", "request", "exclusion"]),
+      assetId: CatalogIdSchema,
+      origin: WorkbenchOriginV1Schema,
+      sourceId: CatalogIdSchema,
+      sourceRevisionId: CatalogIdSchema,
+      contentDigest: DigestSchema,
+      rationale: SelectionRationaleSchema.optional(),
+    })
+    .strict(),
+  z
+    .object({
       type: z.literal("add-exclusion"),
       assetId: CatalogIdSchema,
       origin: WorkbenchOriginV1Schema,
+      rationale: SelectionRationaleSchema.optional(),
     })
     .strict(),
   z
@@ -711,6 +853,7 @@ export const AuthoringCatalogBundleV1Schema = z
     relations: z.array(CatalogRelationV1Schema).max(100_000),
     templates: z.record(CatalogIdSchema, SelectionTemplateV1Schema),
     evidence: z.record(CatalogIdSchema, EvidenceSummaryV1Schema),
+    qualifications: CatalogQualificationSummariesV1Schema.optional(),
     provenance: z.object({ bundleDigest: DigestSchema }).strict(),
     detailChunks: z.record(
       CatalogIdSchema,

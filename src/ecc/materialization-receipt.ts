@@ -456,7 +456,7 @@ const ComponentSchema = z
     }
   });
 
-const ReceiptSchema = z
+const ReceiptV1Schema = z
   .object({
     format: z.literal(ECC_MATERIALIZATION_RECEIPT_FORMAT),
     schemaVersion: z.literal(1),
@@ -471,11 +471,124 @@ const ReceiptSchema = z
     );
   });
 
+const DigestSchema = z.string().regex(/^sha256:[a-f0-9]{64}$/);
+
+const CoreDerivedComponentMappingSchema = z
+  .object({
+    componentId: ComponentIdSchema,
+    rawComponentIds: z.array(ComponentIdSchema).min(1).max(MAX_MATERIALIZED_COMPONENTS),
+  })
+  .strict()
+  .superRefine((mapping, context) => {
+    duplicateIssues(mapping.rawComponentIds, "raw evidence component", context);
+  });
+
+/**
+ * One sealed historical descriptor's evidence references. A V2 receipt can
+ * retain ownership from several descriptor generations, so this is a group,
+ * never the receipt-wide authority label.
+ */
+const CoreDerivedEvidenceReferenceSchema = z
+  .object({
+    /** Reference only: the sealed descriptor remains the authoritative custody record. */
+    descriptorSha256: DigestSchema,
+    rawReportDigest: DigestSchema,
+    coreDerivedEvaluationDigest: DigestSchema,
+    projectionContractDigest: DigestSchema,
+    componentMappings: z
+      .array(CoreDerivedComponentMappingSchema)
+      .min(1)
+      .max(MAX_MATERIALIZED_COMPONENTS),
+  })
+  .strict()
+  .superRefine((reference, context) => {
+    duplicateIssues(
+      reference.componentMappings.map((mapping) => mapping.componentId),
+      "core-derived evidence component mapping",
+      context,
+    );
+  });
+
+const CoreDerivedEvidenceSchema = z
+  .object({
+    groups: z.array(CoreDerivedEvidenceReferenceSchema).min(1).max(MAX_MATERIALIZED_COMPONENTS),
+    /** Components retained from a V1 or ordinary active install. */
+    legacyComponentIds: z.array(ComponentIdSchema).max(MAX_MATERIALIZED_COMPONENTS),
+  })
+  .strict()
+  .superRefine((evidence, context) => {
+    duplicateIssues(evidence.legacyComponentIds, "legacy materialization component", context);
+    const mapped = evidence.groups.flatMap((group) =>
+      group.componentMappings.map((mapping) => mapping.componentId),
+    );
+    duplicateIssues(mapped, "core-derived evidence materialization component", context);
+    for (const id of evidence.legacyComponentIds) {
+      if (mapped.includes(id)) {
+        context.addIssue({
+          code: "custom",
+          path: ["legacyComponentIds"],
+          message: "legacy materialization component is also evidence-mapped: " + id,
+        });
+      }
+    }
+  });
+
+const ReceiptV2Schema = z
+  .object({
+    format: z.literal(ECC_MATERIALIZATION_RECEIPT_FORMAT),
+    schemaVersion: z.literal(2),
+    components: z.array(ComponentSchema).min(1).max(MAX_MATERIALIZED_COMPONENTS),
+    coreDerivedEvidence: CoreDerivedEvidenceSchema,
+  })
+  .strict()
+  .superRefine((receipt, context) => {
+    duplicateIssues(
+      receipt.components.map((component) => component.id),
+      "component",
+      context,
+    );
+    const componentIds = new Set(receipt.components.map((component) => component.id));
+    const mappingIds = new Set(
+      receipt.coreDerivedEvidence.groups.flatMap((group) =>
+        group.componentMappings.map((mapping) => mapping.componentId),
+      ),
+    );
+    const legacyIds = new Set(receipt.coreDerivedEvidence.legacyComponentIds);
+    for (const id of componentIds) {
+      if (!mappingIds.has(id) && !legacyIds.has(id))
+        context.addIssue({
+          code: "custom",
+          path: ["coreDerivedEvidence"],
+          message: "materialized component has no provenance classification: " + id,
+        });
+    }
+    for (const id of mappingIds) {
+      if (!componentIds.has(id))
+        context.addIssue({
+          code: "custom",
+          path: ["coreDerivedEvidence", "groups"],
+          message: "core-derived evidence mapping is not materialized: " + id,
+        });
+    }
+    for (const id of legacyIds) {
+      if (!componentIds.has(id))
+        context.addIssue({
+          code: "custom",
+          path: ["coreDerivedEvidence", "legacyComponentIds"],
+          message: "legacy materialization component is not materialized: " + id,
+        });
+    }
+  });
+
+const ReceiptSchema = z.discriminatedUnion("schemaVersion", [ReceiptV1Schema, ReceiptV2Schema]);
+
 export type EccMaterializationOperation = "copy-file" | "merge-json";
 export type EccOwnedFile = z.infer<typeof OwnedFileSchema>;
 export type EccComponentProvenance = z.infer<typeof ProvenanceSchema>;
 export type EccMaterializedComponent = z.infer<typeof ComponentSchema>;
 export type EccMaterializationReceipt = z.infer<typeof ReceiptSchema>;
+export type EccCoreDerivedEvidenceReferenceV1 = z.infer<typeof CoreDerivedEvidenceReferenceSchema>;
+export type EccCoreDerivedEvidenceV2 = z.infer<typeof CoreDerivedEvidenceSchema>;
 
 /**
  * Validate the policy/content evidence split before planning can read or write
@@ -550,25 +663,50 @@ function byText(left: string, right: string): number {
   return left.localeCompare(right);
 }
 
-function normalizeReceipt(receipt: EccMaterializationReceipt): EccMaterializationReceipt {
-  return {
-    format: ECC_MATERIALIZATION_RECEIPT_FORMAT,
-    schemaVersion: 1,
-    components: [...receipt.components]
-      .map((component) => ({
-        ...component,
-        files: [...component.files]
-          .map((file) =>
-            file.operation === "merge-json"
-              ? { ...file, ownedKeys: [...file.ownedKeys].sort(byText) }
-              : { ...file },
-          )
-          .sort((left, right) => byText(left.path, right.path)),
-      }))
-      .sort((left, right) => byText(left.id, right.id)),
-  };
+function byCodeUnit(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
+function normalizeReceipt(receipt: EccMaterializationReceipt): EccMaterializationReceipt {
+  const components = [...receipt.components]
+    .map((component) => ({
+      ...component,
+      files: [...component.files]
+        .map((file) =>
+          file.operation === "merge-json"
+            ? { ...file, ownedKeys: [...file.ownedKeys].sort(byText) }
+            : { ...file },
+        )
+        .sort((left, right) => byText(left.path, right.path)),
+    }))
+    .sort((left, right) => byText(left.id, right.id));
+  if (receipt.schemaVersion === 1) {
+    return {
+      format: ECC_MATERIALIZATION_RECEIPT_FORMAT,
+      schemaVersion: 1,
+      components,
+    };
+  }
+  return {
+    format: ECC_MATERIALIZATION_RECEIPT_FORMAT,
+    schemaVersion: 2,
+    components,
+    coreDerivedEvidence: {
+      groups: [...receipt.coreDerivedEvidence.groups]
+        .map((group) => ({
+          ...group,
+          componentMappings: [...group.componentMappings]
+            .map((mapping) => ({
+              ...mapping,
+              rawComponentIds: [...mapping.rawComponentIds].sort(byCodeUnit),
+            }))
+            .sort((left, right) => byCodeUnit(left.componentId, right.componentId)),
+        }))
+        .sort((left, right) => byCodeUnit(left.descriptorSha256, right.descriptorSha256)),
+      legacyComponentIds: [...receipt.coreDerivedEvidence.legacyComponentIds].sort(byCodeUnit),
+    },
+  };
+}
 export function parseEccMaterializationReceipt(text: string): EccMaterializationReceipt {
   try {
     return normalizeReceipt(ReceiptSchema.parse(JSON.parse(text)));

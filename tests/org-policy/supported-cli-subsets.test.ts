@@ -4,6 +4,7 @@ import { canonicalStrictJsonSha256V1 } from "../../src/contract/strict-json-v1.j
 import { SUPPORTED_CLIS } from "../../src/internals/clis.js";
 import { parseOrgPolicy } from "../../src/org-policy/schema.js";
 import {
+  defaultStudioPolicy,
   exportStudioPolicy,
   type PolicyStudioModel,
   parseStudioPolicyImport,
@@ -200,6 +201,38 @@ function selectPosture(window: Window, value: "vibe" | "enterprise"): void {
   node.dispatchEvent(new window.Event("change", { bubbles: true }));
 }
 
+type ManagedMcpControl = {
+  id: string;
+  source: { type: "mcp"; server: string };
+  targets: string[];
+};
+
+function isManagedMcpControl(value: unknown): value is ManagedMcpControl {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const candidate = value as Record<string, unknown>;
+  const source = candidate.source;
+  return (
+    typeof candidate.id === "string" &&
+    Array.isArray(candidate.targets) &&
+    candidate.targets.every((target) => typeof target === "string") &&
+    source !== null &&
+    typeof source === "object" &&
+    !Array.isArray(source) &&
+    (source as Record<string, unknown>).type === "mcp" &&
+    typeof (source as Record<string, unknown>).server === "string"
+  );
+}
+
+function setManagedMcpProjection(window: Window, checked: boolean): void {
+  const node = window.document.getElementById("managed-mcp-projection") as unknown as {
+    checked: boolean;
+    dispatchEvent(event: unknown): boolean;
+  } | null;
+  if (node === null) throw new Error("expected managed MCP projection checkbox");
+  node.checked = checked;
+  node.dispatchEvent(new window.Event("change", { bubbles: true }));
+}
+
 function authored(window: Window) {
   const preview = window.document.getElementById("config-preview") as unknown as {
     value: string;
@@ -393,6 +426,87 @@ describe("organization-selected CLI activation scope", () => {
         expect(after.governance.supportedClis).toEqual(before.governance.supportedClis);
         expect(after.governance.activations).toEqual(before.governance.activations);
       }
+    },
+    WORKBENCH_TEST_TIMEOUT_MS,
+  );
+  it(
+    "requires explicit managed MCP opt-in and every selected control host before export",
+    async () => {
+      const window = studio();
+      expect(window.document.body.dataset.view).toBe("compose");
+      const settings = window.document.getElementById("policy-settings");
+      expect(settings?.closest("#workbench")).not.toBeNull();
+      expect(
+        window.document.getElementById("open-ecc-mcp")?.closest("#panel-author"),
+      ).not.toBeNull();
+      click(window, '[data-sanctioned-cli="claude"]');
+      selectPosture(window, "enterprise");
+      selectCatalogControl(window, "code-review-graph");
+
+      const readiness = window.document.getElementById("deployment-readiness")?.textContent;
+      expect(readiness).toContain(
+        "Exact selected target intersections: code-review-graph → claude",
+      );
+      expect(readiness).toContain("enable managed MCP projection");
+      window.document
+        .getElementById("export")
+        ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      expect(window.document.getElementById("announcement")?.textContent).toContain(
+        "Export blocked",
+      );
+
+      setManagedMcpProjection(window, true);
+      const policy = authored(window) as ReturnType<typeof authored> & {
+        mcp?: { allowManagedOnly?: boolean; allowedServers?: string[] };
+      };
+      const control = controls.find(
+        (candidate): candidate is ManagedMcpControl =>
+          candidate.id === "code-review-graph" && isManagedMcpControl(candidate),
+      );
+      if (control === undefined) throw new Error("expected managed MCP control");
+      expect(policy.minimumPosture).toBe("enterprise");
+      expect(policy.governance.supportedClis).toEqual(["claude"]);
+      expect(policy.governance.activations).toContainEqual({
+        candidate: control.id,
+        state: "active",
+        targets: ["claude"],
+        clarification: "Requested by: administrator",
+      });
+      expect(policy.mcp).toEqual({
+        allowManagedOnly: true,
+        allowedServers: [control.source.server],
+      });
+      expect(window.document.getElementById("deployment-readiness")?.textContent).toContain(
+        "ready for the selected Core controls",
+      );
+      window.document
+        .getElementById("export")
+        ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      expect(window.document.getElementById("announcement")?.textContent).toContain(
+        "preview refreshed",
+      );
+
+      selectCatalogControl(window, "code-review-graph");
+      expect(authored(window).governance.activations).toEqual([]);
+      setManagedMcpProjection(window, false);
+      expect((authored(window) as { mcp?: unknown }).mcp).toBeUndefined();
+      expect(
+        (
+          window.document.getElementById("managed-mcp-projection") as unknown as {
+            checked: boolean;
+          } | null
+        )?.checked,
+      ).toBe(false);
+
+      await importPolicy(window, defaultStudioPolicy());
+      expect((authored(window) as { mcp?: unknown }).mcp).toBeUndefined();
+      expect(
+        (
+          window.document.getElementById("managed-mcp-projection") as unknown as {
+            checked: boolean;
+          } | null
+        )?.checked,
+      ).toBe(false);
     },
     WORKBENCH_TEST_TIMEOUT_MS,
   );

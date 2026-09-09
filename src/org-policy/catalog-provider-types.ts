@@ -30,6 +30,8 @@ export interface PolicyAuthoringAsset {
   members?: string[];
   source: { repository: string; commit: string; path: string };
   sourcePaths: string[];
+  /** Provider-declared host runtime identifier for MCP overlap advisory only. */
+  runtimeIdentity?: string;
   vet?: PolicyAuthoringVet;
   metadata?: {
     title: string;
@@ -130,6 +132,8 @@ export interface AihCatalogContentPackV1 {
   id: string;
   pack: string;
   description: string;
+  /** Concise authoring copy; not part of the capability declaration identity. */
+  purpose?: string;
   skills: string[];
   sources: Array<{ skill: string; path: string; manifestIdentity: string }>;
 }

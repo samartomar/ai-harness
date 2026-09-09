@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
+import { policyAuthoringCatalog } from "../../src/org-policy/catalog.js";
 import { ECC_CONTENT_METADATA_PROVENANCE } from "../../src/org-policy/ecc-content-metadata.js";
 import {
   ECC_DISABLE_ELIGIBLE_HOOK_IDS,
@@ -10,7 +11,6 @@ import {
 import { ECC_SKILL_CATALOG_PROVENANCE } from "../../src/org-policy/ecc-skill-catalog.js";
 import { POLICY_ENGINE_FIELD_CONSUMERS } from "../../src/org-policy/effective.js";
 import { parseOrgPolicy } from "../../src/org-policy/schema.js";
-import { policyStudioModel } from "../../src/org-policy/studio-model.js";
 
 function policy(eccHookControls?: Record<string, unknown>): Record<string, unknown> {
   return {
@@ -140,7 +140,7 @@ describe("source-locked ECC hook controls", () => {
   });
 
   it("publishes one browser seam and enrolls both governance leaves", () => {
-    expect(policyStudioModel().catalog.eccHookControls).toMatchObject({
+    expect(policyAuthoringCatalog().eccHookControls).toMatchObject({
       sourceContentSha256: ECC_HOOK_CONTROL_SOURCE_CONTENT_SHA256,
       hooks: eccHookControlCatalog,
       disabledHooks: {

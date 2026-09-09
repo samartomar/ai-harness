@@ -1,0 +1,1178 @@
+import { execFileSync } from "node:child_process";
+import { createHash, generateKeyPairSync } from "node:crypto";
+import {
+  chmodSync,
+  closeSync,
+  constants,
+  cpSync,
+  existsSync,
+  fstatSync,
+  linkSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+import { gzipSync } from "node:zlib";
+import {
+  type BaselineVetBatchResultV1,
+  type BaselineVetRequestV1,
+  canonicalBaselineVetAttestationEnvelopeV1Bytes,
+  ed25519KeyIdV2,
+  signBaselineVetBundleV1,
+} from "@aihq/scan";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({ defaultRunner: vi.fn() }));
+
+vi.mock("../../src/internals/proc.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../src/internals/proc.js")>()),
+  defaultRunner: mocks.defaultRunner,
+}));
+
+import {
+  assertAihScanMaterialEquivalenceV1,
+  type MaterializedAihScanSubjectsV1,
+  materializeAihScanSubjectsV1,
+  removeMaterializedAihScanSubjectsV1,
+} from "../../src/baseline-evidence/aih-scan-material.js";
+import {
+  authorPackagedAihScannerEvidenceRecordV1,
+  authorPreparedAihScannerPublicationV1,
+  prepareAihScannerPublicationsV1,
+  reverifyPackagedAihScannerEvidenceRecordV1,
+} from "../../src/baseline-evidence/aih-scan-preparation.js";
+import { hashComponentTree, hashSourceTree } from "../../src/baseline-evidence/hash.js";
+import {
+  createCoreBaselineVetRequest,
+  createCoreBaselineVetRequests,
+} from "../../src/baseline-evidence/scanner-consumer.js";
+import {
+  SCANNER_BASELINE_ANALYZER_VERSIONS,
+  SCANNER_TO_CORE_BASELINE_ANALYZER,
+  type ScannerBaselineAnalyzer,
+} from "../../src/baseline-evidence/scanner-profile.js";
+import { SCANNER_BASELINE_PUBLICATION_PUBLISHER_V1 } from "../../src/baseline-evidence/scanner-publication-policy.js";
+import { canonicalStrictJsonBytesV1 } from "../../src/contract/strict-json-v1.js";
+import { acquireBoundedGithubSourceArchiveV1 } from "../../src/internals/bounded-github-source-archive.js";
+import { policyAuthoringCatalog } from "../../src/org-policy/catalog.js";
+import { PackagedScannerCollectionEvidenceRecordV1Schema } from "../../src/org-policy/packaged-collection-evidence-v1.js";
+import { assembleCompilerOutputsV1 } from "../../src/org-policy/workbench/assembly.js";
+import { compileBuiltInCatalogV1 } from "../../src/org-policy/workbench/compilers/built-in.js";
+import { CATALOG_QUALIFICATION_RELEASE_POLICY_V1 } from "../../src/org-policy/workbench/core/catalog-qualification-policy-v1.js";
+import {
+  canonicalCatalogQualificationClosureV1,
+  compilerQualificationBindingDigestV1,
+  inspectCatalogQualificationArtifactV1,
+  prepareAihFirstPartyCompilerQualificationsV1,
+  verifyCatalogQualificationArtifactsForPackagingV1,
+} from "../../src/org-policy/workbench/core/catalog-qualification-v1.js";
+import { builtInAssemblyInputV1 } from "../../src/org-policy/workbench/providers/aih.js";
+
+const roots: string[] = [];
+const materializedRoots: MaterializedAihScanSubjectsV1[] = [];
+afterEach(() => {
+  mocks.defaultRunner.mockReset();
+  vi.unstubAllGlobals();
+  for (const materialized of materializedRoots.splice(0)) {
+    if (existsSync(materialized.sourceRoot)) removeMaterializedAihScanSubjectsV1(materialized);
+  }
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+});
+
+function temporaryDirectory(prefix: string): string {
+  const root = mkdtempSync(join(realpathSync(tmpdir()), prefix));
+  roots.push(root);
+  return root;
+}
+
+function localCatalogAttestation(
+  publisher: {
+    repository: string;
+    workflow: string;
+    ref: string;
+    issuer: string;
+    commit: string;
+    subjectName: string;
+  },
+  bytes: Uint8Array,
+): string {
+  const workflow = `https://github.com/${publisher.workflow}@${publisher.ref}`;
+  return JSON.stringify([
+    {
+      verificationResult: {
+        signature: {
+          certificate: {
+            subjectAlternativeName: workflow,
+            buildSignerURI: workflow,
+            buildConfigURI: workflow,
+            issuer: publisher.issuer,
+            sourceRepositoryURI: `https://github.com/${publisher.repository}`,
+            sourceRepositoryRef: publisher.ref,
+            sourceRepositoryDigest: publisher.commit,
+            runnerEnvironment: "github-hosted",
+          },
+        },
+        verifiedTimestamps: [
+          { type: "signed", uri: "https://rekor.sigstore.dev", timestamp: "2026-09-07T12:10:00Z" },
+        ],
+        statement: {
+          _type: "https://in-toto.io/Statement/v1",
+          predicateType: "https://slsa.dev/provenance/v1",
+          subject: [{ name: publisher.subjectName, digest: { sha256: sha256(bytes) } }],
+        },
+      },
+    },
+  ]);
+}
+
+function currentRevision(): string {
+  return execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+}
+
+type TarEntry = Readonly<{ name: string; bytes: Buffer; type?: string; linkTarget?: string }>;
+
+function tarField(target: Buffer, offset: number, length: number, value: string): void {
+  target.write(value, offset, Math.min(Buffer.byteLength(value), length), "ascii");
+}
+
+function tarOctal(target: Buffer, offset: number, length: number, value: number): void {
+  tarField(target, offset, length, `${value.toString(8).padStart(length - 1, "0")}\0`);
+}
+
+function tarEntry(entry: TarEntry): Buffer {
+  const header = Buffer.alloc(512);
+  if (Buffer.byteLength(entry.name) <= 100) tarField(header, 0, 100, entry.name);
+  else {
+    const boundary = entry.name.lastIndexOf("/");
+    const prefix = boundary < 1 ? "" : entry.name.slice(0, boundary);
+    const name = boundary < 1 ? entry.name : entry.name.slice(boundary + 1);
+    if (Buffer.byteLength(prefix) > 155 || Buffer.byteLength(name) > 100)
+      throw new Error("fixture tar path");
+    tarField(header, 0, 100, name);
+    tarField(header, 345, 155, prefix);
+  }
+  tarOctal(header, 100, 8, 0o644);
+  tarOctal(header, 108, 8, 0);
+  tarOctal(header, 116, 8, 0);
+  tarOctal(header, 124, 12, entry.bytes.length);
+  tarOctal(header, 136, 12, 0);
+  header.fill(0x20, 148, 156);
+  tarField(header, 156, 1, entry.type ?? "0");
+  if (entry.linkTarget !== undefined) tarField(header, 157, 100, entry.linkTarget);
+  tarField(header, 257, 6, "ustar");
+  tarField(header, 263, 2, "00");
+  tarOctal(
+    header,
+    148,
+    8,
+    header.reduce((total, value) => total + value, 0),
+  );
+  return Buffer.concat([
+    header,
+    entry.bytes,
+    Buffer.alloc((512 - (entry.bytes.length % 512)) % 512),
+  ]);
+}
+
+function readFixtureFile(path: string): Buffer {
+  const noFollow = "O_NOFOLLOW" in constants ? constants.O_NOFOLLOW : 0;
+  const descriptor = openSync(path, constants.O_RDONLY | noFollow);
+  try {
+    const stats = fstatSync(descriptor);
+    if (!stats.isFile() || stats.nlink > 1) throw new Error("fixture source shape");
+    return readFileSync(descriptor);
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
+function coreArchiveEntries(relativePath: string): readonly TarEntry[] {
+  const absolute = resolve(relativePath);
+  const stats = lstatSync(absolute);
+  if (stats.isFile())
+    return [
+      {
+        name: `ai-harness-${currentRevision()}/${relativePath.replaceAll("\\", "/")}`,
+        bytes: readFixtureFile(absolute),
+      },
+    ];
+  if (!stats.isDirectory()) throw new Error("fixture source shape");
+  return readdirSync(absolute)
+    .sort()
+    .flatMap((name) => coreArchiveEntries(join(relativePath, name)));
+}
+
+function currentCoreArchive(extra: readonly TarEntry[] = []): Buffer {
+  const entries = [
+    ...coreArchiveEntries("aih-packs.json"),
+    ...coreArchiveEntries("packs"),
+    ...extra,
+  ];
+  return gzipSync(Buffer.concat([...entries.map(tarEntry), Buffer.alloc(1024)]));
+}
+
+function copiedPackageCheckout(): string {
+  const source = temporaryDirectory("aih-scan-material-source-");
+  cpSync(resolve("aih-packs.json"), join(source, "aih-packs.json"));
+  cpSync(resolve("packs"), join(source, "packs"), { recursive: true });
+  execFileSync("git", ["init", "-q", source]);
+  execFileSync("git", ["-C", source, "add", "."]);
+  execFileSync("git", [
+    "-C",
+    source,
+    "-c",
+    "user.name=AIH test",
+    "-c",
+    "user.email=test@example.invalid",
+    "commit",
+    "-qm",
+    "fixture",
+  ]);
+  return source;
+}
+
+function materialize(): MaterializedAihScanSubjectsV1 {
+  const outputParent = temporaryDirectory("aih-scan-material-test-");
+  const catalog = policyAuthoringCatalog();
+  const materialized = materializeAihScanSubjectsV1({
+    packageRoot: resolve("."),
+    outputParent,
+    coreRevision: { pinnedSha: currentRevision() },
+    catalog,
+    compiled: compileBuiltInCatalogV1(catalog),
+  });
+  materializedRoots.push(materialized);
+  return materialized;
+}
+
+it("accepts evidence-only release commits while retaining the scanned revision and rejecting changed pack bytes", () => {
+  const packageRoot = copiedPackageCheckout();
+  const catalog = policyAuthoringCatalog();
+  const capture = (inputCatalog = catalog) => {
+    const pinnedSha = execFileSync("git", ["-C", packageRoot, "rev-parse", "HEAD"], {
+      encoding: "utf8",
+    }).trim();
+    const materialized = materializeAihScanSubjectsV1({
+      packageRoot,
+      coreRevision: { pinnedSha },
+      catalog: inputCatalog,
+      compiled: compileBuiltInCatalogV1(inputCatalog),
+    });
+    materializedRoots.push(materialized);
+    return materialized;
+  };
+  const commit = () => {
+    execFileSync("git", ["-C", packageRoot, "add", "."]);
+    execFileSync("git", [
+      "-C",
+      packageRoot,
+      "-c",
+      "user.name=AIH test",
+      "-c",
+      "user.email=test@example.invalid",
+      "commit",
+      "-qm",
+      "evidence update",
+    ]);
+  };
+  const scanned = capture();
+  writeFileSync(join(packageRoot, "evidence-summary.json"), "{}\n");
+  commit();
+  const release = capture();
+  expect(release.coverage.pinnedCommit).not.toBe(scanned.coverage.pinnedCommit);
+  expect(assertAihScanMaterialEquivalenceV1(scanned, release)).toMatchObject({
+    authority: "none",
+    scannedCommit: scanned.coverage.pinnedCommit,
+    releaseCommit: release.coverage.pinnedCommit,
+  });
+  expect(() => assertAihScanMaterialEquivalenceV1(structuredClone(scanned), release)).toThrow(
+    /custody/,
+  );
+  const nextVersion = structuredClone(catalog);
+  nextVersion.aihCapabilityPackage.version = "99.0.0";
+  expect(() => assertAihScanMaterialEquivalenceV1(scanned, capture(nextVersion))).toThrow(
+    /differs/,
+  );
+  for (const prefix of ["generated/usage-metering/", "declarations/claude/project/"]) {
+    const generated = release.subjects
+      .flatMap((subject) => subject.files)
+      .find((file) => file.path.startsWith(prefix));
+    if (generated === undefined) throw new Error("missing generated fixture");
+    const path = join(release.sourceRoot, generated.path);
+    const original = readFileSync(path);
+    chmodSync(path, 0o600);
+    writeFileSync(path, Buffer.concat([original, Buffer.from("\nchanged\n")]));
+    expect(() => assertAihScanMaterialEquivalenceV1(scanned, release)).toThrow(/source changed/);
+    writeFileSync(path, original);
+    chmodSync(path, 0o400);
+  }
+  const packFile = scanned.subjects
+    .flatMap((subject) => subject.files)
+    .find((file) => file.path.startsWith("packs/") && file.path.endsWith("SKILL.md"));
+  if (packFile === undefined) throw new Error("missing pack fixture");
+  writeFileSync(join(packageRoot, packFile.path), "Changed skill material\n");
+  commit();
+  expect(() => assertAihScanMaterialEquivalenceV1(scanned, capture())).toThrow(/differs/);
+});
+
+function sha256(value: Uint8Array): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function signedPublication(request: BaselineVetRequestV1) {
+  const annexArtifacts = [
+    ...new Set(request.components.flatMap((component) => component.analyzers)),
+  ].map((analyzer) => {
+    const value =
+      analyzer === "aih-native"
+        ? {
+            protocol: "BaselineNativeObservationV1",
+            sourceTreeSha256: request.source.treeSha256,
+            files: [],
+          }
+        : { version: "2.1.0", runs: [{ tool: { driver: { name: analyzer } }, results: [] }] };
+    return {
+      path: `annex/${analyzer}.json`,
+      bytes: canonicalStrictJsonBytesV1(value),
+    };
+  });
+  const byAnalyzer = new Map(
+    annexArtifacts.map((artifact) => [artifact.path.slice(6, -5), artifact]),
+  );
+  const observations = [
+    ...new Set(request.components.flatMap((component) => component.analyzers)),
+  ].map((analyzer) => {
+    const annex = byAnalyzer.get(analyzer);
+    if (annex === undefined) throw new Error("fixture annex missing");
+    const coreName = SCANNER_TO_CORE_BASELINE_ANALYZER[analyzer as ScannerBaselineAnalyzer];
+    return {
+      analyzer,
+      analyzerVersion: SCANNER_BASELINE_ANALYZER_VERSIONS[coreName],
+      annex: {
+        path: annex.path,
+        mediaType:
+          analyzer === "aih-native"
+            ? ("application/vnd.aih.baseline-native+json" as const)
+            : ("application/sarif+json" as const),
+        sha256: sha256(annex.bytes),
+        byteLength: annex.bytes.byteLength,
+      },
+    };
+  });
+  const receiptWithoutDigest = {
+    protocol: "BaselineVetReceiptV1" as const,
+    profile: request.profile,
+    requestSha256: request.requestSha256,
+    source: request.source,
+    observations,
+    components: request.components.map((component) => ({
+      id: component.id,
+      content: component.content,
+      paths: component.paths,
+      treeSha256: component.treeSha256,
+      observations: component.analyzers.map((analyzer) => {
+        const annex = byAnalyzer.get(analyzer);
+        if (annex === undefined) throw new Error("fixture component annex missing");
+        return { analyzer, annexSha256: sha256(annex.bytes) };
+      }),
+    })),
+  };
+  const result = {
+    receipt: {
+      ...receiptWithoutDigest,
+      receiptSha256: sha256(
+        canonicalStrictJsonBytesV1({
+          domain: "aih.baseline-vet-receipt-v1",
+          receipt: receiptWithoutDigest,
+        }),
+      ),
+    },
+    annexArtifacts,
+  } as BaselineVetBatchResultV1;
+  const keys = generateKeyPairSync("ed25519");
+  const signer = {
+    identity: "aih-material-test-fixture",
+    class: "test-ephemeral" as const,
+    keyId: ed25519KeyIdV2(keys.publicKey),
+  };
+  const signed = signBaselineVetBundleV1({
+    request,
+    result,
+    signer: { ...signer, privateKey: keys.privateKey },
+    claims: {
+      signedAt: "2026-09-07T11:30:00.000Z",
+      expiresAt: "2026-09-07T12:30:00.000Z",
+    },
+  });
+  const publicationBytes = canonicalStrictJsonBytesV1({
+    protocol: "BaselineVetPublicationV1",
+    request,
+    receipt: result.receipt,
+    annexes: annexArtifacts.map((annex) => ({
+      path: annex.path,
+      bytesBase64: annex.bytes.toString("base64"),
+    })),
+    envelope: JSON.parse(canonicalBaselineVetAttestationEnvelopeV1Bytes(signed).toString("utf8")),
+    verification: {
+      root: {
+        ...signer,
+        publicKeySpkiBase64: Buffer.from(
+          keys.publicKey.export({ type: "spki", format: "der" }),
+        ).toString("base64"),
+      },
+      expected: { now: "2026-09-07T12:00:00.000Z", signer },
+    },
+  });
+  const publisher = SCANNER_BASELINE_PUBLICATION_PUBLISHER_V1;
+  const discoveryBytes = canonicalStrictJsonBytesV1({
+    protocol: "BaselineVetDiscoveryV1",
+    authority: "none",
+    requestSha256: request.requestSha256,
+    receiptSha256: result.receipt.receiptSha256,
+    evidenceDigestSha256: sha256(canonicalBaselineVetAttestationEnvelopeV1Bytes(signed)),
+    publicationSha256: sha256(publicationBytes),
+    locator: `https://github.com/${publisher.repository}/releases/download/baseline-v1-${publisher.commit}-${request.requestSha256}/publication.json`,
+  });
+  const workflowUri = `https://github.com/${publisher.workflow}@${publisher.ref}`;
+  const attestationBytes = canonicalStrictJsonBytesV1([
+    {
+      attestation: {},
+      verificationResult: {
+        mediaType: "application/vnd.dev.sigstore.verificationresult+json;version=0.1",
+        signature: {
+          certificate: {
+            subjectAlternativeName: workflowUri,
+            buildSignerURI: workflowUri,
+            buildConfigURI: workflowUri,
+            issuer: "https://token.actions.githubusercontent.com",
+            sourceRepositoryURI: `https://github.com/${publisher.repository}`,
+            sourceRepositoryRef: publisher.ref,
+            sourceRepositoryDigest: publisher.commit,
+            runnerEnvironment: "github-hosted",
+          },
+        },
+        statement: {
+          _type: "https://in-toto.io/Statement/v1",
+          predicateType: "https://slsa.dev/provenance/v1",
+          subject: [{ name: "publication.json", digest: { sha256: sha256(publicationBytes) } }],
+        },
+        verifiedTimestamps: [
+          {
+            type: "transparency-log",
+            uri: "https://rekor.sigstore.dev",
+            timestamp: "2026-09-07T12:05:00Z",
+          },
+        ],
+      },
+    },
+  ]);
+  return { discoveryBytes, publicationBytes, attestationBytes };
+}
+
+describe("AIH scan material", () => {
+  it("binds the ten actual Core deliveries to their unchanged compiled identities", () => {
+    const materialized = materialize();
+    const request = createCoreBaselineVetRequest(materialized.sourceRoot, materialized.catalog);
+
+    expect(materialized.catalog).toMatchObject({
+      id: "aih",
+      owner: "samartomar",
+      repo: "ai-harness",
+      pinnedSha: currentRevision(),
+    });
+    expect(materialized.coverage).toMatchObject({
+      version: "workbench-scanner-coverage/v1",
+      authority: "none",
+      scope: "declared-source-files",
+      sourceTreeSha256: hashSourceTree(materialized.sourceRoot).treeSha256,
+    });
+    expect(materialized.coverage.components).toHaveLength(10);
+    expect(materialized.subjects).toHaveLength(10);
+    expect(request.components).toHaveLength(10);
+    expect(
+      new Set(materialized.coverage.components.map((component) => component.componentId)).size,
+    ).toBe(10);
+
+    for (const subject of materialized.subjects) {
+      const coverage = materialized.coverage.components.find(
+        (component) => component.componentId === subject.componentId,
+      );
+      const scanned = request.components.find((component) => component.id === subject.componentId);
+      if (coverage === undefined || scanned === undefined)
+        throw new Error("missing scan subject join");
+      expect(coverage.subject.assetId).toBe(subject.assetId);
+      expect(scanned.treeSha256).toBe(coverage.componentTreeSha256);
+      expect(hashComponentTree(materialized.sourceRoot, subject.paths).files).toEqual(
+        subject.files,
+      );
+      expect(coverage.subject.contentDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
+      expect(coverage.subject.sourceId).toBe("source:aih-core");
+      expect(coverage.subject.sourceRevisionId).toMatch(/^package:@aihq\/core@/);
+    }
+  });
+
+  it("uses actual pack files and the reviewed pack manifest, generated recorder bytes, and scope-limited MCP declarations", () => {
+    const materialized = materialize();
+    const byAsset = new Map(materialized.subjects.map((subject) => [subject.assetId, subject]));
+    const packs = [...byAsset.values()].filter((subject) =>
+      subject.assetId.startsWith("aih/package:skill-pack/"),
+    );
+    expect(packs).toHaveLength(3);
+    for (const pack of packs) {
+      expect(pack.paths).toContain("aih-packs.json");
+      expect(pack.files.some((file) => file.path.endsWith("/SKILL.md"))).toBe(true);
+    }
+
+    const hook = byAsset.get("aih/usage-metering");
+    expect(hook?.paths).toEqual(["generated/usage-metering/usage-record.mjs"]);
+    expect(hook?.files).toHaveLength(1);
+    expect(hook?.files[0]?.bytes).toBeGreaterThan(1_000);
+
+    const mcp = [...byAsset.values()].filter(
+      (subject) =>
+        subject.assetId.startsWith("aih/") &&
+        subject.assetId !== "aih/usage-metering" &&
+        !subject.assetId.startsWith("aih/package:"),
+    );
+    expect(mcp).toHaveLength(6);
+    for (const subject of mcp) {
+      expect(subject.paths).toHaveLength(1);
+      expect(subject.paths[0]).toMatch(/^declarations\/claude\/project\/.+\.json$/);
+      const file = subject.files[0];
+      if (file === undefined) throw new Error("MCP material missing file");
+      const value = JSON.parse(readFileSync(join(materialized.sourceRoot, file.path), "utf8")) as {
+        client: string;
+        scope: string;
+        config: { mcpServers: Record<string, unknown> };
+      };
+      expect(value.client).toBe("claude");
+      expect(value.scope).toBe("project");
+      expect(Object.keys(value.config.mcpServers)).toHaveLength(1);
+      expect(JSON.stringify(value)).not.toContain("implementation");
+    }
+  });
+
+  it("removes only its own read-only materialized tree", () => {
+    const materialized = materialize();
+    const sourceRoot = materialized.sourceRoot;
+
+    expect(() => removeMaterializedAihScanSubjectsV1(structuredClone(materialized))).toThrow(
+      /materialized source custody/,
+    );
+    removeMaterializedAihScanSubjectsV1(materialized);
+    expect(existsSync(sourceRoot)).toBe(false);
+  });
+
+  it("refuses a non-pinned checkout, output below the checkout, and altered compiler output before producing a scan tree", () => {
+    const parent = temporaryDirectory("aih-scan-material-reject-");
+    const catalog = policyAuthoringCatalog();
+    const compiled = compileBuiltInCatalogV1(catalog);
+    expect(() =>
+      materializeAihScanSubjectsV1({
+        packageRoot: resolve("."),
+        outputParent: parent,
+        coreRevision: { pinnedSha: "0".repeat(40) },
+        catalog,
+        compiled,
+      }),
+    ).toThrow(/checkout revision/);
+    expect(readdirSync(parent)).toEqual([]);
+
+    expect(() =>
+      materializeAihScanSubjectsV1({
+        packageRoot: resolve("."),
+        outputParent: resolve("packs"),
+        coreRevision: { pinnedSha: currentRevision() },
+        catalog,
+        compiled,
+      }),
+    ).toThrow(/outside Core checkout/);
+
+    const altered = structuredClone(compiled);
+    const first = altered.declarations[0];
+    if (first === undefined) throw new Error("compiled fixture has no declaration");
+    first.declaration.contentDigest = `sha256:${"0".repeat(64)}`;
+    expect(() =>
+      materializeAihScanSubjectsV1({
+        packageRoot: resolve("."),
+        outputParent: parent,
+        coreRevision: { pinnedSha: currentRevision() },
+        catalog,
+        compiled: altered,
+      }),
+    ).toThrow(/canonical compiler output/);
+    expect(readdirSync(parent)).toEqual([]);
+  });
+
+  it("allows ordinary source directories while rejecting a hard-linked delivery file", () => {
+    const packageRoot = copiedPackageCheckout();
+    const outputParent = temporaryDirectory("aih-scan-material-links-");
+    const catalog = policyAuthoringCatalog();
+    const compiled = compileBuiltInCatalogV1(catalog);
+    const sourceFile = join(packageRoot, "packs/docs-quality/aih-betterdoc/SKILL.md");
+    linkSync(sourceFile, join(packageRoot, "packs/docs-quality/aih-betterdoc/hardlink.md"));
+
+    expect(() =>
+      materializeAihScanSubjectsV1({
+        packageRoot,
+        outputParent,
+        coreRevision: {
+          pinnedSha: execFileSync("git", ["-C", packageRoot, "rev-parse", "HEAD"], {
+            encoding: "utf8",
+          }).trim(),
+        },
+        catalog,
+        compiled,
+      }),
+    ).toThrow(/hard-linked file/);
+    expect(readdirSync(outputParent)).toHaveLength(1);
+  });
+
+  it("refuses copied pack bytes that no longer match the pinned Core Git revision", () => {
+    const packageRoot = copiedPackageCheckout();
+    const outputParent = temporaryDirectory("aih-scan-material-dirty-pack-");
+    const catalog = policyAuthoringCatalog();
+    const compiled = compileBuiltInCatalogV1(catalog);
+    const skill = join(packageRoot, "packs/docs-quality/aih-betterdoc/SKILL.md");
+    writeFileSync(skill, `${readFileSync(skill, "utf8")}\nchanged after pin\n`);
+
+    expect(() =>
+      materializeAihScanSubjectsV1({
+        packageRoot,
+        outputParent,
+        coreRevision: {
+          pinnedSha: execFileSync("git", ["-C", packageRoot, "rev-parse", "HEAD"], {
+            encoding: "utf8",
+          }).trim(),
+        },
+        catalog,
+        compiled,
+      }),
+    ).toThrow(/differs from pinned Core revision/);
+    expect(readdirSync(outputParent)).toHaveLength(1);
+  });
+
+  it("refuses a pinned delivery file above the bounded descriptor read limit", () => {
+    const packageRoot = copiedPackageCheckout();
+    const outputParent = temporaryDirectory("aih-scan-material-oversized-pack-");
+    const catalog = policyAuthoringCatalog();
+    const compiled = compileBuiltInCatalogV1(catalog);
+    const relativeSkill = "packs/docs-quality/aih-betterdoc/SKILL.md";
+    writeFileSync(join(packageRoot, relativeSkill), Buffer.alloc(16 * 1024 * 1024 + 1, 0x61));
+    execFileSync("git", ["-C", packageRoot, "add", relativeSkill]);
+    execFileSync("git", [
+      "-C",
+      packageRoot,
+      "-c",
+      "user.name=AIH test",
+      "-c",
+      "user.email=test@example.invalid",
+      "commit",
+      "-qm",
+      "oversized fixture",
+    ]);
+    const pinnedSha = execFileSync("git", ["-C", packageRoot, "rev-parse", "HEAD"], {
+      encoding: "utf8",
+    }).trim();
+
+    expect(() =>
+      materializeAihScanSubjectsV1({
+        packageRoot,
+        outputParent,
+        coreRevision: { pinnedSha },
+        catalog,
+        compiled,
+      }),
+    ).toThrow(/source exceeds maximum size/);
+  });
+
+  it("accepts only a same-process integrity-checked Core archive and rejects a later archive mutation", async () => {
+    const archiveParent = temporaryDirectory("aih-scan-material-archive-");
+    const packageRoot = join(archiveParent, "checkout");
+    const outputParent = temporaryDirectory("aih-scan-material-archive-output-");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(currentCoreArchive())),
+    );
+    await acquireBoundedGithubSourceArchiveV1({
+      repository: "samartomar/ai-harness",
+      commit: currentRevision(),
+      destination: packageRoot,
+    });
+    const catalog = policyAuthoringCatalog();
+    const compiled = compileBuiltInCatalogV1(catalog);
+    const materialized = materializeAihScanSubjectsV1({
+      packageRoot,
+      outputParent,
+      coreRevision: { pinnedSha: currentRevision() },
+      catalog,
+      compiled,
+    });
+    materializedRoots.push(materialized);
+    expect(materialized.subjects).toHaveLength(10);
+
+    writeFileSync(
+      join(packageRoot, "packs/docs-quality/aih-betterdoc/SKILL.md"),
+      "changed archive bytes",
+    );
+    expect(() =>
+      materializeAihScanSubjectsV1({
+        packageRoot,
+        outputParent,
+        coreRevision: { pinnedSha: currentRevision() },
+        catalog,
+        compiled,
+      }),
+    ).toThrow(/Core checkout revision/);
+  });
+
+  it("rejects an omitted archive symlink beneath a declared pack before creating material", async () => {
+    const archiveParent = temporaryDirectory("aih-scan-material-link-archive-");
+    const packageRoot = join(archiveParent, "checkout");
+    const outputParent = temporaryDirectory("aih-scan-material-link-output-");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            currentCoreArchive([
+              {
+                name: `ai-harness-${currentRevision()}/packs/docs-quality/aih-betterdoc/omitted-link`,
+                bytes: Buffer.alloc(0),
+                type: "2",
+                linkTarget: "SKILL.md",
+              },
+            ]),
+          ),
+      ),
+    );
+    await acquireBoundedGithubSourceArchiveV1({
+      repository: "samartomar/ai-harness",
+      commit: currentRevision(),
+      destination: packageRoot,
+    });
+    const catalog = policyAuthoringCatalog();
+    expect(() =>
+      materializeAihScanSubjectsV1({
+        packageRoot,
+        outputParent,
+        coreRevision: { pinnedSha: currentRevision() },
+        catalog,
+        compiled: compileBuiltInCatalogV1(catalog),
+      }),
+    ).toThrow(/omits a covered source path/);
+    expect(readdirSync(outputParent)).toEqual([]);
+  });
+
+  it("seals the shared package record only after Scanner verifies the real materialized subjects", async () => {
+    const materialized = materialize();
+    const preparationParent = temporaryDirectory("aih-scan-material-prepared-");
+    const artifacts = createCoreBaselineVetRequests(
+      materialized.sourceRoot,
+      materialized.catalog,
+    ).map(signedPublication);
+    const calls: string[][] = [];
+    let next = 0;
+    const scannerRunner = async (argv: readonly string[]) => {
+      calls.push([...argv]);
+      expect(argv.slice(0, 3)).toEqual(["gh", "attestation", "verify"]);
+      const artifact = artifacts[next++];
+      if (artifact === undefined) throw new Error("unexpected attestation invocation");
+      return { code: 0, stdout: artifact.attestationBytes.toString("utf8"), stderr: "" };
+    };
+    mocks.defaultRunner.mockImplementation(scannerRunner);
+
+    const catalog = policyAuthoringCatalog();
+    const compiled = compileBuiltInCatalogV1(catalog);
+    const prepared = await prepareAihScannerPublicationsV1({
+      packageRoot: resolve("."),
+      materialOutputParent: preparationParent,
+      coreRevision: { pinnedSha: currentRevision() },
+      catalog,
+      compiled,
+      batches: artifacts.map(({ discoveryBytes, publicationBytes }) => ({
+        discoveryBytes,
+        publicationBytes,
+      })),
+      now: "2026-09-07T12:10:00.000Z",
+    });
+    expect(readdirSync(preparationParent)).toEqual([]);
+    const authored = authorPreparedAihScannerPublicationV1(prepared);
+    const sealed = authorPackagedAihScannerEvidenceRecordV1(prepared);
+    if (authored === undefined || sealed === undefined)
+      throw new Error("operational output missing");
+    const firstParty = prepareAihFirstPartyCompilerQualificationsV1(
+      assembleCompilerOutputsV1([builtInAssemblyInputV1(compiled)], compiled.coreCapabilities),
+      prepared,
+    );
+    expect(firstParty).toBeDefined();
+    expect(Object.keys(firstParty!.bindings)).toHaveLength(9);
+    expect(
+      Object.values(firstParty!.bindings).filter(
+        (binding) => binding.material.kind === "source-files",
+      ),
+    ).toHaveLength(3);
+    expect(
+      Object.values(firstParty!.bindings).filter(
+        (binding) => binding.material.kind === "configuration-only",
+      ),
+    ).toHaveLength(6);
+    expect(firstParty!.unsupported).toEqual([
+      { assetId: "aih/usage-metering", reason: "unsupported-governance-subject-kind" },
+    ]);
+    expect(
+      prepareAihFirstPartyCompilerQualificationsV1(
+        assembleCompilerOutputsV1([builtInAssemblyInputV1(compiled)], compiled.coreCapabilities),
+        structuredClone(prepared),
+      ),
+    ).toBeUndefined();
+
+    const catalogRoot = process.env.AIH_CATALOG_INTEGRATION_ROOT;
+    if (catalogRoot !== undefined && catalogRoot !== "") {
+      const root = realpathSync(catalogRoot);
+      const implementation = (await import(
+        pathToFileURL(join(root, "dist", "supported", "signed-catalog-v2.js")).href
+      )) as {
+        runCatalogV2Cli(argv: readonly string[]): number;
+      };
+      const catalogApi = (await import(pathToFileURL(join(root, "dist", "index.js")).href)) as {
+        parseCatalogHeadV2Json(value: string): { entries: Record<string, unknown>[] };
+        signCatalogHeadV2(value: unknown): unknown;
+        emitQualificationReceipt(value: unknown): unknown;
+        emitQualificationReceiptSet(value: unknown): {
+          manifest: unknown;
+          receipts: readonly { entryId: string; receipt: unknown }[];
+        };
+        canonicalQualificationReceiptBytes(value: unknown): Buffer;
+        canonicalQualificationReceiptSetBytes(value: unknown): Buffer;
+      };
+      const roundtrip = temporaryDirectory("aih-first-party-catalog-roundtrip-");
+      const artifactRoot = join(roundtrip, "artifacts");
+      const evidenceRoot = join(roundtrip, "evidence");
+      mkdirSync(artifactRoot);
+      mkdirSync(evidenceRoot);
+      const assetId = "aih/code-review-graph";
+      const binding = firstParty!.bindings[assetId]!;
+      const profile = firstParty!.profiles[assetId]!;
+      const closure = {
+        format: "aih-supported-catalog-member-closure",
+        version: 1,
+        assetId,
+        sourceId: binding.asset.sourceId,
+        sourceRevisionId: binding.asset.sourceRevisionId,
+        sourceContentDigest: binding.sourceContentDigest,
+        contentDigest: binding.asset.contentDigest,
+        subjectDigest: binding.subject.subjectDigest,
+        bindingDigest: compilerQualificationBindingDigestV1(binding),
+        scope: {
+          kind: binding.material.kind,
+          description: "Local integration fixture for the exact first-party material scope.",
+        },
+        files: binding.material.kind === "source-files" ? binding.material.files : [],
+      } as const;
+      const closureBytes = Buffer.from(canonicalCatalogQualificationClosureV1(closure), "utf8");
+      writeFileSync(join(artifactRoot, "profile.json"), profile.bytes, { flag: "wx" });
+      writeFileSync(join(artifactRoot, "closure.json"), closureBytes, { flag: "wx" });
+      writeFileSync(join(artifactRoot, "recipe.json"), "{}", { flag: "wx" });
+      writeFileSync(join(artifactRoot, "prose.md"), "local integration fixture\n", { flag: "wx" });
+      const evidence = (kind: "report" | "right", id: string) => ({
+        attestor: "attestor:aih-supported/local",
+        format: "aih-supported-evidence/v2",
+        id,
+        kind,
+        subjectDigest: binding.subject.subjectDigest,
+        summary: "Local-only fixture evidence for the exact first-party subject.",
+      });
+      writeFileSync(
+        join(evidenceRoot, "report.json"),
+        JSON.stringify(evidence("report", "local-report")),
+        {
+          flag: "wx",
+        },
+      );
+      writeFileSync(
+        join(evidenceRoot, "right.json"),
+        JSON.stringify(evidence("right", "local-right")),
+        {
+          flag: "wx",
+        },
+      );
+      const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+      const publicKeySpkiSha256 = sha256(publicKey.export({ format: "der", type: "spki" }));
+      const signer = {
+        class: "administrator-ed25519",
+        identity: "administrator:aih-supported/catalog-v2",
+        keyId: `ed25519:${publicKeySpkiSha256}`,
+        publicKeySpkiSha256,
+      };
+      const claims = {
+        environment: "catalog-signing",
+        eventName: "workflow_dispatch",
+        issuer: "https://token.actions.githubusercontent.com",
+        jobWorkflowRef:
+          "samartomar/aih-catalog/.github/workflows/signed-catalog-v2.yml@refs/heads/main",
+        ref: "refs/heads/main",
+        repository: "samartomar/aih-catalog",
+        repositoryId: "987654321",
+        repositoryOwnerId: "123456789",
+      };
+      const entryId = "recipe.aih-code-review-graph";
+      const seed = {
+        artifacts: {
+          closure: "artifacts/closure.json",
+          profile: "artifacts/profile.json",
+          prose: "artifacts/prose.md",
+          recipe: "artifacts/recipe.json",
+        },
+        capabilities: { commands: [], egress: [], hooks: [], mcpTools: [], permissions: [] },
+        entryId,
+        platforms: [{ architecture: "amd64", os: "linux" }],
+        qualification: {
+          findings: [],
+          gaps: [],
+          report: "evidence/report.json",
+          rights: ["evidence/right.json"],
+        },
+        subject: {
+          id: binding.subject.id,
+          kind: binding.subject.kind,
+          source: binding.subject.source,
+        },
+      };
+      const seedPath = join(roundtrip, "seed.json");
+      const signerPath = join(roundtrip, "signer.json");
+      const claimsPath = join(roundtrip, "claims.json");
+      const candidatePath = join(roundtrip, "candidate.json");
+      writeFileSync(seedPath, JSON.stringify(seed), { flag: "wx" });
+      writeFileSync(signerPath, JSON.stringify(signer), { flag: "wx" });
+      writeFileSync(claimsPath, JSON.stringify(claims), { flag: "wx" });
+      const candidateArgs = [
+        "generate-candidate",
+        "--seed",
+        seedPath,
+        "--signer",
+        signerPath,
+        "--claims",
+        claimsPath,
+        "--valid-from",
+        "2026-09-07T00:00:00Z",
+        "--valid-until",
+        "2026-12-06T00:00:00Z",
+        "--sequence",
+        "0",
+        "--previous-catalog-head-sha256",
+        "0".repeat(64),
+        "--output",
+        candidatePath,
+      ];
+      expect(implementation.runCatalogV2Cli(candidateArgs)).toBe(0);
+      const tamperedProfilePath = join(artifactRoot, "profile-tampered.json");
+      writeFileSync(
+        tamperedProfilePath,
+        Buffer.concat([Buffer.from(profile.bytes), Buffer.from(" ")]),
+        {
+          flag: "wx",
+        },
+      );
+      writeFileSync(
+        join(roundtrip, "seed-tampered.json"),
+        JSON.stringify({
+          ...seed,
+          artifacts: { ...seed.artifacts, profile: "artifacts/profile-tampered.json" },
+        }),
+        { flag: "wx" },
+      );
+      const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+      try {
+        expect(
+          implementation.runCatalogV2Cli([
+            ...candidateArgs.slice(0, 2),
+            join(roundtrip, "seed-tampered.json"),
+            ...candidateArgs.slice(3, -1),
+            join(roundtrip, "candidate-tampered.json"),
+          ]),
+        ).toBe(2);
+      } finally {
+        stderr.mockRestore();
+      }
+      const head = catalogApi.parseCatalogHeadV2Json(readFileSync(candidatePath, "utf8"));
+      const signed = catalogApi.signCatalogHeadV2({ head, privateKey });
+      const catalogSignerRoot = {
+        ...signer,
+        publicKeySpkiDerBase64: Buffer.from(
+          publicKey.export({ format: "der", type: "spki" }),
+        ).toString("base64"),
+      };
+      const receipt = catalogApi.emitQualificationReceipt({
+        catalogSignerRoots: [catalogSignerRoot],
+        entryId,
+        expectedClaims: claims,
+        now: "2026-09-07T12:10:00Z",
+        replay: { acceptedIdentities: [] },
+        signed,
+      });
+      const receiptSet = catalogApi.emitQualificationReceiptSet({
+        catalogSignerRoots: [catalogSignerRoot],
+        expectedClaims: claims,
+        now: "2026-09-07T12:10:00Z",
+        replay: { acceptedIdentities: [] },
+        signed,
+      });
+      const member = { ...head.entries[0] };
+      delete member.memberSha256;
+      const receiptBytes = catalogApi.canonicalQualificationReceiptBytes(receipt);
+      const receiptSetBytes = catalogApi.canonicalQualificationReceiptSetBytes(receiptSet.manifest);
+      const memberBytes = canonicalStrictJsonBytesV1(member);
+      const publisher = {
+        ...CATALOG_QUALIFICATION_RELEASE_POLICY_V1.publisher,
+        subjectName: `${entryId}.json`,
+      };
+      const releaseRecord = {
+        receiptBytes,
+        receiptSetBytes,
+        memberBytes,
+        closureBytesByIdentity: { "artifact:artifacts/closure.json": closureBytes },
+        publisher,
+        receiptSetPublisher: CATALOG_QUALIFICATION_RELEASE_POLICY_V1.receiptSetPublisher,
+      };
+      expect(
+        inspectCatalogQualificationArtifactV1(
+          assembleCompilerOutputsV1([builtInAssemblyInputV1(compiled)], compiled.coreCapabilities),
+          releaseRecord,
+          firstParty!.bindings,
+          "2026-09-07T12:10:00Z",
+        ),
+      ).toMatchObject({ [assetId]: { state: "qualified" } });
+      const invalidClosureBytes = Buffer.from(
+        canonicalCatalogQualificationClosureV1({
+          ...closure,
+          files: [{ path: "generated/forged.mjs", digest: `sha256:${"0".repeat(64)}` }],
+        }),
+        "utf8",
+      );
+      expect(
+        inspectCatalogQualificationArtifactV1(
+          assembleCompilerOutputsV1([builtInAssemblyInputV1(compiled)], compiled.coreCapabilities),
+          {
+            ...releaseRecord,
+            closureBytesByIdentity: { "artifact:artifacts/closure.json": invalidClosureBytes },
+          },
+          firstParty!.bindings,
+          "2026-09-07T12:10:00Z",
+        ),
+      ).toBeUndefined();
+      let attestationCall = 0;
+      mocks.defaultRunner.mockImplementation(async () => {
+        const bytes = attestationCall++ === 0 ? receiptBytes : receiptSetBytes;
+        const expectedPublisher =
+          attestationCall === 1 ? publisher : releaseRecord.receiptSetPublisher;
+        return {
+          code: 0,
+          stdout: localCatalogAttestation(expectedPublisher, bytes),
+          stderr: "",
+        };
+      });
+      expect(
+        await verifyCatalogQualificationArtifactsForPackagingV1(
+          assembleCompilerOutputsV1([builtInAssemblyInputV1(compiled)], compiled.coreCapabilities),
+          firstParty!.bindings,
+          [releaseRecord],
+          "2026-09-07T12:10:00Z",
+        ),
+      ).toBeDefined();
+      expect(attestationCall).toBe(2);
+      next = 0;
+      mocks.defaultRunner.mockImplementation(scannerRunner);
+    }
+    const record = PackagedScannerCollectionEvidenceRecordV1Schema.parse(JSON.parse(sealed.bytes));
+
+    expect(calls).toHaveLength(artifacts.length);
+    expect(authored).toMatchObject({
+      catalog: {
+        id: "aih",
+        source: {
+          id: "source:aih-core",
+          inputFormat: "built-in/v1",
+          upstreamOrigin: { kind: "aih" },
+        },
+      },
+      verification: {
+        method: "gh-attestation-verify",
+        preparedAt: "2026-09-07T12:10:00.000Z",
+      },
+    });
+    expect(record).toMatchObject({
+      version: "packaged-scanner-collection-evidence/v1",
+      authority: "display-only",
+      catalog: authored.catalog,
+      verification: {
+        method: "gh-attestation-verify",
+        preparedAt: "2026-09-07T12:10:00.000Z",
+      },
+    });
+    expect(record.coverage.components).toHaveLength(10);
+    expect(sealed.bytes).not.toContain("ageSeconds");
+    expect(sealed.bytes).not.toContain("reverifiedAt");
+    expect(authorPreparedAihScannerPublicationV1(structuredClone(prepared))).toBeUndefined();
+    expect(authorPackagedAihScannerEvidenceRecordV1(structuredClone(prepared))).toBeUndefined();
+
+    next = 0;
+    const reverified = await reverifyPackagedAihScannerEvidenceRecordV1({
+      packageRoot: resolve("."),
+      coreRevision: { pinnedSha: currentRevision() },
+      catalog,
+      compiled: compileBuiltInCatalogV1(catalog),
+      batches: artifacts.map(({ discoveryBytes, publicationBytes }) => ({
+        discoveryBytes,
+        publicationBytes,
+      })),
+      now: "2026-09-07T12:20:00.000Z",
+      sealed,
+    });
+    expect(authorPreparedAihScannerPublicationV1(reverified)).toMatchObject({
+      verification: { preparedAt: "2026-09-07T12:20:00.000Z" },
+    });
+  });
+
+  it("uses the process-owned attestation verifier after materializing from a real Core pin", async () => {
+    const outputParent = temporaryDirectory("aih-scan-material-preparation-");
+    const catalog = policyAuthoringCatalog();
+    const calls: string[][] = [];
+    mocks.defaultRunner.mockImplementation(async (argv) => {
+      calls.push([...argv]);
+      return { code: 0, stdout: "{}", stderr: "" };
+    });
+    await expect(
+      prepareAihScannerPublicationsV1({
+        packageRoot: resolve("."),
+        materialOutputParent: outputParent,
+        coreRevision: { pinnedSha: currentRevision() },
+        catalog,
+        compiled: compileBuiltInCatalogV1(catalog),
+        batches: [
+          {
+            discoveryBytes: Buffer.from(
+              JSON.stringify({
+                locator: `https://github.com/samartomar/aih-scan/releases/download/baseline-v1-${SCANNER_BASELINE_PUBLICATION_PUBLISHER_V1.commit}-${"a".repeat(64)}/publication.json`,
+              }),
+            ),
+            publicationBytes: Buffer.from("{}"),
+          },
+        ],
+        now: "2026-09-07T12:10:00.000Z",
+      }),
+    ).rejects.toThrow(/publication/i);
+    expect(readdirSync(outputParent)).toEqual([]);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.slice(0, 3)).toEqual(["gh", "attestation", "verify"]);
+  });
+});

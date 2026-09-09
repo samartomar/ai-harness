@@ -103,7 +103,7 @@ describe("ai-harness self-hosting boundary", () => {
     expect(full.env?.NODE_OPTIONS).toBeUndefined();
     expect(full.steps.map((step) => step.run)).toEqual(
       expect.arrayContaining([
-        "npx vitest run --coverage --maxWorkers=2 --testTimeout=15000",
+        "npx vitest run --coverage --coverage.reportOnFailure --maxWorkers=2 --testTimeout=15000",
         "npx vitest run --shard=1/4",
         "npx vitest run --shard=2/4",
         "npx vitest run --shard=3/4",

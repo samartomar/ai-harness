@@ -8,6 +8,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Retain verified exact-version ECC runtime data with authenticated Workbench
+  source updates. Compatible saved selections use their own paths and evidence
+  rather than the bundled baseline's metadata. Historical materialization
+  receipts distinguish original reports from Core-derived evaluation, and
+  expired or unsupported updates remain blocked.
+
 - Add 25 pinned Matt Pocock skills to the unreleased Policy Workbench catalog,
   with exact source and content pins, required support files, and MIT attribution.
   Selection records additive requested intent through the existing `--ui` entry.
@@ -21,6 +27,20 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Show packaged Workbench scan results, findings, scope, and reported analyzer
+  versions before a single verification notice. Count included reports separately
+  from currently verified evidence; missing bundled reports no longer direct
+  administrators to repeat an existing scan.
+
+- Clarify Workbench selection, request, and optional-exclusion actions; show readable
+  purpose, declared access, and scan details in a compact source-specific accordion
+  with optional metadata JSON. Preview atomic conflict replacements and
+  starting points before applying them and review draft choices separately from
+  pending requests. Carry source-owned AIH and pinned Superpowers descriptions
+  into the catalog. Collapse adoption guidance
+  into a dismissible panel, restore section and drawer controls, omit empty
+  source-scoped types, identify form fields, and avoid browser eval/CSP probes.
+
 - Reduce Workbench generation and test overhead by reusing private, immutable
   default models and compiler inputs, compacting control fixtures, and closing
   test browser windows. Public outputs remain detached, and supplied evidence
@@ -29,7 +49,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the existing documentation, governance, and review skill packs.
 - Accept timezone-qualified timestamps from GitHub CLI's verified Scanner
   attestations on Windows, while retaining exact publisher and freshness checks.
-- Make the Policy Workbench catalog browsable by source and asset type, with counts, ordinary name search, readable selection-template labels, and explicit empty categories. Filtering retains lazy details and bounded result pages.
+- Make the Policy Workbench catalog browsable by source and asset type, with counts, ordinary name search, readable selection-template labels, and source-scoped type choices that omit empty categories. Filtering retains lazy details and bounded result pages.
 - Every AIH MCP row in the portable Policy Workbench now accepts requested intent, recorded in the
   new optional `governance.aihMcpRequests` array. The policy-projector and AIH-evidence gates stay
   as row labels and next routes: they hold at export and again at target evaluation, and a recorded

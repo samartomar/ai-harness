@@ -3,6 +3,7 @@ import { chmodSync, lstatSync, mkdtempSync, rmSync, writeFileSync } from "node:f
 import { request as httpsRequest } from "node:https";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { SCANNER_BASELINE_ANALYZER_VERSIONS } from "../baseline-evidence/scanner-profile.js";
 import {
   type BaselineEvidenceLock,
   parseBaselineEvidenceLock,
@@ -16,7 +17,10 @@ import {
 } from "../baseline-evidence/vendor-artifact-v1.js";
 import { codeUnitCompare } from "../capability/package-graph/canonical.js";
 import type { Posture } from "../config/posture.js";
-import { canonicalStrictJsonSha256V1 } from "../contract/strict-json-v1.js";
+import {
+  canonicalStrictJsonBytesV1,
+  canonicalStrictJsonSha256V1,
+} from "../contract/strict-json-v1.js";
 import { AihError } from "../errors.js";
 import { defaultRunner, type Runner } from "../internals/proc.js";
 import { findOnPath } from "../live/runner.js";
@@ -32,7 +36,12 @@ import {
   type DownloadedEvidenceV1,
   readAdminBaselineEvidenceCacheV1,
 } from "./admin-baseline-evidence-cache-v1.js";
-import { type AuthoringCatalogBundleV1, EvidenceSummaryV1Schema } from "./workbench/contracts.js";
+import { projectBaselineDisplayEvidenceV1 } from "./baseline-display-projection-v1.js";
+import {
+  inspectPackagedPublicBaselineBytesV1,
+  PackagedPublicBaselineEvidenceV1Schema,
+} from "./packaged-public-baseline-v1.js";
+import type { AuthoringCatalogBundleV1 } from "./workbench/contracts.js";
 
 const ATTESTATION_LIMIT = 256 * 1024;
 const ARTIFACT_FILE_LIMIT = 1024 * 1024;
@@ -95,6 +104,12 @@ interface VerifiedWorkbenchBaselineFactsV1 {
   readonly evidenceDigest: string;
   readonly verifiedAt: string;
   readonly validUntil: string;
+  readonly signedAt: string;
+  readonly publisher: Omit<
+    VerifiedBaselineEvidenceArtifactAttestationV1,
+    "verified" | "subjectSha256"
+  >;
+  readonly artifactSubjectDigest: string;
 }
 // Only the production-owned operational composition can issue this witness.
 const operationalCustody = Symbol("verified-baseline-operation");
@@ -115,6 +130,52 @@ function resolvedEvidence(
 }
 
 /**
+ * Release preparation only: the actual operational verifier must own this
+ * result. Public parsers, injected resolvers, and JSON clones cannot author it.
+ * This proof names the verified Core vendor publisher, not an inferred Scanner run.
+ */
+export function preparePackagedPublicBaselineEvidenceV1(
+  resolved: ResolvedAdminBaselineEvidenceV1,
+  bundle: AuthoringCatalogBundleV1,
+  now: string,
+): { bytes: string; sha256: string } {
+  const facts = verifiedResolutions.get(resolved);
+  if (!facts) fail("public package preparation requires operational custody");
+  const { validUntil, contextDigest } = facts;
+  if (epoch(now, "package preparation clock") >= epoch(validUntil, "public evidence validity"))
+    fail("public evidence has expired");
+  const evidence = workbenchEvidenceFromVerifiedBaselineV1(resolved, bundle, now);
+  if (Object.keys(evidence).length === 0) fail("public evidence has no matching source coverage");
+  for (const report of Object.values(evidence)) {
+    if (report.verification.state !== "verified") fail("public evidence is not current");
+    for (const analyzer of report.scan.analyzers ?? []) {
+      if (
+        SCANNER_BASELINE_ANALYZER_VERSIONS[
+          analyzer.name as keyof typeof SCANNER_BASELINE_ANALYZER_VERSIONS
+        ] !== analyzer.version
+      )
+        fail("public evidence analyzer identity");
+    }
+  }
+  const value = PackagedPublicBaselineEvidenceV1Schema.parse({
+    version: "packaged-public-baseline-evidence/v1",
+    authority: "display-only",
+    publisher: facts.publisher,
+    artifactSubjectDigest: facts.artifactSubjectDigest,
+    lockDigest: `sha256:${facts.evidenceDigest}`,
+    signedAt: facts.signedAt,
+    verifiedAt: facts.verifiedAt,
+    validUntil,
+    contextDigest,
+    expectedAnalyzerPolicy: SCANNER_BASELINE_ANALYZER_VERSIONS,
+  });
+  const bytes = canonicalStrictJsonBytesV1(value).toString("utf8");
+  const sha256 = `sha256:${createHash("sha256").update(bytes, "utf8").digest("hex")}`;
+  inspectPackagedPublicBaselineBytesV1(bytes, sha256);
+  return { bytes, sha256 };
+}
+
+/**
  * Only an in-process result of the actual attestation resolver can carry custody.
  * Cloning/serializing the result loses custody. All displayed scan facts are
  * derived from the checked lock; no caller-supplied summary can nominate them.
@@ -125,73 +186,7 @@ export function workbenchEvidenceFromVerifiedBaselineV1(
   now: string,
 ): AuthoringCatalogBundleV1["evidence"] {
   const facts = verifiedResolutions.get(resolved);
-  if (facts === undefined) return {};
-  const current = epoch(now, "Workbench evidence clock");
-  const fresh =
-    current >= epoch(facts.verifiedAt, "verification clock") &&
-    current < epoch(facts.validUntil, "evidence validity");
-  const result: AuthoringCatalogBundleV1["evidence"] = {};
-  for (const source of facts.lock.sources) {
-    const sourceId = `source:${source.id}`;
-    const descriptor = bundle.sources[sourceId];
-    if (
-      !descriptor ||
-      descriptor.inputFormat !== "pinned-baseline/v1" ||
-      descriptor.upstreamOrigin.kind !== "git" ||
-      descriptor.upstreamOrigin.locator !== `${source.owner}/${source.repo}` ||
-      descriptor.revision.id !== source.pinnedSha ||
-      descriptor.revision.contentDigest !== `sha256:${source.sourceTreeSha256}`
-    )
-      continue;
-    for (const component of source.components) {
-      const assetId = `${source.id}/${component.id}`;
-      const asset = bundle.assets[assetId];
-      if (
-        !asset ||
-        asset.sourceId !== sourceId ||
-        asset.sourceRevisionId !== source.pinnedSha ||
-        asset.contentDigest !== `sha256:${component.treeSha256}` ||
-        asset.derivation !== "upstream"
-      )
-        continue;
-      const id = `evidence:${assetId}`;
-      result[id] = EvidenceSummaryV1Schema.parse({
-        id,
-        projectionVersion: "evidence-summary/v1",
-        subjects: [
-          {
-            assetId,
-            sourceId,
-            sourceRevisionId: source.pinnedSha,
-            contentDigest: asset.contentDigest,
-          },
-        ],
-        evidenceDigest: `sha256:${canonicalStrictJsonSha256V1({
-          artifact: facts.evidenceDigest,
-          source: { id: source.id, pinnedSha: source.pinnedSha },
-          component,
-        })}`,
-        coveredPaths: [...component.paths].sort(),
-        verification: fresh
-          ? {
-              state: "verified",
-              verifiedAt: facts.verifiedAt,
-              validUntil: facts.validUntil,
-              contextDigest: facts.contextDigest,
-            }
-          : { state: "stale" },
-        scan: {
-          outcome: component.verdict === "blocked" ? "failed" : fresh ? "pass" : "unknown",
-          coverage: "complete",
-        },
-        qualification: { state: "unknown" },
-        findings: component.findings
-          .slice(0, 50)
-          .map((finding) => `${finding.code}: ${finding.detail}`.slice(0, 1000)),
-      });
-    }
-  }
-  return result;
+  return facts === undefined ? {} : projectBaselineDisplayEvidenceV1(facts, bundle, now);
 }
 
 export interface ResolveOperationalAdminBaselineEvidenceV1Input {
@@ -415,7 +410,14 @@ export const defaultAdminBaselineEvidenceHttpsFetchV1 = createAdminBaselineEvide
  */
 export function parseGithubBaselineEvidenceAttestationV1(
   bytes: Buffer,
-  expected: AdminBaselineEvidenceBootstrapV1 & {
+  expected: Pick<
+    AdminBaselineEvidenceBootstrapV1,
+    | "expectedEnvironment"
+    | "expectedIssuer"
+    | "expectedRef"
+    | "expectedRepository"
+    | "expectedWorkflow"
+  > & {
     readonly now: string;
     readonly subjectSha256: string;
   },
@@ -890,6 +892,9 @@ async function verify(
         evidenceDigest: info.digest,
         verifiedAt: now,
         validUntil,
+        signedAt,
+        publisher: policy,
+        artifactSubjectDigest: `sha256:${subject.sha256}`,
         contextDigest: `sha256:${canonicalStrictJsonSha256V1({ claim, signedAt, verifiedAt: now, downloadedAt: downloaded.downloadedAt, validUntil, lockDigest: info.digest, sources: bootstrap.sources })}`,
       });
     }

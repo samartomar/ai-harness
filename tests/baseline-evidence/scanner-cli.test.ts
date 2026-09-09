@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   baselineCatalogById: vi.fn(),
+  prepareCatalog: vi.fn(),
   canonicalRequest: vi.fn(),
   consumePublication: vi.fn(),
   consumePublications: vi.fn(),
@@ -19,8 +20,8 @@ vi.mock("node:child_process", () => ({ execFileSync: mocks.execFileSync }));
 vi.mock("@aihq/scan", () => ({
   canonicalBaselineVetRequestV1Bytes: mocks.canonicalRequest,
 }));
-vi.mock("../../src/baseline-evidence/catalogs.js", () => ({
-  baselineCatalogById: mocks.baselineCatalogById,
+vi.mock("../../src/baseline-evidence/scanner-provider-catalogs.js", () => ({
+  prepareRegisteredScannerCatalogV1: mocks.prepareCatalog,
 }));
 vi.mock("../../src/baseline-evidence/ecc-preview-boundary.js", () => ({
   generateAuthorizedEccInstallPreview: mocks.generatePreview,
@@ -68,6 +69,9 @@ beforeEach(() => {
     pinnedSha: PIN,
     components: [],
   }));
+  mocks.prepareCatalog.mockImplementation((_root: string, id: string) => ({
+    catalog: mocks.baselineCatalogById(id),
+  }));
   mocks.canonicalRequest.mockImplementation((value: unknown) =>
     Buffer.from(`${JSON.stringify(value)}\n`),
   );
@@ -83,6 +87,31 @@ afterEach(() => {
 });
 
 describe("baseline Scanner bridge CLI", () => {
+  it("retains a non-authoritative coverage companion bound to the exact authored requests", async () => {
+    const source = makeDirectory("provider-source");
+    const output = join(root, "provider-requests");
+    mocks.createRequests.mockReturnValue([{ requestSha256: "1".repeat(64) }]);
+    mocks.prepareCatalog.mockReturnValue({
+      catalog: mocks.baselineCatalogById("mattpocock"),
+      coverage: { authority: "none", version: "workbench-scanner-coverage/v1" },
+      coverageDigest: `sha256:${"2".repeat(64)}`,
+    });
+    await runScannerBridge([
+      "request",
+      "--catalog",
+      "mattpocock",
+      "--source",
+      source,
+      "--output",
+      output,
+    ]);
+    expect(JSON.parse(readFileSync(join(output, "coverage-map.json"), "utf8"))).toEqual({
+      authority: "none",
+      version: "workbench-scanner-coverage/v1",
+      coverageDigest: `sha256:${"2".repeat(64)}`,
+      requestSha256: ["1".repeat(64)],
+    });
+  });
   it("authors contiguous immutable request batches for the exact catalog checkout", async () => {
     const source = makeDirectory("source");
     const output = join(root, "requests");

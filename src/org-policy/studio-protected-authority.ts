@@ -50,7 +50,7 @@ export function protectedPolicyWorkbenchMarkup(): string {
                 <label data-protected-source="aih" hidden>Exact AIH release <input id="protected-source-release" placeholder="0.3.0"></label>
                 <label data-protected-source="aih" hidden>Exact AIH revision <input id="protected-source-revision" placeholder="sha256:..."></label>
                 <label>Targets <input id="protected-targets" placeholder="claude,codex" required></label>
-                <label>Allowed effects <input id="protected-effects" placeholder="observe,use" required></label>
+                <label>Allowed effects <input id="protected-effects" aria-describedby="protected-effects-guide" placeholder="observe,use" required></label>
                 <label>Qualification basis <select id="protected-qualification-kind" aria-describedby="protected-qualification-guide"><option value="organization-qualified">Organization-qualified evidence</option><option value="aih-supported">AIH-supported Catalog receipt</option></select></label>
                 <label data-protected-qualification="aih-supported" hidden>Catalog signer identity <input id="protected-catalog-signer" placeholder="administrator:aih-supported/catalog-v2"></label>
                 <label data-protected-qualification="aih-supported" hidden>Exact Catalog digest <input id="protected-catalog-digest" placeholder="sha256:..."></label>
@@ -66,7 +66,17 @@ export function protectedPolicyWorkbenchMarkup(): string {
                 <label>Control digest <input id="protected-control-digest" placeholder="sha256:..." required></label>
                 <label>Accountable owner email <input id="protected-actor" type="email" autocomplete="email" placeholder="name@company.example" required></label>
                 <label>Approval reason <input id="protected-reason" placeholder="Approved after evidence review" required></label>
+                <label>Decision disposition <select id="protected-disposition"><option value="approved">Approved</option><option value="accepted-with-conditions">Accepted with conditions</option></select></label>
               </div>
+              <p class="help" id="protected-effects-guide">Use one or more supported effects for this exact artifact approval.</p>
+              <section class="form-grid" data-protected-disposition="accepted-with-conditions" hidden aria-labelledby="protected-conditional-title">
+                <h3 id="protected-conditional-title">Named risk acceptance</h3>
+                <p class="help">Acceptance records named findings or waivable gaps, conditions, and a review time. It does not approve missing evidence or replace Core verification.</p>
+                <label>Accepted findings <input id="protected-accepted-findings" placeholder="finding-a,finding-b"></label>
+                <label>Accepted waivable gaps <input id="protected-accepted-gaps" placeholder="gap-a,gap-b"></label>
+                <label>Conditions <textarea id="protected-conditions" rows="3" placeholder="One visible condition per line"></textarea></label>
+                <label>Review by <input id="protected-review-by" placeholder="2026-09-01T12:00:00Z"></label>
+              </section>
               <p class="help" id="protected-qualification-guide">Organization-qualified evidence binds this decision directly to the exact evidence digest and attestor.</p>
               <div class="brow" style="margin-top:8px"><button type="submit" class="btn sm primary">Add exact artifact approval</button><button type="button" class="btn sm" id="download-protected-bundle" disabled>Download protected policy file</button><button type="button" class="btn sm" id="download-protected-evidence" disabled>Download organization evidence envelope</button></div>
             </fieldset>

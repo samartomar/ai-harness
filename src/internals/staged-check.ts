@@ -50,6 +50,25 @@ function npmExec(toolchain: StagedCheckToolchain, ...args: string[]): string[] {
   return [toolchain.nodeExecutable, toolchain.npmCli, "exec", "--no", "--", ...args];
 }
 
+/** npm exec may use cmd.exe internally; keep escaped argument batches below its limit. */
+function boundedFileCommands(prefix: string[], paths: readonly string[]): string[][] {
+  const commands: string[][] = [];
+  let current = [...prefix];
+  const size = (args: readonly string[]) =>
+    args.reduce((total, arg) => total + arg.length * 2 + 3, 0);
+  for (const path of paths) {
+    if (size([...prefix, path]) > 6000)
+      throw new Error("Staged check path exceeds command-line bound");
+    if (size([...current, path]) > 6000) {
+      commands.push(current);
+      current = [...prefix];
+    }
+    current.push(path);
+  }
+  if (current.length > prefix.length) commands.push(current);
+  return commands;
+}
+
 // Selected integration files can exceed two minutes while individual tests remain bounded.
 // Allow their process to finish without extending lint or artifact-check deadlines.
 function commandTimeoutMs(argv: readonly string[]): number {
@@ -70,7 +89,7 @@ function planCommands(
   const commands: string[][] = [npmRun(toolchain, "--silent", "check:artifacts")];
   const biomePaths = [...new Set(input.stagedPaths.filter(isBiomePath))].sort();
   if (biomePaths.length > 0) {
-    commands.push(npmExec(toolchain, "biome", "check", ...biomePaths));
+    commands.push(...boundedFileCommands(npmExec(toolchain, "biome", "check"), biomePaths));
   }
   if (receipt.riskClass === "docs" || input.stagedPaths.some((path) => path.endsWith(".md"))) {
     commands.push(npmRun(toolchain, "--silent", "docs:lint"));
@@ -81,7 +100,11 @@ function planCommands(
     ? BOUNDED_FALLBACK_TESTS.filter((path) => available.has(path))
     : receipt.selectedTests;
   if (tests.length > 0) {
-    commands.push(npmExec(toolchain, "vitest", "run", ...tests));
+    // Selected policy integration tests launch subprocesses themselves. Keep the
+    // local hook within a bounded worker budget without changing test deadlines.
+    commands.push(
+      ...boundedFileCommands(npmExec(toolchain, "vitest", "run", "--maxWorkers=2"), tests),
+    );
   }
   return commands;
 }

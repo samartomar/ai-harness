@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   compilePinnedComponentCollectionV1,
@@ -9,6 +10,29 @@ import {
 } from "../../../../src/org-policy/workbench/providers/ponytail.js";
 
 describe("pinned component collection compiler", () => {
+  it("preserves bounded large inventories and zero-byte ordinary resources", () => {
+    const input = ponytailComponentCollectionFixtureV1();
+    const main = input.components[0]!;
+    const files = Array.from({ length: 413 }, (_, index) => ({
+      path: `resources/file-${index}.txt`,
+      bytesBase64: "",
+      size: 0,
+      sha256: `sha256:${createHash("sha256").update("").digest("hex")}`,
+    }));
+    input.files.push(...files);
+    for (let start = 0; start < files.length; start += 100)
+      input.components.push({
+        id: `skill:resources-${String.fromCharCode(97 + start / 100)}`,
+        kind: "skill",
+        label: "Resource closure",
+        description: "Exact empty source resources",
+        primaryPath: main.primaryPath,
+        fileRefs: [main.primaryPath, ...files.slice(start, start + 100).map((file) => file.path)],
+      });
+    expect(() => compilePinnedComponentCollectionV1(input)).not.toThrow();
+    input.files[1]!.sha256 = `sha256:${"f".repeat(64)}`;
+    expect(() => compilePinnedComponentCollectionV1(input)).toThrow(/digest mismatch/);
+  });
   function fixtureWithMinimalRelations() {
     const input = ponytailComponentCollectionFixtureV1();
     const main = input.components[0];

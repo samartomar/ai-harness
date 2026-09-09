@@ -67,7 +67,7 @@ describe("browser evidence display", () => {
     ).toMatchObject({ state: "stale" });
     expect(evidenceDisplayFor(asset, [summary()], Date.parse("2026-01-01T12:00:00.000Z"))).toEqual({
       state: "verified",
-      text: "evidence: verified · pass/complete · unqualified",
+      text: "evidence: verified · pass/complete",
     });
   });
   it("never upgrades stale failed evidence into authority", () => {

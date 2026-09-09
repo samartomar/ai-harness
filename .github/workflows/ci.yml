@@ -241,7 +241,15 @@ jobs:
       # starves unrelated filesystem and DOM tests past their own time budgets.
       - name: Test + coverage gate
         if: matrix.os == 'ubuntu-latest'
-        run: npx vitest run --coverage --maxWorkers=2 --testTimeout=15000
+        run: npx vitest run --coverage --coverage.reportOnFailure --maxWorkers=2 --testTimeout=15000
+      - name: Retain coverage diagnostics
+        if: ${{ !cancelled() && matrix.os == 'ubuntu-latest' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: core-coverage
+          path: coverage/lcov.info
+          if-no-files-found: warn
+          retention-days: 7
       # Tokenless upload works for public repos; installing the Codecov GitHub
       # App (or a CODECOV_TOKEN secret) upgrades reliability. Never fails CI —
       # the coverage GATE is the vitest thresholds above, not the upload.

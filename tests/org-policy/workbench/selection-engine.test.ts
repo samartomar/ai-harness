@@ -9,10 +9,16 @@ import {
 import { verifyWorkbenchDraftBytesV1 } from "../../../src/org-policy/workbench/core/verification.js";
 import {
   createWorkbenchState,
+  previewWorkbenchTransactionV1,
   reduceWorkbenchAction,
   resolveWorkbenchSelection,
   workbenchSelectionCounts,
+  workbenchStatesEqualV1,
 } from "../../../src/org-policy/workbench/selection-engine.js";
+import {
+  mcpRuntimeOverlapPresentation,
+  selectionComparisonPresentation,
+} from "../../../src/org-policy/workbench/ui/selection-comparison.js";
 
 const digest = (letter: string) => `sha256:${letter.repeat(64)}`;
 const administrator = { kind: "administrator" } as const;
@@ -83,6 +89,254 @@ const base = catalog({
 });
 
 describe("Workbench reducer", () => {
+  it("persists and clears a rationale only for the exact current request pin", () => {
+    const requested = asset("mcp:rationale", "record-request", { kind: "mcp" });
+    const bundle = catalog({ [requested.id]: requested });
+    const state = reduceWorkbenchAction(bundle, createWorkbenchState(), {
+      type: "record-request",
+      assetId: requested.id,
+      origin: administrator,
+    }).state;
+    const pin = state.requests[0]!;
+    const saved = reduceWorkbenchAction(bundle, state, {
+      type: "set-rationale",
+      entry: "request",
+      ...pin,
+      rationale: "Needed for the reviewed repository integration.",
+    }).state;
+    expect(saved.requests[0]?.rationale).toBe("Needed for the reviewed repository integration.");
+    expect(
+      reduceWorkbenchAction(bundle, saved, { type: "set-rationale", entry: "request", ...pin })
+        .state.requests[0],
+    ).not.toHaveProperty("rationale");
+  });
+  it("advises only on an exact provider-declared MCP runtime identity", () => {
+    const aih = asset("mcp:github-aih", "record-request", {
+      kind: "mcp",
+      runtimeIdentity: "mcp:github",
+    });
+    const ecc = asset("mcp:github-ecc", "record-request", {
+      kind: "mcp",
+      runtimeIdentity: "mcp:github",
+    });
+    const unrelated = asset("mcp:github-label", "record-request", { kind: "mcp" });
+    const bundle = catalog({ [aih.id]: aih, [ecc.id]: ecc, [unrelated.id]: unrelated });
+    const state = reduceWorkbenchAction(bundle, createWorkbenchState(), {
+      type: "record-request",
+      assetId: aih.id,
+      origin: administrator,
+    }).state;
+    expect(mcpRuntimeOverlapPresentation(ecc, bundle, state)).toMatchObject({
+      kind: "potential-overlap",
+      runtimeIdentity: "mcp:github",
+      candidates: [{ assetId: aih.id }],
+    });
+    expect(mcpRuntimeOverlapPresentation(unrelated, bundle, state).kind).toBe("none");
+  });
+  it("normalizes state equality and transaction deltas while rejecting malformed inputs", () => {
+    const selected = reduceWorkbenchAction(base, createWorkbenchState(), {
+      type: "select-root",
+      assetId: "control:one",
+      origin: administrator,
+    }).state;
+    const reordered = {
+      drafts: [],
+      requests: [],
+      exclusions: [],
+      roots: selected.roots.map((root) => Object.fromEntries(Object.entries(root).reverse())),
+    } as unknown as typeof selected;
+    expect(workbenchStatesEqualV1(selected, reordered)).toBe(true);
+    expect(workbenchStatesEqualV1(selected, createWorkbenchState())).toBe(false);
+    expect(workbenchStatesEqualV1({ roots: null }, selected)).toBe(false);
+    const preview = previewWorkbenchTransactionV1(base, reordered, [
+      {
+        type: "record-request",
+        assetId: "request:one",
+        origin: administrator,
+      },
+    ]);
+    expect(preview.changes.roots).toEqual({ added: [], removed: [] });
+    for (const malformed of [
+      { roots: null },
+      { ...selected, roots: Array(10_001).fill(selected.roots[0]) },
+    ]) {
+      expect(previewWorkbenchTransactionV1(base, malformed as typeof selected, [])).toMatchObject({
+        accepted: false,
+        state: malformed,
+      });
+    }
+  });
+
+  it("retains fresh conflict origins when another origin is stale and rejects a mismatched candidate pin", () => {
+    const old = asset("skill:old", "record-selection");
+    const next = asset("skill:new", "record-selection");
+    const bundle = catalog({ [old.id]: old, [next.id]: next }, [
+      {
+        fromAssetId: old.id,
+        toAssetId: next.id,
+        kind: "conflicts",
+      },
+    ]);
+    let state = reduceWorkbenchAction(bundle, createWorkbenchState(), {
+      type: "select-root",
+      assetId: old.id,
+      origin: administrator,
+    }).state;
+    state = reduceWorkbenchAction(bundle, state, {
+      type: "select-root",
+      assetId: old.id,
+      origin: { kind: "legacy-unattributed" },
+    }).state;
+    const stale = state.roots.find((root) => root.origin.kind === "legacy-unattributed")!;
+    stale.contentDigest = digest("c");
+    stale.resolvedItems[0]!.contentDigest = digest("c");
+    expect(resolveWorkbenchSelection(bundle, state)).toMatchObject({
+      assetIds: [old.id],
+      staleAssetIds: [old.id],
+    });
+    const comparison = selectionComparisonPresentation(next, bundle, state);
+    expect(comparison.kind).toBe("conflict");
+    expect(comparison.steps).toContainEqual({
+      type: "remove-root",
+      assetId: old.id,
+      origin: administrator,
+    });
+    expect(comparison.preview.state.roots.some((root) => root.assetId === next.id)).toBe(true);
+    expect(
+      selectionComparisonPresentation({ ...next, contentDigest: digest("c") }, bundle, state)
+        .preview.accepted,
+    ).toBe(false);
+  });
+  it("previews atomic replacement and preserves the original state when a later step fails", () => {
+    const selected = reduceWorkbenchAction(base, createWorkbenchState(), {
+      type: "select-root",
+      assetId: "control:one",
+      origin: administrator,
+    }).state;
+    const remove = { type: "remove-root", assetId: "control:one", origin: administrator } as const;
+    const failed = previewWorkbenchTransactionV1(base, selected, [
+      remove,
+      { type: "select-root", assetId: "control:missing", origin: administrator },
+    ]);
+    expect(failed).toMatchObject({
+      accepted: false,
+      state: selected,
+      changes: { removedAssetIds: [], roots: { removed: [] } },
+    });
+    expect(failed.action).toBeUndefined();
+    const success = previewWorkbenchTransactionV1(base, selected, [
+      remove,
+      { type: "record-request", assetId: "request:one", origin: administrator },
+    ]);
+    expect(success).toMatchObject({
+      accepted: true,
+      changes: {
+        removedAssetIds: ["control:one"],
+        requests: { added: [{ assetId: "request:one" }] },
+      },
+    });
+    expect(reduceWorkbenchAction(base, selected, success.action).state).toEqual(success.state);
+    expect(selected.roots).toHaveLength(1);
+    for (const steps of [
+      [],
+      Array.from({ length: 257 }, () => remove),
+      [{ type: "restore-state" as const, state: selected }],
+    ]) {
+      expect(previewWorkbenchTransactionV1(base, selected, steps)).toMatchObject({
+        accepted: false,
+        state: selected,
+      });
+    }
+  });
+
+  it("compares declared conflicts through selecting origins and previews whole-template collateral", () => {
+    const old = asset("skill:old", "record-selection", { label: "Grill me" });
+    const next = asset("skill:new", "record-selection", { label: "Grill me" });
+    const group = asset("group:one", "record-selection");
+    const extra = asset("skill:extra", "record-selection");
+    const blocked = asset("skill:blocked", "record-selection");
+    const bundle = catalog(
+      {
+        [old.id]: old,
+        [next.id]: next,
+        [group.id]: group,
+        [extra.id]: extra,
+        [blocked.id]: blocked,
+      },
+      [{ fromAssetId: group.id, toAssetId: old.id, kind: "requires" }],
+    );
+    const selected = reduceWorkbenchAction(bundle, createWorkbenchState(), {
+      type: "select-root",
+      assetId: group.id,
+      origin: administrator,
+    }).state;
+    expect(selectionComparisonPresentation(next, bundle, selected).kind).toBe("none");
+    expect(selectionComparisonPresentation(old, bundle, selected).kind).toBe("already-in-draft");
+    bundle.relations.push({ fromAssetId: old.id, toAssetId: next.id, kind: "conflicts" });
+    const origin = { kind: "template", id: "template:one", digest: digest("f") } as const;
+    let templated = reduceWorkbenchAction(bundle, createWorkbenchState(), {
+      type: "select-root",
+      assetId: group.id,
+      origin,
+    }).state;
+    templated = reduceWorkbenchAction(bundle, templated, {
+      type: "select-root",
+      assetId: extra.id,
+      origin,
+    }).state;
+    templated = reduceWorkbenchAction(bundle, templated, {
+      type: "add-exclusion",
+      assetId: "skill:blocked",
+      origin,
+    }).state;
+    const comparison = selectionComparisonPresentation(next, bundle, templated);
+    expect(comparison.kind).toBe("conflict");
+    expect(comparison.steps[0]).toEqual({
+      type: "remove-template",
+      templateId: origin.id,
+      digest: origin.digest,
+    });
+    expect(comparison.preview.accepted).toBe(true);
+    expect(comparison.preview.changes.removedAssetIds).toEqual([group.id, extra.id, old.id].sort());
+    expect(comparison.preview.changes.roots.removed).toHaveLength(2);
+    expect(comparison.preview.changes.exclusions.removed).toEqual([
+      expect.objectContaining({ assetId: blocked.id, origin }),
+    ]);
+    expect(comparison.preview.changes.addedAssetIds).toEqual([next.id]);
+    const direct = reduceWorkbenchAction(bundle, selected, {
+      type: "select-root",
+      assetId: old.id,
+      origin: administrator,
+    }).state;
+    const multiple = selectionComparisonPresentation(next, bundle, direct);
+    expect(multiple.steps.filter((step) => step.type === "remove-root")).toHaveLength(2);
+    expect(multiple.preview.state.roots.map((root) => root.assetId)).toEqual([next.id]);
+  });
+
+  it("allows the same methodology key and offers replacement only for a different one", () => {
+    const first = asset("profile:first", "record-selection", {
+      exclusiveSlot: "methodology",
+      methodologyKey: "method:one",
+    });
+    const same = asset("profile:same", "record-selection", {
+      exclusiveSlot: "methodology",
+      methodologyKey: "method:one",
+    });
+    const different = asset("profile:other", "record-selection", {
+      exclusiveSlot: "methodology",
+      methodologyKey: "method:two",
+    });
+    const bundle = catalog({ [first.id]: first, [same.id]: same, [different.id]: different });
+    const state = reduceWorkbenchAction(bundle, createWorkbenchState(), {
+      type: "select-root",
+      assetId: first.id,
+      origin: administrator,
+    }).state;
+    expect(selectionComparisonPresentation(same, bundle, state).kind).toBe("none");
+    const comparison = selectionComparisonPresentation(different, bundle, state);
+    expect(comparison.kind).toBe("conflict");
+    expect(comparison.preview.state.roots.map((root) => root.assetId)).toEqual([different.id]);
+  });
   it("records an exact request pin without selecting a control", () => {
     const result = reduceWorkbenchAction(base, createWorkbenchState(), {
       type: "record-request",
@@ -477,6 +731,34 @@ describe("Workbench reducer", () => {
         origin: { kind: "template", id: "template:ecc", digest: digest("a") },
       }),
     ).toMatchObject({ accepted: true });
+  });
+  it("removes template requests by exact origin while preserving other versions and administrators", () => {
+    const graph = catalog({ "request:one": asset("request:one", "record-request") });
+    const template = { kind: "template", id: "template:one", digest: digest("a") } as const;
+    const otherVersion = { ...template, digest: digest("c") };
+    let state = createWorkbenchState();
+    for (const origin of [template, otherVersion, administrator]) {
+      const result = reduceWorkbenchAction(graph, state, {
+        type: "record-request",
+        assetId: "request:one",
+        origin,
+      });
+      expect(result.accepted).toBe(true);
+      state = result.state;
+    }
+    const result = previewWorkbenchTransactionV1(graph, state, [
+      {
+        type: "remove-template",
+        templateId: template.id,
+        digest: template.digest,
+      },
+    ]);
+    expect(result.accepted).toBe(true);
+    expect(result.state.requests.map((request) => request.origin)).toEqual(
+      expect.arrayContaining([otherVersion, administrator]),
+    );
+    expect(result.state.requests).toHaveLength(2);
+    expect(result.changes.requests.removed.map((request) => request.origin)).toEqual([template]);
   });
   it("rolls back an indirect methodology conflict", () => {
     const methods = catalog(

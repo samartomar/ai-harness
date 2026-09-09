@@ -235,9 +235,11 @@ describe("coverage policy", () => {
     });
 
     // Chromium and retained coverage run concurrently in the PR lane. On the
-    // four-core hosted runner, reserve one CPU for Chromium and its setup.
-    expect(workbenchRetainedWorkersForParallelAcceptance(4)).toBe(3);
+    // four-core hosted runner, reserve half the processors for Chromium so
+    // the unchanged per-test deadlines do not depend on CPU oversubscription.
+    expect(workbenchRetainedWorkersForParallelAcceptance(4)).toBe(2);
     expect(workbenchRetainedWorkersForParallelAcceptance(2)).toBe(1);
+    expect(workbenchRetainedWorkersForParallelAcceptance(1)).toBe(1);
     expect(workbenchRetainedWorkersForParallelAcceptance(24)).toBe(4);
   });
 });

@@ -2460,6 +2460,95 @@
       "options": [],
       "commands": [
         {
+          "name": "data",
+          "hasDescription": true,
+          "arguments": [],
+          "options": [],
+          "commands": [
+            {
+              "name": "import",
+              "hasDescription": true,
+              "arguments": [],
+              "options": [
+                {
+                  "flags": "--apply"
+                },
+                {
+                  "flags": "--input <path>"
+                },
+                {
+                  "flags": "--proof-root <path>"
+                },
+                {
+                  "flags": "--scanner-source <path>"
+                },
+                {
+                  "flags": "--store <path>"
+                }
+              ],
+              "commands": []
+            },
+            {
+              "name": "prepare",
+              "hasDescription": true,
+              "arguments": [],
+              "options": [
+                {
+                  "flags": "--apply"
+                },
+                {
+                  "flags": "--evidence-only"
+                },
+                {
+                  "flags": "--out <path>"
+                },
+                {
+                  "flags": "--previous-digest <digest>"
+                },
+                {
+                  "flags": "--qualification-proof <path>"
+                },
+                {
+                  "flags": "--scanner-proof <path>"
+                },
+                {
+                  "flags": "--sequence <number>"
+                },
+                {
+                  "flags": "--source <id>"
+                },
+                {
+                  "flags": "--source-bundle <path>"
+                }
+              ],
+              "commands": []
+            },
+            {
+              "name": "sign",
+              "hasDescription": true,
+              "arguments": [],
+              "options": [
+                {
+                  "flags": "--apply"
+                },
+                {
+                  "flags": "--input <path>"
+                },
+                {
+                  "flags": "--key <path>"
+                },
+                {
+                  "flags": "--out <path>"
+                },
+                {
+                  "flags": "--trust <path>"
+                }
+              ],
+              "commands": []
+            }
+          ]
+        },
+        {
           "name": "evaluate",
           "hasDescription": true,
           "arguments": [
@@ -2548,6 +2637,9 @@
             },
             {
               "flags": "--policy <file>"
+            },
+            {
+              "flags": "--policy-input <path>"
             },
             {
               "flags": "--posture <posture>",

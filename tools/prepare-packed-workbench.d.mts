@@ -25,7 +25,7 @@ export function packedConsumerInstallFiles(entry: PackedCoreEntry): {
   manifest: Record<string, unknown>;
   lock: Record<string, unknown>;
 };
-export function preparePackedWorkbench(directory: string): {
+export function preparePackedWorkbench(directory: string): Promise<{
   output: string;
   packageIntegrity: string;
   ui: {
@@ -36,4 +36,4 @@ export function preparePackedWorkbench(directory: string): {
     shutdown: { code: number | null; signal: string | null };
     adminWrites: string[];
   };
-};
+}>;

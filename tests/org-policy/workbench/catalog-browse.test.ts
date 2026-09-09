@@ -103,9 +103,7 @@ describe("catalogBrowse", () => {
       "agent:padded",
     ]);
     expect(catalogBrowse(bundle, { sourceId: "source: padded" }).total).toBe(0);
-    expect(browse.sourceOptions.map((option) => option.label)).toContain(
-      "other/Third source (source:d)",
-    );
+    expect(browse.sourceOptions.map((option) => option.label)).toContain("other/Third source");
     expect(browse.pageAssetIds).toContain("agent:guide");
     expect(browse.sourceOptions.find((option) => option.id === "source:c")).toMatchObject({
       label: "catalogs/Third source (source:c)",
@@ -129,12 +127,30 @@ describe("catalogBrowse", () => {
       kind: "agent",
     });
     const matchingRequest = catalogBrowse(bundle, { query: "mcp:request" });
+    const emptySkillsWithMcpMatch = catalogBrowse(bundle, {
+      sourceId: "source:a",
+      kind: "skill",
+      query: "mcp:request",
+    });
 
     expect(noAgentsInSourceB).toMatchObject({
       active: true,
       total: 0,
       pageAssetIds: [],
     });
+    expect(noAgentsInSourceB.typeOptions.find((option) => option.id === "agent")).toMatchObject({
+      count: 0,
+    });
+    expect(noAgentsInSourceB.typeOptions.find((option) => option.id === "profile")).toMatchObject({
+      count: 1,
+    });
+    expect(emptySkillsWithMcpMatch).toMatchObject({ total: 0, pageAssetIds: [] });
+    expect(
+      emptySkillsWithMcpMatch.typeOptions.find((option) => option.id === "skill"),
+    ).toMatchObject({ count: 0 });
+    expect(emptySkillsWithMcpMatch.typeOptions.find((option) => option.id === "mcp")).toMatchObject(
+      { count: 1 },
+    );
     expect(matchingRequest.total).toBe(1);
     expect(matchingRequest.sourceOptions.find((option) => option.id === "source:a")).toMatchObject({
       count: 1,
@@ -142,6 +158,15 @@ describe("catalogBrowse", () => {
     expect(matchingRequest.sourceOptions.find((option) => option.id === "source:b")).toMatchObject({
       count: 0,
     });
+  });
+
+  it("finds a human-readable MCP name using spaces or the source's hyphens", () => {
+    const bundle = fixtureBundle();
+    bundle.assets["mcp:code-review-graph"] = asset("mcp:code-review-graph", "source:a", "mcp");
+    for (const query of ["code review", "code-review", "Code   Review"])
+      expect(catalogBrowse(bundle, { sourceId: "source:a", query }).pageAssetIds).toEqual([
+        "mcp:code-review-graph",
+      ]);
   });
 
   it("pages filtered matches without expanding the entire prepared catalog", () => {

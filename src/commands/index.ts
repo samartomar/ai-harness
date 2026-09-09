@@ -60,6 +60,10 @@ import {
   policyVerifyCommand,
 } from "../org-policy/validate.js";
 import {
+  registerWorkbenchDataCommandsV1,
+  WORKBENCH_DATA_COMMAND_SPECS_V1,
+} from "../org-policy/workbench/data-command.js";
+import {
   packAddCommand,
   packInitCommand,
   packInstallCommand,
@@ -258,6 +262,7 @@ export const ALL_COMMAND_SPECS: CommandSpec[] = [
   policyManagedUsageReconcileCommandV1,
   policyManagedUsageInspectCommandV1,
   ...CAPABILITY_PACKAGE_COMMAND_SPECS,
+  ...WORKBENCH_DATA_COMMAND_SPECS_V1,
 ];
 
 /** Stable command paths for the spec registry completeness guard. */
@@ -281,6 +286,7 @@ export const ALL_COMMAND_SPEC_PATHS: ReadonlyArray<readonly string[]> = [
   ["policy", "managed", "usage-metering", policyManagedUsageReconcileCommandV1.name] as const,
   ["policy", "managed", "usage-metering", policyManagedUsageInspectCommandV1.name] as const,
   ...CAPABILITY_PACKAGE_COMMAND_SPECS.map((spec) => ["capability", "package", spec.name] as const),
+  ...WORKBENCH_DATA_COMMAND_SPECS_V1.map((spec) => ["policy", "data", spec.name] as const),
 ];
 
 /**
@@ -916,6 +922,7 @@ export function registerCommands(
       );
     },
   );
+  registerWorkbenchDataCommandsV1(policy);
   for (const spec of [
     policyInitCommand,
     policyResolveCommand,

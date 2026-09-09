@@ -172,6 +172,9 @@ Run `aih policy generate --apply`, open `aih-policy-workbench.html`, select Ente
 protected-file form, and download `aih-policy-bundle.json`. The administrator supplies ordinary
 fields for the issuer, an exact GitHub, npm, PyPI, OCI, remote-content, or AIH source identity, artifact kind, targets, effects, and
 attributable evidence; the browser computes the canonical Decision V2 source and subject digests.
+Choose **Accepted with conditions** to record named accepted findings or waivable gaps, conditions,
+and a review date within the authority window. Review those entries in the generated decision before
+downloading it. Risk acceptance does not change a scanner result or replace Core's evidence checks.
 The administrator does not write JSON. Store the generated **PolicyBundle V2** file at an
 administrator-controlled read-only path outside the governed target, then select it with an explicit
 `--policy <file>` or `AIH_ORG_POLICY` path. The CLI flag wins when both are present. It contains the ordinary org policy plus the

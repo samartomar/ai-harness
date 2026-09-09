@@ -372,7 +372,7 @@ export function runPreflight(data: PreflightData): Manifest {
 }
 
 // ---------------------------------------------------------------------------
-// Live gathering (not covered by unit tests — kept minimal; logic stays above).
+// Live gathering: transport boundaries are exercised by the gathering and CLI tests.
 
 function sh(cmd: string, args: string[]): string {
   return execFileSync(cmd, args, {
@@ -727,26 +727,29 @@ async function gatherLive(
 }
 
 const invokedDirectly = process.argv[1]?.replace(/\\/g, "/").endsWith("release-preflight.ts");
-async function main(): Promise<void> {
-  const inputIdx = process.argv.indexOf("--input");
-  const milestoneIdx = process.argv.indexOf("--milestone");
-  const intentIdx = process.argv.indexOf("--intent");
-  const acknowledgementIdx = process.argv.indexOf("--ack-intent-escalation-comment");
-  const retiredAcknowledgementIdx = process.argv.indexOf("--ack-intent-escalation");
+/** Internal CLI entry point; the executable wrapper supplies the process arguments. */
+export async function runReleasePreflightCli(
+  argv: readonly string[] = process.argv,
+): Promise<void> {
+  const inputIdx = argv.indexOf("--input");
+  const milestoneIdx = argv.indexOf("--milestone");
+  const intentIdx = argv.indexOf("--intent");
+  const acknowledgementIdx = argv.indexOf("--ack-intent-escalation-comment");
+  const retiredAcknowledgementIdx = argv.indexOf("--ack-intent-escalation");
   if (retiredAcknowledgementIdx > -1) {
     throw new Error(
       "--ack-intent-escalation is retired; use --ack-intent-escalation-comment with a GitHub issue-comment URL",
     );
   }
-  const rawIntent = intentIdx > -1 ? process.argv[intentIdx + 1] : undefined;
+  const rawIntent = intentIdx > -1 ? argv[intentIdx + 1] : undefined;
   if (rawIntent !== undefined && !CLASSES.includes(rawIntent as SemverClass)) {
     throw new Error(`--intent must be patch, minor, or major (received: ${rawIntent})`);
   }
   const baseData: PreflightData =
     inputIdx > -1
-      ? (JSON.parse(readFileSync(process.argv[inputIdx + 1] ?? "", "utf8")) as PreflightData)
+      ? (JSON.parse(readFileSync(argv[inputIdx + 1] ?? "", "utf8")) as PreflightData)
       : await gatherLive(
-          milestoneIdx > -1 ? (process.argv[milestoneIdx + 1] ?? "next-release") : "next-release",
+          milestoneIdx > -1 ? (argv[milestoneIdx + 1] ?? "next-release") : "next-release",
         );
   let data: PreflightData = {
     ...baseData,
@@ -768,7 +771,7 @@ async function main(): Promise<void> {
           "cannot resolve intent acknowledgement without declared intent, computed bump, and release tracker",
       };
     } else {
-      const commentUrl = process.argv[acknowledgementIdx + 1];
+      const commentUrl = argv[acknowledgementIdx + 1];
       try {
         if (commentUrl === undefined) {
           throw new Error("--ack-intent-escalation-comment requires a GitHub issue-comment URL");
@@ -806,7 +809,7 @@ async function main(): Promise<void> {
 }
 
 if (invokedDirectly) {
-  void main().catch((error: unknown) => {
+  void runReleasePreflightCli().catch((error: unknown) => {
     console.error(`release-preflight: ${error instanceof Error ? error.message : String(error)}`);
     process.exitCode = 1;
   });

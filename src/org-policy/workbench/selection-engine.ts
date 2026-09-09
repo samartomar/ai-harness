@@ -41,6 +41,102 @@ export interface WorkbenchReductionV1 {
   diagnostics?: WorkbenchDiagnosticV1[];
 }
 
+export interface WorkbenchTransactionPreviewV1 extends WorkbenchReductionV1 {
+  action?: Extract<WorkbenchActionV1, { type: "restore-state" }>;
+  changes: {
+    roots: { added: WorkbenchStateV1["roots"]; removed: WorkbenchStateV1["roots"] };
+    requests: { added: WorkbenchStateV1["requests"]; removed: WorkbenchStateV1["requests"] };
+    exclusions: { added: WorkbenchStateV1["exclusions"]; removed: WorkbenchStateV1["exclusions"] };
+    addedAssetIds: string[];
+    removedAssetIds: string[];
+  };
+}
+
+/** Schema normalization makes property order irrelevant while retaining every exact pin and origin. */
+export function workbenchStatesEqualV1(left: unknown, right: unknown): boolean {
+  if (workbenchStateBudgetIssueV1(left) || workbenchStateBudgetIssueV1(right)) return false;
+  const a = WorkbenchStateV1Schema.safeParse(left);
+  const b = WorkbenchStateV1Schema.safeParse(right);
+  return a.success && b.success && JSON.stringify(a.data) === JSON.stringify(b.data);
+}
+
+/** A rejected step leaves the original draft intact; callers commit one validated restore action. */
+export function previewWorkbenchTransactionV1(
+  bundle: AuthoringCatalogBundleV1,
+  state: WorkbenchStateV1,
+  steps: readonly WorkbenchActionV1[],
+): WorkbenchTransactionPreviewV1 {
+  const allowed = new Set([
+    "remove-root",
+    "remove-template",
+    "remove-request",
+    "select-root",
+    "record-request",
+  ]);
+  const budgetIssue = workbenchStateBudgetIssueV1(state);
+  const parsed = budgetIssue ? undefined : WorkbenchStateV1Schema.safeParse(state);
+  const before = parsed?.success ? parsed.data : undefined;
+  let reduction: WorkbenchReductionV1 = { accepted: true, state: before ?? state };
+  if (
+    before === undefined ||
+    steps.length === 0 ||
+    steps.length > 256 ||
+    steps.some((step) => !allowed.has(step.type))
+  ) {
+    reduction = rejected(state, {
+      code: "invalid-action",
+      message: budgetIssue ?? "Invalid selection transaction or saved state.",
+    });
+  } else {
+    for (const step of steps) {
+      reduction = reduceWorkbenchAction(bundle, reduction.state, step);
+      if (!reduction.accepted) break;
+    }
+    if (reduction.accepted)
+      reduction = reduceWorkbenchAction(bundle, state, {
+        type: "restore-state",
+        state: reduction.state,
+      });
+  }
+  if (!reduction.accepted)
+    return {
+      ...reduction,
+      state,
+      changes: {
+        roots: { added: [], removed: [] },
+        requests: { added: [], removed: [] },
+        exclusions: { added: [], removed: [] },
+        addedAssetIds: [],
+        removedAssetIds: [],
+      },
+    };
+  const next = reduction.state;
+  const delta = <T>(before: readonly T[], after: readonly T[]): { added: T[]; removed: T[] } => {
+    const beforeKeys = new Set(before.map((item) => JSON.stringify(item)));
+    const afterKeys = new Set(after.map((item) => JSON.stringify(item)));
+    return {
+      added: after.filter((item) => !beforeKeys.has(JSON.stringify(item))),
+      removed: before.filter((item) => !afterKeys.has(JSON.stringify(item))),
+    };
+  };
+  const canonicalBefore = before ?? state;
+  const beforeIds = resolveWorkbenchSelection(bundle, canonicalBefore).assetIds;
+  const afterIds = resolveWorkbenchSelection(bundle, next).assetIds;
+  const assets = delta(beforeIds, afterIds);
+  return {
+    ...reduction,
+    state: next,
+    action: { type: "restore-state", state: next },
+    changes: {
+      roots: delta(canonicalBefore.roots, next.roots),
+      requests: delta(canonicalBefore.requests, next.requests),
+      exclusions: delta(canonicalBefore.exclusions, next.exclusions),
+      addedAssetIds: assets.added,
+      removedAssetIds: assets.removed,
+    },
+  };
+}
+
 export interface WorkbenchSelectionCountsV1 {
   requestCount: number;
   selectedControlCount: number;
@@ -365,6 +461,41 @@ export function reduceWorkbenchAction(
     return rejected(state, { code: "invalid-action", message: "Workbench action is malformed." });
   const action = parsedAction.data;
   if (action.type === "restore-state") return committed(bundle, state, action.state);
+  if (action.type === "set-rationale") {
+    const key = (item: {
+      assetId: string;
+      origin: WorkbenchOriginV1;
+      sourceId: string;
+      sourceRevisionId: string;
+      contentDigest: string;
+    }) =>
+      item.assetId === action.assetId &&
+      workbenchOriginKey(item.origin) === workbenchOriginKey(action.origin) &&
+      item.sourceId === action.sourceId &&
+      item.sourceRevisionId === action.sourceRevisionId &&
+      item.contentDigest === action.contentDigest;
+    const field =
+      action.entry === "root" ? "roots" : action.entry === "request" ? "requests" : "exclusions";
+    if (!state[field].some(key))
+      return rejected(state, {
+        code: "invalid-action",
+        assetId: action.assetId,
+        message: "That exact saved choice is no longer current.",
+      });
+    return committed(bundle, state, {
+      ...state,
+      [field]: state[field].map((item) =>
+        key(item)
+          ? action.rationale === undefined
+            ? (() => {
+                const { rationale: _, ...current } = item;
+                return current;
+              })()
+            : { ...item, rationale: action.rationale }
+          : item,
+      ),
+    });
+  }
   if (action.type === "add-exclusion") {
     const asset = assetFor(bundle, action.assetId);
     if (asset === undefined)
@@ -379,6 +510,7 @@ export function reduceWorkbenchAction(
       sourceId: asset.sourceId,
       sourceRevisionId: asset.sourceRevisionId,
       contentDigest: asset.contentDigest,
+      ...(action.rationale === undefined ? {} : { rationale: action.rationale }),
     };
     return committed(bundle, state, {
       ...state,
@@ -412,6 +544,9 @@ export function reduceWorkbenchAction(
         ...state,
         roots: state.roots.filter(
           (root) => workbenchOriginKey(root.origin) !== workbenchOriginKey(origin),
+        ),
+        requests: state.requests.filter(
+          (request) => workbenchOriginKey(request.origin) !== workbenchOriginKey(origin),
         ),
         exclusions: state.exclusions.filter(
           (item) => workbenchOriginKey(item.origin) !== workbenchOriginKey(origin),
@@ -541,6 +676,7 @@ export function reduceWorkbenchAction(
         sourceId: asset.sourceId,
         sourceRevisionId: asset.sourceRevisionId,
         contentDigest: asset.contentDigest,
+        ...(action.rationale === undefined ? {} : { rationale: action.rationale }),
       }),
     });
   }
@@ -566,6 +702,7 @@ export function reduceWorkbenchAction(
       sourceId: asset.sourceId,
       sourceRevisionId: asset.sourceRevisionId,
       contentDigest: asset.contentDigest,
+      ...(action.rationale === undefined ? {} : { rationale: action.rationale }),
       resolvedItems: capturedPins(
         bundle,
         action.assetId,

@@ -1,18 +1,30 @@
+import { execFile } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { createRequire } from "node:module";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { defaultStudioPolicy } from "../../src/org-policy/studio-model.js";
 import {
   type PolicyWorkbenchUi,
   runPolicyWorkbenchUi,
   startPolicyWorkbenchUi,
 } from "../../src/org-policy/ui-server.js";
+import { testTimeoutForPlatform } from "../../vitest.config.js";
 
-const { spawnMock } = vi.hoisted(() => ({ spawnMock: vi.fn() }));
-vi.mock("node:child_process", () => ({ spawn: spawnMock }));
+const { resolveGithubSkillMock, spawnMock } = vi.hoisted(() => ({
+  resolveGithubSkillMock: vi.fn(),
+  spawnMock: vi.fn(),
+}));
+vi.mock("node:child_process", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:child_process")>()),
+  spawn: spawnMock,
+}));
+vi.mock("../../src/org-policy/workbench/core/bounded-github-skill-resolver.js", () => ({
+  resolveConnectedGithubSkillV1: resolveGithubSkillMock,
+}));
 
 describe("Policy Workbench UI server", () => {
   let running: PolicyWorkbenchUi | undefined;
@@ -20,6 +32,7 @@ describe("Policy Workbench UI server", () => {
   afterEach(async () => {
     await running?.close();
     running = undefined;
+    resolveGithubSkillMock.mockReset();
   });
 
   it("serves the packaged portable Workbench on an available loopback port", async () => {
@@ -30,7 +43,9 @@ describe("Policy Workbench UI server", () => {
       },
     });
 
-    expect(running.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/aih-policy-workbench\.html$/);
+    expect(running.url).toMatch(
+      /^http:\/\/127\.0\.0\.1:\d+\/aih-policy-workbench\.html#[a-f0-9]{64}$/,
+    );
     expect(opened).toEqual([running.url]);
 
     const response = await fetch(running.url);
@@ -62,57 +77,208 @@ describe("Policy Workbench UI server", () => {
     expect(unsupported.headers.get("allow")).toBe("GET, HEAD");
   });
 
+  it("resolves only a same-origin, token-bound Skill request without accepting a URL proxy", async () => {
+    resolveGithubSkillMock.mockResolvedValue({
+      version: "aih-connected-github-skill/v1" as const,
+      state: "resolved-not-scanned" as const,
+      skill: "frontend-design" as const,
+      source: {
+        type: "github" as const,
+        repository: "anthropics/skills" as const,
+        commit: "41bbe19d1a1a7eaab5e7bb9050a417e5c6cffc8f",
+        path: "skills/frontend-design/SKILL.md" as const,
+      },
+    });
+    running = await startPolicyWorkbenchUi({ openBrowser: async () => {} });
+    const launcher = new URL(running.url);
+    const endpoint = new URL("/api/artifact-intake/github-skill/resolve", running.url);
+    const headers = {
+      Origin: launcher.origin,
+      "Sec-Fetch-Site": "same-origin",
+      "Content-Type": "application/json",
+    };
+
+    const rejected = await fetch(endpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        token: launcher.hash.slice(1),
+        repository: "anthropics/skills",
+        skill: "frontend-design",
+        url: "https://example.invalid/never-fetched",
+      }),
+    });
+    expect(rejected.status).toBe(403);
+    expect(resolveGithubSkillMock).not.toHaveBeenCalled();
+
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        token: launcher.hash.slice(1),
+        repository: "anthropics/skills",
+        skill: "frontend-design",
+      }),
+    });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      state: "resolved-not-scanned",
+      source: { commit: "41bbe19d1a1a7eaab5e7bb9050a417e5c6cffc8f" },
+    });
+    expect(resolveGithubSkillMock).toHaveBeenCalledWith({
+      repository: "anthropics/skills",
+      skill: "frontend-design",
+    });
+
+    resolveGithubSkillMock.mockRejectedValueOnce(new Error("GitHub temporarily unavailable"));
+    const unavailable = await fetch(endpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        token: launcher.hash.slice(1),
+        repository: "anthropics/skills",
+        skill: "frontend-design",
+      }),
+    });
+    expect(unavailable.status).toBe(502);
+    await expect(unavailable.json()).resolves.toEqual({ error: "GitHub temporarily unavailable" });
+
+    resolveGithubSkillMock.mockRejectedValueOnce(new Error("network unavailable"));
+    const genericFailure = await fetch(endpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        token: launcher.hash.slice(1),
+        repository: "anthropics/skills",
+        skill: "frontend-design",
+      }),
+    });
+    expect(genericFailure.status).toBe(502);
+    await expect(genericFailure.json()).resolves.toEqual({
+      error:
+        "GitHub could not be reached to resolve this Skill pin. The candidate remains unpinned.",
+    });
+  });
+
+  it("rejects API requests that lack the loopback origin or launcher token", async () => {
+    running = await startPolicyWorkbenchUi({ openBrowser: async () => {} });
+    const launcher = new URL(running.url);
+    const endpoint = new URL("/api/artifact-intake/github-skill/resolve", running.url);
+
+    const missingOrigin = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    expect(missingOrigin.status).toBe(403);
+
+    const badToken = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        Origin: launcher.origin,
+        "Sec-Fetch-Site": "same-origin",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        token: "0".repeat(64),
+        repository: "anthropics/skills",
+        skill: "frontend-design",
+      }),
+    });
+    expect(badToken.status).toBe(403);
+    expect(resolveGithubSkillMock).not.toHaveBeenCalled();
+
+    const preResolve = await fetch(
+      new URL("/api/artifact-intake/github-skill/prepare", running.url),
+      {
+        method: "POST",
+        headers: {
+          Origin: launcher.origin,
+          "Sec-Fetch-Site": "same-origin",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          token: launcher.hash.slice(1),
+          policy: defaultStudioPolicy(),
+          source: {
+            repository: "anthropics/skills",
+            skill: "frontend-design",
+            commit: "41bbe19d1a1a7eaab5e7bb9050a417e5c6cffc8f",
+            path: "skills/frontend-design/SKILL.md",
+          },
+        }),
+      },
+    );
+    expect(preResolve.status).toBe(409);
+    await expect(preResolve.json()).resolves.toEqual({
+      error: "Resolve the connected Skill before preparing its pending request.",
+    });
+  });
+
+  it("rejects a stale or substituted resolved Skill before rebuilding the Workbench", async () => {
+    const resolved = {
+      version: "aih-connected-github-skill/v1" as const,
+      state: "resolved-not-scanned" as const,
+      skill: "frontend-design",
+      source: {
+        type: "github" as const,
+        repository: "anthropics/skills",
+        commit: "41bbe19d1a1a7eaab5e7bb9050a417e5c6cffc8f",
+        path: "skills/frontend-design/SKILL.md",
+      },
+    };
+    resolveGithubSkillMock.mockResolvedValue(resolved);
+    running = await startPolicyWorkbenchUi({ openBrowser: async () => {} });
+    const launcher = new URL(running.url);
+    const headers = {
+      Origin: launcher.origin,
+      "Sec-Fetch-Site": "same-origin",
+      "Content-Type": "application/json",
+    };
+    await fetch(new URL("/api/artifact-intake/github-skill/resolve", running.url), {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        token: launcher.hash.slice(1),
+        repository: resolved.source.repository,
+        skill: resolved.skill,
+      }),
+    });
+
+    const before = await (await fetch(running.url)).text();
+    const prepared = await fetch(
+      new URL("/api/artifact-intake/github-skill/prepare", running.url),
+      {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          token: launcher.hash.slice(1),
+          policy: defaultStudioPolicy(),
+          source: {
+            repository: resolved.source.repository,
+            skill: resolved.skill,
+            commit: "a".repeat(40),
+            path: resolved.source.path,
+          },
+        }),
+      },
+    );
+    expect(prepared.status).toBe(409);
+    expect(await (await fetch(running.url)).text()).toBe(before);
+  });
+
   it("does not inspect or write the current repository", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "aih-ui-rootless-"));
-    const probe = join(cwd, "ui-server-probe.mts");
-    const sourceUrl = new URL("../../src/org-policy/ui-server.ts", import.meta.url).href;
     try {
-      writeFileSync(
-        probe,
-        [
-          `import { existsSync } from "node:fs";`,
-          `import { join } from "node:path";`,
-          `import { startPolicyWorkbenchUi } from ${JSON.stringify(sourceUrl)};`,
-          "",
-          "const ui = await startPolicyWorkbenchUi({ openBrowser: async () => {} });",
-          "let observed;",
-          "try {",
-          "  observed = {",
-          '    policyHtml: existsSync(join(process.cwd(), "aih-policy-workbench.html")),',
-          '    aih: existsSync(join(process.cwd(), ".aih")),',
-          "    url: ui.url,",
-          "  };",
-          "} finally {",
-          "  await ui.close();",
-          "}",
-          "process.stdout.write(JSON.stringify(observed));",
-        ].join("\n"),
-      );
-
-      const childProcess =
-        await vi.importActual<typeof import("node:child_process")>("node:child_process");
-      const output = childProcess.execFileSync(
+      const fixture = fileURLToPath(new URL("./ui-server-rootless-fixture.mts", import.meta.url));
+      const tsxLoader = new URL("../../node_modules/tsx/dist/loader.mjs", import.meta.url).href;
+      const { stdout, stderr } = await promisify(execFile)(
         process.execPath,
-        ["--import", pathToFileURL(createRequire(import.meta.url).resolve("tsx")).href, probe],
-        {
-          cwd,
-          encoding: "utf8",
-          windowsHide: true,
-          timeout: 10_000,
-          maxBuffer: 1024 * 1024,
-        },
+        ["--import", tsxLoader, fixture],
+        { cwd, timeout: testTimeoutForPlatform(process.platform) - 1_000, windowsHide: true },
       );
-      const observed = JSON.parse(output) as {
-        policyHtml: boolean;
-        aih: boolean;
-        url: string;
-      };
-
-      expect(observed.policyHtml).toBe(false);
-      expect(observed.aih).toBe(false);
-      expect(observed.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/aih-policy-workbench\.html$/);
-      expect(existsSync(join(cwd, "aih-policy-workbench.html"))).toBe(false);
-      expect(existsSync(join(cwd, ".aih"))).toBe(false);
+      expect(stderr).toBe("");
+      expect(stdout).toContain("rootless UI server preserved the temporary directory");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

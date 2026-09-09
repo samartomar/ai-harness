@@ -245,7 +245,10 @@ describe("policy studio adoption recipe", () => {
     if (panel === null) throw new Error("expected adoption recipe panel");
     expect(panel.querySelectorAll(".row")).toHaveLength(0);
     expect(panel.querySelectorAll("input,select,textarea")).toHaveLength(0);
-    expect(panel.querySelectorAll("button")).toHaveLength(0);
+    expect([...panel.querySelectorAll("button")].map((button) => button.id)).toEqual([
+      "adoption-recipe-toggle",
+      "adoption-recipe-close",
+    ]);
     expect(panel.querySelector("img")).toBeNull();
     expect(panel.textContent).toContain('<img src=x onerror="globalThis.__unsafe=true"> hostile');
     expect((window as unknown as { __unsafe?: boolean }).__unsafe).toBeUndefined();

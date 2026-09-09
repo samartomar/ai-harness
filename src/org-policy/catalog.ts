@@ -162,12 +162,16 @@ export interface PolicyAuthoringCatalog extends AihCatalogSourceV1 {
   /** AIH-owned runtime identities the managed stdio projector cannot own. */
   nonProjectableMcp: Array<{
     id: string;
+    description: string;
+    server: McpServer;
     transport: string;
     reason: string;
   }>;
   /** AIH-owned runtime identities withheld from AIH control until AIH evidence exists. */
   unavailableMcp: Array<{
     id: string;
+    description: string;
+    server: McpServer;
     configuredIdentity: string;
     transport: string;
     reason: string;
@@ -219,6 +223,8 @@ function policyAuthoringNonProjectableMcpCatalog(
       : [
           {
             id,
+            description: server.description,
+            server,
             transport: server.type,
             reason:
               `Not policy-projectable: AIH's runtime identity for this id uses the ${server.type} transport ` +
@@ -245,6 +251,8 @@ function policyAuthoringUnavailableMcpCatalog(): PolicyAuthoringCatalog["unavail
   return [
     {
       id: "playwright",
+      description: playwright.description,
+      server: playwright,
       configuredIdentity,
       transport: playwright.type,
       reason:

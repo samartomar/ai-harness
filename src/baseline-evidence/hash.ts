@@ -9,6 +9,10 @@ import {
 } from "node:fs";
 import { isAbsolute, posix, relative, resolve } from "node:path";
 import { AihError } from "../errors.js";
+import {
+  acquiredGithubSourceTreeEntriesV1,
+  assertAcquiredGithubSourceComponentPathsV1,
+} from "../internals/bounded-github-source-archive.js";
 
 export interface BaselineHashedFile {
   path: string;
@@ -94,6 +98,7 @@ export function hashComponentTree(
   if (uniqueRoots.size !== roots.length) {
     return refuse("duplicate normalized baseline component root");
   }
+  assertAcquiredGithubSourceComponentPathsV1(sourceRoot, [...uniqueRoots]);
 
   const entries = new Map<string, TreeEntry>();
   const visit = (path: string): void => {
@@ -164,6 +169,18 @@ export function hashSourceTree(sourceRoot: string): BaselineTreeHash {
     return refuse(`baseline source root is unavailable: ${sourceRoot} (${(err as Error).message})`);
   }
 
+  const acquiredEntries = acquiredGithubSourceTreeEntriesV1(sourceRoot);
+  if (acquiredEntries !== undefined) {
+    const ordered = acquiredEntries as readonly TreeEntry[];
+    return {
+      treeSha256: createHash("sha256").update(JSON.stringify(ordered), "utf8").digest("hex"),
+      files: ordered.flatMap((entry) =>
+        entry.type === "file"
+          ? [{ path: entry.path, bytes: entry.bytes ?? 0, sha256: entry.sha256 ?? "" }]
+          : [],
+      ),
+    };
+  }
   const entries = new Map<string, TreeEntry>();
   const visit = (path: string): void => {
     const stat = lstatSync(path);

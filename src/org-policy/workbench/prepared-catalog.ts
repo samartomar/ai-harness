@@ -20,11 +20,22 @@ import {
   type FreshOrganizationPreparationV1,
   freshOrganizationPreparationSourceInputsV1,
 } from "./core/organization-preparation.js";
+import { applyPackagedWorkbenchSourceDataV1 } from "./core/packaged-source-data.js";
+import { applyWorkbenchSourceDataV1 } from "./core/source-data.js";
+import { packagedDefaultCatalogPreassemblyV1 } from "./default-catalog-preassembly.js";
 
 /** Offline organization manifests accepted by Core preparation, never by the browser shell. */
 export interface PrepareWorkbenchCatalogOptionsV1 {
   organizationManifestBytes?: readonly string[];
   freshOrganizationPreparations?: readonly FreshOrganizationPreparationV1[];
+  sourceDataPins?: readonly {
+    assetId: string;
+    sourceId: string;
+    sourceRevisionId: string;
+    contentDigest: string;
+  }[];
+  /** Internal package preparation only; never an external trust bypass. */
+  packageDataOnly?: boolean;
 }
 
 export interface PreparedWorkbenchCatalogV1 {
@@ -36,11 +47,13 @@ export interface PreparedWorkbenchCatalogV1 {
 
 const MAX_PREPARED_BASELINE_CACHE_ENTRIES = 4;
 const preparedBaselineByDigest = new Map<string, Readonly<PreparedWorkbenchCatalogV1>>();
+let prepared: PreparedWorkbenchCatalogV1 | undefined;
+let preparedCatalogDigest: string | undefined;
 
 function cachePreparedBaselineV1(
   digest: string,
   value: PreparedWorkbenchCatalogV1,
-): PreparedWorkbenchCatalogV1 {
+): Readonly<PreparedWorkbenchCatalogV1> {
   const snapshot = deepFreezeStrictJsonV1(structuredClone(value));
   preparedBaselineByDigest.delete(digest);
   preparedBaselineByDigest.set(digest, snapshot);
@@ -48,15 +61,17 @@ function cachePreparedBaselineV1(
     const oldest = preparedBaselineByDigest.keys().next().value;
     if (oldest !== undefined) preparedBaselineByDigest.delete(oldest);
   }
-  return structuredClone(snapshot);
+  return snapshot;
 }
 
-function cachedPreparedBaselineV1(digest: string): PreparedWorkbenchCatalogV1 | undefined {
+function cachedPreparedBaselineV1(
+  digest: string,
+): Readonly<PreparedWorkbenchCatalogV1> | undefined {
   const cached = preparedBaselineByDigest.get(digest);
   if (cached === undefined) return undefined;
   preparedBaselineByDigest.delete(digest);
   preparedBaselineByDigest.set(digest, cached);
-  return structuredClone(cached);
+  return cached;
 }
 
 function sourceInputsForManifestV1(manifestBytes: string): WorkbenchSourceInputsV1 {
@@ -103,14 +118,52 @@ export function prepareWorkbenchCatalog(
 ): PreparedWorkbenchCatalogV1 {
   const organizationManifestBytes = options.organizationManifestBytes ?? [];
   const freshOrganizationPreparations = options.freshOrganizationPreparations ?? [];
-  const baselineDigest =
-    organizationManifestBytes.length === 0 && freshOrganizationPreparations.length === 0
-      ? canonicalStrictJsonSha256V1(catalog)
-      : undefined;
-  if (baselineDigest !== undefined) {
-    const cached = cachedPreparedBaselineV1(baselineDigest);
-    if (cached !== undefined) return cached;
+  if (organizationManifestBytes.length === 0 && freshOrganizationPreparations.length === 0) {
+    // Consumption often supplies the catalog from an already admitted package.
+    // Reuse only that exact catalog and matching package pins; historical pins
+    // and custom catalogs retain the complete reconstruction path below.
+    if (prepared !== undefined) {
+      const packageSnapshot = prepared;
+      preparedCatalogDigest ??= canonicalStrictJsonSha256V1(packageSnapshot.catalog);
+      if (
+        canonicalStrictJsonSha256V1(catalog) === preparedCatalogDigest &&
+        (options.sourceDataPins ?? []).every((pin) => {
+          const asset = packageSnapshot.bundle.assets[pin.assetId];
+          return (
+            asset?.sourceId === pin.sourceId &&
+            asset.sourceRevisionId === pin.sourceRevisionId &&
+            asset.contentDigest === pin.contentDigest
+          );
+        })
+      ) {
+        return options.packageDataOnly
+          ? structuredClone(packageSnapshot)
+          : applyWorkbenchSourceDataV1(packageSnapshot, { pins: options.sourceDataPins });
+      }
+    }
+    return finishPreparedCatalogV1(structuredClone(preparedBaselineSnapshotV1(catalog)), options);
   }
+  return finishPreparedCatalogV1(
+    prepareCatalogV1(catalog, organizationManifestBytes, freshOrganizationPreparations),
+    options,
+  );
+}
+
+/** A privately held frozen baseline is cloned before public preparation callers can receive it. */
+function preparedBaselineSnapshotV1(
+  catalog: PolicyAuthoringCatalog,
+): Readonly<PreparedWorkbenchCatalogV1> {
+  const baselineDigest = canonicalStrictJsonSha256V1(catalog);
+  const cached = cachedPreparedBaselineV1(baselineDigest);
+  if (cached !== undefined) return cached;
+  return cachePreparedBaselineV1(baselineDigest, prepareCatalogV1(catalog, [], []));
+}
+
+function prepareCatalogV1(
+  catalog: PolicyAuthoringCatalog,
+  organizationManifestBytes: readonly string[],
+  freshOrganizationPreparations: readonly FreshOrganizationPreparationV1[],
+): PreparedWorkbenchCatalogV1 {
   const bundle =
     freshOrganizationPreparations.length > 0
       ? policyAuthoringCatalogBundleWithOrganizationInputsV1(
@@ -196,15 +249,39 @@ export function prepareWorkbenchCatalog(
   }
   // Organization compiler output cannot carry Core capabilities, so its assets remain intent-only.
   for (const asset of Object.values(bundle.assets)) bindings[asset.id] ??= { kind: "intent" };
-  const preparedCatalog = { catalog, bundle, bindings, sourceInputs };
-  return baselineDigest === undefined
-    ? preparedCatalog
-    : cachePreparedBaselineV1(baselineDigest, preparedCatalog);
+  return { catalog, bundle, bindings, sourceInputs };
 }
 
-let prepared: PreparedWorkbenchCatalogV1 | undefined;
+function finishPreparedCatalogV1(
+  base: PreparedWorkbenchCatalogV1,
+  options: PrepareWorkbenchCatalogOptionsV1,
+) {
+  const packaged = applyPackagedWorkbenchSourceDataV1(base, options.sourceDataPins);
+  return options.packageDataOnly
+    ? packaged
+    : applyWorkbenchSourceDataV1(packaged, { pins: options.sourceDataPins });
+}
+
 /** Pinned package data is normalized once per Core process; callers receive a copy. */
 export function defaultPreparedWorkbenchCatalog(): PreparedWorkbenchCatalogV1 {
-  prepared ??= prepareWorkbenchCatalog();
+  return applyWorkbenchSourceDataV1(packagedPreparedWorkbenchCatalogV1());
+}
+
+export function packagedPreparedWorkbenchCatalogV1(): PreparedWorkbenchCatalogV1 {
+  // This process-private consumer can apply sealed package records directly to the frozen cache
+  // snapshot. Its result is cloned before it leaves this module, so callers never receive cache
+  // authority or a shared mutable object.
+  prepared ??= deepFreezeStrictJsonV1(
+    structuredClone(
+      packagedDefaultCatalogPreassemblyV1() ?? compilePackagedWorkbenchCatalogForBuildV1(),
+    ),
+  ) as PreparedWorkbenchCatalogV1;
   return structuredClone(prepared);
+}
+
+/** Package build only: bypasses every process cache before staging a sealed companion. */
+export function compilePackagedWorkbenchCatalogForBuildV1(): PreparedWorkbenchCatalogV1 {
+  return finishPreparedCatalogV1(prepareCatalogV1(policyAuthoringCatalog(), [], []), {
+    packageDataOnly: true,
+  });
 }

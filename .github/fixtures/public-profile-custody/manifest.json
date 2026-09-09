@@ -1,0 +1,12 @@
+{
+  "format": "public-profile-custody-fixtures/v1",
+  "repository": "samartomar/aih-catalog",
+  "workflow": "samartomar/aih-catalog/.github/workflows/signed-catalog-v2.yml",
+  "totalBytes": 6636,
+  "entries": [
+    {"sequence": 0, "path": "seq0.json", "bytes": 1659, "receiptSha256": "sha256:f7eda39ab0fb03a602ef8c5cd090bbe142b2637b5f8a2c5eba9fef31d0e44e10", "workflowRun": 33162188708, "sourceSha": "ea64c29471f12fd5ac1de53a72cb6edd0fc0d142", "catalogHeadDigest": "sha256:5b27c7d7c33afa0da41e06c4e62e91c94db238b04fbedfdad6a69d21aba1880f", "catalogMemberDigest": "sha256:6f9a4264ba9f1efa3be4e6db78376a4c7d40d155755e02b4e4c55978bcd0a6a7"},
+    {"sequence": 1, "path": "seq1.json", "bytes": 1659, "receiptSha256": "sha256:b3da8cf6c43774726025d315f04915864fdc5227ae2c1a82e609ce930d0c2df0", "workflowRun": 34278014513, "sourceSha": "5e18dd66e42f91c30e4c5acd81d41f1e33cd987a", "catalogHeadDigest": "sha256:04ac3bb54a716cf4681c5d2c40f11d72a40fb9f6440c5d77e3f1451788e8f5a2", "catalogMemberDigest": "sha256:f38dfdf08a1e16ddc42423f89921faef8a19107846167faaa2ff798b72117929"},
+    {"sequence": 2, "path": "seq2.json", "bytes": 1659, "receiptSha256": "sha256:e64810a7bd39cf90986123cdf62a14f2eff9a6ce56285a3c91baf481f39d4f53", "workflowRun": 34298865399, "sourceSha": "b019b4e9d6260915a49d177bcc22b58518305dd4", "catalogHeadDigest": "sha256:8694a235821b4b714dfdfc49822098cd233ddba09496e5a0fa4ba312e376d944", "catalogMemberDigest": "sha256:f38dfdf08a1e16ddc42423f89921faef8a19107846167faaa2ff798b72117929"},
+    {"sequence": 3, "path": "seq3.json", "bytes": 1659, "receiptSha256": "sha256:94784c497e240cc36d72d123c5ffbc1903f7e0ecfc02742233014a2a221aeb87", "workflowRun": 34342417057, "sourceSha": "0ce02656d5e281262af2177571033449f277dc46", "catalogHeadDigest": "sha256:c149358bf6d75cb9d7ee75887bd629921604d1dd78ded382f52ffe341d027e1f", "catalogMemberDigest": "sha256:f38dfdf08a1e16ddc42423f89921faef8a19107846167faaa2ff798b72117929"}
+  ]
+}

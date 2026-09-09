@@ -37,34 +37,54 @@ function selectedValue(value: string | undefined): string | undefined {
 
 function normalizedQuery(value: string | undefined): string | undefined {
   const trimmed = value?.trim();
-  return trimmed === undefined || trimmed === "" ? undefined : trimmed.toLowerCase();
+  return trimmed === undefined || trimmed === "" ? undefined : searchableText(trimmed);
+}
+
+function searchableText(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[:/._-]+/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim();
 }
 
 export function catalogSourceDisplayName(
   bundle: AuthoringCatalogBundleV1,
   sourceId: string,
 ): string {
-  const locator = bundle.sources[sourceId]?.upstreamOrigin.locator;
-  return locator === undefined || locator === sourceId ? sourceId : `${locator} (${sourceId})`;
+  const labelFor = (id: string): string => {
+    const locator = bundle.sources[id]?.upstreamOrigin.locator;
+    return locator === undefined || locator === id
+      ? id
+      : locator.replace(/^https:\/\/github\.com\//u, "").replace(/\.git$/u, "");
+  };
+  const label = labelFor(sourceId);
+  return Object.keys(bundle.sources).some((id) => id !== sourceId && labelFor(id) === label)
+    ? `${label} (${sourceId})`
+    : label;
 }
 
 export function catalogKindLabel(kind: string): string {
   if (kind === "skill") return "Skills";
   if (kind === "agent") return "Agents";
   if (kind === "profile") return "Profiles";
+  if (kind === "mcp") return "MCP servers";
+  if (kind === "hook") return "Hooks";
+  if (kind === "lang") return "Languages";
+  if (kind === "module") return "Packages";
   return kind.slice(0, 1).toUpperCase() + kind.slice(1);
 }
 
 function inventoryText(bundle: AuthoringCatalogBundleV1, asset: AuthoringAssetV1): string {
-  return [
-    asset.id,
-    asset.label,
-    asset.kind,
-    asset.sourceId,
-    catalogSourceDisplayName(bundle, asset.sourceId),
-  ]
-    .join(" ")
-    .toLowerCase();
+  return searchableText(
+    [
+      asset.id,
+      asset.label,
+      asset.kind,
+      asset.sourceId,
+      catalogSourceDisplayName(bundle, asset.sourceId),
+    ].join(" "),
+  );
 }
 
 export function catalogBrowse(

@@ -91,5 +91,5 @@ await run("packed-artifact", [
   "test",
   "--config",
   "playwright.workbench.config.ts",
-  "packed.spec.ts",
+  "artifact.spec.ts",
 ]);

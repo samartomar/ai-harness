@@ -63,12 +63,10 @@ describe("#973 generic request intent", () => {
     );
     if (button === null) throw new Error("expected generic request control");
     button.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
-    expect(window.document.querySelector("#framework-rows .help")?.textContent).toContain(
-      "1 requested",
+    expect(window.document.querySelector(".workbench-draft-counts")?.textContent).toContain(
+      "Requests 1",
     );
-    expect(window.document.querySelector("#framework-rows .help")?.textContent).toContain(
-      "effective: not evaluated",
-    );
+    expect(window.document.body.textContent).toContain("effective: not evaluated");
     window.close();
   });
 });

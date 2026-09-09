@@ -12,6 +12,11 @@ import { organizationCatalogProviderV1 } from "../../../../src/org-policy/workbe
 import { pinnedProviderFixtureV1 } from "../../../../src/org-policy/workbench/providers/pinned.js";
 import { registeredCatalogProvidersV1 } from "../../../../src/org-policy/workbench/providers/registry.js";
 import { superpowersCatalogProviderV1 } from "../../../../src/org-policy/workbench/providers/superpowers.js";
+import {
+  createWorkbenchState,
+  reduceWorkbenchAction,
+  resolveWorkbenchSelection,
+} from "../../../../src/org-policy/workbench/selection-engine.js";
 
 describe("catalog provider assembly", () => {
   it("discovers every provider contract and composes their fixtures", () => {
@@ -135,4 +140,99 @@ describe("catalog provider assembly", () => {
       /duplicate/,
     );
   });
+  it.each(["metadata", "content", "version", "addition", "removal"])(
+    "preserves every unrelated provider and saved choice through an ECC %s change",
+    (change) => {
+      const eccInput = {
+        ...pinnedProviderFixtureV1("ecc"),
+        composition: { framework: "ecc" as const, parts: [] },
+      };
+      const compileAll = () =>
+        registeredCatalogProvidersV1.map((provider) =>
+          provider.providerId === "ecc"
+            ? compileCatalogProviderV1(eccCatalogProviderV1, eccInput)
+            : provider.compileFixture(),
+        );
+      const beforeOutputs = compileAll();
+      const before = assembleAuthoringCatalogBundleFromCompilerOutputsV1(
+        beforeOutputs.flatMap((output) => output.inputs),
+      );
+      let state = createWorkbenchState();
+      const independent = beforeOutputs.filter((output) => output.providerId !== "ecc");
+      for (const output of independent) {
+        const sourceIds = output.inputs.flatMap((input) => Object.keys(input.sources));
+        const asset = Object.values(before.assets).find(
+          (item) =>
+            sourceIds.includes(item.sourceId) &&
+            item.kind !== "profile" &&
+            ["record-selection", "record-request"].includes(item.authoring.action),
+        );
+        expect(asset, `${output.providerId} needs a selectable isolation fixture`).toBeDefined();
+        if (!asset) throw new Error("missing selectable fixture");
+        const result = reduceWorkbenchAction(before, state, {
+          type: asset.authoring.action === "record-request" ? "record-request" : "select-root",
+          assetId: asset.id,
+          origin: { kind: "administrator" },
+        });
+        expect(result.accepted).toBe(true);
+        state = result.state;
+      }
+      const saved = JSON.stringify(state);
+      const originalAsset = eccInput.framework.assets[0];
+      if (!originalAsset?.metadata) throw new Error("missing ECC fixture metadata");
+      if (change === "metadata") originalAsset.metadata.title = "Changed ECC title";
+      if (change === "content") originalAsset.metadata.sourceSha256 = "d".repeat(64);
+      if (change === "version") {
+        eccInput.framework.commit = "e".repeat(40);
+        eccInput.source.pinnedSha = eccInput.framework.commit;
+        eccInput.source.sourceTreeSha256 = "f".repeat(64);
+        originalAsset.source.commit = eccInput.framework.commit;
+      }
+      if (change === "addition")
+        eccInput.framework.assets.push({
+          ...structuredClone(originalAsset),
+          id: "skill:additional",
+        });
+      if (change === "removal") eccInput.framework.assets = [];
+      const afterOutputs = compileAll();
+      expect(afterOutputs.filter((output) => output.providerId !== "ecc")).toEqual(independent);
+      const after = assembleAuthoringCatalogBundleFromCompilerOutputsV1(
+        afterOutputs.flatMap((output) => output.inputs),
+      );
+      expect(after.provenance.bundleDigest).not.toBe(before.provenance.bundleDigest);
+      // Compare actual combined assembly against independently compiled provider contracts.
+      for (const output of independent) {
+        const expected = assembleAuthoringCatalogBundleFromCompilerOutputsV1(output.inputs);
+        for (const field of [
+          "sources",
+          "assets",
+          "groups",
+          "templates",
+          "evidence",
+          "detailChunks",
+        ] as const) {
+          for (const [id, value] of Object.entries(expected[field])) {
+            expect(before[field][id], `${output.providerId}/${field}/${id}`).toEqual(value);
+            expect(after[field][id], `${output.providerId}/${field}/${id}`).toEqual(value);
+          }
+        }
+        const assetIds = Object.keys(expected.assets);
+        expect(
+          after.relations.filter(
+            (relation) =>
+              assetIds.includes(relation.fromAssetId) || assetIds.includes(relation.toAssetId),
+          ),
+        ).toEqual(expected.relations);
+      }
+      const restored = reduceWorkbenchAction(after, createWorkbenchState(), {
+        type: "restore-state",
+        state: JSON.parse(saved),
+      });
+      expect(restored.accepted).toBe(true);
+      expect(restored.state).toEqual(state);
+      expect(resolveWorkbenchSelection(after, restored.state)).toEqual(
+        resolveWorkbenchSelection(before, state),
+      );
+    },
+  );
 });

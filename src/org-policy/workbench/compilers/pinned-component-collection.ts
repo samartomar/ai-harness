@@ -17,9 +17,9 @@ const TEMPLATE_ID = /^template:[a-z][a-z0-9-]*(?:\/[a-z][a-z0-9-]*)*$/u;
 const FileSchema = z
   .object({
     path: z.string().min(1).max(1_000),
-    bytesBase64: z.string().min(1).max(1_333_336),
+    bytesBase64: z.string().max(1_333_336),
     sha256: z.string().regex(SHA256),
-    size: z.number().int().min(1).max(1_000_000),
+    size: z.number().int().min(0).max(1_000_000),
   })
   .strict();
 const BaseComponentSchema = z
@@ -95,7 +95,7 @@ const InputSchema = z
         licenseFileRef: z.string().min(1).max(1_000),
       })
       .strict(),
-    files: z.array(FileSchema).min(1).max(256),
+    files: z.array(FileSchema).min(1).max(1_000),
     components: z
       .array(
         z.discriminatedUnion("kind", [
@@ -119,8 +119,7 @@ function digest(value: unknown): string {
 }
 function canonicalBase64(value: string, label: string): Buffer {
   const bytes = Buffer.from(value, "base64");
-  if (bytes.length === 0 || bytes.toString("base64") !== value)
-    throw new TypeError(`${label} must be canonical base64`);
+  if (bytes.toString("base64") !== value) throw new TypeError(`${label} must be canonical base64`);
   return bytes;
 }
 function orderedUnique(values: readonly string[], label: string): string[] {
@@ -147,6 +146,7 @@ function normalizedInput(value: unknown): PinnedComponentCollectionInputV1 {
       throw new TypeError(`component file ${file.path} digest mismatch`);
   }
   const knownFiles = new Set(files.map((file) => file.path));
+  const nonemptyFiles = new Set(files.filter((file) => file.size > 0).map((file) => file.path));
   const components = [...parsed.components]
     .map((component) => ({
       ...component,
@@ -167,9 +167,13 @@ function normalizedInput(value: unknown): PinnedComponentCollectionInputV1 {
   const licenseFileRef = assertSafeRelativePosixPathV1(parsed.source.licenseFileRef, "license");
   const referencedFiles = new Set([licenseFileRef]);
   if (!knownFiles.has(licenseFileRef)) throw new TypeError("license file reference is absent");
+  if (!nonemptyFiles.has(licenseFileRef))
+    throw new TypeError("license context file must not be empty");
   for (const component of components) {
     if (!component.fileRefs.includes(component.primaryPath))
       throw new TypeError(`component ${component.id} primary path must be a file reference`);
+    if (!nonemptyFiles.has(component.primaryPath))
+      throw new TypeError(`component ${component.id} primary file must not be empty`);
     for (const path of component.fileRefs) {
       if (!knownFiles.has(path))
         throw new TypeError(`component ${component.id} names an unknown file reference ${path}`);
@@ -204,6 +208,8 @@ function normalizedInput(value: unknown): PinnedComponentCollectionInputV1 {
     const required = components.find((component) => component.id === parsed.profile?.requires);
     if (required?.kind !== "skill") throw new TypeError("profile requirement must name a skill");
     if (!knownFiles.has(profilePath)) throw new TypeError("profile original path is absent");
+    if (!nonemptyFiles.has(profilePath))
+      throw new TypeError("profile original file must not be empty");
     referencedFiles.add(profilePath);
     if (parsed.template?.profileRef !== parsed.profile.id)
       throw new TypeError("template must name the declared profile");

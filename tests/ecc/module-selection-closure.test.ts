@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
+import { canonicalStrictJsonSha256V1 } from "../../src/contract/strict-json-v1.js";
 import { ECC_DECLARATION_RIDERS, UPSTREAM_CORE_ECC_MODULE_IDS } from "../../src/ecc/components.js";
 import { eccModuleDependencyIds } from "../../src/ecc/evidence.js";
 import {
@@ -10,18 +11,96 @@ import {
   eccComponentSourcePaths,
   eccModuleSelectableMemberIds,
 } from "../../src/ecc/materialize.js";
-import { eccMandatoryRequirementIds } from "../../src/ecc/selection-closure.js";
+import {
+  eccMandatoryRequirementIds,
+  eccSelectionSourcePaths,
+} from "../../src/ecc/selection-closure.js";
 import { type OrgPolicy, OrgPolicySchema } from "../../src/org-policy/schema.js";
 import { defaultStudioPolicy } from "../../src/org-policy/studio-model.js";
+import { verifyAuthoringCatalogBundleIntegrityV1 } from "../../src/org-policy/workbench/catalog-integrity.js";
+import { parseAuthoringCatalogBundleV1 } from "../../src/org-policy/workbench/contracts.js";
+import { packagedWorkbenchSourceDataRecordsV1 } from "../../src/org-policy/workbench/core/packaged-source-data.js";
 import { compilePolicy } from "../../src/org-policy/workbench/policy-compiler.js";
-import { defaultPreparedWorkbenchCatalog } from "../../src/org-policy/workbench/prepared-catalog.js";
+import { packagedPreparedWorkbenchCatalogV1 } from "../../src/org-policy/workbench/prepared-catalog.js";
 import {
   createWorkbenchState,
   reduceWorkbenchAction,
 } from "../../src/org-policy/workbench/selection-engine.js";
+import { tinyStudioModel } from "../org-policy/studio-test-fixture.js";
 
 const catalog = baselineCatalogById("ecc");
 const repository = `${catalog.owner}/${catalog.repo}`;
+
+function tinyEccPreparedCatalog() {
+  const model = tinyStudioModel();
+  const bundle = structuredClone(model.workbenchBundle);
+  const component = catalog.components.find((entry) => entry.id === "module:rules-core");
+  const path = component?.paths[0];
+  const packagedEcc = packagedWorkbenchSourceDataRecordsV1().find(
+    (record) => record.sourceBundle.sources["source:ecc"] !== undefined,
+  );
+  const source = packagedEcc?.sourceBundle.sources["source:ecc"];
+  const packagedAsset = packagedEcc?.sourceBundle.assets["ecc/module:rules-core"];
+  const original = bundle.assets["fixture:external"];
+  if (
+    component === undefined ||
+    path === undefined ||
+    packagedEcc === undefined ||
+    source === undefined ||
+    packagedAsset === undefined ||
+    original === undefined
+  )
+    throw new Error("missing ECC or fixture module input");
+  const assetId = "ecc/module:rules-core";
+  delete bundle.assets[original.id];
+  bundle.assets[assetId] = {
+    ...original,
+    ...packagedAsset,
+    id: assetId,
+  };
+  bundle.sources[source.id] = structuredClone(source);
+  const detail = packagedEcc.sourceBundle.detailChunks[packagedAsset.detailChunkId];
+  if (detail === undefined) throw new Error("missing packaged ECC module detail");
+  bundle.detailChunks[packagedAsset.detailChunkId] = structuredClone(detail);
+  const group = bundle.groups["group:fixture"];
+  if (group === undefined) throw new Error("missing fixture group");
+  group.assetIds = group.assetIds.map((id) => (id === original.id ? assetId : id)).sort();
+  const { provenance: _provenance, ...bare } = bundle;
+  const sealed = parseAuthoringCatalogBundleV1({
+    ...bare,
+    provenance: {
+      bundleDigest: `sha256:${canonicalStrictJsonSha256V1({ ...bare, provenance: {} })}`,
+    },
+  });
+  verifyAuthoringCatalogBundleIntegrityV1(sealed);
+  const bindings = structuredClone(model.workbenchBindings);
+  delete bindings[original.id];
+  bindings[assetId] = {
+    kind: "external-selection",
+    external: {
+      owner: "ecc",
+      item: {
+        id: "module:rules-core",
+        kind: "module",
+        source: {
+          repository: source.upstreamOrigin.locator,
+          commit: packagedAsset.sourceRevisionId,
+          path: packagedAsset.originalPath,
+        },
+      },
+    },
+  };
+  return { bundle: sealed, bindings };
+}
+
+let admittedHistoricalEcc: ReturnType<typeof tinyEccPreparedCatalog>;
+
+beforeAll(() => {
+  // The V3 guard receives an already sealed historical catalog snapshot. Its
+  // assertions begin with selection and consumption, not package admission.
+  packagedPreparedWorkbenchCatalogV1();
+  admittedHistoricalEcc = tinyEccPreparedCatalog();
+});
 
 function selectedPolicyIds(policy: ReturnType<typeof defaultStudioPolicy>): string[] {
   return [
@@ -177,8 +256,8 @@ function withTypescriptLanguageAndCore(includeRider = true) {
 }
 
 describe("schema-v3 Workbench ECC guard", () => {
-  it("consumes compiled V3 pins and refuses stale or missing intent before using its legacy mirror", () => {
-    const prepared = defaultPreparedWorkbenchCatalog();
+  it("refuses a historical V3 pin without its sealed runtime context, and refuses stale or missing intent", () => {
+    const prepared = structuredClone(admittedHistoricalEcc);
     const asset = prepared.bundle.assets["ecc/module:rules-core"];
     if (!asset) throw new Error("expected pinned ECC rules-core asset");
     const selected = reduceWorkbenchAction(prepared.bundle, createWorkbenchState(), {
@@ -196,14 +275,16 @@ describe("schema-v3 Workbench ECC guard", () => {
     expect(compiled.diagnostics).toEqual([]);
     expect(compiled.accepted).toBe(true);
     const valid = OrgPolicySchema.parse(compiled.policy) as OrgPolicy;
-    expect(governedEccComponentIds(valid, catalog)).toContain("module:rules-core");
+    expect(() => governedEccComponentIds(valid, catalog)).toThrow(
+      /claims commit .* but its bytes would come from/i,
+    );
     const exactMirror = structuredClone(valid.governance?.externalSelections);
     for (const kind of ["stale", "missing"] as const) {
       const damaged = structuredClone(valid);
       if (damaged.schemaVersion !== 3) throw new Error("expected V3 compiler output");
       const root = damaged.authoringSelections.roots[0];
       if (!root) throw new Error("expected pinned root");
-      if (kind === "stale") root.contentDigest = "sha256:" + "f".repeat(64);
+      if (kind === "stale") root.contentDigest = `${"sha256:"}${"f".repeat(64)}`;
       else {
         root.assetId = "ecc/skill:removed";
         root.resolvedItems = [
@@ -435,5 +516,31 @@ describe("governed ECC module selection closure", () => {
         },
       ]),
     ).not.toThrow();
+  });
+
+  it("uses the sealed historical structural relation view instead of the active snapshot", () => {
+    const relations = {
+      mandatoryRequirementsById: new Map<string, readonly string[]>([
+        ["module:historical-root", ["module:historical-dependency"]],
+      ]),
+    };
+
+    expect(eccMandatoryRequirementIds("module:historical-root", relations)).toEqual([
+      "module:historical-dependency",
+    ]);
+    expect(eccMandatoryRequirementIds("module:historical-dependency", relations)).toEqual([]);
+  });
+
+  it("uses only sealed historical source paths instead of active skill aliases", () => {
+    const historicalPaths = new Map<string, readonly string[]>([
+      ["skill:renamed", ["skills/renamed-skill/SKILL.md"]],
+    ]);
+
+    expect(eccSelectionSourcePaths("skill:renamed", ["skills/renamed"], historicalPaths)).toEqual([
+      "skills/renamed-skill/SKILL.md",
+    ]);
+    expect(eccSelectionSourcePaths("skill:missing", ["skills/missing"], historicalPaths)).toEqual(
+      [],
+    );
   });
 });

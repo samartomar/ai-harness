@@ -1,5 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
-import * as adoptionRecipe from "../../src/org-policy/adoption-recipe.js";
+import { describe, expect, it } from "vitest";
 import { policyStudioModel } from "../../src/org-policy/studio-model.js";
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
 import { tinyStudioModel } from "./studio-test-fixture.js";
@@ -17,6 +16,76 @@ function scriptCloseCount(html: string): number {
 }
 
 describe("policy workbench data embedding", () => {
+  it("distinguishes preparation pins from evidence and Catalog actually included", () => {
+    const model = tinyStudioModel();
+    model.evidenceDelivery = {
+      coreVersion: "0.5.0",
+      workbenchCatalogDigest: `sha256:${"c".repeat(64)}`,
+      vendorLockDigest: `sha256:${"d".repeat(64)}`,
+      scannerLibraryVersion: "0.3.0",
+      expectedScannerPublisher: {
+        repository: "fixture/scan",
+        workflow: "fixture/scan/.github/workflows/publish.yml",
+        ref: "refs/heads/main",
+        commit: "a".repeat(40),
+      },
+    };
+    const html = policyStudioHtml(model);
+    expect(html).toContain('id="evidence-delivery"');
+    expect(html).toContain("Core 0.5.0");
+    expect(html).toContain(
+      `This Workbench catalog</strong></dt><dd style="overflow-wrap:anywhere">sha256:${"c".repeat(64)}`,
+    );
+    expect(html).toContain(
+      `Bundled report lock</strong></dt><dd style="overflow-wrap:anywhere">sha256:${"d".repeat(64)}`,
+    );
+    expect(html).toContain("@aihq/scan 0.3.0");
+    expect(html).toContain("Allowed Scanner publisher");
+    expect(html).toContain("No verified Catalog head is included");
+    expect(html).toContain("Not included in this build");
+    expect(html).not.toContain("Included evidence publisher</strong>");
+    model.evidenceDelivery.publicBaseline = {
+      publisher: "fixture/core<script>",
+      workflow: "fixture/core/.github/workflows/vendor.yml",
+      artifactDigest: `sha256:${"b".repeat(64)}`,
+      verifiedAt: "2026-09-06T00:00:00Z",
+      validUntil: "2026-09-07T00:00:00Z",
+    };
+    const prepared = policyStudioHtml(model);
+    expect(prepared).toContain("Verification during Core release preparation");
+    expect(prepared).toContain("fixture/core&lt;script&gt;");
+    expect(prepared).not.toContain("fixture/core<script>");
+    delete model.evidenceDelivery.publicBaseline;
+    model.evidenceDelivery.expectedCatalogPublisher = {
+      repository: "fixture/catalog",
+      workflow: "fixture/catalog/.github/workflows/publish.yml",
+      catalogCommit: "b".repeat(40),
+      version: 1,
+    };
+    model.evidenceDelivery.scanPublications = [
+      {
+        source: "fixture",
+        publisher: "fixture/scan",
+        commit: "a".repeat(40),
+        digest: `sha256:${"e".repeat(64)}`,
+      },
+    ];
+    model.evidenceDelivery.qualificationPublications = [
+      {
+        publisher: "fixture/catalog",
+        commit: "b".repeat(40),
+        catalogDigest: `sha256:${"f".repeat(64)}`,
+        receiptSetDigest: `sha256:${"a".repeat(64)}`,
+      },
+    ];
+    const direct = policyStudioHtml(model);
+    expect(direct).toContain("expire after 90 days");
+    expect(direct).toContain("Allowed Catalog publisher");
+    expect(direct).toContain("fixture Scanner publication");
+    expect(direct).toContain("Included Catalog qualification publication");
+    expect(direct).not.toContain("No verified Catalog head is included");
+    expect(direct).not.toContain("Not included in this build");
+  });
   it("embeds a model carrying replacement-pattern characters verbatim", () => {
     const model = tinyStudioModel();
     const hooks = model.catalog.eccHookControls as unknown as {
@@ -34,36 +103,20 @@ describe("policy workbench data embedding", () => {
     expect(scriptCloseCount(html)).toBe(scriptCloseCount(policyStudioHtml(tinyStudioModel())));
   });
 
-  it("caches only detached default models while explicit preparation paths still validate", () => {
-    const recipe = vi.spyOn(adoptionRecipe, "buildAdoptionRecipe");
-    try {
-      const first = policyStudioModel();
-      const assetId = Object.keys(first.workbenchBundle.assets)[0];
-      if (assetId === undefined) throw new Error("expected workbench asset");
-      const asset = first.workbenchBundle.assets[assetId];
-      if (asset === undefined) throw new Error("expected workbench asset");
-      asset.label = "caller mutation";
-
-      expect(policyStudioModel().workbenchBundle.assets[assetId]?.label).not.toBe(
-        "caller mutation",
-      );
-      expect(recipe).toHaveBeenCalledTimes(1);
-      expect(() => policyStudioModel(undefined, { schemaVersion: 1 } as never)).toThrow(
-        /baseline evidence provenance/,
-      );
-      expect(() =>
-        policyStudioModel(undefined, undefined, {
-          organizationManifestBytes: ["not an organization manifest"],
-        }),
-      ).toThrow();
-      expect(() =>
-        policyStudioModel(undefined, undefined, {
-          freshOrganizationPreparations: [{} as never],
-        }),
-      ).toThrow();
-    } finally {
-      recipe.mockRestore();
-    }
+  it("validates explicit provenance and preparation inputs", () => {
+    expect(() => policyStudioModel(undefined, { schemaVersion: 1 } as never)).toThrow(
+      /baseline evidence provenance/,
+    );
+    expect(() =>
+      policyStudioModel(undefined, undefined, {
+        organizationManifestBytes: ["not an organization manifest"],
+      }),
+    ).toThrow();
+    expect(() =>
+      policyStudioModel(undefined, undefined, {
+        freshOrganizationPreparations: [{} as never],
+      }),
+    ).toThrow();
   });
   it("embeds only bounded baseline evidence provenance fields", () => {
     const model = policyStudioModel(undefined, {
@@ -90,5 +143,13 @@ describe("policy workbench data embedding", () => {
     expect(html).not.toContain("leak.example.test");
     expect(html).not.toContain("C:\\secret\\baseline");
     expect(html).not.toContain("signature bytes");
+    const defaultModel = policyStudioModel();
+    expect(defaultModel.baselineEvidenceProvenance).toBeUndefined();
+    expect(defaultModel.workbenchBundle).toEqual(model.workbenchBundle);
+    expect(defaultModel.workbenchBundle).not.toBe(model.workbenchBundle);
+    model.workbenchBundle.evidence = {};
+    expect(policyStudioModel().workbenchBundle.evidence).toEqual(
+      defaultModel.workbenchBundle.evidence,
+    );
   });
 });

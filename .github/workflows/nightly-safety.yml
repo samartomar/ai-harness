@@ -11,6 +11,9 @@ permissions:
 jobs:
   integration:
     name: full integration (${{ matrix.os }}, node-${{ matrix.node }})
+    permissions:
+      contents: read
+      attestations: read
     strategy:
       fail-fast: false
       matrix:
@@ -37,6 +40,8 @@ jobs:
         if: matrix.coverage != true
         run: npm test -- --testTimeout=15000
       - name: Build and cold packed lifecycle
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: npm run verify:release-candidate
 
   evidence:

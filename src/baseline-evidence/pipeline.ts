@@ -51,6 +51,8 @@ export interface BaselineEvidencePipelineInput {
 export interface BaselineEvidencePipelineDeps {
   vendorLock?: BaselineEvidenceLock;
   vendorLockSha256?: string;
+  /** Exact source identity supplied only by authenticated historical runtime context. */
+  expectedSourceTreeSha256?: string;
   resolveOrgEvidence?: (
     input: Parameters<typeof resolveOrgBaselineEvidence>[0],
   ) => Promise<ResolveOrgBaselineEvidenceResult>;
@@ -174,6 +176,7 @@ export async function executeBaselineEvidencePipeline(
         componentIds: input.componentIds,
         vendorLock,
         vendorLockSha256: lockSha256,
+        expectedSourceTreeSha256: deps.expectedSourceTreeSha256,
         orgEvidence: org.evidence,
         acceptanceTuple: input.acceptanceTuple,
       });
