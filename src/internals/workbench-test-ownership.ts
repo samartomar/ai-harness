@@ -27,6 +27,8 @@ export const WORKBENCH_CONTRACT_TEST_PATTERNS = [
   "tests/org-policy/workbench/compilers/**/*.test.ts",
   "tests/org-policy/workbench/catalog-bundle.test.ts",
   "tests/org-policy/workbench/prepared-catalog.test.ts",
+  "tests/org-policy/workbench/default-catalog-preassembly.test.ts",
+  "tests/org-policy/workbench/default-studio-preassembly.test.ts",
   "tests/org-policy/workbench/core/**/*.test.ts",
   // These exercise authenticated disk stores, operator commands, and the
   // production assembly; they are not synthetic reducer/state assertions.

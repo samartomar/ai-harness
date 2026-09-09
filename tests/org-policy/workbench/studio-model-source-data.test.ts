@@ -11,7 +11,7 @@ vi.mock("../../../src/org-policy/workbench/core/source-data.js", async (importOr
 import { policyStudioModel } from "../../../src/org-policy/studio-model.js";
 
 beforeEach(() => apply.mockClear());
-it("authenticates the configured source cache once after preparing package overlays", () => {
+it("authenticates current source data for each model built from the prepared package base", () => {
   const first = policyStudioModel();
   const emptyOptions = policyStudioModel(undefined, undefined, {
     verifiedBaseline: undefined,
@@ -20,5 +20,5 @@ it("authenticates the configured source cache once after preparing package overl
   });
   expect(emptyOptions).toEqual(first);
   expect(emptyOptions.workbenchBundle).not.toBe(first.workbenchBundle);
-  expect(apply).toHaveBeenCalledTimes(1);
+  expect(apply).toHaveBeenCalledTimes(2);
 });

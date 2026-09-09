@@ -64,7 +64,8 @@ import { verifyWorkbenchPublicPublicationV1 } from "../../src/internals/verify-w
 
 const pin = "a".repeat(40);
 const now = "2026-09-09T12:00:00.000Z";
-const summary = { "aih/skill:example": { verifiedAt: now } };
+const receiptDigest = `sha256:${"c".repeat(64)}`;
+const summary = { "aih/skill:example": { verifiedAt: now, receiptDigest } };
 const projection = { summary };
 const sealed = { bytes: "{}", sha256: `sha256:${"b".repeat(64)}` };
 const aihRecord = { catalog: { id: "aih", pinnedCommit: pin } };
@@ -109,6 +110,25 @@ describe("release first-party AIH Catalog qualification", () => {
     setQualificationProjection();
   });
 
+  it("retains independent receipt verification times instead of requiring a catalog-wide refresh", async () => {
+    setExternalCollection();
+    const olderReceiptDigest = `sha256:${"d".repeat(64)}`;
+    const olderTime = "2026-09-08T12:00:00.000Z";
+    const mixedSummary = {
+      ...summary,
+      "external/skill:retained": { verifiedAt: olderTime, receiptDigest: olderReceiptDigest },
+    };
+    const mixedProjection = { summary: mixedSummary };
+    mocks.qualificationProjections.mockReturnValue([mixedProjection]);
+    mocks.projectionSchema.mockReturnValue({ success: true, data: mixedSummary });
+    mocks.projectQualification.mockReturnValue(mixedProjection);
+    await verifyWorkbenchPublicPublicationV1({ now, collectionMaterial: externalMaterial });
+    expect(mocks.verifyQualification).toHaveBeenCalledWith({ marker: "final-bundle" }, {}, now, {
+      [receiptDigest]: now,
+      [olderReceiptDigest]: olderTime,
+    });
+  });
+
   it("derives AIH-only bindings from the genuine reverify handle without external roots", async () => {
     setAihCollection();
     const handle = { marker: "opaque-prepared-aih" };
@@ -135,7 +155,7 @@ describe("release first-party AIH Catalog qualification", () => {
       { marker: "final-bundle" },
       { "aih/skill:example": firstPartyBinding },
       now,
-      now,
+      { [receiptDigest]: now },
     );
   });
 
@@ -155,7 +175,7 @@ describe("release first-party AIH Catalog qualification", () => {
       { marker: "final-bundle" },
       { "aih/skill:example": packagedBinding },
       now,
-      now,
+      { [receiptDigest]: now },
     );
   });
 
@@ -183,11 +203,8 @@ describe("release first-party AIH Catalog qualification", () => {
     await expect(
       verifyWorkbenchPublicPublicationV1({ now, collectionMaterial: externalMaterial }),
     ).rejects.toThrow(/missing exact qualification binding/);
-    expect(mocks.verifyQualification).toHaveBeenCalledWith(
-      { marker: "final-bundle" },
-      {},
-      now,
-      now,
-    );
+    expect(mocks.verifyQualification).toHaveBeenCalledWith({ marker: "final-bundle" }, {}, now, {
+      [receiptDigest]: now,
+    });
   });
 });

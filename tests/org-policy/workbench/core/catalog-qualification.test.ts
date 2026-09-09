@@ -486,6 +486,55 @@ describe("Core Catalog qualification preparation", () => {
     ).resolves.toBeUndefined();
   });
 
+  it.each(["matching", "missing", "other-receipt", "future", "before-attestation"] as const)(
+    "binds preserved verification time to each receipt's bytes: %s",
+    async (scenario) => {
+      const input = artifacts();
+      let calls = 0;
+      vi.mocked(defaultRunner).mockImplementation(async () => {
+        const isReceipt = calls++ === 0;
+        return {
+          code: 0,
+          stderr: "",
+          stdout: ghResult(
+            isReceipt ? input.publisher : input.receiptSetPublisher,
+            isReceipt ? input.receiptBytes : input.receiptSetBytes,
+          ),
+        };
+      });
+      const verifiedAt =
+        scenario === "future"
+          ? "2026-09-04T00:00:00Z"
+          : scenario === "before-attestation"
+            ? "2026-09-01T00:00:00Z"
+            : "2026-09-02T00:00:00Z";
+      const times =
+        scenario === "missing"
+          ? {}
+          : {
+              [scenario === "other-receipt"
+                ? digest("another receipt")
+                : digest(input.receiptBytes)]: verifiedAt,
+            };
+      const prepared = await verifyCatalogQualificationArtifactsForPackagingV1(
+        input.bundle,
+        input.coreBindings,
+        [input],
+        "2026-09-03T00:00:00Z",
+        times,
+      );
+      if (scenario === "matching") {
+        expect(
+          catalogQualificationPreparedBundleV1(input.bundle, prepared)?.qualifications,
+        ).toMatchObject({ "aih/skill:review": { verifiedAt } });
+        expect(calls).toBe(2);
+      } else {
+        expect(prepared).toBeUndefined();
+        if (scenario !== "before-attestation") expect(calls).toBe(0);
+      }
+    },
+  );
+
   it("reuses verified statements only within one call and still rejects duplicate asset claims", async () => {
     const input = artifacts();
     let calls = 0;

@@ -143,5 +143,13 @@ describe("policy workbench data embedding", () => {
     expect(html).not.toContain("leak.example.test");
     expect(html).not.toContain("C:\\secret\\baseline");
     expect(html).not.toContain("signature bytes");
+    const defaultModel = policyStudioModel();
+    expect(defaultModel.baselineEvidenceProvenance).toBeUndefined();
+    expect(defaultModel.workbenchBundle).toEqual(model.workbenchBundle);
+    expect(defaultModel.workbenchBundle).not.toBe(model.workbenchBundle);
+    model.workbenchBundle.evidence = {};
+    expect(policyStudioModel().workbenchBundle.evidence).toEqual(
+      defaultModel.workbenchBundle.evidence,
+    );
   });
 });

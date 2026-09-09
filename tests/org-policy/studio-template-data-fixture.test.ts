@@ -8,6 +8,14 @@ vi.mock("../../src/org-policy/workbench/prepared-catalog.js", () => ({
   packagedPreparedWorkbenchCatalogV1: mocks.prepared,
   prepareWorkbenchCatalog: mocks.prepared,
 }));
+vi.mock("../../src/org-policy/workbench/default-catalog-preassembly.js", async (original) => ({
+  ...(await original<
+    typeof import("../../src/org-policy/workbench/default-catalog-preassembly.js")
+  >()),
+  // This test exercises the tiny compiler fallback; package admission has its
+  // own contract and installed-tarball tests.
+  packagedDefaultCatalogPreassemblyCompanionV1: () => undefined,
+}));
 
 import * as adoptionRecipe from "../../src/org-policy/adoption-recipe.js";
 import { policyStudioModel } from "../../src/org-policy/studio-model.js";

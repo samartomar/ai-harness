@@ -22,6 +22,7 @@ import {
 } from "./core/organization-preparation.js";
 import { applyPackagedWorkbenchSourceDataV1 } from "./core/packaged-source-data.js";
 import { applyWorkbenchSourceDataV1 } from "./core/source-data.js";
+import { packagedDefaultCatalogPreassemblyV1 } from "./default-catalog-preassembly.js";
 
 /** Offline organization manifests accepted by Core preparation, never by the browser shell. */
 export interface PrepareWorkbenchCatalogOptionsV1 {
@@ -246,8 +247,17 @@ export function packagedPreparedWorkbenchCatalogV1(): PreparedWorkbenchCatalogV1
   // This process-private consumer can apply sealed package records directly to the frozen cache
   // snapshot. Its result is cloned before it leaves this module, so callers never receive cache
   // authority or a shared mutable object.
-  prepared ??= finishPreparedCatalogV1(preparedBaselineSnapshotV1(policyAuthoringCatalog()), {
+  prepared ??= deepFreezeStrictJsonV1(
+    structuredClone(
+      packagedDefaultCatalogPreassemblyV1() ?? compilePackagedWorkbenchCatalogForBuildV1(),
+    ),
+  ) as PreparedWorkbenchCatalogV1;
+  return structuredClone(prepared);
+}
+
+/** Package build only: bypasses every process cache before staging a sealed companion. */
+export function compilePackagedWorkbenchCatalogForBuildV1(): PreparedWorkbenchCatalogV1 {
+  return finishPreparedCatalogV1(prepareCatalogV1(policyAuthoringCatalog(), [], []), {
     packageDataOnly: true,
   });
-  return structuredClone(prepared);
 }

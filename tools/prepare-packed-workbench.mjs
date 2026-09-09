@@ -385,6 +385,7 @@ export async function preparePackedWorkbench(directory) {
   const entry = manifest?.[0];
   const paths = entry?.files?.map(file => file.path);
   if (!Array.isArray(paths) || !paths.includes("dist/bundle.generated.cjs")) throw new Error("Packed Core is missing the browser bundle");
+  if (!paths.includes("dist/default-catalog-preassembly.generated.cjs")) throw new Error("Packed Core is missing the default catalog preassembly");
   if (paths.includes("aih-packs.json")) throw new Error("Removed aih-packs.json leaked into the package");
   const consumer = resolve(target, "packed-consumer");
   const uiAdmin = resolve(target, "packed-ui-administrator");

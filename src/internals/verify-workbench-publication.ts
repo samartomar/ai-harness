@@ -222,17 +222,18 @@ export async function verifyWorkbenchPublicPublicationV1(
   const expected = CatalogQualificationSummariesV1Schema.safeParse(packagedProjections[0]?.summary);
   if (!expected.success || Object.keys(expected.data).length === 0)
     throw new Error("Release Catalog qualification projection is malformed.");
-  const verifiedTimes = new Set(Object.values(expected.data).map((summary) => summary.verifiedAt));
-  if (verifiedTimes.size !== 1)
-    throw new Error("Release Catalog qualification projection has ambiguous verification time.");
-  const [verifiedAt] = verifiedTimes;
-  if (verifiedAt === undefined)
-    throw new Error("Release Catalog qualification projection lacks verification time.");
+  const verifiedTimes: Record<string, string> = {};
+  for (const summary of Object.values(expected.data)) {
+    const previous = verifiedTimes[summary.receiptDigest];
+    if (previous !== undefined && previous !== summary.verifiedAt)
+      throw new Error("Release Catalog receipt has conflicting verification times.");
+    verifiedTimes[summary.receiptDigest] = summary.verifiedAt;
+  }
   const preparedQualification = await verifyCatalogQualificationForPackagingV1(
     preparedCatalog.bundle,
     bindings,
     now,
-    verifiedAt,
+    verifiedTimes,
   );
   const actualProjection = catalogQualificationPackagedProjectionV1(preparedQualification);
   if (

@@ -805,17 +805,22 @@ export async function verifyCatalogQualificationArtifactsForPackagingV1(
   coreBindings: CoreCompilerQualificationBindingsV1,
   records: readonly CatalogQualificationArtifactV1[],
   now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
-  verifiedAt = now,
+  verifiedAt: string | Readonly<Record<string, string>> = now,
 ): Promise<PreparedCatalogQualificationV1 | undefined> {
   const merged: Record<string, CatalogQualificationSummaryV1> = {};
   // A GH-verified multi-subject statement authenticates each named digest. Keep
   // it only within this preparation call and recheck every exact subject join.
   const verifiedStatements: string[] = [];
   const nowEpoch = Date.parse(now);
-  const verifiedEpoch = Date.parse(verifiedAt);
-  if (!Number.isFinite(nowEpoch) || !Number.isFinite(verifiedEpoch) || verifiedEpoch > nowEpoch)
-    return undefined;
+  if (!Number.isFinite(nowEpoch)) return undefined;
   for (const record of records) {
+    // Independent publications retain their own preparation time, keyed by the
+    // exact receipt bytes. A missing or invalid time cannot inherit another source's.
+    const recordVerifiedAt =
+      typeof verifiedAt === "string" ? verifiedAt : verifiedAt[sha256(record.receiptBytes)];
+    if (recordVerifiedAt === undefined) return undefined;
+    const verifiedEpoch = Date.parse(recordVerifiedAt);
+    if (!Number.isFinite(verifiedEpoch) || verifiedEpoch > nowEpoch) return undefined;
     const receipt = parseAihSupportedQualificationReceiptV2Bytes(record.receiptBytes);
     const policy = CATALOG_QUALIFICATION_RELEASE_POLICIES_V1.find(
       (candidate) => candidate.catalogCommit === record.publisher.commit,
@@ -858,7 +863,7 @@ export async function verifyCatalogQualificationArtifactsForPackagingV1(
       record,
       coreBindings,
       now,
-      verifiedAt,
+      recordVerifiedAt,
     );
     if (summaries === undefined) return undefined;
     for (const [assetId, summary] of Object.entries(summaries)) {
@@ -874,7 +879,7 @@ export async function verifyCatalogQualificationForPackagingV1(
   bundle: AuthoringCatalogBundleV1,
   coreBindings: CoreCompilerQualificationBindingsV1,
   now?: string,
-  verifiedAt?: string,
+  verifiedAt?: string | Readonly<Record<string, string>>,
 ): Promise<PreparedCatalogQualificationV1 | undefined> {
   return verifyCatalogQualificationArtifactsForPackagingV1(
     bundle,

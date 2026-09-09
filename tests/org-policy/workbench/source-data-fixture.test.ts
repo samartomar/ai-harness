@@ -1,8 +1,22 @@
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+
+const filesystemFailure = vi.hoisted(() => ({ destination: "" }));
+vi.mock("node:fs", async (original) => {
+  const actual = await original<typeof import("node:fs")>();
+  return {
+    ...actual,
+    renameSync: (...args: Parameters<typeof actual.renameSync>) => {
+      if (args[1] === filesystemFailure.destination)
+        throw new Error("fixture active-pointer rename failed");
+      return actual.renameSync(...args);
+    },
+  };
+});
+
 import {
   canonicalStrictJsonBytesV1,
   canonicalStrictJsonSha256V1,
@@ -14,11 +28,13 @@ import {
   readWorkbenchSourceDataFileV1,
   verifyWorkbenchSourceDataV1,
 } from "../../../src/org-policy/workbench/core/source-data.js";
+import { verifySourceDataLocalHeadV1 } from "../../../src/org-policy/workbench/core/source-data-local-receipt.js";
 import {
   fixtureAssetId,
   fixtureChangedAssetId,
   fixtureSourceId,
   fixtureUnrelatedAssetId,
+  fixtureUnrelatedSourceId,
   tinySourceDataPreparedCatalogV1,
 } from "./source-data-test-fixture.js";
 
@@ -88,6 +104,7 @@ function store() {
 }
 
 afterEach(() => {
+  filesystemFailure.destination = "";
   vi.useRealTimers();
   vi.unstubAllEnvs();
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
@@ -95,6 +112,64 @@ afterEach(() => {
 afterAll(() => rmSync(verifierParent, { recursive: true, force: true }));
 
 describe("authenticated versioned Workbench source data with a sealed fixture baseline", () => {
+  it("refreshes one of two active sources while retaining the other source's signed snapshot", () => {
+    const root = store();
+    writeFileSync(
+      join(root, "trust.json"),
+      JSON.stringify({
+        ...trust,
+        authorities: [{ ...authority, sources: [fixtureSourceId, fixtureUnrelatedSourceId] }],
+      }),
+    );
+    const other = {
+      ...bundle(),
+      sourceBundle: extractWorkbenchSourceDataV1(base.bundle, fixtureUnrelatedSourceId),
+    };
+    const otherAsset = other.sourceBundle.assets[fixtureUnrelatedAssetId];
+    if (otherAsset === undefined) throw new Error("missing unrelated fixture asset");
+    otherAsset.label = "Independently updated baseline";
+    other.sourceBundle.provenance.bundleDigest = `sha256:${canonicalStrictJsonSha256V1({ ...other.sourceBundle, provenance: {} })}`;
+    const retained = importWorkbenchSourceDataV1(root, signed(other), now);
+    const first = importWorkbenchSourceDataV1(root, signed(bundle()), now);
+    const previous = JSON.parse(readFileSync(join(root, "active.json"), "utf8"));
+    importWorkbenchSourceDataV1(root, signed(bundle(2, first.digest)), now);
+    const current = JSON.parse(readFileSync(join(root, "active.json"), "utf8"));
+    expect(current.sources[fixtureUnrelatedSourceId]).toEqual(
+      previous.sources[fixtureUnrelatedSourceId],
+    );
+    expect(current.sources[fixtureUnrelatedSourceId].active).toBe(retained.digest);
+    const composed = applyWorkbenchSourceDataV1(base, { root, now });
+    expect(composed.bundle.assets[fixtureUnrelatedAssetId]).toEqual(otherAsset);
+    expect(composed.bundle.assets[fixtureChangedAssetId]?.label).toBe("Data refresh 2");
+  });
+  it("restores the protected head when activation fails and permits an exact retry", () => {
+    const root = store();
+    const first = importWorkbenchSourceDataV1(root, signed(bundle()), now);
+    const activePath = join(root, "active.json");
+    const before = readFileSync(activePath, "utf8");
+    const previousIndex = JSON.parse(before);
+    const nextBytes = signed(bundle(2, first.digest));
+    filesystemFailure.destination = activePath;
+
+    expect(() => importWorkbenchSourceDataV1(root, nextBytes, now)).toThrow(
+      "fixture active-pointer rename failed",
+    );
+    expect(readFileSync(activePath, "utf8")).toBe(before);
+    expect(() => verifySourceDataLocalHeadV1(root, previousIndex)).not.toThrow();
+    expect(
+      readdirSync(root).filter((name) => name === "import.lock" || name.endsWith(".tmp")),
+    ).toEqual([]);
+
+    filesystemFailure.destination = "";
+    const retried = importWorkbenchSourceDataV1(root, nextBytes, now);
+    const currentIndex = JSON.parse(readFileSync(activePath, "utf8"));
+    expect(currentIndex.sources[fixtureSourceId]).toEqual({
+      active: retried.digest,
+      history: [first.digest],
+    });
+    expect(() => verifySourceDataLocalHeadV1(root, currentIndex)).not.toThrow();
+    expect(() => verifySourceDataLocalHeadV1(root, previousIndex)).toThrow();
+  });
   it("reads bounded exact UTF-8 source bytes and rejects directories, empty or malformed files", () => {
     const root = mkdtempSync(join(tmpdir(), "aih-source-file-"));
     roots.push(root);
