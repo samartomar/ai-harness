@@ -9,8 +9,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { basename, dirname, extname, isAbsolute, join, relative } from "node:path";
 import { hashComponentTree } from "../baseline-evidence/hash.js";
 import type { Posture } from "../config/posture.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
@@ -45,6 +44,18 @@ import {
   type UnicodeRisk,
 } from "./lint.js";
 import { collectFilesUnder, TRUST_SKIP_DIRS } from "./scan.js";
+import {
+  CISCO_MCP_SCANNER_ANALYZER,
+  CISCO_MCP_SCANNER_PROJECT,
+  CISCO_SKILL_SCANNER_ANALYZER,
+  CISCO_SKILL_SCANNER_PROJECT,
+  CISCO_SKILL_SCANNER_VERSION,
+  SEMGREP_ANALYZER,
+  SEMGREP_PROJECT,
+  SEMGREP_VERSION,
+  SNYK_AGENT_SCAN_ANALYZER,
+  SNYK_AGENT_SCAN_PROJECT,
+} from "./scanner-runtime-identity.js";
 import { isInstallScriptEvidenceFilePath, isMaliciousCodeScanFilePath } from "./script-files.js";
 
 const INCOMING_MCP_CONFIG_FILES = new Set([...MCP_CONFIG_FILES, "mcp.json"]);
@@ -107,34 +118,24 @@ export interface TrustDetectorResult {
 }
 
 const DETECTOR_UNAVAILABLE = "trust.detector-unavailable";
-const moduleDir = dirname(fileURLToPath(import.meta.url));
-const trustScannerRootCandidates = [
-  resolve(moduleDir, "..", "tools", "trust-scanners"),
-  resolve(moduleDir, "..", "..", "tools", "trust-scanners"),
-] as const;
-const TRUST_SCANNERS_ROOT =
-  trustScannerRootCandidates.find((candidate) => existsSync(candidate)) ??
-  trustScannerRootCandidates[0];
-const ciscoSkillScannerProjectCandidates = [
-  resolve(moduleDir, "..", "tools", "cisco-skill-scanner"),
-  resolve(moduleDir, "..", "..", "tools", "cisco-skill-scanner"),
-] as const;
 const UV_SCANNER_PYTHON = "3.12";
 const UV_SCANNER_STARTUP_TIMEOUT_MS = 120_000;
-export const CISCO_SKILL_SCANNER_PROJECT =
-  ciscoSkillScannerProjectCandidates.find((candidate) => existsSync(join(candidate, "uv.lock"))) ??
-  ciscoSkillScannerProjectCandidates[0];
-export const CISCO_MCP_SCANNER_PROJECT = join(TRUST_SCANNERS_ROOT, "cisco-mcp");
-export const SEMGREP_PROJECT = join(TRUST_SCANNERS_ROOT, "semgrep");
-export const SNYK_AGENT_SCAN_PROJECT = join(TRUST_SCANNERS_ROOT, "snyk-agent-scan");
-export const CISCO_SKILL_SCANNER_VERSION = "2.0.14";
-export const CISCO_MCP_SCANNER_VERSION = "4.8.2";
-export const SEMGREP_VERSION = "1.173.0";
-export const SNYK_AGENT_SCAN_VERSION = "0.5.17";
-export const CISCO_SKILL_SCANNER_ANALYZER = "cisco@uvx";
-export const CISCO_MCP_SCANNER_ANALYZER = `mcp-scanner@uv:${CISCO_MCP_SCANNER_VERSION}`;
-export const SEMGREP_ANALYZER = `semgrep@uv:${SEMGREP_VERSION}`;
-export const SNYK_AGENT_SCAN_ANALYZER = `snyk-agent-scan@uv:${SNYK_AGENT_SCAN_VERSION}`;
+
+export {
+  CISCO_MCP_SCANNER_ANALYZER,
+  CISCO_MCP_SCANNER_PROJECT,
+  CISCO_MCP_SCANNER_VERSION,
+  CISCO_SKILL_SCANNER_ANALYZER,
+  CISCO_SKILL_SCANNER_PROJECT,
+  CISCO_SKILL_SCANNER_VERSION,
+  SEMGREP_ANALYZER,
+  SEMGREP_PROJECT,
+  SEMGREP_VERSION,
+  SNYK_AGENT_SCAN_ANALYZER,
+  SNYK_AGENT_SCAN_PROJECT,
+  SNYK_AGENT_SCAN_VERSION,
+} from "./scanner-runtime-identity.js";
+
 // These Semgrep rules are deliberately small harness-owned safety rules, not a
 // complete substitute for native trust checks. The regexes are line-oriented,
 // including the download-and-execute rule, so a pass is same-line coverage only.

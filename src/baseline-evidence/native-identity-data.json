@@ -27,8 +27,9 @@
     "src/trust/manifest.ts",
     "src/trust/mcp-classify.ts",
     "src/trust/scan.ts",
+    "src/trust/scanner-runtime-identity.ts",
     "src/trust/script-files.ts",
     "src/trust/smoke.ts"
   ],
-  "digest": "9c9e3239d401"
+  "digest": "02e717334a2c"
 }

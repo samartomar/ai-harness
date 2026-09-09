@@ -4,20 +4,8 @@ import { basename, join } from "node:path";
 import type { Runner } from "../internals/proc.js";
 import type { Platform } from "../platform/base.js";
 import {
-  CISCO_MCP_SCANNER_ANALYZER,
-  CISCO_MCP_SCANNER_PROJECT,
-  CISCO_MCP_SCANNER_VERSION,
-  CISCO_SKILL_SCANNER_ANALYZER,
-  CISCO_SKILL_SCANNER_PROJECT,
-  CISCO_SKILL_SCANNER_VERSION,
   checkDetectorsAvailable,
   resolveCiscoScanConcurrency,
-  SEMGREP_ANALYZER,
-  SEMGREP_PROJECT,
-  SEMGREP_VERSION,
-  SNYK_AGENT_SCAN_ANALYZER,
-  SNYK_AGENT_SCAN_PROJECT,
-  SNYK_AGENT_SCAN_VERSION,
   type TrustDetectorName,
 } from "../trust/detectors.js";
 import {
@@ -25,6 +13,20 @@ import {
   SKILLSPECTOR_SOURCE_REVISION,
   type SkillSpectorImageApproval,
 } from "../trust/images.js";
+import {
+  CISCO_MCP_SCANNER_ANALYZER,
+  CISCO_MCP_SCANNER_PROJECT,
+  CISCO_MCP_SCANNER_VERSION,
+  CISCO_SKILL_SCANNER_ANALYZER,
+  CISCO_SKILL_SCANNER_PROJECT,
+  CISCO_SKILL_SCANNER_VERSION,
+  SEMGREP_ANALYZER,
+  SEMGREP_PROJECT,
+  SEMGREP_VERSION,
+  SNYK_AGENT_SCAN_ANALYZER,
+  SNYK_AGENT_SCAN_PROJECT,
+  SNYK_AGENT_SCAN_VERSION,
+} from "../trust/scanner-runtime-identity.js";
 import type { BaselineCatalogComponent } from "./catalog.js";
 import { nativeAnalyzerIdentity } from "./native-identity.js";
 import { SCANNER_BASELINE_ANALYZER_VERSIONS } from "./scanner-profile.js";
