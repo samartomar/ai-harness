@@ -19,6 +19,7 @@ import {
   acquireBoundedGithubSourceArchiveV1,
   forgetAcquiredGithubSourceArchiveV1,
 } from "./bounded-github-source-archive.js";
+import { hermeticGitEnv } from "./git-env.js";
 import type { WorkbenchCollectionCatalogIdV1 } from "./prepare-workbench-collection-evidence.js";
 import { verifyPackagedWorkbenchSourceDataV1 } from "./verify-packaged-workbench-source-data.js";
 import { verifyWorkbenchPublicPublicationV1 } from "./verify-workbench-publication.js";
@@ -147,12 +148,15 @@ function moduleOwnedCoreCheckoutRoot(): string {
 function cleanCoreCheckout(): Readonly<{ root: string; commit: string }> {
   const root = moduleOwnedCoreCheckoutRoot();
   const options = { encoding: "utf8" as const, windowsHide: true };
-  const commit = execFileSync("git", ["-C", root, "rev-parse", "HEAD"], options).trim();
+  const commit = execFileSync("git", ["-C", root, "rev-parse", "HEAD"], {
+    ...options,
+    env: hermeticGitEnv(),
+  }).trim();
   if (!/^[a-f0-9]{40}$/u.test(commit)) throw new Error("Release Core checkout has no exact HEAD.");
   const status = execFileSync(
     "git",
     ["-C", root, "status", "--porcelain=v1", "--untracked-files=no"],
-    options,
+    { ...options, env: hermeticGitEnv() },
   );
   if (status !== "") throw new Error("Release Core checkout must be clean.");
   return { root, commit };

@@ -245,6 +245,18 @@ hosted implementation. The current Catalog subject schema has no hook kind,
 so a hook can have a verified scan without a Catalog qualification. It must
 not inherit qualification by being relabeled as a tool or profile.
 
+For AIH, the collection preparer can also export candidate profiles and bindings
+from the same verified Scanner input:
+
+```bash
+npm run prepare:workbench-collection-evidence -- --catalog aih --source /absolute/pinned-core-checkout --publication-root /absolute/published-batches --output /absolute/new-report.json --qualification-output /absolute/new-qualification-draft.json
+```
+
+Both output files must be new. The qualification draft contains exact profile
+bytes, their digests, candidate bindings, and unsupported assets. It carries no
+qualification authority. Catalog must still assess and publish its own receipt;
+Core then independently verifies that receipt against these bindings.
+
 The internal Catalog preparation command consumes the four bounded files
 `receipt.json`, `receipt-set.json`, `member.json`, and `closure.json`. The local
 transport names differ from the authenticated publisher subjects: the receipt
