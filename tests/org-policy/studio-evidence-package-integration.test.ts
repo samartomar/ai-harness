@@ -127,7 +127,7 @@ describe("Studio composes the verified package channels", () => {
       ...bundle,
       qualifications: { [asset.id]: summary },
     }));
-    const model = policyStudioModel(undefined, undefined, {});
+    const model = policyStudioModel(undefined, undefined, { initialPolicy: fixture.initialPolicy });
     expect(model.workbenchBundle.evidence[evidence.id]).toEqual(evidence);
     expect(model.workbenchBundle.qualifications?.[asset.id]).toEqual(summary);
     expect(model.workbenchBundle.provenance.bundleDigest).not.toBe(
@@ -153,8 +153,11 @@ describe("Studio composes the verified package channels", () => {
     expect(model.initialPolicy.governance?.authority?.approvals).toEqual([]);
   });
   it("rejects a lost preparation handle instead of silently dropping qualification", () => {
+    const fixture = tinyStudioModel();
     mocks.qualification.mockReturnValue({});
     mocks.apply.mockReturnValue(undefined);
-    expect(() => policyStudioModel(undefined, undefined, {})).toThrow("lost custody");
+    expect(() =>
+      policyStudioModel(undefined, undefined, { initialPolicy: fixture.initialPolicy }),
+    ).toThrow("lost custody");
   });
 });

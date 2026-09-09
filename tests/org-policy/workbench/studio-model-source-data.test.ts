@@ -12,6 +12,13 @@ import { policyStudioModel } from "../../../src/org-policy/studio-model.js";
 
 beforeEach(() => apply.mockClear());
 it("authenticates the configured source cache once after preparing package overlays", () => {
-  policyStudioModel();
+  const first = policyStudioModel();
+  const emptyOptions = policyStudioModel(undefined, undefined, {
+    verifiedBaseline: undefined,
+    organizationManifestBytes: [],
+    freshOrganizationPreparations: [],
+  });
+  expect(emptyOptions).toEqual(first);
+  expect(emptyOptions.workbenchBundle).not.toBe(first.workbenchBundle);
   expect(apply).toHaveBeenCalledTimes(1);
 });

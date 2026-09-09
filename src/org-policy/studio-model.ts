@@ -543,7 +543,10 @@ export function policyStudioModel(
   if (
     catalogProvenance === undefined &&
     baselineEvidenceProvenance === undefined &&
-    options === undefined &&
+    options?.verifiedBaseline === undefined &&
+    options?.initialPolicy === undefined &&
+    !options?.organizationManifestBytes?.length &&
+    !options?.freshOrganizationPreparations?.length &&
     !existsSync(join(workbenchSourceDataRootV1(), "active.json"))
   ) {
     return defaultStudioModelV1();
