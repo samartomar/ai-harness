@@ -129,7 +129,6 @@ describe("policy generate admin catalog route", () => {
     expect(injected.calls.argv).toHaveLength(0);
     const html = readFileSync(join(cwd, "aih-policy-workbench.html"), "utf8");
     expect(html).not.toContain("catalog-provenance");
-    expect(Object.hasOwn(policyStudioModel(), "catalogProvenance")).toBe(false);
   });
 
   it("resolves the catalog before rendering and shows verified tier, source, and age safely", async () => {

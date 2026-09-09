@@ -9,9 +9,11 @@ import {
   verify,
 } from "node:crypto";
 import {
+  closeSync,
   existsSync,
   lstatSync,
   mkdirSync,
+  openSync,
   realpathSync,
   renameSync,
   unlinkSync,
@@ -156,6 +158,15 @@ foreach($p in @($env:AIH_VERIFIER_DIRECTORY,$env:AIH_VERIFIER_KEY)) {
   );
   if (result.trim() !== "OK") fail();
 }
+function writeNewPrivateFile(path: string, bytes: string | Buffer): void {
+  // Acquire atomically; never write through a path observed by an earlier check.
+  const descriptor = openSync(path, "wx", 0o600);
+  try {
+    writeFileSync(descriptor, bytes);
+  } finally {
+    closeSync(descriptor);
+  }
+}
 function key(create: boolean) {
   const root = privateRoot();
   const initialize = !existsSync(root);
@@ -175,12 +186,9 @@ function key(create: boolean) {
     // Never regenerate a missing key next to existing receipts.
     if (!create || existsSync(join(root, "initialized"))) fail();
     const generated = generateKeyPairSync("ed25519");
-    writeFileSync(path, generated.privateKey.export({ format: "pem", type: "pkcs8" }), {
-      flag: "wx",
-      mode: 0o600,
-    });
+    writeNewPrivateFile(path, generated.privateKey.export({ format: "pem", type: "pkcs8" }));
     permissions(path, true);
-    writeFileSync(join(root, "initialized"), "local-verification/v1", { flag: "wx", mode: 0o600 });
+    writeNewPrivateFile(join(root, "initialized"), "local-verification/v1");
     material = readRegularFileWithStats(path, { maxBytes: 8192 });
   }
   if (!material) fail();
