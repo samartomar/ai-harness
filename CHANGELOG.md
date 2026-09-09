@@ -27,6 +27,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Keep all three built-in capabilities available on the explicitly reviewed
+  Core `0.5.x` and `0.6.x` lines. Capability resolution and initialization retain
+  enterprise approval requirements; older or unreviewed minor versions fail closed.
+
 - Show packaged Workbench scan results, findings, scope, and reported analyzer
   versions before a single verification notice. Count included reports separately
   from currently verified evidence; missing bundled reports no longer direct

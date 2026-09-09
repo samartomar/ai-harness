@@ -387,22 +387,53 @@ describe("aih capability resolve", () => {
     }
   });
 
-  it("fails closed when the mandatory security-review capability is engine-incompatible", async () => {
-    seedNodeRepo();
-    vi.resetModules();
-    // In pre-1.0 SemVer, `^0.5.0` admits only 0.5.x. A later minor must review
-    // and deliberately advance the built-in catalog's Core engine contract.
-    vi.doMock("../../src/version.js", () => ({ VERSION: "0.6.0" }));
-    try {
-      const module = await import("../../src/capability/index.js");
-      await expect(async () => {
-        await module.capabilityResolveCommand.plan(ctx());
-      }).rejects.toThrow(/common\.security-review is unavailable/);
-    } finally {
-      vi.doUnmock("../../src/version.js");
+  it.each(["0.5.0", "0.5.99", "0.6.0", "0.6.99"])(
+    "preserves all built-in decisions and enterprise approval on reviewed Core %s",
+    async (version) => {
+      seedNodeRepo();
       vi.resetModules();
-    }
-  });
+      vi.doMock("../../src/version.js", () => ({ VERSION: version }));
+      try {
+        const module = await import("../../src/capability/index.js");
+        const c = ctx({ posture: "enterprise" });
+        const result = await executePlan(await module.capabilityResolveCommand.plan(c), c);
+        const data = result.digests.find((item) => item.describe === "capability resolve")
+          ?.data as {
+          decisions: Array<{ name: string; install: string }>;
+        };
+        expect(data.decisions.map(({ name, install }) => ({ name, install }))).toEqual([
+          { name: "common.security-review", install: "requires-approval" },
+          { name: "common.tdd-workflow", install: "requires-approval" },
+          { name: "stack.node-typescript", install: "requires-approval" },
+        ]);
+        expect(result.execs).toEqual([]);
+        expect(existsSync(join(workspace, AIH_CAPABILITIES_FILE))).toBe(false);
+        expect(existsSync(machineCapabilityCachePath(c))).toBe(false);
+      } finally {
+        vi.doUnmock("../../src/version.js");
+        vi.resetModules();
+      }
+    },
+  );
+
+  it.each(["0.4.99", "0.7.0", "1.0.0"])(
+    "fails closed when Core %s has not been reviewed for the built-in catalog",
+    async (version) => {
+      seedNodeRepo();
+      vi.resetModules();
+      // Each pre-1.0 minor needs an explicit built-in catalog compatibility review.
+      vi.doMock("../../src/version.js", () => ({ VERSION: version }));
+      try {
+        const module = await import("../../src/capability/index.js");
+        await expect(async () => {
+          await module.capabilityResolveCommand.plan(ctx());
+        }).rejects.toThrow(/common\.security-review is unavailable/);
+      } finally {
+        vi.doUnmock("../../src/version.js");
+        vi.resetModules();
+      }
+    },
+  );
 });
 
 describe("aih capability prune", () => {
