@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it, vi } from "vitest";
 import { policyAuthoringCatalog } from "../../../src/org-policy/catalog.js";
+import * as packagedSourceData from "../../../src/org-policy/workbench/core/packaged-source-data.js";
 import {
   defaultPreparedWorkbenchCatalog,
   packagedPreparedWorkbenchCatalogV1,
@@ -7,6 +11,61 @@ import {
 } from "../../../src/org-policy/workbench/prepared-catalog.js";
 
 describe("prepared workbench catalog", () => {
+  it("reuses the admitted package for current exact pins without rebuilding its overlays", () => {
+    const baseline = packagedPreparedWorkbenchCatalogV1();
+    const asset = baseline.bundle.assets["mattpocock/skill:tdd"];
+    if (asset === undefined) throw new Error("Missing packaged Matt skill");
+    const pin = {
+      assetId: asset.id,
+      sourceId: asset.sourceId,
+      sourceRevisionId: asset.sourceRevisionId,
+      contentDigest: asset.contentDigest,
+    };
+    const overlay = vi.spyOn(packagedSourceData, "applyPackagedWorkbenchSourceDataV1");
+    try {
+      const first = prepareWorkbenchCatalog(baseline.catalog, {
+        sourceDataPins: [pin],
+        packageDataOnly: true,
+      });
+      expect(first).toEqual(baseline);
+      expect(overlay).not.toHaveBeenCalled();
+      const firstAsset = first.bundle.assets[pin.assetId];
+      if (firstAsset === undefined) throw new Error("Missing detached Matt skill");
+      firstAsset.label = "caller mutation";
+      first.bindings[pin.assetId] = { kind: "intent" };
+      expect(
+        prepareWorkbenchCatalog(baseline.catalog, {
+          sourceDataPins: [pin],
+          packageDataOnly: true,
+        }),
+      ).toEqual(baseline);
+      expect(overlay).not.toHaveBeenCalled();
+      prepareWorkbenchCatalog(baseline.catalog, {
+        sourceDataPins: [{ ...pin, contentDigest: `sha256:${"0".repeat(64)}` }],
+        packageDataOnly: true,
+      });
+      expect(overlay).toHaveBeenCalledOnce();
+    } finally {
+      overlay.mockRestore();
+    }
+  });
+
+  it("rechecks source-store bytes after reusing an admitted package snapshot", () => {
+    const baseline = packagedPreparedWorkbenchCatalogV1();
+    const root = mkdtempSync(join(tmpdir(), "aih-prepared-catalog-live-store-"));
+    vi.stubEnv("AIH_WORKBENCH_DATA", root);
+    try {
+      expect(prepareWorkbenchCatalog(baseline.catalog)).toEqual(baseline);
+      // A store added after the first call must still enter the real trust parser.
+      writeFileSync(join(root, "active.json"), '{"version":1,"sources":{}}');
+      writeFileSync(join(root, "trust.json"), '{"version":1,"version":1}');
+      expect(() => prepareWorkbenchCatalog(baseline.catalog)).toThrow(/duplicate JSON object key/);
+    } finally {
+      vi.unstubAllEnvs();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("prepares unknown organization MCP, skill, and agent assets as intent-only bindings", () => {
     const prepared = prepareWorkbenchCatalog(policyAuthoringCatalog(), {
       organizationManifestBytes: [

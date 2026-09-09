@@ -47,6 +47,8 @@ export interface PreparedWorkbenchCatalogV1 {
 
 const MAX_PREPARED_BASELINE_CACHE_ENTRIES = 4;
 const preparedBaselineByDigest = new Map<string, Readonly<PreparedWorkbenchCatalogV1>>();
+let prepared: PreparedWorkbenchCatalogV1 | undefined;
+let preparedCatalogDigest: string | undefined;
 
 function cachePreparedBaselineV1(
   digest: string,
@@ -116,8 +118,31 @@ export function prepareWorkbenchCatalog(
 ): PreparedWorkbenchCatalogV1 {
   const organizationManifestBytes = options.organizationManifestBytes ?? [];
   const freshOrganizationPreparations = options.freshOrganizationPreparations ?? [];
-  if (organizationManifestBytes.length === 0 && freshOrganizationPreparations.length === 0)
+  if (organizationManifestBytes.length === 0 && freshOrganizationPreparations.length === 0) {
+    // Consumption often supplies the catalog from an already admitted package.
+    // Reuse only that exact catalog and matching package pins; historical pins
+    // and custom catalogs retain the complete reconstruction path below.
+    if (prepared !== undefined) {
+      const packageSnapshot = prepared;
+      preparedCatalogDigest ??= canonicalStrictJsonSha256V1(packageSnapshot.catalog);
+      if (
+        canonicalStrictJsonSha256V1(catalog) === preparedCatalogDigest &&
+        (options.sourceDataPins ?? []).every((pin) => {
+          const asset = packageSnapshot.bundle.assets[pin.assetId];
+          return (
+            asset?.sourceId === pin.sourceId &&
+            asset.sourceRevisionId === pin.sourceRevisionId &&
+            asset.contentDigest === pin.contentDigest
+          );
+        })
+      ) {
+        return options.packageDataOnly
+          ? structuredClone(packageSnapshot)
+          : applyWorkbenchSourceDataV1(packageSnapshot, { pins: options.sourceDataPins });
+      }
+    }
     return finishPreparedCatalogV1(structuredClone(preparedBaselineSnapshotV1(catalog)), options);
+  }
   return finishPreparedCatalogV1(
     prepareCatalogV1(catalog, organizationManifestBytes, freshOrganizationPreparations),
     options,
@@ -237,7 +262,6 @@ function finishPreparedCatalogV1(
     : applyWorkbenchSourceDataV1(packaged, { pins: options.sourceDataPins });
 }
 
-let prepared: PreparedWorkbenchCatalogV1 | undefined;
 /** Pinned package data is normalized once per Core process; callers receive a copy. */
 export function defaultPreparedWorkbenchCatalog(): PreparedWorkbenchCatalogV1 {
   return applyWorkbenchSourceDataV1(packagedPreparedWorkbenchCatalogV1());
