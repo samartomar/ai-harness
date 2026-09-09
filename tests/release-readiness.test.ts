@@ -496,6 +496,8 @@ describe("release readiness metadata", () => {
 
   it("publishes every candidate to next and requires separate installed-evidence promotion", () => {
     const releasing = read("RELEASING.md");
+    const deliveryGovernance = read("docs/DELIVERY_GOVERNANCE.md");
+    const threatModel = read("docs/THREAT_MODEL.md");
     const workflow = read(".github/workflows/release.yml");
     const promotion = read(".github/workflows/promotion-authorization.yml");
 
@@ -505,6 +507,11 @@ describe("release readiness metadata", () => {
     expect(releasing).toContain("promote the same\nimmutable version");
     expect(releasing).toContain("Authorize promotion separately");
     expect(releasing).toContain("A tag push cannot publish");
+    expect(releasing).toContain("Dispatch `installed-acceptance.yml` from protected `main`");
+    expect(deliveryGovernance).toContain(
+      "Dispatch `installed-acceptance.yml` from protected `main`",
+    );
+    expect(threatModel).toContain("Installed acceptance dispatches from protected `main`");
     expect(workflow).toContain("dist_tag=next");
     expect(workflow).not.toContain("dist_tag=latest");
     expect(workflow).toContain("--prerelease");
@@ -524,7 +531,19 @@ describe("release readiness metadata", () => {
     expect(workflow).toContain("skippedLegs: 0");
     expect(workflow).toContain("aih-installed-acceptance-v1");
     expect(workflow).toContain("promotion-token");
-    expect(workflow).toContain(
+    expect(workflow).toContain("qualified_tag");
+    expect(workflow).toContain("qualified_revision");
+    expect(workflow).toContain('GITHUB_REF !== "refs/heads/main"');
+    expect(workflow).toContain("acceptance requires a protected-main verifier run");
+    expect(workflow).toContain('git rev-parse "refs/tags/$QUALIFIED_TAG"');
+    expect(workflow).toContain('git cat-file -t "$qualified_tag_object"');
+    expect(workflow).toContain('git rev-parse "refs/tags/$QUALIFIED_TAG^{}"');
+    expect(workflow).toContain("qualified tag must resolve to a tag object or commit");
+    expect(workflow).toContain("qualification tag object does not match the supplied tag");
+    expect(workflow).toContain("qualification run does not match the supplied frozen run");
+    expect(workflow).toContain('workflow: ".github/workflows/installed-acceptance.yml"');
+    expect(workflow).toContain('ref: "refs/heads/main"');
+    expect(workflow).not.toContain(
       "acceptance must dispatch the workflow from the qualified tag revision",
     );
     expect(workflow).toContain("retention-days: 90");

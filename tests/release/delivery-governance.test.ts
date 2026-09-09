@@ -128,6 +128,15 @@ function acceptance() {
   return {
     schemaVersion: "aih-installed-acceptance-v1",
     qualificationDigest: `sha256:${digest("9")}`,
+    verifier: {
+      repository: "samartomar/ai-harness",
+      workflow: ".github/workflows/installed-acceptance.yml",
+      ref: "refs/heads/main",
+      revision: digest("b").slice(0, 40),
+      runId: 2222,
+      runAttempt: 1,
+      evidenceUrl: "https://github.com/samartomar/ai-harness/actions/runs/2222",
+    },
     package: { name: "@aihq/core", version: "0.6.0", integrity: "sha512-ZXhhY3Q=" },
     companions: { scanner: "0.2.5", catalog: "0.1.3" },
     registryBytesSha256: digest("a"),
@@ -476,6 +485,56 @@ describe("artifact-bound release authority", () => {
     const skipped = acceptance();
     skipped.releaseVerification.skippedLegs = 1;
     expect(() => validateInstalledAcceptanceReceipt(skipped)).toThrow(/skipped/u);
+  });
+
+  it("requires a distinct, strict protected-main verifier identity", () => {
+    const qualified = qualification();
+    const installed = acceptance();
+    installed.qualificationDigest = `sha256:${evidenceSha256(qualified)}`;
+    expect(installed.verifier.revision).not.toBe(qualified.workflow.revision);
+
+    const { verifier: _verifier, ...withoutVerifier } = installed;
+    expect(() => validateInstalledAcceptanceReceipt(withoutVerifier)).toThrow(/verifier/u);
+
+    const malformedVerifier = acceptance();
+    malformedVerifier.verifier.ref = "refs/tags/v-core-0.6.0";
+    expect(() => validateInstalledAcceptanceReceipt(malformedVerifier)).toThrow(/verifier|ref/u);
+
+    const mismatchedEvidenceUrl = acceptance();
+    mismatchedEvidenceUrl.verifier.evidenceUrl =
+      "https://github.com/samartomar/ai-harness/actions/runs/2223";
+    mismatchedEvidenceUrl.evidenceUrl = mismatchedEvidenceUrl.verifier.evidenceUrl;
+    expect(() => validateInstalledAcceptanceReceipt(mismatchedEvidenceUrl)).toThrow(
+      /verifier evidence URL/u,
+    );
+
+    const authorization = {
+      schemaVersion: "aih-promotion-authorization-v1",
+      repository: "samartomar/ai-harness",
+      issueNumber: 950,
+      commentId: 43,
+      commentUrl: "https://github.com/samartomar/ai-harness/issues/950#issuecomment-43",
+      author: "samartomar",
+      authorAssociation: "OWNER",
+      createdAt: "2026-09-02T13:30:00Z",
+      token: promotionAuthorizationToken(qualified, installed),
+    };
+    const mismatchedVerifier = structuredClone(installed);
+    mismatchedVerifier.verifier.revision = digest("c").slice(0, 40);
+    expect(() =>
+      validatePromotionAuthorization(qualified, mismatchedVerifier, authorization),
+    ).toThrow(/token/u);
+  });
+
+  it("accepts the historical lightweight tag object when it equals the qualified revision", () => {
+    const qualified = qualification();
+    qualified.source.tagObject = qualified.source.sha;
+    qualified.workflow.revision = qualified.source.sha;
+    const installed = acceptance();
+    installed.qualificationDigest = `sha256:${evidenceSha256(qualified)}`;
+
+    expect(validateQualificationReceipt(qualified)).toEqual(qualified);
+    expect(promotionAuthorizationToken(qualified, installed)).toContain(qualified.source.tagObject);
   });
 
   it("binds promotion separately to qualification and installed acceptance", () => {
