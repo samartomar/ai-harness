@@ -52,6 +52,7 @@ import {
 } from "../../src/org-policy/qualification-v1.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { usageRecorderScript } from "../../src/usage/capture.js";
+import { VERSION } from "../../src/version.js";
 
 let root: string;
 let bin: string;
@@ -281,7 +282,7 @@ describe("AIH-managed usage adapter V1", () => {
         id: "usage-metering",
         kind: "tool",
         source: {
-          release: "0.5.0",
+          release: VERSION,
           revision: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
           type: "aih",
         },
