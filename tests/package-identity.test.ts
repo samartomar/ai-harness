@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { VERSION } from "../src/version.js";
 
 const root = process.cwd();
 
@@ -10,11 +11,11 @@ function read(path: string): string {
 }
 
 describe("Core package identity (#866)", () => {
-  it("uses the 0.5.0 release identity without changing the command or exports", () => {
+  it("uses the current Core release identity without changing the command or exports", () => {
     const manifest = JSON.parse(read("package.json")) as Record<string, unknown>;
 
     expect(manifest.name).toBe("@aihq/core");
-    expect(manifest.version).toBe("0.5.0");
+    expect(manifest.version).toBe(VERSION);
     expect(manifest.bin).toEqual({ aih: "dist/cli.js" });
     expect(manifest.exports).toEqual({
       ".": {
@@ -61,10 +62,10 @@ describe("Core package identity (#866)", () => {
 
     expect(packed).toHaveLength(1);
     expect(packed[0]).toMatchObject({
-      filename: "aihq-core-0.5.0.tgz",
-      id: "@aihq/core@0.5.0",
+      filename: `aihq-core-${VERSION}.tgz`,
+      id: `@aihq/core@${VERSION}`,
       name: "@aihq/core",
-      version: "0.5.0",
+      version: VERSION,
     });
   });
 });
