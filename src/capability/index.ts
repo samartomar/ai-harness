@@ -89,7 +89,7 @@ interface CatalogCapability {
   id: string;
   class: "runtime" | "feature";
   version: string;
-  engines: { aih: string };
+  engines: { aih: readonly string[] };
   bin: string[];
   default: "on" | "opt-in";
   reason: string;
@@ -118,7 +118,7 @@ const COMMON_CATALOG: readonly CatalogCapability[] = [
     id: "common.security-review",
     class: "feature",
     version: "1.0.0",
-    engines: { aih: "^0.5.0" },
+    engines: { aih: ["^0.5.0", "^0.6.0"] },
     bin: ["COMMON"],
     default: "on",
     reason: "COMMON default-on security review capability for every repo",
@@ -136,7 +136,7 @@ const COMMON_CATALOG: readonly CatalogCapability[] = [
     id: "common.tdd-workflow",
     class: "feature",
     version: "1.0.0",
-    engines: { aih: "^0.5.0" },
+    engines: { aih: ["^0.5.0", "^0.6.0"] },
     bin: ["COMMON"],
     default: "opt-in",
     reason: "Test framework detected, so the repo can use the COMMON TDD workflow",
@@ -154,7 +154,7 @@ const COMMON_CATALOG: readonly CatalogCapability[] = [
     id: "stack.node-typescript",
     class: "feature",
     version: "1.0.0",
-    engines: { aih: "^0.5.0" },
+    engines: { aih: ["^0.5.0", "^0.6.0"] },
     bin: ["STACK:node-ts"],
     default: "on",
     reason: "TypeScript/Node.js stack detected",
@@ -342,7 +342,7 @@ function decision(
 
 function resolveDecisions(ctx: PlanContext, stack: RepoStack): CapabilityDecision[] {
   const byId = new Map(
-    COMMON_CATALOG.filter((capability) => satisfiesAihEngine(capability.engines.aih)).map(
+    COMMON_CATALOG.filter((capability) => capability.engines.aih.some(satisfiesAihEngine)).map(
       (capability) => [capability.id, capability],
     ),
   );
