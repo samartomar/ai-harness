@@ -131,16 +131,25 @@ jobs:
           [[ "$tarball_sha256" =~ ^[0-9a-f]{64}$ ]]
           printf '%s  %s\n' "$tarball_sha256" "$tarball" > SHA256SUMS.txt
           printf 'tarball=%s\ntarball_sha256=%s\n' "$tarball" "$tarball_sha256" >> "$GITHUB_OUTPUT"
+      - name: Stage candidate packet
+        env:
+          TARBALL: ${{ steps.pack.outputs.tarball }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { copyFileSync, mkdirSync } from "node:fs";
+          const tarball = process.env.TARBALL;
+          if (!/^aihq-core-\d+\.\d+\.\d+\.tgz$/.test(tarball ?? "")) throw new Error("invalid candidate tarball name");
+          mkdirSync("candidate-packet");
+          for (const [source, name] of [[tarball, tarball], ["SHA256SUMS.txt", "SHA256SUMS.txt"], ["protected-main-ci.json", "protected-main-ci.json"], ["release/enterprise-change.json", "enterprise-change.json"]]) {
+            copyFileSync(source, `candidate-packet/${name}`);
+          }
+          NODE
       - name: Upload digest-bound candidate packet
         id: upload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: core-release-candidate-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            ${{ steps.pack.outputs.tarball }}
-            SHA256SUMS.txt
-            protected-main-ci.json
-            release/enterprise-change.json
+          path: candidate-packet/
           if-no-files-found: error
           retention-days: 90
           compression-level: 0
@@ -274,17 +283,21 @@ jobs:
           npm run release:governance -- qualification qualification.json "$GITHUB_REPOSITORY"
           token="$(npm run --silent release:governance -- publication-token qualification.json)"
           printf '### Candidate qualified; no npm publication occurred\n\n`%s`\n' "$token" >> "$GITHUB_STEP_SUMMARY"
+      - name: Stage qualification packet
+        run: |
+          node --input-type=module <<'NODE'
+          import { copyFileSync, mkdirSync } from "node:fs";
+          mkdirSync("qualification-packet");
+          for (const [source, name] of [["qualification.json", "qualification.json"], ["aih-sbom.spdx.json", "aih-sbom.spdx.json"], ["candidate/enterprise-change.json", "enterprise-change.json"], ["candidate/protected-main-ci.json", "protected-main-ci.json"], ["candidate/SHA256SUMS.txt", "SHA256SUMS.txt"]]) {
+            copyFileSync(source, `qualification-packet/${name}`);
+          }
+          NODE
       - name: Upload durable qualification evidence
         id: upload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: core-release-evidence-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            qualification.json
-            aih-sbom.spdx.json
-            candidate/enterprise-change.json
-            candidate/protected-main-ci.json
-            candidate/SHA256SUMS.txt
+          path: qualification-packet/
           if-no-files-found: error
           retention-days: 90
 
