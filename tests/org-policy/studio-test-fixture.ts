@@ -17,12 +17,25 @@ import {
   parseOrgPolicy,
 } from "../../src/org-policy/schema.js";
 import type { PolicyStudioModel } from "../../src/org-policy/studio-model.js";
+import { assembleCompilerOutputsV1 } from "../../src/org-policy/workbench/assembly.js";
+import {
+  assembleAuthoringCatalogBundleFromCompilerOutputsV1,
+  compileOrganizationManifestAssemblyInputV1,
+} from "../../src/org-policy/workbench/catalog-bundle.js";
 import { verifyAuthoringCatalogBundleIntegrityV1 } from "../../src/org-policy/workbench/catalog-integrity.js";
 import type { WorkbenchPolicyBindingsV1 } from "../../src/org-policy/workbench/compile-policy.js";
 import {
   type AuthoringCatalogBundleV1,
   parseAuthoringCatalogBundleV1,
 } from "../../src/org-policy/workbench/contracts.js";
+import {
+  consumeFreshOrganizationPreparationV1,
+  freshOrganizationPreparationSourceInputsV1,
+} from "../../src/org-policy/workbench/core/organization-preparation.js";
+import type {
+  PreparedWorkbenchCatalogV1,
+  PrepareWorkbenchCatalogOptionsV1,
+} from "../../src/org-policy/workbench/prepared-catalog.js";
 
 const digest = (bytes: Uint8Array | string): string =>
   `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
@@ -230,4 +243,119 @@ export function tinyEnterpriseStudioModel(): PolicyStudioModel {
   model.initialPolicy.minimumPosture = "enterprise";
   governance.supportedClis = ["codex"];
   return model;
+}
+
+function sourceInputsForOrganizationManifestV1(manifestBytes: string) {
+  const assembly = compileOrganizationManifestAssemblyInputV1(manifestBytes);
+  const byteLength = Buffer.byteLength(manifestBytes, "utf8");
+  const bytesBase64 = Buffer.from(manifestBytes, "utf8").toString("base64");
+  return Object.fromEntries(
+    Object.values(assembly.sources).flatMap((source) =>
+      !source.policyInputRequired
+        ? []
+        : [
+            [
+              source.id,
+              {
+                kind: "organization-manifest" as const,
+                sourceId: source.id,
+                sourceRevisionId: source.revision.id,
+                inputFormat: "organization-authoring-manifest/v1" as const,
+                digest: source.revision.contentDigest,
+                byteLength,
+                bytesBase64,
+              },
+            ],
+          ],
+    ),
+  );
+}
+
+function mergeFixtureBundlesV1(
+  bundles: readonly AuthoringCatalogBundleV1[],
+): AuthoringCatalogBundleV1 {
+  const base = tinyStudioModel().workbenchBundle;
+  const merge = <T extends Record<string, unknown>>(field: keyof AuthoringCatalogBundleV1) => {
+    const merged: Record<string, unknown> = {};
+    for (const bundle of [base, ...bundles]) {
+      const entries = bundle[field] as T;
+      for (const [key, value] of Object.entries(entries)) {
+        if (merged[key] !== undefined)
+          throw new TypeError(`duplicate fixture bundle ${field}:${key}`);
+        merged[key] = value;
+      }
+    }
+    return merged;
+  };
+  const bare = {
+    version: "authoring-catalog-bundle/v1" as const,
+    sources: merge("sources"),
+    assets: merge("assets"),
+    groups: merge("groups"),
+    relations: [base.relations, ...bundles.map((bundle) => bundle.relations)].flat(),
+    templates: merge("templates"),
+    evidence: merge("evidence"),
+    detailChunks: merge("detailChunks"),
+  };
+  const bundle = parseAuthoringCatalogBundleV1({
+    ...bare,
+    provenance: {
+      bundleDigest: `sha256:${canonicalStrictJsonSha256V1({ ...bare, provenance: {} })}`,
+    },
+  });
+  verifyAuthoringCatalogBundleIntegrityV1(bundle);
+  return bundle;
+}
+
+/**
+ * Test-only generic baseline. Organization declaration and fresh witness
+ * assemblies still pass through their production compilers and opaque custody.
+ */
+export function prepareTinyWorkbenchCatalogV1(
+  _catalog?: unknown,
+  options: Pick<
+    PrepareWorkbenchCatalogOptionsV1,
+    "organizationManifestBytes" | "freshOrganizationPreparations"
+  > = {},
+): PreparedWorkbenchCatalogV1 {
+  const manifests = options.organizationManifestBytes ?? [];
+  const fresh = options.freshOrganizationPreparations ?? [];
+  for (const preparation of fresh) {
+    if (consumeFreshOrganizationPreparationV1(preparation) === undefined)
+      throw new TypeError("fixture fresh preparation custody is unavailable");
+  }
+  const compiledBundles = [
+    ...manifests.map((manifest) =>
+      assembleAuthoringCatalogBundleFromCompilerOutputsV1([
+        compileOrganizationManifestAssemblyInputV1(manifest),
+      ]),
+    ),
+    ...(fresh.length === 0 ? [] : [assembleCompilerOutputsV1([], [], fresh)]),
+  ];
+  const model = tinyStudioModel();
+  const bundle =
+    compiledBundles.length === 0 ? model.workbenchBundle : mergeFixtureBundlesV1(compiledBundles);
+  const sourceInputs = Object.assign(
+    {},
+    ...manifests.map(sourceInputsForOrganizationManifestV1),
+    ...fresh.map((preparation) => {
+      const source = freshOrganizationPreparationSourceInputsV1(preparation);
+      if (source === undefined)
+        throw new TypeError("fixture fresh source input custody is unavailable");
+      return source;
+    }),
+  );
+  return {
+    catalog: model.catalog as unknown as PreparedWorkbenchCatalogV1["catalog"],
+    bundle,
+    bindings: {
+      ...model.workbenchBindings,
+      ...Object.fromEntries(
+        Object.keys(bundle.assets)
+          .filter((assetId) => model.workbenchBindings[assetId] === undefined)
+          .map((assetId) => [assetId, { kind: "intent" }]),
+      ),
+    },
+    sourceInputs,
+  };
 }

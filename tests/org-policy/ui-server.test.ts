@@ -1,11 +1,9 @@
 import { EventEmitter } from "node:events";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { createRequire } from "node:module";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { policyStudioModel } from "../../src/org-policy/studio-model.js";
+import { defaultStudioPolicy } from "../../src/org-policy/studio-model.js";
 import {
   type PolicyWorkbenchUi,
   runPolicyWorkbenchUi,
@@ -20,6 +18,33 @@ vi.mock("node:child_process", () => ({ spawn: spawnMock }));
 vi.mock("../../src/org-policy/workbench/core/bounded-github-skill-resolver.js", () => ({
   resolveConnectedGithubSkillV1: resolveGithubSkillMock,
 }));
+
+async function withTinyPreparedCatalog<T>(
+  action: (ui: typeof import("../../src/org-policy/ui-server.js")) => Promise<T>,
+): Promise<T> {
+  vi.resetModules();
+  vi.doMock("../../src/org-policy/workbench/prepared-catalog.js", async () => {
+    const fixture = await import("./studio-test-fixture.js");
+    return {
+      defaultPreparedWorkbenchCatalog: fixture.prepareTinyWorkbenchCatalogV1,
+      packagedPreparedWorkbenchCatalogV1: fixture.prepareTinyWorkbenchCatalogV1,
+      prepareWorkbenchCatalog: fixture.prepareTinyWorkbenchCatalogV1,
+    };
+  });
+  vi.doMock("../../src/org-policy/workbench/default-catalog-preassembly.js", async (original) => ({
+    ...(await original<
+      typeof import("../../src/org-policy/workbench/default-catalog-preassembly.js")
+    >()),
+    packagedDefaultCatalogPreassemblyCompanionV1: () => undefined,
+  }));
+  try {
+    return await action(await import("../../src/org-policy/ui-server.js"));
+  } finally {
+    vi.doUnmock("../../src/org-policy/workbench/prepared-catalog.js");
+    vi.doUnmock("../../src/org-policy/workbench/default-catalog-preassembly.js");
+    vi.resetModules();
+  }
+}
 
 describe("Policy Workbench UI server", () => {
   let running: PolicyWorkbenchUi | undefined;
@@ -168,50 +193,55 @@ describe("Policy Workbench UI server", () => {
       },
     };
     resolveGithubSkillMock.mockResolvedValue(resolved);
-    running = await startPolicyWorkbenchUi({ openBrowser: async () => {} });
-    const launcher = new URL(running.url);
-    const headers = {
-      Origin: launcher.origin,
-      "Sec-Fetch-Site": "same-origin",
-      "Content-Type": "application/json",
-    };
-    const resolve = await fetch(new URL("/api/artifact-intake/github-skill/resolve", running.url), {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        token: launcher.hash.slice(1),
-        repository: resolved.source.repository,
-        skill: resolved.skill,
-      }),
-    });
-    expect(resolve.status).toBe(200);
-
-    const prepared = await fetch(
-      new URL("/api/artifact-intake/github-skill/prepare", running.url),
-      {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          token: launcher.hash.slice(1),
-          policy: policyStudioModel().initialPolicy,
-          source: {
+    await withTinyPreparedCatalog(async ({ startPolicyWorkbenchUi: start }) => {
+      running = await start({ openBrowser: async () => {} });
+      const launcher = new URL(running.url);
+      const headers = {
+        Origin: launcher.origin,
+        "Sec-Fetch-Site": "same-origin",
+        "Content-Type": "application/json",
+      };
+      const resolve = await fetch(
+        new URL("/api/artifact-intake/github-skill/resolve", running.url),
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            token: launcher.hash.slice(1),
             repository: resolved.source.repository,
             skill: resolved.skill,
-            commit: resolved.source.commit,
-            path: resolved.source.path,
-          },
-        }),
-      },
-    );
-    await expect(prepared.json()).resolves.toEqual({
-      version: "aih-connected-github-skill-bridge/v1",
-      state: "prepared-pending-evidence",
-      reload: true,
+          }),
+        },
+      );
+      expect(resolve.status).toBe(200);
+
+      const prepared = await fetch(
+        new URL("/api/artifact-intake/github-skill/prepare", running.url),
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            token: launcher.hash.slice(1),
+            policy: defaultStudioPolicy(),
+            source: {
+              repository: resolved.source.repository,
+              skill: resolved.skill,
+              commit: resolved.source.commit,
+              path: resolved.source.path,
+            },
+          }),
+        },
+      );
+      await expect(prepared.json()).resolves.toEqual({
+        version: "aih-connected-github-skill-bridge/v1",
+        state: "prepared-pending-evidence",
+        reload: true,
+      });
+      const refreshed = await (await fetch(running.url)).text();
+      expect(refreshed).toContain("Pending security review: frontend-design");
+      expect(refreshed).toContain(resolved.source.commit);
+      expect(refreshed).not.toContain('"approvals":[{"');
     });
-    const refreshed = await (await fetch(running.url)).text();
-    expect(refreshed).toContain("Pending security review: frontend-design");
-    expect(refreshed).toContain(resolved.source.commit);
-    expect(refreshed).not.toContain('"approvals":[{"');
   });
 
   it("rejects a stale or substituted resolved Skill before rebuilding the Workbench", async () => {
@@ -252,7 +282,7 @@ describe("Policy Workbench UI server", () => {
         headers,
         body: JSON.stringify({
           token: launcher.hash.slice(1),
-          policy: policyStudioModel().initialPolicy,
+          policy: defaultStudioPolicy(),
           source: {
             repository: resolved.source.repository,
             skill: resolved.skill,
@@ -268,58 +298,19 @@ describe("Policy Workbench UI server", () => {
 
   it("does not inspect or write the current repository", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "aih-ui-rootless-"));
-    const probe = join(cwd, "ui-server-probe.mts");
-    const sourceUrl = new URL("../../src/org-policy/ui-server.ts", import.meta.url).href;
+    const priorCwd = process.cwd();
     try {
-      writeFileSync(
-        probe,
-        [
-          `import { existsSync } from "node:fs";`,
-          `import { join } from "node:path";`,
-          `import { startPolicyWorkbenchUi } from ${JSON.stringify(sourceUrl)};`,
-          "",
-          "const ui = await startPolicyWorkbenchUi({ openBrowser: async () => {} });",
-          "let observed;",
-          "try {",
-          "  observed = {",
-          '    policyHtml: existsSync(join(process.cwd(), "aih-policy-workbench.html")),',
-          '    aih: existsSync(join(process.cwd(), ".aih")),',
-          "    url: ui.url,",
-          "  };",
-          "} finally {",
-          "  await ui.close();",
-          "}",
-          "process.stdout.write(JSON.stringify(observed));",
-        ].join("\n"),
-      );
-
-      const childProcess =
-        await vi.importActual<typeof import("node:child_process")>("node:child_process");
-      const output = childProcess.execFileSync(
-        process.execPath,
-        ["--import", pathToFileURL(createRequire(import.meta.url).resolve("tsx")).href, probe],
-        {
-          cwd,
-          encoding: "utf8",
-          windowsHide: true,
-          timeout: 10_000,
-          maxBuffer: 1024 * 1024,
-        },
-      );
-      const observed = JSON.parse(output) as {
-        policyHtml: boolean;
-        aih: boolean;
-        url: string;
-      };
-
-      expect(observed.policyHtml).toBe(false);
-      expect(observed.aih).toBe(false);
-      expect(observed.url).toMatch(
-        /^http:\/\/127\.0\.0\.1:\d+\/aih-policy-workbench\.html#[a-f0-9]{64}$/,
-      );
+      process.chdir(cwd);
+      await withTinyPreparedCatalog(async ({ startPolicyWorkbenchUi: start }) => {
+        running = await start({ openBrowser: async () => {} });
+        expect(running.url).toMatch(
+          /^http:\/\/127\.0\.0\.1:\d+\/aih-policy-workbench\.html#[a-f0-9]{64}$/,
+        );
+      });
       expect(existsSync(join(cwd, "aih-policy-workbench.html"))).toBe(false);
       expect(existsSync(join(cwd, ".aih"))).toBe(false);
     } finally {
+      process.chdir(priorCwd);
       rmSync(cwd, { recursive: true, force: true });
     }
   });

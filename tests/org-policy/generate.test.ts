@@ -112,6 +112,41 @@ function ctx(over: Partial<PlanContext> = {}): PlanContext {
   };
 }
 
+async function withTinyPreparedCatalog<T>(
+  action: (deps: {
+    runPolicyGenerate: typeof runPolicyGenerate;
+    runner: typeof defaultRunner;
+  }) => Promise<T>,
+): Promise<T> {
+  vi.resetModules();
+  vi.doMock("../../src/org-policy/workbench/prepared-catalog.js", async () => {
+    const fixture = await import("./studio-test-fixture.js");
+    return {
+      defaultPreparedWorkbenchCatalog: fixture.prepareTinyWorkbenchCatalogV1,
+      packagedPreparedWorkbenchCatalogV1: fixture.prepareTinyWorkbenchCatalogV1,
+      prepareWorkbenchCatalog: fixture.prepareTinyWorkbenchCatalogV1,
+    };
+  });
+  vi.doMock("../../src/org-policy/workbench/default-catalog-preassembly.js", async (original) => ({
+    ...(await original<
+      typeof import("../../src/org-policy/workbench/default-catalog-preassembly.js")
+    >()),
+    packagedDefaultCatalogPreassemblyCompanionV1: () => undefined,
+  }));
+  try {
+    const [{ runPolicyGenerate: isolatedRunPolicyGenerate }, { defaultRunner: runner }] =
+      await Promise.all([
+        import("../../src/org-policy/generate.js"),
+        import("../../src/internals/proc.js"),
+      ]);
+    return await action({ runPolicyGenerate: isolatedRunPolicyGenerate, runner });
+  } finally {
+    vi.doUnmock("../../src/org-policy/workbench/prepared-catalog.js");
+    vi.doUnmock("../../src/org-policy/workbench/default-catalog-preassembly.js");
+    vi.resetModules();
+  }
+}
+
 const sha = (character: string) => `sha256:${character.repeat(64)}`;
 
 type FreshFixtureMode = "pass" | "failed" | "missing-detector";
@@ -131,6 +166,7 @@ function writeFreshOrganizationFixture(
   root: string,
   mode: FreshFixtureMode,
   mismatch = false,
+  runner: typeof defaultRunner = defaultRunner,
 ): { manifestPath: string; intakePath: string; rawAssetIds: string[] } {
   const commit = "a".repeat(40);
   const entries = [
@@ -195,8 +231,8 @@ function writeFreshOrganizationFixture(
   const intakePath = join(root, `fresh-${mode}-intake.json`);
   writeFileSync(manifestPath, JSON.stringify(manifest), "utf8");
   writeFileSync(intakePath, JSON.stringify(intake), "utf8");
-  vi.mocked(defaultRunner).mockReset();
-  vi.mocked(defaultRunner).mockImplementation(async (argv) => {
+  vi.mocked(runner).mockReset();
+  vi.mocked(runner).mockImplementation(async (argv) => {
     if (argv[0] === process.execPath && argv[1] === "-e") {
       const input = JSON.parse(argv[3] ?? "{}") as Record<string, string>;
       if (input.treePath !== undefined && input.metadataPath !== undefined) {
@@ -620,15 +656,17 @@ describe("policy generate", () => {
       "utf8",
     );
     const output: string[] = [];
-    const code = await runPolicyGenerate(
-      {
-        optsWithGlobals: () => ({
-          apply: true,
-          out: outputPath,
-          organizationManifest: [manifestPath],
-        }),
-      } as unknown as import("commander").Command,
-      { cwd: dir, write: (text) => output.push(text) },
+    const code = await withTinyPreparedCatalog(({ runPolicyGenerate: run }) =>
+      run(
+        {
+          optsWithGlobals: () => ({
+            apply: true,
+            out: outputPath,
+            organizationManifest: [manifestPath],
+          }),
+        } as unknown as import("commander").Command,
+        { cwd: dir, write: (text) => output.push(text) },
+      ),
     );
 
     expect(code, output.join("\n")).toBe(0);
@@ -765,12 +803,20 @@ describe("policy generate", () => {
   it("emits failed or missing fresh evidence without turning either into a pass", async () => {
     for (const mode of ["failed", "missing-detector"] as const) {
       const outputPath = join(dir, `fresh-${mode}-workbench.html`);
-      const { intakePath, manifestPath } = writeFreshOrganizationFixture(dir, mode);
-      const code = await runPolicyGenerate(
-        freshGenerateCommand(outputPath, manifestPath, intakePath),
-        freshAdminRouteDeps(dir, () => undefined),
-      );
-      expect(code, mode).toBe(0);
+      const output: string[] = [];
+      const code = await withTinyPreparedCatalog(async ({ runPolicyGenerate: run, runner }) => {
+        const { intakePath, manifestPath } = writeFreshOrganizationFixture(
+          dir,
+          mode,
+          false,
+          runner,
+        );
+        return run(
+          freshGenerateCommand(outputPath, manifestPath, intakePath),
+          freshAdminRouteDeps(dir, (line) => output.push(line)),
+        );
+      });
+      expect(code, `${mode}: ${output.join("\n")}`).toBe(0);
       const model = emittedWorkbenchModel(outputPath);
       const evidence = Object.values(
         model.workbenchBundle.evidence as Record<
