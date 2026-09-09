@@ -3,7 +3,7 @@
   "package": {
     "name": "@aihq/core",
     "fromVersion": "0.5.0",
-    "version": "0.6.0"
+    "version": "0.6.1"
   },
   "tracker": {
     "repository": "samartomar/ai-harness",
@@ -21,7 +21,8 @@
       "Scanner publication consumption and bounded analyzer/toolchain security updates.",
       "Candidate-first enterprise delivery and exact public installed acceptance.",
       "Documented npm user-owned prefix recovery for global installation permission failures.",
-      "Explicit reviewed Core 0.5.x and 0.6.x built-in capability compatibility, preserving enterprise approval and refusal of unreviewed minor lines."
+      "Explicit reviewed Core 0.5.x and 0.6.x built-in capability compatibility, preserving enterprise approval and refusal of unreviewed minor lines.",
+      "Fix-forward release packet staging preserves exact enterprise-manifest and qualification-evidence paths after the failed immutable Core 0.6.0 qualification."
     ],
     "adoption": "optional",
     "adoptionRationale": "Optional adoption for organizations needing the new governed Workbench authoring model. Evaluate the exact candidate with existing policy and approved source pins; this release does not require a forced migration.",
@@ -54,7 +55,7 @@
       "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
       "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
       "evidenceDigests": [
-        "sha256:71b6668fff24f52df14d89ea3f74b5d627f225f5929f26e12cdb189d28f2ba47",
+        "sha256:cb8e0ffe680c2742ea00c134e43a3a444b540707fcfe70e7771a8532426f01da",
         "sha256:bc292584c4a0a02c9385023d12b5c7117217ed8cf86b3848141b5466c6779121",
         "sha256:1364d0c9ddff362d5768b2f22b30caa68a9d388e86b44846eac43c44006f1b99"
       ]
@@ -83,7 +84,7 @@
       "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
       "evidenceDigests": [
         "sha256:bc292584c4a0a02c9385023d12b5c7117217ed8cf86b3848141b5466c6779121",
-        "sha256:71b6668fff24f52df14d89ea3f74b5d627f225f5929f26e12cdb189d28f2ba47"
+        "sha256:cb8e0ffe680c2742ea00c134e43a3a444b540707fcfe70e7771a8532426f01da"
       ]
     },
     "machine-readable-output": {
@@ -103,7 +104,7 @@
       "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
       "evidenceDigests": [
         "sha256:bc292584c4a0a02c9385023d12b5c7117217ed8cf86b3848141b5466c6779121",
-        "sha256:71b6668fff24f52df14d89ea3f74b5d627f225f5929f26e12cdb189d28f2ba47"
+        "sha256:cb8e0ffe680c2742ea00c134e43a3a444b540707fcfe70e7771a8532426f01da"
       ]
     },
     "generated-artifacts": {
@@ -122,9 +123,9 @@
       "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
       "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
       "evidenceDigests": [
-        "sha256:0a7f96ba8206be34073ea50ef20918d768864221e63b8ce06d9f2d55e920963d",
+        "sha256:b04a949f7d33f0481bc5bd7299532d2bc58f5a81e0773d9e8289d553c6f01ef0",
         "sha256:9949d9635d8f92733671fb5677b7d19393c480443540978864634917948244f5",
-        "sha256:71b6668fff24f52df14d89ea3f74b5d627f225f5929f26e12cdb189d28f2ba47"
+        "sha256:cb8e0ffe680c2742ea00c134e43a3a444b540707fcfe70e7771a8532426f01da"
       ]
     },
     "administrator-controls": {
@@ -143,7 +144,7 @@
       "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
       "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
       "evidenceDigests": [
-        "sha256:71b6668fff24f52df14d89ea3f74b5d627f225f5929f26e12cdb189d28f2ba47",
+        "sha256:cb8e0ffe680c2742ea00c134e43a3a444b540707fcfe70e7771a8532426f01da",
         "sha256:bc292584c4a0a02c9385023d12b5c7117217ed8cf86b3848141b5466c6779121"
       ]
     },
@@ -163,7 +164,7 @@
       "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
       "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
       "evidenceDigests": [
-        "sha256:71b6668fff24f52df14d89ea3f74b5d627f225f5929f26e12cdb189d28f2ba47",
+        "sha256:cb8e0ffe680c2742ea00c134e43a3a444b540707fcfe70e7771a8532426f01da",
         "sha256:c9249abeec18330b53eecc6e0a93a0da02c0b137e37c708de55f0876ec7ea6a0",
         "sha256:0c3170900cb54592c5c04500c8dfc150c45f00469b3b4470776a05c1c7163467"
       ]
@@ -184,7 +185,7 @@
       "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
       "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
       "evidenceDigests": [
-        "sha256:4a7b38449210033039e4bb3b631221a2c7d0c02d246a4947a8debbf774c70d0b",
+        "sha256:ba884b80672b81fee320eda6adb6cd094d9b106feef6466544531aab90dd3867",
         "sha256:f94f67e77a26b397688abef6caee92c81b85e43774194171e972652e70b2fee7"
       ]
     },
@@ -204,7 +205,7 @@
       "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
       "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
       "evidenceDigests": [
-        "sha256:71b6668fff24f52df14d89ea3f74b5d627f225f5929f26e12cdb189d28f2ba47",
+        "sha256:cb8e0ffe680c2742ea00c134e43a3a444b540707fcfe70e7771a8532426f01da",
         "sha256:9949d9635d8f92733671fb5677b7d19393c480443540978864634917948244f5"
       ]
     },
@@ -224,8 +225,8 @@
       "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
       "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
       "evidenceDigests": [
-        "sha256:0a7f96ba8206be34073ea50ef20918d768864221e63b8ce06d9f2d55e920963d",
-        "sha256:29923f9e1d6a6bb11746e16c44acf876ce588a64913c7fd250e8ed810b4ec588"
+        "sha256:b04a949f7d33f0481bc5bd7299532d2bc58f5a81e0773d9e8289d553c6f01ef0",
+        "sha256:e064b739cab10206b86ec351e2d283b906084e7c54810ef8260a01993835be06"
       ]
     },
     "transitive-dependencies": {
@@ -244,15 +245,15 @@
       "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
       "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
       "evidenceDigests": [
-        "sha256:29923f9e1d6a6bb11746e16c44acf876ce588a64913c7fd250e8ed810b4ec588",
-        "sha256:71b6668fff24f52df14d89ea3f74b5d627f225f5929f26e12cdb189d28f2ba47"
+        "sha256:e064b739cab10206b86ec351e2d283b906084e7c54810ef8260a01993835be06",
+        "sha256:cb8e0ffe680c2742ea00c134e43a3a444b540707fcfe70e7771a8532426f01da"
       ]
     },
     "install-scripts": {
       "status": "unchanged",
       "rationale": "Current package has no preinstall/install/postinstall lifecycle entry; compare against Core0.5 confirms neither manifest defines them. Build scripts changed, but they are not package-install lifecycle hooks. Packed acceptance still must inspect actual release bytes.",
       "evidenceDigests": [
-        "sha256:0a7f96ba8206be34073ea50ef20918d768864221e63b8ce06d9f2d55e920963d"
+        "sha256:b04a949f7d33f0481bc5bd7299532d2bc58f5a81e0773d9e8289d553c6f01ef0"
       ]
     },
     "licenses-cves": {
@@ -271,8 +272,8 @@
       "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
       "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
       "evidenceDigests": [
-        "sha256:71b6668fff24f52df14d89ea3f74b5d627f225f5929f26e12cdb189d28f2ba47",
-        "sha256:0a7f96ba8206be34073ea50ef20918d768864221e63b8ce06d9f2d55e920963d"
+        "sha256:cb8e0ffe680c2742ea00c134e43a3a444b540707fcfe70e7771a8532426f01da",
+        "sha256:b04a949f7d33f0481bc5bd7299532d2bc58f5a81e0773d9e8289d553c6f01ef0"
       ]
     },
     "trust-roots-provenance": {
@@ -291,8 +292,8 @@
       "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
       "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
       "evidenceDigests": [
-        "sha256:71b6668fff24f52df14d89ea3f74b5d627f225f5929f26e12cdb189d28f2ba47",
-        "sha256:4a7b38449210033039e4bb3b631221a2c7d0c02d246a4947a8debbf774c70d0b",
+        "sha256:cb8e0ffe680c2742ea00c134e43a3a444b540707fcfe70e7771a8532426f01da",
+        "sha256:ba884b80672b81fee320eda6adb6cd094d9b106feef6466544531aab90dd3867",
         "sha256:f965e2556464d63dbba1a74fe4415519e82190a38fe482242282a83c1140ffe0"
       ]
     },
@@ -375,7 +376,7 @@
       "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
       "evidenceDigests": [
         "sha256:0c3170900cb54592c5c04500c8dfc150c45f00469b3b4470776a05c1c7163467",
-        "sha256:71b6668fff24f52df14d89ea3f74b5d627f225f5929f26e12cdb189d28f2ba47"
+        "sha256:cb8e0ffe680c2742ea00c134e43a3a444b540707fcfe70e7771a8532426f01da"
       ]
     },
     "rollback": {
@@ -400,6 +401,7 @@
     }
   },
   "knownIssues": [
+    "Immutable Core 0.6.0 failed receipt sealing before publication. Core 0.6.1 must independently qualify and publish its own exact bytes; prior package checks and installed tests do not supply a successful qualification receipt.",
     "Public Catalog sequence 4 and actual supported npm acceptance remain required before completing release tracker #987; unsigned local candidate evidence cannot satisfy those gates.",
     "Retained npm and managed journeys on Core 0.5 development bytes are separate evidence. Required final Core 0.6 public registry journeys and installed OS/Node acceptance must pass before stable promotion.",
     "Core 0.6 includes 524 Workbench records. Final candidate checks must prove complete evidence coverage and live publication-material equivalence on its exact bytes; coverage readiness alone is not scan or release acceptance.",
