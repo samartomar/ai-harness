@@ -43,6 +43,16 @@ import {
 vi.mock("../../../src/org-policy/workbench/core/packaged-source-data-data.js", () => ({
   packagedWorkbenchSourceDataInputV1: () => [],
 }));
+// This file verifies source snapshots and saved pins. Its original Scanner
+// reports remain real; unrelated package qualification receipts are not input.
+vi.mock("../../../src/org-policy/workbench/core/catalog-qualification-data.js", () => ({
+  catalogQualificationPackageInputV1: () => ({
+    version: 1,
+    records: [],
+    bindings: [],
+    projections: [],
+  }),
+}));
 
 vi.mock("../../../src/org-policy/workbench/prepared-catalog.js", async (importOriginal) => {
   const actual =

@@ -52,6 +52,17 @@ vi.mock("../../src/org-policy/workbench/default-catalog-preassembly.js", async (
   >()),
   packagedDefaultCatalogPreassemblyCompanionV1: () => undefined,
 }));
+vi.mock("../../src/org-policy/packaged-collection-evidence-data.js", () => ({
+  packagedScannerCollectionEvidenceInputV1: () => [],
+}));
+vi.mock("../../src/org-policy/workbench/core/catalog-qualification-data.js", () => ({
+  catalogQualificationPackageInputV1: () => ({
+    version: 1,
+    records: [],
+    bindings: [],
+    projections: [],
+  }),
+}));
 let dir: string;
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "aih-policy-organization-generate-"));
