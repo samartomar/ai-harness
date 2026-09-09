@@ -44,6 +44,20 @@ describe("Workbench lane ownership", () => {
       "tests/tools/prepare-packed-workbench.test.ts",
     );
   });
+  it.each([
+    "tests/internals/workbench-publication-roundtrip.test.ts",
+    "tests/internals/workbench-publication-installed-source.test.ts",
+  ])("retains the publication boundary in the Workbench lane: %s", (path) => {
+    expect(isWorkbenchTestPath(path)).toBe(true);
+    expect(WORKBENCH_RETAINED_TEST_PATTERNS).toContain(path);
+    const receipt = classifyCiImpact({
+      baseSha,
+      headSha,
+      changedPaths: ["src/org-policy/workbench/ui/main.ts"],
+      testFiles: [...testFiles, path],
+    });
+    expect(receipt.selectedTests).toContain(path);
+  });
   it("routes a newly discovered typed root test through the pure project", () => {
     const newPureTest = "tests/org-policy/workbench/new-source.test.ts";
     expect(isWorkbenchTestPath(newPureTest)).toBe(true);

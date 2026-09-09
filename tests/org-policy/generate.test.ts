@@ -11,7 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { type Element, Window } from "happy-dom";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { canonicalStrictJsonSha256V1 } from "../../src/contract/strict-json-v1.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
@@ -112,12 +112,15 @@ function ctx(over: Partial<PlanContext> = {}): PlanContext {
   };
 }
 
-async function withTinyPreparedCatalog<T>(
-  action: (deps: {
-    runPolicyGenerate: typeof runPolicyGenerate;
-    runner: typeof defaultRunner;
-  }) => Promise<T>,
-): Promise<T> {
+type TinyPreparedCatalogDeps = {
+  runPolicyGenerate: typeof runPolicyGenerate;
+  runner: typeof defaultRunner;
+};
+
+let tinyPreparedCatalogDeps: Promise<TinyPreparedCatalogDeps> | undefined;
+
+function loadTinyPreparedCatalogDeps(): Promise<TinyPreparedCatalogDeps> {
+  if (tinyPreparedCatalogDeps !== undefined) return tinyPreparedCatalogDeps;
   vi.resetModules();
   vi.doMock("../../src/org-policy/workbench/prepared-catalog.js", async () => {
     const fixture = await import("./studio-test-fixture.js");
@@ -133,19 +136,27 @@ async function withTinyPreparedCatalog<T>(
     >()),
     packagedDefaultCatalogPreassemblyCompanionV1: () => undefined,
   }));
-  try {
-    const [{ runPolicyGenerate: isolatedRunPolicyGenerate }, { defaultRunner: runner }] =
-      await Promise.all([
-        import("../../src/org-policy/generate.js"),
-        import("../../src/internals/proc.js"),
-      ]);
-    return await action({ runPolicyGenerate: isolatedRunPolicyGenerate, runner });
-  } finally {
-    vi.doUnmock("../../src/org-policy/workbench/prepared-catalog.js");
-    vi.doUnmock("../../src/org-policy/workbench/default-catalog-preassembly.js");
-    vi.resetModules();
-  }
+  tinyPreparedCatalogDeps = Promise.all([
+    import("../../src/org-policy/generate.js"),
+    import("../../src/internals/proc.js"),
+  ]).then(([{ runPolicyGenerate: isolatedRunPolicyGenerate }, { defaultRunner: runner }]) => ({
+    runPolicyGenerate: isolatedRunPolicyGenerate,
+    runner,
+  }));
+  return tinyPreparedCatalogDeps;
 }
+
+async function withTinyPreparedCatalog<T>(
+  action: (deps: TinyPreparedCatalogDeps) => Promise<T>,
+): Promise<T> {
+  return action(await loadTinyPreparedCatalogDeps());
+}
+
+afterAll(() => {
+  vi.doUnmock("../../src/org-policy/workbench/prepared-catalog.js");
+  vi.doUnmock("../../src/org-policy/workbench/default-catalog-preassembly.js");
+  vi.resetModules();
+});
 
 const sha = (character: string) => `sha256:${character.repeat(64)}`;
 

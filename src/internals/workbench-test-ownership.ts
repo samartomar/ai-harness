@@ -6,6 +6,8 @@ export const WORKBENCH_EXPLICIT_TEST_PATHS = [
   "tests/org-policy/bounded-github-skill-resolver.test.ts",
   "tests/org-policy/connected-github-skill-bridge.test.ts",
   "tests/internals/check-workbench-release-compatibility.test.ts",
+  "tests/internals/workbench-publication-roundtrip.test.ts",
+  "tests/internals/workbench-publication-installed-source.test.ts",
   "tests/org-policy/admin-baseline-evidence-cli-route.test.ts",
   "tests/org-policy/admin-catalog-cli-route.test.ts",
   "tests/org-policy/admin-catalog-fetch-v1.test.ts",

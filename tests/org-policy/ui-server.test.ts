@@ -1,7 +1,10 @@
+import { execFile } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { defaultStudioPolicy } from "../../src/org-policy/studio-model.js";
 import {
@@ -9,12 +12,16 @@ import {
   runPolicyWorkbenchUi,
   startPolicyWorkbenchUi,
 } from "../../src/org-policy/ui-server.js";
+import { testTimeoutForPlatform } from "../../vitest.config.js";
 
 const { resolveGithubSkillMock, spawnMock } = vi.hoisted(() => ({
   resolveGithubSkillMock: vi.fn(),
   spawnMock: vi.fn(),
 }));
-vi.mock("node:child_process", () => ({ spawn: spawnMock }));
+vi.mock("node:child_process", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:child_process")>()),
+  spawn: spawnMock,
+}));
 vi.mock("../../src/org-policy/workbench/core/bounded-github-skill-resolver.js", () => ({
   resolveConnectedGithubSkillV1: resolveGithubSkillMock,
 }));
@@ -149,6 +156,35 @@ describe("Policy Workbench UI server", () => {
       repository: "anthropics/skills",
       skill: "frontend-design",
     });
+
+    resolveGithubSkillMock.mockRejectedValueOnce(new Error("GitHub temporarily unavailable"));
+    const unavailable = await fetch(endpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        token: launcher.hash.slice(1),
+        repository: "anthropics/skills",
+        skill: "frontend-design",
+      }),
+    });
+    expect(unavailable.status).toBe(502);
+    await expect(unavailable.json()).resolves.toEqual({ error: "GitHub temporarily unavailable" });
+
+    resolveGithubSkillMock.mockRejectedValueOnce(new Error("network unavailable"));
+    const genericFailure = await fetch(endpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        token: launcher.hash.slice(1),
+        repository: "anthropics/skills",
+        skill: "frontend-design",
+      }),
+    });
+    expect(genericFailure.status).toBe(502);
+    await expect(genericFailure.json()).resolves.toEqual({
+      error:
+        "GitHub could not be reached to resolve this Skill pin. The candidate remains unpinned.",
+    });
   });
 
   it("rejects API requests that lack the loopback origin or launcher token", async () => {
@@ -178,6 +214,32 @@ describe("Policy Workbench UI server", () => {
     });
     expect(badToken.status).toBe(403);
     expect(resolveGithubSkillMock).not.toHaveBeenCalled();
+
+    const preResolve = await fetch(
+      new URL("/api/artifact-intake/github-skill/prepare", running.url),
+      {
+        method: "POST",
+        headers: {
+          Origin: launcher.origin,
+          "Sec-Fetch-Site": "same-origin",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          token: launcher.hash.slice(1),
+          policy: defaultStudioPolicy(),
+          source: {
+            repository: "anthropics/skills",
+            skill: "frontend-design",
+            commit: "41bbe19d1a1a7eaab5e7bb9050a417e5c6cffc8f",
+            path: "skills/frontend-design/SKILL.md",
+          },
+        }),
+      },
+    );
+    expect(preResolve.status).toBe(409);
+    await expect(preResolve.json()).resolves.toEqual({
+      error: "Resolve the connected Skill before preparing its pending request.",
+    });
   });
 
   it("rebuilds the connected Workbench with a Core-prepared pending Skill policy", async () => {
@@ -298,19 +360,17 @@ describe("Policy Workbench UI server", () => {
 
   it("does not inspect or write the current repository", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "aih-ui-rootless-"));
-    const priorCwd = process.cwd();
     try {
-      process.chdir(cwd);
-      await withTinyPreparedCatalog(async ({ startPolicyWorkbenchUi: start }) => {
-        running = await start({ openBrowser: async () => {} });
-        expect(running.url).toMatch(
-          /^http:\/\/127\.0\.0\.1:\d+\/aih-policy-workbench\.html#[a-f0-9]{64}$/,
-        );
-      });
-      expect(existsSync(join(cwd, "aih-policy-workbench.html"))).toBe(false);
-      expect(existsSync(join(cwd, ".aih"))).toBe(false);
+      const fixture = fileURLToPath(new URL("./ui-server-rootless-fixture.mts", import.meta.url));
+      const tsxLoader = new URL("../../node_modules/tsx/dist/loader.mjs", import.meta.url).href;
+      const { stdout, stderr } = await promisify(execFile)(
+        process.execPath,
+        ["--import", tsxLoader, fixture],
+        { cwd, timeout: testTimeoutForPlatform(process.platform) - 1_000, windowsHide: true },
+      );
+      expect(stderr).toBe("");
+      expect(stdout).toContain("rootless UI server preserved the temporary directory");
     } finally {
-      process.chdir(priorCwd);
       rmSync(cwd, { recursive: true, force: true });
     }
   });
