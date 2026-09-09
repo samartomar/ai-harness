@@ -170,8 +170,11 @@ source approval alone is not publication approval.
     rejects a rejected or superseded candidate, re-observes protected-main ancestry and artifact
     custody, seals recovery evidence, and only then uses npm Trusted Publishing to publish the exact
     tarball under `next` and create a prerelease GitHub Release. It never changes `latest`.
-13. **Run public installed acceptance.** Dispatch `installed-acceptance.yml` at the qualified tag ref
-    with exact Core, Scanner, and Catalog versions and the qualification run identity. It installs only public
+13. **Run public installed acceptance.** Dispatch `installed-acceptance.yml` from protected `main`
+    with exact Core, Scanner, and Catalog versions, the qualified tag and peeled revision, and the
+    qualification run identity. The verifier re-fetches the named tag and requires its direct tag-ref
+    object, peeled revision, and frozen qualification run/attempt to match the receipt before sealing.
+    It records its own protected-main verifier identity separately from the qualified release revision. It installs only public
     registry packages in disposable roots across the OS/Node matrix and requires npm provenance,
     `aih --version`, `aih --help`, and `aih verify-release` with zero skipped legs. Useful manual
     re-observation remains:

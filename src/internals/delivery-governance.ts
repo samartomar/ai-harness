@@ -257,6 +257,17 @@ const acceptanceSchema = z
   .object({
     schemaVersion: z.literal("aih-installed-acceptance-v1"),
     qualificationDigest: digest,
+    verifier: z
+      .object({
+        repository,
+        workflow: z.literal(".github/workflows/installed-acceptance.yml"),
+        ref: z.literal("refs/heads/main"),
+        revision: sha,
+        runId: z.number().int().positive().safe(),
+        runAttempt: z.number().int().positive().safe(),
+        evidenceUrl: githubUrl,
+      })
+      .strict(),
     package: z
       .object({
         name: z.literal("@aihq/core"),
@@ -287,6 +298,16 @@ const acceptanceSchema = z
     const matrixIssue = installedMatrixFinding(value.matrix);
     if (matrixIssue)
       context.addIssue({ code: "custom", message: `installed acceptance ${matrixIssue}` });
+    const expectedVerifierEvidenceUrl = `https://github.com/${value.verifier.repository}/actions/runs/${value.verifier.runId}`;
+    if (
+      value.evidenceUrl !== value.verifier.evidenceUrl ||
+      value.verifier.evidenceUrl !== expectedVerifierEvidenceUrl
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "installed acceptance verifier evidence URL mismatch",
+      });
+    }
   });
 
 export type InstalledAcceptanceReceipt = z.infer<typeof acceptanceSchema>;

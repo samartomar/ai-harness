@@ -117,8 +117,9 @@ evidence with IDs and digests, not an indefinite-storage claim.
    `release.yml` **at the qualified tag ref** with the tag, qualification run ID/attempt, and comment
    URL. The workflow rejects any other dispatch revision, then re-observes the tag, protected-main
    ancestry, active state, and exact artifacts before publishing to `next`.
-5. Dispatch `installed-acceptance.yml` **at the same qualified tag ref** with exact stable version strings for Core and compatible
-   Scanner/Catalog plus the qualification run identity. Never use ranges or dist-tags in this gate.
+5. Dispatch `installed-acceptance.yml` from protected `main` with exact stable version strings for Core and compatible
+   Scanner/Catalog, the qualified tag and peeled revision, plus the qualification run identity. The verifier
+   independently checks the direct tag-ref object, qualified revision, and frozen run/attempt. Never use ranges or dist-tags in this gate.
 6. Review the installed-acceptance receipt and post its exact promotion token. Dispatch the read-only
    `promotion-authorization.yml` **at the same qualified tag ref**; then run only its printed
    interactive dist-tag and GitHub Release commands. Re-observe npm and GitHub before closing the
