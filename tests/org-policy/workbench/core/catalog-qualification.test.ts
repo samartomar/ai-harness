@@ -277,20 +277,21 @@ function artifacts() {
 }
 
 describe("Core Catalog qualification preparation", () => {
-  it("packages the verified 427-record Catalog evidence set under the current b019 publisher", () => {
+  it("retains prior Catalog evidence and adds nine exact AIH qualifications under the successor publisher", () => {
     const records = packagedCatalogQualificationRecordsV1();
     const bindings = packagedCatalogQualificationBindingsV1();
     const projections = packagedCatalogQualificationProjectionsV1();
-    expect(records).toHaveLength(427);
-    expect(bindings).toHaveLength(427);
+    expect(records).toHaveLength(436);
+    expect(bindings).toHaveLength(436);
     expect(projections).toHaveLength(1);
     const summaries = CatalogQualificationSummariesV1Schema.parse(projections[0]?.summary);
     const summaryValues = Object.values(summaries);
     const sourceCounts = new Map<string, number>();
     for (const summary of summaryValues)
       sourceCounts.set(summary.sourceId, (sourceCounts.get(summary.sourceId) ?? 0) + 1);
-    expect(summaryValues).toHaveLength(427);
+    expect(summaryValues).toHaveLength(436);
     expect(Object.fromEntries(sourceCounts)).toEqual({
+      "source:aih-core": 9,
       "source:anthropics-skills": 14,
       "source:ecc": 367,
       "source:mattpocock": 25,
@@ -298,21 +299,37 @@ describe("Core Catalog qualification preparation", () => {
       "source:superpowers": 14,
     });
     expect(new Set(summaryValues.map((summary) => summary.state))).toEqual(new Set(["qualified"]));
-    expect(new Set(summaryValues.map((summary) => summary.verifiedAt))).toEqual(
+    const retained = summaryValues.filter((summary) => summary.sourceId !== "source:aih-core");
+    const added = summaryValues.filter((summary) => summary.sourceId === "source:aih-core");
+    expect(new Set(retained.map((summary) => summary.verifiedAt))).toEqual(
       new Set(["2026-09-09T01:36:48Z"]),
     );
     expect(
-      records.every(
+      records.filter(
         (record) => record.publisher.commit === "b019b4e9d6260915a49d177bcc22b58518305dd4",
       ),
-    ).toBe(true);
+    ).toHaveLength(427);
+    expect(
+      records.filter(
+        (record) => record.publisher.commit === "0ce02656d5e281262af2177571033449f277dc46",
+      ),
+    ).toHaveLength(9);
+    expect(new Set(added.map((summary) => summary.sourceRevisionId))).toEqual(
+      new Set(["package:@aihq/core@0.6.0"]),
+    );
+    expect(new Set(added.map((summary) => summary.originalIssuedAt))).toEqual(
+      new Set(["2026-09-09T10:46:22Z"]),
+    );
+    expect(new Set(added.map((summary) => summary.validUntil))).toEqual(
+      new Set(["2026-12-08T00:47:41Z"]),
+    );
     expect(
       records.every(
         (record) => record.receiptSetPublisher.subjectName === "qualification-receipt-set.json",
       ),
     ).toBe(true);
     expect(CATALOG_QUALIFICATION_RELEASE_POLICY_V1.catalogCommit).toBe(
-      "b019b4e9d6260915a49d177bcc22b58518305dd4",
+      "0ce02656d5e281262af2177571033449f277dc46",
     );
   });
   it.each(["valid", "duplicate", "missing", "wrong-digest", "malformed", "overflow"] as const)(
@@ -403,7 +420,8 @@ describe("Core Catalog qualification preparation", () => {
     ).toBeUndefined();
   });
   it("uses the merged Catalog publisher for preparation metadata and retains the historical publisher", () => {
-    const current = "b019b4e9d6260915a49d177bcc22b58518305dd4";
+    const current = "0ce02656d5e281262af2177571033449f277dc46";
+    const previous = "b019b4e9d6260915a49d177bcc22b58518305dd4";
     const historical = "5e18dd66e42f91c30e4c5acd81d41f1e33cd987a";
     expect(CATALOG_QUALIFICATION_RELEASE_POLICY_V1).toMatchObject({
       catalogCommit: current,
@@ -412,7 +430,7 @@ describe("Core Catalog qualification preparation", () => {
     });
     expect(catalogQualificationReleasePolicyMetadataV1.catalogCommit).toBe(current);
     expect(CATALOG_QUALIFICATION_RELEASE_POLICIES_V1.map((policy) => policy.catalogCommit)).toEqual(
-      [current, historical],
+      [current, previous, historical],
     );
   });
 
@@ -801,5 +819,49 @@ describe("Core Catalog qualification preparation", () => {
 
   it("ships no inputless qualification for the historical public Catalog fixture", () => {
     expect(preparePackagedCatalogQualificationV1(bundle())).toBeUndefined();
+  });
+
+  it("keeps another source's exact qualification when a source version changes or is absent", () => {
+    const summaries = Object.values(packagedCatalogQualificationProjectionsV1()[0]!.summary);
+    const first = summaries[0] as {
+      assetId: string;
+      sourceId: string;
+      sourceRevisionId: string;
+      contentDigest: string;
+      sourceContentDigest: string;
+    };
+    const second = summaries.find(
+      (value) => (value as typeof first).sourceId !== first.sourceId,
+    ) as typeof first;
+    expect(second).toBeDefined();
+    const template = bundle();
+    const selected = structuredClone(template);
+    selected.sources = {};
+    selected.assets = {};
+    for (const summary of [first, second]) {
+      selected.sources[summary.sourceId] = {
+        ...template.sources["source:core"]!,
+        id: summary.sourceId,
+        revision: { id: summary.sourceRevisionId, contentDigest: summary.sourceContentDigest },
+      };
+      selected.assets[summary.assetId] = {
+        ...template.assets["aih/skill:review"]!,
+        id: summary.assetId,
+        sourceId: summary.sourceId,
+        sourceRevisionId: summary.sourceRevisionId,
+        contentDigest: summary.contentDigest,
+      };
+    }
+    const project = () =>
+      catalogQualificationPreparedBundleV1(
+        selected,
+        preparePackagedCatalogQualificationV1(selected),
+      )?.qualifications;
+    expect(Object.keys(project() ?? {}).sort()).toEqual([first.assetId, second.assetId].sort());
+    selected.assets[first.assetId]!.sourceRevisionId = "changed-version";
+    expect(Object.keys(project() ?? {})).toEqual([second.assetId]);
+    selected.assets[first.assetId]!.sourceRevisionId = first.sourceRevisionId;
+    delete selected.sources[first.sourceId];
+    expect(Object.keys(project() ?? {})).toEqual([second.assetId]);
   });
 });

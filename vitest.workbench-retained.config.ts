@@ -6,9 +6,9 @@ import { workbenchCoverage } from "./vitest.workbench.config.js";
 
 const testRuntime = testRuntimeForPlatform(process.platform, availableParallelism());
 
-/** Reserves Chromium's two workers plus its packed-CLI child process. */
+/** Bound CPU work without leaving the four-core runner serial after Chromium exits. */
 export function workbenchRetainedWorkersForParallelAcceptance(parallelism: number): number {
-  return Math.max(1, Math.min(4, parallelism - 3));
+  return Math.max(1, Math.min(4, parallelism));
 }
 
 export default defineConfig({

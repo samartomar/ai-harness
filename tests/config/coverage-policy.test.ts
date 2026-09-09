@@ -235,10 +235,10 @@ describe("coverage policy", () => {
     });
 
     // Chromium and retained coverage run concurrently in the PR lane. On the
-    // four-core hosted runner, reserve Chromium's two workers and the packed
-    // CLI it starts, so the retained project receives a single worker.
-    expect(workbenchRetainedWorkersForParallelAcceptance(4)).toBe(1);
-    expect(workbenchRetainedWorkersForParallelAcceptance(2)).toBe(1);
+    // four-core hosted runner, keep retained work bounded without serializing
+    // the rest of the project after Chromium has completed.
+    expect(workbenchRetainedWorkersForParallelAcceptance(4)).toBe(4);
+    expect(workbenchRetainedWorkersForParallelAcceptance(2)).toBe(2);
     expect(workbenchRetainedWorkersForParallelAcceptance(24)).toBe(4);
   });
 });

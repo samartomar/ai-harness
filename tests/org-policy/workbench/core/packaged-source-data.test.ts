@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   canonicalStrictJsonBytesV1,
@@ -117,6 +118,36 @@ beforeEach(() => {
   fixture.apply.mockImplementation((base) => structuredClone(base));
 });
 describe("offline package-owned source records", () => {
+  it.each([
+    [
+      "duplicate nested key",
+      (bytes: string) => bytes.replace('"scannerProof":{}', '"scannerProof":{"a":1,"a":1}'),
+    ],
+    ["noncanonical whitespace", (bytes: string) => ` ${bytes}`],
+    ["escaped key", (bytes: string) => bytes.replace('"version":', '"vers\\u0069on":')],
+    [
+      "negative zero",
+      (bytes: string) => bytes.replace('"scannerProof":{}', '"scannerProof":{"a":-0}'),
+    ],
+    [
+      "lone surrogate",
+      (bytes: string) => bytes.replace('"scannerProof":{}', '"scannerProof":{"a":"\\ud800"}'),
+    ],
+    [
+      "non-NFC value",
+      (bytes: string) => bytes.replace('"scannerProof":{}', '"scannerProof":{"a":"e\\u0301"}'),
+    ],
+    ["trailing comma", (bytes: string) => `${bytes.slice(0, -1)},}`],
+  ])("rejects %s even with a matching raw byte digest", async (_label, alter) => {
+    const original = seal(record()).bytes;
+    const bytes = alter(original);
+    expect(bytes).not.toBe(original);
+    fixture.records.push({ bytes, sha256: createHash("sha256").update(bytes).digest("hex") });
+    const { packagedWorkbenchSourceDataRecordsV1 } = await import(
+      "../../../../src/org-policy/workbench/core/packaged-source-data.js"
+    );
+    expect(packagedWorkbenchSourceDataRecordsV1).toThrow();
+  });
   it("returns detached sealed records without fetching or invoking a source importer", async () => {
     fixture.records.push(seal(record()));
     const { packagedWorkbenchSourceDataRecordsV1 } = await import(

@@ -5,7 +5,6 @@ import {
   canonicalStrictJsonBytesV1,
   canonicalStrictJsonSha256V1,
   deepFreezeStrictJsonV1,
-  parseStrictJsonObjectV1,
 } from "../../../contract/strict-json-v1.js";
 import {
   type EccRuntimeDescriptorV1,
@@ -56,7 +55,9 @@ function verifiedPackagedWorkbenchSourceDataRecordsV1(): readonly PackagedSource
     const records = packagedWorkbenchSourceDataInputV1().map((sealed) => {
       if (Buffer.byteLength(sealed.bytes) > 16 * 1024 * 1024)
         throw new TypeError("Packaged source data exceeds its byte budget");
-      const value = parseStrictJsonObjectV1(sealed.bytes, "Packaged source data");
+      // Canonical byte equality below rejects duplicate keys and alternative JSON spellings.
+      // Keep strict value validation in canonicalStrictJsonBytesV1 before trusting the seal.
+      const value: unknown = JSON.parse(sealed.bytes);
       const canonicalBytes = canonicalStrictJsonBytesV1(value);
       if (
         canonicalBytes.toString("utf8") !== sealed.bytes ||

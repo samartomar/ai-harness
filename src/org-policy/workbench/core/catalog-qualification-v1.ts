@@ -900,20 +900,15 @@ export function preparePackagedCatalogQualificationV1(
       const asset = bundle.assets[assetId];
       const source = asset === undefined ? undefined : bundle.sources[asset.sourceId];
       const binding = coreBindings[assetId];
+      // Package integrity is global; a missing or replaced current source is not corruption.
       if (
-        asset === undefined ||
-        source === undefined ||
         binding === undefined ||
-        summary.sourceId !== asset.sourceId ||
-        asset.sourceRevisionId !== summary.sourceRevisionId ||
-        asset.contentDigest !== summary.contentDigest ||
-        source.revision.contentDigest !== summary.sourceContentDigest ||
         summary.compilerBindingDigest !== compilerQualificationBindingDigestV1(binding) ||
-        binding.asset.assetId !== asset.id ||
-        binding.asset.sourceId !== asset.sourceId ||
-        binding.asset.sourceRevisionId !== asset.sourceRevisionId ||
-        binding.asset.contentDigest !== asset.contentDigest ||
-        binding.sourceContentDigest !== source.revision.contentDigest ||
+        binding.asset.assetId !== assetId ||
+        binding.asset.sourceId !== summary.sourceId ||
+        binding.asset.sourceRevisionId !== summary.sourceRevisionId ||
+        binding.asset.contentDigest !== summary.contentDigest ||
+        binding.sourceContentDigest !== summary.sourceContentDigest ||
         binding.subject.subjectDigest !== summary.subjectDigest ||
         summary.contextDigest !==
           qualificationContextDigestV1(
@@ -921,6 +916,16 @@ export function preparePackagedCatalogQualificationV1(
           )
       )
         return undefined;
+      if (
+        asset === undefined ||
+        source === undefined ||
+        asset.id !== assetId ||
+        summary.sourceId !== asset.sourceId ||
+        asset.sourceRevisionId !== summary.sourceRevisionId ||
+        asset.contentDigest !== summary.contentDigest ||
+        source.revision.contentDigest !== summary.sourceContentDigest
+      )
+        continue;
       if (merged[assetId] !== undefined) return undefined;
       merged[assetId] = summary;
     }

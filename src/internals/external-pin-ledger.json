@@ -158,7 +158,7 @@
       "commit": "94e61145a5bd6ae39eabcc52a686830e1ec73be0",
       "integrity": "sha256:ee96cc8e7d4641a5b96047552c426a9a7d6d2736a65a4bcbd77797f2f1add202",
       "disposition": "active",
-      "reason": "The committed uv 0.12.2 lock now resolves cryptography 50.0.0 without overrides. The governed cisco-ai-mcp-scanner pin remains 4.8.2; locked help checks remain required before release."
+      "reason": "The governed cisco-ai-mcp-scanner pin remains 4.8.2 and MCP remains 2.0.0. On 2026-09-09, the exact governed uv 0.12.9 toolchain (commit 9f928602938ac5cf1cd6b294a725833c16f5720e) regenerated lock sha256:92846b24c170bcf8ab380d5743bcce4504d249268712f2443f181a9b6789694a with resolver-only constraints for httpx2 2.12.0, its required httpcore2 2.12.0, and pip 26.2. The universal lock also records required httpx2-jsfetch 1.0 only for Python >=3.12 on Emscripten, as declared by httpx2 2.12.0; it is not a native Windows dependency. This transitive-only repair resolves the seven recorded pip/httpx2/httpcore2 advisories without changing the governed scanner wheel, upstream commit, integrity, or disposition. Locked runtime help and static YARA checks remain required before release."
     },
     {
       "surface": "snyk-agent-scan",

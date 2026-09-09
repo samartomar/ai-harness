@@ -1,7 +1,8 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { policyStudioModel } from "../../../src/org-policy/studio-model.js";
+import type { AuthoringCatalogBundleV1 } from "../../../src/org-policy/workbench/contracts.js";
+import { expandCatalogQualificationPackageInputV2 } from "../../../src/org-policy/workbench/core/catalog-qualification-compact.js";
 import { catalogQualificationPackageInputV1 } from "../../../src/org-policy/workbench/core/catalog-qualification-data.js";
 import { decodeCatalogQualificationPackageInputV1 } from "../../../src/org-policy/workbench/core/catalog-qualification-package-v1.js";
 import { CATALOG_QUALIFICATION_RELEASE_POLICY_V1 } from "../../../src/org-policy/workbench/core/catalog-qualification-policy-v1.js";
@@ -17,12 +18,62 @@ vi.mock("../../../src/live/runner.js", async (original) => ({
 }));
 afterEach(() => vi.mocked(execFileSync).mockReset());
 const issuedAt = "2026-09-09T02:00:00.000Z";
-// The shipped package covers every qualified source; its projection must match
-// the same complete set of claims at the independent verification boundary.
-const bundle = policyStudioModel().workbenchBundle;
+// An independent update carries its own publication, not every installed source's
+// differently published receipts. Keep the authority checks real with one exact record.
+const packaged = expandCatalogQualificationPackageInputV2(catalogQualificationPackageInputV1()) as {
+  records: unknown[];
+  bindings: {
+    asset: { assetId: string; sourceId: string; sourceRevisionId: string; contentDigest: string };
+    sourceContentDigest: string;
+    compiler: { id: string; version: string; inputFormat: string };
+  }[];
+  projections: Record<string, unknown>[];
+};
+const binding = packaged.bindings[0]!;
+const summary = packaged.projections[0]![binding.asset.assetId];
+const bundle = {
+  version: "authoring-catalog-bundle/v1",
+  sources: {
+    [binding.asset.sourceId]: {
+      id: binding.asset.sourceId,
+      distributor: { kind: "git", locator: "fixture/source" },
+      upstreamOrigin: { kind: "git", locator: "fixture/source" },
+      inputFormat: binding.compiler.inputFormat,
+      revision: { id: binding.asset.sourceRevisionId, contentDigest: binding.sourceContentDigest },
+      compiler: { id: binding.compiler.id, version: binding.compiler.version },
+    },
+  },
+  assets: {
+    [binding.asset.assetId]: {
+      id: binding.asset.assetId,
+      sourceId: binding.asset.sourceId,
+      sourceRevisionId: binding.asset.sourceRevisionId,
+      contentDigest: binding.asset.contentDigest,
+      originalPath: "skills/fixture/SKILL.md",
+      derivation: "upstream",
+      kind: "skill",
+      label: "Fixture",
+      detailChunkId: "detail:fixture",
+      declaredHostCapabilities: [],
+      authoring: { action: "record-selection", supportedTargets: [] },
+    },
+  },
+  groups: {},
+  relations: [],
+  templates: {},
+  evidence: {},
+  detailChunks: {},
+  provenance: { bundleDigest: `sha256:${"0".repeat(64)}` },
+  qualifications: { [binding.asset.assetId]: summary },
+} as AuthoringCatalogBundleV1;
 function proof() {
   return {
-    packageInput: structuredClone(catalogQualificationPackageInputV1()),
+    packageInput: structuredClone({
+      version: 1,
+      records: [packaged.records[0]],
+      bindings: [binding],
+      projections: [{ [binding.asset.assetId]: summary }],
+    }),
     receiptAttestation: "fixture-receipts",
     receiptSetAttestation: "fixture-set",
   };
@@ -70,7 +121,7 @@ function installVerifier(input: ReturnType<typeof proof>) {
     .mockReturnValueOnce(attestation(true));
 }
 describe("independent source-data Catalog verification", () => {
-  it("revalidates all exact records through two independently verified attestation statements", () => {
+  it("revalidates the exact source receipt through two independently verified attestation statements", () => {
     const input = proof();
     installVerifier(input);
     expect(() => verifySourceDataQualificationV1(bundle, input, issuedAt)).not.toThrow();
