@@ -48,7 +48,13 @@ const PACK_MANIFEST_PATH = "aih-packs.json";
 const CORE_OWNER = "samartomar";
 const CORE_REPOSITORY = "ai-harness";
 const MAX_PINNED_SOURCE_BYTES = 16 * 1024 * 1024;
-const MAX_PINNED_SOURCE_GIT_BYTES = MAX_PINNED_SOURCE_BYTES + 1;
+const MAX_PINNED_SOURCE_GIT_BATCH_FILES = 128;
+const MAX_PINNED_SOURCE_GIT_BATCH_BYTES = 64 * 1024 * 1024;
+const MAX_PINNED_SOURCE_GIT_BATCH_PATH_BYTES = 1_024;
+const MAX_PINNED_SOURCE_GIT_BATCH_WIRE_BYTES =
+  MAX_PINNED_SOURCE_GIT_BATCH_BYTES +
+  MAX_PINNED_SOURCE_GIT_BATCH_FILES * (MAX_PINNED_SOURCE_GIT_BATCH_PATH_BYTES + 96) +
+  1;
 
 export interface AihScanMaterialCoreRevisionV1 {
   /** Reviewed Git revision of the disposable Core checkout. */
@@ -277,26 +283,69 @@ function readPinnedSourceFile(source: string, expectedLength: number): Buffer {
   }
 }
 
-/** Only copied Core delivery files must be identical to the declared Core Git revision. */
-function pinnedGitBlobBytes(root: string, source: string, pinnedSha: string): Buffer {
-  const rel = relative(root, source).replaceAll("\\", "/");
-  assertSafeRelativePosixPathV1(rel, "materialized source path");
-  if (rel.includes(":")) fail("materialized source path");
-  let expected: Buffer;
+/** Read a bounded set of exact pinned blobs in one hermetic Git process. */
+function pinnedGitBlobBytes(
+  root: string,
+  sources: readonly string[],
+  pinnedSha: string,
+): ReadonlyMap<string, Buffer> {
+  const paths = new Set<string>();
+  for (const source of sources) {
+    const rel = relative(root, source).replaceAll("\\", "/");
+    assertSafeRelativePosixPathV1(rel, "materialized source path");
+    if (
+      rel.includes(":") ||
+      Buffer.byteLength(rel, "utf8") > MAX_PINNED_SOURCE_GIT_BATCH_PATH_BYTES
+    )
+      fail("materialized source path");
+    paths.add(rel);
+  }
+  if (paths.size === 0 || paths.size > MAX_PINNED_SOURCE_GIT_BATCH_FILES)
+    fail("pinned Git batch bounds");
+  const input = Buffer.from(
+    [...paths.keys()].map((path) => `contents ${pinnedSha}:${path}\n`).join(""),
+    "utf8",
+  );
+  let output: Buffer;
   try {
-    expected = execFileSync("git", ["-C", root, "show", `${pinnedSha}:${rel}`], {
+    output = execFileSync("git", ["-C", root, "cat-file", "--batch-command", "--buffer"], {
+      input,
       encoding: "buffer",
-      maxBuffer: MAX_PINNED_SOURCE_GIT_BYTES,
-      stdio: ["ignore", "pipe", "ignore"],
+      maxBuffer: MAX_PINNED_SOURCE_GIT_BATCH_WIRE_BYTES,
+      stdio: ["pipe", "pipe", "ignore"],
       windowsHide: true,
       env: hermeticGitEnv(),
     });
   } catch {
     fail("source is absent from pinned Core revision");
   }
-  const actual = readPinnedSourceFile(source, expected.length);
-  if (!actual.equals(expected)) fail("source differs from pinned Core revision");
-  return actual;
+  const expected = new Map<string, Buffer>();
+  let offset = 0;
+  let total = 0;
+  for (const path of paths.keys()) {
+    const ending = output.indexOf(0x0a, offset);
+    if (ending < offset) fail("pinned Git batch framing");
+    const header = output.subarray(offset, ending).toString("ascii");
+    const match = /^([0-9a-f]{40}|[0-9a-f]{64}) blob ([0-9]+)$/u.exec(header);
+    if (match?.[2] === undefined) fail("pinned Git batch framing");
+    const size = Number(match[2]);
+    if (
+      !Number.isSafeInteger(size) ||
+      size < 0 ||
+      size > MAX_PINNED_SOURCE_BYTES ||
+      total > MAX_PINNED_SOURCE_GIT_BATCH_BYTES - size
+    )
+      fail("source exceeds maximum size");
+    const contentStart = ending + 1;
+    const contentEnd = contentStart + size;
+    if (contentEnd >= output.length || output[contentEnd] !== 0x0a)
+      fail("pinned Git batch framing");
+    expected.set(path, Buffer.from(output.subarray(contentStart, contentEnd)));
+    offset = contentEnd + 1;
+    total += size;
+  }
+  if (offset !== output.length) fail("pinned Git batch framing");
+  return expected;
 }
 
 function acquiredSourceBytes(root: string, relativePath: string, pinnedSha: string): Buffer {
@@ -315,13 +364,17 @@ function sourceBytes(
   source: string,
   pinnedSha: string,
   acquiredArchive: boolean,
+  pinnedBlobs?: ReadonlyMap<string, Buffer>,
 ): Buffer {
   const relativePath = relative(root, source).replaceAll("\\", "/");
   assertSafeRelativePosixPathV1(relativePath, "materialized source path");
   if (relativePath.includes(":")) fail("materialized source path");
-  return acquiredArchive
-    ? acquiredSourceBytes(root, relativePath, pinnedSha)
-    : pinnedGitBlobBytes(root, source, pinnedSha);
+  if (acquiredArchive) return acquiredSourceBytes(root, relativePath, pinnedSha);
+  const expected = pinnedBlobs?.get(relativePath);
+  if (expected === undefined) fail("source is absent from pinned Core revision");
+  const actual = readPinnedSourceFile(source, expected.length);
+  if (!actual.equals(expected)) fail("source differs from pinned Core revision");
+  return actual;
 }
 
 function copyFile(
@@ -330,6 +383,7 @@ function copyFile(
   source: string,
   pinnedSha: string,
   acquiredArchive: boolean,
+  pinnedBlobs?: ReadonlyMap<string, Buffer>,
 ): void {
   const rel = relative(root, source).replaceAll("\\", "/");
   assertSafeRelativePosixPathV1(rel, "materialized source path");
@@ -337,7 +391,7 @@ function copyFile(
   const target = resolve(destination, ...rel.split("/"));
   if (!contained(destination, target)) fail("materialized path escapes output root");
   mkdirSync(dirname(target), { recursive: true, mode: 0o700 });
-  writeFileSync(target, sourceBytes(root, source, pinnedSha, acquiredArchive), {
+  writeFileSync(target, sourceBytes(root, source, pinnedSha, acquiredArchive, pinnedBlobs), {
     flag: "wx",
     mode: 0o400,
   });
@@ -594,9 +648,18 @@ export function materializeAihScanSubjectsV1(
   if (canonicalStrictJsonSha256V1(input.compiled) !== canonicalStrictJsonSha256V1(expectedCompiled))
     fail("compiled AIH catalog differs from canonical compiler output");
   const manifestPath = sourcePath(packageRoot, PACK_MANIFEST_PATH);
+  const manifestBlobs = acquiredArchive
+    ? undefined
+    : pinnedGitBlobBytes(packageRoot, [manifestPath], input.coreRevision.pinnedSha);
   const packAssets = packDeclarations(
     input,
-    sourceBytes(packageRoot, manifestPath, input.coreRevision.pinnedSha, acquiredArchive),
+    sourceBytes(
+      packageRoot,
+      manifestPath,
+      input.coreRevision.pinnedSha,
+      acquiredArchive,
+      manifestBlobs,
+    ),
   );
   if (
     acquiredArchive &&
@@ -616,11 +679,27 @@ export function materializeAihScanSubjectsV1(
     fail("compiled AIH asset inventory");
 
   const destination = mkdtempSync(join(outputParent, "aih-scan-material-"));
-  copyFile(packageRoot, destination, manifestPath, input.coreRevision.pinnedSha, acquiredArchive);
-  for (const pack of packAssets.values()) {
-    for (const file of sourceFiles(packageRoot, pack.path))
-      copyFile(packageRoot, destination, file, input.coreRevision.pinnedSha, acquiredArchive);
-  }
+  const packFiles = [...packAssets.values()].flatMap((pack) => sourceFiles(packageRoot, pack.path));
+  const packBlobs = acquiredArchive
+    ? undefined
+    : pinnedGitBlobBytes(packageRoot, packFiles, input.coreRevision.pinnedSha);
+  copyFile(
+    packageRoot,
+    destination,
+    manifestPath,
+    input.coreRevision.pinnedSha,
+    acquiredArchive,
+    manifestBlobs,
+  );
+  for (const file of packFiles)
+    copyFile(
+      packageRoot,
+      destination,
+      file,
+      input.coreRevision.pinnedSha,
+      acquiredArchive,
+      packBlobs,
+    );
   const hookBytes = Buffer.from(usageRecorderScript(), "utf8");
   const hook = input.catalog.hooks.find((entry) => entry.id === "usage-metering");
   if (

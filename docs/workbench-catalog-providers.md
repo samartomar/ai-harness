@@ -264,12 +264,12 @@ subject is derived from its exact entry ID, and the set subject is
 `qualification-receipt-set.json`.
 
 ```bash
-npm run prepare:workbench-catalog-qualification -- --source /absolute/pinned-checkout --provider mattpocock --artifacts /absolute/verified-publication --output /absolute/new-catalog-data.ts
+npm run prepare:workbench-catalog-qualification -- --source /absolute/pinned-checkout --provider mattpocock --artifacts /absolute/verified-publication --output /absolute/new-catalog-data.json
 ```
 
-It emits the complete inert package-data module: original receipt material,
+It emits the complete inert package-data JSON file: original receipt material,
 independent Core material bindings, and minimal display projections. Only a
-reviewed Core release replaces `catalog-qualification-data.ts` with that output.
+reviewed Core release replaces `catalog-qualification-data.json` with that output.
 The fixed publisher policies must advance to the reviewed Scanner and Catalog
 release commits when their publication workflows change. Development pins cannot
 establish missing production reports or qualifications.

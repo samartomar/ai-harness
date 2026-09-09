@@ -158,12 +158,18 @@ foreach($p in @($env:AIH_VERIFIER_DIRECTORY,$env:AIH_VERIFIER_KEY)) {
 }
 function key(create: boolean) {
   const root = privateRoot();
-  if (!existsSync(root)) {
+  const initialize = !existsSync(root);
+  if (initialize) {
     if (!create) fail();
     mkdirSync(root, { recursive: true, mode: 0o700 });
     permissions(root, true);
-  } else if (create) permissions(root);
+  }
   const path = join(root, "verification-key.pkcs8.pem");
+  const existingKey = existsSync(path);
+  // Check both ACLs before acquiring existing private bytes. The regular-file
+  // reader then enforces handle identity, link count, and bounded reads.
+  if (existingKey) permissions(root, false, path);
+  else if (!initialize) permissions(root);
   let material = readRegularFileWithStats(path, { maxBytes: 8192 });
   if (!material) {
     // Never regenerate a missing key next to existing receipts.
@@ -188,7 +194,7 @@ function key(create: boolean) {
       ((stat.mode & 0o077) !== 0 || (process.getuid && stat.uid !== process.getuid())))
   )
     fail();
-  permissions(root, false, path);
+  if (!existingKey) permissions(root, false, path);
   const privateKey = createPrivateKey(material.contents);
   if (privateKey.asymmetricKeyType !== "ed25519") fail();
   return { root, privateKey };

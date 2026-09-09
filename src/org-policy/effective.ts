@@ -11,6 +11,7 @@ import {
 } from "./finding-codes.js";
 import { type GovernanceDecisionV1, governanceDecisionDigestV1 } from "./governance-decision-v1.js";
 import type { NpmPackageEffectiveStateV1 } from "./npm-package-effective-state-v1.js";
+import { candidateIdentityDigest, stableJson } from "./policy-identity.js";
 import { governanceOwnsAihSurfaces, type OrgPolicy } from "./schema.js";
 import type { UpstreamArtifactEffectiveStateV1 } from "./upstream-artifact-effective-state-v1.js";
 import { consumeWorkbenchPolicy } from "./workbench/policy-consumption.js";
@@ -25,6 +26,7 @@ export {
 export type DispositionableFindingCode = (typeof DISPOSITIONABLE_POLICY_FINDING_CODES)[number];
 export type FencedPrerequisiteCode = (typeof FENCED_POLICY_PREREQUISITE_CODES)[number];
 export type PolicyDangerCode = (typeof UNWAIVABLE_POLICY_DANGER_CODES)[number];
+export { candidateIdentityDigest, stableJson } from "./policy-identity.js";
 
 /** True for a detector finding the accountable administrator may dispose of. */
 export function isDispositionableFinding(value: string): value is DispositionableFindingCode {
@@ -368,17 +370,6 @@ function boundedAuthoringDiagnostics(diagnostics: readonly string[]): string[] {
     .slice(0, 100);
 }
 
-export function stableJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
-  if (value !== null && typeof value === "object") {
-    return `{${Object.entries(value as Record<string, unknown>)
-      .sort(([left], [right]) => ordinalCompare(left, right))
-      .map(([key, child]) => `${JSON.stringify(key)}:${stableJson(child)}`)
-      .join(",")}}`;
-  }
-  return JSON.stringify(value);
-}
-
 function ordinalCompare(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
@@ -396,11 +387,6 @@ function upstreamArtifactStateBlocksProjection(item: UpstreamArtifactEffectiveSt
     item.state === "observed-effective" ||
     (item.state === "stale" && item.reason === "observation-stale")
   );
-}
-
-/** Digest only immutable source identity, never catalog wording or an activation flag. */
-export function candidateIdentityDigest(candidate: Pick<Candidate, "source">): string {
-  return `sha256:${createHash("sha256").update(stableJson(candidate.source), "utf8").digest("hex")}`;
 }
 
 /** Digest every action-significant field; catalog prose and annotations remain report metadata. */

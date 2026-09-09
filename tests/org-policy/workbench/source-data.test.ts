@@ -29,7 +29,7 @@ import { VERSION } from "../../../src/version.js";
 // Exercise the source-store contract against a fixed baseline. The packed
 // browser journey covers the complete shipped initial-source artifact.
 vi.mock("../../../src/org-policy/workbench/core/packaged-source-data-data.js", () => ({
-  PACKAGED_WORKBENCH_SOURCE_DATA_V1: [],
+  packagedWorkbenchSourceDataInputV1: () => [],
 }));
 
 const roots: string[] = [];

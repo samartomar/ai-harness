@@ -86,14 +86,43 @@ function serializeCanonicalValue(value: unknown): string {
     return serialized;
   }
   if (typeof value === "number") {
+    if (!Number.isFinite(value) || Object.is(value, -0))
+      throw new TypeError("canonical JSON numbers must be finite and not negative zero");
     const serialized = JSON.stringify(value);
     if (serialized === undefined) throw new TypeError("value is not JSON serializable");
     return serialized;
   }
   if (Array.isArray(value)) {
-    return `[${value.map((child) => serializeCanonicalValue(child)).join(",")}]`;
+    if (Object.getPrototypeOf(value) !== Array.prototype)
+      throw new TypeError("canonical JSON does not support this array prototype");
+    if (Object.getOwnPropertySymbols(value).length > 0)
+      throw new TypeError("canonical JSON does not support symbol keys");
+    if (
+      Object.keys(value).some((key) => {
+        const index = Number(key);
+        return (
+          !Number.isInteger(index) || index < 0 || index >= value.length || String(index) !== key
+        );
+      })
+    )
+      throw new TypeError("canonical JSON arrays cannot have extra enumerable string keys");
+    const children: string[] = [];
+    for (let index = 0; index < value.length; index += 1) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, String(index));
+      if (descriptor === undefined)
+        throw new TypeError("canonical JSON does not support array holes");
+      if (!("value" in descriptor))
+        throw new TypeError("canonical JSON does not support accessor properties");
+      children.push(serializeCanonicalValue(descriptor.value));
+    }
+    return `[${children.join(",")}]`;
   }
   if (typeof value === "object") {
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null)
+      throw new TypeError("canonical JSON does not support this object prototype");
+    if (Object.getOwnPropertySymbols(value).length > 0)
+      throw new TypeError("canonical JSON does not support symbol keys");
     const record = value as Record<string, unknown>;
     return `{${Object.keys(record)
       .sort(codeUnitCompare)
@@ -107,7 +136,7 @@ function serializeCanonicalValue(value: unknown): string {
 }
 
 export function canonicalJson(value: unknown): string {
-  return serializeCanonicalValue(canonicalizeObjectKeys(value));
+  return serializeCanonicalValue(value);
 }
 
 export function canonicalSha256(value: unknown): string {

@@ -5,7 +5,7 @@ import type { AuthoringCatalogBundleV1 } from "../../../src/org-policy/workbench
 
 const records = vi.hoisted((): { bytes: string; sha256: string }[] => []);
 vi.mock("../../../src/org-policy/packaged-collection-evidence-data.js", () => ({
-  PACKAGED_SCANNER_COLLECTION_EVIDENCE_RECORDS_V1: records,
+  packagedScannerCollectionEvidenceInputV1: () => records,
 }));
 
 import {

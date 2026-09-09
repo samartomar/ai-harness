@@ -4,7 +4,7 @@ import { evidenceExpiryV1 } from "../../../evidence-freshness.js";
 import { parseAihSupportedQualificationReceiptV2Bytes } from "../../supported-qualification-receipt-v2.js";
 import { CatalogQualificationSummariesV1Schema } from "../contracts.js";
 import { expandCatalogQualificationPackageInputV2 } from "./catalog-qualification-compact.js";
-import { CATALOG_QUALIFICATION_PACKAGE_INPUT_V1 } from "./catalog-qualification-data.js";
+import { catalogQualificationPackageInputV1 } from "./catalog-qualification-data.js";
 import {
   CATALOG_RECEIPT_SET_MAX_BYTES,
   CATALOG_RECEIPT_SET_MAX_ENTRIES,
@@ -273,7 +273,7 @@ export function decodeCatalogQualificationPackageInputV1(input: unknown) {
 // Empty development data used to hide the schema initialization cycle.
 let loaded: ReturnType<typeof decodeCatalogQualificationPackageInputV1> | undefined;
 function packageData() {
-  loaded ??= decodeCatalogQualificationPackageInputV1(CATALOG_QUALIFICATION_PACKAGE_INPUT_V1);
+  loaded ??= decodeCatalogQualificationPackageInputV1(catalogQualificationPackageInputV1());
   return loaded;
 }
 

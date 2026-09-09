@@ -21,9 +21,8 @@ import { POLICY_APPROVER_EMAIL_PATTERN } from "./ecc-mcp-approval.js";
 import {
   DISPOSITIONABLE_POLICY_FINDING_CODES,
   FENCED_POLICY_PREREQUISITE_CODES,
-  stableJson,
   UNWAIVABLE_POLICY_DANGER_CODES,
-} from "./effective.js";
+} from "./finding-codes.js";
 import {
   canonicalGovernanceDecisionV1,
   type GovernanceDecisionV1,
@@ -38,6 +37,7 @@ import {
   packagedPublicBaselineEvidenceV1,
   packagedPublicBaselineOverlayV1,
 } from "./packaged-public-baseline-v1.js";
+import { stableJson } from "./policy-identity.js";
 import {
   HTTPS_ORIGIN_ARGUMENT_PREFIXES,
   type OrgPolicy,
@@ -391,6 +391,10 @@ function buildPolicyStudioModel(
     initialPolicy?: OrgPolicy;
   },
 ): PolicyStudioModel {
+  const boundedBaselineProvenance =
+    baselineEvidenceProvenance === undefined
+      ? undefined
+      : baselineEvidenceWorkbenchProvenance(baselineEvidenceProvenance);
   const publicBaseline = packagedPublicBaselineEvidenceV1();
   const initialPolicy = options?.initialPolicy ?? defaultStudioPolicy();
   const savedState =
@@ -493,13 +497,9 @@ function buildPolicyStudioModel(
     workbenchSourceInputs: prepared.sourceInputs,
     adoptionRecipe: buildAdoptionRecipe(),
     ...(catalogProvenance === undefined ? {} : { catalogProvenance }),
-    ...(baselineEvidenceProvenance === undefined
+    ...(boundedBaselineProvenance === undefined
       ? {}
-      : {
-          baselineEvidenceProvenance: baselineEvidenceWorkbenchProvenance(
-            baselineEvidenceProvenance,
-          ),
-        }),
+      : { baselineEvidenceProvenance: boundedBaselineProvenance }),
     schema: z.toJSONSchema(OrgPolicySchema, { io: "input" }) as Record<string, unknown>,
     protectedBundleSchema: z.toJSONSchema(PolicyBundleSchema, { io: "input" }) as Record<
       string,

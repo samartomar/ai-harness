@@ -12,7 +12,7 @@ import {
   parseStrictJsonObjectV1,
 } from "../contract/strict-json-v1.js";
 import { evidenceExpiryV1 } from "../evidence-freshness.js";
-import { PACKAGED_SCANNER_COLLECTION_EVIDENCE_RECORDS_V1 } from "./packaged-collection-evidence-data.js";
+import { packagedScannerCollectionEvidenceInputV1 } from "./packaged-collection-evidence-data.js";
 import { type AuthoringCatalogBundleV1, EvidenceSummaryV1Schema } from "./workbench/contracts.js";
 
 const digest = z.string().regex(/^sha256:[a-f0-9]{64}$/);
@@ -298,11 +298,11 @@ type CachedPackagedCollectionEvidenceV1 = Readonly<{
 let cachedPackagedCollectionEvidenceV1: CachedPackagedCollectionEvidenceV1 | undefined;
 
 function cachedInputMatchesPackageV1(cached: CachedPackagedCollectionEvidenceV1): boolean {
-  if (cached.input.length !== PACKAGED_SCANNER_COLLECTION_EVIDENCE_RECORDS_V1.length) return false;
+  if (cached.input.length !== packagedScannerCollectionEvidenceInputV1().length) return false;
   return cached.input.every(
     (item, index) =>
-      item.bytes === PACKAGED_SCANNER_COLLECTION_EVIDENCE_RECORDS_V1[index]?.bytes &&
-      item.sha256 === PACKAGED_SCANNER_COLLECTION_EVIDENCE_RECORDS_V1[index]?.sha256,
+      item.bytes === packagedScannerCollectionEvidenceInputV1()[index]?.bytes &&
+      item.sha256 === packagedScannerCollectionEvidenceInputV1()[index]?.sha256,
   );
 }
 
@@ -314,7 +314,7 @@ export function packagedScannerCollectionEvidenceV1(): readonly PackagedScannerC
 
   const records: PackagedScannerCollectionEvidenceRecordV1[] = [];
   const sourceIds = new Set<string>();
-  for (const item of PACKAGED_SCANNER_COLLECTION_EVIDENCE_RECORDS_V1) {
+  for (const item of packagedScannerCollectionEvidenceInputV1()) {
     if (
       Buffer.byteLength(item.bytes, "utf8") > 4 * 1024 * 1024 ||
       !digest.safeParse(item.sha256).success
@@ -332,7 +332,7 @@ export function packagedScannerCollectionEvidenceV1(): readonly PackagedScannerC
     sourceIds.add(parsed.catalog.id);
     records.push(parsed);
   }
-  const input = PACKAGED_SCANNER_COLLECTION_EVIDENCE_RECORDS_V1.map((item) =>
+  const input = packagedScannerCollectionEvidenceInputV1().map((item) =>
     Object.freeze({ bytes: item.bytes, sha256: item.sha256 }),
   );
   const immutable = deepFreezeStrictJsonV1(records);

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { policyAuthoringCatalog } from "../../../src/org-policy/catalog.js";
 import {
   defaultPreparedWorkbenchCatalog,
+  packagedPreparedWorkbenchCatalogV1,
   prepareWorkbenchCatalog,
 } from "../../../src/org-policy/workbench/prepared-catalog.js";
 
@@ -105,5 +106,22 @@ describe("prepared workbench catalog", () => {
         (source) => source.inputFormat === "organization-authoring-manifest/v1",
       ),
     ).toBe(false);
+  });
+  it("keeps the package-owned prepared catalog memo detached from callers", () => {
+    const first = packagedPreparedWorkbenchCatalogV1();
+    const assetId = Object.keys(first.bundle.assets)[0];
+    if (assetId === undefined) throw new Error("expected prepared catalog asset");
+    const asset = first.bundle.assets[assetId];
+    if (asset === undefined) throw new Error("expected prepared catalog asset");
+    asset.label = "mutated caller copy";
+    const framework = first.catalog.frameworks[0];
+    if (framework === undefined) throw new Error("expected framework catalog entry");
+    framework.repository = "https://mutated.example.test/catalog";
+
+    const second = packagedPreparedWorkbenchCatalogV1();
+    expect(second.bundle.assets[assetId]?.label).not.toBe("mutated caller copy");
+    expect(second.catalog.frameworks[0]?.repository).not.toBe(
+      "https://mutated.example.test/catalog",
+    );
   });
 });

@@ -20,18 +20,18 @@ vi.mock("../../../../src/internals/proc.js", async (importOriginal) => ({
 }));
 // Baseline-proof tests isolate their fixture from independent release collection records.
 vi.mock("../../../../src/org-policy/workbench/core/packaged-source-data-data.js", () => ({
-  PACKAGED_WORKBENCH_SOURCE_DATA_V1: [],
+  packagedWorkbenchSourceDataInputV1: () => [],
 }));
 vi.mock("../../../../src/org-policy/packaged-collection-evidence-data.js", () => ({
-  PACKAGED_SCANNER_COLLECTION_EVIDENCE_RECORDS_V1: [],
+  packagedScannerCollectionEvidenceInputV1: () => [],
 }));
 vi.mock("../../../../src/org-policy/workbench/core/catalog-qualification-data.js", () => ({
-  CATALOG_QUALIFICATION_PACKAGE_INPUT_V1: {
+  catalogQualificationPackageInputV1: () => ({
     version: 1,
     records: [],
     bindings: [],
     projections: [],
-  },
+  }),
 }));
 const packageFixture = vi.hoisted(() => ({
   bytes: null as string | null,

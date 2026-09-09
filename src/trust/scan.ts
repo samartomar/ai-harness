@@ -17,7 +17,7 @@ import { defaultRunner, type Runner } from "../internals/proc.js";
 import type { Check } from "../internals/verify.js";
 import { evaluateMcpPolicy, mcpPolicyOptionsFromConfig } from "../mcp/policy.js";
 import type { McpServer } from "../mcp/servers.js";
-import { candidateIdentityDigest, stableJson } from "../org-policy/effective.js";
+import { candidateIdentityDigest, stableJson } from "../org-policy/policy-identity.js";
 import { type OrgPolicy, OrgPolicyError, readOrgPolicy } from "../org-policy/schema.js";
 import type { Platform } from "../platform/base.js";
 import { mcpConfigSecretCheck, plaintextSecretCheck } from "../secrets/probes.js";

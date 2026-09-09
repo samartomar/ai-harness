@@ -11,7 +11,7 @@ const fixture = vi.hoisted(() => ({
   apply: vi.fn(),
 }));
 vi.mock("../../../../src/org-policy/workbench/core/packaged-source-data-data.js", () => ({
-  PACKAGED_WORKBENCH_SOURCE_DATA_V1: fixture.records,
+  packagedWorkbenchSourceDataInputV1: () => fixture.records,
 }));
 vi.mock("../../../../src/org-policy/workbench/core/source-data.js", () => ({
   applyPackagedWorkbenchSourceBundlesV1: fixture.apply,

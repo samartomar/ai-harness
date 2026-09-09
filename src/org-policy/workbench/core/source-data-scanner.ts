@@ -461,7 +461,9 @@ async function prepareSourceDataScannerEvidenceOperationalV1(
       version: prepared.coverage.version,
       authority: prepared.coverage.authority,
       scope: prepared.coverage.scope,
-      components: prepared.coverage.components,
+      components: prepared.coverage.components.map(
+        ({ primaryPath: _primaryPath, ...component }) => component,
+      ),
       unmappedDerivedAssets: prepared.coverage.unmappedDerivedAssets,
     };
     const record: ScannerEvidenceProjectionRecordV1 = {

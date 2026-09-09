@@ -23,7 +23,7 @@ import type {
   PreparedWorkbenchCatalogV1,
   PrepareWorkbenchCatalogOptionsV1,
 } from "../prepared-catalog.js";
-import { PACKAGED_WORKBENCH_SOURCE_DATA_V1 } from "./packaged-source-data-data.js";
+import { packagedWorkbenchSourceDataInputV1 } from "./packaged-source-data-data.js";
 import {
   type PackagedSourceDataRecordV1,
   PackagedSourceDataRecordV1Schema,
@@ -44,8 +44,8 @@ export function packagedWorkbenchSourceDataRecordsV1(): readonly PackagedSourceD
 function verifiedPackagedWorkbenchSourceDataRecordsV1(): readonly PackagedSourceDataRecordV1[] {
   if (cached === undefined) {
     if (
-      PACKAGED_WORKBENCH_SOURCE_DATA_V1.length > 64 ||
-      PACKAGED_WORKBENCH_SOURCE_DATA_V1.reduce(
+      packagedWorkbenchSourceDataInputV1().length > 64 ||
+      packagedWorkbenchSourceDataInputV1().reduce(
         (total, item) => total + Buffer.byteLength(item.bytes),
         0,
       ) >
@@ -53,7 +53,7 @@ function verifiedPackagedWorkbenchSourceDataRecordsV1(): readonly PackagedSource
     )
       throw new TypeError("Packaged source inventory exceeds its byte budget");
     const seen = new Set<string>();
-    const records = PACKAGED_WORKBENCH_SOURCE_DATA_V1.map((sealed) => {
+    const records = packagedWorkbenchSourceDataInputV1().map((sealed) => {
       if (Buffer.byteLength(sealed.bytes) > 16 * 1024 * 1024)
         throw new TypeError("Packaged source data exceeds its byte budget");
       const value = parseStrictJsonObjectV1(sealed.bytes, "Packaged source data");
@@ -81,7 +81,7 @@ function verifiedPackagedWorkbenchSourceDataRecordsV1(): readonly PackagedSource
     });
     cached = deepFreezeStrictJsonV1(records) as readonly PackagedSourceDataRecordV1[];
     for (const [index, record] of cached.entries()) {
-      const sealed = PACKAGED_WORKBENCH_SOURCE_DATA_V1[index];
+      const sealed = packagedWorkbenchSourceDataInputV1()[index];
       if (!sealed) throw new TypeError("Packaged source data identity is missing");
       sealedIdentityByRecord.set(record, sealed.sha256);
     }
@@ -156,12 +156,10 @@ export function applyPackagedWorkbenchSourceDataV1(
     }
   }
   const overlay = Object.freeze({
-    bundle: deepFreezeStrictJsonV1(
-      structuredClone(applied.bundle),
-    ) as PreparedWorkbenchCatalogV1["bundle"],
-    bindings: deepFreezeStrictJsonV1(
-      structuredClone(applied.bindings),
-    ) as PreparedWorkbenchCatalogV1["bindings"],
+    // Package-owned replacement allocates its result before this point. Freeze that private
+    // result for cache authority, then clone only when returning to callers.
+    bundle: deepFreezeStrictJsonV1(applied.bundle) as PreparedWorkbenchCatalogV1["bundle"],
+    bindings: deepFreezeStrictJsonV1(applied.bindings) as PreparedWorkbenchCatalogV1["bindings"],
   });
   preparedOverlays.set(key, overlay);
   if (preparedOverlays.size > PREPARED_OVERLAY_CACHE_LIMIT_V1) {

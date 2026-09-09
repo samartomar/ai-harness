@@ -3,7 +3,6 @@ import { isPlainObject } from "../internals/merge.js";
 import { type Action, type PlanContext, remove, writeJson } from "../internals/plan.js";
 import { withExpectedContents } from "../mcp/managed-projection.js";
 import type { EccHookEnvKey, EccHookEnvPatch } from "./ecc-hook-controls-projection.js";
-import { stableJson } from "./effective.js";
 import type { HookAdoptionOffer } from "./hook-registrar-adoption.js";
 import {
   assertHookRegistrations,
@@ -44,6 +43,7 @@ import {
   receiptNativeEntry,
   receiptRegistration,
 } from "./hook-registrar-receipt.js";
+import { stableJson } from "./policy-identity.js";
 import {
   type HookRegistration,
   HookRegistrationSchema,

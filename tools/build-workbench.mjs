@@ -42,6 +42,13 @@ export async function copyWorkbenchToDist(root = repositoryRoot) {
   const target = resolve(root, "dist/bundle.generated.cjs");
   await mkdir(dirname(target), { recursive: true });
   await copyFile(resolve(root, generatedPath), target);
+  for (const source of [
+    "src/org-policy/workbench/core/packaged-source-data-data.json",
+    "src/org-policy/workbench/core/catalog-qualification-data.json",
+    "src/org-policy/packaged-collection-evidence-data.json",
+  ]) {
+    await copyFile(resolve(root, source), resolve(root, "dist", source.split("/").at(-1)));
+  }
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

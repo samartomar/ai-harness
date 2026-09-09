@@ -11,12 +11,12 @@ afterEach(() => {
 describe("Catalog qualification package completeness", () => {
   it("throws for malformed generated input instead of silently replacing it with empty claims", async () => {
     vi.doMock(dataPath, () => ({
-      CATALOG_QUALIFICATION_PACKAGE_INPUT_V1: {
+      catalogQualificationPackageInputV1: () => ({
         version: 2,
         records: [],
         bindings: [],
         projections: [],
-      },
+      }),
     }));
     const packageModule = await import(packagePath);
     expect(() => packageModule.packagedCatalogQualificationRecordsV1()).toThrow(
@@ -26,12 +26,12 @@ describe("Catalog qualification package completeness", () => {
 
   it("rejects a positive projection when no authenticated raw record was packaged", async () => {
     vi.doMock(dataPath, () => ({
-      CATALOG_QUALIFICATION_PACKAGE_INPUT_V1: {
+      catalogQualificationPackageInputV1: () => ({
         version: 1,
         records: [],
         bindings: [],
         projections: [{ "aih/skill:review": { state: "qualified" } }],
-      },
+      }),
     }));
     const packageModule = await import(packagePath);
     expect(() => packageModule.packagedCatalogQualificationRecordsV1()).toThrow(
@@ -41,7 +41,7 @@ describe("Catalog qualification package completeness", () => {
 
   it("rejects raw records without their Core binding and display projection", async () => {
     vi.doMock(dataPath, () => ({
-      CATALOG_QUALIFICATION_PACKAGE_INPUT_V1: {
+      catalogQualificationPackageInputV1: () => ({
         version: 1,
         records: [
           {
@@ -71,7 +71,7 @@ describe("Catalog qualification package completeness", () => {
         ],
         bindings: [],
         projections: [],
-      },
+      }),
     }));
     const packageModule = await import(packagePath);
     expect(() => packageModule.packagedCatalogQualificationRecordsV1()).toThrow(

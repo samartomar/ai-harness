@@ -3,12 +3,13 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("../../../../src/org-policy/workbench/core/catalog-qualification-data.js", async () => {
   const { readFileSync } = await import("node:fs");
   return {
-    CATALOG_QUALIFICATION_PACKAGE_INPUT_V1: JSON.parse(
-      readFileSync(
-        new URL("../../../fixtures/catalog-qualification-package-input-v1.json", import.meta.url),
-        "utf8",
+    catalogQualificationPackageInputV1: () =>
+      JSON.parse(
+        readFileSync(
+          new URL("../../../fixtures/catalog-qualification-package-input-v1.json", import.meta.url),
+          "utf8",
+        ),
       ),
-    ),
   };
 });
 

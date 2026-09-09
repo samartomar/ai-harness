@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { packagedWorkbenchSourceDataRecordsV1 } from "../../../../src/org-policy/workbench/core/packaged-source-data.js";
-import { PACKAGED_WORKBENCH_SOURCE_DATA_V1 } from "../../../../src/org-policy/workbench/core/packaged-source-data-data.js";
+import { packagedWorkbenchSourceDataInputV1 } from "../../../../src/org-policy/workbench/core/packaged-source-data-data.js";
 import identities from "../../../fixtures/workbench-initial-source-identities.json";
 
 it("preserves initial source identities so compatible Core releases do not replace saved policy material", () => {
@@ -22,7 +22,7 @@ it("preserves initial source identities so compatible Core releases do not repla
 });
 
 it("keeps the authenticated ECC runtime descriptor within package and receipt bounds", () => {
-  const record = PACKAGED_WORKBENCH_SOURCE_DATA_V1.find((item) => {
+  const record = packagedWorkbenchSourceDataInputV1().find((item) => {
     const parsed = JSON.parse(item.bytes) as {
       source?: { repository?: unknown; commit?: unknown };
     };

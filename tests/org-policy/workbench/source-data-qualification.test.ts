@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { policyStudioModel } from "../../../src/org-policy/studio-model.js";
-import { CATALOG_QUALIFICATION_PACKAGE_INPUT_V1 } from "../../../src/org-policy/workbench/core/catalog-qualification-data.js";
+import { catalogQualificationPackageInputV1 } from "../../../src/org-policy/workbench/core/catalog-qualification-data.js";
 import { decodeCatalogQualificationPackageInputV1 } from "../../../src/org-policy/workbench/core/catalog-qualification-package-v1.js";
 import { CATALOG_QUALIFICATION_RELEASE_POLICY_V1 } from "../../../src/org-policy/workbench/core/catalog-qualification-policy-v1.js";
 import { verifySourceDataQualificationV1 } from "../../../src/org-policy/workbench/core/source-data-qualification.js";
@@ -22,7 +22,7 @@ const issuedAt = "2026-09-09T02:00:00.000Z";
 const bundle = policyStudioModel().workbenchBundle;
 function proof() {
   return {
-    packageInput: structuredClone(CATALOG_QUALIFICATION_PACKAGE_INPUT_V1),
+    packageInput: structuredClone(catalogQualificationPackageInputV1()),
     receiptAttestation: "fixture-receipts",
     receiptSetAttestation: "fixture-set",
   };
@@ -85,7 +85,14 @@ describe("independent source-data Catalog verification", () => {
     "rejects %s outside explicit release policy",
     (change) => {
       const input = proof();
-      const record = input.packageInput.records[0]!;
+      const record = (
+        input.packageInput as {
+          records: {
+            publisher: Record<string, unknown>;
+            receiptSetPublisher: Record<string, unknown>;
+          }[];
+        }
+      ).records[0]!;
       if (change === "receipt-name") Object.assign(record.publisher, { subjectName: "wrong.json" });
       if (change === "set-name")
         Object.assign(record.receiptSetPublisher, { subjectName: "wrong.json" });

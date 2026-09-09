@@ -27,7 +27,7 @@ vi.mock("../../../src/org-policy/workbench/prepared-catalog.js", async () => {
   return { packagedPreparedWorkbenchCatalogV1: fixture.tinySourceDataPreparedCatalogV1 };
 });
 vi.mock("../../../src/org-policy/workbench/core/packaged-source-data-data.js", () => ({
-  PACKAGED_WORKBENCH_SOURCE_DATA_V1: [],
+  packagedWorkbenchSourceDataInputV1: () => [],
 }));
 
 const roots: string[] = [];

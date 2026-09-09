@@ -50,7 +50,7 @@ const preparedBaselineByDigest = new Map<string, Readonly<PreparedWorkbenchCatal
 function cachePreparedBaselineV1(
   digest: string,
   value: PreparedWorkbenchCatalogV1,
-): PreparedWorkbenchCatalogV1 {
+): Readonly<PreparedWorkbenchCatalogV1> {
   const snapshot = deepFreezeStrictJsonV1(structuredClone(value));
   preparedBaselineByDigest.delete(digest);
   preparedBaselineByDigest.set(digest, snapshot);
@@ -58,15 +58,17 @@ function cachePreparedBaselineV1(
     const oldest = preparedBaselineByDigest.keys().next().value;
     if (oldest !== undefined) preparedBaselineByDigest.delete(oldest);
   }
-  return structuredClone(snapshot);
+  return snapshot;
 }
 
-function cachedPreparedBaselineV1(digest: string): PreparedWorkbenchCatalogV1 | undefined {
+function cachedPreparedBaselineV1(
+  digest: string,
+): Readonly<PreparedWorkbenchCatalogV1> | undefined {
   const cached = preparedBaselineByDigest.get(digest);
   if (cached === undefined) return undefined;
   preparedBaselineByDigest.delete(digest);
   preparedBaselineByDigest.set(digest, cached);
-  return structuredClone(cached);
+  return cached;
 }
 
 function sourceInputsForManifestV1(manifestBytes: string): WorkbenchSourceInputsV1 {
@@ -113,14 +115,29 @@ export function prepareWorkbenchCatalog(
 ): PreparedWorkbenchCatalogV1 {
   const organizationManifestBytes = options.organizationManifestBytes ?? [];
   const freshOrganizationPreparations = options.freshOrganizationPreparations ?? [];
-  const baselineDigest =
-    organizationManifestBytes.length === 0 && freshOrganizationPreparations.length === 0
-      ? canonicalStrictJsonSha256V1(catalog)
-      : undefined;
-  if (baselineDigest !== undefined) {
-    const cached = cachedPreparedBaselineV1(baselineDigest);
-    if (cached !== undefined) return finishPreparedCatalogV1(cached, options);
-  }
+  if (organizationManifestBytes.length === 0 && freshOrganizationPreparations.length === 0)
+    return finishPreparedCatalogV1(structuredClone(preparedBaselineSnapshotV1(catalog)), options);
+  return finishPreparedCatalogV1(
+    prepareCatalogV1(catalog, organizationManifestBytes, freshOrganizationPreparations),
+    options,
+  );
+}
+
+/** A privately held frozen baseline is cloned before public preparation callers can receive it. */
+function preparedBaselineSnapshotV1(
+  catalog: PolicyAuthoringCatalog,
+): Readonly<PreparedWorkbenchCatalogV1> {
+  const baselineDigest = canonicalStrictJsonSha256V1(catalog);
+  const cached = cachedPreparedBaselineV1(baselineDigest);
+  if (cached !== undefined) return cached;
+  return cachePreparedBaselineV1(baselineDigest, prepareCatalogV1(catalog, [], []));
+}
+
+function prepareCatalogV1(
+  catalog: PolicyAuthoringCatalog,
+  organizationManifestBytes: readonly string[],
+  freshOrganizationPreparations: readonly FreshOrganizationPreparationV1[],
+): PreparedWorkbenchCatalogV1 {
   const bundle =
     freshOrganizationPreparations.length > 0
       ? policyAuthoringCatalogBundleWithOrganizationInputsV1(
@@ -206,12 +223,7 @@ export function prepareWorkbenchCatalog(
   }
   // Organization compiler output cannot carry Core capabilities, so its assets remain intent-only.
   for (const asset of Object.values(bundle.assets)) bindings[asset.id] ??= { kind: "intent" };
-  const preparedCatalog = { catalog, bundle, bindings, sourceInputs };
-  const packaged =
-    baselineDigest === undefined
-      ? preparedCatalog
-      : cachePreparedBaselineV1(baselineDigest, preparedCatalog);
-  return finishPreparedCatalogV1(packaged, options);
+  return { catalog, bundle, bindings, sourceInputs };
 }
 
 function finishPreparedCatalogV1(
@@ -231,6 +243,11 @@ export function defaultPreparedWorkbenchCatalog(): PreparedWorkbenchCatalogV1 {
 }
 
 export function packagedPreparedWorkbenchCatalogV1(): PreparedWorkbenchCatalogV1 {
-  prepared ??= prepareWorkbenchCatalog(undefined, { packageDataOnly: true });
+  // This process-private consumer can apply sealed package records directly to the frozen cache
+  // snapshot. Its result is cloned before it leaves this module, so callers never receive cache
+  // authority or a shared mutable object.
+  prepared ??= finishPreparedCatalogV1(preparedBaselineSnapshotV1(policyAuthoringCatalog()), {
+    packageDataOnly: true,
+  });
   return structuredClone(prepared);
 }

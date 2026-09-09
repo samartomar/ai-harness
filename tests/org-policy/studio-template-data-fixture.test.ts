@@ -15,6 +15,7 @@ import { tinyStudioModel } from "./studio-test-fixture.js";
 
 describe("policy workbench detached default model", () => {
   beforeEach(() => {
+    mocks.prepared.mockClear();
     mocks.prepared.mockImplementation(() => {
       const fixture = tinyStudioModel();
       return {
@@ -24,6 +25,13 @@ describe("policy workbench detached default model", () => {
         sourceInputs: fixture.workbenchSourceInputs,
       };
     });
+  });
+
+  it("rejects malformed baseline provenance before preparing the catalog", () => {
+    expect(() => policyStudioModel(undefined, { schemaVersion: 1 } as never)).toThrow(
+      /baseline evidence provenance/,
+    );
+    expect(mocks.prepared).not.toHaveBeenCalled();
   });
 
   it("returns a detached default model without rebuilding its prepared catalog", () => {

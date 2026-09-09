@@ -1,7 +1,7 @@
 import { findNodeAtLocation, type Node, parseTree, visit } from "jsonc-parser";
 import { duplicateRootKeys, isPlainObject, parseJsoncText } from "../internals/merge.js";
-import { stableJson } from "./effective.js";
 import { HOOK_REGISTRAR_DESTINATION } from "./hook-registrar-read.js";
+import { stableJson } from "./policy-identity.js";
 import {
   type HookRegistration,
   HookRegistrationSchema,
@@ -90,12 +90,9 @@ export function projectedHookGroup(entry: NativeHookEntry): ProjectedHookGroup {
  * hold, AIH can then call already-known, and the replace can drop — a silent
  * rewrite of a hook AIH never emitted.
  *
- * `stableJson` sorts with `localeCompare`, which returns 0 for some distinct
- * strings, so this key is NOT guaranteed insensitive to the order a writer used:
- * two objects carrying the same fields in different orders can serialize
- * differently and read as two different entries. That direction is fail-closed —
- * the entry is reported unowned rather than silently rewritten — so it is a
- * false-drift risk, never a deletion risk.
+ * `stableJson` orders object keys ordinally while retaining array order. The
+ * object envelope is canonical, but array order remains action-significant and
+ * is never normalized here.
  */
 export function nativeHookEntryKey(entry: NativeHookEntry): string {
   return [
