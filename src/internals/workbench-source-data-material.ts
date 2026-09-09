@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { lstatSync, readFileSync } from "node:fs";
+import { closeSync, constants, fstatSync, lstatSync, openSync, readSync } from "node:fs";
 import { join } from "node:path";
 import {
   assertSafeRelativePosixPathV1,
@@ -9,6 +9,45 @@ import {
 const marker = "__aihSourceFileV1";
 const digest = (bytes: Buffer) => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 
+function readDescriptorBackedCompilerFileV1(
+  path: string,
+  expected: Readonly<{ bytes: number; sha256: string }>,
+): Buffer {
+  let descriptor: number | undefined;
+  try {
+    descriptor = openSync(
+      path,
+      constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0),
+    );
+    const opened = fstatSync(descriptor);
+    const named = lstatSync(path);
+    if (
+      !opened.isFile() ||
+      named.isSymbolicLink() ||
+      !named.isFile() ||
+      opened.ino !== named.ino ||
+      opened.dev !== named.dev ||
+      opened.size !== named.size
+    )
+      throw new TypeError("Compiler source changed during open");
+    if (opened.size !== expected.bytes) throw new TypeError("Compiler source exceeds bounds");
+    const buffer = Buffer.alloc(opened.size + 1);
+    let length = 0;
+    while (length < buffer.length) {
+      const count = readSync(descriptor, buffer, length, buffer.length - length, null);
+      if (count === 0) break;
+      length += count;
+    }
+    const after = fstatSync(descriptor);
+    const bytes = buffer.subarray(0, length);
+    if (length !== opened.size || after.size !== opened.size || after.mtimeMs !== opened.mtimeMs)
+      throw new TypeError("Compiler source changed during read");
+    if (digest(bytes) !== expected.sha256) throw new TypeError("Compiler source identity mismatch");
+    return Buffer.from(bytes);
+  } finally {
+    if (descriptor !== undefined) closeSync(descriptor);
+  }
+}
 /** Reconstructible package metadata; source bytes stay in the exact upstream archive. */
 export function sourceCompilerTemplateV1(input: unknown): unknown {
   assertStrictJsonValueV1(input, "Source compiler input");
@@ -78,13 +117,12 @@ export function restoreSourceCompilerTemplateV1(template: unknown, sourceRoot: s
         if (lstatSync(current).isSymbolicLink())
           throw new TypeError("Linked compiler source reference");
       }
-      const stat = lstatSync(current);
-      total += stat.size;
-      if (!stat.isFile() || stat.size !== file.bytes || total > 64 * 1024 * 1024)
-        throw new TypeError("Compiler source exceeds bounds");
-      const bytes = readFileSync(current);
-      if (bytes.length !== file.bytes || digest(bytes) !== file.sha256)
-        throw new TypeError("Compiler source identity mismatch");
+      const bytes = readDescriptorBackedCompilerFileV1(current, {
+        bytes: file.bytes as number,
+        sha256: file.sha256,
+      });
+      total += bytes.length;
+      if (total > 64 * 1024 * 1024) throw new TypeError("Compiler source exceeds bounds");
       return bytes.toString("base64");
     }
     return Object.fromEntries(

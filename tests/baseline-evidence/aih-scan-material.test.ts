@@ -1,12 +1,18 @@
 import { execFileSync } from "node:child_process";
 import { createHash, generateKeyPairSync } from "node:crypto";
 import {
+  closeSync,
+  constants,
   cpSync,
+  existsSync,
+  fstatSync,
   linkSync,
   lstatSync,
   mkdtempSync,
+  openSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -32,6 +38,7 @@ vi.mock("../../src/internals/proc.js", async (importOriginal) => ({
 import {
   type MaterializedAihScanSubjectsV1,
   materializeAihScanSubjectsV1,
+  removeMaterializedAihScanSubjectsV1,
 } from "../../src/baseline-evidence/aih-scan-material.js";
 import {
   authorPackagedAihScannerEvidenceRecordV1,
@@ -57,11 +64,21 @@ import { PackagedScannerCollectionEvidenceRecordV1Schema } from "../../src/org-p
 import { compileBuiltInCatalogV1 } from "../../src/org-policy/workbench/compilers/built-in.js";
 
 const roots: string[] = [];
+const materializedRoots: MaterializedAihScanSubjectsV1[] = [];
 afterEach(() => {
   mocks.defaultRunner.mockReset();
   vi.unstubAllGlobals();
+  for (const materialized of materializedRoots.splice(0)) {
+    if (existsSync(materialized.sourceRoot)) removeMaterializedAihScanSubjectsV1(materialized);
+  }
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
+
+function temporaryDirectory(prefix: string): string {
+  const root = mkdtempSync(join(realpathSync(tmpdir()), prefix));
+  roots.push(root);
+  return root;
+}
 
 function currentRevision(): string {
   return execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
@@ -112,6 +129,18 @@ function tarEntry(entry: TarEntry): Buffer {
   ]);
 }
 
+function readFixtureFile(path: string): Buffer {
+  const noFollow = "O_NOFOLLOW" in constants ? constants.O_NOFOLLOW : 0;
+  const descriptor = openSync(path, constants.O_RDONLY | noFollow);
+  try {
+    const stats = fstatSync(descriptor);
+    if (!stats.isFile() || stats.nlink > 1) throw new Error("fixture source shape");
+    return readFileSync(descriptor);
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
 function coreArchiveEntries(relativePath: string): readonly TarEntry[] {
   const absolute = resolve(relativePath);
   const stats = lstatSync(absolute);
@@ -119,7 +148,7 @@ function coreArchiveEntries(relativePath: string): readonly TarEntry[] {
     return [
       {
         name: `ai-harness-${currentRevision()}/${relativePath.replaceAll("\\", "/")}`,
-        bytes: readFileSync(absolute),
+        bytes: readFixtureFile(absolute),
       },
     ];
   if (!stats.isDirectory()) throw new Error("fixture source shape");
@@ -138,8 +167,7 @@ function currentCoreArchive(extra: readonly TarEntry[] = []): Buffer {
 }
 
 function copiedPackageCheckout(): string {
-  const source = mkdtempSync(join(tmpdir(), "aih-scan-material-source-"));
-  roots.push(source);
+  const source = temporaryDirectory("aih-scan-material-source-");
   cpSync(resolve("aih-packs.json"), join(source, "aih-packs.json"));
   cpSync(resolve("packs"), join(source, "packs"), { recursive: true });
   execFileSync("git", ["init", "-q", source]);
@@ -159,16 +187,17 @@ function copiedPackageCheckout(): string {
 }
 
 function materialize(): MaterializedAihScanSubjectsV1 {
-  const outputParent = mkdtempSync(join(tmpdir(), "aih-scan-material-test-"));
-  roots.push(outputParent);
+  const outputParent = temporaryDirectory("aih-scan-material-test-");
   const catalog = policyAuthoringCatalog();
-  return materializeAihScanSubjectsV1({
+  const materialized = materializeAihScanSubjectsV1({
     packageRoot: resolve("."),
     outputParent,
     coreRevision: { pinnedSha: currentRevision() },
     catalog,
     compiled: compileBuiltInCatalogV1(catalog),
   });
+  materializedRoots.push(materialized);
+  return materialized;
 }
 
 function sha256(value: Uint8Array): string {
@@ -408,9 +437,19 @@ describe("AIH scan material", () => {
     }
   });
 
+  it("removes only its own read-only materialized tree", () => {
+    const materialized = materialize();
+    const sourceRoot = materialized.sourceRoot;
+
+    expect(() => removeMaterializedAihScanSubjectsV1(structuredClone(materialized))).toThrow(
+      /materialized source custody/,
+    );
+    removeMaterializedAihScanSubjectsV1(materialized);
+    expect(existsSync(sourceRoot)).toBe(false);
+  });
+
   it("refuses a non-pinned checkout, output below the checkout, and altered compiler output before producing a scan tree", () => {
-    const parent = mkdtempSync(join(tmpdir(), "aih-scan-material-reject-"));
-    roots.push(parent);
+    const parent = temporaryDirectory("aih-scan-material-reject-");
     const catalog = policyAuthoringCatalog();
     const compiled = compileBuiltInCatalogV1(catalog);
     expect(() =>
@@ -427,7 +466,7 @@ describe("AIH scan material", () => {
     expect(() =>
       materializeAihScanSubjectsV1({
         packageRoot: resolve("."),
-        outputParent: resolve(".aih-scratch"),
+        outputParent: resolve("packs"),
         coreRevision: { pinnedSha: currentRevision() },
         catalog,
         compiled,
@@ -452,8 +491,7 @@ describe("AIH scan material", () => {
 
   it("allows ordinary source directories while rejecting a hard-linked delivery file", () => {
     const packageRoot = copiedPackageCheckout();
-    const outputParent = mkdtempSync(join(tmpdir(), "aih-scan-material-links-"));
-    roots.push(outputParent);
+    const outputParent = temporaryDirectory("aih-scan-material-links-");
     const catalog = policyAuthoringCatalog();
     const compiled = compileBuiltInCatalogV1(catalog);
     const sourceFile = join(packageRoot, "packs/docs-quality/aih-betterdoc/SKILL.md");
@@ -477,8 +515,7 @@ describe("AIH scan material", () => {
 
   it("refuses copied pack bytes that no longer match the pinned Core Git revision", () => {
     const packageRoot = copiedPackageCheckout();
-    const outputParent = mkdtempSync(join(tmpdir(), "aih-scan-material-dirty-pack-"));
-    roots.push(outputParent);
+    const outputParent = temporaryDirectory("aih-scan-material-dirty-pack-");
     const catalog = policyAuthoringCatalog();
     const compiled = compileBuiltInCatalogV1(catalog);
     const skill = join(packageRoot, "packs/docs-quality/aih-betterdoc/SKILL.md");
@@ -500,11 +537,44 @@ describe("AIH scan material", () => {
     expect(readdirSync(outputParent)).toHaveLength(1);
   });
 
+  it("refuses a pinned delivery file above the bounded descriptor read limit", () => {
+    const packageRoot = copiedPackageCheckout();
+    const outputParent = temporaryDirectory("aih-scan-material-oversized-pack-");
+    const catalog = policyAuthoringCatalog();
+    const compiled = compileBuiltInCatalogV1(catalog);
+    const relativeSkill = "packs/docs-quality/aih-betterdoc/SKILL.md";
+    writeFileSync(join(packageRoot, relativeSkill), Buffer.alloc(16 * 1024 * 1024 + 1, 0x61));
+    execFileSync("git", ["-C", packageRoot, "add", relativeSkill]);
+    execFileSync("git", [
+      "-C",
+      packageRoot,
+      "-c",
+      "user.name=AIH test",
+      "-c",
+      "user.email=test@example.invalid",
+      "commit",
+      "-qm",
+      "oversized fixture",
+    ]);
+    const pinnedSha = execFileSync("git", ["-C", packageRoot, "rev-parse", "HEAD"], {
+      encoding: "utf8",
+    }).trim();
+
+    expect(() =>
+      materializeAihScanSubjectsV1({
+        packageRoot,
+        outputParent,
+        coreRevision: { pinnedSha },
+        catalog,
+        compiled,
+      }),
+    ).toThrow(/source exceeds maximum size/);
+  });
+
   it("accepts only a same-process integrity-checked Core archive and rejects a later archive mutation", async () => {
-    const archiveParent = mkdtempSync(join(tmpdir(), "aih-scan-material-archive-"));
+    const archiveParent = temporaryDirectory("aih-scan-material-archive-");
     const packageRoot = join(archiveParent, "checkout");
-    const outputParent = mkdtempSync(join(tmpdir(), "aih-scan-material-archive-output-"));
-    roots.push(archiveParent, outputParent);
+    const outputParent = temporaryDirectory("aih-scan-material-archive-output-");
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response(currentCoreArchive())),
@@ -516,15 +586,15 @@ describe("AIH scan material", () => {
     });
     const catalog = policyAuthoringCatalog();
     const compiled = compileBuiltInCatalogV1(catalog);
-    expect(
-      materializeAihScanSubjectsV1({
-        packageRoot,
-        outputParent,
-        coreRevision: { pinnedSha: currentRevision() },
-        catalog,
-        compiled,
-      }).subjects,
-    ).toHaveLength(10);
+    const materialized = materializeAihScanSubjectsV1({
+      packageRoot,
+      outputParent,
+      coreRevision: { pinnedSha: currentRevision() },
+      catalog,
+      compiled,
+    });
+    materializedRoots.push(materialized);
+    expect(materialized.subjects).toHaveLength(10);
 
     writeFileSync(
       join(packageRoot, "packs/docs-quality/aih-betterdoc/SKILL.md"),
@@ -542,10 +612,9 @@ describe("AIH scan material", () => {
   });
 
   it("rejects an omitted archive symlink beneath a declared pack before creating material", async () => {
-    const archiveParent = mkdtempSync(join(tmpdir(), "aih-scan-material-link-archive-"));
+    const archiveParent = temporaryDirectory("aih-scan-material-link-archive-");
     const packageRoot = join(archiveParent, "checkout");
-    const outputParent = mkdtempSync(join(tmpdir(), "aih-scan-material-link-output-"));
-    roots.push(archiveParent, outputParent);
+    const outputParent = temporaryDirectory("aih-scan-material-link-output-");
     vi.stubGlobal(
       "fetch",
       vi.fn(
@@ -582,8 +651,7 @@ describe("AIH scan material", () => {
 
   it("seals the shared package record only after Scanner verifies the real materialized subjects", async () => {
     const materialized = materialize();
-    const preparationParent = mkdtempSync(join(tmpdir(), "aih-scan-material-prepared-"));
-    roots.push(preparationParent);
+    const preparationParent = temporaryDirectory("aih-scan-material-prepared-");
     const artifacts = createCoreBaselineVetRequests(
       materialized.sourceRoot,
       materialized.catalog,
@@ -667,8 +735,7 @@ describe("AIH scan material", () => {
   });
 
   it("uses the process-owned attestation verifier after materializing from a real Core pin", async () => {
-    const outputParent = mkdtempSync(join(tmpdir(), "aih-scan-material-preparation-"));
-    roots.push(outputParent);
+    const outputParent = temporaryDirectory("aih-scan-material-preparation-");
     const catalog = policyAuthoringCatalog();
     const calls: string[][] = [];
     mocks.defaultRunner.mockImplementation(async (argv) => {

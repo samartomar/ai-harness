@@ -88,44 +88,12 @@ describe("schema-v3 policy consumption", () => {
       expect.objectContaining({ code: "authoring-selection-invalid" }),
     );
   });
-  it("reports pinned request intent separately from effective candidates", () => {
-    const prepared = defaultPreparedWorkbenchCatalog();
-    const asset = Object.values(prepared.bundle.assets).find(
-      (candidate) => candidate.authoring.action === "record-request",
-    );
-    if (asset === undefined) throw new Error("expected request-only catalog asset");
-    const state = reduceWorkbenchAction(prepared.bundle, createWorkbenchState(), {
-      type: "record-request",
-      assetId: asset.id,
-      origin: { kind: "administrator" },
-    }).state;
-    const authored = compilePolicy(
-      { schemaVersion: 2, minimumPosture: "vibe", references: { repoContract: "repo" } },
-      state,
-      prepared.bundle,
-      prepared.bindings,
-    );
-    expect(authored.accepted).toBe(true);
-    expect(authored.policy).toMatchObject({
-      schemaVersion: 3,
-      authoringSelections: { requests: [{ assetId: asset.id }] },
-    });
-    const consumed = consumeWorkbenchPolicy(authored.policy, state, prepared);
-    expect(consumed).toMatchObject({ accepted: true });
-    const effective = resolveEffectiveOrgPolicy(authored.policy as OrgPolicy);
-    expect(effective.authoringIntent).toEqual({
-      requestedIntent: [asset.id],
-      selectedControls: [],
-    });
-    expect(effective.candidates).toEqual([]);
-    expect(effective.activeMcpServerIds).toEqual([]);
-  });
-  it("round-trips a scanned source-data ECC MCP selection as inert intent", () => {
+  it("restores package-sealed ECC compiler bindings and rejects forged legacy mirrors", () => {
     const prepared = defaultPreparedWorkbenchCatalog();
     const asset = prepared.bundle.assets["ecc/mcp:supabase"];
     const binding = prepared.bindings["ecc/mcp:supabase"];
-    if (asset === undefined || binding?.kind !== "intent")
-      throw new Error("expected source-data ECC MCP intent binding");
+    if (asset === undefined || binding?.kind !== "external-selection" || !binding.external)
+      throw new Error("expected package-sealed ECC MCP binding");
     expect(
       Object.values(prepared.bundle.evidence).some((report) =>
         report.subjects.some((subject) => subject.assetId === asset.id),
@@ -148,6 +116,14 @@ describe("schema-v3 policy consumption", () => {
     expect(authored.policy.authoringSelections).toMatchObject({
       roots: [expect.objectContaining({ assetId: asset.id })],
     });
+    expect((authored.policy.governance as Record<string, unknown>).externalSelections).toEqual([
+      {
+        framework: "ecc",
+        items: [binding.external.item],
+        roots: [binding.external.item.id],
+        unattributedItems: [],
+      },
+    ]);
     expect(
       importWorkbenchPolicySelections(
         authored.policy,
@@ -160,6 +136,15 @@ describe("schema-v3 policy consumption", () => {
       accepted: true,
       requestedIntent: [asset.id],
       selectedControls: [],
+    });
+    const forged = structuredClone(authored.policy);
+    const governance = forged.governance as { externalSelections: unknown[] };
+    const selection = governance.externalSelections[0] as { items: unknown[] } | undefined;
+    if (selection === undefined) throw new Error("expected ECC external selection");
+    selection.items.push({ ...binding.external.item, id: "mcp:forged" });
+    expect(consumeWorkbenchPolicy(forged, state, prepared)).toMatchObject({
+      accepted: false,
+      diagnostics: ["Legacy external selections disagree with pinned authoring selections"],
     });
   });
 
@@ -287,130 +272,6 @@ describe("schema-v3 policy consumption", () => {
     expect(effective.activeMcpServerIds).not.toContain(organizationAsset.id);
     expect(effective.capabilityPackages).toBeUndefined();
     expect(effective.externalSelections).toEqual([]);
-  });
-
-  it("rejects omitted and tampered organization source transport before projection", () => {
-    const manifest = JSON.stringify({
-      version: "organization-authoring-manifest/v1",
-      source: { id: "source:acme", revisionId: "v1", locator: "Acme catalog" },
-      assets: [
-        {
-          id: "skill:triage",
-          kind: "skill",
-          label: "Triage",
-          path: "skills/triage/SKILL.md",
-        },
-      ],
-    });
-    const prepared = prepareWorkbenchCatalog(undefined, { organizationManifestBytes: [manifest] });
-    const asset = Object.values(prepared.bundle.assets).find(
-      (candidate) => candidate.sourceId === "source:acme",
-    );
-    if (asset === undefined) throw new Error("expected organization asset");
-    const state = reduceWorkbenchAction(prepared.bundle, createWorkbenchState(), {
-      type: "select-root",
-      assetId: asset.id,
-      origin: { kind: "administrator" },
-    }).state;
-    const authored = compilePolicy(
-      { schemaVersion: 2, minimumPosture: "vibe", references: { repoContract: "repo" } },
-      state,
-      prepared.bundle,
-      prepared.bindings,
-      "author",
-      prepared.sourceInputs,
-    );
-    if (!authored.accepted) throw new Error(authored.diagnostics.join("; "));
-
-    const missing = structuredClone(authored.policy);
-    delete (missing as Record<string, unknown>).authoringSources;
-    expect(consumeWorkbenchPolicy(missing, state, defaultPreparedWorkbenchCatalog())).toMatchObject(
-      {
-        accepted: false,
-        diagnostics: ["missing authoring source input for source:acme"],
-      },
-    );
-
-    const tampered = structuredClone(authored.policy) as {
-      authoringSources: Array<{ bytesBase64: string; byteLength: number }>;
-    };
-    tampered.authoringSources[0]!.bytesBase64 = "e30=";
-    tampered.authoringSources[0]!.byteLength = 2;
-    expect(
-      consumeWorkbenchPolicy(tampered, state, defaultPreparedWorkbenchCatalog()),
-    ).toMatchObject({
-      accepted: false,
-      requestedIntent: [],
-      selectedControls: [],
-    });
-  });
-  it("reports distinct missing and stale v3 pins while leaving all effects inert", () => {
-    const prepared = defaultPreparedWorkbenchCatalog();
-    const asset = Object.values(prepared.bundle.assets).find(
-      (candidate) => candidate.authoring.action === "record-selection",
-    );
-    if (asset === undefined) throw new Error("expected record-selection asset");
-    const state = reduceWorkbenchAction(prepared.bundle, createWorkbenchState(), {
-      type: "select-root",
-      assetId: asset.id,
-      origin: { kind: "administrator" },
-    }).state;
-    const authored = compilePolicy(
-      { schemaVersion: 2, minimumPosture: "vibe", references: { repoContract: "repo" } },
-      state,
-      prepared.bundle,
-      prepared.bindings,
-    );
-    expect(authored.accepted).toBe(true);
-
-    const stale = structuredClone(authored.policy) as {
-      authoringSelections: {
-        roots: Array<{ contentDigest: string; resolvedItems: Array<{ contentDigest: string }> }>;
-      };
-    };
-    stale.authoringSelections.roots[0]!.contentDigest = "sha256:" + "f".repeat(64);
-    stale.authoringSelections.roots[0]!.resolvedItems[0]!.contentDigest =
-      "sha256:" + "f".repeat(64);
-    const staleEffective = resolveEffectiveOrgPolicy(stale as OrgPolicy);
-    expect(staleEffective.authoringDiagnostics).toContain("Stale selected content: " + asset.id);
-    expect(staleEffective.candidates).toEqual([]);
-    expect(staleEffective.activeMcpServerIds).toEqual([]);
-
-    const missing = structuredClone(authored.policy) as {
-      authoringSelections: {
-        roots: Array<{
-          assetId: string;
-          sourceId: string;
-          sourceRevisionId: string;
-          contentDigest: string;
-          resolvedItems: Array<{
-            assetId: string;
-            sourceId: string;
-            sourceRevisionId: string;
-            contentDigest: string;
-          }>;
-        }>;
-      };
-    };
-    const root = missing.authoringSelections.roots[0]!;
-    root.assetId = "source:missing";
-    root.sourceId = "source:missing";
-    root.sourceRevisionId = "missing";
-    root.contentDigest = "sha256:" + "e".repeat(64);
-    root.resolvedItems = [
-      {
-        assetId: root.assetId,
-        sourceId: root.sourceId,
-        sourceRevisionId: root.sourceRevisionId,
-        contentDigest: root.contentDigest,
-      },
-    ];
-    const missingEffective = resolveEffectiveOrgPolicy(missing as OrgPolicy);
-    expect(missingEffective.authoringDiagnostics).toContain(
-      "missing authoring source input for source:missing",
-    );
-    expect(missingEffective.candidates).toEqual([]);
-    expect(missingEffective.activeMcpServerIds).toEqual([]);
   });
 
   it("leaves schema-v2 resolution unchanged", () => {

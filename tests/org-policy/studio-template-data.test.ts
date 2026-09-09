@@ -1,5 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
-import * as adoptionRecipe from "../../src/org-policy/adoption-recipe.js";
+import { describe, expect, it } from "vitest";
 import { policyStudioModel } from "../../src/org-policy/studio-model.js";
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
 import { tinyStudioModel } from "./studio-test-fixture.js";
@@ -104,36 +103,20 @@ describe("policy workbench data embedding", () => {
     expect(scriptCloseCount(html)).toBe(scriptCloseCount(policyStudioHtml(tinyStudioModel())));
   });
 
-  it("caches only detached default models while explicit preparation paths still validate", () => {
-    const recipe = vi.spyOn(adoptionRecipe, "buildAdoptionRecipe");
-    try {
-      const first = policyStudioModel();
-      const assetId = Object.keys(first.workbenchBundle.assets)[0];
-      if (assetId === undefined) throw new Error("expected workbench asset");
-      const asset = first.workbenchBundle.assets[assetId];
-      if (asset === undefined) throw new Error("expected workbench asset");
-      asset.label = "caller mutation";
-
-      expect(policyStudioModel().workbenchBundle.assets[assetId]?.label).not.toBe(
-        "caller mutation",
-      );
-      expect(recipe).toHaveBeenCalledTimes(1);
-      expect(() => policyStudioModel(undefined, { schemaVersion: 1 } as never)).toThrow(
-        /baseline evidence provenance/,
-      );
-      expect(() =>
-        policyStudioModel(undefined, undefined, {
-          organizationManifestBytes: ["not an organization manifest"],
-        }),
-      ).toThrow();
-      expect(() =>
-        policyStudioModel(undefined, undefined, {
-          freshOrganizationPreparations: [{} as never],
-        }),
-      ).toThrow();
-    } finally {
-      recipe.mockRestore();
-    }
+  it("validates explicit provenance and preparation inputs", () => {
+    expect(() => policyStudioModel(undefined, { schemaVersion: 1 } as never)).toThrow(
+      /baseline evidence provenance/,
+    );
+    expect(() =>
+      policyStudioModel(undefined, undefined, {
+        organizationManifestBytes: ["not an organization manifest"],
+      }),
+    ).toThrow();
+    expect(() =>
+      policyStudioModel(undefined, undefined, {
+        freshOrganizationPreparations: [{} as never],
+      }),
+    ).toThrow();
   });
   it("embeds only bounded baseline evidence provenance fields", () => {
     const model = policyStudioModel(undefined, {

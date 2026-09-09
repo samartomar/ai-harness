@@ -10,6 +10,15 @@ const blob = z.object({
     .min(1)
     .max(64 * 1024 * 1024),
 });
+const runtimeDescriptor = z
+  .object({
+    bytesBase64: z
+      .string()
+      .min(1)
+      .max(16 * 1024 * 1024),
+    sha256: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+  })
+  .strict();
 /** Package-owned preparation inputs; original proof verification is a connected release gate. */
 export const PackagedSourceDataRecordV1Schema = z
   .object({
@@ -24,6 +33,7 @@ export const PackagedSourceDataRecordV1Schema = z
       .strict(),
     scannerProof: z.unknown(),
     compilerTemplate: z.unknown(),
+    runtimeDescriptor: runtimeDescriptor.optional(),
     inlineBlobs: z.array(blob.extend({ bytesBase64: z.string().max(700_000) }).strict()).max(32),
     publicationBlobs: z
       .array(blob.extend({ url: z.string().max(1_000) }).strict())

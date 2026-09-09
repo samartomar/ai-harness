@@ -32,6 +32,13 @@ describe("authenticated component containment joins", () => {
     expect(result.map((item) => item.publishedComponentIds)).toEqual([[request.id], [request.id]]);
     expect(JSON.stringify(request)).toBe(original);
   });
+  it("rejects source bytes changed after the authenticated request tree was formed", () => {
+    const { root, request, components } = fixture();
+    writeFileSync(join(root, "shared", "one.md"), "changed after scan request");
+    expect(() => verifyScannerComponentContainmentV1(root, components, [request])).toThrow(
+      /containment/,
+    );
+  });
   it.each(["digest", "path", "missing-file", "published-tree", "ambiguous"])(
     "rejects %s before evidence projection",
     (caseName) => {

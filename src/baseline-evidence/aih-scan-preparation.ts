@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import { chmodSync, lstatSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, lstatSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, isAbsolute, join, relative, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import {
   canonicalStrictJsonBytesV1,
   deepFreezeStrictJsonV1,
@@ -20,6 +20,7 @@ import {
   type AihScanMaterialCoreRevisionV1,
   type AihScanMaterialCoverageV1,
   materializeAihScanSubjectsV1,
+  removeMaterializedAihScanSubjectsV1,
 } from "./aih-scan-material.js";
 import { createCoreBaselineVetRequests } from "./scanner-consumer.js";
 import {
@@ -212,25 +213,6 @@ function within(root: string, path: string): boolean {
     !isAbsolute(value) &&
     !value.split(/[\\/]/).includes("..")
   );
-}
-
-/** Removes only the freshly materialized private scan tree, never its caller-owned parent. */
-function removeMaterializedSourceRoot(sourceRoot: string): void {
-  const root = resolve(sourceRoot);
-  if (!basename(root).startsWith("aih-scan-material-")) fail("materialized source custody");
-  const unlock = (path: string): void => {
-    const stat = lstatSync(path);
-    if (stat.isSymbolicLink()) fail("materialized source custody");
-    if (!stat.isDirectory()) return;
-    for (const child of readdirSync(path)) {
-      const nested = join(path, child);
-      if (!within(root, nested)) fail("materialized source custody");
-      unlock(nested);
-    }
-    chmodSync(path, 0o700);
-  };
-  unlock(root);
-  rmSync(root, { recursive: true, force: false, maxRetries: 2, retryDelay: 20 });
 }
 
 async function attestPublicationBytes(
@@ -426,7 +408,7 @@ export async function prepareAihScannerPublicationsV1(
     preparedFacts.set(prepared, { output });
     return prepared;
   } finally {
-    removeMaterializedSourceRoot(materialized.sourceRoot);
+    removeMaterializedAihScanSubjectsV1(materialized);
   }
 }
 

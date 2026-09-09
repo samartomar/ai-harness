@@ -33,7 +33,7 @@ export const test = base.extend<BrowserFixtures>({
             } catch (error) {
               if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
             }
-            const packed = preparePackedWorkbench(directory);
+            const packed = await preparePackedWorkbench(directory);
             await writeFile(
               resolve(directory, "package-receipt.json"),
               JSON.stringify(packed, null, 2),

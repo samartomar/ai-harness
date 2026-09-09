@@ -1,10 +1,18 @@
 import { execFileSync } from "node:child_process";
 import {
+  closeSync,
+  constants,
   cpSync,
   existsSync,
+  fchmodSync,
+  fstatSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
+  readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -14,13 +22,56 @@ import { join, resolve } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { hashSourceTree } from "../../src/baseline-evidence/hash.js";
 
-const roots: string[] = [];
+interface OwnedTestRoot {
+  readonly root: string;
+  readonly dev: number;
+  readonly ino: number;
+}
+
+const roots: OwnedTestRoot[] = [];
 afterEach(() => {
-  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+  for (const root of roots.splice(0)) removeOwnedTestRoot(root);
 });
+
+function removeOwnedTestRoot(owned: OwnedTestRoot): void {
+  const rootStat = lstatSync(owned.root);
+  if (
+    rootStat.isSymbolicLink() ||
+    !rootStat.isDirectory() ||
+    rootStat.dev !== owned.dev ||
+    rootStat.ino !== owned.ino
+  )
+    throw new Error("fixture root custody");
+  const unlock = (path: string): void => {
+    const stat = lstatSync(path);
+    if (stat.isSymbolicLink()) return;
+    if (!stat.isDirectory() && !stat.isFile()) throw new Error("fixture source shape");
+    if (!(process.platform === "win32" && stat.isDirectory())) {
+      const descriptor = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+      try {
+        const opened = fstatSync(descriptor);
+        if (opened.dev !== stat.dev || opened.ino !== stat.ino)
+          throw new Error("fixture source custody");
+        fchmodSync(descriptor, stat.isDirectory() ? 0o700 : 0o600);
+      } finally {
+        closeSync(descriptor);
+      }
+    }
+    if (stat.isDirectory()) {
+      for (const child of readdirSync(path)) unlock(join(path, child));
+      return;
+    }
+  };
+  unlock(owned.root);
+  rmSync(owned.root, { recursive: true, force: false, maxRetries: 2, retryDelay: 20 });
+}
+
 function fixture() {
-  const parent = mkdtempSync(join(tmpdir(), "aih-delivery-command-"));
-  roots.push(parent);
+  const parent = mkdtempSync(join(realpathSync(tmpdir()), "aih-delivery-command-"));
+  const parentStat = lstatSync(parent);
+  if (parentStat.isSymbolicLink() || !parentStat.isDirectory())
+    throw new Error("fixture root custody");
+  roots.push({ root: parent, dev: parentStat.dev, ino: parentStat.ino });
   const source = join(parent, "source");
   execFileSync("git", ["init", "-q", source]);
   execFileSync("git", ["-C", source, "config", "core.autocrlf", "false"]);

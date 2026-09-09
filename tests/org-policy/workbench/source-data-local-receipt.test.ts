@@ -1,6 +1,7 @@
 import { createHash, generateKeyPairSync } from "node:crypto";
 import {
   existsSync,
+  linkSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -13,6 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  readSourceDataLocalRuntimeDescriptorV1,
   sourceDataReceiptDigestsV1,
   stageSourceDataLocalHeadV1,
   verifySourceDataLocalHeadV1,
@@ -67,6 +69,15 @@ describe("machine-local verified source receipts", () => {
       expiresAt: "2026-09-10T00:00:00.000Z",
     });
     expect(() => verifySourceDataLocalReceiptV1(store, expected, now, false)).not.toThrow();
+    expect(readSourceDataLocalRuntimeDescriptorV1(store, expected, now, false)).toBeUndefined();
+    expect(() =>
+      writeSourceDataLocalReceiptV1(store, {
+        ...expected,
+        verifiedAt: now,
+        expiresAt: "2026-09-10T00:00:00.000Z",
+        runtimeDescriptor: {} as never,
+      }),
+    ).toThrow();
     expect(readdirSync(store)).toEqual([]);
     expect(() =>
       verifySourceDataLocalReceiptV1(
@@ -96,6 +107,11 @@ describe("machine-local verified source receipts", () => {
     );
     const receipt = JSON.parse(readFileSync(receiptPath, "utf8"));
     const before = readFileSync(receiptPath);
+    const receiptAlias = join(root, "receipt-alias.json");
+    linkSync(receiptPath, receiptAlias);
+    expect(() => verifySourceDataLocalReceiptV1(store, expected, now, false)).toThrow();
+    unlinkSync(receiptAlias);
+    expect(() => verifySourceDataLocalReceiptV1(store, expected, now, false)).not.toThrow();
     receipt.payload.verifierPolicy = "workbench-source-verifier/v0";
     writeFileSync(receiptPath, JSON.stringify(receipt));
     expect(() => verifySourceDataLocalReceiptV1(store, expected, now, false)).toThrow();

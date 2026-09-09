@@ -206,6 +206,74 @@ describe("F5 — the destination-scoped materialization receipt document", () =>
     expect(parsed.components[0]?.files[0]).not.toHaveProperty("contentAuthorization");
   });
 
+  it("round-trips grouped version-two historical audit references without copying report findings", () => {
+    const receipt = parseEccMaterializationReceipt(
+      JSON.stringify(
+        receiptValue({
+          schemaVersion: 2,
+          coreDerivedEvidence: {
+            groups: [
+              {
+                descriptorSha256: "sha256:" + "a".repeat(64),
+                rawReportDigest: "sha256:" + "b".repeat(64),
+                coreDerivedEvaluationDigest: "sha256:" + "c".repeat(64),
+                projectionContractDigest: "sha256:" + "d".repeat(64),
+                componentMappings: [
+                  { componentId: "skill:tdd-workflow", rawComponentIds: ["skill:raw-b"] },
+                ],
+              },
+            ],
+            legacyComponentIds: [],
+          },
+        }),
+      ),
+    );
+    expect(receipt.schemaVersion).toBe(2);
+    if (receipt.schemaVersion !== 2) throw new Error("expected version-two receipt");
+    expect(receipt).not.toHaveProperty("rawReport");
+    expect(receipt).not.toHaveProperty("findings");
+    expect(receipt.coreDerivedEvidence.groups).toEqual([
+      {
+        descriptorSha256: "sha256:" + "a".repeat(64),
+        rawReportDigest: "sha256:" + "b".repeat(64),
+        coreDerivedEvaluationDigest: "sha256:" + "c".repeat(64),
+        projectionContractDigest: "sha256:" + "d".repeat(64),
+        componentMappings: [
+          { componentId: "skill:tdd-workflow", rawComponentIds: ["skill:raw-b"] },
+        ],
+      },
+    ]);
+    expect(receipt.coreDerivedEvidence.legacyComponentIds).toEqual([]);
+    put(ECC_MATERIALIZATION_RECEIPT_PATH, serializeEccMaterializationReceipt(receipt));
+    const read = readEccMaterializationReceipt(root);
+    expect(read.state).toBe("valid");
+    if (read.state !== "valid") throw new Error("expected version-two receipt readback");
+    expect(read.receipt).toEqual(receipt);
+  });
+
+  it("refuses a version-two mapping that is malformed or does not cover exactly the owned components", () => {
+    const malformed = receiptValue({
+      schemaVersion: 2,
+      coreDerivedEvidence: {
+        groups: [
+          {
+            descriptorSha256: "sha256:" + "a".repeat(64),
+            rawReportDigest: "sha256:" + "b".repeat(64),
+            coreDerivedEvaluationDigest: "sha256:" + "c".repeat(64),
+            projectionContractDigest: "sha256:" + "d".repeat(64),
+            componentMappings: [
+              { componentId: "skill:other", rawComponentIds: ["skill:raw", "skill:raw"] },
+            ],
+          },
+        ],
+        legacyComponentIds: [],
+      },
+    });
+    expect(() => parseEccMaterializationReceipt(JSON.stringify(malformed))).toThrow(
+      /raw evidence component|not materialized|provenance classification/i,
+    );
+  });
+
   it("round-trips separate selected and exact Kiro runtime authorization", () => {
     const contentAuthorization = runtimeAuthorization();
     const receipt = parseEccMaterializationReceipt(

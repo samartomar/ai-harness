@@ -396,9 +396,15 @@ function provenanceFor(
   // These are the facts returned by the exact signature verification call.
   // A later publication or intake cannot renew the original report date.
   const signed = Date.parse(claims.signedAt);
+  const attested = Date.parse(verified.attestation.attestedAt);
+  const expires = Date.parse(claims.expiresAt);
   const age = Date.parse(now) - signed;
   if (
-    signed > Date.parse(verified.attestation.attestedAt) ||
+    !Number.isFinite(signed) ||
+    !Number.isFinite(attested) ||
+    !Number.isFinite(expires) ||
+    signed > attested ||
+    attested >= expires ||
     !Number.isFinite(age) ||
     age < 0 ||
     age >= Math.min(maxAgeSeconds, DEFAULT_EVIDENCE_MAX_AGE_SECONDS_V1) * 1000

@@ -245,6 +245,7 @@ describe("source-level report projection after independent consumption", () => {
     "missing-report",
     "publication-request",
     "publication-date",
+    "custody-expiry",
     "asset-digest",
     "incomplete-closure",
   ])("rejects %s without projecting a pass", (caseName) => {
@@ -261,6 +262,14 @@ describe("source-level report projection after independent consumption", () => {
         provenance: [{ ...input.consumed.provenance[0]!, requestSha256: "f".repeat(64) }],
       };
     if (caseName === "publication-date") input.preparedAt = "2026-09-09T00:00:00.000Z";
+    if (caseName === "custody-expiry")
+      input.consumed = {
+        ...input.consumed,
+        provenance: input.consumed.provenance.map((item) => ({
+          ...item,
+          attestedAt: item.reportVerificationExpiresAt,
+        })),
+      };
     if (caseName === "asset-digest")
       input.declared[0]!.subject.contentDigest = `sha256:${"f".repeat(64)}`;
     if (caseName === "incomplete-closure") input.declared[0]!.paths = ["shared"];

@@ -33,7 +33,7 @@ export const WORKBENCH_CONTRACT_TEST_PATTERNS = [
   "tests/org-policy/workbench/source-data*.test.ts",
   "tests/org-policy/workbench/data-command.test.ts",
   "tests/org-policy/workbench/studio-model-source-data.test.ts",
-  "tests/org-policy/workbench/policy-consumption.test.ts",
+  "tests/org-policy/workbench/policy-consumption*.test.ts",
   "tests/org-policy/workbench/providers/**/*.test.ts",
   "tests/org-policy/catalog-providers.test.ts",
 ] as const;

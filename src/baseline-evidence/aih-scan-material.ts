@@ -1,13 +1,19 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+  type BigIntStats,
   chmodSync,
+  closeSync,
+  constants,
+  fchmodSync,
+  fstatSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readdirSync,
-  readFileSync,
   realpathSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -24,6 +30,7 @@ import {
   assertAcquiredGithubSourceRootV1,
   readAcquiredGithubSourceFileV1,
 } from "../internals/bounded-github-source-archive.js";
+import { readBoundedFileDescriptor } from "../internals/fsxn.js";
 import { hermeticGitEnv } from "../internals/git-env.js";
 import { mcpEntryFor } from "../mcp/render.js";
 import type { PolicyAuthoringCatalog } from "../org-policy/catalog.js";
@@ -40,6 +47,8 @@ const CORE_REVISION = /^[0-9a-f]{40}$/;
 const PACK_MANIFEST_PATH = "aih-packs.json";
 const CORE_OWNER = "samartomar";
 const CORE_REPOSITORY = "ai-harness";
+const MAX_PINNED_SOURCE_BYTES = 16 * 1024 * 1024;
+const MAX_PINNED_SOURCE_GIT_BYTES = MAX_PINNED_SOURCE_BYTES + 1;
 
 export interface AihScanMaterialCoreRevisionV1 {
   /** Reviewed Git revision of the disposable Core checkout. */
@@ -105,6 +114,17 @@ interface SubjectPlan {
   readonly paths: readonly string[];
   readonly skillContent?: true;
 }
+
+interface OwnedMaterializedSourceRoot {
+  readonly root: string;
+  readonly dev: bigint;
+  readonly ino: bigint;
+}
+
+const ownedMaterializedRoots = new WeakMap<
+  MaterializedAihScanSubjectsV1,
+  OwnedMaterializedSourceRoot
+>();
 
 function fail(message: string): never {
   throw new TypeError(`AIH scan material: ${message}`);
@@ -203,6 +223,60 @@ function assertPublicMaterialPath(path: string): void {
     fail("materialized source must not include private configuration");
 }
 
+function sameFileIdentity(left: BigIntStats, right: BigIntStats): boolean {
+  return (
+    left.dev === right.dev &&
+    left.ino === right.ino &&
+    left.nlink === right.nlink &&
+    left.size === right.size &&
+    left.mtimeNs === right.mtimeNs
+  );
+}
+
+function readPinnedSourceFile(source: string, expectedLength: number): Buffer {
+  if (
+    !Number.isSafeInteger(expectedLength) ||
+    expectedLength < 0 ||
+    expectedLength > MAX_PINNED_SOURCE_BYTES
+  )
+    fail("source exceeds maximum size");
+  const noFollow = (constants as Record<string, number | undefined>).O_NOFOLLOW ?? 0;
+  const nonblock = (constants as Record<string, number | undefined>).O_NONBLOCK ?? 0;
+  try {
+    const descriptor = openSync(source, constants.O_RDONLY | noFollow | nonblock);
+    try {
+      const opened = fstatSync(descriptor, { bigint: true });
+      const named = lstatSync(source, { bigint: true });
+      if (
+        opened.isSymbolicLink() ||
+        !opened.isFile() ||
+        opened.nlink > 1n ||
+        named.isSymbolicLink() ||
+        !named.isFile() ||
+        !sameFileIdentity(opened, named)
+      )
+        fail("source has unsafe file shape");
+      if (opened.size !== BigInt(expectedLength)) fail("source differs from pinned Core revision");
+      const actual = readBoundedFileDescriptor(descriptor, expectedLength);
+      const after = fstatSync(descriptor, { bigint: true });
+      const namedAfter = lstatSync(source, { bigint: true });
+      if (
+        actual === undefined ||
+        actual.length !== expectedLength ||
+        !sameFileIdentity(opened, after) ||
+        !sameFileIdentity(opened, namedAfter)
+      )
+        fail("source changed during read");
+      return actual;
+    } finally {
+      closeSync(descriptor);
+    }
+  } catch (error) {
+    if (error instanceof TypeError && error.message.startsWith("AIH scan material:")) throw error;
+    fail("source has unsafe file shape");
+  }
+}
+
 /** Only copied Core delivery files must be identical to the declared Core Git revision. */
 function pinnedGitBlobBytes(root: string, source: string, pinnedSha: string): Buffer {
   const rel = relative(root, source).replaceAll("\\", "/");
@@ -212,6 +286,7 @@ function pinnedGitBlobBytes(root: string, source: string, pinnedSha: string): Bu
   try {
     expected = execFileSync("git", ["-C", root, "show", `${pinnedSha}:${rel}`], {
       encoding: "buffer",
+      maxBuffer: MAX_PINNED_SOURCE_GIT_BYTES,
       stdio: ["ignore", "pipe", "ignore"],
       windowsHide: true,
       env: hermeticGitEnv(),
@@ -219,10 +294,7 @@ function pinnedGitBlobBytes(root: string, source: string, pinnedSha: string): Bu
   } catch {
     fail("source is absent from pinned Core revision");
   }
-  const stat = lstatSync(source);
-  if (stat.isSymbolicLink() || !stat.isFile() || stat.nlink > 1)
-    fail("source has unsafe file shape");
-  const actual = readFileSync(source);
+  const actual = readPinnedSourceFile(source, expected.length);
   if (!actual.equals(expected)) fail("source differs from pinned Core revision");
   return actual;
 }
@@ -288,6 +360,79 @@ function lockDownDirectories(root: string): void {
     chmodSync(path, 0o500);
   };
   walk(root);
+}
+
+function makeOwnedMaterialPathWritable(path: string, expected: BigIntStats, mode: number): void {
+  const noFollow = (constants as Record<string, number | undefined>).O_NOFOLLOW ?? 0;
+  const nonblock = (constants as Record<string, number | undefined>).O_NONBLOCK ?? 0;
+  let descriptor: number | undefined;
+  try {
+    descriptor = openSync(path, constants.O_RDONLY | noFollow | nonblock);
+    const opened = fstatSync(descriptor, { bigint: true });
+    const named = lstatSync(path, { bigint: true });
+    if (
+      opened.isSymbolicLink() ||
+      named.isSymbolicLink() ||
+      !sameFileIdentity(expected, opened) ||
+      !sameFileIdentity(expected, named)
+    )
+      fail("materialized source custody");
+    // Windows does not permit fchmod on directory handles and does not enforce
+    // the POSIX directory mode that protects Unix unlink operations.
+    if (!opened.isDirectory() || process.platform !== "win32") fchmodSync(descriptor, mode);
+    const after = fstatSync(descriptor, { bigint: true });
+    const namedAfter = lstatSync(path, { bigint: true });
+    if (!sameFileIdentity(opened, after) || !sameFileIdentity(opened, namedAfter))
+      fail("materialized source custody");
+  } catch (error) {
+    if (error instanceof TypeError && error.message.startsWith("AIH scan material:")) throw error;
+    fail("materialized source custody");
+  } finally {
+    if (descriptor !== undefined) closeSync(descriptor);
+  }
+}
+
+function unlockOwnedMaterializedSourceRoot(root: OwnedMaterializedSourceRoot): void {
+  const rootStat = lstatSync(root.root, { bigint: true });
+  if (
+    rootStat.isSymbolicLink() ||
+    !rootStat.isDirectory() ||
+    rootStat.dev !== root.dev ||
+    rootStat.ino !== root.ino
+  )
+    fail("materialized source custody");
+  const unlock = (path: string, known?: BigIntStats): void => {
+    const stat = known ?? lstatSync(path, { bigint: true });
+    if (stat.isSymbolicLink()) fail("materialized source custody");
+    if (stat.isDirectory()) {
+      makeOwnedMaterialPathWritable(path, stat, 0o700);
+      for (const child of readdirSync(path)) {
+        const nested = join(path, child);
+        if (!contained(root.root, nested)) fail("materialized source custody");
+        unlock(nested);
+      }
+      return;
+    }
+    if (!stat.isFile()) fail("materialized source custody");
+    makeOwnedMaterialPathWritable(path, stat, 0o600);
+  };
+  unlock(root.root, rootStat);
+  rmSync(root.root, { recursive: true, force: false, maxRetries: 2, retryDelay: 20 });
+}
+
+/**
+ * Remove only a source tree created by this process's materializer. The
+ * ownership handle prevents a caller from using cleanup to remove a checkout
+ * or another caller-owned path.
+ */
+export function removeMaterializedAihScanSubjectsV1(
+  materialized: MaterializedAihScanSubjectsV1,
+): void {
+  const owned = ownedMaterializedRoots.get(materialized);
+  if (owned === undefined || materialized.sourceRoot !== owned.root)
+    fail("materialized source custody");
+  unlockOwnedMaterializedSourceRoot(owned);
+  ownedMaterializedRoots.delete(materialized);
 }
 
 function packDeclarations(
@@ -564,7 +709,7 @@ export function materializeAihScanSubjectsV1(
         .sort(codeUnitCompare),
     ),
   });
-  return Object.freeze({
+  const materialized = Object.freeze({
     sourceRoot: destination,
     catalog,
     coverage,
@@ -575,4 +720,13 @@ export function materializeAihScanSubjectsV1(
       ),
     ),
   });
+  const destinationStat = lstatSync(destination, { bigint: true });
+  if (destinationStat.isSymbolicLink() || !destinationStat.isDirectory())
+    fail("materialized source custody");
+  ownedMaterializedRoots.set(materialized, {
+    root: destination,
+    dev: destinationStat.dev,
+    ino: destinationStat.ino,
+  });
+  return materialized;
 }

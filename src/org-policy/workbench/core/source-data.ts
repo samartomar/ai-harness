@@ -1,6 +1,7 @@
 import { createHash, createPublicKey, randomUUID, verify } from "node:crypto";
 import {
   closeSync,
+  constants,
   existsSync,
   fstatSync,
   fsyncSync,
@@ -20,6 +21,7 @@ import {
   canonicalStrictJsonSha256V1,
   parseStrictJsonObjectV1,
 } from "../../../contract/strict-json-v1.js";
+import type { PreparedEccRuntimeDescriptorV1 } from "../../../ecc/runtime-descriptor.js";
 import { packagedScannerCollectionOverlayV1 } from "../../packaged-collection-evidence-v1.js";
 import { verifyAuthoringCatalogBundleIntegrityV1 } from "../catalog-integrity.js";
 import {
@@ -33,6 +35,7 @@ import {
 } from "../prepared-catalog.js";
 import { CATALOG_QUALIFICATION_RELEASE_POLICIES_V1 } from "./catalog-qualification-policy-v1.js";
 import {
+  readSourceDataLocalRuntimeDescriptorV1,
   sourceDataReceiptDigestsV1,
   stageSourceDataLocalHeadV1,
   verifySourceDataLocalHeadV1,
@@ -123,14 +126,19 @@ function seal(bundle: AuthoringCatalogBundleV1): AuthoringCatalogBundleV1 {
   return parsed;
 }
 export function readWorkbenchSourceDataFileV1(path: string, max = MAX_BYTES): string {
-  const stat = lstatSync(path);
-  if (!stat.isFile() || stat.isSymbolicLink() || stat.size < 1 || stat.size > max)
-    fail("unsafe or oversized file");
-  const fd = openSync(path, "r");
+  const fd = openSync(
+    path,
+    constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0),
+  );
   try {
     const opened = fstatSync(fd);
+    const stat = lstatSync(path);
     if (
       !opened.isFile() ||
+      stat.isSymbolicLink() ||
+      !stat.isFile() ||
+      opened.size < 1 ||
+      opened.size > max ||
       opened.ino !== stat.ino ||
       opened.dev !== stat.dev ||
       opened.size !== stat.size
@@ -433,13 +441,14 @@ export async function importWorkbenchSourceDataWithProofsV1(
   directory(root);
   const trust = trustAt(root);
   const checked = verifyWorkbenchSourceDataEnvelopeV1(bytes, trust, now);
+  let runtimeDescriptor: PreparedEccRuntimeDescriptorV1 | undefined;
   if (checked.payload.scanner === undefined) {
     verifyWorkbenchSourceDataV1(bytes, trust, now);
   } else {
     if (!options.sourceRoot)
       fail("Scanner proof import requires --scanner-source with exact source bytes");
-    const { verifySourceDataScannerV1 } = await import("./source-data-scanner.js");
-    await verifySourceDataScannerV1(
+    const { prepareSourceDataScannerRuntimeFactsV1 } = await import("./source-data-scanner.js");
+    const scanner = await prepareSourceDataScannerRuntimeFactsV1(
       checked.payload.sourceBundle,
       checked.payload.scanner,
       options.sourceRoot,
@@ -448,6 +457,12 @@ export async function importWorkbenchSourceDataWithProofsV1(
       now,
       options.proofRoot,
     );
+    if (
+      canonicalStrictJsonSha256V1(scanner.evidence) !==
+      canonicalStrictJsonSha256V1(checked.payload.sourceBundle.evidence)
+    )
+      fail("Scanner evidence differs from original verified reports");
+    runtimeDescriptor = scanner.descriptor;
     verifySourceDataQualificationV1(
       checked.payload.sourceBundle,
       checked.payload.qualification,
@@ -478,6 +493,7 @@ export async function importWorkbenchSourceDataWithProofsV1(
       ...sourceDataReceiptDigestsV1(checked.digest, effectiveTrust, checked.payload.sourceBundle),
       verifiedAt: now,
       expiresAt: new Date(expiry).toISOString(),
+      ...(runtimeDescriptor === undefined ? {} : { runtimeDescriptor }),
     });
   }
   importWitnesses.set(checked.digest, trustDigest);
@@ -599,9 +615,12 @@ export function importWorkbenchSourceDataV1(
     replaceSource(composed, trusted.payload.sourceBundle, trusted.sourceId);
     seal(composed.bundle);
     const target = fileFor(root, trusted.digest);
-    if (existsSync(target)) {
+    try {
+      writeFileSync(target, bytes, { flag: "wx", mode: 0o600 });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
       if (readBounded(target) !== bytes) fail("immutable snapshot differs");
-    } else writeFileSync(target, bytes, { flag: "wx", mode: 0o600 });
+    }
     index.sources[trusted.sourceId] = {
       active: trusted.digest,
       history: previous ? [previous.active, ...previous.history] : [],
@@ -638,6 +657,52 @@ function exactPins(bundle: AuthoringCatalogBundleV1, pins: readonly Pin[]) {
       asset.contentDigest === pin.contentDigest
     );
   });
+}
+
+/**
+ * Protected local runtime facts for exact historical ECC pins. Each value is
+ * re-bound to the active source-data envelope, current trust policy and its
+ * machine-local verification receipt before it leaves this module.
+ */
+export function historicalEccRuntimeDescriptorsFromSourceDataV1(
+  root = workbenchSourceDataRootV1(),
+  now = new Date().toISOString(),
+): readonly import("../../../ecc/runtime-descriptor.js").EccRuntimeDescriptorV1[] {
+  if (!existsSync(root) || !existsSync(join(root, "active.json"))) return [];
+  directory(root);
+  const trust = trustAt(root);
+  const index = indexAt(root);
+  verifySourceDataLocalHeadV1(root, index);
+  const descriptors: import("../../../ecc/runtime-descriptor.js").EccRuntimeDescriptorV1[] = [];
+  for (const entry of Object.values(index.sources)) {
+    for (const reference of [entry.active, ...entry.history]) {
+      const checked = verifyStored(root, readBounded(fileFor(root, reference)), trust, now, true);
+      if (checked.digest !== reference) fail("historical source snapshot identity mismatch");
+      const descriptor = readSourceDataLocalRuntimeDescriptorV1(
+        root,
+        sourceDataReceiptDigestsV1(
+          checked.digest,
+          effectiveSourceTrust(checked),
+          checked.payload.sourceBundle,
+        ),
+        now,
+        true,
+      );
+      if (descriptor === undefined) continue;
+      const sources = Object.values(checked.payload.sourceBundle.sources);
+      const source = sources.length === 1 ? sources[0] : undefined;
+      if (
+        source === undefined ||
+        source.upstreamOrigin.kind !== "git" ||
+        source.upstreamOrigin.locator !== descriptor.source.repository ||
+        source.revision.id !== descriptor.source.commit ||
+        source.revision.contentDigest !== descriptor.compilerInputDigest
+      )
+        fail("runtime descriptor does not bind the retained source snapshot");
+      descriptors.push(descriptor);
+    }
+  }
+  return descriptors;
 }
 
 /** Reconstruct authorized source data and retain exact saved pins; never import caller action bindings. */

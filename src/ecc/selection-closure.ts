@@ -2,8 +2,30 @@ import type { EccComponentId, EccMcpComponentId } from "./components.js";
 import { eccModuleDependencyIds } from "./evidence.js";
 import { eccComponentRequiredModuleRootIds } from "./materialize.js";
 
-/** Exact policy provenance paths, including narrow adapter-owned aliases. */
-export function eccSelectionSourcePaths(id: string, catalogPaths: readonly string[]): string[] {
+/**
+ * Structural dependencies carried by a sealed historical ECC runtime descriptor.
+ *
+ * The descriptor resolver is the authority boundary. This is only the pure
+ * closure view it passes to consumers after authenticating the descriptor and
+ * its adapter compatibility; callers without it keep the active snapshot.
+ */
+export interface EccStructuralRelationView {
+  readonly mandatoryRequirementsById: ReadonlyMap<string, readonly string[]>;
+}
+
+/**
+ * Exact policy provenance paths. The active catalog keeps its narrow
+ * adapter-owned aliases. A sealed historical descriptor supplies its own exact
+ * paths and never inherits aliases from the current snapshot.
+ */
+export function eccSelectionSourcePaths(
+  id: string,
+  catalogPaths: readonly string[],
+  historicalComponentPaths?: ReadonlyMap<string, readonly string[]>,
+): string[] {
+  if (historicalComponentPaths !== undefined) {
+    return [...(historicalComponentPaths.get(id) ?? [])];
+  }
   const paths = new Set(catalogPaths);
   if (id === "baseline:rules") paths.add("rules");
   if (id.startsWith("skill:")) {
@@ -34,7 +56,11 @@ export function eccPreferredSelectionSourcePath(
  * Trust-boundary callers must first prove the identifier belongs to the active
  * pinned catalog; this lower-level helper stays total for synthetic tests.
  */
-export function eccMandatoryRequirementIds(id: string): string[] {
+export function eccMandatoryRequirementIds(
+  id: string,
+  relations?: EccStructuralRelationView,
+): string[] {
+  if (relations !== undefined) return [...(relations.mandatoryRequirementsById.get(id) ?? [])];
   if (id.startsWith("runtime:")) return [];
   try {
     return [

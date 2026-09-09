@@ -14,13 +14,13 @@ function deepFreeze<T>(value: T): T {
  */
 export const CATALOG_QUALIFICATION_RELEASE_POLICY_V1 = deepFreeze({
   version: 1,
-  catalogCommit: "5e18dd66e42f91c30e4c5acd81d41f1e33cd987a",
+  catalogCommit: "b019b4e9d6260915a49d177bcc22b58518305dd4",
   publisher: {
     repository: "samartomar/aih-catalog",
     workflow: "samartomar/aih-catalog/.github/workflows/signed-catalog-v2.yml",
     ref: "refs/heads/main",
     issuer: "https://token.actions.githubusercontent.com",
-    commit: "5e18dd66e42f91c30e4c5acd81d41f1e33cd987a",
+    commit: "b019b4e9d6260915a49d177bcc22b58518305dd4",
     /** Receipt basename is derived from its strict Catalog entryId at verification. */
     subjectName: "<entryId>.json",
   },
@@ -29,7 +29,7 @@ export const CATALOG_QUALIFICATION_RELEASE_POLICY_V1 = deepFreeze({
     workflow: "samartomar/aih-catalog/.github/workflows/signed-catalog-v2.yml",
     ref: "refs/heads/main",
     issuer: "https://token.actions.githubusercontent.com",
-    commit: "5e18dd66e42f91c30e4c5acd81d41f1e33cd987a",
+    commit: "b019b4e9d6260915a49d177bcc22b58518305dd4",
     subjectName: "qualification-receipt-set.json",
   },
 } as const satisfies {
@@ -44,14 +44,14 @@ export const CATALOG_QUALIFICATION_RELEASE_POLICIES_V1 = deepFreeze([
   CATALOG_QUALIFICATION_RELEASE_POLICY_V1,
   {
     ...CATALOG_QUALIFICATION_RELEASE_POLICY_V1,
-    catalogCommit: "b019b4e9d6260915a49d177bcc22b58518305dd4",
+    catalogCommit: "5e18dd66e42f91c30e4c5acd81d41f1e33cd987a",
     publisher: {
       ...CATALOG_QUALIFICATION_RELEASE_POLICY_V1.publisher,
-      commit: "b019b4e9d6260915a49d177bcc22b58518305dd4",
+      commit: "5e18dd66e42f91c30e4c5acd81d41f1e33cd987a",
     },
     receiptSetPublisher: {
       ...CATALOG_QUALIFICATION_RELEASE_POLICY_V1.receiptSetPublisher,
-      commit: "b019b4e9d6260915a49d177bcc22b58518305dd4",
+      commit: "5e18dd66e42f91c30e4c5acd81d41f1e33cd987a",
     },
   },
 ] as const);

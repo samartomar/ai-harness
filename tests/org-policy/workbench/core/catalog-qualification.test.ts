@@ -9,8 +9,20 @@ import {
   governanceDecisionSourceDigestV2,
   governanceDecisionSubjectDigestV2,
 } from "../../../../src/org-policy/governance-decision-v2.js";
-import type { AuthoringCatalogBundleV1 } from "../../../../src/org-policy/workbench/contracts.js";
-import { CATALOG_QUALIFICATION_RELEASE_POLICY_V1 } from "../../../../src/org-policy/workbench/core/catalog-qualification-policy-v1.js";
+import {
+  type AuthoringCatalogBundleV1,
+  CatalogQualificationSummariesV1Schema,
+} from "../../../../src/org-policy/workbench/contracts.js";
+import {
+  packagedCatalogQualificationBindingsV1,
+  packagedCatalogQualificationProjectionsV1,
+  packagedCatalogQualificationRecordsV1,
+} from "../../../../src/org-policy/workbench/core/catalog-qualification-package-v1.js";
+import {
+  CATALOG_QUALIFICATION_RELEASE_POLICIES_V1,
+  CATALOG_QUALIFICATION_RELEASE_POLICY_V1,
+  catalogQualificationReleasePolicyMetadataV1,
+} from "../../../../src/org-policy/workbench/core/catalog-qualification-policy-v1.js";
 import type {
   CatalogQualificationClosureV1,
   CompilerQualificationBindingV1,
@@ -265,6 +277,44 @@ function artifacts() {
 }
 
 describe("Core Catalog qualification preparation", () => {
+  it("packages the verified 427-record Catalog evidence set under the current b019 publisher", () => {
+    const records = packagedCatalogQualificationRecordsV1();
+    const bindings = packagedCatalogQualificationBindingsV1();
+    const projections = packagedCatalogQualificationProjectionsV1();
+    expect(records).toHaveLength(427);
+    expect(bindings).toHaveLength(427);
+    expect(projections).toHaveLength(1);
+    const summaries = CatalogQualificationSummariesV1Schema.parse(projections[0]?.summary);
+    const summaryValues = Object.values(summaries);
+    const sourceCounts = new Map<string, number>();
+    for (const summary of summaryValues)
+      sourceCounts.set(summary.sourceId, (sourceCounts.get(summary.sourceId) ?? 0) + 1);
+    expect(summaryValues).toHaveLength(427);
+    expect(Object.fromEntries(sourceCounts)).toEqual({
+      "source:anthropics-skills": 14,
+      "source:ecc": 367,
+      "source:mattpocock": 25,
+      "source:ponytail": 7,
+      "source:superpowers": 14,
+    });
+    expect(new Set(summaryValues.map((summary) => summary.state))).toEqual(new Set(["qualified"]));
+    expect(new Set(summaryValues.map((summary) => summary.verifiedAt))).toEqual(
+      new Set(["2026-09-09T01:36:48Z"]),
+    );
+    expect(
+      records.every(
+        (record) => record.publisher.commit === "b019b4e9d6260915a49d177bcc22b58518305dd4",
+      ),
+    ).toBe(true);
+    expect(
+      records.every(
+        (record) => record.receiptSetPublisher.subjectName === "qualification-receipt-set.json",
+      ),
+    ).toBe(true);
+    expect(CATALOG_QUALIFICATION_RELEASE_POLICY_V1.catalogCommit).toBe(
+      "b019b4e9d6260915a49d177bcc22b58518305dd4",
+    );
+  });
   it.each(["valid", "duplicate", "missing", "wrong-digest", "malformed", "overflow"] as const)(
     "checks exact membership in a bounded multi-receipt attestation: %s",
     async (scenario) => {
@@ -352,7 +402,21 @@ describe("Core Catalog qualification preparation", () => {
       ),
     ).toBeUndefined();
   });
-  it.each(["5e18dd66e42f91c30e4c5acd81d41f1e33cd987a", "b019b4e9d6260915a49d177bcc22b58518305dd4"])(
+  it("uses the merged Catalog publisher for preparation metadata and retains the historical publisher", () => {
+    const current = "b019b4e9d6260915a49d177bcc22b58518305dd4";
+    const historical = "5e18dd66e42f91c30e4c5acd81d41f1e33cd987a";
+    expect(CATALOG_QUALIFICATION_RELEASE_POLICY_V1).toMatchObject({
+      catalogCommit: current,
+      publisher: { commit: current },
+      receiptSetPublisher: { commit: current },
+    });
+    expect(catalogQualificationReleasePolicyMetadataV1.catalogCommit).toBe(current);
+    expect(CATALOG_QUALIFICATION_RELEASE_POLICIES_V1.map((policy) => policy.catalogCommit)).toEqual(
+      [current, historical],
+    );
+  });
+
+  it.each(CATALOG_QUALIFICATION_RELEASE_POLICIES_V1.map((policy) => policy.catalogCommit))(
     "requires the fixed GH boundary for retained publisher %s",
     async (commit) => {
       const fixture = artifacts();
@@ -402,6 +466,33 @@ describe("Core Catalog qualification preparation", () => {
         "2026-09-01T00:00:00Z",
       ),
     ).resolves.toBeUndefined();
+  });
+
+  it("reuses verified statements only within one call and still rejects duplicate asset claims", async () => {
+    const input = artifacts();
+    let calls = 0;
+    vi.mocked(defaultRunner).mockImplementation(async () => {
+      const receipt = calls++ % 2 === 0;
+      return {
+        code: 0,
+        stderr: "",
+        stdout: ghResult(
+          receipt ? input.publisher : input.receiptSetPublisher,
+          receipt ? input.receiptBytes : input.receiptSetBytes,
+        ),
+      };
+    });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      expect(
+        await verifyCatalogQualificationArtifactsForPackagingV1(
+          input.bundle,
+          input.coreBindings,
+          [input, input],
+          "2026-09-02T00:00:00Z",
+        ),
+      ).toBeUndefined();
+      expect(calls).toBe((attempt + 1) * 2);
+    }
   });
 
   it("does not mint from a GH result bound to a different publisher", async () => {

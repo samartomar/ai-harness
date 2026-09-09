@@ -2,6 +2,7 @@ import type { EccComponentId } from "./components.js";
 import type { DestinationExpectation } from "./materialization-fs.js";
 import type {
   EccComponentProvenance,
+  EccCoreDerivedEvidenceReferenceV1,
   EccMaterializationOperation,
   EccMaterializationReceipt,
   EccMaterializedComponent,
@@ -33,6 +34,8 @@ export interface EccMaterializationComponentInput {
 export interface EccMaterializationRequest {
   root: string;
   components: readonly EccMaterializationComponentInput[];
+  /** Immutable references to sealed historical evidence; never evidence authority itself. */
+  coreDerivedEvidence?: EccCoreDerivedEvidenceReferenceV1;
 }
 
 export type EccMaterializationAction =
@@ -158,4 +161,5 @@ export interface ResolvedComponent {
 export interface ResolvedRequest {
   root: string;
   components: ResolvedComponent[];
+  coreDerivedEvidence?: EccCoreDerivedEvidenceReferenceV1;
 }

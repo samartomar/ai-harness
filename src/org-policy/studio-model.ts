@@ -32,7 +32,7 @@ import {
 } from "./governance-decision-v1.js";
 import {
   packagedScannerCollectionEvidenceV1,
-  packagedScannerCollectionOverlayV1,
+  projectScannerCollectionEvidenceV1,
 } from "./packaged-collection-evidence-v1.js";
 import {
   packagedPublicBaselineEvidenceV1,
@@ -407,14 +407,15 @@ function buildPolicyStudioModel(
     sourceDataPins !== undefined
       ? prepareWorkbenchCatalog(undefined, { ...options, sourceDataPins, packageDataOnly: true })
       : packagedPreparedWorkbenchCatalogV1();
+  const scannerCollectionRecords = packagedScannerCollectionEvidenceV1();
   const packagedEvidence = {
     ...packagedPublicBaselineOverlayV1(prepared.bundle),
-    ...packagedScannerCollectionOverlayV1(prepared.bundle),
+    ...projectScannerCollectionEvidenceV1(prepared.bundle, scannerCollectionRecords),
   };
+  let evidenceChanged = false;
   if (Object.keys(packagedEvidence).length > 0) {
     prepared.bundle.evidence = { ...prepared.bundle.evidence, ...packagedEvidence };
-    prepared.bundle.provenance.bundleDigest = `sha256:${canonicalStrictJsonSha256V1({ ...prepared.bundle, provenance: {} })}`;
-    verifyAuthoringCatalogBundleIntegrityV1(prepared.bundle);
+    evidenceChanged = true;
   }
   if (options?.verifiedBaseline !== undefined) {
     const evidence = workbenchEvidenceFromVerifiedBaselineV1(
@@ -423,14 +424,18 @@ function buildPolicyStudioModel(
       options.verifiedBaseline.now,
     );
     prepared.bundle.evidence = { ...prepared.bundle.evidence, ...evidence };
-    prepared.bundle.provenance.bundleDigest = `sha256:${canonicalStrictJsonSha256V1({ ...prepared.bundle, provenance: {} })}`;
-    verifyAuthoringCatalogBundleIntegrityV1(prepared.bundle);
+    evidenceChanged = true;
   }
   const qualification = preparePackagedCatalogQualificationV1(prepared.bundle);
   if (qualification !== undefined) {
     const qualified = catalogQualificationPreparedBundleV1(prepared.bundle, qualification);
     if (qualified === undefined) throw new Error("Prepared Catalog qualification lost custody.");
     prepared.bundle = qualified;
+    evidenceChanged = true;
+  }
+  // These independently verified overlays change only evidence/qualification.
+  // Seal and inspect their final composition before any source update consumes it.
+  if (evidenceChanged) {
     prepared.bundle.provenance.bundleDigest = `sha256:${canonicalStrictJsonSha256V1({ ...prepared.bundle, provenance: {} })}`;
     verifyAuthoringCatalogBundleIntegrityV1(prepared.bundle);
   }
@@ -446,7 +451,7 @@ function buildPolicyStudioModel(
       expectedCatalogPublisher: catalogQualificationReleasePolicyMetadataV1,
       scanPublications: [
         ...packagedWorkbenchSourcePublicationsV1(prepared.bundle),
-        ...packagedScannerCollectionEvidenceV1().flatMap((record) =>
+        ...scannerCollectionRecords.flatMap((record) =>
           record.publications.map((publication) => ({
             source: record.catalog.id,
             publisher: publication.repository,

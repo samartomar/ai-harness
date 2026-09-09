@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
@@ -38,6 +38,88 @@ test("one installed Core version refreshes a source and preserves old browser po
     expect(result.status, result.stderr || result.stdout).toBe(0);
     return result.stdout;
   };
+  const invokeAsync = (
+    args: string[],
+    cwd: string,
+    extraEnv: Record<string, string> = {},
+  ): Promise<{
+    command: string;
+    failure?: Error;
+    signal: NodeJS.Signals | null;
+    status: number | null;
+    stderr: string;
+    stdout: string;
+    wallMs: number;
+  }> =>
+    new Promise((complete) => {
+      const started = performance.now();
+      const child = spawn(process.execPath, args, {
+        cwd,
+        env: { ...env, ...extraEnv },
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true,
+      });
+      const maxBuffer = 8 * 1024 * 1024;
+      let stdout = "";
+      let stderr = "";
+      let stdoutBytes = 0;
+      let stderrBytes = 0;
+      let failure: Error | undefined;
+      let forceKill: NodeJS.Timeout | undefined;
+      let timeout: NodeJS.Timeout | undefined;
+      const terminate = (error: Error) => {
+        if (failure !== undefined) return;
+        failure = error;
+        if (!child.killed) child.kill("SIGTERM");
+        forceKill = setTimeout(() => {
+          if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+        }, 5_000);
+      };
+      timeout = setTimeout(() => {
+        terminate(new Error("Installed Workbench command timed out after 30000ms"));
+      }, 30_000);
+      const append = (stream: "stdout" | "stderr", value: Buffer) => {
+        if (failure !== undefined) return;
+        if (stream === "stdout") {
+          stdoutBytes += value.length;
+          stdout += value.toString("utf8");
+          if (stdoutBytes > maxBuffer)
+            terminate(new Error("Installed Workbench command stdout exceeds its byte budget"));
+          return;
+        }
+        stderrBytes += value.length;
+        stderr += value.toString("utf8");
+        if (stderrBytes > maxBuffer)
+          terminate(new Error("Installed Workbench command stderr exceeds its byte budget"));
+      };
+      child.stdout.on("data", (value: Buffer) => append("stdout", value));
+      child.stderr.on("data", (value: Buffer) => append("stderr", value));
+      child.once("error", terminate);
+      child.once("close", (status, signal) => {
+        if (timeout !== undefined) clearTimeout(timeout);
+        if (forceKill !== undefined) clearTimeout(forceKill);
+        complete({
+          command: args.slice(1).join(" "),
+          ...(failure === undefined ? {} : { failure }),
+          signal,
+          status,
+          stderr,
+          stdout,
+          wallMs: performance.now() - started,
+        });
+      });
+    });
+  const expectAsyncSuccess = (
+    result: Awaited<ReturnType<typeof invokeAsync>>,
+    command = result.command,
+  ) => {
+    commandTimings.push({ command, wallMs: result.wallMs });
+    expect(
+      result.failure?.message ?? result.status,
+      result.failure?.message ?? (result.stderr || result.stdout),
+    ).toBe(0);
+    return result.stdout;
+  };
   const version = invoke([cli, "--version"]);
   const codeDigest = async () => {
     const hash = createHash("sha256");
@@ -72,26 +154,43 @@ test("one installed Core version refreshes a source and preserves old browser po
     );
     expect(imported.digest).toMatch(/^sha256:[a-f0-9]{64}$/);
   }
-  invoke([
-    cli,
-    "policy",
-    "generate",
-    "--apply",
-    "--policy-input",
-    "old-policy.json",
-    "--out",
-    "historical.html",
+  const oldPolicyPath = resolve(fixture, "old-policy.json");
+  const historicalAdministrator = resolve(fixture, "historical-administrator");
+  const currentUiAdministrator = resolve(fixture, "current-ui-administrator");
+  const historicalHtml = resolve(historicalAdministrator, "historical.html");
+  const currentHtml = resolve(currentUiAdministrator, "current.html");
+  await Promise.all([
+    mkdir(historicalAdministrator, { recursive: true }),
+    mkdir(currentUiAdministrator, { recursive: true }),
   ]);
-  const ui = JSON.parse(
-    invoke([
-      resolve(fixtureDirectory, "packed-ui-smoke.mjs"),
-      cli,
-      pathToFileURL(resolve(fixtureDirectory, "packed-ui-browser-preload.mjs")).href,
-      resolve(fixture, "current.html"),
-    ]),
-  );
+  const [historicalResult, uiResult] = await Promise.all([
+    invokeAsync(
+      [
+        cli,
+        "policy",
+        "generate",
+        "--apply",
+        "--policy-input",
+        oldPolicyPath,
+        "--out",
+        historicalHtml,
+      ],
+      historicalAdministrator,
+    ),
+    invokeAsync(
+      [
+        resolve(fixtureDirectory, "packed-ui-smoke.mjs"),
+        cli,
+        pathToFileURL(resolve(fixtureDirectory, "packed-ui-browser-preload.mjs")).href,
+        currentHtml,
+      ],
+      currentUiAdministrator,
+    ),
+  ]);
+  expectAsyncSuccess(historicalResult);
+  const ui = JSON.parse(expectAsyncSuccess(uiResult));
   expect(ui.catalogSourceRevisions["source:mattpocock"]).toBe("f".repeat(40));
-  await page.goto(pathToFileURL(resolve(fixture, "current.html")).href);
+  await page.goto(pathToFileURL(currentHtml).href);
   await page.locator('[data-workbench-source-tab="source:mattpocock"]').click();
   await page
     .locator(
@@ -107,35 +206,52 @@ test("one installed Core version refreshes a source and preserves old browser po
   const downloadEvent = page.waitForEvent("download");
   await page.locator("#download").click();
   await (await downloadEvent).saveAs(resolve(fixture, "new-policy.json"));
-  for (const file of ["old-policy.json", "new-policy.json"]) {
-    const validation = invoke([cli, "policy", "validate", fixture, "--json", "--no-log"], {
-      AIH_ORG_POLICY: resolve(fixture, file),
-    });
-    await testInfo.attach(file + "-installed-validation", {
+  const newPolicyPath = resolve(fixture, "new-policy.json");
+  const oldValidationAdministrator = resolve(fixture, "old-validation-administrator");
+  const newValidationAdministrator = resolve(fixture, "new-validation-administrator");
+  const exportVerificationAdministrator = resolve(fixture, "export-verification-administrator");
+  await Promise.all([
+    mkdir(oldValidationAdministrator, { recursive: true }),
+    mkdir(newValidationAdministrator, { recursive: true }),
+    mkdir(exportVerificationAdministrator, { recursive: true }),
+  ]);
+  const [oldValidationResult, newValidationResult, consumptionResult] = await Promise.all([
+    invokeAsync(
+      [cli, "policy", "validate", fixture, "--json", "--no-log"],
+      oldValidationAdministrator,
+      { AIH_ORG_POLICY: oldPolicyPath },
+    ),
+    invokeAsync(
+      [cli, "policy", "validate", fixture, "--json", "--no-log"],
+      newValidationAdministrator,
+      { AIH_ORG_POLICY: newPolicyPath },
+    ),
+    invokeAsync(
+      [
+        "--import",
+        "tsx",
+        resolve("tools/verify-workbench-export.ts"),
+        oldPolicyPath,
+        "mattpocock/skill:tdd",
+        newPolicyPath,
+        "mattpocock/skill:tdd",
+      ],
+      exportVerificationAdministrator,
+    ),
+  ]);
+  const validations = [
+    ["old-policy.json", oldValidationResult],
+    ["new-policy.json", newValidationResult],
+  ] as const;
+  for (const [file, result] of validations) {
+    const validation = expectAsyncSuccess(result);
+    await testInfo.attach(`${file}-installed-validation`, {
       body: validation,
       contentType: "application/json",
     });
   }
-  const consumptionStarted = performance.now();
-  const consumption = spawnSync(
-    process.execPath,
-    [
-      "--import",
-      "tsx",
-      "tools/verify-workbench-export.ts",
-      resolve(fixture, "old-policy.json"),
-      "mattpocock/skill:tdd",
-      resolve(fixture, "new-policy.json"),
-      "mattpocock/skill:tdd",
-    ],
-    { env, encoding: "utf8", windowsHide: true, timeout: 30_000 },
-  );
-  expect(consumption.status, consumption.stderr || consumption.stdout).toBe(0);
-  commandTimings.push({
-    command: "verify both exported policies",
-    wallMs: performance.now() - consumptionStarted,
-  });
-  await page.goto(pathToFileURL(resolve(fixture, "historical.html")).href);
+  expectAsyncSuccess(consumptionResult, "verify both exported policies");
+  await page.goto(pathToFileURL(historicalHtml).href);
   const restored = JSON.parse(await page.locator("#config-preview").inputValue());
   expect(restored.authoringSelections).toEqual(JSON.parse(oldPolicy).authoringSelections);
   expect(restored.authoringSelections.roots[0].sourceRevisionId).toBe(sourceBefore);
@@ -182,7 +298,7 @@ test("published source evidence survives installed browser export and inert poli
     ),
   ).toBe(true);
   expect(detail.catalogQualification.text).toContain(
-    "samartomar/aih-catalog@5e18dd66e42f91c30e4c5acd81d41f1e33cd987a",
+    "samartomar/aih-catalog@b019b4e9d6260915a49d177bcc22b58518305dd4",
   );
   expect(detail.catalogQualification.text).toContain("does not grant organization approval");
   expect(["current", "expired"]).toContain(detail.catalogQualification.state);

@@ -12,7 +12,6 @@ import {
   existsSync,
   lstatSync,
   mkdirSync,
-  readFileSync,
   realpathSync,
   renameSync,
   unlinkSync,
@@ -27,8 +26,16 @@ import {
   canonicalStrictJsonSha256V1,
   parseStrictJsonObjectV1,
 } from "../../../contract/strict-json-v1.js";
+import {
+  type EccRuntimeDescriptorSealV1,
+  type EccRuntimeDescriptorV1,
+  inspectEccRuntimeDescriptorSealV1,
+  type PreparedEccRuntimeDescriptorV1,
+} from "../../../ecc/runtime-descriptor.js";
+import { readRegularFileWithStats } from "../../../internals/fsxn.js";
 import { VERSION } from "../../../version.js";
 import { CATALOG_QUALIFICATION_RELEASE_POLICY_V1 } from "./catalog-qualification-policy-v1.js";
+import { sealPreparedEccRuntimeDescriptorV1 } from "./source-data-runtime-descriptor-custody.js";
 
 // Changing verification semantics invalidates receipts created by older code.
 const VERIFIER_POLICY = "workbench-source-verifier/v1";
@@ -40,7 +47,7 @@ const VERIFIER_POLICY_DIGEST = canonicalStrictJsonSha256V1({
 });
 const ReceiptSchema = z
   .object({
-    version: z.literal("local-workbench-verification/v1"),
+    version: z.enum(["local-workbench-verification/v1", "local-workbench-verification/v2"]),
     verifierPolicy: z.literal(VERIFIER_POLICY),
     verifierPolicyDigest: z.literal(VERIFIER_POLICY_DIGEST),
     store: z.string().regex(/^[a-f0-9]{64}$/),
@@ -49,8 +56,29 @@ const ReceiptSchema = z
     summaryDigest: z.string().regex(/^[a-f0-9]{64}$/),
     verifiedAt: z.string().datetime(),
     expiresAt: z.string().datetime(),
+    runtimeDescriptor: z
+      .object({
+        bytesBase64: z
+          .string()
+          .min(1)
+          .max(16 * 1024 * 1024),
+        sha256: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+      })
+      .strict()
+      .optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((receipt, ctx) => {
+    if (
+      (receipt.version === "local-workbench-verification/v1") !==
+      (receipt.runtimeDescriptor === undefined)
+    )
+      ctx.addIssue({
+        code: "custom",
+        path: ["runtimeDescriptor"],
+        message: "runtime descriptor receipt version mismatch",
+      });
+  });
 const SignedSchema = z
   .object({ payload: ReceiptSchema, signature: z.string().length(88) })
   .strict();
@@ -136,7 +164,8 @@ function key(create: boolean) {
     permissions(root, true);
   } else if (create) permissions(root);
   const path = join(root, "verification-key.pkcs8.pem");
-  if (!existsSync(path)) {
+  let material = readRegularFileWithStats(path, { maxBytes: 8192 });
+  if (!material) {
     // Never regenerate a missing key next to existing receipts.
     if (!create || existsSync(join(root, "initialized"))) fail();
     const generated = generateKeyPairSync("ed25519");
@@ -146,8 +175,10 @@ function key(create: boolean) {
     });
     permissions(path, true);
     writeFileSync(join(root, "initialized"), "local-verification/v1", { flag: "wx", mode: 0o600 });
+    material = readRegularFileWithStats(path, { maxBytes: 8192 });
   }
-  const stat = lstatSync(path);
+  if (!material) fail();
+  const stat = material.stats;
   if (
     !stat.isFile() ||
     stat.isSymbolicLink() ||
@@ -158,7 +189,7 @@ function key(create: boolean) {
   )
     fail();
   permissions(root, false, path);
-  const privateKey = createPrivateKey(readFileSync(path));
+  const privateKey = createPrivateKey(material.contents);
   if (privateKey.asymmetricKeyType !== "ed25519") fail();
   return { root, privateKey };
 }
@@ -170,16 +201,27 @@ function receiptPath(root: string, digest: string, directory: string) {
 /** Local receipt only: neither portable public provenance nor Scanner/Catalog authority. */
 export function writeSourceDataLocalReceiptV1(
   root: string,
-  receipt: Omit<Receipt, "version" | "verifierPolicy" | "verifierPolicyDigest" | "store">,
+  receipt: Omit<
+    Receipt,
+    "version" | "verifierPolicy" | "verifierPolicyDigest" | "store" | "runtimeDescriptor"
+  > & { runtimeDescriptor?: PreparedEccRuntimeDescriptorV1 },
 ): void {
   storeId(root);
   const local = key(true);
+  const runtimeDescriptor =
+    receipt.runtimeDescriptor === undefined
+      ? undefined
+      : sealPreparedEccRuntimeDescriptorV1(receipt.runtimeDescriptor);
   const payload = ReceiptSchema.parse({
     ...receipt,
-    version: "local-workbench-verification/v1",
+    version:
+      runtimeDescriptor === undefined
+        ? "local-workbench-verification/v1"
+        : "local-workbench-verification/v2",
     verifierPolicy: VERIFIER_POLICY,
     verifierPolicyDigest: VERIFIER_POLICY_DIGEST,
     store: storeId(root),
+    ...(runtimeDescriptor === undefined ? {} : { runtimeDescriptor }),
   });
   const bytes = canonicalStrictJsonBytesV1({
     payload,
@@ -196,13 +238,13 @@ export function verifySourceDataLocalReceiptV1(
   expected: Pick<Receipt, "envelopeDigest" | "trustDigest" | "summaryDigest">,
   now: string,
   historical: boolean,
-): void {
+): Receipt {
   storeId(root);
   const local = key(false);
   const path = receiptPath(root, expected.envelopeDigest, local.root);
-  const stat = lstatSync(path);
-  if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 || stat.size > 4096) fail();
-  const bytes = readFileSync(path, "utf8");
+  const material = readRegularFileWithStats(path, { maxBytes: 20 * 1024 * 1024 });
+  if (material?.identity.nlink !== 1n) fail();
+  const bytes = material.contents.toString("utf8");
   const receipt = SignedSchema.parse(parseStrictJsonObjectV1(bytes, "Local verification receipt"));
   const signature = Buffer.from(receipt.signature, "base64");
   if (
@@ -222,6 +264,19 @@ export function verifySourceDataLocalReceiptV1(
     (!historical && Date.parse(receipt.payload.expiresAt) <= Date.parse(now))
   )
     fail();
+  return receipt.payload;
+}
+
+/** Reads a descriptor only after the same local signature and source-data digests pass. */
+export function readSourceDataLocalRuntimeDescriptorV1(
+  root: string,
+  expected: Pick<Receipt, "envelopeDigest" | "trustDigest" | "summaryDigest">,
+  now: string,
+  historical: boolean,
+): EccRuntimeDescriptorV1 | undefined {
+  const receipt = verifySourceDataLocalReceiptV1(root, expected, now, historical);
+  if (receipt.runtimeDescriptor === undefined) return undefined;
+  return inspectEccRuntimeDescriptorSealV1(receipt.runtimeDescriptor as EccRuntimeDescriptorSealV1);
 }
 
 /** Canonical digests of independently verified facts, never a replacement for the local signature. */
@@ -254,10 +309,10 @@ export function verifySourceDataLocalHeadV1(root: string, index: unknown): void 
   const path = join(privateRoot(), `head-${storeId(root)}.json`);
   if (!existsSync(path)) return;
   const local = key(false);
-  const stat = lstatSync(path);
-  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 4096) fail();
+  const material = readRegularFileWithStats(path, { maxBytes: 4096 });
+  if (material?.identity.nlink !== 1n) fail();
   const head = HeadSchema.parse(
-    parseStrictJsonObjectV1(readFileSync(path, "utf8"), "Local source head"),
+    parseStrictJsonObjectV1(material.contents.toString("utf8"), "Local source head"),
   );
   const signature = Buffer.from(head.signature, "base64");
   if (
@@ -286,7 +341,9 @@ export function stageSourceDataLocalHeadV1(
   }
   const local = key(true);
   const path = join(local.root, `head-${storeId(root)}.json`);
-  const before = existsSync(path) ? readFileSync(path) : undefined;
+  const priorMaterial = readRegularFileWithStats(path, { maxBytes: 4096 });
+  if (!priorMaterial && existsSync(path)) fail();
+  const before = priorMaterial?.contents;
   const payload = {
     version: "local-workbench-head/v1",
     store: storeId(root),

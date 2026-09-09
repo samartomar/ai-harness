@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { SCANNER_BASELINE_PUBLICATION_PUBLISHERS_V1 } from "../baseline-evidence/scanner-publication-policy.js";
@@ -11,7 +11,9 @@ import { packagedWorkbenchSourceDataRecordsV1 } from "../org-policy/workbench/co
 import { readSourceDataProofBlobV1 } from "../org-policy/workbench/core/source-data-proof-blobs.js";
 import {
   prepareSourceDataScannerEvidenceV1,
+  prepareSourceDataScannerRuntimeFactsV1,
   SourceDataScannerProofV1Schema,
+  sealPreparedEccRuntimeDescriptorV1,
 } from "../org-policy/workbench/core/source-data-scanner.js";
 import {
   acquireBoundedGithubSourceArchiveV1,
@@ -31,15 +33,17 @@ export function writePackagedSourceProofBlobV1(
   )
     throw new TypeError("Packaged original proof identity mismatch");
   const path = join(root, `${reference.sha256}.blob`);
-  if (existsSync(path)) {
-    readSourceDataProofBlobV1(
+  try {
+    writeFileSync(path, bytes, { flag: "wx", mode: 0o600 });
+  } catch (error) {
+    if ((error as { code?: unknown }).code !== "EEXIST") throw error;
+    const existing = readSourceDataProofBlobV1(
       { sha256: reference.sha256, bytes: reference.bytes },
       root,
       reference.bytes,
     );
-    return;
+    if (!existing.equals(bytes)) throw new TypeError("Packaged original proof identity mismatch");
   }
-  writeFileSync(path, bytes, { flag: "wx", mode: 0o600 });
 }
 async function download(url: string, maximum: number): Promise<Buffer> {
   const response = await fetch(url, { signal: AbortSignal.timeout(30_000), redirect: "follow" });
@@ -110,20 +114,46 @@ export async function verifyPackagedWorkbenchSourceDataV1(
         writePackagedSourceProofBlobV1(proofRoot, blob, await download(blob.url, blob.bytes));
       }
       stage = "original report verification";
-      const verified = await prepareSourceDataScannerEvidenceV1(
-        record.sourceBundle,
-        proof,
-        sourceRoot,
-        proof.preparedAt,
-        undefined,
-        new Date().toISOString(),
-        proofRoot,
-      );
+      const preparedRuntime =
+        record.runtimeDescriptor === undefined
+          ? undefined
+          : await prepareSourceDataScannerRuntimeFactsV1(
+              record.sourceBundle,
+              proof,
+              sourceRoot,
+              proof.preparedAt,
+              undefined,
+              new Date().toISOString(),
+              proofRoot,
+            );
+      const verified =
+        preparedRuntime?.evidence ??
+        (await prepareSourceDataScannerEvidenceV1(
+          record.sourceBundle,
+          proof,
+          sourceRoot,
+          proof.preparedAt,
+          undefined,
+          new Date().toISOString(),
+          proofRoot,
+        ));
       if (
         canonicalStrictJsonSha256V1(verified) !==
         canonicalStrictJsonSha256V1(record.sourceBundle.evidence)
       )
         throw new TypeError("Packaged source summaries differ from original verified reports");
+      if (record.runtimeDescriptor !== undefined) {
+        const sealed =
+          preparedRuntime?.descriptor === undefined
+            ? undefined
+            : sealPreparedEccRuntimeDescriptorV1(preparedRuntime.descriptor);
+        if (
+          sealed === undefined ||
+          sealed.sha256 !== record.runtimeDescriptor.sha256 ||
+          sealed.bytesBase64 !== record.runtimeDescriptor.bytesBase64
+        )
+          throw new TypeError("Packaged runtime descriptor differs from original verified reports");
+      }
       if (Object.keys(record.sourceBundle.qualifications ?? {}).length)
         throw new TypeError(
           "Package source qualifications require their independent Catalog preparation path",

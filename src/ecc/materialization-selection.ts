@@ -11,7 +11,7 @@ import {
   displaySafe,
   type EccComponentProvenance,
 } from "./materialization-receipt.js";
-import { eccMandatoryRequirementIds } from "./selection-closure.js";
+import { type EccStructuralRelationView, eccMandatoryRequirementIds } from "./selection-closure.js";
 
 /**
  * F2: the policy's evidence-passed effective selection.
@@ -122,6 +122,7 @@ function heldReason(held: BaselineHeldComponent): {
 export function resolveEccMaterializationSelection(
   policy: Pick<EffectiveOrgPolicy, "externalSelections">,
   evidence: EccSelectionEvidence,
+  relations?: EccStructuralRelationView,
 ): EccEffectiveSelectionResult {
   const authorizationById = new Map(
     evidence.authorizations.map((authorization) => [authorization.componentId, authorization]),
@@ -223,7 +224,7 @@ export function resolveEccMaterializationSelection(
     for (let index = included.length - 1; index >= 0; index -= 1) {
       const component = included[index];
       if (component === undefined) continue;
-      const missing = eccMandatoryRequirementIds(component.id).filter(
+      const missing = eccMandatoryRequirementIds(component.id, relations).filter(
         (dependency) => !includedIds.has(dependency),
       );
       if (missing.length === 0) continue;

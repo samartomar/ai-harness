@@ -29,6 +29,7 @@ export interface CaptureBaselineGateInput {
   componentIds: readonly string[];
   vendorLock: BaselineEvidenceLock;
   vendorLockSha256: string;
+  expectedSourceTreeSha256?: string;
   orgEvidence?: OrgBaselineEvidence;
   /** When set, only accepted-with-conditions decisions for this exact tuple apply. */
   acceptanceTuple?: AcceptanceTuple;
@@ -42,6 +43,7 @@ export interface BaselineGate {
   posture: Posture;
   vendorLock: BaselineEvidenceLock;
   vendorLockSha256: string;
+  expectedSourceTreeSha256?: string;
   orgEvidence?: OrgBaselineEvidence;
   acceptanceTuple?: AcceptanceTuple;
   authorizations: BaselineAuthorization[];
@@ -123,6 +125,7 @@ export function captureBaselineGate(input: CaptureBaselineGateInput): BaselineGa
     posture,
     vendorLock: input.vendorLock,
     vendorLockSha256: input.vendorLockSha256,
+    expectedSourceTreeSha256: input.expectedSourceTreeSha256,
     orgEvidence: input.orgEvidence,
     acceptanceTuple: input.acceptanceTuple,
   });
@@ -148,6 +151,7 @@ export function captureBaselineGate(input: CaptureBaselineGateInput): BaselineGa
     posture,
     vendorLock: input.vendorLock,
     vendorLockSha256: input.vendorLockSha256,
+    expectedSourceTreeSha256: input.expectedSourceTreeSha256,
     orgEvidence: input.orgEvidence,
     acceptanceTuple: input.acceptanceTuple,
     authorizations: verification.authorizations,
@@ -170,6 +174,7 @@ export async function baselineInstallPhasePlan(
     posture: gate.posture,
     vendorLock: gate.vendorLock,
     vendorLockSha256: gate.vendorLockSha256,
+    expectedSourceTreeSha256: gate.expectedSourceTreeSha256,
     orgEvidence: gate.orgEvidence,
     acceptanceTuple: gate.acceptanceTuple,
   });

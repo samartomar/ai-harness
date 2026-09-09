@@ -213,6 +213,11 @@ export const ScannerEvidenceProjectionRecordV1Schema = z
         Date.parse(observation.reportSignedAt)
       )
         ctx.addIssue({ code: "custom", message: "report verification window" });
+      if (
+        published !== undefined &&
+        Date.parse(published.publishedAt) >= Date.parse(observation.reportVerificationExpiresAt)
+      )
+        ctx.addIssue({ code: "custom", message: "publication outside report verification window" });
     }
     if (value.report.components.some((component) => !seen.has(component.id)))
       ctx.addIssue({ code: "custom", message: "report component lacks observation" });

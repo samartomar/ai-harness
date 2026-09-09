@@ -8,6 +8,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Retain verified exact-version ECC runtime data with authenticated Workbench
+  source updates. Compatible saved selections use their own paths and evidence
+  rather than the bundled baseline's metadata. Historical materialization
+  receipts distinguish original reports from Core-derived evaluation, and
+  expired or unsupported updates remain blocked.
+
 - Add 25 pinned Matt Pocock skills to the unreleased Policy Workbench catalog,
   with exact source and content pins, required support files, and MIT attribution.
   Selection records additive requested intent through the existing `--ui` entry.

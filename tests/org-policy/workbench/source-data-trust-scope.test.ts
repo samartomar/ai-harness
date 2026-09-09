@@ -13,7 +13,9 @@ import { packagedPreparedWorkbenchCatalogV1 } from "../../../src/org-policy/work
 
 // This test isolates local receipt policy binding, not the separately tested raw verifier.
 vi.mock("../../../src/org-policy/workbench/core/source-data-scanner.js", () => ({
-  verifySourceDataScannerV1: vi.fn(),
+  prepareSourceDataScannerRuntimeFactsV1: vi.fn(async (bundle: { evidence: unknown }) => ({
+    evidence: bundle.evidence,
+  })),
 }));
 const roots: string[] = [];
 afterEach(() => {

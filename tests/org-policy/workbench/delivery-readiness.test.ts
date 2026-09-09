@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { policyStudioModel } from "../../../src/org-policy/studio-model.js";
 import { inspectWorkbenchEvidenceCoverageV1 } from "../../../src/org-policy/workbench/delivery-readiness.js";
 import { prepareWorkbenchEvidenceCompositionsForReleaseV1 } from "../../../src/org-policy/workbench/providers/evidence-compositions.js";
 import { tinyStudioModel } from "../studio-test-fixture.js";
@@ -127,8 +126,47 @@ function currentVerifiedReport(asset: {
   };
 }
 
-function fullyReportedProductionBundle() {
-  const bundle = structuredClone(policyStudioModel().workbenchBundle);
+function fullyReportedCompositionFixture() {
+  const bundle = structuredClone(tinyStudioModel().workbenchBundle);
+  const asset = Object.values(bundle.assets)[0];
+  const source = Object.values(bundle.sources)[0];
+  if (!asset || !source) throw new Error("Missing composition fixture seed");
+  bundle.assets = {};
+  bundle.sources = {};
+  bundle.templates = {};
+  bundle.groups = {};
+  bundle.relations = [];
+  for (const provider of ["ecc", "superpowers", "ponytail"]) {
+    const sourceId = `source:${provider}`;
+    const profileId = `${provider}/profile:methodology`;
+    const skillId = `${provider}/skill:${provider}`;
+    bundle.sources[sourceId] = { ...source, id: sourceId };
+    bundle.assets[skillId] = {
+      ...asset,
+      id: skillId,
+      sourceId,
+      kind: "skill",
+      derivation: "upstream",
+      authoring: { action: "record-selection", supportedTargets: [] },
+    };
+    bundle.assets[profileId] = {
+      ...bundle.assets[skillId],
+      id: profileId,
+      kind: "profile",
+      derivation: "core-derived",
+      exclusiveSlot: "methodology",
+      methodologyKey: provider,
+    };
+    const templateId = `template:${provider}/methodology`;
+    bundle.templates[templateId] = {
+      id: templateId,
+      label: provider,
+      digest: `sha256:${"a".repeat(64)}`,
+      roots: [{ assetId: profileId, mode: "select", includeOptionalMembers: false }],
+      exclusions: [],
+    };
+    bundle.relations.push({ fromAssetId: profileId, toAssetId: skillId, kind: "requires" });
+  }
   bundle.evidence = Object.fromEntries(
     Object.values(bundle.assets).map((asset) => {
       const report = currentVerifiedReport(asset);
@@ -140,7 +178,7 @@ function fullyReportedProductionBundle() {
 
 describe("Core-derived methodology composition evidence", () => {
   it("uses an injected code-owned composition only after every upstream constituent has a current report", () => {
-    const bundle = fullyReportedProductionBundle();
+    const bundle = fullyReportedCompositionFixture();
     const releaseCompositions = prepareWorkbenchEvidenceCompositionsForReleaseV1(bundle);
     const now = "2026-09-07T00:00:00Z";
 
@@ -179,7 +217,7 @@ describe("Core-derived methodology composition evidence", () => {
   });
 
   it("keeps a failed constituent structurally covered, but never treats a synthetic profile report as proof", () => {
-    const bundle = fullyReportedProductionBundle();
+    const bundle = fullyReportedCompositionFixture();
     const releaseCompositions = prepareWorkbenchEvidenceCompositionsForReleaseV1(bundle);
     const now = "2026-09-07T00:00:00Z";
     const constituent = Object.values(bundle.assets).find(
@@ -207,7 +245,7 @@ describe("Core-derived methodology composition evidence", () => {
   });
 
   it("fails closed for invalid composition material, including cyclic relationships", () => {
-    const bundle = fullyReportedProductionBundle();
+    const bundle = fullyReportedCompositionFixture();
     bundle.relations.push({
       fromAssetId: "ponytail/skill:ponytail",
       toAssetId: "ponytail/profile:methodology",

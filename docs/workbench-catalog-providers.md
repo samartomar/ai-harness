@@ -316,6 +316,35 @@ offered assets only after complete file-and-digest containment checks. The UI
 identifies broader source reports and retains their findings and failed outcomes.
 This does not establish runtime behavior or organization approval.
 
+An archived Scanner publication retains its original custody-signature window
+and verification context. Core verifies that context and checks that the
+independently authenticated publication time fell within the original window.
+That short window is separate from current report freshness, which is bounded
+to 90 days from the original signed report date. Re-verification, publication,
+and import do not restart that age. Catalog qualification keeps its own signed
+expiry; neither kind of evidence grants organization permission.
+
+For ECC, a verified data snapshot can also retain an exact-version runtime
+descriptor for the existing materializer. Core reconstructs its component paths,
+required dependencies, optional riders, and source-tree digest from verified
+material. Before acquisition, Core checks that its current target adapter can
+interpret that descriptor. Unsupported destinations remain refusals; a snapshot
+cannot introduce an installer, executable adapter, or new permission.
+
+An authenticated local snapshot matching the saved policy takes precedence over
+packaged data. If that matching snapshot is expired or incompatible, Core stops
+instead of falling back to older packaged evidence. A different source revision
+does not replace the saved policy's revision. Source bytes are checked again at
+both baseline evidence gates before materialization.
+
+Historical ECC materialization receipts use version 2 to record separate
+descriptor, original-report, Core-derived evaluation, and projection digests,
+plus the original report component references for the materialized selection.
+The original report remains in the verified descriptor. The derived evaluation
+is an internal input to Core's existing checks, not a new Scanner report;
+mapped failed findings remain failures. Existing version 1 receipts remain
+readable. Neither receipt version grants organization approval.
+
 Large publications may be retained as digest-addressed proof files beside the
 signed snapshot and supplied with `--proof-root` during import. Verification
 requires `gh` at import time. Ordinary cached UI preparation needs neither `gh`

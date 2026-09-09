@@ -267,6 +267,14 @@ describe("independently published Scanner baseline consumption", () => {
       /report freshness/,
     );
   });
+
+  it("requires the original attestation strictly inside its signed custody window", async () => {
+    const value = fixture();
+    const publicationTimestamp = value.attestation[0]?.verificationResult.verifiedTimestamps[0];
+    if (publicationTimestamp === undefined) throw new Error("fixture timestamp missing");
+    publicationTimestamp.timestamp = "2026-09-03T13:30:00.000Z";
+    await expect(consume(value, "2026-09-03T13:31:00.000Z")).rejects.toThrow(/report freshness/);
+  });
   it("verifies discovery, immutable bytes, workflow provenance, freshness, and Scanner custody", async () => {
     await expect(consume()).resolves.toMatchObject({
       evidence: { id: "fixture", pinnedSha: "a".repeat(40) },

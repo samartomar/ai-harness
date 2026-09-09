@@ -57,6 +57,10 @@ import {
   type RegistrationLedger,
   readRegistrationLedger,
 } from "./registration.js";
+import {
+  type HistoricalEccRuntimeDescriptorContextV1,
+  resolveHistoricalEccRuntimeDescriptorV1,
+} from "./runtime-descriptor-resolver.js";
 import { eccLanguages } from "./select.js";
 import { type VerifiedEccRequest, verifiedEccInstallPlan } from "./verified.js";
 
@@ -109,6 +113,63 @@ function requestedCatalog(ctx: PlanContext): BaselineCatalog {
   return baselineCatalogById("ecc", requestedPin || undefined);
 }
 
+function resolveHistoricalRuntimeContext(
+  ctx: PlanContext,
+  policy: OrgPolicy,
+): HistoricalEccRuntimeDescriptorContextV1 | undefined {
+  if ((policy as { schemaVersion?: unknown }).schemaVersion !== 3) return undefined;
+  const requestedPin = (ctx.env.AIH_ECC_REF ?? "").trim();
+  if (requestedPin.length > 0 && !FULL_SHA.test(requestedPin)) {
+    throw new AihError(
+      "AIH_ECC_REF must be an exact lowercase 40-character commit SHA for evidence-gated installs",
+      "AIH_CONFIG",
+    );
+  }
+  const sourceTuples = new Map<string, { repository: string; commit: string }>();
+  for (const selection of policy.governance?.externalSelections ?? []) {
+    if (selection.framework !== "ecc") continue;
+    for (const item of selection.items) {
+      sourceTuples.set(`${item.source.repository}\0${item.source.commit}`, item.source);
+    }
+  }
+  // The normal current pin stays on the active catalog path. A bad or mixed
+  // V3 source tuple is delegated to the sealed resolver, which fails closed.
+  const current = baselineCatalogById("ecc");
+  const selected = sourceTuples.size === 1 ? sourceTuples.values().next().value : undefined;
+  if (
+    selected !== undefined &&
+    selected.repository.toLowerCase() === `${current.owner}/${current.repo}`.toLowerCase() &&
+    selected.commit === current.pinnedSha
+  ) {
+    if (requestedPin.length > 0 && requestedPin !== current.pinnedSha) {
+      throw new AihError(
+        `AIH_ECC_REF ${requestedPin} does not match the policy-selected active ECC source ${current.pinnedSha}`,
+        "AIH_CONFIG",
+      );
+    }
+    return undefined;
+  }
+  const historical = resolveHistoricalEccRuntimeDescriptorV1(policy);
+  if (requestedPin.length > 0 && requestedPin !== historical.source.commit) {
+    throw new AihError(
+      `AIH_ECC_REF ${requestedPin} does not match the policy-selected authenticated ECC source ${historical.source.commit}`,
+      "AIH_CONFIG",
+    );
+  }
+  return historical;
+}
+function earlierCommitDeadline(existing: string | undefined, evidenceExpiresAt: string): string {
+  const evidenceEpoch = Date.parse(evidenceExpiresAt);
+  if (!Number.isFinite(evidenceEpoch)) {
+    throw new AihError("historical ECC evidence expiry is invalid", "AIH_TRUST");
+  }
+  if (existing === undefined) return new Date(evidenceEpoch).toISOString();
+  const existingEpoch = Date.parse(existing);
+  if (!Number.isFinite(existingEpoch)) {
+    throw new AihError("existing policy commit deadline is invalid", "AIH_TRUST");
+  }
+  return new Date(Math.min(existingEpoch, evidenceEpoch)).toISOString();
+}
 function requestedSource(ctx: PlanContext, catalog: BaselineCatalog): TrustSource {
   const local = typeof ctx.options.eccPath === "string" ? ctx.options.eccPath.trim() : "";
   if (local.length > 0) return resolveTrustSource(local, { root: ctx.root });
@@ -333,11 +394,14 @@ export async function executeEccCommand(
       // the profile installer here rather than wrapping it: AIH-direct
       // materialization is what makes per-component governed control possible,
       // and the framework's own installer projects surfaces governance owns.
-      const catalog = deps.catalog ?? requestedCatalog(targetCtx);
+      const historical = resolveHistoricalRuntimeContext(targetCtx, policy);
+      // V3 historical sources are only admitted through the sealed resolver;
+      // a caller-supplied catalog cannot substitute a different authority.
+      const catalog = historical?.catalog ?? deps.catalog ?? requestedCatalog(targetCtx);
       // Validate the policy against the catalog BEFORE resolving a source:
       // resolving a remote source creates a quarantine directory, and an
       // invocation that refuses must create nothing at all.
-      const componentIds = governedEccComponentIds(policy, catalog);
+      const componentIds = governedEccComponentIds(policy, catalog, historical);
       // WHICH targets is the workstation CLI selection every other
       // target-scoped operation already uses — `--cli`, `--all-tools`, the
       // committed marker, else the `claude` default. No second flag and no
@@ -345,6 +409,16 @@ export async function executeEccCommand(
       // notion of "which tool am I installing for". Narrowed here, before the
       // source, for the same reason the catalog check is here.
       const targets = assertGovernedMaterializationTargets(policyTargets.resolution.clis);
+      const governedTransactionPins =
+        historical === undefined
+          ? transactionPins
+          : {
+              ...transactionPins,
+              commitNotAfter: earlierCommitDeadline(
+                transactionPins.commitNotAfter,
+                historical.evidence.expiresAt,
+              ),
+            };
       return executeGovernedEccMaterialization(
         targetCtx,
         {
@@ -353,7 +427,8 @@ export async function executeEccCommand(
           targets,
           source: deps.source ?? requestedSource(targetCtx, catalog),
           policy,
-          transactionGuard: transactionPins,
+          historical,
+          transactionGuard: governedTransactionPins,
         },
         deps,
       );

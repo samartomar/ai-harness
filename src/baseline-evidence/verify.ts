@@ -52,6 +52,11 @@ export interface VerifyBaselineComponentsInput {
   posture: Posture;
   vendorLock: BaselineEvidenceLock;
   vendorLockSha256: string;
+  /**
+   * Optional exact full-source identity required by an authenticated historical
+   * runtime descriptor. Legacy vendor locks intentionally omit this check.
+   */
+  expectedSourceTreeSha256?: string;
   orgEvidence?: OrgBaselineEvidence;
   /** Signed accepted-with-conditions decisions; defaults to the shipped artifact. */
   acceptanceDecisions?: readonly AcceptanceDecision[];
@@ -143,6 +148,14 @@ export function verifyBaselineComponents(
   const sourceName = `${input.catalog.owner}/${input.catalog.repo}`;
   const vendorSource = sourceEvidence(input.vendorLock, input.catalog);
   const sourceTreeDigest = hashSourceTree(input.sourceRoot).treeSha256;
+  if (
+    input.expectedSourceTreeSha256 !== undefined &&
+    !/^[a-f0-9]{64}$/.test(input.expectedSourceTreeSha256)
+  ) {
+    throw new TypeError(
+      "expected historical source tree digest must be a lowercase SHA-256 hex string",
+    );
+  }
   const orgSource =
     input.orgEvidence === undefined
       ? undefined
@@ -150,6 +163,30 @@ export function verifyBaselineComponents(
   const checks: Check[] = [];
   const authorizations: BaselineAuthorization[] = [];
   const held: BaselineHeldComponent[] = [];
+
+  if (
+    input.expectedSourceTreeSha256 !== undefined &&
+    sourceTreeDigest !== input.expectedSourceTreeSha256
+  ) {
+    const detail =
+      `acquired source tree digest ${sourceTreeDigest} does not match the authenticated historical descriptor ` +
+      `${input.expectedSourceTreeSha256}`;
+    for (const component of components) {
+      checks.push({
+        name: `baseline evidence ${component.id}`,
+        verdict: "fail",
+        code: "baseline.evidence-mismatch",
+        detail,
+      });
+      held.push({
+        componentId: component.id,
+        routeCode: "baseline.evidence-mismatch",
+        codes: ["baseline.evidence-mismatch"],
+        details: [detail],
+      });
+    }
+    return { checks, authorizations, held };
+  }
 
   const hold = (
     componentId: string,

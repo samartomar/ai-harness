@@ -3,10 +3,14 @@ import {
   canonicalStrictJsonBytesV1,
   canonicalStrictJsonSha256V1,
 } from "../contract/strict-json-v1.js";
+import type { PreparedEccRuntimeDescriptorV1 } from "../ecc/runtime-descriptor.js";
 import type { AuthoringCatalogBundleV1 } from "../org-policy/workbench/contracts.js";
 import { PackagedSourceDataRecordV1Schema } from "../org-policy/workbench/core/packaged-source-data-record.js";
 import { readSourceDataProofBlobV1 } from "../org-policy/workbench/core/source-data-proof-blobs.js";
-import { SourceDataScannerProofV1Schema } from "../org-policy/workbench/core/source-data-scanner.js";
+import {
+  SourceDataScannerProofV1Schema,
+  sealPreparedEccRuntimeDescriptorV1,
+} from "../org-policy/workbench/core/source-data-scanner.js";
 import { sourceCompilerTemplateV1 } from "./workbench-source-data-material.js";
 
 /** Encode already verified preparation for the mandatory connected release replay. */
@@ -17,6 +21,7 @@ export function preparePackagedWorkbenchSourceDataV1(input: {
   proofRoot: string;
   source: { repository: string; commit: string };
   updateKind?: "evidence-only";
+  runtimeDescriptor?: PreparedEccRuntimeDescriptorV1;
 }) {
   const proof = SourceDataScannerProofV1Schema.parse(input.proof);
   const compilerBytes = canonicalStrictJsonBytesV1(input.compilerInput);
@@ -68,6 +73,9 @@ export function preparePackagedWorkbenchSourceDataV1(input: {
     source: input.source,
     scannerProof: proof,
     compilerTemplate: sourceCompilerTemplateV1(input.compilerInput),
+    ...(input.runtimeDescriptor === undefined
+      ? {}
+      : { runtimeDescriptor: sealPreparedEccRuntimeDescriptorV1(input.runtimeDescriptor) }),
     inlineBlobs,
     publicationBlobs,
   });

@@ -35,7 +35,68 @@ function record() {
     sourceBundle: bundle,
     source: { repository: "example/skills", commit: source.revision.id },
     scannerProof: {},
-    compilerTemplate: {},
+    compilerTemplate: { version: "built-in/v1" },
+    inlineBlobs: [],
+    publicationBlobs: [
+      { sha256: "b".repeat(64), bytes: 1, url: "https://github.com/example/scans" },
+    ],
+  };
+}
+function frameworkRecord() {
+  const bundle = structuredClone(tinyStudioModel().workbenchBundle);
+  const revision = "a".repeat(40);
+  const repository = "fixture/ecc";
+  const previous = Object.values(bundle.sources)[0];
+  if (!previous) throw new Error("Missing fixture source");
+  delete bundle.sources[previous.id];
+  bundle.sources["source:ecc"] = {
+    ...previous,
+    id: "source:ecc",
+    upstreamOrigin: { kind: "git", locator: repository },
+    inputFormat: "pinned-baseline/v1",
+    revision: { id: revision, contentDigest: previous.revision.contentDigest },
+    compiler: { id: "pinned-baseline", version: "1" },
+  };
+  const assets = Object.values(bundle.assets);
+  const declarations = assets.map((asset) => {
+    const name = asset.id.split(":")[1];
+    if (!name) throw new Error("Missing fixture asset name");
+    const itemId = `skill:${name}`;
+    const id = `ecc/${itemId}`;
+    const detail = bundle.detailChunks[asset.detailChunkId];
+    if (!detail) throw new Error("Missing fixture detail");
+    delete bundle.assets[asset.id];
+    delete bundle.detailChunks[asset.detailChunkId];
+    asset.id = id;
+    asset.sourceId = "source:ecc";
+    asset.sourceRevisionId = revision;
+    asset.derivation = "upstream";
+    asset.kind = "skill";
+    asset.originalPath = `skills/${name}/SKILL.md`;
+    asset.detailChunkId = `detail:${id}`;
+    asset.authoring = { action: "record-selection", supportedTargets: [] };
+    bundle.assets[id] = asset;
+    bundle.detailChunks[asset.detailChunkId] = detail;
+    return {
+      id: itemId,
+      kind: "skill",
+      source: { repository, commit: revision, path: asset.originalPath },
+      sourcePaths: [asset.originalPath],
+    };
+  });
+  const group = bundle.groups["group:fixture"];
+  if (!group) throw new Error("Missing fixture group");
+  group.assetIds = declarations.map((item) => `ecc/${item.id}`);
+  bundle.provenance.bundleDigest = `sha256:${canonicalStrictJsonSha256V1({ ...bundle, provenance: {} })}`;
+  return {
+    version: "packaged-workbench-source-data/v1",
+    sourceBundle: bundle,
+    source: { repository, commit: revision },
+    scannerProof: {},
+    compilerTemplate: {
+      version: "pinned-baseline/v1",
+      framework: { id: "ecc", repository, commit: revision, assets: declarations },
+    },
     inlineBlobs: [],
     publicationBlobs: [
       { sha256: "b".repeat(64), bytes: 1, url: "https://github.com/example/scans" },
@@ -111,7 +172,7 @@ describe("offline package-owned source records", () => {
     applyPackagedWorkbenchSourceDataV1(base);
     expect(fixture.apply).toHaveBeenCalledOnce();
   });
-  it("reuses a detached package overlay only for the exact base and selected pin state", async () => {
+  it("reuses a detached package overlay only for the exact base and selected records", async () => {
     const value = record();
     fixture.records.push(seal(value));
     const { applyPackagedWorkbenchSourceDataV1 } = await import(
@@ -136,7 +197,7 @@ describe("offline package-owned source records", () => {
     expect(fixture.apply).toHaveBeenCalledTimes(2);
     const selected = Object.values(value.sourceBundle.assets)[0];
     if (!selected) throw new Error("Missing packaged fixture asset");
-    applyPackagedWorkbenchSourceDataV1(base, [
+    const selectedOverlay = applyPackagedWorkbenchSourceDataV1(base, [
       {
         assetId: selected.id,
         sourceId: selected.sourceId,
@@ -144,7 +205,9 @@ describe("offline package-owned source records", () => {
         contentDigest: selected.contentDigest,
       },
     ]);
-    expect(fixture.apply).toHaveBeenCalledTimes(3);
+    expect(selectedOverlay).toEqual(second);
+    expect(selectedOverlay).not.toBe(second);
+    expect(fixture.apply).toHaveBeenCalledTimes(2);
   });
   it("evicts the least-recent exact input after four overlays", async () => {
     fixture.records.push(seal(record()));
@@ -166,5 +229,43 @@ describe("offline package-owned source records", () => {
     if (!first) throw new Error("Missing cache fixture");
     applyPackagedWorkbenchSourceDataV1(first);
     expect(fixture.apply).toHaveBeenCalledTimes(6);
+  });
+  it("restores only compiler bindings declared by the sealed registered template", async () => {
+    const value = frameworkRecord();
+    fixture.records.push(seal(value));
+    fixture.apply.mockImplementation((base, records) => ({
+      ...structuredClone(base),
+      bundle: structuredClone(records[0]?.sourceBundle),
+      bindings: {},
+    }));
+    const { applyPackagedWorkbenchSourceDataV1 } = await import(
+      "../../../../src/org-policy/workbench/core/packaged-source-data.js"
+    );
+    const prepared = applyPackagedWorkbenchSourceDataV1(preparedBase());
+    expect(prepared.bindings["ecc/skill:control"]).toEqual({
+      kind: "external-selection",
+      external: {
+        owner: "ecc",
+        item: {
+          id: "skill:control",
+          kind: "skill",
+          source: {
+            repository: "fixture/ecc",
+            commit: "a".repeat(40),
+            path: "skills/control/SKILL.md",
+          },
+        },
+      },
+    });
+
+    fixture.records.length = 0;
+    const malformed = frameworkRecord();
+    malformed.compilerTemplate.framework.assets.pop();
+    fixture.records.push(seal(malformed));
+    vi.resetModules();
+    const { applyPackagedWorkbenchSourceDataV1: applyMalformed } = await import(
+      "../../../../src/org-policy/workbench/core/packaged-source-data.js"
+    );
+    expect(() => applyMalformed(preparedBase())).toThrow(/undeclared asset/);
   });
 });

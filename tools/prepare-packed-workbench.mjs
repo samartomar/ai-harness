@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { basename, dirname, resolve, sep } from "node:path";
@@ -274,13 +274,13 @@ function defaultBrowserExpectation() {
   return { command: "xdg-open", prefix: undefined };
 }
 
-function packedUiSmoke(target, admin, cli, run) {
+async function packedUiSmoke(target, admin, cli, run) {
   const preload = resolve(target, "packed-ui-browser-preload.mjs");
   const controller = resolve(target, "packed-ui-smoke.mjs");
   writeFileSync(preload, packedUiBrowserPreload());
   writeFileSync(controller, packedUiSmokeController());
   const before = new Set(readdirSync(admin));
-  const ui = JSON.parse(run(admin, [controller, cli, pathToFileURL(preload).href]));
+  const ui = JSON.parse(await run(admin, [controller, cli, pathToFileURL(preload).href]));
   const expected = defaultBrowserExpectation();
   if (
     !Number.isInteger(ui.initialRows) ||
@@ -302,13 +302,15 @@ function packedUiSmoke(target, admin, cli, run) {
   return { url: ui.url, initialRows: ui.initialRows, catalogSourceIds: ui.catalogSourceIds, browserOpenRequested: true, shutdown: ui.shutdown, adminWrites };
 }
 /** A cold package consumer: no product command ever targets the source checkout. */
-export function preparePackedWorkbench(directory) {
+export async function preparePackedWorkbench(directory) {
   const started = performance.now();
   const stages = [];
-  function timed(name, action) {
+  async function timed(name, action) {
+    const stage = { name, wallMs: 0 };
+    stages.push(stage);
     const stageStarted = performance.now();
-    try { return action(); }
-    finally { stages.push({ name, wallMs: performance.now() - stageStarted }); }
+    try { return await action(); }
+    finally { stage.wallMs = performance.now() - stageStarted; }
   }
   const target = resolve(directory);
   const npmCandidate = process.env.npm_execpath?.replace(/npx-cli\.js$/u, "npm-cli.js");
@@ -320,46 +322,106 @@ export function preparePackedWorkbench(directory) {
     delete environment.AIH_ORG_POLICY;
     delete environment.AIH_POLICY_AUTHORITY_REPOSITORY;
     delete environment.AIH_POLICY_AUTHORITY_WORKFLOW;
-    const result = spawnSync(process.execPath, args, {
-      cwd, env: environment, encoding: "utf8", windowsHide: true, timeout: 60000,
-      maxBuffer: 16 * 1024 * 1024,
+    return new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, args, {
+        cwd,
+        env: environment,
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true,
+      });
+      const maxBuffer = 16 * 1024 * 1024;
+      let stdout = "";
+      let stderr = "";
+      let stdoutBytes = 0;
+      let stderrBytes = 0;
+      let failure;
+      let forceKill;
+      const timeout = setTimeout(() => {
+        terminate(new Error("Packed Workbench fixture timed out after 60000ms"));
+      }, 60000);
+      function terminate(error) {
+        if (failure !== undefined) return;
+        failure = error;
+        if (!child.killed) child.kill("SIGTERM");
+        forceKill = setTimeout(() => {
+          if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+        }, 5000);
+      }
+      function append(stream, value) {
+        if (failure !== undefined) return;
+        if (stream === "stdout") {
+          stdoutBytes += value.length;
+          stdout += value;
+          if (stdoutBytes > maxBuffer)
+            terminate(new Error("Packed Workbench fixture stdout exceeds its byte budget"));
+          return;
+        }
+        stderrBytes += value.length;
+        stderr += value;
+        if (stderrBytes > maxBuffer)
+          terminate(new Error("Packed Workbench fixture stderr exceeds its byte budget"));
+      }
+      child.stdout.on("data", (value) => append("stdout", value));
+      child.stderr.on("data", (value) => append("stderr", value));
+      child.once("error", terminate);
+      child.once("close", (code) => {
+        clearTimeout(timeout);
+        if (forceKill !== undefined) clearTimeout(forceKill);
+        if (failure !== undefined) {
+          reject(failure);
+          return;
+        }
+        if (code !== 0) {
+          reject(new Error("Packed Workbench fixture failed: " + (stderr || stdout).slice(0, 1000)));
+          return;
+        }
+        resolve(stdout);
+      });
     });
-    if (result.error) throw result.error;
-    if (result.status !== 0) throw new Error("Packed Workbench fixture failed: " + (result.stderr || result.stdout).slice(0, 1000));
-    return result.stdout;
   }
-  const manifest = timed("pack", () => JSON.parse(run(sourceRoot, [npmCli, "pack", "--ignore-scripts", "--json", "--pack-destination", target])));
+  const manifest = await timed("pack", async () =>
+    JSON.parse(await run(sourceRoot, [npmCli, "pack", "--ignore-scripts", "--json", "--pack-destination", target])),
+  );
   const entry = manifest?.[0];
   const paths = entry?.files?.map(file => file.path);
   if (!Array.isArray(paths) || !paths.includes("dist/bundle.generated.cjs")) throw new Error("Packed Core is missing the browser bundle");
   if (paths.includes("aih-packs.json")) throw new Error("Removed aih-packs.json leaked into the package");
   const consumer = resolve(target, "packed-consumer");
+  const uiAdmin = resolve(target, "packed-ui-administrator");
   const admin = resolve(target, "packed-administrator");
-  mkdirSync(consumer); mkdirSync(admin);
+  const repeatedAdmin = resolve(target, "packed-repeat-administrator");
+  mkdirSync(consumer); mkdirSync(uiAdmin); mkdirSync(admin); mkdirSync(repeatedAdmin);
   const install = packedConsumerInstallFiles(entry);
   writeFileSync(resolve(consumer, "package.json"), JSON.stringify(install.manifest) + "\n");
   writeFileSync(resolve(consumer, "package-lock.json"), JSON.stringify(install.lock, null, 2) + "\n");
-  timed("install", () => run(consumer, [npmCli, "ci", "--offline", "--ignore-scripts", "--no-audit", "--no-fund"]));
+  await timed("install", () => run(consumer, [npmCli, "ci", "--offline", "--ignore-scripts", "--no-audit", "--no-fund"]));
   const cli = resolve(consumer, "node_modules/@aihq/core/dist/cli.js");
   if (!cli.startsWith(target + sep) || !existsSync(cli)) throw new Error("Invalid packed Core CLI");
   const installedPackage = JSON.parse(readFileSync(resolve(consumer, "node_modules/@aihq/core/package.json"), "utf8"));
   if (installedPackage.bin?.aih !== "dist/cli.js") throw new Error("Installed Core does not expose the aih package bin");
-  const ui = timed("ui", () => packedUiSmoke(target, admin, cli, run));
-  const organizationManifest = resolve(admin, "organization-manifest.json");
-  writeFileSync(organizationManifest, JSON.stringify({
-    version: "organization-authoring-manifest/v1",
-    source: { id: "source:packed-organization", revisionId: "revision:1", locator: "acme/portable-inputs" },
-    assets: [
-      { id: "mcp:packed", kind: "mcp", label: "Packed organization MCP", path: "mcp/packed.json" },
-      { id: "skill:packed", kind: "skill", label: "Packed organization skill", path: "skills/packed/SKILL.md" },
-      { id: "agent:packed", kind: "agent", label: "Packed organization agent", path: "agents/packed.md", requires: ["skill:packed"] },
-    ],
-  }) + "\n");
+  function organizationManifestFor(root) {
+    const path = resolve(root, "organization-manifest.json");
+    writeFileSync(path, JSON.stringify({
+      version: "organization-authoring-manifest/v1",
+      source: { id: "source:packed-organization", revisionId: "revision:1", locator: "acme/portable-inputs" },
+      assets: [
+        { id: "mcp:packed", kind: "mcp", label: "Packed organization MCP", path: "mcp/packed.json" },
+        { id: "skill:packed", kind: "skill", label: "Packed organization skill", path: "skills/packed/SKILL.md" },
+        { id: "agent:packed", kind: "agent", label: "Packed organization agent", path: "agents/packed.md", requires: ["skill:packed"] },
+      ],
+    }) + "\n");
+    return path;
+  }
+  const organizationManifest = organizationManifestFor(admin);
+  const repeatedManifest = organizationManifestFor(repeatedAdmin);
   const output = resolve(target, "packed-policy-workbench.html");
-  const argumentsFor = out => [cli, "policy", "generate", "--apply", "--out", out, "--organization-manifest", organizationManifest];
-  timed("generate", () => run(admin, argumentsFor(output)));
+  const argumentsFor = (out, manifestPath) => [cli, "policy", "generate", "--apply", "--out", out, "--organization-manifest", manifestPath];
   const repeated = resolve(target, "packed-policy-workbench-repeat.html");
-  timed("repeat", () => run(admin, argumentsFor(repeated)));
+  const [ui] = await Promise.all([
+    timed("ui", () => packedUiSmoke(target, uiAdmin, cli, run)),
+    timed("generate", () => run(admin, argumentsFor(output, organizationManifest))),
+    timed("repeat", () => run(repeatedAdmin, argumentsFor(repeated, repeatedManifest))),
+  ]);
   if (!readFileSync(output).equals(readFileSync(repeated))) throw new Error("Identical pinned inputs generated different offline artifact bytes");
   if (!existsSync(output)) throw new Error("Installed Core did not generate its Workbench");
   return { output, packageIntegrity: entry.integrity, ui, stages, wallMs: performance.now() - started };

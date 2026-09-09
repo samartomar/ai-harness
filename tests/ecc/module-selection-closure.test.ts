@@ -10,7 +10,10 @@ import {
   eccComponentSourcePaths,
   eccModuleSelectableMemberIds,
 } from "../../src/ecc/materialize.js";
-import { eccMandatoryRequirementIds } from "../../src/ecc/selection-closure.js";
+import {
+  eccMandatoryRequirementIds,
+  eccSelectionSourcePaths,
+} from "../../src/ecc/selection-closure.js";
 import { type OrgPolicy, OrgPolicySchema } from "../../src/org-policy/schema.js";
 import { defaultStudioPolicy } from "../../src/org-policy/studio-model.js";
 import { compilePolicy } from "../../src/org-policy/workbench/policy-compiler.js";
@@ -177,7 +180,7 @@ function withTypescriptLanguageAndCore(includeRider = true) {
 }
 
 describe("schema-v3 Workbench ECC guard", () => {
-  it("consumes compiled V3 pins and refuses stale or missing intent before using its legacy mirror", () => {
+  it("refuses a historical V3 pin without its sealed runtime context, and refuses stale or missing intent", () => {
     const prepared = defaultPreparedWorkbenchCatalog();
     const asset = prepared.bundle.assets["ecc/module:rules-core"];
     if (!asset) throw new Error("expected pinned ECC rules-core asset");
@@ -196,14 +199,16 @@ describe("schema-v3 Workbench ECC guard", () => {
     expect(compiled.diagnostics).toEqual([]);
     expect(compiled.accepted).toBe(true);
     const valid = OrgPolicySchema.parse(compiled.policy) as OrgPolicy;
-    expect(governedEccComponentIds(valid, catalog)).toContain("module:rules-core");
+    expect(() => governedEccComponentIds(valid, catalog)).toThrow(
+      /claims commit .* but its bytes would come from/i,
+    );
     const exactMirror = structuredClone(valid.governance?.externalSelections);
     for (const kind of ["stale", "missing"] as const) {
       const damaged = structuredClone(valid);
       if (damaged.schemaVersion !== 3) throw new Error("expected V3 compiler output");
       const root = damaged.authoringSelections.roots[0];
       if (!root) throw new Error("expected pinned root");
-      if (kind === "stale") root.contentDigest = "sha256:" + "f".repeat(64);
+      if (kind === "stale") root.contentDigest = `${"sha256:"}${"f".repeat(64)}`;
       else {
         root.assetId = "ecc/skill:removed";
         root.resolvedItems = [
@@ -435,5 +440,31 @@ describe("governed ECC module selection closure", () => {
         },
       ]),
     ).not.toThrow();
+  });
+
+  it("uses the sealed historical structural relation view instead of the active snapshot", () => {
+    const relations = {
+      mandatoryRequirementsById: new Map<string, readonly string[]>([
+        ["module:historical-root", ["module:historical-dependency"]],
+      ]),
+    };
+
+    expect(eccMandatoryRequirementIds("module:historical-root", relations)).toEqual([
+      "module:historical-dependency",
+    ]);
+    expect(eccMandatoryRequirementIds("module:historical-dependency", relations)).toEqual([]);
+  });
+
+  it("uses only sealed historical source paths instead of active skill aliases", () => {
+    const historicalPaths = new Map<string, readonly string[]>([
+      ["skill:renamed", ["skills/renamed-skill/SKILL.md"]],
+    ]);
+
+    expect(eccSelectionSourcePaths("skill:renamed", ["skills/renamed"], historicalPaths)).toEqual([
+      "skills/renamed-skill/SKILL.md",
+    ]);
+    expect(eccSelectionSourcePaths("skill:missing", ["skills/missing"], historicalPaths)).toEqual(
+      [],
+    );
   });
 });

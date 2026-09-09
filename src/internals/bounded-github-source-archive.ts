@@ -1,5 +1,16 @@
 import { createHash } from "node:crypto";
-import { lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  closeSync,
+  constants,
+  fstatSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  readdirSync,
+  readSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { gunzipSync } from "node:zlib";
 
@@ -366,6 +377,50 @@ function requestedFileMatches(root: string, file: string, material: Material): b
     if (!contained(root, dirname(current)) && dirname(current) !== root) return false;
   }
 }
+/** Reads a regular acquired file through one stable descriptor, never after a separate path check. */
+function readDescriptorBackedAcquiredFile(path: string, material: Material): Buffer | undefined {
+  let descriptor: number | undefined;
+  try {
+    descriptor = openSync(
+      path,
+      constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0),
+    );
+    const opened = fstatSync(descriptor);
+    const named = lstatSync(path);
+    if (
+      !opened.isFile() ||
+      opened.nlink !== 1 ||
+      named.isSymbolicLink() ||
+      !named.isFile() ||
+      opened.ino !== named.ino ||
+      opened.dev !== named.dev ||
+      opened.size !== named.size ||
+      opened.size !== material.bytes
+    )
+      return undefined;
+    const buffer = Buffer.alloc(opened.size + 1);
+    let length = 0;
+    while (length < buffer.length) {
+      const count = readSync(descriptor, buffer, length, buffer.length - length, null);
+      if (count === 0) break;
+      length += count;
+    }
+    const after = fstatSync(descriptor);
+    const bytes = buffer.subarray(0, length);
+    if (
+      length !== opened.size ||
+      after.size !== opened.size ||
+      after.mtimeMs !== opened.mtimeMs ||
+      createHash("sha256").update(bytes).digest("hex") !== material.digest
+    )
+      return undefined;
+    return Buffer.from(bytes);
+  } catch {
+    return undefined;
+  } finally {
+    if (descriptor !== undefined) closeSync(descriptor);
+  }
+}
 function acquiredTreeMatches(root: string, proof: AcquiredRoot): boolean {
   const seenFiles = new Set<string>();
   const seenDirectories = new Set<string>();
@@ -397,13 +452,9 @@ function acquiredTreeMatches(root: string, proof: AcquiredRoot): boolean {
         }
         const material = proof.files.get(relativePath);
         if (
-          !stat.isFile() ||
-          stat.nlink !== 1 ||
           material === undefined ||
-          stat.size !== material.bytes
+          readDescriptorBackedAcquiredFile(path, material) === undefined
         )
-          return false;
-        if (createHash("sha256").update(readFileSync(path)).digest("hex") !== material.digest)
           return false;
         seenFiles.add(relativePath);
         if (seenFiles.size + seenDirectories.size > MAX_ENTRIES) return false;
@@ -578,14 +629,7 @@ export function readAcquiredGithubSourceFileV1(
   if (material === undefined) return undefined;
   const file = resolve(root, ...path.split("/"));
   if (!requestedFileMatches(root, file, material)) return undefined;
-  try {
-    const bytes = readFileSync(file);
-    return createHash("sha256").update(bytes).digest("hex") === material.digest
-      ? Buffer.from(bytes)
-      : undefined;
-  } catch {
-    return undefined;
-  }
+  return readDescriptorBackedAcquiredFile(file, material);
 }
 export function forgetAcquiredGithubSourceArchiveV1(rootInput: string): void {
   acquired.delete(resolve(rootInput));

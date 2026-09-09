@@ -670,7 +670,12 @@ async function verifyWithGithubV1(
   bytes: Uint8Array,
   publisher: CatalogQualificationPublisherV1,
   now: number,
+  verifiedStatements: string[],
 ): Promise<string | undefined> {
+  for (const statement of verifiedStatements) {
+    const match = catalogQualificationAttestationMatchesV1(statement, publisher, bytes, now);
+    if (match !== undefined) return match;
+  }
   const gh = findOnPath("gh", process.env, process.platform, {
     excludeRoot: process.cwd(),
     windowsExeOnly: true,
@@ -678,6 +683,7 @@ async function verifyWithGithubV1(
   if (gh === undefined) return undefined;
   let directory: string | undefined;
   let verified: string | undefined;
+  let statement: string | undefined;
   try {
     directory = mkdtempSync(join(tmpdir(), "aih-catalog-qualification-"));
     const receiptPath = join(directory, "receipt.json");
@@ -711,8 +717,10 @@ async function verifyWithGithubV1(
       !result.truncated &&
       Buffer.byteLength(result.stdout, "utf8") <= MAX_GITHUB_OUTPUT_BYTES &&
       Buffer.from(readFileSync(receiptPath)).equals(Buffer.from(bytes))
-    )
+    ) {
       verified = catalogQualificationAttestationMatchesV1(result.stdout, publisher, bytes, now);
+      if (verified !== undefined) statement = result.stdout;
+    }
   } catch {
     verified = undefined;
   } finally {
@@ -724,12 +732,17 @@ async function verifyWithGithubV1(
       }
     }
   }
+  if (verified !== undefined && statement !== undefined) {
+    verifiedStatements.push(statement);
+    if (verifiedStatements.length > 16) verifiedStatements.shift();
+  }
   return verified;
 }
 
 /**
- * Live release/build boundary. Raw records are accepted only here, then each
- * is re-attested with the real defaultRunner before an opaque proof is minted.
+ * Live release/build boundary. Every raw record must match a statement verified
+ * by the real defaultRunner before an opaque proof is minted. A verified
+ * multi-subject statement can be reused within this invocation only.
  */
 export async function verifyCatalogQualificationArtifactsForPackagingV1(
   bundle: AuthoringCatalogBundleV1,
@@ -739,6 +752,9 @@ export async function verifyCatalogQualificationArtifactsForPackagingV1(
   verifiedAt = now,
 ): Promise<PreparedCatalogQualificationV1 | undefined> {
   const merged: Record<string, CatalogQualificationSummaryV1> = {};
+  // A GH-verified multi-subject statement authenticates each named digest. Keep
+  // it only within this preparation call and recheck every exact subject join.
+  const verifiedStatements: string[] = [];
   const nowEpoch = Date.parse(now);
   const verifiedEpoch = Date.parse(verifiedAt);
   if (!Number.isFinite(nowEpoch) || !Number.isFinite(verifiedEpoch) || verifiedEpoch > nowEpoch)
@@ -766,11 +782,13 @@ export async function verifyCatalogQualificationArtifactsForPackagingV1(
       record.receiptBytes,
       record.publisher,
       nowEpoch,
+      verifiedStatements,
     );
     const setAttestedAt = await verifyWithGithubV1(
       record.receiptSetBytes,
       record.receiptSetPublisher,
       nowEpoch,
+      verifiedStatements,
     );
     if (
       receiptAttestedAt === undefined ||

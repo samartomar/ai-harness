@@ -175,6 +175,14 @@ describe("packaged collection evidence", () => {
     expect(() => encodePackagedScannerCollectionEvidenceRecordV1(record)).not.toThrow();
   });
 
+  it("requires each original publication inside its own retained custody window", () => {
+    const record = sealedFixture(tinyStudioModel().workbenchBundle);
+    record.publications[0]!.publishedAt = record.observations[0]!.reportVerificationExpiresAt;
+    expect(() => ScannerEvidenceProjectionRecordV1Schema.parse(record)).toThrow(
+      /publication outside report verification window/,
+    );
+  });
+
   it.each(["coverage", "paths", "tree", "verdict", "findings"])(
     "rejects partial %s substitution even when the outer seal is recomputed",
     (field) => {

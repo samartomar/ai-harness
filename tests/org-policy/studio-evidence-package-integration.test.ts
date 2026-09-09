@@ -13,7 +13,7 @@ vi.mock("../../src/org-policy/workbench/prepared-catalog.js", () => ({
   prepareWorkbenchCatalog: mocks.prepared,
 }));
 vi.mock("../../src/org-policy/packaged-collection-evidence-v1.js", () => ({
-  packagedScannerCollectionOverlayV1: mocks.reports,
+  projectScannerCollectionEvidenceV1: mocks.reports,
   packagedScannerCollectionEvidenceV1: mocks.records,
 }));
 vi.mock("../../src/org-policy/workbench/core/catalog-qualification-v1.js", () => ({

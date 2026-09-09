@@ -1349,3 +1349,21 @@ describe("the one destination mapping keeps each target off the others' exclusiv
     }
   });
 });
+
+describe("historical source paths through the closed target adapter", () => {
+  it("materializes a sealed historical skill absent from the active component snapshot", () => {
+    const id = "skill:historical-only";
+    writeSource(sourceRoot, { "skills/historical-only/SKILL.md": "# historical\n" });
+    const component = selected(id, "skills/historical-only");
+
+    const result = resolveEccTargetMaterialization({
+      sourceRoot,
+      targets: ["claude"],
+      components: [component],
+      componentPathsById: new Map([[id, ["skills/historical-only"]]]),
+    });
+
+    expect(result.refused).toEqual([]);
+    expect(destinations(result, id)).toEqual([".claude/skills/historical-only/SKILL.md"]);
+  });
+});

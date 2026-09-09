@@ -97,6 +97,7 @@ export function projectContainedScannerEvidenceV1(input: {
       Date.parse(publication.reportSignedAt) >=
         Date.parse(publication.reportVerificationExpiresAt) ||
       Date.parse(publication.reportSignedAt) > Date.parse(publication.attestedAt) ||
+      Date.parse(publication.attestedAt) >= Date.parse(publication.reportVerificationExpiresAt) ||
       Date.parse(publication.attestedAt) > Date.parse(preparedAt)
     )
       fail();

@@ -492,7 +492,13 @@ export function authorPackagedScannerCollectionEvidenceRecordV1(
     version: output.coverage.version,
     authority: output.coverage.authority,
     scope: output.coverage.scope,
-    components: output.coverage.components,
+    components: output.coverage.components.map((component) => ({
+      componentId: component.componentId,
+      componentTreeSha256: component.componentTreeSha256,
+      paths: component.paths,
+      files: component.files,
+      subject: component.subject,
+    })),
     unmappedDerivedAssets: output.coverage.unmappedDerivedAssets,
   };
   return encodePackagedScannerCollectionEvidenceRecordV1({

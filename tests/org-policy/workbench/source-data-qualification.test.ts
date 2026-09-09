@@ -5,7 +5,6 @@ import { policyStudioModel } from "../../../src/org-policy/studio-model.js";
 import { CATALOG_QUALIFICATION_PACKAGE_INPUT_V1 } from "../../../src/org-policy/workbench/core/catalog-qualification-data.js";
 import { decodeCatalogQualificationPackageInputV1 } from "../../../src/org-policy/workbench/core/catalog-qualification-package-v1.js";
 import { CATALOG_QUALIFICATION_RELEASE_POLICY_V1 } from "../../../src/org-policy/workbench/core/catalog-qualification-policy-v1.js";
-import { extractWorkbenchSourceDataV1 } from "../../../src/org-policy/workbench/core/source-data.js";
 import { verifySourceDataQualificationV1 } from "../../../src/org-policy/workbench/core/source-data-qualification.js";
 
 vi.mock("node:child_process", async (original) => ({
@@ -17,11 +16,10 @@ vi.mock("../../../src/live/runner.js", async (original) => ({
   findOnPath: () => "fixture-gh",
 }));
 afterEach(() => vi.mocked(execFileSync).mockReset());
-const issuedAt = "2026-09-09T00:00:00.000Z";
-const bundle = extractWorkbenchSourceDataV1(
-  policyStudioModel().workbenchBundle,
-  "source:mattpocock",
-);
+const issuedAt = "2026-09-09T02:00:00.000Z";
+// The shipped package covers every qualified source; its projection must match
+// the same complete set of claims at the independent verification boundary.
+const bundle = policyStudioModel().workbenchBundle;
 function proof() {
   return {
     packageInput: structuredClone(CATALOG_QUALIFICATION_PACKAGE_INPUT_V1),
@@ -50,7 +48,7 @@ function installVerifier(input: ReturnType<typeof proof>) {
               runnerEnvironment: "github-hosted",
             },
           },
-          verifiedTimestamps: [{ timestamp: "2026-09-08T21:00:00Z" }],
+          verifiedTimestamps: [{ timestamp: "2026-09-09T01:30:00Z" }],
           statement: {
             _type: "https://in-toto.io/Statement/v1",
             predicateType: "https://slsa.dev/provenance/v1",

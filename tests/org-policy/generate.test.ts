@@ -1899,7 +1899,13 @@ describe("policy generate", () => {
 
   it("provides field recovery and safe edit/remove disclosures for pending and report-only rows", async () => {
     const window = workbenchWindow();
-    const html = policyStudioHtml(policyStudioModel());
+    const model = tinyStudioModel();
+    model.catalog.frameworks.push({
+      id: "superpowers",
+      repository: "fixture/superpowers",
+      commit: "b".repeat(40),
+    });
+    const html = policyStudioHtml(model);
     window.document.write(html);
     loadStudio(window, html);
     const document = window.document;
