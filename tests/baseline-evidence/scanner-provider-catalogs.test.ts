@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createCoreBaselineVetRequests } from "../../src/baseline-evidence/scanner-consumer.js";
 import { prepareCollectionScannerCoverageV1 } from "../../src/baseline-evidence/scanner-provider-catalogs.js";
+import { canonicalStrictJsonSha256V1 } from "../../src/contract/strict-json-v1.js";
 import { pinnedSkillCollectionDigestV1 } from "../../src/org-policy/workbench/compilers/pinned-skill-collection.js";
 import { mattPocockPinnedSkillCollectionFixtureV1 } from "../../src/org-policy/workbench/providers/mattpocock.js";
 import { ponytailComponentCollectionFixtureV1 } from "../../src/org-policy/workbench/providers/ponytail.js";
@@ -38,9 +39,21 @@ describe("collection provider Scanner coverage", () => {
       }
       const prepared = prepareCollectionScannerCoverageV1(root, input);
       const requests = createCoreBaselineVetRequests(root, prepared.catalog);
+      expect(prepared.coverageDigest).toBe(
+        `sha256:${canonicalStrictJsonSha256V1(prepared.coverage)}`,
+      );
+      expect(prepared.coverageDigest).not.toBe(
+        `sha256:${canonicalStrictJsonSha256V1({
+          ...prepared.coverage,
+          components: prepared.coverage.components.map(
+            ({ primaryPath: _primaryPath, ...component }) => component,
+          ),
+        })}`,
+      );
       expect(prepared.coverage.authority).toBe("none");
       expect(prepared.coverage.components).toHaveLength(prepared.catalog.components.length);
       for (const component of prepared.coverage.components) {
+        expect(component.paths).toContain(component.primaryPath);
         const scanned = requests
           .flatMap((request) => request.components)
           .find((candidate) => candidate.id === component.componentId)!;

@@ -94,8 +94,12 @@ import {
 } from "../../src/baseline-evidence/scanner-profile.js";
 import { prepareRegisteredScannerCatalogV1 } from "../../src/baseline-evidence/scanner-provider-catalogs.js";
 import { SCANNER_BASELINE_PUBLICATION_PUBLISHER_V1 } from "../../src/baseline-evidence/scanner-publication-policy.js";
-import { canonicalStrictJsonBytesV1 } from "../../src/contract/strict-json-v1.js";
+import {
+  canonicalStrictJsonBytesV1,
+  canonicalStrictJsonSha256V1,
+} from "../../src/contract/strict-json-v1.js";
 import { defaultRunner, type Runner } from "../../src/internals/proc.js";
+import { encodePackagedScannerCollectionEvidenceRecordV1 } from "../../src/org-policy/packaged-collection-evidence-v1.js";
 import { pinnedSkillCollectionDigestV1 } from "../../src/org-policy/workbench/compilers/pinned-skill-collection.js";
 import { mattPocockPinnedSkillCollectionFixtureV1 } from "../../src/org-policy/workbench/providers/mattpocock.js";
 import { ponytailComponentCollectionFixtureV1 } from "../../src/org-policy/workbench/providers/ponytail.js";
@@ -478,6 +482,66 @@ describe("Scanner collection publication preparation", () => {
       ).toBe(originalVerdict);
     },
   );
+
+  it("requires fresh preparation for changed coverage without changing original report facts", async () => {
+    const sourceRoot = materializeSource("mattpocock");
+    const artifact = signedPublication(sourceRoot, "mattpocock");
+    const { catalog, coverage } = prepareRegisteredScannerCatalogV1(sourceRoot, "mattpocock");
+    if (coverage === undefined) throw new Error("collection coverage missing");
+    vi.mocked(defaultRunner).mockImplementation(
+      runnerFor(catalog.pinnedSha, artifact.attestationBytes, []),
+    );
+    const input = {
+      sourceRoot,
+      catalogId: "mattpocock" as const,
+      batches: [
+        { discoveryBytes: artifact.discoveryBytes, publicationBytes: artifact.publicationBytes },
+      ],
+    };
+    const initial = authorPackagedScannerCollectionEvidenceRecordV1(
+      await prepareScannerCollectionPublicationsV1({ ...input, now: "2026-09-07T12:10:00.000Z" }),
+    );
+    if (initial === undefined) throw new Error("operational package record missing");
+    const record = JSON.parse(initial.bytes);
+    const priorCoverage = {
+      ...coverage,
+      components: coverage.components.map((component) => {
+        if (!("primaryPath" in component)) throw new Error("collection primary path missing");
+        const { primaryPath: _primaryPath, ...priorComponent } = component;
+        return priorComponent;
+      }),
+    };
+    const oldDigest = `sha256:${canonicalStrictJsonSha256V1(priorCoverage)}`;
+    expect(oldDigest).not.toBe(record.catalog.coverageDigest);
+    const oldProjection = encodePackagedScannerCollectionEvidenceRecordV1({
+      ...record,
+      catalog: { ...record.catalog, coverageDigest: oldDigest },
+    });
+    await expect(
+      reverifyPackagedScannerCollectionEvidenceRecordV1({
+        ...input,
+        now: "2026-09-07T12:20:00.000Z",
+        sealed: oldProjection,
+      }),
+    ).rejects.toThrow("packaged collection record differs from reverified publication");
+    const refreshed = authorPackagedScannerCollectionEvidenceRecordV1(
+      await prepareScannerCollectionPublicationsV1({ ...input, now: "2026-09-07T12:20:00.000Z" }),
+    );
+    if (refreshed === undefined) throw new Error("operational refresh missing");
+    const current = JSON.parse(refreshed.bytes);
+    expect(current.report).toEqual(record.report);
+    expect(current.publications).toEqual(record.publications);
+    expect(current.observations).toEqual(record.observations);
+    expect(current.catalog).toEqual(record.catalog);
+    expect(current.verification.preparedAt).toBe("2026-09-07T12:20:00.000Z");
+    await expect(
+      reverifyPackagedScannerCollectionEvidenceRecordV1({
+        ...input,
+        now: "2026-09-07T12:30:00.000Z",
+        sealed: refreshed,
+      }),
+    ).resolves.toBeDefined();
+  });
 
   it("rejects a changed checkout before attestation and rejects altered publication bytes", async () => {
     const sourceRoot = materializeSource("ponytail");
