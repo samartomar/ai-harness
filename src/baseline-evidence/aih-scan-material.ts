@@ -309,12 +309,12 @@ function pinnedGitBlobBytes(
   let output: Buffer;
   try {
     output = execFileSync("git", ["-C", root, "cat-file", "--batch-command", "--buffer"], {
+      env: hermeticGitEnv(),
       input,
       encoding: "buffer",
       maxBuffer: MAX_PINNED_SOURCE_GIT_BATCH_WIRE_BYTES,
       stdio: ["pipe", "pipe", "ignore"],
       windowsHide: true,
-      env: hermeticGitEnv(),
     });
   } catch {
     fail("source is absent from pinned Core revision");
