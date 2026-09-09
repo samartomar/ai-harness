@@ -353,6 +353,13 @@ export function verifyWorkbenchSourceDataV1(
   historical = false,
 ) {
   const checked = verifyWorkbenchSourceDataEnvelopeV1(bytes, trustInput, now, historical);
+  return verifyReleaseKnownSourceEvidenceV1(checked);
+}
+
+/** Private continuation for this call's freshly authenticated, parsed envelope. */
+function verifyReleaseKnownSourceEvidenceV1(
+  checked: ReturnType<typeof verifyWorkbenchSourceDataEnvelopeV1>,
+) {
   const { payload, authority } = checked;
   const bundle = payload.sourceBundle;
   if (payload.scanner !== undefined) fail("independent Scanner proof requires asynchronous import");
@@ -428,7 +435,7 @@ function verifyStored(
     );
     return checked;
   }
-  return verifyWorkbenchSourceDataV1(bytes, trust, now, historical);
+  return verifyReleaseKnownSourceEvidenceV1(checked);
 }
 
 /** Raw verification precedes local receipt creation and the active-pointer transaction. */
@@ -443,7 +450,7 @@ export async function importWorkbenchSourceDataWithProofsV1(
   const checked = verifyWorkbenchSourceDataEnvelopeV1(bytes, trust, now);
   let runtimeDescriptor: PreparedEccRuntimeDescriptorV1 | undefined;
   if (checked.payload.scanner === undefined) {
-    verifyWorkbenchSourceDataV1(bytes, trust, now);
+    verifyReleaseKnownSourceEvidenceV1(checked);
   } else {
     if (!options.sourceRoot)
       fail("Scanner proof import requires --scanner-source with exact source bytes");

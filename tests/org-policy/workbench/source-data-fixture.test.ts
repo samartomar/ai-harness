@@ -1,10 +1,14 @@
-import { createHash, generateKeyPairSync, sign } from "node:crypto";
+import { createHash, generateKeyPairSync, sign, verify } from "node:crypto";
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 
 const filesystemFailure = vi.hoisted(() => ({ destination: "" }));
+vi.mock("node:crypto", async (original) => {
+  const actual = await original<typeof import("node:crypto")>();
+  return { ...actual, verify: vi.fn(actual.verify) };
+});
 vi.mock("node:fs", async (original) => {
   const actual = await original<typeof import("node:fs")>();
   return {
@@ -112,6 +116,31 @@ afterEach(() => {
 afterAll(() => rmSync(verifierParent, { recursive: true, force: true }));
 
 describe("authenticated versioned Workbench source data with a sealed fixture baseline", () => {
+  it("authenticates each immutable incoming envelope once and rechecks it on the next import", () => {
+    const root = store();
+    const bytes = signed(bundle());
+    const signature = Buffer.from(JSON.parse(bytes).signature, "base64");
+    const verification = vi.mocked(verify);
+    const incomingVerifications = () =>
+      verification.mock.calls.filter(
+        (call) => Buffer.isBuffer(call[3]) && call[3].equals(signature),
+      ).length;
+    verification.mockClear();
+    const imported = importWorkbenchSourceDataV1(root, bytes, now);
+    expect(incomingVerifications()).toBe(1);
+    const activePath = join(root, "active.json");
+    const before = readFileSync(activePath, "utf8");
+    verification.mockClear();
+    expect(importWorkbenchSourceDataV1(root, bytes, now).digest).toBe(imported.digest);
+    expect(incomingVerifications()).toBe(1);
+    const altered = JSON.parse(bytes);
+    const invalidSignature = Buffer.from(signature);
+    invalidSignature[0] = (invalidSignature[0] ?? 0) ^ 1;
+    altered.signature = invalidSignature.toString("base64");
+    expect(() => importWorkbenchSourceDataV1(root, JSON.stringify(altered), now)).toThrow();
+    expect(readFileSync(activePath, "utf8")).toBe(before);
+  });
+
   it("refreshes one of two active sources while retaining the other source's signed snapshot", () => {
     const root = store();
     writeFileSync(
