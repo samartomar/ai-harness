@@ -70,7 +70,9 @@ describe("staged repository checks", () => {
     expect(calls).toContainEqual(
       npmExec("biome", "check", "src/org-policy/catalog.ts", "tests/org-policy/catalog.test.ts"),
     );
-    expect(calls).toContainEqual(npmExec("vitest", "run", "tests/org-policy/catalog.test.ts"));
+    expect(calls).toContainEqual(
+      npmExec("vitest", "run", "--maxWorkers=2", "tests/org-policy/catalog.test.ts"),
+    );
     expect(calls).not.toContainEqual(npmRun("test", "--silent"));
     expect(calls.flat().join(" ")).not.toMatch(/--coverage/u);
   });
@@ -98,7 +100,10 @@ describe("staged repository checks", () => {
         { argv: npmRun("--silent", "check:artifacts"), timeoutMs: 120_000 },
         { argv: npmExec("biome", "check", "src/org-policy/catalog.ts"), timeoutMs: 120_000 },
         { argv: npmRun("--silent", "docs:lint"), timeoutMs: 120_000 },
-        { argv: npmExec("vitest", "run", "tests/org-policy/catalog.test.ts"), timeoutMs: 300_000 },
+        {
+          argv: npmExec("vitest", "run", "--maxWorkers=2", "tests/org-policy/catalog.test.ts"),
+          timeoutMs: 300_000,
+        },
       ]),
     );
   });
@@ -150,7 +155,9 @@ describe("staged repository checks", () => {
 
     expect(result.code).toBe(0);
     expect(calls).toContainEqual(npmRun("--silent", "docs:lint"));
-    expect(calls).toContainEqual(npmExec("vitest", "run", "tests/docs/readme-assets.test.ts"));
+    expect(calls).toContainEqual(
+      npmExec("vitest", "run", "--maxWorkers=2", "tests/docs/readme-assets.test.ts"),
+    );
   });
 
   it("uses bounded repository-contract tests for a full-suite fallback", async () => {
@@ -181,12 +188,15 @@ describe("staged repository checks", () => {
       npmExec(
         "vitest",
         "run",
+        "--maxWorkers=2",
         "tests/package-identity.test.ts",
         "tests/release-readiness.test.ts",
         "tests/release/preflight.test.ts",
       ),
     );
-    expect(calls).not.toContainEqual(npmExec("vitest", "run", ...result.receipt.selectedTests));
+    expect(calls).not.toContainEqual(
+      npmExec("vitest", "run", "--maxWorkers=2", ...result.receipt.selectedTests),
+    );
   });
 
   it("stops at the first failed command", async () => {

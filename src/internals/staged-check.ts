@@ -100,7 +100,11 @@ function planCommands(
     ? BOUNDED_FALLBACK_TESTS.filter((path) => available.has(path))
     : receipt.selectedTests;
   if (tests.length > 0) {
-    commands.push(...boundedFileCommands(npmExec(toolchain, "vitest", "run"), tests));
+    // Selected policy integration tests launch subprocesses themselves. Keep the
+    // local hook within a bounded worker budget without changing test deadlines.
+    commands.push(
+      ...boundedFileCommands(npmExec(toolchain, "vitest", "run", "--maxWorkers=2"), tests),
+    );
   }
   return commands;
 }
