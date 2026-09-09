@@ -257,4 +257,34 @@ describe("packaged collection evidence", () => {
     records.push({ bytes: "{}", sha256: `sha256:${sha("0")}` });
     expect(() => packagedScannerCollectionEvidenceV1()).toThrow(/seal mismatch/);
   });
+
+  it("returns detached immutable records and revalidates changed package input", () => {
+    const bundle = tinyStudioModel().workbenchBundle;
+    records.push(encodePackagedScannerCollectionEvidenceRecordV1(sealedFixture(bundle)));
+
+    const first = packagedScannerCollectionEvidenceV1();
+    const second = packagedScannerCollectionEvidenceV1();
+    const firstRecord = first[0];
+    const secondRecord = second[0];
+    if (firstRecord === undefined || secondRecord === undefined)
+      throw new Error("fixture package record is missing");
+    const firstComponent = firstRecord.coverage.components[0];
+    const secondComponent = secondRecord.coverage.components[0];
+    if (firstComponent === undefined || secondComponent === undefined)
+      throw new Error("fixture package component is missing");
+    expect(second).not.toBe(first);
+    expect(secondRecord).not.toBe(firstRecord);
+    expect(Object.isFrozen(first)).toBe(true);
+    expect(Object.isFrozen(firstRecord)).toBe(true);
+    expect(Object.isFrozen(firstComponent)).toBe(true);
+    expect(() => {
+      (firstComponent.paths as string[])[0] = "changed.json";
+    }).toThrow();
+    expect(secondComponent.paths[0]).toBe("catalog.json");
+
+    const packageRecord = records[0];
+    if (packageRecord === undefined) throw new Error("fixture package seal is missing");
+    records[0] = { ...packageRecord, sha256: `sha256:${sha("0")}` };
+    expect(() => packagedScannerCollectionEvidenceV1()).toThrow(/seal mismatch/);
+  });
 });

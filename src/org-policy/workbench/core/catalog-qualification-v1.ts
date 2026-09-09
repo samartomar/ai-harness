@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
+import type { PreparedAihScannerPublicationsV1 } from "../../../baseline-evidence/aih-scan-preparation.js";
 import { hashComponentTree } from "../../../baseline-evidence/hash.js";
 import { componentIdentityPaths } from "../../../baseline-evidence/license.js";
 import { prepareRegisteredScannerCatalogV1 } from "../../../baseline-evidence/scanner-provider-catalogs.js";
@@ -20,6 +21,10 @@ import {
   CatalogQualificationSummariesV1Schema,
   type CatalogQualificationSummaryV1,
 } from "../contracts.js";
+import {
+  type AihFirstPartyQualificationPreparationV1,
+  prepareAihFirstPartyQualificationCandidatesV1,
+} from "./catalog-qualification-first-party-v1.js";
 import {
   CATALOG_RECEIPT_SET_MAX_BYTES,
   CATALOG_RECEIPT_SET_MAX_ENTRIES,
@@ -155,6 +160,14 @@ export type CoreCompilerQualificationBindingsV1 = Readonly<
   Record<string, CompilerQualificationBindingV1>
 >;
 
+export interface PreparedAihFirstPartyCompilerQualificationsV1 {
+  readonly bindings: CoreCompilerQualificationBindingsV1;
+  /** Canonical Catalog profile artifact bytes indexed by the exact asset identity. */
+  readonly profiles: Readonly<Record<string, Readonly<{ bytes: Uint8Array; sha256: string }>>>;
+  /** Scanner-covered AIH assets that have no supported governance-subject kind. */
+  readonly unsupported: AihFirstPartyQualificationPreparationV1["unsupported"];
+}
+
 /**
  * The preparation-only portion of the fixed Scanner provider registry. Raw
  * file digests must come from Core's `hashComponentTree`, never from Catalog.
@@ -262,6 +275,49 @@ export function compilerQualificationBindingsFromRegisteredCoverageV1(
     bindings[asset.id] = parsed.data;
   }
   return Object.freeze(bindings);
+}
+
+/**
+ * First-party preparation is deliberately separate from the registered Git
+ * path. Its source profile is derived only from an opaque, verified AIH
+ * Scanner witness and the exact final built-in bundle.
+ */
+export function prepareAihFirstPartyCompilerQualificationsV1(
+  bundle: AuthoringCatalogBundleV1,
+  prepared: PreparedAihScannerPublicationsV1,
+): PreparedAihFirstPartyCompilerQualificationsV1 | undefined {
+  const firstParty = prepareAihFirstPartyQualificationCandidatesV1(bundle, prepared);
+  if (firstParty === undefined) return undefined;
+  const bindings: Record<string, CompilerQualificationBindingV1> = {};
+  const profiles: Record<string, Readonly<{ bytes: Uint8Array; sha256: string }>> = {};
+  for (const candidate of firstParty.candidates) {
+    const parsed = CompilerQualificationBindingV1Schema.safeParse({
+      format: "aih-compiler-qualification-binding",
+      version: 1,
+      asset: candidate.asset,
+      sourceContentDigest: candidate.sourceContentDigest,
+      compiler: candidate.compiler,
+      subject: candidate.subject,
+      material: candidate.material,
+    });
+    if (
+      !parsed.success ||
+      bindings[candidate.asset.assetId] !== undefined ||
+      profiles[candidate.asset.assetId] !== undefined ||
+      candidate.profile.sha256 !== sha256(candidate.profile.bytes)
+    )
+      return undefined;
+    bindings[candidate.asset.assetId] = parsed.data;
+    profiles[candidate.asset.assetId] = Object.freeze({
+      bytes: new Uint8Array(candidate.profile.bytes),
+      sha256: candidate.profile.sha256,
+    });
+  }
+  return Object.freeze({
+    bindings: Object.freeze(bindings),
+    profiles: Object.freeze(profiles),
+    unsupported: firstParty.unsupported,
+  });
 }
 
 /** Only registered, pinned Git sources can derive a Catalog subject at release preparation. */

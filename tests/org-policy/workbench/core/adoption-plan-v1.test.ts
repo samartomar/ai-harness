@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { policyAuthoringCatalog } from "../../../../src/org-policy/catalog.js";
+import { organizationManifestCatalogBundleV1 } from "../../../../src/org-policy/workbench/catalog-bundle.js";
 import { planWorkbenchAdoptionV1 } from "../../../../src/org-policy/workbench/core/adoption-plan-v1.js";
-import { prepareWorkbenchCatalog } from "../../../../src/org-policy/workbench/prepared-catalog.js";
 import {
   createWorkbenchState,
   reduceWorkbenchAction,
@@ -52,37 +51,36 @@ describe("Workbench adoption handoff", () => {
   });
 
   it("keeps a Core-prepared connected custom Skill pending evidence and derives its vet command from the saved pin", () => {
-    const prepared = prepareWorkbenchCatalog(policyAuthoringCatalog(), {
-      organizationManifestBytes: [
-        JSON.stringify({
-          version: "organization-authoring-manifest/v1",
-          source: {
-            id: "source:connected-github-skill",
-            revisionId: "a".repeat(40),
-            locator: "https://github.com/anthropics/skills",
+    // Exercise the real organization compiler without unrelated package sources.
+    const bundle = organizationManifestCatalogBundleV1(
+      JSON.stringify({
+        version: "organization-authoring-manifest/v1",
+        source: {
+          id: "source:connected-github-skill",
+          revisionId: "a".repeat(40),
+          locator: "https://github.com/anthropics/skills",
+        },
+        assets: [
+          {
+            id: "frontend-design",
+            kind: "skill",
+            label: "Frontend design",
+            path: "skills/frontend-design/SKILL.md",
           },
-          assets: [
-            {
-              id: "frontend-design",
-              kind: "skill",
-              label: "Frontend design",
-              path: "skills/frontend-design/SKILL.md",
-            },
-          ],
-        }),
-      ],
-    });
-    const asset = Object.values(prepared.bundle.assets).find(
+        ],
+      }),
+    );
+    const asset = Object.values(bundle.assets).find(
       (candidate) => candidate.sourceId === "source:connected-github-skill",
     );
     if (asset === undefined) throw new Error("prepared connected Skill missing");
-    const reduced = reduceWorkbenchAction(prepared.bundle, createWorkbenchState(), {
+    const reduced = reduceWorkbenchAction(bundle, createWorkbenchState(), {
       type: "select-root",
       assetId: asset.id,
       origin: { kind: "administrator" },
     });
     if (!reduced.accepted) throw new Error("fixture action rejected");
-    const plan = planWorkbenchAdoptionV1(prepared.bundle, reduced.state, prepared.bindings);
+    const plan = planWorkbenchAdoptionV1(bundle, reduced.state, {});
     expect(plan.items).toEqual([
       expect.objectContaining({
         assetId: asset.id,

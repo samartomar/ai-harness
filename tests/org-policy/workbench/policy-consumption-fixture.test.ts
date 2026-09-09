@@ -44,6 +44,7 @@ vi.mock("../../../src/org-policy/workbench/prepared-catalog.js", async () => {
     if (manifests.length !== 1) throw new TypeError("fixture accepts one organization manifest");
     const manifest = manifests[0];
     if (manifest === undefined) throw new TypeError("fixture manifest is unavailable");
+    const model = tinyStudioModel();
     const compiled = compileOrganizationManifestV1(manifest);
     const assets = Object.fromEntries(
       compiled.declarations.map(({ declaration }) => [
@@ -66,6 +67,7 @@ vi.mock("../../../src/org-policy/workbench/prepared-catalog.js", async () => {
     const bareBundle = {
       version: "authoring-catalog-bundle/v1" as const,
       sources: {
+        ...model.workbenchBundle.sources,
         [compiled.source.id]: {
           id: compiled.source.id,
           distributor: { kind: "organization" as const, locator: compiled.source.locator },
@@ -79,12 +81,12 @@ vi.mock("../../../src/org-policy/workbench/prepared-catalog.js", async () => {
           policyInputRequired: true,
         },
       },
-      assets,
-      groups: {},
-      relations: compiled.relations,
-      templates: {},
-      evidence: {},
-      detailChunks,
+      assets: { ...model.workbenchBundle.assets, ...assets },
+      groups: model.workbenchBundle.groups,
+      relations: [...model.workbenchBundle.relations, ...compiled.relations],
+      templates: model.workbenchBundle.templates,
+      evidence: model.workbenchBundle.evidence,
+      detailChunks: { ...model.workbenchBundle.detailChunks, ...detailChunks },
     };
     const bundle = parseAuthoringCatalogBundleV1({
       ...bareBundle,
@@ -96,12 +98,14 @@ vi.mock("../../../src/org-policy/workbench/prepared-catalog.js", async () => {
       },
     });
     return {
-      catalog: {},
+      catalog: model.catalog,
       bundle,
-      bindings: Object.fromEntries(
-        Object.keys(bundle.assets).map((assetId) => [assetId, { kind: "intent" }]),
-      ),
+      bindings: {
+        ...model.workbenchBindings,
+        ...Object.fromEntries(Object.keys(assets).map((assetId) => [assetId, { kind: "intent" }])),
+      },
       sourceInputs: {
+        ...model.workbenchSourceInputs,
         [compiled.source.id]: {
           kind: "organization-manifest",
           sourceId: compiled.source.id,
@@ -213,6 +217,132 @@ describe("schema-v3 policy consumption with a sealed fixture baseline", () => {
       requestedIntent: [],
       selectedControls: [],
     });
+  });
+
+  it("reports a selected organization declaration as inert generic intent", () => {
+    const prepared = prepareWorkbenchCatalog(undefined, {
+      organizationManifestBytes: [
+        JSON.stringify({
+          version: "organization-authoring-manifest/v1",
+          source: { id: "source:acme", revisionId: "v1", locator: "Acme catalog" },
+          assets: [
+            {
+              id: "skill:triage",
+              kind: "skill",
+              label: "Triage",
+              path: "skills/triage/SKILL.md",
+            },
+          ],
+        }),
+      ],
+    });
+    const asset = Object.values(prepared.bundle.assets).find(
+      (candidate) => candidate.sourceId === "source:acme",
+    );
+    if (asset === undefined) throw new Error("expected organization asset");
+    const state = reduceWorkbenchAction(prepared.bundle, createWorkbenchState(), {
+      type: "select-root",
+      assetId: asset.id,
+      origin: { kind: "administrator" },
+    }).state;
+    const authored = compilePolicy(
+      basePolicy,
+      state,
+      prepared.bundle,
+      prepared.bindings,
+      "author",
+      prepared.sourceInputs,
+    );
+    expect(authored.accepted).toBe(true);
+    const consumed = consumeWorkbenchPolicy(authored.policy, state, prepared);
+    expect(consumed).toMatchObject({
+      accepted: true,
+      requestedIntent: [asset.id],
+      selectedControls: [],
+    });
+    const effective = resolveEffectiveOrgPolicy(authored.policy as OrgPolicy, {
+      preparedWorkbenchCatalog: prepared,
+    });
+    expect(effective.authoringIntent).toEqual({
+      requestedIntent: [asset.id],
+      selectedControls: [],
+    });
+    expect(effective.candidates).toEqual([]);
+    expect(effective.activeMcpServerIds).toEqual([]);
+  });
+
+  it("reconstructs exact organization sources while retaining known Core controls", () => {
+    const manifest = JSON.stringify({
+      version: "organization-authoring-manifest/v1",
+      source: { id: "source:acme", revisionId: "v1", locator: "Acme catalog" },
+      assets: [
+        {
+          id: "skill:triage",
+          kind: "skill",
+          label: "Triage",
+          path: "skills/triage/SKILL.md",
+        },
+      ],
+    });
+    const prepared = prepareWorkbenchCatalog(undefined, { organizationManifestBytes: [manifest] });
+    const organizationAsset = Object.values(prepared.bundle.assets).find(
+      (asset) => asset.sourceId === "source:acme",
+    );
+    const control = prepared.bundle.assets["fixture:control"];
+    if (organizationAsset === undefined || control === undefined)
+      throw new Error("expected organization intent and Core control");
+
+    let state = createWorkbenchState();
+    state = reduceWorkbenchAction(prepared.bundle, state, {
+      type: "select-root",
+      assetId: control.id,
+      origin: { kind: "administrator" },
+    }).state;
+    state = reduceWorkbenchAction(prepared.bundle, state, {
+      type: "select-root",
+      assetId: organizationAsset.id,
+      origin: { kind: "administrator" },
+    }).state;
+    const authored = compilePolicy(
+      basePolicy,
+      state,
+      prepared.bundle,
+      prepared.bindings,
+      "author",
+      prepared.sourceInputs,
+    );
+    expect(authored.accepted).toBe(true);
+    expect(authored.policy).toMatchObject({
+      schemaVersion: 3,
+      authoringSources: [
+        expect.objectContaining({ sourceId: "source:acme", sourceRevisionId: "v1" }),
+      ],
+    });
+
+    const consumed = consumeWorkbenchPolicy(
+      authored.policy,
+      createWorkbenchState(),
+      defaultPreparedWorkbenchCatalog(),
+    );
+    expect(consumed).toMatchObject({
+      accepted: true,
+      requestedIntent: [organizationAsset.id],
+      selectedControls: [control.id],
+    });
+    const effective = resolveEffectiveOrgPolicy(authored.policy as OrgPolicy);
+    expect(effective.authoringIntent).toEqual({
+      requestedIntent: [organizationAsset.id],
+      selectedControls: [control.id],
+    });
+    expect(effective.candidates).toContainEqual(
+      expect.objectContaining({ id: "usage-metering", requested: true, effective: false }),
+    );
+    expect(effective.candidates.some((candidate) => candidate.id === organizationAsset.id)).toBe(
+      false,
+    );
+    expect(effective.activeMcpServerIds).not.toContain(organizationAsset.id);
+    expect(effective.capabilityPackages).toBeUndefined();
+    expect(effective.externalSelections).toEqual([]);
   });
 
   it("reports distinct missing and stale v3 pins while leaving all effects inert", () => {

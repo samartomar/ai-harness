@@ -8,9 +8,11 @@ import {
   openSync,
   readdirSync,
   readSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { gunzipSync } from "node:zlib";
 
@@ -159,14 +161,23 @@ function assertGlobalPax(bytes: Buffer, name: string, commit: string): void {
     fail("unsafe global PAX metadata");
 }
 function assertSafeParentChain(root: string): void {
+  const temporary = resolve(tmpdir());
+  const insideTemporary = root === temporary || contained(temporary, root);
+  const canonicalTemporary = insideTemporary ? realpathSync(temporary) : undefined;
   for (let current = dirname(root); ; current = dirname(current)) {
     try {
       const stat = lstatSync(current);
       if (!stat.isDirectory() || stat.isSymbolicLink()) fail("destination parent is unsafe");
+      if (insideTemporary) {
+        const expected = resolve(canonicalTemporary!, relative(temporary, current));
+        if (realpathSync(current) !== expected) fail("destination parent is unsafe");
+      }
     } catch (error) {
       if (error instanceof Error && error.message.startsWith("Bounded GitHub source archive:"))
         throw error;
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") fail("destination parent is unsafe");
     }
+    if (insideTemporary && current === temporary) return;
     const parent = dirname(current);
     if (parent === current) return;
   }

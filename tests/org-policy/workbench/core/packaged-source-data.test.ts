@@ -140,6 +140,24 @@ describe("offline package-owned source records", () => {
     fixture.records.splice(0, 1, seal(value));
     expect(packagedWorkbenchSourceDataRecordsV1).toThrow(/archive identity mismatch/);
   });
+  it("defers nested runtime descriptor inspection until a runtime consumer requests it", async () => {
+    const value = {
+      ...record(),
+      runtimeDescriptor: {
+        bytesBase64: Buffer.from("{}", "utf8").toString("base64"),
+        sha256: `sha256:${canonicalStrictJsonSha256V1({})}`,
+      },
+    };
+    fixture.records.push(seal(value));
+    const { packagedEccRuntimeDescriptorsV1, packagedWorkbenchSourceDataRecordsV1 } = await import(
+      "../../../../src/org-policy/workbench/core/packaged-source-data.js"
+    );
+
+    expect(packagedWorkbenchSourceDataRecordsV1).not.toThrow();
+    expect(packagedEccRuntimeDescriptorsV1).toThrow();
+    // A failed inspection is never marked as a registered empty descriptor owner.
+    expect(packagedEccRuntimeDescriptorsV1).toThrow();
+  });
   it("retains the exact compiled-base revision when an initial package record is newer", async () => {
     const value = record();
     fixture.records.push(seal(value));

@@ -22,7 +22,7 @@ package smoke; those are the browser successors for generic UI behavior:
   - `opens offline and keeps exact prepared evidence separate from permission across expiry`
   - `imports legacy policy, rolls back invalid input, and downloads exact bytes`
   - `authors a protected decision through ordinary fields`
-- `tests/org-policy/workbench/browser/packed.spec.ts`
+- `tests/org-policy/workbench/browser/artifact.spec.ts`
   - `installed package generates a complete offline artifact with usable export`
 
 The first generic journey is the replacement evidence for bounded group/search/

@@ -231,6 +231,20 @@ that binds the generated tree to the Core commit. Scanner must scan that generat
 tree; scanning the ordinary repository checkout does not cover these declarations.
 This preparation does not sign, publish, or qualify evidence.
 
+The scanned Core commit and the final packaging commit are distinct identities.
+An evidence-only packaging change can retain a report only when freshly generated
+materials match: package version, compiler inputs, asset identities, component
+files, and generated content. The original scanned commit remains in the report.
+A changed pack, hook, MCP declaration, or compiler input requires new matching
+evidence; changing only the evidence records does not renew report dates.
+
+AIH scan coverage and Catalog qualification have different scopes. Pack
+qualification covers the declared pack files and manifest. MCP qualification
+can cover configuration declarations only, not the external server binary or
+hosted implementation. The current Catalog subject schema has no hook kind,
+so a hook can have a verified scan without a Catalog qualification. It must
+not inherit qualification by being relabeled as a tool or profile.
+
 The internal Catalog preparation command consumes the four bounded files
 `receipt.json`, `receipt-set.json`, `member.json`, and `closure.json`. The local
 transport names differ from the authenticated publisher subjects: the receipt

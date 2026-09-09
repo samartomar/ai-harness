@@ -1,9 +1,17 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve, sep } from "node:path";
-import { pathToFileURL } from "node:url";
+import { dirname, join, resolve, sep } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import {
+  assertAihScanMaterialEquivalenceV1,
+  materializeAihScanSubjectsV1,
+  removeMaterializedAihScanSubjectsV1,
+} from "../baseline-evidence/aih-scan-material.js";
 import { SCANNER_BASELINE_PUBLICATION_PUBLISHERS_V1 } from "../baseline-evidence/scanner-publication-policy.js";
+import { policyAuthoringCatalog } from "../org-policy/catalog.js";
 import { packagedScannerCollectionEvidenceV1 } from "../org-policy/packaged-collection-evidence-v1.js";
+import { compileBuiltInCatalogV1 } from "../org-policy/workbench/compilers/built-in.js";
 import { packagedCatalogQualificationBindingsV1 } from "../org-policy/workbench/core/catalog-qualification-package-v1.js";
 import { packagedWorkbenchSourceDataRecordsV1 } from "../org-policy/workbench/core/packaged-source-data.js";
 import { defaultPreparedWorkbenchCatalog } from "../org-policy/workbench/prepared-catalog.js";
@@ -123,6 +131,63 @@ async function download(url: string, maximum: number): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
+function moduleOwnedCoreCheckoutRoot(): string {
+  const moduleDirectory = dirname(fileURLToPath(import.meta.url));
+  const candidates = [resolve(moduleDirectory, "../.."), resolve(moduleDirectory, "..")];
+  for (const root of candidates) {
+    if (
+      existsSync(join(root, "package.json")) &&
+      existsSync(join(root, "src", "org-policy", "catalog.ts"))
+    )
+      return root;
+  }
+  throw new Error("Release Core checkout root is unavailable.");
+}
+
+function cleanCoreCheckout(): Readonly<{ root: string; commit: string }> {
+  const root = moduleOwnedCoreCheckoutRoot();
+  const options = { encoding: "utf8" as const, windowsHide: true };
+  const commit = execFileSync("git", ["-C", root, "rev-parse", "HEAD"], options).trim();
+  if (!/^[a-f0-9]{40}$/u.test(commit)) throw new Error("Release Core checkout has no exact HEAD.");
+  const status = execFileSync(
+    "git",
+    ["-C", root, "status", "--porcelain=v1", "--untracked-files=no"],
+    options,
+  );
+  if (status !== "") throw new Error("Release Core checkout must be clean.");
+  return { root, commit };
+}
+
+function assertAihReleaseMaterialEquivalence(
+  scannedRoot: string,
+  scannedCommit: string,
+  outputParent: string,
+): void {
+  const release = cleanCoreCheckout();
+  const catalog = policyAuthoringCatalog();
+  const compiled = compileBuiltInCatalogV1(catalog);
+  const scanned = materializeAihScanSubjectsV1({
+    packageRoot: scannedRoot,
+    outputParent,
+    coreRevision: { pinnedSha: scannedCommit },
+    catalog,
+    compiled,
+  });
+  let releaseMaterial: ReturnType<typeof materializeAihScanSubjectsV1> | undefined;
+  try {
+    releaseMaterial = materializeAihScanSubjectsV1({
+      packageRoot: release.root,
+      outputParent,
+      coreRevision: { pinnedSha: release.commit },
+      catalog,
+      compiled,
+    });
+    assertAihScanMaterialEquivalenceV1(scanned, releaseMaterial);
+  } finally {
+    if (releaseMaterial !== undefined) removeMaterializedAihScanSubjectsV1(releaseMaterial);
+    removeMaterializedAihScanSubjectsV1(scanned);
+  }
+}
 /** Connected release gate only. Normal Studio generation never calls this operation. */
 export async function verifyWorkbenchPublicPublicationWithMaterialsV1(): Promise<void> {
   await verifyPackagedWorkbenchSourceDataV1();
@@ -152,6 +217,7 @@ export async function verifyWorkbenchPublicPublicationWithMaterialsV1(): Promise
         commit: target.pin,
         destination: checkout,
       });
+      if (target.id === "aih") assertAihReleaseMaterialEquivalence(checkout, target.pin, root);
       const packaged = packagedSources.get(target.sourceId);
       if (packaged) {
         packagedSourceQualification.push({

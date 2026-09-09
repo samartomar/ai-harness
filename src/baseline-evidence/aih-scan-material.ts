@@ -435,6 +435,47 @@ export function removeMaterializedAihScanSubjectsV1(
   ownedMaterializedRoots.delete(materialized);
 }
 
+/**
+ * Compare freshly generated release materials with the scanned checkout's
+ * materials. Git revisions remain separate provenance; every other coverage
+ * fact must agree. This proves equivalence, not a scan or qualification.
+ */
+export function assertAihScanMaterialEquivalenceV1(
+  scanned: MaterializedAihScanSubjectsV1,
+  release: MaterializedAihScanSubjectsV1,
+): Readonly<{
+  authority: "none";
+  scannedCommit: string;
+  releaseCommit: string;
+  materialDigest: string;
+}> {
+  for (const materialized of [scanned, release]) {
+    const owned = ownedMaterializedRoots.get(materialized);
+    if (owned === undefined || materialized.sourceRoot !== owned.root)
+      fail("material equivalence custody");
+    const stat = lstatSync(owned.root, { bigint: true });
+    if (
+      stat.isSymbolicLink() ||
+      !stat.isDirectory() ||
+      stat.dev !== owned.dev ||
+      stat.ino !== owned.ino ||
+      hashSourceTree(owned.root).treeSha256 !== materialized.coverage.sourceTreeSha256
+    )
+      fail("material equivalence source changed");
+  }
+  const { pinnedCommit: scannedCommit, ...scannedMaterial } = scanned.coverage;
+  const { pinnedCommit: releaseCommit, ...releaseMaterial } = release.coverage;
+  const digest = canonicalStrictJsonSha256V1(scannedMaterial);
+  if (digest !== canonicalStrictJsonSha256V1(releaseMaterial))
+    fail("release material differs from scanned material");
+  return Object.freeze({
+    authority: "none",
+    scannedCommit,
+    releaseCommit,
+    materialDigest: `sha256:${digest}`,
+  });
+}
+
 function packDeclarations(
   input: MaterializeAihScanSubjectsV1Input,
   manifestBytes: Buffer,

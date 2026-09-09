@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash, generateKeyPairSync } from "node:crypto";
 import {
+  chmodSync,
   closeSync,
   constants,
   cpSync,
@@ -8,6 +9,7 @@ import {
   fstatSync,
   linkSync,
   lstatSync,
+  mkdirSync,
   mkdtempSync,
   openSync,
   readdirSync,
@@ -18,6 +20,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { gzipSync } from "node:zlib";
 import {
   type BaselineVetBatchResultV1,
@@ -36,6 +39,7 @@ vi.mock("../../src/internals/proc.js", async (importOriginal) => ({
 }));
 
 import {
+  assertAihScanMaterialEquivalenceV1,
   type MaterializedAihScanSubjectsV1,
   materializeAihScanSubjectsV1,
   removeMaterializedAihScanSubjectsV1,
@@ -61,7 +65,17 @@ import { canonicalStrictJsonBytesV1 } from "../../src/contract/strict-json-v1.js
 import { acquireBoundedGithubSourceArchiveV1 } from "../../src/internals/bounded-github-source-archive.js";
 import { policyAuthoringCatalog } from "../../src/org-policy/catalog.js";
 import { PackagedScannerCollectionEvidenceRecordV1Schema } from "../../src/org-policy/packaged-collection-evidence-v1.js";
+import { assembleCompilerOutputsV1 } from "../../src/org-policy/workbench/assembly.js";
 import { compileBuiltInCatalogV1 } from "../../src/org-policy/workbench/compilers/built-in.js";
+import { CATALOG_QUALIFICATION_RELEASE_POLICY_V1 } from "../../src/org-policy/workbench/core/catalog-qualification-policy-v1.js";
+import {
+  canonicalCatalogQualificationClosureV1,
+  compilerQualificationBindingDigestV1,
+  inspectCatalogQualificationArtifactV1,
+  prepareAihFirstPartyCompilerQualificationsV1,
+  verifyCatalogQualificationArtifactsForPackagingV1,
+} from "../../src/org-policy/workbench/core/catalog-qualification-v1.js";
+import { builtInAssemblyInputV1 } from "../../src/org-policy/workbench/providers/aih.js";
 
 const roots: string[] = [];
 const materializedRoots: MaterializedAihScanSubjectsV1[] = [];
@@ -78,6 +92,46 @@ function temporaryDirectory(prefix: string): string {
   const root = mkdtempSync(join(realpathSync(tmpdir()), prefix));
   roots.push(root);
   return root;
+}
+
+function localCatalogAttestation(
+  publisher: {
+    repository: string;
+    workflow: string;
+    ref: string;
+    issuer: string;
+    commit: string;
+    subjectName: string;
+  },
+  bytes: Uint8Array,
+): string {
+  const workflow = `https://github.com/${publisher.workflow}@${publisher.ref}`;
+  return JSON.stringify([
+    {
+      verificationResult: {
+        signature: {
+          certificate: {
+            subjectAlternativeName: workflow,
+            buildSignerURI: workflow,
+            buildConfigURI: workflow,
+            issuer: publisher.issuer,
+            sourceRepositoryURI: `https://github.com/${publisher.repository}`,
+            sourceRepositoryRef: publisher.ref,
+            sourceRepositoryDigest: publisher.commit,
+            runnerEnvironment: "github-hosted",
+          },
+        },
+        verifiedTimestamps: [
+          { type: "signed", uri: "https://rekor.sigstore.dev", timestamp: "2026-09-07T12:10:00Z" },
+        ],
+        statement: {
+          _type: "https://in-toto.io/Statement/v1",
+          predicateType: "https://slsa.dev/provenance/v1",
+          subject: [{ name: publisher.subjectName, digest: { sha256: sha256(bytes) } }],
+        },
+      },
+    },
+  ]);
 }
 
 function currentRevision(): string {
@@ -199,6 +253,76 @@ function materialize(): MaterializedAihScanSubjectsV1 {
   materializedRoots.push(materialized);
   return materialized;
 }
+
+it("accepts evidence-only release commits while retaining the scanned revision and rejecting changed pack bytes", () => {
+  const packageRoot = copiedPackageCheckout();
+  const catalog = policyAuthoringCatalog();
+  const capture = (inputCatalog = catalog) => {
+    const pinnedSha = execFileSync("git", ["-C", packageRoot, "rev-parse", "HEAD"], {
+      encoding: "utf8",
+    }).trim();
+    const materialized = materializeAihScanSubjectsV1({
+      packageRoot,
+      coreRevision: { pinnedSha },
+      catalog: inputCatalog,
+      compiled: compileBuiltInCatalogV1(inputCatalog),
+    });
+    materializedRoots.push(materialized);
+    return materialized;
+  };
+  const commit = () => {
+    execFileSync("git", ["-C", packageRoot, "add", "."]);
+    execFileSync("git", [
+      "-C",
+      packageRoot,
+      "-c",
+      "user.name=AIH test",
+      "-c",
+      "user.email=test@example.invalid",
+      "commit",
+      "-qm",
+      "evidence update",
+    ]);
+  };
+  const scanned = capture();
+  writeFileSync(join(packageRoot, "evidence-summary.json"), "{}\n");
+  commit();
+  const release = capture();
+  expect(release.coverage.pinnedCommit).not.toBe(scanned.coverage.pinnedCommit);
+  expect(assertAihScanMaterialEquivalenceV1(scanned, release)).toMatchObject({
+    authority: "none",
+    scannedCommit: scanned.coverage.pinnedCommit,
+    releaseCommit: release.coverage.pinnedCommit,
+  });
+  expect(() => assertAihScanMaterialEquivalenceV1(structuredClone(scanned), release)).toThrow(
+    /custody/,
+  );
+  const nextVersion = structuredClone(catalog);
+  nextVersion.aihCapabilityPackage.version = "99.0.0";
+  expect(() => assertAihScanMaterialEquivalenceV1(scanned, capture(nextVersion))).toThrow(
+    /differs/,
+  );
+  for (const prefix of ["generated/usage-metering/", "declarations/claude/project/"]) {
+    const generated = release.subjects
+      .flatMap((subject) => subject.files)
+      .find((file) => file.path.startsWith(prefix));
+    if (generated === undefined) throw new Error("missing generated fixture");
+    const path = join(release.sourceRoot, generated.path);
+    const original = readFileSync(path);
+    chmodSync(path, 0o600);
+    writeFileSync(path, Buffer.concat([original, Buffer.from("\nchanged\n")]));
+    expect(() => assertAihScanMaterialEquivalenceV1(scanned, release)).toThrow(/source changed/);
+    writeFileSync(path, original);
+    chmodSync(path, 0o400);
+  }
+  const packFile = scanned.subjects
+    .flatMap((subject) => subject.files)
+    .find((file) => file.path.startsWith("packs/") && file.path.endsWith("SKILL.md"));
+  if (packFile === undefined) throw new Error("missing pack fixture");
+  writeFileSync(join(packageRoot, packFile.path), "Changed skill material\n");
+  commit();
+  expect(() => assertAihScanMaterialEquivalenceV1(scanned, capture())).toThrow(/differs/);
+});
 
 function sha256(value: Uint8Array): string {
   return createHash("sha256").update(value).digest("hex");
@@ -658,21 +782,23 @@ describe("AIH scan material", () => {
     ).map(signedPublication);
     const calls: string[][] = [];
     let next = 0;
-    mocks.defaultRunner.mockImplementation(async (argv) => {
+    const scannerRunner = async (argv: readonly string[]) => {
       calls.push([...argv]);
       expect(argv.slice(0, 3)).toEqual(["gh", "attestation", "verify"]);
       const artifact = artifacts[next++];
       if (artifact === undefined) throw new Error("unexpected attestation invocation");
       return { code: 0, stdout: artifact.attestationBytes.toString("utf8"), stderr: "" };
-    });
+    };
+    mocks.defaultRunner.mockImplementation(scannerRunner);
 
     const catalog = policyAuthoringCatalog();
+    const compiled = compileBuiltInCatalogV1(catalog);
     const prepared = await prepareAihScannerPublicationsV1({
       packageRoot: resolve("."),
       materialOutputParent: preparationParent,
       coreRevision: { pinnedSha: currentRevision() },
       catalog,
-      compiled: compileBuiltInCatalogV1(catalog),
+      compiled,
       batches: artifacts.map(({ discoveryBytes, publicationBytes }) => ({
         discoveryBytes,
         publicationBytes,
@@ -684,6 +810,289 @@ describe("AIH scan material", () => {
     const sealed = authorPackagedAihScannerEvidenceRecordV1(prepared);
     if (authored === undefined || sealed === undefined)
       throw new Error("operational output missing");
+    const firstParty = prepareAihFirstPartyCompilerQualificationsV1(
+      assembleCompilerOutputsV1([builtInAssemblyInputV1(compiled)], compiled.coreCapabilities),
+      prepared,
+    );
+    expect(firstParty).toBeDefined();
+    expect(Object.keys(firstParty!.bindings)).toHaveLength(9);
+    expect(
+      Object.values(firstParty!.bindings).filter(
+        (binding) => binding.material.kind === "source-files",
+      ),
+    ).toHaveLength(3);
+    expect(
+      Object.values(firstParty!.bindings).filter(
+        (binding) => binding.material.kind === "configuration-only",
+      ),
+    ).toHaveLength(6);
+    expect(firstParty!.unsupported).toEqual([
+      { assetId: "aih/usage-metering", reason: "unsupported-governance-subject-kind" },
+    ]);
+    expect(
+      prepareAihFirstPartyCompilerQualificationsV1(
+        assembleCompilerOutputsV1([builtInAssemblyInputV1(compiled)], compiled.coreCapabilities),
+        structuredClone(prepared),
+      ),
+    ).toBeUndefined();
+
+    const catalogRoot = process.env.AIH_CATALOG_INTEGRATION_ROOT;
+    if (catalogRoot !== undefined && catalogRoot !== "") {
+      const root = realpathSync(catalogRoot);
+      const implementation = (await import(
+        pathToFileURL(join(root, "dist", "supported", "signed-catalog-v2.js")).href
+      )) as {
+        runCatalogV2Cli(argv: readonly string[]): number;
+      };
+      const catalogApi = (await import(pathToFileURL(join(root, "dist", "index.js")).href)) as {
+        parseCatalogHeadV2Json(value: string): { entries: Record<string, unknown>[] };
+        signCatalogHeadV2(value: unknown): unknown;
+        emitQualificationReceipt(value: unknown): unknown;
+        emitQualificationReceiptSet(value: unknown): {
+          manifest: unknown;
+          receipts: readonly { entryId: string; receipt: unknown }[];
+        };
+        canonicalQualificationReceiptBytes(value: unknown): Buffer;
+        canonicalQualificationReceiptSetBytes(value: unknown): Buffer;
+      };
+      const roundtrip = temporaryDirectory("aih-first-party-catalog-roundtrip-");
+      const artifactRoot = join(roundtrip, "artifacts");
+      const evidenceRoot = join(roundtrip, "evidence");
+      mkdirSync(artifactRoot);
+      mkdirSync(evidenceRoot);
+      const assetId = "aih/code-review-graph";
+      const binding = firstParty!.bindings[assetId]!;
+      const profile = firstParty!.profiles[assetId]!;
+      const closure = {
+        format: "aih-supported-catalog-member-closure",
+        version: 1,
+        assetId,
+        sourceId: binding.asset.sourceId,
+        sourceRevisionId: binding.asset.sourceRevisionId,
+        sourceContentDigest: binding.sourceContentDigest,
+        contentDigest: binding.asset.contentDigest,
+        subjectDigest: binding.subject.subjectDigest,
+        bindingDigest: compilerQualificationBindingDigestV1(binding),
+        scope: {
+          kind: binding.material.kind,
+          description: "Local integration fixture for the exact first-party material scope.",
+        },
+        files: binding.material.kind === "source-files" ? binding.material.files : [],
+      } as const;
+      const closureBytes = Buffer.from(canonicalCatalogQualificationClosureV1(closure), "utf8");
+      writeFileSync(join(artifactRoot, "profile.json"), profile.bytes, { flag: "wx" });
+      writeFileSync(join(artifactRoot, "closure.json"), closureBytes, { flag: "wx" });
+      writeFileSync(join(artifactRoot, "recipe.json"), "{}", { flag: "wx" });
+      writeFileSync(join(artifactRoot, "prose.md"), "local integration fixture\n", { flag: "wx" });
+      const evidence = (kind: "report" | "right", id: string) => ({
+        attestor: "attestor:aih-supported/local",
+        format: "aih-supported-evidence/v2",
+        id,
+        kind,
+        subjectDigest: binding.subject.subjectDigest,
+        summary: "Local-only fixture evidence for the exact first-party subject.",
+      });
+      writeFileSync(
+        join(evidenceRoot, "report.json"),
+        JSON.stringify(evidence("report", "local-report")),
+        {
+          flag: "wx",
+        },
+      );
+      writeFileSync(
+        join(evidenceRoot, "right.json"),
+        JSON.stringify(evidence("right", "local-right")),
+        {
+          flag: "wx",
+        },
+      );
+      const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+      const publicKeySpkiSha256 = sha256(publicKey.export({ format: "der", type: "spki" }));
+      const signer = {
+        class: "administrator-ed25519",
+        identity: "administrator:aih-supported/catalog-v2",
+        keyId: `ed25519:${publicKeySpkiSha256}`,
+        publicKeySpkiSha256,
+      };
+      const claims = {
+        environment: "catalog-signing",
+        eventName: "workflow_dispatch",
+        issuer: "https://token.actions.githubusercontent.com",
+        jobWorkflowRef:
+          "samartomar/aih-catalog/.github/workflows/signed-catalog-v2.yml@refs/heads/main",
+        ref: "refs/heads/main",
+        repository: "samartomar/aih-catalog",
+        repositoryId: "987654321",
+        repositoryOwnerId: "123456789",
+      };
+      const entryId = "recipe.aih-code-review-graph";
+      const seed = {
+        artifacts: {
+          closure: "artifacts/closure.json",
+          profile: "artifacts/profile.json",
+          prose: "artifacts/prose.md",
+          recipe: "artifacts/recipe.json",
+        },
+        capabilities: { commands: [], egress: [], hooks: [], mcpTools: [], permissions: [] },
+        entryId,
+        platforms: [{ architecture: "amd64", os: "linux" }],
+        qualification: {
+          findings: [],
+          gaps: [],
+          report: "evidence/report.json",
+          rights: ["evidence/right.json"],
+        },
+        subject: {
+          id: binding.subject.id,
+          kind: binding.subject.kind,
+          source: binding.subject.source,
+        },
+      };
+      const seedPath = join(roundtrip, "seed.json");
+      const signerPath = join(roundtrip, "signer.json");
+      const claimsPath = join(roundtrip, "claims.json");
+      const candidatePath = join(roundtrip, "candidate.json");
+      writeFileSync(seedPath, JSON.stringify(seed), { flag: "wx" });
+      writeFileSync(signerPath, JSON.stringify(signer), { flag: "wx" });
+      writeFileSync(claimsPath, JSON.stringify(claims), { flag: "wx" });
+      const candidateArgs = [
+        "generate-candidate",
+        "--seed",
+        seedPath,
+        "--signer",
+        signerPath,
+        "--claims",
+        claimsPath,
+        "--valid-from",
+        "2026-09-07T00:00:00Z",
+        "--valid-until",
+        "2026-12-06T00:00:00Z",
+        "--sequence",
+        "0",
+        "--previous-catalog-head-sha256",
+        "0".repeat(64),
+        "--output",
+        candidatePath,
+      ];
+      expect(implementation.runCatalogV2Cli(candidateArgs)).toBe(0);
+      const tamperedProfilePath = join(artifactRoot, "profile-tampered.json");
+      writeFileSync(
+        tamperedProfilePath,
+        Buffer.concat([Buffer.from(profile.bytes), Buffer.from(" ")]),
+        {
+          flag: "wx",
+        },
+      );
+      writeFileSync(
+        join(roundtrip, "seed-tampered.json"),
+        JSON.stringify({
+          ...seed,
+          artifacts: { ...seed.artifacts, profile: "artifacts/profile-tampered.json" },
+        }),
+        { flag: "wx" },
+      );
+      const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+      try {
+        expect(
+          implementation.runCatalogV2Cli([
+            ...candidateArgs.slice(0, 2),
+            join(roundtrip, "seed-tampered.json"),
+            ...candidateArgs.slice(3, -1),
+            join(roundtrip, "candidate-tampered.json"),
+          ]),
+        ).toBe(2);
+      } finally {
+        stderr.mockRestore();
+      }
+      const head = catalogApi.parseCatalogHeadV2Json(readFileSync(candidatePath, "utf8"));
+      const signed = catalogApi.signCatalogHeadV2({ head, privateKey });
+      const catalogSignerRoot = {
+        ...signer,
+        publicKeySpkiDerBase64: Buffer.from(
+          publicKey.export({ format: "der", type: "spki" }),
+        ).toString("base64"),
+      };
+      const receipt = catalogApi.emitQualificationReceipt({
+        catalogSignerRoots: [catalogSignerRoot],
+        entryId,
+        expectedClaims: claims,
+        now: "2026-09-07T12:10:00Z",
+        replay: { acceptedIdentities: [] },
+        signed,
+      });
+      const receiptSet = catalogApi.emitQualificationReceiptSet({
+        catalogSignerRoots: [catalogSignerRoot],
+        expectedClaims: claims,
+        now: "2026-09-07T12:10:00Z",
+        replay: { acceptedIdentities: [] },
+        signed,
+      });
+      const member = { ...head.entries[0] };
+      delete member.memberSha256;
+      const receiptBytes = catalogApi.canonicalQualificationReceiptBytes(receipt);
+      const receiptSetBytes = catalogApi.canonicalQualificationReceiptSetBytes(receiptSet.manifest);
+      const memberBytes = canonicalStrictJsonBytesV1(member);
+      const publisher = {
+        ...CATALOG_QUALIFICATION_RELEASE_POLICY_V1.publisher,
+        subjectName: `${entryId}.json`,
+      };
+      const releaseRecord = {
+        receiptBytes,
+        receiptSetBytes,
+        memberBytes,
+        closureBytesByIdentity: { "artifact:artifacts/closure.json": closureBytes },
+        publisher,
+        receiptSetPublisher: CATALOG_QUALIFICATION_RELEASE_POLICY_V1.receiptSetPublisher,
+      };
+      expect(
+        inspectCatalogQualificationArtifactV1(
+          assembleCompilerOutputsV1([builtInAssemblyInputV1(compiled)], compiled.coreCapabilities),
+          releaseRecord,
+          firstParty!.bindings,
+          "2026-09-07T12:10:00Z",
+        ),
+      ).toMatchObject({ [assetId]: { state: "qualified" } });
+      const invalidClosureBytes = Buffer.from(
+        canonicalCatalogQualificationClosureV1({
+          ...closure,
+          files: [{ path: "generated/forged.mjs", digest: `sha256:${"0".repeat(64)}` }],
+        }),
+        "utf8",
+      );
+      expect(
+        inspectCatalogQualificationArtifactV1(
+          assembleCompilerOutputsV1([builtInAssemblyInputV1(compiled)], compiled.coreCapabilities),
+          {
+            ...releaseRecord,
+            closureBytesByIdentity: { "artifact:artifacts/closure.json": invalidClosureBytes },
+          },
+          firstParty!.bindings,
+          "2026-09-07T12:10:00Z",
+        ),
+      ).toBeUndefined();
+      let attestationCall = 0;
+      mocks.defaultRunner.mockImplementation(async () => {
+        const bytes = attestationCall++ === 0 ? receiptBytes : receiptSetBytes;
+        const expectedPublisher =
+          attestationCall === 1 ? publisher : releaseRecord.receiptSetPublisher;
+        return {
+          code: 0,
+          stdout: localCatalogAttestation(expectedPublisher, bytes),
+          stderr: "",
+        };
+      });
+      expect(
+        await verifyCatalogQualificationArtifactsForPackagingV1(
+          assembleCompilerOutputsV1([builtInAssemblyInputV1(compiled)], compiled.coreCapabilities),
+          firstParty!.bindings,
+          [releaseRecord],
+          "2026-09-07T12:10:00Z",
+        ),
+      ).toBeDefined();
+      expect(attestationCall).toBe(2);
+      next = 0;
+      mocks.defaultRunner.mockImplementation(scannerRunner);
+    }
     const record = PackagedScannerCollectionEvidenceRecordV1Schema.parse(JSON.parse(sealed.bytes));
 
     expect(calls).toHaveLength(artifacts.length);

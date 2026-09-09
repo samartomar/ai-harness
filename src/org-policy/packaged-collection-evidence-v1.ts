@@ -8,6 +8,7 @@ import { BaselineSourceEvidenceSchema } from "../baseline-evidence/schema.js";
 import {
   canonicalStrictJsonBytesV1,
   canonicalStrictJsonSha256V1,
+  deepFreezeStrictJsonV1,
   parseStrictJsonObjectV1,
 } from "../contract/strict-json-v1.js";
 import { evidenceExpiryV1 } from "../evidence-freshness.js";
@@ -284,8 +285,33 @@ export function encodePackagedScannerCollectionEvidenceRecordV1(value: unknown):
   };
 }
 
+type PackagedCollectionInputV1 = Readonly<{
+  bytes: string;
+  sha256: string;
+}>;
+
+type CachedPackagedCollectionEvidenceV1 = Readonly<{
+  input: readonly PackagedCollectionInputV1[];
+  records: readonly PackagedScannerCollectionEvidenceRecordV1[];
+}>;
+
+let cachedPackagedCollectionEvidenceV1: CachedPackagedCollectionEvidenceV1 | undefined;
+
+function cachedInputMatchesPackageV1(cached: CachedPackagedCollectionEvidenceV1): boolean {
+  if (cached.input.length !== PACKAGED_SCANNER_COLLECTION_EVIDENCE_RECORDS_V1.length) return false;
+  return cached.input.every(
+    (item, index) =>
+      item.bytes === PACKAGED_SCANNER_COLLECTION_EVIDENCE_RECORDS_V1[index]?.bytes &&
+      item.sha256 === PACKAGED_SCANNER_COLLECTION_EVIDENCE_RECORDS_V1[index]?.sha256,
+  );
+}
+
 /** Inputless loader for independent source records shipped by the release process. */
 export function packagedScannerCollectionEvidenceV1(): readonly PackagedScannerCollectionEvidenceRecordV1[] {
+  const cached = cachedPackagedCollectionEvidenceV1;
+  if (cached !== undefined && cachedInputMatchesPackageV1(cached))
+    return deepFreezeStrictJsonV1(structuredClone(cached.records));
+
   const records: PackagedScannerCollectionEvidenceRecordV1[] = [];
   const sourceIds = new Set<string>();
   for (const item of PACKAGED_SCANNER_COLLECTION_EVIDENCE_RECORDS_V1) {
@@ -306,7 +332,15 @@ export function packagedScannerCollectionEvidenceV1(): readonly PackagedScannerC
     sourceIds.add(parsed.catalog.id);
     records.push(parsed);
   }
-  return Object.freeze(records);
+  const input = PACKAGED_SCANNER_COLLECTION_EVIDENCE_RECORDS_V1.map((item) =>
+    Object.freeze({ bytes: item.bytes, sha256: item.sha256 }),
+  );
+  const immutable = deepFreezeStrictJsonV1(records);
+  cachedPackagedCollectionEvidenceV1 = Object.freeze({
+    input: Object.freeze(input),
+    records: immutable,
+  });
+  return deepFreezeStrictJsonV1(structuredClone(immutable));
 }
 
 function exactAsset(

@@ -8,6 +8,7 @@ import {
   parseStrictJsonObjectV1,
 } from "../../../contract/strict-json-v1.js";
 import {
+  type EccRuntimeDescriptorV1,
   registerPackagedEccRuntimeDescriptorsV1,
   packagedEccRuntimeDescriptorsV1 as runtimeDescriptorsForPackageOwnerV1,
 } from "../../../ecc/runtime-descriptor.js";
@@ -31,6 +32,7 @@ import { applyPackagedWorkbenchSourceBundlesV1 } from "./source-data.js";
 
 let cached: readonly PackagedSourceDataRecordV1[] | undefined;
 const sealedIdentityByRecord = new WeakMap<PackagedSourceDataRecordV1, string>();
+const registeredRuntimeDescriptorRecords = new WeakSet<PackagedSourceDataRecordV1>();
 const PREPARED_OVERLAY_CACHE_LIMIT_V1 = 4;
 type PreparedOverlayV1 = Readonly<Pick<PreparedWorkbenchCatalogV1, "bundle" | "bindings">>;
 const preparedOverlays = new Map<string, PreparedOverlayV1>();
@@ -74,10 +76,6 @@ function verifiedPackagedWorkbenchSourceDataRecordsV1(): readonly PackagedSource
           source.revision.id !== record.source.commit)
       )
         throw new TypeError("Packaged source archive identity mismatch");
-      registerPackagedEccRuntimeDescriptorsV1(
-        record,
-        record.runtimeDescriptor === undefined ? [] : [record.runtimeDescriptor],
-      );
       seen.add(source.id);
       return record;
     });
@@ -91,11 +89,26 @@ function verifiedPackagedWorkbenchSourceDataRecordsV1(): readonly PackagedSource
   return cached;
 }
 
-/** Runtime descriptors are package literals only; user source-data imports cannot enter this registry. */
+/**
+ * Runtime descriptors are package literals only; user source-data imports cannot enter this registry.
+ * Catalog preparation validates the outer package seal but does not establish runtime materialization
+ * validity. Runtime consumers validate the nested descriptor seal when they actually need it.
+ */
 export function packagedEccRuntimeDescriptorsV1() {
-  return verifiedPackagedWorkbenchSourceDataRecordsV1().flatMap((record) =>
-    runtimeDescriptorsForPackageOwnerV1(record),
-  );
+  const descriptors: EccRuntimeDescriptorV1[] = [];
+  for (const record of verifiedPackagedWorkbenchSourceDataRecordsV1()) {
+    if (!registeredRuntimeDescriptorRecords.has(record)) {
+      registerPackagedEccRuntimeDescriptorsV1(
+        record,
+        record.runtimeDescriptor === undefined ? [] : [record.runtimeDescriptor],
+      );
+      // Registration can throw for a malformed nested seal. Mark only a fully validated owner so
+      // a later resolution attempt cannot treat its empty registry as trusted.
+      registeredRuntimeDescriptorRecords.add(record);
+    }
+    descriptors.push(...runtimeDescriptorsForPackageOwnerV1(record));
+  }
+  return descriptors;
 }
 
 /** Package data is applied before independently authenticated user updates. */

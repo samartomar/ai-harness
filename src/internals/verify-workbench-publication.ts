@@ -24,6 +24,7 @@ import {
 import {
   type CompilerQualificationBindingV1,
   catalogQualificationPackagedProjectionV1,
+  prepareAihFirstPartyCompilerQualificationsV1,
   prepareRegisteredCompilerQualificationBindingsV1,
   verifyCatalogQualificationForPackagingV1,
 } from "../org-policy/workbench/core/catalog-qualification-v1.js";
@@ -37,6 +38,17 @@ import {
   type WorkbenchCollectionCatalogIdV1,
 } from "./prepare-workbench-collection-evidence.js";
 import { defaultRunner, type Runner } from "./proc.js";
+
+function mergeQualificationBindings(
+  target: Record<string, CompilerQualificationBindingV1>,
+  incoming: Readonly<Record<string, CompilerQualificationBindingV1>>,
+): void {
+  for (const [assetId, binding] of Object.entries(incoming)) {
+    if (target[assetId] !== undefined)
+      throw new Error("Release qualification source material overlaps an asset binding.");
+    target[assetId] = binding;
+  }
+}
 
 /** Release-only read gate. No result of this function can mint a custody witness. */
 export async function verifyWorkbenchPublicPublicationV1(
@@ -125,6 +137,9 @@ export async function verifyWorkbenchPublicPublicationV1(
     }
   }
 
+  let preparedAihPublications:
+    | Awaited<ReturnType<typeof reverifyPackagedAihScannerEvidenceRecordV1>>
+    | undefined;
   if (collectionRecords.length !== 0) {
     if (!options.collectionMaterial || options.collectionMaterial.length === 0)
       throw new Error(
@@ -144,7 +159,9 @@ export async function verifyWorkbenchPublicPublicationV1(
         input.publicationRoot,
       );
       if (record.catalog.id === "aih") {
-        await reverifyPackagedAihScannerEvidenceRecordV1({
+        if (preparedAihPublications !== undefined)
+          throw new Error("Release collection material has duplicate AIH records.");
+        preparedAihPublications = await reverifyPackagedAihScannerEvidenceRecordV1({
           packageRoot: input.sourceRoot,
           coreRevision: { pinnedSha: record.catalog.pinnedCommit },
           catalog: policyAuthoringCatalog(),
@@ -167,21 +184,27 @@ export async function verifyWorkbenchPublicPublicationV1(
 
   const qualificationRecords = packagedCatalogQualificationRecordsV1();
   if (qualificationRecords.length === 0) return;
-  if (options.catalogQualification === undefined || options.catalogQualification.length === 0)
-    throw new Error(
-      "Release qualification records require registered source material for re-verification.",
-    );
   const preparedCatalog = defaultPreparedWorkbenchCatalog();
   const bindings: Record<string, CompilerQualificationBindingV1> = {};
-  for (const [assetId, binding] of Object.entries(
+  if (preparedAihPublications !== undefined) {
+    const firstParty = prepareAihFirstPartyCompilerQualificationsV1(
+      preparedCatalog.bundle,
+      preparedAihPublications,
+    );
+    if (firstParty === undefined)
+      throw new Error(
+        "Release AIH qualification bindings could not be derived from verified material.",
+      );
+    mergeQualificationBindings(bindings, firstParty.bindings);
+  }
+  mergeQualificationBindings(
+    bindings,
     derivePackagedSourceQualificationBindingsV1(
       preparedCatalog.bundle,
       options.packagedSourceQualification ?? [],
     ),
-  )) {
-    bindings[assetId] = binding;
-  }
-  for (const source of options.catalogQualification) {
+  );
+  for (const source of options.catalogQualification ?? []) {
     const derived = prepareRegisteredCompilerQualificationBindingsV1(
       preparedCatalog.bundle,
       source.sourceRoot,
@@ -191,11 +214,7 @@ export async function verifyWorkbenchPublicPublicationV1(
       throw new Error(
         "Release qualification bindings could not be recomputed from registered material.",
       );
-    for (const [assetId, binding] of Object.entries(derived)) {
-      if (bindings[assetId] !== undefined)
-        throw new Error("Release qualification source material overlaps an asset binding.");
-      bindings[assetId] = binding;
-    }
+    mergeQualificationBindings(bindings, derived);
   }
   const packagedProjections = packagedCatalogQualificationProjectionsV1();
   if (packagedProjections.length !== 1)

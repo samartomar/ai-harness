@@ -1,5 +1,13 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { gzipSync } from "node:zlib";
@@ -275,6 +283,25 @@ describe("bounded GitHub source archive acquisition", () => {
     await expect(
       acquireBoundedGithubSourceArchiveV1({ repository, commit, destination }),
     ).resolves.toBe(destination);
+  });
+  it("rejects a nested destination beneath a symlinked temporary parent", async () => {
+    const parent = root();
+    const target = join(parent, "target");
+    mkdirSync(join(target, "nested"), { recursive: true });
+    const linked = join(parent, "linked");
+    symlinkSync(target, linked, process.platform === "win32" ? "junction" : "dir");
+    const fetch = stubArchive(
+      gzipped([{ name: "repository-sha/README.md", bytes: Buffer.from("safe") }]),
+    );
+    await expect(
+      acquireBoundedGithubSourceArchiveV1({
+        repository,
+        commit,
+        destination: join(linked, "nested", "checkout"),
+      }),
+    ).rejects.toThrow(/destination parent is unsafe/);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(existsSync(join(target, "nested", "checkout"))).toBe(false);
   });
   it("preserves a pre-existing destination instead of treating it as owned cleanup", async () => {
     const destination = join(root(), "checkout");

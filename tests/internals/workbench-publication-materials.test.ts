@@ -12,6 +12,27 @@ const mocks = vi.hoisted(() => ({
   verify: vi.fn(),
   verifyPackaged: vi.fn(),
   sourceData: vi.fn(),
+  materialize: vi.fn(),
+  equivalence: vi.fn(),
+  removeMaterial: vi.fn(),
+  policyCatalog: vi.fn(),
+  compileBuiltIn: vi.fn(),
+  git: vi.fn(),
+}));
+vi.mock("node:child_process", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:child_process")>()),
+  execFileSync: mocks.git,
+}));
+vi.mock("../../src/baseline-evidence/aih-scan-material.js", () => ({
+  assertAihScanMaterialEquivalenceV1: mocks.equivalence,
+  materializeAihScanSubjectsV1: mocks.materialize,
+  removeMaterializedAihScanSubjectsV1: mocks.removeMaterial,
+}));
+vi.mock("../../src/org-policy/catalog.js", () => ({
+  policyAuthoringCatalog: mocks.policyCatalog,
+}));
+vi.mock("../../src/org-policy/workbench/compilers/built-in.js", () => ({
+  compileBuiltInCatalogV1: mocks.compileBuiltIn,
 }));
 vi.mock("../../src/org-policy/packaged-collection-evidence-v1.js", () => ({
   packagedScannerCollectionEvidenceV1: mocks.records,
@@ -42,8 +63,31 @@ import {
 } from "../../src/internals/verify-workbench-publication-with-materials.js";
 
 const pin = "a".repeat(40);
+const releasePin = "c".repeat(40);
 const request = "b".repeat(64);
 const locator = `https://github.com/${SCANNER_BASELINE_PUBLICATION_PUBLISHER_V1.repository}/releases/download/baseline-v1-${SCANNER_BASELINE_PUBLICATION_PUBLISHER_V1.commit}-${request}-r00000001/publication.json`;
+function aihFixture() {
+  mocks.records.mockReturnValue([
+    {
+      catalog: {
+        source: { id: "source:aih-core" },
+        repository: "samartomar/ai-harness",
+        pinnedCommit: pin,
+      },
+      publications: [],
+    },
+  ]);
+  mocks.catalog.mockReturnValue({
+    bundle: {
+      sources: {
+        "source:aih-core": {
+          upstreamOrigin: { kind: "git", locator: "https://github.com/samartomar/ai-harness" },
+          revision: { id: pin },
+        },
+      },
+    },
+  });
+}
 function sourceFixture(publicationLocator = locator) {
   mocks.records.mockReturnValue([
     {
@@ -79,6 +123,11 @@ describe("release-only pinned publication material acquisition", () => {
     mocks.records.mockReturnValue([]);
     mocks.bindings.mockReturnValue([]);
     mocks.sourceData.mockReturnValue([]);
+    mocks.policyCatalog.mockReturnValue({ marker: "current-catalog" });
+    mocks.compileBuiltIn.mockReturnValue({ marker: "current-compiler" });
+    mocks.git.mockImplementation((_command, args: readonly string[]) =>
+      args.includes("rev-parse") ? `${releasePin}\n` : "",
+    );
     mocks.catalog.mockReturnValue({ bundle: { sources: {} } });
     mocks.acquire.mockImplementation(async ({ destination }) => {
       mkdirSync(destination, { recursive: true });
@@ -132,6 +181,51 @@ describe("release-only pinned publication material acquisition", () => {
     expect(checkout).not.toBe("");
     expect(mocks.forget).toHaveBeenCalledWith(checkout);
     expect(existsSync(checkout)).toBe(false);
+  });
+  it("requires clean-checkout AIH material equivalence before release re-verification", async () => {
+    aihFixture();
+    const scanned = { sourceRoot: "scanned-material" } as never;
+    const release = { sourceRoot: "release-material" } as never;
+    mocks.materialize.mockReturnValueOnce(scanned).mockReturnValueOnce(release);
+    await verifyWorkbenchPublicPublicationWithMaterialsV1();
+    const checkout = mocks.acquire.mock.calls[0]?.[0]?.destination;
+    expect(checkout).toEqual(expect.any(String));
+    expect(mocks.materialize).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        packageRoot: checkout,
+        coreRevision: { pinnedSha: pin },
+        catalog: { marker: "current-catalog" },
+        compiled: { marker: "current-compiler" },
+      }),
+    );
+    expect(mocks.materialize).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        coreRevision: { pinnedSha: releasePin },
+        catalog: { marker: "current-catalog" },
+        compiled: { marker: "current-compiler" },
+      }),
+    );
+    expect(mocks.equivalence).toHaveBeenCalledWith(scanned, release);
+    expect(mocks.removeMaterial).toHaveBeenNthCalledWith(1, release);
+    expect(mocks.removeMaterial).toHaveBeenNthCalledWith(2, scanned);
+    expect(mocks.verify).toHaveBeenCalledOnce();
+  });
+  it("stops before publication re-verification when AIH material differs", async () => {
+    aihFixture();
+    const scanned = { sourceRoot: "scanned-material" } as never;
+    const release = { sourceRoot: "release-material" } as never;
+    mocks.materialize.mockReturnValueOnce(scanned).mockReturnValueOnce(release);
+    mocks.equivalence.mockImplementation(() => {
+      throw new Error("release material differs from scanned material");
+    });
+    await expect(verifyWorkbenchPublicPublicationWithMaterialsV1()).rejects.toThrow(
+      /release material differs/,
+    );
+    expect(mocks.verify).not.toHaveBeenCalled();
+    expect(mocks.removeMaterial).toHaveBeenNthCalledWith(1, release);
+    expect(mocks.removeMaterial).toHaveBeenNthCalledWith(2, scanned);
   });
   it("rejects arbitrary fetch hosts, wrong renewal tags and unpinned source revisions before acquisition", async () => {
     for (const invalid of [

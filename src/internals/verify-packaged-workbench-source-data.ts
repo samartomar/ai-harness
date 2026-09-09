@@ -7,6 +7,7 @@ import {
   canonicalStrictJsonBytesV1,
   canonicalStrictJsonSha256V1,
 } from "../contract/strict-json-v1.js";
+import { inspectEccRuntimeDescriptorSealV1 } from "../ecc/runtime-descriptor.js";
 import { packagedWorkbenchSourceDataRecordsV1 } from "../org-policy/workbench/core/packaged-source-data.js";
 import { readSourceDataProofBlobV1 } from "../org-policy/workbench/core/source-data-proof-blobs.js";
 import {
@@ -70,6 +71,8 @@ export async function verifyPackagedWorkbenchSourceDataV1(
   progress?: (source: string, phase: "start" | "verified") => void,
 ): Promise<void> {
   for (const record of packagedWorkbenchSourceDataRecordsV1()) {
+    if (record.runtimeDescriptor !== undefined)
+      inspectEccRuntimeDescriptorSealV1(record.runtimeDescriptor);
     progress?.(record.source.repository, "start");
     const proof = SourceDataScannerProofV1Schema.parse(record.scannerProof);
     const publisher = SCANNER_BASELINE_PUBLICATION_PUBLISHERS_V1.find(
