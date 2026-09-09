@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [Core 0.6.0] - 2026-09-09
+
 ### Added
 
 - Retain verified exact-version ECC runtime data with authenticated Workbench
@@ -14,16 +16,24 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   receipts distinguish original reports from Core-derived evaluation, and
   expired or unsupported updates remain blocked.
 
-- Add 25 pinned Matt Pocock skills to the unreleased Policy Workbench catalog,
+- Add 25 pinned Matt Pocock skills to the Policy Workbench catalog,
   with exact source and content pins, required support files, and MIT attribution.
   Selection records additive requested intent through the existing `--ui` entry.
 
-- Add the unreleased pinned Ponytail catalog: six skills, an optional methodology
+- Add the pinned Ponytail catalog: six skills, an optional methodology
   profile, three hook requests, and one MCP request. Export/import preserves exact
   source and content pins. Hook and MCP metadata records declared upstream behavior;
   selection does not install, activate, approve, or execute it.
 
-- Introduce the unreleased #967 Policy Workbench authoring core: the browser consumes an offline normalized authoring catalog bundle, preserves exact source and asset identities in generic authoring selections, and emits schema-v3 policy intent with a `minimumCoreVersion` floor of `0.6.0`. This is an unreleased feature floor only; it does not change the package version or release cut.
+- Introduce the #967 Policy Workbench authoring core: the browser consumes an offline normalized authoring catalog bundle, preserves exact source and asset identities in generic authoring selections, and emits schema-v3 policy intent with a `minimumCoreVersion` floor of `0.6.0`.
+
+- Retain ten first-party AIH Scanner reports and nine independently verified
+  Catalog qualifications. The GitHub MCP report keeps its blocked
+  `trust.external-egress` finding, and the usage-metering hook has report coverage
+  without an unsupported Catalog qualification. Source-specific evidence updates
+  preserve unrelated sources and exact saved selections.
+- Author accepted-with-conditions protected decisions through ordinary Workbench
+  fields, retaining explicit findings, coverage gaps, conditions and review dates.
 
 ### Fixed
 
@@ -48,7 +58,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Reduce Workbench generation and test overhead by reusing private, immutable
   default models and compiler inputs, compacting control fixtures, and closing
   test browser windows. Public outputs remain detached, and supplied evidence
-  keeps its validation. Existing coverage and time budgets remain unchanged.
+  keeps its validation. Coverage, per-test deadlines and the pure ten-second
+  budget remain blocking; the total sixty-second target is tracked in #986.
 - Restore the repository's first-party `aih-packs.json` curation manifest for
   the existing documentation, governance, and review skill packs.
 - Accept timezone-qualified timestamps from GitHub CLI's verified Scanner
@@ -73,7 +84,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   remain in force, and the separate MCP inventory and packaged-profile pins
   do not move.
 
-- Isolate unreleased Workbench catalog preparation behind registered ECC,
+- Isolate Workbench catalog preparation behind registered ECC,
   Superpowers, AIH, and organization providers with explicit inputs and automatic
   contracts. Provider-local CI runs its reviewed consumers and the shared packed
   smoke; shared inputs retain broader checks. Core keeps evidence and policy
@@ -118,6 +129,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   AIH-reviewed Workbench and evaluator control until current protected Scanner evidence exists. Exact
   legacy Core 0.5.0 enterprise imports remove the unavailable authority without broadening other targets or
   approvals ([#936]).
+
+### Security
+
+- Patch the optional Cisco MCP runtime's `httpx2` and `httpcore2` dependencies to
+  `2.12.0` and `pip` to `26.2`, retaining Cisco MCP Scanner `4.8.2`. The locked
+  Linux check exercises offline import and a completed static YARA result.
 
 ## [Core 0.5.0] - 2026-09-01
 
@@ -3230,7 +3247,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v-core-0.5.0...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v-core-0.6.0...HEAD
+[Core 0.6.0]: https://github.com/samartomar/ai-harness/compare/v-core-0.5.0...v-core-0.6.0
 [Core 0.5.0]: https://github.com/samartomar/ai-harness/compare/v-core-0.4.3...v-core-0.5.0
 [Core 0.4.3]: https://github.com/samartomar/ai-harness/compare/v-core-0.4.2...v-core-0.4.3
 [Core 0.4.2]: https://github.com/samartomar/ai-harness/compare/v-core-0.4.1...v-core-0.4.2

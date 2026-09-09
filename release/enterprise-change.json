@@ -1,0 +1,411 @@
+{
+  "schemaVersion": "aih-enterprise-change-manifest-v1",
+  "package": {
+    "name": "@aihq/core",
+    "fromVersion": "0.5.0",
+    "version": "0.6.0"
+  },
+  "tracker": {
+    "repository": "samartomar/ai-harness",
+    "issueNumber": 987
+  },
+  "decisionUnit": {
+    "id": "governed-workbench-authoring-core",
+    "cohort": "Enterprise administrators and developers reviewing exact source-bound AI tooling policy; release maintainers supplying verifiable Core artifacts.",
+    "outcome": "Author reviewable offline policy intent across source providers while preserving exact evidence, target constraints and distinct qualification/publication/acceptance/promotion authority.",
+    "includedChanges": [
+      "Schema-v3 normalized Workbench authoring with Core0.6 minimum feature floor.",
+      "Source-provider separation and exact saved ECC runtime data; canonical upstream evidence binding.",
+      "Pinned Matt Pocock and Ponytail catalog additions, readable scan metadata and source browsing.",
+      "Requested AIH MCP intent, target intersection and withheld unverified legacy authority.",
+      "Scanner publication consumption and bounded analyzer/toolchain security updates.",
+      "Candidate-first enterprise delivery and exact public installed acceptance.",
+      "Documented npm user-owned prefix recovery for global installation permission failures.",
+      "Explicit reviewed Core 0.5.x and 0.6.x built-in capability compatibility, preserving enterprise approval and refusal of unreviewed minor lines."
+    ],
+    "adoption": "optional",
+    "adoptionRationale": "Optional adoption for organizations needing the new governed Workbench authoring model. Evaluate the exact candidate with existing policy and approved source pins; this release does not require a forced migration.",
+    "prerequisites": [
+      "Successful final merged-main preflight, exact candidate verification and protected qualification recorded on release tracker #987.",
+      "Core version floor and compatible exact Scanner/Catalog versions; preserved prior policies and custody.",
+      "Existing Catalog owner signature, approved public seq4 receipt set and exact attestation before supported npm journey.",
+      "Exact npm Trusted Publisher tuple and protected environment approval; no token fallback.",
+      "Public installed acceptance with zero skipped legs and actual released-byte npm/managed journeys before released-feature claims."
+    ],
+    "rollout": "Evaluate the qualified exact candidate under next in disposable roots. Review policy diffs and requested/effective state with a small administrator cohort. Expand only after exact public acceptance and a separately authorized stable promotion; keep existing approved pins until organizational approval.",
+    "rollback": "Stop rollout, retain evidence and revoke newly owned effects where appropriate. Restore saved compatible policy/approved package pins; inspect custody before downgrade. Owner may restore prior accepted latest tag; never move immutable git tags or rebuild an existing version.",
+    "supportImpact": "Schema-v3 consumers require Core 0.6 or a compatible successor. Administrators must distinguish requested intent, conditional local acceptance and verified public authority. The final public OS/Node matrix and required npm/managed journeys must pass before stable promotion.",
+    "accountableOwner": "samartomar (Core release maintainer; release tracker #987 assignee)"
+  },
+  "surfaces": {
+    "cli-flags-exit-codes": {
+      "status": "changed",
+      "previous": "Core 0.5 --ui authored the prior policy model and compatibility controls.",
+      "next": "The existing --ui entry authors normalized schema-v3 selections; unsupported target/control combinations and retired evidence remain blocked. Built-in capability resolution explicitly supports the reviewed 0.5.x and 0.6.x lines; enterprise approval remains required and unreviewed minor lines fail closed.",
+      "affectedCohort": "Administrators authoring governed AI policies and maintainers operating Core delivery.",
+      "operatorAction": "Validate downloads with the Core version named by their minimumCoreVersion; inspect requested versus effective state.",
+      "compatibility": "Core 0.6 schema-v3 authoring has a minimumCoreVersion floor; requested intent is not execution or verified authority. Existing unsupported controls fail closed.",
+      "risk": "Automation must not interpret a selected request or UI export as successful activation.",
+      "documentation": [
+        "CHANGELOG.md",
+        "docs/DELIVERY_GOVERNANCE.md",
+        "docs/workbench-catalog-providers.md"
+      ],
+      "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
+      "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
+      "evidenceDigests": [
+        "sha256:71b6668fff24f52df14d89ea3f74b5d627f225f5929f26e12cdb189d28f2ba47",
+        "sha256:bc292584c4a0a02c9385023d12b5c7117217ed8cf86b3848141b5466c6779121",
+        "sha256:1364d0c9ddff362d5768b2f22b30caa68a9d388e86b44846eac43c44006f1b99"
+      ]
+    },
+    "library-exports": {
+      "status": "unchanged",
+      "rationale": "src/index.ts is byte-unchanged from v-core-0.5.0 at the observed head. This proves the export declaration surface only; implementation and final packed-library compatibility still require release checks.",
+      "evidenceDigests": [
+        "sha256:26c75b3ca8b8066a338e622d8a2eb2fa5228b16a01e5f49c1b703b287c6f0e78"
+      ]
+    },
+    "schemas": {
+      "status": "changed",
+      "previous": "Prior policy schema did not represent the normalized authoring selections and AIH MCP request field.",
+      "next": "Policy schema-v3 supports exact authoring selections, minimumCoreVersion and optional governance.aihMcpRequests.",
+      "affectedCohort": "Administrators authoring governed AI policies and maintainers operating Core delivery.",
+      "operatorAction": "Use current schema validation; retain original policy before migration.",
+      "compatibility": "Core 0.6 schema-v3 authoring has a minimumCoreVersion floor; requested intent is not execution or verified authority. Existing unsupported controls fail closed.",
+      "risk": "Older Core cannot be assumed to accept or preserve new fields.",
+      "documentation": [
+        "CHANGELOG.md",
+        "docs/DELIVERY_GOVERNANCE.md",
+        "docs/workbench-catalog-providers.md"
+      ],
+      "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
+      "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
+      "evidenceDigests": [
+        "sha256:bc292584c4a0a02c9385023d12b5c7117217ed8cf86b3848141b5466c6779121",
+        "sha256:71b6668fff24f52df14d89ea3f74b5d627f225f5929f26e12cdb189d28f2ba47"
+      ]
+    },
+    "machine-readable-output": {
+      "status": "changed",
+      "previous": "Prior Workbench output combined the earlier catalog selection model and evidence presentation.",
+      "next": "Downloads preserve exact source/content identities, requested intent, evidence distinctions and narrowed sanctioned targets.",
+      "affectedCohort": "Administrators authoring governed AI policies and maintainers operating Core delivery.",
+      "operatorAction": "Update policy consumers to treat pending requests and effective candidates separately.",
+      "compatibility": "Core 0.6 schema-v3 authoring has a minimumCoreVersion floor; requested intent is not execution or verified authority. Existing unsupported controls fail closed.",
+      "risk": "A coverage-ready record count is not scanner success or installed acceptance.",
+      "documentation": [
+        "CHANGELOG.md",
+        "docs/DELIVERY_GOVERNANCE.md",
+        "docs/workbench-catalog-providers.md"
+      ],
+      "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
+      "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
+      "evidenceDigests": [
+        "sha256:bc292584c4a0a02c9385023d12b5c7117217ed8cf86b3848141b5466c6779121",
+        "sha256:71b6668fff24f52df14d89ea3f74b5d627f225f5929f26e12cdb189d28f2ba47"
+      ]
+    },
+    "generated-artifacts": {
+      "status": "changed",
+      "previous": "Core 0.5 packaged the prior Workbench generation layout.",
+      "next": "Build assembles the portable Workbench with normalized source providers, immutable bundled material, and new pinned Matt Pocock/Ponytail catalog content.",
+      "affectedCohort": "Administrators authoring governed AI policies and maintainers operating Core delivery.",
+      "operatorAction": "Review generated policy diffs and source versions before using downloads.",
+      "compatibility": "Core 0.6 schema-v3 authoring has a minimumCoreVersion floor; requested intent is not execution or verified authority. Existing unsupported controls fail closed.",
+      "risk": "Bundled source material and saved updates must remain byte-bound; older material replay cannot certify a successor build.",
+      "documentation": [
+        "CHANGELOG.md",
+        "docs/DELIVERY_GOVERNANCE.md",
+        "docs/workbench-catalog-providers.md"
+      ],
+      "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
+      "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
+      "evidenceDigests": [
+        "sha256:0a7f96ba8206be34073ea50ef20918d768864221e63b8ce06d9f2d55e920963d",
+        "sha256:9949d9635d8f92733671fb5677b7d19393c480443540978864634917948244f5",
+        "sha256:71b6668fff24f52df14d89ea3f74b5d627f225f5929f26e12cdb189d28f2ba47"
+      ]
+    },
+    "administrator-controls": {
+      "status": "changed",
+      "previous": "Prior controls could display broader combinations and legacy authority rows.",
+      "next": "Activation is limited to projector/sanctioned-CLI intersection; unavailable Playwright reviewed authority is withheld; AIH MCP rows retain requested intent without activation.",
+      "affectedCohort": "Administrators authoring governed AI policies and maintainers operating Core delivery.",
+      "operatorAction": "Review named target refusals and reacquire valid protected evidence where required.",
+      "compatibility": "Core 0.6 schema-v3 authoring has a minimumCoreVersion floor; requested intent is not execution or verified authority. Existing unsupported controls fail closed.",
+      "risk": "Legacy imports must not broaden authority or silently enable a hook/MCP.",
+      "documentation": [
+        "CHANGELOG.md",
+        "docs/DELIVERY_GOVERNANCE.md",
+        "docs/workbench-catalog-providers.md"
+      ],
+      "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
+      "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
+      "evidenceDigests": [
+        "sha256:71b6668fff24f52df14d89ea3f74b5d627f225f5929f26e12cdb189d28f2ba47",
+        "sha256:bc292584c4a0a02c9385023d12b5c7117217ed8cf86b3848141b5466c6779121"
+      ]
+    },
+    "installation-uninstallation": {
+      "status": "changed",
+      "previous": "Earlier quickstarts did not consistently route global permission recovery through an npm user-owned prefix.",
+      "next": "Public installation guidance describes npm-supported user-owned prefix recovery; workbench selection itself still installs nothing.",
+      "affectedCohort": "Administrators authoring governed AI policies and maintainers operating Core delivery.",
+      "operatorAction": "Follow documented prefix recovery and inspect actual installed version; do not use elevated workaround installs by default.",
+      "compatibility": "Core 0.6 schema-v3 authoring has a minimumCoreVersion floor; requested intent is not execution or verified authority. Existing unsupported controls fail closed.",
+      "risk": "Permissions, retained policy and custody need separate review during removal or rollback.",
+      "documentation": [
+        "CHANGELOG.md",
+        "docs/DELIVERY_GOVERNANCE.md",
+        "docs/workbench-catalog-providers.md"
+      ],
+      "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
+      "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
+      "evidenceDigests": [
+        "sha256:71b6668fff24f52df14d89ea3f74b5d627f225f5929f26e12cdb189d28f2ba47",
+        "sha256:c9249abeec18330b53eecc6e0a93a0da02c0b137e37c708de55f0876ec7ea6a0",
+        "sha256:0c3170900cb54592c5c04500c8dfc150c45f00469b3b4470776a05c1c7163467"
+      ]
+    },
+    "files-environment-credentials": {
+      "status": "changed",
+      "previous": "Prior release process and packaged Workbench inputs used the older artifact and authorization flow.",
+      "next": "Release qualification, candidate publication and promotion retain separate evidence; Workbench updates consume exact source-owned data without conferring credentials.",
+      "affectedCohort": "Administrators authoring governed AI policies and maintainers operating Core delivery.",
+      "operatorAction": "Preserve original policies/custody; use existing protected owner signing and token-free npm publication boundaries.",
+      "compatibility": "Core 0.6 schema-v3 authoring has a minimumCoreVersion floor; requested intent is not execution or verified authority. Existing unsupported controls fail closed.",
+      "risk": "Do not put signing keys or tokens in policy downloads, source, fixtures or evidence.",
+      "documentation": [
+        "CHANGELOG.md",
+        "docs/DELIVERY_GOVERNANCE.md",
+        "docs/workbench-catalog-providers.md"
+      ],
+      "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
+      "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
+      "evidenceDigests": [
+        "sha256:4a7b38449210033039e4bb3b631221a2c7d0c02d246a4947a8debbf774c70d0b",
+        "sha256:f94f67e77a26b397688abef6caee92c81b85e43774194171e972652e70b2fee7"
+      ]
+    },
+    "network-egress-telemetry-data-classes": {
+      "status": "changed",
+      "previous": "Baseline evidence consumption used the earlier publisher identities and local shortcut paths.",
+      "next": "Baseline refresh consumes exact protected Scanner publications; Workbench authoring remains offline and declared upstream hook/MCP behavior is intent only.",
+      "affectedCohort": "Administrators authoring governed AI policies and maintainers operating Core delivery.",
+      "operatorAction": "Review external runtime egress separately before actual enablement; permit only verified publisher/repository bindings.",
+      "compatibility": "Core 0.6 schema-v3 authoring has a minimumCoreVersion floor; requested intent is not execution or verified authority. Existing unsupported controls fail closed.",
+      "risk": "Catalog metadata is not approval of upstream execution, network access or data processing.",
+      "documentation": [
+        "CHANGELOG.md",
+        "docs/DELIVERY_GOVERNANCE.md",
+        "docs/workbench-catalog-providers.md"
+      ],
+      "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
+      "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
+      "evidenceDigests": [
+        "sha256:71b6668fff24f52df14d89ea3f74b5d627f225f5929f26e12cdb189d28f2ba47",
+        "sha256:9949d9635d8f92733671fb5677b7d19393c480443540978864634917948244f5"
+      ]
+    },
+    "direct-dependencies": {
+      "status": "changed",
+      "previous": "Development tooling included @aihq/scan 0.2.5 and no dedicated browser test/parser additions.",
+      "next": "Development tooling pins @aihq/scan 0.3.0, @babel/parser 7.29.7, @playwright/test 1.62.1 and esbuild 0.28.1; production dependency declarations remain commander/jsonc-parser/yaml/zod.",
+      "affectedCohort": "Administrators authoring governed AI policies and maintainers operating Core delivery.",
+      "operatorAction": "Use the committed lock for verification; distinguish build/test tools from consumer runtime dependencies.",
+      "compatibility": "Core 0.6 schema-v3 authoring has a minimumCoreVersion floor; requested intent is not execution or verified authority. Existing unsupported controls fail closed.",
+      "risk": "Final resolved dependency and platform support evidence must be attached to the actual release artifact.",
+      "documentation": [
+        "CHANGELOG.md",
+        "docs/DELIVERY_GOVERNANCE.md",
+        "docs/workbench-catalog-providers.md"
+      ],
+      "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
+      "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
+      "evidenceDigests": [
+        "sha256:0a7f96ba8206be34073ea50ef20918d768864221e63b8ce06d9f2d55e920963d",
+        "sha256:29923f9e1d6a6bb11746e16c44acf876ce588a64913c7fd250e8ed810b4ec588"
+      ]
+    },
+    "transitive-dependencies": {
+      "status": "changed",
+      "previous": "The Core0.5 lock and analyzer runtime pins described the previous tool graph.",
+      "next": "Current npm lock reflects tooling additions and esbuild override; uv/analyzer changes are recorded separately, including Cisco fixes.",
+      "affectedCohort": "Administrators authoring governed AI policies and maintainers operating Core delivery.",
+      "operatorAction": "Review final lock/SBOM and runtime locks against the cut baseline.",
+      "compatibility": "Core 0.6 schema-v3 authoring has a minimumCoreVersion floor; requested intent is not execution or verified authority. Existing unsupported controls fail closed.",
+      "risk": "The completed Cisco subset does not resolve every broader #940 campaign or prove all CVEs absent.",
+      "documentation": [
+        "CHANGELOG.md",
+        "docs/DELIVERY_GOVERNANCE.md",
+        "docs/workbench-catalog-providers.md"
+      ],
+      "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
+      "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
+      "evidenceDigests": [
+        "sha256:29923f9e1d6a6bb11746e16c44acf876ce588a64913c7fd250e8ed810b4ec588",
+        "sha256:71b6668fff24f52df14d89ea3f74b5d627f225f5929f26e12cdb189d28f2ba47"
+      ]
+    },
+    "install-scripts": {
+      "status": "unchanged",
+      "rationale": "Current package has no preinstall/install/postinstall lifecycle entry; compare against Core0.5 confirms neither manifest defines them. Build scripts changed, but they are not package-install lifecycle hooks. Packed acceptance still must inspect actual release bytes.",
+      "evidenceDigests": [
+        "sha256:0a7f96ba8206be34073ea50ef20918d768864221e63b8ce06d9f2d55e920963d"
+      ]
+    },
+    "licenses-cves": {
+      "status": "changed",
+      "previous": "Core0.5 carried the earlier bundled source inventory and analyzer pin set.",
+      "next": "New Matt Pocock material carries MIT attribution; source inventories preserve their own licenses. uv security updates and Cisco lock remediation are recorded with bounded scope.",
+      "affectedCohort": "Administrators authoring governed AI policies and maintainers operating Core delivery.",
+      "operatorAction": "Review final bundled notices/SBOM and open #940 scope before release; preserve attribution.",
+      "compatibility": "Core 0.6 schema-v3 authoring has a minimumCoreVersion floor; requested intent is not execution or verified authority. Existing unsupported controls fail closed.",
+      "risk": "No blanket vulnerability-free claim; native-only npm scan remains missing/warn with nine gaps.",
+      "documentation": [
+        "CHANGELOG.md",
+        "docs/DELIVERY_GOVERNANCE.md",
+        "docs/workbench-catalog-providers.md"
+      ],
+      "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
+      "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
+      "evidenceDigests": [
+        "sha256:71b6668fff24f52df14d89ea3f74b5d627f225f5929f26e12cdb189d28f2ba47",
+        "sha256:0a7f96ba8206be34073ea50ef20918d768864221e63b8ce06d9f2d55e920963d"
+      ]
+    },
+    "trust-roots-provenance": {
+      "status": "changed",
+      "previous": "Prior Core delivery and ECC evidence references used the earlier release/consumption model.",
+      "next": "Canonical affaan-m/ECC repository is required at its unchanged exact revision; publication identities include publisher commit and request digest. Core release qualification/publish/accept/promote effects bind immutable receipts separately.",
+      "affectedCohort": "Administrators authoring governed AI policies and maintainers operating Core delivery.",
+      "operatorAction": "Reject retired fork evidence and require real Catalog seq4, existing owner signature and protected GitHub attestation before supported npm acceptance.",
+      "compatibility": "Core 0.6 schema-v3 authoring has a minimumCoreVersion floor; requested intent is not execution or verified authority. Existing unsupported controls fail closed.",
+      "risk": "Local self-asserted organization decisions and candidate scans are not public Catalog or release authority.",
+      "documentation": [
+        "CHANGELOG.md",
+        "docs/DELIVERY_GOVERNANCE.md",
+        "docs/workbench-catalog-providers.md"
+      ],
+      "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
+      "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
+      "evidenceDigests": [
+        "sha256:71b6668fff24f52df14d89ea3f74b5d627f225f5929f26e12cdb189d28f2ba47",
+        "sha256:4a7b38449210033039e4bb3b631221a2c7d0c02d246a4947a8debbf774c70d0b",
+        "sha256:f965e2556464d63dbba1a74fe4415519e82190a38fe482242282a83c1140ffe0"
+      ]
+    },
+    "guides": {
+      "status": "changed",
+      "previous": "Previous guides described the earlier Workbench and release process.",
+      "next": "Source-provider ownership, candidate-first governance, public installed acceptance and prefix recovery are documented.",
+      "affectedCohort": "Administrators authoring governed AI policies and maintainers operating Core delivery.",
+      "operatorAction": "Read provider and delivery guides alongside policy previews and release notes.",
+      "compatibility": "Core 0.6 schema-v3 authoring has a minimumCoreVersion floor; requested intent is not execution or verified authority. Existing unsupported controls fail closed.",
+      "risk": "Guide examples do not waive exact-version, authority or target checks.",
+      "documentation": [
+        "CHANGELOG.md",
+        "docs/DELIVERY_GOVERNANCE.md",
+        "docs/workbench-catalog-providers.md"
+      ],
+      "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
+      "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
+      "evidenceDigests": [
+        "sha256:9949d9635d8f92733671fb5677b7d19393c480443540978864634917948244f5",
+        "sha256:f94f67e77a26b397688abef6caee92c81b85e43774194171e972652e70b2fee7",
+        "sha256:0c3170900cb54592c5c04500c8dfc150c45f00469b3b4470776a05c1c7163467",
+        "sha256:c9249abeec18330b53eecc6e0a93a0da02c0b137e37c708de55f0876ec7ea6a0"
+      ]
+    },
+    "known-issues": {
+      "status": "changed",
+      "previous": "Prior baseline issues and acceptance evidence were tied to Core0.5.",
+      "next": "Required public npm and managed journeys remain acceptance gates on tracker #987, including supported npm #848 and umbrella #832. The broader #940 pin campaign is future work; total runtime optimization is follow-up #986.",
+      "affectedCohort": "Administrators authoring governed AI policies and maintainers operating Core delivery.",
+      "operatorAction": "Resolve release-blocking scope on the tracker; retain limitations in the final decision.",
+      "compatibility": "Core 0.6 schema-v3 authoring has a minimumCoreVersion floor; requested intent is not execution or verified authority. Existing unsupported controls fail closed.",
+      "risk": "A follow-up performance target does not waive correctness, coverage, security or released-byte journeys.",
+      "documentation": [
+        "CHANGELOG.md",
+        "docs/DELIVERY_GOVERNANCE.md",
+        "docs/workbench-catalog-providers.md"
+      ],
+      "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
+      "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
+      "evidenceDigests": [
+        "sha256:f94f67e77a26b397688abef6caee92c81b85e43774194171e972652e70b2fee7",
+        "sha256:59b5a876fc56e978572eab423d1e2af6bf40b0ea6c507444b3726a5b8779ef01"
+      ]
+    },
+    "waivers": {
+      "status": "changed",
+      "previous": "No release-specific Core0.6 waiver disposition existed.",
+      "next": "No correctness/security/coverage or public-authority waiver is proposed. Total60-second target is a separate #986 follow-up; nine scan coverage gaps belong to scoped local npm decisions, not blanket release waiver.",
+      "affectedCohort": "Administrators authoring governed AI policies and maintainers operating Core delivery.",
+      "operatorAction": "Obtain explicit owner disposition for any additional exception; never silently convert blocked work into accepted risk.",
+      "compatibility": "Core 0.6 schema-v3 authoring has a minimumCoreVersion floor; requested intent is not execution or verified authority. Existing unsupported controls fail closed.",
+      "risk": "Local task authorization is not a publication or promotion token.",
+      "documentation": [
+        "CHANGELOG.md",
+        "docs/DELIVERY_GOVERNANCE.md",
+        "docs/workbench-catalog-providers.md"
+      ],
+      "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
+      "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
+      "evidenceDigests": [
+        "sha256:f94f67e77a26b397688abef6caee92c81b85e43774194171e972652e70b2fee7",
+        "sha256:0c3170900cb54592c5c04500c8dfc150c45f00469b3b4470776a05c1c7163467"
+      ]
+    },
+    "support": {
+      "status": "changed",
+      "previous": "Core0.5 supported the preceding Workbench authoring model.",
+      "next": "Core0.6 supports the schema-v3 feature floor and clearer requested/effective diagnosis; public promotion remains contingent on exact compatible Scanner/Catalog matrix.",
+      "affectedCohort": "Administrators authoring governed AI policies and maintainers operating Core delivery.",
+      "operatorAction": "Pin approved Core/Scanner/Catalog versions and retain diagnostic JSON when escalating.",
+      "compatibility": "Core 0.6 schema-v3 authoring has a minimumCoreVersion floor; requested intent is not execution or verified authority. Existing unsupported controls fail closed.",
+      "risk": "Historical0.5 acceptance remains separately tracked; no final0.6 support promise until release gates pass.",
+      "documentation": [
+        "CHANGELOG.md",
+        "docs/DELIVERY_GOVERNANCE.md",
+        "docs/workbench-catalog-providers.md"
+      ],
+      "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
+      "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
+      "evidenceDigests": [
+        "sha256:0c3170900cb54592c5c04500c8dfc150c45f00469b3b4470776a05c1c7163467",
+        "sha256:71b6668fff24f52df14d89ea3f74b5d627f225f5929f26e12cdb189d28f2ba47"
+      ]
+    },
+    "rollback": {
+      "status": "changed",
+      "previous": "Earlier delivery did not use the full separate acceptance-bound promotion flow.",
+      "next": "Rejected candidates remain off latest; promoted regression response restores the previously accepted dist-tag without retagging or rebuilding immutable versions.",
+      "affectedCohort": "Administrators authoring governed AI policies and maintainers operating Core delivery.",
+      "operatorAction": "Preserve prior policies and approvals; independently inspect/revoke changed owned controls before reverting CLI.",
+      "compatibility": "Core 0.6 schema-v3 authoring has a minimumCoreVersion floor; requested intent is not execution or verified authority. Existing unsupported controls fail closed.",
+      "risk": "Downgrading the executable does not reverse schema-v3 policy, durable custody or installed controls.",
+      "documentation": [
+        "CHANGELOG.md",
+        "docs/DELIVERY_GOVERNANCE.md",
+        "docs/workbench-catalog-providers.md"
+      ],
+      "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
+      "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
+      "evidenceDigests": [
+        "sha256:0c3170900cb54592c5c04500c8dfc150c45f00469b3b4470776a05c1c7163467",
+        "sha256:f94f67e77a26b397688abef6caee92c81b85e43774194171e972652e70b2fee7"
+      ]
+    }
+  },
+  "knownIssues": [
+    "Public Catalog sequence 4 and actual supported npm acceptance remain required before completing release tracker #987; unsigned local candidate evidence cannot satisfy those gates.",
+    "Retained npm and managed journeys on Core 0.5 development bytes are separate evidence. Required final Core 0.6 public registry journeys and installed OS/Node acceptance must pass before stable promotion.",
+    "Core 0.6 includes 524 Workbench records. Final candidate checks must prove complete evidence coverage and live publication-material equivalence on its exact bytes; coverage readiness alone is not scan or release acceptance.",
+    "The native-only picocolors 1.1.1 scan remains missing/warn with nine explicitly scoped coverage gaps. Conditional local acceptance does not make it a successful scan or blanket waiver.",
+    "The broader #940 external-pin qualification campaign and historical Core 0.5 acceptance #972 remain separately open; this release does not claim their completion.",
+    "The total 60-second Workbench runtime target remains follow-up #986. Functional behavior, per-test deadlines, the pure ten-second budget, coverage and security remain required."
+  ],
+  "waivers": []
+}
