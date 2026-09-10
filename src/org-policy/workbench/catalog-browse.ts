@@ -2,6 +2,9 @@ import type { AuthoringAssetV1, AuthoringCatalogBundleV1 } from "./contracts.js"
 
 export const CATALOG_BROWSE_PAGE_SIZE = 50;
 
+/** Display indexes only; browsing does not consume or alter catalog authority. */
+export type CatalogBrowseInventory = Pick<AuthoringCatalogBundleV1, "assets" | "sources">;
+
 export interface CatalogBrowseFilters {
   sourceId?: string;
   kind?: string;
@@ -48,10 +51,7 @@ function searchableText(value: string): string {
     .trim();
 }
 
-export function catalogSourceDisplayName(
-  bundle: AuthoringCatalogBundleV1,
-  sourceId: string,
-): string {
+export function catalogSourceDisplayName(bundle: CatalogBrowseInventory, sourceId: string): string {
   const labelFor = (id: string): string => {
     const locator = bundle.sources[id]?.upstreamOrigin.locator;
     return locator === undefined || locator === id
@@ -75,7 +75,7 @@ export function catalogKindLabel(kind: string): string {
   return kind.slice(0, 1).toUpperCase() + kind.slice(1);
 }
 
-function inventoryText(bundle: AuthoringCatalogBundleV1, asset: AuthoringAssetV1): string {
+function inventoryText(bundle: CatalogBrowseInventory, asset: AuthoringAssetV1): string {
   return searchableText(
     [
       asset.id,
@@ -88,7 +88,7 @@ function inventoryText(bundle: AuthoringCatalogBundleV1, asset: AuthoringAssetV1
 }
 
 export function catalogBrowse(
-  bundle: AuthoringCatalogBundleV1,
+  bundle: CatalogBrowseInventory,
   filters: CatalogBrowseFilters,
 ): CatalogBrowseResult {
   const sourceId = selectedValue(filters.sourceId);

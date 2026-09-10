@@ -17,6 +17,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Remove Ponytail from Workbench catalog browsing and starting points while
+  preserving existing saved policy pins and Core consumption.
 - Report governed project MCP receipts at their native paths, with global
   configuration shown separately and policy-aware remediation. Align ordinary
   and governed environment references, route offline generation through every

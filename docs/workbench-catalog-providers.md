@@ -394,10 +394,11 @@ declaration from commit `974d940a1c5344210874150b98ff0d2c861fab6a` (v4.9.0). Its
 files. A literal reviewed digest binds the complete snapshot, including component
 metadata and file references. Snapshot validation happens on first preparation.
 
-Use the existing Source selector for `source:ponytail` and the Type selector to
-browse Skills, Profiles, Hooks, or MCP. The main Ponytail skill and optional
+Ponytail is omitted from the Workbench source picker, catalog browsing, and
+starting points. Its packaged records remain available to preserve existing saved
+policy pins and Core consumption. The main Ponytail skill and optional
 methodology profile share one methodology key; the five auxiliary skills are
-additive. Applying the methodology template selects its pinned skill closure.
+additive. Existing methodology selections retain their pinned skill closure.
 Hook and MCP requests must be recorded explicitly and have separate counts from
 selected controls. They never become implicit template dependencies.
 
@@ -410,7 +411,8 @@ support, a locked dependency closure, organization approval, or scanner evidence
 The root upstream npm package does not include the private MCP subtree, which has
 no dependency lock. A future Core runtime adapter would need an exact acquisition
 source, independently locked dependencies, and its own reviewed installation and
-activation contracts. The Workbench currently records pinned requests only.
+activation contracts. Historical Workbench hook and MCP records remain pinned
+requests only.
 
 File references identify covered source bytes. In particular, the gain skill's
 benchmark files are supporting material, not an installation or execution list.
