@@ -10,7 +10,7 @@ import { pathToFileURL } from 'node:url';
 import { compareInstalledTarball, inventory, regularBytes, sha256 } from './bytes.mjs';
 import { npmSource, readPublicReceiptInputs, repository, verifyPublicReceiptAttestations, workflow } from './public-receipt-inputs.mjs';
 import { authorAndCheck, prepareDecisionFields, readCandidateQualification, supportedAcceptanceWindow } from './policy-authoring.mjs';
-import { supportedAcceptArguments, supportedInspectArguments } from './custody-arguments.mjs';
+import { supportedAcceptArguments, supportedInspectArguments, npmObserveArguments, npmLifecycleArguments, policyEvaluateArguments, workbenchGenerateArguments } from './custody-arguments.mjs';
 
 export async function run848(context) {
 assertAuthorized(context);
@@ -98,7 +98,7 @@ async function executeAcceptance(input, checked) {
   assert.equal(installed.version, npmSource.version); assert.equal(installed.integrity, npmSource.integrity);
   assert.equal(installed.resolved, 'https://registry.npmjs.org/picocolors/-/picocolors-1.1.1.tgz');
   const htmlPath = join(adminRoot, 'aih-policy-workbench.html');
-  run('generate-workbench', ['policy', 'generate', '--apply', '--out', htmlPath, '--no-log'], { cwd: adminRoot, parse: false });
+  run('generate-workbench', workbenchGenerateArguments(htmlPath), { cwd: adminRoot, parse: false });
   const { issuedAt, expiresAt, reviewBy } = supportedAcceptanceWindow(checked.records);
   const intended = prepareDecisionFields({ ...checked, issuedAt, expiresAt, reviewBy, targetRoot, adminRoot });
   const authorArgs = { ...checked, intended, issuedAt, expiresAt, htmlPath, adminRoot, evidenceRoot };
@@ -118,9 +118,8 @@ async function executeAcceptance(input, checked) {
     assert(!existsSync(join(targetRoot, '.aih', 'supported-qualification', 'v2')), 'unexpected target-local custody');
   }
   zeroWrite('supported-head-repeat', () => run('supported-head-repeat', [...acceptArguments(4), '--apply']));
-  const packageArgs = ['--decision', active.decisions[4].id, '--decision-digest', active.packageDecisionDigest, '--target', 'codex', '--json', '--no-log'];
-  const observe = () => ['policy', 'observe', 'npm-package', targetRoot, ...packageArgs];
-  const lifecycle = apply => ['policy', 'lifecycle', 'npm-package', targetRoot, ...packageArgs, ...(apply ? ['--apply'] : [])];
+  const observe = () => npmObserveArguments(targetRoot, active.decisions[4].id, active.packageDecisionDigest);
+  const lifecycle = apply => npmLifecycleArguments(targetRoot, active.decisions[4].id, active.packageDecisionDigest, apply);
   const observed = zeroWrite('npm-observe', () => run('npm-observe', observe()));
   assertSubset(dataOf(observed), { authority: 'verified', qualification: 'aih-supported', effective: 'observed-effective', outcome: 'observed-effective' });
   const preview = zeroWrite('npm-lifecycle-preview', () => run('npm-lifecycle-preview', lifecycle(false)));
@@ -128,13 +127,13 @@ async function executeAcceptance(input, checked) {
   const applied = run('npm-lifecycle-apply', lifecycle(true)); assertSubset(dataOf(applied), { applied: true, outcome: 'fulfilled', state: 'observed-effective' });
   const repeated = run('npm-lifecycle-repeat', lifecycle(true)); assertSubset(dataOf(repeated), { applied: true, outcome: 'fulfilled', state: 'observed-effective' });
   // An observation is time-bound; repeating a lifecycle may retain a successor record. Only supported-head repeat claims zero writes.
-  const effective = dataOf(run('effective-before-revocation', ['policy', 'evaluate', targetRoot, '--cli', 'codex', '--json', '--no-log']));
+  const effective = dataOf(run('effective-before-revocation', policyEvaluateArguments(targetRoot)));
   assert.equal(effective.blocking, false); assert(effective.npmPackageLifecycle.some(row => row.decision.digest === active.packageDecisionDigest && row.state === 'observed-effective'));
   const revoked = await authorAndCheck({ ...authorArgs, revokedDigest: active.packageDecisionDigest });
   assert.notEqual(revoked.report.download.sha256, active.report.download.sha256); env.AIH_ORG_POLICY = revoked.report.download.path;
   const revoke = run('npm-lifecycle-revoke', lifecycle(true), { refused: true });
   assertSubset(dataOf(revoke), { applied: true, outcome: 'fulfilled', state: 'decision-revoked', reason: 'decision-revoked' });
-  const evaluated = dataOf(run('effective-after-revocation', ['policy', 'evaluate', targetRoot, '--cli', 'codex', '--json', '--no-log'], { refused: true }));
+  const evaluated = dataOf(run('effective-after-revocation', policyEvaluateArguments(targetRoot), { refused: true }));
   assert.equal(evaluated.blocking, true);
   assert(evaluated.npmPackageLifecycle.some(row => row.decision.id === active.decisions[4].id && row.decision.digest === active.packageDecisionDigest && row.reason === 'decision-revoked' && row.state === 'revoked'));
   compareInstalledTarball(input.coreTarball, input.corePackageRoot, originalCoreSha256);
