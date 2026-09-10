@@ -291,9 +291,9 @@ jobs:
       - name: Build the browser companion for included Workbench UI tests
         run: npm run build:workbench
       - name: Test Windows shard
-        # Hosted Windows load can push filesystem-heavy cases past Vitest's
-        # 5-second default without changing their assertions or file coverage.
-        run: npx vitest run --testTimeout=15000 --shard=${{ matrix.shard }}/2
+        # Match the verified local/coverage worker bound: concurrent filesystem
+        # fixtures can otherwise starve native PowerShell custody checks.
+        run: npx vitest run --maxWorkers=2 --testTimeout=15000 --shard=${{ matrix.shard }}/2
 
   # Branch protection keeps these exact context names. Every context fails
   # closed over the selected lane or the complete fallback matrix, so a failed,

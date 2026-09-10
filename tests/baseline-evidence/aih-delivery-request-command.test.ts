@@ -19,7 +19,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { afterEach, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it } from "vitest";
 import { hashSourceTree } from "../../src/baseline-evidence/hash.js";
 
 interface OwnedTestRoot {
@@ -29,7 +29,7 @@ interface OwnedTestRoot {
 }
 
 const roots: OwnedTestRoot[] = [];
-afterEach(() => {
+afterAll(() => {
   for (const root of roots.splice(0)) removeOwnedTestRoot(root);
 });
 
@@ -119,8 +119,15 @@ function run(source: string, commit: string, output: string) {
     { encoding: "utf8", timeout: 30_000, windowsHide: true, stdio: "pipe" },
   );
 }
+// Both cases inspect the same exact source. Build that large Git fixture once;
+// keep output roots separate and restore the deliberate dirty-source mutation.
+let checkout: ReturnType<typeof fixture>;
+beforeAll(() => {
+  checkout = fixture();
+}, 30_000);
+
 it("authors exact generated delivery material rather than scanning the source checkout", () => {
-  const { parent, source, commit } = fixture();
+  const { parent, source, commit } = checkout;
   const output = join(parent, "requests");
   run(source, commit, output);
   const manifest = JSON.parse(readFileSync(join(output, "materialization.json"), "utf8"));
@@ -143,7 +150,7 @@ it("authors exact generated delivery material rather than scanning the source ch
   expect(() => run(source, commit, output)).toThrow();
 }, 30_000);
 it("rejects revision mismatch and any output within the source checkout", () => {
-  const { parent, source, commit } = fixture();
+  const { parent, source, commit } = checkout;
   const nested = join(source, "..looks-like-parent");
   expect(() => run(source, commit, nested)).toThrow(/outside the Core checkout/);
   expect(existsSync(nested)).toBe(false);
@@ -168,8 +175,13 @@ it("rejects revision mismatch and any output within the source checkout", () => 
     ),
   ).toThrow(/executing helper checkout/);
   const generator = join(source, "src/usage/capture.ts");
-  writeFileSync(generator, `${readFileSync(generator, "utf8")}\n// uncommitted generator change\n`);
-  const dirtyOutput = join(parent, "dirty-generator");
-  expect(() => run(source, commit, dirtyOutput)).toThrow(/must be clean/);
-  expect(existsSync(dirtyOutput)).toBe(false);
+  const original = readFileSync(generator, "utf8");
+  try {
+    writeFileSync(generator, `${original}\n// uncommitted generator change\n`);
+    const dirtyOutput = join(parent, "dirty-generator");
+    expect(() => run(source, commit, dirtyOutput)).toThrow(/must be clean/);
+    expect(existsSync(dirtyOutput)).toBe(false);
+  } finally {
+    writeFileSync(generator, original);
+  }
 }, 30_000);
