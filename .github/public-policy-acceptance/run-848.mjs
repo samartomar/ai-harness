@@ -11,6 +11,9 @@ import { compareInstalledTarball, inventory, regularBytes, sha256 } from './byte
 import { npmSource, readPublicReceiptInputs, repository, verifyPublicReceiptAttestations, workflow } from './public-receipt-inputs.mjs';
 import { authorAndCheck, prepareDecisionFields, readCandidateQualification } from './policy-authoring.mjs';
 
+export const supportedAcceptArguments = (root, decisionId, decisionDigest) => ['policy', 'supported', 'accept', '--root', root, '--decision', decisionId, '--decision-digest', decisionDigest, '--target', 'codex', '--json'];
+export const supportedInspectArguments = root => ['policy', 'supported', 'inspect', '--root', root, '--json'];
+
 export async function run848(context) {
 assertAuthorized(context);
 const repo = resolve(import.meta.dirname, '..', '..');
@@ -105,20 +108,20 @@ async function executeAcceptance(input, checked) {
   const authorArgs = { ...checked, intended, issuedAt, expiresAt, htmlPath, adminRoot, evidenceRoot };
   const active = await authorAndCheck(authorArgs); env.AIH_ORG_POLICY = active.report.download.path;
   mkdirSync(join(targetRoot, '.aih'));
-  const common = index => ['--root', targetRoot, '--decision', active.decisions[index].id, '--decision-digest', checked.core.governanceDecisionDigestV2(active.decisions[index]), '--target', 'codex', '--json', '--no-log'];
+  const acceptArguments = index => supportedAcceptArguments(targetRoot, active.decisions[index].id, checked.core.governanceDecisionDigestV2(active.decisions[index]));
   for (const [index, record] of checked.records.entries()) {
     assert(regularBytes(record.path, 5970).equals(record.bytes), 'original receipt changed before consumption');
     writeFileSync(join(targetRoot, '.aih', 'aih-supported-qualification-receipt.json'), record.bytes);
-    const accept = ['policy', 'supported', 'accept', ...common(index)];
+    const accept = acceptArguments(index);
     const preview = zeroWrite(`seq${index}-preview`, () => run(`seq${index}-preview`, accept)); assert.equal(preview.applied, false);
     const applied = run(`seq${index}-apply`, [...accept, '--apply']); assert.equal(applied.applied, true);
-    const custody = dataOf(run(`seq${index}-inspect`, ['policy', 'supported', 'inspect', '--root', targetRoot, '--json', '--no-log']));
+    const custody = dataOf(run(`seq${index}-inspect`, supportedInspectArguments(targetRoot)));
     assert.equal(custody.memberRecords.occupied, index + 1); assert.equal(custody.members.length, 1);
     assertSubset(custody.members[0], { entryId: record.receipt.entryId, target: 'codex', decision: { id: active.decisions[index].id, digest: checked.core.governanceDecisionDigestV2(active.decisions[index]) } });
     assertSubset(custody.members[0].subject, { kind: record.receipt.subject.kind, id: record.receipt.subject.id, digest: record.receipt.subject.subjectDigest });
     assert(!existsSync(join(targetRoot, '.aih', 'supported-qualification', 'v2')), 'unexpected target-local custody');
   }
-  zeroWrite('supported-head-repeat', () => run('supported-head-repeat', ['policy', 'supported', 'accept', ...common(4), '--apply']));
+  zeroWrite('supported-head-repeat', () => run('supported-head-repeat', [...acceptArguments(4), '--apply']));
   const packageArgs = ['--decision', active.decisions[4].id, '--decision-digest', active.packageDecisionDigest, '--target', 'codex', '--json', '--no-log'];
   const observe = () => ['policy', 'observe', 'npm-package', targetRoot, ...packageArgs];
   const lifecycle = apply => ['policy', 'lifecycle', 'npm-package', targetRoot, ...packageArgs, ...(apply ? ['--apply'] : [])];
