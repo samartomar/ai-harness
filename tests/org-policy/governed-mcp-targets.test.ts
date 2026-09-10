@@ -246,7 +246,9 @@ describe("governed MCP target contracts", () => {
 
   it("uses updated protected policy scope for clean built-ins without broadening receipt decisions", async () => {
     const root = mkdtempSync(join(tmpdir(), "aih-mcp-target-boundary-"));
-    const admin = mkdtempSync(join(tmpdir(), "aih-mcp-target-authority-"));
+    const admin = realpathSync.native(
+      mkdtempSync(join(realpathSync.native(tmpdir()), "aih-mcp-target-authority-")),
+    );
     try {
       const policyPath = join(admin, "policy-bundle.json");
       const permitted = TARGETS.filter((target) => target !== "copilot");
