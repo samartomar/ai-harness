@@ -1,0 +1,23 @@
+import {writeFileSync} from 'node:fs';
+import {join} from 'node:path';
+import {spawnSync} from 'node:child_process';
+import assert from 'node:assert/strict';
+import {assertFreshHost} from './host-guard.mjs';
+import {acquire} from './acquire-public.mjs';
+import {hostedPaths,nativeTool} from './hosted-paths.mjs';
+import {main} from './run-public-acceptance.mjs';
+import {resolveHostedOperator} from './hosted-operator.mjs';
+assert(!process.env.AIH_CORE061_SCAN_INPUTS&&!process.env.AIH_CORE061_EVIDENCE_KEY);
+assertFreshHost();
+const run=JSON.parse(spawnSync(nativeTool('gh'),['api',`repos/samartomar/ai-harness/actions/runs/${process.env.GITHUB_RUN_ID}/attempts/${process.env.GITHUB_RUN_ATTEMPT}`],{encoding:'utf8',windowsHide:true}).stdout);
+assert.equal(run.head_sha,process.env.GITHUB_SHA);assert.equal(run.event,'workflow_dispatch');assert.equal(run.path,'.github/workflows/public-policy-acceptance.yml');assert.equal(run.head_branch,'main');
+const git=nativeTool('git');
+const commitResult=spawnSync(nativeTool('gh'),['api',`repos/samartomar/ai-harness/commits/${process.env.GITHUB_SHA}`],{encoding:'utf8',windowsHide:true,timeout:30000,maxBuffer:2*1024*1024});
+assert.equal(commitResult.status,0,'native verifier commit lookup failed');
+const operator=resolveHostedOperator(run,JSON.parse(commitResult.stdout),process.env.GITHUB_SHA,process.env.GITHUB_ACTOR);
+for(const[key,value]of [['user.name',operator.name],['user.email',operator.email]])assert.equal(spawnSync(git,['config','--local',key,value],{cwd:process.env.GITHUB_WORKSPACE,encoding:'utf8',windowsHide:true}).status,0);
+writeFileSync(join(hostedPaths().raw,'operator.json'),JSON.stringify({operator,dispatchActor:process.env.GITHUB_ACTOR,run:process.env.GITHUB_RUN_ID,source:process.env.GITHUB_SHA}));
+const input=await acquire();
+await main(['--inputs',input,'--scan-root',join(hostedPaths().raw,'scans'),'--execute','all']);
+// This marker is downstream of all original journey checks and final rechecks.
+writeFileSync(join(hostedPaths().raw,'all-journeys-complete.json'),JSON.stringify({format:'aih-core061-complete/v1',journeys:['832','managed','848']}),{flag:'wx'});

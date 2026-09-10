@@ -1,0 +1,68 @@
+name: Actual public Core policy acceptance
+on:
+  workflow_dispatch:
+    inputs:
+      qualification_run:
+        required: true
+        type: string
+      qualification_attempt:
+        required: true
+        type: string
+      qualification_sha256:
+        description: Exact sha256-prefixed raw qualification.json digest
+        required: true
+        type: string
+      catalog_run:
+        description: Successful signed Catalog sequence 4 run at reviewed source
+        required: true
+        type: string
+permissions: {}
+jobs:
+  actual-public-policy:
+    if: github.repository == 'samartomar/ai-harness' && github.ref == 'refs/heads/main' && github.ref_protected
+    runs-on: windows-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+      issues: read
+      attestations: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24'
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6
+      - name: Install locked verifier and native Chromium tooling
+        shell: pwsh
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node node_modules/playwright/cli.js install chromium
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Execute genuine public journeys with encrypted private evidence
+        id: acceptance
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AIH_QUALIFICATION_RUN: ${{ inputs.qualification_run }}
+          AIH_QUALIFICATION_ATTEMPT: ${{ inputs.qualification_attempt }}
+          AIH_QUALIFICATION_SHA256: ${{ inputs.qualification_sha256 }}
+          AIH_CATALOG_RUN: ${{ inputs.catalog_run }}
+          AIH_CORE061_SCAN_INPUTS: ${{ secrets.AIH_CORE061_SCAN_INPUTS }}
+          AIH_CORE061_EVIDENCE_KEY: ${{ secrets.AIH_CORE061_EVIDENCE_KEY }}
+        run: node .github/public-policy-acceptance/hosted-run.mjs
+      - name: Retain only encrypted raw evidence and fixed public projection
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: core061-actual-policy-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ steps.acceptance.outputs.encrypted_evidence }}
+            ${{ steps.acceptance.outputs.ciphertext_digest }}
+            ${{ steps.acceptance.outputs.public_summary }}
+          if-no-files-found: error
+          retention-days: 7

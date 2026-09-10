@@ -10,6 +10,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Bind the nine eligible first-party Workbench qualifications to Core 0.6.1 while
+  preserving the original Scanner findings and all other providers' evidence.
+  Final public policy acceptance runs on a fresh hosted Windows administrator
+  runner and retains private raw evidence in an encrypted artifact.
+
 - Preserve the enterprise manifest and qualification evidence at explicit artifact
   roots throughout release qualification and publication. The immutable Core 0.6.0
   attempt passed its package checks and installed matrix, then failed receipt
