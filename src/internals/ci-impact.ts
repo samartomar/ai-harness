@@ -7,7 +7,7 @@ import {
 } from "./workbench-provider-ownership.js";
 import { isWorkbenchTestPath } from "./workbench-test-ownership.js";
 
-export const CI_SELECTOR_VERSION = "1.5.2";
+export const CI_SELECTOR_VERSION = "1.5.3";
 
 export type CiRiskClass = "docs" | "focused" | "cross-platform" | "full";
 export type CiTestLane = "docs" | "core" | "workbench" | "both" | "full";
@@ -346,6 +346,14 @@ export function classifyCiImpact(
         ? testFiles.filter(isWorkbenchTest)
         : testsForDomain(sourceDomain, testFiles);
       for (const test of ownedTests) selectedTests.add(test);
+      // Both ECC entry points consume this renderer across domain boundaries.
+      // Domain-only selection missed their literal-setting compatibility.
+      if (path === "src/mcp/render.ts") {
+        matchedRules.push("mcp-renderer-consumers");
+        for (const domain of ["ecc", "ecc-profile"]) {
+          for (const test of testsForDomain(domain, testFiles)) selectedTests.add(test);
+        }
+      }
       // Shared policy code can affect source contracts owned outside org-policy.
       if (sourceDomain === "org-policy" && !isWorkbenchSource(path)) {
         for (const test of testFiles.filter(isWorkbenchTest)) selectedTests.add(test);

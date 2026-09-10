@@ -29,6 +29,27 @@ const testFiles = [
 ];
 
 describe("CI impact classifier", () => {
+  it("includes ECC callers when the shared MCP renderer changes", () => {
+    const consumers = [
+      "tests/ecc/mcp-explicit-add.test.ts",
+      "tests/ecc-profile/mcp-profile.test.ts",
+      "tests/ecc-profile/native-registration.test.ts",
+      "tests/ecc-profile/parity-receipt.test.ts",
+      "tests/mcp/render.test.ts",
+    ];
+    const receipt = classifyCiImpact({
+      baseSha,
+      headSha,
+      changedPaths: ["src/mcp/render.ts"],
+      testFiles: [...consumers, "tests/workspace/manifest.test.ts"],
+    });
+    expect(receipt.fullSuite).toBe(false);
+    expect(receipt.selectedTests).toEqual(expect.arrayContaining(consumers));
+    expect(receipt.selectedTests).not.toContain("tests/workspace/manifest.test.ts");
+    expect(receipt.operatingSystems).toEqual(["ubuntu-latest", "macos-latest", "windows-latest"]);
+    expect(validateCiImpactReceipt(receipt)).toEqual(receipt);
+  });
+
   it("writes the receipt and GitHub outputs from bounded git observations", async () => {
     const root = mkdtempSync(join(tmpdir(), "aih-ci-impact-command-"));
     const receiptPath = join(root, "receipt.json");

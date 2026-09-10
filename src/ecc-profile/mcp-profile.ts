@@ -265,7 +265,7 @@ function buildEccMcpProfileProjectionForRuntime(
   );
   if (wrapperArgsPrefix.length > 16) throw new Error("wrapperArgsPrefix exceeds its limit");
   const context7Attestation = validateContext7Attestation(input.context7Attestation);
-  const servers: EccMcpProjection["servers"] = {
+  const servers = {
     ...localServers(),
     context7: { ...CONTEXT7_SERVER },
     serena: {
@@ -295,14 +295,26 @@ function buildEccMcpProfileProjectionForRuntime(
       credentials: "none",
       supplyChain: "pinned",
     },
-  };
+  } satisfies EccMcpProjection["servers"];
   const native =
     input.client === "claude"
       ? {
           kind: "claude-json" as const,
           body: `${JSON.stringify({ mcpServers: mcpEntries("claude", servers) }, null, 2)}\n`,
         }
-      : { kind: "codex-toml" as const, body: `${mcpTomlBody(servers)}\n` };
+      : {
+          kind: "codex-toml" as const,
+          // The catalog renderer accepts secret references only. These two
+          // producer-owned settings are literals: a validated state path and a
+          // fixed reporting policy. Preserve the historical receipt bytes.
+          body: [
+            mcpTomlBody({ ...servers, serena: { ...servers.serena, env: undefined } }),
+            '\n[mcp_servers."serena".env]',
+            `SERENA_HOME = ${JSON.stringify(serenaHome)}`,
+            'SERENA_USAGE_REPORTING = "false"',
+            "",
+          ].join("\n"),
+        };
   return {
     activation: "prepared-not-registered",
     servers,
