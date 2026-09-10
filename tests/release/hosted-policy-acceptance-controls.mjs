@@ -59,8 +59,8 @@ test('workflow accepts only protected dispatch, read permissions and exact encry
  assert.deepEqual(job.permissions,{contents:'read',actions:'read',issues:'read',attestations:'read'});
  for(const step of job.steps.filter(s=>s.uses))assert.match(step.uses,/@[a-f0-9]{40}$/u);
  const uploads=job.steps.filter(s=>s.uses?.startsWith('actions/upload-artifact@'));assert.equal(uploads.length,1);assert.equal(uploads[0].if,'always()');
- assert.deepEqual(uploads[0].with.path.trim().split('\n').map(p=>p.split('/').at(-1)),['raw-evidence.aes256gcm','ciphertext.sha256','summary.json']);
- const privateSteps=job.steps.filter(s=>s.env?.AIH_CORE061_SCAN_INPUTS);assert.equal(privateSteps.length,1);assert.equal(privateSteps[0].run,'node .github/public-policy-acceptance/hosted-run.mjs');
+ assert.deepEqual(uploads[0].with.path.trim().split('\n'),['${{ steps.acceptance.outputs.encrypted_evidence }}','${{ steps.acceptance.outputs.ciphertext_digest }}','${{ steps.acceptance.outputs.public_summary }}']);
+ const privateSteps=job.steps.filter(s=>s.env?.AIH_CORE061_SCAN_INPUTS);assert.equal(privateSteps.length,1);assert.equal(privateSteps[0].id,'acceptance');assert.equal(privateSteps[0].run,'node .github/public-policy-acceptance/hosted-run.mjs');
 });
 test('failed native child output remains complete encrypted evidence',()=>{
  const script=join(fixture,'negative-child.mjs');writeFileSync(script,"import {spawnSync} from 'node:child_process'; const r=spawnSync(process.execPath,['-e',\"process.stdout.write('PRIVATE_SENTINEL'); process.stderr.write('FAIL_SENTINEL'); process.exit(7)\"],{encoding:'utf8',maxBuffer:1}); if(r.status!==7||r.stdout!=='PRIVATE_SENTINEL'||r.stderr!=='FAIL_SENTINEL')throw Error('capture failed'); process.exit(7);");

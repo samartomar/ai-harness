@@ -5,6 +5,12 @@ import {pathToFileURL} from 'node:url';
 import {regularBytes,sha256,compareInstalledTarball} from './bytes.mjs';
 import {validateQualificationReceiptForRepository} from '../../src/internals/delivery-governance.ts';
 export const identity=Object.freeze({name:'@aihq/core',version:'0.6.1',repository:'samartomar/ai-harness',tag:'v-core-0.6.1',registryMetadata:'https://registry.npmjs.org/@aihq%2fcore/0.6.1',tarball:'https://registry.npmjs.org/@aihq/core/-/core-0.6.1.tgz'});
+export function exactRegistryMetadataText(bytes){
+ assert(Buffer.isBuffer(bytes)&&bytes.length>0&&bytes.length<=1024*1024,'registry metadata byte limit');
+ const text=new TextDecoder('utf-8',{fatal:true,ignoreBOM:true}).decode(bytes);
+ assert(Buffer.from(text,'utf8').equals(bytes),'registry metadata byte round-trip mismatch');
+ return text;
+}
 export function assertInputs(input){
  assert(input&&Object.getPrototypeOf(input)===Object.prototype,'plain input object required');
  assert.deepEqual(Object.keys(input).sort(),['qualificationPath','qualificationSha256','coreTarball','corePackageRoot','seq4Receipt','seq4SourceSha'].sort(),'exact input keys required');
@@ -37,11 +43,12 @@ export async function validatePublicInputs(input){
  const receiptBytes=regularBytes(input.qualificationPath);assert.equal(sha256(receiptBytes),input.qualificationSha256,'reviewed qualification bytes changed');
  const compressed=regularBytes(input.coreTarball,64*1024*1024);
  const metadataBytes=await publicBytes(identity.registryMetadata,1024*1024);
- const bound=bindIdentity(JSON.parse(metadataBytes),JSON.parse(receiptBytes),compressed);
+ const metadataText=exactRegistryMetadataText(metadataBytes);
+ const bound=bindIdentity(JSON.parse(metadataText),JSON.parse(receiptBytes),compressed);
  const registryTar=await publicBytes(identity.tarball,64*1024*1024);assert(registryTar.equals(compressed),'local bytes differ from actual registry response');
  const installed=compareInstalledTarball(input.coreTarball,input.corePackageRoot,bound.sha256);
  const manifest=JSON.parse(regularBytes(join(input.corePackageRoot,'package.json')));assert.equal(manifest.name,identity.name);assert.equal(manifest.version,identity.version);
- return {status:'public-byte-binding-only',liveExecutionReady:false,authorityVerified:false,version:identity.version,qualificationSha256:input.qualificationSha256,registryMetadataSha256:sha256(metadataBytes),registryMetadataJson:metadataBytes.toString('utf8'),registryIntegrity:bound.integrity,core:installed,requiredBeforeCustody:['Independently verify qualification run/artifact custody, tag object/source, active candidate and public provenance using real native gh/npm/cosign.','Parse and verify original public seq0-4 through installed Core and native gh with exact workflow/source bindings.','Use run-public-acceptance.mjs for all native authority checks and adapted drivers; recheck bytes immediately before each execution.']};
+ return {status:'public-byte-binding-only',liveExecutionReady:false,authorityVerified:false,version:identity.version,qualificationSha256:input.qualificationSha256,registryMetadataSha256:sha256(metadataBytes),registryMetadataJson:metadataText,registryIntegrity:bound.integrity,core:installed,requiredBeforeCustody:['Independently verify qualification run/artifact custody, tag object/source, active candidate and public provenance using real native gh/npm/cosign.','Parse and verify original public seq0-4 through installed Core and native gh with exact workflow/source bindings.','Use run-public-acceptance.mjs for all native authority checks and adapted drivers; recheck bytes immediately before each execution.']};
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
  assert.equal(process.argv.length,4,'usage: node --import tsx validate-public-inputs.mjs --inputs absolute.json');assert.equal(process.argv[2],'--inputs');assert(isAbsolute(process.argv[3]));

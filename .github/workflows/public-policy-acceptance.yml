@@ -44,6 +44,7 @@ jobs:
           node node_modules/playwright/cli.js install chromium
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Execute genuine public journeys with encrypted private evidence
+        id: acceptance
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -60,8 +61,8 @@ jobs:
         with:
           name: core061-actual-policy-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            ${{ runner.temp }}/aih-public-acceptance-output/raw-evidence.aes256gcm
-            ${{ runner.temp }}/aih-public-acceptance-output/ciphertext.sha256
-            ${{ runner.temp }}/aih-public-acceptance-output/summary.json
+            ${{ steps.acceptance.outputs.encrypted_evidence }}
+            ${{ steps.acceptance.outputs.ciphertext_digest }}
+            ${{ steps.acceptance.outputs.public_summary }}
           if-no-files-found: error
           retention-days: 7

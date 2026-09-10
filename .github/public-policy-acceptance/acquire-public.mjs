@@ -4,6 +4,7 @@ import {mkdirSync,writeFileSync} from 'node:fs';
 import {join,dirname} from 'node:path';
 import {nativeTool,hostedPaths} from './hosted-paths.mjs';
 import {regularBytes,sha256} from './bytes.mjs';
+import {validateQualificationReceiptForRepository} from '../../src/internals/delivery-governance.ts';
 const catalog='samartomar/aih-catalog',core='samartomar/ai-harness';
 export const catalogSource='98d95263aa0901504c9d480628f6c06c4a1fe453';
 const priorRuns=[33162188708,34278014513,34298865399,34342417057];
@@ -11,6 +12,14 @@ const priorSources=['ea64c29471f12fd5ac1de53a72cb6edd0fc0d142','5e18dd66e42f91c3
 const command=(file,args,cwd)=>{const r=spawnSync(file,args,{cwd,encoding:'utf8',timeout:300000,maxBuffer:16*1024*1024,windowsHide:true});assert(!r.error&&r.status===0,'public input acquisition refused');return r.stdout;};
 const positive=value=>{assert(/^[1-9][0-9]{0,14}$/u.test(value??''));return value;};
 export const maxSourceBytes=8*1024*1024;
+export const maxTarballBytes=64*1024*1024;
+/** Transport authentication only; native provenance and live authority remain required. */
+export function validateQualifiedTarball(bytes,expectedSha256){
+ assert(Buffer.isBuffer(bytes)&&bytes.length>0&&bytes.length<=maxTarballBytes,'public tarball size refused');
+ assert(/^[0-9a-f]{64}$/u.test(expectedSha256??'')&&!/^0+$/u.test(expectedSha256),'qualified tarball digest required');
+ assert.equal(sha256(bytes),'sha256:'+expectedSha256,'qualified tarball digest mismatch');
+ return bytes;
+}
 /** Byte transport validation only; does not confer qualification authority. */
 export function validateSourceBytes(metadata,bytes,expectedSha256){
  assert.equal(metadata.type,'file');
@@ -27,7 +36,8 @@ export async function acquire(){
  const qdir=join(paths.raw,'public-qualification');mkdirSync(qdir);
  command(gh,['run','download',qRun,'--repo',core,'--name',`core-release-evidence-${qRun}-${attempt}`,'--dir',qdir]);
  const qualificationPath=join(qdir,'qualification.json');assert.equal(sha256(regularBytes(qualificationPath)),process.env.AIH_QUALIFICATION_SHA256);
- const q=JSON.parse(regularBytes(qualificationPath));assert.equal(String(q.workflow.runId),qRun);assert.equal(String(q.workflow.runAttempt),attempt);
+ const q=validateQualificationReceiptForRepository(JSON.parse(regularBytes(qualificationPath)),core);assert.equal(String(q.workflow.runId),qRun);assert.equal(String(q.workflow.runAttempt),attempt);
+ assert.equal(q.package.name,'@aihq/core');assert.equal(q.package.version,'0.6.1');assert.equal(q.source.tag,'v-core-0.6.1');assert.equal(q.workflow.revision,q.source.sha);
  mkdirSync(paths.receipts);
  for(let sequence=0;sequence<=4;sequence++){
   const runId=sequence<4?String(priorRuns[sequence]):seq4Run,source=sequence<4?priorSources[sequence]:catalogSource;
@@ -54,8 +64,11 @@ export async function acquire(){
   assert(/^evidence:(?:gap|report|right):evidence\/[a-z0-9.-]+\.json$/u.test(row.identity));const path='defaults/workbench/npm/package.picocolors/'+row.identity.split(':').at(-1);sourceFile(path,join(paths.candidate,path),'sha256:'+row.sha256);assert.equal(sha256(regularBytes(join(paths.candidate,path))),'sha256:'+row.sha256);
  }
  const url='https://registry.npmjs.org/@aihq/core/-/core-0.6.1.tgz';
- const response=await fetch(url,{redirect:'error',signal:AbortSignal.timeout(30000)});assert(response.ok&&response.url===url);const chunks=[];let size=0;for await(const chunk of response.body){size+=chunk.length;assert(size<=64*1024*1024);chunks.push(chunk);}
- const coreTarball=join(paths.raw,'core-0.6.1.tgz');writeFileSync(coreTarball,Buffer.concat(chunks),{flag:'wx'});
+ const response=await fetch(url,{redirect:'error',signal:AbortSignal.timeout(30000)});assert(response.ok&&response.url===url&&response.body);const chunks=[];let size=0;for await(const chunk of response.body){size+=chunk.length;assert(size<=maxTarballBytes);chunks.push(chunk);}
+ // Persist only the exact digest in the hash-bound, schema-validated qualification.
+ // The destination is fixed in private staging; nothing is extracted or executed here.
+ const tarballBytes=validateQualifiedTarball(Buffer.concat(chunks),q.artifact.tarballSha256);
+ const coreTarball=join(paths.raw,'core-0.6.1.tgz');writeFileSync(coreTarball,tarballBytes,{flag:'wx',mode:0o600});
  // Scripts-disabled install of genuine registry version, independently compared with retained tar by original validator.
  const consumer=join(paths.root,'consumer');mkdirSync(consumer);writeFileSync(join(consumer,'package.json'),JSON.stringify({name:'aih-public-acceptance-consumer',version:'1.0.0',private:true}));
  const npmCli=join(dirname(process.execPath),'node_modules/npm/bin/npm-cli.js');regularBytes(npmCli);

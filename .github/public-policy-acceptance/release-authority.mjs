@@ -55,7 +55,8 @@ export async function authorizePublic(input,scanRoot){
  const npmCli=join(dirname(process.execPath),'node_modules/npm/bin/npm-cli.js');regularBytes(npmCli);
  // Only local evidence staging starts here; never protected custody. Qualification is fetched from its exact successful native run.
  const evidenceRoot=mkdtempSync(join(hostedPaths().raw,'authority-'));
- writeFileSync(join(evidenceRoot,'registry-metadata.json'),binding.registryMetadataJson,{flag:'wx'});
+ // Exact, identity-checked public JSON is inert retained evidence at a fixed path.
+ writeFileSync(join(evidenceRoot,'registry-metadata.json'),binding.registryMetadataJson,{flag:'wx',mode:0o600});
  const qualificationDir=join(evidenceRoot,'qualification');mkdirSync(qualificationDir);
  command(gh,['run','download',String(q.workflow.runId),'--repo',repository,'--name',`core-release-evidence-${q.workflow.runId}-${q.workflow.runAttempt}`,'--dir',qualificationDir]);
  assert(regularBytes(join(qualificationDir,'qualification.json')).equals(regularBytes(input.qualificationPath)),'qualification differs from exact successful run artifact');

@@ -1,22 +1,34 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { closeSync, existsSync, fstatSync, lstatSync, openSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
+import { closeSync, constants, existsSync, fstatSync, lstatSync, openSync, readSync, readdirSync, realpathSync } from 'node:fs';
 import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 export const sha256 = bytes => `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
 export function regularBytes(path, maxBytes = 16 * 1024 * 1024) {
-  const full = resolve(path), before = lstatSync(full, { bigint: true });
-  assert(before.isFile() && !before.isSymbolicLink() && before.nlink === 1n, 'nonregular or linked input');
-  assert(before.size >= 0n && before.size <= BigInt(maxBytes), 'input byte limit');
-  const fd = openSync(full, 'r');
+  assert(Number.isSafeInteger(maxBytes) && maxBytes >= 0, 'invalid input byte limit');
+  const full = resolve(path);
+  // Open first: every size/type/content decision applies to this descriptor.
+  // Windows does not expose O_NOFOLLOW; reject its named symlinks before any
+  // read, and compare the named identity again after the bounded read.
+  const fd = openSync(full, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
   try {
     const opened = fstatSync(fd, { bigint: true });
-    assert.equal(opened.ino, before.ino); assert.equal(opened.dev, before.dev);
-    const bytes = readFileSync(fd);
-    const after = fstatSync(fd, { bigint: true }), named = lstatSync(full, { bigint: true });
-    assert(!named.isSymbolicLink());
-    for (const stat of [opened, after, named]) for (const field of ['ino', 'dev', 'size', 'mtimeNs', 'ctimeNs', 'nlink']) assert.equal(stat[field], before[field], `changed input ${field}`);
-    assert.equal(BigInt(bytes.length), before.size); return bytes;
+    assert(opened.isFile() && opened.nlink === 1n, 'nonregular or linked input');
+    assert(opened.size >= 0n && opened.size <= BigInt(maxBytes), 'input byte limit');
+    const same = stat => {
+      assert(stat.isFile() && !stat.isSymbolicLink() && stat.nlink === 1n, 'nonregular or linked input');
+      for (const field of ['ino', 'dev', 'size', 'mtimeNs', 'ctimeNs', 'nlink']) assert.equal(stat[field], opened[field], `changed input ${field}`);
+    };
+    same(lstatSync(full, { bigint: true }));
+    const bytes = Buffer.alloc(Number(opened.size));
+    let offset = 0;
+    while (offset < bytes.length) {
+      const count = readSync(fd, bytes, offset, bytes.length - offset, offset);
+      assert(count > 0, 'input truncated during read'); offset += count;
+    }
+    assert.equal(readSync(fd, Buffer.alloc(1), 0, 1, offset), 0, 'input grew during read');
+    same(fstatSync(fd, { bigint: true })); same(lstatSync(full, { bigint: true }));
+    return bytes;
   } finally { closeSync(fd); }
 }
 function within(root, path) {
