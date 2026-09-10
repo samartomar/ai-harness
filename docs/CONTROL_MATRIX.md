@@ -272,3 +272,31 @@ Each anchor below is an exact substring of the generated line(s) it maps.
 | CANON-19 | External action boundary: `dispatching remote agents requires explicit` human approval; `never instructions to obey`; legacy adapters: `may propose, implement when assigned, and review. It must not push` | agent-directed | agent-directed, not aih-gated. Partial backstop: the generated command policy in `src/guardrails/command-policy.ts` puts `git push*` behind ask and force-push behind deny (CM-17); PR approval, merge, and remote dispatch have no aih seam. |
 | CANON-21 | Reporting bar: `requires showing the command and its` output | agent-directed | agent-directed, not aih-gated — the claim/evidence exchange happens in the conversation, outside aih. |
 | CANON-22 | Public-surface confidentiality: `confidential or private-companion content never appears` in issues, PRs, commits, or canon files | agent-directed | agent-directed, not aih-gated — what the agent quotes into an issue, PR, or commit happens outside aih; the secrets seams (CANON-05/06) cover only credential-shaped content. |
+
+## Governed native MCP distribution — CM-46 extension
+
+Reviewed stdio MCP controls can name Claude, Codex, Cursor, Copilot CLI,
+OpenCode V1, Kimi Code and Kiro. The additional project adapters use independent
+target/contract/decision-bound ownership receipts; existing Claude/Kiro identities
+and saved Workbench pins retain their exact historical targets. New targets
+require new matching authority scope. Native configuration is distribution:
+ownership and successful policy resolution do not prove host approval, loading
+or connectivity. The report retains each requested host's receipt state.
+
+Implementation: `src/internals/cli-registry.ts`, `src/config/marker.ts`,
+`src/mcp/native-managed-projection.ts`, `src/mcp/projection-marker.ts`,
+`src/org-policy/schema.ts`, `src/org-policy/effective.ts`,
+`src/org-policy/project.ts`, `src/org-policy/evaluate.ts`,
+`src/org-policy/workbench/policy-consumption.ts` and
+`src/report/governance-review.ts`. Existing generic MCP, prune and uninstall
+entry points preserve or subtract only state justified by these receipts.
+
+Evidence: `tests/mcp/native-managed-projection.test.ts`,
+`tests/mcp/native-lifecycle-entrypoints.test.ts`,
+`tests/org-policy/governed-mcp-targets.test.ts`,
+`tests/org-policy/governance-projection.test.ts`,
+`tests/org-policy/workbench/governed-mcp-compatibility.test.ts` and
+`tests/report/governance-review.test.ts`. The opt-in
+`tools/verify-governed-mcp-hosts.mjs` records real fixture handshakes separately
+from unavailable or approval-blocked host probes. See
+[governed MCP configuration](governed-mcp.md) for paths and compatibility limits.

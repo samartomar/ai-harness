@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { canonicalStrictJsonBytesV1 } from "../../../contract/strict-json-v1.js";
+import type { GovernedMcpTarget } from "../../../internals/cli-registry.js";
 import type {
   AihCatalogSourceV1,
   AihPolicyControl,
@@ -112,7 +113,7 @@ export function compileBuiltInCatalogV1(catalog: BuiltInCatalogInputV1): Compile
     label: string,
     originalPath: string,
     declarationInput: unknown,
-    supportedTargets: readonly ("claude" | "codex" | "kiro")[] = [],
+    supportedTargets: readonly GovernedMcpTarget[] = [],
     projectorId?: "mcp-managed-settings" | "usage-hook",
     decision?: Record<string, string>,
     runtimeIdentity?: string,

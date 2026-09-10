@@ -450,16 +450,19 @@ describe("ECC opt-in file stores", () => {
         harness: "codex",
       });
       let clock = 1_000;
-      const handler = createLearningHandler({
+      const handlerOptions = {
         enabled: true,
         repositoryId: "repo",
         canonicalWorktree: worktree,
         harness: "codex",
-        store,
         now: () => clock++,
-      });
-      for (let index = 0; index <= LEARNING_LIMITS.maxRecords / 2; index += 1) {
-        await handler.run(
+      };
+      // Generate valid persisted records with the real handler, without repeatedly
+      // rereading and rewriting a growing file just to reach the rotation boundary.
+      const seedStore = memoryLearningStore();
+      const seedHandler = createLearningHandler({ ...handlerOptions, store: seedStore });
+      for (let index = 0; index < LEARNING_LIMITS.maxRecords / 2; index += 1) {
+        await seedHandler.run(
           event("after-compact", {
             cwd: worktree,
             sessionId: `session-${index}`,
@@ -468,8 +471,35 @@ describe("ECC opt-in file stores", () => {
           signal,
         );
       }
+      const seedRecords = seedStore.list();
+      const firstRecord = seedRecords[0];
+      if (!firstRecord) throw new Error("learning seed record missing");
+      store.save(firstRecord);
+      const stateFiles = readdirSync(join(stateRoot, "learning"));
+      expect(stateFiles).toHaveLength(1);
+      const [stateFileName] = stateFiles;
+      if (!stateFileName) throw new Error("learning state file missing");
+      const stateFile = join(stateRoot, "learning", stateFileName);
+      writeFileSync(stateFile, serializeLearningState(seedRecords), "utf8");
+      expect(store.list()).toHaveLength(LEARNING_LIMITS.maxRecords);
+
+      const handler = createLearningHandler({ ...handlerOptions, store });
+      await handler.run(
+        event("after-compact", {
+          cwd: worktree,
+          sessionId: `session-${LEARNING_LIMITS.maxRecords / 2}`,
+          compactSummary: `candidate ${LEARNING_LIMITS.maxRecords / 2}`,
+        }),
+        signal,
+      );
       const records = store.list();
       expect(records).toHaveLength(LEARNING_LIMITS.maxRecords);
+      expect(records.map((record) => record.updatedAtEpochMs)).toEqual(
+        Array.from(
+          { length: LEARNING_LIMITS.maxRecords },
+          (_, index) => 1_001 + Math.floor(index / 2),
+        ),
+      );
       expect(
         records.some((record) => record.kind !== "approval" && record.summary === "candidate 0"),
       ).toBe(false);
@@ -480,13 +510,8 @@ describe("ECC opt-in file stores", () => {
             record.summary === `candidate ${LEARNING_LIMITS.maxRecords / 2}`,
         ),
       ).toBe(true);
-      const stateFiles = readdirSync(join(stateRoot, "learning"));
-      expect(stateFiles).toHaveLength(1);
-      const [stateFileName] = stateFiles;
-      if (!stateFileName) throw new Error("learning state file missing");
-      expect(readFileSync(join(stateRoot, "learning", stateFileName), "utf8")).toContain(
-        '"kind": "candidate"',
-      );
+      expect(readFileSync(stateFile, "utf8")).toBe(serializeLearningState(records));
+      expect(readdirSync(join(stateRoot, "learning"))).toEqual(stateFiles);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -505,30 +530,47 @@ describe("ECC opt-in file stores", () => {
         repositoryId: "repo",
         harness: "codex",
       });
-      for (let index = 0; index <= OBSERVABILITY_LIMITS.maxRecords; index += 1) {
-        store.save({
-          version: 1,
-          id: index.toString(16).padStart(64, "0"),
-          repositoryId: "repo",
-          canonicalWorktree: worktree,
-          harness: "codex",
-          sessionId: "a".repeat(64),
-          updatedAtEpochMs: index,
-          client: "codex",
-          event: "after-tool",
-          tool: "shell",
-          outcome: "ok",
-          durationMs: index,
-          eventCount: 1,
-        });
-      }
+      const record = (index: number): ObservabilityRecord => ({
+        version: 1,
+        id: index.toString(16).padStart(64, "0"),
+        repositoryId: "repo",
+        canonicalWorktree: worktree,
+        harness: "codex",
+        sessionId: "a".repeat(64),
+        updatedAtEpochMs: index,
+        client: "codex",
+        event: "after-tool",
+        tool: "shell",
+        outcome: "ok",
+        durationMs: index,
+        eventCount: 1,
+      });
+      // Bootstrap through the actual writer, then seed a valid at-cap snapshot;
+      // only the cap-crossing save and retention prune need filesystem replay.
+      store.save(record(0));
+      const stateFiles = readdirSync(join(stateRoot, "personal-observability"));
+      expect(stateFiles).toHaveLength(1);
+      const [stateFileName] = stateFiles;
+      if (!stateFileName) throw new Error("observability state file missing");
+      const stateFile = join(stateRoot, "personal-observability", stateFileName);
+      writeFileSync(
+        stateFile,
+        `${JSON.stringify(Array.from({ length: OBSERVABILITY_LIMITS.maxRecords }, (_, index) => record(index)))}\n`,
+        "utf8",
+      );
       expect(store.list()).toHaveLength(OBSERVABILITY_LIMITS.maxRecords);
+      store.save(record(OBSERVABILITY_LIMITS.maxRecords));
+      expect(store.list().map((record) => record.updatedAtEpochMs)).toEqual(
+        Array.from({ length: OBSERVABILITY_LIMITS.maxRecords }, (_, index) => index + 1),
+      );
       store.prune(OBSERVABILITY_LIMITS.maxRecords - 2);
       expect(store.list().map((record) => record.updatedAtEpochMs)).toEqual([
         OBSERVABILITY_LIMITS.maxRecords - 2,
         OBSERVABILITY_LIMITS.maxRecords - 1,
         OBSERVABILITY_LIMITS.maxRecords,
       ]);
+      expect(JSON.parse(readFileSync(stateFile, "utf8"))).toEqual(store.list());
+      expect(readdirSync(join(stateRoot, "personal-observability"))).toEqual(stateFiles);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

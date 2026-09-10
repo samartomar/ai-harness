@@ -1760,7 +1760,7 @@ describe("aih mcp — per-CLI config (honors --cli)", () => {
       (action) =>
         action.kind === "digest" && action.describe === "MCP allowlist filtered all servers",
     );
-    expect(jsonClientWrites).toHaveLength(9);
+    expect(jsonClientWrites).toHaveLength(10);
     for (const write of jsonClientWrites) expect(jsonConfigServerNames(write)).toEqual([]);
     expect(codex?.contents).not.toContain("[mcp_servers.");
     expect((managed?.json as { allowedMcpServers?: unknown[] })?.allowedMcpServers).toEqual([]);
@@ -2314,11 +2314,12 @@ describe("aih mcp — per-CLI config (honors --cli)", () => {
     const p = await command.plan(makeCtx({ options: { allTools: true } }));
     const writes = p.actions.filter((a): a is WriteAction => a.kind === "write");
     const paths = writes.map((w) => w.path.replace(/\\/g, "/"));
-    // Repo-relative natives keep their own paths (claude/kimi dedupe to one .mcp.json).
+    // Repo-relative natives keep their own paths.
     expect(paths).toContain(".mcp.json");
     expect(paths).toContain(".cursor/mcp.json");
     expect(paths.some((pa) => pa.endsWith(".config/opencode/opencode.json"))).toBe(true);
-    expect(paths.some((pa) => pa.endsWith(".vscode/mcp.json"))).toBe(true);
+    expect(paths).toContain(".github/mcp.json");
+    expect(paths).toContain(".kimi-code/mcp.json");
     // Codex gets its TOML written (external), NOT a .mcp.json it cannot read.
     const codex = writes.find((w) => w.path.replace(/\\/g, "/").endsWith(".codex/config.toml"));
     expect(codex?.external).toBe(true);

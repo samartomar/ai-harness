@@ -42,6 +42,14 @@ import {
   unprovableResidueReason,
   withExpectedContents,
 } from "../mcp/managed-projection.js";
+import {
+  NATIVE_MCP_TARGETS,
+  type NativeMcpTarget,
+  nativeMcpProjectionActions,
+  nativeMcpProjectionExpected,
+  nativeMcpProjectionOnDisk,
+  nativeMcpProjectionState,
+} from "../mcp/native-managed-projection.js";
 import { mcpApprovalSubject } from "../mcp/policy.js";
 import { coalesceMcpProjectionMarkerActions } from "../mcp/projection-marker.js";
 import { type McpServer, mcpServers, type StdioServer } from "../mcp/servers.js";
@@ -1160,6 +1168,84 @@ export function orgPolicyKiroMcpReceiptState(
   return state;
 }
 
+/** Read-only per-host configuration ownership; a receipt does not prove host consumption. */
+export function orgPolicyNativeMcpReceiptState(
+  ctx: PlanContext,
+  effective: EffectiveOrgPolicy,
+  target: NativeMcpTarget,
+): { state: ReturnType<typeof orgPolicyKiroMcpReceiptState>["state"]; detail: string } {
+  const activeIds = effective.candidates
+    .filter(
+      (candidate) =>
+        candidate.effective &&
+        isProjectionSurfaceCandidate(candidate, "mcp") &&
+        candidate.projection.requestedTargets.includes(target),
+    )
+    .map((candidate) => candidate.id);
+  const state = nativeMcpProjectionState(ctx.root, target);
+  const prior = nativeMcpProjectionOnDisk(ctx.root, target);
+  const bindingState =
+    state.state === "clean" && prior !== undefined
+      ? decisionReceiptState(prior.ownership, effective, "mcp", target)
+      : undefined;
+  if (bindingState !== undefined) {
+    return {
+      state: bindingState,
+      detail: `${target} workspace-MCP receipt retains a decision binding that requires policy reconciliation`,
+    };
+  }
+  if (activeIds.length === 0) {
+    if (state.state === "clean" && prior !== undefined) {
+      return {
+        state: "retained",
+        detail: `${target} workspace-MCP receipt retains a prior selection; policy project must reconcile its removal`,
+      };
+    }
+    return state.state === "absent"
+      ? {
+          state: "not-requested",
+          detail: `no effective ${target} workspace-MCP control or ownership receipt`,
+        }
+      : state;
+  }
+  const catalog = mcpServers(
+    "project",
+    scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir }),
+  );
+  const expected = nativeMcpProjectionExpected(
+    target,
+    Object.fromEntries(
+      activeIds.flatMap((id) => {
+        const server = catalog[id];
+        return server?.type === "stdio" ? [[id, server] as const] : [];
+      }),
+    ),
+  );
+  if (
+    state.state === "clean" &&
+    prior !== undefined &&
+    stableJson(prior.ownership.expected) !== stableJson(expected)
+  ) {
+    return {
+      state: "retained",
+      detail: `${target} workspace-MCP receipt retains a different selection; policy project must reconcile the requested selection`,
+    };
+  }
+  return state;
+}
+
+export function orgPolicyNativeMcpReceiptStates(
+  ctx: PlanContext,
+  effective: EffectiveOrgPolicy,
+): Record<NativeMcpTarget, ReturnType<typeof orgPolicyNativeMcpReceiptState>> {
+  return Object.fromEntries(
+    NATIVE_MCP_TARGETS.map((target) => [
+      target,
+      orgPolicyNativeMcpReceiptState(ctx, effective, target),
+    ]),
+  ) as Record<NativeMcpTarget, ReturnType<typeof orgPolicyNativeMcpReceiptState>>;
+}
+
 /**
  * Does the usage-hook ownership receipt already own hook entries at this path?
  *
@@ -1855,6 +1941,31 @@ function projectionActionsFromRuntime(
   // that lifecycle for a legacy policy would mistake its generic recorder for
   // an unreceipted governed artifact.
   if (governanceOwnsAihSurfaces(policy)) {
+    for (const target of NATIVE_MCP_TARGETS) {
+      if (!targets.includes(target)) continue;
+      const selectedIds = runtime.effective.candidates
+        .filter(
+          (candidate) =>
+            candidate.effective &&
+            isProjectionSurfaceCandidate(candidate, "mcp") &&
+            candidate.projection.requestedTargets.includes(target),
+        )
+        .map((candidate) => candidate.id);
+      const selected = Object.fromEntries(
+        selectedIds.flatMap((id) => {
+          const server = runtime.catalog[id];
+          return server?.type === "stdio" ? [[id, server] as const] : [];
+        }),
+      );
+      actions.push(
+        ...nativeMcpProjectionActions(
+          ctx,
+          target,
+          selected,
+          decisionBindingsFor(runtime.effective, "mcp", target),
+        ),
+      );
+    }
     const usage = usageHookProjectionActions(ctx, runtime.effective);
     actions.push(...usage);
     if (targets.includes("claude")) {

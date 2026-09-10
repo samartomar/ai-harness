@@ -1,4 +1,5 @@
 import { isAbsolute, join } from "node:path";
+import type { GovernedMcpTarget } from "../internals/cli-registry.js";
 import type { Cli } from "../internals/clis.js";
 import { removeManagedBlock } from "../internals/envfile.js";
 import { beginMarker, endMarker } from "../internals/render.js";
@@ -16,7 +17,7 @@ import type { McpServer } from "./servers.js";
  *  - gemini  → `mcpServers` `{command, args}` / `{httpUrl}` (~/.gemini/settings.json);
  *  - windsurf→ `mcpServers` `{command, args}` / `{serverUrl}`;
  *  - antigravity → `mcpServers` `{command, args}` / `{url}`;
- *  - copilot → `servers` `{type, command, args}` / `{type:"http", url}` (.vscode/mcp.json);
+ *  - copilot → `mcpServers` `{type, command, args}` / `{type:"http", url}` (.github/mcp.json);
  *  - opencode→ `mcp` `{type:"local", command:[cmd, ...args], enabled}` / `{type:"remote", url, enabled}`;
  *  - zed     → `context_servers` `{command, args}` / `{url}`;
  *  - codex   → TOML `[mcp_servers."name"]` tables (see {@link mcpTomlBody}).
@@ -27,6 +28,65 @@ import type { McpServer } from "./servers.js";
 
 /** One tool-shaped MCP server entry (the value under the tool's server-map key). */
 export type McpEntry = Record<string, unknown>;
+
+/** Strict stdio distributions omit AIH evidence metadata that belongs in receipts. */
+export function nativeMcpEntries(
+  target: Exclude<GovernedMcpTarget, "claude" | "kiro">,
+  servers: Record<string, McpServer>,
+): Record<string, McpEntry> {
+  return Object.fromEntries(
+    Object.entries(servers).map(([name, server]) => {
+      if (
+        server.type !== "stdio" ||
+        !/^[a-z][a-z0-9-]{0,119}$/.test(name) ||
+        typeof server.command !== "string" ||
+        server.command.length === 0 ||
+        !Array.isArray(server.args) ||
+        !server.args.every((arg) => typeof arg === "string")
+      ) {
+        throw new Error(
+          `${target} governed MCP projection refuses unsupported server shape for ${name}`,
+        );
+      }
+      const environment: Record<string, string> = {};
+      const envVars: string[] = [];
+      for (const [key, value] of Object.entries(server.env ?? {})) {
+        const reference = /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/.exec(value)?.[1];
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || reference === undefined) {
+          throw new Error(
+            `${target} governed MCP projection requires canonical environment references for ${name}`,
+          );
+        }
+        if (target === "codex") {
+          if (reference !== key)
+            throw new Error("Codex environment forwarding does not support renamed references");
+          envVars.push(reference);
+        } else if (target === "cursor") environment[key] = `\${env:${reference}}`;
+        else if (target === "opencode") environment[key] = `{env:${reference}}`;
+        else
+          throw new Error(
+            `${target} governed MCP environment references are unsupported by the registered host contract`,
+          );
+      }
+      const env = Object.keys(environment).length ? { env: environment } : {};
+      const common = { command: server.command, args: [...server.args] };
+      const shaped =
+        target === "opencode"
+          ? {
+              type: "local",
+              command: [server.command, ...server.args],
+              enabled: true,
+              ...(Object.keys(environment).length ? { environment } : {}),
+            }
+          : target === "codex"
+            ? { ...common, ...(envVars.length ? { env_vars: envVars.sort() } : {}) }
+            : target === "copilot"
+              ? { type: "stdio", ...common, ...env }
+              : { ...common, ...env };
+      return [name, shaped];
+    }),
+  );
+}
 
 /** Render one canonical server into `cli`'s entry shape. */
 export function mcpEntryFor(cli: Cli, s: McpServer): McpEntry {
@@ -48,7 +108,7 @@ export function mcpEntryFor(cli: Cli, s: McpServer): McpEntry {
             ...(s.headers ? { headers: s.headers } : {}),
           };
     case "copilot":
-      // VS Code `.vscode/mcp.json` keeps the `type` discriminator.
+      // Copilot CLI uses `mcpServers` and accepts the stdio/http discriminator.
       return s.type === "stdio"
         ? { type: "stdio", command: s.command, args: s.args, ...(s.env ? { env: s.env } : {}) }
         : { type: "http", url: s.url, ...(s.headers ? { headers: s.headers } : {}) };

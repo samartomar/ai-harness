@@ -171,8 +171,8 @@ describe("project-local explicit ECC MCP lifecycle", () => {
   it.each([
     ["claude", ".mcp.json", "mcpServers"],
     ["cursor", ".cursor/mcp.json", "mcpServers"],
-    ["copilot", ".vscode/mcp.json", "servers"],
-    ["kimi", ".mcp.json", "mcpServers"],
+    ["copilot", ".github/mcp.json", "mcpServers"],
+    ["kimi", ".kimi-code/mcp.json", "mcpServers"],
     ["kiro", ".kiro/settings/mcp.json", "mcpServers"],
   ])(
     "adds and removes one receipt-owned entry from %s without deleting or clobbering",

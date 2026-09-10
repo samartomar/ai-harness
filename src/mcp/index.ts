@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { join, posix } from "node:path";
+import { NATIVE_MCP_TARGETS } from "../config/marker.js";
 import { SettingsError } from "../errors.js";
 import { homeDir, isTargeted } from "../internals/cli-detect.js";
 import { type CliEntry, entry } from "../internals/cli-registry.js";
@@ -50,6 +51,7 @@ import {
   managedMcpProjectionOnDisk,
   managedMcpProjectionOwnershipAction,
 } from "./managed-projection.js";
+import { nativeMcpProjectionState } from "./native-managed-projection.js";
 import {
   asPosture,
   deniedServers,
@@ -842,8 +844,19 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   // Honor --cli/--all-tools/--detect, a committed marker, or the deterministic
   // first-run Claude default. Previously mcp ignored the selection and wrote
   // Claude's `.mcp.json` for every tool — a real bug for Codex (config.toml),
-  // Copilot (.vscode/mcp.json), OpenCode, Zed, etc.
+  // Copilot (.github/mcp.json), OpenCode, Zed, etc.
   const { clis } = policyTargets.resolution;
+  // A removed policy file does not transfer receipt-owned activation back to the
+  // generic generator, including its home/global Codex and OpenCode writers.
+  for (const target of NATIVE_MCP_TARGETS) {
+    if (!clis.includes(target)) continue;
+    const projection = nativeMcpProjectionState(ctx.root, target);
+    if (projection.state !== "absent") {
+      throw new SettingsError(
+        `${target} has a governed MCP receipt (${projection.state}); use verified \`aih policy project\` or receipt-proven prune/uninstall cleanup instead of generic MCP generation`,
+      );
+    }
+  }
   const scope = String(ctx.options.scope ?? "project");
   const selfHost = ctx.options.selfHost === true;
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
@@ -950,7 +963,7 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     // the user's other settings (Gemini/Zed settings.json carry unrelated keys).
     const external = isExternalMcp(p.configPath);
     const writePath = external ? mcpConfigAbs(home, p.configPath) : p.configPath;
-    if (writtenPaths.has(writePath)) continue; // tools sharing a path (claude + kimi → .mcp.json)
+    if (writtenPaths.has(writePath)) continue;
     writtenPaths.add(writePath);
     const where = external
       ? ` ${p.configPath} (global — affects all your projects)`

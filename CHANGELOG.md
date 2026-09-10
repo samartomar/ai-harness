@@ -6,6 +6,25 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Extend governed, receipt-owned MCP workspace configuration to Codex, Cursor,
+  Copilot CLI, OpenCode V1, and Kimi Code alongside the existing Claude and Kiro
+  projectors. Preserve exact historical policy/control bindings without extending
+  old approvals, and report ownership separately for every requested host.
+- Add explicit-base/head local CI verification through `npm run verify:local`,
+  reusing the hosted change classifier and applicable validation commands.
+
+### Fixed
+
+- Keep registered provider-test edits in their provider verification lane while
+  retaining broader coverage for shared or unknown changes.
+- Correct Copilot CLI and Kimi Code MCP paths and host-specific environment
+  references; preserve unrelated native configuration during governed updates
+  and ownership-proven removal.
+- Align contribution and review instructions with change-scoped verification
+  and one consolidated independent review for authority or ownership changes.
+
 ## [Core 0.6.1] - 2026-09-09
 
 ### Fixed

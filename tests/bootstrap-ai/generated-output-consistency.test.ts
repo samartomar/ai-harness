@@ -89,7 +89,7 @@ describe("generated canon — internal consistency", () => {
 
   it("AGENTS.md preamble derives its reader list from the registry (Kimi and Kiro included)", () => {
     const preamble = bootloaderPreamble("AGENTS.md", DIR, "repo", "compact");
-    expect(preamble).toContain("Kimi CLI");
+    expect(preamble).toContain("Kimi Code");
     expect(preamble).toContain("Kiro");
   });
 

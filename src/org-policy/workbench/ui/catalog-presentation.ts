@@ -724,7 +724,9 @@ export function assetDetailsPresentation(
         value:
           asset.authoring.supportedTargets.length === 0
             ? "No managed policy target is declared for this item. Host compatibility must be reviewed separately."
-            : `Managed control for ${asset.authoring.supportedTargets.join(", ")}. This does not describe every host the upstream tool may support.`,
+            : asset.authoring.projectorId === "mcp-managed-settings"
+              ? `Governed MCP configuration for ${asset.authoring.supportedTargets.join(", ")}. Configuration readiness does not verify that the host loaded the server or connected to it.`
+              : `Managed control for ${asset.authoring.supportedTargets.join(", ")}. This does not describe every host the upstream tool may support.`,
       },
       { label: "Security review", value: `${decision.evidenceLabel}. ${decision.evidenceHelp}` },
       ...evidenceFact(asset, bundle),

@@ -10,7 +10,10 @@ import {
 } from "../../src/internals/ci-impact.js";
 import { runCiImpactCommand } from "../../src/internals/ci-impact-command.js";
 import { fakeRunner } from "../../src/internals/proc.js";
-import { providerTestsFor } from "../../src/internals/workbench-provider-ownership.js";
+import {
+  providerTestsFor,
+  WORKBENCH_PROVIDER_OWNERSHIP,
+} from "../../src/internals/workbench-provider-ownership.js";
 import { isWorkbenchTestPath } from "../../src/internals/workbench-test-ownership.js";
 
 const baseSha = "a".repeat(40);
@@ -213,6 +216,60 @@ describe("CI impact classifier", () => {
         requiresPackedArtifact: true,
         requiresGenericBrowserJourneys: false,
       });
+    }
+  });
+
+  it.each(WORKBENCH_PROVIDER_OWNERSHIP)(
+    "routes $id provider test edits through their complete provider lane",
+    ({ id, testPath, sourceRoots }) => {
+      const providerTests = providerTestsFor([id]);
+      for (const changedPaths of [[testPath], ...sourceRoots.map((source) => [source, testPath])]) {
+        const receipt = classifyCiImpact({
+          baseSha,
+          headSha,
+          changedPaths,
+          testFiles: [...testFiles, ...providerTests],
+        });
+        expect(receipt).toMatchObject({
+          fullSuite: false,
+          testLane: "workbench",
+          affectedProviders: [id],
+          providerTests,
+          selectedTests: providerTests,
+          requiresPackedArtifact: true,
+          requiresGenericBrowserJourneys: false,
+        });
+        expect(() =>
+          validateCiImpactReceipt({ ...receipt, requiresGenericBrowserJourneys: true }),
+        ).toThrow("generic browser requirement");
+      }
+    },
+  );
+
+  it.each([
+    ["shared source", "src/org-policy/workbench/contracts.ts", false],
+    ["shared consumer test", "tests/org-policy/workbench/contracts.test.ts", false],
+    ["unknown provider", "src/org-policy/workbench/providers/future.ts", true],
+    ["unknown path", "future-surface/input.json", true],
+  ])("broadens a provider test edit mixed with %s", (_name, otherPath, fullSuite) => {
+    const providerTests = providerTestsFor(["ecc"]);
+    const receipt = classifyCiImpact({
+      baseSha,
+      headSha,
+      changedPaths: ["tests/org-policy/workbench/providers/ecc.test.ts", otherPath],
+      testFiles: [...testFiles, ...providerTests],
+    });
+    expect(receipt).toMatchObject({
+      fullSuite,
+      requiresPackedArtifact: true,
+      requiresGenericBrowserJourneys: true,
+    });
+    expect(() =>
+      validateCiImpactReceipt({ ...receipt, requiresGenericBrowserJourneys: false }),
+    ).toThrow("generic browser requirement");
+    if (fullSuite) {
+      expect(receipt.operatingSystems).toEqual(["ubuntu-latest", "macos-latest", "windows-latest"]);
+      expect(receipt.fallbackReasons.length).toBeGreaterThan(0);
     }
   });
 

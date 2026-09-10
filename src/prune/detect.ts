@@ -1,6 +1,6 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { readAihConfig } from "../config/marker.js";
+import { NATIVE_MCP_TARGETS, readAihConfig } from "../config/marker.js";
 import { bootloadersFor, entry } from "../internals/cli-registry.js";
 import { type Cli, SUPPORTED_CLIS } from "../internals/clis.js";
 import type { PlanContext } from "../internals/plan.js";
@@ -15,6 +15,10 @@ import {
   type ManagedMcpProjectionResidue,
   managedMcpProjectionOnDisk,
 } from "../mcp/managed-projection.js";
+import {
+  type NativeMcpProjectionResidue,
+  nativeMcpProjectionOnDisk,
+} from "../mcp/native-managed-projection.js";
 import { isExternalMcp } from "../mcp/render.js";
 
 /**
@@ -66,6 +70,7 @@ export type PruneArtifactKind =
   | "settings"
   | "managed-settings"
   | "kiro-managed-mcp"
+  | "native-managed-mcp"
   | "kiro-steering"
   | "kiro-hook";
 
@@ -107,6 +112,8 @@ export interface StalePruneSet {
   managedMcp?: ManagedMcpProjectionResidue;
   /** Receipt-proven Kiro workspace-MCP distribution for a dropped Kiro target. */
   kiroMcp?: KiroMcpProjectionResidue;
+  /** Receipt-proven native distributions for targets removed from committed intent. */
+  nativeMcp?: NativeMcpProjectionResidue[];
 }
 
 const VALID = new Set<string>(SUPPORTED_CLIS);
@@ -257,6 +264,21 @@ function kiroMcpArtifacts(residue: KiroMcpProjectionResidue | undefined): PruneA
   ];
 }
 
+function nativeMcpArtifacts(residues: readonly NativeMcpProjectionResidue[]): PruneArtifact[] {
+  return residues.flatMap((residue) =>
+    residue.unprovable === "settings-absent"
+      ? []
+      : [
+          {
+            kind: "native-managed-mcp" as const,
+            path: residue.path,
+            disposition: residue.matches ? ("block" as const) : ("advisory" as const),
+            clis: [residue.target],
+          },
+        ],
+  );
+}
+
 /**
  * The TARGETED CLIs (committed intent) that are wired into this repo but whose binary
  * is not on PATH — `aih prune --unrunnable`'s opt-in input. A CLI is unrunnable only
@@ -348,6 +370,15 @@ export function stalePruneSet(
   const kiroMcp = kiroCommitted ? undefined : kiroMcpProjectionOnDisk(ctx.root);
   const kiroManaged = kiroMcpArtifacts(kiroMcp);
   const kiroManagedField = kiroMcp === undefined ? {} : { kiroMcp };
+  // A missing binary or temporary --cli selection never withdraws governed MCP.
+  const nativeMcp = NATIVE_MCP_TARGETS.filter((target) => !committed.includes(target)).flatMap(
+    (target) => {
+      const residue = nativeMcpProjectionOnDisk(ctx.root, target);
+      return residue === undefined ? [] : [residue];
+    },
+  );
+  const nativeManaged = nativeMcpArtifacts(nativeMcp);
+  const nativeManagedField = nativeMcp.length === 0 ? {} : { nativeMcp };
   if (dropped.length === 0) {
     return {
       targeted,
@@ -355,9 +386,10 @@ export function stalePruneSet(
       dropped,
       unrunnable,
       unknownTargets: [],
-      artifacts: [...managed, ...kiroManaged],
+      artifacts: [...managed, ...kiroManaged, ...nativeManaged],
       ...managedField,
       ...kiroManagedField,
+      ...nativeManagedField,
     };
   }
 
@@ -435,7 +467,7 @@ export function stalePruneSet(
     }
   }
 
-  artifacts.push(...managed, ...kiroManaged);
+  artifacts.push(...managed, ...kiroManaged, ...nativeManaged);
 
   return {
     targeted,
@@ -446,6 +478,7 @@ export function stalePruneSet(
     artifacts,
     ...managedField,
     ...kiroManagedField,
+    ...nativeManagedField,
   };
 }
 

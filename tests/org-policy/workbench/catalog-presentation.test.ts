@@ -28,6 +28,22 @@ const options = [
 ] as const;
 
 describe("catalog presentation", () => {
+  it("distinguishes MCP configuration readiness from host verification", () => {
+    const bundle = structuredClone(tinyStudioModel().workbenchBundle);
+    const asset = Object.values(bundle.assets)[0];
+    if (asset === undefined) throw new Error("expected catalog fixture asset");
+    asset.kind = "mcp";
+    asset.authoring = {
+      action: "select-control",
+      projectorId: "mcp-managed-settings",
+      supportedTargets: ["codex", "cursor"],
+    };
+    const support = assetDetailsPresentation(asset, bundle).facts.find(
+      (fact) => fact.label === "Policy support",
+    )?.value;
+    expect(support).toContain("codex, cursor");
+    expect(support).toContain("does not verify that the host loaded the server or connected to it");
+  });
   it("explains a known external connection rule without guessing unknown findings", () => {
     expect(findingExplanation("[trust.external-egress] link to api.fontshare.com")).toContain(
       "remote font or stylesheet",

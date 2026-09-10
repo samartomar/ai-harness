@@ -28,7 +28,7 @@ temporary fixture roots in tests.
 - Product implementation: TypeScript/Node.js
 - Auxiliary assets: one packaged Python skill script and four pinned uv
   analyzer/runtime manifests; these are not repository workspaces
-- Commands: verify `npm run verify` · typecheck `npm run typecheck` · test `npm test` · build `npm run build` · lint `npm run lint`
+- Commands: selected local verification `npm run verify:local -- --base <ref> --head <ref>` · full validation `npm run verify` · typecheck `npm run typecheck` · test `npm test` · build `npm run build` · lint `npm run lint`
 
 ## Always read first
 
@@ -57,15 +57,20 @@ advisory tool routing) before broad work.
 
 ### Code review / PR
 Load `ai-coding/project.md`; review the diff, tests, and schemas against repo
-evidence. Before a PR is marked ready or merged, run and record the required
-review skills/agents: code review, security review, and any domain-specific
-reviewer for the touched area. Comment only unless explicitly asked to fix.
+evidence. Use one implementation owner and, for risky changes, one independent
+Astra/low review covering correctness, security, and the touched domain together.
+Add a reviewer only for a named unresolved boundary. Follow `CONTRIBUTING.md` and
+`rules/review-protocol.md`; comment only unless explicitly asked to fix.
 
 ### Testing
-Run `npm run verify` as the pre-completion gate only while its repository-scoped
-steps remain direct checks rather than AIH CLI commands. Use `npm test` for
-narrower TDD loops. Product CLI behavior must target temporary fixture roots;
-new behavior needs a test, and the implementation—not the test—gets fixed.
+Run `npm run verify:local -- --base <ref> --head <ref>` as the routine local
+completion gate, adding `--include-working` for explicit working changes.
+Use focused Vitest files for TDD and `--plan` to inspect the CI selection.
+Record its results and hosted gaps. Reserve `npm run verify` for deliberate full
+validation; release acceptance and protected CI checks remain required.
+Product CLI behavior must target temporary fixture roots; repository-scoped
+steps must remain direct checks. New behavior needs a test, and the
+implementation—not the test—gets fixed.
 
 ### Public documentation
 Load `ai-coding/rules/doc-and-truth-homes.md`, `PUBLIC_DOCS_POLICY.md`, and the

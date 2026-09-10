@@ -197,17 +197,6 @@ export function mountLegacyWorkbench(t) {
           f.type === "mcp" &&
           s.id !== f.server &&
           d.push(P(c + ".id", "must match built-in MCP source.server")),
-        s.kind === "mcp" &&
-          Array.isArray(s.targets) &&
-          s.targets.some(function (v) {
-            return v !== "claude" && v !== "kiro";
-          }) &&
-          d.push(
-            P(
-              c + ".targets",
-              "MCP candidates support Claude managed settings and Kiro workspace distribution only",
-            ),
-          ),
         s.kind === "hook" &&
           f.type !== "hook" &&
           d.push(

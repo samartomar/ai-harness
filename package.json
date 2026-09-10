@@ -38,6 +38,7 @@
     "guides",
     "docs/assets",
     "docs/commands.md",
+    "docs/governed-mcp.md",
     "!docs/README.md",
     "README.md",
     "CHANGELOG.md",
@@ -66,6 +67,7 @@
     "check:staged": "tsx src/internals/staged-check.ts",
     "ci:classify": "tsx src/internals/ci-impact-command.ts",
     "ci:run-selected": "node --import tsx .github/scripts/run-selected-tests.mjs",
+    "verify:local": "tsx src/internals/ci-local-verification-command.ts",
     "check:ai-runtime": "tsx src/internals/ai-runtime-inventory.ts --root .",
     "check:bugbounty-report": "tsx src/internals/bugbounty-report.ts --source .internal/defects/BUGBOUNTY.md",
     "check:self-hosting-canon": "vitest run tests/self-hosting/self-hosting.test.ts",
@@ -128,6 +130,7 @@
   "dependencies": {
     "commander": "^15.0.0",
     "jsonc-parser": "^3.3.1",
+    "smol-toml": "1.8.0",
     "yaml": "2.9.0",
     "zod": "^4.4.3"
   },
@@ -141,13 +144,13 @@
     "acorn": "^8.17.0",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
+    "esbuild": "0.28.1",
     "fast-check": "^4.8.0",
     "happy-dom": "^20.10.6",
     "tsup": "^8.5.1",
     "tsx": "^4.23.0",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.10",
-    "esbuild": "0.28.1"
+    "vitest": "^4.1.10"
   },
   "overrides": {
     "esbuild": "0.28.1"

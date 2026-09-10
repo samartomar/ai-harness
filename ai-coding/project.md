@@ -21,11 +21,16 @@ packaged skill script and four pinned `uv` analyzer/runtime manifests under
 
 ## Commands
 
-- **verify (completion gate)** — `npm run verify` _(detected)_
+- **verify (selected local completion gate)** — `npm run verify:local` _(detected)_;
+  supply `-- --base <ref> --head <ref>`, adding `--include-working` for working changes.
+- **full validation** — `npm run verify`; deliberate full coverage and lifecycle checks.
 - **typecheck** — `npm run typecheck` _(detected)_
 - **test** — `npm test` _(detected)_
 - **build** — `npm run build` _(detected)_
 - **lint** — `npm run lint` _(detected)_
+
+The local gate uses CI's selection and prints remaining hosted OS/security gaps.
+See `CONTRIBUTING.md` for prerequisites, `--plan`, and review requirements.
 
 ## Scale
 

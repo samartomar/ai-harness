@@ -1600,6 +1600,83 @@ describe("FsTransaction — removals (aih prune)", () => {
   });
 });
 
+describe("FsTransaction — read-only absence assertions", () => {
+  it("does not create missing parents of an asserted-absent path", () => {
+    const absent = join(dir, "missing-parent", "alternate.jsonc");
+    const transaction = new FsTransaction();
+    transaction.stageAbsenceAssertion(absent, "alternate config must remain absent", dir);
+    expect(transaction.commit()).toEqual({ written: [], backups: [], removed: [] });
+    expect(existsSync(dirname(absent))).toBe(false);
+  });
+  it("commits without creating the asserted path", () => {
+    const absent = join(dir, "alternate.jsonc");
+    const transaction = new FsTransaction();
+    transaction.stageAbsenceAssertion(absent, "alternate config must remain absent", dir);
+    const written = join(dir, "generated.json");
+    transaction.stage(written, "generated\n", undefined, undefined, { root: dir });
+    expect(transaction.commit().written).toEqual([written]);
+    expect(existsSync(absent)).toBe(false);
+  });
+
+  it.each(["file", "directory", "symlink"])(
+    "refuses %s occupancy without following or removing it",
+    (kind) => {
+      const absent = join(dir, "alternate.jsonc");
+      const transaction = new FsTransaction();
+      transaction.stageAbsenceAssertion(absent, "alternate config must remain absent", dir);
+      const generated = join(dir, "generated.json");
+      transaction.stage(generated, "generated\n", undefined, undefined, { root: dir });
+      if (kind === "file") writeFileSync(absent, "operator\n");
+      else if (kind === "directory") mkdirSync(absent);
+      else {
+        const target = join(dir, "operator-directory");
+        mkdirSync(target);
+        symlinkSync(target, absent, process.platform === "win32" ? "junction" : "dir");
+      }
+      expect(() => transaction.commit()).toThrow(/must remain absent/);
+      expect(existsSync(generated)).toBe(false);
+      expect(lstatSync(absent)).toBeDefined();
+    },
+  );
+
+  it("rolls back writes when an asserted-absent path appears during commit", () => {
+    const absent = join(dir, "alternate.jsonc");
+    const generated = join(dir, "generated.json");
+    const transaction = new FsTransaction();
+    transaction.stageAbsenceAssertion(absent, "alternate config must remain absent", dir);
+    transaction.stage(generated, "generated\n", undefined, undefined, { root: dir });
+    fsEvents.afterRename = (to) => {
+      if (to === generated) writeFileSync(absent, "operator\n");
+    };
+    expect(() => transaction.commit()).toThrow(/must remain absent/);
+    expect(existsSync(generated)).toBe(false);
+    expect(readFileSync(absent, "utf8")).toBe("operator\n");
+  });
+
+  it("refuses a transaction that asserts absence and writes that same path", () => {
+    const absent = join(dir, "alternate.jsonc");
+    const transaction = new FsTransaction();
+    transaction.stageAbsenceAssertion(absent, "alternate config must remain absent", dir);
+    transaction.stage(absent, "generated\n");
+    expect(() => transaction.commit()).toThrow(/both asserts and mutates/);
+    expect(existsSync(absent)).toBe(false);
+  });
+
+  it("retains contradictory content and absence pins instead of dropping either", () => {
+    const path = join(dir, "alternate.jsonc");
+    writeFileSync(path, "operator\n");
+    const transaction = new FsTransaction();
+    transaction.stageAbsenceAssertion(path, "alternate config must remain absent", dir);
+    transaction.stageAssertion(
+      path,
+      createHash("sha256").update("operator\n").digest("hex"),
+      "content pin",
+      dir,
+    );
+    expect(() => transaction.commit()).toThrow(/must remain absent/);
+  });
+});
+
 describe("FsTransaction — hard-delete removals (backupSibling)", () => {
   const put = (name: string, body = "x"): string => {
     const p = join(dir, name);

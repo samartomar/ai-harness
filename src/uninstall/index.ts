@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readdirSync, realpathSync } from "node:fs";
-import { join } from "node:path";
+import { join, posix } from "node:path";
 import { SHARED_MARKER, sharedCanonicalBlockBody } from "../bootstrap-ai/canon.js";
-import { AIH_CONFIG_FILE, readAihConfig } from "../config/marker.js";
+import { AIH_CONFIG_FILE, NATIVE_MCP_TARGETS, readAihConfig } from "../config/marker.js";
 import { bootloadersFor, entry, REGISTRY_IDS } from "../internals/cli-registry.js";
 import { inspectContainedRelativePath } from "../internals/contained-path.js";
 import { readIfExists, readRegularFile } from "../internals/fsxn.js";
@@ -31,6 +31,11 @@ import {
   managedMcpSubtractionAction,
   unprovableResidueReason,
 } from "../mcp/managed-projection.js";
+import {
+  type NativeMcpProjectionResidue,
+  nativeMcpProjectionOnDisk,
+  nativeMcpSubtractionAction,
+} from "../mcp/native-managed-projection.js";
 import { isExternalMcp } from "../mcp/render.js";
 import {
   HOOK_REGISTRAR_DESTINATION,
@@ -60,6 +65,7 @@ interface UninstallArtifact {
     | "kiro-hook"
     | "managed-settings"
     | "kiro-managed-mcp"
+    | "native-managed-mcp"
     | "hook-registrar"
     | "ecc-materialization";
   disposition: UninstallDisposition;
@@ -76,6 +82,8 @@ interface UninstallSet {
   managedMcp?: ManagedMcpProjectionResidue;
   /** Receipt-proven Kiro workspace-MCP entries to subtract before marker removal. */
   kiroMcp?: KiroMcpProjectionResidue;
+  /** Receipt-proven native MCP entries to subtract before marker removal. */
+  nativeMcp?: NativeMcpProjectionResidue[];
   /**
    * Receipt-proven hook registration revocation (subtract the owned `hooks`
    * key, remove the receipt). Third-party entries have no removal path of
@@ -152,8 +160,15 @@ function hasManagedContextEvidence(ctx: PlanContext, contextDir: string): boolea
 function registeredConfigDirOwner(ctx: PlanContext, contextDir: string): string | undefined {
   const rel = cleanRel(contextDir);
   const contextIdentity = existingPathIdentity(ctx, rel);
-  return REGISTRY_IDS.find((cli) =>
-    entry(cli).configDirs.some((configDir) => {
+  return REGISTRY_IDS.find((cli) => {
+    const client = entry(cli);
+    const governedDir =
+      client.mcp.governed === undefined ? undefined : posix.dirname(client.mcp.governed.configPath);
+    const configDirs =
+      governedDir === undefined || governedDir === "."
+        ? client.configDirs
+        : [...client.configDirs, governedDir];
+    return configDirs.some((configDir) => {
       const registered = cleanRel(configDir);
       const registeredIdentity = existingPathIdentity(ctx, registered);
       if (contextIdentity !== undefined && registeredIdentity !== undefined) {
@@ -164,8 +179,8 @@ function registeredConfigDirOwner(ctx: PlanContext, contextDir: string): string 
       return ctx.host.platform === "windows"
         ? rel.toLowerCase() === registered.toLowerCase()
         : rel === registered;
-    }),
-  );
+    });
+  });
 }
 
 function existingPathIdentity(ctx: PlanContext, relPath: string): string | undefined {
@@ -381,11 +396,12 @@ function bootloaderAdvisories(ctx: PlanContext): UninstallArtifact[] {
 function repoMcpAdvisories(ctx: PlanContext): UninstallArtifact[] {
   const paths = new Set<string>();
   for (const cli of REGISTRY_IDS) {
-    const configPath = entry(cli).mcp.configPath;
-    if (configPath === undefined || isExternalMcp(configPath) || !exists(ctx, configPath)) {
-      continue;
+    for (const configPath of [entry(cli).mcp.configPath, entry(cli).mcp.governed?.configPath]) {
+      if (configPath === undefined || isExternalMcp(configPath) || !exists(ctx, configPath)) {
+        continue;
+      }
+      paths.add(configPath);
     }
-    paths.add(configPath);
   }
   return [...paths].map((path) => ({
     path,
@@ -514,6 +530,18 @@ function kiroMcpArtifact(residue: KiroMcpProjectionResidue): UninstallArtifact |
       };
 }
 
+function nativeMcpArtifact(residue: NativeMcpProjectionResidue): UninstallArtifact | undefined {
+  if (residue.unprovable === "settings-absent") return undefined;
+  return {
+    path: residue.path,
+    kind: "native-managed-mcp",
+    disposition: residue.matches ? "subtract" : "advisory",
+    reason: residue.matches
+      ? `marker-proven ${residue.target} native MCP entries; every unowned server and setting is preserved`
+      : `${residue.target} native MCP residue becomes unattributable once the marker is removed; ownership is unprovable (${residue.unprovable}) and the file is left untouched`,
+  };
+}
+
 function coreUninstallSet(ctx: PlanContext): UninstallSet {
   const marker = readAihConfig(ctx.root);
   const markerTargets = new Set((marker?.targets ?? []).map((target) => target.toLowerCase()));
@@ -584,6 +612,17 @@ function coreUninstallSet(ctx: PlanContext): UninstallSet {
     : kiroMcpProjectionOnDisk(ctx.root);
   const kiroMcpArtifactEntry = kiroMcp === undefined ? undefined : kiroMcpArtifact(kiroMcp);
   if (kiroMcpArtifactEntry !== undefined) artifacts.push(kiroMcpArtifactEntry);
+  const nativeMcp = NATIVE_MCP_TARGETS.flatMap((target) => {
+    const residue = nativeMcpProjectionOnDisk(ctx.root, target);
+    if (
+      residue === undefined ||
+      removedTrees(artifacts).some((tree) => isUnderTree(ctx, residue.path, tree))
+    )
+      return [];
+    const artifact = nativeMcpArtifact(residue);
+    if (artifact !== undefined) artifacts.push(artifact);
+    return [residue];
+  });
 
   // Receipt-proven hook registrations are revoked the same owned-content-first
   // way. The registrar receipt is the only removal authority a projected
@@ -697,6 +736,7 @@ function coreUninstallSet(ctx: PlanContext): UninstallSet {
     artifacts,
     ...(managedMcp === undefined ? {} : { managedMcp }),
     ...(kiroMcp === undefined ? {} : { kiroMcp }),
+    ...(nativeMcp.length === 0 ? {} : { nativeMcp }),
     ...(hookRegistrarActions === undefined ? {} : { hookRegistrarActions }),
     ...(removeMaterialization === undefined
       ? {}
@@ -803,6 +843,13 @@ function uninstallPlan(ctx: PlanContext): Plan {
     const subtraction = kiroMcpSubtractionAction(
       planned.kiroMcp,
       "subtract the receipt-owned Kiro workspace MCP servers before removing the ownership marker",
+    );
+    if (subtraction !== undefined) actions.push(subtraction);
+  }
+  for (const residue of planned.nativeMcp ?? []) {
+    const subtraction = nativeMcpSubtractionAction(
+      residue,
+      `subtract the receipt-owned ${residue.target} MCP servers before removing the ownership marker`,
     );
     if (subtraction !== undefined) actions.push(subtraction);
   }

@@ -977,6 +977,29 @@ export async function executePlan(
       );
     }
   }
+  for (const action of plan.actions) {
+    if (action.kind !== "write" || action.assertAbsentPaths === undefined) continue;
+    if (!Array.isArray(action.assertAbsentPaths))
+      throw new AihError("invalid transaction absence assertion", "AIH_CONFIG");
+    for (const path of action.assertAbsentPaths) {
+      if (
+        typeof path !== "string" ||
+        path.length === 0 ||
+        path.includes("\0") ||
+        isAbsolute(path) ||
+        path.startsWith("~") ||
+        path.split(/[\\/]/).includes("..")
+      )
+        throw new AihError("invalid transaction absence assertion", "AIH_CONFIG");
+      const absPath = resolvePath(ctx, path);
+      assertContained(ctx.root, absPath);
+      assertNoSymlinkParents(ctx.root, absPath, path);
+      if (ctx.apply) {
+        for (const transaction of [txn, deferredTxn, execTxn])
+          transaction.stageAbsenceAssertion(absPath, `required absent path ${path}`, ctx.root);
+      }
+    }
+  }
   const sensitiveBackupTargets = new Set<string>();
   const writes: WriteSummary[] = [];
   const docs: PlanResult["docs"] = [];

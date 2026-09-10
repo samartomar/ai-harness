@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { GOVERNED_MCP_TARGETS, type GovernedMcpTarget } from "../../internals/cli-registry.js";
 
 export const WORKBENCH_MINIMUM_CORE_VERSION = "0.6.0" as const;
 export const WORKBENCH_MAX_POLICY_BYTES = 1_000_000;
@@ -221,7 +222,7 @@ export const AuthoringAssetV1Schema = CompilerAssetDeclarationV1Schema.extend({
     .object({
       action: AuthoringActionSchema,
       projectorId: ProjectorIdSchema.optional(),
-      supportedTargets: z.array(z.enum(["claude", "codex", "kiro"])).max(3),
+      supportedTargets: z.array(z.enum(GOVERNED_MCP_TARGETS)).max(GOVERNED_MCP_TARGETS.length),
     })
     .strict(),
 }).superRefine((asset, ctx) => {
@@ -283,7 +284,7 @@ export interface CoreAuthoringCapabilityRegistryEntryV1 {
     | "prepare-approval"
     | "inspect-evidence";
   projectorId?: "mcp-managed-settings" | "usage-hook";
-  supportedTargets: readonly ("claude" | "codex" | "kiro")[];
+  supportedTargets: readonly GovernedMcpTarget[];
 }
 
 /** Core-only assembly joins declarations with this closed registry before bundling. */
