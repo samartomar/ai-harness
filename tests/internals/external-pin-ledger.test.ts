@@ -317,7 +317,7 @@ describe("active external-pin ledger", () => {
     expect(entry("claude-code-action")).toMatchObject({
       commit: claude?.[1],
     });
-    expect(entry("claude-code-action").version).toBe("v1.0.210");
+    expect(entry("claude-code-action").version).toBe("v1.0.217");
 
     const snykQualificationWorkflow = readFileSync(
       resolve(root, ".github/workflows/snyk-agent-qualification.yml"),

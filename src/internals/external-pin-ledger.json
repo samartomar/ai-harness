@@ -248,10 +248,10 @@
     {
       "surface": "claude-code-action",
       "identity": "anthropics/claude-code-action",
-      "version": "v1.0.210",
-      "commit": "a874e9ecd7bb36efdad65429c6b35815f5a08f10",
+      "version": "v1.0.217",
+      "commit": "9c5ddab2e6d17b83ea679153b31f1d5f023cf636",
       "disposition": "active",
-      "reason": "The official v1.0.210 annotated tag dereferences to this immutable SHA. The target commit and tag are unsigned, matching the prior Claude action pin's signature posture rather than introducing a new regression. The opt-in maintainer workflow remains pinned to the commit rather than the movable v1 tag; its action inputs, permissions, and secret input are unchanged. The reviewed range bounds stalled job-log downloads, encodes branch names in generated GitHub links, corrects delete-file path guidance, and advances the embedded Claude Code and Agent SDK together."
+      "reason": "Reconciled on 2026-09-10: the official v1.0.217 annotated tag object ef7878a0506921197f7f9cd8a6c8dc7b11497021 dereferences to this immutable SHA. The tag and commit are unsigned, preserving the prior pin's signature posture. The seven-commit range from v1.0.210 updates the embedded Claude Code from 2.1.251 to 2.1.263 and Agent SDK from 0.3.251 to 0.3.263 in the two launchers, package manifests and Bun locks. Action input declarations, workflow permissions and credential inputs are unchanged. The opt-in maintainer workflow remains commit-pinned. This is source/identity reconciliation, not a paid-agent runtime qualification."
     },
     {
       "surface": "setup-node-action",
