@@ -4,9 +4,27 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, expect, it } from "vitest";
 
-const { prepareDecisionFields, assertAuthoredDecisionBounds } = await import(
-  pathToFileURL(resolve(".github/public-policy-acceptance/policy-authoring.mjs")).href
-);
+const { prepareDecisionFields, assertAuthoredDecisionBounds, supportedAcceptanceWindow } =
+  await import(
+    pathToFileURL(resolve(".github/public-policy-acceptance/policy-authoring.mjs")).href
+  );
+
+it("covers all published receipt expiries while retaining a one-day conditional review", () => {
+  const start = { issuedAt: "2026-09-09T00:00:00Z", notBefore: "2026-09-09T00:00:00Z" };
+  const records = ["2026-09-27T00:00:00Z", "2026-12-08T00:00:00Z"].map((expiresAt) => ({
+    receipt: { ...start, expiresAt },
+  }));
+  const now = Date.parse("2026-09-10T00:00:00Z");
+  expect(supportedAcceptanceWindow(records, now)).toEqual({
+    issuedAt: "2026-09-10T00:00:00Z",
+    expiresAt: "2026-12-08T00:00:00Z",
+    reviewBy: "2026-09-11T00:00:00Z",
+  });
+  for (const expiresAt of ["invalid", "2026-09-10T00:30:00Z", "2027-01-01T00:00:00Z"])
+    expect(() => supportedAcceptanceWindow([{ receipt: { ...start, expiresAt } }], now)).toThrow();
+  expect(() => supportedAcceptanceWindow([], now)).toThrow();
+  expect(() => supportedAcceptanceWindow(records, Number.NaN)).toThrow();
+});
 const roots: string[] = [];
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
@@ -21,6 +39,7 @@ function fields() {
     operator: { actor: "owner@example.invalid", attestor: "test-owner" },
     issuedAt: "2026-09-10T00:00:00Z",
     expiresAt: "2026-09-11T00:00:00Z",
+    reviewBy: "2026-09-10T12:00:00Z",
     qualification: {
       gaps: [
         {
@@ -64,7 +83,7 @@ it("keeps explicit accepted gaps and review conditions on the supported npm deci
   expect(decision["protected-accepted-findings"]).toBe("");
   expect(decision["protected-accepted-gaps"]).toBe("gap-static");
   expect(decision["protected-conditions"]).toContain("Keep npm install scripts disabled");
-  expect(decision["protected-review-by"]).toBe("2026-09-11T00:00:00Z");
+  expect(decision["protected-review-by"]).toBe("2026-09-10T12:00:00Z");
 });
 
 it("uses unique decision IDs accepted by the protected Workbench grammar", () => {
