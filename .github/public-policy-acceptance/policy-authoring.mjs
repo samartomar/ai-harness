@@ -33,6 +33,16 @@ export function decisionDispositionForSequence(sequence) {
   return sequence === 4 ? 'accepted-with-conditions' : 'approved';
 }
 
+export function assertAuthoredDecisionBounds(decision, { issuedAt, expiresAt, acceptedGaps, conditions, conditional }) {
+  // Workbench canonicalizes timestamps and list order before its native download.
+  // Compare every item (including multiplicity) and the exact canonical instants.
+  const canonicalIssuedAt = new Date(issuedAt).toISOString(), canonicalExpiresAt = new Date(expiresAt).toISOString();
+  assert.deepEqual(decision.acceptedGaps, [...acceptedGaps].sort());
+  assert.deepEqual(decision.conditions, [...conditions].sort());
+  if (conditional) assert.equal(decision.reviewBy, canonicalExpiresAt);
+  assert.equal(decision.issuedAt, canonicalIssuedAt); assert.equal(decision.notBefore, canonicalIssuedAt); assert.equal(decision.expiresAt, canonicalExpiresAt);
+}
+
 export function prepareDecisionFields({ records, qualification, operator, issuedAt, expiresAt, targetRoot, adminRoot }) {
   const policy = {
     format: 'aih-local-supported-npm-acceptance-policy/v1', operator,
@@ -52,11 +62,13 @@ export function prepareDecisionFields({ records, qualification, operator, issued
   const fields = records.map(({ receipt, sequence, sha256: receiptHash }) => ({
     'protected-actor': operator.actor, 'protected-attestor': operator.attestor,
     'protected-disposition': decisionDispositionForSequence(sequence),
-    'protected-accepted-findings': '', 'protected-accepted-gaps': sequence === 4 ? policy.acceptedGaps.map(gap => gap.id).join(',') : '',
-    ...(sequence === 4 ? { 'protected-conditions': control.conditions.join('\n'), 'protected-review-by': expiresAt } : {}),
+    ...(sequence === 4 ? {
+      'protected-accepted-findings': '', 'protected-accepted-gaps': policy.acceptedGaps.map(gap => gap.id).join(','),
+      'protected-conditions': control.conditions.join('\n'), 'protected-review-by': expiresAt,
+    } : {}),
     'protected-control-id': 'local-supported-npm-control', 'protected-control-digest': sha256(controlBytes),
     'protected-policy-id': 'local-supported-npm-policy', 'protected-policy-version': '2026.09', 'protected-policy-digest': sha256(policyBytes),
-    'protected-decision-id': `local-supported-seq-${sequence}`, 'protected-effects': sequence === 4 ? 'install' : 'use',
+    'protected-decision-id': `decision-local-supported-seq-${sequence}`, 'protected-effects': sequence === 4 ? 'install' : 'use',
     'protected-evidence-id': `public-receipt-seq-${sequence}`, 'protected-evidence-digest': receiptHash,
     'protected-kind': receipt.subject.kind, 'protected-subject-id': receipt.subject.id,
     'protected-qualification-kind': 'aih-supported', 'protected-catalog-digest': receipt.qualificationBasis.catalogDigest,
@@ -87,10 +99,7 @@ export async function authorAndCheck({ core, htmlPath, adminRoot, evidenceRoot, 
     assert.equal(decision.policy.digest, intended.policySha256); assert.equal(decision.control.digest, intended.controlSha256);
     assert.deepEqual(decision.allowedEffects, [i === 4 ? 'install' : 'use']); assert.deepEqual(decision.targets, ['codex']);
     assert.equal(decision.disposition, field['protected-disposition']); assert.deepEqual(decision.acceptedFindings, []);
-    assert.deepEqual(decision.acceptedGaps, i === 4 ? intended.policy.acceptedGaps.map(gap => gap.id) : []);
-    assert.deepEqual(decision.conditions, i === 4 ? intended.control.conditions : []);
-    if (i === 4) assert.equal(decision.reviewBy, expiresAt);
-    assert.equal(decision.issuedAt, issuedAt); assert.equal(decision.notBefore, issuedAt); assert.equal(decision.expiresAt, expiresAt);
+    assertAuthoredDecisionBounds(decision, { issuedAt, expiresAt, acceptedGaps: i === 4 ? intended.policy.acceptedGaps.map(gap => gap.id) : [], conditions: i === 4 ? intended.control.conditions : [], conditional: i === 4 });
   }
   const digest = core.governanceDecisionDigestV2(decisions[4]);
   if (revokedDigest) assert.equal(digest, revokedDigest, 'revocation must preserve original decision bytes');
