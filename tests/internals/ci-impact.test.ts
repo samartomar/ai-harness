@@ -112,6 +112,34 @@ describe("CI impact classifier", () => {
     expect(receipt.releasePreparation).toBe(false);
   });
 
+  it.each(["release/enterprise-change.json", "src/internals/release-preflight.ts"])(
+    "routes indirectly selected Workbench release checks to their authoritative lane for %s",
+    (changedPath) => {
+      const workbenchReleaseTest = "tests/internals/check-workbench-release-compatibility.test.ts";
+      const receipt = classifyCiImpact({
+        baseSha,
+        headSha,
+        changedPaths: [changedPath],
+        testFiles: [...testFiles, workbenchReleaseTest],
+      });
+
+      expect(receipt.selectedTests).toContain(workbenchReleaseTest);
+      expect(receipt).toMatchObject({
+        fullSuite: false,
+        testLane: "both",
+        requiresGenericBrowserJourneys: true,
+        requiresPackedArtifact: true,
+      });
+      expect(validateCiImpactReceipt(receipt)).toEqual(receipt);
+      expect(() =>
+        validateCiImpactReceipt({ ...receipt, requiresGenericBrowserJourneys: false }),
+      ).toThrow("generic browser requirement");
+      expect(() => validateCiImpactReceipt({ ...receipt, testLane: "core" })).toThrow(
+        "CI test lane",
+      );
+    },
+  );
+
   it("uses the bounded documentation suite for public documentation", () => {
     const receipt = classifyCiImpact({
       baseSha,
