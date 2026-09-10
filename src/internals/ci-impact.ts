@@ -7,7 +7,7 @@ import {
 } from "./workbench-provider-ownership.js";
 import { isWorkbenchTestPath } from "./workbench-test-ownership.js";
 
-export const CI_SELECTOR_VERSION = "1.5.3";
+export const CI_SELECTOR_VERSION = "1.5.4";
 
 export type CiRiskClass = "docs" | "focused" | "cross-platform" | "full";
 export type CiTestLane = "docs" | "core" | "workbench" | "both" | "full";
@@ -194,6 +194,15 @@ function isWorkbenchTest(path: string): boolean {
   return isWorkbenchTestPath(path);
 }
 
+/** Playwright owns these inputs; they must never enter the Vitest inventory. */
+function isWorkbenchBrowserInput(path: string): boolean {
+  return (
+    (path.startsWith("tests/org-policy/workbench/browser/") && path.endsWith(".spec.ts")) ||
+    path === "tests/org-policy/workbench/browser/setup.ts" ||
+    path === "tests/org-policy/workbench/browser/fixture.ts"
+  );
+}
+
 function isWorkbenchSource(path: string): boolean {
   return (
     WORKBENCH_SOURCE_PATHS.has(path) ||
@@ -220,7 +229,7 @@ function scopedTestLane(
       workbench = true;
       continue;
     }
-    if (isWorkbenchSource(path) || isWorkbenchTest(path)) {
+    if (isWorkbenchSource(path) || isWorkbenchTest(path) || isWorkbenchBrowserInput(path)) {
       workbench = true;
     } else if (path.startsWith("src/org-policy/")) {
       // Conservatively treat every non-Workbench org-policy source as shared:
@@ -359,6 +368,15 @@ export function classifyCiImpact(
         for (const test of testFiles.filter(isWorkbenchTest)) selectedTests.add(test);
       }
       if (CROSS_PLATFORM_DOMAINS.has(sourceDomain)) crossPlatform = true;
+      continue;
+    }
+
+    if (isWorkbenchBrowserInput(path)) {
+      matchedRules.push("workbench-browser-input");
+      selectedDomains.add("org-policy");
+      for (const test of testFiles.filter(isWorkbenchTest)) selectedTests.add(test);
+      requiresGenericBrowserJourneys = true;
+      crossPlatform = true;
       continue;
     }
 
@@ -529,7 +547,10 @@ export function validateCiImpactReceipt(
       (path) =>
         isWorkbenchCatalogSharedInputPath(path) ||
         (providerForWorkbenchPath(path) === undefined &&
-          (isWorkbenchSource(path) || isWorkbenchTest(path) || path.startsWith("src/org-policy/"))),
+          (isWorkbenchSource(path) ||
+            isWorkbenchTest(path) ||
+            isWorkbenchBrowserInput(path) ||
+            path.startsWith("src/org-policy/"))),
     );
   if (value.requiresGenericBrowserJourneys !== expectedGenericBrowserJourneys) {
     throw new Error("generic browser requirement does not match changed paths");

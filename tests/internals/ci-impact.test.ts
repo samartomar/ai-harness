@@ -29,6 +29,42 @@ const testFiles = [
 ];
 
 describe("CI impact classifier", () => {
+  it.each([
+    "tests/org-policy/workbench/browser/artifact.spec.ts",
+    "tests/org-policy/workbench/browser/nested/new.spec.ts",
+    "tests/org-policy/workbench/browser/setup.ts",
+    "tests/org-policy/workbench/browser/fixture.ts",
+  ])("keeps browser-owned input %s in the complete packed Workbench lane", (path) => {
+    const receipt = classifyCiImpact({ baseSha, headSha, changedPaths: [path], testFiles });
+    expect(receipt).toMatchObject({
+      fullSuite: false,
+      testLane: "workbench",
+      requiresGenericBrowserJourneys: true,
+      requiresPackedArtifact: true,
+      fallbackReasons: [],
+    });
+    expect(receipt.selectedTests).toEqual(testFiles.filter(isWorkbenchTestPath));
+    expect(receipt.selectedTests).not.toContain(path);
+    expect(validateCiImpactReceipt(receipt)).toEqual(receipt);
+    expect(() =>
+      validateCiImpactReceipt({
+        ...receipt,
+        selectedTests: [],
+        requiresGenericBrowserJourneys: false,
+      }),
+    ).toThrow("generic browser requirement");
+  });
+
+  it.each([
+    "tests/other/browser/unknown.spec.ts",
+    "tests/org-policy/workbench/browser/unknown.ts",
+    "tests/org-policy/workbench/browser/config.json",
+  ])("retains the full fallback for unowned browser-like input %s", (path) => {
+    const receipt = classifyCiImpact({ baseSha, headSha, changedPaths: [path], testFiles });
+    expect(receipt.fullSuite).toBe(true);
+    expect(receipt.fallbackReasons).toContain(`unknown-path:${path}`);
+  });
+
   it("includes ECC callers when the shared MCP renderer changes", () => {
     const consumers = [
       "tests/ecc/mcp-explicit-add.test.ts",

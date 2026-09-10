@@ -95,6 +95,11 @@ describe("local CI verification", () => {
     ["Core", ["src/workspace/manifest.ts"], ["ci:run-selected"]],
     ["provider", [providerTest], ["ci:run-selected", "test:workbench:providers"]],
     [
+      "browser",
+      ["tests/org-policy/workbench/browser/artifact.spec.ts"],
+      ["ci:run-selected", "test:workbench:pr"],
+    ],
+    [
       "shared",
       [providerTest, "src/org-policy/schema.ts"],
       ["ci:run-selected", "test:workbench:pr"],
