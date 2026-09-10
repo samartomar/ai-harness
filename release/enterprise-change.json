@@ -22,9 +22,7 @@
       "Candidate-first enterprise delivery and exact public installed acceptance.",
       "Documented npm user-owned prefix recovery for global installation permission failures.",
       "Explicit reviewed Core 0.5.x and 0.6.x built-in capability compatibility, preserving enterprise approval and refusal of unreviewed minor lines.",
-      "Fix-forward release packet staging preserves exact enterprise-manifest and qualification-evidence paths after the failed immutable Core 0.6.0 qualification.",
-      "Exact Core 0.6.1 first-party evidence intake from the published sequence4 Catalog, with all prior provider evidence and Scanner findings preserved.",
-      "Fresh hosted public npm832, managed and supported npm848 acceptance with encrypted raw evidence retention; actual execution remains required before promotion."
+      "Fix-forward release packet staging preserves exact enterprise-manifest and qualification-evidence paths after the failed immutable Core 0.6.0 qualification."
     ],
     "adoption": "optional",
     "adoptionRationale": "Optional adoption for organizations needing the new governed Workbench authoring model. Evaluate the exact candidate with existing policy and approved source pins; this release does not require a forced migration.",
@@ -57,7 +55,7 @@
       "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
       "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
       "evidenceDigests": [
-        "sha256:fb9f43f8cbca6da905d116883cebf2d6664fcabbfb39c51e948a34978860876c",
+        "sha256:cb8e0ffe680c2742ea00c134e43a3a444b540707fcfe70e7771a8532426f01da",
         "sha256:bc292584c4a0a02c9385023d12b5c7117217ed8cf86b3848141b5466c6779121",
         "sha256:1364d0c9ddff362d5768b2f22b30caa68a9d388e86b44846eac43c44006f1b99"
       ]
@@ -86,7 +84,7 @@
       "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
       "evidenceDigests": [
         "sha256:bc292584c4a0a02c9385023d12b5c7117217ed8cf86b3848141b5466c6779121",
-        "sha256:fb9f43f8cbca6da905d116883cebf2d6664fcabbfb39c51e948a34978860876c"
+        "sha256:cb8e0ffe680c2742ea00c134e43a3a444b540707fcfe70e7771a8532426f01da"
       ]
     },
     "machine-readable-output": {
@@ -106,7 +104,7 @@
       "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
       "evidenceDigests": [
         "sha256:bc292584c4a0a02c9385023d12b5c7117217ed8cf86b3848141b5466c6779121",
-        "sha256:fb9f43f8cbca6da905d116883cebf2d6664fcabbfb39c51e948a34978860876c"
+        "sha256:cb8e0ffe680c2742ea00c134e43a3a444b540707fcfe70e7771a8532426f01da"
       ]
     },
     "generated-artifacts": {
@@ -127,7 +125,7 @@
       "evidenceDigests": [
         "sha256:b04a949f7d33f0481bc5bd7299532d2bc58f5a81e0773d9e8289d553c6f01ef0",
         "sha256:9949d9635d8f92733671fb5677b7d19393c480443540978864634917948244f5",
-        "sha256:fb9f43f8cbca6da905d116883cebf2d6664fcabbfb39c51e948a34978860876c"
+        "sha256:cb8e0ffe680c2742ea00c134e43a3a444b540707fcfe70e7771a8532426f01da"
       ]
     },
     "administrator-controls": {
@@ -146,7 +144,7 @@
       "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
       "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
       "evidenceDigests": [
-        "sha256:fb9f43f8cbca6da905d116883cebf2d6664fcabbfb39c51e948a34978860876c",
+        "sha256:cb8e0ffe680c2742ea00c134e43a3a444b540707fcfe70e7771a8532426f01da",
         "sha256:bc292584c4a0a02c9385023d12b5c7117217ed8cf86b3848141b5466c6779121"
       ]
     },
@@ -166,7 +164,7 @@
       "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
       "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
       "evidenceDigests": [
-        "sha256:fb9f43f8cbca6da905d116883cebf2d6664fcabbfb39c51e948a34978860876c",
+        "sha256:cb8e0ffe680c2742ea00c134e43a3a444b540707fcfe70e7771a8532426f01da",
         "sha256:c9249abeec18330b53eecc6e0a93a0da02c0b137e37c708de55f0876ec7ea6a0",
         "sha256:0c3170900cb54592c5c04500c8dfc150c45f00469b3b4470776a05c1c7163467"
       ]
@@ -174,7 +172,7 @@
     "files-environment-credentials": {
       "status": "changed",
       "previous": "Prior release process and packaged Workbench inputs used the older artifact and authorization flow.",
-      "next": "Release qualification, candidate publication and promotion retain separate evidence; Workbench updates consume exact source-owned data without conferring credentials. Final public policy journeys use a fresh hosted Windows administrator runner; original scan inputs are bounded private transport and raw results are authenticated encrypted artifacts.",
+      "next": "Release qualification, candidate publication and promotion retain separate evidence; Workbench updates consume exact source-owned data without conferring credentials.",
       "affectedCohort": "Administrators authoring governed AI policies and maintainers operating Core delivery.",
       "operatorAction": "Preserve original policies/custody; use existing protected owner signing and token-free npm publication boundaries.",
       "compatibility": "Core 0.6 schema-v3 authoring has a minimumCoreVersion floor; requested intent is not execution or verified authority. Existing unsupported controls fail closed.",
@@ -188,9 +186,7 @@
       "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
       "evidenceDigests": [
         "sha256:ba884b80672b81fee320eda6adb6cd094d9b106feef6466544531aab90dd3867",
-        "sha256:f94f67e77a26b397688abef6caee92c81b85e43774194171e972652e70b2fee7",
-        "sha256:37dcf965f8303280984648f656535d2f6c8942b92af0c7e5541fb9677b94e7f2",
-        "sha256:01e5dd5f13c929190bd9647c45a3e8557fee3ff7e98387337fb4e152ae0518a2"
+        "sha256:f94f67e77a26b397688abef6caee92c81b85e43774194171e972652e70b2fee7"
       ]
     },
     "network-egress-telemetry-data-classes": {
@@ -209,7 +205,7 @@
       "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
       "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
       "evidenceDigests": [
-        "sha256:fb9f43f8cbca6da905d116883cebf2d6664fcabbfb39c51e948a34978860876c",
+        "sha256:cb8e0ffe680c2742ea00c134e43a3a444b540707fcfe70e7771a8532426f01da",
         "sha256:9949d9635d8f92733671fb5677b7d19393c480443540978864634917948244f5"
       ]
     },
@@ -250,7 +246,7 @@
       "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
       "evidenceDigests": [
         "sha256:e064b739cab10206b86ec351e2d283b906084e7c54810ef8260a01993835be06",
-        "sha256:fb9f43f8cbca6da905d116883cebf2d6664fcabbfb39c51e948a34978860876c"
+        "sha256:cb8e0ffe680c2742ea00c134e43a3a444b540707fcfe70e7771a8532426f01da"
       ]
     },
     "install-scripts": {
@@ -276,14 +272,14 @@
       "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
       "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
       "evidenceDigests": [
-        "sha256:fb9f43f8cbca6da905d116883cebf2d6664fcabbfb39c51e948a34978860876c",
+        "sha256:cb8e0ffe680c2742ea00c134e43a3a444b540707fcfe70e7771a8532426f01da",
         "sha256:b04a949f7d33f0481bc5bd7299532d2bc58f5a81e0773d9e8289d553c6f01ef0"
       ]
     },
     "trust-roots-provenance": {
       "status": "changed",
       "previous": "Prior Core delivery and ECC evidence references used the earlier release/consumption model.",
-      "next": "Canonical affaan-m/ECC repository is required at its unchanged exact revision; publication identities include publisher commit and request digest. Core release qualification/publish/accept/promote effects bind immutable receipts separately. Nine Core 0.6.1 first-party qualifications join the published sequence4 Catalog source while retaining 427 other qualifications and original Scanner facts.",
+      "next": "Canonical affaan-m/ECC repository is required at its unchanged exact revision; publication identities include publisher commit and request digest. Core release qualification/publish/accept/promote effects bind immutable receipts separately.",
       "affectedCohort": "Administrators authoring governed AI policies and maintainers operating Core delivery.",
       "operatorAction": "Reject retired fork evidence and require real Catalog seq4, existing owner signature and protected GitHub attestation before supported npm acceptance.",
       "compatibility": "Core 0.6 schema-v3 authoring has a minimumCoreVersion floor; requested intent is not execution or verified authority. Existing unsupported controls fail closed.",
@@ -296,12 +292,9 @@
       "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
       "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
       "evidenceDigests": [
-        "sha256:fb9f43f8cbca6da905d116883cebf2d6664fcabbfb39c51e948a34978860876c",
+        "sha256:cb8e0ffe680c2742ea00c134e43a3a444b540707fcfe70e7771a8532426f01da",
         "sha256:ba884b80672b81fee320eda6adb6cd094d9b106feef6466544531aab90dd3867",
-        "sha256:f965e2556464d63dbba1a74fe4415519e82190a38fe482242282a83c1140ffe0",
-        "sha256:cee9208fac17c1a090cf2105530da29a64d1e013101c67aa16443a40d13983a5",
-        "sha256:14fdfded86f707f0e92c15ce2b60e0e8abcb863f5425273f83e39065d9a4cd92",
-        "sha256:e2a26463a03707ee01b0f0621c1249a8fea5b6419b8fb9510a6155c8fc11c5e9"
+        "sha256:f965e2556464d63dbba1a74fe4415519e82190a38fe482242282a83c1140ffe0"
       ]
     },
     "guides": {
@@ -383,7 +376,7 @@
       "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
       "evidenceDigests": [
         "sha256:0c3170900cb54592c5c04500c8dfc150c45f00469b3b4470776a05c1c7163467",
-        "sha256:fb9f43f8cbca6da905d116883cebf2d6664fcabbfb39c51e948a34978860876c"
+        "sha256:cb8e0ffe680c2742ea00c134e43a3a444b540707fcfe70e7771a8532426f01da"
       ]
     },
     "rollback": {
@@ -409,7 +402,7 @@
   },
   "knownIssues": [
     "Immutable Core 0.6.0 failed receipt sealing before publication. Core 0.6.1 must independently qualify and publish its own exact bytes; prior package checks and installed tests do not supply a successful qualification receipt.",
-    "Catalog sequence4 publication is verified at exact source98d95263aa0901504c9d480628f6c06c4a1fe453. Actual public Core 0.6.1 supported npm and managed journeys remain required before completing release tracker #987.",
+    "Public Catalog sequence 4 and actual supported npm acceptance remain required before completing release tracker #987; unsigned local candidate evidence cannot satisfy those gates.",
     "Retained npm and managed journeys on Core 0.5 development bytes are separate evidence. Required final Core 0.6 public registry journeys and installed OS/Node acceptance must pass before stable promotion.",
     "Core 0.6 includes 524 Workbench records. Final candidate checks must prove complete evidence coverage and live publication-material equivalence on its exact bytes; coverage readiness alone is not scan or release acceptance.",
     "The native-only picocolors 1.1.1 scan remains missing/warn with nine explicitly scoped coverage gaps. Conditional local acceptance does not make it a successful scan or blanket waiver.",
