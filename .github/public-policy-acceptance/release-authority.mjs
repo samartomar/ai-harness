@@ -10,6 +10,7 @@ import {regularBytes,sha256,compareInstalledTarball} from './bytes.mjs';
 import {readPublicReceiptInputs,verifyPublicReceiptAttestations} from './public-receipt-inputs.mjs';
 import {readCandidateQualification} from './policy-authoring.mjs';
 import {evidenceSha256} from '../../src/internals/delivery-governance.ts';
+import {assertReleaseVerification} from './release-verification.mjs';
 const trusted=new WeakMap();
 const gh=nativeTool('gh');
 const repository='samartomar/ai-harness';
@@ -64,8 +65,8 @@ export async function authorizePublic(input,scanRoot){
  const signature=JSON.parse(command(process.execPath,[npmCli,'audit','signatures','--json'],consumer));
  writeFileSync(join(evidenceRoot,'npm-signatures.json'),JSON.stringify(signature));
  const verify=JSON.parse(command(process.execPath,[join(input.corePackageRoot,'dist/cli.js'),'verify-release','0.6.1','--json'],consumer));
- assert.equal(verify.counts?.fail,0);assert.equal(verify.counts?.skip,0);assert.equal(verify.counts?.pass,3,'all three release verification legs required');
  writeFileSync(join(evidenceRoot,'verify-release.json'),JSON.stringify(verify));
+ assertReleaseVerification(verify);
  writeFileSync(join(evidenceRoot,'tar-attestation.json'),JSON.stringify(attestation));
  const context=Object.freeze({input:Object.freeze({...input}),binding:Object.freeze({...binding,core:Object.freeze({...binding.core})}),consumer,npmCli,scanRoot,evidenceRoot});
  trusted.set(context,{q,records,expected});await recheck(context);

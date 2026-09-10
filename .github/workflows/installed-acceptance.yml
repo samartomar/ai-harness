@@ -85,8 +85,14 @@ jobs:
           "$consumer/node_modules/.bin/aih" verify-release "$CORE_VERSION" --json > verify-release.json
           node --input-type=module <<'NODE'
           import { readFileSync, writeFileSync } from "node:fs";
-          const report = JSON.parse(readFileSync("verify-release.json", "utf8"));
-          if (report?.counts?.fail !== 0 || report?.counts?.skip !== 0) throw new Error("aih verify-release did not complete all three legs");
+          const output = JSON.parse(readFileSync("verify-release.json", "utf8"));
+          const report = output.report;
+          const expectedChecks = ["release cosign bundle", "release npm signatures", "release tarball hash"];
+          if (output.capability !== "verify-release" || report?.ok !== true || report?.counts?.pass !== 3 || report?.counts?.fail !== 0 || report?.counts?.skip !== 0 ||
+              !Array.isArray(report?.checks) || report.checks.length !== 3 || report.checks.some((check) => check.verdict !== "pass") ||
+              JSON.stringify(report.checks.map((check) => check.name).sort()) !== JSON.stringify(expectedChecks)) {
+            throw new Error("aih verify-release did not complete all three legs");
+          }
           const receipt = {
             os: process.env.MATRIX_OS,
             node: process.env.MATRIX_NODE,
