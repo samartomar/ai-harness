@@ -9,7 +9,8 @@ import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { compareInstalledTarball, inventory, regularBytes, sha256 } from './bytes.mjs';
 import { npmSource, readPublicReceiptInputs, repository, verifyPublicReceiptAttestations, workflow } from './public-receipt-inputs.mjs';
-import { authorAndCheck, prepareDecisionFields, readCandidateQualification } from './policy-authoring.mjs';
+import { authorAndCheck, prepareDecisionFields, readCandidateQualification, supportedAcceptanceWindow } from './policy-authoring.mjs';
+import { supportedAcceptArguments, supportedInspectArguments, npmObserveArguments, npmLifecycleArguments, policyEvaluateArguments, workbenchGenerateArguments } from './custody-arguments.mjs';
 
 export async function run848(context) {
 assertAuthorized(context);
@@ -97,31 +98,28 @@ async function executeAcceptance(input, checked) {
   assert.equal(installed.version, npmSource.version); assert.equal(installed.integrity, npmSource.integrity);
   assert.equal(installed.resolved, 'https://registry.npmjs.org/picocolors/-/picocolors-1.1.1.tgz');
   const htmlPath = join(adminRoot, 'aih-policy-workbench.html');
-  run('generate-workbench', ['policy', 'generate', '--apply', '--out', htmlPath, '--no-log'], { cwd: adminRoot, parse: false });
-  const issuedAt = new Date().toISOString().replace(/\.\d{3}Z$/u, 'Z');
-  const expiresAt = new Date(Math.min(Date.parse(issuedAt) + 86400000, ...checked.records.map(row => Date.parse(row.receipt.expiresAt)))).toISOString().replace(/\.\d{3}Z$/u, 'Z');
-  assert(Date.parse(expiresAt) - Date.parse(issuedAt) > 3600000, 'one hour of valid authority required');
-  const intended = prepareDecisionFields({ ...checked, issuedAt, expiresAt, targetRoot, adminRoot });
+  run('generate-workbench', workbenchGenerateArguments(htmlPath), { cwd: adminRoot, parse: false });
+  const { issuedAt, expiresAt, reviewBy } = supportedAcceptanceWindow(checked.records);
+  const intended = prepareDecisionFields({ ...checked, issuedAt, expiresAt, reviewBy, targetRoot, adminRoot });
   const authorArgs = { ...checked, intended, issuedAt, expiresAt, htmlPath, adminRoot, evidenceRoot };
   const active = await authorAndCheck(authorArgs); env.AIH_ORG_POLICY = active.report.download.path;
   mkdirSync(join(targetRoot, '.aih'));
-  const common = index => ['--root', targetRoot, '--decision', active.decisions[index].id, '--decision-digest', checked.core.governanceDecisionDigestV2(active.decisions[index]), '--target', 'codex', '--json', '--no-log'];
+  const acceptArguments = index => supportedAcceptArguments(targetRoot, active.decisions[index].id, checked.core.governanceDecisionDigestV2(active.decisions[index]));
   for (const [index, record] of checked.records.entries()) {
     assert(regularBytes(record.path, 5970).equals(record.bytes), 'original receipt changed before consumption');
     writeFileSync(join(targetRoot, '.aih', 'aih-supported-qualification-receipt.json'), record.bytes);
-    const accept = ['policy', 'supported', 'accept', ...common(index)];
+    const accept = acceptArguments(index);
     const preview = zeroWrite(`seq${index}-preview`, () => run(`seq${index}-preview`, accept)); assert.equal(preview.applied, false);
     const applied = run(`seq${index}-apply`, [...accept, '--apply']); assert.equal(applied.applied, true);
-    const custody = dataOf(run(`seq${index}-inspect`, ['policy', 'supported', 'inspect', '--root', targetRoot, '--json', '--no-log']));
+    const custody = dataOf(run(`seq${index}-inspect`, supportedInspectArguments(targetRoot)));
     assert.equal(custody.memberRecords.occupied, index + 1); assert.equal(custody.members.length, 1);
     assertSubset(custody.members[0], { entryId: record.receipt.entryId, target: 'codex', decision: { id: active.decisions[index].id, digest: checked.core.governanceDecisionDigestV2(active.decisions[index]) } });
     assertSubset(custody.members[0].subject, { kind: record.receipt.subject.kind, id: record.receipt.subject.id, digest: record.receipt.subject.subjectDigest });
     assert(!existsSync(join(targetRoot, '.aih', 'supported-qualification', 'v2')), 'unexpected target-local custody');
   }
-  zeroWrite('supported-head-repeat', () => run('supported-head-repeat', ['policy', 'supported', 'accept', ...common(4), '--apply']));
-  const packageArgs = ['--decision', active.decisions[4].id, '--decision-digest', active.packageDecisionDigest, '--target', 'codex', '--json', '--no-log'];
-  const observe = () => ['policy', 'observe', 'npm-package', targetRoot, ...packageArgs];
-  const lifecycle = apply => ['policy', 'lifecycle', 'npm-package', targetRoot, ...packageArgs, ...(apply ? ['--apply'] : [])];
+  zeroWrite('supported-head-repeat', () => run('supported-head-repeat', [...acceptArguments(4), '--apply']));
+  const observe = () => npmObserveArguments(targetRoot, active.decisions[4].id, active.packageDecisionDigest);
+  const lifecycle = apply => npmLifecycleArguments(targetRoot, active.decisions[4].id, active.packageDecisionDigest, apply);
   const observed = zeroWrite('npm-observe', () => run('npm-observe', observe()));
   assertSubset(dataOf(observed), { authority: 'verified', qualification: 'aih-supported', effective: 'observed-effective', outcome: 'observed-effective' });
   const preview = zeroWrite('npm-lifecycle-preview', () => run('npm-lifecycle-preview', lifecycle(false)));
@@ -129,13 +127,18 @@ async function executeAcceptance(input, checked) {
   const applied = run('npm-lifecycle-apply', lifecycle(true)); assertSubset(dataOf(applied), { applied: true, outcome: 'fulfilled', state: 'observed-effective' });
   const repeated = run('npm-lifecycle-repeat', lifecycle(true)); assertSubset(dataOf(repeated), { applied: true, outcome: 'fulfilled', state: 'observed-effective' });
   // An observation is time-bound; repeating a lifecycle may retain a successor record. Only supported-head repeat claims zero writes.
-  const effective = dataOf(run('effective-before-revocation', ['policy', 'evaluate', targetRoot, '--cli', 'codex', '--json', '--no-log']));
+  const effective = dataOf(run('effective-before-revocation', policyEvaluateArguments(targetRoot)));
   assert.equal(effective.blocking, false); assert(effective.npmPackageLifecycle.some(row => row.decision.digest === active.packageDecisionDigest && row.state === 'observed-effective'));
   const revoked = await authorAndCheck({ ...authorArgs, revokedDigest: active.packageDecisionDigest });
   assert.notEqual(revoked.report.download.sha256, active.report.download.sha256); env.AIH_ORG_POLICY = revoked.report.download.path;
-  const revoke = run('npm-lifecycle-revoke', lifecycle(true), { refused: true });
-  assertSubset(dataOf(revoke), { applied: true, outcome: 'fulfilled', state: 'decision-revoked', reason: 'decision-revoked' });
-  const evaluated = dataOf(run('effective-after-revocation', ['policy', 'evaluate', targetRoot, '--cli', 'codex', '--json', '--no-log'], { refused: true }));
+  // Revoked supported decisions cannot mint a fresh qualification capability.
+  // Observation and lifecycle therefore refuse without writes; effective policy
+  // re-resolves the existing record against the revoked authority below.
+  const revokedObservation = zeroWrite('npm-observe-revoked', () => run('npm-observe-revoked', observe(), { refused: true }));
+  assertSubset(dataOf(revokedObservation), { authority: 'verified', qualification: 'unqualified', outcome: 'refused', effective: 'qualification-unverified', reason: 'qualification-unverified' });
+  const revoke = zeroWrite('npm-lifecycle-revoke', () => run('npm-lifecycle-revoke', lifecycle(true), { refused: true }));
+  assertSubset(dataOf(revoke), { applied: false, outcome: 'refused', state: 'observation-unverified', reason: 'observation-unverified' });
+  const evaluated = dataOf(zeroWrite('effective-after-revocation', () => run('effective-after-revocation', policyEvaluateArguments(targetRoot), { refused: true })));
   assert.equal(evaluated.blocking, true);
   assert(evaluated.npmPackageLifecycle.some(row => row.decision.id === active.decisions[4].id && row.decision.digest === active.packageDecisionDigest && row.reason === 'decision-revoked' && row.state === 'revoked'));
   compareInstalledTarball(input.coreTarball, input.corePackageRoot, originalCoreSha256);
@@ -145,6 +148,7 @@ async function executeAcceptance(input, checked) {
     scope: 'Actual local installed candidate acceptance. Public Core0.6.1 bytes independently verified against registry and qualification. No public organization authority or package execution claim.',
     core: checked.coreBytes, npm: { source: npmSource, version: checked.npmVersion, ...packageBytes },
     qualification: { state: 'missing', verdict: 'warn', acceptedGaps: intended.policy.acceptedGaps },
+    revocation: { observation: 'refused', lifecycle: 'refused', writes: false, effective: 'revoked', durableRevocationAppended: false },
     publicReceipts: checked.records.map(({ bytes, receipt, ...row }) => ({ ...row, receipt, attestationSha256: sha256(Buffer.from(JSON.stringify(row.attestation))) })),
     authority: { active: active.report, revoked: revoked.report, policySha256: intended.policySha256, controlSha256: intended.controlSha256 }, operations, finalInventory: snap() };
   const reportPath = join(evidenceRoot, 'actual-848-report.json'); writeFileSync(reportPath, JSON.stringify(report, null, 2) + '\n', { flag: 'wx' });

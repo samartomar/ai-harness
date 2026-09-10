@@ -33,7 +33,33 @@ export function decisionDispositionForSequence(sequence) {
   return sequence === 4 ? 'accepted-with-conditions' : 'approved';
 }
 
-export function prepareDecisionFields({ records, qualification, operator, issuedAt, expiresAt, targetRoot, adminRoot }) {
+export function supportedAcceptanceWindow(records, now = Date.now()) {
+  assert(Array.isArray(records) && records.length > 0 && Number.isFinite(now), 'current public receipt windows required');
+  const issued = Math.floor(now / 1000) * 1000;
+  const expiries = records.map(({ receipt }) => {
+    const start = Date.parse(receipt.issuedAt), notBefore = Date.parse(receipt.notBefore), end = Date.parse(receipt.expiresAt);
+    assert(Number.isFinite(start) && Number.isFinite(notBefore) && Number.isFinite(end) && start <= issued && notBefore <= issued && end > issued, 'receipt must be current');
+    return end;
+  });
+  const expiry = Math.max(...expiries), review = Math.min(issued + 86400000, ...expiries);
+  assert(expiry - issued <= 90 * 86400000 && review - issued > 3600000, 'bounded authority and one hour of valid review required');
+  const canonical = value => new Date(value).toISOString().replace(/\.\d{3}Z$/u, 'Z');
+  // Core requires the decision window to cover the signed support receipt.
+  // Conditional review remains one day; receipt and authority clocks still clamp effects.
+  return { issuedAt: canonical(issued), expiresAt: canonical(expiry), reviewBy: canonical(review) };
+}
+
+export function assertAuthoredDecisionBounds(decision, { issuedAt, expiresAt, reviewBy = expiresAt, acceptedGaps, conditions, conditional }) {
+  // Workbench canonicalizes timestamps and list order before its native download.
+  // Compare every item (including multiplicity) and the exact canonical instants.
+  const canonicalIssuedAt = new Date(issuedAt).toISOString(), canonicalExpiresAt = new Date(expiresAt).toISOString();
+  assert.deepEqual(decision.acceptedGaps, [...acceptedGaps].sort());
+  assert.deepEqual(decision.conditions, [...conditions].sort());
+  if (conditional) assert.equal(decision.reviewBy, new Date(reviewBy).toISOString());
+  assert.equal(decision.issuedAt, canonicalIssuedAt); assert.equal(decision.notBefore, canonicalIssuedAt); assert.equal(decision.expiresAt, canonicalExpiresAt);
+}
+
+export function prepareDecisionFields({ records, qualification, operator, issuedAt, expiresAt, reviewBy = expiresAt, targetRoot, adminRoot }) {
   const policy = {
     format: 'aih-local-supported-npm-acceptance-policy/v1', operator,
     attribution: 'Current local Git identity; self-asserted task attribution, without verification of an organization role.',
@@ -45,18 +71,20 @@ export function prepareDecisionFields({ records, qualification, operator, issued
   };
   const control = { format: 'aih-local-supported-npm-acceptance-control/v1', targetRoot,
     conditions: ['Use only the exact attested picocolors 1.1.1 package integrity in this disposable target.', 'Keep npm install scripts disabled; do not execute package code.', 'Accept the nine documented static coverage gaps only for observer and lifecycle validation.', 'Revoke the package decision after the observed lifecycle and verify that effective policy becomes blocked.'],
-    reviewBy: expiresAt, owner: operator.actor };
+    reviewBy, owner: operator.actor };
   const policyBytes = Buffer.from(JSON.stringify(policy, null, 2) + '\n'), controlBytes = Buffer.from(JSON.stringify(control, null, 2) + '\n');
   writeFileSync(join(adminRoot, 'local-policy.json'), policyBytes, { flag: 'wx' });
   writeFileSync(join(adminRoot, 'local-control.json'), controlBytes, { flag: 'wx' });
   const fields = records.map(({ receipt, sequence, sha256: receiptHash }) => ({
     'protected-actor': operator.actor, 'protected-attestor': operator.attestor,
     'protected-disposition': decisionDispositionForSequence(sequence),
-    'protected-accepted-findings': '', 'protected-accepted-gaps': sequence === 4 ? policy.acceptedGaps.map(gap => gap.id).join(',') : '',
-    ...(sequence === 4 ? { 'protected-conditions': control.conditions.join('\n'), 'protected-review-by': expiresAt } : {}),
+    ...(sequence === 4 ? {
+      'protected-accepted-findings': '', 'protected-accepted-gaps': policy.acceptedGaps.map(gap => gap.id).join(','),
+      'protected-conditions': control.conditions.join('\n'), 'protected-review-by': reviewBy,
+    } : {}),
     'protected-control-id': 'local-supported-npm-control', 'protected-control-digest': sha256(controlBytes),
     'protected-policy-id': 'local-supported-npm-policy', 'protected-policy-version': '2026.09', 'protected-policy-digest': sha256(policyBytes),
-    'protected-decision-id': `local-supported-seq-${sequence}`, 'protected-effects': sequence === 4 ? 'install' : 'use',
+    'protected-decision-id': `decision-local-supported-seq-${sequence}`, 'protected-effects': sequence === 4 ? 'install' : 'use',
     'protected-evidence-id': `public-receipt-seq-${sequence}`, 'protected-evidence-digest': receiptHash,
     'protected-kind': receipt.subject.kind, 'protected-subject-id': receipt.subject.id,
     'protected-qualification-kind': 'aih-supported', 'protected-catalog-digest': receipt.qualificationBasis.catalogDigest,
@@ -87,10 +115,7 @@ export async function authorAndCheck({ core, htmlPath, adminRoot, evidenceRoot, 
     assert.equal(decision.policy.digest, intended.policySha256); assert.equal(decision.control.digest, intended.controlSha256);
     assert.deepEqual(decision.allowedEffects, [i === 4 ? 'install' : 'use']); assert.deepEqual(decision.targets, ['codex']);
     assert.equal(decision.disposition, field['protected-disposition']); assert.deepEqual(decision.acceptedFindings, []);
-    assert.deepEqual(decision.acceptedGaps, i === 4 ? intended.policy.acceptedGaps.map(gap => gap.id) : []);
-    assert.deepEqual(decision.conditions, i === 4 ? intended.control.conditions : []);
-    if (i === 4) assert.equal(decision.reviewBy, expiresAt);
-    assert.equal(decision.issuedAt, issuedAt); assert.equal(decision.notBefore, issuedAt); assert.equal(decision.expiresAt, expiresAt);
+    assertAuthoredDecisionBounds(decision, { issuedAt, expiresAt, reviewBy: intended.control.reviewBy, acceptedGaps: i === 4 ? intended.policy.acceptedGaps.map(gap => gap.id) : [], conditions: i === 4 ? intended.control.conditions : [], conditional: i === 4 });
   }
   const digest = core.governanceDecisionDigestV2(decisions[4]);
   if (revokedDigest) assert.equal(digest, revokedDigest, 'revocation must preserve original decision bytes');

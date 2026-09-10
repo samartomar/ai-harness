@@ -119,6 +119,10 @@ export async function authorProtectedPolicyViaChromium({
     const form = page.locator("#protected-form");
     for (let index = 0; index < decisions.length; index += 1) {
       await fillFields(page, { ...authorityFields, ...decisions[index] });
+      const invalidFields = await form.locator("input:invalid, select:invalid, textarea:invalid").evaluateAll(
+        (controls) => controls.map((control) => control.id),
+      );
+      if (invalidFields.length !== 0) throw new Error(`chromium-author-invalid-fields:${invalidFields.join(",")}`);
       await form.locator('button[type="submit"]').click();
       await page.locator(`[data-protected-revoke="${index}"]`).waitFor({ state: "visible" });
     }
