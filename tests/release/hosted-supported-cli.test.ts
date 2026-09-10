@@ -4,7 +4,7 @@ import { expect, it } from "vitest";
 import { buildProgram } from "../../src/program.js";
 
 const { supportedAcceptArguments, supportedInspectArguments } = await import(
-  pathToFileURL(resolve(".github/public-policy-acceptance/run-848.mjs")).href
+  pathToFileURL(resolve(".github/public-policy-acceptance/custody-arguments.mjs")).href
 );
 
 it("parses every hosted custody preview, apply, repeat and inspect argument through the real CLI", () => {

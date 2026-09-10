@@ -10,9 +10,7 @@ import { pathToFileURL } from 'node:url';
 import { compareInstalledTarball, inventory, regularBytes, sha256 } from './bytes.mjs';
 import { npmSource, readPublicReceiptInputs, repository, verifyPublicReceiptAttestations, workflow } from './public-receipt-inputs.mjs';
 import { authorAndCheck, prepareDecisionFields, readCandidateQualification } from './policy-authoring.mjs';
-
-export const supportedAcceptArguments = (root, decisionId, decisionDigest) => ['policy', 'supported', 'accept', '--root', root, '--decision', decisionId, '--decision-digest', decisionDigest, '--target', 'codex', '--json'];
-export const supportedInspectArguments = root => ['policy', 'supported', 'inspect', '--root', root, '--json'];
+import { supportedAcceptArguments, supportedInspectArguments } from './custody-arguments.mjs';
 
 export async function run848(context) {
 assertAuthorized(context);
