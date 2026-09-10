@@ -131,9 +131,14 @@ async function executeAcceptance(input, checked) {
   assert.equal(effective.blocking, false); assert(effective.npmPackageLifecycle.some(row => row.decision.digest === active.packageDecisionDigest && row.state === 'observed-effective'));
   const revoked = await authorAndCheck({ ...authorArgs, revokedDigest: active.packageDecisionDigest });
   assert.notEqual(revoked.report.download.sha256, active.report.download.sha256); env.AIH_ORG_POLICY = revoked.report.download.path;
-  const revoke = run('npm-lifecycle-revoke', lifecycle(true), { refused: true });
-  assertSubset(dataOf(revoke), { applied: true, outcome: 'fulfilled', state: 'decision-revoked', reason: 'decision-revoked' });
-  const evaluated = dataOf(run('effective-after-revocation', policyEvaluateArguments(targetRoot), { refused: true }));
+  // Revoked supported decisions cannot mint a fresh qualification capability.
+  // Observation and lifecycle therefore refuse without writes; effective policy
+  // re-resolves the existing record against the revoked authority below.
+  const revokedObservation = zeroWrite('npm-observe-revoked', () => run('npm-observe-revoked', observe(), { refused: true }));
+  assertSubset(dataOf(revokedObservation), { authority: 'verified', qualification: 'unqualified', outcome: 'refused', effective: 'qualification-unverified', reason: 'qualification-unverified' });
+  const revoke = zeroWrite('npm-lifecycle-revoke', () => run('npm-lifecycle-revoke', lifecycle(true), { refused: true }));
+  assertSubset(dataOf(revoke), { applied: false, outcome: 'refused', state: 'observation-unverified', reason: 'observation-unverified' });
+  const evaluated = dataOf(zeroWrite('effective-after-revocation', () => run('effective-after-revocation', policyEvaluateArguments(targetRoot), { refused: true })));
   assert.equal(evaluated.blocking, true);
   assert(evaluated.npmPackageLifecycle.some(row => row.decision.id === active.decisions[4].id && row.decision.digest === active.packageDecisionDigest && row.reason === 'decision-revoked' && row.state === 'revoked'));
   compareInstalledTarball(input.coreTarball, input.corePackageRoot, originalCoreSha256);
@@ -143,6 +148,7 @@ async function executeAcceptance(input, checked) {
     scope: 'Actual local installed candidate acceptance. Public Core0.6.1 bytes independently verified against registry and qualification. No public organization authority or package execution claim.',
     core: checked.coreBytes, npm: { source: npmSource, version: checked.npmVersion, ...packageBytes },
     qualification: { state: 'missing', verdict: 'warn', acceptedGaps: intended.policy.acceptedGaps },
+    revocation: { observation: 'refused', lifecycle: 'refused', writes: false, effective: 'revoked', durableRevocationAppended: false },
     publicReceipts: checked.records.map(({ bytes, receipt, ...row }) => ({ ...row, receipt, attestationSha256: sha256(Buffer.from(JSON.stringify(row.attestation))) })),
     authority: { active: active.report, revoked: revoked.report, policySha256: intended.policySha256, controlSha256: intended.controlSha256 }, operations, finalInventory: snap() };
   const reportPath = join(evidenceRoot, 'actual-848-report.json'); writeFileSync(reportPath, JSON.stringify(report, null, 2) + '\n', { flag: 'wx' });
