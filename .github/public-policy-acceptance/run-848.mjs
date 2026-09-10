@@ -9,7 +9,7 @@ import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { compareInstalledTarball, inventory, regularBytes, sha256 } from './bytes.mjs';
 import { npmSource, readPublicReceiptInputs, repository, verifyPublicReceiptAttestations, workflow } from './public-receipt-inputs.mjs';
-import { authorAndCheck, prepareDecisionFields, readCandidateQualification } from './policy-authoring.mjs';
+import { authorAndCheck, prepareDecisionFields, readCandidateQualification, supportedAcceptanceWindow } from './policy-authoring.mjs';
 import { supportedAcceptArguments, supportedInspectArguments } from './custody-arguments.mjs';
 
 export async function run848(context) {
@@ -99,10 +99,8 @@ async function executeAcceptance(input, checked) {
   assert.equal(installed.resolved, 'https://registry.npmjs.org/picocolors/-/picocolors-1.1.1.tgz');
   const htmlPath = join(adminRoot, 'aih-policy-workbench.html');
   run('generate-workbench', ['policy', 'generate', '--apply', '--out', htmlPath, '--no-log'], { cwd: adminRoot, parse: false });
-  const issuedAt = new Date().toISOString().replace(/\.\d{3}Z$/u, 'Z');
-  const expiresAt = new Date(Math.min(Date.parse(issuedAt) + 86400000, ...checked.records.map(row => Date.parse(row.receipt.expiresAt)))).toISOString().replace(/\.\d{3}Z$/u, 'Z');
-  assert(Date.parse(expiresAt) - Date.parse(issuedAt) > 3600000, 'one hour of valid authority required');
-  const intended = prepareDecisionFields({ ...checked, issuedAt, expiresAt, targetRoot, adminRoot });
+  const { issuedAt, expiresAt, reviewBy } = supportedAcceptanceWindow(checked.records);
+  const intended = prepareDecisionFields({ ...checked, issuedAt, expiresAt, reviewBy, targetRoot, adminRoot });
   const authorArgs = { ...checked, intended, issuedAt, expiresAt, htmlPath, adminRoot, evidenceRoot };
   const active = await authorAndCheck(authorArgs); env.AIH_ORG_POLICY = active.report.download.path;
   mkdirSync(join(targetRoot, '.aih'));
