@@ -7,7 +7,7 @@ import {
 } from "./workbench-provider-ownership.js";
 import { isWorkbenchTestPath } from "./workbench-test-ownership.js";
 
-export const CI_SELECTOR_VERSION = "1.5.0";
+export const CI_SELECTOR_VERSION = "1.5.1";
 
 export type CiRiskClass = "docs" | "focused" | "cross-platform" | "full";
 export type CiTestLane = "docs" | "core" | "workbench" | "both" | "full";
@@ -195,9 +195,12 @@ function isWorkbenchSource(path: string): boolean {
   );
 }
 
-function scopedTestLane(changedPaths: readonly string[]): Exclude<CiTestLane, "docs" | "full"> {
+function scopedTestLane(
+  changedPaths: readonly string[],
+  selectedTests: readonly string[],
+): Exclude<CiTestLane, "docs" | "full"> {
   let core = false;
-  let workbench = false;
+  let workbench = selectedTests.some(isWorkbenchTest);
   for (const path of changedPaths) {
     if (isDocumentation(path)) continue;
     if (isWorkbenchCatalogSharedInputPath(path)) {
@@ -375,6 +378,11 @@ export function classifyCiImpact(input: CiImpactInput): CiImpactReceipt {
     );
   }
   for (const test of providerTests) selectedTests.add(test);
+  // Domain and release rules can select Workbench tests indirectly. Every such
+  // test needs its owning lane, unless the exact provider lane already owns it.
+  if ([...selectedTests].some((test) => isWorkbenchTest(test) && !providerTests.includes(test))) {
+    requiresGenericBrowserJourneys = true;
+  }
 
   if (fallbackReasons.length > 0) {
     return validateCiImpactReceipt(
@@ -400,7 +408,7 @@ export function classifyCiImpact(input: CiImpactInput): CiImpactReceipt {
     selectedTests: sortedUnique([...selectedTests]),
     operatingSystems: crossPlatform ? [...ALL_OPERATING_SYSTEMS] : ["ubuntu-latest"],
     riskClass: docsOnly ? "docs" : crossPlatform ? "cross-platform" : "focused",
-    testLane: docsOnly ? "docs" : scopedTestLane(changedPaths),
+    testLane: docsOnly ? "docs" : scopedTestLane(changedPaths, [...selectedTests]),
     fullSuite: false,
     releasePreparation: changedPaths.some((path) => RELEASE_PREPARATION_SIGNAL_PATHS.has(path)),
     fallbackReasons: [],
@@ -488,6 +496,9 @@ export function validateCiImpactReceipt(value: CiImpactReceipt): CiImpactReceipt
   }
   const expectedGenericBrowserJourneys =
     value.fullSuite ||
+    value.selectedTests.some(
+      (test) => isWorkbenchTest(test) && !expectedProviderTests.includes(test),
+    ) ||
     value.changedPaths.some(
       (path) =>
         isWorkbenchCatalogSharedInputPath(path) ||
@@ -528,7 +539,7 @@ export function validateCiImpactReceipt(value: CiImpactReceipt): CiImpactReceipt
     ? "full"
     : value.riskClass === "docs"
       ? "docs"
-      : scopedTestLane(value.changedPaths);
+      : scopedTestLane(value.changedPaths, value.selectedTests);
   if (value.testLane !== expectedTestLane)
     throw new Error("CI test lane does not match changed paths");
   if (!Array.isArray(value.operatingSystems)) throw new Error("invalid CI operating systems");
