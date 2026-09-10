@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { join, posix } from "node:path";
 import { NATIVE_MCP_TARGETS } from "../config/marker.js";
 import { SettingsError } from "../errors.js";
+import { cliCapabilities, cliCapabilitySummary } from "../internals/cli-capabilities.js";
 import { homeDir, isTargeted } from "../internals/cli-detect.js";
 import { type CliEntry, entry } from "../internals/cli-registry.js";
 import { type Cli, SUPPORTED_CLIS } from "../internals/clis.js";
@@ -704,7 +705,7 @@ async function probeUv(ctx: PlanContext): Promise<Check> {
  * fallback (the agent keeps each capability without the MCP wrapper), plus the
  * admin `managed-mcp.json` template that disables MCP org-wide.
  */
-function planMcpNone(ctx: PlanContext): ReturnType<typeof plan> {
+function planMcpNone(ctx: PlanContext, clis: readonly Cli[]): ReturnType<typeof plan> {
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   return plan(
     "mcp",
@@ -713,75 +714,21 @@ function planMcpNone(ctx: PlanContext): ReturnType<typeof plan> {
       mcpFallbackSteering(stack),
       "no-MCP fallback: the CLI tool for each MCP capability",
     ),
-    writeJson(
-      "managed-mcp.json.example",
-      managedMcpExample({}),
-      "org admin: managed-mcp.json that DISABLES all MCP (deploy to the system path)",
+    ...(clis.includes("claude")
+      ? [
+          writeJson(
+            "managed-mcp.json.example",
+            managedMcpExample({}),
+            "org admin: managed-mcp.json that DISABLES all MCP (deploy to the system path)",
+          ),
+        ]
+      : []),
+    doc(
+      "MCP fallback instructions — existing host configuration is unchanged",
+      clis.includes("claude")
+        ? enterpriseMcpDoc("none", {})
+        : "Use the CLI-tool fallback. Disable existing MCP servers through the selected host's configuration or its governed policy; this mode does not remove active configuration.",
     ),
-    doc("enterprise MCP control (disabled — agent uses CLI tools)", enterpriseMcpDoc("none", {})),
-  );
-}
-
-/**
- * Egress-blocked but spawn-allowed (`--mode offline`): keep only local stdio
- * servers (drop http/remote that need egress) for vendoring by exact command, and
- * emit the admin fixed-set template + the allowlist playbook.
- */
-function planMcpOffline(ctx: PlanContext, catalog: PolicyAwareMcpCatalog): ReturnType<typeof plan> {
-  const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
-  if (catalog.error !== undefined || catalog.servers === undefined) {
-    throw mcpCatalogError(catalog);
-  }
-  const allowed = orgAllowedServers(catalog.servers, catalog.policy);
-  const stdio = stdioServers(allowed);
-  const denied = Object.fromEntries(
-    Object.entries(catalog.servers).filter(([name]) => !(name in stdio)),
-  );
-  const mcpPath = join(ctx.root, ".mcp.json");
-  const source = readIfExists(mcpPath);
-  const stale = matchingGeneratedJsonServerNames(
-    mcpPath,
-    "mcpServers",
-    mcpEntries("claude", denied),
-    {},
-    source,
-  );
-  const retired = matchingGeneratedJsonServerNames(
-    mcpPath,
-    "mcpServers",
-    mcpEntries("claude", RETIRED_GENERATED_SERVERS),
-    {},
-    source,
-  );
-  return plan(
-    "mcp",
-    withExpectedContents(
-      writeJson(
-        ".mcp.json",
-        { mcpServers: stdio },
-        "local stdio MCP servers (offline) — mirror/vendor these; some still resolve packages at runtime until vendored (see the offline verify probe)",
-        {
-          merge: true,
-          removeJsonKeys: serverConfigRemovals(undefined, "mcpServers", [
-            ...new Set([...stale, ...retired]),
-          ]),
-        },
-      ),
-      source,
-    ),
-    writeJson(
-      "managed-mcp.json.example",
-      managedMcpExample(stdio),
-      "org admin: fixed approved MCP set (deploy to the system path)",
-    ),
-    writeText(
-      posix.join(ctx.contextDir, "mcp-fallback.md"),
-      mcpFallbackSteering(stack),
-      "CLI fallback for when even local MCP is blocked",
-    ),
-    doc("enterprise MCP control (offline / vendored)", enterpriseMcpDoc("offline", stdio)),
-    probe("offline MCP servers are vendored", () => offlineVendoredProbe(stdio)),
-    probe("uv present", probeUv),
   );
 }
 
@@ -829,6 +776,7 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   }
   const githubAuth = githubAuthOption(ctx.options.githubAuth);
   const mode = String(ctx.options.mode ?? "standard");
+  const offline = mode === "offline";
   const withPolicyPins = (planned: ReturnType<typeof plan>): ReturnType<typeof plan> => ({
     ...planned,
     ...(policyTargets.fileAssertions === undefined
@@ -839,13 +787,13 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
       : { commitNotAfter: policyTargets.commitNotAfter }),
     ...(policyTargets.commitLock === undefined ? {} : { commitLock: policyTargets.commitLock }),
   });
-  if (mode === "none") return withPolicyPins(planMcpNone(ctx));
+  const { clis } = policyTargets.resolution;
+  if (mode === "none") return withPolicyPins(planMcpNone(ctx, clis));
 
   // Honor --cli/--all-tools/--detect, a committed marker, or the deterministic
   // first-run Claude default. Previously mcp ignored the selection and wrote
   // Claude's `.mcp.json` for every tool — a real bug for Codex (config.toml),
   // Copilot (.github/mcp.json), OpenCode, Zed, etc.
-  const { clis } = policyTargets.resolution;
   // A removed policy file does not transfer receipt-owned activation back to the
   // generic generator, including its home/global Codex and OpenCode writers.
   for (const target of NATIVE_MCP_TARGETS) {
@@ -871,8 +819,18 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
       : {}),
   };
   const catalog = policyAwareMcpCatalog(ctx, catalogOptions);
-  if (mode === "offline") return withPolicyPins(planMcpOffline(ctx, catalog));
   const actions: Action[] = [];
+  const nativeHosts = clis.filter((cli) => entry(cli).mcp.governed !== undefined || cli === "kiro");
+  if (nativeHosts.length) {
+    actions.push(
+      digest(
+        "MCP host capabilities — runtime consumption unverified",
+        nativeHosts
+          .flatMap((cli) => [cliCapabilitySummary(cli), ...cliCapabilities(cli).requirements])
+          .join("\n"),
+      ),
+    );
+  }
   if (catalog.error !== undefined || catalog.servers === undefined) {
     throw mcpCatalogError(catalog);
   }
@@ -908,7 +866,8 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const deniedGeneratedPoliciesByName = new Map<string, ServerPolicy>(
     deniedGenerated.map(({ server: _server, ...policy }) => [policy.name, policy]),
   );
-  const orgAllowed = orgAllowedServers(catalog.servers, catalog.policy);
+  const allowed = orgAllowedServers(catalog.servers, catalog.policy);
+  const orgAllowed = offline ? stdioServers(allowed) : allowed;
   const orgDeniedGenerated = Object.fromEntries(
     Object.entries(catalog.servers).filter(([name]) => !(name in orgAllowed)),
   );
@@ -969,8 +928,9 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
       ? ` ${p.configPath} (global — affects all your projects)`
       : ` ${p.configPath}`;
     // Preserve the exact `.mcp.json` describe (golden) for the standard path.
-    const describe =
-      p.configPath === ".mcp.json"
+    const describe = offline
+      ? `${e.label} local stdio MCP servers (offline) →${where}; vendor launchers before relying on blocked egress`
+      : p.configPath === ".mcp.json"
         ? scope === "remote"
           ? "Configure project-aware servers + the opt-in hosted enterprise toolset (remote scope), merged into any existing .mcp.json"
           : `Configure project-aware MCP servers (${scope} scope)${tailored ? ` — ${tailored}` : ""}, merged into any existing .mcp.json`
@@ -1064,6 +1024,34 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
 
   if (hygieneIssues.length > 0) {
     actions.push(digest("MCP server hygiene warnings", mcpHygieneDigest(hygieneIssues, clis)));
+  }
+
+  if (offline) {
+    if (clis.includes("claude")) {
+      actions.push(
+        writeJson(
+          "managed-mcp.json.example",
+          managedMcpExample(stdioServers(writeServers)),
+          "org admin: fixed approved MCP set (deploy to the system path)",
+        ),
+      );
+    }
+    actions.push(
+      writeText(
+        posix.join(ctx.contextDir, "mcp-fallback.md"),
+        mcpFallbackSteering(stack),
+        "CLI fallback for when even local MCP is blocked",
+      ),
+      doc(
+        "MCP offline configuration",
+        "Only generated stdio entries are selected. Vendor package launchers before blocking egress. Operator-owned servers are preserved and must be reviewed separately; this mode does not enforce a host-wide network policy.",
+      ),
+      probe("offline MCP servers are vendored", () =>
+        offlineVendoredProbe(stdioServers(writeServers)),
+      ),
+      probe("uv present", probeUv),
+    );
+    return withPolicyPins(plan("mcp", ...actions));
   }
 
   // Self-host changes + any secret placeholders the developer must supply out-of-band.
@@ -1224,7 +1212,7 @@ async function planMcpWithWriteGuards(ctx: PlanContext): Promise<ReturnType<type
 export const command: CommandSpec = {
   name: "mcp",
   summary:
-    "Generate .mcp.json (scopes) or enterprise-blocked MCP fallback (--mode offline|none) + managed-mcp template",
+    "Generate selected CLI MCP configuration, vendored stdio configuration (--mode offline), or fallback guidance (--mode none)",
   options: [
     {
       flags: "--scope <scope>",
@@ -1234,7 +1222,7 @@ export const command: CommandSpec = {
     {
       flags: "--mode <mode>",
       description:
-        "standard | offline (vendored local-command servers) | none (no MCP; CLI-tool fallback)",
+        "standard | offline (vendored local-command servers) | none (fallback guidance; existing host configuration unchanged)",
       default: "standard",
     },
     {

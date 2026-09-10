@@ -36,6 +36,9 @@ export const GOVERNED_MCP_TARGETS = [
 ] as const;
 export type GovernedMcpTarget = (typeof GOVERNED_MCP_TARGETS)[number];
 
+/** Targets wired into the governed AIH usage-metering control. */
+export const GOVERNED_USAGE_TARGETS = ["claude", "codex"] as const;
+
 const McpProfile = z.object({
   /**
    * aih's MCP integration level for this tool:
@@ -160,9 +163,9 @@ export type CliEntry = z.infer<typeof CliEntry>;
 /**
  * The registry, in canonical order (detection, reports, and the --detect fallback
  * notice all depend on this ordering — keep it stable). MCP facts are objective
- * per-tool documentation values; `support` is conservative — only the tools whose
- * project config is plain `mcpServers` JSON (Claude's de-facto standard shape) are
- * `native` (aih writes them); everyone else is `fallback` (aih emits guidance).
+ * per-tool documentation values; `native` means a registered JSON/TOML renderer
+ * for the stated scope. Governed projection and runtime verification are separate
+ * capabilities; neither follows merely from generic configuration support.
  */
 const RAW: Record<string, z.input<typeof CliEntry>> = {
   claude: {
@@ -314,7 +317,7 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
   kimi: {
     id: "kimi",
     label: "Kimi Code",
-    configDirs: [".kimi-code", ".kimi", ".config/kimi"],
+    configDirs: [".kimi-code"],
     binaries: ["kimi"],
     bootloaders: ["AGENTS.md"],
     mcp: {

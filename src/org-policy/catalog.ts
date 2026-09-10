@@ -2,7 +2,12 @@ import { createHash } from "node:crypto";
 import { eccBaselineCatalogV1 } from "../baseline-evidence/catalog-providers/ecc.js";
 import { superpowersBaselineCatalogV1 } from "../baseline-evidence/catalog-providers/superpowers.js";
 import { readVendorBaselineLock } from "../baseline-evidence/vendor.js";
-import { CLI_REGISTRY, GOVERNED_MCP_TARGETS, REGISTRY_IDS } from "../internals/cli-registry.js";
+import {
+  CLI_REGISTRY,
+  GOVERNED_MCP_TARGETS,
+  GOVERNED_USAGE_TARGETS,
+  REGISTRY_IDS,
+} from "../internals/cli-registry.js";
 import { mcpApprovalSubject } from "../mcp/policy.js";
 import { type McpServer, mcpServers } from "../mcp/servers.js";
 import { usageRecorderScript } from "../usage/capture.js";
@@ -269,7 +274,7 @@ function usageMeteringControl(): AihPolicyControl {
     id: "usage-metering",
     kind: "hook",
     source: { type: "hook", handler: "usage-metering", scriptDigest },
-    targets: ["claude", "codex"],
+    targets: [...GOVERNED_USAGE_TARGETS],
     projector: "usage-hook",
     lifecycle: "supported",
   };

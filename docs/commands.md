@@ -1723,9 +1723,20 @@ Claude uses `.mcp.json`, Kimi Code uses `.kimi-code/mcp.json`, Cursor uses `.cur
 with `mcpServers` (its CLI does not consume VS Code's `.vscode/mcp.json`). Zed and other
 global-config entries get their registry-specific native writes or guidance. Global config targets are selected only through
 an explicit flag or a committed marker; `--apply` can affect that CLI across all projects. Scopes:
-local/project/remote. For locked-down orgs,
-`--mode offline` (vendored local-command servers) or `--mode none` (no MCP + a CLI-tool fallback)
-plus a `managed-mcp.json` admin template. Enterprise org policy can also tune the hosted GitHub
+local/project/remote. `--mode offline` selects stdio servers and uses the same native
+paths, environment translation and preservation rules as standard generation for
+every selected CLI. Vendor package launchers before blocking egress; preserved
+operator-owned servers must be reviewed separately. `--mode none` emits CLI-tool
+fallback guidance and leaves active host configuration unchanged. Both modes emit
+a `managed-mcp.json.example` administrator template only when Claude is selected;
+deploying that template is a separate administrative step.
+
+Codex stdio environment references become `env_vars`; Cursor uses `${env:NAME}`,
+and OpenCode uses `{env:NAME}`. Copilot CLI and Kimi Code environment mappings with
+no supported native representation are refused before configuration is written.
+The plan reports feature support and host requirements separately from runtime
+acceptance. See [governed MCP configuration](governed-mcp.md) for the scope and
+verification differences. Enterprise org policy can also tune the hosted GitHub
 MCP entry: `mcp.incumbentHosts` declares which vendor hosts are reachable/incumbent,
 `mcp.githubHost` points at a GHES or internal GitHub MCP origin, and `mcp.disabledServers`
 can remove `github` entirely. Without committed org policy, the legacy github.com default remains

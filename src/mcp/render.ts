@@ -12,8 +12,8 @@ import type { McpServer } from "./servers.js";
  * server map is the same, but the per-tool field names / nesting differ, and writing
  * the wrong shape would be worse than emitting guidance. Shapes verified against each
  * tool's current docs:
- *  - claude / cursor / kiro / kimi → the canonical `mcpServers` JSON aih already
- *    emits (identity — byte-preserves the existing `.mcp.json` golden output);
+ *  - claude / cursor / kiro / kimi → `mcpServers` JSON; Cursor environment
+ *    references are translated, and unsupported Kimi references are refused;
  *  - gemini  → `mcpServers` `{command, args}` / `{httpUrl}` (~/.gemini/settings.json);
  *  - windsurf→ `mcpServers` `{command, args}` / `{serverUrl}`;
  *  - antigravity → `mcpServers` `{command, args}` / `{url}`;
@@ -21,13 +21,41 @@ import type { McpServer } from "./servers.js";
  *  - opencode→ `mcp` `{type:"local", command:[cmd, ...args], enabled}` / `{type:"remote", url, enabled}`;
  *  - zed     → `context_servers` `{command, args}` / `{url}`;
  *  - codex   → TOML `[mcp_servers."name"]` tables (see {@link mcpTomlBody}).
- * A stdio server's optional `env` rides along under each tool's env key (`env`, or
- * `environment` for OpenCode, or a `[mcp_servers.NAME.env]` sub-table for Codex);
+ * A stdio server's optional `env` follows the host contract (`environment` for
+ * OpenCode, `env_vars` forwarding for Codex, `${env:NAME}` values for Cursor);
  * http servers never carry env. Pure data transforms — no IO, no network.
  */
 
 /** One tool-shaped MCP server entry (the value under the tool's server-map key). */
 export type McpEntry = Record<string, unknown>;
+
+/** One environment contract for generic generation and governed projection. */
+function mcpEnvironment(
+  target: Cli,
+  values: Readonly<Record<string, string>> | undefined,
+): { env?: Record<string, string>; environment?: Record<string, string>; env_vars?: string[] } {
+  const environment: Record<string, string> = Object.create(null);
+  const envVars: string[] = [];
+  for (const [key, value] of Object.entries(values ?? {})) {
+    const reference = /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/.exec(value)?.[1];
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || reference === undefined) {
+      throw new Error(`${target} MCP requires canonical environment references`);
+    }
+    if (target === "codex") {
+      if (reference !== key)
+        throw new Error("Codex environment forwarding does not support renamed references");
+      envVars.push(reference);
+    } else if (target === "cursor") environment[key] = `\${env:${reference}}`;
+    else if (target === "opencode") environment[key] = `{env:${reference}}`;
+    else
+      throw new Error(
+        `${target} MCP environment references are unsupported by the registered host contract`,
+      );
+  }
+  if (target === "codex") return envVars.length ? { env_vars: envVars.sort() } : {};
+  if (!Object.keys(environment).length) return {};
+  return target === "opencode" ? { environment } : { env: environment };
+}
 
 /** Strict stdio distributions omit AIH evidence metadata that belongs in receipts. */
 export function nativeMcpEntries(
@@ -48,27 +76,7 @@ export function nativeMcpEntries(
           `${target} governed MCP projection refuses unsupported server shape for ${name}`,
         );
       }
-      const environment: Record<string, string> = {};
-      const envVars: string[] = [];
-      for (const [key, value] of Object.entries(server.env ?? {})) {
-        const reference = /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/.exec(value)?.[1];
-        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) || reference === undefined) {
-          throw new Error(
-            `${target} governed MCP projection requires canonical environment references for ${name}`,
-          );
-        }
-        if (target === "codex") {
-          if (reference !== key)
-            throw new Error("Codex environment forwarding does not support renamed references");
-          envVars.push(reference);
-        } else if (target === "cursor") environment[key] = `\${env:${reference}}`;
-        else if (target === "opencode") environment[key] = `{env:${reference}}`;
-        else
-          throw new Error(
-            `${target} governed MCP environment references are unsupported by the registered host contract`,
-          );
-      }
-      const env = Object.keys(environment).length ? { env: environment } : {};
+      const env = mcpEnvironment(target, server.env);
       const common = { command: server.command, args: [...server.args] };
       const shaped =
         target === "opencode"
@@ -76,10 +84,10 @@ export function nativeMcpEntries(
               type: "local",
               command: [server.command, ...server.args],
               enabled: true,
-              ...(Object.keys(environment).length ? { environment } : {}),
+              ...env,
             }
           : target === "codex"
-            ? { ...common, ...(envVars.length ? { env_vars: envVars.sort() } : {}) }
+            ? { ...common, ...env }
             : target === "copilot"
               ? { type: "stdio", ...common, ...env }
               : { ...common, ...env };
@@ -99,7 +107,7 @@ export function mcpEntryFor(cli: Cli, s: McpServer): McpEntry {
             type: "local",
             command: [s.command, ...s.args],
             enabled: true,
-            ...(s.env ? { environment: s.env } : {}),
+            ...mcpEnvironment(cli, s.env),
           }
         : {
             type: "remote",
@@ -110,7 +118,7 @@ export function mcpEntryFor(cli: Cli, s: McpServer): McpEntry {
     case "copilot":
       // Copilot CLI uses `mcpServers` and accepts the stdio/http discriminator.
       return s.type === "stdio"
-        ? { type: "stdio", command: s.command, args: s.args, ...(s.env ? { env: s.env } : {}) }
+        ? { type: "stdio", command: s.command, args: s.args, ...mcpEnvironment(cli, s.env) }
         : { type: "http", url: s.url, ...(s.headers ? { headers: s.headers } : {}) };
     case "gemini":
       return s.type === "stdio"
@@ -125,9 +133,13 @@ export function mcpEntryFor(cli: Cli, s: McpServer): McpEntry {
       return s.type === "stdio"
         ? { command: s.command, args: s.args, ...(s.env ? { env: s.env } : {}) }
         : { url: s.url, ...(s.headers ? { headers: s.headers } : {}) };
+    case "cursor":
+    case "kimi":
+      return s.type === "stdio" && s.env
+        ? { ...s, ...mcpEnvironment(cli, s.env) }
+        : (s as unknown as McpEntry);
     default:
-      // claude, cursor, kiro, kimi — the canonical aih shape, unchanged so the
-      // existing `.mcp.json` / `.cursor/mcp.json` golden output stays byte-identical.
+      // Claude/Kiro retain the canonical shape and their historical metadata.
       return s as unknown as McpEntry;
   }
 }
@@ -186,14 +198,8 @@ export function mcpTomlBody(servers: Record<string, McpServer>): string {
       if (s.type === "stdio") {
         const out = [head, `command = ${tomlStr(s.command)}`];
         if (s.args.length > 0) out.push(`args = ${tomlArray(s.args)}`);
-        if (s.env) {
-          // A nested `[mcp_servers.NAME.env]` table (blank line before it keeps TOML valid).
-          out.push(`\n[mcp_servers.${tomlStr(name)}.env]`);
-          for (const [k, v] of Object.entries(s.env)) {
-            const key = /^[A-Za-z0-9_-]+$/.test(k) ? k : tomlStr(k);
-            out.push(`${key} = ${tomlStr(v)}`);
-          }
-        }
+        const envVars = mcpEnvironment("codex", s.env).env_vars;
+        if (envVars) out.push(`env_vars = ${tomlArray(envVars)}`);
         return out.join("\n");
       }
       const out = [head, `url = ${tomlStr(s.url)}`];

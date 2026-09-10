@@ -17,6 +17,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Report governed project MCP receipts at their native paths, with global
+  configuration shown separately and policy-aware remediation. Align ordinary
+  and governed environment references, route offline generation through every
+  selected CLI, and keep fallback-only mode distinct from disabling live servers.
+- Expose feature-specific CLI support and runtime requirements in wiring reports
+  and MCP plans. Detect Kimi Code configuration without treating legacy Kimi
+  directories as proof of a Kimi Code install, including `KIMI_CODE_HOME` support.
 - Keep registered provider-test edits in their provider verification lane while
   retaining broader coverage for shared or unknown changes.
 - Correct Copilot CLI and Kimi Code MCP paths and host-specific environment

@@ -81,6 +81,24 @@ function makeCtx(
 }
 
 describe("detectOne", () => {
+  it("does not identify a legacy Kimi directory as Kimi Code", async () => {
+    configDir(".kimi");
+    configDir(".config/kimi");
+    expect(await detectOne(makeCtx(), "kimi")).toEqual({ cli: "kimi", present: false });
+    expect(detectClisByConfig(makeCtx()).find((cli) => cli.cli === "kimi")?.present).toBe(false);
+  });
+
+  it("honors KIMI_CODE_HOME as the actual Kimi Code config root", async () => {
+    const ctx = makeCtx();
+    ctx.env.KIMI_CODE_HOME = kiroHome;
+    expect(await detectOne(ctx, "kimi")).toMatchObject({
+      present: true,
+      via: "config",
+      detail: "KIMI_CODE_HOME",
+    });
+    expect(detectClisByConfig(ctx).find((cli) => cli.cli === "kimi")?.present).toBe(true);
+  });
+
   it("detects via a config dir (cheap, no PATH probe)", async () => {
     configDir(".claude");
     const p = await detectOne(makeCtx(), "claude");
