@@ -645,6 +645,65 @@ describe("npm package lifecycle V1", () => {
     expect(readNpmPackageLifecycleStoreV1(root)).toMatchObject({ kind: "complete" });
   });
 
+  it("refuses supported revocation writes while effective policy revokes the existing record", async () => {
+    const value = supportedFixture();
+    writeFixture(value);
+    writeGovernedPolicy();
+    writeFileSync(
+      join(root, ".aih", "aih-supported-qualification-receipt.json"),
+      canonicalAihSupportedQualificationReceiptV2(value.receipt),
+    );
+    const env = {
+      AIH_SUPPORTED_QUALIFICATION_REPOSITORY: "aihq/supported-catalog",
+      AIH_SUPPORTED_QUALIFICATION_WORKFLOW: "qualification.yml",
+    };
+    const ctx = context(true, value.decision, { evidence: undefined }, env);
+    await executePlan(await supportedCustodyAcceptPlanV2(ctx), ctx, {
+      skipWorktreeGate: true,
+    });
+    expect(await run(ctx)).toMatchObject({ applied: true, state: "observed-effective" });
+    writeAuthority(value.decision, [
+      {
+        format: "aih-governance-decision-revocation",
+        version: 2,
+        decisionDigest: governanceDecisionDigestV2(value.decision),
+        issuer: value.decision.issuer,
+        revokedAt: "2026-08-01T00:00:00+00:00",
+        reason: "Withdraw the supported package decision.",
+      },
+    ]);
+    const snapshot = (path: string): unknown[] =>
+      readdirSync(path, { withFileTypes: true })
+        .sort((left, right) => left.name.localeCompare(right.name))
+        .map((entry) => [
+          entry.name,
+          entry.isDirectory()
+            ? snapshot(join(path, entry.name))
+            : readFileSync(join(path, entry.name)).toString("base64"),
+        ]);
+    const before = snapshot(root);
+    expect(await observeNpmPackageV1(ctx)).toMatchObject({
+      authority: "verified",
+      qualification: "unqualified",
+      outcome: "refused",
+      effective: "qualification-unverified",
+      reason: "qualification-unverified",
+    });
+    const execution = await execute(ctx);
+    expect(execution.digests[0]?.data).toEqual({
+      applied: false,
+      outcome: "refused",
+      state: "observation-unverified",
+      reason: "observation-unverified",
+    });
+    expect(execution.report?.exitCode()).toBe(1);
+    expect(await resolveNpmPackageEffectiveStateV1(ctx)).toEqual([
+      expect.objectContaining({ state: "revoked", reason: "decision-revoked" }),
+    ]);
+    expect(await orgPolicyEffectiveCheck(ctx)).toMatchObject({ verdict: "fail" });
+    expect(snapshot(root)).toEqual(before);
+  });
+
   it("refuses a supported lifecycle when its fixed receipt changes after transaction assertions", async () => {
     const value = supportedFixture();
     writeFixture(value);
