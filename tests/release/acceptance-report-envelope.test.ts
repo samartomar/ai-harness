@@ -19,8 +19,10 @@ const names = ["release npm signatures", "release cosign bundle", "release tarba
 
 async function envelope(verdicts: Verdict[] = ["pass", "pass", "pass"]) {
   const run = fakeRunner(() => undefined);
+  const root = mkdtempSync(join(tmpdir(), "aih-acceptance-plan-"));
+  roots.push(root);
   const context = {
-    root: process.cwd(),
+    root,
     contextDir: "ai-coding",
     apply: false,
     verify: true,
