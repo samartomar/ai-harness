@@ -6,6 +6,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [Core 0.6.2] - 2026-09-11
+
+### Changed
+
+- Retain the Core 0.6 release line by explicit owner direction for this cut.
+  The merged changes remain minor-class and the standard version calculation
+  yields 0.7.0. This one-time numbering exception does not describe a patch-only
+  change; review the new native outputs and recovery requirements before adoption.
+- Require an original-content `backupSha256` for overwrite restoration through
+  the exported `rollbackAppliedWrites` API. `FsTransaction` supplies the pin;
+  callers constructing `AppliedWrite` records must retain it before replacement.
+  Missing pins preserve live files and report incomplete recovery.
+
 ### Added
 
 - Extend governed, receipt-owned MCP workspace configuration to Codex, Cursor,
@@ -17,6 +30,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Bind the nine eligible first-party Workbench qualifications to Core 0.6.2 and
+  its current declarations, preserving the original Scanner findings and dates,
+  all 427 other qualifications, and historical Catalog publisher policies.
+- Initialize Windows local-receipt ACLs without PowerShell module autoload,
+  preserving owner, inheritance, allowed-SID checks and the process deadline.
+  Bound local Windows verification to two workers by default.
 - Preserve the three built-in capability decisions and enterprise approval
   requirements on the reviewed Core 0.7 line; unreviewed minor lines still fail
   closed.
@@ -3298,7 +3317,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v-core-0.6.1...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v-core-0.6.2...HEAD
+[Core 0.6.2]: https://github.com/samartomar/ai-harness/compare/v-core-0.6.1...v-core-0.6.2
 [Core 0.6.1]: https://github.com/samartomar/ai-harness/compare/v-core-0.6.0...v-core-0.6.1
 [Core 0.6.0]: https://github.com/samartomar/ai-harness/compare/v-core-0.5.0...v-core-0.6.0
 [Core 0.5.0]: https://github.com/samartomar/ai-harness/compare/v-core-0.4.3...v-core-0.5.0
