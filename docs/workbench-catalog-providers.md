@@ -232,11 +232,15 @@ tree; scanning the ordinary repository checkout does not cover these declaration
 This preparation does not sign, publish, or qualify evidence.
 
 The scanned Core commit and the final packaging commit are distinct identities.
-An evidence-only packaging change can retain a report only when freshly generated
-materials match: package version, compiler inputs, asset identities, component
-files, and generated content. The original scanned commit remains in the report.
-A changed pack, hook, MCP declaration, or compiler input requires new matching
-evidence; changing only the evidence records does not renew report dates.
+An existing Scanner publication can be retained only when authenticated
+re-preparation proves that the generated requests, component files and scanned
+content are unchanged. The original scanned commit, findings and dates remain
+in the report. The wrapper and compiler bindings must be derived again for the
+current package version and declarations. A version change therefore requires
+matching Catalog qualifications even when the underlying scan can be retained.
+Changed scanned material requires new matching evidence. Release checks reject
+evidence that belongs to another package release; repackaging never renews its
+original dates.
 
 AIH scan coverage and Catalog qualification have different scopes. Pack
 qualification covers the declared pack files and manifest. MCP qualification

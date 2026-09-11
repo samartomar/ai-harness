@@ -311,14 +311,14 @@ describe("Core Catalog qualification preparation", () => {
     ).toHaveLength(427);
     expect(
       records.filter(
-        (record) => record.publisher.commit === "98d95263aa0901504c9d480628f6c06c4a1fe453",
+        (record) => record.publisher.commit === "36f269266208661430fc37f167c86e534dabf893",
       ),
     ).toHaveLength(9);
     expect(new Set(added.map((summary) => summary.sourceRevisionId))).toEqual(
-      new Set(["package:@aihq/core@0.6.1"]),
+      new Set(["package:@aihq/core@0.6.2"]),
     );
     expect(new Set(added.map((summary) => summary.originalIssuedAt))).toEqual(
-      new Set(["2026-09-10T01:47:35Z"]),
+      new Set(["2026-09-11T16:25:18Z"]),
     );
     expect(new Set(added.map((summary) => summary.validUntil))).toEqual(
       new Set(["2026-12-08T00:47:41Z"]),
@@ -329,7 +329,7 @@ describe("Core Catalog qualification preparation", () => {
       ),
     ).toBe(true);
     expect(CATALOG_QUALIFICATION_RELEASE_POLICY_V1.catalogCommit).toBe(
-      "98d95263aa0901504c9d480628f6c06c4a1fe453",
+      "36f269266208661430fc37f167c86e534dabf893",
     );
   });
   it.each(["valid", "duplicate", "missing", "wrong-digest", "malformed", "overflow"] as const)(
@@ -420,7 +420,8 @@ describe("Core Catalog qualification preparation", () => {
     ).toBeUndefined();
   });
   it("uses the merged Catalog publisher for preparation metadata and retains the historical publisher", () => {
-    const current = "98d95263aa0901504c9d480628f6c06c4a1fe453";
+    const current = "36f269266208661430fc37f167c86e534dabf893";
+    const priorCore061 = "98d95263aa0901504c9d480628f6c06c4a1fe453";
     const priorCore = "0ce02656d5e281262af2177571033449f277dc46";
     const previous = "b019b4e9d6260915a49d177bcc22b58518305dd4";
     const historical = "5e18dd66e42f91c30e4c5acd81d41f1e33cd987a";
@@ -431,7 +432,7 @@ describe("Core Catalog qualification preparation", () => {
     });
     expect(catalogQualificationReleasePolicyMetadataV1.catalogCommit).toBe(current);
     expect(CATALOG_QUALIFICATION_RELEASE_POLICIES_V1.map((policy) => policy.catalogCommit)).toEqual(
-      [current, priorCore, previous, historical],
+      [current, priorCore061, priorCore, previous, historical],
     );
   });
 
