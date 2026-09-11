@@ -387,7 +387,7 @@ describe("aih capability resolve", () => {
     }
   });
 
-  it.each(["0.5.0", "0.5.99", "0.6.0", "0.6.99"])(
+  it.each(["0.5.0", "0.5.99", "0.6.0", "0.6.99", "0.7.0", "0.7.99"])(
     "preserves all built-in decisions and enterprise approval on reviewed Core %s",
     async (version) => {
       seedNodeRepo();
@@ -416,7 +416,7 @@ describe("aih capability resolve", () => {
     },
   );
 
-  it.each(["0.4.99", "0.7.0", "1.0.0"])(
+  it.each(["0.4.99", "0.8.0", "1.0.0"])(
     "fails closed when Core %s has not been reviewed for the built-in catalog",
     async (version) => {
       seedNodeRepo();

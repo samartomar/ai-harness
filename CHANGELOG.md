@@ -17,6 +17,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Preserve the three built-in capability decisions and enterprise approval
+  requirements on the reviewed Core 0.7 line; unreviewed minor lines still fail
+  closed.
+- Verify original backup bytes before rollback, preserving live files and
+  reporting incomplete recovery when backup contents change or disappear.
+- Require successful native probes and actual tool-catalog evidence before
+  reporting host acceptance; failed and request-only probes cannot pass.
 - Remove Ponytail from Workbench catalog browsing and starting points while
   preserving existing saved policy pins and Core consumption.
 - Report governed project MCP receipts at their native paths, with global
