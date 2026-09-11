@@ -64,9 +64,10 @@ neither becomes repository truth. Committed source and tests remain authoritativ
 3. Edit the shared block source first, then copy its body exactly into both root
    bootloaders. Keep repo-specific preamble text outside the fenced block.
 4. Add or remove adapters and bootloaders only when the target list changes.
-5. Run `npm run check:self-hosting-canon`, focused fixture tests, typecheck, and
-   lint. `npm run verify` is allowed only while every repository-scoped check in
-   that chain remains a direct repository check rather than an AIH CLI command.
+5. Run the selected local gate from `CONTRIBUTING.md`; it includes
+   `npm run check:self-hosting-canon`, typecheck, lint, and CI's applicable tests.
+   Use `npm run verify` for deliberate full validation. Every repository-scoped
+   check must remain a direct repository check rather than an AIH CLI command.
 
 If generated product defaults later change, review them as upstream source
 changes. Adopt useful behavior manually; never clear drift by applying AIH here.

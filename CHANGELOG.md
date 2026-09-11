@@ -6,6 +6,41 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Extend governed, receipt-owned MCP workspace configuration to Codex, Cursor,
+  Copilot CLI, OpenCode V1, and Kimi Code alongside the existing Claude and Kiro
+  projectors. Preserve exact historical policy/control bindings without extending
+  old approvals, and report ownership separately for every requested host.
+- Add explicit-base/head local CI verification through `npm run verify:local`,
+  reusing the hosted change classifier and applicable validation commands.
+
+### Fixed
+
+- Preserve the three built-in capability decisions and enterprise approval
+  requirements on the reviewed Core 0.7 line; unreviewed minor lines still fail
+  closed.
+- Verify original backup bytes before rollback, preserving live files and
+  reporting incomplete recovery when backup contents change or disappear.
+- Require successful native probes and actual tool-catalog evidence before
+  reporting host acceptance; failed and request-only probes cannot pass.
+- Remove Ponytail from Workbench catalog browsing and starting points while
+  preserving existing saved policy pins and Core consumption.
+- Report governed project MCP receipts at their native paths, with global
+  configuration shown separately and policy-aware remediation. Align ordinary
+  and governed environment references, route offline generation through every
+  selected CLI, and keep fallback-only mode distinct from disabling live servers.
+- Expose feature-specific CLI support and runtime requirements in wiring reports
+  and MCP plans. Detect Kimi Code configuration without treating legacy Kimi
+  directories as proof of a Kimi Code install, including `KIMI_CODE_HOME` support.
+- Keep registered provider-test edits in their provider verification lane while
+  retaining broader coverage for shared or unknown changes.
+- Correct Copilot CLI and Kimi Code MCP paths and host-specific environment
+  references; preserve unrelated native configuration during governed updates
+  and ownership-proven removal.
+- Align contribution and review instructions with change-scoped verification
+  and one consolidated independent review for authority or ownership changes.
+
 ## [Core 0.6.1] - 2026-09-09
 
 ### Fixed

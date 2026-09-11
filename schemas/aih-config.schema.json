@@ -566,6 +566,277 @@
         }
       ]
     },
+    "nativeMcpProjections": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "enum": [
+          "codex",
+          "cursor",
+          "copilot",
+          "opencode",
+          "kimi"
+        ]
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "type": "number",
+            "const": 2
+          },
+          "target": {
+            "type": "string",
+            "enum": [
+              "codex",
+              "cursor",
+              "copilot",
+              "opencode",
+              "kimi"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 240
+          },
+          "contract": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "active",
+              "revoked"
+            ]
+          },
+          "expected": {
+            "type": "object",
+            "properties": {
+              "entries": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]{0,119}$"
+                },
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "command": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512
+                        },
+                        "args": {
+                          "maxItems": 128,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "maxLength": 2048
+                          }
+                        },
+                        "env": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                          },
+                          "additionalProperties": {
+                            "type": "string",
+                            "maxLength": 4096
+                          }
+                        }
+                      },
+                      "required": [
+                        "command",
+                        "args"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "command": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512
+                        },
+                        "args": {
+                          "maxItems": 128,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "maxLength": 2048
+                          }
+                        },
+                        "env_vars": {
+                          "maxItems": 128,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                          }
+                        }
+                      },
+                      "required": [
+                        "command",
+                        "args"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "const": "stdio"
+                        },
+                        "command": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512
+                        },
+                        "args": {
+                          "maxItems": 128,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "maxLength": 2048
+                          }
+                        },
+                        "env": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                          },
+                          "additionalProperties": {
+                            "type": "string",
+                            "maxLength": 4096
+                          }
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "command",
+                        "args"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "type": {
+                          "type": "string",
+                          "const": "local"
+                        },
+                        "command": {
+                          "minItems": 1,
+                          "maxItems": 129,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "maxLength": 2048
+                          }
+                        },
+                        "enabled": {
+                          "type": "boolean",
+                          "const": true
+                        },
+                        "environment": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string",
+                            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+                          },
+                          "additionalProperties": {
+                            "type": "string",
+                            "maxLength": 4096
+                          }
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "command",
+                        "enabled"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              }
+            },
+            "required": [
+              "entries"
+            ],
+            "additionalProperties": false
+          },
+          "decisions": {
+            "maxItems": 64,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "candidate": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                },
+                "id": {
+                  "type": "string",
+                  "allOf": [
+                    {
+                      "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                    },
+                    {
+                      "pattern": "^decision-"
+                    }
+                  ]
+                },
+                "issuer": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]{0,63}$"
+                },
+                "digest": {
+                  "type": "string",
+                  "pattern": "^sha256:[a-f0-9]{64}$"
+                },
+                "expiresAt": {
+                  "type": "string",
+                  "pattern": "^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2}):(\\d{2})(?:\\.\\d{1,3})?(Z|[+-](\\d{2}):(\\d{2}))$"
+                }
+              },
+              "required": [
+                "candidate",
+                "id",
+                "issuer",
+                "digest",
+                "expiresAt"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "target",
+          "path",
+          "contract",
+          "state",
+          "expected",
+          "decisions",
+          "sha256"
+        ],
+        "additionalProperties": false
+      }
+    },
     "adopt": {
       "type": "object",
       "properties": {

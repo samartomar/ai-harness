@@ -24,6 +24,21 @@ import { z } from "zod";
 export const SUPPORT_LEVELS = ["native", "fallback", "absent"] as const;
 const Support = z.enum(SUPPORT_LEVELS);
 
+/** CLI targets whose project MCP projections have governed ownership lifecycles. */
+export const GOVERNED_MCP_TARGETS = [
+  "claude",
+  "codex",
+  "cursor",
+  "copilot",
+  "opencode",
+  "kimi",
+  "kiro",
+] as const;
+export type GovernedMcpTarget = (typeof GOVERNED_MCP_TARGETS)[number];
+
+/** Targets wired into the governed AIH usage-metering control. */
+export const GOVERNED_USAGE_TARGETS = ["claude", "codex"] as const;
+
 const McpProfile = z.object({
   /**
    * aih's MCP integration level for this tool:
@@ -41,6 +56,15 @@ const McpProfile = z.object({
   /** Top-level key holding the server map. */
   configKey: z.enum(["mcpServers", "mcp_servers", "mcp", "servers", "context_servers"]).optional(),
   configFormat: z.enum(["json", "toml"]).optional(),
+  /** Explicit project distribution contract; never redirects into user/global configuration. */
+  governed: z
+    .object({
+      configPath: z.string(),
+      contract: z.enum(["codex-v1", "cursor-v1", "copilot-cli-v1", "opencode-v1", "kimi-code-v1"]),
+      /** Other project config filenames whose precedence this lifecycle does not reconcile. */
+      alternateConfigPaths: z.array(z.string()).optional(),
+    })
+    .optional(),
 });
 
 /**
@@ -139,9 +163,9 @@ export type CliEntry = z.infer<typeof CliEntry>;
 /**
  * The registry, in canonical order (detection, reports, and the --detect fallback
  * notice all depend on this ordering — keep it stable). MCP facts are objective
- * per-tool documentation values; `support` is conservative — only the tools whose
- * project config is plain `mcpServers` JSON (Claude's de-facto standard shape) are
- * `native` (aih writes them); everyone else is `fallback` (aih emits guidance).
+ * per-tool documentation values; `native` means a registered JSON/TOML renderer
+ * for the stated scope. Governed projection and runtime verification are separate
+ * capabilities; neither follows merely from generic configuration support.
  */
 const RAW: Record<string, z.input<typeof CliEntry>> = {
   claude: {
@@ -167,13 +191,13 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
     binaries: ["codex"],
     bootloaders: ["AGENTS.md"],
     machineSkillDir: ".codex/skills",
-    // Codex reads MCP servers from ~/.codex/config.toml as [mcp_servers.<name>] (TOML, global).
-    // aih writes them as an aih-managed block (mcp/render.ts), preserving the rest of the file.
+    // Codex has user configuration and a trusted project scope. Governed distribution uses the latter.
     mcp: {
       support: "native",
       configPath: "~/.codex/config.toml",
       configKey: "mcp_servers",
       configFormat: "toml",
+      governed: { configPath: ".codex/config.toml", contract: "codex-v1" },
     },
     dryRunProbe: manualDryRunProbe("Codex CLI"),
   },
@@ -181,7 +205,7 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
     id: "cursor",
     label: "Cursor",
     configDirs: [".cursor"],
-    binaries: ["cursor"],
+    binaries: ["cursor", "cursor-agent", "agent"],
     bootloaders: [".cursor/rules/00-canon.mdc"],
     loadsDirectory: ".cursor/rules",
     mcp: {
@@ -189,6 +213,7 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
       configPath: ".cursor/mcp.json",
       configKey: "mcpServers",
       configFormat: "json",
+      governed: { configPath: ".cursor/mcp.json", contract: "cursor-v1" },
     },
     activation: { key: "alwaysApply", value: "true" },
     dryRunProbe: manualDryRunProbe("Cursor"),
@@ -229,12 +254,13 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
     configDirs: [".config/github-copilot", ".copilot"],
     binaries: ["copilot"],
     bootloaders: [".github/copilot-instructions.md"],
-    // VS Code reads .vscode/mcp.json under a `servers` key ({type, command, args}).
+    // Copilot CLI reads trusted .github/mcp.json; .vscode/mcp.json belongs to VS Code.
     mcp: {
       support: "native",
-      configPath: ".vscode/mcp.json",
-      configKey: "servers",
+      configPath: ".github/mcp.json",
+      configKey: "mcpServers",
       configFormat: "json",
+      governed: { configPath: ".github/mcp.json", contract: "copilot-cli-v1" },
     },
     dryRunProbe: manualDryRunProbe("GitHub Copilot"),
   },
@@ -265,6 +291,11 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
       configPath: "~/.config/opencode/opencode.json",
       configKey: "mcp",
       configFormat: "json",
+      governed: {
+        configPath: "opencode.json",
+        contract: "opencode-v1",
+        alternateConfigPaths: ["opencode.jsonc"],
+      },
     },
     dryRunProbe: manualDryRunProbe("OpenCode"),
   },
@@ -285,17 +316,18 @@ const RAW: Record<string, z.input<typeof CliEntry>> = {
   },
   kimi: {
     id: "kimi",
-    label: "Kimi CLI",
-    configDirs: [".kimi", ".config/kimi"],
+    label: "Kimi Code",
+    configDirs: [".kimi-code"],
     binaries: ["kimi"],
     bootloaders: ["AGENTS.md"],
     mcp: {
       support: "native",
-      configPath: ".mcp.json",
+      configPath: ".kimi-code/mcp.json",
       configKey: "mcpServers",
       configFormat: "json",
+      governed: { configPath: ".kimi-code/mcp.json", contract: "kimi-code-v1" },
     },
-    dryRunProbe: manualDryRunProbe("Kimi CLI"),
+    dryRunProbe: manualDryRunProbe("Kimi Code"),
   },
   kiro: {
     id: "kiro",

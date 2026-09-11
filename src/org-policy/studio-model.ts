@@ -78,6 +78,7 @@ import {
   defaultCatalogPreassemblyAdmissionV1,
   packagedDefaultCatalogPreassemblyCompanionV1,
 } from "./workbench/default-catalog-preassembly.js";
+import { historicalWorkbenchCatalogForPolicyV1 } from "./workbench/policy-consumption.js";
 import { withLegacyPolicyCandidateDefaultsV1 } from "./workbench/policy-import.js";
 import type { PreparedWorkbenchCatalogV1 } from "./workbench/prepared-catalog.js";
 import {
@@ -428,6 +429,19 @@ function buildPolicyStudioModel(
     sourceDataPins !== undefined
       ? prepareWorkbenchCatalog(undefined, { ...options, sourceDataPins, packageDataOnly: true })
       : packagedPreparedWorkbenchCatalogV1();
+  if (savedState !== undefined) {
+    const historicalCatalog = historicalWorkbenchCatalogForPolicyV1(
+      { ...initialPolicy },
+      savedState,
+      prepared,
+    );
+    if (historicalCatalog !== undefined)
+      prepared = prepareWorkbenchCatalog(historicalCatalog, {
+        ...options,
+        sourceDataPins,
+        packageDataOnly: true,
+      });
+  }
   const scannerCollectionRecords = packagedScannerCollectionEvidenceV1();
   const packagedEvidence = {
     ...packagedPublicBaselineOverlayV1(prepared.bundle),

@@ -14,15 +14,16 @@
   `semver:none|patch|minor|major` label. `semver:none` changes ride the open train
   and cannot start a package cut. Package-bearing work accumulates into one coherent
   release PR; an immediate hotfix train is reserved for material installed-user harm.
-- **Run apply-mode `aih` in a throwaway tree, never the repo root.** Apply runs
-  emit files and rewrite `.gitignore`; a root run once swept thousands of
-  generated files into a PR. Stage explicit paths, never `git add -A`; never
-  commit `dist/` or `coverage/`. Running `npm run verify` and tests in-repo is
-  fine — the hazard is apply-mode writes.
-- **`npm run verify` is the gate, and CI is stricter than the loose local
-  aliases** (`biome ci` over `biome check`; coverage on the ubuntu leg only). Gate
-  on real exit codes, not a piped tail. Coverage floors live in
-  `vitest.config.ts` — read them there, never hardcode a number.
+- **Never run AIH against this checkout.** Exercise project behavior only in
+  tests targeting temporary fixture roots, including read-only commands.
+  Stage explicit paths, never `git add -A`; never commit `dist/` or `coverage/`.
+  Direct repository checks and local verification remain allowed.
+- **Use the selected local completion gate:**
+  `npm run verify:local -- --base <ref> --head <ref>`, with `--include-working`
+  for working changes. It retains CI static checks, applicable test/browser/provider
+  lanes, and the full fallback. Gate on real exit codes, not a piped tail; report
+  the hosted OS and security gaps. `npm run verify` is deliberate full validation.
+  Coverage floors live in `vitest.config.ts` — read them there, never hardcode a number.
 - **Read a red check before calling it flaky.** The CodeQL check reports its
   alerts in seconds — its speed says nothing; read its output. Don't trust
   `--watch`; poll the check rollup and re-check it right before merge.

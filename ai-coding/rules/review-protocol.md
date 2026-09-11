@@ -2,22 +2,27 @@
 
 > Load when: reviewing a PR, verifying a change, or acting on review/external feedback.
 
-`CONTRIBUTING.md` requires recording a code review + security review before a PR
-is ready. The deltas it leaves unstated:
+Follow the proportionate review contract in `CONTRIBUTING.md`:
 
-- **Two independent lenses before merging a high-risk PR** (deletes/moves files,
-  trust/security/exec surfaces, release machinery): an external security review
-  plus a complementary specialized agent — never the same lens twice, never
-  general-purpose. Apply every confirmed finding with a regression test, then
-  re-verify. Routine feature work does not need this.
-- **A green unit suite is a sanity gate, not a completion gate.** Hermetic tests
-  miss real bugs here — verify behavior by running the real built CLI
-  (`npm run dev -- <cmd>`) against a fixture, with both a passing and a failing
-  case, on the target OS. Confirm a branch builds from a clean checkout before
-  handing it back.
-- **Verify a reviewer's claims against source before acting** — reviews cite
-  symbols and flags that do not exist.
-- **Adjudicate external feedback against `main`.** Reviews and field reports run
-  heavily stale; refute by default, verdict each claim with `file:line` evidence,
-  and re-verify your own old issues before implementing them. In spec or plan
-  docs, `LOCKED`/`RESOLVED` is binding; the rest is the session's to decide.
+- **One owner, one independent review for risky changes.** Use Astra with low
+  reasoning effort to cover correctness, security, and the touched domain in
+  one pass. Trust/execution authority, credentials, destructive operations,
+  schema compatibility, and CI/release machinery require that review. Routine
+  work does not automatically need subagents, specialist chains, or panels.
+- **Add a reviewer only for a named unresolved boundary.** Record the question
+  and why the existing review cannot resolve it. Consolidate findings; repair
+  confirmed defects in one owned pass and rerun affected checks. Do not repeat
+  unchanged verification or restart reviews merely because a new task begins.
+- **Use the selected local completion gate.** Run
+  `npm run verify:local -- --base <ref> --head <ref>` with explicit working-change
+  inclusion when needed, and report its result and hosted gaps. Focused unit
+  tests support TDD; CLI-boundary changes also need passing and failing cases
+  against temporary fixtures. Full validation is deliberate; real installed
+  publication acceptance and protected CI remain required where applicable.
+- **Verify review claims against current source.** Check symbols, flags, tests,
+  and the applicable revision before acting. Revalidate old reports against
+  current `main`; neither accept nor reject a finding solely because of its age.
+  Record the evidence and disposition of confirmed or rejected findings in the PR.
+
+Human authorization for external actions is unchanged. Reviews and local checks
+do not authorize publishing, pushing, merging, or dispatching remote agents.

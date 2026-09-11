@@ -10,7 +10,10 @@ import {
 } from "../../src/internals/ci-impact.js";
 import { runCiImpactCommand } from "../../src/internals/ci-impact-command.js";
 import { fakeRunner } from "../../src/internals/proc.js";
-import { providerTestsFor } from "../../src/internals/workbench-provider-ownership.js";
+import {
+  providerTestsFor,
+  WORKBENCH_PROVIDER_OWNERSHIP,
+} from "../../src/internals/workbench-provider-ownership.js";
 import { isWorkbenchTestPath } from "../../src/internals/workbench-test-ownership.js";
 
 const baseSha = "a".repeat(40);
@@ -26,6 +29,63 @@ const testFiles = [
 ];
 
 describe("CI impact classifier", () => {
+  it.each([
+    "tests/org-policy/workbench/browser/artifact.spec.ts",
+    "tests/org-policy/workbench/browser/nested/new.spec.ts",
+    "tests/org-policy/workbench/browser/setup.ts",
+    "tests/org-policy/workbench/browser/fixture.ts",
+  ])("keeps browser-owned input %s in the complete packed Workbench lane", (path) => {
+    const receipt = classifyCiImpact({ baseSha, headSha, changedPaths: [path], testFiles });
+    expect(receipt).toMatchObject({
+      fullSuite: false,
+      testLane: "workbench",
+      requiresGenericBrowserJourneys: true,
+      requiresPackedArtifact: true,
+      fallbackReasons: [],
+    });
+    expect(receipt.selectedTests).toEqual(testFiles.filter(isWorkbenchTestPath));
+    expect(receipt.selectedTests).not.toContain(path);
+    expect(validateCiImpactReceipt(receipt)).toEqual(receipt);
+    expect(() =>
+      validateCiImpactReceipt({
+        ...receipt,
+        selectedTests: [],
+        requiresGenericBrowserJourneys: false,
+      }),
+    ).toThrow("generic browser requirement");
+  });
+
+  it.each([
+    "tests/other/browser/unknown.spec.ts",
+    "tests/org-policy/workbench/browser/unknown.ts",
+    "tests/org-policy/workbench/browser/config.json",
+  ])("retains the full fallback for unowned browser-like input %s", (path) => {
+    const receipt = classifyCiImpact({ baseSha, headSha, changedPaths: [path], testFiles });
+    expect(receipt.fullSuite).toBe(true);
+    expect(receipt.fallbackReasons).toContain(`unknown-path:${path}`);
+  });
+
+  it("includes ECC callers when the shared MCP renderer changes", () => {
+    const consumers = [
+      "tests/ecc/mcp-explicit-add.test.ts",
+      "tests/ecc-profile/mcp-profile.test.ts",
+      "tests/ecc-profile/native-registration.test.ts",
+      "tests/ecc-profile/parity-receipt.test.ts",
+      "tests/mcp/render.test.ts",
+    ];
+    const receipt = classifyCiImpact({
+      baseSha,
+      headSha,
+      changedPaths: ["src/mcp/render.ts"],
+      testFiles: [...consumers, "tests/workspace/manifest.test.ts"],
+    });
+    expect(receipt.fullSuite).toBe(false);
+    expect(receipt.selectedTests).toEqual(expect.arrayContaining(consumers));
+    expect(receipt.selectedTests).not.toContain("tests/workspace/manifest.test.ts");
+    expect(receipt.operatingSystems).toEqual(["ubuntu-latest", "macos-latest", "windows-latest"]);
+    expect(validateCiImpactReceipt(receipt)).toEqual(receipt);
+  });
+
   it("writes the receipt and GitHub outputs from bounded git observations", async () => {
     const root = mkdtempSync(join(tmpdir(), "aih-ci-impact-command-"));
     const receiptPath = join(root, "receipt.json");
@@ -213,6 +273,60 @@ describe("CI impact classifier", () => {
         requiresPackedArtifact: true,
         requiresGenericBrowserJourneys: false,
       });
+    }
+  });
+
+  it.each(WORKBENCH_PROVIDER_OWNERSHIP)(
+    "routes $id provider test edits through their complete provider lane",
+    ({ id, testPath, sourceRoots }) => {
+      const providerTests = providerTestsFor([id]);
+      for (const changedPaths of [[testPath], ...sourceRoots.map((source) => [source, testPath])]) {
+        const receipt = classifyCiImpact({
+          baseSha,
+          headSha,
+          changedPaths,
+          testFiles: [...testFiles, ...providerTests],
+        });
+        expect(receipt).toMatchObject({
+          fullSuite: false,
+          testLane: "workbench",
+          affectedProviders: [id],
+          providerTests,
+          selectedTests: providerTests,
+          requiresPackedArtifact: true,
+          requiresGenericBrowserJourneys: false,
+        });
+        expect(() =>
+          validateCiImpactReceipt({ ...receipt, requiresGenericBrowserJourneys: true }),
+        ).toThrow("generic browser requirement");
+      }
+    },
+  );
+
+  it.each([
+    ["shared source", "src/org-policy/workbench/contracts.ts", false],
+    ["shared consumer test", "tests/org-policy/workbench/contracts.test.ts", false],
+    ["unknown provider", "src/org-policy/workbench/providers/future.ts", true],
+    ["unknown path", "future-surface/input.json", true],
+  ])("broadens a provider test edit mixed with %s", (_name, otherPath, fullSuite) => {
+    const providerTests = providerTestsFor(["ecc"]);
+    const receipt = classifyCiImpact({
+      baseSha,
+      headSha,
+      changedPaths: ["tests/org-policy/workbench/providers/ecc.test.ts", otherPath],
+      testFiles: [...testFiles, ...providerTests],
+    });
+    expect(receipt).toMatchObject({
+      fullSuite,
+      requiresPackedArtifact: true,
+      requiresGenericBrowserJourneys: true,
+    });
+    expect(() =>
+      validateCiImpactReceipt({ ...receipt, requiresGenericBrowserJourneys: false }),
+    ).toThrow("generic browser requirement");
+    if (fullSuite) {
+      expect(receipt.operatingSystems).toEqual(["ubuntu-latest", "macos-latest", "windows-latest"]);
+      expect(receipt.fallbackReasons.length).toBeGreaterThan(0);
     }
   });
 

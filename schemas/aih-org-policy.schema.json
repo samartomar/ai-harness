@@ -1088,13 +1088,17 @@
                           },
                           "targets": {
                             "minItems": 1,
-                            "maxItems": 3,
+                            "maxItems": 7,
                             "type": "array",
                             "items": {
                               "type": "string",
                               "enum": [
                                 "claude",
                                 "codex",
+                                "cursor",
+                                "copilot",
+                                "opencode",
+                                "kimi",
                                 "kiro"
                               ]
                             }
@@ -1582,13 +1586,17 @@
                           },
                           "targets": {
                             "minItems": 1,
-                            "maxItems": 3,
+                            "maxItems": 7,
                             "type": "array",
                             "items": {
                               "type": "string",
                               "enum": [
                                 "claude",
                                 "codex",
+                                "cursor",
+                                "copilot",
+                                "opencode",
+                                "kimi",
                                 "kiro"
                               ]
                             }
@@ -1703,13 +1711,17 @@
                       },
                       "targets": {
                         "minItems": 1,
-                        "maxItems": 3,
+                        "maxItems": 7,
                         "type": "array",
                         "items": {
                           "type": "string",
                           "enum": [
                             "claude",
                             "codex",
+                            "cursor",
+                            "copilot",
+                            "opencode",
+                            "kimi",
                             "kiro"
                           ]
                         }
@@ -2128,13 +2140,17 @@
                           },
                           "scope": {
                             "minItems": 1,
-                            "maxItems": 3,
+                            "maxItems": 7,
                             "type": "array",
                             "items": {
                               "type": "string",
                               "enum": [
                                 "claude",
                                 "codex",
+                                "cursor",
+                                "copilot",
+                                "opencode",
+                                "kimi",
                                 "kiro"
                               ]
                             }
@@ -3889,13 +3905,17 @@
                           },
                           "targets": {
                             "minItems": 1,
-                            "maxItems": 3,
+                            "maxItems": 7,
                             "type": "array",
                             "items": {
                               "type": "string",
                               "enum": [
                                 "claude",
                                 "codex",
+                                "cursor",
+                                "copilot",
+                                "opencode",
+                                "kimi",
                                 "kiro"
                               ]
                             }
@@ -4383,13 +4403,17 @@
                           },
                           "targets": {
                             "minItems": 1,
-                            "maxItems": 3,
+                            "maxItems": 7,
                             "type": "array",
                             "items": {
                               "type": "string",
                               "enum": [
                                 "claude",
                                 "codex",
+                                "cursor",
+                                "copilot",
+                                "opencode",
+                                "kimi",
                                 "kiro"
                               ]
                             }
@@ -4504,13 +4528,17 @@
                       },
                       "targets": {
                         "minItems": 1,
-                        "maxItems": 3,
+                        "maxItems": 7,
                         "type": "array",
                         "items": {
                           "type": "string",
                           "enum": [
                             "claude",
                             "codex",
+                            "cursor",
+                            "copilot",
+                            "opencode",
+                            "kimi",
                             "kiro"
                           ]
                         }
@@ -4929,13 +4957,17 @@
                           },
                           "scope": {
                             "minItems": 1,
-                            "maxItems": 3,
+                            "maxItems": 7,
                             "type": "array",
                             "items": {
                               "type": "string",
                               "enum": [
                                 "claude",
                                 "codex",
+                                "cursor",
+                                "copilot",
+                                "opencode",
+                                "kimi",
                                 "kiro"
                               ]
                             }

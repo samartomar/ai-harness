@@ -17,6 +17,7 @@ import {
   kiroMcpProjectionOwnership,
   managedMcpProjectionOwnership,
 } from "../../src/config/marker.js";
+import { GOVERNED_MCP_TARGETS, type GovernedMcpTarget } from "../../src/internals/cli-registry.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext, WriteAction } from "../../src/internals/plan.js";
 import { plan } from "../../src/internals/plan.js";
@@ -563,7 +564,7 @@ function reviewedMcpPolicy({
   allowedServers?: string[];
   disabledServers?: string[];
   serverId?: "code-review-graph" | "playwright" | "sequential-thinking";
-  targets?: ("claude" | "kiro")[];
+  targets?: GovernedMcpTarget[];
 } = {}) {
   const server = mcpServers("project", scanRepo(dir, { maxDepth: 8, contextDir: "ai-coding" }))[
     serverId
@@ -591,7 +592,9 @@ function reviewedMcpPolicy({
             capabilities: [],
             risks: [],
             source,
-            targets: ["claude", "kiro"],
+            targets: targets.some((target) => target !== "claude" && target !== "kiro")
+              ? [...GOVERNED_MCP_TARGETS]
+              : ["claude", "kiro"],
             projector: "mcp-managed-settings",
             lifecycle: "supported",
             evidence: { record: "ignored-self-assertion" },
@@ -606,6 +609,48 @@ function reviewedMcpPolicy({
 }
 
 describe("governed candidate projection", () => {
+  it.each(["codex", "cursor", "copilot", "opencode", "kimi"] as const)(
+    "projects and reconciles a %s-only governed MCP through its own receipt",
+    async (target) => {
+      const governed = reviewedMcpPolicy({
+        allowedServers: [],
+        disabledServers: [],
+        targets: [target],
+      });
+      const applied = ctx({ apply: true, targets: [target] });
+      const actions = await verifiedOrgPolicyProjectionActions(applied, governed);
+      expect(
+        actions.some((action) => action.kind === "write" && action.path !== ".aih-config.json"),
+      ).toBe(true);
+      await executePlan(plan(`governed ${target} MCP`, ...actions), applied);
+      const marker = JSON.parse(readFileSync(join(dir, ".aih-config.json"), "utf8"));
+      expect(Object.keys(marker.nativeMcpProjections)).toEqual([target]);
+      expect(marker.nativeMcpProjections[target]).toMatchObject({ state: "active", target });
+      expect(marker.managedMcpProjection).toBeUndefined();
+      expect(marker.kiroMcpProjection).toBeUndefined();
+      expect(await verifiedOrgPolicyProjectionActions(applied, governed)).toEqual([]);
+
+      writeFileSync(join(dir, "aih-org-policy.json"), JSON.stringify(governed));
+      const digest = await orgPolicyEffectiveDigest(applied);
+      expect(digest?.data).toMatchObject({ nativeMcpReceipts: { [target]: { state: "clean" } } });
+      expect(digest?.text).toContain(`${target} / workspace MCP distribution`);
+      expect(digest?.text).toContain("host consumption is not verified by this receipt");
+
+      const disabled = parseOrgPolicy({
+        ...governed,
+        governance: { ...governed.governance, activations: [] },
+      });
+      await executePlan(
+        plan(
+          `remove governed ${target} MCP`,
+          ...(await verifiedOrgPolicyProjectionActions(applied, disabled)),
+        ),
+        applied,
+      );
+      expect(await verifiedOrgPolicyProjectionActions(applied, disabled)).toEqual([]);
+    },
+  );
+
   it("keeps the exact Playwright runtime identity blocked while protected evidence is absent", async () => {
     writeFileSync(
       join(dir, "package.json"),
@@ -1888,7 +1933,7 @@ describe("governed candidate projection", () => {
     expect(report?.text).toContain("missing-projector");
     expect(report?.text).toContain("projector-disabled-at-vibe-posture");
     expect(report?.text).toContain(
-      "kiro / workspace MCP distribution; supported=claude,kiro; selected=kiro (this invocation); blocked",
+      "kiro / workspace MCP distribution; supported=claude,codex,cursor,copilot,opencode,kimi,kiro; selected=kiro (this invocation); blocked",
     );
   });
 

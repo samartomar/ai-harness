@@ -92,6 +92,8 @@ export interface WriteAction {
   expectScratch?: { absent: true } | { sha256: string };
   /** Recheck an unchanged expected file inside the filesystem transaction without rewriting it. */
   assertUnchanged?: boolean;
+  /** Root-relative paths that must remain unoccupied throughout every apply transaction. Never written. */
+  assertAbsentPaths?: readonly string[];
   /**
    * Allow this write to land OUTSIDE the target root (home/system files: PEM
    * bundles, shell profiles, VDI redirects). Repo-scoped writes leave this unset

@@ -1,5 +1,6 @@
 import {
   type CatalogBrowseFilters,
+  type CatalogBrowseInventory,
   catalogBrowse,
   catalogKindLabel,
   catalogSourceDisplayName,
@@ -156,7 +157,19 @@ export function mountWorkbench(
   options: WorkbenchMountOptions,
 ): MountedWorkbench {
   let state = options.initialState;
-  const groups = sourceGroups(options.bundle);
+  // Retain the complete bundle for saved-policy round trips. Ponytail is no
+  // longer offered by the catalog UI; this projection carries no authority.
+  const browseInventory: CatalogBrowseInventory = {
+    sources: Object.fromEntries(
+      Object.entries(options.bundle.sources).filter(([id]) => id !== "source:ponytail"),
+    ),
+    assets: Object.fromEntries(
+      Object.entries(options.bundle.assets).filter(
+        ([, asset]) => asset.sourceId !== "source:ponytail",
+      ),
+    ),
+  };
+  const groups = sourceGroups(options.bundle).filter((group) => browseInventory.sources[group.id]);
   const teardown = new AbortController();
   const draftSummary = document.createElement("section");
   const draftSummaryHeading = document.createElement("h2");
@@ -1163,7 +1176,7 @@ export function mountWorkbench(
   const renderInventory = (): void => {
     if (filtersState.sourceId === undefined && groups[0] !== undefined)
       filtersState = { ...filtersState, sourceId: groups[0].id, page: 0 };
-    const browse = catalogBrowse(options.bundle, filtersState);
+    const browse = catalogBrowse(browseInventory, filtersState);
     renderBrowseResults(browse);
   };
   const previewList = (assetIds: readonly string[]): string => {
@@ -1278,6 +1291,11 @@ export function mountWorkbench(
     }
     const activeSourceId = filtersState.sourceId;
     const available = Object.values(options.bundle.templates)
+      .filter((template) =>
+        [...template.roots.map((entry) => entry.assetId), ...template.exclusions].every(
+          (assetId) => browseInventory.assets[assetId],
+        ),
+      )
       .filter(
         (template) =>
           activeSourceId === undefined ||

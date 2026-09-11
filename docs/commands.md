@@ -1003,19 +1003,21 @@ identity Core verifies. A relative `--policy` value resolves from the target roo
 over the environment variable, and a missing selected file fails closed rather than falling back to the
 default filename. For
 Claude this includes `.claude/managed-settings.json` and, at enterprise posture, the two system-path
-examples; selected Kiro reviewed stdio MCP candidates are distributed separately to
-`.kiro/settings/mcp.json`. An active
+examples. Selected reviewed stdio MCP candidates also have receipt-owned workspace
+distribution for Codex, Cursor, Copilot CLI, OpenCode V1, Kimi Code, and Kiro; see
+[governed MCP targets and compatibility](governed-mcp.md) for the native paths and limits. An active
 AIH-owned `usage-metering` policy hook may also project to the selected Claude or Codex host through
 the existing host-specific generator. A policy may separately declare `governance.eccHookControls`; for a Claude target, projection merges only receipt-owned `ECC_HOOK_PROFILE` and `ECC_DISABLED_HOOKS` values into `.claude/settings.json.env`, preserves every operator sibling, refuses unreceipted collisions or drift, and shares one content-pinned settings snapshot with the hook registrar. ECC—not AIH—executes and enforces those controls after process spawn, so a disabled hook still incurs one spawn.
 It does not run `aih init`, regenerate the canon, or modify unrelated settings. The managed settings/MCP
-portion is a Claude projection: it writes only when Claude is selected (the default); `--cli cursor`,
-for example, produces no managed-settings projection. When managed-only MCP is active, it records existing AIH ownership provenance in
+file is a Claude projection: it writes only when Claude is selected (the default).
+Other governed MCP targets receive their own workspace configuration rather than a Claude
+managed-settings file. When managed-only MCP is active, it records existing AIH ownership provenance in
 `.aih-config.json` so later deactivation can remove only the exact generated values. It refuses a
 configuration write when `AIH_ORG_POLICY` selects an ordinary override; previewing without `--apply`
 remains inspectable. The only external mutation source is the exact protected PolicyBundle V2 that
 Core has verified for the same path, and its bytes remain pinned through the transaction.
 
-New Claude and Kiro MCP ownership records are always strict schema V2 and bind the exact effective
+New governed MCP ownership records are always strict schema V2 and bind the exact effective
 decision identity for their own surface. New usage-hook ownership records are always V3 and bind the
 same decision facts plus the policy version under a domain-separated self-digest. The persisted
 records are comparison and rollback evidence, never authority: freshly verified organization
@@ -1714,15 +1716,27 @@ endpoints → `{ usage_report, skills }`).
 
 Generate the MCP server config **for the targeted CLIs** (`--cli`/`--all-tools`/`--detect`;
 otherwise the committed `.aih-config.json` targets, then Claude on a first run):
-Claude/Kimi share `.mcp.json`, Cursor uses `.cursor/mcp.json`, and Kiro uses
+Claude uses `.mcp.json`, Kimi Code uses `.kimi-code/mcp.json`, Cursor uses `.cursor/mcp.json`, and Kiro uses
 `.kiro/settings/mcp.json`; Codex gets native TOML in `~/.codex/config.toml` (including
 `bearer_token_env_var` for token auth), OpenCode gets its global
-`~/.config/opencode/opencode.json` `mcp` map, and Copilot/Zed or other global-config entries get
-their registry-specific native writes or guidance. Global config targets are selected only through
+`~/.config/opencode/opencode.json` V1 `mcp` map, and Copilot CLI uses `.github/mcp.json`
+with `mcpServers` (its CLI does not consume VS Code's `.vscode/mcp.json`). Zed and other
+global-config entries get their registry-specific native writes or guidance. Global config targets are selected only through
 an explicit flag or a committed marker; `--apply` can affect that CLI across all projects. Scopes:
-local/project/remote. For locked-down orgs,
-`--mode offline` (vendored local-command servers) or `--mode none` (no MCP + a CLI-tool fallback)
-plus a `managed-mcp.json` admin template. Enterprise org policy can also tune the hosted GitHub
+local/project/remote. `--mode offline` selects stdio servers and uses the same native
+paths, environment translation and preservation rules as standard generation for
+every selected CLI. Vendor package launchers before blocking egress; preserved
+operator-owned servers must be reviewed separately. `--mode none` emits CLI-tool
+fallback guidance and leaves active host configuration unchanged. Both modes emit
+a `managed-mcp.json.example` administrator template only when Claude is selected;
+deploying that template is a separate administrative step.
+
+Codex stdio environment references become `env_vars`; Cursor uses `${env:NAME}`,
+and OpenCode uses `{env:NAME}`. Copilot CLI and Kimi Code environment mappings with
+no supported native representation are refused before configuration is written.
+The plan reports feature support and host requirements separately from runtime
+acceptance. See [governed MCP configuration](governed-mcp.md) for the scope and
+verification differences. Enterprise org policy can also tune the hosted GitHub
 MCP entry: `mcp.incumbentHosts` declares which vendor hosts are reachable/incumbent,
 `mcp.githubHost` points at a GHES or internal GitHub MCP origin, and `mcp.disabledServers`
 can remove `github` entirely. Without committed org policy, the legacy github.com default remains

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { GOVERNED_MCP_TARGETS } from "../../src/internals/cli-registry.js";
 import {
   POLICY_AUTHORITY_RECEIPT_FIELD_CONSUMERS,
   policyAuthorityReceiptLeafPaths,
@@ -188,7 +189,7 @@ describe("headless effective org policy", () => {
       resolutionReasons: ["projector-disabled-at-vibe-posture"],
       projection: {
         requestedTargets: ["kiro"],
-        supportedTargets: ["claude", "kiro"],
+        supportedTargets: [...GOVERNED_MCP_TARGETS],
         availableTargets: ["kiro"],
         coverage: "blocked",
         ownership: "unavailable",
@@ -311,7 +312,7 @@ describe("headless effective org policy", () => {
       /built-in MCP candidate id must exactly match source.server/,
     );
     expect(() => resolve(candidate({ targets: ["codex"] }), ["codex"])).toThrow(
-      /MCP managed-settings candidates support Claude targets only/,
+      /no projector for the organization-sanctioned CLI set claude/,
     );
     for (const [label, item, targets] of [
       ["projector", candidate({ projector: "usage-hook" }), ["claude"]],

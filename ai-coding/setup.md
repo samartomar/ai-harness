@@ -48,9 +48,15 @@ assigned task; normal reruns retain and verify the installed plugin.
 
 ## Work and verification
 
-- Fast product checks: `npm run typecheck`, `npm test`, `npm run build`, and
-  `npm run lint`.
-- Full product completion gate: `npm run verify`.
+- Editing loop: run the focused Vitest files for the changed behavior.
+- Routine local completion gate:
+  `npm run verify:local -- --base origin/main --head HEAD --include-working`.
+  Add `--plan` to inspect selection without running checks. Supply the intended
+  base/head refs; omit `--include-working` only for a clean checkout.
+- Browser/provider lanes require pinned Chromium:
+  `npx --no-install playwright install chromium`. Local results leave the printed
+  hosted OS, CodeQL, and protected-check gaps for CI.
+- Deliberate full validation: `npm run verify`; release acceptance remains separate.
 - Sensitive path-name check: `git ls-files -- ".env" ".env.*" "secrets/**"`.
 - Self-hosting check: `npm run check:self-hosting-canon`.
 - Treat the root as one npm package. Pinned `uv` manifests under `tools/` are

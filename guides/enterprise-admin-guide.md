@@ -493,6 +493,10 @@ aih capability resolve --posture enterprise --apply
 aih capability prune --apply
 ```
 
+The built-in security-review, TDD and Node/TypeScript capabilities support the
+reviewed Core 0.5, 0.6 and 0.7 lines. Enterprise decisions still require approval;
+an unreviewed Core minor line fails closed instead of assuming compatibility.
+
 Approve and distribute governed skills:
 
 ```console

@@ -139,7 +139,7 @@ function surfaceReceiptFor(
       candidate.projection.requestedTargets.flatMap((target) => {
         if (target === "claude") return [[target, receipts.mcp.state]];
         if (target === "kiro") return [[target, receipts.kiro.state]];
-        return [];
+        return [[target, receipts.native?.[target]?.state ?? "unavailable"]];
       }),
     );
     const states = [...new Set(Object.values(targets))];

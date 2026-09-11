@@ -1,7 +1,12 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { SHARED_MARKER, sharedCanonicalBlockBody } from "../bootstrap-ai/canon.js";
-import { readAihConfig } from "../config/marker.js";
+import { NATIVE_MCP_TARGETS, type NativeMcpTarget, readAihConfig } from "../config/marker.js";
+import {
+  type CliCapabilities,
+  cliCapabilities,
+  cliCapabilitySummary,
+} from "../internals/cli-capabilities.js";
 import { detectClisByConfig, homeDir } from "../internals/cli-detect.js";
 import { entry } from "../internals/cli-registry.js";
 import { type Cli, resolveClis, SUPPORTED_CLIS } from "../internals/clis.js";
@@ -9,6 +14,11 @@ import { readIfExists } from "../internals/fsxn.js";
 import { extractManagedBlock } from "../internals/markers.js";
 import { type DigestAction, digest, type PlanContext } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
+import {
+  nativeMcpProjectionOnDisk,
+  nativeMcpProjectionPath,
+  nativeMcpProjectionState,
+} from "../mcp/native-managed-projection.js";
 import { isExternalMcp, mcpConfigAbs, tomlServerCount } from "../mcp/render.js";
 import { staleAdvisory, stalePruneSet } from "../prune/detect.js";
 import { type CliLoadability, loadabilityFor, loadReason } from "./cli-loadability.js";
@@ -25,8 +35,7 @@ import { remediationBlock } from "./render.js";
  * Four cell states, three of which the legacy boolean conflated:
  *  - `wired`   — the tool's own artifact exists AND carries the expected content;
  *  - `missing` — aih can write it, but it isn't there (a real gap → graded);
- *  - `manual`  — aih intentionally does NOT write it (`fallback` MCP: TOML,
- *                a global path, or a different server shape) — guidance only, so
+ *  - `manual`  — aih intentionally does NOT write an unsupported shape — guidance only, so
  *                file existence is not a fair signal → NOT graded;
  *  - `na`      — the tool has no such capability (e.g. settings for non-Claude).
  *
@@ -50,6 +59,14 @@ export interface CliCell {
   scope?: "repo" | "global";
   /** MCP-cell only: configured server count (a `~/.codex` global with 16 ≠ a repo `.mcp.json` with 5). */
   count?: number;
+  /** Other observed configuration scopes, without a competing repair command. */
+  otherScopes?: Array<{
+    scope: "global";
+    state: CellState;
+    path?: string;
+    count?: number;
+    detail: string;
+  }>;
 }
 
 export interface CliCoverageRow {
@@ -62,6 +79,8 @@ export interface CliCoverageRow {
   settings: CliCell;
   /** Will the (present) bootloader actually load + route to canon? (Phase 1.5) */
   load: CliLoadability;
+  /** Feature support is separate from wiring and host runtime acceptance. */
+  capabilities?: CliCapabilities;
 }
 
 /** Which arm of the target-resolution precedence won — surfaced to the user. */
@@ -240,6 +259,49 @@ function serverCount(raw: string, key: string): number {
  * never graded). Pure fs reads.
  */
 function mcpCell(ctx: PlanContext, cli: Cli): CliCell {
+  if ((NATIVE_MCP_TARGETS as readonly string[]).includes(cli)) {
+    const target = cli as NativeMcpTarget;
+    const projection = nativeMcpProjectionState(ctx.root, target);
+    if (projection.state !== "absent") {
+      const path = nativeMcpProjectionPath(target);
+      const generic = genericMcpCell(ctx, cli);
+      const otherScopes =
+        generic.scope === "global"
+          ? [
+              {
+                scope: "global" as const,
+                state: generic.state,
+                path: generic.path,
+                count: generic.count,
+                detail: generic.detail,
+              },
+            ]
+          : undefined;
+      if (projection.state === "clean") {
+        const owned = nativeMcpProjectionOnDisk(ctx.root, target);
+        return {
+          state: "wired",
+          path,
+          scope: "repo",
+          otherScopes,
+          count: Object.keys(owned?.ownership.expected.entries ?? {}).length,
+          detail: `${path}: ${projection.detail}; project configuration only, runtime consumption unverified`,
+        };
+      }
+      return {
+        state: "missing",
+        path,
+        scope: "repo",
+        otherScopes,
+        detail: `${projection.detail}; review the verified policy and resolve ownership conflicts before applying`,
+        fix: "aih policy project",
+      };
+    }
+  }
+  return genericMcpCell(ctx, cli);
+}
+
+function genericMcpCell(ctx: PlanContext, cli: Cli): CliCell {
   const e = entry(cli);
   const m = e.mcp;
   if (m.support === "absent" || !m.configPath || !m.configKey) {
@@ -331,6 +393,7 @@ function buildRow(ctx: PlanContext, cli: Cli, targeted: boolean): CliCoverageRow
     mcp: mcpCell(ctx, cli),
     settings: settingsCell(ctx, cli),
     load: loadabilityFor(ctx, cli),
+    capabilities: cliCapabilities(cli),
   };
 }
 
@@ -436,6 +499,20 @@ export function renderCliCoverage(model: CliCoverageModel): string {
     "",
     `  TARGETED — ${model.structurallyConfigured}/${model.totalTargeted} configured, ${model.provenLoadable}/${model.totalTargeted} proven loadable`,
     ...targeted.map(rowLine),
+    ...targeted.flatMap(
+      (row) =>
+        row.mcp.otherScopes?.map(
+          (scope) => `  ${row.cli} additional ${scope.scope} configuration: ${scope.detail}`,
+        ) ?? [],
+    ),
+    "",
+    "  Feature support — independent of installed configuration:",
+    ...targeted.map((row) => `  ${cliCapabilitySummary(row.cli, row.capabilities)}`),
+    "",
+    "  Host requirements:",
+    ...targeted.flatMap((row) =>
+      (row.capabilities?.requirements ?? []).map((requirement) => `  ${row.cli}: ${requirement}`),
+    ),
     ...(other.length > 0 ? ["", "  ALSO INSTALLED (not targeted)", ...other.map(rowLine)] : []),
     "",
     ...remediationBlock("  To close the gaps — copy any line:", fixes),

@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { cliCapabilities } from "../../src/internals/cli-capabilities.js";
 import { digest, type PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner, type Runner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
@@ -274,6 +275,10 @@ describe("reportHtml — single bento + new panels", () => {
             cli: "claude",
             label: "Claude Code",
             targeted: true,
+            capabilities: {
+              ...cliCapabilities("claude"),
+              requirements: ["fixture <host> approval required"],
+            },
             bootloader: { state: "wired", path: "CLAUDE.md", detail: "in sync" },
             mcp: { state: "wired", path: ".mcp.json", detail: "1 server(s)" },
             settings: { state: "wired", path: ".claude/settings.json", detail: "present" },
@@ -312,6 +317,10 @@ describe("reportHtml — single bento + new panels", () => {
     expect(html).toContain("CLIs installed"); // machine-detection KPI (renamed)
     // per-CLI wiring matrix: a row per tool, four-state cells, dual KPI
     expect(html).toContain('class="cli-matrix"');
+    expect(html).toContain("Feature support and host requirements");
+    expect(html).toContain("governed usage supported");
+    expect(html).toContain("fixture &lt;host&gt; approval required");
+    expect(html).not.toContain("fixture <host> approval required");
     expect(html).toContain("tools wired"); // structural-config KPI tile
     expect(html).toContain('class="cli-cell ok"'); // wired cell (green)
     expect(html).toContain(">✓ CLAUDE.md</span>"); // claude bootloader wired (plain, no fix)

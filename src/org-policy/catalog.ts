@@ -2,7 +2,12 @@ import { createHash } from "node:crypto";
 import { eccBaselineCatalogV1 } from "../baseline-evidence/catalog-providers/ecc.js";
 import { superpowersBaselineCatalogV1 } from "../baseline-evidence/catalog-providers/superpowers.js";
 import { readVendorBaselineLock } from "../baseline-evidence/vendor.js";
-import { CLI_REGISTRY, REGISTRY_IDS } from "../internals/cli-registry.js";
+import {
+  CLI_REGISTRY,
+  GOVERNED_MCP_TARGETS,
+  GOVERNED_USAGE_TARGETS,
+  REGISTRY_IDS,
+} from "../internals/cli-registry.js";
 import { mcpApprovalSubject } from "../mcp/policy.js";
 import { type McpServer, mcpServers } from "../mcp/servers.js";
 import { usageRecorderScript } from "../usage/capture.js";
@@ -77,9 +82,8 @@ export type {
 export { POLICY_AUTHORING_ASSET_KINDS } from "./catalog-provider-types.js";
 /**
  * Every AI CLI this build knows, and whether an org policy can project onto it.
- * AIH's registry carries eleven; `PolicyTargetSchema` carries three. Stating that
- * asymmetry is the point: an administrator who sees only Claude, Codex, and Kiro has
- * no way to tell whether the others are unknown or merely unprojectable.
+ * Host recognition and projection capabilities are separate: a known host may
+ * have no governed projector, and hook targets remain narrower than MCP targets.
  */
 export interface PolicyAuthoringHost {
   id: string;
@@ -90,7 +94,7 @@ export interface PolicyAuthoringHost {
 }
 
 export function policyAuthoringHosts(): PolicyAuthoringHost[] {
-  const targets = new Set(["claude", "codex", "kiro"]);
+  const targets = new Set<string>(GOVERNED_MCP_TARGETS);
   return REGISTRY_IDS.map((id) => {
     const cli = CLI_REGISTRY[id];
     if (cli === undefined) throw new Error(`cli registry is missing ${id}`);
@@ -270,7 +274,7 @@ function usageMeteringControl(): AihPolicyControl {
     id: "usage-metering",
     kind: "hook",
     source: { type: "hook", handler: "usage-metering", scriptDigest },
-    targets: ["claude", "codex"],
+    targets: [...GOVERNED_USAGE_TARGETS],
     projector: "usage-hook",
     lifecycle: "supported",
   };
@@ -315,7 +319,7 @@ export function aihPolicyControls(
                 server: id,
                 subject: mcpApprovalSubject(server),
               },
-              targets: ["claude", "kiro"] as ("claude" | "kiro")[],
+              targets: [...GOVERNED_MCP_TARGETS].sort(),
               projector: "mcp-managed-settings" as const,
               lifecycle: "supported" as const,
             },
