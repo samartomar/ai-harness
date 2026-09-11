@@ -378,6 +378,13 @@ nor those raw files; it validates protected machine-local receipts. Unrelated
 source trust additions do not invalidate an accepted source. Changes to its
 applicable signer scope or publisher policy require re-verification.
 
+On Windows, local-receipt initialization uses direct .NET ACL constructors
+without PowerShell module autoload. Core still requires the current user's
+ownership, protected inheritance, and allow rules restricted to that user's SID;
+each ACL process has a 15-second deadline. The native regression in
+`tests/org-policy/workbench/source-data-local-receipt-acl.test.ts` initializes
+with module loading disabled and verifies refusal after actual ACL tampering.
+
 Saved policies retain their exact source revisions and content pins. A new
 revision does not silently move a saved selection. Back up the signed snapshots,
 referenced proof files, exact source material, and public trust configuration.
