@@ -115,7 +115,7 @@ describe("ai-harness self-hosting boundary", () => {
     expect(windows.strategy.matrix.shard).toEqual([1, 2]);
     expect(windows["runs-on"]).toBe("windows-latest");
     expect(windows.steps.map((step) => step.run)).toContain(
-      `npx vitest run --maxWorkers=2 --testTimeout=15000 --shard=${githubExpression("matrix.shard")}/2`,
+      `npx vitest run --maxWorkers=1 --testTimeout=15000 --shard=${githubExpression("matrix.shard")}/2`,
     );
     expect(aggregate.name).toBe(`verify (${githubExpression("matrix.os")})`);
     expect(aggregate.if).toBe(githubExpression("always()"));
