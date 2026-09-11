@@ -918,6 +918,7 @@ describe("FsTransaction", () => {
         path: target,
         contents: "generated",
         backup,
+        backupSha256: createHash("sha256").update("original").digest("hex"),
         created: false,
         parentGuard: { directories: [{ path: parent, dev: stats.dev, ino: stats.ino }] },
       },
@@ -959,6 +960,7 @@ describe("FsTransaction", () => {
         path: target,
         contents: "generated",
         backup,
+        backupSha256: createHash("sha256").update("original").digest("hex"),
         created: false,
         parentGuard: { directories: [{ path: parent, dev: stats.dev, ino: stats.ino }] },
       },
@@ -1005,6 +1007,51 @@ describe("FsTransaction", () => {
     expect(preserved).toEqual([target]);
     expect(readFileSync(target, "utf8")).toBe("operator edit\n");
     expect(readFileSync(backup, "utf8")).toBe("before\n");
+  });
+
+  it.each(["changed", "removed"])(
+    "preserves the live file when its rollback backup is %s",
+    (change) => {
+      const target = join(dir, "managed.json");
+      const second = join(dir, "second.json");
+      writeFileSync(target, "original");
+      fsEvents.afterTempWrite = (path) => {
+        if (path !== `${second}.aih.tmp`) return;
+        if (change === "changed") writeFileSync(`${target}.aih.bak`, "changed backup");
+        else rmSync(`${target}.aih.bak`);
+        throw new Error("later write failed");
+      };
+      const transaction = new FsTransaction();
+      transaction.stage(target, "generated", undefined, undefined, { root: dir });
+      transaction.stage(second, "second", undefined, undefined, { root: dir });
+
+      expect(() => transaction.commit()).toThrow(/preserved concurrent changes/);
+      expect(readFileSync(target, "utf8")).toBe("generated");
+      if (change === "changed")
+        expect(readFileSync(`${target}.aih.bak`, "utf8")).toBe("changed backup");
+      expect(existsSync(second)).toBe(false);
+    },
+  );
+
+  it("refuses a backup changed after rollback has read its original bytes", () => {
+    const target = join(dir, "managed.json");
+    const backup = `${target}.aih.bak`;
+    writeFileSync(target, "generated");
+    writeFileSync(backup, "original");
+    fsEvents.afterRollbackTempWrite = () => writeFileSync(backup, "later change");
+    const preserved = rollbackAppliedWrites([
+      {
+        path: target,
+        contents: "generated",
+        backup,
+        backupSha256: createHash("sha256").update("original").digest("hex"),
+        created: false,
+      },
+    ]);
+    expect(preserved).toEqual([target]);
+    expect(readFileSync(target, "utf8")).toBe("generated");
+    expect(readFileSync(backup, "utf8")).toBe("later change");
+    expect(existsSync(`${target}.aih.rollback.tmp`)).toBe(false);
   });
 
   it("dedupes repeated writes to one target so rollback restores the ORIGINAL", () => {
@@ -1394,10 +1441,13 @@ describe("FsTransaction — bounded property model", () => {
           });
 
           const preserved = rollbackAppliedWrites(
-            applied.map(({ path, generated, backup, existed }) => ({
+            applied.map(({ path, initial, generated, backup, existed }) => ({
               path,
               contents: generated,
               backup: existed ? backup : undefined,
+              backupSha256: existed
+                ? createHash("sha256").update(initial).digest("hex")
+                : undefined,
               created: !existed,
             })),
           );

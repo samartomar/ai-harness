@@ -125,6 +125,21 @@ function eventEvidence(events) {
   return { initialized: methods.has("initialize"), catalogRequested: methods.has("tools/list"), toolCalled: methods.has("tools/call"), nonceVerified: events.length > 0 && events.every((event) => event.nonceVerified === true) };
 }
 
+export function hostVerdict(target, evidence, probe) {
+  // Protocol requests can precede a host failure. They are never a successful
+  // native catalog observation, even when the fixture nonce matches.
+  if (probe.error || probe.protocolError || probe.protocolErrorCode !== undefined || (probe.code !== undefined && probe.code !== null && probe.code !== 0)) return { status: "failed", reason: "host-probe-failed" };
+  if (probe.unavailable || probe.timeout) return { status: "unavailable", reason: probe.unavailable ?? "host-probe-timeout" };
+  if (probe.code !== 0) return { status: "unavailable", reason: "host-probe-success-not-proved" };
+  if (!evidence.initialized) return { status: "unavailable", reason: "host-did-not-initialize-configured-fixture" };
+  if (!evidence.catalogRequested || !evidence.nonceVerified) return { status: "failed", reason: "fixture-handshake-incomplete-or-nonce-mismatch" };
+  if (probe.catalogVisible !== true) return { status: "unavailable", reason: "native-tool-discovery-not-proved" };
+  if (evidence.initialized && evidence.catalogRequested && evidence.nonceVerified) {
+    if (target === "claude") return { status: "unavailable", nativeDefinitionStatus: "passed", reason: "native-definition-connected; governed-system-path-consumption-not-proved" };
+    return { status: "passed", reason: "real-host-file-loaded-MCP-handshake-catalog-and-nonce" };
+  }
+}
+
 async function projectFixture(target, options) {
   const { plan } = await import("../src/internals/plan.ts");
   const { executePlan } = await import("../src/internals/execute.ts");
@@ -269,7 +284,7 @@ async function copilotAcpProbe(launch, options) {
       // Opening a session is the final request. Never send session/prompt.
       const deadline = Date.now() + options.timeout;
       while (Date.now() < deadline && running.child.exitCode === null) {
-        if (eventEvidence(eventsAt(options.eventPath)).catalogRequested) return { code: 0, localSessionOnly: true };
+        if (eventEvidence(eventsAt(options.eventPath)).catalogRequested) return { code: 0, catalogVisible: false, unavailable: "copilot-native-tool-discovery-not-proved", localSessionOnly: true };
         await new Promise((done) => setTimeout(done, 100));
       }
       return { unavailable: "copilot-ACP-session-did-not-initialize-file-configured-fixture", localSessionOnly: true };
@@ -363,12 +378,7 @@ export async function verifyTarget(target, fixtureBase, timeout = 15000) {
     }
     const events = eventsAt(eventPath);
     result.evidence = { ...eventEvidence(events), catalogVisible: Boolean(probe.catalogVisible), methods: [...new Set(events.map((event) => event.method))] };
-    if (result.evidence.initialized && result.evidence.catalogRequested && result.evidence.nonceVerified) {
-      result.status = "passed"; result.reason = "real-host-file-loaded-MCP-handshake-catalog-and-nonce";
-      if (target === "claude") { result.status = "unavailable"; result.nativeDefinitionStatus = "passed"; result.reason = "native-definition-connected; governed-system-path-consumption-not-proved"; }
-    } else if (probe.unavailable || probe.timeout || !result.evidence.initialized) {
-      result.reason = probe.unavailable ?? (probe.timeout ? "host-probe-timeout" : "host-did-not-initialize-configured-fixture");
-    } else { result.status = "failed"; result.reason = "fixture-handshake-incomplete-or-nonce-mismatch"; }
+    Object.assign(result, hostVerdict(target, result.evidence, probe));
     return result;
   } catch (error) {
     const site = String(error.stack ?? "").split("\n").find((line) => /^\s+at /.test(line));

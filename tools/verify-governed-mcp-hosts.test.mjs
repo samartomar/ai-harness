@@ -5,7 +5,28 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { assertContained, isolatedEnvironment } from "./verify-governed-mcp-hosts.mjs";
+import { assertContained, isolatedEnvironment, hostVerdict } from "./verify-governed-mcp-hosts.mjs";
+
+const completeEvidence = { initialized: true, catalogRequested: true, nonceVerified: true };
+for (const target of ["claude", "codex", "cursor", "copilot", "opencode", "kimi", "kiro"]) {
+  test(`${target}: failed probes and request-only evidence cannot pass`, () => {
+    for (const probe of [
+      { code: 1, catalogVisible: true },
+      { timeout: true, catalogVisible: true },
+      { unavailable: "authentication-required", catalogVisible: true },
+      { code: 0, protocolError: true, catalogVisible: true },
+      { code: 0, catalogVisible: false },
+      { code: null, catalogVisible: true },
+    ]) {
+      const verdict = hostVerdict(target, completeEvidence, probe);
+      assert.notEqual(verdict.status, "passed");
+      assert.notEqual(verdict.nativeDefinitionStatus, "passed");
+    }
+    assert.notEqual(hostVerdict(target, { ...completeEvidence, nonceVerified: false }, { code: 0, catalogVisible: true }).status, "passed");
+    assert.notEqual(hostVerdict(target, { ...completeEvidence, initialized: false }, { code: 0, catalogVisible: true }).status, "passed");
+    assert.equal(hostVerdict(target, completeEvidence, { code: 0, catalogVisible: true }).status, target === "claude" ? "unavailable" : "passed");
+  });
+}
 
 test("child environment excludes credentials and leaves the caller unchanged", () => {
   const original = Object.freeze({ HOME: "private-home", CODEX_HOME: "private-codex", API_KEY: "private-key", PATH: "runtime-path", NODE_OPTIONS: "untrusted-loader", HTTP_PROXY: "private-proxy" });

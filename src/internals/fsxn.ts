@@ -83,6 +83,8 @@ export interface AppliedWrite {
   path: string;
   contents: string;
   backup?: string;
+  /** Pin the original bytes before replacing the live file; backups remain mutable. */
+  backupSha256?: string;
   created: boolean;
   parentGuard?: ParentGuard;
 }
@@ -1042,7 +1044,11 @@ export class FsTransaction {
         });
         if (w.expectScratch === undefined) clearExpectedScratch();
         let backup: string | undefined;
+        let backupSha256: string | undefined;
         if (existed) {
+          const original = readRegularFile(w.path);
+          if (original === undefined) throw new FsTxnError("write baseline is not a regular file");
+          backupSha256 = createHash("sha256").update(original).digest("hex");
           backup = backupPath;
           // Reads the just-written source; retry the transient Windows scanner lock.
           this.guardParents(w.path, w.root, false);
@@ -1051,6 +1057,13 @@ export class FsTransaction {
             this.assertCommitDeadline();
             return copyFileSync(w.path, backupPath, fsConstants.COPYFILE_EXCL);
           });
+          const saved = readRegularFile(backupPath);
+          if (
+            saved === undefined ||
+            createHash("sha256").update(saved).digest("hex") !== backupSha256
+          ) {
+            throw new FsTxnError("write backup changed before commit");
+          }
         }
         this.guardParents(w.path, w.root, false);
         this.assertCommitDeadline();
@@ -1077,6 +1090,7 @@ export class FsTransaction {
           path: w.path,
           contents: w.contents,
           backup,
+          backupSha256,
           created: !existed,
           parentGuard,
         });
@@ -1502,7 +1516,7 @@ export function rollbackAppliedWrites(
         } else if (current === a.contents) {
           preserved.push(a.path);
         } else if (current !== undefined) preserved.push(a.path);
-      } else if (a.backup && existsSync(a.backup)) {
+      } else {
         if (current === a.contents && restoreOverwrittenWrite(a, assertCanMutate)) {
           continue;
         }
@@ -1522,11 +1536,15 @@ export function rollbackAppliedWrites(
  * rename and a swapped leaf is preserved rather than followed.
  */
 function restoreOverwrittenWrite(applied: AppliedWrite, assertCanMutate: () => void): boolean {
-  if (applied.backup === undefined) return false;
+  if (applied.backup === undefined || applied.backupSha256 === undefined) return false;
   if (!parentGuardMatches(applied.parentGuard)) return false;
   const backup = readRegularFile(applied.backup);
   if (!parentGuardMatches(applied.parentGuard)) return false;
-  if (backup === undefined) return false;
+  if (
+    backup === undefined ||
+    createHash("sha256").update(backup).digest("hex") !== applied.backupSha256
+  )
+    return false;
   const tmpPath = `${applied.path}.aih.rollback.tmp`;
   if (!clearRollbackScratch(tmpPath, applied.parentGuard, assertCanMutate)) return false;
   try {
@@ -1543,6 +1561,12 @@ function restoreOverwrittenWrite(applied: AppliedWrite, assertCanMutate: () => v
     const final = lstatSafe(applied.path);
     if (final === undefined || final.isSymbolicLink()) return false;
     if (readFileSync(applied.path, "utf8") !== applied.contents) return false;
+    const finalBackup = readRegularFile(applied.backup);
+    if (
+      finalBackup === undefined ||
+      createHash("sha256").update(finalBackup).digest("hex") !== applied.backupSha256
+    )
+      return false;
     if (!parentGuardMatches(applied.parentGuard)) return false;
     assertCanMutate();
     renameSync(tmpPath, applied.path);
@@ -1550,6 +1574,7 @@ function restoreOverwrittenWrite(applied: AppliedWrite, assertCanMutate: () => v
     if (
       backupInfo !== undefined &&
       !backupInfo.isSymbolicLink() &&
+      readRegularFile(applied.backup)?.equals(backup) === true &&
       parentGuardMatches(applied.parentGuard)
     ) {
       assertCanMutate();
