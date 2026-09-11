@@ -2,419 +2,414 @@
   "schemaVersion": "aih-enterprise-change-manifest-v1",
   "package": {
     "name": "@aihq/core",
-    "fromVersion": "0.5.0",
-    "version": "0.6.1"
+    "fromVersion": "0.6.1",
+    "version": "0.6.2"
   },
   "tracker": {
     "repository": "samartomar/ai-harness",
-    "issueNumber": 987
+    "issueNumber": 1009
   },
   "decisionUnit": {
-    "id": "governed-workbench-authoring-core",
-    "cohort": "Enterprise administrators and developers reviewing exact source-bound AI tooling policy; release maintainers supplying verifiable Core artifacts.",
-    "outcome": "Author reviewable offline policy intent across source providers while preserving exact evidence, target constraints and distinct qualification/publication/acceptance/promotion authority.",
+    "id": "governed-native-mcp-delivery",
+    "cohort": "Administrators and developers using governed MCP across supported CLI clients, and maintainers qualifying Core releases.",
+    "outcome": "Use native governed MCP configuration across seven CLI targets with exact approval scope, ownership-aware lifecycle behavior and honest host acceptance evidence.",
     "includedChanges": [
-      "Schema-v3 normalized Workbench authoring with Core0.6 minimum feature floor.",
-      "Source-provider separation and exact saved ECC runtime data; canonical upstream evidence binding.",
-      "Pinned Matt Pocock and Ponytail catalog additions, readable scan metadata and source browsing.",
-      "Requested AIH MCP intent, target intersection and withheld unverified legacy authority.",
-      "Scanner publication consumption and bounded analyzer/toolchain security updates.",
-      "Candidate-first enterprise delivery and exact public installed acceptance.",
-      "Documented npm user-owned prefix recovery for global installation permission failures.",
-      "Explicit reviewed Core 0.5.x and 0.6.x built-in capability compatibility, preserving enterprise approval and refusal of unreviewed minor lines.",
-      "Fix-forward release packet staging preserves exact enterprise-manifest and qualification-evidence paths after the failed immutable Core 0.6.0 qualification.",
-      "Exact Core 0.6.1 first-party evidence intake from the published sequence4 Catalog, with all prior provider evidence and Scanner findings preserved.",
-      "Fresh hosted public npm832, managed and supported npm848 acceptance with encrypted raw evidence retention; actual execution remains required before promotion."
+      "Native governed MCP projectors for Codex, Cursor, Copilot CLI, OpenCode V1 and Kimi Code alongside Claude and Kiro, preserving historical control and receipt identities.",
+      "CLI-specific environment references, offline writers, target support reporting and separation of governed project configuration from global client state.",
+      "Shared transaction rollback verifies original backup bytes and preserves live files if recovery material changes or disappears.",
+      "Native-host acceptance requires successful probes and actual tool-catalog evidence; completed version-specific evidence for all seven supported clients.",
+      "Ponytail removed from Workbench discovery and starting points while preserving saved-policy compatibility.",
+      "Explicit reviewed built-in capability compatibility for Core 0.7 with enterprise approval and future-minor refusal retained.",
+      "Change-selected local verification, corrected Workbench browser/provider ownership selection and bounded Windows fixture execution.",
+      "Already merged repository-only public acceptance fixes validate command arguments, receipt validity, accountable dispatch identity, result envelopes and revocation refusal.",
+      "Windows local-receipt ACL initialization uses direct .NET constructors without PowerShell module autoload; local Windows verification defaults to at most two workers. Owner, inheritance, SID validation and existing verification deadlines remain unchanged.",
+      "Nine first-party Core 0.6.2 Catalog qualifications are independently authenticated from the sequence-5 publication at Catalog commit 36f269266208661430fc37f167c86e534dabf893. The other 427 qualifications and original Scanner findings, publications and dates are preserved."
     ],
-    "adoption": "optional",
-    "adoptionRationale": "Optional adoption for organizations needing the new governed Workbench authoring model. Evaluate the exact candidate with existing policy and approved source pins; this release does not require a forced migration.",
+    "adoption": "recommended",
+    "adoptionRationale": "Recommended for the affected governed-MCP cohort and users needing the rollback integrity fix. Other users may retain their accepted version until their own policy review; no forced migration is introduced.",
     "prerequisites": [
-      "Successful final merged-main preflight, exact candidate verification and protected qualification recorded on release tracker #987.",
-      "Core version floor and compatible exact Scanner/Catalog versions; preserved prior policies and custody.",
-      "Existing Catalog owner signature, approved public seq4 receipt set and exact attestation before supported npm journey.",
-      "Exact npm Trusted Publisher tuple and protected environment approval; no token fallback.",
-      "Public installed acceptance with zero skipped legs and actual released-byte npm/managed journeys before released-feature claims."
+      "Final merged-main preflight, independent review, full local release verification and exact protected-main CI recorded on tracker #1009.",
+      "Exact compatible public packages for installed acceptance: Core candidate, @aihq/scan 0.3.0 and @aihq/catalog 0.1.3. Candidate dist-tags on companion packages are not adopted implicitly.",
+      "Existing approvals, source pins and client-specific runtime requirements; tested host versions do not qualify every future client version.",
+      "Artifact-bound owner authorization, protected npm Trusted Publishing, complete public installed OS/Node acceptance and separate acceptance-bound promotion.",
+      "Retain preflight computed minor/0.7.0 and its exact candidate-SHA intent acknowledgement. The owner-directed 0.6.2 numbering exception is separately recorded in tracker #1009 and this manifest; it does not waive any qualification, publication or promotion requirement."
     ],
-    "rollout": "Evaluate the qualified exact candidate under next in disposable roots. Review policy diffs and requested/effective state with a small administrator cohort. Expand only after exact public acceptance and a separately authorized stable promotion; keep existing approved pins until organizational approval.",
-    "rollback": "Stop rollout, retain evidence and revoke newly owned effects where appropriate. Restore saved compatible policy/approved package pins; inspect custody before downgrade. Owner may restore prior accepted latest tag; never move immutable git tags or rebuild an existing version.",
-    "supportImpact": "Schema-v3 consumers require Core 0.6 or a compatible successor. Administrators must distinguish requested intent, conditional local acceptance and verified public authority. The final public OS/Node matrix and required npm/managed journeys must pass before stable promotion.",
-    "accountableOwner": "samartomar (Core release maintainer; release tracker #987 assignee)"
+    "rollout": "Qualify one immutable package, publish it under next, and run exact public installed acceptance with the recorded companion versions. Review generated native configuration and receipt-owned changes with the affected administrator cohort before promoting the same bytes to latest.",
+    "rollback": "Stop rollout and preserve evidence. Use ownership-aware removal only for unchanged receipt-owned entries; preserve operator edits and report incomplete recovery. Restore previously approved package/configuration baselines after inspection. Never move an immutable tag or republish a version.",
+    "supportImpact": "Core 0.6.2 adds native governed configuration for the five additional clients while retaining Claude/Kiro. Schema-v3 authoring keeps its 0.6 minimum floor; newer per-host behavior requires this reviewed implementation. Claude acceptance covers fixed-set managed-mcp deployment and does not independently qualify allowlist-only enforcement. The promoted stable train remains the supported line.",
+    "accountableOwner": "samartomar (Core release maintainer; release tracker #1009 assignee)"
   },
   "surfaces": {
     "cli-flags-exit-codes": {
-      "status": "changed",
-      "previous": "Core 0.5 --ui authored the prior policy model and compatibility controls.",
-      "next": "The existing --ui entry authors normalized schema-v3 selections; unsupported target/control combinations and retired evidence remain blocked. Built-in capability resolution explicitly supports the reviewed 0.5.x and 0.6.x lines; enterprise approval remains required and unreviewed minor lines fail closed.",
-      "affectedCohort": "Administrators authoring governed AI policies and maintainers operating Core delivery.",
-      "operatorAction": "Validate downloads with the Core version named by their minimumCoreVersion; inspect requested versus effective state.",
-      "compatibility": "Core 0.6 schema-v3 authoring has a minimumCoreVersion floor; requested intent is not execution or verified authority. Existing unsupported controls fail closed.",
-      "risk": "Automation must not interpret a selected request or UI export as successful activation.",
-      "documentation": [
-        "CHANGELOG.md",
-        "docs/DELIVERY_GOVERNANCE.md",
-        "docs/workbench-catalog-providers.md"
-      ],
-      "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
-      "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
+      "status": "unchanged",
+      "rationale": "The public CLI command/flag/positional contract is byte-identical to Core 0.6.1. Native configuration, diagnostic content and ownership behavior change through existing commands and are described below.",
       "evidenceDigests": [
-        "sha256:fb9f43f8cbca6da905d116883cebf2d6664fcabbfb39c51e948a34978860876c",
-        "sha256:bc292584c4a0a02c9385023d12b5c7117217ed8cf86b3848141b5466c6779121",
-        "sha256:1364d0c9ddff362d5768b2f22b30caa68a9d388e86b44846eac43c44006f1b99"
+        "sha256:3626a4de4515bc7e42f88eea16558c820bac25761b618bc32c28d0a07bc955e2"
       ]
     },
     "library-exports": {
-      "status": "unchanged",
-      "rationale": "src/index.ts is byte-unchanged from v-core-0.5.0 at the observed head. This proves the export declaration surface only; implementation and final packed-library compatibility still require release checks.",
+      "status": "changed",
+      "previous": "The exported AppliedWrite recovery record carried a backup path without an original-content digest.",
+      "next": "AppliedWrite adds backupSha256; exported rollbackAppliedWrites requires that pin before restoring an overwritten file. Records produced by FsTransaction include it.",
+      "affectedCohort": "Administrators and developers using governed MCP across supported CLI clients, and maintainers qualifying Core releases.",
+      "operatorAction": "Callers constructing AppliedWrite records must retain the SHA-256 of the original bytes; do not derive the pin later from mutable backup contents.",
+      "compatibility": "Export names remain present, but overwrite recovery behavior is intentionally stricter. The optional field is required for a successful overwrite restore; direct library callers must update their recovery records.",
+      "risk": "Legacy manually constructed records without a digest preserve the live file and report incomplete recovery instead of restoring the backup.",
+      "documentation": [
+        "CHANGELOG.md",
+        "src/internals/fsxn.ts"
+      ],
+      "migration": "Prefer recovery records returned by FsTransaction. For manually constructed records, pin original bytes before replacement and preserve them through rollback.",
+      "owner": "samartomar (Core release maintainer; release tracker #1009 assignee)",
       "evidenceDigests": [
-        "sha256:26c75b3ca8b8066a338e622d8a2eb2fa5228b16a01e5f49c1b703b287c6f0e78"
+        "sha256:26c75b3ca8b8066a338e622d8a2eb2fa5228b16a01e5f49c1b703b287c6f0e78",
+        "sha256:ecb4ae64e3913b6846998f2a4ecd2758becb1adaf2f758e4766fb58ee71ac4dd",
+        "sha256:b0c9e2b67d5d3ad7439bce8547144b55674930adaca1f4b77af278c6286b53ac"
       ]
     },
     "schemas": {
       "status": "changed",
-      "previous": "Prior policy schema did not represent the normalized authoring selections and AIH MCP request field.",
-      "next": "Policy schema-v3 supports exact authoring selections, minimumCoreVersion and optional governance.aihMcpRequests.",
-      "affectedCohort": "Administrators authoring governed AI policies and maintainers operating Core delivery.",
-      "operatorAction": "Use current schema validation; retain original policy before migration.",
-      "compatibility": "Core 0.6 schema-v3 authoring has a minimumCoreVersion floor; requested intent is not execution or verified authority. Existing unsupported controls fail closed.",
-      "risk": "Older Core cannot be assumed to accept or preserve new fields.",
+      "previous": "Governed policy/receipt schemas represent the preceding target and ownership coverage.",
+      "next": "Schemas accept the expanded native target and ownership metadata while retaining historical policy bindings.",
+      "affectedCohort": "Administrators and developers using governed MCP across supported CLI clients, and maintainers qualifying Core releases.",
+      "operatorAction": "Validate proposed policy with the intended Core version and retain the original document.",
+      "compatibility": "Existing exact policy bindings and approval scopes are preserved. New native projection behavior requires the reviewed Core line; unsupported controls and unreviewed capability minor lines remain refused.",
+      "risk": "Older consumers cannot be assumed to understand newly emitted metadata.",
       "documentation": [
-        "CHANGELOG.md",
-        "docs/DELIVERY_GOVERNANCE.md",
-        "docs/workbench-catalog-providers.md"
+        "docs/governed-mcp.md",
+        "guides/enterprise-admin-guide.md",
+        "CHANGELOG.md"
       ],
-      "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
-      "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
+      "migration": "Retain existing policy and client configuration; review the native projection plan and ownership receipts in a disposable target before rollout.",
+      "owner": "samartomar (Core release maintainer; release tracker #1009 assignee)",
       "evidenceDigests": [
-        "sha256:bc292584c4a0a02c9385023d12b5c7117217ed8cf86b3848141b5466c6779121",
-        "sha256:fb9f43f8cbca6da905d116883cebf2d6664fcabbfb39c51e948a34978860876c"
+        "sha256:d80648040f16a4779f372b7b1a71fdf8cf54252bb9ebbcbbbe7ef5357b873036",
+        "sha256:4799f74a8f5978e4bd6cf08c97cc9a44b500455a1738c3610c98f9f05a4d8199",
+        "sha256:0e7f576adc1df4df1502081744f857f0d6d9cbaa280f8fcac50a7b88bbe9e6a1"
       ]
     },
     "machine-readable-output": {
       "status": "changed",
-      "previous": "Prior Workbench output combined the earlier catalog selection model and evidence presentation.",
-      "next": "Downloads preserve exact source/content identities, requested intent, evidence distinctions and narrowed sanctioned targets.",
-      "affectedCohort": "Administrators authoring governed AI policies and maintainers operating Core delivery.",
-      "operatorAction": "Update policy consumers to treat pending requests and effective candidates separately.",
-      "compatibility": "Core 0.6 schema-v3 authoring has a minimumCoreVersion floor; requested intent is not execution or verified authority. Existing unsupported controls fail closed.",
-      "risk": "A coverage-ready record count is not scanner success or installed acceptance.",
+      "previous": "Wiring and effective-state output could conflate generic host definitions, global state and governed project support.",
+      "next": "Reports identify native paths and feature-specific support; historical controls retain their exact target and source identities.",
+      "affectedCohort": "Administrators and developers using governed MCP across supported CLI clients, and maintainers qualifying Core releases.",
+      "operatorAction": "Read requested, supported and effective state separately; use native client evidence for runtime claims.",
+      "compatibility": "Existing exact policy bindings and approval scopes are preserved. New native projection behavior requires the reviewed Core line; unsupported controls and unreviewed capability minor lines remain refused.",
+      "risk": "A configured or requested server is not proof that the host loaded its tool catalog.",
       "documentation": [
-        "CHANGELOG.md",
-        "docs/DELIVERY_GOVERNANCE.md",
-        "docs/workbench-catalog-providers.md"
+        "docs/governed-mcp.md",
+        "guides/enterprise-admin-guide.md",
+        "CHANGELOG.md"
       ],
-      "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
-      "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
+      "migration": "Retain existing policy and client configuration; review the native projection plan and ownership receipts in a disposable target before rollout.",
+      "owner": "samartomar (Core release maintainer; release tracker #1009 assignee)",
       "evidenceDigests": [
-        "sha256:bc292584c4a0a02c9385023d12b5c7117217ed8cf86b3848141b5466c6779121",
-        "sha256:fb9f43f8cbca6da905d116883cebf2d6664fcabbfb39c51e948a34978860876c"
+        "sha256:1f7909142ce2174a42d9750eb38e50baf95bc2924642ae14dfcdf37a2086e9f2",
+        "sha256:ff2c6376f34a8e697bffc4cfebb49cd78d389e25566d6731978d5e5ca77559cd"
       ]
     },
     "generated-artifacts": {
       "status": "changed",
-      "previous": "Core 0.5 packaged the prior Workbench generation layout.",
-      "next": "Build assembles the portable Workbench with normalized source providers, immutable bundled material, and new pinned Matt Pocock/Ponytail catalog content.",
-      "affectedCohort": "Administrators authoring governed AI policies and maintainers operating Core delivery.",
-      "operatorAction": "Review generated policy diffs and source versions before using downloads.",
-      "compatibility": "Core 0.6 schema-v3 authoring has a minimumCoreVersion floor; requested intent is not execution or verified authority. Existing unsupported controls fail closed.",
-      "risk": "Bundled source material and saved updates must remain byte-bound; older material replay cannot certify a successor build.",
+      "previous": "Governed native projection was limited to Claude/Kiro and some generic paths represented different host contracts.",
+      "next": "Seven supported targets receive native configuration with per-host ownership receipts; unrelated operator settings are preserved.",
+      "affectedCohort": "Administrators and developers using governed MCP across supported CLI clients, and maintainers qualifying Core releases.",
+      "operatorAction": "Review each target path and generated diff before apply.",
+      "compatibility": "Existing exact policy bindings and approval scopes are preserved. New native projection behavior requires the reviewed Core line; unsupported controls and unreviewed capability minor lines remain refused.",
+      "risk": "Host-specific formats and alternate configuration files can affect which source is loaded.",
       "documentation": [
-        "CHANGELOG.md",
-        "docs/DELIVERY_GOVERNANCE.md",
-        "docs/workbench-catalog-providers.md"
+        "docs/governed-mcp.md",
+        "guides/enterprise-admin-guide.md",
+        "CHANGELOG.md"
       ],
-      "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
-      "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
+      "migration": "Retain existing policy and client configuration; review the native projection plan and ownership receipts in a disposable target before rollout.",
+      "owner": "samartomar (Core release maintainer; release tracker #1009 assignee)",
       "evidenceDigests": [
-        "sha256:b04a949f7d33f0481bc5bd7299532d2bc58f5a81e0773d9e8289d553c6f01ef0",
-        "sha256:9949d9635d8f92733671fb5677b7d19393c480443540978864634917948244f5",
-        "sha256:fb9f43f8cbca6da905d116883cebf2d6664fcabbfb39c51e948a34978860876c"
+        "sha256:5b760f30a140d3097251b8a1d7fdb6f1f812269759ddd3588d398e237a68b0c7",
+        "sha256:da57b6e24e25cd48ee64b48bcf30c711802dac05d7a011949afefc1381edf814",
+        "sha256:7fbef80ee22ea0e7e670b1759625c0a5f753c4b20c4c750294d8f2006b8fdc18"
       ]
     },
     "administrator-controls": {
       "status": "changed",
-      "previous": "Prior controls could display broader combinations and legacy authority rows.",
-      "next": "Activation is limited to projector/sanctioned-CLI intersection; unavailable Playwright reviewed authority is withheld; AIH MCP rows retain requested intent without activation.",
-      "affectedCohort": "Administrators authoring governed AI policies and maintainers operating Core delivery.",
-      "operatorAction": "Review named target refusals and reacquire valid protected evidence where required.",
-      "compatibility": "Core 0.6 schema-v3 authoring has a minimumCoreVersion floor; requested intent is not execution or verified authority. Existing unsupported controls fail closed.",
-      "risk": "Legacy imports must not broaden authority or silently enable a hook/MCP.",
+      "previous": "Only the earlier native targets could materialize governed built-in MCP settings.",
+      "next": "Additional targets materialize only approved exact selections without widening old approvals; Core 0.7 built-ins preserve enterprise approval.",
+      "affectedCohort": "Administrators and developers using governed MCP across supported CLI clients, and maintainers qualifying Core releases.",
+      "operatorAction": "Approve explicit target scopes and review pinned server identities.",
+      "compatibility": "Existing exact policy bindings and approval scopes are preserved. New native projection behavior requires the reviewed Core line; unsupported controls and unreviewed capability minor lines remain refused.",
+      "risk": "Adding an invocation target does not grant protected policy or organization authority.",
       "documentation": [
-        "CHANGELOG.md",
-        "docs/DELIVERY_GOVERNANCE.md",
-        "docs/workbench-catalog-providers.md"
+        "docs/governed-mcp.md",
+        "guides/enterprise-admin-guide.md",
+        "CHANGELOG.md"
       ],
-      "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
-      "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
+      "migration": "Retain existing policy and client configuration; review the native projection plan and ownership receipts in a disposable target before rollout.",
+      "owner": "samartomar (Core release maintainer; release tracker #1009 assignee)",
       "evidenceDigests": [
-        "sha256:fb9f43f8cbca6da905d116883cebf2d6664fcabbfb39c51e948a34978860876c",
-        "sha256:bc292584c4a0a02c9385023d12b5c7117217ed8cf86b3848141b5466c6779121"
+        "sha256:5521e183f64ec9318c365bab5237a2a4a4f66ee649d80702becfda251a8e4a8e",
+        "sha256:ff2c6376f34a8e697bffc4cfebb49cd78d389e25566d6731978d5e5ca77559cd",
+        "sha256:745648f5c2e8f2d9dc650c498fa9938c3501db46921a55031084c0eeb96c22cf"
       ]
     },
     "installation-uninstallation": {
       "status": "changed",
-      "previous": "Earlier quickstarts did not consistently route global permission recovery through an npm user-owned prefix.",
-      "next": "Public installation guidance describes npm-supported user-owned prefix recovery; workbench selection itself still installs nothing.",
-      "affectedCohort": "Administrators authoring governed AI policies and maintainers operating Core delivery.",
-      "operatorAction": "Follow documented prefix recovery and inspect actual installed version; do not use elevated workaround installs by default.",
-      "compatibility": "Core 0.6 schema-v3 authoring has a minimumCoreVersion floor; requested intent is not execution or verified authority. Existing unsupported controls fail closed.",
-      "risk": "Permissions, retained policy and custody need separate review during removal or rollback.",
+      "previous": "Lifecycle reconciliation did not cover the five new governed native client formats.",
+      "next": "Repeat apply, prune and uninstall reconcile only receipt-owned native entries; drift is refused or preserved.",
+      "affectedCohort": "Administrators and developers using governed MCP across supported CLI clients, and maintainers qualifying Core releases.",
+      "operatorAction": "Retain receipts and inspect operator changes before removal or rollback.",
+      "compatibility": "Existing exact policy bindings and approval scopes are preserved. New native projection behavior requires the reviewed Core line; unsupported controls and unreviewed capability minor lines remain refused.",
+      "risk": "A downgrade alone does not reverse native configuration already written by a newer release.",
       "documentation": [
-        "CHANGELOG.md",
-        "docs/DELIVERY_GOVERNANCE.md",
-        "docs/workbench-catalog-providers.md"
+        "docs/governed-mcp.md",
+        "guides/enterprise-admin-guide.md",
+        "CHANGELOG.md"
       ],
-      "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
-      "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
+      "migration": "Retain existing policy and client configuration; review the native projection plan and ownership receipts in a disposable target before rollout.",
+      "owner": "samartomar (Core release maintainer; release tracker #1009 assignee)",
       "evidenceDigests": [
-        "sha256:fb9f43f8cbca6da905d116883cebf2d6664fcabbfb39c51e948a34978860876c",
-        "sha256:c9249abeec18330b53eecc6e0a93a0da02c0b137e37c708de55f0876ec7ea6a0",
-        "sha256:0c3170900cb54592c5c04500c8dfc150c45f00469b3b4470776a05c1c7163467"
+        "sha256:5b760f30a140d3097251b8a1d7fdb6f1f812269759ddd3588d398e237a68b0c7",
+        "sha256:fe63d5cf1f65a8bb1d9b1f8c0aa19ed3f0d5a205d946f7c681f994e7cb994522",
+        "sha256:e5e9d8391285567ff37a05ecc3797150ffd1ee7f542ee4552e091f9757426cb1"
       ]
     },
     "files-environment-credentials": {
       "status": "changed",
-      "previous": "Prior release process and packaged Workbench inputs used the older artifact and authorization flow.",
-      "next": "Release qualification, candidate publication and promotion retain separate evidence; Workbench updates consume exact source-owned data without conferring credentials. Final public policy journeys use a fresh hosted Windows administrator runner; original scan inputs are bounded private transport and raw results are authenticated encrypted artifacts.",
-      "affectedCohort": "Administrators authoring governed AI policies and maintainers operating Core delivery.",
-      "operatorAction": "Preserve original policies/custody; use existing protected owner signing and token-free npm publication boundaries.",
-      "compatibility": "Core 0.6 schema-v3 authoring has a minimumCoreVersion floor; requested intent is not execution or verified authority. Existing unsupported controls fail closed.",
-      "risk": "Do not put signing keys or tokens in policy downloads, source, fixtures or evidence.",
+      "previous": "Generic environment references and rollback backup reads could diverge from host contracts or original bytes.",
+      "next": "Native writers use host-specific environment references; rollback pins and rechecks original backup contents. No credential store migration is introduced. Windows verifier ACL initialization removes the New-Object module dependency while retaining the same owner, inheritance and allowed-SID checks.",
+      "affectedCohort": "Administrators and developers using governed MCP across supported CLI clients, and maintainers qualifying Core releases.",
+      "operatorAction": "Keep secrets in the host-supported environment channel and preserve changed recovery material for review.",
+      "compatibility": "Existing exact policy bindings and approval scopes are preserved. New native projection behavior requires the reviewed Core line; unsupported controls and unreviewed capability minor lines remain refused.",
+      "risk": "Missing or changed backups now leave live state intact and report incomplete recovery; they cannot establish a successful rollback.",
       "documentation": [
-        "CHANGELOG.md",
-        "docs/DELIVERY_GOVERNANCE.md",
-        "docs/workbench-catalog-providers.md"
+        "docs/governed-mcp.md",
+        "guides/enterprise-admin-guide.md",
+        "CHANGELOG.md"
       ],
-      "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
-      "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
+      "migration": "Retain existing policy and client configuration; review the native projection plan and ownership receipts in a disposable target before rollout.",
+      "owner": "samartomar (Core release maintainer; release tracker #1009 assignee)",
       "evidenceDigests": [
-        "sha256:ba884b80672b81fee320eda6adb6cd094d9b106feef6466544531aab90dd3867",
-        "sha256:f94f67e77a26b397688abef6caee92c81b85e43774194171e972652e70b2fee7",
-        "sha256:95f0194fac0712becb0098ed43e1c2f11844f1fe9e49599daaba1350e90aeb0a",
-        "sha256:7e35758b37fb36769747f07ac696def57a95788a997c53c7b27849a2ee4c60e0"
+        "sha256:da57b6e24e25cd48ee64b48bcf30c711802dac05d7a011949afefc1381edf814",
+        "sha256:ecb4ae64e3913b6846998f2a4ecd2758becb1adaf2f758e4766fb58ee71ac4dd",
+        "sha256:b0c9e2b67d5d3ad7439bce8547144b55674930adaca1f4b77af278c6286b53ac",
+        "sha256:33eb638e6d549b242ab297cf83699fe06503c969a43e0f18c68a685662f17c37",
+        "sha256:0e87d93908f7f1f905e32cab4ec5c34b299356f393e253fed0ee3e9988820db5"
       ]
     },
     "network-egress-telemetry-data-classes": {
-      "status": "changed",
-      "previous": "Baseline evidence consumption used the earlier publisher identities and local shortcut paths.",
-      "next": "Baseline refresh consumes exact protected Scanner publications; Workbench authoring remains offline and declared upstream hook/MCP behavior is intent only.",
-      "affectedCohort": "Administrators authoring governed AI policies and maintainers operating Core delivery.",
-      "operatorAction": "Review external runtime egress separately before actual enablement; permit only verified publisher/repository bindings.",
-      "compatibility": "Core 0.6 schema-v3 authoring has a minimumCoreVersion floor; requested intent is not execution or verified authority. Existing unsupported controls fail closed.",
-      "risk": "Catalog metadata is not approval of upstream execution, network access or data processing.",
-      "documentation": [
-        "CHANGELOG.md",
-        "docs/DELIVERY_GOVERNANCE.md",
-        "docs/workbench-catalog-providers.md"
-      ],
-      "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
-      "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
+      "status": "unchanged",
+      "rationale": "Core still emits local configuration rather than authenticating to remote services. Client-launched MCP commands retain their approved identities; the shared process runner is byte-identical to the baseline. No new telemetry endpoint or data class is introduced by this delta.",
       "evidenceDigests": [
-        "sha256:fb9f43f8cbca6da905d116883cebf2d6664fcabbfb39c51e948a34978860876c",
-        "sha256:9949d9635d8f92733671fb5677b7d19393c480443540978864634917948244f5"
+        "sha256:2c0d9e0a03585c289d7ff87e546fb3a358a5787c82b9a340612176c8364e91e4",
+        "sha256:5b760f30a140d3097251b8a1d7fdb6f1f812269759ddd3588d398e237a68b0c7"
       ]
     },
     "direct-dependencies": {
       "status": "changed",
-      "previous": "Development tooling included @aihq/scan 0.2.5 and no dedicated browser test/parser additions.",
-      "next": "Development tooling pins @aihq/scan 0.3.0, @babel/parser 7.29.7, @playwright/test 1.62.1 and esbuild 0.28.1; production dependency declarations remain commander/jsonc-parser/yaml/zod.",
-      "affectedCohort": "Administrators authoring governed AI policies and maintainers operating Core delivery.",
-      "operatorAction": "Use the committed lock for verification; distinguish build/test tools from consumer runtime dependencies.",
-      "compatibility": "Core 0.6 schema-v3 authoring has a minimumCoreVersion floor; requested intent is not execution or verified authority. Existing unsupported controls fail closed.",
-      "risk": "Final resolved dependency and platform support evidence must be attached to the actual release artifact.",
+      "previous": "Core did not declare a TOML parser dependency.",
+      "next": "Add exact smol-toml 1.8.0 for native TOML configuration preservation.",
+      "affectedCohort": "Administrators and developers using governed MCP across supported CLI clients, and maintainers qualifying Core releases.",
+      "operatorAction": "Retain the release lockfile and evaluate the dependency under organizational policy.",
+      "compatibility": "Existing exact policy bindings and approval scopes are preserved. New native projection behavior requires the reviewed Core line; unsupported controls and unreviewed capability minor lines remain refused.",
+      "risk": "TOML parsing/serialization correctness affects preservation of operator configuration.",
       "documentation": [
-        "CHANGELOG.md",
-        "docs/DELIVERY_GOVERNANCE.md",
-        "docs/workbench-catalog-providers.md"
+        "docs/governed-mcp.md",
+        "guides/enterprise-admin-guide.md",
+        "CHANGELOG.md"
       ],
-      "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
-      "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
+      "migration": "Retain existing policy and client configuration; review the native projection plan and ownership receipts in a disposable target before rollout.",
+      "owner": "samartomar (Core release maintainer; release tracker #1009 assignee)",
       "evidenceDigests": [
-        "sha256:b04a949f7d33f0481bc5bd7299532d2bc58f5a81e0773d9e8289d553c6f01ef0",
-        "sha256:e064b739cab10206b86ec351e2d283b906084e7c54810ef8260a01993835be06"
+        "sha256:2865259fef03134872d28af11fb4455ce4d552487494a6dd582d879f63d3bcf2",
+        "sha256:b6ffc3b48634c9ad26d7f082dd17f8d8f7ce68c1218b60b174ccf8d31e95fc2f"
       ]
     },
     "transitive-dependencies": {
       "status": "changed",
-      "previous": "The Core0.5 lock and analyzer runtime pins described the previous tool graph.",
-      "next": "Current npm lock reflects tooling additions and esbuild override; uv/analyzer changes are recorded separately, including Cisco fixes.",
-      "affectedCohort": "Administrators authoring governed AI policies and maintainers operating Core delivery.",
-      "operatorAction": "Review final lock/SBOM and runtime locks against the cut baseline.",
-      "compatibility": "Core 0.6 schema-v3 authoring has a minimumCoreVersion floor; requested intent is not execution or verified authority. Existing unsupported controls fail closed.",
-      "risk": "The completed Cisco subset does not resolve every broader #940 campaign or prove all CVEs absent.",
+      "previous": "The previous lock had no smol-toml entry.",
+      "next": "The lock adds smol-toml 1.8.0; comparison finds no other changed package entries beyond the root manifest.",
+      "affectedCohort": "Administrators and developers using governed MCP across supported CLI clients, and maintainers qualifying Core releases.",
+      "operatorAction": "Verify the exact release lock and SBOM.",
+      "compatibility": "Existing exact policy bindings and approval scopes are preserved. New native projection behavior requires the reviewed Core line; unsupported controls and unreviewed capability minor lines remain refused.",
+      "risk": "A clean vulnerability audit is a dated observation, not a blanket safety claim.",
       "documentation": [
-        "CHANGELOG.md",
-        "docs/DELIVERY_GOVERNANCE.md",
-        "docs/workbench-catalog-providers.md"
+        "docs/governed-mcp.md",
+        "guides/enterprise-admin-guide.md",
+        "CHANGELOG.md"
       ],
-      "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
-      "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
+      "migration": "Retain existing policy and client configuration; review the native projection plan and ownership receipts in a disposable target before rollout.",
+      "owner": "samartomar (Core release maintainer; release tracker #1009 assignee)",
       "evidenceDigests": [
-        "sha256:e064b739cab10206b86ec351e2d283b906084e7c54810ef8260a01993835be06",
-        "sha256:fb9f43f8cbca6da905d116883cebf2d6664fcabbfb39c51e948a34978860876c"
+        "sha256:b6ffc3b48634c9ad26d7f082dd17f8d8f7ce68c1218b60b174ccf8d31e95fc2f"
       ]
     },
     "install-scripts": {
       "status": "unchanged",
-      "rationale": "Current package has no preinstall/install/postinstall lifecycle entry; compare against Core0.5 confirms neither manifest defines them. Build scripts changed, but they are not package-install lifecycle hooks. Packed acceptance still must inspect actual release bytes.",
+      "rationale": "No install/preinstall/postinstall lifecycle hook is introduced. The repository-only verify:local script and packed documentation inclusion do not execute on consumer installation.",
       "evidenceDigests": [
-        "sha256:b04a949f7d33f0481bc5bd7299532d2bc58f5a81e0773d9e8289d553c6f01ef0"
+        "sha256:2865259fef03134872d28af11fb4455ce4d552487494a6dd582d879f63d3bcf2"
       ]
     },
     "licenses-cves": {
       "status": "changed",
-      "previous": "Core0.5 carried the earlier bundled source inventory and analyzer pin set.",
-      "next": "New Matt Pocock material carries MIT attribution; source inventories preserve their own licenses. uv security updates and Cisco lock remediation are recorded with bounded scope.",
-      "affectedCohort": "Administrators authoring governed AI policies and maintainers operating Core delivery.",
-      "operatorAction": "Review final bundled notices/SBOM and open #940 scope before release; preserve attribution.",
-      "compatibility": "Core 0.6 schema-v3 authoring has a minimumCoreVersion floor; requested intent is not execution or verified authority. Existing unsupported controls fail closed.",
-      "risk": "No blanket vulnerability-free claim; native-only npm scan remains missing/warn with nine gaps.",
+      "previous": "The previous runtime dependency set did not include smol-toml.",
+      "next": "The added smol-toml 1.8.0 dependency declares BSD-3-Clause; project LICENSE and NOTICE remain unchanged. Current npm audit reports zero vulnerabilities.",
+      "affectedCohort": "Administrators and developers using governed MCP across supported CLI clients, and maintainers qualifying Core releases.",
+      "operatorAction": "Review the final SBOM and license inventory before adoption.",
+      "compatibility": "Existing exact policy bindings and approval scopes are preserved. New native projection behavior requires the reviewed Core line; unsupported controls and unreviewed capability minor lines remain refused.",
+      "risk": "Future advisories may change the audit result; retained Scanner coverage limitations remain explicit.",
       "documentation": [
-        "CHANGELOG.md",
-        "docs/DELIVERY_GOVERNANCE.md",
-        "docs/workbench-catalog-providers.md"
+        "docs/governed-mcp.md",
+        "guides/enterprise-admin-guide.md",
+        "CHANGELOG.md"
       ],
-      "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
-      "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
+      "migration": "Retain existing policy and client configuration; review the native projection plan and ownership receipts in a disposable target before rollout.",
+      "owner": "samartomar (Core release maintainer; release tracker #1009 assignee)",
       "evidenceDigests": [
-        "sha256:fb9f43f8cbca6da905d116883cebf2d6664fcabbfb39c51e948a34978860876c",
-        "sha256:b04a949f7d33f0481bc5bd7299532d2bc58f5a81e0773d9e8289d553c6f01ef0"
+        "sha256:b6ffc3b48634c9ad26d7f082dd17f8d8f7ce68c1218b60b174ccf8d31e95fc2f",
+        "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+        "sha256:1ee2fede80d389a7650d8aaf3b4db2e304fcb40ee1cb9aabd25e9f5cb70f6323"
       ]
     },
     "trust-roots-provenance": {
       "status": "changed",
-      "previous": "Prior Core delivery and ECC evidence references used the earlier release/consumption model.",
-      "next": "Canonical affaan-m/ECC repository is required at its unchanged exact revision; publication identities include publisher commit and request digest. Core release qualification/publish/accept/promote effects bind immutable receipts separately. Nine Core 0.6.1 first-party qualifications join the published sequence4 Catalog source while retaining 427 other qualifications and original Scanner facts.",
-      "affectedCohort": "Administrators authoring governed AI policies and maintainers operating Core delivery.",
-      "operatorAction": "Reject retired fork evidence and require real Catalog seq4, existing owner signature and protected GitHub attestation before supported npm acceptance.",
-      "compatibility": "Core 0.6 schema-v3 authoring has a minimumCoreVersion floor; requested intent is not execution or verified authority. Existing unsupported controls fail closed.",
-      "risk": "Local self-asserted organization decisions and candidate scans are not public Catalog or release authority.",
+      "previous": "Prior native projection and hosted public-acceptance verification had narrower lifecycle coverage.",
+      "next": "New native outputs bind exact existing authority/receipt identities; repository-only acceptance checks tighten command, operator, receipt and verification-envelope validation. Publication trust roots are unchanged. First-party evidence is rebound to the exact Core 0.6.2 release and current declaration profiles under the existing Catalog signer root; historical publisher policies remain available.",
+      "affectedCohort": "Administrators and developers using governed MCP across supported CLI clients, and maintainers qualifying Core releases.",
+      "operatorAction": "Verify the exact qualified tarball and all public provenance/signature legs.",
+      "compatibility": "Existing exact policy bindings and approval scopes are preserved. New native projection behavior requires the reviewed Core line; unsupported controls and unreviewed capability minor lines remain refused.",
+      "risk": "Local native proof cannot substitute for signed Catalog authority or public installed release acceptance.",
       "documentation": [
+        "docs/governed-mcp.md",
+        "guides/enterprise-admin-guide.md",
         "CHANGELOG.md",
-        "docs/DELIVERY_GOVERNANCE.md",
         "docs/workbench-catalog-providers.md"
       ],
-      "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
-      "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
+      "migration": "Retain existing policy and client configuration; review the native projection plan and ownership receipts in a disposable target before rollout.",
+      "owner": "samartomar (Core release maintainer; release tracker #1009 assignee)",
       "evidenceDigests": [
-        "sha256:fb9f43f8cbca6da905d116883cebf2d6664fcabbfb39c51e948a34978860876c",
+        "sha256:5521e183f64ec9318c365bab5237a2a4a4f66ee649d80702becfda251a8e4a8e",
         "sha256:ba884b80672b81fee320eda6adb6cd094d9b106feef6466544531aab90dd3867",
-        "sha256:f965e2556464d63dbba1a74fe4415519e82190a38fe482242282a83c1140ffe0",
-        "sha256:cee9208fac17c1a090cf2105530da29a64d1e013101c67aa16443a40d13983a5",
-        "sha256:14fdfded86f707f0e92c15ce2b60e0e8abcb863f5425273f83e39065d9a4cd92",
-        "sha256:e2a26463a03707ee01b0f0621c1249a8fea5b6419b8fb9510a6155c8fc11c5e9"
+        "sha256:c2463d033a5f2b3553d427d6f1ab0a936d49941efca9c35aa29a42437c4accc8",
+        "sha256:c9709e1b3c603a04efd6b175507c6d3b8f10d42bd68a8365d22a262a80c3e6a0",
+        "sha256:d28f04340002a632e057f1bfd91522152689b0a5d61e732e81632f084ce9b161",
+        "sha256:1def3c9dbbb254c9da2705df3dd097c72abf289c18cc3aead4cd4a34e91bda0c",
+        "sha256:64836011ab4167f6b19f9acba0af5597a30f55e167b858228002d61ad6547263",
+        "sha256:44823fe12c0ffe5c89253bc526f2e0639c4fcfa9d1ed436ec5dd7b6bd6646804"
       ]
     },
     "guides": {
       "status": "changed",
-      "previous": "Previous guides described the earlier Workbench and release process.",
-      "next": "Source-provider ownership, candidate-first governance, public installed acceptance and prefix recovery are documented.",
-      "affectedCohort": "Administrators authoring governed AI policies and maintainers operating Core delivery.",
-      "operatorAction": "Read provider and delivery guides alongside policy previews and release notes.",
-      "compatibility": "Core 0.6 schema-v3 authoring has a minimumCoreVersion floor; requested intent is not execution or verified authority. Existing unsupported controls fail closed.",
-      "risk": "Guide examples do not waive exact-version, authority or target checks.",
+      "previous": "Administrator documentation lacked complete seven-client native paths, ownership migration and reviewed Core 0.7 compatibility.",
+      "next": "The governed MCP guide and administrator guide describe supported native paths, runtime prerequisites, ownership boundaries and reviewed capability lines.",
+      "affectedCohort": "Administrators and developers using governed MCP across supported CLI clients, and maintainers qualifying Core releases.",
+      "operatorAction": "Use the guide for the selected host and keep scope-specific evidence distinct.",
+      "compatibility": "Existing exact policy bindings and approval scopes are preserved. New native projection behavior requires the reviewed Core line; unsupported controls and unreviewed capability minor lines remain refused.",
+      "risk": "Examples are not authorization to change machine policy or widen an allowlist.",
       "documentation": [
-        "CHANGELOG.md",
-        "docs/DELIVERY_GOVERNANCE.md",
-        "docs/workbench-catalog-providers.md"
+        "docs/governed-mcp.md",
+        "guides/enterprise-admin-guide.md",
+        "CHANGELOG.md"
       ],
-      "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
-      "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
+      "migration": "Retain existing policy and client configuration; review the native projection plan and ownership receipts in a disposable target before rollout.",
+      "owner": "samartomar (Core release maintainer; release tracker #1009 assignee)",
       "evidenceDigests": [
-        "sha256:9949d9635d8f92733671fb5677b7d19393c480443540978864634917948244f5",
-        "sha256:f94f67e77a26b397688abef6caee92c81b85e43774194171e972652e70b2fee7",
-        "sha256:0c3170900cb54592c5c04500c8dfc150c45f00469b3b4470776a05c1c7163467",
-        "sha256:c9249abeec18330b53eecc6e0a93a0da02c0b137e37c708de55f0876ec7ea6a0"
+        "sha256:98ea4292560bc8da5e3fd30954080ad413f9482a53b649cdfd841bf68ffd3b2e",
+        "sha256:f12765597efc432bd2016ad6b12d9bf7a3d24fdc4f62be0eb14bd82e2c516219",
+        "sha256:eca6fd03baca63e79bc7a26060c8788979b1552a7b872fae812696f72375dd20"
       ]
     },
     "known-issues": {
       "status": "changed",
-      "previous": "Prior baseline issues and acceptance evidence were tied to Core0.5.",
-      "next": "Required public npm and managed journeys remain acceptance gates on tracker #987, including supported npm #848 and umbrella #832. The broader #940 pin campaign is future work; total runtime optimization is follow-up #986.",
-      "affectedCohort": "Administrators authoring governed AI policies and maintainers operating Core delivery.",
-      "operatorAction": "Resolve release-blocking scope on the tracker; retain limitations in the final decision.",
-      "compatibility": "Core 0.6 schema-v3 authoring has a minimumCoreVersion floor; requested intent is not execution or verified authority. Existing unsupported controls fail closed.",
-      "risk": "A follow-up performance target does not waive correctness, coverage, security or released-byte journeys.",
+      "previous": "The preceding release tracked its own fix-forward and public acceptance conditions.",
+      "next": "This train retains unfinished executable-consent, external-pin and performance work; native proofs remain bound to tested versions and deployment scopes.",
+      "affectedCohort": "Administrators and developers using governed MCP across supported CLI clients, and maintainers qualifying Core releases.",
+      "operatorAction": "Consult the open issues and do not interpret this release as completing the deferred work.",
+      "compatibility": "Existing exact policy bindings and approval scopes are preserved. New native projection behavior requires the reviewed Core line; unsupported controls and unreviewed capability minor lines remain refused.",
+      "risk": "Known upstream/materialization gaps remain relevant outside the delivered native MCP scope.",
       "documentation": [
-        "CHANGELOG.md",
-        "docs/DELIVERY_GOVERNANCE.md",
-        "docs/workbench-catalog-providers.md"
+        "docs/governed-mcp.md",
+        "guides/enterprise-admin-guide.md",
+        "CHANGELOG.md"
       ],
-      "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
-      "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
+      "migration": "Retain existing policy and client configuration; review the native projection plan and ownership receipts in a disposable target before rollout.",
+      "owner": "samartomar (Core release maintainer; release tracker #1009 assignee)",
       "evidenceDigests": [
-        "sha256:f94f67e77a26b397688abef6caee92c81b85e43774194171e972652e70b2fee7",
-        "sha256:59b5a876fc56e978572eab423d1e2af6bf40b0ea6c507444b3726a5b8779ef01"
+        "sha256:f12765597efc432bd2016ad6b12d9bf7a3d24fdc4f62be0eb14bd82e2c516219",
+        "sha256:98ea4292560bc8da5e3fd30954080ad413f9482a53b649cdfd841bf68ffd3b2e"
       ]
     },
     "waivers": {
       "status": "changed",
-      "previous": "No release-specific Core0.6 waiver disposition existed.",
-      "next": "No correctness/security/coverage or public-authority waiver is proposed. Total60-second target is a separate #986 follow-up; nine scan coverage gaps belong to scoped local npm decisions, not blanket release waiver.",
-      "affectedCohort": "Administrators authoring governed AI policies and maintainers operating Core delivery.",
-      "operatorAction": "Obtain explicit owner disposition for any additional exception; never silently convert blocked work into accepted risk.",
-      "compatibility": "Core 0.6 schema-v3 authoring has a minimumCoreVersion floor; requested intent is not execution or verified authority. Existing unsupported controls fail closed.",
-      "risk": "Local task authorization is not a publication or promotion token.",
+      "previous": "No numbering exception applied to this train under the default highest-merged-bump rule.",
+      "next": "The owner selects Core 0.6.2 while preflight continues to compute minor/0.7.0; the discrepancy is recorded without relabeling product changes.",
+      "affectedCohort": "Administrators, direct library consumers and maintainers evaluating Core 0.6.2.",
+      "operatorAction": "Review the complete change manifest and rollback record migration despite the patch-shaped number.",
+      "compatibility": "The exception changes release numbering only. New native artifacts and stricter overwrite recovery remain explicit compatibility considerations.",
+      "risk": "Version-number-based automation may underestimate scope if it ignores the release notes and enterprise manifest.",
       "documentation": [
-        "CHANGELOG.md",
-        "docs/DELIVERY_GOVERNANCE.md",
-        "docs/workbench-catalog-providers.md"
+        "VERSIONING.md#core-062-numbering-exception",
+        "RELEASING.md",
+        "CHANGELOG.md"
       ],
-      "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
-      "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
+      "migration": "Review the new native configuration outputs and retain original-content backupSha256 in manually constructed AppliedWrite recovery records.",
+      "owner": "samartomar (Core release maintainer; release tracker #1009 assignee)",
       "evidenceDigests": [
-        "sha256:f94f67e77a26b397688abef6caee92c81b85e43774194171e972652e70b2fee7",
-        "sha256:0c3170900cb54592c5c04500c8dfc150c45f00469b3b4470776a05c1c7163467"
+        "sha256:6c91f9bc4520667e188dc5669d74b7acba55bf9e3c07474db28ab19579b39cfc",
+        "sha256:c2b032b478468dcc767b3d13ddd1f85a5d2d4f88f332f6b7dcfaca7f4a0a8e4b",
+        "sha256:4badf61e153cfdc3422a2718e0dcca5cafdee6499876193cbe73ef06e54d2128"
       ]
     },
     "support": {
       "status": "changed",
-      "previous": "Core0.5 supported the preceding Workbench authoring model.",
-      "next": "Core0.6 supports the schema-v3 feature floor and clearer requested/effective diagnosis; public promotion remains contingent on exact compatible Scanner/Catalog matrix.",
-      "affectedCohort": "Administrators authoring governed AI policies and maintainers operating Core delivery.",
-      "operatorAction": "Pin approved Core/Scanner/Catalog versions and retain diagnostic JSON when escalating.",
-      "compatibility": "Core 0.6 schema-v3 authoring has a minimumCoreVersion floor; requested intent is not execution or verified authority. Existing unsupported controls fail closed.",
-      "risk": "Historical0.5 acceptance remains separately tracked; no final0.6 support promise until release gates pass.",
+      "previous": "The stable baseline has the preceding governed native target coverage and reviewed Core capability lines.",
+      "next": "Core 0.6.2 covers seven native MCP clients and separately retains the reviewed Core 0.7 built-in capability compatibility; stable support starts only after exact public acceptance and promotion.",
+      "affectedCohort": "Administrators and developers using governed MCP across supported CLI clients, and maintainers qualifying Core releases.",
+      "operatorAction": "Pin the approved Core/Scanner/Catalog tuple and the tested host version when reproducing behavior.",
+      "compatibility": "Existing exact policy bindings and approval scopes are preserved. New native projection behavior requires the reviewed Core line; unsupported controls and unreviewed capability minor lines remain refused.",
+      "risk": "OpenCode V2, legacy Kimi CLI, custom/remote materialization and Claude allowlist-only runtime enforcement are outside the recorded acceptance.",
       "documentation": [
-        "CHANGELOG.md",
-        "docs/DELIVERY_GOVERNANCE.md",
-        "docs/workbench-catalog-providers.md"
+        "docs/governed-mcp.md",
+        "guides/enterprise-admin-guide.md",
+        "CHANGELOG.md"
       ],
-      "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
-      "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
+      "migration": "Retain existing policy and client configuration; review the native projection plan and ownership receipts in a disposable target before rollout.",
+      "owner": "samartomar (Core release maintainer; release tracker #1009 assignee)",
       "evidenceDigests": [
-        "sha256:0c3170900cb54592c5c04500c8dfc150c45f00469b3b4470776a05c1c7163467",
-        "sha256:fb9f43f8cbca6da905d116883cebf2d6664fcabbfb39c51e948a34978860876c"
+        "sha256:745648f5c2e8f2d9dc650c498fa9938c3501db46921a55031084c0eeb96c22cf",
+        "sha256:98ea4292560bc8da5e3fd30954080ad413f9482a53b649cdfd841bf68ffd3b2e",
+        "sha256:4459bcab0365725b2ebcce2519a4826fd7578519eb8a0d92b57f2cc13060bd93"
       ]
     },
     "rollback": {
       "status": "changed",
-      "previous": "Earlier delivery did not use the full separate acceptance-bound promotion flow.",
-      "next": "Rejected candidates remain off latest; promoted regression response restores the previously accepted dist-tag without retagging or rebuilding immutable versions.",
-      "affectedCohort": "Administrators authoring governed AI policies and maintainers operating Core delivery.",
-      "operatorAction": "Preserve prior policies and approvals; independently inspect/revoke changed owned controls before reverting CLI.",
-      "compatibility": "Core 0.6 schema-v3 authoring has a minimumCoreVersion floor; requested intent is not execution or verified authority. Existing unsupported controls fail closed.",
-      "risk": "Downgrading the executable does not reverse schema-v3 policy, durable custody or installed controls.",
+      "previous": "A mutable or removed backup could be treated as successful restoration material.",
+      "next": "Rollback verifies original backup bytes, rechecks before restoration and preserves live state on recovery-material drift. Native removal uses ownership receipts.",
+      "affectedCohort": "Administrators and developers using governed MCP across supported CLI clients, and maintainers qualifying Core releases.",
+      "operatorAction": "Investigate incomplete recovery reports and preserve operator changes; inspect before downgrade.",
+      "compatibility": "Existing exact policy bindings and approval scopes are preserved. New native projection behavior requires the reviewed Core line; unsupported controls and unreviewed capability minor lines remain refused.",
+      "risk": "Filesystem path operations do not promise isolation from arbitrary concurrent external writers.",
       "documentation": [
-        "CHANGELOG.md",
-        "docs/DELIVERY_GOVERNANCE.md",
-        "docs/workbench-catalog-providers.md"
+        "docs/governed-mcp.md",
+        "guides/enterprise-admin-guide.md",
+        "CHANGELOG.md"
       ],
-      "migration": "Review the exact exported policy and prerequisites in a disposable target before staged adoption.",
-      "owner": "samartomar (Core release maintainer; release tracker #987 assignee)",
+      "migration": "Retain existing policy and client configuration; review the native projection plan and ownership receipts in a disposable target before rollout.",
+      "owner": "samartomar (Core release maintainer; release tracker #1009 assignee)",
       "evidenceDigests": [
-        "sha256:0c3170900cb54592c5c04500c8dfc150c45f00469b3b4470776a05c1c7163467",
-        "sha256:f94f67e77a26b397688abef6caee92c81b85e43774194171e972652e70b2fee7"
+        "sha256:ecb4ae64e3913b6846998f2a4ecd2758becb1adaf2f758e4766fb58ee71ac4dd",
+        "sha256:b0c9e2b67d5d3ad7439bce8547144b55674930adaca1f4b77af278c6286b53ac",
+        "sha256:5b760f30a140d3097251b8a1d7fdb6f1f812269759ddd3588d398e237a68b0c7"
       ]
     }
   },
   "knownIssues": [
-    "Immutable Core 0.6.0 failed receipt sealing before publication. Core 0.6.1 must independently qualify and publish its own exact bytes; prior package checks and installed tests do not supply a successful qualification receipt.",
-    "Catalog sequence4 publication is verified at exact source98d95263aa0901504c9d480628f6c06c4a1fe453. Actual public Core 0.6.1 supported npm and managed journeys remain required before completing release tracker #987.",
-    "Retained npm and managed journeys on Core 0.5 development bytes are separate evidence. Required final Core 0.6 public registry journeys and installed OS/Node acceptance must pass before stable promotion.",
-    "Core 0.6 includes 524 Workbench records. Final candidate checks must prove complete evidence coverage and live publication-material equivalence on its exact bytes; coverage readiness alone is not scan or release acceptance.",
-    "The native-only picocolors 1.1.1 scan remains missing/warn with nine explicitly scoped coverage gaps. Conditional local acceptance does not make it a successful scan or blanket waiver.",
-    "The broader #940 external-pin qualification campaign and historical Core 0.5 acceptance #972 remain separately open; this release does not claim their completion.",
-    "The total 60-second Workbench runtime target remains follow-up #986. Functional behavior, per-test deadlines, the pure ten-second budget, coverage and security remain required."
+    "Core #1008 executable OpenCode consent across every ECC materialization route remains open. No new ECC pin is adopted; upstream and Scanner qualification holds are unchanged.",
+    "The broader #940 external-pin campaign and unmerged dependency updates remain separate work; this release does not claim their completion.",
+    "The total 60-second Workbench runtime target remains follow-up #986. Functional checks, per-test deadlines, coverage, pure-suite budget and release acceptance remain required.",
+    "Native acceptance is tied to recorded client versions. Claude 2.1.241 evidence proves fixed-server managed-mcp.json enforcement, not a separate allowlist-only deployment; no protected external-channel runtime claim is added.",
+    "The retained native-only picocolors 1.1.1 scan is missing/warn with nine explicitly scoped coverage gaps. Conditional local acceptance is not Scanner success or a new waiver.",
+    "Historical Core 0.5 acceptance remains separately tracked. Core 0.6.2 must qualify its own immutable bytes and pass exact public installed acceptance before stable promotion."
   ],
-  "waivers": []
+  "waivers": [
+    "One-time owner-directed numbering exception for Core 0.6.2 only, recorded at https://github.com/samartomar/ai-harness/issues/1009#issuecomment-5629842727. The merged work remains semver:minor and unmodified preflight computes 0.7.0. This version includes native-artifact additions and stricter library recovery behavior; its patch-shaped number is not a patch-only compatibility promise. No review, CI, custody, qualification, publication, installed acceptance, provenance, promotion or Scanner requirement is waived."
+  ]
 }

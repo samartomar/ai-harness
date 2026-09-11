@@ -76,6 +76,15 @@ source approval alone is not publication approval.
 
 ## Cut a release
 
+The owner-directed Core 0.6.2 cut has one documented
+[numbering exception](VERSIONING.md#core-062-numbering-exception): retain the
+preflight's computed minor/0.7.0 result, resolve its exact candidate-SHA intent
+acknowledgement, and record the selected 0.6.2 version separately in tracker
+[#1009](https://github.com/samartomar/ai-harness/issues/1009), the changelog and the
+enterprise manifest waiver. Do not relabel the feature work or report that
+preflight computed 0.6.2. The exception changes only this cut's assigned number;
+every remaining check and authorization below still applies.
+
 1. **Soft-lock and sweep.** Comment `cut in progress from <full-main-SHA>` on the
    release tracker issue (parallel sessions hold merges and cuts until done). Then run
    `npm run release:preflight -- --intent <patch|minor|major>` — it validates the
