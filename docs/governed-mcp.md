@@ -164,6 +164,10 @@ with `--codex-binary` when PATH contains only a package launcher.
 Use a new `--report` path for each producer run, including retries. Existing files
 are refused before the probe starts. Failed runs retain a failure report for
 diagnosis; retry with a fresh path after resolving the reported cause.
+Setup failure codes distinguish denied file access, exhausted storage, unavailable
+paths and unreadable material. Check the selected paths and available disk space
+for those categories. Unclassified failures retain `runtime-probe-failed`; reports
+omit raw operating-system error text and private paths from error messages.
 
 The JSON keeps support, discovery, exercise, restart and enforcement separate.
 The first command records the observed executable version and binds the executable

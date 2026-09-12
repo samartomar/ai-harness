@@ -230,10 +230,20 @@ export async function writeReport(options, producer = produce) {
   try {
     let result;
     try { result = await producer(options); }
-    catch { result = reportShape("failed", { failureCode: "runtime-probe-failed" }); }
+    catch (error) { result = reportShape("failed", { failureCode: setupFailureCode(error) }); }
     writeFileSync(descriptor, `${JSON.stringify(result, null, 2)}\n`);
     return result;
   } finally { closeSync(descriptor); }
+}
+
+function setupFailureCode(error) {
+  // Keep actionable categories without copying native paths or arbitrary error messages.
+  switch (error?.code) {
+    case "EACCES": case "EPERM": case "EROFS": return "runtime-setup-permission-denied";
+    case "ENOSPC": case "EDQUOT": return "runtime-setup-storage-full";
+    case "ENOENT": case "ENOTDIR": return "runtime-setup-path-unavailable";
+    default: return error?.message === "unsafe-material-file" ? "runtime-material-unavailable" : "runtime-probe-failed";
+  }
 }
 
 function openedPathStillNamesFile(path, opened) {

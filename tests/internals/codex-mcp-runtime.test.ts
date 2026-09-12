@@ -251,6 +251,25 @@ describe("bounded Codex MCP runtime producer", () => {
     expect(readFileSync(reportPath, "utf8")).toBe("existing report");
   });
 
+  it.each([
+    ["EACCES", "runtime-setup-permission-denied"],
+    ["ENOSPC", "runtime-setup-storage-full"],
+    ["ENOENT", "runtime-setup-path-unavailable"],
+    ["unknown-code", "runtime-probe-failed"],
+  ])(
+    "retains the %s setup failure category without private error text",
+    async (code, failureCode) => {
+      const root = mkdtempSync(join(tmpdir(), "aih-report-diagnostic-"));
+      const reportPath = join(root, "report.json");
+      await producer.writeReport({ report: reportPath }, async () => {
+        throw Object.assign(new Error("private-fixture-path-and-value"), { code });
+      });
+      const serialized = readFileSync(reportPath, "utf8");
+      expect(JSON.parse(serialized)).toMatchObject({ status: "failed", failureCode });
+      expect(serialized).not.toContain("private-fixture-path-and-value");
+    },
+  );
+
   it("writes the fixed private config and strips credentials from child env", () => {
     const text = producer.configText("C:\\node.exe", "nonce", "C:\\root");
     expect(text).toContain('approval_policy = "never"');
