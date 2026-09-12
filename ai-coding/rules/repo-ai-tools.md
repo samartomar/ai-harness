@@ -71,9 +71,50 @@ The generated Serena context is single-project and excludes memory, file,
 shell, project-switching, and line-editor overlap. Token Savior uses its
 optimized profile with memory and capture disabled, then Codex exposes only its
 six orientation tools. code-review-graph is externally cached and exposes only
-impact/review operations. codebase-memory-mcp is root-restricted and keeps its
-cache outside the worktree. These allowlists minimize tool confusion; they are
-not a security boundary and do not replace repository authorization rules.
+impact/review operations. codebase-memory-mcp receives a worktree-specific
+`CBM_ALLOWED_ROOT` for indexing and uses managed runtime and cache roots derived
+from the canonical repository root and memory pin. These allowlists minimize
+tool confusion; they are not a security boundary and do not replace repository
+authorization rules.
+
+### Resource ownership across worktrees
+
+| Resource | Owner and lifetime |
+|---|---|
+| Pinned executables and Python environments | Repository-path-and-toolset-keyed user cache; existing toolsets remain available to their active clients. This bootstrap does not deduplicate installations across worktrees. |
+| Serena context and review graph | Worktree-specific state under the repository/toolset cache. Existing installations remain available to active clients. |
+| Memory completion marker | Per-root, per-memory-generation state. Reuse requires a matching root and generation plus live populated inventory. |
+| Memory graph databases and daemon | Managed runtime/cache state is separate per canonical repository root and memory pin. The launcher derives these roots under the managed tool home and does not join an unrelated account daemon. |
+| Memory indexing boundary | `CBM_ALLOWED_ROOT` is set to the current worktree for each session. Native root grants and daemon workers also participate in authorization; this setting alone is not runtime proof of confinement or usability. Query tools can expose other indexed projects. Select and verify the intended project by its returned `root_path`. |
+| Codex projection | Ignored `.codex/config.toml` in each worktree, with launchers bound to that worktree. |
+| Native ECC plugin | Account-owned installation shared across worktrees; normal setup verifies the existing plugin, and marketplace refresh remains explicit. |
+
+Codebase-memory-mcp 0.10.5 uses `CBM_RUNTIME_DIR` for daemon rendezvous and
+requires runtime and cache roots to remain consistent across clients. The
+managed launcher supplies separate roots for the canonical repository and
+memory pin, while `AIH_REPO_AI_TOOLS_HOME` selects a custom managed home.
+Existing toolset/worktree installations remain available; changing the memory
+pin creates a new generation and does not migrate an existing graph database.
+Before manual indexing, managed preflight writes `auto_watch = false` and
+`auto_index = false` in the private cache configuration to avoid background
+work racing the bounded admission and index check.
+See the pinned [upstream configuration contract](https://github.com/DeusData/codebase-memory-mcp/blob/v0.10.5/docs/CONFIGURATION.md).
+
+Setup checks memory admission and initializes its index after preparing pinned
+tools and before publishing client setup changes. If either stage fails,
+installed tool files may remain for reuse; the failure is reported and existing
+sessions, caches, and native plugin state are not rolled back. An index failure
+does not publish a completion marker. Retry with the same managed root and
+generation; do not delete another session's cache or stop its daemon.
+
+An active daemon created by an older bootstrap retains its original cache and
+runtime. A new managed client uses its private generation rather than joining,
+stopping, or migrating that daemon. An indexing rejection after successful
+admission is a separate boundary failure. The selected native client,
+configuration, and sandbox policy must be checked for the intended root before
+relying on that session; this does not establish usability for every client or
+configuration. Do not automatically add native root grants to make this check
+pass.
 
 For an on-demand local audit, run
 `node tools/repo-ai-tools.mjs token-optimizer-report`. For repo-scoped coaching,

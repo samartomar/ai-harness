@@ -429,7 +429,7 @@ Keep this table as a navigation index: do not add flag-level behavior or workflo
 | [`aih cleanup`](docs/commands.md#aih-cleanup) | Preview and remove framework-contaminated Claude user-scope surfaces with backup and rollback. |
 | [`aih heal`](docs/commands.md#aih-heal) | Diagnose and repair the broken runtime behind any TLS-intercepting proxy — corporate trust, npm, PATH, MCP pre-flight. |
 | [`aih tools`](docs/commands.md#aih-tools) | Install the agent shell tools the harness leans on (`rg`/`fd`/`jq`, `ast-grep`, `gh`, …) through the platform package manager. |
-| [`aih ready`](docs/commands.md#aih-ready) | Grade a blocker-aware readiness verdict: can a developer start work with an AI agent here, now? |
+| [`aih ready`](docs/commands.md#aih-ready) | Check host and selected-client configuration prerequisites, with blockers and unverified MCP capabilities visible. |
 | [`aih session-guard`](docs/commands.md#aih-session-guard) | Inspect session/action text offline for secret-like values and dangerous local actions. |
 | [`aih live`](docs/commands.md#aih-live) | Stream bounded progress from one explicitly selected local Codex, Claude, or opt-in non-read-only Kimi invocation. |
 | [`aih hardware`](docs/commands.md#aih-hardware) | Profile CPU/RAM/GPU and emit tuned Ollama/llama.cpp settings. |

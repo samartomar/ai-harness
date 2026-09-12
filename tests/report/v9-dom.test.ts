@@ -113,7 +113,7 @@ describe("reportHtmlV9 — DOM hydration", () => {
     const ready = doc.getElementById("sec-ready");
     expect(ready?.textContent).toContain("NOT READY");
     expect(ready?.textContent).toContain("Corporate TLS/CA trust intact");
-    expect(ready?.querySelector(".sec-title")?.textContent).toContain("1 blocker");
+    expect(ready?.querySelector(".sec-title")?.textContent).toContain("1 preflight blocker");
     // Action board: ranked anomaly cards from real signals.
     const actions = doc.getElementById("sec-actions");
     expect(actions?.querySelectorAll(".anom-card").length ?? 0).toBeGreaterThan(0);

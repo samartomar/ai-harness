@@ -125,3 +125,94 @@ file and connects to the intended server. The repository's
 exercises isolated, harmless fixture servers and records real handshakes and
 tool discovery separately from unavailable or blocked probes. It does not
 replace organization-specific host approval or deployment checks.
+
+### Bounded native acceptance
+
+Keep support, configuration, discovery, tool execution and enforcement as separate
+observations. `aih ready` reports host/configuration preflight and unverified MCP
+capabilities. It does not import a prior host report as runtime proof or upgrade a
+configuration receipt into an execution result.
+
+For a supported client, begin with the repository-owned fixture probe from the
+source checkout, selecting one target and an absolute report path:
+
+```sh
+node --import tsx tools/verify-governed-mcp-hosts.mjs --targets codex --report /absolute/path/host-acceptance.json
+```
+
+This explicit probe uses isolated consumer fixtures. Its JSON records client
+version, configuration hash and distinct handshake/catalog/tool evidence. A host
+whose probe only lists tools has established discovery; it has not established a
+successful tool operation. Review the per-target result and its scope limitations.
+
+For Codex, the source checkout also provides a bounded native operation probe:
+
+```sh
+node --import tsx tools/verify-codex-mcp-runtime.mjs --report /absolute/path/codex-runtime.json --codex-binary /absolute/path/to/codex
+node --import tsx tools/verify-codex-mcp-runtime.mjs --report /absolute/path/codex-runtime.json --check
+```
+
+The first command creates an isolated consumer and client home, starts only the
+repository-owned fixture server, and calls its canary tool through the native
+Codex app server. It checks the returned root and effective read-only/no-network
+thread policy, then repeats the operation in a fresh client process. It requests
+no model turn. It does not install a client, repair sandbox permissions, copy
+authentication, or change the adopter's client configuration. An unavailable
+native executable remains unavailable; supply the installed native executable
+with `--codex-binary` when PATH contains only a package launcher.
+
+Use a new `--report` path for each producer run, including retries. Existing files
+are refused before the probe starts. Failed runs retain a failure report for
+diagnosis; retry with a fresh path after resolving the reported cause.
+Setup failure codes distinguish denied file access, exhausted storage, unavailable
+paths and unreadable material. Check the selected paths and available disk space
+for those categories. Unclassified failures retain `runtime-probe-failed`; reports
+omit raw operating-system error text and private paths from error messages.
+
+The JSON keeps support, discovery, exercise, restart and enforcement separate.
+The first command records the observed executable version and binds the executable
+bytes, root, configuration, fixture/runtime bytes, invocation and deadline. The
+second command rechecks file bytes, paths, fixture configuration and the deadline
+without launching the client. The version remains the historical value in the
+record; the recheck does not measure it again or authenticate edits to the report.
+Changed material bindings or an expired deadline make the observation stale;
+missing or unsafe files prevent reuse. This local record is not signed authority,
+and a byte recheck does not establish a new live policy observation. Repeat the
+first command with an explicitly selected client for a fresh version and runtime
+observation. Retain the fixture directory while reusing the record.
+
+The fixture's MCP call does not test MCP subprocess confinement; enforcement
+remains unverified. A successful result covers this fixture and client only.
+`aih ready` continues to report preflight and does not import this file or upgrade
+unrelated configured servers to exercised.
+
+Then use the intended native client under the required policy to perform one
+authorized, bounded operation against a disposable consumer root. For example,
+read one known canary through the selected MCP tool and compare its expected
+value. Record the actual tool request/result and a deadline. A direct host call
+does not establish that the restricted client can perform the same operation.
+Restart the client and repeat that operation when continuity is required. Test a
+harmless denied operation separately when claiming enforcement, and confirm that
+the prohibited effect did not occur. A sandbox result for the client's shell does
+not by itself prove confinement of its MCP subprocesses.
+
+Retain the existing host report plus the operation result in the team's evidence
+home. Bind each observation to the client executable/version, canonical target
+root, configuration path/hash, effective approval/sandbox/network policy and time.
+Record server/cache identity when it affects the operation. Reuse only matching
+evidence; a change to any material condition makes the affected observation stale
+until repeated. A missing restart or denied-operation result stays unverified.
+
+| Observed condition | Next bounded action |
+| --- | --- |
+| Authentication required | Complete the selected host's supported login, then repeat the same tool call; retain no token values. |
+| Runtime or offline cache unavailable | Restore the approved runtime/cache for the calling process, then repeat the same call. A version check cannot establish cached package availability. |
+| Wrong target root | Compare the request root and server/daemon root context; correct the scoped configuration before repeating. |
+| Policy or approval blocks the operation | Identify the denied operation and applicable policy owner; obtain only the required scoped authority. |
+| Configured but unverified | Run the one bounded native operation and record its result. |
+| Optional tool unavailable | Keep the failure visible and use the supported workflow that does not require that tool. |
+
+Codex's native `required` setting applies to enabled servers. AIH retains an
+omitted requirement as unspecified because native startup defaults do not define
+the team's required workflow. See the
+[Codex MCP configuration reference](https://developers.openai.com/codex/mcp/).

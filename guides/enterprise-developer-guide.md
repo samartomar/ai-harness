@@ -1,7 +1,7 @@
 ---
 status: guide
 owner: AI-Harness maintainers
-last_verified: 2026-09-02
+last_verified: 2026-09-12
 truth_home: true
 purpose: Developer guide for consuming admin-authored AI-Harness enterprise configuration.
 ---
@@ -43,23 +43,68 @@ may stay within the current major. Re-run `aih verify-release $CoreVersion` afte
 installation. Use `--force` only
 to replace a broken global install after reviewing the npm prefix and package source.
 
-Clone the admin configuration repo and point AI-Harness at the policy:
+Ask the administrator for the absolute path to the protected PolicyBundle V2 on the
+read-only admin/MDM distribution path. Use the administrator-managed launcher or
+process environment that provides `AIH_ORG_POLICY` to AIH and the selected client.
+The path must remain outside the governed project. A shell-only export does not
+configure a later terminal, desktop shortcut, or background process.
+
+In a fresh approved terminal, and again through the selected client's command
+tool, check the received binding before applying project changes:
 
 ```powershell
-$AdminConfigDir = Join-Path $HOME "aih-admin-configuration"
-git clone <admin-config-repo-url> $AdminConfigDir
-$env:AIH_ORG_POLICY = Join-Path $AdminConfigDir "aih-org-policy.json"
-aih policy validate
+if ([string]::IsNullOrWhiteSpace($env:AIH_ORG_POLICY) -or
+    -not [System.IO.Path]::IsPathFullyQualified($env:AIH_ORG_POLICY)) {
+    throw "The approved launcher must supply an absolute AIH_ORG_POLICY path."
+}
+aih policy validate . --no-log
+aih policy verify . --against "<administrator-provided-sha256>" --no-log
+aih policy evaluate . --no-log --json
 ```
+
+`policy validate` checks the selected policy's schema; `policy verify` compares
+the selected file with the administrator's expected digest. `policy evaluate`
+reports effective requirements and blocked decisions. Inspect all three results;
+a schema pass alone does not prove authority or that required controls are active.
+Repeat these checks after restarting the client and in each new worktree.
+
+For one invocation outside that launcher, pass the administrator's absolute path:
+
+```powershell
+$PolicyPath = "<absolute-admin-read-only-policy-bundle>"
+aih policy validate . --policy $PolicyPath --no-log
+aih policy verify . --against "<administrator-provided-sha256>" --policy $PolicyPath --no-log
+```
+
+`--policy` affects that invocation only. The recipes below assume the managed
+environment has passed the fresh-process checks above. If using `--policy`
+instead, include it on every AIH command; assigning `$PolicyPath` does not bind
+later commands. AIH does not install a persistent environment or launcher for you.
+Keep that configuration under the administrator's existing deployment controls.
 
 What you need from the admin:
 
+These inputs belong to each adopting organization. For local evaluation with
+the default Vibe posture and packaged baseline evidence, follow
+[Vibe Developer](vibe-developer-guide.md); that path does not require an
+organization signing setup. A policy's Enterprise posture floor still applies
+when that policy is selected.
+
 | Input | Purpose | Secret handling |
 |---|---|---|
-| Admin config repo or bundle | Carries policy, approved server names, pack manifests, and pins. | No real tokens should be present. |
-| `aih-org-policy.json` path | Sets `AIH_ORG_POLICY` for local commands. | Safe to reference by path. |
+| Protected PolicyBundle V2 path | Administrator/MDM distributes the exact read-only policy outside the governed target. | The path is safe to reference; never edit the bundle or place secrets in it. |
+| Optional admin template repo | Carries reviewed templates and handoff material; it is not authority unless the administrator publishes the protected bundle from it. | No real tokens should be present. |
 | Approved MCP templates | Shows allowed server keys such as `figma`, `atlassian`, or `aws-knowledge-mcp-server`. | Keep OAuth state and API tokens local. |
 | Approved skill pack names | Tells developers which packs may be installed or synced. | Approval does not transfer to same-named skills from another source. |
+| ECC/Superpowers organization evidence | Enterprise installation requires an exact `trust.baselineOverrides[]` entry and its GitHub-attested bundle, even when packaged publisher evidence passes. | Receive the reviewed bundle through the administrator's distribution route; do not invent approval metadata or signing identities. |
+
+The baseline override's bundle path is relative to the governed project. Its
+checksum and GitHub attestation are verified against the signing repository in
+the protected policy; the protected PolicyBundle itself remains outside the
+project. If installation reports `baseline.org-evidence-required`, request the
+reviewed entry and matching bundle for the exact reported source pin. Follow
+[the Enterprise org-evidence boundary](https://github.com/samartomar/ai-harness/blob/main/docs/security/baseline-evidence.md#enterprise-org-evidence-boundary)
+before running the ECC or Superpowers recipes below.
 
 Most writing commands refuse a dirty worktree unless `--force` is supplied. For normal repo onboarding, run a stage, review the diff, and commit or stash before the next writing stage. Use `--force` only when you intentionally accept the current dirty setup branch.
 
@@ -70,9 +115,6 @@ When the task is specifically to add, switch, or prune AI CLI surfaces, use [CLI
 Use Min Configuration when you only need the governed repo canon, policy-aware MCP generation, and verification.
 
 ```powershell
-$AdminConfigDir = Join-Path $HOME "aih-admin-configuration"
-$env:AIH_ORG_POLICY = Join-Path $AdminConfigDir "aih-org-policy.json"
-aih policy validate
 aih init . --posture enterprise --mcp-mode offline --mcp-compliant
 aih init . --posture enterprise --mcp-mode offline --mcp-compliant --apply
 aih bootstrap-ai --all-tools --apply
@@ -100,8 +142,6 @@ directory through the approved shell/profile path.
 Use Balanced when the repo needs ECC, BetterDoc, and one reviewed enterprise MCP example such as Figma in addition to the Min Configuration.
 
 ```powershell
-$AdminConfigDir = Join-Path $HOME "aih-admin-configuration"
-$env:AIH_ORG_POLICY = Join-Path $AdminConfigDir "aih-org-policy.json"
 aih ecc --cli claude,codex --profile core --posture enterprise --apply
 aih pack plan --pack docs-quality
 aih pack install --pack docs-quality --posture enterprise --apply
@@ -135,8 +175,6 @@ aih doctor --posture enterprise
 Use Powerhouse Mode when policy has approved the optional feature set for this repo: ECC, BetterDoc, Superpowers, local usage/reporting, truth sidecar, selected external skills, Figma, Atlassian/Jira, and selected AWS MCP.
 
 ```powershell
-$AdminConfigDir = Join-Path $HOME "aih-admin-configuration"
-$env:AIH_ORG_POLICY = Join-Path $AdminConfigDir "aih-org-policy.json"
 aih init . --v3 --posture enterprise --mcp-mode standard --mcp-compliant --apply
 aih bootstrap-ai --all-tools --apply
 aih bootstrap-ai --verify
@@ -225,9 +263,16 @@ Run `skill sync` only for approved promoted skills. A same-named skill from anot
 
 ## 5. Best Practices & Architecture
 
-Keep `AIH_ORG_POLICY` stable for the shell where commands run. A new terminal, GUI-launched editor, or background agent may not inherit the variable.
+Keep `AIH_ORG_POLICY` in the administrator-managed launcher/process environment. A new
+terminal, GUI-launched editor, or background agent must receive the same path explicitly;
+otherwise use `--policy <absolute-path>` for that invocation.
 
-Use policy validation before local setup. If `aih policy validate` fails, fix or update the admin policy before running install commands.
+Before setup, run the read-only policy checks above in the fresh terminal and
+client-launched process. Without an explicit selection, AIH looks for the
+repository-local default; its absence can be a skip. That is not evidence that
+the organization's policy was loaded. An explicitly selected missing or unsafe
+file fails, and `policy verify` fails when the expected digest differs. Have the
+administrator correct the delivery path or distribution when these checks fail.
 
 Use the approved client path. Some clients support direct HTTP MCP, some prefer plugins, and some need local proxy tools. The policy approval is server-name evidence; it is not a guarantee that every client can use the same JSON shape.
 
