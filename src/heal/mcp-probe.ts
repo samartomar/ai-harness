@@ -5,11 +5,88 @@ import { type Action, digest, type PlanContext, probe } from "../internals/plan.
 import type { RunResult } from "../internals/proc.js";
 import type { Check } from "../internals/verify.js";
 import { captured, classifyTool, type HealShared, type HealStep, versionArgv } from "./common.js";
+import {
+  inventoryMcpReadiness,
+  type McpInventoryIssue,
+  type McpReadinessServer,
+} from "./mcp-inventory.js";
 import { mcpTlsInterceptionDoc } from "./templates.js";
 
 const CHECK = "mcp: npx launcher";
 const MAX_ENDPOINT_PROBES = 3;
 const PROBE_ENDPOINTS_OPTION = "probeMcpEndpoints";
+
+export interface McpReadinessAssessment {
+  actions: Action[];
+  servers: McpReadinessServer[];
+  issues: McpInventoryIssue[];
+}
+
+/** Read configuration and fixed runtime prerequisites without launching configured servers. */
+export async function assessMcpReadiness(
+  ctx: PlanContext,
+  shared: HealShared,
+): Promise<McpReadinessAssessment> {
+  const inventory = inventoryMcpReadiness(ctx);
+  const npxServers = inventory.servers.filter(
+    (server) =>
+      server.selected && inventory.launchers.get(server) === "npx" && server.state === "unverified",
+  );
+  const uvxServers = inventory.servers.filter(
+    (server) =>
+      server.selected && inventory.launchers.get(server) === "uvx" && server.state === "unverified",
+  );
+  const actions: Action[] = [];
+  if (npxServers.length > 0) {
+    const result = await ctx.run(versionArgv(ctx.host.platform, "npx"));
+    const available = classifyTool(result, ctx.host.platform === "windows") === "ok";
+    actions.push(
+      captured({
+        name: CHECK,
+        verdict: available ? "pass" : "fail",
+        code: available ? undefined : "mcp.blocked",
+        detail: available
+          ? "npx is runnable; configured MCP servers remain unverified until invoked"
+          : shared.tlsRegistry.verdict === "fail"
+            ? "npx prerequisite unavailable; certs/TLS also failed — run aih heal --scope certs, then aih heal --scope npm"
+            : "npx prerequisite unavailable — run aih heal --scope npm",
+      }),
+    );
+    if (!available) {
+      for (const server of npxServers) {
+        server.state = "unavailable";
+        server.reason = "npx-unavailable";
+        server.detail = "npx prerequisite is unavailable; configured server was not launched";
+        server.nextStep =
+          "aih heal --scope npm; then follow docs/governed-mcp.md#bounded-native-acceptance";
+      }
+    }
+  }
+  if (uvxServers.length > 0) {
+    const result = await ctx.run(versionArgv(ctx.host.platform, "uvx"));
+    const available = classifyTool(result, ctx.host.platform === "windows") === "ok";
+    actions.push(
+      captured({
+        name: "mcp: uvx launcher",
+        verdict: available ? "pass" : "fail",
+        code: available ? undefined : "mcp.blocked",
+        detail: available
+          ? "uvx is runnable; offline cache, authentication, and server startup remain unverified"
+          : "uvx prerequisite is unavailable in the preflight environment; server startup remains unverified",
+      }),
+    );
+    if (!available) {
+      for (const server of uvxServers) {
+        server.state = "unavailable";
+        server.reason = "uvx-unavailable";
+        server.detail = "uvx prerequisite is unavailable; configured server was not launched";
+        server.nextStep =
+          "restore the approved uvx runtime; run uvx --version, then follow docs/governed-mcp.md#bounded-native-acceptance";
+      }
+    }
+  }
+  return { actions, servers: inventory.servers, issues: inventory.issues };
+}
 
 interface McpInventory {
   configured: boolean;
@@ -62,8 +139,8 @@ function addAtlassianEnvEndpoints(
   addEndpoint(out, processEnv.CONFLUENCE_URL);
 }
 
-/** Does this repo configure MCP servers that shell out to `npx`? */
-function mcpInventory(ctx: PlanContext): McpInventory {
+/** Existing root-config endpoint diagnostics; these are not runtime acceptance. */
+function mcpTlsInventory(ctx: PlanContext): McpInventory {
   const raw = readRegularFile(join(ctx.root, ".mcp.json"))?.toString("utf8");
   const empty: McpInventory = {
     configured: false,
@@ -298,60 +375,50 @@ async function pythonTlsCheck(ctx: PlanContext, endpoints: readonly string[]): P
 }
 
 /**
- * MCP pre-flight — strictly read-only. It surfaces the ROOT CAUSE rather than a
- * bare "MCP failed": if `npx` can't run, was it the cert/TLS layer (fix certs) or
- * a broken npm (fix npm)? The chain reuses the shared TLS result, so it adds no
- * extra network probe.
+ * MCP preflight shares readiness's native inventory and fixed prerequisites.
+ * Existing root-config TLS diagnostics remain an explicit opt-in adjunct.
  */
 async function planMcpProbe(ctx: PlanContext, shared: HealShared): Promise<Action[]> {
-  const inventory = mcpInventory(ctx);
-  const { configured, usesNpx } = inventory;
-
-  let check: Check;
-  if (!configured) {
-    check = {
-      name: CHECK,
-      verdict: "skip",
-      detail: "no .mcp.json (no MCP servers configured)",
-      code: "mcp.config-missing",
-    };
-    return [captured(check)];
+  const assessment = await assessMcpReadiness(ctx, shared);
+  const actions = assessment.actions;
+  if (!actions.some((action) => action.describe === CHECK)) {
+    actions.unshift(
+      captured({
+        name: CHECK,
+        verdict: "skip",
+        detail: "no enabled npx prerequisite found in registered MCP configuration",
+      }),
+    );
   }
-  if (!usesNpx) {
-    check = { name: CHECK, verdict: "skip", detail: ".mcp.json servers don't launch via npx" };
-  } else if (shared.tlsRegistry.verdict === "fail") {
-    const res = await ctx.run(versionArgv(ctx.host.platform, "npx"));
-    const npxOk = classifyTool(res, ctx.host.platform === "windows") === "ok";
-    check = npxOk
-      ? {
-          name: CHECK,
-          verdict: "pass",
-          detail: `npx ${res.stdout.trim()} — MCP servers can launch`,
-        }
-      : {
-          name: CHECK,
-          verdict: "fail",
-          detail:
-            "npx can't reach the registry — root cause: certs/TLS (heal the certs step first)",
-          code: "mcp.blocked",
-        };
-  } else {
-    const res = await ctx.run(versionArgv(ctx.host.platform, "npx"));
-    const npxOk = classifyTool(res, ctx.host.platform === "windows") === "ok";
-    check = npxOk
-      ? {
-          name: CHECK,
-          verdict: "pass",
-          detail: `npx ${res.stdout.trim()} — MCP servers can launch`,
-        }
-      : {
-          name: CHECK,
-          verdict: "fail",
-          detail: "npx unavailable — root cause: npm is broken (see the npm step)",
-          code: "mcp.blocked",
-        };
+  for (const issue of assessment.issues) {
+    actions.push(
+      captured(
+        issue.selected
+          ? issue.check
+          : {
+              ...issue.check,
+              verdict: "skip",
+              code: undefined,
+              detail: `unselected client: ${issue.check.detail}`,
+            },
+      ),
+    );
   }
-  const actions: Action[] = [captured(check)];
+  if (assessment.servers.length > 0) {
+    actions.push(
+      digest(
+        "heal: MCP readiness",
+        assessment.servers
+          .map(
+            (server) =>
+              `${server.targetCli} / ${server.name} (${server.configPath}; ${server.required}): ${server.state} — ${server.detail}\nNext: ${server.nextStep}`,
+          )
+          .join("\n"),
+        { servers: assessment.servers, issues: assessment.issues },
+      ),
+    );
+  }
+  const inventory = mcpTlsInventory(ctx);
   if (inventory.endpoints.length > 0 && (inventory.nodeRuntime || inventory.pythonRuntime)) {
     actions.push(
       captured({

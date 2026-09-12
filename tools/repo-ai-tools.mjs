@@ -8,16 +8,20 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const repoRoot = realpathSync.native(resolve(dirname(fileURLToPath(import.meta.url)), ".."));
+const codexConfigPath = join(repoRoot, ".codex", "config.toml");
+const codexBlockBegin = "# BEGIN AIH REPO TOOLING (managed by npm run repo:init)";
+const codexBlockEnd = "# END AIH REPO TOOLING";
 const pins = {
   serena: {
     package: "serena-agent==1.7.0",
@@ -59,11 +63,13 @@ const repoKey = createHash("sha256")
   .update(`${repoRoot}\0${cacheGeneration}`)
   .digest("hex")
   .slice(0, 16);
-const cacheRoot =
+const selectedCacheRoot =
   process.env.AIH_REPO_AI_TOOLS_HOME ||
+  readManagedCacheRoot() ||
   (process.platform === "win32"
     ? join(process.env.LOCALAPPDATA || homedir(), "aih-cache")
     : join(homedir(), ".cache"));
+const cacheRoot = canonicalCacheRoot(selectedCacheRoot);
 const installRoot = join(cacheRoot, "aih", "repo-ai-tools", repoKey);
 const uvToolRoot = join(installRoot, "uv");
 const binRoot = join(installRoot, "bin");
@@ -72,9 +78,29 @@ const tokenOptimizerClaudeScope = join(installRoot, "token-optimizer", "claude-s
 const serenaOverridesPath = join(installRoot, "serena-security-overrides.txt");
 const serenaContextPath = join(installRoot, "serena-codex-context.yml");
 const codeReviewGraphRoot = join(installRoot, "code-review-graph");
-const codebaseMemoryRoot = join(installRoot, "codebase-memory");
+// Memory ownership must survive unrelated helper upgrades. A memory upgrade
+// gets a new namespace without joining or migrating another client's daemon.
+const codebaseMemoryGeneration = createHash("sha256")
+  .update(JSON.stringify({
+    package: pins.codebaseMemory.package,
+    platform: process.platform,
+    arch: process.arch,
+  }))
+  .digest("hex")
+  .slice(0, 16);
+const codebaseMemoryRootKey = createHash("sha256")
+  .update(JSON.stringify({
+    root: process.platform === "win32" ? repoRoot.toLowerCase() : repoRoot,
+    generation: codebaseMemoryGeneration,
+  }))
+  .digest("hex")
+  .slice(0, 16);
+const codebaseMemoryRoot = join(
+  cacheRoot, "aih-memory", codebaseMemoryRootKey,
+);
+const codebaseMemoryCacheDir = join(codebaseMemoryRoot, "cache");
+const codebaseMemoryRuntimeDir = join(codebaseMemoryRoot, "runtime");
 const codebaseMemoryMarker = join(codebaseMemoryRoot, "indexed.json");
-const codexConfigPath = join(repoRoot, ".codex", "config.toml");
 const scriptPath = fileURLToPath(import.meta.url);
 
 const serenaExcludedTools = [
@@ -165,6 +191,9 @@ const plan = {
     codebaseMemory: {
       role: "find-trace-recall",
       advisory: true,
+      generation: codebaseMemoryGeneration,
+      cacheDir: codebaseMemoryCacheDir,
+      runtimeDir: codebaseMemoryRuntimeDir,
       enabledTools: codebaseMemoryEnabledTools,
     },
   },
@@ -205,6 +234,46 @@ const plan = {
 function fail(message) {
   process.stderr.write(`[repo-ai-tools] ${message}\n`);
   process.exitCode = 1;
+}
+
+function canonicalCacheRoot(path) {
+  const absolute = resolve(path);
+  if (existsSync(absolute)) return realpathSync.native(absolute);
+  const parent = dirname(absolute);
+  if (parent === absolute) throw new Error("managed cache root has no existing ancestor");
+  return join(canonicalCacheRoot(parent), basename(absolute));
+}
+
+function readManagedCacheRoot() {
+  const config = readOptionalUtf8(codexConfigPath);
+  if (config === undefined) return undefined;
+  const begin = config.indexOf(codexBlockBegin);
+  const end = config.indexOf(codexBlockEnd);
+  if (begin < 0 && end < 0) return undefined;
+  if (begin < 0 || end < begin || config.indexOf(codexBlockBegin, begin + 1) >= 0) {
+    throw new Error("malformed managed Codex config block");
+  }
+  const lines = config.slice(begin, end).split(/\r?\n/)
+    .filter((line) => line.includes("AIH_REPO_AI_TOOLS_HOME"));
+  let recorded;
+  for (const line of lines) {
+    // Read only our generated inline binding, not arbitrary TOML or user entries.
+    const match = /^env = \{ AIH_REPO_AI_TOOLS_HOME = (".*") \}$/.exec(line.trim());
+    let value;
+    try {
+      value = match ? JSON.parse(match[1]) : undefined;
+    } catch {
+      throw new Error("malformed managed cache binding");
+    }
+    if (typeof value !== "string" || !isAbsolute(value) || /[\0\r\n]/.test(value)) {
+      throw new Error("malformed managed cache binding; expected an absolute path");
+    }
+    if (recorded !== undefined && recorded !== value) {
+      throw new Error("conflicting managed cache bindings");
+    }
+    recorded = value;
+  }
+  return recorded;
 }
 
 function runChecked(command, args, options = {}) {
@@ -576,11 +645,19 @@ function codeReviewGraphMcp() {
   );
 }
 
+function prepareCodebaseMemoryRuntime() {
+  for (const path of [codebaseMemoryRoot, codebaseMemoryCacheDir, codebaseMemoryRuntimeDir]) {
+    mkdirSync(path, { recursive: true, mode: 0o700 });
+  }
+}
+
 function codebaseMemoryEnv() {
+  prepareCodebaseMemoryRuntime();
   return {
     ...process.env,
     CBM_ALLOWED_ROOT: repoRoot,
-    CBM_CACHE_DIR: codebaseMemoryRoot,
+    CBM_CACHE_DIR: codebaseMemoryCacheDir,
+    CBM_RUNTIME_DIR: codebaseMemoryRuntimeDir,
     CBM_LOG_LEVEL: "warn",
   };
 }
@@ -684,8 +761,6 @@ const projectMcpServers = [
     toolTimeout: 300,
   },
 ];
-const codexBlockBegin = "# BEGIN AIH REPO TOOLING (managed by npm run repo:init)";
-const codexBlockEnd = "# END AIH REPO TOOLING";
 
 function tomlString(value) {
   return JSON.stringify(value);
@@ -704,6 +779,7 @@ function renderCodexConfig() {
       `command = ${tomlString("node")}`,
       `args = ${tomlString([scriptPath, server.launcher])}`,
       `cwd = ${tomlString(repoRoot)}`,
+      `env = { AIH_REPO_AI_TOOLS_HOME = ${tomlString(cacheRoot)} }`,
       `enabled_tools = ${tomlString(server.enabledTools)}`,
       `startup_timeout_sec = ${server.startupTimeout}`,
       `tool_timeout_sec = ${server.toolTimeout}`,
@@ -835,21 +911,49 @@ function initializeCodebaseMemory() {
   const markerText = readOptionalUtf8(codebaseMemoryMarker);
   if (markerText !== undefined) {
     const marker = parseJson(markerText, "codebase-memory marker");
-    if (marker.repository === repoRoot && marker.generation === cacheGeneration) return;
+    const project = codebaseMemoryProject(codebaseMemoryInventory());
+    if (
+      codebaseMemoryMarkerMatches(marker) &&
+      isPopulatedCodebaseMemoryProject(project)
+    ) {
+      return;
+    }
   }
   runChecked(
     executable("codebase-memory-mcp"),
     ["cli", "index_repository", "--repo-path", repoRoot, "--mode", "moderate"],
     { env: codebaseMemoryEnv(), timeout: 1_800_000 },
   );
+  codebaseMemoryStatus();
   writeFileAtomically(
     codebaseMemoryMarker,
-    `${JSON.stringify({ repository: repoRoot, generation: cacheGeneration }, null, 2)}\n`,
+    `${JSON.stringify({ repository: repoRoot, generation: codebaseMemoryGeneration }, null, 2)}\n`,
     markerText,
   );
 }
 
-function codebaseMemoryStatus() {
+function codebaseMemoryMarkerMatches(marker) {
+  return (
+    !!marker &&
+    typeof marker === "object" &&
+    !Array.isArray(marker) &&
+    marker.repository === repoRoot &&
+    marker.generation === codebaseMemoryGeneration
+  );
+}
+
+function codebaseMemoryCompletion() {
+  const markerText = readOptionalUtf8(codebaseMemoryMarker);
+  if (markerText === undefined) {
+    throw new Error("codebase-memory-mcp has no completed repo index marker");
+  }
+  if (!codebaseMemoryMarkerMatches(parseJson(markerText, "codebase-memory marker"))) {
+    throw new Error("codebase-memory-mcp index marker differs from this root or memory pin; rerun repo:init");
+  }
+  return codebaseMemoryStatus();
+}
+
+function codebaseMemoryInventory() {
   const inventory = parseJson(
     runChecked(executable("codebase-memory-mcp"), ["cli", "list_projects"], {
       capture: true,
@@ -858,16 +962,64 @@ function codebaseMemoryStatus() {
     }),
     "codebase-memory project inventory",
   );
-  const projects = Array.isArray(inventory.projects) ? inventory.projects : [];
-  const project = projects.find(
+  if (!inventory || typeof inventory !== "object" || !Array.isArray(inventory.projects)) {
+    throw new Error("codebase-memory-mcp returned malformed project inventory");
+  }
+  return inventory;
+}
+
+function codebaseMemoryProject(inventory) {
+  const projects = Array.isArray(inventory?.projects) ? inventory.projects : [];
+  const expectedRoot = resolve(repoRoot);
+  return projects.find(
     (item) =>
       typeof item?.root_path === "string" &&
-      resolve(item.root_path).toLowerCase() === repoRoot.toLowerCase(),
+      isAbsolute(item.root_path) &&
+      (process.platform === "win32"
+        ? resolve(item.root_path).toLowerCase() === expectedRoot.toLowerCase()
+        : resolve(item.root_path) === expectedRoot),
   );
-  if (!project || project.nodes <= 0 || project.edges <= 0) {
+}
+
+function isPopulatedCodebaseMemoryProject(project) {
+  return (
+    !!project &&
+    typeof project.nodes === "number" &&
+    Number.isFinite(project.nodes) &&
+    project.nodes > 0 &&
+    typeof project.edges === "number" &&
+    Number.isFinite(project.edges) &&
+    project.edges > 0
+  );
+}
+
+function codebaseMemoryStatus() {
+  const project = codebaseMemoryProject(codebaseMemoryInventory());
+  if (!isPopulatedCodebaseMemoryProject(project)) {
     throw new Error("codebase-memory-mcp has no populated index for this repository");
   }
   return { nodes: project.nodes, edges: project.edges };
+}
+
+function preflightCodebaseMemory() {
+  // Configure only this managed cache before a temporary native client starts
+  // watching/indexing the root and races the explicit setup index operation.
+  for (const setting of ["auto_watch", "auto_index"]) {
+    runChecked(executable("codebase-memory-mcp"), ["config", "set", setting, "false"], {
+      env: codebaseMemoryEnv(),
+      timeout: 30_000,
+    });
+  }
+  codebaseMemoryInventory();
+}
+
+function setupStage(name, action) {
+  try {
+    return action();
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`setup-codex ${name} failed: ${detail}`, { cause: error });
+  }
 }
 
 const mcpProbeScript = String.raw`
@@ -881,6 +1033,7 @@ async def main():
     params = StdioServerParameters(
         command=os.environ["AIH_MCP_COMMAND"],
         args=json.loads(os.environ["AIH_MCP_ARGS"]),
+        env={"AIH_REPO_AI_TOOLS_HOME": os.environ["AIH_REPO_AI_TOOLS_HOME"]},
     )
     async with stdio_client(params) as (reader, writer):
         async with ClientSession(reader, writer) as session:
@@ -897,6 +1050,7 @@ function probeMcpServer(server) {
     timeout: Math.max(server.startupTimeout * 1_000, 120_000),
     env: {
       ...process.env,
+      AIH_REPO_AI_TOOLS_HOME: cacheRoot,
       AIH_MCP_COMMAND: "node",
       AIH_MCP_ARGS: JSON.stringify([scriptPath, server.launcher]),
     },
@@ -923,6 +1077,9 @@ function verifyCodexProjection() {
     );
     const transport = entry.transport ?? entry;
     if (transport.command !== "node") throw new Error(`${server.name} Codex command drifted`);
+    if (transport.env?.AIH_REPO_AI_TOOLS_HOME !== cacheRoot) {
+      throw new Error(`${server.name} Codex managed cache binding drifted`);
+    }
     if (!Array.isArray(transport.args) || !transport.args.includes(server.launcher)) {
       throw new Error(`${server.name} Codex launcher drifted`);
     }
@@ -989,10 +1146,7 @@ function doctorCodex() {
   if (!status || !hasPositiveGraphMetric(status)) {
     throw new Error("code-review-graph has no populated repo-scoped graph");
   }
-  if (!existsSync(codebaseMemoryMarker)) {
-    throw new Error("codebase-memory-mcp has no completed repo index marker");
-  }
-  const memory = codebaseMemoryStatus();
+  const memory = codebaseMemoryCompletion();
   const mcp = Object.fromEntries(
     projectMcpServers.map((server) => [server.name, { exposedTools: probeMcpServer(server) }]),
   );
@@ -1044,17 +1198,18 @@ function setupCodex({ dryRun = false, refreshEcc = false } = {}) {
   for (const name of ["node", "git", "uv", "codex", "rg", "fd", "tree"]) {
     assertCommand(name);
   }
+  install();
+  setupStage("codebase-memory preflight", preflightCodebaseMemory);
+  setupStage("codebase-memory indexing", initializeCodebaseMemory);
   const hooksPath = runChecked("git", ["config", "--get", "core.hooksPath"], {
     capture: true,
   });
   if (hooksPath !== ".githooks") {
     runChecked("git", ["config", "core.hooksPath", ".githooks"]);
   }
-  install();
   writeCodexProjection();
   configureEcc({ refresh: refreshEcc });
   initializeCodeReviewGraph();
-  initializeCodebaseMemory();
   doctorCodex();
 }
 

@@ -65,11 +65,27 @@ probe is an advisory skip — it does not block `aih tools` or `aih ready`.
 
 ## aih ready
 
-Readiness gate — one graded, blocker-aware verdict answering "can a developer start work with an AI
-agent here, now?", composed from aih's read-only probes (runtime/TLS/PATH/core tools, per-CLI
-loadability, contract, secret scan). Diagnoses by default (non-zero when blocked); the one
+Readiness preflight — a graded, blocker-aware view of host and configuration checks
+(runtime/TLS/PATH/core tools, per-CLI loadability, contract, secret scan). Native MCP
+configuration is inventoried separately from runtime acceptance. A launcher version
+does not prove a server can initialize, authenticate or perform a tool operation.
+Diagnoses by default (non-zero when blocked); the one
 auto-fixable blocker (missing `rg`/`fd`/`jq`) installs under confirmation. Surfaces a `sec-ready`
 panel in `aih report --v9`.
+
+Configured MCP servers remain unverified, including Codex project configuration and
+offline `uvx` declarations. Unverified capabilities for selected clients prevent a
+clean `READY` banner. Other clients' project configurations remain visible without
+affecting the selected workflow's score or banner.
+An explicitly required, enabled Codex server on a selected target blocks acceptance
+while its runtime is unavailable or unverified. Explicitly optional failures remain
+warnings; an omitted requirement stays unspecified. Disabled servers remain visible.
+AIH reads registered project configuration and selected clients' registered global
+configuration; this inventory does not resolve every native override or workspace
+trust decision. Routine readiness does not start configured third-party servers or
+run the repository's first command. Follow the
+[bounded native acceptance steps](governed-mcp.md#bounded-native-acceptance)
+to record actual tool use and policy behavior separately.
 
 The secret gate reports the finding's LOCATION class, because the remediation differs: a
 git-tracked finding is `no-committed-secret` (rotate the credential and rewrite it out of git

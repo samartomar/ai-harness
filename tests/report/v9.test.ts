@@ -172,6 +172,11 @@ function readiness(
     score: number;
     grade: string;
     blockers: Array<{ id: string; title: string; cmd: string }>;
+    unverified: Array<{ id: string; title: string; cmd: string }>;
+    mcp: {
+      servers: Array<Record<string, unknown>>;
+      issues: Array<Record<string, unknown>>;
+    };
   }> = {},
 ): DigestAction {
   return digest("Developer readiness — 88/100 (solid)", "body", {
@@ -180,6 +185,8 @@ function readiness(
     rawScore: over.score ?? 88,
     grade: over.grade ?? "solid",
     blockers: over.blockers ?? [],
+    unverified: over.unverified ?? [],
+    mcp: over.mcp ?? { servers: [], issues: [] },
     warns: [],
     firstCommand: null,
   });
@@ -493,7 +500,7 @@ describe("buildAihDataV9 — developer readiness (sec-ready)", () => {
     expect(html).toContain("aih heal --scope certs");
     expect(html).toContain("What to fix first"); // cross-links, does not duplicate
     // Title reflects the blocker count.
-    expect(view.sections["sec-ready"]?.title).toContain("2 blockers");
+    expect(view.sections["sec-ready"]?.title).toContain("2 preflight blockers");
   });
 
   it("shows an honest 'No blockers' state when READY", () => {
@@ -504,8 +511,45 @@ describe("buildAihDataV9 — developer readiness (sec-ready)", () => {
     const view = assembleViewV9(d, V9_DEMO);
     const html = view.sections["sec-ready"]?.html ?? "";
     expect(html).toContain("READY");
-    expect(html).toContain("No blockers");
-    expect(view.sections["sec-ready"]?.title).toContain("an agent can start here");
+    expect(html).toContain("No preflight blockers");
+    expect(view.sections["sec-ready"]?.title).toContain("preflight has no blockers");
+  });
+
+  it("keeps configured but unverified MCP capabilities visible", () => {
+    const row = {
+      id: "mcp:codex:.codex/config.toml:memory",
+      title: "codex MCP memory: configured-unverified",
+      cmd: "accept with Codex",
+    };
+    const d = buildAihDataV9([
+      ...ALL.filter((x) => !x.describe.startsWith("Developer readiness")),
+      readiness({
+        unverified: [row],
+        mcp: {
+          servers: [
+            {
+              targetCli: "codex",
+              configPath: ".codex/config.toml",
+              name: "memory",
+              selected: true,
+              required: "optional",
+              state: "configured-unverified",
+              detail: "configuration parsed; native discovery and tool execution unverified",
+              nextStep: "accept with Codex",
+            },
+          ],
+          issues: [],
+        },
+      }),
+    ]);
+    const view = assembleViewV9(d, V9_DEMO);
+    const html = view.sections["sec-ready"]?.html ?? "";
+    expect(d.ready?.unverified).toEqual([row]);
+    expect(html).toContain("MCP capability acceptance");
+    expect(html).toContain("configured-unverified");
+    expect(html).toContain("selected · optional");
+    expect(html).toContain("native discovery and tool execution unverified");
+    expect(html).not.toContain("an agent can start");
   });
 
   it("gates sec-ready empty with an honest stub when the digest is absent (org path)", () => {

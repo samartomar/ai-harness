@@ -8,7 +8,7 @@ import {
   tlsCheck,
   versionArgv,
 } from "../heal/common.js";
-import { mcpStep } from "../heal/mcp-probe.js";
+import { assessMcpReadiness } from "../heal/mcp-probe.js";
 import { pathStep } from "../heal/path-heal.js";
 import { gitRead } from "../internals/git.js";
 import { preCommitHookActive } from "../internals/git-hooks.js";
@@ -30,8 +30,8 @@ import {
 import { remediationBlock } from "./render.js";
 
 /**
- * DEVELOPER READINESS — "can this developer, on THIS machine, in THIS repo, make a
- * correct first change with an AI agent right now?" Unlike {@link scorecardDigest}
+ * DEVELOPER READINESS — host and configuration preflight for this repository.
+ * It does not establish native tool execution. Unlike {@link scorecardDigest}
  * (harness MATURITY, which omits entirely off-canon), readiness ALWAYS renders: a
  * harness-less repo is the single most important readiness case — it earns warns and
  * a first-command handoff, never silence.
@@ -89,6 +89,8 @@ export interface ReadinessResult {
   banner: "NOT READY" | "READY" | "READY, WITH GAPS";
   blockers: ReadinessRow[];
   warns: ReadinessRow[];
+  unverified: ReadinessRow[];
+  mcp: Omit<Awaited<ReturnType<typeof assessMcpReadiness>>, "actions">;
   score: number;
   rawScore: number;
   grade: Grade;
@@ -241,7 +243,11 @@ async function classifySecretFindings(ctx: PlanContext, gitOk: boolean): Promise
  * severity + dimension so the composer can split them into blockers (failing gates)
  * and scored warns. `skip` verdicts stay in the list but are dropped by the composer.
  */
-async function buildChecks(ctx: PlanContext): Promise<ReadinessCheck[]> {
+async function buildChecks(ctx: PlanContext): Promise<{
+  checks: ReadinessCheck[];
+  mcp: ReadinessResult["mcp"];
+  unverified: ReadinessRow[];
+}> {
   const { root, contextDir } = ctx;
   const posture = postureFromContext(ctx);
   const out: ReadinessCheck[] = [];
@@ -438,22 +444,51 @@ async function buildChecks(ctx: PlanContext): Promise<ReadinessCheck[]> {
     cmd: "aih guardrails --apply",
   });
 
-  // Third-party MCP egress unvetted / npx MCP can't launch. The launch failure is a
-  // conditional GATE (only when the repo declares an npx MCP — mcp-probe's `mcp.blocked`);
-  // not-applicable ⇒ `skip`.
-  const mcp =
-    (await healCheck(mcpStep, ctx, shared, "mcp.blocked")) ??
-    (await firstHealCheck(mcpStep, ctx, shared));
-  out.push({
-    id: "mcp-launches",
-    title: "Declared npx MCP servers can launch",
-    severity: "gate",
-    dimension: "harness-wiring",
-    verdict: mcp?.verdict === "fail" ? "fail" : "skip",
-    cmd: "aih heal --scope mcp",
-  });
+  // Launcher availability is a prerequisite, never native execution evidence.
+  // Keep unknowns outside scoring, and fail closed for explicitly required,
+  // enabled servers belonging to a selected client.
+  const { servers, issues } = await assessMcpReadiness(ctx, shared);
+  const unverified: ReadinessRow[] = [];
+  for (const server of servers) {
+    // Retain other clients' declarations in the inventory without grading them
+    // as requirements of the selected workflow.
+    if (!server.selected) continue;
+    const row: ReadinessRow = {
+      id: `mcp:${server.targetCli}:${server.configPath}:${server.name}`,
+      title: `${server.targetCli} MCP ${server.name}: ${server.state} — ${server.detail}`,
+      cmd: server.nextStep,
+      dimension: "harness-wiring",
+    };
+    if (server.state !== "disabled") unverified.push(row);
+    const required = server.required === "required";
+    out.push({
+      ...row,
+      severity: required ? "gate" : "warn",
+      verdict:
+        server.state === "disabled"
+          ? "skip"
+          : required || server.state === "unavailable"
+            ? "fail"
+            : "skip",
+    });
+  }
+  for (const issue of issues) {
+    if (!issue.selected) continue;
+    const row: ReadinessRow = {
+      id: `mcp-config:${issue.targetCli}:${issue.configPath}`,
+      title: `${issue.targetCli} MCP ${issue.configPath}: ${issue.check.detail}`,
+      cmd: issue.nextStep,
+      dimension: "harness-wiring",
+    };
+    unverified.push(row);
+    out.push({
+      ...row,
+      severity: "gate",
+      verdict: issue.check.verdict,
+    });
+  }
 
-  return out;
+  return { checks: out, mcp: { servers, issues }, unverified };
 }
 
 /**
@@ -479,7 +514,7 @@ function dimensionOf(name: Dimension, checks: ReadinessCheck[]): DimensionResult
  * (the exit-code probe), so both agree without double-computing.
  */
 export async function computeReadiness(ctx: PlanContext): Promise<ReadinessResult> {
-  const checks = await buildChecks(ctx);
+  const { checks, mcp, unverified } = await buildChecks(ctx);
 
   const blockers: ReadinessRow[] = checks
     .filter((c) => c.severity === "gate" && c.verdict === "fail")
@@ -501,14 +536,14 @@ export async function computeReadiness(ctx: PlanContext): Promise<ReadinessResul
 
   const banner: ReadinessResult["banner"] = hasBlocker
     ? "NOT READY"
-    : score >= READY_THRESHOLD
+    : score >= READY_THRESHOLD && unverified.length === 0
       ? "READY"
       : "READY, WITH GAPS";
 
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   const firstCommand = stack.startCommand ?? stack.testRunner ?? null;
 
-  return { banner, blockers, warns, score, rawScore, grade, dims, firstCommand };
+  return { banner, blockers, warns, unverified, mcp, score, rawScore, grade, dims, firstCommand };
 }
 
 /** Failing gates ⇒ blockers; failing warns ⇒ score dings. `skip` never counts. */
@@ -525,6 +560,8 @@ export function readinessDigest(ctx: PlanContext): DigestAction {
         rawScore: r.rawScore,
         grade: r.grade,
         warns: r.warns,
+        unverified: r.unverified,
+        mcp: r.mcp,
         firstCommand: r.firstCommand,
       };
       return { text: renderReadinessBody(r), data };
@@ -534,22 +571,34 @@ export function readinessDigest(ctx: PlanContext): DigestAction {
 
 /** Terse, deterministic human summary: banner, blockers, per-dimension line, warn count. */
 export function renderReadinessBody(r: ReadinessResult): string {
-  const { banner, blockers, warns, dims, score, grade } = r;
+  const { banner, blockers, warns, unverified, mcp, dims, score, grade } = r;
   const mark = (s: number): string => (s >= READY_THRESHOLD ? "✓" : s >= 50 ? "~" : "·");
   return lines(
     `${banner} — ${score}/100 (${grade})`,
+    "Host/configuration preflight for selected clients; native tool operations, sandbox enforcement and the first command are not verified.",
     "",
     ...(blockers.length > 0
       ? remediationBlock(
-          `  ${blockers.length} blocker${blockers.length === 1 ? "" : "s"} — must fix before an agent can work:`,
+          `  ${blockers.length} blocker${blockers.length === 1 ? "" : "s"} — resolve before accepting readiness:`,
           blockers.map((b) => ({ command: b.cmd, label: b.title })),
         )
-      : ["  No blockers — nothing stops an agent from working here."]),
+      : ["  No blockers found by the preflight checks."]),
     "",
     ...dims.map((d) => `  ${mark(d.score)} ${d.name.padEnd(16)} ${d.score}/100`),
     "",
     warns.length > 0
       ? `  ${warns.length} warn${warns.length === 1 ? "" : "s"} dinging the score (see the dimension lines above).`
-      : "  No warnings — every applicable check passes.",
+      : "  No failed warning checks.",
+    ...(unverified.length > 0
+      ? ["", `  ${unverified.length} selected MCP observation(s) remain unverified.`]
+      : []),
+    ...mcp.servers.flatMap((server) => [
+      `  ${server.targetCli} / ${server.name} (${server.configPath}; ${server.selected ? "selected" : "unselected"}; ${server.required}): ${server.state} — ${server.detail}`,
+      `    Next: ${server.nextStep}`,
+    ]),
+    ...mcp.issues.flatMap((issue) => [
+      `  ${issue.targetCli} / ${issue.configPath}: ${issue.check.detail}`,
+      `    Next: ${issue.nextStep}`,
+    ]),
   );
 }

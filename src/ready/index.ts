@@ -23,8 +23,7 @@ import {
 } from "../tools/install.js";
 
 /**
- * `aih ready` — the readiness GATE. Answers one question: can a developer start work
- * with an AI agent in THIS repo, on THIS machine, right now? It reuses the developer-
+ * `aih ready` — the host/configuration preflight GATE. It reuses the developer-
  * readiness composition ({@link computeReadiness}) — every signal is one of aih's
  * existing read-only probes (heal's node/npm/TLS ladder, per-CLI loadability, the
  * contract truth check, the secret scan) — and surfaces it two ways at once:
@@ -33,7 +32,7 @@ import {
  *    identical to what `aih report` renders, so the two never drift; and
  *  - ONE gate PROBE that fails iff there are blockers. `alwaysVerify` runs the probe on
  *    every invocation, so a bare `aih ready` DIAGNOSES by default (like `heal`) and
- *    exits non-zero when an agent cannot start here.
+ *    exits non-zero when a required preflight condition is failed or unverified.
  *
  * A single "readiness gate" probe (not one probe per check) keeps the exit signal
  * crisp: the digest already enumerates each blocker; the probe just gates on their
@@ -69,7 +68,11 @@ function gateCheck(r: ReadinessResult): Check {
       code: "ready.blocked",
     };
   }
-  return { name, verdict: "pass", detail: "no blockers — an agent can start here" };
+  return {
+    name,
+    verdict: "pass",
+    detail: `no preflight blockers; ${r.unverified.length} unverified MCP observation(s); native execution not established`,
+  };
 }
 
 /** Map the missing core bin names (rg/fd/jq) to their {@link ToolSpec}s, in canonical order. */
@@ -123,6 +126,8 @@ async function readyPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     banner: r.banner,
     blockers: r.blockers,
     warns: r.warns,
+    unverified: r.unverified,
+    mcp: r.mcp,
     score: r.score,
     rawScore: r.rawScore,
     grade: r.grade,
@@ -154,8 +159,7 @@ async function readyPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
 
 export const command: CommandSpec = {
   name: "ready",
-  summary:
-    "Readiness gate — can a developer start work with an AI agent here? (graded, blocker-aware)",
+  summary: "Readiness preflight — host, configuration, and unverified MCP capabilities",
   alwaysVerify: true,
   // Offer the "Install rg, fd, jq now? [y/N]" confirmation on a bare `aih ready` in a
   // TTY (not just under `--detect`) — the install is what a first-time repo opener wants.

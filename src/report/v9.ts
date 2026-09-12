@@ -162,6 +162,14 @@ interface BlockerRaw {
   cmd?: unknown;
 }
 
+function readinessRows(value: unknown): V9Ready["blockers"] {
+  return (Array.isArray(value) ? (value as BlockerRaw[]) : []).map((row) => ({
+    id: String(row.id ?? ""),
+    title: String(row.title ?? ""),
+    cmd: String(row.cmd ?? ""),
+  }));
+}
+
 /**
  * The developer-readiness verdict, bound from the "Developer readiness" digest that
  * {@link readinessDigest} emits (banner + score + grade + the blocker subset). Always
@@ -176,16 +184,43 @@ function buildReady(digests: DigestAction[]): V9Ready | undefined {
     r.banner === "READY" || r.banner === "NOT READY" || r.banner === "READY, WITH GAPS"
       ? r.banner
       : "READY, WITH GAPS";
-  const blockers = (Array.isArray(r.blockers) ? (r.blockers as BlockerRaw[]) : []).map((b) => ({
-    id: String(b.id ?? ""),
-    title: String(b.title ?? ""),
-    cmd: String(b.cmd ?? ""),
-  }));
+  const blockers = readinessRows(r.blockers);
+  const unverified = readinessRows(r.unverified);
+  const mcp = typeof r.mcp === "object" && r.mcp !== null ? (r.mcp as Record<string, unknown>) : {};
+  const servers = (Array.isArray(mcp.servers) ? mcp.servers : []).map((value) => {
+    const server = value as Record<string, unknown>;
+    return {
+      targetCli: String(server.targetCli ?? ""),
+      configPath: String(server.configPath ?? ""),
+      name: String(server.name ?? ""),
+      selected: server.selected === true,
+      required: String(server.required ?? "unknown"),
+      state: String(server.state ?? "unknown"),
+      detail: String(server.detail ?? ""),
+      nextStep: String(server.nextStep ?? ""),
+    };
+  });
+  const issues = (Array.isArray(mcp.issues) ? mcp.issues : []).map((value) => {
+    const issue = value as Record<string, unknown>;
+    const check =
+      typeof issue.check === "object" && issue.check !== null
+        ? (issue.check as Record<string, unknown>)
+        : {};
+    return {
+      targetCli: String(issue.targetCli ?? ""),
+      configPath: String(issue.configPath ?? ""),
+      selected: issue.selected === true,
+      detail: String(check.detail ?? ""),
+      nextStep: String(issue.nextStep ?? ""),
+    };
+  });
   return {
     banner,
     score: numOr(r.score, 0),
     grade: typeof r.grade === "string" ? r.grade : "",
     blockers,
+    unverified,
+    mcp: { servers, issues },
   };
 }
 
@@ -207,7 +242,7 @@ function deriveActions(digests: DigestAction[]): V9Action[] {
     out.push({
       sev: "high",
       title: `Fix: ${title}`,
-      body: "Hard readiness blocker — an agent cannot make a correct first change until this clears.",
+      body: "Hard readiness preflight blocker — resolve this condition before accepting the preflight.",
       cmd: String(b.cmd ?? ""),
     });
   }
@@ -1119,7 +1154,7 @@ export function assembleViewV9(data: AihDataV9, demo: AihDataV9): V9View {
     sections["sec-hero"] = { state: "empty", container: ".hero-narrative", html: heroStub() };
   }
 
-  // ◆ Developer readiness — the single "can I start?" gate (cross-links to ★ actions).
+  // ◆ Developer readiness preflight (cross-links blockers to ★ actions).
   if (data.ready) {
     const r = data.ready;
     const clean = r.blockers.length === 0;
@@ -1127,10 +1162,10 @@ export function assembleViewV9(data: AihDataV9, demo: AihDataV9): V9View {
       state: "live",
       container: ".grid",
       title: clean
-        ? `${r.banner} — an agent can start here`
-        : `${r.banner} — ${r.blockers.length} blocker${r.blockers.length === 1 ? "" : "s"} before an agent can work`,
+        ? `${r.banner} — preflight has no blockers`
+        : `${r.banner} — ${r.blockers.length} preflight blocker${r.blockers.length === 1 ? "" : "s"}`,
       insight:
-        'The single "can I start?" gate: the maturity score above rates harness <i>wiring</i>; this rates whether an agent can make a correct first change on THIS machine right now. A blocker is a hard stop — the full remediation list is in <b>What to fix first</b> below.',
+        "Host and repository configuration preflight. MCP configuration can be inspected here, but native discovery, tool execution, policy enforcement and restart behavior remain unverified unless explicitly shown below.",
       count: `${r.score}/100 · ${escHtml(r.grade)}`,
       html: renderReady(r),
     };
