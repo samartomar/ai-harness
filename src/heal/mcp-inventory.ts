@@ -43,6 +43,7 @@ export interface McpInventory {
   servers: McpReadinessServer[];
   issues: McpInventoryIssue[];
   launchers: Map<McpReadinessServer, "npx" | "uvx">;
+  configurationPresent: boolean;
 }
 
 function projectPaths(cli: Cli): string[] {
@@ -145,6 +146,7 @@ export function inventoryMcpReadiness(ctx: PlanContext): McpInventory {
   const servers: McpReadinessServer[] = [];
   const issues: McpInventoryIssue[] = [];
   const launchers = new Map<McpReadinessServer, "npx" | "uvx">();
+  let configurationPresent = false;
   for (const candidate of paths(ctx)) {
     const abs = isExternalMcp(candidate.path)
       ? mcpConfigAbs(homeDir(ctx), candidate.path)
@@ -174,6 +176,7 @@ export function inventoryMcpReadiness(ctx: PlanContext): McpInventory {
       });
       continue;
     }
+    configurationPresent = true;
     try {
       for (const [name, value] of Object.entries(entries(candidate.cli, raw))) {
         if (value === null || typeof value !== "object" || Array.isArray(value))
@@ -222,5 +225,5 @@ export function inventoryMcpReadiness(ctx: PlanContext): McpInventory {
       });
     }
   }
-  return { servers, issues, launchers };
+  return { servers, issues, launchers, configurationPresent };
 }

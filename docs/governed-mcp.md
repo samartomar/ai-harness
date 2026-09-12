@@ -161,6 +161,10 @@ authentication, or change the adopter's client configuration. An unavailable
 native executable remains unavailable; supply the installed native executable
 with `--codex-binary` when PATH contains only a package launcher.
 
+Use a new `--report` path for each producer run, including retries. Existing files
+are refused before the probe starts. Failed runs retain a failure report for
+diagnosis; retry with a fresh path after resolving the reported cause.
+
 The JSON keeps support, discovery, exercise, restart and enforcement separate.
 The first command records the observed executable version and binds the executable
 bytes, root, configuration, fixture/runtime bytes, invocation and deadline. The

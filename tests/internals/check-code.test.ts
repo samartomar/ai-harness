@@ -189,6 +189,36 @@ describe("Check.code — heal emitters", () => {
     expect(checks.some((check) => check.code === "mcp.config-missing")).toBe(false);
   });
 
+  it("does not tag an empty root MCP server map as config-missing", async () => {
+    const root = freshTmp();
+    write(root, ".mcp.json", '{"mcpServers":{}}');
+    const ctx = makeCtx({
+      root,
+      env: { HOME: join(root, "home"), PATH: "/usr/bin" },
+      run: healRunner({}),
+      options: { scope: "mcp", caPattern: "Zscaler" },
+      targets: ["claude"],
+    });
+    const checks = await checksOf(await healCommand.plan(ctx), ctx);
+
+    expect(checks.some((check) => check.code === "mcp.config-missing")).toBe(false);
+  });
+
+  it("does not tag an empty native Codex configuration as config-missing", async () => {
+    const root = freshTmp();
+    write(root, ".codex/config.toml", "");
+    const ctx = makeCtx({
+      root,
+      env: { HOME: join(root, "home"), PATH: "/usr/bin" },
+      run: healRunner({}),
+      options: { scope: "mcp", caPattern: "Zscaler" },
+      targets: ["codex"],
+    });
+    const checks = await checksOf(await healCommand.plan(ctx), ctx);
+
+    expect(checks.some((check) => check.code === "mcp.config-missing")).toBe(false);
+  });
+
   it("tags malformed native Codex configuration as invalid, not missing", async () => {
     const root = freshTmp();
     write(root, ".codex/config.toml", '[mcp_servers.fixture\ncommand = "node"\n');

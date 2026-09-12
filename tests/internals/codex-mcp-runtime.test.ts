@@ -1,5 +1,12 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -211,6 +218,37 @@ describe("bounded Codex MCP runtime producer", () => {
     expect(producer.safeBytes(material, 5)).toEqual(Buffer.from("abcde"));
     expect(() => producer.safeBytes(material, 4)).toThrow("unsafe-material-file");
     expect(() => producer.safeBytes(root, 5)).toThrow("unsafe-material-file");
+  });
+
+  it("persists a structured failed report and releases its descriptor when setup throws", async () => {
+    const root = mkdtempSync(join(tmpdir(), "aih-report-failure-"));
+    const reportPath = join(root, "report.json");
+    const result = await producer.writeReport({ report: reportPath }, async () => {
+      throw new Error("setup exception");
+    });
+    expect(result).toMatchObject({ status: "failed", failureCode: "runtime-probe-failed" });
+    expect(JSON.parse(readFileSync(reportPath, "utf8"))).toMatchObject({
+      status: "failed",
+      failureCode: "runtime-probe-failed",
+    });
+    const movedPath = join(root, "moved-report.json");
+    renameSync(reportPath, movedPath);
+    expect(JSON.parse(readFileSync(movedPath, "utf8"))).toMatchObject({ status: "failed" });
+  });
+
+  it("leaves an existing report untouched without invoking the producer", async () => {
+    const root = mkdtempSync(join(tmpdir(), "aih-existing-report-"));
+    const reportPath = join(root, "report.json");
+    writeFileSync(reportPath, "existing report");
+    let invoked = false;
+    await expect(
+      producer.writeReport({ report: reportPath }, async () => {
+        invoked = true;
+        return { status: "passed" };
+      }),
+    ).rejects.toThrow("report-exists");
+    expect(invoked).toBe(false);
+    expect(readFileSync(reportPath, "utf8")).toBe("existing report");
   });
 
   it("writes the fixed private config and strips credentials from child env", () => {

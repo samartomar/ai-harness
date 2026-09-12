@@ -214,20 +214,26 @@ async function produce(options) {
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
-  let reportDescriptor;
-  try {
-    if (!options.check) reportDescriptor = reserveReport(options.report);
-    const result = options.check ? checkRetainedReport(options.report) : await produce(options);
-    if (reportDescriptor !== undefined) writeFileSync(reportDescriptor, `${JSON.stringify(result, null, 2)}\n`);
-    process.stdout.write(`${JSON.stringify({ status: result.status, evaluation: result.evaluation, failureCode: result.failureCode, reportPath: options.report })}\n`);
-    process.exitCode = result.status === "passed" ? 0 : result.status === "unavailable" ? 2 : 1;
-  } finally { if (reportDescriptor !== undefined) closeSync(reportDescriptor); }
+  const result = options.check ? checkRetainedReport(options.report) : await writeReport(options);
+  process.stdout.write(`${JSON.stringify({ status: result.status, evaluation: result.evaluation, failureCode: result.failureCode, reportPath: options.report })}\n`);
+  process.exitCode = result.status === "passed" ? 0 : result.status === "unavailable" ? 2 : 1;
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) await main();
 function reserveReport(path) {
   try { return openSync(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | O_NOFOLLOW, 0o600); }
   catch (error) { if (error?.code === "EEXIST") throw new Error("report-exists"); throw error; }
+}
+
+export async function writeReport(options, producer = produce) {
+  const descriptor = reserveReport(options.report);
+  try {
+    let result;
+    try { result = await producer(options); }
+    catch { result = reportShape("failed", { failureCode: "runtime-probe-failed" }); }
+    writeFileSync(descriptor, `${JSON.stringify(result, null, 2)}\n`);
+    return result;
+  } finally { closeSync(descriptor); }
 }
 
 function openedPathStillNamesFile(path, opened) {
