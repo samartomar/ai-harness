@@ -1,11 +1,12 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { closeSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readSync, realpathSync, writeFileSync } from "node:fs";
+import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, mkdtempSync, openSync, readSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, isAbsolute, join } from "node:path";
 import { createInterface } from "node:readline";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
+import { readRegularFileWithStats } from "../src/internals/fsxn.ts";
 import { evaluateMcpRuntimeObservation } from "../src/heal/mcp-runtime-evidence.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -15,6 +16,9 @@ const args = {};
 const sha = (value) => createHash("sha256").update(value).digest("hex");
 const canonicalPath = realpathSync.native;
 const reportShape = (status, rest = {}) => ({ kind: "aih-codex-mcp-runtime-report", status, observation: null, evaluation: null, modelTurns: 0, fixtureRoot: null, ...rest });
+const O_NOFOLLOW = constants.O_NOFOLLOW ?? 0;
+const O_NONBLOCK = constants.O_NONBLOCK ?? 0;
+const HAS_O_NOFOLLOW = O_NOFOLLOW !== 0;
 
 export function parseArgs(argv) {
   let report, binary, check = false;
@@ -180,10 +184,11 @@ export function checkRetainedReport(reportPath, now = new Date().toISOString()) 
     if (!nativeHeader(binary)) throw new Error("native-client-unavailable");
     const expectedConfig = configText(process.execPath, original.operation.expectedCanary, root);
     const configMatches = safeBytes(configPath, 1024 * 1024).equals(Buffer.from(expectedConfig));
+    // A retained observation's version is historical evidence; --check never launches its imported executable.
     const current = materialBindings(binary, original.client.version, root, configPath);
     const evaluation = evaluateMcpRuntimeObservation(original, current, now);
     const passed = configMatches && evaluation.recordState === "current";
-    return { ...report, status: passed ? "passed" : "failed", evaluation, modelTurns: 0, fixtureRoot: root, failureCode: passed ? undefined : configMatches ? "observation-not-current" : evaluation.recordState === "current" ? "config-not-fixed" : "observation-not-current", recheckScope: "local observation only; not authority or a new native policy check" };
+    return { ...report, status: passed ? "passed" : "failed", evaluation, modelTurns: 0, fixtureRoot: root, failureCode: passed ? undefined : configMatches ? "observation-not-current" : evaluation.recordState === "current" ? "config-not-fixed" : "observation-not-current", recheckScope: "local observation only: rechecks retained paths and bytes, but does not launch the recorded executable or remeasure its historical version" };
   } catch { return { ...report, status: "failed", evaluation: null, modelTurns: 0, failureCode: "material-binding-unavailable" }; }
 }
 
@@ -208,12 +213,43 @@ async function produce(options) {
 }
 
 async function main() {
-  const options = parseArgs(process.argv.slice(2)); if (existsSync(options.report) && !options.check) throw new Error("report-exists"); const result = options.check ? checkRetainedReport(options.report) : await produce(options); if (!options.check) writeFileSync(options.report, `${JSON.stringify(result, null, 2)}\n`, { flag: "wx" }); process.stdout.write(`${JSON.stringify({ status: result.status, evaluation: result.evaluation, failureCode: result.failureCode, reportPath: options.report })}\n`); process.exitCode = result.status === "passed" ? 0 : result.status === "unavailable" ? 2 : 1;
+  const options = parseArgs(process.argv.slice(2));
+  let reportDescriptor;
+  try {
+    if (!options.check) reportDescriptor = reserveReport(options.report);
+    const result = options.check ? checkRetainedReport(options.report) : await produce(options);
+    if (reportDescriptor !== undefined) writeFileSync(reportDescriptor, `${JSON.stringify(result, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify({ status: result.status, evaluation: result.evaluation, failureCode: result.failureCode, reportPath: options.report })}\n`);
+    process.exitCode = result.status === "passed" ? 0 : result.status === "unavailable" ? 2 : 1;
+  } finally { if (reportDescriptor !== undefined) closeSync(reportDescriptor); }
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) await main();
-function safeBytes(path, maximum) {
-  const stat = lstatSync(path); if (!isRegularNonSymlink(stat) || stat.size > maximum) throw new Error("unsafe-material-file"); return readFileSync(path);
+function reserveReport(path) {
+  try { return openSync(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | O_NOFOLLOW, 0o600); }
+  catch (error) { if (error?.code === "EEXIST") throw new Error("report-exists"); throw error; }
+}
+
+function openedPathStillNamesFile(path, opened) {
+  try {
+    const named = lstatSync(path);
+    return isRegularNonSymlink(named) && named.dev === opened.dev && named.ino === opened.ino;
+  } catch { return false; }
+}
+
+function openRegularDescriptor(path) {
+  const descriptor = openSync(path, constants.O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
+  try {
+    const opened = fstatSync(descriptor);
+    if (!opened.isFile() || (!HAS_O_NOFOLLOW && !openedPathStillNamesFile(path, opened))) throw new Error("unsafe-material-file");
+    return descriptor;
+  } catch (error) { closeSync(descriptor); throw error; }
+}
+
+export function safeBytes(path, maximum) {
+  const material = readRegularFileWithStats(path, { maxBytes: maximum });
+  if (!material) throw new Error("unsafe-material-file");
+  return material.contents;
 }
 
 export function isRegularNonSymlink(stat) {
@@ -221,7 +257,11 @@ export function isRegularNonSymlink(stat) {
 }
 
 export function nativeHeader(path) {
-  if (!isRegularNonSymlink(lstatSync(path))) return false;
-  const fd = openSync(path, "r"); const bytes = Buffer.alloc(4); try { readSync(fd, bytes, 0, 4, 0); } finally { closeSync(fd); }
-  return bytes.subarray(0, 2).equals(Buffer.from("MZ")) || bytes.equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46])) || [0xfeedface, 0xfeedfacf, 0xcefaedfe, 0xcffaedfe].includes(bytes.readUInt32BE(0));
+  let descriptor;
+  try {
+    descriptor = openRegularDescriptor(path);
+    const bytes = Buffer.alloc(4); readSync(descriptor, bytes, 0, 4, 0);
+    return bytes.subarray(0, 2).equals(Buffer.from("MZ")) || bytes.equals(Buffer.from([0x7f, 0x45, 0x4c, 0x46])) || [0xfeedface, 0xfeedfacf, 0xcefaedfe, 0xcffaedfe].includes(bytes.readUInt32BE(0));
+  } catch { return false; }
+  finally { if (descriptor !== undefined) closeSync(descriptor); }
 }

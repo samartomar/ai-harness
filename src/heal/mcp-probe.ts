@@ -381,6 +381,16 @@ async function pythonTlsCheck(ctx: PlanContext, endpoints: readonly string[]): P
 async function planMcpProbe(ctx: PlanContext, shared: HealShared): Promise<Action[]> {
   const assessment = await assessMcpReadiness(ctx, shared);
   const actions = assessment.actions;
+  if (assessment.servers.length === 0 && assessment.issues.length === 0) {
+    actions.unshift(
+      captured({
+        name: "mcp: configuration",
+        verdict: "skip",
+        code: "mcp.config-missing",
+        detail: "no registered MCP servers found in supported configuration",
+      }),
+    );
+  }
   if (!actions.some((action) => action.describe === CHECK)) {
     actions.unshift(
       captured({

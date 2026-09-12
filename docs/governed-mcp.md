@@ -162,13 +162,16 @@ native executable remains unavailable; supply the installed native executable
 with `--codex-binary` when PATH contains only a package launcher.
 
 The JSON keeps support, discovery, exercise, restart and enforcement separate.
-Its local observation binds the executable version and bytes, root, configuration,
-fixture/runtime bytes, invocation and deadline. The second command rechecks those
-retained material bindings and the deadline without launching the client. Changed
-bindings or an expired deadline make the observation stale; missing or unsafe
-files prevent reuse. This local
-record is not signed authority, and a byte recheck does not establish a new live
-policy observation. Retain the fixture directory while reusing the record.
+The first command records the observed executable version and binds the executable
+bytes, root, configuration, fixture/runtime bytes, invocation and deadline. The
+second command rechecks file bytes, paths, fixture configuration and the deadline
+without launching the client. The version remains the historical value in the
+record; the recheck does not measure it again or authenticate edits to the report.
+Changed material bindings or an expired deadline make the observation stale;
+missing or unsafe files prevent reuse. This local record is not signed authority,
+and a byte recheck does not establish a new live policy observation. Repeat the
+first command with an explicitly selected client for a fresh version and runtime
+observation. Retain the fixture directory while reusing the record.
 
 The fixture's MCP call does not test MCP subprocess confinement; enforcement
 remains unverified. A successful result covers this fixture and client only.

@@ -116,6 +116,50 @@ function fakeClient(
   };
 }
 
+function retainedObservation(
+  root: string,
+  configPath: string,
+  executable: string,
+  version: string,
+  nonce: string,
+  now: Date,
+) {
+  const fixture = join(process.cwd(), "tools", "codex-runtime-fixture.mjs");
+  return {
+    schemaVersion: 1,
+    kind: "aih-mcp-runtime-observation",
+    client: {
+      targetCli: "codex",
+      executable,
+      version,
+      sha256: sha(readFileSync(executable)),
+    },
+    target: {
+      canonicalRoot: root,
+      configPath: canonicalPath(configPath),
+      configSha256: sha(readFileSync(configPath)),
+    },
+    policy: { approvalPolicy: "never", sandbox: "readOnly", networkAccess: false },
+    server: {
+      name: "fixture",
+      fixtureIdentity: `sha256:${sha(readFileSync(fixture))}`,
+      runtimeIdentity: `sha256:${sha(readFileSync(process.execPath))}`,
+    },
+    invocation: { tool: "fixture_probe", argumentsSha256: sha("{}") },
+    observedAt: new Date(now.getTime() - 1000).toISOString(),
+    expiresAt: new Date(now.getTime() + 60_000).toISOString(),
+    support: { nativeClientStarted: true, configuredServerRecognized: true },
+    discovery: { serverConnected: true, tool: "fixture_probe", toolListed: true },
+    operation: { expectedCanary: nonce, actualCanary: nonce, succeeded: true, sessionId: "one" },
+    restart: {
+      actualCanary: nonce,
+      succeeded: true,
+      sessionId: "two",
+      observedAt: now.toISOString(),
+    },
+  };
+}
+
 describe("bounded Codex MCP runtime producer", () => {
   it("strictly parses flags", () => {
     const report = join(tmpdir(), "evidence.json");
@@ -158,6 +202,15 @@ describe("bounded Codex MCP runtime producer", () => {
         isSymbolicLink: () => false,
       }),
     ).toBe(false);
+  });
+
+  it("reads material through a bounded regular-file descriptor", () => {
+    const root = mkdtempSync(join(tmpdir(), "aih-safe-material-"));
+    const material = join(root, "material.bin");
+    writeFileSync(material, "abcde");
+    expect(producer.safeBytes(material, 5)).toEqual(Buffer.from("abcde"));
+    expect(() => producer.safeBytes(material, 4)).toThrow("unsafe-material-file");
+    expect(() => producer.safeBytes(root, 5)).toThrow("unsafe-material-file");
   });
 
   it("writes the fixed private config and strips credentials from child env", () => {
@@ -239,46 +292,15 @@ describe("bounded Codex MCP runtime producer", () => {
     mkdirSync(home, { recursive: true });
     const configPath = join(home, "config.toml");
     writeFileSync(configPath, "before");
-    const fixture = join(process.cwd(), "tools", "codex-runtime-fixture.mjs");
     const now = new Date();
-    const observation = {
-      schemaVersion: 1,
-      kind: "aih-mcp-runtime-observation",
-      client: {
-        targetCli: "codex",
-        executable: canonicalPath(process.execPath),
-        version: process.versions.node,
-        sha256: sha(readFileSync(process.execPath)),
-      },
-      target: {
-        canonicalRoot: root,
-        configPath: canonicalPath(configPath),
-        configSha256: sha("before"),
-      },
-      policy: { approvalPolicy: "never", sandbox: "readOnly", networkAccess: false },
-      server: {
-        name: "fixture",
-        fixtureIdentity: `sha256:${sha(readFileSync(fixture))}`,
-        runtimeIdentity: `sha256:${sha(readFileSync(process.execPath))}`,
-      },
-      invocation: { tool: "fixture_probe", argumentsSha256: sha("{}") },
-      observedAt: new Date(now.getTime() - 1000).toISOString(),
-      expiresAt: new Date(now.getTime() + 60_000).toISOString(),
-      support: { nativeClientStarted: true, configuredServerRecognized: true },
-      discovery: { serverConnected: true, tool: "fixture_probe", toolListed: true },
-      operation: {
-        expectedCanary: "nonce",
-        actualCanary: "nonce",
-        succeeded: true,
-        sessionId: "one",
-      },
-      restart: {
-        actualCanary: "nonce",
-        succeeded: true,
-        sessionId: "two",
-        observedAt: now.toISOString(),
-      },
-    };
+    const observation = retainedObservation(
+      root,
+      configPath,
+      canonicalPath(process.execPath),
+      process.versions.node,
+      "nonce",
+      now,
+    );
     const reportPath = join(root, "report.json");
     writeFileSync(
       reportPath,
@@ -296,6 +318,43 @@ describe("bounded Codex MCP runtime producer", () => {
       status: "failed",
       evaluation: { recordState: "stale" },
       failureCode: "observation-not-current",
+    });
+  });
+
+  it("rechecks a retained report without launching its recorded executable or remeasuring its version", () => {
+    const root = canonicalPath(mkdtempSync(join(tmpdir(), "aih-recheck-no-launch-")));
+    const home = join(root, "home", ".codex");
+    mkdirSync(home, { recursive: true });
+    const configPath = join(home, "config.toml");
+    const nonce = "nonce";
+    writeFileSync(configPath, producer.configText(process.execPath, nonce, root));
+    const executable = join(root, "recorded-only.bin");
+    writeFileSync(executable, Buffer.from([0x4d, 0x5a, 0, 0]));
+    const now = new Date();
+    const observation = retainedObservation(
+      root,
+      configPath,
+      executable,
+      "historical-version",
+      nonce,
+      now,
+    );
+    const reportPath = join(root, "report.json");
+    writeFileSync(
+      reportPath,
+      JSON.stringify({
+        kind: "aih-codex-mcp-runtime-report",
+        status: "passed",
+        observation,
+        evaluation: {},
+        modelTurns: 0,
+        fixtureRoot: root,
+      }),
+    );
+    expect(producer.checkRetainedReport(reportPath, now.toISOString())).toMatchObject({
+      status: "passed",
+      observation: { client: { version: "historical-version" } },
+      recheckScope: expect.stringContaining("does not launch"),
     });
   });
 });
