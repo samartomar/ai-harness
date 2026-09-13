@@ -19,6 +19,13 @@ export const DEVCONTAINER_IMAGE = "mcr.microsoft.com/devcontainers/base:ubuntu-2
 /** Egress allowlist baked into the managed sandbox settings. */
 export const SANDBOX_ALLOWED_DOMAINS = ["github.com", "pypi.org", "registry.npmjs.org"] as const;
 
+/** Ordered egress domains generated for a detected repository stack. */
+export function sandboxAllowedDomains(stack?: RepoStack): string[] {
+  const allowedDomains: string[] = [...SANDBOX_ALLOWED_DOMAINS];
+  if (stack?.cloud.includes("AWS")) allowedDomains.push("*.amazonaws.com");
+  return allowedDomains;
+}
+
 /** Where worktree-isolated checkouts live, relative to the repo root. */
 export const WORKTREE_DIR = ".claude/worktrees";
 
@@ -176,8 +183,7 @@ export function devcontainerConfig(opts: DevcontainerOptions): Record<string, un
  * `.claude/managed-settings.json`.
  */
 export function managedSandboxSettings(stack?: RepoStack): Record<string, unknown> {
-  const allowedDomains: string[] = [...SANDBOX_ALLOWED_DOMAINS];
-  if (stack?.cloud.includes("AWS")) allowedDomains.push("*.amazonaws.com");
+  const allowedDomains = sandboxAllowedDomains(stack);
   return {
     sandbox: {
       enabled: true,

@@ -1819,6 +1819,13 @@ The Claude policy writes the egress list at `sandbox.network.allowedDomains`, al
 The additional `sandbox.commandPolicy` block is AIH metadata; Claude's command permission
 rules use `permissions.allow`, `permissions.ask`, and `permissions.deny`.
 
+When reapplying, AIH removes the obsolete `sandbox.allowedDomains` key only if its
+ordered value exactly matches the previous generated defaults for the detected
+stack. The write is bound to the settings bytes inspected during planning and
+refuses the migration if they change. Other legacy values remain untouched with
+a review note; AIH does not copy them into the new network allowlist. This exact
+value match is a migration heuristic, not an ownership receipt.
+
 `.claude/managed-settings.json` is a deployment artifact. Claude does not load that filename
 from the project directory as managed policy. The adopter must deploy it through a supported
 [managed settings source](https://code.claude.com/docs/en/managed-settings).

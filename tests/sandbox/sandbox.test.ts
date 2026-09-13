@@ -302,6 +302,98 @@ describe("end-to-end execution", () => {
     expect(merged.sandbox?.failIfUnavailable).toBe(true);
   });
 
+  it("removes only the exact legacy generated allowlist while preserving adjacent settings", async () => {
+    const settingsDir = join(dir, ".claude");
+    mkdirSync(settingsDir, { recursive: true });
+    writeFileSync(
+      join(settingsDir, "managed-settings.json"),
+      JSON.stringify({
+        telemetry: { enabled: false },
+        sandbox: {
+          allowedDomains: ["github.com", "pypi.org", "registry.npmjs.org"],
+          customSetting: true,
+        },
+      }),
+    );
+
+    const applyCtx = ctx({ apply: true });
+    const p = await command.plan(applyCtx);
+    const write = findWrite(p.actions, ".claude/managed-settings.json");
+    expect(write.removeJsonKeys).toEqual({ sandbox: ["allowedDomains"] });
+    expect(write.expect).toHaveProperty("sha256");
+    await executePlan(p, applyCtx);
+
+    const merged = JSON.parse(readFileSync(join(settingsDir, "managed-settings.json"), "utf8")) as {
+      telemetry?: unknown;
+      sandbox?: {
+        allowedDomains?: unknown;
+        customSetting?: unknown;
+        network?: { allowedDomains?: unknown };
+      };
+    };
+    expect(merged.telemetry).toEqual({ enabled: false });
+    expect(merged.sandbox?.allowedDomains).toBeUndefined();
+    expect(merged.sandbox?.customSetting).toBe(true);
+    expect(merged.sandbox?.network?.allowedDomains).toEqual([
+      "github.com",
+      "pypi.org",
+      "registry.npmjs.org",
+    ]);
+  });
+
+  it("retains a customized legacy allowlist and emits a review diagnostic", async () => {
+    const settingsDir = join(dir, ".claude");
+    mkdirSync(settingsDir, { recursive: true });
+    writeFileSync(
+      join(settingsDir, "managed-settings.json"),
+      JSON.stringify({ sandbox: { allowedDomains: ["custom.example"] } }),
+    );
+
+    const applyCtx = ctx({ apply: true });
+    const p = await command.plan(applyCtx);
+    const write = findWrite(p.actions, ".claude/managed-settings.json");
+    expect(write.removeJsonKeys).toBeUndefined();
+    expect(
+      p.actions.find(
+        (action) => action.kind === "doc" && action.describe.includes("obsolete Claude sandbox"),
+      ),
+    ).toBeDefined();
+    await executePlan(p, applyCtx);
+
+    const merged = JSON.parse(readFileSync(join(settingsDir, "managed-settings.json"), "utf8")) as {
+      sandbox?: { allowedDomains?: unknown; network?: { allowedDomains?: unknown } };
+    };
+    expect(merged.sandbox?.allowedDomains).toEqual(["custom.example"]);
+    expect(merged.sandbox?.network?.allowedDomains).toEqual([
+      "github.com",
+      "pypi.org",
+      "registry.npmjs.org",
+    ]);
+  });
+
+  it("refuses the generated-key migration when managed settings change after planning", async () => {
+    const settingsDir = join(dir, ".claude");
+    mkdirSync(settingsDir, { recursive: true });
+    const settingsPath = join(settingsDir, "managed-settings.json");
+    writeFileSync(
+      settingsPath,
+      JSON.stringify({
+        sandbox: { allowedDomains: ["github.com", "pypi.org", "registry.npmjs.org"] },
+      }),
+    );
+
+    const applyCtx = ctx({ apply: true });
+    const p = await command.plan(applyCtx);
+    writeFileSync(
+      settingsPath,
+      JSON.stringify({ sandbox: { allowedDomains: ["changed.example"] } }),
+    );
+    await expect(executePlan(p, applyCtx)).rejects.toThrow(/changed after the plan was computed/);
+    expect(JSON.parse(readFileSync(settingsPath, "utf8"))).toEqual({
+      sandbox: { allowedDomains: ["changed.example"] },
+    });
+  });
+
   it("is idempotent: re-applying yields byte-identical files", async () => {
     const first = ctx({ apply: true });
     await executePlan(await command.plan(first), first);
