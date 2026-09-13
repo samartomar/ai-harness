@@ -102,15 +102,9 @@ const O_NOFOLLOW = (fsConstants as Record<string, number | undefined>).O_NOFOLLO
 function readStableRegularFile(path: string, unsafeMessage: string): Buffer {
   let descriptor: number | undefined;
   try {
-    const before = lstatSync(path, { bigint: true });
-    if (before.isSymbolicLink() || !before.isFile() || realpathSync(path) !== path) {
-      throw new Error("unsafe file");
-    }
     descriptor = openSync(path, fsConstants.O_RDONLY | fsConstants.O_NONBLOCK | O_NOFOLLOW);
     const opened = fstatSync(descriptor, { bigint: true });
-    if (!opened.isFile() || opened.dev !== before.dev || opened.ino !== before.ino) {
-      throw new Error("file changed while opening");
-    }
+    if (!opened.isFile()) throw new Error("unsafe file");
     const bytes = readFileSync(descriptor);
     const afterRead = fstatSync(descriptor, { bigint: true });
     const afterPath = lstatSync(path, { bigint: true });
@@ -209,8 +203,7 @@ function externalExecutable(
     throw new AihError(`${option} requires an absolute executable path`, "AIH_CONFIG");
   }
   const path = resolve(value);
-  const fromRoot = relative(root, path);
-  if (fromRoot === "" || (!fromRoot.startsWith("..") && !isAbsolute(fromRoot))) {
+  if (containsPath(root, path)) {
     throw new AihError(`${option} must be outside the project root`, "AIH_CONFIG");
   }
   const bytes = readStableRegularFile(
@@ -412,8 +405,7 @@ function externalPolicy(
     );
   }
   const path = resolve(value);
-  const fromRoot = relative(root, path);
-  if (fromRoot === "" || (!fromRoot.startsWith("..") && !isAbsolute(fromRoot))) {
+  if (containsPath(root, path)) {
     throw new AihError("OpenCode sandbox policy must be outside the project root", "AIH_CONFIG");
   }
   const bytes = readStableRegularFile(

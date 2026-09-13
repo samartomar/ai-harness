@@ -52,25 +52,26 @@ function context(options: Record<string, unknown>, env: NodeJS.ProcessEnv = {}):
 }
 
 describe("OpenCode Linux sandbox profile", () => {
-  it("refuses an executable replaced between inspection and descriptor open", async () => {
+  it("refuses an executable pathname replaced after descriptor open", async () => {
     const policy = join(outside, "policy.json");
     const opencode = join(outside, "opencode");
     const seccomp = join(outside, "apply-seccomp");
     writeFileSync(policy, "{}");
     writeFileSync(opencode, "original");
     writeFileSync(seccomp, "binary");
-    let replaceBeforeOpen = true;
+    let replaceAfterOpen = true;
     vi.doMock("node:fs", async (importOriginal) => {
       const original = await importOriginal<typeof import("node:fs")>();
       return {
         ...original,
         openSync: (path: string | Buffer | URL, flags: string | number, mode?: number) => {
-          if (replaceBeforeOpen && path === opencode) {
-            replaceBeforeOpen = false;
+          const descriptor = original.openSync(path, flags, mode);
+          if (replaceAfterOpen && path === opencode) {
+            replaceAfterOpen = false;
             original.renameSync(opencode, `${opencode}-inspected`);
             original.writeFileSync(opencode, "replacement");
           }
-          return original.openSync(path, flags, mode);
+          return descriptor;
         },
       };
     });
@@ -175,6 +176,48 @@ describe("OpenCode Linux sandbox profile", () => {
         ),
       ),
     ).toThrow(/refuses (?:secret-bearing|unsafe environment) name/);
+  });
+
+  it("treats dot-dot-prefixed child directories as inside the project root", () => {
+    const policyDirectory = join(root, "..policy");
+    const runtimeDirectory = join(root, "..runtime");
+    mkdirSync(policyDirectory);
+    mkdirSync(runtimeDirectory);
+    const insidePolicy = join(policyDirectory, "policy.json");
+    const insideOpenCode = join(runtimeDirectory, "opencode");
+    const outsidePolicy = join(outside, "policy.json");
+    const outsideOpenCode = join(outside, "opencode");
+    const seccomp = join(outside, "apply-seccomp");
+    writeFileSync(insidePolicy, "{}");
+    writeFileSync(insideOpenCode, "binary");
+    writeFileSync(outsidePolicy, "{}");
+    writeFileSync(outsideOpenCode, "binary");
+    writeFileSync(seccomp, "binary");
+
+    expect(() =>
+      openCodeSandboxActions(
+        context(
+          {
+            bwrapExecutable: seccomp,
+            opencodeExecutable: insideOpenCode,
+            seccompExecutable: seccomp,
+          },
+          { AIH_ORG_POLICY: outsidePolicy },
+        ),
+      ),
+    ).toThrow(/--opencode-executable must be outside the project root/);
+    expect(() =>
+      openCodeSandboxActions(
+        context(
+          {
+            bwrapExecutable: seccomp,
+            opencodeExecutable: outsideOpenCode,
+            seccompExecutable: seccomp,
+          },
+          { AIH_ORG_POLICY: insidePolicy },
+        ),
+      ),
+    ).toThrow(/policy must be outside the project root/);
   });
 
   it("refuses non-boolean OpenCode offline bindings and other OpenCode configuration", () => {
