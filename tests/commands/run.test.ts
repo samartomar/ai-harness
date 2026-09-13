@@ -1,5 +1,13 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -252,7 +260,7 @@ describe("runCapability — context-dir precedence ladder (flag > marker > env >
 
 describe("runCapability — sandbox restart authority", () => {
   it("restores the root-bound OpenCode policy before capability planning", async () => {
-    const outside = mkdtempSync(join(tmpdir(), "aih-run-policy-"));
+    const outside = realpathSync(mkdtempSync(join(tmpdir(), "aih-run-policy-")));
     const policy = join(outside, "policy.json");
     const opencode = join(outside, "opencode");
     const seccomp = join(outside, "apply-seccomp");
@@ -296,7 +304,7 @@ describe("runCapability — sandbox restart authority", () => {
   });
 
   it("rejects a launch policy that differs from the root-bound authority", async () => {
-    const outside = mkdtempSync(join(tmpdir(), "aih-run-policy-conflict-"));
+    const outside = realpathSync(mkdtempSync(join(tmpdir(), "aih-run-policy-conflict-")));
     const policy = join(outside, "policy.json");
     const otherPolicy = join(outside, "other-policy.json");
     const opencode = join(outside, "opencode");

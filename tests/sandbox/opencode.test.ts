@@ -1,8 +1,16 @@
 import { createHash } from "node:crypto";
-import { lstatSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, parse } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExecAction, PlanContext, WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
@@ -20,8 +28,8 @@ const identity = (path: string) => {
   };
 };
 beforeEach(() => {
-  root = mkdtempSync(join(tmpdir(), "aih-opencode-root-"));
-  outside = mkdtempSync(join(tmpdir(), "aih-opencode-outside-"));
+  root = realpathSync(mkdtempSync(join(tmpdir(), "aih-opencode-root-")));
+  outside = realpathSync(mkdtempSync(join(tmpdir(), "aih-opencode-outside-")));
 });
 afterEach(() => {
   rmSync(root, { recursive: true, force: true });
@@ -44,6 +52,49 @@ function context(options: Record<string, unknown>, env: NodeJS.ProcessEnv = {}):
 }
 
 describe("OpenCode Linux sandbox profile", () => {
+  it("refuses an executable replaced between inspection and descriptor open", async () => {
+    const policy = join(outside, "policy.json");
+    const opencode = join(outside, "opencode");
+    const seccomp = join(outside, "apply-seccomp");
+    writeFileSync(policy, "{}");
+    writeFileSync(opencode, "original");
+    writeFileSync(seccomp, "binary");
+    let replaceBeforeOpen = true;
+    vi.doMock("node:fs", async (importOriginal) => {
+      const original = await importOriginal<typeof import("node:fs")>();
+      return {
+        ...original,
+        openSync: (path: string | Buffer | URL, flags: string | number, mode?: number) => {
+          if (replaceBeforeOpen && path === opencode) {
+            replaceBeforeOpen = false;
+            original.renameSync(opencode, `${opencode}-inspected`);
+            original.writeFileSync(opencode, "replacement");
+          }
+          return original.openSync(path, flags, mode);
+        },
+      };
+    });
+    vi.resetModules();
+    try {
+      const raced = await import("../../src/sandbox/opencode.js");
+      expect(() =>
+        raced.openCodeSandboxActions(
+          context(
+            {
+              bwrapExecutable: seccomp,
+              opencodeExecutable: opencode,
+              seccompExecutable: seccomp,
+            },
+            { AIH_ORG_POLICY: policy },
+          ),
+        ),
+      ).toThrow(/executable does not exist or is unsafe/);
+    } finally {
+      vi.doUnmock("node:fs");
+      vi.resetModules();
+    }
+  });
+
   it("persists root-owned policy, non-secret bindings, and explicit exposure controls", () => {
     const policy = join(outside, "policy.json");
     const hidden = join(outside, "private");
@@ -409,7 +460,7 @@ describe("OpenCode Linux sandbox profile", () => {
         clientArgs: ["run", "fixture"],
       }),
     );
-    rmSync(hidden, { recursive: true });
+    renameSync(hidden, `${hidden}-replaced`);
     mkdirSync(hidden);
     expect(() => openCodeSandboxActions(context({ launch: true }))).toThrow(
       /path changed after setup/,

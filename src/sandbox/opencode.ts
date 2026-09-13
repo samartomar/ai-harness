@@ -1,5 +1,13 @@
 import { createHash } from "node:crypto";
-import { lstatSync, readFileSync, realpathSync } from "node:fs";
+import {
+  closeSync,
+  constants as fsConstants,
+  fstatSync,
+  lstatSync,
+  openSync,
+  readFileSync,
+  realpathSync,
+} from "node:fs";
 import { dirname, isAbsolute, join, parse, relative, resolve, sep } from "node:path";
 import { z } from "zod";
 import { AihError } from "../errors.js";
@@ -89,6 +97,43 @@ const ProfileSchema = z
   .strict();
 export type OpenCodeSandboxProfile = z.infer<typeof ProfileSchema>;
 
+const O_NOFOLLOW = (fsConstants as Record<string, number | undefined>).O_NOFOLLOW ?? 0;
+
+function readStableRegularFile(path: string, unsafeMessage: string): Buffer {
+  let descriptor: number | undefined;
+  try {
+    const before = lstatSync(path, { bigint: true });
+    if (before.isSymbolicLink() || !before.isFile() || realpathSync(path) !== path) {
+      throw new Error("unsafe file");
+    }
+    descriptor = openSync(path, fsConstants.O_RDONLY | fsConstants.O_NONBLOCK | O_NOFOLLOW);
+    const opened = fstatSync(descriptor, { bigint: true });
+    if (!opened.isFile() || opened.dev !== before.dev || opened.ino !== before.ino) {
+      throw new Error("file changed while opening");
+    }
+    const bytes = readFileSync(descriptor);
+    const afterRead = fstatSync(descriptor, { bigint: true });
+    const afterPath = lstatSync(path, { bigint: true });
+    if (
+      afterRead.dev !== opened.dev ||
+      afterRead.ino !== opened.ino ||
+      afterRead.size !== opened.size ||
+      afterPath.isSymbolicLink() ||
+      !afterPath.isFile() ||
+      afterPath.dev !== opened.dev ||
+      afterPath.ino !== opened.ino ||
+      realpathSync(path) !== path
+    ) {
+      throw new Error("file changed while reading");
+    }
+    return bytes;
+  } catch {
+    throw new AihError(unsafeMessage, "AIH_CONFIG");
+  } finally {
+    if (descriptor !== undefined) closeSync(descriptor);
+  }
+}
+
 function values(value: unknown): string[] {
   if (value === undefined) return [];
   if (typeof value === "string") return [value];
@@ -168,15 +213,11 @@ function externalExecutable(
   if (fromRoot === "" || (!fromRoot.startsWith("..") && !isAbsolute(fromRoot))) {
     throw new AihError(`${option} must be outside the project root`, "AIH_CONFIG");
   }
-  try {
-    const stat = lstatSync(path);
-    if (stat.isSymbolicLink() || !stat.isFile() || realpathSync(path) !== path) {
-      throw new Error("unsafe executable");
-    }
-  } catch {
-    throw new AihError(`${option} executable does not exist: ${path}`, "AIH_CONFIG");
-  }
-  const sha256 = createHash("sha256").update(readFileSync(path)).digest("hex");
+  const bytes = readStableRegularFile(
+    path,
+    `${option} executable does not exist or is unsafe: ${path}`,
+  );
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
   if (expectedSha256 !== undefined && sha256 !== expectedSha256) {
     throw new AihError(`${option} executable changed after sandbox setup: ${path}`, "AIH_CONFIG");
   }
@@ -375,15 +416,11 @@ function externalPolicy(
   if (fromRoot === "" || (!fromRoot.startsWith("..") && !isAbsolute(fromRoot))) {
     throw new AihError("OpenCode sandbox policy must be outside the project root", "AIH_CONFIG");
   }
-  try {
-    const stat = lstatSync(path);
-    if (stat.isSymbolicLink() || !stat.isFile() || realpathSync(path) !== path) {
-      throw new Error("unsafe policy");
-    }
-  } catch {
-    throw new AihError(`OpenCode sandbox policy is missing or unsafe: ${path}`, "AIH_CONFIG");
-  }
-  const sha256 = createHash("sha256").update(readFileSync(path)).digest("hex");
+  const bytes = readStableRegularFile(
+    path,
+    `OpenCode sandbox policy is missing or unsafe: ${path}`,
+  );
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
   if (expectedSha256 !== undefined && sha256 !== expectedSha256) {
     throw new AihError(`OpenCode sandbox policy changed after setup: ${path}`, "AIH_CONFIG");
   }
