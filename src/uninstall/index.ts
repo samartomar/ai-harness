@@ -2,9 +2,15 @@ import { createHash } from "node:crypto";
 import { existsSync, lstatSync, readdirSync, realpathSync } from "node:fs";
 import { join, posix } from "node:path";
 import { SHARED_MARKER, sharedCanonicalBlockBody } from "../bootstrap-ai/canon.js";
-import { AIH_CONFIG_FILE, NATIVE_MCP_TARGETS, readAihConfig } from "../config/marker.js";
+import {
+  AIH_CONFIG_FILE,
+  NATIVE_MCP_TARGETS,
+  readAihConfig,
+  readPolicyBinding,
+} from "../config/marker.js";
 import { bootloadersFor, entry, REGISTRY_IDS } from "../internals/cli-registry.js";
 import { inspectContainedRelativePath } from "../internals/contained-path.js";
+import { executePlan, type PlanResult } from "../internals/execute.js";
 import { readIfExists, readRegularFile } from "../internals/fsxn.js";
 import { extractManagedBlock } from "../internals/markers.js";
 import {
@@ -15,8 +21,10 @@ import {
   type PlanContext,
   plan,
   remove,
+  writeJson,
 } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
+import { VerificationReport } from "../internals/verify.js";
 import {
   KIRO_MCP_SETTINGS_PATH,
   type KiroMcpProjectionResidue,
@@ -38,10 +46,19 @@ import {
 } from "../mcp/native-managed-projection.js";
 import { isExternalMcp } from "../mcp/render.js";
 import {
+  COMMAND_PERMISSION_RECEIPT,
+  projectCommandPermissions,
+} from "../org-policy/command-permissions.js";
+import {
   HOOK_REGISTRAR_DESTINATION,
   hookRegistrarRevocationActions,
   hookRegistrarState,
 } from "../org-policy/hook-registrar.js";
+import {
+  inspectPolicyRequiredGuidance,
+  planPolicyRequiredGuidance,
+} from "../org-policy/required-guidance.js";
+import { parseOrgPolicy } from "../org-policy/schema.js";
 import { projectPromotedSkillArtifacts } from "../skill/promoted-artifacts.js";
 import { parseTrustLockSource, TRUST_LOCK_FILE } from "../trust/lock.js";
 import {
@@ -755,6 +772,7 @@ function coreUninstallSet(ctx: PlanContext): UninstallSet {
 function withMaterializationOutcome(
   set: UninstallSet,
   outcome: EccMaterializationRemovalOutcome,
+  receiptRetained: boolean,
 ): UninstallSet {
   return {
     ...set,
@@ -763,14 +781,18 @@ function withMaterializationOutcome(
         ? [
             {
               ...artifact,
-              reason: `receipt-proven aih ECC materialization: removed ${outcome.removed.length} owned file(s); operator content on the same surfaces is preserved`,
+              disposition: receiptRetained ? "advisory" : "subtract",
+              reason: `receipt-proven aih ECC materialization: removed ${outcome.removed.length} owned file(s); ${receiptRetained ? "receipt retained for retry; " : ""}operator content on the same surfaces is preserved`,
             },
             ...outcome.advisories.map(
               (advisory): UninstallArtifact => ({
                 path: advisory.path,
                 kind: "ecc-materialization",
                 disposition: "advisory",
-                reason: `aih ECC materialization destination ${advisory.reason} and was kept, not removed — ${advisory.detail}`,
+                reason:
+                  advisory.reason === "missing"
+                    ? `aih ECC materialization destination was already absent — ${advisory.detail}`
+                    : `aih ECC materialization destination ${advisory.reason} and was kept, not removed — ${advisory.detail}`,
               }),
             ),
           ]
@@ -789,6 +811,10 @@ function withMaterializationOutcome(
 function subtractFooter(set: UninstallSet): string[] {
   const subtracted = set.artifacts.filter((a) => a.disposition === "subtract");
   if (subtracted.length === 0) return [];
+  if (subtracted.some((artifact) => artifact.kind === "ecc-materialization"))
+    return [
+      "Entries marked [subtract] remove receipt-proven content, including owned files and completed receipts. Unrelated content is preserved.",
+    ];
   const removedPaths = new Set(
     (set.hookRegistrarActions ?? []).flatMap((action) =>
       action.kind === "remove" ? [action.path] : [],
@@ -823,14 +849,42 @@ function body(set: UninstallSet): string {
 
 function uninstallPlan(ctx: PlanContext): Plan {
   const planned = coreUninstallSet(ctx);
+  const binding = readPolicyBinding(ctx.root);
+  const governanceContextDir = readAihConfig(ctx.root)?.contextDir ?? ctx.contextDir;
+  const guidance = inspectPolicyRequiredGuidance(ctx.root, governanceContextDir);
+  const preservesGuidance =
+    guidance.state === "drifted" ||
+    guidance.state === "malformed" ||
+    (guidance.state === "missing" && exists(ctx, guidance.path));
+  // A receipt may survive subtraction because its destination was edited. Never
+  // erase the remaining ownership record through the enclosing cache cleanup.
+  const retainsGovernanceState =
+    binding !== undefined ||
+    exists(ctx, ECC_MATERIALIZATION_RECEIPT_PATH) ||
+    exists(ctx, COMMAND_PERMISSION_RECEIPT) ||
+    guidance.state !== "absent";
+  for (const artifact of planned.artifacts) {
+    if (
+      (artifact.kind === "marker" && binding !== undefined) ||
+      (artifact.path === ".aih" && retainsGovernanceState) ||
+      (artifact.kind === "context-dir" && preservesGuidance)
+    ) {
+      artifact.disposition = "advisory";
+      artifact.reason =
+        artifact.kind === "marker"
+          ? "project policy binding is retained as revoked; reviewed policy rebind is required before setup"
+          : artifact.kind === "context-dir"
+            ? "required guidance ownership is unprovable or edited; guidance and its receipt are preserved in place"
+            : "remaining governance receipts and unrelated project state are preserved in place";
+    }
+  }
   const actions: Action[] = [];
   // Owned content whose ownership only the marker proves is subtracted FIRST — the
   // established owned-content -> ownership-state -> ledger-last order
   // (`src/ecc/reconcile-driver.ts:485`, `:511`, `:514`). The executor stages this
-  // write and the removals below in ONE transaction (writes commit before removals,
-  // and a failure rolls both back), so an interrupted uninstall can never leave a
-  // removed marker beside unsubtracted content. Clearing the marker's ownership
-  // record is unnecessary here: the whole marker is being removed.
+  // write and the removals below in one transaction. Governed bindings remain
+  // revoked, and ECC's independent receipt-backed cleanup runs only after this
+  // transaction succeeds; its outcome and any incomplete phase are reported.
   if (planned.managedMcp?.matches === true) {
     actions.push(
       managedMcpSubtractionAction(
@@ -859,23 +913,139 @@ function uninstallPlan(ctx: PlanContext): Plan {
   if (planned.hookRegistrarActions !== undefined) {
     actions.push(...planned.hookRegistrarActions);
   }
-  // The governed ECC materialization is subtracted by its own engine, which owns
-  // the per-file digest match, the operator-content guarantee and the rollback
-  // that make removal honest — re-expressing it as plan removes would be a
-  // second copy of that transaction, free to disagree with the receipt. `apply`
-  // is the only gate; a dry run reports {@link eccMaterializationUninstallState}
-  // through the artifact digest and touches nothing.
-  // The report is then re-derived from the outcome, never from the intent.
-  const set =
-    planned.removeEccMaterialization === true && ctx.apply
-      ? withMaterializationOutcome(planned, removeEccMaterialization(ctx.root))
-      : planned;
+  if (exists(ctx, COMMAND_PERMISSION_RECEIPT)) {
+    // Explicit uninstall withdraws only receipt-proven entries. No authority
+    // source is needed to preserve everything the receipt cannot attribute.
+    const withdrawal = projectCommandPermissions(
+      ctx,
+      parseOrgPolicy({
+        schemaVersion: 2,
+        minimumPosture: "enterprise",
+        references: { repoContract: `${ctx.contextDir}/project.json` },
+        governance: { supportedClis: ["claude"] },
+      }),
+      [],
+      actions,
+    );
+    actions.splice(0, actions.length, ...withdrawal);
+  }
+  if (!preservesGuidance && guidance.state !== "absent") {
+    actions.push(...planPolicyRequiredGuidance(ctx.root, governanceContextDir, []).actions);
+  }
+  if (binding !== undefined) {
+    const markerBytes = readRegularFile(join(ctx.root, AIH_CONFIG_FILE));
+    if (markerBytes === undefined)
+      throw new Error("policy binding marker disappeared during uninstall");
+    const clearedMcpKeys = [
+      ...(planned.managedMcp?.matches === true ? ["managedMcpProjection"] : []),
+      ...(planned.kiroMcp?.matches === true ? ["kiroMcpProjection"] : []),
+    ];
+    const clearedNativeTargets = (planned.nativeMcp ?? [])
+      .filter((residue) => residue.matches)
+      .map((residue) => residue.target);
+    actions.push(
+      writeJson(
+        AIH_CONFIG_FILE,
+        { policyBinding: { ...binding, state: "revoked" } },
+        "retain revoked project policy binding after uninstall",
+        {
+          merge: true,
+          replaceJsonKeys: ["policyBinding"],
+          // This marker now survives uninstall. Remove ownership only for MCP
+          // content subtracted in the same pinned transaction, so reviewed
+          // rebind/reinstall does not encounter a stale active receipt.
+          ...(clearedMcpKeys.length ? { removeJsonTopLevelKeys: clearedMcpKeys } : {}),
+          ...(clearedNativeTargets.length
+            ? { removeJsonKeys: { nativeMcpProjections: clearedNativeTargets } }
+            : {}),
+          expect: { sha256: createHash("sha256").update(markerBytes).digest("hex") },
+        },
+      ),
+    );
+  }
+  // Planning remains read-only, including when ctx.apply is true. The public
+  // executor invokes ECC's engine only after the ordinary plan has succeeded.
+  const set = planned;
   for (const artifact of set.artifacts) {
     if (artifact.disposition !== "backup") continue;
     actions.push(remove(artifact.path, artifact.reason, { hardDelete: true }));
   }
   actions.push(digest("core install footprint", body(set), set));
   return plan("uninstall", ...actions);
+}
+
+/** Execute receipt-only cleanup in explicit, independently recoverable phases. */
+export async function executeUninstallCommand(
+  ctx: PlanContext,
+  deps: { removeMaterialization?: typeof removeEccMaterialization } = {},
+): Promise<PlanResult> {
+  const prepared = uninstallPlan(ctx);
+  const set = prepared.actions.find((action) => action.kind === "digest")?.data as UninstallSet;
+  const result = await executePlan(prepared, ctx);
+  if (!ctx.apply || !set.removeEccMaterialization || (result.report && !result.report.ok))
+    return result;
+  try {
+    const outcome = (deps.removeMaterialization ?? removeEccMaterialization)(ctx.root);
+    const receiptRetained = exists(ctx, ECC_MATERIALIZATION_RECEIPT_PATH);
+    const actual = withMaterializationOutcome(set, outcome, receiptRetained);
+    const report = result.report ?? new VerificationReport();
+    if (receiptRetained)
+      report.fail(
+        "ECC cleanup retained owned files",
+        "Some owned destinations require review and remain with their receipts. The digest identifies each retained path. Restore reviewed ownership before retrying cleanup.",
+      );
+    return {
+      ...result,
+      ...(receiptRetained ? { report } : {}),
+      removed: [
+        ...result.removed,
+        ...(!receiptRetained
+          ? [
+              {
+                path: ECC_MATERIALIZATION_RECEIPT_PATH,
+                describe: "completed ECC ownership receipt",
+                effect: "delete" as const,
+              },
+            ]
+          : []),
+        ...outcome.removed.map((path) => ({
+          path,
+          describe: "receipt-proven ECC content",
+          effect: "delete" as const,
+        })),
+      ],
+      digests: result.digests.map((entry) =>
+        entry.describe === "core install footprint"
+          ? {
+              ...entry,
+              text: body(actual),
+              data: {
+                ...actual,
+                eccCleanup: { state: receiptRetained ? "partial" : "complete" },
+              },
+            }
+          : entry,
+      ),
+    };
+  } catch {
+    const report = result.report ?? new VerificationReport();
+    report.fail(
+      "ECC uninstall incomplete",
+      "Project cleanup completed, but ECC cleanup did not complete. Remaining ownership receipts are retained. Inspect the retained ECC files and rerun uninstall after repairing the reported ownership state.",
+    );
+    return {
+      ...result,
+      report,
+      digests: [
+        ...result.digests,
+        {
+          describe: "incomplete ECC cleanup",
+          text: "Project cleanup completed; ECC removal failed. Remaining ownership receipts are retained for recovery. Rerun uninstall to finish receipt-proven cleanup.",
+          data: { state: "partial", completed: "project-cleanup", pending: "ecc-cleanup" },
+        },
+      ],
+    };
+  }
 }
 
 export const command: CommandSpec = {

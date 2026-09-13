@@ -271,6 +271,7 @@ function context(
     host: makeHostAdapter({ platform: "linux", run, env: {} }),
     env: { AIH_POLICY_AUTHORITY_REPOSITORY: "acme/governance", PATH: bin },
     options,
+    targets: ["codex"],
   };
 }
 

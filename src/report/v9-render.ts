@@ -172,7 +172,7 @@ export function renderReady(r: V9Ready): string {
   const strongVar = `var(--${cls})`;
   const sub =
     r.banner === "READY"
-      ? "no blockers or unverified MCP capabilities for selected clients"
+      ? "no blockers or unverified capabilities for selected clients"
       : r.banner === "NOT READY"
         ? "a required preflight condition is failed or unverified"
         : "measured checks have gaps or unverified capabilities";
@@ -214,7 +214,24 @@ export function renderReady(r: V9Ready): string {
     mcpRows + issueRows ||
     `<div class="method">No configured MCP capability observations were reported.</div>`;
   const mcpAcceptance = `<div class="card span-12"><div class="card-head"><h3>MCP capability acceptance</h3><span class="badge ${unverified.length > 0 ? "warn" : "ok"}">${unverified.length} selected unverified</span></div><div class="card-body"><div class="drift-files">${mcpBody}</div><div class="method" style="margin-top:.6rem">Configured means the client configuration was parsed. Discovery, a real tool call, policy enforcement and post-restart behavior are separate evidence.</div></div></div>`;
-  return verdict + blockers + mcpAcceptance + renderRuntimeEvidence(r.runtimeEvidence);
+  return (
+    verdict +
+    blockers +
+    mcpAcceptance +
+    renderPolicyDelivery(r.policyDelivery) +
+    renderRuntimeEvidence(r.runtimeEvidence)
+  );
+}
+
+function renderPolicyDelivery(report: V9Ready["policyDelivery"]): string {
+  if (!report) return "";
+  const rows = report.components
+    .map(
+      (component) =>
+        `<div class="drift-file"><span class="fn">${escHtml(component.id)}<br><small>${escHtml(component.source.repository)}@${escHtml(component.source.commit)}</small></span><span class="fs">${escHtml(component.state)}<br>Target coverage: ${escHtml(component.targetCoverage?.state ?? "unverified")} (${escHtml(component.targetCoverage?.recordedTargets.join(", ") || "not recorded")})<br>Native loading: ${escHtml(component.nativeLoading)} · effect: ${escHtml(component.practiceEffect)}</span></div>`,
+    )
+    .join("");
+  return `<div class="card span-12"><div class="card-head"><h3>Required policy content</h3><span class="badge ${report.blocking ? "bad" : "warn"}">${report.blocking ? "blocked" : report.nativeLoading === "not-requested" ? "no required native content" : "native loading unverified"}</span></div><div class="card-body"><div class="method">Policy ${escHtml(report.policyVersion ?? "unspecified")} · receipt ${escHtml(report.receipt)}. ${escHtml(report.detail)}</div>${rows}<div class="method">Project binding: ${escHtml(report.binding?.state ?? "not recorded")}${report.binding?.projectId ? ` (${escHtml(report.binding.projectId)})` : ""}<br>Startup guidance: ${escHtml(report.startupGuidance?.state ?? "not inspected")}<br>Command permissions: ${escHtml(report.commandPermissions?.state ?? "not inspected")}; native enforcement: ${escHtml(report.commandPermissions?.nativeEnforcement ?? "unverified")}<br>Advisory command targets: ${escHtml(report.commandPermissions?.advisoryTargets.join(", ") || "none")}<br>Optional exclusions: ${escHtml(report.excludedOptionalAssets.join(", ") || "none")}<br>Unrequested owned content: ${escHtml(report.unrequestedOwnedComponents.join(", ") || "none")}<br>Unsupported ECC targets: ${escHtml(report.unsupportedTargets.join(", ") || "none")}<br><code>${escHtml(report.nextStep)}</code></div></div></div>`;
 }
 
 /** The same evaluated observation carried by CLI/JSON, beside the unchanged preflight. */

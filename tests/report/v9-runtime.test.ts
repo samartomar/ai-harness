@@ -30,7 +30,7 @@ const observation = {
   ],
 };
 
-function readiness(runtimeEvidence?: unknown) {
+function readiness(runtimeEvidence?: unknown, policyDelivery?: unknown) {
   return digest("Developer readiness", "", {
     banner: "NOT READY",
     score: 42,
@@ -55,10 +55,72 @@ function readiness(runtimeEvidence?: unknown) {
       issues: [],
     },
     ...(runtimeEvidence === undefined ? {} : { runtimeEvidence }),
+    ...(policyDelivery === undefined ? {} : { policyDelivery }),
   });
 }
 
 describe("v9 runtime observations beside preflight", () => {
+  it("keeps required policy delivery and guidance limits identical in static and hydrated HTML", () => {
+    const policyDelivery = {
+      policyVersion: "harbor-2",
+      blocking: true,
+      policyBlocked: true,
+      targets: ["codex"],
+      unsupportedTargets: [],
+      receipt: "valid",
+      excludedOptionalAssets: ["ecc/skill:frontend-patterns"],
+      unrequestedOwnedComponents: [],
+      nativeLoading: "unverified",
+      detail: "Receipt bytes do not prove native loading or practice enforcement.",
+      nextStep: "aih policy evaluate --json",
+      components: [
+        {
+          id: "skill:tdd-workflow",
+          source: {
+            repository: "fictional/adopter",
+            commit: "a".repeat(40),
+            path: "skills/tdd-workflow",
+          },
+          state: "drifted",
+          files: [],
+          nativeLoading: "unverified",
+          practiceEffect: "guidance",
+        },
+      ],
+    };
+    const digests = [readiness(observation, policyDelivery)];
+    const data = buildAihDataV9(digests);
+    expect(data.ready?.policyDelivery).toEqual(policyDelivery);
+    expect(data.ready?.banner).toBe("NOT READY");
+    const window = new Window({
+      url: "http://localhost/",
+      settings: { disableJavaScriptEvaluation: true },
+    });
+    try {
+      window.document.write(reportHtmlV9("Policy delivery", digests));
+      const before = window.document.querySelector("#sec-ready .grid")?.textContent;
+      for (const value of [
+        "Required policy content",
+        "harbor-2",
+        "skill:tdd-workflow",
+        "drifted",
+        "guidance",
+        "Native loading: unverified",
+        "frontend-patterns",
+        "Exercised: verified",
+        "NOT READY",
+      ])
+        expect(before).toContain(value);
+      const hydrate = new Function(`return (${HYDRATE_FN})`)() as (
+        doc: unknown,
+        view: unknown,
+      ) => void;
+      hydrate(window.document, assembleViewV9(data, V9_DEMO));
+      expect(window.document.querySelector("#sec-ready .grid")?.textContent).toBe(before);
+    } finally {
+      window.happyDOM.close();
+    }
+  });
   it.each([false, true])(
     "materializes readiness before rendering (runtime requested: %s)",
     async (runtimeRequested) => {

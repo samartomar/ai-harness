@@ -31,6 +31,7 @@ installations use `@aihq/core`. Use [docs/commands.md](../docs/commands.md) and
 | Engineering team applying AI-Harness during application delivery | [Enterprise Application Adoption](enterprise-application-adoption.md) |
 | Governed organization or enterprise rollout | [Enterprise Admin](enterprise-admin-guide.md) |
 | Developer consuming an admin enterprise config | [Enterprise Developer](enterprise-developer-guide.md) |
+| Author, assign, deliver, update, and revoke project requirements | [Portable Policy Delivery](portable-policy-delivery.md) |
 | Repeat governed OpenCode launches across Linux worktrees | [OpenCode Linux Sandbox](opencode-linux-sandbox.md) |
 
 ## Maintenance Rules

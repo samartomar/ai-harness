@@ -1564,6 +1564,9 @@
           "flags": "--detect"
         },
         {
+          "flags": "--ecc-path <path>"
+        },
+        {
           "flags": "--force"
         },
         {
@@ -2460,6 +2463,66 @@
       "options": [],
       "commands": [
         {
+          "name": "bind",
+          "hasDescription": true,
+          "arguments": [
+            {
+              "name": "root",
+              "required": false
+            }
+          ],
+          "options": [
+            {
+              "flags": "--all-tools"
+            },
+            {
+              "flags": "--apply"
+            },
+            {
+              "flags": "--cli <list>"
+            },
+            {
+              "flags": "--context-dir <dir>",
+              "defaultValue": "ai-coding"
+            },
+            {
+              "flags": "--detect"
+            },
+            {
+              "flags": "--force"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--no-log"
+            },
+            {
+              "flags": "--policy <file>"
+            },
+            {
+              "flags": "--posture <posture>",
+              "defaultValue": "vibe"
+            },
+            {
+              "flags": "--project <id>"
+            },
+            {
+              "flags": "--root <dir>"
+            },
+            {
+              "flags": "--support-out <dir>"
+            },
+            {
+              "flags": "--verify"
+            },
+            {
+              "flags": "--yes"
+            }
+          ],
+          "commands": []
+        },
+        {
           "name": "data",
           "hasDescription": true,
           "arguments": [],
@@ -3056,6 +3119,9 @@
               "flags": "--detect"
             },
             {
+              "flags": "--ecc-path <path>"
+            },
+            {
               "flags": "--force"
             },
             {
@@ -3070,6 +3136,66 @@
             {
               "flags": "--posture <posture>",
               "defaultValue": "vibe"
+            },
+            {
+              "flags": "--root <dir>"
+            },
+            {
+              "flags": "--support-out <dir>"
+            },
+            {
+              "flags": "--verify"
+            },
+            {
+              "flags": "--yes"
+            }
+          ],
+          "commands": []
+        },
+        {
+          "name": "rebind",
+          "hasDescription": true,
+          "arguments": [
+            {
+              "name": "root",
+              "required": false
+            }
+          ],
+          "options": [
+            {
+              "flags": "--all-tools"
+            },
+            {
+              "flags": "--apply"
+            },
+            {
+              "flags": "--cli <list>"
+            },
+            {
+              "flags": "--context-dir <dir>",
+              "defaultValue": "ai-coding"
+            },
+            {
+              "flags": "--detect"
+            },
+            {
+              "flags": "--force"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--no-log"
+            },
+            {
+              "flags": "--policy <file>"
+            },
+            {
+              "flags": "--posture <posture>",
+              "defaultValue": "vibe"
+            },
+            {
+              "flags": "--project <id>"
             },
             {
               "flags": "--root <dir>"
@@ -3127,6 +3253,66 @@
             },
             {
               "flags": "--target <id>"
+            }
+          ],
+          "commands": []
+        },
+        {
+          "name": "revoke",
+          "hasDescription": true,
+          "arguments": [
+            {
+              "name": "root",
+              "required": false
+            }
+          ],
+          "options": [
+            {
+              "flags": "--all-tools"
+            },
+            {
+              "flags": "--apply"
+            },
+            {
+              "flags": "--cli <list>"
+            },
+            {
+              "flags": "--context-dir <dir>",
+              "defaultValue": "ai-coding"
+            },
+            {
+              "flags": "--detect"
+            },
+            {
+              "flags": "--force"
+            },
+            {
+              "flags": "--json"
+            },
+            {
+              "flags": "--no-log"
+            },
+            {
+              "flags": "--policy <file>"
+            },
+            {
+              "flags": "--posture <posture>",
+              "defaultValue": "vibe"
+            },
+            {
+              "flags": "--project <id>"
+            },
+            {
+              "flags": "--root <dir>"
+            },
+            {
+              "flags": "--support-out <dir>"
+            },
+            {
+              "flags": "--verify"
+            },
+            {
+              "flags": "--yes"
             }
           ],
           "commands": []

@@ -14,16 +14,20 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineBaselineCatalog } from "../../src/baseline-evidence/catalog.js";
 import { hashComponentTree } from "../../src/baseline-evidence/hash.js";
+import { componentIdentityPaths } from "../../src/baseline-evidence/license.js";
 import { parseBaselineEvidenceLock } from "../../src/baseline-evidence/schema.js";
 import { walkManagedRoot } from "../../src/ecc/install-manifest.js";
 import { eccMaterializationReceiptPath } from "../../src/ecc/materialization.js";
 import { readEccMaterializationReceipt } from "../../src/ecc/materialization-receipt.js";
 import { executeEccCommand } from "../../src/ecc/pipeline.js";
 import { SUPPORTED_CLIS } from "../../src/internals/clis.js";
-import type { PlanResult } from "../../src/internals/execute.js";
+import { executePlan, type PlanResult } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
+import { policyBindCommand } from "../../src/org-policy/binding.js";
+import { inspectPolicyDelivery } from "../../src/org-policy/policy-delivery-report.js";
 import { orgPolicyPath } from "../../src/org-policy/schema.js";
+import { executePolicyProjectCommand } from "../../src/org-policy/validate.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { resolveTrustSource } from "../../src/trust/fetch.js";
 import { removeEccMaterialization } from "../../src/uninstall/ecc-materialization.js";
@@ -45,6 +49,7 @@ const COMMIT = "a".repeat(40);
 const REPOSITORY = "affaan-m/ECC";
 
 const SOURCE_TREE: Readonly<Record<string, string>> = {
+  LICENSE: "fixture license\n",
   "agents/code-reviewer.md": "# code-reviewer\n",
   "agents/planner.md": "# planner\n",
   "skills/tdd-workflow/SKILL.md": "# tdd-workflow\n",
@@ -317,7 +322,8 @@ function vendorLock() {
         components: CATALOGUED.map((item) => ({
           id: item.id,
           paths: item.paths,
-          treeSha256: hashComponentTree(sourceRoot, item.paths).treeSha256,
+          treeSha256: hashComponentTree(sourceRoot, componentIdentityPaths(sourceRoot, item.paths))
+            .treeSha256,
           verdict: item.id === BLOCKED.id ? "blocked" : "pass",
           analyzers: [{ name: "aih-native", version: "2.7.0" }],
           findings:
@@ -443,6 +449,210 @@ describe("F6 — the governed framework lifecycle reached through `aih ecc`", ()
     for (const path of Object.keys(OPERATOR_TREE)) {
       expect(bytesAt(root, path).toString("utf8"), path).toBe(OPERATOR_TREE[path]);
     }
+  });
+
+  it("delivers required ECC content from the normal policy project apply", async () => {
+    writeGovernedPolicy([...PASSED]);
+    const context = ctx(true, { eccPath: sourceRoot, cli: "claude" });
+
+    const result = await executePolicyProjectCommand(context, {
+      catalog: catalog(),
+      resolveOrgEvidence: verifiedOrgEvidence(vendorLock()),
+    });
+
+    expect(result.capability).toBe("policy project");
+    expect(materializationDigest(result).applied).toBe(true);
+    expect(existsSync(eccMaterializationReceiptPath(root))).toBe(true);
+    expect(existsSync(join(root, "ai-coding", "policy-required-guidance.md"))).toBe(true);
+    expect(existsSync(join(root, "ai-coding", "policy-required-guidance.receipt.json"))).toBe(true);
+    expect(
+      bytesAt(root, MATERIALIZED[0]?.destination ?? "").equals(
+        bytesAt(sourceRoot, MATERIALIZED[0]?.source ?? ""),
+      ),
+    ).toBe(true);
+  });
+
+  it("previews normal policy project delivery from a local source without material effects", async () => {
+    writeGovernedPolicy([...PASSED]);
+    const before = snapshot(root);
+    const context = ctx(false, { eccPath: sourceRoot, cli: "claude" });
+
+    const result = await executePolicyProjectCommand(context, {
+      catalog: catalog(),
+      resolveOrgEvidence: verifiedOrgEvidence(vendorLock()),
+    });
+
+    expect(result.capability).toBe("policy project");
+    const reported = materializationDigest(result);
+    expect(reported.applied).toBe(false);
+    expect(reported.write.length).toBeGreaterThan(0);
+    expect(snapshot(root)).toEqual(before);
+    expect(existsSync(eccMaterializationReceiptPath(root))).toBe(false);
+    expect(existsSync(join(root, "ai-coding", "policy-required-guidance.md"))).toBe(false);
+    expect(existsSync(join(root, "ai-coding", "policy-required-guidance.receipt.json"))).toBe(
+      false,
+    );
+  });
+
+  it("accepts the durable binding's exact source when command defaults inject it into the env", async () => {
+    writeGovernedPolicy([...PASSED]);
+    const sourcePath = realpathSync.native(orgPolicyPath(root, {}));
+    const bind = ctx(true, { project: "harbor-api", cli: "claude" });
+    await executePlan(await policyBindCommand.plan(bind), bind);
+
+    const result = await executeEccCommand(
+      ctx(
+        true,
+        { lifecycle: "install", eccPath: sourceRoot, cli: "claude" },
+        { AIH_ORG_POLICY: sourcePath },
+      ),
+      {
+        catalog: catalog(),
+        resolveOrgEvidence: verifiedOrgEvidence(vendorLock()),
+      },
+    );
+
+    expect(materializationDigest(result).applied).toBe(true);
+  });
+
+  it("prepares the exact ECC request and refuses target gaps before policy projection writes", async () => {
+    writeGovernedPolicy([OTHER_LIFECYCLE]);
+    const before = snapshot(root);
+    const context = ctx(true, { eccPath: sourceRoot, cli: "claude" });
+
+    await expect(
+      executePolicyProjectCommand(context, {
+        catalog: catalog(),
+        resolveOrgEvidence: verifiedOrgEvidence(vendorLock()),
+      }),
+    ).rejects.toThrow(/refused every.*mcp:github.*unowned-destination/);
+
+    expect(snapshot(root)).toEqual(before);
+    expect(existsSync(eccMaterializationReceiptPath(root))).toBe(false);
+  });
+
+  it("acquires and verifies the remote pin in an effect-free preparation before project writes", async () => {
+    writeGovernedPolicy([...PASSED]);
+    let fetches = 0;
+    const run = fakeRunner((argv) => {
+      const raw = argv.at(-1);
+      if (argv[1] !== "-e" || raw === undefined) return undefined;
+      const input = JSON.parse(raw) as {
+        owner?: string;
+        repo?: string;
+        ref?: string;
+        pin?: string;
+        treePath?: string;
+        metadataPath?: string;
+      };
+      if (input.owner !== "affaan-m" || input.repo !== "ECC") return undefined;
+      if (input.treePath === undefined || input.metadataPath === undefined) {
+        throw new Error("missing quarantine paths");
+      }
+      writeTree(input.treePath, SOURCE_TREE);
+      writeFileSync(
+        input.metadataPath,
+        `${JSON.stringify({
+          kind: "github",
+          owner: input.owner,
+          repo: input.repo,
+          ref: input.ref,
+          pinnedSha: input.pin,
+          source: `${input.owner}/${input.repo}`,
+          treePath: input.treePath,
+        })}\n`,
+      );
+      fetches++;
+      return undefined;
+    });
+    const context = {
+      ...ctx(true, { cli: "claude" }),
+      run,
+      host: makeHostAdapter({ platform: "linux", run, env: {} }),
+    };
+
+    const result = await executePolicyProjectCommand(context, {
+      catalog: catalog(),
+      resolveOrgEvidence: verifiedOrgEvidence(vendorLock()),
+    });
+
+    expect(fetches).toBe(1);
+    expect(materializationDigest(result).applied).toBe(true);
+    expect(existsSync(eccMaterializationReceiptPath(root))).toBe(true);
+  });
+
+  it("treats an explicit empty ECC selection as authorized receipt-bound withdrawal", async () => {
+    writeGovernedPolicy([...PASSED]);
+    await runLifecycle("install", true);
+    expect(existsSync(eccMaterializationReceiptPath(root))).toBe(true);
+    expect(existsSync(join(root, "ai-coding", "policy-required-guidance.md"))).toBe(true);
+
+    writeGovernedPolicy([]);
+    const withdrawn = await runLifecycle("install", true);
+
+    expect(materializationDigest(withdrawn).applied).toBe(true);
+    expect(existsSync(eccMaterializationReceiptPath(root))).toBe(false);
+    expect(existsSync(join(root, "ai-coding", "policy-required-guidance.md"))).toBe(false);
+    expect(existsSync(join(root, "ai-coding", "policy-required-guidance.receipt.json"))).toBe(
+      false,
+    );
+    for (const file of MATERIALIZED) {
+      expect(existsSync(join(root, ...file.destination.split("/"))), file.destination).toBe(false);
+    }
+    for (const path of Object.keys(OPERATOR_TREE)) {
+      expect(bytesAt(root, path).toString("utf8"), path).toBe(OPERATOR_TREE[path]);
+    }
+
+    writeGovernedPolicy([...PASSED]);
+    await runLifecycle("install", true);
+    writeGovernedPolicy([]);
+    await runLifecycle("install", true);
+    expect(existsSync(join(root, "ai-coding", "policy-required-guidance.md"))).toBe(false);
+  });
+
+  it("recovers a missing guidance bridge from current materialization and verified policy", async () => {
+    writeGovernedPolicy([...PASSED]);
+    await runLifecycle("install", true);
+    const guidance = join(root, "ai-coding", "policy-required-guidance.md");
+    const receipt = join(root, "ai-coding", "policy-required-guidance.receipt.json");
+    rmSync(guidance);
+    rmSync(receipt);
+
+    await runLifecycle("install", true);
+
+    expect(readFileSync(guidance, "utf8")).toContain("Policy version: 2026-08-07.f6");
+    expect(JSON.parse(readFileSync(receipt, "utf8"))).toMatchObject({
+      policyVersion: "2026-08-07.f6",
+      source: { repository: REPOSITORY, commit: COMMIT },
+      targets: ["claude"],
+    });
+  });
+
+  it("reports a failed guidance commit as partial delivery and repairs it on exact retry", async () => {
+    writeGovernedPolicy([...PASSED]);
+    const context = ctx(true, { lifecycle: "install", eccPath: sourceRoot, cli: "claude" });
+
+    await expect(
+      executeEccCommand(context, {
+        catalog: catalog(),
+        resolveOrgEvidence: verifiedOrgEvidence(vendorLock()),
+        executeRequiredGuidancePlan: async () => {
+          throw new Error("injected guidance commit failure");
+        },
+      }),
+    ).rejects.toThrow(/injected guidance commit failure/);
+
+    expect(readEccMaterializationReceipt(root).state).toBe("valid");
+    expect(existsSync(join(root, "ai-coding", "policy-required-guidance.md"))).toBe(false);
+    const incomplete = await inspectPolicyDelivery(ctx(false, { cli: "claude" }));
+    expect(incomplete?.blocking).toBe(true);
+    expect(incomplete?.startupGuidance?.state).toBe("absent");
+
+    await runLifecycle("install", true, "claude");
+
+    expect(existsSync(join(root, "ai-coding", "policy-required-guidance.md"))).toBe(true);
+    const repaired = await inspectPolicyDelivery(ctx(false, { cli: "claude" }));
+    expect(repaired?.startupGuidance?.state).toBe("current");
   });
 
   it("refuses protected authority A-to-B before the governed writer creates any effect", async () => {
@@ -719,6 +929,33 @@ describe("F6 — the governed framework lifecycle reached through `aih ecc`", ()
     expect(executeProfileLifecycle).toHaveBeenCalledOnce();
     expect(result.capability).toBe("ecc lifecycle");
     expect(existsSync(eccMaterializationReceiptPath(root))).toBe(false);
+  });
+
+  it("refuses ordinary profile fallback when governed materialization ownership remains", async () => {
+    writeGovernedPolicy([...PASSED]);
+    await runLifecycle("install", true);
+    writeFileSync(
+      orgPolicyPath(root, {}),
+      `${JSON.stringify({
+        schemaVersion: 2,
+        minimumPosture: "vibe",
+        references: { repoContract: "ai-coding/project.json" },
+      })}\n`,
+    );
+    const before = snapshot(root);
+    let profileCalled = false;
+
+    await expect(
+      executeEccCommand(ctx(true, { lifecycle: "install", eccPath: sourceRoot }), {
+        catalog: catalog(),
+        executeProfileLifecycle: async () => {
+          profileCalled = true;
+          throw new Error("must not reach ordinary profile lifecycle");
+        },
+      }),
+    ).rejects.toThrow(/governed materialization ownership remains/);
+    expect(profileCalled).toBe(false);
+    expect(snapshot(root)).toEqual(before);
   });
 });
 
@@ -1127,7 +1364,13 @@ describe("F4 — the governed framework lifecycle for the Kimi target", () => {
     // owned, and it no longer owns the dropped target's rows.
     const receiptPath = ".aih/ecc/materialization-v1.json";
     for (const [path, sha] of Object.entries(digests)) {
-      if (path.startsWith(".kimi-code/") || path === receiptPath) continue;
+      if (
+        path.startsWith(".kimi-code/") ||
+        path === receiptPath ||
+        path.startsWith("ai-coding/policy-required-guidance")
+      ) {
+        continue;
+      }
       expect(createHash("sha256").update(bytesAt(root, path)).digest("hex"), path).toBe(sha);
       expect(digest?.text ?? "", path).not.toContain(`[removed] ${path}`);
     }
@@ -1287,7 +1530,13 @@ describe("F4 — the governed framework lifecycle for the Cursor target", () => 
     // record of what is owned, and it no longer owns the dropped target's rows.
     const receiptPath = ".aih/ecc/materialization-v1.json";
     for (const [path, sha] of Object.entries(digests)) {
-      if (path.startsWith(".cursor/") || path === receiptPath) continue;
+      if (
+        path.startsWith(".cursor/") ||
+        path === receiptPath ||
+        path.startsWith("ai-coding/policy-required-guidance")
+      ) {
+        continue;
+      }
       expect(createHash("sha256").update(bytesAt(root, path)).digest("hex"), path).toBe(sha);
       expect(digest?.text ?? "", path).not.toContain(`[removed] ${path}`);
     }
@@ -1319,6 +1568,10 @@ describe("F4 — the governed framework lifecycle for the OpenCode target", () =
     {
       source: ".agents/plugins/marketplace.json",
       destination: ".agents/plugins/marketplace.json",
+    },
+    {
+      source: ".agents/skills/tdd-workflow/SKILL.md",
+      destination: ".agents/skills/tdd-workflow/SKILL.md",
     },
   ];
 
@@ -1355,10 +1608,8 @@ describe("F4 — the governed framework lifecycle for the OpenCode target", () =
     expect(digest?.text).toContain(
       "[unowned-destination] agent:code-reviewer - the OpenCode target owns no content destination for agents/code-reviewer.md",
     );
-    // A component with one shared row and one generic row refuses WHOLE, rather
-    // than installing the half OpenCode can map.
-    expect(digest?.text).toContain("[unowned-destination] skill:tdd-workflow");
-    expect(materializationDigest(result).write.map((file) => file.path)).not.toContain(
+    expect(digest?.text).not.toContain("[unowned-destination] skill:tdd-workflow");
+    expect(materializationDigest(result).write.map((file) => file.path)).toContain(
       ".agents/skills/tdd-workflow/SKILL.md",
     );
   });
@@ -1387,7 +1638,9 @@ describe("F4 — the governed framework lifecycle for the OpenCode target", () =
     expect(digest?.text).toContain("Evidence-passed, and refused by the OpenCode target:");
     expect(digest?.text).not.toContain("refused by the Claude target");
     expect(reported.refused.map((entry) => entry.id).sort()).toEqual(
-      PASSED.map((item) => item.id).sort(),
+      PASSED.filter((item) => item.id !== "skill:tdd-workflow")
+        .map((item) => item.id)
+        .sort(),
     );
     // `AGENTS.md` is a row both targets agree on, so the union claims it once.
     expect(reported.write.filter((file) => file.path === "AGENTS.md")).toHaveLength(1);
@@ -1404,7 +1657,7 @@ describe("F4 — the governed framework lifecycle for the OpenCode target", () =
     // No shared-row component in the selection, so OpenCode — the only target —
     // refuses all of it. That is indistinguishable from "everything was
     // deselected", on which apply would subtract a whole prior install.
-    writeGovernedPolicy([...PASSED]);
+    writeGovernedPolicy(PASSED.filter((item) => item.id !== "skill:tdd-workflow"));
     const before = snapshot(root);
 
     const failure = await runLifecycle("install", true, "opencode").then(
@@ -1417,7 +1670,9 @@ describe("F4 — the governed framework lifecycle for the OpenCode target", () =
     );
     expect(failure?.message).toContain("indistinguishable from deselecting all of them");
     // Every refusal named, not just the count.
-    for (const item of PASSED) expect(failure?.message, item.id).toContain(item.id);
+    for (const item of PASSED.filter((entry) => entry.id !== "skill:tdd-workflow")) {
+      expect(failure?.message, item.id).toContain(item.id);
+    }
     expect(snapshot(root)).toEqual(before);
     expect(existsSync(eccMaterializationReceiptPath(root))).toBe(false);
   });
@@ -1525,6 +1780,25 @@ describe("the governed framework lifecycle for the Kiro target", () => {
       "# code-reviewer\n",
     );
     expect(existsSync(join(root, ".kiro", "settings", "mcp.json.example"))).toBe(false);
+  });
+
+  it("accepts the active catalog's .agents skill provenance alias", async () => {
+    const tddWorkflow = PASSED.find((component) => component.id === "skill:tdd-workflow");
+    if (!tddWorkflow) throw new Error("tdd-workflow fixture is required");
+    writeGovernedPolicy([
+      ...PASSED.filter((component) => component.id !== "skill:tdd-workflow"),
+      {
+        ...tddWorkflow,
+        path: ".agents/skills/tdd-workflow",
+      },
+    ]);
+
+    const reported = materializationDigest(await runLifecycle("install", true, "kiro"));
+
+    expect(reported.applied).toBe(true);
+    expect(bytesAt(root, ".kiro/skills/tdd-workflow/SKILL.md").toString("utf8")).toBe(
+      "# Kiro tdd-workflow\n",
+    );
   });
 
   it("subtracts a genuinely deselected Kiro surface", async () => {

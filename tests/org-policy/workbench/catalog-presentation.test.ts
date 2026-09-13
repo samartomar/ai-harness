@@ -28,6 +28,18 @@ const options = [
 ] as const;
 
 describe("catalog presentation", () => {
+  it("distinguishes skill instructions from native loading and enforced behavior", () => {
+    const bundle = structuredClone(tinyStudioModel().workbenchBundle);
+    const asset = Object.values(bundle.assets)[0]!;
+    asset.kind = "skill";
+    asset.authoring = { action: "record-selection", supportedTargets: [] };
+    const effect = assetDetailsPresentation(asset, bundle).facts.find(
+      (fact) => fact.label === "Practice effect",
+    )?.value;
+    expect(effect).toContain("guidance");
+    expect(effect).toContain("fresh session");
+    expect(effect).toContain("does not enforce");
+  });
   it("distinguishes MCP configuration readiness from host verification", () => {
     const bundle = structuredClone(tinyStudioModel().workbenchBundle);
     const asset = Object.values(bundle.assets)[0];

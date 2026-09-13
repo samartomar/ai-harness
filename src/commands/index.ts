@@ -29,7 +29,7 @@ import {
 import { command as guardrails } from "../guardrails/index.js";
 import { command as hardware } from "../hardware/index.js";
 import { command as heal } from "../heal/index.js";
-import { command as init } from "../init/index.js";
+import { executeInitCommand, command as init } from "../init/index.js";
 import type { CommandSpec } from "../internals/plan.js";
 import { command as live } from "../live/index.js";
 import { marketplaceBuildCommand } from "../marketplace/build.js";
@@ -42,6 +42,11 @@ import {
   policyManagedUsageInspectCommandV1,
   policyManagedUsageReconcileCommandV1,
 } from "../org-policy/aih-managed-usage-command-v1.js";
+import {
+  policyBindCommand,
+  policyRebindCommand,
+  policyRevokeCommand,
+} from "../org-policy/binding.js";
 import { policyGenerateCommand, runPolicyGenerate } from "../org-policy/generate.js";
 import { policyInitCommand } from "../org-policy/init.js";
 import { npmPackageLifecycleCommand } from "../org-policy/npm-package-lifecycle-v1.js";
@@ -54,6 +59,7 @@ import {
 import { upstreamArtifactLifecycleCommand } from "../org-policy/upstream-artifact-lifecycle-v1.js";
 import { upstreamArtifactObserveCommand } from "../org-policy/upstream-artifact-observer-v1.js";
 import {
+  executePolicyProjectCommand,
   policyEvaluateCommand,
   policyProjectCommand,
   policyValidateCommand,
@@ -110,7 +116,7 @@ import {
 } from "../trust/commands.js";
 import { trustScanCommand } from "../trust/scan.js";
 import { truthPackCommand, truthVerifyCommand } from "../truth/index.js";
-import { command as uninstall } from "../uninstall/index.js";
+import { executeUninstallCommand, command as uninstall } from "../uninstall/index.js";
 import { command as usage } from "../usage/index.js";
 import { command as vdi } from "../vdi/index.js";
 import { runWorkspaceAdd, workspaceAddCommand } from "../workspace/acquire.js";
@@ -234,6 +240,9 @@ export const GROUPED_COMMAND_SPECS = {
   marketplace: [marketplaceBuildCommand, marketplaceValidateCommand, marketplacePublishCommand],
   policy: [
     policyGenerateCommand,
+    policyBindCommand,
+    policyRebindCommand,
+    policyRevokeCommand,
     policyInitCommand,
     npmPackageLifecycleCommand,
     npmPackageObserveCommand,
@@ -496,6 +505,8 @@ function registerSpec(program: Command, spec: CommandSpec): void {
       if (spec === ecc) deps.execute = executeEccCommand;
       if (spec === governanceDoctorRepairCommand)
         deps.execute = executeGovernanceDoctorRepairCommandV1;
+      if (spec === init) deps.execute = executeInitCommand;
+      if (spec === uninstall) deps.execute = executeUninstallCommand;
       if (spec === superpowers) deps.execute = executeSuperpowersCommand;
       process.exitCode = await runCapability(spec, command, deps);
     },
@@ -924,6 +935,9 @@ export function registerCommands(
   );
   registerWorkbenchDataCommandsV1(policy);
   for (const spec of [
+    policyBindCommand,
+    policyRebindCommand,
+    policyRevokeCommand,
     policyInitCommand,
     policyResolveCommand,
     policyEvaluateCommand,
@@ -939,7 +953,9 @@ export function registerCommands(
     addOptionsForSpec(sub, spec);
     sub.action(
       async (_rootArg: string | undefined, _options: Record<string, unknown>, command: Command) => {
-        process.exitCode = await runCapability(spec, command);
+        process.exitCode = await runCapability(spec, command, {
+          ...(spec === policyProjectCommand ? { execute: executePolicyProjectCommand } : {}),
+        });
       },
     );
   }

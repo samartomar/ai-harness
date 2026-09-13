@@ -1,4 +1,5 @@
 import type { RuntimeEvidenceResult } from "../heal/opencode-runtime-evidence.js";
+import type { PolicyDeliveryReport } from "../org-policy/policy-delivery-report.js";
 
 /**
  * View-model for the **local-report v9** dashboard (the "developer console" skin,
@@ -75,6 +76,7 @@ export interface V9Ready {
   unverified?: Array<{ id: string; title: string; cmd: string }>;
   /** Explicitly evaluated bounded observations; never part of the preflight score. */
   runtimeEvidence?: RuntimeEvidenceResult;
+  policyDelivery?: PolicyDeliveryReport;
   mcp?: {
     servers: Array<{
       targetCli: string;

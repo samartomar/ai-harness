@@ -25,6 +25,7 @@ afterEach(() => {
 
 function ctx(over: Partial<PlanContext> = {}): PlanContext {
   const run = fakeRunner(() => undefined);
+  const env = { HOME: join(dir, "home"), USERPROFILE: join(dir, "home") };
   return {
     root: dir,
     contextDir: "ai-coding",
@@ -32,8 +33,8 @@ function ctx(over: Partial<PlanContext> = {}): PlanContext {
     verify: false,
     json: false,
     run,
-    host: makeHostAdapter({ platform: "linux", run, env: {} }),
-    env: {},
+    host: makeHostAdapter({ platform: "linux", run, env }),
+    env,
     options: {},
     ...over,
   };
@@ -55,7 +56,10 @@ function marker(...targets: string[]): void {
 const actionsOf = async (over: Partial<PlanContext> = {}): Promise<Action[]> =>
   (await command.plan(ctx(over))).actions;
 const digestText = (actions: Action[]): string => {
-  const d = actions.find((a): a is Extract<Action, { kind: "digest" }> => a.kind === "digest");
+  const d = actions.find(
+    (a): a is Extract<Action, { kind: "digest" }> =>
+      a.kind === "digest" && a.describe.startsWith("Stale artifacts"),
+  );
   return d?.text ?? "";
 };
 

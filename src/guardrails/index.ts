@@ -13,6 +13,11 @@ import {
   writeJson,
   writeText,
 } from "../internals/plan.js";
+import {
+  assertCommandPermissionPolicyPresent,
+  hasCommandPermissionOwnership,
+} from "../org-policy/command-permissions.js";
+import { readOrgPolicy } from "../org-policy/schema.js";
 import type { RepoStack } from "../profile/scan.js";
 import { scanRepo } from "../profile/scan.js";
 import { claudeBashPermissions, commandPolicyDoc, sandboxExecPolicy } from "./command-policy.js";
@@ -116,6 +121,10 @@ function preCommitActions(ctx: PlanContext, stack: RepoStack): Action[] {
  * write or human-facing doc — CI execution is left to the customer's pipeline.
  */
 function guardrailsPlan(ctx: PlanContext): ReturnType<typeof plan> {
+  const policy = readOrgPolicy(ctx.root, ctx.env);
+  assertCommandPermissionPolicyPresent(ctx.root, policy);
+  const policyOwnsCommands =
+    policy?.command !== undefined || hasCommandPermissionOwnership(ctx.root);
   const posture = ctx.posture ?? asPosture(ctx.options.posture);
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   const actions: Action[] = [
@@ -132,6 +141,15 @@ function guardrailsPlan(ctx: PlanContext): ReturnType<typeof plan> {
     ),
     doc("CI license gate runs in your pipeline, not from aih", ciNote()),
   ];
+
+  if (policyOwnsCommands) {
+    actions.push(
+      doc(
+        "Organization policy owns native command rules",
+        "Run `aih policy project --apply` to reconcile the selected command rules. Generic guardrails preserve that policy-owned native configuration.",
+      ),
+    );
+  }
 
   // The full prose taxonomy + command-policy lexicon are LEGACY-only FILES: generic
   // platform-engineering prose with low agent-leverage. The enforcement TEETH —
@@ -157,7 +175,7 @@ function guardrailsPlan(ctx: PlanContext): ReturnType<typeof plan> {
   // native project permissions AND managed-settings commandPolicy. This is
   // Claude-specific, so under `aih init` it lands only when Claude is a target; at
   // `vibe`, the lexicon remains advisory docs only.
-  if (posture !== "vibe" && isTargeted(ctx, "claude")) {
+  if (posture !== "vibe" && isTargeted(ctx, "claude") && !policyOwnsCommands) {
     actions.push(
       writeJson(
         CLAUDE_SETTINGS_PATH,

@@ -1,7 +1,7 @@
 ---
 status: guide
 owner: AI-Harness maintainers
-last_verified: 2026-09-12
+last_verified: 2026-09-13
 truth_home: true
 purpose: Developer guide for consuming admin-authored AI-Harness enterprise configuration.
 ---
@@ -9,6 +9,12 @@ purpose: Developer guide for consuming admin-authored AI-Harness enterprise conf
 # Enterprise Developer Guide to AI-Harness
 
 Use this guide when a developer is joining an organization that already has an AI-Harness admin policy, approved skills, and reviewed MCP choices. Platform owners should read [Enterprise Admin](enterprise-admin-guide.md). Individual non-governed setup belongs in [Vibe Developer](vibe-developer-guide.md).
+
+For durable project assignment, required practices and their full update/removal
+journey, follow [Project policy delivery](portable-policy-delivery.md). That path
+restores the exact selected policy and clients in fresh AIH processes through
+`policy bind`; the administrator-managed launcher below remains a separate
+deployment option.
 
 This guide owns developer-side consumption: install and release verification, applying the admin config, local authentication, approved MCP templates, approved skill packs, and local usage/reporting. It should not author org policy, approve new external sources, sign scanner images, or publish bundles.
 
@@ -76,10 +82,13 @@ aih policy validate . --policy $PolicyPath --no-log
 aih policy verify . --against "<administrator-provided-sha256>" --policy $PolicyPath --no-log
 ```
 
-`--policy` affects that invocation only. The recipes below assume the managed
-environment has passed the fresh-process checks above. If using `--policy`
-instead, include it on every AIH command; assigning `$PolicyPath` does not bind
-later commands. AIH does not install an account-wide environment or an
+`--policy` alone affects that invocation only. The recipes below assume the
+managed environment has passed the fresh-process checks above. Alternatively,
+use `aih policy bind . --project <id> --cli <approved-list> --policy $PolicyPath --apply`
+after review to retain that exact source and target set for this canonical root.
+Fresh AIH invocations restore the project binding; explicit conflicts or changed
+policy bytes require reviewed `policy rebind`. Assigning `$PolicyPath` alone does
+not bind later commands. AIH does not install an account-wide environment or an
 administrator deployment launcher. The bounded [OpenCode Linux sandbox
 path](opencode-linux-sandbox.md) can retain an explicitly selected policy path
 and non-secret launch bindings per consumer root. Keep policy distribution and

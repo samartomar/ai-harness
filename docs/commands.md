@@ -717,6 +717,38 @@ build); `validate --require-signature` then
 
 ## aih policy
 
+### Project assignment and required-content delivery
+
+`aih policy bind <root> --project <id> --cli <list> --policy <file>` previews a
+durable assignment; add `--apply` after review. It records the canonical root,
+project identifier, exact selected policy path/digest and complete approved
+target set in `.aih-config.json`. Fresh AIH processes restore that selection.
+Binding is not authority, account-wide environment configuration or implicit
+policy merging. Explicit conflicting sources or targets fail closed.
+
+`aih policy rebind <root> --project <same-id> --cli <list> --policy <file> --apply`
+acknowledges reviewed policy bytes, a reviewed target change, or a new canonical
+checkout of the same project. It reruns the policy authority and target checks.
+`aih policy revoke <root> --project <same-id> --apply` retains a revoked binding
+that blocks mutation; it does not delete content or stop native processes.
+Withdraw owned content through the authorized policy before revoking it. Rebind
+with current verified authority to recover.
+
+`aih policy project <root> --apply` projects supported controls and reconciles
+selected governed ECC content. `--ecc-path <path>` supplies a local checkout
+that must still pass exact source and qualification checks. An explicitly empty
+authorized ECC selection withdraws owned content; losing policy is not an
+unrestricted installer fallback. `aih init` also accepts `--ecc-path` for a bound
+project's required-content delivery and suppresses an unselected Superpowers
+baseline under governed policy.
+
+`policy evaluate --json`, readiness and HTML reports distinguish policy and
+binding blockers, selected content, ownership drift and unverified native
+loading. Receipt-current describes recorded source/owned bytes, not a native
+session or enforced practice. The full administrator/developer lifecycle and
+downstream content ownership contract are in
+[Project policy delivery](../guides/portable-policy-delivery.md).
+
 ### Unreleased Workbench authoring core (#967)
 
 The in-progress authoring core is an offline, typed browser over `authoring-catalog-bundle/v1`. Its normalized bundle has source descriptors, immutable source and asset identities, relations, groups, templates, evidence summaries, provenance, and lazy detail chunks. Source identity records where an asset came from; it does not decide methodology. A resolved closure permits zero or one distinct methodology key, while assets in the same exclusive methodology slot may share the same key.

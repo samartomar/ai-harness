@@ -10,10 +10,54 @@ import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner, type RunResult } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { command as reportCommand } from "../../src/report/index.js";
-import { readinessDigest, runtimeEvidenceDigest } from "../../src/report/readiness.js";
+import {
+  computeReadiness,
+  readinessDigest,
+  runtimeEvidenceDigest,
+} from "../../src/report/readiness.js";
 import { openCodeRuntimeFixture } from "../heal/opencode-runtime-evidence-fixture.js";
 
 const DIR_NAME = "ai-coding";
+
+it("keeps missing required policy content as a blocker beside host preflight", async () => {
+  scaffoldReady();
+  put(
+    "aih-org-policy.json",
+    JSON.stringify({
+      schemaVersion: 2,
+      minimumPosture: "enterprise",
+      references: { repoContract: "ai-coding/project.json" },
+      governance: {
+        policyVersion: "harbor-1",
+        supportedClis: ["claude"],
+        catalog: { reviewed: [], custom: [] },
+        externalSelections: [
+          {
+            framework: "ecc",
+            items: [
+              {
+                id: "skill:tdd-workflow",
+                kind: "skill",
+                source: {
+                  repository: "affaan-m/ECC",
+                  commit: "a".repeat(40),
+                  path: "skills/tdd-workflow",
+                },
+              },
+            ],
+          },
+        ],
+      },
+    }),
+  );
+  const result = await computeReadiness(ctx({ gitRepo: true }, { targets: ["claude"] }));
+  expect(result.banner).toBe("NOT READY");
+  expect(result.blockers).toContainEqual(expect.objectContaining({ id: "policy-delivery" }));
+  expect(result.policyDelivery?.components[0]).toMatchObject({
+    state: "missing-receipt",
+    nativeLoading: "unverified",
+  });
+});
 
 interface Row {
   id: string;

@@ -19,6 +19,11 @@ import { preCommitHookActive } from "../internals/git-hooks.js";
 import type { Action, DigestAction, PlanContext } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import type { Check } from "../internals/verify.js";
+import {
+  inspectPolicyDelivery,
+  type PolicyDeliveryReport,
+  renderPolicyDelivery,
+} from "../org-policy/policy-delivery-report.js";
 import { scanRepo } from "../profile/scan.js";
 import { scanConfigSecrets, scanSecrets } from "../secrets/scan.js";
 import { inventory } from "../status.js";
@@ -100,6 +105,7 @@ export interface ReadinessResult {
   grade: Grade;
   dims: DimensionResult[];
   firstCommand: string | null;
+  policyDelivery?: PolicyDeliveryReport;
 }
 
 export interface ReadinessDigestData {
@@ -113,6 +119,7 @@ export interface ReadinessDigestData {
   mcp: ReadinessResult["mcp"];
   firstCommand: string | null;
   runtimeEvidence?: RuntimeEvidenceResult;
+  policyDelivery?: PolicyDeliveryReport;
 }
 
 const runtimeEvaluation = new WeakMap<PlanContext, Promise<RuntimeEvidenceResult>>();
@@ -147,6 +154,7 @@ export function readinessData(
   evidence?: RuntimeEvidenceResult,
 ): ReadinessDigestData {
   return {
+    ...(r.policyDelivery ? { policyDelivery: r.policyDelivery } : {}),
     banner: r.banner,
     blockers: r.blockers,
     score: r.score,
@@ -577,6 +585,26 @@ function dimensionOf(name: Dimension, checks: ReadinessCheck[]): DimensionResult
  */
 export async function computeReadiness(ctx: PlanContext): Promise<ReadinessResult> {
   const { checks, mcp, unverified } = await buildChecks(ctx);
+  const policyDelivery = await inspectPolicyDelivery(ctx);
+  if (policyDelivery?.blocking) {
+    checks.push({
+      id: "policy-delivery",
+      title:
+        "Selected policy or required content delivery is blocked; inspect authority, source and owned files",
+      severity: "gate",
+      dimension: "harness-wiring",
+      verdict: "fail",
+      cmd: policyDelivery.nextStep,
+    });
+  }
+  if (policyDelivery?.nativeLoading === "unverified") {
+    unverified.push({
+      id: "policy-native-loading",
+      title: "Required practice guidance needs a fresh native-session loading check",
+      dimension: "harness-wiring",
+      cmd: policyDelivery.nextStep,
+    });
+  }
 
   const blockers: ReadinessRow[] = checks
     .filter((c) => c.severity === "gate" && c.verdict === "fail")
@@ -605,7 +633,19 @@ export async function computeReadiness(ctx: PlanContext): Promise<ReadinessResul
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   const firstCommand = stack.startCommand ?? stack.testRunner ?? null;
 
-  return { banner, blockers, warns, unverified, mcp, score, rawScore, grade, dims, firstCommand };
+  return {
+    banner,
+    blockers,
+    warns,
+    unverified,
+    mcp,
+    score,
+    rawScore,
+    grade,
+    dims,
+    firstCommand,
+    ...(policyDelivery ? { policyDelivery } : {}),
+  };
 }
 
 /** Failing gates ⇒ blockers; failing warns ⇒ score dings. `skip` never counts. */
@@ -679,7 +719,7 @@ export function renderReadinessBody(r: ReadinessResult, evidence?: RuntimeEviden
       ? `  ${warns.length} warn${warns.length === 1 ? "" : "s"} dinging the score (see the dimension lines above).`
       : "  No failed warning checks.",
     ...(unverified.length > 0
-      ? ["", `  ${unverified.length} selected MCP observation(s) remain unverified.`]
+      ? ["", `  ${unverified.length} selected capability observation(s) remain unverified.`]
       : []),
     ...mcp.servers.flatMap((server) => [
       `  ${server.targetCli} / ${server.name} (${server.configPath}; ${server.selected ? "selected" : "unselected"}; ${server.required}): ${server.state} — ${server.detail}`,
@@ -689,6 +729,7 @@ export function renderReadinessBody(r: ReadinessResult, evidence?: RuntimeEviden
       `  ${issue.targetCli} / ${issue.configPath}: ${issue.check.detail}`,
       `    Next: ${issue.nextStep}`,
     ]),
+    ...(r.policyDelivery ? ["", renderPolicyDelivery(r.policyDelivery)] : []),
     ...(evidence ? ["", renderRuntimeEvidence(evidence)] : []),
   );
 }

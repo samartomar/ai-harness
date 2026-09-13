@@ -24,6 +24,13 @@ import {
   type RunEntryInput,
   statusFor,
 } from "../logging/run-log.js";
+import {
+  applyPolicyBindingDefaults,
+  applyPolicyBindingReadOnlyDiagnosticDefaults,
+  assertPolicyBindingCurrent,
+  policyBindingFileAssertion,
+  withPolicyBindingFileAssertion,
+} from "../org-policy/binding.js";
 import { makeHostAdapter } from "../platform/detect.js";
 import { openCodeSandboxPolicyBinding } from "../sandbox/opencode.js";
 import { buildSupport, supportSummary } from "../support/integrate.js";
@@ -249,6 +256,11 @@ export async function runCapability(
       }
       env = { ...baseEnv, AIH_ORG_POLICY: policy.trim() };
     }
+    const bindingDefaults =
+      spec.name === "governance-doctor" && spec.readOnly === true && spec.zeroWrite === true
+        ? applyPolicyBindingReadOnlyDiagnosticDefaults(resolvedRoot, env, opts)
+        : applyPolicyBindingDefaults(resolvedRoot, env, opts);
+    env = bindingDefaults.env;
     // A sandbox restart begins in a fresh process. Restore its root-bound explicit
     // authority before posture and governance resolve. A newly supplied policy
     // must name that same authority so evaluation and child launch cannot diverge.
@@ -375,13 +387,30 @@ export async function runCapability(
         force: opts.force,
         open: liveOpen ? true : opts.open,
       },
+      ...(bindingDefaults.targets === undefined ? {} : { targets: bindingDefaults.targets }),
     };
+
+    const managesPolicyBinding =
+      command.parent?.name() === "policy" &&
+      (spec.name === "bind" || spec.name === "rebind" || spec.name === "revoke");
+    const cleansPolicyOwnership = spec.name === "uninstall";
+    if (!spec.readOnly && !managesPolicyBinding && !cleansPolicyOwnership) {
+      assertPolicyBindingCurrent(ctx.root, ctx.env, undefined, { requireIfOwned: true });
+    }
+    const bindingAssertion =
+      spec.readOnly || managesPolicyBinding || cleansPolicyOwnership
+        ? undefined
+        : policyBindingFileAssertion(ctx.root);
 
     const result = deps.execute
       ? await deps.execute(ctx)
-      : await executePlan(await spec.plan(ctx), ctx, {
-          skipWorktreeGate: spec.skipWorktreeGate === true,
-        });
+      : await executePlan(
+          withPolicyBindingFileAssertion(await spec.plan(ctx), bindingAssertion),
+          ctx,
+          {
+            skipWorktreeGate: spec.skipWorktreeGate === true,
+          },
+        );
 
     if (policyFromCli) relabelExplicitPolicySourceInPlace(result);
 
@@ -491,9 +520,14 @@ export async function runCapability(
       for (;;) {
         await delay(watchSec * 1000);
         try {
-          await executePlan(await spec.plan(ctx), ctx, {
-            skipWorktreeGate: spec.skipWorktreeGate === true,
-          });
+          const refreshBindingAssertion = policyBindingFileAssertion(ctx.root);
+          await executePlan(
+            withPolicyBindingFileAssertion(await spec.plan(ctx), refreshBindingAssertion),
+            ctx,
+            {
+              skipWorktreeGate: spec.skipWorktreeGate === true,
+            },
+          );
         } catch (e) {
           write(`refresh error: ${e instanceof Error ? e.message : String(e)}\n`);
         }

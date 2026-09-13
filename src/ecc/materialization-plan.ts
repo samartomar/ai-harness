@@ -26,6 +26,7 @@ import {
   type EccCoreDerivedEvidenceReferenceV1,
   type EccCoreDerivedEvidenceV2,
   type EccMaterializationReceipt,
+  EccMaterializationTargetsSchema,
   type EccMaterializedComponent,
   type EccOwnedFile,
   exceedsJsonDepth,
@@ -242,6 +243,10 @@ export function resolveRequest(request: EccMaterializationRequest): ResolvedRequ
   let recordBytes = 0;
 
   const components = request.components.map((component) => {
+    const targets =
+      component.targets === undefined
+        ? undefined
+        : EccMaterializationTargetsSchema.parse(component.targets).sort();
     const componentId = assertMaterializedComponentId(component.id);
     const authorization = component.authorization;
     const provenance = component.provenance;
@@ -400,6 +405,7 @@ export function resolveRequest(request: EccMaterializationRequest): ResolvedRequ
       authorization: trustedComponent?.authorization ?? authorization,
       provenance: trustedComponent?.provenance ?? provenance,
       files: files.sort((left, right) => byText(left.path, right.path)),
+      ...(targets === undefined ? {} : { targets }),
     };
   });
 
@@ -845,6 +851,21 @@ function planMaterialize(
   return { steps, plans, unchanged, entries };
 }
 
+function deliveryTargetMetadata(
+  component: ResolvedRequest["components"][number],
+  retained: EccOwnedFile[] | undefined,
+  receipt: EccMaterializationReceipt | undefined,
+): Pick<EccMaterializedComponent, "targets"> {
+  if (component.targets === undefined) return {};
+  if (!retained?.length) return { targets: component.targets };
+  const prior = receipt?.components.find((item) => item.id === component.id)?.targets;
+  // Drifted bytes from a removed target retain their old coverage claim until
+  // reconciliation succeeds. Unknown legacy coverage cannot become verified.
+  return prior === undefined
+    ? {}
+    : { targets: [...new Set([...prior, ...component.targets])].sort() };
+}
+
 function receiptComponents(
   resolved: ResolvedRequest,
   entries: Map<string, EccOwnedFile[]>,
@@ -856,6 +877,7 @@ function receiptComponents(
     id: component.id,
     authorization: component.authorization,
     provenance: component.provenance,
+    ...deliveryTargetMetadata(component, retained.get(component.id), receipt),
     // A dropped file that could not be subtracted keeps its record: bytes AIH
     // still owns are never silently disowned.
     files: [...(entries.get(component.id) ?? []), ...(retained.get(component.id) ?? [])].sort(

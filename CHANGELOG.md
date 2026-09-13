@@ -8,6 +8,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Bind an exact policy source and client set to a canonical project root with
+  `policy bind`, review changes through `policy rebind`, and retain a fail-closed
+  revoked assignment with `policy revoke`. Reconcile governed required content
+  through `policy project` and route native startup to receipt-owned guidance.
+- Report required policy content, ownership drift and binding conflicts beside
+  readiness and HTML results, keeping installed guidance separate from native
+  loading and enforced behavior. Document independent adopter delivery and the
+  required/optional content ownership contract.
+- Project authored organization command rules into Claude's native project
+  permissions with entry ownership, preserving custom rules and hooks during
+  updates and withdrawal. Keep other clients advisory and native refusal
+  verification separate from generated configuration.
+
 - Show explicitly selected OpenCode Linux runtime observations beside readiness
   preflight. Recheck current material bindings and expiry, report exercised
   operations, restart and specific denials separately, and retain unrelated

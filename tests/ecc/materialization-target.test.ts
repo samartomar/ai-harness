@@ -36,6 +36,7 @@ import {
   eccComponentSourcePaths,
   eccContentDestinationMapping,
 } from "../../src/ecc/materialize.js";
+import { currentEccRuntimeAdapterCompatibilityV1 } from "../../src/ecc/runtime-adapter-compatibility.js";
 
 /**
  * F4, the targets past the first: Codex and Kimi, and the seam that made them
@@ -519,22 +520,26 @@ describe("the OpenCode target ships the shared rows and refuses the rest by name
     );
   });
 
-  it("refuses a half-shared component whole rather than installing the half it can map", () => {
+  it("prefers a component's shared .agents skill copy for OpenCode", () => {
     const result = resolve(
       ["opencode"],
       [
-        // `.agents/skills/tdd-workflow` is shared and WOULD map; `skills/tdd-workflow`
-        // does not. Per-target refusal is all-or-nothing, so neither lands.
+        // The active component declares both source copies. OpenCode consumes
+        // the shared `.agents/skills` convention, so the duplicate legacy copy
+        // is not projected a second time.
         selected("skill:tdd-workflow", "skills/tdd-workflow"),
         selected("baseline:agents", "AGENTS.md"),
       ],
     );
 
-    expect(result.components.map((component) => component.id)).toEqual(["baseline:agents"]);
-    expect(refusalFor(result, "skill:tdd-workflow", "opencode")?.reason).toBe(
-      "unowned-destination",
-    );
-    expect(destinations(result, "skill:tdd-workflow")).toEqual([]);
+    expect(result.components.map((component) => component.id)).toEqual([
+      "skill:tdd-workflow",
+      "baseline:agents",
+    ]);
+    expect(refusalFor(result, "skill:tdd-workflow", "opencode")).toBeUndefined();
+    expect(destinations(result, "skill:tdd-workflow")).toEqual([
+      ".agents/skills/tdd-workflow/SKILL.md",
+    ]);
   });
 
   it("produces no `.opencode/` destination for any evidence-passed component", () => {
@@ -550,7 +555,11 @@ describe("the OpenCode target ships the shared rows and refuses the rest by name
 
     expect(
       result.components.flatMap((component) => component.files.map((file) => file.path)),
-    ).toEqual([".agents/plugins/marketplace.json", "AGENTS.md"]);
+    ).toEqual([
+      ".agents/skills/tdd-workflow/SKILL.md",
+      ".agents/plugins/marketplace.json",
+      "AGENTS.md",
+    ]);
   });
 
   it("lets Claude materialize what OpenCode refuses, in one union", () => {
@@ -1116,18 +1125,21 @@ describe("the one destination mapping keeps each target off the others' exclusiv
     }
   });
 
-  it("answers no generic project row for OpenCode, and never `.opencode/`", () => {
-    // Suppressed deliberately: no evidence records a per-component OpenCode
-    // PROJECT layout. Its only framework adapter is home-scoped, so `.opencode/`
-    // here would be a directory this lifecycle invented.
+  it("answers only the shared skill project row for OpenCode, and never `.opencode/`", () => {
+    // OpenCode's shared skill convention is project-scoped. Its own framework
+    // adapter remains home-scoped, so other generic rows still have no project
+    // destination and `.opencode/` is never invented here.
     for (const source of [
       "agents/code-reviewer.md",
-      "skills/tdd-workflow/SKILL.md",
       "commands/tdd.md",
       "rules/common/testing.md",
     ]) {
       expect(eccContentDestinationMapping(source, "opencode"), source).toBeUndefined();
     }
+    expect(eccContentDestinationMapping("skills/tdd-workflow/SKILL.md", "opencode")).toEqual({
+      scope: "project",
+      relative: ".agents/skills/tdd-workflow/SKILL.md",
+    });
     expect(
       GOVERNED_MATERIALIZATION_TARGETS.flatMap((target) =>
         ["agents/x.md", "skills/x/SKILL.md", "commands/x.md", "rules/x.md"].map(
@@ -1135,8 +1147,7 @@ describe("the one destination mapping keeps each target off the others' exclusiv
         ),
       ).filter((relative) => relative.startsWith(".opencode/")),
     ).toEqual([]);
-    // The shared rows still answer for OpenCode — the suppression removes the
-    // four generic rows, not the target.
+    // The target-independent shared rows still answer for OpenCode.
     expect(eccContentDestinationMapping("AGENTS.md", "opencode")).toEqual({
       scope: "project",
       relative: "AGENTS.md",
@@ -1319,20 +1330,16 @@ describe("the one destination mapping keeps each target off the others' exclusiv
   });
 
   /**
-   * The same lockstep, on the OpenCode suppression. The behavioural pins above
+   * The same lockstep, on the OpenCode shared-skill bridge. The behavioural pins above
    * only reach the importable copy; the child's restatement is a script string
-   * this suite can read but not call. Suppression applied to one copy only is a
-   * classifier and a planner that disagree about whether `.opencode/agents/` is
-   * a governed content destination at all.
+   * this suite can read but not call. The bridge applied to one copy only is a
+   * classifier and planner disagreement about the owned destination.
    */
-  it("keeps the runtime restatement of the mapping in lockstep on the OpenCode suppression", () => {
-    // The four generic rows must sit INSIDE the suppressed arm, so the regex
-    // spans from the target test through the first row it guards.
-    const suppression = /target === "opencode"\s*\?\s*\[\]\s*:\s*\(?\[\s*\[\s*"agents\/"/;
+  it("keeps the runtime restatement of the mapping in lockstep on the OpenCode bridge", () => {
     for (const module of ["materialize.ts", "verified.ts"]) {
-      expect(readFileSync(join(process.cwd(), "src", "ecc", module), "utf8"), module).toMatch(
-        suppression,
-      );
+      const source = readFileSync(join(process.cwd(), "src", "ecc", module), "utf8");
+      expect(source, module).toMatch(/(?:target|payload\.target) === "opencode"/);
+      expect(source, module).toContain('["skills/", ".agents/skills/"]');
     }
   });
 
@@ -1365,5 +1372,41 @@ describe("historical source paths through the closed target adapter", () => {
 
     expect(result.refused).toEqual([]);
     expect(destinations(result, id)).toEqual([".claude/skills/historical-only/SKILL.md"]);
+  });
+
+  it("refuses a historical component whole when OpenCode owns only some of its sealed files", () => {
+    const id = "framework:react";
+    const paths = [
+      ".agents/skills/frontend-patterns/SKILL.md",
+      "rules/react/component-architecture.md",
+    ] as const;
+    writeSource(sourceRoot, {
+      [paths[0]]: "# frontend patterns\n",
+      [paths[1]]: "# component architecture\n",
+    });
+    const compatibility = currentEccRuntimeAdapterCompatibilityV1([
+      {
+        id,
+        kind: "framework",
+        files: paths.map((path, index) => ({
+          path,
+          digest: `sha256:${String(index + 1).repeat(64)}`,
+        })),
+      },
+    ]);
+
+    const result = resolveEccTargetMaterialization({
+      sourceRoot,
+      targets: ["opencode"],
+      components: [selected(id, "frameworks/react")],
+      componentPathsById: new Map([[id, paths]]),
+      historicalAdapterCompatibility: compatibility,
+    });
+
+    expect(result.components).toEqual([]);
+    expect(refusalFor(result, id, "opencode")).toMatchObject({
+      reason: "unsupported-component",
+      detail: expect.stringContaining("unowned-destination"),
+    });
   });
 });

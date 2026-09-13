@@ -221,6 +221,9 @@ function buildReady(digests: DigestAction[]): V9Ready | undefined {
     blockers,
     unverified,
     mcp: { servers, issues },
+    ...(r.policyDelivery && typeof r.policyDelivery === "object"
+      ? { policyDelivery: r.policyDelivery as V9Ready["policyDelivery"] }
+      : {}),
     ...(r.runtimeEvidence && typeof r.runtimeEvidence === "object"
       ? { runtimeEvidence: r.runtimeEvidence as V9Ready["runtimeEvidence"] }
       : {}),

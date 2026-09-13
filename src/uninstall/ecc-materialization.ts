@@ -18,10 +18,10 @@ import {
  *
  * ORDERING (issue #567). The ownership receipt lives under `.aih`, while the
  * bytes it claims live on the client surfaces (`.claude/`, `.agents/`). Uninstall
- * may remove `.aih` wholesale, so this member never skips itself for a receipt
- * inside a removed tree the way the hook-registrar member does for its
- * destination: skipping would strand every materialized byte with nothing left
- * on disk to attribute it. Owned content goes first, always.
+ * preserves `.aih` while this receipt exists. After the ordinary cleanup phase
+ * succeeds, this member removes proven content before its ownership receipt.
+ * A partial cleanup retains the receipt and reports the remaining destinations
+ * for a supported retry.
  */
 
 export interface EccMaterializationUninstallState {

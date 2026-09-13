@@ -703,7 +703,7 @@ export function historicalEccRuntimeDescriptorsFromSourceDataV1(
         source.upstreamOrigin.kind !== "git" ||
         source.upstreamOrigin.locator !== descriptor.source.repository ||
         source.revision.id !== descriptor.source.commit ||
-        source.revision.contentDigest !== descriptor.compilerInputDigest
+        source.revision.contentDigest !== `sha256:${descriptor.source.treeSha256}`
       )
         fail("runtime descriptor does not bind the retained source snapshot");
       descriptors.push(descriptor);

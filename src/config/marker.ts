@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { join } from "node:path";
+import { join, posix, win32 } from "node:path";
 import { z } from "zod";
 import { type BindingDeclaration, BindingDeclarationSchema } from "../binding/schema.js";
 import { SettingsError } from "../errors.js";
@@ -11,6 +11,7 @@ import {
   isBaselineSourceId,
 } from "../internals/baseline-sources.js";
 import { entry, GOVERNED_MCP_TARGETS, type GovernedMcpTarget } from "../internals/cli-registry.js";
+import { SUPPORTED_CLIS } from "../internals/clis.js";
 import { readIfExists } from "../internals/fsxn.js";
 import {
   isLegacyGstackId,
@@ -31,6 +32,39 @@ import { ContextDir } from "./settings.js";
  */
 export const AIH_CONFIG_FILE = ".aih-config.json";
 const AihConfigPostureSchema = z.enum(["vibe", "enterprise"]);
+const PolicyBindingTargetSchema = z.enum(SUPPORTED_CLIS);
+
+function isPortableAbsolutePath(value: string): boolean {
+  if (value.includes("\0") || value.includes("\r") || value.includes("\n")) return false;
+  if (posix.isAbsolute(value)) return true;
+  const windowsRoot = win32.parse(value).root;
+  return win32.isAbsolute(value) && (windowsRoot.includes(":") || windowsRoot.startsWith("\\\\"));
+}
+
+export const PolicyBindingSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    state: z.enum(["active", "revoked"]),
+    projectId: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/),
+    rootSha256: z.string().regex(/^[a-f0-9]{64}$/),
+    source: z
+      .object({
+        path: z
+          .string()
+          .min(1)
+          .max(4096)
+          .refine(isPortableAbsolutePath, "must be an absolute POSIX or Windows path"),
+        sha256: z.string().regex(/^[a-f0-9]{64}$/),
+      })
+      .strict(),
+    targets: z
+      .array(PolicyBindingTargetSchema)
+      .min(1)
+      .max(SUPPORTED_CLIS.length)
+      .refine((targets) => new Set(targets).size === targets.length, "targets must be unique"),
+  })
+  .strict();
+export type PolicyBinding = z.infer<typeof PolicyBindingSchema>;
 const KiroHookRuntimeSchema = z.enum(["ide1-cli3", "cli2"]);
 const ManagedMcpProjectionExpectedSchema = z
   .object({
@@ -405,10 +439,45 @@ export const AihConfigSchema = z.object({
    * surrounding marker schema is otherwise lenient. See `../binding/schema.ts`.
    */
   binding: BindingDeclarationSchema.optional(),
+  /** Durable, root-bound organization policy assignment. */
+  policyBinding: PolicyBindingSchema.optional(),
 });
 
 export type AihConfig = z.infer<typeof AihConfigSchema>;
 export type { BindingDeclaration };
+
+/**
+ * Read the committed organization-policy assignment as a strict control value.
+ * A malformed marker cannot be treated as an unbound project: doing so would
+ * silently drop authority after corruption or a copied partial binding.
+ */
+export function readPolicyBinding(root: string): PolicyBinding | undefined {
+  const raw = readIfExists(join(root, AIH_CONFIG_FILE));
+  if (raw === undefined) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new SettingsError(
+      `invalid policyBinding in ${AIH_CONFIG_FILE}: marker is not valid JSON`,
+    );
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new SettingsError(
+      `invalid policyBinding in ${AIH_CONFIG_FILE}: marker must be an object`,
+    );
+  }
+  if (!("policyBinding" in parsed)) return undefined;
+  const binding = (parsed as { policyBinding?: unknown }).policyBinding;
+  if (binding === undefined) return undefined;
+  const result = PolicyBindingSchema.safeParse(binding);
+  if (result.success) return result.data;
+  throw new SettingsError(
+    `invalid policyBinding in ${AIH_CONFIG_FILE}: ${result.error.issues
+      .map((issue) => `${issue.path.join(".") || "(root)"} — ${issue.message}`)
+      .join("; ")}`,
+  );
+}
 
 export type AihConfigReadDiagnostic =
   | { invalid: false; present: false }

@@ -6,6 +6,12 @@ run `aih policy project --apply` against the consumer project with every target
 named by the activation. The [policy command reference](commands.md#aih-policy)
 describes the policy and protected-authority inputs.
 
+For durable project assignment and required ECC practices alongside MCP
+configuration, follow [Project policy delivery](../guides/portable-policy-delivery.md).
+`policy bind` retains one exact verified policy source and client set per
+canonical root; a changed source or target set requires reviewed `policy rebind`.
+The binding does not grant policy authority or configure account-wide launchers.
+
 ## Native targets
 
 The configuration paths below are relative to the consumer project. Selecting
@@ -76,7 +82,8 @@ drifted configuration is preserved and the ownership claim is revoked according
 to the existing conservative lifecycle.
 
 Projection acts on the explicitly selected hosts. To remove a host from the
-project entirely, persist the reduced CLI selection in the project marker and
+project entirely, review the reduced policy targets, rebind a bound project,
+persist the reduced CLI selection in the project marker with `init`, and
 run `aih prune --apply`. Prune uses the prior receipt to remove unchanged owned
 entries from the removed host while preserving its other settings. Invoking
 projection for the remaining hosts alone does not remove an unselected host.
