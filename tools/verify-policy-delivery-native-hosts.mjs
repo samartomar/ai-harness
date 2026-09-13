@@ -5,9 +5,9 @@
  */
 import { createHash } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
-import { isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 
 const fail = message => { throw new Error(message); };
 const hash = bytes => createHash("sha256").update(bytes).digest("hex");
@@ -23,10 +23,13 @@ for (const key of ["--root-a", "--root-b", "--output", "--binary"])
   if (!isAbsolute(options[key] ?? "")) fail(key + " must be absolute");
 if (process.platform !== "linux" || process.getuid?.() === 0) fail("Unprivileged Linux required");
 const output = resolve(options["--output"]), binary = resolve(options["--binary"]);
-if (existsSync(output)) fail("Output already exists");
-mkdirSync(output, { recursive: true });
+mkdirSync(dirname(output), { recursive: true });
+try { mkdirSync(output, { mode: 0o700 }); } catch (error) {
+  if (error?.code === "EEXIST") fail("Output already exists");
+  throw error;
+}
 const roots = [options["--root-a"], options["--root-b"], options["--root-a"]];
-const save = (path, value) => writeFileSync(path, JSON.stringify(value, null, 2) + "\n", { flag: "wx" });
+const save = (path, value) => writeFileSync(path, JSON.stringify(value, null, 2) + "\n", { flag: "wx", mode: 0o600 });
 const version = spawnSync(binary, ["--version"], { encoding: "utf8", timeout: 15000 });
 const report = { schemaVersion: 1, client, binary, binarySha256: hash(readFileSync(binary)), version: version.stdout?.trim(),
   simulation: "Loopback provider chooses native reads; real client context and read results are observed",

@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
-import { isAbsolute, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 const [client, root, output, scenario = "allowed"] = process.argv.slice(2);
 const clients = {
   claude: { binary: "/home/aih-probe/runtime/claude/claude-2.1.241", config: "managed-mcp.json.example" },
@@ -11,11 +11,15 @@ const clients = {
   copilot: { binary: "/home/aih-probe/runtime/copilot-1.0.83/extracted/copilot", config: ".github/mcp.json" },
   kimi: { binary: "/home/aih-probe/runtime/kimi-0.36.1/extracted/kimi", config: ".kimi-code/mcp.json" },
 };
-if (!clients[client] || !isAbsolute(root ?? "") || !isAbsolute(output ?? "") || process.platform !== "linux" || process.getuid() === 0 || existsSync(output)) throw Error("Expected client, absolute consumer root, and new output, as unprivileged Linux user");
+if (!clients[client] || !isAbsolute(root ?? "") || !isAbsolute(output ?? "") || process.platform !== "linux" || process.getuid() === 0) throw Error("Expected client, absolute consumer root, and new output, as unprivileged Linux user");
 if (scenario !== "allowed" && !(client === "claude" && scenario === "foreign-refusal")) throw Error("Unexpected native acceptance scenario");
-mkdirSync(output, { recursive: true });
+mkdirSync(dirname(output), { recursive: true });
+try { mkdirSync(output, { mode: 0o700 }); } catch (error) {
+  if (error?.code === "EEXIST") throw Error("Expected client, absolute consumer root, and new output, as unprivileged Linux user");
+  throw error;
+}
 const hash = value => createHash("sha256").update(value).digest("hex");
-const save = (name, value) => writeFileSync(join(output, name), JSON.stringify(value, null, 2) + "\n");
+const save = (name, value) => writeFileSync(join(output, name), JSON.stringify(value, null, 2) + "\n", { flag: "wx", mode: 0o600 });
 const { binary, config } = clients[client], configBytes = readFileSync(join(root, config));
 writeFileSync(join(output, "configuration-before.json"), configBytes);
 const marker = JSON.parse(readFileSync(join(root, ".aih-config.json")));
@@ -23,7 +27,6 @@ if (marker.policyBinding?.state !== "active" || !configBytes.toString().includes
 const report = { client, root, version: spawnSync(binary, ["--version"], { encoding: "utf8", timeout: 15000 }).stdout.trim(), configuration: { path: config, sha256: hash(configBytes) }, simulation: "Loopback chat provider only; actual code-review-graph@2.3.7 process via generated native config", status: "failed", requests: [], calls: [], auxiliary: [] };
 const foreignConfig = join(root, ".mcp.json"), foreignEffect = join(output, "foreign-started.txt");
 if (scenario === "foreign-refusal") {
-  if (existsSync(foreignConfig)) throw Error("Will not overwrite an existing consumer project MCP file");
   const launcher = join(output, "foreign-launcher.cjs");
   writeFileSync(launcher, "require('node:fs').writeFileSync(process.argv[2], 'foreign launcher executed\\n');\n");
   // An intentionally unowned competing entry is the negative test input. The
@@ -147,8 +150,7 @@ if (client === "claude") {
   // Provider-only fixture configuration; preserve the generated MCP file exactly.
   const configHome = join(home, ".kimi-code"), providerPath = join(configHome, "config.toml");
   mkdirSync(configHome, { recursive: true });
-  if (existsSync(providerPath)) throw Error("Will not overwrite an existing Kimi provider configuration");
-  writeFileSync(providerPath, 'default_model = "fixture"\ndefault_permission_mode = "auto"\ntelemetry = false\n[providers.fixture]\ntype = "openai"\nbase_url = ' + JSON.stringify(url) + '\napi_key = "fixture-not-a-credential"\n[models.fixture]\nprovider = "fixture"\nmodel = "fixture-model"\nmax_context_size = 200000\nmax_output_size = 1024\ncapabilities = ["tool_use"]\n');
+  writeFileSync(providerPath, 'default_model = "fixture"\ndefault_permission_mode = "auto"\ntelemetry = false\n[providers.fixture]\ntype = "openai"\nbase_url = ' + JSON.stringify(url) + '\napi_key = "fixture-not-a-credential"\n[models.fixture]\nprovider = "fixture"\nmodel = "fixture-model"\nmax_context_size = 200000\nmax_output_size = 1024\ncapabilities = ["tool_use"]\n', { flag: "wx", mode: 0o600 });
   writeFileSync(join(configHome, "tui.toml"), "[upgrade]\nauto_install = false\n", { flag: "wx" });
   env.KIMI_CODE_HOME = configHome;
   report.nativeConfigurationSelection = "Isolated KIMI_CODE_HOME contains only provider configuration; project MCP loading requires native workspace trust and is verified by the following actual calls";

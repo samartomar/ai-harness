@@ -1,7 +1,7 @@
 /** Native Claude permission acceptance after public AIH guardrails delivery. */
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { closeSync, constants, existsSync, mkdtempSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 
 function fail(message) {
@@ -140,12 +140,18 @@ async function main() {
   if (expectAllowed) {
     assertion(existsSync(sentinel), "denied sentinel is missing before withdrawal positive control");
   } else {
-    assertion(!existsSync(sentinel), "sentinel already exists");
-    writeFileSync(sentinel, "must survive denied command\n", {
-      encoding: "utf8",
-      flag: "wx",
-      mode: 0o600,
-    });
+    let descriptor;
+    try {
+      descriptor = openSync(sentinel, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600);
+    } catch (error) {
+      if (error && typeof error === "object" && "code" in error && error.code === "EEXIST") fail("sentinel already exists");
+      throw error;
+    }
+    try {
+      writeFileSync(descriptor, "must survive denied command\n", { encoding: "utf8" });
+    } finally {
+      closeSync(descriptor);
+    }
   }
   const report = { schemaVersion: 1, purpose: "fresh native Claude command permission enforcement after public AIH guardrails delivery", claude, root, settings, denyRule, allowedTools: allowedTools ?? null, expectAllowed, provider: "deterministic loopback Anthropic Messages transport; native Claude decides the Bash permission", status: "failed" };
   try {

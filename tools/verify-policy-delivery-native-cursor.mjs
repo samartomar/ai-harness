@@ -1,7 +1,7 @@
 /** Native Cursor A→B→A startup-guidance acceptance over public-delivered roots. */
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, constants, fstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { createSecureServer } from "node:http2";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
@@ -171,11 +171,26 @@ function rootSnapshot(root) {
   const frontmatterEnd = bridgeText.indexOf("\n---\n", 4);
   assertion(bridgeText.startsWith("---\n") && frontmatterEnd >= 0, "Cursor bridge frontmatter is malformed");
   const bridgeBody = bridgeText.slice(frontmatterEnd + 5).replace(/^\n/, "");
+  const readRegularFileNoFollow = (file) => {
+    let descriptor;
+    try {
+      descriptor = openSync(file, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    } catch (error) {
+      if (error && typeof error === "object" && "code" in error && error.code === "ELOOP") return undefined;
+      throw error;
+    }
+    try {
+      if (!fstatSync(descriptor).isFile()) return undefined;
+      return readFileSync(descriptor);
+    } finally {
+      closeSync(descriptor);
+    }
+  };
   const cursorTree = (path, prefix = "") => readdirSync(path, { withFileTypes: true }).flatMap((entry) => {
     const relative = `${prefix}${entry.name}`; const full = join(path, entry.name);
     if (entry.isDirectory()) return cursorTree(full, `${relative}/`);
-    if (!entry.isFile() || lstatSync(full).isSymbolicLink()) return [`${relative}:unsupported`];
-    return [`${relative}:${hash(readFileSync(full))}`];
+    const content = readRegularFileNoFollow(full);
+    return [content === undefined ? `${relative}:unsupported` : `${relative}:${hash(content)}`];
   }).sort();
   return {
     bridge,
