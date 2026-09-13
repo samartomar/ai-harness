@@ -8,6 +8,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Emit Claude's sandbox egress list at `sandbox.network.allowedDomains` and
+  explain the supported settings deployment needed before the generated policy
+  takes effect. Distinguish Bash sandboxing from local MCP and container boundaries.
 - Keep native MCP runtime observations separate from preflight, with an explicit
   Codex fixture operation/restart probe and stale detection for changed material
   bindings or expired observations.

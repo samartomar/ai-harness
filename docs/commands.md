@@ -1814,7 +1814,35 @@ vetted pin bump that covers the UI variant's surface.
 
 Generate a devcontainer + managed sandbox settings (egress allowlist, `failIfUnavailable`).
 
+The Claude policy writes the egress list at `sandbox.network.allowedDomains`, alongside
+`sandbox.enabled`, `sandbox.failIfUnavailable`, and `sandbox.allowUnsandboxedCommands: false`.
+The additional `sandbox.commandPolicy` block is AIH metadata; Claude's command permission
+rules use `permissions.allow`, `permissions.ask`, and `permissions.deny`.
+
+`.claude/managed-settings.json` is a deployment artifact. Claude does not load that filename
+from the project directory as managed policy. The adopter must deploy it through a supported
+[managed settings source](https://code.claude.com/docs/en/managed-settings).
+For a session-scoped trial on a supported host, `claude --settings .claude/managed-settings.json`
+loads the file explicitly; this does not make it an administrator-managed policy.
+
+Claude's built-in Bash sandbox currently supports macOS, Linux and WSL2, with host-specific
+prerequisites. Native Windows is unsupported. The Bash sandbox also does not automatically
+confine local MCP servers; those require their own process boundary. See Claude's
+[sandbox documentation](https://code.claude.com/docs/en/sandboxing) for platform support and
+the distinction between Bash sandboxing and tool permissions. Generating this Claude policy
+does not configure sandbox enforcement for another CLI.
+
 **Verification**
+
+The command checks Docker reachability; a missing binary or unreachable daemon is reported
+as skipped. It does not start a container or prove client execution. The generated container
+has no outbound network block, and a Git worktree does not provide a security boundary.
+
+In a disposable consumer project, verify that the intended client loads the policy, completes
+an allowed command, and denies an explicitly prohibited operation without the prohibited
+effect occurring. Test an actual local MCP tool call separately from discovery, and test
+network restrictions independently from file restrictions. A successful file-denial test
+does not prove a network boundary or another client's behavior.
 
 ## aih docs-lint
 

@@ -52,15 +52,15 @@ function sandboxPlan(ctx: PlanContext) {
     ),
   ];
 
-  // `.claude/managed-settings.json` enforces Claude's sandbox policy specifically —
-  // under `aih init` it lands only when Claude is a target (standalone `aih sandbox`
-  // always writes).
+  // This Claude policy artifact needs deployment through a host-supported settings
+  // source. Under `aih init` it lands only when Claude is a target (standalone
+  // `aih sandbox` always writes it).
   if (isTargeted(ctx, "claude")) {
     actions.push(
       writeJson(
         MANAGED_SETTINGS_PATH,
         managedSandboxSettings(stack),
-        "Enforce Claude sandbox policy (failIfUnavailable, allowUnsandboxedCommands=false, egress allowlist incl. detected cloud) — merged into existing managed settings",
+        "Generate Claude sandbox policy (failIfUnavailable, allowUnsandboxedCommands=false, network egress allowlist incl. detected cloud) — merged into existing managed settings; loading/enforcement requires the host's managed-settings deployment",
         { merge: true },
       ),
     );

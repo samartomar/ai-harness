@@ -164,21 +164,25 @@ describe("managed-settings.json content", () => {
   it("carries the github/pypi/npm egress allowlist", async () => {
     const p = await command.plan(ctx());
     const ms = findWrite(p.actions, ".claude/managed-settings.json").json as {
-      sandbox: { allowedDomains: string[] };
+      sandbox: { network: { allowedDomains: string[] } };
     };
-    expect(ms.sandbox.allowedDomains).toEqual(["github.com", "pypi.org", "registry.npmjs.org"]);
+    expect(ms.sandbox.network.allowedDomains).toEqual([
+      "github.com",
+      "pypi.org",
+      "registry.npmjs.org",
+    ]);
   });
 
   it("ships the command-policy exec block alongside the egress allowlist", async () => {
     const p = await command.plan(ctx());
     const ms = findWrite(p.actions, ".claude/managed-settings.json").json as {
       sandbox: {
-        allowedDomains: string[];
+        network: { allowedDomains: string[] };
         commandPolicy: { deny: Array<{ pattern: string; reason?: string }> };
       };
     };
-    // The egress allowlist and the command policy ship in ONE managed-settings file.
-    expect(ms.sandbox.allowedDomains).toContain("github.com");
+    // The egress allowlist and AIH command-policy metadata ship in ONE managed-settings file.
+    expect(ms.sandbox.network.allowedDomains).toContain("github.com");
     const denyPatterns = ms.sandbox.commandPolicy.deny.map((r) => r.pattern);
     expect(denyPatterns).toContain("rm -rf /");
     const rmRule = ms.sandbox.commandPolicy.deny.find((r) => r.pattern === "rm -rf /");
