@@ -59,34 +59,48 @@ function readiness(runtimeEvidence?: unknown) {
 }
 
 describe("v9 runtime observations beside preflight", () => {
-  it("materializes explicitly requested readiness before the real report renderer consumes it", async () => {
-    const root = mkdtempSync(join(tmpdir(), "aih-v9-runtime-"));
-    const run = fakeRunner(() => undefined);
-    const context: PlanContext = {
-      root,
-      contextDir: "ai-coding",
-      apply: false,
-      verify: false,
-      json: true,
-      run,
-      host: makeHostAdapter({ platform: "linux", run, env: {} }),
-      env: { HOME: root, USERPROFILE: root },
-      options: { v9: true, cli: ["opencode"], runtimeEvidence: join(root, "missing.json") },
-    };
-    try {
-      const data = buildAihDataV9(await v9ExtraDigests(context));
-      expect(data.ready?.runtimeEvidence).toMatchObject({
-        recordState: "unavailable",
-        reasons: ["observation-file-unavailable"],
-        exercised: "unverified",
-      });
-      expect(assembleViewV9(data, V9_DEMO).sections["sec-ready"]?.html).toContain(
-        "observation-file-unavailable",
-      );
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  });
+  it.each([false, true])(
+    "materializes readiness before rendering (runtime requested: %s)",
+    async (runtimeRequested) => {
+      const root = mkdtempSync(join(tmpdir(), "aih-v9-runtime-"));
+      const run = fakeRunner(() => undefined);
+      const context: PlanContext = {
+        root,
+        contextDir: "ai-coding",
+        apply: false,
+        verify: false,
+        json: true,
+        run,
+        host: makeHostAdapter({ platform: "linux", run, env: {} }),
+        env: { HOME: root, USERPROFILE: root },
+        options: {
+          v9: true,
+          cli: ["opencode"],
+          ...(runtimeRequested ? { runtimeEvidence: join(root, "missing.json") } : {}),
+        },
+      };
+      try {
+        const data = buildAihDataV9(await v9ExtraDigests(context));
+        expect(data.ready?.banner).toBe("NOT READY");
+        expect(data.ready?.blockers.length).toBeGreaterThan(0);
+        const html = assembleViewV9(data, V9_DEMO).sections["sec-ready"]?.html;
+        expect(html).toContain("NOT READY");
+        if (runtimeRequested) {
+          expect(data.ready?.runtimeEvidence).toMatchObject({
+            recordState: "unavailable",
+            reasons: ["observation-file-unavailable"],
+            exercised: "unverified",
+          });
+          expect(html).toContain("observation-file-unavailable");
+        } else {
+          expect(data.ready).not.toHaveProperty("runtimeEvidence");
+          expect(html).not.toContain("Current runtime observation");
+        }
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("omits the observation section unless explicitly requested", () => {
     const data = buildAihDataV9([readiness()]);

@@ -1154,7 +1154,7 @@ export function skillGovernanceDigest(ctx: PlanContext): DigestAction | undefine
  */
 export async function v9ExtraDigests(ctx: PlanContext): Promise<DigestAction[]> {
   let readiness = readinessDigest(ctx);
-  if (ctx.options.runtimeEvidence !== undefined && readiness.run) {
+  if (readiness.run) {
     // The HTML renderer consumes data, not deferred callbacks. Explicit runtime
     // evaluation shares the same cached observation as the CLI/JSON digest.
     const result = await readiness.run(ctx);
