@@ -1814,6 +1814,17 @@ vetted pin bump that covers the UI variant's surface.
 
 Generate a devcontainer + managed sandbox settings (egress allowlist, `failIfUnavailable`).
 
+For a bounded OpenCode Linux workflow, configure `--cli opencode` with an
+external `--policy`, `--bwrap-executable`, `--opencode-executable`,
+`--seccomp-executable`, repeatable
+non-secret `--binding NAME=value` and native `--client-arg` values. Optional
+repeatable `--hide-path` and `--read-only-path` values name existing absolute
+paths. Preview first, then use `--apply` to save the per-root launch profile.
+`aih sandbox --cli opencode --launch --apply` reloads that root's bindings for a
+fresh native process. See [repeatable OpenCode Linux
+launches](../guides/opencode-linux-sandbox.md) for setup, restart, worktree
+ownership, filesystem exposure and the separate native acceptance boundary.
+
 The Claude policy writes the egress list at `sandbox.network.allowedDomains`, alongside
 `sandbox.enabled`, `sandbox.failIfUnavailable`, and `sandbox.allowUnsandboxedCommands: false`.
 The additional `sandbox.commandPolicy` block is AIH metadata; Claude's command permission

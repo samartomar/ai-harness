@@ -3616,7 +3616,16 @@
           "flags": "--apply"
         },
         {
+          "flags": "--binding <NAME=value>"
+        },
+        {
+          "flags": "--bwrap-executable <absolute-path>"
+        },
+        {
           "flags": "--cli <list>"
+        },
+        {
+          "flags": "--client-arg <arg>"
         },
         {
           "flags": "--context-dir <dir>",
@@ -3629,10 +3638,19 @@
           "flags": "--force"
         },
         {
+          "flags": "--hide-path <absolute-path>"
+        },
+        {
           "flags": "--json"
         },
         {
+          "flags": "--launch"
+        },
+        {
           "flags": "--no-log"
+        },
+        {
+          "flags": "--opencode-executable <absolute-path>"
         },
         {
           "flags": "--policy <file>"
@@ -3642,7 +3660,13 @@
           "defaultValue": "vibe"
         },
         {
+          "flags": "--read-only-path <absolute-path>"
+        },
+        {
           "flags": "--root <dir>"
+        },
+        {
+          "flags": "--seccomp-executable <absolute-path>"
         },
         {
           "flags": "--support-out <dir>"

@@ -269,8 +269,8 @@ describe("worktree guidance doc", () => {
     expect(guidance.text).toContain("devcontainer");
   });
 
-  it("rejects --worktree instead of silently ignoring it", () => {
-    expect(() => command.plan(ctx({ options: { worktree: "feature-x" } }))).toThrow(
+  it("rejects --worktree instead of silently ignoring it", async () => {
+    await expect(command.plan(ctx({ options: { worktree: "feature-x" } }))).rejects.toThrow(
       /--worktree is not implemented yet/,
     );
   });

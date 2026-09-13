@@ -6,6 +6,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Configure a per-root OpenCode Linux sandbox launch with persisted non-secret
+  bindings and explicit launches through external bubblewrap and seccomp
+  confinement. Keep worktree state separate and retain the selected policy
+  across fresh processes; setup remains distinct from runtime acceptance.
+
 ### Fixed
 
 - Emit Claude's sandbox egress list at `sandbox.network.allowedDomains` and

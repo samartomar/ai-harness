@@ -79,8 +79,11 @@ aih policy verify . --against "<administrator-provided-sha256>" --policy $Policy
 `--policy` affects that invocation only. The recipes below assume the managed
 environment has passed the fresh-process checks above. If using `--policy`
 instead, include it on every AIH command; assigning `$PolicyPath` does not bind
-later commands. AIH does not install a persistent environment or launcher for you.
-Keep that configuration under the administrator's existing deployment controls.
+later commands. AIH does not install an account-wide environment or an
+administrator deployment launcher. The bounded [OpenCode Linux sandbox
+path](opencode-linux-sandbox.md) can retain an explicitly selected policy path
+and non-secret launch bindings per consumer root. Keep policy distribution and
+authority under the administrator's existing deployment controls.
 
 What you need from the admin:
 
