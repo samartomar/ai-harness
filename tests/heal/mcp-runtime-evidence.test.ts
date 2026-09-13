@@ -82,6 +82,7 @@ describe("MCP runtime observation V1", () => {
       exercised: "verified",
       restart: "verified",
       enforcement: "verified",
+      restrictions: [],
     });
   });
 

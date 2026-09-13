@@ -8,6 +8,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Show explicitly selected OpenCode Linux runtime observations beside readiness
+  preflight. Recheck current material bindings and expiry, report exercised
+  operations, restart and specific denials separately, and retain unrelated
+  required-capability and policy blockers.
 - Configure a per-root OpenCode Linux sandbox launch with persisted non-secret
   bindings and explicit launches through external bubblewrap and seccomp
   confinement. Keep worktree state separate and retain the selected policy

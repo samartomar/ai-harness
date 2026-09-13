@@ -1,13 +1,15 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { sharedBlock } from "../../src/bootstrap-ai/canon.js";
+import type { RuntimeEvidenceResult } from "../../src/heal/opencode-runtime-evidence.js";
 import { mergeManagedBlock } from "../../src/internals/markers.js";
 import type { Action, PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner, type RunResult } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { command } from "../../src/ready/index.js";
+import { openCodeRuntimeFixture } from "../heal/opencode-runtime-evidence-fixture.js";
 
 const DIR_NAME = "ai-coding";
 
@@ -162,6 +164,7 @@ interface McpReadinessData {
     issues: Array<Record<string, unknown>>;
   };
   unverified: Array<{ id: string }>;
+  runtimeEvidence?: RuntimeEvidenceResult;
 }
 
 describe("aih ready — plan shape", () => {
@@ -356,6 +359,88 @@ describe("aih ready — confirmation-gated core-tool installs (slice 4)", () => 
 });
 
 describe("aih ready — native MCP evidence boundary", () => {
+  it("shows explicitly selected current OpenCode evidence beside unchanged preflight blockers", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime("2026-09-13T12:10:00.000Z");
+    const native = openCodeRuntimeFixture();
+    rmSync(dir, { recursive: true, force: true });
+    dir = native.root;
+    try {
+      scaffoldReady();
+      put(
+        ".aih-config.json",
+        JSON.stringify({ schemaVersion: 1, contextDir: DIR_NAME, targets: ["opencode"] }),
+      );
+      const baseline = actionsOf(
+        (await command.plan(ctx({ rg: false }, { options: { cli: "opencode" } }))).actions,
+      ).digest.data as unknown as McpReadinessData;
+      const observedContext = ctx(
+        { rg: false },
+        { options: { cli: "opencode", runtimeEvidence: native.evidencePath } },
+      );
+      const readinessRun = observedContext.run;
+      observedContext.run = async (argv, options) =>
+        argv[0] === native.paths.opencode
+          ? { code: 0, stdout: "opencode version 1.18.11\n", stderr: "" }
+          : readinessRun(argv, options);
+      const built = await command.plan(observedContext);
+      const { digest, gate } = actionsOf(built.actions);
+      const data = digest.data as unknown as McpReadinessData;
+      expect(data.runtimeEvidence).toMatchObject({
+        recordState: "current",
+        exercised: "verified",
+        enforcement: "verified",
+      });
+      expect(data.banner).toBe(baseline.banner);
+      expect(data.score).toBe(baseline.score);
+      expect(data.blockers).toEqual(baseline.blockers);
+      expect(await gate.run(ctx())).toMatchObject({ verdict: "fail", code: "ready.blocked" });
+      expect(digest.text).toContain("fixed fixture / fixture_probe");
+      expect(digest.text).toContain("local unsigned observation");
+    } finally {
+      native.cleanup();
+      vi.useRealTimers();
+    }
+  });
+
+  it("registers the explicit runtime evidence option without changing default output", () => {
+    expect(command.options).toContainEqual({
+      flags: "--runtime-evidence <absolute-file>",
+      description: expect.stringContaining("OpenCode"),
+    });
+  });
+
+  it("re-evaluates current material on each plan built with the same context", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime("2026-09-13T12:10:00.000Z");
+    const native = openCodeRuntimeFixture();
+    rmSync(dir, { recursive: true, force: true });
+    dir = native.root;
+    try {
+      scaffoldReady();
+      const c = ctx({}, { options: { cli: "opencode", runtimeEvidence: native.evidencePath } });
+      const readinessRun = c.run;
+      c.run = async (argv, options) =>
+        argv[0] === native.paths.opencode
+          ? { code: 0, stdout: "1.18.11\n", stderr: "" }
+          : readinessRun(argv, options);
+      const first = actionsOf((await command.plan(c)).actions).digest.data as McpReadinessData;
+      expect(first.runtimeEvidence?.recordState).toBe("current");
+      writeFileSync(
+        native.paths.config,
+        `${JSON.stringify(JSON.parse(readFileSync(native.paths.config, "utf8")))}\n`,
+      );
+      const second = actionsOf((await command.plan(c)).actions).digest.data as McpReadinessData;
+      expect(second.runtimeEvidence).toMatchObject({
+        recordState: "stale",
+        reasons: expect.arrayContaining(["target-binding-changed"]),
+      });
+    } finally {
+      native.cleanup();
+      vi.useRealTimers();
+    }
+  });
+
   it.each([
     '[mcp_servers.other]\ncommand="uvx"\n',
     '[mcp_servers.other]\nrequired=true\nbearer_token_env_var="MISSING_FIXTURE_AUTH"\n',

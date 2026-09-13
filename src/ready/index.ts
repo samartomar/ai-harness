@@ -1,3 +1,4 @@
+import type { RuntimeEvidenceResult } from "../heal/opencode-runtime-evidence.js";
 import {
   type Action,
   type CommandSpec,
@@ -12,7 +13,10 @@ import {
   computeReadiness,
   coreToolsMissing,
   type ReadinessResult,
+  readinessData,
   renderReadinessBody,
+  resetRuntimeEvidenceEvaluation,
+  runtimeEvidenceForContext,
 } from "../report/readiness.js";
 import {
   detectPms,
@@ -58,20 +62,22 @@ function handoffLine(firstCommand: string | null): string {
 }
 
 /** The gate probe's {@link Check}: fail with the blocker roll-up, or pass clean. */
-function gateCheck(r: ReadinessResult): Check {
+function gateCheck(r: ReadinessResult, evidence?: RuntimeEvidenceResult): Check {
   const name = "readiness — no blockers";
   if (r.blockers.length > 0) {
     return {
       name,
       verdict: "fail",
-      detail: `${r.blockers.length} blocker(s): ${r.blockers.map((b) => b.id).join(", ")}`,
+      detail: `${r.blockers.length} blocker(s): ${r.blockers.map((b) => b.id).join(", ")}${evidence ? "; runtime observation is reported separately and does not clear blockers" : ""}`,
       code: "ready.blocked",
     };
   }
   return {
     name,
     verdict: "pass",
-    detail: `no preflight blockers; ${r.unverified.length} unverified MCP observation(s); native execution not established`,
+    detail: evidence
+      ? `no preflight blockers; ${r.unverified.length} unverified MCP preflight observation(s); explicit runtime observation is reported separately`
+      : `no preflight blockers; ${r.unverified.length} unverified MCP observation(s); native execution not established`,
   };
 }
 
@@ -120,23 +126,15 @@ async function coreToolInstallActions(ctx: PlanContext, specs: ToolSpec[]): Prom
 }
 
 async function readyPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
+  resetRuntimeEvidenceEvaluation(ctx);
   const r = await computeReadiness(ctx);
-  const body = `${renderReadinessBody(r)}\n${handoffLine(r.firstCommand)}\n`;
-  const data = {
-    banner: r.banner,
-    blockers: r.blockers,
-    warns: r.warns,
-    unverified: r.unverified,
-    mcp: r.mcp,
-    score: r.score,
-    rawScore: r.rawScore,
-    grade: r.grade,
-    firstCommand: r.firstCommand,
-  };
+  const evidence = await runtimeEvidenceForContext(ctx);
+  const body = `${renderReadinessBody(r, evidence)}\n${handoffLine(r.firstCommand)}\n`;
+  const data = readinessData(r, evidence);
   // The digest + gate probe always print (installs are ADDITIVE, never replace the report).
   const actions: Action[] = [
     digest("Developer readiness", body, data),
-    probe("readiness — no blockers", () => gateCheck(r)),
+    probe("readiness — no blockers", () => gateCheck(r, evidence)),
   ];
 
   // The ONE auto-fixable blocker: missing core shell tools (rg/fd/jq). Recompute the
@@ -164,5 +162,11 @@ export const command: CommandSpec = {
   // Offer the "Install rg, fd, jq now? [y/N]" confirmation on a bare `aih ready` in a
   // TTY (not just under `--detect`) — the install is what a first-time repo opener wants.
   wantsInstallPrompt: true,
+  options: [
+    {
+      flags: "--runtime-evidence <absolute-file>",
+      description: "evaluate one local OpenCode native runtime observation beside preflight",
+    },
+  ],
   plan: readyPlan,
 };

@@ -87,6 +87,17 @@ run the repository's first command. Follow the
 [bounded native acceptance steps](governed-mcp.md#bounded-native-acceptance)
 to record actual tool use and policy behavior separately.
 
+For the bounded OpenCode Linux fixture, `--runtime-evidence <absolute-file>`
+explicitly adds a current-material evaluation beside preflight. Select the current
+consumer with `--root` and `--cli opencode`. The optional `runtimeEvidence` JSON
+result distinguishes unavailable, invalid, stale and current records, with
+observation/expiry times, exercise, restart and specific restrictions. It never
+removes preflight blockers or verifies unrelated configured servers. The same
+option is supported by local `aih report --v9`, including its JSON output.
+Reading the record does not launch its asserted commands. See
+[OpenCode runtime observations](../guides/opencode-linux-sandbox.md#current-runtime-observations)
+for the producer, current-binding checks and scope limits.
+
 The secret gate reports the finding's LOCATION class, because the remediation differs: a
 git-tracked finding is `no-committed-secret` (rotate the credential and rewrite it out of git
 history), while an untracked on-disk file is `no-plaintext-secret-on-disk` (rotate and move it to a

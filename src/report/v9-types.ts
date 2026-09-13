@@ -1,3 +1,5 @@
+import type { RuntimeEvidenceResult } from "../heal/opencode-runtime-evidence.js";
+
 /**
  * View-model for the **local-report v9** dashboard (the "developer console" skin,
  * opt-in via `--v9`). These types describe the PURE DATA the renderer binds to —
@@ -71,6 +73,8 @@ export interface V9Ready {
   blockers: Array<{ id: string; title: string; cmd: string }>;
   /** Capabilities that configuration inspection cannot prove at runtime. */
   unverified?: Array<{ id: string; title: string; cmd: string }>;
+  /** Explicitly evaluated bounded observations; never part of the preflight score. */
+  runtimeEvidence?: RuntimeEvidenceResult;
   mcp?: {
     servers: Array<{
       targetCli: string;

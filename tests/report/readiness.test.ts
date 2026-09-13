@@ -1,14 +1,17 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { sharedBlock } from "../../src/bootstrap-ai/canon.js";
 import type { Posture } from "../../src/config/posture.js";
+import type { RuntimeEvidenceResult } from "../../src/heal/opencode-runtime-evidence.js";
 import { mergeManagedBlock } from "../../src/internals/markers.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner, type RunResult } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
-import { readinessDigest } from "../../src/report/readiness.js";
+import { command as reportCommand } from "../../src/report/index.js";
+import { readinessDigest, runtimeEvidenceDigest } from "../../src/report/readiness.js";
+import { openCodeRuntimeFixture } from "../heal/opencode-runtime-evidence-fixture.js";
 
 const DIR_NAME = "ai-coding";
 
@@ -26,6 +29,7 @@ interface ReadinessData {
   grade: string;
   warns: Row[];
   firstCommand: string | null;
+  runtimeEvidence?: RuntimeEvidenceResult;
 }
 
 /** Which tools the fake runner should report as present on PATH / runnable. */
@@ -203,6 +207,63 @@ describe("readinessDigest — a ready repo", () => {
     // The declared start command flows into firstCommand for the (later) handoff
     // renderer. scanRepo normalizes a declared `start` script to its canonical form.
     expect(data.firstCommand).toBe("npm start");
+  });
+});
+
+describe("readinessDigest — explicit runtime observation", () => {
+  it("keeps default data byte-compatible and emits a separate report digest only on request", async () => {
+    scaffoldReady();
+    const baseline = await digestData(ctx());
+    expect(baseline.data.runtimeEvidence).toBeUndefined();
+    expect(runtimeEvidenceDigest(ctx())).toBeUndefined();
+    expect(reportCommand.options).toContainEqual({
+      flags: "--runtime-evidence <absolute-file>",
+      description: expect.stringContaining("OpenCode"),
+    });
+  });
+
+  it("rejects runtime evidence outside the bounded local v9 report", async () => {
+    await expect(
+      reportCommand.plan(ctx({}, { options: { runtimeEvidence: "/tmp/observation.json" } })),
+    ).rejects.toMatchObject({ code: "AIH_REPORT" });
+    await expect(
+      reportCommand.plan(
+        ctx(
+          {},
+          { options: { v9: true, org: "org.json", runtimeEvidence: "/tmp/observation.json" } },
+        ),
+      ),
+    ).rejects.toMatchObject({ code: "AIH_REPORT" });
+  });
+
+  it("shares one current evaluation across ready data and report JSON/terminal digest", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime("2026-09-13T12:10:00.000Z");
+    const native = openCodeRuntimeFixture();
+    rmSync(dir, { recursive: true, force: true });
+    dir = native.root;
+    try {
+      scaffoldReady();
+      const c = ctx({}, { options: { cli: "opencode", runtimeEvidence: native.evidencePath } });
+      const readinessRun = c.run;
+      c.run = async (argv, options) =>
+        argv[0] === native.paths.opencode
+          ? { code: 0, stdout: "opencode version 1.18.11\n", stderr: "" }
+          : readinessRun(argv, options);
+      const readiness = await digestData(c);
+      const runtime = runtimeEvidenceDigest(c);
+      const runtimeResult = runtime?.run ? await runtime.run(c) : undefined;
+      if (!runtimeResult || typeof runtimeResult === "string") {
+        throw new Error("expected structured runtime digest result");
+      }
+      expect(runtimeResult.data).toEqual(readiness.data.runtimeEvidence);
+      expect(runtime?.describe).toBe("OpenCode runtime observation");
+      expect(runtimeResult.text).toContain("current");
+      expect(runtimeResult.text).toContain("expires 2026-09-13T13:00:00.000Z");
+    } finally {
+      native.cleanup();
+      vi.useRealTimers();
+    }
   });
 });
 

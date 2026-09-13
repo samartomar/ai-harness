@@ -29,6 +29,7 @@ import { localPanels } from "./local.js";
 import { type NextStepsInput, nextSteps, nextStepsDigest, nextStepsHeadline } from "./nextsteps.js";
 import { aggregateOrg } from "./org.js";
 import { orgDigest, orgHeadline } from "./org-render.js";
+import { resetRuntimeEvidenceEvaluation, runtimeEvidenceDigest } from "./readiness.js";
 import { contextBloatDigest, loadGroupDigest } from "./render.js";
 import { reportHtmlV4 } from "./v4.js";
 import { reportHtmlV9 } from "./v9.js";
@@ -282,6 +283,15 @@ async function buildReport(ctx: PlanContext): Promise<Built> {
  * like the telemetry fetcher's `--run`.
  */
 async function reportPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
+  resetRuntimeEvidenceEvaluation(ctx);
+  const runtimeRequested = ctx.options.runtimeEvidence !== undefined;
+  const requestedNonLocal =
+    (typeof ctx.options.org === "string" && ctx.options.org.length > 0) ||
+    ctx.options.workspace === true ||
+    workspaceManifestExists(ctx.root);
+  if (runtimeRequested && (ctx.options.v9 !== true || requestedNonLocal)) {
+    throw new AihError("--runtime-evidence requires a local --v9 report", "AIH_REPORT");
+  }
   // `--open` implies the HTML dashboard (you can't usefully "open" a terminal/md
   // report in a browser); `--refresh <sec>` embeds a meta-refresh + also forces html
   // (the watch loop in run.ts keeps regenerating the file while the page reloads).
@@ -302,7 +312,12 @@ async function reportPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const format = open || demo || v4 || v9 || refresh !== undefined ? "html" : formatOf(ctx);
   const shouldOpen = open || demo;
   const built = await buildReport(ctx);
+  if (runtimeRequested && (!v9 || built.scope !== "local")) {
+    throw new AihError("--runtime-evidence requires a local --v9 report", "AIH_REPORT");
+  }
   const actions: Action[] = [...built.digests];
+  const runtime = runtimeEvidenceDigest(ctx);
+  if (runtime) actions.push(runtime);
   // Report-panel advisories → coded checks routed through the support pipeline.
   // `--gate` keeps the per-turn budget as the CI gate ("per-turn token budget": a
   // `fail` flips the exit via the existing verify→exitCode() path, the same
@@ -454,6 +469,10 @@ export const command: CommandSpec = {
     {
       flags: "--v9",
       description: "render the v9 developer-console dashboard skin (opt-in; implies html)",
+    },
+    {
+      flags: "--runtime-evidence <absolute-file>",
+      description: "evaluate one local OpenCode native observation in a --v9 report",
     },
   ],
   plan: reportPlan,

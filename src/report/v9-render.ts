@@ -214,7 +214,45 @@ export function renderReady(r: V9Ready): string {
     mcpRows + issueRows ||
     `<div class="method">No configured MCP capability observations were reported.</div>`;
   const mcpAcceptance = `<div class="card span-12"><div class="card-head"><h3>MCP capability acceptance</h3><span class="badge ${unverified.length > 0 ? "warn" : "ok"}">${unverified.length} selected unverified</span></div><div class="card-body"><div class="drift-files">${mcpBody}</div><div class="method" style="margin-top:.6rem">Configured means the client configuration was parsed. Discovery, a real tool call, policy enforcement and post-restart behavior are separate evidence.</div></div></div>`;
-  return verdict + blockers + mcpAcceptance;
+  return verdict + blockers + mcpAcceptance + renderRuntimeEvidence(r.runtimeEvidence);
+}
+
+/** The same evaluated observation carried by CLI/JSON, beside the unchanged preflight. */
+function renderRuntimeEvidence(runtime: V9Ready["runtimeEvidence"]): string {
+  if (!runtime) return "";
+  const statusClass =
+    runtime.recordState === "current" &&
+    [
+      runtime.supported,
+      runtime.discovered,
+      runtime.exercised,
+      runtime.restart,
+      runtime.enforcement,
+    ].every((status) => status === "verified")
+      ? "ok"
+      : "warn";
+  const operation = runtime.operation
+    ? `${escHtml(runtime.operation.server)} / ${escHtml(runtime.operation.tool)}`
+    : "No operation verified";
+  const capabilities = [
+    `Supported: ${runtime.supported}`,
+    `Discovered: ${runtime.discovered}`,
+    `Exercised: ${runtime.exercised}`,
+    `Restart: ${runtime.restart}`,
+  ]
+    .map((value) => `<span>${escHtml(value)}</span>`)
+    .join(" · ");
+  const restrictions = runtime.restrictions
+    .map(
+      (row) =>
+        `<div class="drift-file"><span class="fn">${escHtml(row.id)}</span><span class="fs">${escHtml(row.boundary)}</span><span class="ft ${row.status === "verified" ? "ok" : "warn"}">${escHtml(row.status)}</span></div>`,
+    )
+    .join("");
+  const reasons =
+    runtime.reasons.length > 0
+      ? `<p>${runtime.reasons.map(escHtml).join(" · ")}</p><p>Review the changed or unavailable material and repeat the explicit OpenCode native fixture check to produce a fresh observation.</p>`
+      : "";
+  return `<div class="card span-12"><div class="card-head"><h3>Current runtime observation</h3><span class="badge ${statusClass}">${escHtml(runtime.recordState)}</span></div><div class="card-body"><p><b>${operation}</b> · ${escHtml(runtime.targetCli)} · local unsigned observation</p><p>${capabilities}</p><p>Observed at: ${escHtml(runtime.observedAt ?? "not recorded")}<br>Expires at: ${escHtml(runtime.expiresAt ?? "not recorded")}</p>${reasons}<p>Specific restrictions: ${escHtml(runtime.enforcement)}</p><div class="drift-files">${restrictions || '<div class="method">No specific restriction demonstrated.</div>'}</div><div class="method" style="margin-top:.6rem">Only the recorded fixture operation and listed restrictions are covered. This observation does not clear preflight blockers or verify arbitrary tools, real model inference, hosted authentication, paid usage, public-internet access, general credential isolation or vendor-native sandbox acceptance. Host files remain generally readable unless explicitly hidden. The local record is unsigned and is not policy authority.</div></div></div>`;
 }
 
 // ── ★ Actions ────────────────────────────────────────────────────────────────

@@ -9,6 +9,10 @@ import {
   versionArgv,
 } from "../heal/common.js";
 import { assessMcpReadiness } from "../heal/mcp-probe.js";
+import {
+  evaluateOpenCodeRuntimeEvidence,
+  type RuntimeEvidenceResult,
+} from "../heal/opencode-runtime-evidence.js";
 import { pathStep } from "../heal/path-heal.js";
 import { gitRead } from "../internals/git.js";
 import { preCommitHookActive } from "../internals/git-hooks.js";
@@ -96,6 +100,64 @@ export interface ReadinessResult {
   grade: Grade;
   dims: DimensionResult[];
   firstCommand: string | null;
+}
+
+export interface ReadinessDigestData {
+  banner: ReadinessResult["banner"];
+  blockers: ReadinessRow[];
+  score: number;
+  rawScore: number;
+  grade: Grade;
+  warns: ReadinessRow[];
+  unverified: ReadinessRow[];
+  mcp: ReadinessResult["mcp"];
+  firstCommand: string | null;
+  runtimeEvidence?: RuntimeEvidenceResult;
+}
+
+const runtimeEvaluation = new WeakMap<PlanContext, Promise<RuntimeEvidenceResult>>();
+
+/** Start a fresh explicit observation read for one command planning cycle. */
+export function resetRuntimeEvidenceEvaluation(ctx: PlanContext): void {
+  runtimeEvaluation.delete(ctx);
+}
+
+export async function runtimeEvidenceForContext(
+  ctx: PlanContext,
+): Promise<RuntimeEvidenceResult | undefined> {
+  if (ctx.options.runtimeEvidence === undefined) return undefined;
+  let pending = runtimeEvaluation.get(ctx);
+  if (!pending) {
+    pending = evaluateOpenCodeRuntimeEvidence({
+      root: ctx.root,
+      evidencePath: ctx.options.runtimeEvidence,
+      now: new Date().toISOString(),
+      platform: ctx.host.platform,
+      targetCli: ctx.options.cli,
+      run: ctx.run,
+    });
+    runtimeEvaluation.set(ctx, pending);
+  }
+  return pending;
+}
+
+/** Shared JSON shape for `ready`, report terminal output and the v9 readiness panel. */
+export function readinessData(
+  r: ReadinessResult,
+  evidence?: RuntimeEvidenceResult,
+): ReadinessDigestData {
+  return {
+    banner: r.banner,
+    blockers: r.blockers,
+    score: r.score,
+    rawScore: r.rawScore,
+    grade: r.grade,
+    warns: r.warns,
+    unverified: r.unverified,
+    mcp: r.mcp,
+    firstCommand: r.firstCommand,
+    ...(evidence ? { runtimeEvidence: evidence } : {}),
+  };
 }
 
 const SCORE_CAP_WITH_BLOCKER = 69;
@@ -553,24 +615,51 @@ export function readinessDigest(ctx: PlanContext): DigestAction {
     describe: "Developer readiness",
     run: async () => {
       const r = await computeReadiness(ctx);
-      const data = {
-        banner: r.banner,
-        blockers: r.blockers,
-        score: r.score,
-        rawScore: r.rawScore,
-        grade: r.grade,
-        warns: r.warns,
-        unverified: r.unverified,
-        mcp: r.mcp,
-        firstCommand: r.firstCommand,
+      const evidence = await runtimeEvidenceForContext(ctx);
+      return {
+        text: renderReadinessBody(r, evidence),
+        data: readinessData(r, evidence),
       };
-      return { text: renderReadinessBody(r), data };
     },
   };
 }
 
+/** Separate report action so terminal and JSON callers can consume the observation directly. */
+export function runtimeEvidenceDigest(ctx: PlanContext): DigestAction | undefined {
+  if (ctx.options.runtimeEvidence === undefined) return undefined;
+  return {
+    kind: "digest",
+    describe: "OpenCode runtime observation",
+    run: async () => {
+      const evidence = await runtimeEvidenceForContext(ctx);
+      if (!evidence) throw new Error("runtime evidence was not requested");
+      return { text: renderRuntimeEvidence(evidence), data: evidence };
+    },
+  };
+}
+
+/** Bounded, explicit rendering of the one fixed native observation. */
+export function renderRuntimeEvidence(evidence: RuntimeEvidenceResult): string {
+  const operation = evidence.operation
+    ? `${evidence.operation.server} / ${evidence.operation.tool}`
+    : "unavailable";
+  return lines(
+    `local unsigned observation (OpenCode) — ${evidence.recordState}`,
+    "This fixed operation is shown beside preflight only; it does not prove policy authority, arbitrary MCP tools, model/authentication, paid usage, or a vendor sandbox.",
+    `  observed ${evidence.observedAt ?? "unavailable"}; expires ${evidence.expiresAt ?? "unavailable"}`,
+    `  fixed ${operation}`,
+    `  supported ${evidence.supported}; discovered ${evidence.discovered}; exercised ${evidence.exercised}; restart ${evidence.restart}; enforcement ${evidence.enforcement}`,
+    ...evidence.restrictions.map(
+      (restriction) => `  ${restriction.boundary} / ${restriction.id}: ${restriction.status}`,
+    ),
+    ...(evidence.reasons.length > 0
+      ? ["  reasons:", ...evidence.reasons.map((reason) => `    - ${reason}`)]
+      : []),
+  );
+}
+
 /** Terse, deterministic human summary: banner, blockers, per-dimension line, warn count. */
-export function renderReadinessBody(r: ReadinessResult): string {
+export function renderReadinessBody(r: ReadinessResult, evidence?: RuntimeEvidenceResult): string {
   const { banner, blockers, warns, unverified, mcp, dims, score, grade } = r;
   const mark = (s: number): string => (s >= READY_THRESHOLD ? "✓" : s >= 50 ? "~" : "·");
   return lines(
@@ -600,5 +689,6 @@ export function renderReadinessBody(r: ReadinessResult): string {
       `  ${issue.targetCli} / ${issue.configPath}: ${issue.check.detail}`,
       `    Next: ${issue.nextStep}`,
     ]),
+    ...(evidence ? ["", renderRuntimeEvidence(evidence)] : []),
   );
 }

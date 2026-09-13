@@ -156,9 +156,9 @@ not remove confinement or grant broader access merely to clear a check.
 
 `aih ready` and routine doctor checks remain preflight checks. They do not run
 this launch, start an MCP server, execute a project command, or turn an old
-native report into a current READY result. Keep optional helper failures separate
-from required failures. Runtime evidence must name the exact root, client,
-configuration, policy, executable bytes and observation time.
+native report into a current READY result. An explicitly selected runtime
+observation can appear beside preflight as described below. Keep optional helper
+failures separate from required failures.
 
 The repository's explicit native acceptance driver uses fictional projects and
 a deterministic local provider. It exercises actual client dispatch and returned
@@ -199,6 +199,58 @@ outside `/tmp`, which the sandbox replaces. `AIH_BIN` must run the actual built
 CLI. The test policy authoring fixture is fictional protected-file authority;
 the current clean shipped control needs no waiver decision. The negative bundle
 changes that identity so actual CLI evaluation must reject it.
+
+## Current runtime observations
+
+The explicit native driver above produces `opencode-runtime-observation.json`
+after real fixture calls in fresh OpenCode processes. It evaluates that record
+through readiness and local v9 reporting while the disposable consumer exists,
+then changes actual native configuration bytes to check staleness and restores
+them. Each attempt retains command receipts and report output before cleanup.
+
+To evaluate an observation while its consumer fixture still exists, explicitly
+select its record and the current consumer root:
+
+```bash
+aih ready --root "$CONSUMER_ROOT" --cli opencode \
+  --runtime-evidence "$OBSERVATION_FILE" --json
+aih report --root "$CONSUMER_ROOT" --cli opencode --v9 \
+  --runtime-evidence "$OBSERVATION_FILE" --json --apply
+```
+
+`OBSERVATION_FILE` must be an absolute file path. The report option is supported
+on the local v9 path. Ordinary readiness output is unchanged when the option is
+absent. Readiness adds a `runtimeEvidence` result: observation state, time and
+expiry; support, discovery, exercise and restart; the recorded server and tool;
+and each specific shell or MCP restriction. The report exposes the same result
+in its `OpenCode runtime observation` digest and v9 readiness panel beside the
+configuration inventory.
+
+Evaluation recomputes current bindings from local material: canonical consumer
+root, sandbox profile, effective policy, native MCP configuration, client version
+and executable bytes, confinement executables, and the selected
+fixture/provider/runtime material and operation. The version read uses the
+executable validated by the current local profile. Paths and commands asserted
+by the imported record are not executed.
+A record copied from another root, changed material or an expired deadline
+cannot verify the current setup. Missing, unsupported or malformed evidence
+remains unverified with a reason. Review that reason, correct the local setup
+when appropriate and repeat the explicit native fixture check for new evidence.
+
+The supplied driver removes its disposable consumer after collecting these
+results. The saved report then remains historical evidence and its bindings can
+no longer be rechecked as current. A producer's successful temporary fixture
+does not verify another project. Reports are local unsigned observations: they
+are neither policy authority nor tamper-proof attestations.
+
+A current successful fixture call does not clear preflight or policy blockers,
+missing required resources, or another required capability. Configuration,
+discovery, one exercised operation and restart remain distinct. A failed required
+capability stays blocking; optional unavailability remains visible. Specific
+protected-path or TCP/Unix denials do not establish arbitrary tool usability,
+general host/credential isolation or vendor-native sandbox acceptance. The
+deterministic provider does not verify real inference, hosted authentication,
+paid usage or public-internet connectivity.
 
 ## Resource cleanup
 

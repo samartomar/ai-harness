@@ -130,8 +130,10 @@ replace organization-specific host approval or deployment checks.
 
 Keep support, configuration, discovery, tool execution and enforcement as separate
 observations. `aih ready` reports host/configuration preflight and unverified MCP
-capabilities. It does not import a prior host report as runtime proof or upgrade a
-configuration receipt into an execution result.
+capabilities. A configuration receipt is not an execution result. The explicit
+[OpenCode Linux observation path](../guides/opencode-linux-sandbox.md#current-runtime-observations)
+can display a bounded current observation beside preflight; it does not remove
+unrelated blockers or establish arbitrary configured tools as exercised.
 
 For a supported client, begin with the repository-owned fixture probe from the
 source checkout, selecting one target and an absolute report path:
