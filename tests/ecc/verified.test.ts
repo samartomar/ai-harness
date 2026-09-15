@@ -37,7 +37,7 @@ import { makeHostAdapter } from "../../src/platform/detect.js";
 let root: string;
 
 beforeEach(() => {
-  root = mkdtempSync(join(tmpdir(), "aih-ecc-verified-"));
+  root = realpathSync(mkdtempSync(join(tmpdir(), "aih-ecc-verified-")));
 });
 
 afterEach(() => {

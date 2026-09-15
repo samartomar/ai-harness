@@ -55,7 +55,7 @@ function fixture(): {
   installRoot: string;
   checkoutRoot: string;
 } {
-  const root = mkdtempSync(join(tmpdir(), "aih-token-optimizer-test-"));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "aih-token-optimizer-test-")));
   roots.push(root);
   const projectRoot = join(root, "project");
   const stateRoot = join(root, "state");
