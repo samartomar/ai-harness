@@ -31,6 +31,7 @@ import {
   codexMcpCollisionActions,
   coreOwnedEccCodexMcpServers,
 } from "./codex.js";
+import { ECC_UPSTREAM_HOOK_CONSENT_ADAPTER_SOURCE } from "./hook-consent.js";
 import {
   type EccInstallInputs,
   eccActionsForCli,
@@ -472,6 +473,7 @@ const CODEX_INSTALL_MERGE_SCRIPT_SOURCE = [
   'const crypto = require("crypto");',
   'const fs = require("fs");',
   'const path = require("path");',
+  ...ECC_UPSTREAM_HOOK_CONSENT_ADAPTER_SOURCE.trim().split("\n"),
   "const [repoRoot, profileId, homeDir, mergeCodexConfig, configPath, sourceAgents, targetAgents, statePath, governanceFlag, specB64, mcpB64, stateB64] = process.argv.slice(1);",
   'if (!repoRoot || !profileId || !homeDir || !mergeCodexConfig || !configPath || !sourceAgents || !targetAgents || !statePath || !stateB64) { console.error("usage: codex-install-merge <repo-root> <profile> <home-dir> <merge-config> <config> <source-agents> <target-agents> <state-path> <state-b64>"); process.exit(1); }',
   'const normalize = (value) => String(value || "").replace(/\\\\/g, "/");',
@@ -620,7 +622,8 @@ const CODEX_INSTALL_MERGE_SCRIPT_SOURCE = [
   "function installCodexManagedFiles() {",
   '  const { createManifestInstallPlan } = require(path.join(repoRoot, "scripts", "lib", "install-executor.js"));',
   '  const { writeInstallState } = require(path.join(repoRoot, "scripts", "lib", "install-state.js"));',
-  '  const plan = createManifestInstallPlan({ sourceRoot: repoRoot, target: "codex", profileId: spec ? (spec.scope === "full" ? "full" : null) : profileId, moduleIds: spec && spec.scope !== "full" ? spec.moduleIds : [], homeDir });',
+  '  let plan = createManifestInstallPlan({ sourceRoot: repoRoot, target: "codex", profileId: spec ? (spec.scope === "full" ? "full" : null) : profileId, moduleIds: spec && spec.scope !== "full" ? spec.moduleIds : [], homeDir });',
+  '  plan = applyEccUpstreamHookConsent(plan, repoRoot, governed ? "declined" : executableConsent);',
   '  if (typeof plan.installStatePath !== "string") throw new Error("Codex ECC install-state path is not the exact authorized upstream state path");',
   "  const upstreamStateLocation = assertInsideHome(plan.installStatePath);",
   '  if (upstreamStateLocation.parts.length !== 2 || upstreamStateLocation.parts[0] !== ".codex" || upstreamStateLocation.parts[1] !== "ecc-install-state.json") throw new Error("Codex ECC install-state path is not the exact authorized upstream state path");',
