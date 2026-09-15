@@ -64,6 +64,14 @@ function contract(over: Partial<ProjectContract> = {}): ProjectContract {
 }
 
 describe("generated canon — internal consistency", () => {
+  it("routes ordinary startup through the policy-selected required guidance in the configured context directory", () => {
+    const block = sharedCanonicalBlockBody(DIR);
+    expect(block).toContain(`${DIR}/policy-required-guidance.md`);
+    expect(block).toContain("before acting");
+    expect(block).toContain("instruction guidance");
+    expect(block).not.toContain("ai-coding/policy-required-guidance.md");
+  });
+
   it("compact router renders the External action boundary section every compact adapter cites", () => {
     const router = ruleRouterDoc(DIR, "repo", emptyStack(), ["CLAUDE.md"], { canon: "compact" });
     expect(router).toContain("## External action boundary");

@@ -25,6 +25,7 @@ import type { Cli } from "../internals/clis.js";
 import { inspectContainedRelativePath } from "../internals/contained-path.js";
 import { executePlan, type PlanResult } from "../internals/execute.js";
 import { doc, type Plan, type PlanContext, plan } from "../internals/plan.js";
+import { assertPolicyBindingCurrent, policyBindingFileAssertion } from "../org-policy/binding.js";
 import { assertOrgPolicyMutationSource } from "../org-policy/drift.js";
 import { verifiedOrgPolicyTargets } from "../org-policy/project.js";
 import { governanceOwnsAihSurfaces, type OrgPolicy, readOrgPolicy } from "../org-policy/schema.js";
@@ -36,7 +37,10 @@ import { selectEccComponents } from "./components.js";
 import { eccEvidenceComponentIds, eccEvidenceComponentIdsForSelection } from "./evidence.js";
 import {
   executeGovernedEccMaterialization,
+  executeGovernedEccWithdrawal,
+  type GovernedEccLifecycleDeps,
   governedEccComponentIds,
+  type PreparedGovernedEccDelivery,
 } from "./governed-lifecycle.js";
 import {
   eccActionsForCli,
@@ -48,6 +52,7 @@ import {
   contingentEccInstallPreviewPlan,
   type EccInstallPreviewArtifact,
 } from "./install-preview.js";
+import { readEccMaterializationReceipt } from "./materialization-receipt.js";
 import { assertGovernedMaterializationTargets } from "./materialization-target.js";
 import { orgAllowedEccMcpComponents } from "./mcp.js";
 import {
@@ -95,6 +100,11 @@ export interface EccEvidencePipelineDeps extends BaselineEvidencePipelineDeps {
 }
 
 export interface EccCommandDeps extends EccEvidencePipelineDeps {
+  /** Build and verify the governed request without committing destination effects. */
+  prepareOnly?: boolean;
+  /** Internal handoff used by composed project delivery to commit this exact preparation. */
+  onGovernedPrepared?: (prepared: PreparedGovernedEccDelivery) => void;
+  executeRequiredGuidancePlan?: GovernedEccLifecycleDeps["executeRequiredGuidancePlan"];
   executeProfileLifecycle?: (
     ctx: PlanContext,
     deps?: EccProfileLifecycleCommandDeps,
@@ -371,21 +381,31 @@ export async function executeEccCommand(
   ctx: PlanContext,
   deps: EccCommandDeps = {},
 ): Promise<PlanResult> {
+  const bindingAssertion = policyBindingFileAssertion(ctx.root);
   const policyTargets = await verifiedOrgPolicyTargets(ctx);
   const targetCtx: PlanContext = { ...ctx, targets: policyTargets.resolution.clis };
+  const binding = assertPolicyBindingCurrent(
+    targetCtx.root,
+    targetCtx.env,
+    policyTargets.resolution.clis,
+  );
+  const fileAssertions = [
+    ...(policyTargets.fileAssertions ?? []),
+    ...(bindingAssertion === undefined ? [] : [bindingAssertion]),
+  ];
   const transactionPins: Pick<Plan, "fileAssertions" | "commitNotAfter" | "commitLock"> = {
-    ...(policyTargets.fileAssertions === undefined
-      ? {}
-      : { fileAssertions: policyTargets.fileAssertions }),
+    ...(fileAssertions.length === 0 ? {} : { fileAssertions }),
     ...(policyTargets.commitNotAfter === undefined
       ? {}
       : { commitNotAfter: policyTargets.commitNotAfter }),
     ...(policyTargets.commitLock === undefined ? {} : { commitLock: policyTargets.commitLock }),
   };
-  assertOrgPolicyMutationSource(
-    { ...targetCtx, posture: postureFromContext(targetCtx) },
-    policyTargets.source?.verification.authority,
-  );
+  if (binding === undefined) {
+    assertOrgPolicyMutationSource(
+      { ...targetCtx, posture: postureFromContext(targetCtx) },
+      policyTargets.source?.verification.authority,
+    );
+  }
   if (targetCtx.options.lifecycle !== undefined) {
     const lifecycle = String(targetCtx.options.lifecycle);
     const policy = policyTargets.policy ?? readOrgPolicy(targetCtx.root, targetCtx.env);
@@ -419,6 +439,16 @@ export async function executeEccCommand(
                 historical.evidence.expiresAt,
               ),
             };
+      if (componentIds.length === 0) {
+        return executeGovernedEccWithdrawal(
+          targetCtx,
+          targets,
+          governedTransactionPins,
+          deps.prepareOnly === true,
+          deps.onGovernedPrepared,
+          deps,
+        );
+      }
       return executeGovernedEccMaterialization(
         targetCtx,
         {
@@ -429,6 +459,8 @@ export async function executeEccCommand(
           policy,
           historical,
           transactionGuard: governedTransactionPins,
+          prepareOnly: deps.prepareOnly,
+          onPrepared: deps.onGovernedPrepared,
         },
         deps,
       );
@@ -440,6 +472,16 @@ export async function executeEccCommand(
       throw new AihError(
         `\`aih ecc --lifecycle ${lifecycle}\` drives the framework's own profile installer, which may register native MCPs that governance exclusively owns; the governed framework lifecycle is wired instead — \`aih ecc --lifecycle install\` materializes the policy's evidence-passed selection and \`aih uninstall\` removes it receipt-bound`,
         "AIH_CONFIG",
+      );
+    }
+    if (
+      lifecycle === "install" &&
+      !governanceOwnsAihSurfaces(policy) &&
+      readEccMaterializationReceipt(targetCtx.root).state !== "absent"
+    ) {
+      throw new AihError(
+        "refusing the ordinary ECC profile lifecycle because governed materialization ownership remains; restore an authorized ECC selection or explicitly withdraw it before changing lifecycle authority",
+        "AIH_TRUST",
       );
     }
     const profileLifecycle = {

@@ -83,7 +83,9 @@ function commandPolicyRow(posture: Posture): GovernanceRow {
     control: "command-policy",
     verdict: gradeVerdict("warn", "command-policy", posture),
     detail: `${deny} deny pattern(s), ${ask} ask pattern(s); ${
-      posture === "vibe" ? "advisory-only" : "required CI + enterprise managed-settings"
+      posture === "vibe"
+        ? "advisory-only"
+        : "policy severity only; Claude native permissions require projection and a fresh refusal check; other clients are advisory; system managed-settings requires administrator deployment"
     }`,
     count: deny + ask,
   };

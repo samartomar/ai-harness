@@ -49,6 +49,12 @@ aih verify-release "$CORE_VERSION"
    `%APPDATA%\Python\Python3x\Scripts`, then add the actual directory to PATH through
    your approved shell/profile management path.
 
+   For a distributed protected policy, first open the administrator-managed
+   terminal or client launcher that supplies an absolute `AIH_ORG_POLICY` path
+   outside the target. Use the [fresh-process policy checks](../guides/enterprise-developer-guide.md#2-quickstart--implementation-blueprint)
+   before the initialization commands below. A one-shell export or MCP-server
+   environment entry does not configure other terminal or client processes.
+
 3. Initialize a pilot repo in dry-run, then apply after review:
 
    ```bash
@@ -64,14 +70,17 @@ aih verify-release "$CORE_VERSION"
 
    ```bash
    npm run dev -- policy validate --root .
-   npm run dev -- policy project --root . --apply
    npm run dev -- policy verify --against <sha256-or-bundle> --root .
+   npm run dev -- policy evaluate --root .
+   npm run dev -- policy project --root . --apply
    ```
 
    Treat the trusted policy channel as either the committed `aih-org-policy.json`
    reviewed in the repo or the Workbench-generated PolicyBundle V2 distributed at
-   an administrator-controlled read-only path outside the governed target. An
-   ordinary `AIH_ORG_POLICY` override is not a silent replacement: `aih doctor` and
+   an administrator-controlled read-only path outside the governed target. The
+   administrator/MDM launcher should provide that path to each fresh terminal and
+   client process; use an explicit absolute `--policy` path for a one-off invocation.
+   An ordinary `AIH_ORG_POLICY` override is not a silent replacement: `aih doctor` and
    `aih report` surface it as a policy-source integrity signal, and mutation refuses
    it. `policy project --apply` additionally accepts the exact protected PolicyBundle
    V2 only after Core verifies its authority, custody, freshness, and file identity;
@@ -90,6 +99,13 @@ aih verify-release "$CORE_VERSION"
    Managed-only MCP policy also records AIH ownership provenance so later removal
    preserves operator-owned configuration.
 
+   Repeat the read-only `policy validate` and `policy verify --against` checks from the
+   fresh terminal and the selected client launch context before applying project changes.
+   Without an explicit selection, a missing repository-local policy can be a
+   skip; that does not prove the distributed policy was loaded. An explicitly
+   selected missing or unsafe file fails, and a mismatched expected digest fails
+   `policy verify`.
+
 5. Gate PRs with the repo checks:
 
    ```bash
@@ -106,11 +122,16 @@ aih verify-release "$CORE_VERSION"
    `bundle.signature` finding instead of a quiet skip. For cosign, use your key or
    OIDC identity material consistently at signing and verification time.
 
-   If the fleet needs ECC or Superpowers bytes newer than the vendor pin, vet the
-   exact commit with `aih evidence vet-baseline`, sign the resulting evidence
-   bundle with the governance repository's GitHub identity, and add an attributable
-   `trust.baselineOverrides[]` entry. Org evidence can authorize new exact bytes;
-   it cannot waive an exact vendor `blocked` verdict. Follow
+   Before an Enterprise ECC or Superpowers install, the selected policy must name
+   an exact organization-reviewed `trust.baselineOverrides[]` entry and its
+   GitHub-attested evidence bundle. This is required even when packaged publisher
+   evidence passes. A missing or stale override returns
+   `baseline.org-evidence-required` before installation. The administrator must
+   provide the bundle, signing repository, reason, reviewer and approval time for
+   the selected catalog/source/pin. If new bytes need review, vet the exact commit
+   with `aih evidence vet-baseline` and sign the resulting evidence bundle with
+   the governance repository's GitHub identity. Org evidence can authorize new
+   exact bytes; it cannot waive an exact vendor `blocked` verdict. Follow
    [Baseline Component Evidence](security/baseline-evidence.md) for the posture
    matrix, commands, and strict policy example.
 

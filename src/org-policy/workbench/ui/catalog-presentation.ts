@@ -718,6 +718,15 @@ export function assetDetailsPresentation(
       ...(trigger === undefined ? [] : [{ label: "When it runs", value: trigger }]),
       ...(failureMode === undefined ? [] : [{ label: "If it fails", value: failureMode }]),
       { label: "If you add this", value: decision.consequence },
+      ...(asset.kind === "skill"
+        ? [
+            {
+              label: "Practice effect",
+              value:
+                "This practice is instruction guidance. Verify that a fresh session loads the delivered content. Installing or discovering a skill does not enforce the practice; an enforced restriction needs a supported control and a separate refusal check.",
+            },
+          ]
+        : []),
       ...(reason === undefined ? [] : [{ label: "Why this needs follow-up", value: reason }]),
       {
         label: "Policy support",

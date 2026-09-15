@@ -1,4 +1,13 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -37,7 +46,11 @@ const gateSpec: CommandSpec = {
     plan(
       "gate",
       probe("ok", () => ({ name: "ok", verdict: "pass" })),
-      probe("drift", () => ({ name: "drift", verdict: "fail", detail: "drifted" })),
+      probe("drift", () => ({
+        name: "drift",
+        verdict: "fail",
+        detail: "drifted",
+      })),
     ),
 };
 
@@ -91,6 +104,7 @@ function command(argv: string[]): Command {
     .option("--refresh <sec>")
     .option("--keep-quarantine")
     .option("--no-cache");
+  cmd.option("--launch");
   cmd.parse(argv, { from: "user" });
   return cmd;
 }
@@ -122,6 +136,12 @@ const echoSpec: CommandSpec = {
       digest("context-dir", ctx.contextDir),
       digest("posture", `${ctx.posture}:${ctx.postureSource}`),
     ),
+};
+
+const sandboxPolicyEchoSpec: CommandSpec = {
+  name: "sandbox",
+  summary: "echo restored sandbox policy",
+  plan: (ctx) => plan("sandbox", digest("policy", String(ctx.env.AIH_ORG_POLICY))),
 };
 
 /** A capability that echoes the resolved CA pattern so the env/flag ladder is observable. */
@@ -218,13 +238,17 @@ describe("runCapability — context-dir precedence ladder (flag > marker > env >
 
   it("committed marker wins over env when no flag is passed", async () => {
     writeMarker("marker-dir");
-    const out = await resolvedDir(["--root", dir], { AIH_CONTEXT_DIR: "env-dir" });
+    const out = await resolvedDir(["--root", dir], {
+      AIH_CONTEXT_DIR: "env-dir",
+    });
     expect(out).toContain("marker-dir");
     expect(out).not.toContain("env-dir");
   });
 
   it("env wins over the default when neither flag nor marker is present", async () => {
-    const out = await resolvedDir(["--root", dir], { AIH_CONTEXT_DIR: "env-dir" });
+    const out = await resolvedDir(["--root", dir], {
+      AIH_CONTEXT_DIR: "env-dir",
+    });
     expect(out).toContain("env-dir");
   });
 
@@ -234,11 +258,105 @@ describe("runCapability — context-dir precedence ladder (flag > marker > env >
   });
 });
 
+describe("runCapability — sandbox restart authority", () => {
+  it("restores the root-bound OpenCode policy before capability planning", async () => {
+    const outside = realpathSync(mkdtempSync(join(tmpdir(), "aih-run-policy-")));
+    const policy = join(outside, "policy.json");
+    const opencode = join(outside, "opencode");
+    const seccomp = join(outside, "apply-seccomp");
+    writeFileSync(
+      policy,
+      JSON.stringify({
+        schemaVersion: 2,
+        minimumPosture: "vibe",
+        references: { repoContract: "ai-coding/project.json" },
+      }),
+    );
+    writeFileSync(opencode, "binary");
+    writeFileSync(seccomp, "binary");
+    const profileDir = join(dir, ".aih", "sandbox");
+    mkdirSync(profileDir, { recursive: true });
+    writeFileSync(
+      join(profileDir, "opencode.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        client: "opencode",
+        root: dir,
+        policy,
+        policySha256: createHash("sha256").update(readFileSync(policy)).digest("hex"),
+        bwrapExecutable: seccomp,
+        bwrapSha256: createHash("sha256").update("binary").digest("hex"),
+        opencodeExecutable: opencode,
+        opencodeSha256: createHash("sha256").update("binary").digest("hex"),
+        seccompExecutable: seccomp,
+        seccompSha256: createHash("sha256").update("binary").digest("hex"),
+        environment: {},
+        hiddenPaths: [],
+        readOnlyPaths: [],
+        pathIdentities: {},
+        clientArgs: ["run", "fixture"],
+      }),
+    );
+    const result = await run(["--root", dir, "--launch"], sandboxPolicyEchoSpec, {});
+    expect(result.code).toBe(0);
+    expect(result.out).toContain(policy);
+    rmSync(outside, { recursive: true, force: true });
+  });
+
+  it("rejects a launch policy that differs from the root-bound authority", async () => {
+    const outside = realpathSync(mkdtempSync(join(tmpdir(), "aih-run-policy-conflict-")));
+    const policy = join(outside, "policy.json");
+    const otherPolicy = join(outside, "other-policy.json");
+    const opencode = join(outside, "opencode");
+    const seccomp = join(outside, "apply-seccomp");
+    writeFileSync(policy, "{}");
+    writeFileSync(otherPolicy, "{}");
+    writeFileSync(opencode, "binary");
+    writeFileSync(seccomp, "binary");
+    const profileDir = join(dir, ".aih", "sandbox");
+    mkdirSync(profileDir, { recursive: true });
+    writeFileSync(
+      join(profileDir, "opencode.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        client: "opencode",
+        root: dir,
+        policy,
+        policySha256: createHash("sha256").update(readFileSync(policy)).digest("hex"),
+        bwrapExecutable: seccomp,
+        bwrapSha256: createHash("sha256").update("binary").digest("hex"),
+        opencodeExecutable: opencode,
+        opencodeSha256: createHash("sha256").update("binary").digest("hex"),
+        seccompExecutable: seccomp,
+        seccompSha256: createHash("sha256").update("binary").digest("hex"),
+        environment: {},
+        hiddenPaths: [],
+        readOnlyPaths: [],
+        pathIdentities: {},
+        clientArgs: ["run", "fixture"],
+      }),
+    );
+    const result = await run(
+      ["--root", dir, "--launch", "--policy", otherPolicy],
+      sandboxPolicyEchoSpec,
+      {},
+    );
+    expect(result.code).toBe(1);
+    expect(result.out).toContain("conflicts with this root's persisted authority binding");
+    rmSync(outside, { recursive: true, force: true });
+  });
+});
+
 describe("runCapability — posture precedence ladder (org floor > flag > marker > env > default)", () => {
   function writeMarker(posture: string): void {
     writeFileSync(
       join(dir, ".aih-config.json"),
-      JSON.stringify({ schemaVersion: 1, contextDir: "ai-coding", targets: [], posture }),
+      JSON.stringify({
+        schemaVersion: 1,
+        contextDir: "ai-coding",
+        targets: [],
+        posture,
+      }),
     );
   }
 
@@ -269,7 +387,9 @@ describe("runCapability — posture precedence ladder (org floor > flag > marker
   });
 
   it("env wins over the default when neither flag nor marker is present", async () => {
-    const out = await resolvedPosture(["--root", dir], { AIH_POSTURE: "enterprise" });
+    const out = await resolvedPosture(["--root", dir], {
+      AIH_POSTURE: "enterprise",
+    });
     expect(out).toContain("enterprise:env");
   });
 
@@ -403,7 +523,11 @@ describe("runCapability — posture precedence ladder (org floor > flag > marker
   });
 
   it("refuses removed team posture values from CLI, marker, and environment with the named migration", async () => {
-    const cases: Array<{ argv: string[]; env: NodeJS.ProcessEnv; marker?: boolean }> = [
+    const cases: Array<{
+      argv: string[];
+      env: NodeJS.ProcessEnv;
+      marker?: boolean;
+    }> = [
       { argv: ["--posture", "team", "--root", dir], env: {} },
       { argv: ["--root", dir], env: { AIH_POSTURE: "team" } },
       { argv: ["--root", dir], env: {}, marker: true },
@@ -428,7 +552,11 @@ describe("runCapability — posture precedence ladder (org floor > flag > marker
   it("lets policy validate report malformed org policy as a coded verification finding", async () => {
     writeFileSync(
       join(dir, "aih-org-policy.json"),
-      JSON.stringify({ schemaVersion: 2, minimumPosture: "wild", references: {} }),
+      JSON.stringify({
+        schemaVersion: 2,
+        minimumPosture: "wild",
+        references: {},
+      }),
     );
 
     let out = "";
@@ -443,11 +571,21 @@ describe("runCapability — posture precedence ladder (org floor > flag > marker
     expect(code).toBe(1);
     const payload = JSON.parse(out) as {
       error?: unknown;
-      report?: { checks: Array<{ name: string; verdict: string; code?: string; detail?: string }> };
+      report?: {
+        checks: Array<{
+          name: string;
+          verdict: string;
+          code?: string;
+          detail?: string;
+        }>;
+      };
     };
     expect(payload.error).toBeUndefined();
     const check = payload.report?.checks.find((c) => c.name === "org policy schema");
-    expect(check).toMatchObject({ verdict: "fail", code: "org-policy.invalid" });
+    expect(check).toMatchObject({
+      verdict: "fail",
+      code: "org-policy.invalid",
+    });
     expect(check?.detail).toContain("org-policy is invalid");
   });
 });
@@ -457,7 +595,9 @@ describe("runCapability — ca-pattern env fallback (flag > env > default)", () 
     // Regression: heal/certs give --ca-pattern a "Zscaler" default, so opts.caPattern is
     // never undefined. Passing that default into loadSettings shadowed AIH_CA_PATTERN and
     // always printed "Zscaler". With no flag, the env var must win.
-    const out = await resolvedCaPattern(["--root", dir], { AIH_CA_PATTERN: "Netskope" });
+    const out = await resolvedCaPattern(["--root", dir], {
+      AIH_CA_PATTERN: "Netskope",
+    });
     expect(out).toContain("Netskope");
     expect(out).not.toContain("Zscaler");
   });
@@ -499,13 +639,17 @@ describe("runCapability — explicit apply-only mutation boundary", () => {
   });
 
   it("keeps an explicit-apply-only capability dry-run under AIH_APPLY alone", async () => {
-    const { out } = await run(["--root", dir], explicitApplyOnlySpec, { AIH_APPLY: "1" });
+    const { out } = await run(["--root", dir], explicitApplyOnlySpec, {
+      AIH_APPLY: "1",
+    });
     expect(existsSync(join(dir, "explicit.txt"))).toBe(false);
     expect(out).toContain("pass --apply to execute");
   });
 
   it("applies an explicit-apply-only capability under literal --apply", async () => {
-    await run(["--apply", "--root", dir], explicitApplyOnlySpec, { AIH_APPLY: "0" });
+    await run(["--apply", "--root", dir], explicitApplyOnlySpec, {
+      AIH_APPLY: "0",
+    });
     expect(readFileSync(join(dir, "explicit.txt"), "utf8")).toBe("explicit\n");
   });
 
@@ -521,8 +665,13 @@ describe("runCapability — explicit apply-only mutation boundary", () => {
   });
 
   it("does not let spec-owned live options imply apply", async () => {
-    const explicitLiveSpec: CommandSpec = { ...liveSpec, requireExplicitApply: true };
-    const { out } = await run(["--open", "--root", dir], explicitLiveSpec, { AIH_APPLY: "1" });
+    const explicitLiveSpec: CommandSpec = {
+      ...liveSpec,
+      requireExplicitApply: true,
+    };
+    const { out } = await run(["--open", "--root", dir], explicitLiveSpec, {
+      AIH_APPLY: "1",
+    });
     expect(out).toContain("false");
   });
 
@@ -751,7 +900,9 @@ describe("runCapability — live report options", () => {
   it("rejects --refresh with --json before emitting a mixed JSON/live stream", async () => {
     const { code, out } = await run(["--json", "--refresh", "1", "--root", dir], liveSpec);
     expect(code).toBe(1);
-    const payload = JSON.parse(out) as { error: { code: string; message: string } };
+    const payload = JSON.parse(out) as {
+      error: { code: string; message: string };
+    };
     expect(payload.error.code).toBe("AIH_CONFIG");
     expect(payload.error.message).toContain("--refresh cannot be combined with --json");
   });

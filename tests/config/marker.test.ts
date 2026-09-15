@@ -17,6 +17,7 @@ import {
   readAihConfigBaseline,
   readAihConfigDiagnostic,
   readAihConfigPosture,
+  readPolicyBinding,
   revokedManagedMcpProjectionOwnership,
 } from "../../src/config/marker.js";
 import * as fsxn from "../../src/internals/fsxn.js";
@@ -97,6 +98,55 @@ describe("readAihConfig", () => {
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+describe("readPolicyBinding", () => {
+  const binding = {
+    schemaVersion: 1,
+    state: "active",
+    projectId: "payments-api",
+    rootSha256: "a".repeat(64),
+    source: { path: "C:/policy/team.json", sha256: "b".repeat(64) },
+    targets: ["codex", "kiro"],
+  };
+
+  it("returns the strict committed policy assignment", () => {
+    writeMarker({ schemaVersion: 1, contextDir: "ai-coding", targets: [], policyBinding: binding });
+    expect(readPolicyBinding(dir)).toEqual(binding);
+  });
+
+  it.each(["C:\\policy\\team.json", "C:/policy/team.json", "/etc/aih/team.json"])(
+    "accepts a stored foreign-host absolute source path: %s",
+    (path) => {
+      const foreignBinding = { ...binding, source: { ...binding.source, path } };
+      writeMarker({
+        schemaVersion: 1,
+        contextDir: "ai-coding",
+        targets: [],
+        policyBinding: foreignBinding,
+      });
+      expect(readPolicyBinding(dir)).toEqual(foreignBinding);
+    },
+  );
+
+  it.each([
+    { ...binding, projectId: "../copied" },
+    { ...binding, rootSha256: "A".repeat(64) },
+    { ...binding, source: { ...binding.source, path: "relative/team.json" } },
+    { ...binding, source: { ...binding.source, path: "\\rooted-but-drive-relative.json" } },
+    { ...binding, targets: ["codex", "codex"] },
+    { ...binding, targets: ["unknown-cli"] },
+    { ...binding, state: "missing" },
+    { ...binding, surprise: true },
+  ])("fails closed for malformed policyBinding %#", (policyBinding) => {
+    writeMarker({ schemaVersion: 1, contextDir: "ai-coding", targets: [], policyBinding });
+    expect(() => readPolicyBinding(dir)).toThrow(/invalid policyBinding/);
+  });
+
+  it("distinguishes an absent binding from a malformed marker", () => {
+    writeMarker({ schemaVersion: 1, contextDir: "ai-coding", targets: [] });
+    expect(readPolicyBinding(dir)).toBeUndefined();
   });
 });
 

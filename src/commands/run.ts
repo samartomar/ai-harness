@@ -24,7 +24,15 @@ import {
   type RunEntryInput,
   statusFor,
 } from "../logging/run-log.js";
+import {
+  applyPolicyBindingDefaults,
+  applyPolicyBindingReadOnlyDiagnosticDefaults,
+  assertPolicyBindingCurrent,
+  policyBindingFileAssertion,
+  withPolicyBindingFileAssertion,
+} from "../org-policy/binding.js";
 import { makeHostAdapter } from "../platform/detect.js";
+import { openCodeSandboxPolicyBinding } from "../sandbox/opencode.js";
 import { buildSupport, supportSummary } from "../support/integrate.js";
 import { redactArgv, redactText } from "../support/redact.js";
 
@@ -248,6 +256,29 @@ export async function runCapability(
       }
       env = { ...baseEnv, AIH_ORG_POLICY: policy.trim() };
     }
+    const bindingDefaults =
+      spec.name === "governance-doctor" && spec.readOnly === true && spec.zeroWrite === true
+        ? applyPolicyBindingReadOnlyDiagnosticDefaults(resolvedRoot, env, opts)
+        : applyPolicyBindingDefaults(resolvedRoot, env, opts);
+    env = bindingDefaults.env;
+    // A sandbox restart begins in a fresh process. Restore its root-bound explicit
+    // authority before posture and governance resolve. A newly supplied policy
+    // must name that same authority so evaluation and child launch cannot diverge.
+    if (spec.name === "sandbox" && opts.launch === true) {
+      const persistedPolicy = openCodeSandboxPolicyBinding(resolvedRoot);
+      const selectedPolicy = env.AIH_ORG_POLICY;
+      if (
+        typeof selectedPolicy === "string" &&
+        selectedPolicy.trim().length > 0 &&
+        resolve(resolvedRoot, selectedPolicy.trim()) !== persistedPolicy
+      ) {
+        throw new AihError(
+          "sandbox launch policy conflicts with this root's persisted authority binding",
+          "AIH_CONFIG",
+        );
+      }
+      env = { ...env, AIH_ORG_POLICY: persistedPolicy };
+    }
     // Context-dir precedence ladder: explicit `--context-dir` flag > committed
     // `.aih-config.json` marker > `AIH_CONTEXT_DIR` env > `ai-coding` default.
     // Commander fills the flag's default, so `opts.contextDir` is never undefined —
@@ -356,13 +387,30 @@ export async function runCapability(
         force: opts.force,
         open: liveOpen ? true : opts.open,
       },
+      ...(bindingDefaults.targets === undefined ? {} : { targets: bindingDefaults.targets }),
     };
+
+    const managesPolicyBinding =
+      command.parent?.name() === "policy" &&
+      (spec.name === "bind" || spec.name === "rebind" || spec.name === "revoke");
+    const cleansPolicyOwnership = spec.name === "uninstall";
+    if (!spec.readOnly && !managesPolicyBinding && !cleansPolicyOwnership) {
+      assertPolicyBindingCurrent(ctx.root, ctx.env, undefined, { requireIfOwned: true });
+    }
+    const bindingAssertion =
+      spec.readOnly || managesPolicyBinding || cleansPolicyOwnership
+        ? undefined
+        : policyBindingFileAssertion(ctx.root);
 
     const result = deps.execute
       ? await deps.execute(ctx)
-      : await executePlan(await spec.plan(ctx), ctx, {
-          skipWorktreeGate: spec.skipWorktreeGate === true,
-        });
+      : await executePlan(
+          withPolicyBindingFileAssertion(await spec.plan(ctx), bindingAssertion),
+          ctx,
+          {
+            skipWorktreeGate: spec.skipWorktreeGate === true,
+          },
+        );
 
     if (policyFromCli) relabelExplicitPolicySourceInPlace(result);
 
@@ -421,7 +469,13 @@ export async function runCapability(
     if (!streamSarif) {
       if (json) {
         const payload = support
-          ? { ...result, support: { findings: support.findings, templates: support.templates } }
+          ? {
+              ...result,
+              support: {
+                findings: support.findings,
+                templates: support.templates,
+              },
+            }
           : result;
         write(`${JSON.stringify(payload, null, 2)}\n`);
       } else {
@@ -440,13 +494,21 @@ export async function runCapability(
       argv: logArgv,
       status: statusFor(verifyCode === 1, execFailed),
       exitCode,
-      mode: { apply: ctx.apply, verify: ctx.verify, json, sarif: typeof opts.sarif === "string" },
+      mode: {
+        apply: ctx.apply,
+        verify: ctx.verify,
+        json,
+        sarif: typeof opts.sarif === "string",
+      },
       platform: host.platform,
       node: process.versions.node,
       root: resolvedRoot,
       result,
       support: support
-        ? { findings: support.findings.length, templates: support.templates.length }
+        ? {
+            findings: support.findings.length,
+            templates: support.templates.length,
+          }
         : undefined,
     });
 
@@ -458,9 +520,14 @@ export async function runCapability(
       for (;;) {
         await delay(watchSec * 1000);
         try {
-          await executePlan(await spec.plan(ctx), ctx, {
-            skipWorktreeGate: spec.skipWorktreeGate === true,
-          });
+          const refreshBindingAssertion = policyBindingFileAssertion(ctx.root);
+          await executePlan(
+            withPolicyBindingFileAssertion(await spec.plan(ctx), refreshBindingAssertion),
+            ctx,
+            {
+              skipWorktreeGate: spec.skipWorktreeGate === true,
+            },
+          );
         } catch (e) {
           write(`refresh error: ${e instanceof Error ? e.message : String(e)}\n`);
         }

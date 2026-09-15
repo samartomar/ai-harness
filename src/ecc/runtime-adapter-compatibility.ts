@@ -115,6 +115,19 @@ function inspectOutcome(
       reason: "historical-kiro-runtime-proof-unavailable",
     };
   }
+  // v1 predates OpenCode's generic `skills/**` bridge. Its sealed contract
+  // deliberately maps only the repository's `.agents/skills/**` copies, so a
+  // compatible newer Core must retain that historical outcome even when its
+  // live adapter can also translate a legacy `skills/**` source.
+  if (target === "opencode" && path.startsWith("skills/")) {
+    return {
+      componentId: component.id,
+      path,
+      target,
+      state: "refused",
+      reason: "unowned-destination",
+    };
+  }
   const outcome = inspectEccTargetDestinationV1(path, target);
   return outcome.state === "mapped"
     ? {

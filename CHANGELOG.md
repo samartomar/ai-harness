@@ -6,6 +6,57 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Bind an exact policy source and client set to a canonical project root with
+  `policy bind`, review changes through `policy rebind`, and retain a fail-closed
+  revoked assignment with `policy revoke`. Reconcile governed required content
+  through `policy project` and route native startup to receipt-owned guidance.
+- Report required policy content, ownership drift and binding conflicts beside
+  readiness and HTML results, keeping installed guidance separate from native
+  loading and enforced behavior. Document independent adopter delivery and the
+  required/optional content ownership contract.
+- Project authored organization command rules into Claude's native project
+  permissions with entry ownership, preserving custom rules and hooks during
+  updates and withdrawal. Keep other clients advisory and native refusal
+  verification separate from generated configuration.
+
+- Show explicitly selected OpenCode Linux runtime observations beside readiness
+  preflight. Recheck current material bindings and expiry, report exercised
+  operations, restart and specific denials separately, and retain unrelated
+  required-capability and policy blockers.
+- Configure a per-root OpenCode Linux sandbox launch with persisted non-secret
+  bindings and explicit launches through external bubblewrap and seccomp
+  confinement. Keep worktree state separate and retain the selected policy
+  across fresh processes; setup remains distinct from runtime acceptance.
+
+### Fixed
+
+- Emit Claude's sandbox egress list at `sandbox.network.allowedDomains` and
+  explain the supported settings deployment needed before the generated policy
+  takes effect. Distinguish Bash sandboxing from local MCP and container boundaries.
+- Remove an obsolete sandbox allowlist matching the prior generated defaults
+  during reapplication, with a check against changed settings bytes; preserve
+  customized legacy values and report the remaining review step.
+- Keep native MCP runtime observations separate from preflight, with an explicit
+  Codex fixture operation/restart probe and stale detection for changed material
+  bindings or expired observations.
+- Clarify enterprise policy continuity through administrator-managed launch
+  environments, with explicit policy selection and fresh-process validation
+  before project changes.
+- Explain the exact organization evidence required before Enterprise ECC or
+  Superpowers installation, including when packaged publisher evidence passes.
+- Keep repository bootstrap's memory graph admission and indexing ordered before
+  publishing client setup changes, with live index checks before marker reuse.
+- Derive managed codebase-memory runtime and cache roots from the canonical
+  repository root and memory pin, with `AIH_REPO_AI_TOOLS_HOME` preserving a
+  custom managed cache parent across clients. Keep existing toolset/worktree
+  installations available and use a new generation when the memory pin changes.
+- Separate MCP configuration and launcher prerequisites from native runtime
+  acceptance in readiness reports. Include registered native client paths, retain
+  unverified capabilities, and distinguish explicit Codex requirements from
+  optional or unspecified servers without starting configured third-party tools.
+
 ## [Core 0.6.2] - 2026-09-11
 
 ### Changed

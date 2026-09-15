@@ -49,7 +49,13 @@ function codexProjectCommand(cli: Cli): string {
 }
 
 function codexProjectCommandWindows(cli: Cli): string {
-  return `for /f "delims=" %r in ('git rev-parse --show-toplevel 2^>nul') do @node "%r\\.aih\\usage-record.mjs" --from ${cli}`;
+  return (
+    `node -e "const{execFileSync,spawnSync}=require('node:child_process'),{join}=require('node:path');` +
+    `try{const r=execFileSync('git',['rev-parse','--show-toplevel'],` +
+    `{encoding:'utf8',stdio:['ignore','pipe','ignore']}).trim();` +
+    `const p=spawnSync(process.execPath,[join(r,'.aih','usage-record.mjs'),'--from','${cli}'],` +
+    `{cwd:r,stdio:'inherit'});process.exit(p.error?1:(p.status??1))}catch{process.exit(1)}"`
+  );
 }
 
 interface HookOptions {

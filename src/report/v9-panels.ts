@@ -1153,10 +1153,20 @@ export function skillGovernanceDigest(ctx: PlanContext): DigestAction | undefine
  * separately). Async because the outcome digest reads git.
  */
 export async function v9ExtraDigests(ctx: PlanContext): Promise<DigestAction[]> {
+  let readiness = readinessDigest(ctx);
+  if (readiness.run) {
+    // The HTML renderer consumes data, not deferred callbacks. Explicit runtime
+    // evaluation shares the same cached observation as the CLI/JSON digest.
+    const result = await readiness.run(ctx);
+    readiness =
+      typeof result === "string"
+        ? digest(readiness.describe, result)
+        : digest(readiness.describe, result.text, result.data);
+  }
   return [
     // Readiness ALWAYS renders (even a harness-less repo earns a verdict), so its
     // `sec-ready` panel is always LIVE on the local report path.
-    readinessDigest(ctx),
+    readiness,
     driftDigest(ctx),
     mcpServersDigest(ctx),
     eccInventoryDigest(ctx),

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { BaselineAuthorization } from "../../src/baseline-evidence/verify.js";
+import { command as bootstrapAiCommand } from "../../src/bootstrap-ai/index.js";
 import {
   applyEccMaterialization,
   eccMaterializationReceiptPath,
@@ -13,7 +14,7 @@ import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
-import { command as uninstallCommand } from "../../src/uninstall/index.js";
+import { executeUninstallCommand, command as uninstallCommand } from "../../src/uninstall/index.js";
 
 /**
  * F6: governed materialization removal composes into the top-level
@@ -115,7 +116,7 @@ function materialize(): void {
 
 async function uninstall(apply: boolean): Promise<Awaited<ReturnType<typeof executePlan>>> {
   const ctx = context(apply);
-  return executePlan(await uninstallCommand.plan(ctx), ctx, { skipWorktreeGate: true });
+  return executeUninstallCommand(ctx);
 }
 
 /**
@@ -130,13 +131,46 @@ function digestRowFor(result: Awaited<ReturnType<typeof executePlan>>, path: str
 }
 
 describe("F6 — `aih uninstall` removes governed ECC materialization receipt-bound", () => {
+  it("does not remove any content while constructing an apply plan", async () => {
+    materialize();
+    await uninstallCommand.plan(context(true));
+    for (const path of MATERIALIZED) expect(existsSync(join(root, path))).toBe(true);
+    expect(existsSync(eccMaterializationReceiptPath(root))).toBe(true);
+  });
+
+  it("reports a failed ECC execution phase and preserves receipts for a successful retry", async () => {
+    materialize();
+    const result = await executeUninstallCommand(context(true), {
+      removeMaterialization: () => {
+        throw new Error("injected filesystem failure");
+      },
+    });
+    expect(result.report?.ok).toBe(false);
+    expect(result.digests.at(-1)?.data).toMatchObject({ state: "partial", pending: "ecc-cleanup" });
+    expect(existsSync(eccMaterializationReceiptPath(root))).toBe(true);
+    for (const path of MATERIALIZED) expect(existsSync(join(root, path))).toBe(true);
+    await uninstall(true);
+    for (const path of MATERIALIZED) expect(existsSync(join(root, path))).toBe(false);
+  });
+  it("retains a drifted component receipt when ordinary setup also owns the enclosing cache", async () => {
+    const ctx = context(true);
+    await executePlan(await bootstrapAiCommand.plan(ctx), ctx, { skipWorktreeGate: true });
+    materialize();
+    writeFileSync(join(root, ".claude/rules/README.md"), "# edited guidance\n");
+    await uninstall(true);
+    expect(readFileSync(join(root, ".claude/rules/README.md"), "utf8")).toBe("# edited guidance\n");
+    expect(existsSync(eccMaterializationReceiptPath(root))).toBe(true);
+  });
   it("removes exactly the owned bytes and leaves operator content byte-identical", async () => {
     materialize();
     const operatorBefore = Object.fromEntries(
       Object.keys(OPERATOR_TREE).map((path) => [path, readFileSync(join(root, path))]),
     );
 
-    await uninstall(true);
+    const result = await uninstall(true);
+    expect(
+      result.digests.find((entry) => entry.describe === "core install footprint")?.text,
+    ).not.toContain("their file is never deleted");
 
     for (const path of MATERIALIZED) {
       expect(existsSync(join(root, ...path.split("/"))), path).toBe(false);
@@ -193,6 +227,7 @@ describe("F6 — `aih uninstall` removes governed ECC materialization receipt-bo
     const result = await uninstall(true);
 
     const row = digestRowFor(result, drifted);
+    expect(result.report?.ok).toBe(false);
     expect(row).toMatch(/\[advisory\]/);
     expect(row).toMatch(/drift/i);
     // The engine kept it, so the bytes AND the operator's edit survive.
@@ -206,6 +241,8 @@ describe("F6 — `aih uninstall` removes governed ECC materialization receipt-bo
     // The receipt row states the real count — two removed, not three — and the
     // receipt survives because it still records ownership of the kept file.
     const receiptRow = digestRowFor(result, ECC_MATERIALIZATION_RECEIPT_PATH);
+    expect(receiptRow).toMatch(/\[advisory\]/);
+    expect(receiptRow).toMatch(/retained for retry/);
     expect(receiptRow).toMatch(/removed 2 /);
     expect(receiptRow).not.toMatch(/removed 3 /);
     expect(existsSync(eccMaterializationReceiptPath(root))).toBe(true);
@@ -249,5 +286,22 @@ describe("F6 — `aih uninstall` removes governed ECC materialization receipt-bo
       entry.describe.includes("core install footprint"),
     );
     expect(digest?.text).not.toContain(ECC_MATERIALIZATION_RECEIPT_PATH);
+  });
+
+  it("completes cleanup when owned files were already removed and reports the receipt removal", async () => {
+    materialize();
+    for (const path of MATERIALIZED) rmSync(join(root, path));
+    const result = await uninstall(true);
+    expect(result.report?.ok).not.toBe(false);
+    expect(existsSync(eccMaterializationReceiptPath(root))).toBe(false);
+    expect(result.removed.map((entry) => entry.path)).toContain(ECC_MATERIALIZATION_RECEIPT_PATH);
+    const receiptRow = digestRowFor(result, ECC_MATERIALIZATION_RECEIPT_PATH);
+    expect(receiptRow).toMatch(/\[subtract\]/);
+    expect(receiptRow).not.toMatch(/retained/);
+    for (const path of MATERIALIZED) {
+      const row = digestRowFor(result, path);
+      expect(row).toMatch(/already absent/);
+      expect(row).not.toMatch(/was kept/);
+    }
   });
 });

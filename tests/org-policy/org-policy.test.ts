@@ -81,6 +81,8 @@ describe("policy project", () => {
       ".claude/managed-settings.json",
       "managed-settings.json.example",
       "managed-mcp.json.example",
+      ".claude/settings.json",
+      ".aih/org-policy/command-permissions-v1.json",
     ]);
 
     await executePlan(planned, applied);

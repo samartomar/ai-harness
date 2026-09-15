@@ -8,13 +8,22 @@ import {
   tlsCheck,
   versionArgv,
 } from "../heal/common.js";
-import { mcpStep } from "../heal/mcp-probe.js";
+import { assessMcpReadiness } from "../heal/mcp-probe.js";
+import {
+  evaluateOpenCodeRuntimeEvidence,
+  type RuntimeEvidenceResult,
+} from "../heal/opencode-runtime-evidence.js";
 import { pathStep } from "../heal/path-heal.js";
 import { gitRead } from "../internals/git.js";
 import { preCommitHookActive } from "../internals/git-hooks.js";
 import type { Action, DigestAction, PlanContext } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import type { Check } from "../internals/verify.js";
+import {
+  inspectPolicyDelivery,
+  type PolicyDeliveryReport,
+  renderPolicyDelivery,
+} from "../org-policy/policy-delivery-report.js";
 import { scanRepo } from "../profile/scan.js";
 import { scanConfigSecrets, scanSecrets } from "../secrets/scan.js";
 import { inventory } from "../status.js";
@@ -30,8 +39,8 @@ import {
 import { remediationBlock } from "./render.js";
 
 /**
- * DEVELOPER READINESS — "can this developer, on THIS machine, in THIS repo, make a
- * correct first change with an AI agent right now?" Unlike {@link scorecardDigest}
+ * DEVELOPER READINESS — host and configuration preflight for this repository.
+ * It does not establish native tool execution. Unlike {@link scorecardDigest}
  * (harness MATURITY, which omits entirely off-canon), readiness ALWAYS renders: a
  * harness-less repo is the single most important readiness case — it earns warns and
  * a first-command handoff, never silence.
@@ -89,11 +98,74 @@ export interface ReadinessResult {
   banner: "NOT READY" | "READY" | "READY, WITH GAPS";
   blockers: ReadinessRow[];
   warns: ReadinessRow[];
+  unverified: ReadinessRow[];
+  mcp: Omit<Awaited<ReturnType<typeof assessMcpReadiness>>, "actions">;
   score: number;
   rawScore: number;
   grade: Grade;
   dims: DimensionResult[];
   firstCommand: string | null;
+  policyDelivery?: PolicyDeliveryReport;
+}
+
+export interface ReadinessDigestData {
+  banner: ReadinessResult["banner"];
+  blockers: ReadinessRow[];
+  score: number;
+  rawScore: number;
+  grade: Grade;
+  warns: ReadinessRow[];
+  unverified: ReadinessRow[];
+  mcp: ReadinessResult["mcp"];
+  firstCommand: string | null;
+  runtimeEvidence?: RuntimeEvidenceResult;
+  policyDelivery?: PolicyDeliveryReport;
+}
+
+const runtimeEvaluation = new WeakMap<PlanContext, Promise<RuntimeEvidenceResult>>();
+
+/** Start a fresh explicit observation read for one command planning cycle. */
+export function resetRuntimeEvidenceEvaluation(ctx: PlanContext): void {
+  runtimeEvaluation.delete(ctx);
+}
+
+export async function runtimeEvidenceForContext(
+  ctx: PlanContext,
+): Promise<RuntimeEvidenceResult | undefined> {
+  if (ctx.options.runtimeEvidence === undefined) return undefined;
+  let pending = runtimeEvaluation.get(ctx);
+  if (!pending) {
+    pending = evaluateOpenCodeRuntimeEvidence({
+      root: ctx.root,
+      evidencePath: ctx.options.runtimeEvidence,
+      now: new Date().toISOString(),
+      platform: ctx.host.platform,
+      targetCli: ctx.options.cli,
+      run: ctx.run,
+    });
+    runtimeEvaluation.set(ctx, pending);
+  }
+  return pending;
+}
+
+/** Shared JSON shape for `ready`, report terminal output and the v9 readiness panel. */
+export function readinessData(
+  r: ReadinessResult,
+  evidence?: RuntimeEvidenceResult,
+): ReadinessDigestData {
+  return {
+    ...(r.policyDelivery ? { policyDelivery: r.policyDelivery } : {}),
+    banner: r.banner,
+    blockers: r.blockers,
+    score: r.score,
+    rawScore: r.rawScore,
+    grade: r.grade,
+    warns: r.warns,
+    unverified: r.unverified,
+    mcp: r.mcp,
+    firstCommand: r.firstCommand,
+    ...(evidence ? { runtimeEvidence: evidence } : {}),
+  };
 }
 
 const SCORE_CAP_WITH_BLOCKER = 69;
@@ -241,7 +313,11 @@ async function classifySecretFindings(ctx: PlanContext, gitOk: boolean): Promise
  * severity + dimension so the composer can split them into blockers (failing gates)
  * and scored warns. `skip` verdicts stay in the list but are dropped by the composer.
  */
-async function buildChecks(ctx: PlanContext): Promise<ReadinessCheck[]> {
+async function buildChecks(ctx: PlanContext): Promise<{
+  checks: ReadinessCheck[];
+  mcp: ReadinessResult["mcp"];
+  unverified: ReadinessRow[];
+}> {
   const { root, contextDir } = ctx;
   const posture = postureFromContext(ctx);
   const out: ReadinessCheck[] = [];
@@ -438,22 +514,51 @@ async function buildChecks(ctx: PlanContext): Promise<ReadinessCheck[]> {
     cmd: "aih guardrails --apply",
   });
 
-  // Third-party MCP egress unvetted / npx MCP can't launch. The launch failure is a
-  // conditional GATE (only when the repo declares an npx MCP — mcp-probe's `mcp.blocked`);
-  // not-applicable ⇒ `skip`.
-  const mcp =
-    (await healCheck(mcpStep, ctx, shared, "mcp.blocked")) ??
-    (await firstHealCheck(mcpStep, ctx, shared));
-  out.push({
-    id: "mcp-launches",
-    title: "Declared npx MCP servers can launch",
-    severity: "gate",
-    dimension: "harness-wiring",
-    verdict: mcp?.verdict === "fail" ? "fail" : "skip",
-    cmd: "aih heal --scope mcp",
-  });
+  // Launcher availability is a prerequisite, never native execution evidence.
+  // Keep unknowns outside scoring, and fail closed for explicitly required,
+  // enabled servers belonging to a selected client.
+  const { servers, issues } = await assessMcpReadiness(ctx, shared);
+  const unverified: ReadinessRow[] = [];
+  for (const server of servers) {
+    // Retain other clients' declarations in the inventory without grading them
+    // as requirements of the selected workflow.
+    if (!server.selected) continue;
+    const row: ReadinessRow = {
+      id: `mcp:${server.targetCli}:${server.configPath}:${server.name}`,
+      title: `${server.targetCli} MCP ${server.name}: ${server.state} — ${server.detail}`,
+      cmd: server.nextStep,
+      dimension: "harness-wiring",
+    };
+    if (server.state !== "disabled") unverified.push(row);
+    const required = server.required === "required";
+    out.push({
+      ...row,
+      severity: required ? "gate" : "warn",
+      verdict:
+        server.state === "disabled"
+          ? "skip"
+          : required || server.state === "unavailable"
+            ? "fail"
+            : "skip",
+    });
+  }
+  for (const issue of issues) {
+    if (!issue.selected) continue;
+    const row: ReadinessRow = {
+      id: `mcp-config:${issue.targetCli}:${issue.configPath}`,
+      title: `${issue.targetCli} MCP ${issue.configPath}: ${issue.check.detail}`,
+      cmd: issue.nextStep,
+      dimension: "harness-wiring",
+    };
+    unverified.push(row);
+    out.push({
+      ...row,
+      severity: "gate",
+      verdict: issue.check.verdict,
+    });
+  }
 
-  return out;
+  return { checks: out, mcp: { servers, issues }, unverified };
 }
 
 /**
@@ -479,7 +584,27 @@ function dimensionOf(name: Dimension, checks: ReadinessCheck[]): DimensionResult
  * (the exit-code probe), so both agree without double-computing.
  */
 export async function computeReadiness(ctx: PlanContext): Promise<ReadinessResult> {
-  const checks = await buildChecks(ctx);
+  const { checks, mcp, unverified } = await buildChecks(ctx);
+  const policyDelivery = await inspectPolicyDelivery(ctx);
+  if (policyDelivery?.blocking) {
+    checks.push({
+      id: "policy-delivery",
+      title:
+        "Selected policy or required content delivery is blocked; inspect authority, source and owned files",
+      severity: "gate",
+      dimension: "harness-wiring",
+      verdict: "fail",
+      cmd: policyDelivery.nextStep,
+    });
+  }
+  if (policyDelivery?.nativeLoading === "unverified") {
+    unverified.push({
+      id: "policy-native-loading",
+      title: "Required practice guidance needs a fresh native-session loading check",
+      dimension: "harness-wiring",
+      cmd: policyDelivery.nextStep,
+    });
+  }
 
   const blockers: ReadinessRow[] = checks
     .filter((c) => c.severity === "gate" && c.verdict === "fail")
@@ -501,14 +626,26 @@ export async function computeReadiness(ctx: PlanContext): Promise<ReadinessResul
 
   const banner: ReadinessResult["banner"] = hasBlocker
     ? "NOT READY"
-    : score >= READY_THRESHOLD
+    : score >= READY_THRESHOLD && unverified.length === 0
       ? "READY"
       : "READY, WITH GAPS";
 
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   const firstCommand = stack.startCommand ?? stack.testRunner ?? null;
 
-  return { banner, blockers, warns, score, rawScore, grade, dims, firstCommand };
+  return {
+    banner,
+    blockers,
+    warns,
+    unverified,
+    mcp,
+    score,
+    rawScore,
+    grade,
+    dims,
+    firstCommand,
+    ...(policyDelivery ? { policyDelivery } : {}),
+  };
 }
 
 /** Failing gates ⇒ blockers; failing warns ⇒ score dings. `skip` never counts. */
@@ -518,38 +655,81 @@ export function readinessDigest(ctx: PlanContext): DigestAction {
     describe: "Developer readiness",
     run: async () => {
       const r = await computeReadiness(ctx);
-      const data = {
-        banner: r.banner,
-        blockers: r.blockers,
-        score: r.score,
-        rawScore: r.rawScore,
-        grade: r.grade,
-        warns: r.warns,
-        firstCommand: r.firstCommand,
+      const evidence = await runtimeEvidenceForContext(ctx);
+      return {
+        text: renderReadinessBody(r, evidence),
+        data: readinessData(r, evidence),
       };
-      return { text: renderReadinessBody(r), data };
     },
   };
 }
 
+/** Separate report action so terminal and JSON callers can consume the observation directly. */
+export function runtimeEvidenceDigest(ctx: PlanContext): DigestAction | undefined {
+  if (ctx.options.runtimeEvidence === undefined) return undefined;
+  return {
+    kind: "digest",
+    describe: "OpenCode runtime observation",
+    run: async () => {
+      const evidence = await runtimeEvidenceForContext(ctx);
+      if (!evidence) throw new Error("runtime evidence was not requested");
+      return { text: renderRuntimeEvidence(evidence), data: evidence };
+    },
+  };
+}
+
+/** Bounded, explicit rendering of the one fixed native observation. */
+export function renderRuntimeEvidence(evidence: RuntimeEvidenceResult): string {
+  const operation = evidence.operation
+    ? `${evidence.operation.server} / ${evidence.operation.tool}`
+    : "unavailable";
+  return lines(
+    `local unsigned observation (OpenCode) — ${evidence.recordState}`,
+    "This fixed operation is shown beside preflight only; it does not prove policy authority, arbitrary MCP tools, model/authentication, paid usage, or a vendor sandbox.",
+    `  observed ${evidence.observedAt ?? "unavailable"}; expires ${evidence.expiresAt ?? "unavailable"}`,
+    `  fixed ${operation}`,
+    `  supported ${evidence.supported}; discovered ${evidence.discovered}; exercised ${evidence.exercised}; restart ${evidence.restart}; enforcement ${evidence.enforcement}`,
+    ...evidence.restrictions.map(
+      (restriction) => `  ${restriction.boundary} / ${restriction.id}: ${restriction.status}`,
+    ),
+    ...(evidence.reasons.length > 0
+      ? ["  reasons:", ...evidence.reasons.map((reason) => `    - ${reason}`)]
+      : []),
+  );
+}
+
 /** Terse, deterministic human summary: banner, blockers, per-dimension line, warn count. */
-export function renderReadinessBody(r: ReadinessResult): string {
-  const { banner, blockers, warns, dims, score, grade } = r;
+export function renderReadinessBody(r: ReadinessResult, evidence?: RuntimeEvidenceResult): string {
+  const { banner, blockers, warns, unverified, mcp, dims, score, grade } = r;
   const mark = (s: number): string => (s >= READY_THRESHOLD ? "✓" : s >= 50 ? "~" : "·");
   return lines(
     `${banner} — ${score}/100 (${grade})`,
+    "Host/configuration preflight for selected clients; native tool operations, sandbox enforcement and the first command are not verified.",
     "",
     ...(blockers.length > 0
       ? remediationBlock(
-          `  ${blockers.length} blocker${blockers.length === 1 ? "" : "s"} — must fix before an agent can work:`,
+          `  ${blockers.length} blocker${blockers.length === 1 ? "" : "s"} — resolve before accepting readiness:`,
           blockers.map((b) => ({ command: b.cmd, label: b.title })),
         )
-      : ["  No blockers — nothing stops an agent from working here."]),
+      : ["  No blockers found by the preflight checks."]),
     "",
     ...dims.map((d) => `  ${mark(d.score)} ${d.name.padEnd(16)} ${d.score}/100`),
     "",
     warns.length > 0
       ? `  ${warns.length} warn${warns.length === 1 ? "" : "s"} dinging the score (see the dimension lines above).`
-      : "  No warnings — every applicable check passes.",
+      : "  No failed warning checks.",
+    ...(unverified.length > 0
+      ? ["", `  ${unverified.length} selected capability observation(s) remain unverified.`]
+      : []),
+    ...mcp.servers.flatMap((server) => [
+      `  ${server.targetCli} / ${server.name} (${server.configPath}; ${server.selected ? "selected" : "unselected"}; ${server.required}): ${server.state} — ${server.detail}`,
+      `    Next: ${server.nextStep}`,
+    ]),
+    ...mcp.issues.flatMap((issue) => [
+      `  ${issue.targetCli} / ${issue.configPath}: ${issue.check.detail}`,
+      `    Next: ${issue.nextStep}`,
+    ]),
+    ...(r.policyDelivery ? ["", renderPolicyDelivery(r.policyDelivery)] : []),
+    ...(evidence ? ["", renderRuntimeEvidence(evidence)] : []),
   );
 }

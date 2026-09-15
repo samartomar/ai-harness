@@ -643,18 +643,11 @@ function isEccContentDestination(
  * at a call site keeps this the single answer to "where does this source land
  * for this target", which is what the governed classifier enforces against.
  *
- * One target has NO generic rows at all. OpenCode's only framework adapter is
- * home-scoped (`TARGET_LOCATIONS` in `reconcile.ts` records it as
- * `{ scope: "home", rootSegment: ".opencode" }`) and the pinned install-preview
- * artifact carries, for OpenCode, home config merges and nothing project-scoped
- * — so no evidence says where a per-component OpenCode project layout would go.
- * The four generic rows are therefore suppressed for it and OpenCode ships the
- * shared target-independent rows only. Deriving `.opencode/agents/` from the
- * parameterized root would invent a directory nothing is known to read, and
- * this function is the single answer to where a source lands: an invented
- * answer here becomes an invented answer in the receipt, in the classifier, and
- * in what uninstall then removes. A small target with real, named refusals is
- * the honest shape; a full-looking one built on a guess is not.
+ * OpenCode consumes project skills through the cross-tool `.agents/skills`
+ * convention. Its own `.opencode` framework adapter is home-scoped, so agents,
+ * commands and rules still have no project destination here. A repository that
+ * carries both skill layouts uses the `.agents` copy; `skills/` is only the
+ * source fallback for catalogs that do not carry that shared copy.
  */
 export function eccContentDestinationMapping(
   source: string,
@@ -673,7 +666,12 @@ export function eccContentDestinationMapping(
       ? ([[".claude/commands/", ".claude/commands/"]] as Array<[string, string]>)
       : []),
     ...(target === "opencode"
-      ? []
+      ? ([
+          // OpenCode consumes the cross-tool `.agents/skills` convention. Prefer
+          // an upstream `.agents/skills` copy when present; `skills/` is the
+          // source fallback handled by the target adapter.
+          ["skills/", ".agents/skills/"],
+        ] as Array<[string, string]>)
       : ([
           ["agents/", `${targetRoot}/agents/`],
           ["skills/", `${targetRoot}/skills/`],

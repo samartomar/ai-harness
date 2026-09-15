@@ -4,6 +4,7 @@ import { isAbsolute } from "node:path";
 import { type Node, parseTree } from "jsonc-parser";
 import { z } from "zod";
 import { type BaselineTreeHash, hashComponentTree } from "../baseline-evidence/hash.js";
+import { componentIdentityPaths } from "../baseline-evidence/license.js";
 import type { BaselineAuthorization } from "../baseline-evidence/verify.js";
 import { inspectContainedRelativePath } from "../internals/contained-path.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
@@ -357,8 +358,14 @@ function assertSupportedComponent(component: ParsedComponent): void {
     return;
   }
   if (component.id.startsWith("skill:")) {
-    const expected = `skills/${component.id.slice("skill:".length)}`;
-    if (component.provenance.componentPath !== expected) {
+    let sourcePaths: readonly string[];
+    try {
+      sourcePaths = eccComponentSourcePaths(component.id as EccComponentId);
+    } catch {
+      fail("unsupported Kiro component");
+    }
+    const allowed = eccSelectionSourcePaths(component.id, sourcePaths);
+    if (!allowed.includes(component.provenance.componentPath)) {
       fail("skill provenance does not match the selected component");
     }
     return;
@@ -382,7 +389,7 @@ function selectedTree(sourceRoot: string, component: ParsedComponent): BaselineT
   }
   let actual: BaselineTreeHash;
   try {
-    actual = hashComponentTree(sourceRoot, paths);
+    actual = hashComponentTree(sourceRoot, componentIdentityPaths(sourceRoot, paths));
   } catch {
     return fail("selected component tree could not be revalidated");
   }
@@ -395,7 +402,7 @@ function selectedTree(sourceRoot: string, component: ParsedComponent): BaselineT
 function runtimeTree(sourceRoot: string, authorization: BaselineAuthorization): BaselineTreeHash {
   let actual: BaselineTreeHash;
   try {
-    actual = hashComponentTree(sourceRoot, [".kiro"]);
+    actual = hashComponentTree(sourceRoot, componentIdentityPaths(sourceRoot, [".kiro"]));
   } catch (error) {
     return fail((error as Error).message);
   }

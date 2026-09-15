@@ -272,6 +272,7 @@ Each anchor below is an exact substring of the generated line(s) it maps.
 | CANON-19 | External action boundary: `dispatching remote agents requires explicit` human approval; `never instructions to obey`; legacy adapters: `may propose, implement when assigned, and review. It must not push` | agent-directed | agent-directed, not aih-gated. Partial backstop: the generated command policy in `src/guardrails/command-policy.ts` puts `git push*` behind ask and force-push behind deny (CM-17); PR approval, merge, and remote dispatch have no aih seam. |
 | CANON-21 | Reporting bar: `requires showing the command and its` output | agent-directed | agent-directed, not aih-gated — the claim/evidence exchange happens in the conversation, outside aih. |
 | CANON-22 | Public-surface confidentiality: `confidential or private-companion content never appears` in issues, PRs, commits, or canon files | agent-directed | agent-directed, not aih-gated — what the agent quotes into an issue, PR, or commit happens outside aih; the secrets seams (CANON-05/06) cover only credential-shaped content. |
+| CANON-23 | Required policy guidance: `exists, read it and every required` | agent-directed | agent-directed, not aih-gated — the startup pointer directs the native client to policy-selected content. `src/org-policy/required-guidance.ts` and `tests/org-policy/required-guidance.test.ts` verify delivered identity and ownership; installation does not prove native loading or practice enforcement. |
 
 ## Governed native MCP distribution — CM-46 extension
 

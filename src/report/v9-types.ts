@@ -1,3 +1,6 @@
+import type { RuntimeEvidenceResult } from "../heal/opencode-runtime-evidence.js";
+import type { PolicyDeliveryReport } from "../org-policy/policy-delivery-report.js";
+
 /**
  * View-model for the **local-report v9** dashboard (the "developer console" skin,
  * opt-in via `--v9`). These types describe the PURE DATA the renderer binds to —
@@ -58,7 +61,7 @@ export interface V9Hero {
 }
 
 /**
- * Developer-readiness verdict — the single "can I start?" gate. Sourced from the same
+ * Developer-readiness preflight. Sourced from the same
  * `computeReadiness` the `aih ready` command uses (via the "Developer readiness" digest),
  * so the panel never recomputes readiness differently. Cross-links to the action board
  * for the full remediation list rather than duplicating it.
@@ -69,6 +72,30 @@ export interface V9Ready {
   grade: string;
   /** Failing gates (blockers) — id, title, and the exact fix command. */
   blockers: Array<{ id: string; title: string; cmd: string }>;
+  /** Capabilities that configuration inspection cannot prove at runtime. */
+  unverified?: Array<{ id: string; title: string; cmd: string }>;
+  /** Explicitly evaluated bounded observations; never part of the preflight score. */
+  runtimeEvidence?: RuntimeEvidenceResult;
+  policyDelivery?: PolicyDeliveryReport;
+  mcp?: {
+    servers: Array<{
+      targetCli: string;
+      configPath: string;
+      name: string;
+      selected: boolean;
+      required: string;
+      state: string;
+      detail: string;
+      nextStep: string;
+    }>;
+    issues: Array<{
+      targetCli: string;
+      configPath: string;
+      selected: boolean;
+      detail: string;
+      nextStep: string;
+    }>;
+  };
 }
 
 /** One ranked action on the ★ board. */

@@ -1166,9 +1166,9 @@ const GovernedPolicyGovernanceSchema = z
     /** Report-only external framework curation; never feeds an installer or projector. */
     externalCuration: z.array(ExternalFrameworkCurationSchema).default([]),
     /**
-     * Requested intent over externally-owned inventory, recorded before its
-     * audit evidence exists. Recording is not enforcement and never feeds an
-     * installer or projector.
+     * Requested intent over externally-owned inventory. Recording grants no
+     * permission: governed lifecycle consumers materialize a selection only
+     * after the applicable policy and source-evidence checks succeed.
      */
     externalSelections: z.array(ExternalFrameworkSelectionSchema).default([]),
     /**

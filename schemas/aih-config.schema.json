@@ -966,6 +966,79 @@
         "source"
       ],
       "additionalProperties": false
+    },
+    "policyBinding": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "type": "number",
+          "const": 1
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "active",
+            "revoked"
+          ]
+        },
+        "projectId": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,63}$"
+        },
+        "rootSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "source": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          "required": [
+            "path",
+            "sha256"
+          ],
+          "additionalProperties": false
+        },
+        "targets": {
+          "minItems": 1,
+          "maxItems": 11,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "claude",
+              "codex",
+              "cursor",
+              "antigravity",
+              "gemini",
+              "copilot",
+              "windsurf",
+              "opencode",
+              "zed",
+              "kimi",
+              "kiro"
+            ]
+          }
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "state",
+        "projectId",
+        "rootSha256",
+        "source",
+        "targets"
+      ],
+      "additionalProperties": false
     }
   },
   "required": [

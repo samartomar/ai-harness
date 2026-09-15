@@ -62,6 +62,7 @@ import {
   verifiedPolicyFileAuthorityPolicyV1,
   verifyPolicyAuthorityReceipt,
 } from "./authority.js";
+import { projectCommandPermissions } from "./command-permissions.js";
 import { composeOrgPolicy } from "./compose.js";
 import { planEccHookControlsProjection } from "./ecc-hook-controls-projection.js";
 import {
@@ -2030,7 +2031,9 @@ function projectionActionsFromRuntime(
       }
     }
   }
-  return coalesceMcpProjectionMarkerActions(actions);
+  return coalesceMcpProjectionMarkerActions(
+    projectCommandPermissions(ctx, policy, targets, actions),
+  );
 }
 
 export interface VerifiedOrgPolicyProjection {

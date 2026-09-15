@@ -24,6 +24,10 @@ import type {
   EccMaterializationFileInput,
 } from "./materialization-types.js";
 import { eccComponentSourcePaths, eccContentDestinationMapping } from "./materialize.js";
+import type {
+  EccRuntimeAdapterCompatibilityV1,
+  EccRuntimeAdapterOutcomeV1,
+} from "./runtime-adapter-compatibility.js";
 
 /**
  * F4: the target adapter for governed materialization, parameterized by target.
@@ -216,6 +220,8 @@ export interface EccTargetMaterializationRequest {
    * component metadata.
    */
   componentPathsById?: ReadonlyMap<string, readonly string[]>;
+  /** Exact per-file destinations sealed by a historical runtime descriptor. */
+  historicalAdapterCompatibility?: EccRuntimeAdapterCompatibilityV1;
 }
 
 export interface EccTargetMaterializationResult {
@@ -386,6 +392,7 @@ function componentFiles(
   id: EccComponentId,
   target: EccMaterializationTarget,
   componentPathsById?: ReadonlyMap<string, readonly string[]>,
+  historicalOutcomes?: ReadonlyMap<string, EccRuntimeAdapterOutcomeV1>,
 ): EccMaterializationFileInput[] {
   let declared: string[];
   try {
@@ -401,9 +408,41 @@ function componentFiles(
   } catch (error) {
     throw new TargetRefusal("no-install-descriptor", (error as Error).message);
   }
+  if (
+    target === "opencode" &&
+    id.startsWith("skill:") &&
+    declared.some((path) => path.startsWith(".agents/skills/"))
+  ) {
+    declared = declared.filter((path) => !path.startsWith("skills/"));
+  }
   const files: EccMaterializationFileInput[] = [];
+  let firstHistoricalRefusal: string | undefined;
   for (const path of declared) {
     for (const file of sourceFiles(sourceRoot, path)) {
+      const historical = historicalOutcomes?.get(`${id}\0${file.source}\0${target}`);
+      if (historicalOutcomes !== undefined) {
+        if (historical === undefined) {
+          throw new TargetRefusal(
+            "no-install-descriptor",
+            `sealed historical adapter carries no ${TARGET_NAME[target]} outcome for ${displaySafe(file.source)}`,
+          );
+        }
+        if (historical.state === "refused") {
+          firstHistoricalRefusal ??= historical.reason;
+          continue;
+        }
+        try {
+          files.push({
+            path: assertOwnedRelativePath(historical.relative),
+            kind: "copy-file",
+            contents: sourceBytes(file),
+          });
+        } catch (error) {
+          if (error instanceof TargetRefusal) throw error;
+          throw new TargetRefusal("unowned-destination", (error as Error).message);
+        }
+        continue;
+      }
       // Destination first: a source this target does not own refuses without
       // its bytes ever being read.
       files.push({
@@ -412,6 +451,12 @@ function componentFiles(
         contents: sourceBytes(file),
       });
     }
+  }
+  if (firstHistoricalRefusal !== undefined) {
+    throw new TargetRefusal(
+      "unsupported-component",
+      `sealed historical adapter refused ${displaySafe(id)} for ${TARGET_NAME[target]}: ${displaySafe(firstHistoricalRefusal)}`,
+    );
   }
   if (files.length === 0) {
     throw new TargetRefusal(
@@ -466,8 +511,20 @@ export function resolveEccTargetMaterialization(
   const sourceRoot = assertComponentSourceRoot(request.sourceRoot);
   const components: EccMaterializationComponentInput[] = [];
   const refused: EccTargetedRefusal[] = [];
-  const kiroRequested = request.targets.includes("kiro");
-  const genericTargets = request.targets.filter((target) => target !== "kiro");
+  const historicalOutcomes =
+    request.historicalAdapterCompatibility === undefined
+      ? undefined
+      : new Map(
+          request.historicalAdapterCompatibility.outcomes.map((outcome) => [
+            `${outcome.componentId}\0${outcome.path}\0${outcome.target}`,
+            outcome,
+          ]),
+        );
+  const kiroRequested = historicalOutcomes === undefined && request.targets.includes("kiro");
+  const genericTargets =
+    historicalOutcomes === undefined
+      ? request.targets.filter((target) => target !== "kiro")
+      : request.targets;
   const kiroCandidates = request.components.filter(
     (component) =>
       component.id === "baseline:rules" ||
@@ -501,23 +558,32 @@ export function resolveEccTargetMaterialization(
   }
   for (const component of request.components) {
     const union = new Map<string, EccMaterializationFileInput>();
+    const deliveredTargets: EccMaterializationTarget[] = [];
     for (const target of genericTargets) {
       try {
-        for (const file of componentFiles(
+        const mapped = componentFiles(
           sourceRoot,
           component.id,
           target,
           request.componentPathsById,
-        )) {
+          historicalOutcomes,
+        );
+        for (const file of mapped) {
           const identity = destinationIdentity(file.path);
           if (!union.has(identity)) union.set(identity, file);
         }
+        deliveredTargets.push(target);
       } catch (error) {
         if (!(error instanceof TargetRefusal)) throw error;
         refused.push({ target, id: component.id, reason: error.reason, detail: error.message });
       }
     }
-    if (union.size > 0) components.push({ ...component, files: [...union.values()] });
+    if (union.size > 0)
+      components.push({
+        ...component,
+        targets: deliveredTargets,
+        files: [...union.values()],
+      });
   }
 
   if (kiroRequested) {
@@ -544,12 +610,17 @@ export function resolveEccTargetMaterialization(
     for (const component of kiro.components) {
       const existing = byId.get(component.id);
       if (existing === undefined) {
-        components.push(component);
-        byId.set(component.id, component);
+        const withTarget = { ...component, targets: ["kiro" as const] };
+        components.push(withTarget);
+        byId.set(component.id, withTarget);
         continue;
       }
       const index = components.indexOf(existing);
-      const combined = { ...existing, files: [...existing.files, ...component.files] };
+      const combined = {
+        ...existing,
+        targets: [...(existing.targets ?? []), "kiro" as const],
+        files: [...existing.files, ...component.files],
+      };
       components[index] = combined;
       byId.set(component.id, combined);
     }

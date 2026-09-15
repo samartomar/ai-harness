@@ -1,6 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 import { classifyCanon, isAdoptable } from "../adopt/classify.js";
-import { aihConfigJson, readAihConfigBaseline } from "../config/marker.js";
+import { aihConfigJson, readAihConfigBaseline, readPolicyBinding } from "../config/marker.js";
+import type { EccCommandDeps } from "../ecc/pipeline.js";
 import { AihError } from "../errors.js";
 import {
   BASELINE_OPTION,
@@ -15,6 +16,7 @@ import {
   resolveTargets,
   unmanagedBootloaders,
 } from "../internals/cli-detect.js";
+import { executePlan, type PlanResult } from "../internals/execute.js";
 import { deepMerge, isPlainObject } from "../internals/merge.js";
 import type {
   Action,
@@ -31,8 +33,15 @@ import {
   KIRO_HOOK_RUNTIME_OPTION,
   kiroHookRuntime,
 } from "../kiro/runtime.js";
+import {
+  assertPolicyBindingCurrent,
+  policyBindingFileAssertion,
+  withPolicyBindingFileAssertion,
+} from "../org-policy/binding.js";
+import { assertCommandPermissionPolicyPresent } from "../org-policy/command-permissions.js";
 import { verifiedOrgPolicyProjection, verifiedOrgPolicySource } from "../org-policy/project.js";
 import { governanceOwnsAihSurfaces, readOrgPolicy } from "../org-policy/schema.js";
+import { combineProjectResults, executePolicyProjectCommand } from "../org-policy/validate.js";
 import { sidecarInitActions } from "../truth/index.js";
 import { INIT_PHASES } from "./phases.js";
 import { initV3Actions } from "./v3.js";
@@ -207,6 +216,8 @@ function retainInitCommitLock(
  * produce, so the harness's "no faked provisioning" guarantee is preserved.
  */
 async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
+  const bindingAssertion = policyBindingFileAssertion(ctx.root);
+  assertPolicyBindingCurrent(ctx.root, ctx.env, ctx.targets);
   explicitKiroHookRuntime(ctx);
   // Brownfield guard FIRST: never bulldoze an existing hand-built canon — redirect
   // to `aih adopt` and emit nothing else, so a dry-run or `--apply` both stop here.
@@ -224,6 +235,7 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   // Resolve protected policy and authority before target selection so the CLI
   // sanction gate and every later effect use the same custodied policy bytes.
   const configuredPolicy = readOrgPolicy(ctx.root, ctx.env);
+  assertCommandPermissionPolicyPresent(ctx.root, configuredPolicy);
   const preparedPolicy =
     configuredPolicy === undefined
       ? undefined
@@ -238,6 +250,7 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   // `.cursor/*`. Without this single resolution, every phase that calls
   // `resolveTargets` would re-prompt under `--detect`.
   const resolution = await resolveTargets(ctx, policy);
+  assertPolicyBindingCurrent(ctx.root, ctx.env, resolution.clis);
   const baseline = resolveBaselineSource(ctx.options, readAihConfigBaseline(ctx.root));
   const baseCtx: PlanContext = {
     ...ctx,
@@ -291,6 +304,9 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
 
   for (const phase of INIT_PHASES) {
     if (phase.command.name === "superpowers" && baseline.id !== "ecc") continue;
+    // A governed selection is the requirement set. Routine bootstrap must not
+    // restore an unrelated framework or optional skills the administrator omitted.
+    if (phase.command.name === "superpowers" && governanceOwnsAihSurfaces(policy)) continue;
     if (
       governanceOwnsAihSurfaces(policy) &&
       (phase.command.name === "mcp" || phase.command.name === "usage")
@@ -338,7 +354,14 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   // ECC is not a phase: its installer runs the network (`npx ecc-install` / a git
   // checkout), so `aih init` points at the separate gated step instead of running
   // it. This single doc is the only action init adds beyond the phase headers.
-  actions.push(baselineInstallDoc(baseline));
+  actions.push(
+    governanceOwnsAihSurfaces(policy)
+      ? doc(
+          "deliver selected organization content",
+          "Run `aih policy project --apply` to reconcile the verified policy selection and its owned components. Ordinary baseline installation cannot replace governed content.",
+        )
+      : baselineInstallDoc(baseline),
+  );
 
   // Persist the bootstrap intent at the repo ROOT (committed — NOT under the
   // git-ignored `.aih/`, or it would be lost on clone) so re-runs and `aih doctor`
@@ -414,12 +437,15 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     }
   }
 
-  return {
-    ...plan("init", ...deduped),
-    ...(authorityAssertions === undefined ? {} : { fileAssertions: authorityAssertions }),
-    ...(authorityCommitNotAfter === undefined ? {} : { commitNotAfter: authorityCommitNotAfter }),
-    ...(authorityCommitLock === undefined ? {} : { commitLock: authorityCommitLock }),
-  };
+  return withPolicyBindingFileAssertion(
+    {
+      ...plan("init", ...deduped),
+      ...(authorityAssertions === undefined ? {} : { fileAssertions: authorityAssertions }),
+      ...(authorityCommitNotAfter === undefined ? {} : { commitNotAfter: authorityCommitNotAfter }),
+      ...(authorityCommitLock === undefined ? {} : { commitLock: authorityCommitLock }),
+    },
+    bindingAssertion,
+  );
 }
 
 function baselineInstallDoc(baseline: ReturnType<typeof resolveBaselineSource>): Action {
@@ -448,11 +474,36 @@ function baselineInstallDoc(baseline: ReturnType<typeof resolveBaselineSource>):
   );
 }
 
+/** Bound setup uses the same public delivery pipeline before refreshing bootloaders. */
+export async function executeInitCommand(
+  ctx: PlanContext,
+  deps: EccCommandDeps = {},
+): Promise<PlanResult> {
+  const initialPlan = await initPlan(ctx);
+  if (!readPolicyBinding(ctx.root)) return executePlan(initialPlan, ctx);
+  const delivered = await executePolicyProjectCommand(ctx, deps);
+  if (
+    delivered.execs.some((entry) => entry.ran && entry.ok === false) ||
+    (delivered.report && !delivered.report.ok)
+  ) {
+    return { ...delivered, capability: "init" };
+  }
+  // Delivery may change shared client files. Replan against those exact bytes
+  // rather than applying stale pre-delivery assertions or restoring old entries.
+  const initialized = await executePlan(ctx.apply ? await initPlan(ctx) : initialPlan, ctx);
+  return { ...combineProjectResults(delivered, initialized), capability: "init" };
+}
+
 export const command: CommandSpec = {
   name: "init",
   summary:
     "Initialize a target repo: profile + selected baseline + bootstrap-ai + scaffold + contract + secrets + guardrails + mcp + sandbox + usage",
   options: [
+    {
+      flags: "--ecc-path <path>",
+      description:
+        "exact local ECC checkout for a bound project's governed required-content delivery",
+    },
     {
       flags: "--sidecar",
       description: "create an external sibling truth sidecar and bind it to the current commit",

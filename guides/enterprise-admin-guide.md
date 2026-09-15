@@ -1,7 +1,7 @@
 ---
 status: guide
 owner: AI-Harness maintainers
-last_verified: 2026-09-02
+last_verified: 2026-09-13
 truth_home: true
 purpose: Admin guide for governed organizations and enterprise rollout of AI-Harness.
 ---
@@ -11,6 +11,11 @@ purpose: Admin guide for governed organizations and enterprise rollout of AI-Har
 Use this guide for enterprise admins, platform owners, security owners, fleet rollout, regulated teams, and organizations that need policy, evidence, approval paths, and developer handoff. For posture mechanics, read [Postures](postures.md). For the full command map, use [Command Use Cases](command-use-cases.md). Developers consuming an admin-authored policy should read [Enterprise Developer](enterprise-developer-guide.md).
 
 This guide owns admin-side material: policy authoring, approvals, source pins, signing choices, Docker/SkillSpector preparation, bundles, and evidence packaging. It should not become the place for developer-local OAuth, API token setup, or day-to-day client usage beyond handoff requirements.
+
+Use [Project policy delivery](portable-policy-delivery.md) for the complete
+Workbench → review → project binding → required-content delivery → native
+verification → update/revocation workflow. It also defines the downstream
+required/optional content and receipt-ownership contract.
 
 ## 1. Executive Summary / Mental Model
 

@@ -1,3 +1,4 @@
+import type { Cli } from "../internals/clis.js";
 import type { EccComponentId } from "./components.js";
 import type { DestinationExpectation } from "./materialization-fs.js";
 import type {
@@ -29,6 +30,8 @@ export interface EccMaterializationComponentInput {
   authorization: InstalledComponentRegistration["authorization"];
   provenance: EccComponentProvenance;
   files: readonly EccMaterializationFileInput[];
+  /** Exact adapter-approved delivery set; absence in legacy callers is unverified. */
+  targets?: readonly Cli[];
 }
 
 export interface EccMaterializationRequest {
@@ -156,6 +159,7 @@ export interface ResolvedComponent {
   authorization: InstalledComponentRegistration["authorization"];
   provenance: EccComponentProvenance;
   files: ResolvedFile[];
+  targets?: Cli[];
 }
 
 export interface ResolvedRequest {

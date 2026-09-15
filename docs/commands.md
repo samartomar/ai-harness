@@ -65,11 +65,38 @@ probe is an advisory skip — it does not block `aih tools` or `aih ready`.
 
 ## aih ready
 
-Readiness gate — one graded, blocker-aware verdict answering "can a developer start work with an AI
-agent here, now?", composed from aih's read-only probes (runtime/TLS/PATH/core tools, per-CLI
-loadability, contract, secret scan). Diagnoses by default (non-zero when blocked); the one
+Readiness preflight — a graded, blocker-aware view of host and configuration checks
+(runtime/TLS/PATH/core tools, per-CLI loadability, contract, secret scan). Native MCP
+configuration is inventoried separately from runtime acceptance. A launcher version
+does not prove a server can initialize, authenticate or perform a tool operation.
+Diagnoses by default (non-zero when blocked); the one
 auto-fixable blocker (missing `rg`/`fd`/`jq`) installs under confirmation. Surfaces a `sec-ready`
 panel in `aih report --v9`.
+
+Configured MCP servers remain unverified, including Codex project configuration and
+offline `uvx` declarations. Unverified capabilities for selected clients prevent a
+clean `READY` banner. Other clients' project configurations remain visible without
+affecting the selected workflow's score or banner.
+An explicitly required, enabled Codex server on a selected target blocks acceptance
+while its runtime is unavailable or unverified. Explicitly optional failures remain
+warnings; an omitted requirement stays unspecified. Disabled servers remain visible.
+AIH reads registered project configuration and selected clients' registered global
+configuration; this inventory does not resolve every native override or workspace
+trust decision. Routine readiness does not start configured third-party servers or
+run the repository's first command. Follow the
+[bounded native acceptance steps](governed-mcp.md#bounded-native-acceptance)
+to record actual tool use and policy behavior separately.
+
+For the bounded OpenCode Linux fixture, `--runtime-evidence <absolute-file>`
+explicitly adds a current-material evaluation beside preflight. Select the current
+consumer with `--root` and `--cli opencode`. The optional `runtimeEvidence` JSON
+result distinguishes unavailable, invalid, stale and current records, with
+observation/expiry times, exercise, restart and specific restrictions. It never
+removes preflight blockers or verifies unrelated configured servers. The same
+option is supported by local `aih report --v9`, including its JSON output.
+Reading the record does not launch its asserted commands. See
+[OpenCode runtime observations](../guides/opencode-linux-sandbox.md#current-runtime-observations)
+for the producer, current-binding checks and scope limits.
 
 The secret gate reports the finding's LOCATION class, because the remediation differs: a
 git-tracked finding is `no-committed-secret` (rotate the credential and rewrite it out of git
@@ -689,6 +716,38 @@ build); `validate --require-signature` then
 `aih workspace add` — the vet gate still runs at consume time.
 
 ## aih policy
+
+### Project assignment and required-content delivery
+
+`aih policy bind <root> --project <id> --cli <list> --policy <file>` previews a
+durable assignment; add `--apply` after review. It records the canonical root,
+project identifier, exact selected policy path/digest and complete approved
+target set in `.aih-config.json`. Fresh AIH processes restore that selection.
+Binding is not authority, account-wide environment configuration or implicit
+policy merging. Explicit conflicting sources or targets fail closed.
+
+`aih policy rebind <root> --project <same-id> --cli <list> --policy <file> --apply`
+acknowledges reviewed policy bytes, a reviewed target change, or a new canonical
+checkout of the same project. It reruns the policy authority and target checks.
+`aih policy revoke <root> --project <same-id> --apply` retains a revoked binding
+that blocks mutation; it does not delete content or stop native processes.
+Withdraw owned content through the authorized policy before revoking it. Rebind
+with current verified authority to recover.
+
+`aih policy project <root> --apply` projects supported controls and reconciles
+selected governed ECC content. `--ecc-path <path>` supplies a local checkout
+that must still pass exact source and qualification checks. An explicitly empty
+authorized ECC selection withdraws owned content; losing policy is not an
+unrestricted installer fallback. `aih init` also accepts `--ecc-path` for a bound
+project's required-content delivery and suppresses an unselected Superpowers
+baseline under governed policy.
+
+`policy evaluate --json`, readiness and HTML reports distinguish policy and
+binding blockers, selected content, ownership drift and unverified native
+loading. Receipt-current describes recorded source/owned bytes, not a native
+session or enforced practice. The full administrator/developer lifecycle and
+downstream content ownership contract are in
+[Project policy delivery](../guides/portable-policy-delivery.md).
 
 ### Unreleased Workbench authoring core (#967)
 
@@ -1798,7 +1857,53 @@ vetted pin bump that covers the UI variant's surface.
 
 Generate a devcontainer + managed sandbox settings (egress allowlist, `failIfUnavailable`).
 
+For a bounded OpenCode Linux workflow, configure `--cli opencode` with an
+external `--policy`, `--bwrap-executable`, `--opencode-executable`,
+`--seccomp-executable`, repeatable
+non-secret `--binding NAME=value` and native `--client-arg` values. Optional
+repeatable `--hide-path` and `--read-only-path` values name existing absolute
+paths. Preview first, then use `--apply` to save the per-root launch profile.
+`aih sandbox --cli opencode --launch --apply` reloads that root's bindings for a
+fresh native process. See [repeatable OpenCode Linux
+launches](../guides/opencode-linux-sandbox.md) for setup, restart, worktree
+ownership, filesystem exposure and the separate native acceptance boundary.
+
+The Claude policy writes the egress list at `sandbox.network.allowedDomains`, alongside
+`sandbox.enabled`, `sandbox.failIfUnavailable`, and `sandbox.allowUnsandboxedCommands: false`.
+The additional `sandbox.commandPolicy` block is AIH metadata; Claude's command permission
+rules use `permissions.allow`, `permissions.ask`, and `permissions.deny`.
+
+When reapplying, AIH removes the obsolete `sandbox.allowedDomains` key only if its
+ordered value exactly matches the previous generated defaults for the detected
+stack. The write is bound to the settings bytes inspected during planning and
+refuses the migration if they change. Other legacy values remain untouched with
+a review note; AIH does not copy them into the new network allowlist. This exact
+value match is a migration heuristic, not an ownership receipt.
+
+`.claude/managed-settings.json` is a deployment artifact. Claude does not load that filename
+from the project directory as managed policy. The adopter must deploy it through a supported
+[managed settings source](https://code.claude.com/docs/en/managed-settings).
+For a session-scoped trial on a supported host, `claude --settings .claude/managed-settings.json`
+loads the file explicitly; this does not make it an administrator-managed policy.
+
+Claude's built-in Bash sandbox currently supports macOS, Linux and WSL2, with host-specific
+prerequisites. Native Windows is unsupported. The Bash sandbox also does not automatically
+confine local MCP servers; those require their own process boundary. See Claude's
+[sandbox documentation](https://code.claude.com/docs/en/sandboxing) for platform support and
+the distinction between Bash sandboxing and tool permissions. Generating this Claude policy
+does not configure sandbox enforcement for another CLI.
+
 **Verification**
+
+The command checks Docker reachability; a missing binary or unreachable daemon is reported
+as skipped. It does not start a container or prove client execution. The generated container
+has no outbound network block, and a Git worktree does not provide a security boundary.
+
+In a disposable consumer project, verify that the intended client loads the policy, completes
+an allowed command, and denies an explicitly prohibited operation without the prohibited
+effect occurring. Test an actual local MCP tool call separately from discovery, and test
+network restrictions independently from file restrictions. A successful file-denial test
+does not prove a network boundary or another client's behavior.
 
 ## aih docs-lint
 
