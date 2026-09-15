@@ -446,6 +446,13 @@ its separate MCP and hook ownership boundaries. Preview, installation and reconc
 the same consent filter. Consult-only targets provide component advice and cannot authorize
 executable or runtime recommendations.
 
+When a verified upstream plan provides a hook-consent helper, AIH applies its effective
+decision before checking operation kinds. The plan, receipt and selected modules must
+agree; declined consent excludes `hooks-runtime`. Older plans without that helper retain
+their existing behavior. Claude plans that still require `update-claude-settings` are
+refused before installation because that operation's managed-hook ownership lifecycle
+is not supported. This compatibility handling does not change the qualified ECC pin.
+
 Reinstall refuses before changes when a narrower consent selection would leave previously
 installed runtime content behind. It preserves the existing files and ownership state for
 review and cleanup before retrying; reinstall does not silently withdraw that integration.
