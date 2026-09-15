@@ -33,6 +33,10 @@ export const SCANNER_BASELINE_PUBLICATION_PUBLISHERS_V1 = Object.freeze([
     ...SCANNER_BASELINE_PUBLICATION_PUBLISHER_V1,
     commit: "2597b1ca71ba1509a78b92447abb5980b968e670",
   }),
+  Object.freeze({
+    ...SCANNER_BASELINE_PUBLICATION_PUBLISHER_V1,
+    commit: "981d50f19ec8923974597de28c4c7b7acf684ded",
+  }),
 ]);
 
 /** Select policy, never trust, from an immutable locator; signature verification still follows. */
@@ -44,7 +48,7 @@ export function scannerBaselinePublicationPublisherForLocatorV1(
     const prefix = `https://github.com/${publisher.repository}/releases/download/baseline-v1-${publisher.commit}-`;
     return (
       locator.startsWith(prefix) &&
-      /^[0-9a-f]{64}\/publication\.json$/.test(locator.slice(prefix.length))
+      /^[0-9a-f]{64}(?:-r[0-9]{8})?\/publication\.json$/u.test(locator.slice(prefix.length))
     );
   });
 }

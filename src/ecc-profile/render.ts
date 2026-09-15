@@ -386,6 +386,36 @@ function codexAgentsConfig(roles: readonly { id: string; description: string }[]
   return `${lines.join("\n")}\n`;
 }
 
+/** Render one evidence-passed upstream Markdown role for Codex's native agent contract. */
+export function renderGovernedCodexRole(
+  id: string,
+  sourcePath: string,
+  contents: string,
+): { description: string; contents: string } {
+  const normalized = normalizeText(new TextEncoder().encode(contents), sourcePath);
+  const parsed = parseMarkdownSource(normalized, sourcePath, id);
+  return {
+    description: normalizeCodexRoleDescription(id, parsed.description),
+    contents: codexRoleConfig(normalizeCodexRoleBody(id, parsed.body)),
+  };
+}
+
+/** Render one qualified upstream command as a Codex-discovered workflow skill. */
+export function renderGovernedCodexWorkflow(
+  id: string,
+  sourcePath: string,
+  contents: string,
+): string {
+  const normalized = normalizeText(new TextEncoder().encode(contents), sourcePath);
+  const parsed = parseMarkdownSource(normalized, sourcePath);
+  const workflowId = `/${id}`;
+  return codexWorkflowSkill(
+    workflowId,
+    normalizeCodexWorkflowDescription(parsed.description, [workflowId]),
+    normalizeCodexWorkflowBody(parsed.body, [workflowId]),
+  );
+}
+
 function assertProjectionFiles(files: RenderedProjectionFile[]): RenderedProjectionFile[] {
   const ordered = [...files].sort((left, right) =>
     left.destination < right.destination ? -1 : left.destination > right.destination ? 1 : 0,

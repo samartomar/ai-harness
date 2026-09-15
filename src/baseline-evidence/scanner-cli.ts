@@ -3,6 +3,7 @@ import { type Dirent, mkdirSync, readdirSync, readFileSync, writeFileSync } from
 import { join, resolve } from "node:path";
 import { canonicalBaselineVetRequestV1Bytes } from "@aihq/scan";
 import { z } from "zod";
+import { parseStrictJsonObjectV1 } from "../contract/strict-json-v1.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
 import { hermeticGitEnv } from "../internals/git-env.js";
 import { generateAuthorizedEccInstallPreview } from "./ecc-preview-boundary.js";
@@ -12,8 +13,9 @@ import {
   consumeScannerBaselinePublicationsV1,
   consumeScannerBaselinePublicationV1,
   SCANNER_BASELINE_PUBLICATION_MAX_AGE_SECONDS_V1,
-  SCANNER_BASELINE_PUBLICATION_PUBLISHER_V1,
+  type ScannerBaselinePublicationPublisherV1,
 } from "./scanner-publication.js";
+import { scannerBaselinePublicationPublisherForLocatorV1 } from "./scanner-publication-policy.js";
 import {
   type BaselineSourceEvidence,
   BaselineSourceEvidenceSchema,
@@ -69,6 +71,23 @@ function readPublishedBytes(path: string, maximum: number, label: string): Buffe
   if (opened === undefined || opened.contents.length === 0 || opened.identity.nlink !== 1n)
     fail(`${label} file shape`);
   return opened.contents;
+}
+
+function discoveryPublisher(bytes: Buffer): ScannerBaselinePublicationPublisherV1 {
+  let discovery: Record<string, unknown>;
+  try {
+    const text = bytes.toString("utf8");
+    if (!Buffer.from(text, "utf8").equals(bytes)) fail("discovery publisher encoding");
+    discovery = parseStrictJsonObjectV1(text, "discovery publisher");
+  } catch {
+    return fail("discovery publisher shape");
+  }
+  // This selects an independently reviewed policy, not trust. The consumer still
+  // verifies all discovery, publication, signature, request, and freshness bindings.
+  return (
+    scannerBaselinePublicationPublisherForLocatorV1(discovery.locator) ??
+    fail("discovery must name a reviewed immutable publisher")
+  );
 }
 
 function checkoutHead(root: string): string {
@@ -130,11 +149,13 @@ async function consumePublication(args: readonly string[]): Promise<void> {
   const seenPath = optionalFlag(args, "--seen");
   const seen =
     seenPath === undefined ? { digests: [], receipts: [] } : replayWire.parse(readJson(seenPath));
+  const discoveryBytes = readPublishedBytes(flag(args, "--discovery"), 8 * 1024, "discovery");
+  const publisher = discoveryPublisher(discoveryBytes);
   const consumed = await consumeScannerBaselinePublicationV1({
     sourceRoot,
     catalog,
     expectedRequestSha256: flag(args, "--request-sha256"),
-    discoveryBytes: readPublishedBytes(flag(args, "--discovery"), 8 * 1024, "discovery"),
+    discoveryBytes,
     publicationBytes: readPublishedBytes(
       flag(args, "--publication"),
       96 * 1024 * 1024,
@@ -145,7 +166,7 @@ async function consumePublication(args: readonly string[]): Promise<void> {
       256 * 1024,
       "attestation",
     ),
-    publisher: SCANNER_BASELINE_PUBLICATION_PUBLISHER_V1,
+    publisher,
     now: new Date().toISOString(),
     maxAgeSeconds: SCANNER_BASELINE_PUBLICATION_MAX_AGE_SECONDS_V1,
     seenEvidenceDigests: seen.digests,
@@ -223,14 +244,21 @@ async function consumePublications(args: readonly string[]): Promise<void> {
   const seenPath = optionalFlag(args, "--seen");
   const seen =
     seenPath === undefined ? { digests: [], receipts: [] } : replayWire.parse(readJson(seenPath));
+  const publications = closedPublicationBatches(
+    publicationRoot,
+    requests.map((request) => request.requestSha256),
+  );
+  const publishers = publications.map((publication) =>
+    discoveryPublisher(publication.discoveryBytes),
+  );
+  const publisher = publishers[0];
+  if (publisher === undefined || publishers.some((entry) => entry.commit !== publisher.commit))
+    fail("publication batches must use one reviewed publisher");
   const consumed = await consumeScannerBaselinePublicationsV1({
     sourceRoot,
     catalog,
-    publications: closedPublicationBatches(
-      publicationRoot,
-      requests.map((request) => request.requestSha256),
-    ),
-    publisher: SCANNER_BASELINE_PUBLICATION_PUBLISHER_V1,
+    publications,
+    publisher,
     now: new Date().toISOString(),
     maxAgeSeconds: SCANNER_BASELINE_PUBLICATION_MAX_AGE_SECONDS_V1,
     seenEvidenceDigests: seen.digests,

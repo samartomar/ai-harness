@@ -236,7 +236,7 @@ export function resolveRequest(request: EccMaterializationRequest): ResolvedRequ
     throw new Error("ECC materialization component count exceeds the lifecycle boundary");
   }
   const seenComponents = new Set<string>();
-  const wholeFileOwners = new Map<string, string>();
+  const wholeFileOwners = new Map<string, { componentId: string; sha256: string }>();
   const mergeOwners = new Map<string, string>();
   const jsonKeyOwners = new Map<string, string>();
   let total = 0;
@@ -348,17 +348,25 @@ export function resolveRequest(request: EccMaterializationRequest): ResolvedRequ
       }
       if ((trusted?.kind ?? file.kind) === "copy-file") {
         const owner = wholeFileOwners.get(identity);
-        if (owner !== undefined) {
+        const contentSha256 = ownedFileSha256(bytes);
+        const exactCommandAlias =
+          owner !== undefined &&
+          owner.componentId !== componentId &&
+          [owner.componentId, componentId].every(
+            (id) => id === "baseline:commands" || id === "module:commands-core",
+          ) &&
+          owner.sha256 === contentSha256;
+        if (owner !== undefined && !exactCommandAlias) {
           throw new Error(
-            `ECC materialization destination is claimed by two components: ${path} (${owner}, ${componentId})`,
+            `ECC materialization destination is claimed by two components: ${path} (${owner.componentId}, ${componentId})`,
           );
         }
-        wholeFileOwners.set(identity, componentId);
+        wholeFileOwners.set(identity, { componentId, sha256: contentSha256 });
         return {
           path,
           operation: "copy-file",
           bytes,
-          contentSha256: ownedFileSha256(bytes),
+          contentSha256,
           ...(trusted === undefined
             ? {}
             : {
@@ -413,7 +421,7 @@ export function resolveRequest(request: EccMaterializationRequest): ResolvedRequ
     const mergeOwner = mergeOwners.get(identity);
     if (mergeOwner === undefined) continue;
     throw new Error(
-      `ECC materialization destination mixes copy-file and merge-json: ${identity} (${wholeOwner}, ${mergeOwner})`,
+      `ECC materialization destination mixes copy-file and merge-json: ${identity} (${wholeOwner.componentId}, ${mergeOwner})`,
     );
   }
   return {
@@ -728,6 +736,7 @@ function planMaterialize(
    * not record `false`, or uninstall would strand an empty document.
    */
   const created = new Map<string, boolean>();
+  const acceptedCommandAliases = new Map<string, { componentId: string; sha256: string }>();
 
   for (const component of resolved.components) {
     const componentEntries: EccOwnedFile[] = [];
@@ -737,14 +746,32 @@ function planMaterialize(
       const live = state.read(file.path);
 
       if (file.operation === "copy-file") {
-        if (live !== undefined && index.wholeFiles.get(identity) !== component.id) {
+        const previous = ownedEntry(receipt, component.id, file.path);
+        const accepted = acceptedCommandAliases.get(identity);
+        const samePlanAlias =
+          accepted !== undefined &&
+          accepted.componentId !== component.id &&
+          [accepted.componentId, component.id].every(
+            (id) => id === "baseline:commands" || id === "module:commands-core",
+          ) &&
+          accepted.sha256 === file.contentSha256;
+        if (
+          live !== undefined &&
+          index.wholeFiles.get(identity) !== component.id &&
+          previous === undefined &&
+          !samePlanAlias
+        ) {
           throw new Error(
             `refusing to claim an existing unowned ECC materialization destination: ${file.path} (component ${component.id})`,
           );
         }
-        const previous = ownedEntry(receipt, component.id, file.path);
         const liveSha = live === undefined ? undefined : sha256(live);
-        if (live !== undefined && previous !== undefined && liveSha !== previous.contentSha256) {
+        if (
+          live !== undefined &&
+          previous !== undefined &&
+          liveSha !== previous.contentSha256 &&
+          !samePlanAlias
+        ) {
           throw new Error(
             `refusing to overwrite a hand-edited owned ECC materialization destination: ${file.path} (component ${component.id})`,
           );
@@ -759,6 +786,10 @@ function planMaterialize(
                 contentAuthorization: file.kiroEvidence.contentAuthorization,
                 contentSourcePath: file.kiroEvidence.contentSourcePath,
               }),
+        });
+        acceptedCommandAliases.set(identity, {
+          componentId: component.id,
+          sha256: file.contentSha256,
         });
         if (liveSha === file.contentSha256) {
           unchanged.push({ ...plan, action: "unchanged" });

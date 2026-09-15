@@ -483,6 +483,7 @@ describe("Check.code — invariants", () => {
       "env.git-bash-missing": true,
       "env.dev-tool-missing": true,
       "env.tool-install-blocked": true,
+      "developer-tools.runtime-verification": true,
       "cert.ca-missing": true,
       "tls.verify-failed": true,
       "npm.runtime-broken": true,

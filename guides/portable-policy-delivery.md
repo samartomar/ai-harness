@@ -1,7 +1,7 @@
 ---
 status: guide
 owner: AI-Harness maintainers
-last_verified: 2026-09-13
+last_verified: 2026-09-14
 truth_home: true
 purpose: Author, bind, deliver and reconcile project policy and required guidance through public commands.
 ---
@@ -241,6 +241,109 @@ then rerun the same public command. Inspect both the component receipt and the
 required-guidance receipt before opening a fresh client session. An intermediate
 installation result does not establish complete startup delivery.
 
+## Inspect selection and discovery ownership
+
+Preview the bound project's governed selection before applying it:
+
+```sh
+aih ecc --lifecycle install . --ecc-path "$ECC_SOURCE" --json
+aih policy evaluate . --json
+aih ready . --json
+```
+
+The governed ECC preview joins the reviewed selection to exact source files and
+planned destinations. Read its selection, exclusion, refusal and subtraction
+details together. A destination in a preview is a proposed write, not proof of
+installation. Preview does not install content or change ownership receipts.
+Without a qualified source on disk, the command explains that its output is not
+a file-level preview; provide the exact checkout to inspect the actual paths.
+
+Every admitted `governance.externalSelections` item remains part of the required
+delivery set. Root and dependency provenance explain why it is retained;
+optional authoring choices do not waive a retained requirement. Schema-v3
+exclusions carry their own source revision and content digest. A historical
+selection keeps its historical source identity; it cannot inherit the current
+catalog's dependency or approval facts merely because names match.
+
+| Owner | Scope and selection path | Disposition |
+| --- | --- | --- |
+| Governed ECC materializer | Selected project files under `.aih/ecc/materialization-v1.json` | Apply reconciles the exact selection; subtraction requires unchanged receipt-owned bytes |
+| Earlier AIH profile installation | Separate `.aih/ecc-profile/` lifecycle and source identity | Its receipts do not authorize governed materialization or replacement; review the existing lifecycle before changing owners |
+| Older mirrors without proven ownership | Existing project content | Retained for manual review; matching names or directories grant no removal authority |
+| Native plugin or user installation | Client-managed user/account inventory | Project selection does not enumerate or filter this owner's components; its content may remain visible |
+| Custom guidance, commands, roles and hooks | User-owned files or settings entries | Preserved; a same-name custom skill is not automatically a duplicate capability |
+
+Ordinary upstream installation, the separate AIH profile lifecycle, governed ECC
+materialization and governed MCP support have different target and source
+contracts. In this build the separate profile uses
+`affaan-m/ECC@0c1d7be9a750627fb2a6534c78a998cc46d03f9c`; the packaged current
+governed catalog uses `affaan-m/ECC@5caf398a91599029a176ca6d806409b00d1052c4`.
+Saved historical selections can name another qualified revision. Inspect the
+selected source in the actual preview; these identities are not interchangeable.
+Use the Workbench's compiled schema-v3 policy to retain a historical source's
+verified selection. Changing a commit field in a legacy schema-v2 policy does
+not establish that authority. After binding the compiled policy, run
+`aih policy project --apply --ecc-path <exact-checkout>` for selected delivery,
+then ordinary initialization. A sealed older Codex Markdown agent destination
+requires reviewed requalification before native TOML role delivery; its
+unchanged skill and other client routes retain their original authority.
+Copilot CLI's governed MCP support does not give it governed ECC support.
+
+When the qualified source carries a shared Codex skill projection, its selected
+project discovery route is `.agents/skills/<name>/SKILL.md`. Sources without
+that projection retain their evidenced target mapping. Reconciliation removes an older
+`.codex/skills/<name>/SKILL.md` projection only when its unchanged materialization
+receipt proves AIH owns it. Edited or unowned copies remain and can still appear
+in native discovery. Review the reported residual paths instead of deleting
+them by name. Existing client settings, including disabled-skill arrays, are not
+replaced to achieve this project selection.
+
+Selected Codex agents use native `.codex/agents/<name>.toml` role files and
+project `[agents.<name>]` registration in `.codex/config.toml`. AIH owns only its
+marked registration block, tracked by
+`.aih/ecc/codex-role-registration-v1.json`. Existing roles, MCP entries and other
+settings remain separately owned. A same-name role, invalid configuration or
+edited managed registration requires review before reconciliation. Codex must
+permit loading the project's configuration through its normal trust settings;
+installing a role file alone does not establish that a session loaded it.
+
+Repeat ordinary `init` or `policy project`, then start the client normally in
+that root. No remembered process-level skill override is needed for the owned
+projection path. Required guidance is reached through the generated startup
+pointer; a native catalog entry supplies discovery metadata, and full content
+still requires the client's read path. Generated governed adapters describe
+this selection without asserting that an unselected global baseline is installed.
+The required-guidance pointer lists applicable selected skill, agent, command,
+rule and steering Markdown. Native Codex role instructions are carried by the
+registered TOML role. Configuration and runtime JSON are not presented as
+practice text to read. Component-specific target refusals still apply: for
+example, OpenCode's governed project adapter supplies shared skills but has no
+project agent or command projection. Review the preview before assigning a
+component across several clients.
+
+Command bundles need qualified runtime content as well as Markdown. The current
+packaged `commands-core` descriptor omits libraries used by its health command,
+so AIH refuses that incomplete bundle instead of installing commands that cannot
+run. A reviewed source descriptor can authorize the complete `commands` tree,
+`scripts/harness-audit.js`, `scripts/skills-health.js` and `scripts/lib` together.
+AIH preserves that source identity, records owned support files and supplies an
+owned `scripts/package.json` CommonJS boundary. An existing user file at that
+path is a collision; the adopter's root package settings are preserved.
+
+For a complete qualified command source, Codex discovers generated workflow
+skills at `.agents/skills/ecc-workflow-<command>/SKILL.md`; use the generated
+skill name shown in native discovery. Claude, Cursor and Kimi use their command
+paths. This does not authorize copying an unselected hooks runtime or treating
+an old sealed destination as permission for a new one. Review and import the
+new source qualification before changing the bound selection.
+
+For comparison, record the same project, policy, immutable ECC source, client
+version and host before and after reconciliation. Keep physical files, unique
+component identities, native inventory rows, enabled entries and complete loaded
+content separate. A removed owned projection does not imply removal from another
+owner's inventory. Record unavailable usage fields as unavailable; fewer files,
+rows or output bytes do not establish lower billed tokens, latency or cost.
+
 `policy evaluate`, `ready` and HTML reports distinguish policy blockers, selected
 components, owned-byte drift and unverified native loading. Current component receipts record the
 adapter's delivery targets, while older receipts without that field remain
@@ -265,7 +368,8 @@ skill, and a skill is not an enforced control.
 
 Each consumer root owns its generated project material through the appropriate
 receipt: native MCP receipts, ECC materialization receipt, required-guidance
-receipt and native command-permission receipt are separate. Qualification remains bound to source/component identity
+receipt, native Codex role-registration receipt and native command-permission
+receipt are separate. Qualification remains bound to source/component identity
 and approved targets. Reconciliation may subtract only unchanged owned material.
 User plugin installations, global profiles, custom files and another root's
 state remain separately owned. Content pruning must preserve this separation;

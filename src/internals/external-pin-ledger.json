@@ -6,6 +6,23 @@
   "integrityCoveragePolicy": "An entry's integrity hash is assumed to cover the artifact that actually executes. When it does not — the distributed package is a launcher that fetches its real payload at run time — the entry must set integrityCovers to \"launcher-only\" and its reason must name the unrecorded hop. A launcher-only entry may not be declared egress \"none\" in src/mcp/servers.ts: provisioning is real egress even when steady-state operation is local.",
   "entries": [
     {
+      "surface": "markitdown-cli",
+      "identity": "microsoft/markitdown",
+      "version": "0.1.7",
+      "commit": "fd239d5d2be43d9b68329730206b9312c7d5a388",
+      "integrity": "sha256:4eca912c87c6aa6897284a7f4bf6769a23bccf8544530f5d8b175fbe3797c916",
+      "disposition": "active",
+      "reason": "Default CLI selected on 2026-09-15 from official PyPI release 0.1.7 and Microsoft source tag v0.1.7 under MIT. The common-document extras are docx, outlook, pdf, pptx, xls and xlsx; cloud, audio and YouTube extras are not part of default acquisition. Authenticated pyproject sha256:f8e6c843f8be6f6e8d6910ba21e95ca6b6b8dac3e208d28a2c141263faf69469 and uv lock sha256:a4c5a8505b39f9d990ab15605689ce446aedaea3f1c6b22aeb6c62c94e373af6 bind dependency closure sha256:8cdf8e5fcd24cef05fe1704a90274223a83f5aae30cd52a02ace22b706498d08. Setup uses the external digest-keyed environment and verifies actual local conversion before reporting verified. Selection and receipt ownership follow the developer-tool policy lifecycle; no global PATH or user CLI replacement. The separately optional MCP adapter shares this converter version. Host execution evidence is recorded separately and this entry does not assert macOS qualification."
+    },
+    {
+      "surface": "markitdown-mcp",
+      "identity": "markitdown-mcp",
+      "version": "0.0.1a7",
+      "integrity": "sha256:e38dce929a28b210a936396c4e1546b30b02601667c79dfa104afd6a7e3b818b",
+      "disposition": "active",
+      "reason": "Optional official adapter, independently published on PyPI, verified 2026-09-15. It is absent from no-policy setup and requires explicit mcp.allowedServers selection. Exact adapter 0.0.1a7 and shared converter 0.1.7 pins are emitted; the upstream all-extra requires explicitly pinned azure-ai-contentunderstanding 1.2.0b3 for resolution. This uvx recipe does not claim a locked transitive closure. It exposes convert_to_markdown for user-selected files and URLs and is classified as third-party egress with current-user filesystem access. Windows initialize, tools/list and actual data-URI conversion passed with plugins disabled in the probe. The upstream adapter defaults plugins off but can inherit the operator's MARKITDOWN_ENABLE_PLUGINS setting. Audio needs external ffmpeg; that capability was not qualified. Default CLI selection never enables this adapter."
+    },
+    {
       "surface": "ecc",
       "identity": "affaan-m/ECC",
       "version": "v2.2.0-1-g5caf398a",
@@ -22,6 +39,14 @@
       "reason": "ECC_OPENCODE_HOOK_CONSENT_AND_FULL_VET_UNQUALIFIED. Candidate e04ea0b9cc8248686edf5ac751cadff550e162b8 is the upstream main revision observed on 2026-09-04 (committed 2026-09-03T20:51:15Z, VERSION 2.2.1, untagged) and is recorded blocked for promotion; tracking issue #961. Exact-SHA GitHub state: the merge commit carries a GitHub-verified signature and 46 of 46 check runs completed successfully. The prior blocked candidate ce64e417fd420a0df98ed0aa00809eea5e74e127 and the active source are both ancestors of this revision (19 commits and 146 commits respectively), and LICENSE bytes are identical at all three. The OpenCode hook-runtime consent defect is unchanged upstream: scripts/lib/install/hook-consent.js gates only the hooks-runtime module and is byte-identical to the prior candidate, while the default-install platform-configs module still carries .opencode/plugins/ecc-hooks.ts, which runs prettier and npx tsc on tool events, mutates the child environment through shell.env, and auto-approves permission.ask decisions. Core review confirmed there is no single choke point on the Core side either: the .opencode and .config/opencode host-runtime classification applies only when governance owns AIH surfaces, its TypeScript form has no production caller, and ungoverned --profile core or --profile full installs, the install-apply.js fallback, and the consult route apply the upstream plan unfiltered, which is not a categorical block across every install, repair, update, and activation path. No Scanner publication was requested for this revision because the consent gate failed first and baseline-publication.yml accepts only samartomar/ECC for the ecc catalog. Nothing was promoted and nothing moved: the active source remains samartomar/ECC@5caf398a91599029a176ca6d806409b00d1052c4, and the production lock, preview, catalog, hook inventory, and policy surfaces remain unchanged. The prior ce64e417 and dcbf95bf candidate receipts remain immutable history."
     },
     {
+      "surface": "ecc-latest-stable-candidate",
+      "identity": "affaan-m/ECC",
+      "version": "v2.2.1",
+      "commit": "5064474d4d762dc9640234a41617cccb79185cec",
+      "disposition": "blocked",
+      "reason": "Observed latest stable v2.2.1 on 2026-09-14; annotated tag resolves to commit 5064474d4d762dc9640234a41617cccb79185cec and tree 9d448bb479cc1af55c488357556ac24d8cd932d2. ECC_OPENCODE_HOOK_CONSENT_UNQUALIFIED remains: default platform-configs includes .opencode, while the hook-consent operation classifier covers hooks-runtime and hooks/Cursor paths, not the OpenCode plugin. That plugin contains automatic formatting, shell.env augmentation and permission.ask approvals. The new compiled-payload prerequisite is not consent or runtime qualification. Catalog skill membership at this revision does not supply Core aggregate installer/runtime evidence. Active Core source 5caf398a91599029a176ca6d806409b00d1052c4 and all historical candidate evidence remain unchanged; no upstream installer was executed during this read-only assessment."
+    },
+    {
       "surface": "ecc-codex-chrome-devtools-mcp",
       "identity": "chrome-devtools-mcp",
       "version": "1.7.0",
@@ -32,10 +57,10 @@
     {
       "surface": "superpowers",
       "identity": "obra/Superpowers",
-      "commit": "3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9",
+      "commit": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797",
       "disposition": "active",
-      "reason": "Rebound from v6.1.1 to the v6.2.0 release commit, dereferenced from the annotated tag, for the full re-vet.",
-      "version": "v6.2.0"
+      "reason": "Rebound from v6.2.0 to v6.3.0 on 2026-09-14 after exact source and Core delivery-closure review. Source archive SHA-256 8d795dfb2141e467bdf448474fd9acfa97dffa4da5837f0f6cf0dc2c290640ba and canonical source-tree digest 3420d68292184fe345d2e3121ed2b3cb192d367ea6fb5f23d9d0fb3629a284b5 bind the annotated release commit. Protected Scanner publisher 981d50f19ec8923974597de28c4c7b7acf684ded published request 782ad368cde26e3f9b34e0ddb6e396bab5e35cca6fbff0c14a72b9b40cba2c81, receipt 7fe10f3e6392748879b2fb25ba3b715498854e61f47854c3181057261a538a91 and publication e71e2a7e87631db1147526fc6f5f0c982ad9c2b1ff48119f6ffa2655b141bf9e. Core consumed those exact bytes through its supported public Scanner bridge at actual current time, producing 15 passing components under Core normalization. All 60 mapped analyzer findings and repository-wide coverage limits remain recorded; passing normalized components do not claim an absence of findings. MIT source has no packaged dependencies or install scripts. The optional visual companion requires explicit user approval, uses authenticated loopback access, and is not activated by ordinary Core delivery; telemetry images remain suppressed by AIH. Skill-only Catalog membership was not substituted for this aggregate runtime qualification. Historical receipts remain unchanged.",
+      "version": "v6.3.0"
     },
     {
       "surface": "code-review-graph",
@@ -44,7 +69,16 @@
       "commit": "6a1ee1c7063cc35cfa5ff12b8198c29360f3e4ad",
       "integrity": "sha256:12196dce3e673bdec7fba97ae5c4dff7589adee73a721374f62efae76e0fdd88",
       "disposition": "active",
-      "reason": "The exact wheel and CLI identify 2.3.7, and its dereferenced v2.3.7 source commit is still verified at the PyPI-advertised tirth8205/code-review-graph repository; the older DeusData URL no longer resolves and was corrected without changing package bytes. Its MCP initialize response reports FastMCP 3.4.5 because upstream does not pass its package version to FastMCP, so keep the fail-closed mcp.version-drift warning until upstream self-attestation is corrected. The 2.3.8 candidate remains on hold: its new implicit-provider path turns ambient CRG_OPENAI_API_KEY plus CRG_OPENAI_BASE_URL into silent network egress when an MCP call omits provider, while AIH currently inherits that environment and classifies this launch as local-only."
+      "reason": "Raw repository-agnostic fallback only: this 2.3.7 uv route stays active because it lacks the native authenticated state and payload guards. The exact wheel and CLI identify 2.3.7, and its dereferenced v2.3.7 source commit is still verified at the PyPI-advertised tirth8205/code-review-graph repository; the older DeusData URL no longer resolves and was corrected without changing package bytes. Its MCP initialize response reports FastMCP 3.4.5 because upstream does not pass its package version to FastMCP, so keep the fail-closed mcp.version-drift warning until upstream self-attestation is corrected. The 2.3.8 raw candidate remains on hold: its new implicit-provider path turns ambient CRG_OPENAI_API_KEY plus CRG_OPENAI_BASE_URL into silent network egress when an MCP call omits provider, while AIH currently inherits that environment and classifies this launch as local-only. The guarded native 2.3.8 default is a separate code-review-graph-native-default surface; it does not promote or qualify this raw fallback."
+    },
+    {
+      "surface": "code-review-graph-native-default",
+      "identity": "code-review-graph",
+      "version": "2.3.8",
+      "commit": "2c6dae32643572ee528eb9b77dbcc17f58f3a8c9",
+      "integrity": "sha256:013ae3c119cc7de337f9e88fe36daef82e2d4def942a014edcf97f126e208547",
+      "disposition": "active",
+      "reason": "Distinct guarded native default, not the raw repository-agnostic fallback. The authenticated runtime lock binds source commit 2c6dae32643572ee528eb9b77dbcc17f58f3a8c9, wheel sha256:013ae3c119cc7de337f9e88fe36daef82e2d4def942a014edcf97f126e208547, pyproject sha256:fed57c2dbf15fac6f83aa3a31b7de43dce496f16b34ceb499c9c3e040dd6f22f, uv lock sha256:feb526cc7101e6c047fc9728f4001a7ebbdc1556d013148b5e1ee6e49434379d, and dependency-closure aggregate sha256:034ae6c2dcac6fcb8bf647f0b09ced392608397fba53b91ded0389d8f247e79c before the rooted native launch. Its project state is owned and its provider environment is guarded. On 2026-09-14, ordinary installed Linux Node 20 setup used the generated authenticated launcher, exposed exactly five guarded operations, built a populated graph and completed a real change query. Repeated setup retained the integration without changes. Native state-redirect and provider-boundary regressions also passed. Final package identity and per-host lifecycle results belong to the separate release acceptance packet; macOS execution remains unverified. This entry does not imply operating-system network confinement or blanket platform qualification."
     },
     {
       "surface": "codebase-memory-mcp",
@@ -54,7 +88,16 @@
       "integrity": "sha256:d27ca6248566d53f67ef0dde24d0bf2f0583385561ebcd6309832f53dda14d74",
       "integrityCovers": "launcher-only",
       "disposition": "active",
-      "reason": "The recorded integrity is the PyPI wheel's sha256, and that wheel is a launcher shim (__init__.py, __main__.py, _cli.py) rather than the payload. Its _cli.py main() fetches the platform release archive from the upstream GitHub release on first run, unpacks a large native binary into the per-user cache (~296 MB measured at 0.10.4), and exec's it — so this hash does not cover the executed artifact and no recorded pin does; integrityCovers is launcher-only for exactly that reason. The catalog launch's --offline governs uv wheel resolution only and does not reach urllib inside the shim, so provisioning is real egress and the server is declared egress vendor-incumbent (github.com) in src/mcp/servers.ts, not egress none. Moved 0.9.0 -> 0.10.5 on 2026-08-15. The move was taken for supply-chain reasons: 0.10.5's _verify_checksum is fail-closed and exits on any verification failure, where 0.9.0's swallowed every non-SystemExit exception, so an unreachable or malformed checksums.txt no longer lets an unverified archive execute. The exact pinned launch was exercised with the pinned uv 0.12.2 on Linux x86_64 and on Windows amd64: both exit 0 and answer initialize with the pinned serverInfo.version, provisioning reports checksum verified, and the coordination daemon introduced in 0.10.0 does not detach — no process outlives the stdio child on either platform. Linux was verified at 0.10.4, whose launcher shim is byte-identical to 0.10.5's, with the entire release delta inside the fetched native payload. From 0.10.0 the graph UI is always included and its HTTP listener binds 127.0.0.1:9749 by default, loopback only and never a routable address; that inbound surface is named in the catalog description because egress describes outbound traffic and does not cover a listening socket. The 0.10.4 hold is discharged: its daemon refused to create a secure endpoint on Windows hosts whose user-profile AppData carries an AppContainer capability ACE — which the Codex sandbox group grants and actively re-provisions, so clearing it locally was not a durable remedy — and upstream fixed that ancestor check in 0.10.5. The fix was confirmed on the exact host that produced the failure, with the capability ACE still present and the sandbox still running."
+      "reason": "Raw repository-agnostic fallback only: this 0.10.5 uv route stays active because it lacks the native authenticated state and payload guards. The guarded native 0.10.8 default is separately recorded as codebase-memory-mcp-native-default; it does not promote or qualify this raw fallback. The recorded integrity is the PyPI wheel's sha256, and that wheel is a launcher shim (__init__.py, __main__.py, _cli.py) rather than the payload. Its _cli.py main() fetches the platform release archive from the upstream GitHub release on first run, unpacks a large native binary into the per-user cache (~296 MB measured at 0.10.4), and exec's it — so this hash does not cover the executed artifact and no recorded pin does; integrityCovers is launcher-only for exactly that reason. The catalog launch's --offline governs uv wheel resolution only and does not reach urllib inside the shim, so provisioning is real egress and the server is declared egress vendor-incumbent (github.com) in src/mcp/servers.ts, not egress none. Moved 0.9.0 -> 0.10.5 on 2026-08-15. The move was taken for supply-chain reasons: 0.10.5's _verify_checksum is fail-closed and exits on any verification failure, where 0.9.0's swallowed every non-SystemExit exception, so an unreachable or malformed checksums.txt no longer lets an unverified archive execute. The exact pinned launch was exercised with the pinned uv 0.12.2 on Linux x86_64 and on Windows amd64: both exit 0 and answer initialize with the pinned serverInfo.version, provisioning reports checksum verified, and the coordination daemon introduced in 0.10.0 does not detach — no process outlives the stdio child on either platform. Linux was verified at 0.10.4, whose launcher shim is byte-identical to 0.10.5's, with the entire release delta inside the fetched native payload. From 0.10.0 the graph UI is always included and its HTTP listener binds 127.0.0.1:9749 by default, loopback only and never a routable address; that inbound surface is named in the catalog description because egress describes outbound traffic and does not cover a listening socket. The 0.10.4 hold is discharged: its daemon refused to create a secure endpoint on Windows hosts whose user-profile AppData carries an AppContainer capability ACE — which the Codex sandbox group grants and actively re-provisions, so clearing it locally was not a durable remedy — and upstream fixed that ancestor check in 0.10.5. The fix was confirmed on the exact host that produced the failure, with the capability ACE still present and the sandbox still running."
+    },
+    {
+      "surface": "codebase-memory-mcp-native-default",
+      "identity": "codebase-memory-mcp",
+      "version": "0.10.8",
+      "commit": "46ae198fc11cda80e817acbc5f5908d7c2de7032",
+      "integrity": "sha256:9d2e33bdf9c9dc8662079d5b9a1bbf716aa2e62e2ed6cc51cf4ae06d42498787",
+      "disposition": "active",
+      "reason": "Distinct guarded native default, not the raw repository-agnostic fallback. Its release-manifest root is sha256:9d2e33bdf9c9dc8662079d5b9a1bbf716aa2e62e2ed6cc51cf4ae06d42498787; the authenticated runtime lock also binds source commit 46ae198fc11cda80e817acbc5f5908d7c2de7032, wheel sha256:a5e39e6886bbdd7836cadaec13cdeb3ee3648c34fdf88359d9395abccc16287c, pyproject sha256:fed57c2dbf15fac6f83aa3a31b7de43dce496f16b34ceb499c9c3e040dd6f22f, uv lock sha256:feb526cc7101e6c047fc9728f4001a7ebbdc1556d013148b5e1ee6e49434379d, and dependency-closure aggregate sha256:034ae6c2dcac6fcb8bf647f0b09ced392608397fba53b91ded0389d8f247e79c. Acquisition verifies the manifest and selected platform archive before extraction: codebase-memory-mcp-darwin-amd64.tar.gz sha256:2b193085410af3801634a522f4b17dcd6699695e015a068393c87817c1d260d4; codebase-memory-mcp-darwin-arm64.tar.gz sha256:9bd840dfb3ec7eaef4f310382057adaa5b0e904df883104d03ffcf39836afd07; codebase-memory-mcp-linux-amd64-portable.tar.gz sha256:6eef49652bc0c7820f43114125044d40bf7f4d97c11b2592f6b0f6a307702325; codebase-memory-mcp-linux-arm64-portable.tar.gz sha256:5697d986d9716c913163b4bff7b3a294287f3b843e993bc1ff71e78dcdc21781; codebase-memory-mcp-windows-amd64.zip sha256:b43ad982994c4d829670749e08d3b622a74bb20041fc0a7d02bef6113f81c34d; codebase-memory-mcp-windows-arm64.zip sha256:254b26e819f00bab7f430c5f809d37d22b07bb3eb6427e290e5a27ba5b8e983e. Linux MCP A-B-A evidence recorded initialize, tools/list, indexing, root isolation, and no surviving native process. On 2026-09-14, ordinary installed Linux Node 20 setup verified the generated authenticated launcher with populated indexing and explicit-project search. Generated-launcher A-B-A sessions preserved canonical root/name identity, refused a foreign-root index request, and left no surviving task-native process. Repeated setup, policy exclusion, empty-selection reinitialization and custom MCP preservation passed. Final package identity and per-host results belong to the separate release acceptance packet; macOS execution remains unverified."
     },
     {
       "surface": "serena",
@@ -77,37 +120,46 @@
     {
       "surface": "token-optimizer",
       "identity": "alexgreensh/token-optimizer",
-      "version": "v5.11.68",
-      "commit": "ffe3b8007542260b17648a2d9228c3dedda380ad",
+      "version": "v5.13.14",
+      "commit": "37a9546b9fecba2c4e9a02ef4e90855d449bf08f",
       "disposition": "active",
-      "reason": "The exact source commit retains the PolyForm Noncommercial 1.0.0 boundary, produced local reports in isolated Codex and Claude scopes, completed the quiet Stop path, and passed a reversible cache-root rollback/restore probe."
+      "reason": "One v5.13.14 source identity for Core's Codex project-hook runtime and the repository-development helper. The immutable source is commit 37a9546b9fecba2c4e9a02ef4e90855d449bf08f, tree b86bba7e8f3caea3a32d41ad134d81c3fea3e9e6, and release manifest sha256:c21cdc7034a0a501c5fb5c14e0c1e8b96560448a06ae778b79aea282a585c9ea. All 158 manifest records matched canonical Git blobs on 2026-09-15; Core acquisition authenticates the commit, tree and manifest before configuration. The quiet and balanced adapters recognize only approved hook commands bound to this checkout, retaining receipt ownership, custom hooks and policy exclusions. The unchanged PolyForm Noncommercial 1.0.0 license still requires explicit acceptance. Native per-platform acceptance is separately recorded; prior v5.11.75 Linux results do not qualify this revision, and macOS remains unverified."
+    },
+    {
+      "surface": "token-optimizer-candidate",
+      "identity": "alexgreensh/token-optimizer",
+      "version": "v5.13.12",
+      "commit": "35d047b32af64b2c8bb7ef8d83d90396abc223c9",
+      "integrity": "sha256:69e4704da1c003529c157ffa061a31756997073b849759e231434a080e15a601",
+      "disposition": "retained",
+      "reason": "Historical candidate identity only, superseded by the v5.13.14 Core runtime pin. The independent 2026-09-15 recheck found all 154 official release manifest records matched canonical Git blobs at commit 35d047b32af64b2c8bb7ef8d83d90396abc223c9. The prior checksum hold was disproved; no upstream repair was required. This entry is not an active runtime selection or a claim of v5.13.12 lifecycle qualification."
     },
     {
       "surface": "sequential-thinking",
       "identity": "@modelcontextprotocol/server-sequential-thinking",
-      "version": "2026.7.4",
-      "commit": "6dd0a683e198783e30feabf7abaf42f925bd18b1",
-      "integrity": "sha512-tmR/ieGaeweffLNBrDp1H1w4sn4M6TN5yWSbMS+YMfS+0GDyPjnNKzqCl2uqfdRiX3D44PJUhwiDGqtJp6tFhw==",
+      "version": "2026.8.31",
+      "commit": "a40bc270fb5ece62673f8a1196f57116d885c5eb",
+      "integrity": "sha512-/EMH++1j2e+VmHwpibw1IUPHxA0tcQY09Yo5/OIPwW/8irEKLAufJNGSZQhCK18n8TUvV6WwZyQOuaDKxe/CeQ==",
       "disposition": "active",
-      "reason": "The exact npm package completed MCP initialize online and from the npm offline cache. Its serverInfo reports the upstream server version 0.2.0 rather than the npm release 2026.7.4, so package integrity remains the authoritative pin identity."
+      "reason": "Exact npm package and isolated v3 lock were qualified on 2026-09-14. Official modelcontextprotocol/servers annotated tag object 153cc26a3b3796a17b693277b5e0e1232a76940e dereferences to this commit; the source and packed package.json bytes match (SHA-256 2c48d1b17da92ca611ed8b6558f516eddb7c5375c870f2c60a81e5e3ab812d52). The 113-entry lock has SHA-256 8257241874533fc40729c457a6f676b13a3daa86727b6cbeb8e94b66ed4057e6. Initialize, tools/list, and one bounded thought succeeded; serverInfo reports sequential-thinking-server 2026.8.31."
     },
     {
       "surface": "playwright-mcp",
       "identity": "@playwright/mcp",
-      "version": "0.0.79",
-      "commit": "4c5077651542f68525a0b51e97bab2a32abc9290",
-      "integrity": "sha512-VpqD4a3vFyGQMY9sh3UJiO6wjcurggkljKfAyCHL0QWGY5m6Ehr3MNsAAHPDHO//n13g0PCjpHatAOiulrqdZQ==",
+      "version": "0.0.81",
+      "commit": "e73d72e01f162054a3d0a6b0fe8d4affffb095ee",
+      "integrity": "sha512-c4eVex1nS53IzLHlwAm0J9ZISDTvA7RndFX8oVcQOrmvIrKSkByazpq79lZHWJuWTB7Gpk0sLBQoRepyIgmneA==",
       "disposition": "active",
-      "reason": "The exact npm package completed MCP initialize online and from the npm offline cache. Its serverInfo reports the embedded Playwright build 1.63.0-alpha-2026-08-05 rather than the wrapper package 0.0.79, so package integrity remains the authoritative pin identity. The embedded build moved with the wrapper (0.0.78 reported 1.62.0-alpha-1783623505000), which is why the wrapper version alone cannot be the identity."
+      "reason": "Exact npm package and isolated v3 lock were qualified on 2026-09-15. Official microsoft/playwright-mcp lightweight tag v0.0.81, npm gitHead, and verified npm SLSA provenance resolve to this signed commit; source and packed package.json bytes match (SHA-256 6c1f1d1aa60788dc8c916589127885cb78134e43d8bc2ae2dd6192cabc1a946e). The four-entry lock has SHA-256 e9497540b85e7652b6afd0dee8a27525fd533fbf090fc3fe6f80604914a98178. Initialize, tools/list (26 tools), and an isolated headless data-URL navigation succeeded; serverInfo reports Playwright 1.64.0-alpha-2026-09-14. The navigation used system Chrome 152.0.7977.84 because a separately downloaded Playwright Chromium was absent. The npm integrity authenticates the package tarball and the lock binds its JavaScript dependency closure; neither covers the separately supplied browser executable."
     },
     {
       "surface": "github-mcp-container",
       "identity": "ghcr.io/github/github-mcp-server",
-      "version": "v1.9.0",
-      "commit": "cdfa34e0a9d3e1ae6825345471f25185dd61d74e",
-      "integrity": "sha256:881b53d6f75f69bdbc1b5b10fc2f1361717c19054143b3a8529fb5c32061a50e",
+      "version": "v1.12.1",
+      "commit": "7d13a7ad6f2a17f351a6d77ce280c85ae1821f4d",
+      "integrity": "sha256:0ba840c46a237879c8300e7fddb0b6347f20e029ccb9cbe2ce4a943daa1ff560",
       "disposition": "active",
-      "reason": "Self-host launcher image moved v1.8.0 -> v1.9.0 by digest on 2026-08-15. The digest was resolved through the GHCR registry API after confirming the same method reproduces the previously committed v1.8.0 digest sha256:d5a18c04... exactly, so the method was validated against a known answer before any new digest was trusted. The commit is the v1.9.0 annotated tag dereferenced to its commit. Upstream delta is 7 commits / 40 files with no security content. One tool-behavior change is recorded because it moves output against unchanged inputs rather than adding a surface: search_issues is now semantic by default (#2964). The new find_duplicate tool is not reachable by default -- it is gated behind the non-default duplicate_detection flag (#3020) -- so it does not enlarge the default tool surface this pin exposes."
+      "reason": "Optional self-host launcher image moved v1.9.0 -> v1.12.1 by immutable OCI index digest on 2026-09-15; GitHub stays optional and the hosted route is unaffected by this image pin. Anonymous GHCR registry resolution reproduced the committed v1.9.0 digest exactly before resolving the candidate. The official annotated v1.12.1 tag dereferences to this signed commit, and OCI labels bind the image version, revision, and official source. The index also embeds BuildKit SLSA provenance metadata for its linux/amd64 and linux/arm64 manifests. The exact linux/amd64 layer digest sha256:d9c63f5dbc90be67f94941df48ccf7b97fb5662cba48d747da30c9a4649b018e yielded a static binary that reports v1.12.1 and this commit; initialize and tools/list succeeded with a synthetic invalid token and no tool calls, and its 44 default tool names are identical to v1.9.0. Security and reliability changes include credential-host, HTTPS, lockdown, path, and sanitization hardening, per-call scope checks, merge-head pinning, and the v1.12.1 advertised OAuth-scope correction. Governance tools remain behind the non-default governance toolset. Docker was unavailable, so the container wrapper and arm64 runtime remain unverified; gh and cosign found no separately authenticated attestation for the embedded OCI provenance."
     },
     {
       "surface": "aws-core-mcp-server",
@@ -115,7 +167,7 @@
       "version": "1.0.27",
       "integrity": "sha256:991c7220f249b6e512946e949115ecf514599a34c1f7e1545b46af0083539aa1",
       "disposition": "blocked",
-      "reason": "PyPI still reports 1.0.27 as the newest release, but that release is now itself yanked: both its wheel and its sdist carry the yank reason \"load individual MCPs\", so the pinned version is no longer an installable candidate on its own terms. The original blocker also stands and has hardened. 1.0.27 requires awslabs-aws-diagram-mcp-server>=1.0.5, and every diagram release in that range -- all 18 from 1.0.5 through the current newest 1.0.23 -- is yanked in favor of the deploy-on-AWS Agent Toolkit plugin, leaving the constraint with no unyanked solution. Fresh uv resolution fails, so AIH no longer generates this launch. Both yank facts were re-verified directly against the PyPI JSON API on 2026-08-15; this entry records a yank state, not a version move."
+      "reason": "PyPI still reports 1.0.27 as the newest release, but that release is now itself yanked: both its wheel and its sdist carry the yank reason \"load individual MCPs\", so the pinned version is no longer an installable candidate on its own terms. The original blocker also stands and has hardened. 1.0.27 requires awslabs-aws-diagram-mcp-server>=1.0.5, and every diagram release in that range -- all 18 from 1.0.5 through the current newest 1.0.23 -- is yanked in favor of the deploy-on-AWS Agent Toolkit plugin, leaving the constraint with no unyanked solution. Fresh uv resolution fails, so AIH no longer generates this launch. Both yank facts were re-verified directly against the PyPI JSON API on 2026-08-15; this entry records a yank state, not a version move. A metadata-only authoritative PyPI JSON recheck on 2026-09-14T15:44:37.728Z reconfirmed that 1.0.27 is deprecated and both exact artifacts remain yanked for \"load individual MCPs\": wheel sha256:991c7220f249b6e512946e949115ecf514599a34c1f7e1545b46af0083539aa1 and sdist sha256:a75febfe46bf80b63c7e2530ace1bd915e283ce5eae9316c74a1e52f61047381. No install or configuration was attempted."
     },
     {
       "surface": "skillspector",
@@ -140,7 +192,7 @@
       "version": "0.12.8",
       "commit": "68209e5c61ce4b76c2e685bea7913876bc929dc9",
       "disposition": "retained",
-      "reason": "Exact build-tool input for the currently published SkillSpector v2.9.4 image digest sha256:c5d4a1816419f129ae85ff96b3e366d4a062c1859997e26b7ab87341a43d4800. The controlled five-way reproduction used uv 0.12.8; changing this Dockerfile input without rebuilding and re-vetting the image makes the committed recipe cease to reproduce the trusted digest. The 0.12.8 tag resolves to commit 68209e5c61ce4b76c2e685bea7913876bc929dc9. This build-only pin is retained until the next controlled SkillSpector rebuild; the independent general uv toolchain remains 0.12.9."
+      "reason": "Exact build-tool input for the currently published SkillSpector v2.9.4 image digest sha256:c5d4a1816419f129ae85ff96b3e366d4a062c1859997e26b7ab87341a43d4800. The controlled five-way reproduction used uv 0.12.8; changing this Dockerfile input without rebuilding and re-vetting the image makes the committed recipe cease to reproduce the trusted digest. The 0.12.8 tag resolves to commit 68209e5c61ce4b76c2e685bea7913876bc929dc9. This build-only pin is retained until the next controlled SkillSpector rebuild; the independent general uv toolchain is 0.12.13."
     },
     {
       "surface": "cisco-skill-scanner",
@@ -189,7 +241,7 @@
       "identity": "anthropics/skills",
       "commit": "9d2f1ae187231d8199c64b5b762e1bdf2244733d",
       "disposition": "retained",
-      "reason": "Maintained guidance keeps the previously reviewed pin. The b29e7cf candidate produced a RED, degraded enterprise scan with 201 failing checks. Cisco and Semgrep completed; SkillSpector timed out after isolated OSV fallback retries, and Snyk remained unavailable without a token, so the candidate was not promoted or approved."
+      "reason": "Maintained guidance keeps the previously reviewed pin. The b29e7cf candidate produced a RED, degraded enterprise scan with 201 failing checks. Cisco and Semgrep completed; SkillSpector timed out after isolated OSV fallback retries, and Snyk remained unavailable without a token, so the candidate was not promoted or approved. The distinct 2026-09-14 candidate 34040c9c568585f6929bedeaad110ad08f079624 is held as review-only Scanner and Catalog evidence, not Core guide approval: unresolved content, license, and execution findings, retained coverage warnings, and no installation or organizational authority keep the maintained guide pin unchanged. Historical candidate evidence remains intact."
     },
     {
       "surface": "anthropic-skills",
@@ -199,11 +251,19 @@
       "reason": "The exact candidate produced a RED, degraded enterprise scan with 201 failing checks: 131 hidden-Unicode, 40 prompt-injection, 16 visible-Unicode, 9 Cisco, 3 skill-license, and 2 Semgrep findings. Cisco and Semgrep completed; SkillSpector timed out after isolated OSV fallback retries, and Snyk remained unavailable without a token. It remains quarantined and unapproved."
     },
     {
+      "surface": "anthropic-skills-candidate-2026-09-14",
+      "identity": "anthropics/skills",
+      "commit": "34040c9c568585f6929bedeaad110ad08f079624",
+      "integrity": "sha256:bbda9be7b3cba505db10e6e61e38133a05ab17799bd4f8e155704c6900ffb914",
+      "disposition": "blocked",
+      "reason": "2026-09-14 immutable candidate: protected Scanner source handoff and Catalog review-only admission, not Core guide approval. Source tree sha256:dcb26b56e9328e16d74ff26ebb9a8fec20a10f6132cc1880c33ee27ff18f355d and canonical source archive sha256:2c33f4e117d7919fea91f87fb744ca4ed7f99fdccee727fa8e5bfd060244b464 bind the exact commit. Protected request sha256:5b14bb5835c795538498275ffa8feaa67f02fcbd6499eccbbc53c4b2aacd8437, publication sha256:bbda9be7b3cba505db10e6e61e38133a05ab17799bd4f8e155704c6900ffb914, receipt sha256:1b25f8425f484b08ae6732804c275ea7ea179d3323e64680803ae592072df78a, and workflow-artifact sha256:8edc91a655a774cb8c5c7d320291c37f29626ef686e7d56bd568ef506fb9a18a are the saved handoff identities. All requested fixed analyzer executions succeeded with no missing or failed analyzer, while coverage warnings remain preserved. Catalog source commit 8101b9790ef18136a99d7e4cc481c01a5d63ee6c reproduced 15 review-only rows (14 Anthropic and 1 UI UX), 176 generated files, and 243 mapped findings (Anthropic 163 and UI UX 80), file-set sha256:0456dfbb316a06d14eb351098ef8f68f8b96ad377a29dfa275adbfce4ae5dcef. That record has empty executable capability arrays, installation false, authority none, and organization admission not-authoritative. It does not clear unresolved content, license, or execution findings, and its review-only scope cannot promote the maintained Core guide pin. The verified source tree was preserved through DCO-only commit-message correction, then the exact signed successor/predecessor files were added and merged as 192b795058b04a4b9ceefdd9879636c5d2744a9f. The generated 176-file identity is unchanged; this source merge is not a Core guide promotion or an engine version cut."
+    },
+    {
       "surface": "ui-ux-pro-max-skill-guide",
       "identity": "nextlevelbuilder/ui-ux-pro-max-skill",
       "commit": "12b486b22e67f5d887962ef8351c1ac863bfaeb9",
       "disposition": "retained",
-      "reason": "Maintained guidance keeps the previously reviewed pin. The v2.11.3 candidate produced a RED, degraded enterprise scan with 186 failing checks. Cisco and Semgrep completed; SkillSpector timed out, and Snyk remained unavailable without a token, so the candidate was not promoted or approved."
+      "reason": "Maintained guidance keeps the previously reviewed pin. The v2.11.3 candidate produced a RED, degraded enterprise scan with 186 failing checks. Cisco and Semgrep completed; SkillSpector timed out, and Snyk remained unavailable without a token, so the candidate was not promoted or approved. The distinct 2026-09-14 v2.15.0 candidate a38d04c3d5c298c851dbe5e6ee1965ee3de42cb5 is held as review-only Scanner and Catalog evidence, not Core guide approval: unresolved content, license, and execution findings, retained coverage warnings, and no installation or organizational authority keep the maintained guide pin unchanged. Historical candidate evidence remains intact."
     },
     {
       "surface": "ui-ux-pro-max-skill",
@@ -213,6 +273,15 @@
       "integrity": "npm-sha512:tg6ABZP/L4rUlJGCfUYWnRdrkMiPI1oEKmWG9SeICRVkO7CFFfB11cEiNoW8s5wRHnquZhqbo40x/yCgSxSAGg==",
       "disposition": "blocked",
       "reason": "The exact candidate produced a RED, degraded enterprise scan with 186 failing checks: 112 hidden-Unicode, 29 visible-Unicode, 28 Cisco, 10 unpinned-dependency, 5 skill-license, and 2 auto-exec-hook findings. Cisco and Semgrep completed; SkillSpector timed out, and Snyk remained unavailable without a token. It remains quarantined and unapproved."
+    },
+    {
+      "surface": "ui-ux-pro-max-skill-candidate-2026-09-14",
+      "identity": "nextlevelbuilder/ui-ux-pro-max-skill",
+      "version": "v2.15.0",
+      "commit": "a38d04c3d5c298c851dbe5e6ee1965ee3de42cb5",
+      "integrity": "sha256:3a2c67b989fd9def7db7b3f75e4223744ef33e59475d149224f847ae244fa123",
+      "disposition": "blocked",
+      "reason": "2026-09-14 immutable candidate: protected Scanner source handoff and Catalog review-only admission, not Core guide approval. Source tree sha256:18a07e74515a407e52cc2e04e3146139b838b68fadbb5cbe2925c11e02fdf2bd and canonical source archive sha256:596f61cf0a55a9fafe497210d4d78e558b8221515ea67980fe0f964ba35807eb bind v2.15.0 commit a38d04c3d5c298c851dbe5e6ee1965ee3de42cb5. Protected request sha256:55c071fd4aa39254d3743527cb78095c0b04e4d73c5b7f6cb9c80f6e126b2eac, publication sha256:3a2c67b989fd9def7db7b3f75e4223744ef33e59475d149224f847ae244fa123, receipt sha256:d5a88a98ecac41543397943a60e7e7b5487fcc4709290cd1f17c86b0a93e6186, and workflow-artifact sha256:d7c6d2ef71583abda319bad097b80b7c45f7c9e4836293b11e70ae85efe5bc35 are the saved handoff identities. All requested fixed analyzer executions succeeded with no missing or failed analyzer, while coverage warnings remain preserved. Catalog source commit 8101b9790ef18136a99d7e4cc481c01a5d63ee6c reproduced 15 review-only rows (14 Anthropic and 1 UI UX), 176 generated files, and 243 mapped findings (Anthropic 163 and UI UX 80), file-set sha256:0456dfbb316a06d14eb351098ef8f68f8b96ad377a29dfa275adbfce4ae5dcef. That record has empty executable capability arrays, installation false, authority none, and organization admission not-authoritative. It does not clear unresolved content, license, or execution findings, and its review-only scope cannot promote the maintained Core guide pin. The verified source tree was preserved through DCO-only commit-message correction, then the exact signed successor/predecessor files were added and merged as 192b795058b04a4b9ceefdd9879636c5d2744a9f. The generated 176-file identity is unchanged; this source merge is not a Core guide promotion or an engine version cut."
     },
     {
       "surface": "aws-mcp-guide-source",
@@ -225,10 +294,10 @@
     {
       "surface": "uv",
       "identity": "uv",
-      "version": "0.12.9",
-      "commit": "9f928602938ac5cf1cd6b294a725833c16f5720e",
+      "version": "0.12.13",
+      "commit": "0ebbd9274a55a8a53a13970be3b97e4209598e17",
       "disposition": "active",
-      "reason": "Toolchain pin for the five locked scanner/runtime projects, moved 0.12.8 -> 0.12.9 on 2026-09-04. The official tag resolves to verified commit 9f928602938ac5cf1cd6b294a725833c16f5720e. The exact Windows x86_64 executable reports that commit and version; its official archive SHA-256 ddbfcee1ac615a0499f6aa97b5ec8ebdf3ee4a7714a48055ec2ba0030e3cf810 matches both the release checksum sidecar and GitHub artifact attestation. The same attestation binds the Linux x86_64 setup-uv archive at SHA-256 ec7a99cd05e0cd7f80243f135ce1361c76835cb0ee60055d14d20eba8eba1460, and the downloaded PyPI manylinux x86_64 wheel matches PyPI's SHA-256 5badfd805fd88bf99b4b4f044f6e8f762f1892cab27477f4427bb473e93dd049. All five committed locks pass offline uv lock --check without mutation under 0.12.9, and every requirements export is byte-identical to checksum-verified 0.12.8 when each version writes the same scratch path. Source review confirms 0.12.9 is a security and correctness release: it updates async_http_range_reader to 0.11.1 against a potential memory-safety defect when reading metadata ranges from untrusted wheels, drops sensitive headers when a redirect crosses an authentication realm, redacts secrets in signed URLs from retry diagnostics, and gives --locked, --frozen, and --check precedence over conflicting UV_LOCKED and UV_FROZEN values; none of these changes the locked dependency graphs or the offline lock and export results. The Snyk qualification workflow provisions this exact version; the controlled SkillSpector recipe retains its separately recorded 0.12.8 build input until the next rebuild, and setup-uv itself remains at its reviewed immutable SHA."
+      "reason": "Toolchain pin for the five locked scanner/runtime projects, moved 0.12.9 -> 0.12.13 on 2026-09-14. The official tag resolves to verified commit 0ebbd9274a55a8a53a13970be3b97e4209598e17. The task-local Windows x86_64 executable reports that commit and version; its official archive SHA-256 a86c9dc7bad9b03f388583b7187c05fe9951c2e0d392217e8fd43d97787f6ec2 matches both the release checksum sidecar and a verified GitHub SLSA provenance v1 attestation from astral-sh/uv/.github/workflows/release.yml. All five committed locks pass offline uv lock --check without mutation under both 0.12.9 and 0.12.13, and every paired requirements export is byte-identical. Source review confirms 0.12.10 through 0.12.13 retain relevant lock correctness and strengthen artifact integrity: deterministic exclude-newer lock handling, source archive and PEP 658 metadata hash verification, and Windows executable signing/launcher fixes; none changes the locked dependency graphs or offline lock/export results. The Cisco MCP and Snyk qualification workflows provision this exact version; the controlled SkillSpector recipe retains its separately recorded 0.12.8 build input until the next rebuild, and setup-uv itself remains at its reviewed immutable SHA."
     },
     {
       "surface": "actions-checkout",
@@ -248,10 +317,10 @@
     {
       "surface": "claude-code-action",
       "identity": "anthropics/claude-code-action",
-      "version": "v1.0.210",
-      "commit": "a874e9ecd7bb36efdad65429c6b35815f5a08f10",
+      "version": "v1.0.223",
+      "commit": "9cdae7f0d995e3ba7c33f226087fdf82a59cd520",
       "disposition": "active",
-      "reason": "The official v1.0.210 annotated tag dereferences to this immutable SHA. The target commit and tag are unsigned, matching the prior Claude action pin's signature posture rather than introducing a new regression. The opt-in maintainer workflow remains pinned to the commit rather than the movable v1 tag; its action inputs, permissions, and secret input are unchanged. The reviewed range bounds stalled job-log downloads, encodes branch names in generated GitHub links, corrects delete-file path guidance, and advances the embedded Claude Code and Agent SDK together."
+      "reason": "Verified the exact stable v1.0.223 tag on 2026-09-14; the moving v1 release alias is not the version identity. The source range advances embedded Claude Code from 2.1.251 to 2.1.270 and Agent SDK from 0.3.251 to 0.3.270. Action inputs, permissions and the existing opt-in workflow boundary remain unchanged. The commit remains unsigned, matching the prior pin. No paid model task was run for this metadata qualification."
     },
     {
       "surface": "setup-node-action",
@@ -280,10 +349,10 @@
     {
       "surface": "codeql-action",
       "identity": "github/codeql-action",
-      "version": "v4.37.9",
-      "commit": "cdf488f595d80d6e07e03d4674febd5ab45fa938",
+      "version": "v4.38.0",
+      "commit": "b96794f015dfd88f77b49b1c93e0fa7110f94c63",
       "disposition": "active",
-      "reason": "The official v4.37.9 annotated tag dereferences to this immutable SHA. The action input surfaces used by this repository are unchanged; the default analysis engine advances to codeql-bundle-v2.26.4 and supported GitHub Enterprise Server metadata is refreshed. All three governed call sites -- init and analyze in codeql.yml and upload-sarif in scorecard.yml -- move together because one ledger identity covers them."
+      "reason": "The official v4.38.0 action tag resolves to this GitHub-verified immutable commit, independently of the separate codeql-bundle-v2.27.0 release that it selects by default. The reviewed range adds Linux arm64 support, bounds toolcache cleanup to the configured cache, and adds an internal job-status input for the post step. Existing JavaScript/TypeScript and SARIF inputs and permissions remain unchanged. All three governed init, analyze and upload-sarif call sites move together. Hosted analysis is separate acceptance and has not been rerun for this local Core candidate."
     },
     {
       "surface": "scorecard-action",
@@ -328,10 +397,19 @@
     {
       "surface": "setup-uv-action",
       "identity": "astral-sh/setup-uv",
-      "version": "v10.0.1",
-      "commit": "20cfd1bf945f4377ade1205e4dbc17946fc9a30d",
+      "version": "v10.1.0",
+      "commit": "bec219d24cd3e171d82865faccec33120bb574f4",
       "disposition": "active",
-      "reason": "Moved v9.0.0 -> v10.0.1 on 2026-08-15, crossing one major; the entry leaves the retained disposition because the newest stable release no longer resolves to the previously recorded SHA. v10.0.1 is a lightweight tag, so the recorded commit is the tag target itself rather than a dereferenced annotated tag. v10.0.0's only breaking change is that the default enable-cache: auto now DISABLES the cache for pull_request_target, workflow_run and release events, as a cache-poisoning defense. The only remaining Core call site, snyk-agent-qualification.yml, is workflow_dispatch only, so none of the three affected events is in use and caching behavior is unchanged for this repository. That call site pins version 0.12.9 explicitly, so the new latest-known resolution and the .tool-versions Python inference are never reached. v10.0.1 adds only a transient manifest-timeout tolerance over v10.0.0."
+      "reason": "Verified stable v10.1.0 at this immutable commit on 2026-09-14. The reviewed range verifies version-manifest downloads with astral-sh/versions checksums, respects NO_PROXY, and adds an optional Python runtime identity output. Both Core callers retain their explicit uv version, workflow triggers, permissions and cache settings. The action version is independent of the selected uv runtime and does not regenerate analyzer locks. Hosted execution remains a separate acceptance step."
+    },
+    {
+      "surface": "ecc-codex-chrome-devtools-mcp-candidate",
+      "identity": "chrome-devtools-mcp",
+      "version": "1.9.0",
+      "commit": "1cec9cd1a3bbf1895c98fa4b4e0e2da5a36e4075",
+      "integrity": "sha512-RnzXoJiUQ44hpOihWk90uOhLD/CnwDkDy0ldHMZONJ2nYQ+dWN1fq1luHHqyd+7FuYnyIlCY6uTThbN5ut9kSQ==",
+      "disposition": "blocked",
+      "reason": "Qualified only under CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS=1 and CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS=1, plus isolated/headless options. Its normal launch invokes a detached update-check child that writes the user cache and fetches the configured npm registry, while usage statistics default on. Core now has a typed stdio environment projection and fixture coverage that parses exact candidate TOML and verifies an owned repeat update; active Core remains 1.7.0. A disposable generated candidate TOML was accepted by Codex CLI with the exact args, both environment values, and timeout. The direct offline-cache launcher negotiated initialize as chrome_devtools 1.9.0, listed 29 tools, logged that usage statistics were off, and did not create the disposable update cache. Earlier qualification left both new_page and list_pages nonreturning. On 2026-09-15, the exact automatic candidate with a compliant roots responder failed new_page for two loopback runs and one data-URL run; a vendor launch-construction differential also remained pending before it returned a Browser. The final supported --executablePath C:/Program Files/Google/Chrome/Application/chrome.exe variant used an argv-array npm CLI wrapper, the same installed Chrome binary, both opt-outs, and an isolated profile, but still timed out at real new_page. It then exited with code zero after stdin EOF and its captured owned Node/Chrome tree was empty; no forced termination or repeat followed the failed operation. Direct bundled-Puppeteer pipe and WebSocket/attach successes do not qualify the normal managed configuration. The runtime cause remains unproven, so retain active 1.7.0 and keep this candidate blocked; do not infer a working browser workflow from initialize/tools-list. Official ChromeDevTools/chrome-devtools-mcp lightweight tag chrome-devtools-mcp-v1.9.0 resolves to this commit; packed manifest SHA-256 6a14bfc51d9111957a5446ba861e462c3181c69c915f8133d8f2beac8c175021; isolated two-entry lock SHA-256 cade7ee6604f22303be2ce0e03cbf059aafc4e630b49b6be6e6f45d09598d180."
     }
   ]
 }

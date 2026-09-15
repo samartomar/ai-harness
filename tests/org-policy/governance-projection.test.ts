@@ -22,6 +22,7 @@ import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext, WriteAction } from "../../src/internals/plan.js";
 import { plan } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
+import { defaultNativeMcpServers } from "../../src/mcp/default-native-runtime.js";
 import { command as mcpCommand } from "../../src/mcp/index.js";
 import { managedMcpProjectionState } from "../../src/mcp/managed-projection.js";
 import { mcpApprovalSubject } from "../../src/mcp/policy.js";
@@ -135,6 +136,12 @@ function customSource() {
     version: "1.2.3",
     integrity: DIGEST,
   };
+}
+
+function rootAwareMcpServers() {
+  return mcpServers("project", scanRepo(dir, { maxDepth: 8, contextDir: "ai-coding" }), {
+    localRuntimeServers: defaultNativeMcpServers(ctx()),
+  });
 }
 
 function customPolicy(targets: string[] = ["claude"], approvals: unknown[] = []) {
@@ -260,9 +267,7 @@ function currentReviewedDecision(
   if (candidate?.source.type !== "mcp" || policy.governance === undefined) {
     throw new Error("expected reviewed MCP fixture");
   }
-  const control = aihPolicyControls(
-    mcpServers("project", scanRepo(dir, { maxDepth: 8, contextDir: "ai-coding" })),
-  ).find((item) => item.id === candidate.id);
+  const control = aihPolicyControls(rootAwareMcpServers()).find((item) => item.id === candidate.id);
   if (control === undefined) throw new Error("expected AIH-owned reviewed control");
   const now = Date.now();
   return {
@@ -566,9 +571,7 @@ function reviewedMcpPolicy({
   serverId?: "code-review-graph" | "playwright" | "sequential-thinking";
   targets?: GovernedMcpTarget[];
 } = {}) {
-  const server = mcpServers("project", scanRepo(dir, { maxDepth: 8, contextDir: "ai-coding" }))[
-    serverId
-  ];
+  const server = rootAwareMcpServers()[serverId];
   if (server === undefined) throw new Error(`expected ${serverId} catalog entry`);
   const source = {
     type: "mcp" as const,
@@ -667,7 +670,7 @@ describe("governed candidate projection", () => {
     const playwright = runtime.catalog.playwright;
     expect(playwright?.type).toBe("stdio");
     if (playwright?.type !== "stdio") throw new Error("expected configured Playwright stdio MCP");
-    expect(playwright.args).toEqual(["@playwright/mcp@0.0.79"]);
+    expect(playwright.args).toEqual(["@playwright/mcp@0.0.81"]);
     expect(runtime.effective.candidates[0]).toMatchObject({
       id: "playwright",
       requested: true,
@@ -2492,9 +2495,7 @@ describe("governed candidate projection", () => {
   });
 
   it("allows an exact AIH-shipped reviewed MCP without accepting a self-declared custom review", async () => {
-    const server = mcpServers("project", scanRepo(dir, { maxDepth: 8, contextDir: "ai-coding" }))[
-      "code-review-graph"
-    ];
+    const server = rootAwareMcpServers()["code-review-graph"];
     if (server === undefined) throw new Error("expected code-review-graph catalog entry");
     const source = {
       type: "mcp" as const,
@@ -2550,7 +2551,13 @@ describe("governed candidate projection", () => {
     expect(managed?.json).toMatchObject({
       allowedMcpServers: [
         expect.objectContaining({
-          serverCommand: expect.arrayContaining(["code-review-graph@2.3.7"]),
+          serverCommand: expect.arrayContaining([
+            process.execPath,
+            expect.stringMatching(/[\\/]dist[\\/]ecc-runtime\.js$/),
+            "code-review-graph",
+            "--package",
+            "code-review-graph==2.3.8",
+          ]),
         }),
       ],
     });
@@ -2572,7 +2579,13 @@ describe("governed candidate projection", () => {
     const settings = JSON.parse(readFileSync(join(dir, ".kiro", "settings", "mcp.json"), "utf8"));
     expect(settings.mcpServers["code-review-graph"]).toMatchObject({
       type: "stdio",
-      command: "uvx",
+      command: process.execPath,
+      args: expect.arrayContaining([
+        expect.stringMatching(/[\\/]dist[\\/]ecc-runtime\.js$/),
+        "code-review-graph",
+        "--package",
+        "code-review-graph==2.3.8",
+      ]),
     });
     const marker = JSON.parse(readFileSync(join(dir, ".aih-config.json"), "utf8"));
     expect(marker.kiroMcpProjection).toMatchObject({ state: "active" });

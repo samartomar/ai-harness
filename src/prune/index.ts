@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { SHARED_MARKER, sharedCanonicalBlockBody } from "../bootstrap-ai/canon.js";
 import { AIH_CONFIG_FILE } from "../config/marker.js";
 import { codexPruneRemovalActions } from "../ecc/codex.js";
-import { ECC_NPM_CLI_BIN, ECC_NPM_PACKAGE, isAihDirectEccInstallTarget } from "../ecc/install.js";
+import { isAihDirectEccInstallTarget } from "../ecc/install.js";
 import {
   eccPruneReconciliationActions,
   hasEccRegisteredTarget,
@@ -16,7 +16,7 @@ import {
   type Action,
   type CommandSpec,
   digest,
-  exec,
+  doc,
   type Plan,
   type PlanContext,
   plan,
@@ -32,7 +32,6 @@ import {
 } from "../mcp/managed-projection.js";
 import { nativeMcpProjectionActions } from "../mcp/native-managed-projection.js";
 import { coalesceMcpProjectionMarkerActions } from "../mcp/projection-marker.js";
-import { execArgv } from "../tools/install.js";
 import {
   type PruneArtifact,
   type StalePruneSet,
@@ -286,19 +285,14 @@ function actionFor(ctx: PlanContext, a: PruneArtifact, hardDelete: boolean): Act
   return undefined; // advisory → surfaced in the digest, never an auto-action
 }
 
-function eccUninstallAction(ctx: PlanContext, cli: Cli): Action {
-  return exec(
-    `Remove ECC-managed ${cli} footprint recorded in ECC install-state (under --apply)`,
-    execArgv(ctx.host.platform, [
-      "npx",
-      "--yes",
-      "--package",
-      ECC_NPM_PACKAGE,
-      ECC_NPM_CLI_BIN,
-      "uninstall",
-      "--target",
-      cli,
-    ]),
+function unreceiptedEccPreservationDoc(cli: Cli): Action {
+  return doc(
+    `Preserve unreceipted ECC ${cli} footprint`,
+    lines(
+      `No AIH ECC registration ledger target receipt authenticates the ${cli} install state.`,
+      "Prune preserves the target's client files and skips upstream uninstall execution.",
+      "AIH-owned repository adapters and managed bootloader blocks remain eligible for cleanup.",
+    ),
   );
 }
 
@@ -351,8 +345,11 @@ async function prunePlan(ctx: PlanContext): Promise<Plan> {
   const coordinatedEccPrune = hasEccRegistrationLedger(ctx);
   const coordinatedCodexPrune = coordinatedEccPrune && hasEccRegisteredTarget(ctx, "codex");
   for (const cli of set.dropped) {
-    if (!coordinatedEccPrune && isAihDirectEccInstallTarget(cli)) {
-      actions.push(eccUninstallAction(ctx, cli));
+    if (
+      isAihDirectEccInstallTarget(cli) &&
+      (!coordinatedEccPrune || !hasEccRegisteredTarget(ctx, cli))
+    ) {
+      actions.push(unreceiptedEccPreservationDoc(cli));
     }
     if (!coordinatedCodexPrune && cli === "codex") {
       const codexPrune = codexPruneRemovalActions(ctx);

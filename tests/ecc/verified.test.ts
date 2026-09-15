@@ -361,6 +361,413 @@ describe("verifiedEccInstallPlan", () => {
     expect(JSON.stringify(steps)).not.toContain("install-apply.js");
   });
 
+  it.each<{
+    name: string;
+    selection: EccComponentSelection;
+    governance: boolean;
+    runtimeExpected: boolean;
+  }>([
+    {
+      name: "implicit Core",
+      selection: {
+        scope: "scoped" as const,
+        components: [],
+        mcps: [],
+        recommendations: [],
+        moduleIds: ["agents-core", "hooks-runtime"],
+      },
+      governance: false,
+      runtimeExpected: false,
+    },
+    {
+      name: "implicit Full",
+      selection: {
+        scope: "full" as const,
+        components: [],
+        mcps: [],
+        recommendations: [],
+      },
+      governance: false,
+      runtimeExpected: false,
+    },
+    {
+      name: "explicit baseline:hooks",
+      selection: {
+        scope: "scoped" as const,
+        components: ["baseline:hooks"],
+        mcps: [],
+        recommendations: [],
+        moduleIds: ["agents-core"],
+      },
+      governance: false,
+      runtimeExpected: true,
+    },
+    {
+      name: "policy-governed explicit baseline:hooks",
+      selection: {
+        scope: "scoped" as const,
+        components: ["baseline:hooks"],
+        mcps: [],
+        recommendations: [],
+        moduleIds: ["agents-core"],
+      },
+      governance: true,
+      runtimeExpected: false,
+    },
+  ])(
+    "enforces executable consent in the $name OpenCode consumer route",
+    ({ selection: selected, governance, runtimeExpected }) => {
+      const sourceRoot = join(root, `ecc-consent-${governance}-${runtimeExpected}`);
+      const capture = join(root, `consent-capture-${governance}-${runtimeExpected}.json`);
+      const safeDestination = join(root, ".agents", "skills", "tdd-workflow", "SKILL.md");
+      const runtimeDestinations = [
+        join(root, ".opencode", "plugins", "ecc.js"),
+        join(root, ".config", "opencode", "plugins", "ecc.js"),
+        join(root, ".config", "opencode", "opencode.json"),
+        join(root, "opencode.json"),
+      ];
+      put(
+        join(sourceRoot, "scripts", "lib", "install-executor.js"),
+        `exports.createManifestInstallPlan = ({ homeDir }) => {
+          const operations = [
+            { kind: "copy-file", moduleId: "agents-core", sourceRelativePath: ".agents/skills/tdd-workflow/SKILL.md", destinationPath: ${JSON.stringify(safeDestination)} },
+            { kind: "copy-file", moduleId: "hooks-runtime", sourceRelativePath: ".opencode/plugins/ecc.js", destinationPath: ${JSON.stringify(runtimeDestinations[0])} },
+            { kind: "copy-file", moduleId: "hooks-runtime", sourceRelativePath: ".config/opencode/plugins/ecc.js", destinationPath: ${JSON.stringify(runtimeDestinations[1])} },
+            { kind: "merge-json", moduleId: "hooks-runtime", sourceRelativePath: "opencode.json", destinationPath: ${JSON.stringify(runtimeDestinations[2])}, mergePayload: { plugin: ["./plugins/ecc.js"], command: { check: { command: "node child.js", environment: { ECC_CHILD: "1" } } }, permission: { bash: "deny" } } },
+            { kind: "copy-file", moduleId: "hooks-runtime", sourceRelativePath: "opencode.json", destinationPath: ${JSON.stringify(runtimeDestinations[3])} },
+          ];
+          return { operations, statePreview: { operations }, installStatePath: require("node:path").join(homeDir, ".opencode", "ecc-install-state.json") };
+        };
+        exports.applyInstallPlan = (plan) => {
+          const crypto = require("node:crypto");
+          const fs = require("node:fs");
+          const path = require("node:path");
+          fs.writeFileSync(${JSON.stringify(capture)}, JSON.stringify(plan.operations), "utf8");
+          const operations = plan.operations.map((operation) => {
+            const contents = operation.kind === "merge-json"
+              ? JSON.stringify(operation.mergePayload) + "\\n"
+              : operation.sourceRelativePath + "\\n";
+            fs.mkdirSync(path.dirname(operation.destinationPath), { recursive: true });
+            fs.writeFileSync(operation.destinationPath, contents, "utf8");
+            return {
+              ...operation,
+              strategy: "preserve-relative-path",
+              ownership: "managed",
+              scaffoldOnly: false,
+              contentSha256: crypto.createHash("sha256").update(contents).digest("hex"),
+            };
+          });
+          const state = {
+            schemaVersion: "ecc.install.v1",
+            installedAt: "2026-09-15T00:00:00.000Z",
+            target: { root: path.dirname(plan.installStatePath), installStatePath: plan.installStatePath },
+            operations,
+          };
+          fs.mkdirSync(path.dirname(plan.installStatePath), { recursive: true });
+          fs.writeFileSync(plan.installStatePath, JSON.stringify(state), "utf8");
+        };\n`,
+      );
+      const request = {
+        clis: ["opencode" as const],
+        profile: selected.scope === "full" ? "full" : "core",
+        packs: [],
+        selection: selected as EccComponentSelection,
+        ...(governance ? { governance: true as const } : {}),
+      };
+      const built = verifiedEccInstallPlan(
+        ctx(),
+        sourceRoot,
+        request,
+        eccEvidenceComponentIdsForSelection("opencode", selected as EccComponentSelection).map(
+          authorization,
+        ),
+      );
+      const materialize = driverSteps(built.actions)[1];
+      if (materialize === undefined || materialize.argv[0] === undefined) {
+        throw new Error("missing OpenCode materialization step");
+      }
+      const result = spawnSync(materialize.argv[0], materialize.argv.slice(1), {
+        cwd: materialize.cwd,
+        input: materialize.input,
+        encoding: "utf8",
+      });
+
+      expect(result.status, `${result.stderr}${result.stdout}`).toBe(0);
+      const applied = JSON.parse(readFileSync(capture, "utf8")) as Array<{
+        destinationPath: string;
+      }>;
+      expect(applied.map((operation) => operation.destinationPath)).toContain(safeDestination);
+      for (const destination of runtimeDestinations) {
+        expect(applied.map((operation) => operation.destinationPath).includes(destination)).toBe(
+          runtimeExpected,
+        );
+      }
+      if (runtimeExpected && !governance) {
+        const statePath = join(root, ".opencode", "ecc-install-state.json");
+        const before = new Map(
+          [capture, safeDestination, statePath, ...runtimeDestinations].map((path) => [
+            path,
+            readFileSync(path),
+          ]),
+        );
+        const declinedSelection: EccComponentSelection = {
+          ...selected,
+          components: selected.components.filter((component) => component !== "baseline:hooks"),
+        };
+        const declined = verifiedEccInstallPlan(
+          ctx(),
+          sourceRoot,
+          { ...request, selection: declinedSelection },
+          eccEvidenceComponentIdsForSelection("opencode", declinedSelection).map(authorization),
+        );
+        const declinedStep = driverSteps(declined.actions)[1];
+        if (declinedStep === undefined || declinedStep.argv[0] === undefined) {
+          throw new Error("missing declined OpenCode materialization step");
+        }
+        const declinedResult = spawnSync(declinedStep.argv[0], declinedStep.argv.slice(1), {
+          cwd: declinedStep.cwd,
+          input: declinedStep.input,
+          encoding: "utf8",
+        });
+
+        expect(`${declinedResult.stderr}${declinedResult.stdout}`).toMatch(
+          /consent withdrawal.*prior receipt and runtime remain unchanged/i,
+        );
+        expect(declinedResult.status).not.toBe(0);
+        for (const [path, contents] of before) expect(readFileSync(path)).toEqual(contents);
+      }
+    },
+  );
+
+  it.each<{
+    name: string;
+    selection: EccComponentSelection;
+    governance: boolean;
+    runtimeExpected: boolean;
+  }>([
+    {
+      name: "implicit Core",
+      selection: {
+        scope: "scoped" as const,
+        components: ["baseline:rules"],
+        mcps: [],
+        recommendations: [],
+        moduleIds: ["hooks-runtime"],
+      },
+      governance: false,
+      runtimeExpected: false,
+    },
+    {
+      name: "implicit Full",
+      selection: {
+        scope: "full" as const,
+        components: [],
+        mcps: [],
+        recommendations: [],
+      },
+      governance: false,
+      runtimeExpected: false,
+    },
+    {
+      name: "explicit baseline:hooks",
+      selection: {
+        scope: "scoped" as const,
+        components: ["baseline:rules", "baseline:hooks"],
+        mcps: [],
+        recommendations: [],
+        moduleIds: ["hooks-runtime"],
+      },
+      governance: false,
+      runtimeExpected: true,
+    },
+    {
+      name: "policy-governed explicit baseline:hooks",
+      selection: {
+        scope: "scoped" as const,
+        components: ["baseline:rules", "baseline:hooks"],
+        mcps: [],
+        recommendations: [],
+        moduleIds: ["hooks-runtime"],
+      },
+      governance: true,
+      runtimeExpected: false,
+    },
+  ])(
+    "enforces executable consent in the $name Codex consumer route",
+    ({ selection: selected, governance, runtimeExpected }) => {
+      const suffix = `${selected.scope}-${governance}-${runtimeExpected}`;
+      const sourceRoot = join(root, `codex-consent-source-${suffix}`);
+      const home = join(root, `codex-consent-home-${suffix}`);
+      const safeSource = join(sourceRoot, "rules", "common", "testing.md");
+      const runtimeSource = join(sourceRoot, ".codex", "hooks", "pretooluse.js");
+      const safeDestination = join(home, ".codex", "rules", "common", "testing.md");
+      const runtimeDestination = join(home, ".codex", "hooks", "pretooluse.js");
+      mkdirSync(join(home, ".codex"), { recursive: true });
+      mkdirSync(join(sourceRoot, "skills"), { recursive: true });
+      writeFileSync(join(home, ".codex", "config.toml"), "", "utf8");
+      put(safeSource, "safe content\n");
+      put(runtimeSource, "runtime content\n");
+      put(
+        join(sourceRoot, "scripts", "lib", "install-executor.js"),
+        `exports.createManifestInstallPlan = ({ homeDir }) => {
+          const operations = [
+            {
+              kind: "copy-file",
+              moduleId: "rules-core",
+              sourcePath: ${JSON.stringify(safeSource)},
+              sourceRelativePath: "rules/common/testing.md",
+              destinationPath: ${JSON.stringify(safeDestination)},
+            },
+            {
+              kind: "copy-file",
+              moduleId: "hooks-runtime",
+              sourcePath: ${JSON.stringify(runtimeSource)},
+              sourceRelativePath: ".codex/hooks/pretooluse.js",
+              destinationPath: ${JSON.stringify(runtimeDestination)},
+            },
+          ];
+          return {
+            operations,
+            statePreview: {
+              schemaVersion: "ecc.install.v1",
+              installedAt: "2026-09-15T00:00:00.000Z",
+              target: {
+                root: require("node:path").join(homeDir, ".codex"),
+                installStatePath: require("node:path").join(homeDir, ".codex", "ecc-install-state.json"),
+              },
+              operations,
+            },
+            installStatePath: require("node:path").join(homeDir, ".codex", "ecc-install-state.json"),
+          };
+        };\n`,
+      );
+      put(
+        join(sourceRoot, "scripts", "lib", "install-state.js"),
+        'exports.writeInstallState = (path, state) => require("node:fs").writeFileSync(path, JSON.stringify(state), "utf8");\n',
+      );
+      for (const name of ["merge-codex-config.js", "merge-mcp-config.js"]) {
+        put(join(sourceRoot, "scripts", "codex", name), "process.exit(0);\n");
+      }
+      put(
+        join(sourceRoot, ".codex", "AGENTS.md"),
+        [
+          "## Skills Discovery",
+          "",
+          "old guidance",
+          "",
+          "Available skills:",
+          "",
+          "## MCP Servers",
+          "",
+          "old MCP guidance",
+          "",
+          "## External Action Boundaries",
+          "",
+          "boundary",
+          "",
+          "| Skills | Skills loaded via plugin | `.agents/skills/` directory |",
+          "",
+        ].join("\n"),
+      );
+      const run = fakeRunner(() => undefined);
+      const context: PlanContext = {
+        ...ctx(),
+        env: { HOME: home, USERPROFILE: home },
+        host: makeHostAdapter({ platform: "linux", run, env: { HOME: home, USERPROFILE: home } }),
+        run,
+      };
+      const request = {
+        clis: ["codex" as const],
+        profile: selected.scope === "full" ? "full" : "core",
+        packs: [],
+        selection: selected as EccComponentSelection,
+        ...(governance ? { governance: true as const } : {}),
+      };
+      const built = verifiedEccInstallPlan(
+        context,
+        sourceRoot,
+        request,
+        authorizationsForSelection("codex", selected as EccComponentSelection),
+      );
+      const step = driverSteps(built.actions).find((candidate) =>
+        codexInstallProgram(candidate).includes("codex-install-merge"),
+      );
+      if (step === undefined || step.argv[0] === undefined) {
+        throw new Error("missing Codex consent materialization step");
+      }
+      const result = spawnSync(step.argv[0], step.argv.slice(1), {
+        cwd: step.cwd,
+        env: { ...process.env, ...step.env, HOME: home, USERPROFILE: home },
+        encoding: "utf8",
+      });
+
+      expect(result.status, `${result.stderr}${result.stdout}`).toBe(0);
+      expect(readFileSync(safeDestination, "utf8")).toBe("safe content\n");
+      expect(existsSync(runtimeDestination)).toBe(runtimeExpected);
+      const upstreamState = JSON.parse(
+        readFileSync(join(home, ".codex", "ecc-install-state.json"), "utf8"),
+      ) as { operations: Array<{ destinationPath: string; contentSha256?: string }> };
+      expect(
+        upstreamState.operations.some(
+          (operation) => operation.destinationPath === runtimeDestination,
+        ),
+      ).toBe(runtimeExpected);
+      expect(upstreamState.operations).not.toHaveLength(0);
+      expect(
+        upstreamState.operations.every((operation) =>
+          /^[a-f0-9]{64}$/.test(operation.contentSha256 ?? ""),
+        ),
+      ).toBe(true);
+      if (runtimeExpected && !governance) {
+        const upstreamStatePath = join(home, ".codex", "ecc-install-state.json");
+        const before = new Map(
+          [safeDestination, runtimeDestination, upstreamStatePath].map((path) => [
+            path,
+            readFileSync(path),
+          ]),
+        );
+        const declinedSelection: EccComponentSelection = {
+          ...selected,
+          components: selected.components.filter((component) => component !== "baseline:hooks"),
+        };
+        const declined = verifiedEccInstallPlan(
+          context,
+          sourceRoot,
+          { ...request, selection: declinedSelection },
+          authorizationsForSelection("codex", declinedSelection),
+        );
+        const declinedStep = driverSteps(declined.actions).find((candidate) =>
+          codexInstallProgram(candidate).includes("codex-install-merge"),
+        );
+        if (declinedStep === undefined || declinedStep.argv[0] === undefined) {
+          throw new Error("missing declined Codex materialization step");
+        }
+        const declinedResult = spawnSync(declinedStep.argv[0], declinedStep.argv.slice(1), {
+          cwd: declinedStep.cwd,
+          env: { ...process.env, ...declinedStep.env, HOME: home, USERPROFILE: home },
+          encoding: "utf8",
+        });
+
+        expect(`${declinedResult.stderr}${declinedResult.stdout}`).toMatch(
+          /consent withdrawal.*prior receipt and runtime remain unchanged/i,
+        );
+        expect(declinedResult.status).not.toBe(0);
+        for (const [path, contents] of before) expect(readFileSync(path)).toEqual(contents);
+      }
+    },
+  );
+
+  it("refuses the legacy selection-less direct installer fallback", () => {
+    expect(() =>
+      verifiedEccInstallPlan(
+        ctx(),
+        join(root, "quarantine", "tree"),
+        { clis: ["opencode"], profile: "core", packs: [] },
+        [authorization()],
+      ),
+    ).toThrow(/explicit component selection.*consent/i);
+  });
+
   it("fails the governed materialization driver when a content-looking manifest destination escapes its roots", () => {
     const sourceRoot = join(root, "ecc-source");
     const outside = join(tmpdir(), "aih-ecc-outside", "skills", "tdd-workflow", "SKILL.md");
@@ -438,7 +845,7 @@ describe("verifiedEccInstallPlan", () => {
     });
     expect(result.status).not.toBe(0);
     expect(`${result.stderr}${result.stdout}`).toContain(
-      "normalized governed ECC destination collision",
+      "normalized ECC consent destination collision",
     );
   });
 
@@ -488,7 +895,7 @@ describe("verifiedEccInstallPlan", () => {
         { clis: ["claude", "codex", "kiro"], profile: "core", packs: [], governance: true },
         [],
       ),
-    ).toThrow(/governed ECC install without an authorized component selection/);
+    ).toThrow(/explicit component selection for executable consent/);
   });
 
   it("rejects a governed direct materializer whose upstream state path is not the exact target state path", () => {
@@ -620,7 +1027,7 @@ describe("verifiedEccInstallPlan", () => {
         "sequential-thinking": {
           type: "stdio",
           command: "npx",
-          args: ["-y", "@modelcontextprotocol/server-sequential-thinking@2026.7.4"],
+          args: ["-y", "@modelcontextprotocol/server-sequential-thinking@2026.8.31"],
         },
         github: {
           type: "http",
@@ -678,12 +1085,13 @@ describe("verifiedEccInstallPlan", () => {
     expect(codexInstallProgram(codexStep)).toContain(completeOpenCodeTree);
   });
 
-  it("projects Core's exact Chrome DevTools default through the unscoped verified Codex path", () => {
+  it("projects Core's exact Chrome DevTools default through an explicitly scoped Codex path", () => {
+    const selected = selection();
     const plan = verifiedEccInstallPlan(
       ctx(),
       join(root, "quarantine", "tree"),
-      { clis: ["codex"], profile: "minimal", packs: [] },
-      [authorization()],
+      { clis: ["codex"], profile: "minimal", packs: [], selection: selected },
+      authorizationsForSelection("codex", selected),
     );
     const step = driverSteps(plan.actions)[1];
     const mcpB64 = step?.argv.at(-2);
@@ -691,6 +1099,7 @@ describe("verifiedEccInstallPlan", () => {
     const rendered = Buffer.from(mcpB64, "base64").toString("utf8");
 
     expect(rendered).toContain("chrome-devtools-mcp@1.7.0");
+    expect(rendered).not.toContain("CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS");
     expect(rendered).toContain('"startupTimeoutSec":30');
     expect(rendered).not.toContain("@latest");
   });
@@ -927,11 +1336,25 @@ describe("verifiedEccInstallPlan", () => {
       `exports.createManifestInstallPlan = ({ homeDir }) => ({
         operations: [],
         statePreview: {
-          schemaVersion: 1,
+          schemaVersion: "ecc.install.v1",
           installedAt: process.hrtime.bigint().toString(),
-          request: {},
+          target: {
+            id: "codex-home",
+            target: "codex",
+            kind: "home",
+            root: require("node:path").join(homeDir, ".codex"),
+            installStatePath: require("node:path").join(homeDir, ".codex", "ecc-install-state.json"),
+          },
+          request: {
+            profile: null,
+            modules: [],
+            includeComponents: [],
+            excludeComponents: [],
+            legacyLanguages: [],
+            legacyMode: false,
+          },
           resolution: { selectedModules: [], skippedModules: [] },
-          source: { manifestVersion: 1 },
+          source: { repoVersion: "2.2.1", repoCommit: ${JSON.stringify("a".repeat(40))}, manifestVersion: 1 },
           operations: [],
         },
         installStatePath: require("node:path").join(homeDir, ".codex", "ecc-install-state.json"),
@@ -1006,6 +1429,7 @@ describe("verifiedEccInstallPlan", () => {
     ).toBe("# Coding standards\n");
     const config = readFileSync(join(home, ".codex", "config.toml"), "utf8");
     expect(config).toContain("chrome-devtools-mcp@1.7.0");
+    expect(config).not.toContain("CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS");
     expect(config).toContain("startup_timeout_sec = 30");
     expect(config).not.toContain("@latest");
     expect(config).toContain("\r\n");
@@ -1057,7 +1481,7 @@ describe("verifiedEccInstallPlan", () => {
           "sequential-thinking": {
             type: "stdio",
             command: "npx",
-            args: ["-y", "@modelcontextprotocol/server-sequential-thinking@2026.7.4"],
+            args: ["-y", "@modelcontextprotocol/server-sequential-thinking@2026.8.31"],
           },
         },
       },
@@ -1086,18 +1510,24 @@ describe("verifiedEccInstallPlan", () => {
   });
 
   it("emits machine-readable evidence authorization receipts", () => {
-    const receipt = authorization();
+    const selected: EccComponentSelection = {
+      scope: "scoped",
+      components: ["baseline:rules"],
+      mcps: [],
+      recommendations: [],
+    };
+    const receipts = [authorization(), authorization("baseline:rules")];
     const plan = verifiedEccInstallPlan(
       ctx(),
       join(root, "tree"),
-      { clis: ["claude"], profile: "core", packs: [] },
-      [receipt],
+      { clis: ["claude"], profile: "core", packs: [], selection: selected },
+      receipts,
     );
     const digest = plan.actions.find(
       (action): action is DigestAction =>
         action.kind === "digest" && action.describe.includes("evidence"),
     );
-    expect(digest?.data).toEqual({ authorizations: [receipt] });
+    expect(digest?.data).toEqual({ authorizations: receipts });
     expect(digest?.text).toContain("vendor");
     expect(digest?.text).toContain("runtime:ecc-installer");
   });
@@ -1184,6 +1614,12 @@ describe("verifiedEccInstallPlan", () => {
   });
 
   it("preserves consult-only guidance alongside verified mutating targets", () => {
+    const selected: EccComponentSelection = {
+      scope: "scoped",
+      components: ["baseline:rules"],
+      mcps: [],
+      recommendations: [],
+    };
     const built = verifiedEccInstallPlan(
       ctx(),
       join(root, "tree"),
@@ -1192,8 +1628,9 @@ describe("verifiedEccInstallPlan", () => {
         profile: "core",
         packs: [],
         stackSummary: "TypeScript using React",
+        selection: selected,
       },
-      [authorization()],
+      [authorization(), authorization("baseline:rules")],
     );
 
     const guidance = built.actions

@@ -354,13 +354,13 @@ describe("report local scope — composed panels", () => {
     }
   });
 
-  it("mcpGovernanceDigest denies context7 (third-party egress) under the enterprise posture", () => {
+  it("mcpGovernanceDigest denies the curated third-party egress recipes under enterprise", () => {
     const d = mcpGovernanceDigest(ctx());
     expect(d.describe).toContain("MCP governance");
     const data = d.data as { denied: { name: string }[]; allowed: string[] };
-    expect(data.denied.map((x) => x.name)).toContain("context7");
-    // The secret-free defaults are enterprise-clean: GitHub (vendor-incumbent + OAuth)
-    // and the local servers pass.
+    expect(data.denied.map((x) => x.name)).toEqual(["context7", "markitdown-mcp"]);
+    // The read-only inventory also assesses optional GitHub, whose vendor-incumbent OAuth
+    // route passes alongside the zero-egress local servers.
     expect(data.allowed).toContain("github");
     expect(data.allowed).toContain("code-review-graph");
   });

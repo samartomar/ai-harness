@@ -375,16 +375,29 @@ export function ruleRouterDoc(
   repoName: string,
   stack: RepoStack,
   bootloaders: string[],
-  opts: { projectExtension?: boolean; canon?: CanonMode; baseline?: BaselineSource } = {},
+  opts: {
+    projectExtension?: boolean;
+    canon?: CanonMode;
+    baseline?: BaselineSource;
+    governed?: boolean;
+  } = {},
 ): string {
   const projectExtension = opts.projectExtension ?? false;
   const baseline = opts.baseline ?? resolveBaselineSource({});
+  const governed = opts.governed ?? false;
   return (opts.canon ?? "legacy") === "compact"
-    ? ruleRouterCompact(dir, repoName, stack, bootloaders, projectExtension, baseline)
-    : ruleRouterLegacy(dir, repoName, stack, bootloaders, projectExtension, baseline);
+    ? ruleRouterCompact(dir, repoName, stack, bootloaders, projectExtension, baseline, governed)
+    : ruleRouterLegacy(dir, repoName, stack, bootloaders, projectExtension, baseline, governed);
 }
 
-function baselineLayerLines(source: BaselineSource): string[] {
+function baselineLayerLines(source: BaselineSource, governed: boolean): string[] {
+  if (governed) {
+    return [
+      "- **Layer 1 — selected project guidance:** the project's reviewed policy owns",
+      "  the required selection and dependency closure. Global/plugin guidance remains",
+      "  separately owned; its presence does not make it part of this selection.",
+    ];
+  }
   if (source.id === "ecc") {
     return [
       "- **Layer 1 — user baseline (generic):** ECC (affaan-m/ECC) + Superpowers",
@@ -399,7 +412,10 @@ function baselineLayerLines(source: BaselineSource): string[] {
   ];
 }
 
-function baselineAlwaysReadLine(source: BaselineSource): string {
+function baselineAlwaysReadLine(source: BaselineSource, dir: string, governed: boolean): string {
+  if (governed) {
+    return `- The selected policy requirements and \`${dir}/policy-required-guidance.md\` when present. Missing expected guidance is a delivery gap: inspect \`aih policy evaluate --json\`; do not substitute a broad baseline.`;
+  }
   return source.id === "ecc"
     ? "- The ECC `common` rules (Layer 1) before any non-trivial change"
     : `- The ${source.label} baseline (${baselineRepoRefs(source)}) before any non-trivial change`;
@@ -410,7 +426,17 @@ function baselineImplementationLines(
   dir: string,
   primaryLang: string,
   canon: CanonMode,
+  governed: boolean,
 ): string[] {
+  if (governed) {
+    return [
+      canon === "compact"
+        ? `Load \`${dir}/project.md\` for the commands, scale, and constraints.`
+        : `Load \`${dir}/conventions.md\` + \`${dir}/architecture.md\` for the project contract.`,
+      `Read every required practice named by \`${dir}/policy-required-guidance.md\` before acting.`,
+      "Optional discovery is separate from required loading. State the goal and the smallest viable change first.",
+    ];
+  }
   if (source.id === "ecc") {
     return canon === "compact"
       ? [
@@ -440,6 +466,7 @@ function ruleRouterLegacy(
   bootloaders: string[],
   projectExtension: boolean,
   baseline: BaselineSource,
+  governed: boolean,
 ): string {
   const primaryLang = stack.languages[0] ?? "the repo's language";
   // `aih adopt` carves project-specific content out of a brownfield bootloader into
@@ -448,7 +475,7 @@ function ruleRouterLegacy(
   const alwaysReadFirst = [
     `- \`${dir}/rules/agent-behavior-core.md\` — working discipline (think → simplify → surgical → goal-driven)`,
     `- \`${dir}/INDEX.md\` — context index; it owns the load order for architecture / conventions / tasks / skills`,
-    baselineAlwaysReadLine(baseline),
+    baselineAlwaysReadLine(baseline, dir, governed),
   ];
   if (projectExtension) {
     alwaysReadFirst.push(
@@ -465,7 +492,7 @@ function ruleRouterLegacy(
     "",
     "## Layered model (baseline + repo)",
     "",
-    baselineLayerLines(baseline),
+    baselineLayerLines(baseline, governed),
     `- **Layer 2 — this repo's canon (specific):** this router and the files under`,
     `  \`${dir}/\`, plus the bootloaders (${bootloaders.map((b) => `\`${b}\``).join(", ")})`,
     `  and the per-tool notes in \`${dir}/adapters/\`.`,
@@ -493,7 +520,7 @@ function ruleRouterLegacy(
     "## Task routing",
     "",
     "### Implementation",
-    baselineImplementationLines(baseline, dir, primaryLang, "legacy"),
+    baselineImplementationLines(baseline, dir, primaryLang, "legacy", governed),
     "For broad large-repo work, use code-review-graph once when available to focus",
     "likely impact, then verify against source and tests. It is advisory; if it",
     "fails or is stale, warn once and continue unless graph repair is the task.",
@@ -541,12 +568,13 @@ function ruleRouterCompact(
   bootloaders: string[],
   projectExtension: boolean,
   baseline: BaselineSource,
+  governed: boolean,
 ): string {
   const primaryLang = stack.languages[0] ?? "the repo's language";
   const alwaysReadFirst = [
     `- \`${dir}/rules/agent-behavior-core.md\` — working discipline (think → simplify → surgical → goal-driven)`,
     `- \`${dir}/project.md\` — the repo contract: stack, commands, scale, sensitive paths, known gaps (machine-readable in \`${dir}/project.json\`)`,
-    baselineAlwaysReadLine(baseline),
+    baselineAlwaysReadLine(baseline, dir, governed),
   ];
   if (projectExtension) {
     alwaysReadFirst.push(
@@ -563,7 +591,7 @@ function ruleRouterCompact(
     "",
     "## Layered model (baseline + repo)",
     "",
-    baselineLayerLines(baseline),
+    baselineLayerLines(baseline, governed),
     "- **Layer 2 — this repo's contract (specific):** this router, the contract",
     `  (\`${dir}/project.json\` + \`${dir}/project.md\` + \`${dir}/setup.md\`), the working`,
     `  discipline in \`${dir}/rules/\`, the bootloaders (${bootloaders.map((b) => `\`${b}\``).join(", ")}),`,
@@ -586,7 +614,7 @@ function ruleRouterCompact(
     "## Task routing",
     "",
     "### Implementation",
-    baselineImplementationLines(baseline, dir, primaryLang, "compact"),
+    baselineImplementationLines(baseline, dir, primaryLang, "compact", governed),
     `Honor the Invariants in \`${dir}/rules/agent-behavior-core.md\` (boundaries and`,
     "advisory tool routing) before broad work.",
     "",
@@ -711,8 +739,21 @@ export function adapterNote(
   dir: string,
   canon: CanonMode = "legacy",
   baseline: BaselineSource = resolveBaselineSource({}),
+  governed = false,
 ): string {
   const m = CLI_META[cli];
+  if (governed) {
+    return lines(
+      `# ${m.label} adapter`,
+      "",
+      `- Entry: ${m.entry}`,
+      `- Rule loading: ${m.loads}`,
+      `- Selected guidance: \`${dir}/policy-required-guidance.md\` names the admitted project practice files; read each required practice before acting.`,
+      "- Native skill discovery lists available metadata; complete required-content loading needs a native read. Global/plugin content is separately owned and may remain visible.",
+      "- Missing expected guidance is a delivery gap. Inspect `aih policy evaluate --json`; do not install broad defaults to fill it.",
+      `- Repo canon and contract: \`${dir}/RULE_ROUTER.md\`; boundaries: § External action boundary.`,
+    );
+  }
   if (canon === "legacy") {
     const baselineLayer =
       baseline.id === "ecc"

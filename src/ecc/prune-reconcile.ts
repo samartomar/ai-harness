@@ -9,7 +9,6 @@ import { readRegularFileWithStats } from "../internals/fsxn.js";
 import { stripManagedBlock } from "../internals/markers.js";
 import { type Action, digest, type PlanContext } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
-import { execArgv } from "../tools/install.js";
 import {
   CODEX_AGENTS_BLOCK_MARKER,
   codexHomeDir,
@@ -17,7 +16,7 @@ import {
   stripCodexTomlFootprint,
 } from "./codex.js";
 import type { EccComponentSelection } from "./components.js";
-import { ECC_NPM_CLI_BIN, ECC_NPM_PACKAGE, isAihDirectEccInstallTarget } from "./install.js";
+import { isAihDirectEccInstallTarget } from "./install.js";
 import { eccMaterializationSpec } from "./materialize.js";
 import {
   eccInstallStateCandidates,
@@ -29,7 +28,6 @@ import {
   type EccReconcileExpectedRead,
   type EccReconcileMutation,
   type EccReconcileTransactionPayload,
-  type EccReconcileUpstreamUninstall,
   eccReconcileTransactionAction,
 } from "./reconcile-driver.js";
 import { readRegistrationLedgerSnapshot, serializeRegistrationLedger } from "./registration.js";
@@ -125,6 +123,21 @@ function targetSelection(
       .filter((componentId) => componentId.startsWith("module:"))
       .map((componentId) => componentId.slice("module:".length)),
   };
+}
+
+function emptyTargetSelection(): EccComponentSelection {
+  return {
+    scope: "scoped",
+    components: [],
+    mcps: [],
+    recommendations: [],
+    moduleIds: [],
+  };
+}
+
+function pathIdentity(path: string): string {
+  const absolute = resolve(path);
+  return process.platform === "win32" ? absolute.toLowerCase() : absolute;
 }
 
 function targetShrank(
@@ -300,40 +313,36 @@ export function eccPruneReconciliationActions(
   const reads = new Map<string, EccReconcileExpectedRead>();
   addRead(reads, snapshot.path, snapshot.contents);
   const mutations: EccReconcileMutation[] = [];
+  const registeredTargets = new Set(snapshot.ledger.targets.map((target) => target.target));
+  const receiptBoundDroppedTargets = new Set(
+    droppedTargets.filter(
+      (target) =>
+        registeredTargets.has(target) &&
+        (isAihDirectEccInstallTarget(target) || target === "codex"),
+    ),
+  );
   const priorCandidates = eccInstallStateCandidates(
     home,
     reconcileEccRegistrationLedger(snapshot.ledger),
   );
-  const uninstalls: EccReconcileUpstreamUninstall[] = droppedTargets
-    .filter(isAihDirectEccInstallTarget)
-    .map((target) => ({
-      target,
-      argv: execArgv(ctx.host.platform, [
-        "npx",
-        "--yes",
-        "--package",
-        ECC_NPM_PACKAGE,
-        ECC_NPM_CLI_BIN,
-        "uninstall",
-        "--target",
-        target,
-      ]),
-      cwd: ctx.root,
-      paths: priorCandidates
-        .filter((candidate) => candidate.target === target)
-        .map((candidate) => candidate.statePath),
-    }));
+  const candidateMap = new Map(
+    [
+      ...eccInstallStateCandidates(home, reconciliation),
+      ...priorCandidates.filter((candidate) => receiptBoundDroppedTargets.has(candidate.target)),
+    ].map((candidate) => [pathIdentity(candidate.statePath), candidate]),
+  );
+  const candidates = [...candidateMap.values()].sort((left, right) =>
+    pathIdentity(left.statePath).localeCompare(pathIdentity(right.statePath)),
+  );
+  const foundStateTargets = new Set<Cli>();
   const affectedStatePaths: string[] = [];
   const removedDestinations: string[] = [];
 
-  for (const candidate of eccInstallStateCandidates(home, reconciliation)) {
+  for (const candidate of candidates) {
+    const dropped = receiptBoundDroppedTargets.has(candidate.target);
     const opened = safeRead(candidate.root, candidate.statePath);
-    if (opened === undefined) {
-      if (candidate.scope === "home" && targetShrank(reconciliation, candidate.target)) {
-        fail(`missing ECC install state for shrinking home target: ${candidate.statePath}`);
-      }
-      continue;
-    }
+    if (opened === undefined) continue;
+    foundStateTargets.add(candidate.target);
     addRead(reads, candidate.statePath, opened.contents);
     const state = parseEccInstallState(opened.contents.toString("utf8"), candidate.statePath);
     if (
@@ -345,15 +354,23 @@ export function eccPruneReconciliationActions(
     }
     const stateReconciliation = reconcileEccInstallState(
       state,
-      targetSelection(reconciliation, candidate.target),
+      dropped ? emptyTargetSelection() : targetSelection(reconciliation, candidate.target),
     );
-    if (stateReconciliation.removed.length === 0) continue;
+    if (stateReconciliation.removed.length === 0 && !dropped) continue;
     for (const operation of stateReconciliation.removed) {
       const destination = safeRead(candidate.root, operation.destinationPath);
       if (destination === undefined) continue;
       addRead(reads, operation.destinationPath, destination.contents);
-      removedDestinations.push(operation.destinationPath);
       if (operation.kind === "copy-file") {
+        const recordedDigest = operation.contentSha256;
+        if (typeof recordedDigest !== "string" || !/^[a-f0-9]{64}$/i.test(recordedDigest)) {
+          fail(
+            `refusing to remove unverifiable ECC managed file without a recorded content digest; preserve it for manual cleanup: ${operation.destinationPath}`,
+          );
+        }
+        if (sha256(destination.contents) !== recordedDigest.toLowerCase()) {
+          fail(`refusing to remove modified ECC managed file: ${operation.destinationPath}`);
+        }
         mutations.push({
           kind: "remove-file",
           phase: "owned-removal",
@@ -373,26 +390,53 @@ export function eccPruneReconciliationActions(
           payloads: [mergePayload],
         });
       }
+      removedDestinations.push(operation.destinationPath);
     }
-    mutations.push({
-      kind: "write-file",
-      phase: "target-state",
-      path: candidate.statePath,
-      root: candidate.root,
-      contents: stateReconciliation.nextText,
-      mode: opened.mode,
-    });
+    mutations.push(
+      dropped
+        ? {
+            kind: "remove-file",
+            phase: "target-state",
+            path: candidate.statePath,
+            root: candidate.root,
+          }
+        : {
+            kind: "write-file",
+            phase: "target-state",
+            path: candidate.statePath,
+            root: candidate.root,
+            contents: stateReconciliation.nextText,
+            mode: opened.mode,
+          },
+    );
     affectedStatePaths.push(candidate.statePath);
+  }
+
+  for (const target of receiptBoundDroppedTargets) {
+    if (!foundStateTargets.has(target)) {
+      fail(`missing ECC install state for dropped target: ${target}`);
+    }
+  }
+  for (const target of reconciliation.ledger.targets) {
+    if (
+      targetShrank(reconciliation, target.target) &&
+      candidates.some(
+        (candidate) => candidate.target === target.target && candidate.scope === "home",
+      ) &&
+      !foundStateTargets.has(target.target)
+    ) {
+      fail(`missing ECC install state for shrinking home target: ${target.target}`);
+    }
   }
 
   mutations.push(...codexMutations(ctx, reconciliation, reads));
   const nextLedger = serializeRegistrationLedger(reconciliation.ledger);
   const ledgerChanged = Buffer.compare(snapshot.contents, Buffer.from(nextLedger, "utf8")) !== 0;
-  if (!ledgerChanged && mutations.length === 0 && uninstalls.length === 0) return [];
+  if (!ledgerChanged && mutations.length === 0) return [];
   const payload: EccReconcileTransactionPayload = {
     reads: [...reads.values()].sort((left, right) => left.path.localeCompare(right.path)),
     mutations,
-    uninstalls,
+    uninstalls: [],
     ledger: { path: snapshot.path, root: home, contents: nextLedger, mode: 0o600 },
   };
   const detail = lines(

@@ -5,6 +5,10 @@ import {
 } from "../baseline-evidence/pipeline.js";
 import type { BaselineEvidenceLock } from "../baseline-evidence/schema.js";
 import type { BaselineAuthorization, BaselineHeldComponent } from "../baseline-evidence/verify.js";
+import {
+  governedCodexRoleReceiptRoles,
+  planGovernedCodexRoleRegistration,
+} from "../ecc-profile/governed-codex-roles.js";
 import { AihError } from "../errors.js";
 import { executePlan, type PlanResult } from "../internals/execute.js";
 import { digest, type Plan, type PlanContext, plan } from "../internals/plan.js";
@@ -18,6 +22,10 @@ import type { OrgPolicy } from "../org-policy/schema.js";
 import { consumeWorkbenchPolicy } from "../org-policy/workbench/policy-consumption.js";
 import { cleanupQuarantine, type TrustSource } from "../trust/fetch.js";
 import { ECC_DECLARATION_RIDERS } from "./components.js";
+import {
+  describeEccEffectiveDiscovery,
+  type EccEffectiveDiscoveryReport,
+} from "./effective-discovery.js";
 import {
   applyEccMaterialization,
   type EccMaterializationAdvisory,
@@ -157,6 +165,8 @@ export interface GovernedMaterializationReport {
   advisories: EccMaterializationAdvisory[];
   excluded: EccSelectionExclusion[];
   refused: EccTargetedRefusal[];
+  /** Read-only intent, ownership and native-path explanation for report consumers. */
+  selection?: EccEffectiveDiscoveryReport;
 }
 
 /** Exact verified bytes and ownership plan retained in memory for one later commit. */
@@ -164,6 +174,8 @@ export interface PreparedGovernedEccDelivery {
   request: EccMaterializationRequest;
   report: GovernedMaterializationReport;
   guidance: PolicyRequiredGuidancePlan;
+  roleRegistration: Plan;
+  codexRoles: readonly { id: string; description: string; configFile: string }[];
   transactionGuard?: EccMaterializationTransactionGuard;
 }
 
@@ -429,6 +441,23 @@ function reportBody(report: GovernedMaterializationReport): string {
   const verb = report.applied ? "wrote" : "would write";
   return lines(
     `Governed ECC framework materialization (${report.applied ? "applied" : "preview"}):`,
+    ...(report.selection === undefined
+      ? []
+      : [
+          "Effective selected discovery:",
+          ...report.selection.components.map(
+            (component) =>
+              `  [${component.requirement}/${component.selectionReason}] ${component.id} - ${component.owner}/${component.ownership}; ${component.source.repository}@${component.source.commit.slice(0, 12)}:${component.source.componentPath}; ${component.destinations.map((destination) => `${destination.path} (${destination.discovery})`).join(", ")}${component.retainedBy.length > 0 ? `; retained by ${component.retainedBy.join(", ")}` : ""}`,
+          ),
+          ...report.selection.authoringExclusions.map(
+            (exclusion) =>
+              `  [excluded] ${exclusion.assetId} - ${exclusion.sourceId}@${exclusion.sourceRevisionId}`,
+          ),
+          ...report.selection.otherOwners.map(
+            (owner) => `  [${owner.state}] ${owner.owner}/${owner.scope} - ${owner.detail}`,
+          ),
+          "",
+        ]),
     ...report.write.map((file) => `  [${verb}] ${file.path} - ${file.componentId}`),
     // Neutral wording: a receipt entry the request no longer carries may be a
     // genuine deselection OR a component this run could not map, and this layer
@@ -567,6 +596,8 @@ function governedMaterializationPlan(
     request: EccMaterializationRequest,
     report: GovernedMaterializationReport,
     guidance: PolicyRequiredGuidancePlan,
+    roleRegistration: Plan,
+    codexRoles: readonly { id: string; description: string; configFile: string }[],
   ) => void,
   transactionGuard?: EccMaterializationTransactionGuard,
   prepareOnly = false,
@@ -640,6 +671,7 @@ function governedMaterializationPlan(
           targets,
         },
   );
+  const roleRegistration = planGovernedCodexRoleRegistration(ctx.root, target.codexRoles);
   const report: GovernedMaterializationReport = {
     root: ctx.root,
     applied: false,
@@ -656,12 +688,28 @@ function governedMaterializationPlan(
     ],
     excluded: selection.excluded,
     refused: target.refused,
+    selection: describeEccEffectiveDiscovery({
+      policy,
+      targets,
+      components: target.components.map((component) => ({ ...component, ownership: "planned" })),
+      unavailable: selection.excluded,
+      refused: target.refused,
+      relations: historical?.relations ?? {
+        mandatoryRequirementsById: new Map(
+          selection.included.map((component) => [
+            component.id,
+            eccMandatoryRequirementIds(component.id),
+          ]),
+        ),
+      },
+    }),
   };
-  onPrepared?.(request, report, guidance);
+  onPrepared?.(request, report, guidance, roleRegistration, target.codexRoles);
   return {
     ...plan(
       "ecc: governed framework materialization",
       ...(!ctx.apply && !prepareOnly ? guidance.actions : []),
+      ...(!ctx.apply && !prepareOnly ? roleRegistration.actions : []),
       digest("governed ECC framework materialization", reportBody(report), report),
     ),
     ...(transactionGuard?.fileAssertions === undefined
@@ -710,13 +758,13 @@ export async function executeGovernedEccMaterialization(
   ) {
     evidenceComponentIds.push(ECC_KIRO_RUNTIME_COMPONENT_ID);
   }
-  let prepared:
-    | {
-        request: EccMaterializationRequest;
-        report: GovernedMaterializationReport;
-        guidance: PolicyRequiredGuidancePlan;
-      }
-    | undefined;
+  let prepared: PreparedGovernedEccDelivery | undefined;
+  const hasApplicableBaselineOverride = input.policy.trust?.baselineOverrides?.some(
+    (override) =>
+      override.catalog === input.catalog.id &&
+      override.owner === input.catalog.owner &&
+      override.repo === input.catalog.repo,
+  );
   const result = await executeBaselineEvidencePipeline(
     ctx,
     {
@@ -738,11 +786,13 @@ export async function executeGovernedEccMaterialization(
           authorizations,
           held,
           input.historical,
-          (request, report, guidance) => {
+          (request, report, guidance, roleRegistration, codexRoles) => {
             prepared = {
               request,
               report,
               guidance,
+              roleRegistration,
+              codexRoles,
               ...(input.transactionGuard === undefined
                 ? {}
                 : { transactionGuard: input.transactionGuard }),
@@ -760,6 +810,14 @@ export async function executeGovernedEccMaterialization(
           vendorLock: input.historical.evidence.vendorLock,
           vendorLockSha256: input.historical.evidence.vendorLockSha256,
           expectedSourceTreeSha256: input.historical.source.treeSha256,
+          // The sealed descriptor was admitted through the active source-data
+          // trust root and its machine-local verification receipt. Requiring a
+          // second repository-authored baseline override would discard that
+          // independently verified historical authority before its exact
+          // descriptor-derived vendor lock can run.
+          ...(hasApplicableBaselineOverride
+            ? {}
+            : { resolveOrgEvidence: async () => ({ checks: [] }) }),
         },
   );
   if (!ctx.apply || input.prepareOnly || prepared === undefined) return result;
@@ -774,21 +832,77 @@ export async function applyPreparedGovernedEccDelivery(
   result: PlanResult,
   deps: GovernedEccLifecycleDeps = {},
 ): Promise<PlanResult> {
-  const outcome = applyEccMaterialization(prepared.request, {}, prepared.transactionGuard);
-  if (outcome.advisories.length === 0 && prepared.guidance.actions.length > 0) {
-    const executeGuidance = deps.executeRequiredGuidancePlan ?? executePlan;
-    const guidanceResult = await executeGuidance(
-      guardedPlan(
-        plan("ecc: required organization guidance", ...prepared.guidance.actions),
-        prepared.transactionGuard,
-      ),
+  // Refresh after policy projection: that command may have composed MCP changes
+  // into the same config after preparation. Validate and write registration
+  // before materializing role files so a config refusal leaves no orphan role.
+  const refreshedRoleRegistration = planGovernedCodexRoleRegistration(
+    ctx.root,
+    prepared.codexRoles,
+  );
+  const priorCodexRoles = governedCodexRoleReceiptRoles(ctx.root);
+  const transactionGuard =
+    prepared.transactionGuard === undefined
+      ? undefined
+      : {
+          ...prepared.transactionGuard,
+          fileAssertions: prepared.transactionGuard.fileAssertions?.filter(
+            (assertion) =>
+              assertion.path.replace(/\\/g, "/").replace(/^\.\//, "") !== ".codex/config.toml",
+          ),
+        };
+  if (refreshedRoleRegistration.actions.length > 0) {
+    const registrationResult = await executePlan(
+      guardedPlan(refreshedRoleRegistration, transactionGuard),
       ctx,
     );
-    appendPlanResult(result, guidanceResult);
+    appendPlanResult(result, registrationResult);
+  }
+  let outcome: ReturnType<typeof applyEccMaterialization>;
+  try {
+    outcome = applyEccMaterialization(prepared.request, {}, transactionGuard);
+  } catch (error) {
+    if (refreshedRoleRegistration.actions.length > 0) {
+      const rollback = planGovernedCodexRoleRegistration(ctx.root, priorCodexRoles);
+      if (rollback.actions.length > 0) await executePlan(rollback, ctx);
+    }
+    throw error;
+  }
+  if (outcome.advisories.length > 0 && refreshedRoleRegistration.actions.length > 0) {
+    const rollback = planGovernedCodexRoleRegistration(ctx.root, priorCodexRoles);
+    if (rollback.actions.length > 0) await executePlan(rollback, ctx);
+  }
+  if (outcome.advisories.length === 0 && prepared.guidance.actions.length > 0) {
+    const executeGuidance = deps.executeRequiredGuidancePlan ?? executePlan;
+    try {
+      const guidanceResult = await executeGuidance(
+        guardedPlan(
+          plan("ecc: required organization guidance", ...prepared.guidance.actions),
+          transactionGuard,
+        ),
+        ctx,
+      );
+      appendPlanResult(result, guidanceResult);
+    } catch (error) {
+      if (refreshedRoleRegistration.actions.length > 0) {
+        const rollback = planGovernedCodexRoleRegistration(ctx.root, priorCodexRoles);
+        if (rollback.actions.length > 0) await executePlan(rollback, ctx);
+      }
+      throw error;
+    }
   }
   const report: GovernedMaterializationReport = {
     ...prepared.report,
     applied: true,
+    selection:
+      prepared.report.selection === undefined
+        ? undefined
+        : {
+            ...prepared.report.selection,
+            components: prepared.report.selection.components.map((component) => ({
+              ...component,
+              ownership: outcome.advisories.length === 0 ? "receipt-recorded" : "missing-receipt",
+            })),
+          },
     write: outcome.written,
     subtract: outcome.removed,
     advisories: [
@@ -829,6 +943,7 @@ export async function executeGovernedEccWithdrawal(
   const request: EccMaterializationRequest = { root: ctx.root, components: [] };
   const preview = previewEccMaterialization(request);
   const guidance = planPolicyRequiredGuidance(ctx.root, ctx.contextDir, []);
+  const roleRegistration = planGovernedCodexRoleRegistration(ctx.root, []);
   const report: GovernedMaterializationReport = {
     root: ctx.root,
     applied: false,
@@ -850,6 +965,8 @@ export async function executeGovernedEccWithdrawal(
     request,
     report,
     guidance,
+    roleRegistration,
+    codexRoles: [],
     ...(transactionGuard === undefined ? {} : { transactionGuard }),
   };
   onPrepared?.(prepared);
@@ -858,6 +975,7 @@ export async function executeGovernedEccWithdrawal(
       ...plan(
         "ecc: governed framework withdrawal",
         ...(!ctx.apply && !prepareOnly ? guidance.actions : []),
+        ...(!ctx.apply && !prepareOnly ? roleRegistration.actions : []),
         digest("governed ECC framework materialization", reportBody(report), report),
       ),
       ...(transactionGuard?.fileAssertions === undefined

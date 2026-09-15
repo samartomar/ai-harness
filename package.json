@@ -30,6 +30,8 @@
     "src/baseline-evidence/vendor-lock.json",
     "src/baseline-evidence/ecc-install-preview.json",
     "src/ecc-profile/serena-runtime",
+    "src/ecc-profile/default-mcp-runtime",
+    "src/ecc-profile/markitdown-runtime",
     "tools/cisco-skill-scanner",
     "tools/trust-scanners",
     "packs",
@@ -128,14 +130,14 @@
     "access": "public"
   },
   "dependencies": {
-    "commander": "^15.0.0",
+    "commander": "14.0.3",
     "jsonc-parser": "^3.3.1",
     "smol-toml": "1.8.0",
     "yaml": "2.9.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@aihq/scan": "0.3.0",
+    "@aihq/scan": "0.4.0",
     "@babel/parser": "7.29.7",
     "@biomejs/biome": "^2.5.1",
     "@playwright/test": "1.62.1",

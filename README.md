@@ -449,7 +449,8 @@ still initialize under the vendor CLI. Aih does not attest those customizations 
 
 | Command | What it does |
 | --- | --- |
-| [`aih init`](docs/commands.md#aih-init) | Initialize a repo in one pass: profile + superpowers + bootstrap-ai + scaffold + contract + secrets + guardrails + mcp + sandbox + usage. |
+| [`aih init`](docs/commands.md#aih-init) | Initialize a repo in one pass: profile + superpowers + bootstrap-ai + scaffold + contract + secrets + guardrails + mcp + sandbox + usage, then preview or reconcile the effective developer-tool selection. |
+| [`aih developer-tools`](docs/commands.md#aih-developer-tools) | Preview or reconcile the effective developer-tool lifecycle; `--apply` sets up selected tools and can remove unchanged receipt-owned integration for policy exclusions. Token Optimizer requires explicit license acceptance. |
 | [`aih profile`](docs/commands.md#aih-profile) | Detect the repo's stack recursively and synthesize Cursor stack rules (`.cursor/rules/*.mdc`). |
 | [`aih change-profile`](docs/commands.md#aih-change-profile) | Deterministically classify one explicit bounded change-facts JSON file without Git/worktree discovery. |
 | [`aih scaffold`](docs/commands.md#aih-scaffold) | Scaffold repo hygiene — secret deny-list, pre-commit hook, `.gitignore` entries; `--canon legacy` adds the full context-doc family. |

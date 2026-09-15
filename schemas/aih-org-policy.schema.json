@@ -6122,6 +6122,42 @@
             ],
             "additionalProperties": false
           }
+        },
+        "developerTools": {
+          "type": "object",
+          "properties": {
+            "selected": {
+              "maxItems": 6,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "code-review-graph",
+                  "codebase-memory-mcp",
+                  "serena",
+                  "token-optimizer",
+                  "context7",
+                  "markitdown"
+                ]
+              }
+            },
+            "excluded": {
+              "maxItems": 6,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "code-review-graph",
+                  "codebase-memory-mcp",
+                  "serena",
+                  "token-optimizer",
+                  "context7",
+                  "markitdown"
+                ]
+              }
+            }
+          },
+          "additionalProperties": false
         }
       },
       "required": [

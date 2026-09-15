@@ -94,7 +94,7 @@ function scopedSelection(): EccComponentSelection {
 }
 
 describe("filterEccManifestPlan", () => {
-  it("materializes the governed MCP configuration for a bare MCP selection", () => {
+  it("keeps upstream MCP operations out of the AIH-owned projection", () => {
     const selected: EccComponentSelection = {
       scope: "scoped",
       components: [],
@@ -105,10 +105,8 @@ describe("filterEccManifestPlan", () => {
 
     filterEccManifestPlan(filtered, selected);
 
-    expect(filtered.operations.map((entry) => entry.sourceRelativePath).sort()).toEqual([
-      ".mcp.json",
-      "mcp-configs/mcp-servers.json",
-    ]);
+    expect(filtered.operations).toEqual([]);
+    expect(filtered.statePreview.operations).toEqual([]);
   });
 
   it("deduplicates materialized module ids while retaining the first trusted selection order", () => {
@@ -144,8 +142,6 @@ describe("filterEccManifestPlan", () => {
     expect([...new Set(filtered.operations.map((entry) => entry.moduleId))].sort()).toEqual([
       "agents-core",
       "commands-core",
-      "hooks-runtime",
-      "platform-configs",
       "rules-core",
       "skill-unified-memory",
       "workflow-quality",
@@ -210,9 +206,6 @@ describe("filterEccManifestPlan", () => {
       "rules/react/testing.md",
       "rules/web/security.md",
       "commands/tdd.md",
-      ".mcp.json",
-      "mcp-configs/mcp-servers.json",
-      "scaffolds/cursor/hooks.json",
       "AGENTS.md",
       ".agents/plugins/marketplace.json",
       "agents/code-reviewer.md",
@@ -248,13 +241,34 @@ describe("filterEccManifestPlan", () => {
     expect(plan.statePreview.operations).toEqual(plan.operations);
   });
 
-  it("leaves an explicit full plan unfiltered", () => {
+  it("keeps ordinary Full content while declining executable and MCP operations", () => {
     const plan = fixturePlan();
-    const before = JSON.stringify(plan);
 
     filterEccManifestPlan(plan, { ...scopedSelection(), scope: "full" });
 
-    expect(JSON.stringify(plan)).toBe(before);
+    expect(plan.operations.map((entry) => entry.sourceRelativePath)).not.toEqual([]);
+    expect(JSON.stringify(plan)).not.toContain("hooks/pretooluse.js");
+    expect(JSON.stringify(plan)).not.toContain("scaffolds/cursor/hooks.json");
+    expect(JSON.stringify(plan)).not.toContain("mcp-configs/mcp-servers.json");
+    expect(JSON.stringify(plan)).not.toContain('".mcp.json"');
+    expect(plan.statePreview.operations).toEqual(plan.operations);
+  });
+
+  it("allows host runtime only for explicit baseline:hooks consent", () => {
+    const plan = fixturePlan();
+
+    filterEccManifestPlan(plan, {
+      ...scopedSelection(),
+      components: [...scopedSelection().components, "baseline:hooks"],
+    });
+
+    expect(plan.operations.map((entry) => entry.sourceRelativePath)).toContain(
+      "hooks/pretooluse.js",
+    );
+    expect(plan.operations.map((entry) => entry.sourceRelativePath)).toContain(
+      "scaffolds/cursor/hooks.json",
+    );
+    expect(JSON.stringify(plan)).not.toContain("mcp-configs/mcp-servers.json");
   });
 
   const governedSelections: Array<[string, EccComponentSelection]> = [
@@ -369,7 +383,9 @@ describe("filterEccManifestPlan", () => {
           target: "claude",
         },
       ),
-    ).toThrow(/unclassifiable governed ECC content operation|unsafe ECC (source|destination) path/);
+    ).toThrow(
+      /unclassifiable governed ECC content operation|unsafe ECC (source|destination) path|escapes authorized project\/home roots/,
+    );
   });
 
   it("rejects a content-looking destination outside the authorized project and home roots", () => {
@@ -391,7 +407,9 @@ describe("filterEccManifestPlan", () => {
           target: "claude",
         },
       ),
-    ).toThrow(/unclassifiable governed ECC content operation/);
+    ).toThrow(
+      /unclassifiable governed ECC content operation|escapes authorized project\/home roots/,
+    );
   });
 
   it("rejects a same-root source-to-target remap and duplicate normalized destination", () => {

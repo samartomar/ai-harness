@@ -143,6 +143,13 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
       NO_CODE_CHANGES,
     ],
   },
+  "developer-tools.runtime-verification": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "selected developer tool did not complete runtime verification",
+    action:
+      "Read the named tool's verification detail, correct that specific prerequisite, configuration, or runtime failure, then rerun `aih developer-tools <root> --apply`.",
+  },
   "cert.ca-missing": {
     audience: "internal-it",
     failSeverity: "blocking",

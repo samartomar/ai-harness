@@ -299,6 +299,12 @@ describe("ECC registration reconciliation", () => {
       {
         target: "opencode",
         scope: "home",
+        root: join(home, ".config", "opencode"),
+        statePath: join(home, ".config", "opencode", "ecc-install-state.json"),
+      },
+      {
+        target: "opencode",
+        scope: "home",
         root: join(home, ".opencode"),
         statePath: join(home, ".opencode", "ecc-install-state.json"),
       },
@@ -349,6 +355,42 @@ describe("ECC install-state reconciliation", () => {
     expect(result.state.installedAt).toBe("2026-07-10T00:00:00.000Z");
     expect(JSON.parse(result.nextText).operations).toHaveLength(1);
   });
+
+  it.each([
+    ["implicit Full", [], ["hooks-runtime"], false],
+    ["explicit baseline:hooks", ["baseline:hooks"], ["hooks-runtime"], true],
+  ])(
+    "applies executable consent while reconciling %s install state",
+    (_case, components, moduleIds, runtimeExpected) => {
+      const statePath = join(home, ".codex", "ecc-install-state.json");
+      const safeDestination = join(home, ".codex", "rules", "common", "testing.md");
+      const runtimeDestination = join(home, ".codex", "hooks", "pretooluse.js");
+      const parsed = parseEccInstallState(
+        JSON.stringify(
+          installState([
+            managedOperation("rules/common/testing.md", safeDestination),
+            managedOperation("hooks/pretooluse.js", runtimeDestination),
+          ]),
+        ),
+        statePath,
+      );
+      const result = reconcileEccInstallState(parsed, {
+        scope: "full",
+        components: components as EccComponentId[],
+        mcps: [],
+        recommendations: [],
+        moduleIds,
+      });
+
+      expect(result.kept.map((operation) => operation.destinationPath)).toContain(safeDestination);
+      expect(
+        result.kept.map((operation) => operation.destinationPath).includes(runtimeDestination),
+      ).toBe(runtimeExpected);
+      expect(
+        result.removed.map((operation) => operation.destinationPath).includes(runtimeDestination),
+      ).toBe(!runtimeExpected);
+    },
+  );
 
   it("strictly rejects malformed states, duplicate destinations, and unsupported operations", () => {
     const statePath = join(home, ".codex", "ecc-install-state.json");

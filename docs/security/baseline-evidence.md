@@ -471,7 +471,7 @@ follow, and both are load-bearing:
 1. **Vet what you ship, at its exact named source.** The ECC product source is
    canonical upstream
    `affaan-m/ECC@5caf398a91599029a176ca6d806409b00d1052c4`, alongside
-   `obra/Superpowers@3dcbd5c4…`, in `src/internals/baseline-sources.ts` and
+   `obra/Superpowers@b36e0829…`, in `src/internals/baseline-sources.ts` and
    recorded with their acceptance disposition in
    `src/internals/external-pin-ledger.json`. Any working checkout used to
    reproduce a baseline — a local clone, a personal fork, a CI runner tree —
@@ -519,11 +519,26 @@ write; write mode refuses linked or non-regular ledger custody and replaces only
 the module-owned ledger through an exclusive temporary file. Neither mode turns
 an observation into an acceptance.
 
-The audit at `obra/Superpowers@3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9`
-reported 87 observations, 0 accepted, 0 stale, 62 historical entries no longer
-emitted, 87 new advisory observations, and 0 critical findings. Issue #804
-removed only those 62 obsolete ledger rows. The current observations were not
-translated into acceptance, and the shipped ledger is now intentionally empty.
+The audit at `obra/Superpowers@b36e0829c6d0140e93cfef2ca599b1b07d4a7797`
+reported 92 medium `trust.visible-unicode` observations, 0 accepted, 0 stale,
+0 missing, 92 new advisory observations, and 0 critical findings. The current
+observations were not translated into acceptance, and the shipped ledger remains
+intentionally empty.
+
+The v6.3.0 adoption also consumed the protected Scanner publication for request
+`782ad368cde26e3f9b34e0ddb6e396bab5e35cca6fbff0c14a72b9b40cba2c81`
+from reviewed publisher commit `981d50f19ec8923974597de28c4c7b7acf684ded`.
+The publication had no missing or failed analyzer and no error notification, but
+it did not claim complete coverage: it retained 19 coverage warnings (18 global
+SkillSpector disabled/degraded notices plus one binary skip outside the declared
+closures) and five notes. It reported 60 findings mapped to the 15 declared
+closures (28 SkillSpector and 32 Cisco) and 68 repository observations outside
+those closures. Review traced the mapped results to prose or examples, declared
+file reads and writes, and operator-invoked local helpers. The source has a root
+MIT license and no package dependency or install-script execution. Core's policy
+interpretation produced 15 exact `pass` components with no retained finding; that
+result does not erase Scanner's coverage limits or authorize material outside the
+declared catalog and supported installation path.
 
 ### Refresh ownership and scaling
 

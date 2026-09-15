@@ -17,8 +17,22 @@ export interface RunResult {
   truncated?: boolean;
 }
 
+export type RunInputDecision =
+  | { readonly state: "waiting" }
+  | { readonly state: "ready" }
+  | { readonly state: "failed"; readonly detail: string };
+
+export interface RunInputStep {
+  /** Bytes written only after the preceding step's response predicate succeeds. */
+  readonly input: string;
+  /** Decide whether bounded stdout completes, fails, or is still awaiting this step. */
+  readonly inspectStdout: (stdout: string) => RunInputDecision;
+}
+
 export interface RunOptions {
   input?: string;
+  /** Keep stdin open and advance a request/response protocol one bounded step at a time. */
+  inputSequence?: readonly RunInputStep[];
   cwd?: string;
   env?: NodeJS.ProcessEnv;
   timeoutMs?: number;
@@ -67,6 +81,15 @@ export const defaultRunner: Runner = (argv, opts = {}) =>
       removeAbortListener();
       resolve(result);
     };
+    if (opts.input !== undefined && opts.inputSequence !== undefined) {
+      finish({
+        code: 1,
+        stdout: "",
+        stderr: "process input and inputSequence are mutually exclusive",
+        spawnError: true,
+      });
+      return;
+    }
     if (opts.signal?.aborted) {
       finish({ code: 1, stdout: "", stderr: "process aborted", spawnError: true });
       return;
@@ -74,6 +97,7 @@ export const defaultRunner: Runner = (argv, opts = {}) =>
     const capture = (chunk: string | Buffer): string =>
       typeof chunk === "string" ? chunk : chunk.toString("utf8");
     let child: ReturnType<typeof execFile>;
+    let interactionFailure: RunResult | undefined;
     try {
       child = execFile(
         cmd,
@@ -88,6 +112,10 @@ export const defaultRunner: Runner = (argv, opts = {}) =>
         (err: ProcError, stdout, stderr) => {
           const stdoutText = stdout && stdout.length > 0 ? stdout : capturedStdout;
           const stderrText = stderr && stderr.length > 0 ? stderr : capturedStderr;
+          if (interactionFailure !== undefined) {
+            finish({ ...interactionFailure, stdout: stdoutText });
+            return;
+          }
           const errno = err?.code;
           if (errno === "ENOENT") {
             finish({
@@ -150,13 +178,55 @@ export const defaultRunner: Runner = (argv, opts = {}) =>
       abort();
       return;
     }
+    const sequence = opts.inputSequence;
+    let sequenceIndex = 0;
+    let inputEnded = false;
+    const endInput = (value?: string): void => {
+      if (inputEnded) return;
+      inputEnded = true;
+      child.stdin?.end(value);
+    };
+    const writeSequenceStep = (): void => {
+      const step = sequence?.[sequenceIndex];
+      if (step === undefined) {
+        endInput();
+        return;
+      }
+      child.stdin?.write(step.input);
+    };
+    const advanceSequence = (): void => {
+      if (sequence === undefined || interactionFailure !== undefined || settled) return;
+      const step = sequence[sequenceIndex];
+      if (step === undefined) return;
+      const decision = step.inspectStdout(capturedStdout);
+      if (decision.state === "waiting") return;
+      if (decision.state === "failed") {
+        interactionFailure = { code: 1, stdout: capturedStdout, stderr: decision.detail };
+        child.kill();
+        return;
+      }
+      sequenceIndex += 1;
+      writeSequenceStep();
+    };
     child.stdout?.on("data", (chunk: string | Buffer) => {
       capturedStdout += capture(chunk);
+      try {
+        advanceSequence();
+      } catch {
+        interactionFailure = {
+          code: 1,
+          stdout: capturedStdout,
+          stderr: "process interaction failed",
+          spawnError: true,
+        };
+        child.kill();
+      }
     });
     child.stderr?.on("data", (chunk: string | Buffer) => {
       capturedStderr += capture(chunk);
     });
     child.stdin?.on("error", () => {
+      if (interactionFailure !== undefined) return;
       child.kill();
       finish({
         code: 1,
@@ -166,7 +236,8 @@ export const defaultRunner: Runner = (argv, opts = {}) =>
       });
     });
     try {
-      child.stdin?.end(opts.input);
+      if (sequence === undefined) endInput(opts.input);
+      else writeSequenceStep();
     } catch {
       child.kill();
       finish({

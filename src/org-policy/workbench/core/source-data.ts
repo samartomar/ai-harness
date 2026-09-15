@@ -21,7 +21,10 @@ import {
   canonicalStrictJsonSha256V1,
   parseStrictJsonObjectV1,
 } from "../../../contract/strict-json-v1.js";
-import type { PreparedEccRuntimeDescriptorV1 } from "../../../ecc/runtime-descriptor.js";
+import type {
+  EccRuntimeDescriptorV1,
+  PreparedEccRuntimeDescriptorV1,
+} from "../../../ecc/runtime-descriptor.js";
 import { packagedScannerCollectionOverlayV1 } from "../../packaged-collection-evidence-v1.js";
 import { verifyAuthoringCatalogBundleIntegrityV1 } from "../catalog-integrity.js";
 import {
@@ -730,6 +733,7 @@ export function applyWorkbenchSourceDataV1(
     const pins = (options.pins ?? []).filter((pin) => pin.sourceId === id);
     const snapshots = [entry.active, ...entry.history];
     let chosen: AuthoringCatalogBundleV1 | undefined;
+    let chosenRuntimeDescriptor: EccRuntimeDescriptorV1 | undefined;
     for (const reference of snapshots) {
       const verified = verifyStored(
         root,
@@ -744,6 +748,18 @@ export function applyWorkbenchSourceDataV1(
         fail("snapshot identity mismatch");
       if (exactPins(verified.payload.sourceBundle, pins)) {
         chosen = structuredClone(verified.payload.sourceBundle);
+        if (id === "source:ecc") {
+          chosenRuntimeDescriptor = readSourceDataLocalRuntimeDescriptorV1(
+            root,
+            sourceDataReceiptDigestsV1(
+              verified.digest,
+              effectiveSourceTrust(verified),
+              verified.payload.sourceBundle,
+            ),
+            now,
+            true,
+          );
+        }
         const expires = Date.parse(verified.payload.expiresAt);
         for (const evidence of Object.values(chosen.evidence)) {
           if (
@@ -770,7 +786,7 @@ export function applyWorkbenchSourceDataV1(
       if (exactPins(base.bundle, pins)) continue;
       fail("no retained snapshot matches saved source pins");
     }
-    replaceSource(result, chosen, id);
+    replaceSource(result, chosen, id, chosenRuntimeDescriptor);
   }
   result.bundle = seal(result.bundle);
   return result;
@@ -780,6 +796,7 @@ function replaceSource(
   result: PreparedWorkbenchCatalogV1,
   chosen: AuthoringCatalogBundleV1,
   id: string,
+  runtimeDescriptor?: EccRuntimeDescriptorV1,
 ): void {
   const oldBindings = structuredClone(result.bindings);
   const previousIds = new Set(
@@ -885,18 +902,57 @@ function replaceSource(
     Object.assign(result.bundle, { [field]: current });
   }
   result.bundle.relations.push(...chosen.relations);
+  const descriptorSource = runtimeDescriptor?.source;
+  const chosenSource = chosen.sources[id];
+  const qualifiedEcc =
+    id === "source:ecc" &&
+    descriptorSource !== undefined &&
+    chosenSource?.upstreamOrigin.kind === "git" &&
+    chosenSource.upstreamOrigin.locator === descriptorSource.repository &&
+    chosenSource.revision.id === descriptorSource.commit &&
+    chosenSource.revision.contentDigest === `sha256:${descriptorSource.treeSha256}`;
+  const descriptorComponents = new Map(
+    (qualifiedEcc ? (runtimeDescriptor?.components ?? []) : []).map((component) => [
+      component.id,
+      component,
+    ]),
+  );
   for (const asset of Object.values(chosen.assets)) {
     const old = exactOld.get(asset.id);
-    result.bindings[asset.id] =
-      old !== undefined &&
-      exactPins(chosen, [
-        {
-          assetId: old.id,
-          sourceId: old.sourceId,
-          sourceRevisionId: old.sourceRevisionId,
-          contentDigest: old.contentDigest,
-        },
-      ])
+    const componentId = asset.id.startsWith("ecc/") ? asset.id.slice("ecc/".length) : "";
+    const descriptorComponent = descriptorComponents.get(componentId);
+    const exactDescriptorComponent =
+      descriptorComponent !== undefined &&
+      descriptorComponent.kind === asset.kind &&
+      descriptorComponent.paths.includes(asset.originalPath) &&
+      asset.sourceId === id &&
+      asset.sourceRevisionId === descriptorSource?.commit &&
+      asset.contentDigest === `sha256:${descriptorComponent.identityTreeSha256}`;
+    result.bindings[asset.id] = exactDescriptorComponent
+      ? {
+          kind: "external-selection",
+          external: {
+            owner: "ecc",
+            item: {
+              id: componentId,
+              kind: asset.kind,
+              source: {
+                repository: descriptorSource.repository,
+                commit: descriptorSource.commit,
+                path: asset.originalPath,
+              },
+            },
+          },
+        }
+      : old !== undefined &&
+          exactPins(chosen, [
+            {
+              assetId: old.id,
+              sourceId: old.sourceId,
+              sourceRevisionId: old.sourceRevisionId,
+              contentDigest: old.contentDigest,
+            },
+          ])
         ? structuredClone(oldBindings[asset.id] ?? { kind: "intent" })
         : { kind: "intent" };
   }

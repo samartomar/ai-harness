@@ -51,9 +51,13 @@ async function session(root, index) {
   const context = marker.contextDir ?? "ai-coding", bridgePath = join(root, context, "policy-required-guidance.md");
   const bridge = readFileSync(bridgePath), receipt = JSON.parse(readFileSync(join(root, context, "policy-required-guidance.receipt.json")));
   if (hash(bridge) !== receipt.sha256 || !receipt.targets.includes(client)) fail("Guidance receipt mismatch");
-  const nativePrefix = client === "claude" ? ".claude/skills/" : ".agents/skills/";
-  const nativePaths = [...new Set(receipt.components.flatMap(item => item.paths).filter(path => path.startsWith(nativePrefix)))];
-  if (!nativePaths.length) fail("No receipt-owned native skill");
+  const nativePrefix = client === "claude" ? ".claude/" : client === "kimi" ? ".kimi-code/" : ".agents/skills/";
+  // The guidance receipt is the product's exact selected-content contract.
+  // Read every client-native Markdown item it names: a skill entry alone does
+  // not establish that selected agents or commands are reachable.
+  const nativePaths = [...new Set(receipt.components.flatMap(item => item.paths)
+    .filter(path => path.startsWith(nativePrefix) && path.endsWith(".md")))];
+  if (!nativePaths.length) fail("No receipt-owned native Markdown guidance");
   const paths = [bridgePath, ...nativePaths.map(path => join(root, path))], expected = paths.map(path => readFileSync(path, "utf8"));
   const result = { root, projectId: marker.policyBinding.projectId, markerSha256: hash(markerBytes), source: receipt.source,
     policyVersion: receipt.policyVersion, components: receipt.components.map(item => item.id),

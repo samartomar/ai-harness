@@ -178,6 +178,7 @@ export function mcpServersDigest(ctx: PlanContext): DigestAction | undefined {
     scope: "local",
     stack,
     includeDisabledServers: true,
+    includeOptionalServers: true,
   });
   if (catalogResult.error !== undefined || catalogResult.servers === undefined) {
     const catalogError =
@@ -217,7 +218,7 @@ export function mcpServersDigest(ctx: PlanContext): DigestAction | undefined {
         ]
       : []),
     thirdParty > 0
-      ? `  ${thirdParty} third-party server(s) send queries off-box — confirm approved.`
+      ? `  ${thirdParty} third-party server(s) can contact external services — confirm approved.`
       : "  No third-party egress.",
   );
   return digest(`MCP servers — ${servers.length} configured, ${thirdParty} third-party`, body, {

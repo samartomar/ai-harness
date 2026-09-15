@@ -16,10 +16,15 @@ import { defineBaselineCatalog } from "../../src/baseline-evidence/catalog.js";
 import { hashComponentTree } from "../../src/baseline-evidence/hash.js";
 import { componentIdentityPaths } from "../../src/baseline-evidence/license.js";
 import { parseBaselineEvidenceLock } from "../../src/baseline-evidence/schema.js";
+import {
+  executeGovernedEccMaterialization,
+  type GovernedEccHistoricalContext,
+} from "../../src/ecc/governed-lifecycle.js";
 import { walkManagedRoot } from "../../src/ecc/install-manifest.js";
 import { eccMaterializationReceiptPath } from "../../src/ecc/materialization.js";
 import { readEccMaterializationReceipt } from "../../src/ecc/materialization-receipt.js";
 import { executeEccCommand } from "../../src/ecc/pipeline.js";
+import { currentEccRuntimeAdapterCompatibilityV1 } from "../../src/ecc/runtime-adapter-compatibility.js";
 import { SUPPORTED_CLIS } from "../../src/internals/clis.js";
 import { executePlan, type PlanResult } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
@@ -50,7 +55,8 @@ const REPOSITORY = "affaan-m/ECC";
 
 const SOURCE_TREE: Readonly<Record<string, string>> = {
   LICENSE: "fixture license\n",
-  "agents/code-reviewer.md": "# code-reviewer\n",
+  "agents/code-reviewer.md":
+    "---\nname: code-reviewer\ndescription: Reviews code for correctness.\n---\n\n# code-reviewer\n",
   "agents/planner.md": "# planner\n",
   "skills/tdd-workflow/SKILL.md": "# tdd-workflow\n",
   ".agents/skills/tdd-workflow/SKILL.md": "# tdd-workflow (agent copy)\n",
@@ -385,6 +391,8 @@ function materializationDigest(result: PlanResult): {
   write: Array<{ componentId: string; path: string }>;
   excluded: Array<{ id: string; reason: string; findingCodes: string[] }>;
   refused: Array<{ id: string; reason: string }>;
+  advisories: Array<{ path: string; reason: string }>;
+  selection?: { components: Array<{ ownership: string; requirement: string }> };
 } {
   const entry = result.digests.find((digest) =>
     digest.describe.includes("governed ECC framework materialization"),
@@ -410,6 +418,9 @@ describe("F6 — the governed framework lifecycle reached through `aih ecc`", ()
     // would prove nothing at all.
     const reported = materializationDigest(result);
     expect(reported.applied).toBe(false);
+    expect(
+      reported.selection?.components.every((component) => component.ownership === "planned"),
+    ).toBe(true);
     expect(reported.write.map((file) => file.path).sort()).toEqual(
       MATERIALIZED.map((file) => file.destination).sort(),
     );
@@ -428,6 +439,11 @@ describe("F6 — the governed framework lifecycle reached through `aih ecc`", ()
 
     const reported = materializationDigest(result);
     expect(reported.applied).toBe(true);
+    expect(
+      reported.selection?.components.every(
+        (component) => component.ownership === "receipt-recorded",
+      ),
+    ).toBe(true);
     for (const file of MATERIALIZED) {
       expect(
         bytesAt(root, file.destination).equals(bytesAt(sourceRoot, file.source)),
@@ -757,6 +773,86 @@ describe("F6 — the governed framework lifecycle reached through `aih ecc`", ()
     expect(existsSync(source.quarantineRoot)).toBe(false);
   });
 
+  it("does not bypass an explicit same-source baseline override for a historical descriptor", async () => {
+    const selected = PASSED[1]!;
+    const policy = governedPolicy([selected]) as ReturnType<typeof governedPolicy> & {
+      trust: { baselineOverrides: Record<string, unknown>[] };
+    };
+    policy.trust = {
+      baselineOverrides: [
+        {
+          catalog: "ecc",
+          owner: "affaan-m",
+          repo: "ECC",
+          pinnedSha: "b".repeat(40),
+        },
+      ],
+    };
+    const components = [
+      {
+        id: selected.id,
+        kind: selected.kind,
+        files: selected.paths.flatMap((path) =>
+          Object.keys(SOURCE_TREE)
+            .filter((file) => file === path || file.startsWith(`${path}/`))
+            .map((file) => ({
+              path: file,
+              digest: `sha256:${createHash("sha256").update(SOURCE_TREE[file]!).digest("hex")}`,
+            })),
+        ),
+      },
+    ];
+    const resolveOrgEvidence = vi.fn(async () => ({
+      checks: [
+        {
+          name: "stale explicit override",
+          verdict: "fail" as const,
+          detail: "declared pin is stale",
+        },
+      ],
+    }));
+    const historical: GovernedEccHistoricalContext = {
+      source: {
+        repository: REPOSITORY,
+        commit: COMMIT,
+        treeSha256: "c".repeat(64),
+        compilerInputDigest: `sha256:${"d".repeat(64)}`,
+      },
+      evidence: {
+        vendorLock: vendorLock(),
+        vendorLockSha256: "e".repeat(64),
+        rawReportDigest: `sha256:${"f".repeat(64)}`,
+        coreDerivedEvaluationDigest: `sha256:${"1".repeat(64)}`,
+        projectionContractDigest: `sha256:${"2".repeat(64)}`,
+        mappings: [{ componentId: selected.id, rawComponentIds: [selected.id] }],
+      },
+      descriptorSha256: `sha256:${"3".repeat(64)}`,
+      relations: {
+        mandatoryRequirementsById: new Map(),
+        declarationRidersById: new Map(),
+        moduleMembersById: new Map(),
+      },
+      componentPathsById: new Map([[selected.id, selected.paths]]),
+      adapterCompatibility: currentEccRuntimeAdapterCompatibilityV1(components),
+    };
+    const result = await executeGovernedEccMaterialization(
+      ctx(true, { lifecycle: "install", eccPath: sourceRoot }),
+      {
+        catalog: catalog(),
+        componentIds: [selected.id],
+        targets: ["claude"],
+        source: resolveTrustSource(sourceRoot, { root }),
+        policy: policy as never,
+        historical,
+      },
+      { resolveOrgEvidence },
+    );
+    expect(resolveOrgEvidence).toHaveBeenCalledOnce();
+    expect(result.digests).toEqual([]);
+    expect(result.writes).toEqual([]);
+    expect(existsSync(eccMaterializationReceiptPath(root))).toBe(false);
+  });
+
   /**
    * M3: an empty engine request is indistinguishable from "everything was
    * deselected", and the engine subtracts every prior receipt entry on that
@@ -983,15 +1079,47 @@ function preservesUnicodeSpelling(): boolean {
 describe("F4 — the governed framework lifecycle for the Codex target", () => {
   /** Where each source file lands for Codex; the shared row is target-independent. */
   const CODEX_MATERIALIZED: ReadonlyArray<{ source: string; destination: string }> = [
-    { source: "agents/code-reviewer.md", destination: ".codex/agents/code-reviewer.md" },
+    { source: "agents/code-reviewer.md", destination: ".codex/agents/code-reviewer.toml" },
     { source: "rules/README.md", destination: ".codex/rules/README.md" },
     { source: "rules/common/coding-style.md", destination: ".codex/rules/common/coding-style.md" },
     {
       source: ".agents/skills/tdd-workflow/SKILL.md",
       destination: ".agents/skills/tdd-workflow/SKILL.md",
     },
-    { source: "skills/tdd-workflow/SKILL.md", destination: ".codex/skills/tdd-workflow/SKILL.md" },
   ];
+
+  it("compensates native role registration when required guidance commit fails", async () => {
+    writeGovernedPolicy([...PASSED]);
+    const context = ctx(true, { lifecycle: "install", eccPath: sourceRoot, cli: "codex" });
+    await expect(
+      executeEccCommand(context, {
+        catalog: catalog(),
+        resolveOrgEvidence: verifiedOrgEvidence(vendorLock()),
+        executeRequiredGuidancePlan: async () => {
+          throw new Error("injected Codex guidance failure");
+        },
+      }),
+    ).rejects.toThrow(/injected Codex guidance failure/);
+    expect(existsSync(join(root, ".codex", "config.toml"))).toBe(false);
+    expect(existsSync(join(root, ".aih", "ecc", "codex-role-registration-v1.json"))).toBe(false);
+  });
+
+  it("compensates native role registration when materialization reports a partial advisory", async () => {
+    writeGovernedPolicy([...PASSED]);
+    await runLifecycle("install", true, "claude");
+    writeFileSync(join(root, ".claude", "rules", "README.md"), "# operator drift\n");
+
+    const result = await runLifecycle("install", true, "codex");
+    const report = materializationDigest(result);
+    expect(report.advisories).toEqual([
+      expect.objectContaining({ path: ".claude/rules/README.md", reason: "drifted" }),
+    ]);
+    expect(existsSync(join(root, ".codex", "config.toml"))).toBe(false);
+    expect(existsSync(join(root, ".aih", "ecc", "codex-role-registration-v1.json"))).toBe(false);
+    expect(readFileSync(join(root, ".claude", "rules", "README.md"), "utf8")).toBe(
+      "# operator drift\n",
+    );
+  });
 
   it("previews `--cli codex` against the Codex rows and writes nothing", async () => {
     writeGovernedPolicy([...PASSED, BLOCKED]);
@@ -1014,6 +1142,12 @@ describe("F4 — the governed framework lifecycle for the Codex target", () => {
 
     expect(reported.applied).toBe(true);
     for (const file of CODEX_MATERIALIZED) {
+      if (file.destination.endsWith(".toml")) {
+        expect(bytesAt(root, file.destination).toString("utf8")).toContain(
+          "developer_instructions",
+        );
+        continue;
+      }
       expect(
         bytesAt(root, file.destination).equals(bytesAt(sourceRoot, file.source)),
         file.destination,
@@ -1022,6 +1156,12 @@ describe("F4 — the governed framework lifecycle for the Codex target", () => {
     // Nothing landed on the Claude surfaces this run did not target.
     expect(existsSync(join(root, ".claude", "agents", "code-reviewer.md"))).toBe(false);
     expect(existsSync(eccMaterializationReceiptPath(root))).toBe(true);
+    expect(bytesAt(root, ".codex/config.toml").toString("utf8")).toContain(
+      "[agents.code-reviewer]",
+    );
+    expect(bytesAt(root, ".codex/config.toml").toString("utf8")).toContain(
+      'config_file = "agents/code-reviewer.toml"',
+    );
 
     // Removal is the shipped `aih uninstall` member, receipt-bound and
     // target-agnostic: the receipt is what proves ownership, not the flag.
@@ -1082,10 +1222,10 @@ describe("F4 — the governed framework lifecycle for the Codex target", () => {
     expect(skill?.files.map((file) => file.path)).toEqual([
       shared,
       ".claude/skills/tdd-workflow/SKILL.md",
-      ".codex/skills/tdd-workflow/SKILL.md",
     ]);
-    // ONE receipt at ONE path: no per-target root and no second document.
+    // Materialized bytes and the shared Codex config fragment keep distinct ownership receipts.
     expect(walkManagedRoot(root).filter((path) => path.startsWith(".aih/"))).toEqual([
+      ".aih/ecc/codex-role-registration-v1.json",
       ".aih/ecc/materialization-v1.json",
     ]);
   });
@@ -1096,7 +1236,7 @@ describe("F4 — the governed framework lifecycle for the Codex target", () => {
     // side — one the dropped target owned alone, one the remaining target keeps.
     writeGovernedPolicy([PASSED[0] as SelectionFixture]);
     await runLifecycle("install", true, "claude,codex");
-    expect(existsSync(join(root, ".codex", "agents", "code-reviewer.md"))).toBe(true);
+    expect(existsSync(join(root, ".codex", "agents", "code-reviewer.toml"))).toBe(true);
     expect(existsSync(join(root, ".claude", "agents", "code-reviewer.md"))).toBe(true);
 
     const result = await runLifecycle("install", true, "claude");
@@ -1106,7 +1246,9 @@ describe("F4 — the governed framework lifecycle for the Codex target", () => {
     );
     // Subtracted, and reported — never silently.
     expect(existsSync(join(root, ".codex", "agents", "code-reviewer.md"))).toBe(false);
-    expect(digest?.text).toContain("[removed] .codex/agents/code-reviewer.md");
+    expect(existsSync(join(root, ".codex", "config.toml"))).toBe(false);
+    expect(existsSync(join(root, ".aih", "ecc", "codex-role-registration-v1.json"))).toBe(false);
+    expect(digest?.text).toContain("[removed] .codex/agents/code-reviewer.toml");
     // The remaining target's row survives: narrowing subtracts what the dropped
     // target owned alone, never what the remaining target still claims.
     expect(existsSync(join(root, ".claude", "agents", "code-reviewer.md"))).toBe(true);
@@ -1175,7 +1317,7 @@ describe("F4 — the governed framework lifecycle for the Codex target", () => {
     "reports a duplicate-destination refusal under the target that made it",
     async () => {
       writeGovernedPolicy([...PASSED]);
-      const skill = join(sourceRoot, "skills", "tdd-workflow");
+      const skill = join(sourceRoot, ".agents", "skills", "tdd-workflow");
       writeFileSync(join(skill, "café.md".normalize("NFC")), "# precomposed\n");
       writeFileSync(join(skill, "café.md".normalize("NFD")), "# decomposed\n");
 
@@ -1190,10 +1332,10 @@ describe("F4 — the governed framework lifecycle for the Codex target", () => {
       // Positive control: the other components still materialize, so the
       // refusal is scoped to the component that carries the collision.
       expect(materializationDigest(result).write.map((file) => file.path)).toContain(
-        ".codex/agents/code-reviewer.md",
+        ".codex/agents/code-reviewer.toml",
       );
       expect(materializationDigest(result).write.map((file) => file.path)).not.toContain(
-        ".codex/skills/tdd-workflow/SKILL.md",
+        ".agents/skills/tdd-workflow/SKILL.md",
       );
     },
   );
@@ -1776,8 +1918,8 @@ describe("the governed framework lifecycle for the Kiro target", () => {
       },
     ]);
     expect(existsSync(join(root, ".kiro", "agents", "code-reviewer.json"))).toBe(true);
-    expect(bytesAt(root, ".kiro/agents/code-reviewer.md").toString("utf8")).toBe(
-      "# code-reviewer\n",
+    expect(bytesAt(root, ".kiro/agents/code-reviewer.md")).toEqual(
+      bytesAt(sourceRoot, "agents/code-reviewer.md"),
     );
     expect(existsSync(join(root, ".kiro", "settings", "mcp.json.example"))).toBe(false);
   });

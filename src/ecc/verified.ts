@@ -1,5 +1,4 @@
 import { homedir } from "node:os";
-import { join } from "node:path";
 import process from "node:process";
 import type { BaselineAuthorization } from "../baseline-evidence/verify.js";
 import { AihError } from "../errors.js";
@@ -95,13 +94,15 @@ for (const step of steps) {
 `;
 
 const VERIFIED_ECC_MATERIALIZE_DRIVER = String.raw`
+const fs = require("node:fs");
 const path = require("node:path");
-const payload = JSON.parse(require("node:fs").readFileSync(0, "utf8"));
+const payload = JSON.parse(fs.readFileSync(0, "utf8"));
 if (!payload || typeof payload.sourceRoot !== "string" || typeof payload.target !== "string" || typeof payload.homeDir !== "string" || typeof payload.projectRoot !== "string" || !payload.spec) {
   throw new Error("invalid scoped ECC materialization payload");
 }
 const { createManifestInstallPlan, applyInstallPlan } = require(path.join(payload.sourceRoot, "scripts", "lib", "install-executor.js"));
 const spec = payload.spec;
+if (spec.executableConsent !== "enabled" && spec.executableConsent !== "declined") throw new Error("invalid ECC executable consent");
 const plan = createManifestInstallPlan({
   sourceRoot: payload.sourceRoot,
   target: payload.target,
@@ -110,21 +111,26 @@ const plan = createManifestInstallPlan({
   homeDir: payload.homeDir,
   projectRoot: payload.projectRoot,
 });
-if (spec.excludeAihOwnedSurfaces === true) {
-  const expectedInstallStatePath = {
-    claude: path.join(payload.homeDir, ".claude", "ecc", "install-state.json"),
-    cursor: path.join(payload.projectRoot, ".cursor", "ecc-install-state.json"),
-    gemini: path.join(payload.projectRoot, ".gemini", "ecc-install-state.json"),
-    opencode: path.join(payload.homeDir, ".opencode", "ecc-install-state.json"),
-    zed: path.join(payload.projectRoot, ".zed", "ecc-install-state.json"),
-  }[payload.target];
-  if (!expectedInstallStatePath || typeof plan.installStatePath !== "string" || path.resolve(plan.installStatePath) !== path.resolve(expectedInstallStatePath)) {
-    throw new Error("ECC install-state path is not the exact authorized target state path");
-  }
-  // Do not leave an upstream-provided alias in the object consumed by apply:
-  // the expected path is both authority and the eventual write destination.
-  plan.installStatePath = expectedInstallStatePath;
+const expectedInstallTargets = {
+  claude: [{ root: path.join(payload.homeDir, ".claude"), state: path.join(payload.homeDir, ".claude", "ecc", "install-state.json") }],
+  cursor: [{ root: path.join(payload.projectRoot, ".cursor"), state: path.join(payload.projectRoot, ".cursor", "ecc-install-state.json") }],
+  antigravity: [{ root: path.join(payload.projectRoot, ".agent"), state: path.join(payload.projectRoot, ".agent", "ecc-install-state.json") }],
+  gemini: [{ root: path.join(payload.projectRoot, ".gemini"), state: path.join(payload.projectRoot, ".gemini", "ecc-install-state.json") }],
+  opencode: [
+    { root: path.join(payload.homeDir, ".config", "opencode"), state: path.join(payload.homeDir, ".config", "opencode", "ecc-install-state.json") },
+    { root: path.join(payload.homeDir, ".opencode"), state: path.join(payload.homeDir, ".opencode", "ecc-install-state.json") },
+  ],
+  zed: [{ root: path.join(payload.projectRoot, ".zed"), state: path.join(payload.projectRoot, ".zed", "ecc-install-state.json") }],
+}[payload.target];
+const expectedInstallTarget = Array.isArray(expectedInstallTargets) && typeof plan.installStatePath === "string"
+  ? expectedInstallTargets.find((candidate) => path.resolve(candidate.state) === path.resolve(plan.installStatePath))
+  : undefined;
+if (!expectedInstallTarget) {
+  throw new Error("ECC install-state path is not an exact authorized target state path");
 }
+// Do not leave an upstream-provided alias in the object consumed by apply:
+// the expected path is both authority and the eventual write destination.
+plan.installStatePath = expectedInstallTarget.state;
 const normalize = (value) => String(value || "").replace(/\\/g, "/");
 const identity = (operation) => [operation.kind, operation.moduleId, normalize(operation.sourceRelativePath), normalize(operation.destinationPath)].join("\0");
 if (!Array.isArray(plan.operations) || !plan.statePreview || !Array.isArray(plan.statePreview.operations)) throw new Error("invalid ECC manifest plan operation arrays");
@@ -151,7 +157,7 @@ const selectOperation = (operation) => {
   return Boolean(skill && skills.has(skill[1]));
 };
 let operations = plan.operations.filter(selectOperation);
-if (spec.excludeAihOwnedSurfaces === true) {
+{
   const assertSourcePath = (value) => {
     const normalized = normalize(value);
     if (!normalized || normalized.includes(String.fromCharCode(0)) || normalized.startsWith("/") || normalized.startsWith("//") || /^[a-z]:\//i.test(normalized) || normalized.startsWith("./") || normalized.split("/").some((part) => !part || part === "." || part === "..")) {
@@ -179,10 +185,11 @@ if (spec.excludeAihOwnedSurfaces === true) {
     return normalized.split("/").some((part) => !part || part === "." || part === "..") ? undefined : normalized;
   };
   const mcpPath = (value) => /(?:^|\/)(?:\.mcp\.json|mcp\.json|mcp-servers\.json)$/i.test(value) || /^(?:mcp-configs|mcp)(?:\/|$)/i.test(value);
-  const hostRuntimePath = (value) => /(?:^|\/)(?:\.claude|\.codex|\.cursor|\.kiro|\.gemini|\.opencode|\.zed)\/(?:hooks(?:\/|$)|(?:settings(?:\.local)?\.json|config\.(?:json|toml)))$/i.test(value) || /^(?:hooks|scripts\/hooks)(?:\/|$)/i.test(value);
+  const hostRuntimePath = (value) => /(?:^|\/)opencode\.json$/i.test(value) || /(?:^|\/)(?:\.claude|\.codex|\.cursor|\.kiro|\.gemini|\.opencode|\.zed)\/(?:hooks(?:\.json)?|plugins)(?:\/|$)/i.test(value) || /(?:^|\/)(?:\.claude|\.codex|\.cursor|\.kiro|\.gemini|\.opencode|\.zed)\/(?:settings(?:\.local)?\.json|config\.(?:json|toml))$/i.test(value) || /^(?:hooks(?:\.json)?|plugins|scripts\/hooks)(?:\/|$)/i.test(value) || /^scaffolds\/(?:claude|codex|cursor|kiro|gemini|opencode|zed)\/(?:hooks(?:\.json)?|plugins|settings(?:\.local)?\.json|config\.(?:json|toml))(?:\/|$)/i.test(value);
   const openCodeRuntimeTree = (value) => /(?:^|\/)(?:\.opencode|\.config\/opencode)(?:\/|$)/i.test(value);
   const eccContentPath = (value) => value === "AGENTS.md" || /^(?:\.agents\/(?:plugins|skills)\/|agents\/|skills\/|commands\/|rules\/|\.claude\/commands\/|\.codex\/AGENTS\.md$)/.test(value);
   const eccContentDestination = (source, destination) => {
+    if (containedRelative(expectedInstallTarget.root, destination) === source) return true;
     const mapping = (() => {
       if (source === "AGENTS.md") return { root: payload.projectRoot, relative: "AGENTS.md" };
       if (source === ".codex/AGENTS.md") return { root: payload.homeDir, relative: ".codex/AGENTS.md" };
@@ -202,6 +209,9 @@ if (spec.excludeAihOwnedSurfaces === true) {
     if (typeof operation.moduleId !== "string" || operation.moduleId.trim().length === 0) throw new Error("invalid ECC manifest module identity");
     const source = assertSourcePath(operation.sourceRelativePath);
     const destination = assertDestinationPath(operation.destinationPath);
+    if (containedRelative(payload.projectRoot, destination) === undefined && containedRelative(payload.homeDir, destination) === undefined) {
+      throw new Error("ECC destination escapes authorized project/home roots: " + destination);
+    }
     if (mcpPath(source) || mcpPath(destination)) return "mcp";
     if (operation.moduleId === "hooks-runtime" || hostRuntimePath(source) || hostRuntimePath(destination) || openCodeRuntimeTree(source) || (!eccContentPath(source) && openCodeRuntimeTree(destination))) return "host-runtime";
     if (operation.kind === "merge-json") throw new Error("unclassifiable governed ECC merge-json operation: " + operation.moduleId + ":" + destination);
@@ -210,13 +220,38 @@ if (spec.excludeAihOwnedSurfaces === true) {
   };
   const destinations = new Set();
   operations = operations.filter((operation) => {
-    if (classify(operation) !== "ecc-content") return false;
+    const operationClass = classify(operation);
+    if (operationClass === "mcp") return false;
+    if (operationClass === "host-runtime" && (spec.executableConsent !== "enabled" || spec.excludeAihOwnedSurfaces === true)) return false;
     const destination = normalize(operation.destinationPath);
     const collisionKey = destination.normalize("NFC").toLowerCase();
-    if (destinations.has(collisionKey)) throw new Error("normalized governed ECC destination collision: " + destination);
+    if (destinations.has(collisionKey)) throw new Error("normalized ECC consent destination collision: " + destination);
     destinations.add(collisionKey);
     return true;
   });
+  let priorState;
+  try {
+    priorState = JSON.parse(fs.readFileSync(plan.installStatePath, "utf8"));
+  } catch (error) {
+    if (!error || error.code !== "ENOENT") throw error;
+  }
+  if (priorState !== undefined) {
+    if (!priorState || typeof priorState !== "object" || Array.isArray(priorState) || !priorState.target || !Array.isArray(priorState.operations) || path.resolve(priorState.target.root || "") !== path.resolve(expectedInstallTarget.root) || path.resolve(priorState.target.installStatePath || "") !== path.resolve(plan.installStatePath)) {
+      throw new Error("invalid prior ECC install state at the consent boundary");
+    }
+    const destinationKey = (value) => {
+      const resolved = path.resolve(value);
+      return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+    };
+    const activeDestinations = new Set(operations.map((operation) => destinationKey(operation.destinationPath)));
+    const withdrawn = priorState.operations.filter((operation) => {
+      const operationClass = classify(operation);
+      return operationClass !== "ecc-content" && !activeDestinations.has(destinationKey(operation.destinationPath));
+    });
+    if (withdrawn.length > 0) {
+      throw new Error("refusing verified ECC consent withdrawal without an atomic receipt-bound transition; the prior receipt and runtime remain unchanged for receipt-bound prune or manual cleanup: " + withdrawn.map((operation) => operation.destinationPath).join(", "));
+    }
+  }
 }
 if (operations.length !== plan.operations.length) {
   plan.operations = operations;
@@ -392,9 +427,12 @@ export function verifiedEccInstallPlan(
   request: VerifiedEccRequest,
   authorizations: readonly BaselineAuthorization[],
 ): Plan {
-  if (request.governance === true && request.selection === undefined) {
+  const requiresConsentSelection = request.clis.some(
+    (cli) => isAihDirectEccInstallTarget(cli) || cli === "codex",
+  );
+  if (requiresConsentSelection && request.selection === undefined) {
     throw new AihError(
-      "refusing governed ECC install without an authorized component selection; policy project owns AIH MCP and hook projection",
+      "refusing verified ECC install without an explicit component selection for executable consent",
       "AIH_TRUST",
     );
   }
@@ -454,18 +492,10 @@ export function verifiedEccInstallPlan(
       if (selection !== undefined && materialization !== undefined) {
         steps.push(materializeStep(ctx, sourceRoot, cli, selection, materialization));
       } else {
-        steps.push({
-          argv: [
-            process.execPath,
-            join(sourceRoot, "scripts", "install-apply.js"),
-            "--target",
-            cli,
-            "--profile",
-            request.profile,
-            ...request.packs,
-          ],
-          cwd: ctx.root,
-        });
+        throw new AihError(
+          `refusing ${cli} ECC materialization without an explicit component selection for executable consent`,
+          "AIH_TRUST",
+        );
       }
       installedClis.push(cli);
       continue;

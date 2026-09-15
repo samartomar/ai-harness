@@ -4,7 +4,7 @@ import { z } from "zod";
 import { AihError } from "../errors.js";
 import type { Cli } from "../internals/clis.js";
 import type { EccComponentId, EccComponentSelection, EccMcpComponentId } from "./components.js";
-import { type EccManifestOperation, eccManifestOperationSelected } from "./materialize.js";
+import { type EccManifestOperation, eccManifestOperationAllowedByConsent } from "./materialize.js";
 import {
   machineRegistrationUnion,
   parseRegistrationLedger,
@@ -104,18 +104,27 @@ interface TargetLocation {
   stateSegments: readonly string[];
 }
 
-const TARGET_LOCATIONS: Partial<Record<Cli, TargetLocation>> = {
-  claude: { scope: "home", rootSegment: ".claude", stateSegments: ["ecc", "install-state.json"] },
-  codex: { scope: "home", rootSegment: ".codex", stateSegments: ["ecc-install-state.json"] },
-  cursor: { scope: "project", rootSegment: ".cursor", stateSegments: ["ecc-install-state.json"] },
-  antigravity: {
-    scope: "project",
-    rootSegment: ".agent",
-    stateSegments: ["ecc-install-state.json"],
-  },
-  gemini: { scope: "project", rootSegment: ".gemini", stateSegments: ["ecc-install-state.json"] },
-  opencode: { scope: "home", rootSegment: ".opencode", stateSegments: ["ecc-install-state.json"] },
-  zed: { scope: "project", rootSegment: ".zed", stateSegments: ["ecc-install-state.json"] },
+const TARGET_LOCATIONS: Partial<Record<Cli, readonly TargetLocation[]>> = {
+  claude: [{ scope: "home", rootSegment: ".claude", stateSegments: ["ecc", "install-state.json"] }],
+  codex: [{ scope: "home", rootSegment: ".codex", stateSegments: ["ecc-install-state.json"] }],
+  cursor: [{ scope: "project", rootSegment: ".cursor", stateSegments: ["ecc-install-state.json"] }],
+  antigravity: [
+    {
+      scope: "project",
+      rootSegment: ".agent",
+      stateSegments: ["ecc-install-state.json"],
+    },
+  ],
+  gemini: [{ scope: "project", rootSegment: ".gemini", stateSegments: ["ecc-install-state.json"] }],
+  opencode: [
+    {
+      scope: "home",
+      rootSegment: join(".config", "opencode"),
+      stateSegments: ["ecc-install-state.json"],
+    },
+    { scope: "home", rootSegment: ".opencode", stateSegments: ["ecc-install-state.json"] },
+  ],
+  zed: [{ scope: "project", rootSegment: ".zed", stateSegments: ["ecc-install-state.json"] }],
 };
 
 function uniqueSorted<T extends string>(values: readonly T[]): T[] {
@@ -207,27 +216,29 @@ export function eccInstallStateCandidates(
   const normalizedHome = resolve(home);
   const candidates: EccInstallStateCandidate[] = [];
   for (const target of reconciliation.ledger.targets) {
-    const location = TARGET_LOCATIONS[target.target];
-    if (location === undefined) continue;
-    if (location.scope === "home") {
-      const root = join(normalizedHome, location.rootSegment);
-      candidates.push({
-        target: target.target,
-        scope: "home",
-        root,
-        statePath: join(root, ...location.stateSegments),
-      });
-      continue;
-    }
-    for (const project of reconciliation.ledger.projects) {
-      const root = join(project.root, location.rootSegment);
-      candidates.push({
-        target: target.target,
-        scope: "project",
-        projectRoot: project.root,
-        root,
-        statePath: join(root, ...location.stateSegments),
-      });
+    const locations = TARGET_LOCATIONS[target.target];
+    if (locations === undefined) continue;
+    for (const location of locations) {
+      if (location.scope === "home") {
+        const root = join(normalizedHome, location.rootSegment);
+        candidates.push({
+          target: target.target,
+          scope: "home",
+          root,
+          statePath: join(root, ...location.stateSegments),
+        });
+        continue;
+      }
+      for (const project of reconciliation.ledger.projects) {
+        const root = join(project.root, location.rootSegment);
+        candidates.push({
+          target: target.target,
+          scope: "project",
+          projectRoot: project.root,
+          root,
+          statePath: join(root, ...location.stateSegments),
+        });
+      }
     }
   }
   return candidates.sort((left, right) =>
@@ -279,7 +290,7 @@ export function reconcileEccInstallState(
   const kept: EccInstallOperation[] = [];
   const removed: EccInstallOperation[] = [];
   for (const operation of state.operations) {
-    if (eccManifestOperationSelected(operation, selection)) {
+    if (eccManifestOperationAllowedByConsent(operation, selection)) {
       kept.push(operation);
       continue;
     }

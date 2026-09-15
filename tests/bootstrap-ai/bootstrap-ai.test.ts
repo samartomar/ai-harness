@@ -97,6 +97,53 @@ function probeNamed(actions: Action[], needle: string): ProbeAction | undefined 
 }
 
 describe("bootstrap-ai — canon files", () => {
+  it.each(["compact", "legacy"])(
+    "routes governed %s guidance to the selected project content without restoring broad baseline requirements",
+    async (canon) => {
+      put(
+        "aih-org-policy.json",
+        JSON.stringify({
+          schemaVersion: 2,
+          minimumPosture: "vibe",
+          references: { repoContract: ".ai-context/project.json" },
+          governance: {
+            policyVersion: "fictional-selection-1",
+            supportedClis: ["codex"],
+            catalog: { reviewed: [], custom: [] },
+            externalSelections: [{ framework: "ecc", items: [] }],
+          },
+        }),
+      );
+      const ctx = makeCtx({ canon, cli: "codex" });
+      const initialPlan = await command.plan(ctx);
+      const first = writesByPath(initialPlan.actions);
+      const second = writesByPath((await command.plan(ctx)).actions);
+      const router = first.get(".ai-context/RULE_ROUTER.md")?.contents;
+      const adapter = first.get(".ai-context/adapters/codex.md")?.contents;
+      expect(router).toContain("policy-required-guidance.md");
+      expect(router).toContain("Missing expected guidance is a delivery gap");
+      expect(router).not.toContain("The ECC `common` rules");
+      expect(router).not.toContain("follow the ECC");
+      expect(router).not.toContain("ECC (affaan-m/ECC) + Superpowers");
+      expect(adapter).toContain("policy-required-guidance.md");
+      expect(adapter).toContain("separately owned");
+      expect(adapter).not.toContain("~/.codex/");
+      const summary = initialPlan.actions.find(
+        (action) => action.kind === "doc" && action.describe.startsWith("bootstrap-ai summary"),
+      );
+      expect(summary).toMatchObject({
+        kind: "doc",
+        text: expect.stringContaining("policy-required-guidance.md"),
+      });
+      expect(summary).toMatchObject({
+        kind: "doc",
+        text: expect.not.stringContaining("install ECC + Superpowers"),
+      });
+      expect(second.get(".ai-context/RULE_ROUTER.md")?.contents).toBe(router);
+      expect(second.get(".ai-context/adapters/codex.md")?.contents).toBe(adapter);
+    },
+  );
+
   it("keeps the previous full adapter byte-identical in legacy mode", () => {
     expect(adapterNote("gemini", ".ai-context", "legacy")).toBe(PREVIOUS_GEMINI_ADAPTER);
   });

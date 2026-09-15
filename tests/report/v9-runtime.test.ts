@@ -73,6 +73,40 @@ describe("v9 runtime observations beside preflight", () => {
       nativeLoading: "unverified",
       detail: "Receipt bytes do not prove native loading or practice enforcement.",
       nextStep: "aih policy evaluate --json",
+      codexRoles: { state: "missing", expectedRoleIds: ["planner"], receiptRoleIds: [] },
+      selection: {
+        targets: ["codex"],
+        dependencyAuthority: "unverified",
+        authoringExclusions: [],
+        unavailable: [],
+        refused: [],
+        components: [
+          {
+            id: "skill:tdd-workflow",
+            requirement: "required",
+            selectionReason: "selected-root",
+            retainedBy: [],
+            source: {
+              repository: "fictional/adopter",
+              commit: "a".repeat(40),
+              componentPath: "skills/tdd-workflow",
+            },
+            owner: "aih-materialization",
+            ownership: "receipt-recorded",
+            destinations: [
+              { path: ".agents/skills/tdd-workflow/SKILL.md", discovery: "project-skill-entry" },
+            ],
+          },
+        ],
+        otherOwners: [
+          {
+            owner: "native-plugin",
+            scope: "user-or-account",
+            state: "unverified",
+            detail: "Plugin <inventory> is separately owned.",
+          },
+        ],
+      },
       components: [
         {
           id: "skill:tdd-workflow",
@@ -107,10 +141,17 @@ describe("v9 runtime observations beside preflight", () => {
         "guidance",
         "Native loading: unverified",
         "frontend-patterns",
+        "project-skill-entry",
+        ".agents/skills/tdd-workflow/SKILL.md",
+        "selected-root",
+        "receipt-recorded",
+        "Codex role registration: missing; expected roles: planner",
+        "Plugin <inventory> is separately owned.",
         "Exercised: verified",
         "NOT READY",
       ])
         expect(before).toContain(value);
+      expect(window.document.querySelector("#sec-ready inventory")).toBeNull();
       const hydrate = new Function(`return (${HYDRATE_FN})`)() as (
         doc: unknown,
         view: unknown,

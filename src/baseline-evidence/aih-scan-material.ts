@@ -591,7 +591,7 @@ function mcpDeclarations(
     ...catalog.unavailableMcp.map(({ id, server }) => ({ id, server })),
     ...catalog.nonProjectableMcp.map(({ id, server }) => ({ id, server })),
   ];
-  if (entries.length !== 6 || new Set(entries.map((entry) => entry.id)).size !== entries.length)
+  if (entries.length !== 7 || new Set(entries.map((entry) => entry.id)).size !== entries.length)
     fail("AIH MCP declaration inventory");
   return new Map(
     entries.map(({ id, server }) => [
@@ -675,7 +675,7 @@ export function materializeAihScanSubjectsV1(
   const declared = new Map(
     input.compiled.declarations.map(({ declaration }) => [declaration.id, declaration]),
   );
-  if (declared.size !== input.compiled.declarations.length || declared.size !== 10)
+  if (declared.size !== input.compiled.declarations.length || declared.size !== 11)
     fail("compiled AIH asset inventory");
 
   const destination = mkdtempSync(join(outputParent, "aih-scan-material-"));
@@ -753,7 +753,7 @@ export function materializeAihScanSubjectsV1(
     }
     return fail(`unmaterialized compiled AIH asset: ${declaration.id}`);
   });
-  if (plans.length !== 10 || plans.some((plan) => !declared.has(plan.asset.id)))
+  if (plans.length !== 11 || plans.some((plan) => !declared.has(plan.asset.id)))
     fail("compiled/materialized asset join");
   const planIds = new Set(plans.map((plan) => plan.asset.id));
   if (

@@ -1,4 +1,8 @@
 import "./browser-validation.js";
+import {
+  explicitDeveloperToolSelectionForOrgPolicyV1,
+  resolveDeveloperToolSelectionForOrgPolicyV1,
+} from "../../developer-tool-policy.js";
 import { safePolicyCommandArgument } from "../command-arguments.js";
 import { projectWorkbenchPolicy, type WorkbenchPolicyBindingsV1 } from "../compile-policy.js";
 import {
@@ -14,6 +18,7 @@ import {
 } from "../selection-engine.js";
 import { mountArtifactIntakeWorkbench } from "./artifact-intake-runtime.js";
 import { mountWorkbench } from "./catalog-inventory.js";
+import { mountDeveloperToolSelection } from "./developer-tool-selection.js";
 import { mountLegacyWorkbench } from "./legacy-runtime.js";
 
 interface WorkbenchSession {
@@ -107,6 +112,12 @@ if (preparedCatalogValid) {
       return { accepted: false, diagnostics: ["Unsupported policy version"] };
     const commandErrors = browserCommandArgumentErrors(policy);
     if (commandErrors.length > 0) return { accepted: false, diagnostics: commandErrors };
+    const developerTools = resolveDeveloperToolSelectionForOrgPolicyV1(policy);
+    if (!developerTools.accepted)
+      return {
+        accepted: false,
+        diagnostics: developerTools.diagnostics.map((diagnostic) => diagnostic.message),
+      };
     const imported = importedState(policy, bundle, bindings, sourceInputs);
     return { accepted: imported.accepted, diagnostics: imported.diagnostics };
   };
@@ -120,6 +131,67 @@ if (preparedCatalogValid) {
   if (root === null || session === undefined)
     throw new Error("Policy Workbench selection controller is unavailable.");
   let applyingWorkbenchProjection = false;
+  const developerToolRows = document.getElementById("developer-tool-rows");
+  const developerToolStatus = document.getElementById("developer-tool-selection-status");
+  const developerTools =
+    developerToolRows instanceof HTMLElement && developerToolStatus instanceof HTMLElement
+      ? mountDeveloperToolSelection({
+          root: developerToolRows,
+          status: developerToolStatus,
+          initialPolicy: session.snapshotPolicy(),
+          persist(selection) {
+            const snapshot = session.snapshotPolicy();
+            const basePolicy = object(snapshot);
+            const imported = importedState(snapshot, bundle, bindings, sourceInputs);
+            if (basePolicy === undefined || !imported.accepted)
+              return {
+                accepted: false,
+                diagnostics:
+                  basePolicy === undefined
+                    ? ["Policy session returned an invalid policy."]
+                    : imported.diagnostics,
+              };
+            const compiled = projectWorkbenchPolicy(
+              basePolicy,
+              imported.state,
+              bundle,
+              bindings,
+              "author",
+              sourceInputs,
+            );
+            if (!compiled.accepted) return { accepted: false, diagnostics: compiled.diagnostics };
+            const policy = {
+              ...compiled.policy,
+              developerTools: explicitDeveloperToolSelectionForOrgPolicyV1(
+                selection.selected,
+                selection.excluded,
+              ),
+            };
+            const developerTools = resolveDeveloperToolSelectionForOrgPolicyV1(policy);
+            if (!developerTools.accepted)
+              return {
+                accepted: false,
+                diagnostics: developerTools.diagnostics.map((diagnostic) => diagnostic.message),
+              };
+            try {
+              applyingWorkbenchProjection = true;
+              window.__aihWorkbenchApplyingProjection = true;
+              session.restorePolicy(policy);
+              return { accepted: true, policy };
+            } catch (error) {
+              return {
+                accepted: false,
+                diagnostics: [
+                  error instanceof Error ? error.message : "Policy update was rejected.",
+                ],
+              };
+            } finally {
+              window.__aihWorkbenchApplyingProjection = false;
+              applyingWorkbenchProjection = false;
+            }
+          },
+        })
+      : undefined;
   const mounted = mountWorkbench(root, {
     bundle,
     adoptionBindings: bindings,
@@ -297,6 +369,7 @@ if (preparedCatalogValid) {
   window.addEventListener("aih-workbench-policy-change", () => {
     if (applyingWorkbenchProjection) return;
     const snapshot = session.snapshotPolicy();
+    developerTools?.restore(snapshot);
     const imported = importedState(snapshot, bundle, bindings, sourceInputs);
     const basePolicy = object(snapshot);
     if (!imported.accepted || basePolicy === undefined) {

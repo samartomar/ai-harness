@@ -44,6 +44,7 @@ import {
   type VerifiedOrgPolicyTargets,
   verifiedOrgPolicyTargets,
 } from "../org-policy/project.js";
+import { governanceOwnsAihSurfaces } from "../org-policy/schema.js";
 import { scanRepo } from "../profile/scan.js";
 import {
   adapterNote,
@@ -224,6 +225,7 @@ export async function bootstrapAiPlan(
           resolution: await resolveTargets(ctx, preparedTargets.policy),
         };
   const { clis, detectFellBack, bareDefault } = policyTargets.resolution;
+  const governed = governanceOwnsAihSurfaces(policyTargets.policy);
   const baseline = resolveBaselineSource(ctx.options, readAihConfigBaseline(ctx.root));
   const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
   const repoName = repoDisplayName(ctx.root);
@@ -237,6 +239,7 @@ export async function bootstrapAiPlan(
     projectExtension: hasProjectExtension,
     canon,
     baseline,
+    governed,
   });
   const adapterContents = new Map<Cli, string>();
 
@@ -258,7 +261,7 @@ export async function bootstrapAiPlan(
 
   // One tool-specific adapter note per selected CLI.
   for (const cli of clis) {
-    const contents = adapterNote(cli, dir, canon, baseline);
+    const contents = adapterNote(cli, dir, canon, baseline, governed);
     adapterContents.set(cli, contents);
     actions.push(
       writeText(posix.join(dir, "adapters", `${cli}.md`), contents, `${cli} adapter note`),
@@ -420,7 +423,7 @@ export async function bootstrapAiPlan(
   actions.push(
     doc(
       "bootstrap-ai summary (Layer-2 ai-coding canon)",
-      summaryText(dir, clis, bootloaders, canon, baseline),
+      summaryText(dir, clis, bootloaders, canon, baseline, governed),
     ),
   );
 
@@ -442,6 +445,7 @@ function summaryText(
   bootloaders: string[],
   canon: CanonMode,
   baseline: ReturnType<typeof resolveBaselineSource>,
+  governed: boolean,
 ): string {
   const layer2 =
     canon === "compact"
@@ -451,8 +455,9 @@ function summaryText(
     canon === "compact"
       ? "Repo contract (stack/commands/scale/gaps): `aih contract`. Re-run `aih bootstrap-ai`"
       : "Context dir (INDEX/architecture/conventions): `aih scaffold`. Re-run `aih bootstrap-ai`";
-  const layer1 =
-    baseline.id === "ecc"
+  const layer1 = governed
+    ? `Required project guidance: ${dir}/policy-required-guidance.md. Reconcile the bound selection with \`aih policy project --apply\`; native plugins and user content remain separately owned.`
+    : baseline.id === "ecc"
       ? "Layer 1 (user baseline): install ECC + Superpowers with `aih ecc` / `aih superpowers`."
       : `Layer 1 (user baseline): ${baseline.label} (${baseline.sources
           .map((repo) => `${repo.owner}/${repo.repo}@${repo.pinnedSha.slice(0, 12)}`)

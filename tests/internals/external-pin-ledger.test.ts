@@ -8,10 +8,18 @@ import {
   SEMGREP_VERSION,
 } from "../../src/baseline-evidence/analyzer-profile.js";
 import { coreOwnedEccCodexMcpServers } from "../../src/ecc/codex.js";
+import {
+  CODE_REVIEW_GRAPH_RUNTIME_PIN,
+  CODEBASE_MEMORY_RUNTIME_PIN,
+  DEFAULT_MCP_DEPENDENCY_LOCK_SHA256,
+  DEFAULT_MCP_RUNTIME_PYPROJECT_SHA256,
+  DEFAULT_MCP_RUNTIME_UV_LOCK_SHA256,
+} from "../../src/ecc-profile/default-mcp-runtime-lock.js";
 import { CHECKOUT_ACTION_PIN } from "../../src/guardrails/sca.js";
 import { BASELINE_SOURCES } from "../../src/internals/baseline-sources.js";
 import { mcpServers, type StdioServer } from "../../src/mcp/servers.js";
 import type { RepoStack } from "../../src/profile/scan.js";
+import { TOKEN_OPTIMIZER_PIN } from "../../src/tools/token-optimizer-runtime.js";
 import { SKILLSPECTOR_IMAGE_DIGEST, SKILLSPECTOR_SOURCE_REVISION } from "../../src/trust/images.js";
 
 interface LedgerEntry {
@@ -63,7 +71,7 @@ function entry(surface: string): LedgerEntry {
 function toolingPlan(): {
   pins: {
     serena: { package: string };
-    tokenOptimizer: { tag: string; commit: string };
+    tokenOptimizer: { tag: string; commit: string; tree: string };
     tokenSavior: { package: string };
   };
 } {
@@ -157,21 +165,24 @@ describe("active external-pin ledger", () => {
     expect(entry("ecc-candidate").reason).toMatch(/nothing was promoted/i);
     expect(entry("superpowers")).toMatchObject({
       identity: "obra/Superpowers",
-      commit: "3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9",
+      commit: "b36e0829c6d0140e93cfef2ca599b1b07d4a7797",
       disposition: "active",
     });
     // The previous reconciliation deliberately did NOT promote the refresh
     // candidate; this one does, so the recorded reason has to say so.
-    expect(entry("superpowers").reason).toMatch(/rebound from v6\.1\.1 to the v6\.2\.0/i);
+    expect(entry("superpowers").reason).toMatch(/rebound from v6\.2\.0 to v6\.3\.0/i);
     const servers = mcpServers("standard", webStack, { selfHost: true });
     expect(entry("code-review-graph").version).toBe(
       versionFromSpec(stdioArg(servers, "code-review-graph", "code-review-graph@")),
     );
     expect(entry("code-review-graph").reason).toMatch(
-      /2\.3\.8.*hold.*ambient.*CRG_OPENAI.*silent.*egress/i,
+      /raw repository-agnostic fallback only.*2\.3\.8 raw candidate.*hold.*ambient.*CRG_OPENAI.*silent.*egress/i,
     );
     expect(entry("codebase-memory-mcp").version).toBe(
       versionFromSpec(stdioArg(servers, "codebase-memory-mcp", "codebase-memory-mcp@")),
+    );
+    expect(entry("codebase-memory-mcp").reason).toMatch(
+      /raw repository-agnostic fallback only.*0\.10\.5.*native.*0\.10\.8.*separate/i,
     );
     expect(entry("sequential-thinking").version).toBe(
       versionFromSpec(
@@ -183,13 +194,13 @@ describe("active external-pin ledger", () => {
       ),
     );
     expect(entry("sequential-thinking").reason).toMatch(
-      /initialize online.*offline cache.*server version 0\.2\.0/i,
+      /Initialize.*bounded thought succeeded.*serverInfo reports sequential-thinking-server 2026\.8\.31/i,
     );
     expect(entry("playwright-mcp").version).toBe(
       versionFromSpec(stdioArg(servers, "playwright", "@playwright/mcp@")),
     );
     expect(entry("playwright-mcp").reason).toMatch(
-      /initialize online.*offline cache.*Playwright build 1\.63\.0-alpha-2026-08-05/i,
+      /Initialize.*isolated headless.*serverInfo reports Playwright 1\.64\.0-alpha-2026-09-14/i,
     );
     expect(entry("ecc-codex-chrome-devtools-mcp")).toMatchObject({
       identity: "chrome-devtools-mcp",
@@ -203,11 +214,30 @@ describe("active external-pin ledger", () => {
     expect(entry("ecc-codex-chrome-devtools-mcp").version).toBe(
       versionFromSpec(chromeDevtools.args[1] ?? ""),
     );
+    expect(entry("ecc-codex-chrome-devtools-mcp-candidate")).toMatchObject({
+      version: "1.9.0",
+      commit: "1cec9cd1a3bbf1895c98fa4b4e0e2da5a36e4075",
+      disposition: "blocked",
+    });
+    expect(entry("ecc-codex-chrome-devtools-mcp-candidate").reason).toMatch(
+      /detached update-check.*usage statistics default on.*new_page.*list_pages.*blocked/i,
+    );
+    expect(entry("ecc-codex-chrome-devtools-mcp-candidate").reason).toMatch(
+      /--executablePath.*same installed Chrome binary.*new_page.*captured owned Node\/Chrome tree was empty/i,
+    );
 
     const github = servers.github as StdioServer;
     const githubImage = github.args.find((candidate) => candidate.startsWith("ghcr.io/github/"));
     expect(githubImage).toBeDefined();
     expect(entry("github-mcp-container").integrity).toBe(githubImage?.split("@")[1]);
+    expect(entry("github-mcp-container")).toMatchObject({
+      version: "v1.12.1",
+      commit: "7d13a7ad6f2a17f351a6d77ce280c85ae1821f4d",
+      disposition: "active",
+    });
+    expect(entry("github-mcp-container").reason).toMatch(
+      /Optional self-host.*44 default tool names are identical.*Docker was unavailable/i,
+    );
 
     const plan = toolingPlan();
     expect(entry("serena").version).toBe(versionFromSpec(plan.pins.serena.package));
@@ -216,6 +246,82 @@ describe("active external-pin ledger", () => {
       version: plan.pins.tokenOptimizer.tag,
       commit: plan.pins.tokenOptimizer.commit,
     });
+  });
+
+  it("keeps raw MCP fallbacks distinct from authenticated native defaults", () => {
+    const graph = entry("code-review-graph-native-default");
+    expect(graph).toMatchObject({
+      identity: "code-review-graph",
+      version: versionFromSpec(CODE_REVIEW_GRAPH_RUNTIME_PIN.package),
+      commit: CODE_REVIEW_GRAPH_RUNTIME_PIN.sourceCommit,
+      integrity: `sha256:${CODE_REVIEW_GRAPH_RUNTIME_PIN.wheelSha256}`,
+      disposition: "active",
+    });
+    for (const lock of [
+      DEFAULT_MCP_RUNTIME_PYPROJECT_SHA256,
+      DEFAULT_MCP_RUNTIME_UV_LOCK_SHA256,
+      DEFAULT_MCP_DEPENDENCY_LOCK_SHA256,
+    ]) {
+      expect(graph.reason).toContain(`sha256:${lock}`);
+    }
+    expect(graph.reason).toMatch(
+      /guarded native default.*installed Linux Node 20.*five guarded operations.*per-host.*macOS.*unverified/i,
+    );
+
+    const memory = entry("codebase-memory-mcp-native-default");
+    expect(memory).toMatchObject({
+      identity: "codebase-memory-mcp",
+      version: versionFromSpec(CODEBASE_MEMORY_RUNTIME_PIN.package),
+      commit: CODEBASE_MEMORY_RUNTIME_PIN.sourceCommit,
+      integrity: `sha256:${CODEBASE_MEMORY_RUNTIME_PIN.releaseManifestSha256}`,
+      disposition: "active",
+    });
+    expect(memory.integrityCovers).toBeUndefined();
+    for (const lock of [
+      DEFAULT_MCP_RUNTIME_PYPROJECT_SHA256,
+      DEFAULT_MCP_RUNTIME_UV_LOCK_SHA256,
+      DEFAULT_MCP_DEPENDENCY_LOCK_SHA256,
+      CODEBASE_MEMORY_RUNTIME_PIN.wheelSha256,
+    ]) {
+      expect(memory.reason).toContain(`sha256:${lock}`);
+    }
+    for (const archive of Object.values(CODEBASE_MEMORY_RUNTIME_PIN.archives)) {
+      expect(memory.reason).toContain(`${archive.name} sha256:${archive.sha256}`);
+    }
+    expect(memory.reason).toMatch(
+      /guarded native default.*selected platform archive.*installed Linux Node 20.*A-B-A.*per-host.*macOS.*unverified/i,
+    );
+  });
+
+  it("binds Core and its repository helper to one Token Optimizer source identity", () => {
+    const active = entry("token-optimizer");
+    expect(active).toMatchObject({
+      identity: TOKEN_OPTIMIZER_PIN.repository,
+      version: TOKEN_OPTIMIZER_PIN.tag,
+      commit: TOKEN_OPTIMIZER_PIN.commit,
+      disposition: "active",
+    });
+    expect(active.reason).toContain(`tree ${TOKEN_OPTIMIZER_PIN.tree}`);
+    expect(active.reason).toContain(`manifest sha256:${TOKEN_OPTIMIZER_PIN.manifestSha256}`);
+    expect(active.reason).toMatch(/all 158.*canonical Git blobs/i);
+    expect(active.reason).toMatch(/quiet and balanced.*receipt ownership.*policy exclusions/i);
+    expect(toolingPlan().pins.tokenOptimizer).toMatchObject({
+      tag: TOKEN_OPTIMIZER_PIN.tag,
+      commit: TOKEN_OPTIMIZER_PIN.commit,
+      tree: TOKEN_OPTIMIZER_PIN.tree,
+    });
+
+    const historical = entry("token-optimizer-candidate");
+    expect(historical).toMatchObject({
+      identity: TOKEN_OPTIMIZER_PIN.repository,
+      version: "v5.13.12",
+      commit: "35d047b32af64b2c8bb7ef8d83d90396abc223c9",
+      integrity: "sha256:69e4704da1c003529c157ffa061a31756997073b849759e231434a080e15a601",
+      disposition: "retained",
+    });
+    expect(historical.reason).toMatch(/historical candidate.*superseded/i);
+    expect(historical.reason).toMatch(/all 154.*canonical Git blobs/i);
+    expect(historical.reason).toMatch(/checksum hold was disproved.*no upstream repair/i);
   });
 
   it("declares launcher-shim pins honestly and never as zero egress", () => {
@@ -284,20 +390,14 @@ describe("active external-pin ledger", () => {
       skillspectorDockerfile.match(/pip install --no-cache-dir uv==([^\s]+)/)?.[1],
     );
     expect(entry("uv")).toMatchObject({
-      version: "0.12.9",
-      commit: "9f928602938ac5cf1cd6b294a725833c16f5720e",
+      version: "0.12.13",
+      commit: "0ebbd9274a55a8a53a13970be3b97e4209598e17",
       disposition: "active",
     });
     expect(entry("uv").reason).toMatch(/five committed locks.*byte-identical/i);
     expect(entry("uv").reason).not.toMatch(/SkillSpector build/i);
     expect(entry("uv").reason).toContain(
-      "ddbfcee1ac615a0499f6aa97b5ec8ebdf3ee4a7714a48055ec2ba0030e3cf810",
-    );
-    expect(entry("uv").reason).toContain(
-      "ec7a99cd05e0cd7f80243f135ce1361c76835cb0ee60055d14d20eba8eba1460",
-    );
-    expect(entry("uv").reason).toContain(
-      "5badfd805fd88bf99b4b4f044f6e8f762f1892cab27477f4427bb473e93dd049",
+      "a86c9dc7bad9b03f388583b7187c05fe9951c2e0d392217e8fd43d97787f6ec2",
     );
     expect(skillspectorDockerfile).toContain(
       `LABEL org.opencontainers.image.revision="${SKILLSPECTOR_SOURCE_REVISION}"`,
@@ -317,7 +417,7 @@ describe("active external-pin ledger", () => {
     expect(entry("claude-code-action")).toMatchObject({
       commit: claude?.[1],
     });
-    expect(entry("claude-code-action").version).toBe("v1.0.210");
+    expect(entry("claude-code-action").version).toBe("v1.0.223");
 
     const snykQualificationWorkflow = readFileSync(
       resolve(root, ".github/workflows/snyk-agent-qualification.yml"),
@@ -373,8 +473,8 @@ describe("active external-pin ledger", () => {
         version: pin[2],
       });
     }
-    expect(entry("codeql-action").version).toBe("v4.37.9");
-    expect(entry("codeql-action").reason).toMatch(/codeql-bundle-v2\.26\.4/i);
+    expect(entry("codeql-action").version).toBe("v4.38.0");
+    expect(entry("codeql-action").reason).toMatch(/codeql-bundle-v2\.27\.0/i);
   });
 
   it("records governed scanner identities and fails closed on AgentShield provenance", () => {
@@ -431,6 +531,9 @@ describe("active external-pin ledger", () => {
     // dependency would understate why this entry stays blocked.
     expect(entry("aws-core-mcp-server").reason).toMatch(/itself yanked/i);
     expect(entry("aws-core-mcp-server").reason).toMatch(/load individual MCPs/i);
+    expect(entry("aws-core-mcp-server").reason).toMatch(
+      /2026-09-14T15:44:37\.728Z.*both exact artifacts remain yanked.*wheel.*sdist/i,
+    );
     expect(entry("setup-python-action")).toMatchObject({
       identity: "actions/setup-python",
       version: "v7.0.0",
@@ -444,7 +547,7 @@ describe("active external-pin ledger", () => {
       /Python 3\.13.*memory and shell hooks disabled.*entry-point/i,
     );
     expect(entry("token-optimizer").reason).toMatch(
-      /PolyForm Noncommercial.*Codex and Claude.*rollback/i,
+      /PolyForm Noncommercial 1\.0\.0.*explicit acceptance/i,
     );
   });
 
@@ -482,6 +585,50 @@ describe("active external-pin ledger", () => {
     expect(entry("ui-ux-pro-max-skill").reason).toMatch(
       /RED, degraded.*186 failing.*Cisco and Semgrep completed.*SkillSpector timed out.*Snyk/i,
     );
+    const anthropicCandidate = entry("anthropic-skills-candidate-2026-09-14");
+    expect(anthropicCandidate).toMatchObject({
+      identity: "anthropics/skills",
+      commit: "34040c9c568585f6929bedeaad110ad08f079624",
+      integrity: "sha256:bbda9be7b3cba505db10e6e61e38133a05ab17799bd4f8e155704c6900ffb914",
+      disposition: "blocked",
+    });
+    expect(anthropicCandidate.reason).toMatch(
+      /request sha256:5b14bb5835c795538498275ffa8feaa67f02fcbd6499eccbbc53c4b2aacd8437.*publication sha256:bbda9be7b3cba505db10e6e61e38133a05ab17799bd4f8e155704c6900ffb914.*receipt sha256:1b25f8425f484b08ae6732804c275ea7ea179d3323e64680803ae592072df78a/i,
+    );
+    const uiUxCandidate = entry("ui-ux-pro-max-skill-candidate-2026-09-14");
+    expect(uiUxCandidate).toMatchObject({
+      identity: "nextlevelbuilder/ui-ux-pro-max-skill",
+      version: "v2.15.0",
+      commit: "a38d04c3d5c298c851dbe5e6ee1965ee3de42cb5",
+      integrity: "sha256:3a2c67b989fd9def7db7b3f75e4223744ef33e59475d149224f847ae244fa123",
+      disposition: "blocked",
+    });
+    expect(uiUxCandidate.reason).toMatch(
+      /request sha256:55c071fd4aa39254d3743527cb78095c0b04e4d73c5b7f6cb9c80f6e126b2eac.*publication sha256:3a2c67b989fd9def7db7b3f75e4223744ef33e59475d149224f847ae244fa123.*receipt sha256:d5a88a98ecac41543397943a60e7e7b5487fcc4709290cd1f17c86b0a93e6186/i,
+    );
+    for (const candidate of [anthropicCandidate, uiUxCandidate]) {
+      expect(candidate.reason).toMatch(
+        /all requested fixed analyzer executions succeeded.*no missing or failed analyzer.*coverage warnings remain preserved/i,
+      );
+      expect(candidate.reason).toMatch(
+        /8101b9790ef18136a99d7e4cc481c01a5d63ee6c.*15 review-only rows.*176 generated files.*243 mapped findings.*empty executable capability arrays.*installation false.*authority none.*organization admission not-authoritative.*unresolved content, license, or execution findings.*cannot promote the maintained Core guide pin/i,
+      );
+    }
+    expect(entry("anthropic-skills-guide").reason).toMatch(
+      /34040c9c568585f6929bedeaad110ad08f079624.*held.*not Core guide approval/i,
+    );
+    expect(entry("ui-ux-pro-max-skill-guide").reason).toMatch(
+      /v2\.15\.0 candidate a38d04c3d5c298c851dbe5e6ee1965ee3de42cb5.*held.*not Core guide approval/i,
+    );
+    expect(entry("anthropic-skills")).toMatchObject({
+      commit: "b29e7cf65e5cb78a5ac33d582270551bc74a14eb",
+      disposition: "blocked",
+    });
+    expect(entry("ui-ux-pro-max-skill")).toMatchObject({
+      version: "v2.11.3",
+      commit: "4857a2c5ef989794751a0f66b8545a4a49566286",
+      disposition: "blocked",
+    });
     expect(entry("aws-mcp-guide-source").reason).toMatch(/Agent Toolkit for AWS/i);
 
     // The ECC candidate is recorded blocked WITHOUT moving the active pin, so the

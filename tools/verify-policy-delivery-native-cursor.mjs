@@ -109,8 +109,8 @@ async function provider(configPath) {
           requestRead(5, config.reads[1].absolutePath);
           return;
         }
-        if ((stage !== 2.5 || id !== 5) && (stage !== 2.75 || id !== 6)) throw new Error("unexpected-execution-order");
-        const readIndex = stage === 2.5 ? 1 : 2;
+        if (stage < 2.5 || !Number.isInteger(id) || id !== 5 + (stage - 2.5)) throw new Error("unexpected-execution-order");
+        const readIndex = 1 + (stage - 2.5);
         const expectedExecId = `fixture-read-${id}`;
         const execId = text(execution, 15);
         if (execId !== undefined && execId !== expectedExecId) throw new Error("native-read-result-correlation-mismatch");
@@ -121,17 +121,11 @@ async function provider(configPath) {
         if (!Buffer.isBuffer(context)) throw new Error("native-read-result-missing-content");
         const expectedRead = config.reads[readIndex];
         const values = { id, execId, execIdCorrelation: execId === undefined ? "omitted-by-client" : "matched", returnedPath: text(success, 1), requestedPath: expectedRead.absolutePath, pathExact: text(success, 1) === expectedRead.absolutePath, contentExact: context.equals(Buffer.from(expectedRead.base64, "base64")), contentSha256: hash(context), contentBytes: context.length };
-        if (stage === 2.5) {
-          emit({ type: "native-policy-guidance-read", ...values });
-          if (!values.pathExact || !values.contentExact) throw new Error("native-required-guidance-read-mismatch");
-          stage = 2.75;
-          requestRead(6, config.reads[2].absolutePath);
-          return;
-        }
-        emit({ type: "native-skill-read", ...values });
-        if (!values.pathExact || !values.contentExact) throw new Error("native-skill-read-mismatch");
-        stage = 3;
-        complete();
+        const type = readIndex === 1 ? "native-policy-guidance-read" : readIndex === 2 ? "native-skill-read" : "native-selected-content-read";
+        emit({ type, ...values });
+        if (!values.pathExact || !values.contentExact) throw new Error("native-selected-guidance-read-mismatch");
+        if (readIndex + 1 < config.reads.length) { stage += 1; requestRead(5 + (readIndex), config.reads[readIndex + 1].absolutePath); return; }
+        stage = 3; complete();
         return;
       }
     };
@@ -192,6 +186,9 @@ function rootSnapshot(root) {
     const content = readRegularFileNoFollow(full);
     return [content === undefined ? `${relative}:unsupported` : `${relative}:${hash(content)}`];
   }).sort();
+  const receipt = JSON.parse(readFileSync(join(root, "ai-coding", "policy-required-guidance.receipt.json"), "utf8"));
+  const selected = [...new Set(receipt.components.flatMap((component) => component.paths)
+    .filter((path) => path.startsWith(".cursor/") && path.endsWith(".md") && !path.includes("/skills/")))].sort();
   return {
     bridge,
     guidance,
@@ -205,6 +202,7 @@ function rootSnapshot(root) {
       { path: ".cursor/rules/00-canon.mdc", base64: bridgeBytes.toString("base64"), bodyBase64: Buffer.from(bridgeBody).toString("base64") },
       { path: "ai-coding/policy-required-guidance.md", base64: guidanceBytes.toString("base64") },
       { path: `.cursor/skills/${skillName}/SKILL.md`, base64: skillBytes.toString("base64") },
+      ...selected.map((path) => ({ path, base64: readFileSync(join(root, path)).toString("base64") })),
     ],
   };
 }
@@ -237,6 +235,7 @@ async function runRoot(root, ordinal) {
     const skills = result.providerEvents.find((event) => event.type === "native-skills-blob");
     const guidanceRead = result.providerEvents.find((event) => event.type === "native-policy-guidance-read");
     const skillRead = result.providerEvents.find((event) => event.type === "native-skill-read");
+    const selectedReads = result.providerEvents.filter((event) => event.type === "native-selected-content-read");
     result.client = { ...exited, output, stderr };
     result.initialRequestWasContextFree = initial?.pointerPresent === false;
     result.nativeContextPointer = rules?.pointerPresent === true;
@@ -245,8 +244,9 @@ async function runRoot(root, ordinal) {
     result.nativeParsedBridgeBodyNormalizedEquivalent = rules?.bridgeBodyNormalizedEquivalent === true;
     result.nativeGuidanceReadExact = guidanceRead?.contentExact === true && guidanceRead?.pathExact === true;
     result.nativeSkillReadExact = skillRead?.contentExact === true && skillRead?.pathExact === true;
+    result.nativeSelectedContentReadsExact = selectedReads.length === source.reads.length - 3 && selectedReads.every((event) => event.contentExact === true && event.pathExact === true);
     result.sourceUnchanged = hash(readFileSync(source.bridge)) === source.bridgeSha256 && hash(readFileSync(source.guidance)) === source.guidanceSha256 && hash(readFileSync(source.skill)) === source.skillSha256 && JSON.stringify(rootSnapshot(root).cursorTree) === JSON.stringify(source.cursorTree);
-    result.status = exited.code === 0 && !exited.timeout && result.initialRequestWasContextFree && result.nativeContextPointer && result.nativePolicyGuidanceInstruction && result.nativeRequiredSkillIdentity && result.nativeParsedBridgeBodyNormalizedEquivalent && result.nativeGuidanceReadExact && result.nativeSkillReadExact && result.sourceUnchanged ? "passed" : "failed";
+    result.status = exited.code === 0 && !exited.timeout && result.initialRequestWasContextFree && result.nativeContextPointer && result.nativePolicyGuidanceInstruction && result.nativeRequiredSkillIdentity && result.nativeParsedBridgeBodyNormalizedEquivalent && result.nativeGuidanceReadExact && result.nativeSkillReadExact && result.nativeSelectedContentReadsExact && result.sourceUnchanged ? "passed" : "failed";
   } catch (error) { result.failure = error instanceof Error ? error.message : String(error); }
   finally {
     provider?.kill("SIGTERM");

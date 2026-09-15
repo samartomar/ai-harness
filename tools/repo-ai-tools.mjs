@@ -33,9 +33,9 @@ const pins = {
     ],
   },
   tokenOptimizer: {
-    tag: "v5.11.68",
-    commit: "ffe3b8007542260b17648a2d9228c3dedda380ad",
-    tree: "d044ba6038ac705e8d0da6a4b545cbee00abe7d5",
+    tag: "v5.13.14",
+    commit: "37a9546b9fecba2c4e9a02ef4e90855d449bf08f",
+    tree: "b86bba7e8f3caea3a32d41ad134d81c3fea3e9e6",
     license: "PolyForm-Noncommercial-1.0.0",
     source: "https://github.com/alexgreensh/token-optimizer",
   },
@@ -73,7 +73,7 @@ const cacheRoot = canonicalCacheRoot(selectedCacheRoot);
 const installRoot = join(cacheRoot, "aih", "repo-ai-tools", repoKey);
 const uvToolRoot = join(installRoot, "uv");
 const binRoot = join(installRoot, "bin");
-const tokenOptimizerRoot = join(installRoot, "token-optimizer", "v5.11.68");
+const tokenOptimizerRoot = join(installRoot, "token-optimizer", pins.tokenOptimizer.tag);
 const tokenOptimizerClaudeScope = join(installRoot, "token-optimizer", "claude-scope");
 const serenaOverridesPath = join(installRoot, "serena-security-overrides.txt");
 const serenaContextPath = join(installRoot, "serena-codex-context.yml");

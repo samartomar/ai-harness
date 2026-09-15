@@ -686,6 +686,12 @@ body[data-rail="off"] .sidehead .brand{display:flex}
         <p class="help">Required for supported MCP tools you select. Preview the changes in your project before applying.</p>
         <p class="help" id="deployment-readiness" role="status" aria-live="polite"></p>
       </section>
+      <section class="gcard sect" id="developer-tool-selection" aria-labelledby="developer-tool-selection-title">
+        <h2 id="developer-tool-selection-title">Developer tool setup</h2>
+        <p class="help">Choose the default developer tools for later setup. This authoring view records selection intent only; it does not claim a tool is installed, configured, or verified.</p>
+        <p class="help" id="developer-tool-selection-status" role="status" aria-live="polite"></p>
+        <div class="stack" id="developer-tool-rows"></div>
+      </section>
       <div id="deployment-advanced-actions" class="brow" hidden><button type="button" class="btn sm" id="open-ecc-mcp">Approve ECC MCP</button><button type="button" class="btn sm" id="open-artifacts">Organization artifacts</button><button type="button" class="btn sm" id="open-custom-hook-info" data-detail="AIH Governance &amp; Telemetry Hooks information">Why custom Hooks are unavailable</button></div>
       <div id="framework-rows"></div>
 

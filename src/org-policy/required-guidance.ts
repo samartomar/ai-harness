@@ -29,7 +29,7 @@ const ReceiptSchema = z
       .array(
         z
           .object({
-            id: z.string().regex(/^skill:[a-z0-9][a-z0-9._-]*$/),
+            id: z.string().regex(/^[a-z][a-z0-9-]*:[a-z0-9][a-z0-9._-]*$/),
             paths: z.array(z.string().min(1).max(1024)).min(1),
           })
           .strict(),
@@ -79,9 +79,11 @@ function requiredSelections(
 ): Array<{ id: string; paths: string[] }> {
   const byId = new Map<string, Set<string>>();
   for (const component of components) {
-    if (!component.id.startsWith("skill:")) continue;
     for (const file of component.files) {
-      if (!file.path.endsWith("/SKILL.md")) continue;
+      const selectedGuidance =
+        file.path.endsWith("/SKILL.md") ||
+        /(^|\/)(?:agents|commands|rules|steering)\/.*\.md$/.test(file.path);
+      if (!selectedGuidance) continue;
       const paths = byId.get(component.id) ?? new Set<string>();
       paths.add(file.path);
       byId.set(component.id, paths);
@@ -90,6 +92,13 @@ function requiredSelections(
   return [...byId]
     .map(([id, paths]) => ({ id, paths: [...paths].sort() }))
     .sort((left, right) => left.id.localeCompare(right.id));
+}
+
+/** Shared predicate for writers and read-only delivery reports. */
+export function hasRequiredGuidanceComponents(
+  components: readonly RequiredGuidanceComponent[],
+): boolean {
+  return requiredSelections(components).length > 0;
 }
 
 /** Pure expected bytes and identity for reporters as well as the writer. */
@@ -120,7 +129,7 @@ export function expectedPolicyRequiredGuidance(
     `Verified ECC source: ${parsedIdentity.source.repository}@${parsedIdentity.source.commit}`,
     `Governed targets: ${parsedIdentity.targets.join(", ")}`,
     "",
-    "At the start of every task, read and follow every skill listed below before acting:",
+    "At the start of every task, read every selected guidance file listed below in full before acting:",
     "",
     ...selected.flatMap((component) =>
       component.paths.map((componentPath) => `- \`${componentPath}\` (${component.id})`),

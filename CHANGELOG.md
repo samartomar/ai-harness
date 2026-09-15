@@ -8,6 +8,22 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Add MarkItDown CLI to default developer-tool setup, with a pinned local-document runtime,
+  conversion verification and persistent policy opt-outs. Its MCP adapter is separately optional.
+- Refresh Playwright MCP to 0.0.81 and the optional self-hosted GitHub MCP image to v1.12.1
+  at its verified immutable digest. GitHub MCP now requires an explicit selection.
+- Add `aih developer-tools` for the policy-selected default developer-tool lifecycle, and run the
+  same lifecycle from ordinary `aih init`. The JSON result reports effective selection and per-tool
+  lifecycle state; `--apply` provisions selected tools and reconciles policy exclusions only through
+  unchanged receipt-owned integration. Token Optimizer remains blocked until
+  `--accept-token-optimizer-license` is supplied, with `--token-optimizer-profile quiet|balanced`
+  selecting its setup profile.
+- Register governed Codex agents as native project roles and expose complete
+  qualified command bundles through native workflow skills, with owned
+  configuration, runtime boundaries and conservative rollback.
+- Explain governed ECC selection provenance, exclusions, planned discovery paths
+  and separate installation owners through the existing preview and reports.
+
 - Bind an exact policy source and client set to a canonical project root with
   `policy bind`, review changes through `policy rebind`, and retain a fail-closed
   revoked assignment with `policy revoke`. Reconcile governed required content
@@ -31,6 +47,26 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   across fresh processes; setup remains distinct from runtime acceptance.
 
 ### Fixed
+
+- Prune ECC files only through recorded ownership and matching content digests, preserving
+  unreceipted or modified files and removing the automatic upstream-uninstaller fallback.
+
+- Require explicit ECC hook/runtime consent across direct and Codex materialization,
+  preview and reconciliation; Core and Full content profiles do not supply that consent.
+  Keep governed runtime exclusions and consult-only boundaries intact.
+- Preserve validated scoped MCP environment values in deterministic Codex TOML projection.
+- Support the pinned Token Optimizer 5.13.14 Codex quiet and balanced hooks,
+  keeping approved commands bound to the authenticated source and preserving
+  receipt ownership, custom hooks and policy exclusions.
+- Pin Commander to the maintained Node 20-compatible 14.0.3 release so Core's
+  runtime dependency agrees with its advertised Node floor and existing test matrix.
+- Restore effective ECC selections when importing an exactly qualified source
+  into Workbench. Bind components to the verified local descriptor and preserve
+  explicit organization overrides and historical destination authority.
+- Keep one governed Codex skill projection in `.agents/skills/` during normal
+  setup. Reconcile unchanged receipt-owned duplicate projections while preserving
+  edited/custom content and unrelated client settings. Route generated governed
+  guidance to the project selection instead of unselected broad baseline rules.
 
 - Emit Claude's sandbox egress list at `sandbox.network.allowedDomains` and
   explain the supported settings deployment needed before the generated policy

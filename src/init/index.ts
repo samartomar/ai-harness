@@ -42,6 +42,10 @@ import { assertCommandPermissionPolicyPresent } from "../org-policy/command-perm
 import { verifiedOrgPolicyProjection, verifiedOrgPolicySource } from "../org-policy/project.js";
 import { governanceOwnsAihSurfaces, readOrgPolicy } from "../org-policy/schema.js";
 import { combineProjectResults, executePolicyProjectCommand } from "../org-policy/validate.js";
+import {
+  type DeveloperToolsCommandDeps,
+  executeDeveloperToolsCommand,
+} from "../tools/developer-tools-command.js";
 import { sidecarInitActions } from "../truth/index.js";
 import { INIT_PHASES } from "./phases.js";
 import { initV3Actions } from "./v3.js";
@@ -475,23 +479,54 @@ function baselineInstallDoc(baseline: ReturnType<typeof resolveBaselineSource>):
 }
 
 /** Bound setup uses the same public delivery pipeline before refreshing bootloaders. */
+export interface InitCommandDeps extends EccCommandDeps {
+  /** Public setup runtime seam. Ordinary init already owns the MCP projection phase. */
+  readonly developerTools?: DeveloperToolsCommandDeps;
+}
+
+function resultFailed(result: PlanResult): boolean {
+  return (
+    result.execs.some((entry) => entry.ran && entry.ok === false) ||
+    (result.report !== undefined && !result.report.ok)
+  );
+}
+
+async function finishDeveloperToolSetup(
+  ctx: PlanContext,
+  initialized: PlanResult,
+  deps: InitCommandDeps,
+): Promise<PlanResult> {
+  if (resultFailed(initialized)) return { ...initialized, capability: "init" };
+  const developerTools = await executeDeveloperToolsCommand(ctx, {
+    ...deps.developerTools,
+    projectMcp: false,
+  });
+  return {
+    ...combineProjectResults(initialized, developerTools),
+    capability: "init",
+  };
+}
+
 export async function executeInitCommand(
   ctx: PlanContext,
-  deps: EccCommandDeps = {},
+  deps: InitCommandDeps = {},
 ): Promise<PlanResult> {
   const initialPlan = await initPlan(ctx);
-  if (!readPolicyBinding(ctx.root)) return executePlan(initialPlan, ctx);
+  if (!readPolicyBinding(ctx.root)) {
+    return finishDeveloperToolSetup(ctx, await executePlan(initialPlan, ctx), deps);
+  }
   const delivered = await executePolicyProjectCommand(ctx, deps);
-  if (
-    delivered.execs.some((entry) => entry.ran && entry.ok === false) ||
-    (delivered.report && !delivered.report.ok)
-  ) {
+  if (resultFailed(delivered)) {
     return { ...delivered, capability: "init" };
   }
   // Delivery may change shared client files. Replan against those exact bytes
   // rather than applying stale pre-delivery assertions or restoring old entries.
   const initialized = await executePlan(ctx.apply ? await initPlan(ctx) : initialPlan, ctx);
-  return { ...combineProjectResults(delivered, initialized), capability: "init" };
+  return finishDeveloperToolSetup(
+    ctx,
+    { ...combineProjectResults(delivered, initialized), capability: "init" },
+    deps,
+  );
 }
 
 export const command: CommandSpec = {
@@ -526,6 +561,15 @@ export const command: CommandSpec = {
     {
       flags: "--v3",
       description: "include the structured init-v3 scan, gap, install-plan, and fingerprint flow",
+    },
+    {
+      flags: "--accept-token-optimizer-license",
+      description: "accept Token Optimizer's license before ordinary setup acquires it",
+    },
+    {
+      flags: "--token-optimizer-profile <profile>",
+      description: "Token Optimizer setup profile: quiet | balanced",
+      default: "quiet",
     },
     CANON_OPTION,
     BASELINE_OPTION,

@@ -10,11 +10,12 @@ permissions:
 env:
   SCANNER_REPOSITORY: samartomar/aih-scan
   SCANNER_PUBLISHER_WORKFLOW: samartomar/aih-scan/.github/workflows/baseline-publication.yml
-  SCANNER_PUBLISHER_COMMIT: f6189c0211fe27369fb15672f00da76c2072361c
 
 jobs:
   consume:
     runs-on: ubuntu-latest
+    env:
+      SCANNER_PUBLISHER_COMMIT: ${{ matrix.publisherCommit }}
     strategy:
       fail-fast: false
       matrix:
@@ -22,9 +23,11 @@ jobs:
           - id: ecc
             repository: affaan-m/ECC
             sha: 5caf398a91599029a176ca6d806409b00d1052c4
+            publisherCommit: f6189c0211fe27369fb15672f00da76c2072361c
           - id: superpowers
             repository: obra/Superpowers
-            sha: 3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9
+            sha: b36e0829c6d0140e93cfef2ca599b1b07d4a7797
+            publisherCommit: 981d50f19ec8923974597de28c4c7b7acf684ded
     steps:
       - name: Check out current protected Core main
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

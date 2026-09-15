@@ -203,7 +203,23 @@ describe("policy project", () => {
     expect(managed.sandbox).toBeDefined();
     const commands = (managed.allowedMcpServers ?? []).map((entry) => entry.serverCommand);
     expect(commands).toEqual([
-      expect.arrayContaining(["uvx", "--offline", "--no-python-downloads", "--no-env-file"]),
+      [
+        process.execPath,
+        expect.stringMatching(/[\\/]dist[\\/]ecc-runtime\.js$/),
+        "code-review-graph",
+        "--package",
+        "code-review-graph==2.3.8",
+        "--dependency-lock-sha256",
+        expect.stringMatching(/^[a-f0-9]{64}$/),
+        "--lock-root",
+        expect.any(String),
+        "--project",
+        expect.any(String),
+        "--state-root",
+        expect.any(String),
+        "--uv-cache",
+        expect.any(String),
+      ],
     ]);
     expect(JSON.stringify(commands)).not.toContain("code-review-graph@2.1.0");
 

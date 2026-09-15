@@ -27,6 +27,7 @@ export function mcpGovernanceSummary(
     scope: "project",
     stack,
     includeDisabledServers: true,
+    includeOptionalServers: true,
   });
   if (catalog.error !== undefined || catalog.servers === undefined) {
     return {
