@@ -133,11 +133,13 @@ if (preparedCatalogValid) {
   let applyingWorkbenchProjection = false;
   const developerToolRows = document.getElementById("developer-tool-rows");
   const developerToolStatus = document.getElementById("developer-tool-selection-status");
+  const developerToolSummary = document.getElementById("developer-tool-selection-summary");
   const developerTools =
     developerToolRows instanceof HTMLElement && developerToolStatus instanceof HTMLElement
       ? mountDeveloperToolSelection({
           root: developerToolRows,
           status: developerToolStatus,
+          summary: developerToolSummary instanceof HTMLElement ? developerToolSummary : undefined,
           initialPolicy: session.snapshotPolicy(),
           persist(selection) {
             const snapshot = session.snapshotPolicy();

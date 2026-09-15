@@ -841,10 +841,12 @@ The **Source** filter limits **Type** to categories with matching assets. Changi
 source clears a type that is no longer available. The **Adoption recipe** arrow
 opens a reading panel; dismiss it with Escape, its close button, or by moving the
 pointer away. Keyboard focus keeps the guide available while reading it. Adoption
-recipe and Evidence & versions share the compact reference shelf under the toolbar.
+recipe and Evidence & versions sit in the Deployment setup header.
 
-The working surface starts with Deployment setup, then Developer tool setup and
-Build your policy. The setup strip keeps posture, allowed CLI choices, managed
+The working surface starts with Deployment setup, followed by Build your policy.
+Developer tool setup is a collapsed section inside Deployment setup; its summary
+shows the current selections and exclusions. Expand it to review or change tools.
+The setup strip keeps posture, allowed CLI choices, managed
 MCP intent and readiness together. Its information buttons open the full setup
 and CLI-sanctioning explanations by hover or click; Escape dismisses them.
 Developer-tool rows retain selection status beside compact actions. MarkItDown

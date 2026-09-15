@@ -168,13 +168,13 @@ a:hover{color:var(--ink-2)}
 .field{display:none}
 ::-webkit-scrollbar{width:8px;height:8px}
 ::-webkit-scrollbar-thumb{background:var(--fill-2);border-radius:0}
-.stage{min-height:100vh;min-height:100dvh;display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-rows:auto auto auto 1fr auto}
+.stage{min-height:100vh;min-height:100dvh;display:grid;grid-template-columns:auto minmax(0,1fr);grid-template-rows:auto auto auto auto auto;align-content:start}
 #side{grid-column:1;grid-row:1/-1;position:sticky;top:0;align-self:start;z-index:60;width:250px;border-right:1px solid var(--rule);background:var(--surface);padding:12px 10px;display:flex;flex-direction:column;gap:10px;transition:width var(--motion)}
 body[data-workbench-shell="generic"] .stage{grid-template-columns:minmax(0,1fr)}
 body[data-workbench-shell="generic"] #side{display:none}
-body[data-workbench-shell="generic"] .bar,body[data-workbench-shell="generic"] .reference-shelf,body[data-workbench-shell="generic"] .announce,body[data-workbench-shell="generic"] .ticker,body[data-workbench-shell="generic"] .work,body[data-workbench-shell="generic"] .ledger{grid-column:1}
+body[data-workbench-shell="generic"] .bar,body[data-workbench-shell="generic"] .announce,body[data-workbench-shell="generic"] .ticker,body[data-workbench-shell="generic"] .work,body[data-workbench-shell="generic"] .ledger{grid-column:1}
 body[data-rail="off"] #side{width:58px;padding:12px 7px}
-.bar,.reference-shelf,.announce,.ticker,.work,.ledger{grid-column:2}
+.bar,.announce,.ticker,.work,.ledger{grid-column:2}
 .sidehead{display:flex;align-items:center;gap:8px}
 .sidehead .brand{flex:1;min-width:0}
 #rail-toggle{width:24px;height:24px;border:1px solid var(--rule);border-radius:3px;color:var(--ink-3);display:grid;place-items:center;font-size:var(--body);flex:0 0 auto}
@@ -225,9 +225,9 @@ kbd{font:500 var(--cap)/1 var(--mono);background:var(--fill-2);border-radius:3px
 .pill{display:inline-flex;gap:2px;padding:2px;border-radius:3px;border:1px solid var(--rule);background:var(--surface)}
 .pill button{height:24px;min-width:44px;padding:0 10px;border-radius:2px;color:var(--ink-3);font-weight:600;font-size:var(--meta)}
 .pill button[aria-pressed="true"]{color:var(--ink);background:var(--fill-2)}
-.announce{min-height:22px;padding:4px 16px 0;font-size:var(--meta);color:var(--ink-2);pointer-events:none}
+.announce{min-height:18px;padding:2px 14px 0;font-size:var(--meta);color:var(--ink-2);pointer-events:none}
 .announce.error{color:var(--blocked)}
-.ticker{display:flex;align-items:center;padding:6px 16px 0;flex-wrap:wrap}
+.ticker{display:flex;align-items:center;padding:4px 14px 0;flex-wrap:wrap}
 .ticker button{height:26px;padding:0 12px;border:0;color:var(--ink-3);font:600 var(--meta)/1 var(--sans);letter-spacing:.08em;text-transform:uppercase;display:inline-flex;align-items:center;gap:6px;transition:color var(--motion)}
 .ticker button~button{border-left:1px solid var(--rule)}
 .ticker button:hover{color:var(--ink)}
@@ -237,7 +237,7 @@ kbd{font:500 var(--cap)/1 var(--mono);background:var(--fill-2);border-radius:3px
 .ticker .sep{display:none}
 .ticker .soon{font:600 var(--cap)/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);opacity:.7;margin-left:auto}
 /* layout: one document scroll, sticky rail */
-.work{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;padding:8px 16px 12px;align-items:start}
+.work{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;padding:6px 14px 10px;align-items:start;min-width:0}
 body[data-view="compose"] #panel-artifacts,body[data-view="compose"] #panel-author,body[data-view="compose"] #panel-imports{display:none}
 body[data-view="artifacts"] .ticker,body[data-view="artifacts"] .plane:not(.pane),body[data-view="artifacts"] #panel-author,body[data-view="artifacts"] #panel-imports{display:none}
 body[data-view="author"] .ticker,body[data-view="author"] .plane:not(.pane),body[data-view="author"] #panel-artifacts,body[data-view="author"] #panel-imports{display:none}
@@ -246,7 +246,7 @@ body[data-view="imports"] .ticker,body[data-view="imports"] .plane:not(.pane),bo
 .gcard{border:1px solid var(--rule);border-radius:4px;background:var(--surface)}
 .rail{display:grid;gap:2px;align-content:start;padding:0}
 #side .gcard{border:0;background:transparent;border-radius:0}
-.sect{padding:10px 12px;display:grid;gap:8px}
+.sect{padding:8px 10px;display:grid;gap:6px}
 .cap{font:600 var(--cap)/1.3 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);display:flex;align-items:center;gap:7px}
 .cap .end{margin-left:auto;letter-spacing:0;text-transform:none;font-family:var(--sans);color:var(--ink)}
 .chips{display:flex;flex-wrap:wrap;gap:4px}
@@ -255,7 +255,7 @@ body[data-view="imports"] .ticker,body[data-view="imports"] .plane:not(.pane),bo
 .chip[aria-pressed="true"]{background:var(--fill-hover);color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
 .chip[aria-disabled="true"]{opacity:.55;cursor:default}
 /* plane / panes */
-.plane{display:flex;flex-direction:column;gap:8px;padding:2px;min-width:0}
+.plane{display:flex;flex-direction:column;gap:6px;padding:0;min-width:0}
 .plane>*{flex:0 0 auto}
 .pane{max-width:1060px;width:100%;margin:0 auto}
 .workbench-catalog-filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
@@ -397,14 +397,14 @@ p.gcard.grpnote,section.gcard>.grpnote:first-child{border-top:0}
 .copy:hover{background:var(--fill-hover)}
 .brow{display:flex;gap:6px;flex-wrap:wrap}
 /* forms */
-.dform{display:grid;gap:8px}
+.dform{display:grid;gap:6px}
 .dform label,.form-grid label{display:grid;gap:3px;color:var(--ink-3);font-size:var(--meta)}
 legend{color:var(--ink-3);font-size:var(--meta)}
 fieldset>legend{display:inline-flex;align-items:center;gap:2px}
-.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
 .dform input,.dform select,.form-grid input,.form-grid select{border:1px solid var(--rule);border-radius:3px;background:var(--surface);color:var(--ink);font:400 12px/1.4 var(--sans);padding:0 9px;height:30px;width:100%}
 .dform input:focus,.form-grid input:focus{border-color:var(--ink);outline:none}
-fieldset{border:1px solid var(--rule);border-radius:4px;margin:0;padding:12px}
+fieldset{border:1px solid var(--rule);border-radius:4px;margin:0;padding:10px}
 legend{padding:0 5px}
 legend .tip-wrap{margin-left:.35rem}
 [aria-invalid="true"]{border-color:var(--blocked)!important}
@@ -516,35 +516,33 @@ fieldset .hookprofiles{display:flex;gap:12px;flex-wrap:wrap}
 @media (max-width:700px){.workbench-catalog-filters{display:flex}.workbench-source-review{grid-template-columns:1fr}.workbench-source-review-cells p:first-child{border-left:0}.workbench-browse-tools{align-items:stretch;flex-direction:column}.workbench-browse-tools>input{flex:auto;width:100%}.workbench-draft-counts{display:grid;grid-template-columns:1fr}.workbench-template-option{grid-template-columns:1fr}.workbench-template-option .btn{grid-column:1;grid-row:auto;justify-self:start}.workbench-inventory-rows article.workbench-asset{grid-template-columns:1fr}.workbench-row-actions{grid-column:1;grid-row:auto;flex-direction:row;flex-wrap:wrap;min-width:0}.workbench-row-actions .btn{flex:1 1 140px}.workbench-expanded-item{grid-template-columns:1fr;gap:14px}.workbench-source-tabs{margin-inline:-2px}}
 
 .workbench-source-review{display:grid;grid-template-columns:minmax(12rem,.65fr) minmax(0,1.35fr);gap:0;margin:0;padding:0;border:1px solid #d9d8c9;border-radius:8px;background:#fdfcf8;color:#5f614f;overflow:hidden}.workbench-source-review h3{display:flex;align-items:center;margin:0;padding:12px 14px;color:var(--ink);font:650 var(--body)/1.3 var(--sans);background:#f1f0e9}.workbench-source-review-cells{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}.workbench-source-review-cells p{display:grid;gap:3px;align-content:center;min-height:58px;margin:0;padding:9px 12px;border-left:1px solid #dddccf;color:var(--ink-3);font:600 var(--cap)/1.25 var(--sans)}.workbench-source-review-cells strong{color:var(--ink);font:650 18px/1 var(--sans)}.workbench-browse-tools{display:flex;align-items:center;gap:10px;min-width:0}.workbench-browse-tools>input{flex:0 1 22rem;min-width:12rem}.workbench-type-tabs{display:flex;gap:4px;min-width:0;overflow-x:auto}.workbench-type-tab{min-height:34px;padding:5px 8px;border:1px solid var(--rule);border-radius:5px;background:var(--surface);color:var(--ink-3);font:600 var(--cap)/1.2 var(--sans);white-space:nowrap}.workbench-type-tab:hover{background:var(--fill)}.workbench-type-tab[aria-pressed="true"]{border-color:var(--ink);background:#e9f0e5;color:var(--ink)}.adoption-recipe{padding:0!important;width:100%;border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important}
-#adoption-recipe-toggle{display:flex;justify-content:space-between;align-items:center;width:100%;padding:6px 2px;font-size:var(--meta);font-weight:600;text-align:left}
-#adoption-recipe-toggle:hover{background:var(--fill-hover)}
 body[data-view="compose"] #surface-ecc-hooks{display:none}
 /* Approved compact composition layout. Keep source facts and actions aligned. */
 .workbench-comparison-records{max-height:240px;overflow:auto;padding:6px 10px;border:1px solid var(--rule);border-radius:5px;background:var(--surface);overflow-wrap:anywhere}
-.workbench-inventory{gap:20px}
-.workbench-draft-summary{grid-template-columns:minmax(0,1fr) auto;gap:8px 24px;padding:14px 0 4px;border:0;background:transparent;box-shadow:none}
-.workbench-draft-summary h2{grid-column:1;margin:0;font:700 30px/1.2 var(--sans);letter-spacing:-.035em}
+.workbench-inventory{gap:10px}
+.workbench-draft-summary{grid-template-columns:minmax(0,1fr) auto;gap:6px 16px;padding:8px 0 2px;border:0;background:transparent;box-shadow:none}
+.workbench-draft-summary h2{grid-column:1;margin:0;font:700 26px/1.2 var(--sans);letter-spacing:-.035em}
 .workbench-draft-summary>p{grid-column:1;max-width:72ch;margin:0}
-.workbench-draft-counts{gap:12px!important;margin:0!important}
+.workbench-draft-counts{gap:8px!important;margin:0!important}
 .workbench-draft-counts span{padding:0;border:0;background:transparent;font:500 var(--meta)/1.4 var(--sans)}
 .workbench-draft-review{grid-column:2;grid-row:1/4;align-self:center;border:0;padding:0}
-.workbench-draft-review>summary{width:max-content;padding:12px 16px;border-radius:6px;background:var(--ink);color:var(--surface)}
+.workbench-draft-review>summary{width:max-content;padding:8px 12px;border-radius:6px;background:var(--ink);color:var(--surface)}
 .workbench-draft-review[open]{grid-column:1/-1;grid-row:auto}
-.workbench-draft-review-list{padding:12px 18px;border:1px solid var(--rule);border-radius:8px;background:var(--surface)}
+.workbench-draft-review-list{padding:8px 12px;border:1px solid var(--rule);border-radius:8px;background:var(--surface)}
 .workbench-source-review{display:block;border:0;background:transparent;overflow:visible}
-.workbench-source-review h3{padding:0 0 14px;background:transparent;font:650 19px/1.3 var(--sans)}
+.workbench-source-review h3{padding:0 0 8px;background:transparent;font:650 18px/1.3 var(--sans)}
 .workbench-source-review-cells{border:1px solid var(--rule);border-radius:8px;background:var(--fill);overflow:hidden}
-.workbench-source-review-cells p{grid-template-columns:auto 1fr;align-items:center;gap:12px;min-height:60px;padding:12px 20px;font:500 var(--meta)/1.3 var(--sans)}
+.workbench-source-review-cells p{grid-template-columns:auto 1fr;align-items:center;gap:8px;min-height:42px;padding:7px 12px;font:500 var(--meta)/1.3 var(--sans)}
 .workbench-source-review-cells p:first-child{border-left:0}
-.workbench-source-review-cells strong{font:600 25px/1 var(--sans)}
-.workbench-browse-tools{justify-content:space-between;gap:16px}
-.workbench-browse-tools>input{order:2;flex:0 1 250px;min-width:0;border:1px solid var(--rule);border-radius:6px;padding:9px 12px;background:var(--surface);color:var(--ink)}
+.workbench-source-review-cells strong{font:600 20px/1 var(--sans)}
+.workbench-browse-tools{justify-content:space-between;gap:10px}
+.workbench-browse-tools>input{order:2;flex:0 1 250px;min-width:0;border:1px solid var(--rule);border-radius:6px;padding:7px 10px;background:var(--surface);color:var(--ink)}
 .workbench-type-tabs{flex:1;gap:5px}
-.workbench-type-tab{border-color:transparent;background:transparent;font:500 var(--meta)/1.2 var(--sans);padding:8px 10px}
+.workbench-type-tab{border-color:transparent;background:transparent;font:500 var(--meta)/1.2 var(--sans);padding:6px 8px}
 .workbench-type-tab[aria-pressed="true"]{border-color:var(--rule);background:var(--surface)}
-.workbench-page-controls{display:flex;align-items:center;flex-wrap:wrap;gap:10px;padding:12px 0;color:var(--muted);font-size:13px}.workbench-page-controls>[role=status]{margin-right:auto;color:var(--ink);font-weight:600}
+.workbench-page-controls{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:8px 0;color:var(--muted);font-size:13px}.workbench-page-controls>[role=status]{margin-right:auto;color:var(--ink);font-weight:600}
 .workbench-inventory-rows{gap:0;border:1px solid var(--rule);border-radius:9px;overflow:hidden;background:var(--surface)}
-.workbench-inventory-rows article.workbench-asset{grid-template-columns:minmax(0,1fr) auto minmax(150px,auto) auto;gap:6px 18px;min-height:78px;padding:16px 20px;border:0;border-radius:0;box-shadow:none;border-bottom:1px solid var(--rule-soft)}
+.workbench-inventory-rows article.workbench-asset{grid-template-columns:minmax(0,1fr) auto minmax(150px,auto) auto;gap:5px 12px;min-height:64px;padding:10px 14px;border:0;border-radius:0;box-shadow:none;border-bottom:1px solid var(--rule-soft)}
 .workbench-inventory-rows article.workbench-asset:last-child{border-bottom:0}
 .workbench-row-title{grid-column:1;grid-row:1}
 .workbench-row-kind{grid-column:2;grid-row:1;align-self:center;font-size:10px}
@@ -553,7 +551,7 @@ body[data-view="compose"] #surface-ecc-hooks{display:none}
 .workbench-row-decision>p:not(.workbench-row-evidence){display:none}
 .workbench-row-evidence{grid-column:3;grid-row:1/3;align-self:center;justify-self:start;max-width:210px;margin:0;padding:4px 7px;border-radius:4px;background:var(--fill);font:500 11px/1.4 var(--sans);color:var(--ink-2)}
 .workbench-row-evidence[data-workbench-needs-information="true"]{background:#fbf3e4;color:#795622}
-.workbench-row-actions{grid-column:4;grid-row:1/3;gap:10px}
+.workbench-row-actions{grid-column:4;grid-row:1/3;gap:8px}
 .workbench-row-actions .btn.primary{min-width:112px;text-align:center}
 .workbench-row-expand{min-width:30px;border-color:transparent!important;background:transparent!important;font-size:0!important}
 .workbench-row-expand::after{content:"";display:block;margin:auto;width:6px;height:6px;border-right:1px solid currentColor;border-bottom:1px solid currentColor;transform:rotate(45deg)}
@@ -587,29 +585,28 @@ button[data-workbench-removal="true"]:hover{background:#faeced!important;color:#
 @media(max-width:700px){.workbench-browse-tools{flex-direction:column;flex-wrap:nowrap;align-items:stretch}.workbench-type-tabs{flex:0 0 auto;width:100%;max-width:100%}.workbench-browse-tools>input{order:0;flex:0 0 auto;box-sizing:border-box;width:100%}}
 .adoption-drawer{position:fixed;inset:0 0 0 auto;z-index:840;width:min(460px,94vw);overflow:auto;padding:20px;background:var(--surface);border-left:1px solid var(--rule);box-shadow:-8px 0 28px #0002;animation:adoption-enter 140ms ease-out}
 @keyframes adoption-enter{from{transform:translateX(24px);opacity:0}to{transform:translateX(0);opacity:1}}
-/* Compact setup surfaces keep policy controls in view while preserving their explanations. */
-.reference-shelf{display:flex;align-items:center;gap:5px;min-height:34px;height:34px;padding:3px 16px;border-bottom:1px solid var(--rule);background:var(--surface);overflow:hidden}
-.reference-entry{display:contents}
-.reference-chip{display:inline-flex;align-items:center;min-height:26px;padding:0 8px;border:1px solid var(--rule);border-radius:3px;background:var(--fill);color:var(--ink-2);font:600 var(--cap)/1 var(--mono);letter-spacing:.025em;white-space:nowrap}
-.reference-chip:hover{background:var(--fill-hover);color:var(--ink)}
-#adoption-recipe-toggle.reference-chip{display:inline-flex;width:auto;justify-content:flex-start;padding-inline:8px}
+/* Deployment keeps setup choices and their reference material in one compact card. */
+.compact-instrument{display:grid;gap:6px;padding:8px 10px;min-width:0}
+.compact-instrument .tooltip,.developer-tools-disclosure .tooltip{white-space:normal;text-transform:none;letter-spacing:normal;font-family:var(--sans);overflow-wrap:anywhere}
+.deployment-card-header{display:flex;align-items:center;gap:8px;min-width:0;flex-wrap:wrap}
+.deployment-card-header .instrument-heading{flex:1 1 150px}
+.deployment-reference-controls{display:flex;align-items:center;gap:5px;min-width:0;margin-left:auto}
+.deployment-reference-entry,.reference-evidence{position:relative;display:flex;flex:0 0 auto;margin:0;min-width:0}
+.deployment-reference-control,.reference-evidence>summary{display:inline-flex;align-items:center;min-height:26px;padding:0 8px;border:1px solid var(--rule);border-radius:3px;background:var(--fill);color:var(--ink-2);font:600 var(--cap)/1 var(--mono);letter-spacing:.025em;white-space:nowrap}
+.deployment-reference-control:hover,.reference-evidence>summary:hover,.reference-evidence[open]>summary{background:var(--fill-hover);color:var(--ink)}
+#adoption-recipe-toggle.deployment-reference-control{display:inline-flex;width:auto;justify-content:flex-start;padding-inline:8px}
 .reference-drawer{position:fixed;inset:0 0 0 auto;z-index:840;width:min(500px,94vw);overflow:auto;padding:20px;background:var(--surface);border-left:1px solid var(--rule);box-shadow:-8px 0 28px #0002;animation:adoption-enter 140ms ease-out}
 .reference-drawer .help{max-width:none;font-size:var(--body);line-height:1.55}
 .reference-drawer dl,.reference-evidence-panel dl{display:grid;grid-template-columns:minmax(0,1fr);gap:3px 12px;margin:0}
 .reference-drawer dt,.reference-evidence-panel dt{margin-top:8px;color:var(--ink)}
 .reference-drawer dd,.reference-evidence-panel dd{margin:0;color:var(--ink-2)}
-.reference-evidence{position:relative;margin:0}
-.reference-evidence>summary{display:inline-flex;align-items:center;min-height:26px;padding:0 8px;border:1px solid var(--rule);border-radius:3px;background:var(--fill);color:var(--ink-2);font:600 var(--cap)/1 var(--mono);letter-spacing:.025em;white-space:nowrap}
 .reference-evidence>summary::before{display:none}
-.reference-evidence>summary:hover,.reference-evidence[open]>summary{background:var(--fill-hover);color:var(--ink)}
 .reference-evidence-panel{position:fixed;inset:0 0 0 auto;z-index:840;width:min(500px,94vw);overflow:auto;padding:20px;background:var(--surface);border-left:1px solid var(--rule);box-shadow:-8px 0 28px #0002;animation:adoption-enter 140ms ease-out}
 .reference-evidence-heading{display:flex;align-items:flex-start;gap:10px;margin-bottom:12px}
 .reference-evidence-heading h2{min-width:0;margin:0;font:650 var(--title)/1.35 var(--sans)}
 .reference-evidence-close{flex:0 0 auto}
 .reference-evidence-panel .help{max-width:none;font-size:var(--body);line-height:1.55}
-.compact-instrument{display:grid;gap:6px;padding:8px 12px}
-.compact-instrument .tooltip,.compact-tool-selection .tooltip{white-space:normal;text-transform:none;letter-spacing:normal;font-family:var(--sans);overflow-wrap:anywhere}
-.instrument-strip{display:grid;grid-template-columns:auto auto minmax(0,1fr) auto;gap:6px 14px;align-items:center;min-width:0}
+.instrument-strip{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:6px 12px;align-items:center;min-width:0}
 .instrument-heading{display:flex;align-items:center;gap:4px;min-width:0;white-space:nowrap}
 .instrument-heading h2{font:650 var(--body)/1.3 var(--sans);letter-spacing:.01em}
 .instrument-heading .tip-wrap,.instrument-label .tip-wrap{margin-left:0}
@@ -620,12 +617,16 @@ button[data-workbench-removal="true"]:hover{background:#faeced!important;color:#
 .instrument-clis{display:flex;align-items:center;gap:6px;min-width:0}
 .instrument-label{display:flex;align-items:center;gap:5px;flex:0 0 auto;color:var(--ink-3);font:600 var(--cap)/1.2 var(--mono);letter-spacing:.1em;text-transform:uppercase;white-space:nowrap}
 .instrument-label .end{letter-spacing:0;text-transform:none;font-family:var(--sans);color:var(--ink)}
-.instrument-clis .chips{min-width:0;gap:3px}
+.instrument-clis .chips{flex:1 1 180px;min-width:0;gap:3px}
 .instrument-clis .chip{height:22px;padding:0 7px;font-size:var(--cap)}
 .instrument-toggle{padding:4px 7px;border:1px solid var(--rule);border-radius:3px;background:var(--fill)}
 .instrument-toggle input{width:15px;height:15px;margin:0;accent-color:var(--ink);flex:0 0 auto}
-.instrument-readiness{grid-column:1/-1;max-width:none;padding-top:4px;border-top:1px solid var(--rule-soft);font-size:var(--cap);line-height:1.35}
-.compact-tool-selection{display:grid;gap:6px;padding:8px 12px}
+.instrument-readiness{max-width:none;padding-top:4px;border-top:1px solid var(--rule-soft);font-size:var(--cap);line-height:1.35}
+.developer-tools-disclosure{min-width:0;border-top:1px solid var(--rule-soft)}
+.developer-tools-disclosure>summary{display:flex;align-items:center;min-height:30px;padding:4px 0;cursor:pointer;color:var(--ink-2);font:650 var(--meta)/1.3 var(--sans);overflow-wrap:anywhere}
+.developer-tools-disclosure>summary:hover{color:var(--ink)}
+.developer-tools-disclosure[open]>summary{border-bottom:1px solid var(--rule-soft)}
+.developer-tool-selection-body{display:grid;gap:6px;padding:6px 0 0;min-width:0}
 .tool-selection-heading{display:flex;align-items:center;gap:4px;min-width:0}
 .tool-selection-heading h2{font:650 var(--body)/1.3 var(--sans);letter-spacing:.01em}
 .tool-selection-heading .tip-wrap{margin-left:0}
@@ -641,8 +642,8 @@ button[data-workbench-removal="true"]:hover{background:#faeced!important;color:#
 .developer-tool-row[data-developer-tool-state="excluded"] .developer-tool-state,.developer-tool-row[data-developer-tool-state="blocked"] .developer-tool-state{color:var(--blocked)}
 .developer-tool-actions{justify-content:flex-end;align-items:center;max-width:100%}
 .developer-tool-actions .btn{height:auto;min-height:28px;max-width:100%;padding-block:5px;white-space:normal;text-align:center;line-height:1.2}
-@media(max-width:900px){.reference-shelf{grid-column:1}.instrument-strip{grid-template-columns:auto minmax(0,1fr)}.instrument-clis{grid-column:1/-1}.instrument-toggle{justify-self:start}}
-@media(max-width:560px){.reference-shelf{padding-inline:8px}.reference-chip{padding-inline:6px}.compact-instrument,.compact-tool-selection{padding-inline:10px}.instrument-strip{display:flex;align-items:flex-start;flex-wrap:wrap}.instrument-heading{width:100%}.instrument-posture{flex:1}.instrument-posture select{flex:1}.instrument-clis{display:grid;width:100%}.instrument-label{width:100%}.instrument-clis .chips{width:100%}.instrument-toggle{white-space:normal}.developer-tool-row{grid-template-columns:minmax(0,1fr)}.developer-tool-actions{justify-content:flex-start;width:100%}.developer-tool-actions .btn{flex:1 1 132px;justify-content:center}}
+@media(max-width:900px){.instrument-strip{grid-template-columns:auto minmax(0,1fr)}.instrument-clis{grid-column:1/-1;grid-row:2}.instrument-toggle{grid-column:2;grid-row:1;justify-self:end}}
+@media(max-width:560px){.compact-instrument{padding-inline:8px}.deployment-card-header{align-items:flex-start}.deployment-reference-controls{width:100%;margin-left:0;flex-wrap:wrap}.instrument-strip{display:flex;align-items:flex-start;flex-wrap:wrap}.instrument-posture{flex:1}.instrument-posture select{flex:1}.instrument-clis{display:grid;width:100%}.instrument-label{width:100%}.instrument-clis .chips{width:100%}.instrument-toggle{white-space:normal}.developer-tool-row{grid-template-columns:minmax(0,1fr)}.developer-tool-actions{justify-content:flex-start;width:100%}.developer-tool-actions .btn{flex:1 1 132px;justify-content:center}}
 .grp[data-open="0"]>:not(.grphead){display:none}
 summary{gap:7px;list-style:none}summary::-webkit-details-marker{display:none}
 summary::before{content:"";display:inline-block;width:5px;height:5px;margin-right:6px;border-right:1px solid currentColor;border-bottom:1px solid currentColor;transform:rotate(-45deg);transition:transform var(--motion)}
@@ -662,21 +663,28 @@ details[open]>summary::before{transform:rotate(45deg)}
 .sheet .sub{font-size:var(--meta);color:var(--ink-3)}
 .sheet .sbody{flex:1;margin:0;overflow:auto;padding:13px 16px;display:grid;gap:10px;align-content:start}
 .sheet textarea{min-height:16rem}
-.importbar{padding:12px;display:grid;gap:8px}
+.importbar{display:grid;gap:6px;min-width:0;padding:8px 10px}
+#panel-imports{min-width:0}
+#panel-imports .form-grid{min-width:0}
+#panel-imports .form-grid>*{min-width:0}
+#panel-imports .form-grid input{min-width:0}
+#panel-imports .help,#panel-imports #policy-file-command{overflow-wrap:anywhere}
+#panel-imports #policy-file-command{margin:0;white-space:pre-wrap;word-break:break-word}
+#panel-imports .brow .btn{max-width:100%;min-height:30px;height:auto;white-space:normal}
 /* removed: header rail toggle rules (toggle lives in the sidebar) */
 @media(min-width:1200px){.form-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:920px){
 .bar{padding:8px}
 .stage{grid-template-columns:minmax(0,1fr);grid-template-rows:none}
 #side{grid-column:1;grid-row:auto;position:static;width:100%!important;border-right:0;border-bottom:2px solid var(--ink);padding:10px 12px}
- .bar,.reference-shelf,.announce,.ticker,.work,.ledger{grid-column:1}
+ .bar,.announce,.ticker,.work,.ledger{grid-column:1}
 #rail-toggle{display:none}
 #side .rail{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:2px 26px;align-items:start}
 body[data-rail="off"] #side .brand-name,body[data-rail="off"] #side .seek .lbl2,body[data-rail="off"] #side .seek kbd,body[data-rail="off"] #side .cap,body[data-rail="off"] #side .pop-row .pl,body[data-rail="off"] #side .pop-row .selcount,body[data-rail="off"] #side .pop-row .pc{display:revert}
 body[data-rail="off"] #side .pop-row{justify-content:flex-start;padding:0 4px}
 body[data-rail="off"] .sidehead{justify-content:flex-start}
 body[data-rail="off"] .sidehead .brand{display:flex}
-.form-grid{grid-template-columns:1fr}
+.form-grid{grid-template-columns:minmax(0,1fr)}
 .grpbody{grid-template-columns:minmax(0,1fr)}
 #ecc-hook-controls{grid-template-columns:minmax(0,1fr)}
 }
@@ -720,36 +728,40 @@ body[data-rail="off"] .sidehead .brand{display:flex}
     <input class="hidden" id="decision-file" type="file" accept="application/json">
   </header>
 
-  <nav class="reference-shelf" aria-label="Reference shelf">
-    <div id="adoption-recipe" class="reference-entry">
-      <button type="button" class="reference-chip" id="adoption-recipe-toggle" aria-expanded="false" aria-controls="adoption-recipe-panel"><span id="adoption-recipe-title">Adoption recipe &#8594;</span></button>
-      <aside id="adoption-recipe-panel" class="reference-drawer adoption-drawer" hidden aria-labelledby="adoption-guide-title">
-        <div class="dhead"><h2 id="adoption-guide-title">Adoption recipe</h2><button type="button" class="x" id="adoption-recipe-close" aria-label="Close adoption recipe">&#10005;</button></div>
-        <p class="help">Use this guide to decide who handles each step. Reading it does not change your policy.</p>
-        <div id="adoption-recipe-roles"></div>
-      </aside>
-    </div>
-    ${evidenceDelivery}
-  </nav>
-
   <p id="announcement" class="announce" aria-live="polite"></p>${catalogProvenance}${baselineEvidenceProvenance}
 
   <div class="work">
     <main class="plane" id="workbench" tabindex="-1">
       <p class="gcard grpnote" id="plane-empty" hidden></p>
       <section class="gcard compact-instrument" id="policy-settings" aria-labelledby="policy-settings-title">
-        <div class="instrument-strip">
+        <div class="deployment-card-header">
           <div class="instrument-heading"><h2 id="policy-settings-title">Deployment setup</h2><span class="tip-wrap"><button type="button" class="instrument-info" id="deployment-setup-info" aria-label="About deployment setup" aria-describedby="deployment-setup-help" aria-expanded="false" data-tooltip-button="deployment-setup-help">&#9432;</button><span id="deployment-setup-help" class="tooltip" role="tooltip" data-open="false">Choose the hosts this policy may target before adding Core controls. These choices record policy intent; they do not install, start, or contact a server.</span></span></div>
+          <div class="deployment-reference-controls" role="group" aria-label="Deployment references">
+            <div id="adoption-recipe" class="deployment-reference-entry">
+              <button type="button" class="deployment-reference-control" id="adoption-recipe-toggle" aria-expanded="false" aria-controls="adoption-recipe-panel"><span id="adoption-recipe-title">Adoption recipe &#8594;</span></button>
+              <aside id="adoption-recipe-panel" class="reference-drawer adoption-drawer" hidden aria-labelledby="adoption-guide-title">
+                <div class="dhead"><h2 id="adoption-guide-title">Adoption recipe</h2><button type="button" class="x" id="adoption-recipe-close" aria-label="Close adoption recipe">&#10005;</button></div>
+                <p class="help">Use this guide to decide who handles each step. Reading it does not change your policy.</p>
+                <div id="adoption-recipe-roles"></div>
+              </aside>
+            </div>
+            ${evidenceDelivery}
+          </div>
+        </div>
+        <div class="instrument-strip">
           <label class="instrument-posture"><span>Posture</span><select id="posture"><option value="vibe">Vibe</option><option value="enterprise">Enterprise</option></select></label>
           <div class="instrument-clis"><div class="instrument-label">Allowed CLI <span class="end" id="supported-cli-count"></span><span class="tip-wrap"><button type="button" class="instrument-info" id="supported-cli-info" aria-label="About allowed CLIs" aria-describedby="supported-cli-note" aria-expanded="false" data-tooltip-button="supported-cli-note">&#9432;</button><span id="supported-cli-note" class="tooltip" role="tooltip" data-open="false"></span></span></div><div class="chips" id="supported-cli-hosts"></div></div>
           <label class="instrument-toggle"><input id="managed-mcp-projection" type="checkbox" aria-describedby="managed-mcp-help"><span>Allow AIH to configure selected MCP tools</span><span class="tip-wrap"><button type="button" class="instrument-info" id="managed-mcp-info" aria-label="About managed MCP projection" aria-describedby="managed-mcp-help" aria-expanded="false" data-tooltip-button="managed-mcp-help">&#9432;</button><span id="managed-mcp-help" class="tooltip" role="tooltip" data-open="false">Required for supported MCP tools you select. Preview the changes in your project before applying.</span></span></label>
-          <p class="help instrument-readiness" id="deployment-readiness" role="status" aria-live="polite"></p>
         </div>
-      </section>
-      <section class="gcard compact-tool-selection" id="developer-tool-selection" aria-labelledby="developer-tool-selection-title">
-        <div class="tool-selection-heading"><h2 id="developer-tool-selection-title">Developer tool setup</h2><span class="tip-wrap"><button type="button" class="instrument-info" id="developer-tool-info" aria-label="About developer tool setup" aria-describedby="developer-tool-help" aria-expanded="false" data-tooltip-button="developer-tool-help">&#9432;</button><span id="developer-tool-help" class="tooltip" role="tooltip" data-open="false">Choose the default developer tools for later setup. This authoring view records selection intent only; it does not claim a tool is installed, configured, or verified.</span></span></div>
-        <p class="help" id="developer-tool-selection-status" role="status" aria-live="polite"></p>
-        <div id="developer-tool-rows"></div>
+        <p class="help instrument-readiness" id="deployment-readiness" role="status" aria-live="polite"></p>
+        <details class="developer-tools-disclosure" id="developer-tool-selection">
+          <summary><span id="developer-tool-selection-summary" aria-live="polite">Developer tool setup &mdash; Loading selection&hellip;</span></summary>
+          <div class="developer-tool-selection-body">
+            <div class="tool-selection-heading"><h2 id="developer-tool-selection-title">Developer tool setup</h2><span class="tip-wrap"><button type="button" class="instrument-info" id="developer-tool-info" aria-label="About developer tool setup" aria-describedby="developer-tool-help" aria-expanded="false" data-tooltip-button="developer-tool-help">&#9432;</button><span id="developer-tool-help" class="tooltip" role="tooltip" data-open="false">Choose the default developer tools for later setup. This authoring view records selection intent only; it does not claim a tool is installed, configured, or verified.</span></span></div>
+            <p class="help" id="developer-tool-selection-status" role="status" aria-live="polite"></p>
+            <div id="developer-tool-rows"></div>
+          </div>
+        </details>
       </section>
       <div id="deployment-advanced-actions" class="brow" hidden><button type="button" class="btn sm" id="open-ecc-mcp">Approve ECC MCP</button><button type="button" class="btn sm" id="open-artifacts">Organization artifacts</button><button type="button" class="btn sm" id="open-custom-hook-info" data-detail="AIH Governance &amp; Telemetry Hooks information">Why custom Hooks are unavailable</button></div>
       <div id="framework-rows"></div>

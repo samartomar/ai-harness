@@ -39,6 +39,7 @@ const PRESENTATION: Readonly<Record<DeveloperToolId, { label: string; detail: st
 export interface DeveloperToolSelectionUiOptions {
   readonly root: HTMLElement;
   readonly status: HTMLElement;
+  readonly summary?: HTMLElement;
   readonly initialPolicy: unknown;
   readonly persist: (selection: {
     selected: readonly DeveloperToolId[];
@@ -130,6 +131,18 @@ export function mountDeveloperToolSelection(
   const render = (): void => {
     const resolution = resolveDeveloperToolSelectionForOrgPolicyV1(currentPolicy);
     options.root.replaceChildren();
+    if (options.summary !== undefined) {
+      if (!resolution.accepted) {
+        options.summary.textContent = "Developer tool setup — Blocked";
+      } else if (resolution.source === "default" || resolution.source === "legacy-unspecified") {
+        options.summary.textContent = "Developer tool setup — All default tools selected";
+      } else {
+        const counts = [`${String(resolution.selected.length)} selected`];
+        if (resolution.excluded.length > 0)
+          counts.push(`${String(resolution.excluded.length)} excluded`);
+        options.summary.textContent = `Developer tool setup — ${counts.join(" · ")}`;
+      }
+    }
     if (!resolution.accepted) {
       options.status.textContent = `Blocked — ${resolution.diagnostics.map((diagnostic) => diagnostic.message).join(" ")}`;
       options.status.className = "help error";

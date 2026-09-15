@@ -51,6 +51,10 @@ for (const [excludedId, excludedLabel] of [
 
     invoke(["policy", "generate", "--out", "author.html", "--apply", "--json"]);
     await page.goto(pathToFileURL(resolve(directory, "author.html")).href);
+    const disclosure = page.locator("#developer-tool-selection");
+    await expect(disclosure).not.toHaveAttribute("open", "");
+    await expect(disclosure.locator("summary")).toContainText(/all default tools selected/i);
+    await disclosure.locator("summary").click();
 
     const rows = page.locator("[data-developer-tool-id]");
     await expect(rows).toHaveCount(tools.length);
@@ -100,6 +104,8 @@ for (const [excludedId, excludedLabel] of [
       "--json",
     ]);
     await page.goto(pathToFileURL(resolve(directory, "excluded-reopened.html")).href);
+    await expect(disclosure).not.toHaveAttribute("open", "");
+    await expect(disclosure.locator("summary")).toContainText("1 excluded");
     await expect(excludedRow).toContainText("Excluded by policy");
     expect(JSON.parse(await page.locator("#config-preview").inputValue()).developerTools).toEqual(
       excludedPolicy.developerTools,
@@ -115,6 +121,8 @@ for (const [excludedId, excludedLabel] of [
       .toEqual(excludedPolicy.developerTools);
     await expect(excludedRow).toContainText("Excluded by policy");
 
+    await expect(disclosure.locator("summary")).toContainText("1 excluded");
+    await disclosure.locator("summary").click();
     await excludedRow.getByRole("button", { name: `Include ${excludedLabel} in setup` }).click();
     for (const [id, label] of tools) {
       await page
@@ -144,6 +152,8 @@ for (const [excludedId, excludedLabel] of [
       "--json",
     ]);
     await page.goto(pathToFileURL(resolve(directory, "reopened.html")).href);
+    await expect(disclosure).not.toHaveAttribute("open", "");
+    await expect(disclosure.locator("summary")).toContainText("0 selected");
     await expect(rows).toHaveCount(tools.length);
     for (const [id] of tools)
       await expect(page.locator(`[data-developer-tool-id="${id}"]`)).toContainText("Not selected");
@@ -156,6 +166,7 @@ for (const [excludedId, excludedLabel] of [
         async () => JSON.parse(await page.locator("#config-preview").inputValue()).developerTools,
       )
       .toEqual({ selected: [] });
+    await expect(disclosure.locator("summary")).toContainText("0 selected");
 
     await writeFile(
       testInfo.outputPath("developer-tool-browser-receipt.json"),
