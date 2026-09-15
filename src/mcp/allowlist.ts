@@ -1,5 +1,9 @@
 import { join } from "node:path";
 import { AIH_CONFIG_FILE } from "../config/marker.js";
+import {
+  CODE_REVIEW_GRAPH_RUNTIME_PIN,
+  DEFAULT_MCP_DEPENDENCY_LOCK_SHA256,
+} from "../ecc-profile/default-mcp-runtime-lock.js";
 import { isTargeted } from "../internals/cli-detect.js";
 import { owningCli } from "../internals/cli-registry.js";
 import type { Cli } from "../internals/clis.js";
@@ -7,6 +11,7 @@ import { readIfExists } from "../internals/fsxn.js";
 import type { PlanContext } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
 import { type OrgPolicy, readOrgPolicy } from "../org-policy/schema.js";
+import { defaultRuntimeScriptPath } from "./default-native-runtime.js";
 import {
   MANAGED_MCP_PROJECTION_KEYS,
   MANAGED_SETTINGS_PATH,
@@ -61,6 +66,50 @@ const GENERATION_HARDENED_LAUNCH_FLAGS = [
   "--no-env-file",
 ] as const;
 
+/**
+ * These source-evidenced Graph commands are accepted for this native-runtime
+ * migration. Keep this list exact: it is a positive history fingerprint, not
+ * a package-prefix compatibility rule for arbitrary user-provided uvx commands.
+ */
+const HISTORICAL_AIH_GRAPH_LAUNCHERS = [
+  ["uvx", "code-review-graph@2.1.0", "serve"],
+  [
+    "uvx",
+    "--offline",
+    "--no-python-downloads",
+    "--no-env-file",
+    "code-review-graph@2.3.7",
+    "serve",
+  ],
+] as const;
+
+function isHistoricalAihGraphLauncher(command: readonly string[]): boolean {
+  return HISTORICAL_AIH_GRAPH_LAUNCHERS.some(
+    (historical) => commandKey(command) === commandKey(historical),
+  );
+}
+
+function isCurrentNativeGraphLauncher(command: readonly string[]): boolean {
+  return (
+    command.length === 15 &&
+    command[0] === process.execPath &&
+    command[1] === defaultRuntimeScriptPath() &&
+    command[2] === "code-review-graph" &&
+    command[3] === "--package" &&
+    command[4] === CODE_REVIEW_GRAPH_RUNTIME_PIN.package &&
+    command[5] === "--dependency-lock-sha256" &&
+    command[6] === DEFAULT_MCP_DEPENDENCY_LOCK_SHA256 &&
+    command[7] === "--lock-root" &&
+    command[9] === "--project" &&
+    command[11] === "--state-root" &&
+    command[13] === "--uv-cache" &&
+    [8, 10, 12, 14].every((index) => {
+      const value = command[index];
+      return typeof value === "string" && value.length > 0 && !value.startsWith("-");
+    })
+  );
+}
+
 function packageBase(spec: string): string {
   const at = spec.lastIndexOf("@");
   return at > 0 ? spec.slice(0, at) : spec;
@@ -93,6 +142,9 @@ export function previousGenerationCommandForm(
   actual: readonly string[],
   expected: readonly string[],
 ): boolean {
+  if (isHistoricalAihGraphLauncher(actual) && isCurrentNativeGraphLauncher(expected)) {
+    return true;
+  }
   const command = expected[0];
   if (command === undefined || actual[0] !== command) return false;
   if (commandKey(actual) === commandKey(expected)) return false;

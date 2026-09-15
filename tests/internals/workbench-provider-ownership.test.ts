@@ -227,6 +227,51 @@ describe("Workbench provider ownership", () => {
     }
   });
 
+  it("keeps the shared target vocabulary limited to its inert schema dependency", () => {
+    const path = "src/internals/cli-registry.ts";
+    const parsed = parse(readFileSync(path, "utf8"), {
+      sourceType: "module",
+      plugins: ["typescript"],
+    });
+    const imports: unknown[] = [];
+    const visit = (node: unknown): void => {
+      if (Array.isArray(node)) {
+        for (const child of node) visit(child);
+        return;
+      }
+      if (node === null || typeof node !== "object") return;
+      const record = node as Record<string, unknown>;
+      if (record.type === "ImportDeclaration")
+        imports.push((record.source as { value?: unknown }).value);
+      if (record.type === "ExportAllDeclaration" || record.type === "ExportNamedDeclaration")
+        expect(record.source ?? null).toBeNull();
+      expect(record.type).not.toBe("ImportExpression");
+      expect(record.type).not.toBe("TSImportEqualsDeclaration");
+      if (record.type === "Identifier") {
+        expect([
+          "require",
+          "process",
+          "fetch",
+          "WebSocket",
+          "globalThis",
+          "eval",
+          "Function",
+          "Bun",
+          "Deno",
+        ]).not.toContain(record.name);
+      }
+      if (record.type === "CallExpression")
+        expect((record.callee as { type?: unknown }).type).not.toBe("Import");
+      for (const child of Object.values(record)) visit(child);
+    };
+    visit(parsed);
+    expect(imports).toEqual(["zod"]);
+    expect(staticImportClosure([path])).toEqual([]);
+    for (const { id } of WORKBENCH_PROVIDER_OWNERSHIP)
+      expect(() => assertProviderImportTarget(id, path)).not.toThrow();
+    expect(isWorkbenchCatalogSharedInputPath(path)).toBe(true);
+  });
+
   it("rejects unreviewed and shared JSON as provider source ownership", () => {
     for (const providerId of ["mattpocock", "ponytail"] as const) {
       const record = WORKBENCH_PROVIDER_OWNERSHIP.find(({ id }) => id === providerId);

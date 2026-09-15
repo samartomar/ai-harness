@@ -178,6 +178,7 @@ export function mcpServersDigest(ctx: PlanContext): DigestAction | undefined {
     scope: "local",
     stack,
     includeDisabledServers: true,
+    includeOptionalServers: true,
   });
   if (catalogResult.error !== undefined || catalogResult.servers === undefined) {
     const catalogError =
@@ -217,7 +218,7 @@ export function mcpServersDigest(ctx: PlanContext): DigestAction | undefined {
         ]
       : []),
     thirdParty > 0
-      ? `  ${thirdParty} third-party server(s) send queries off-box — confirm approved.`
+      ? `  ${thirdParty} third-party server(s) can contact external services — confirm approved.`
       : "  No third-party egress.",
   );
   return digest(`MCP servers — ${servers.length} configured, ${thirdParty} third-party`, body, {
@@ -1153,10 +1154,20 @@ export function skillGovernanceDigest(ctx: PlanContext): DigestAction | undefine
  * separately). Async because the outcome digest reads git.
  */
 export async function v9ExtraDigests(ctx: PlanContext): Promise<DigestAction[]> {
+  let readiness = readinessDigest(ctx);
+  if (readiness.run) {
+    // The HTML renderer consumes data, not deferred callbacks. Explicit runtime
+    // evaluation shares the same cached observation as the CLI/JSON digest.
+    const result = await readiness.run(ctx);
+    readiness =
+      typeof result === "string"
+        ? digest(readiness.describe, result)
+        : digest(readiness.describe, result.text, result.data);
+  }
   return [
     // Readiness ALWAYS renders (even a harness-less repo earns a verdict), so its
     // `sec-ready` panel is always LIVE on the local report path.
-    readinessDigest(ctx),
+    readiness,
     driftDigest(ctx),
     mcpServersDigest(ctx),
     eccInventoryDigest(ctx),

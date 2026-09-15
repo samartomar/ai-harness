@@ -52,6 +52,7 @@ function writeMcpPolicy(
     allowManagedOnly: boolean;
     disabledServers?: string[];
     githubHost?: string;
+    incumbentHosts?: string[];
   },
 ): void {
   writeFileSync(
@@ -420,38 +421,46 @@ describe("aih mcp — generated mcpServers blueprint", () => {
     }
   });
 
-  it("models code-review-graph as a uvx stdio server", async () => {
+  it("models code-review-graph as a project-bound managed stdio server", async () => {
     const p = await command.plan(makeCtx());
     const w = p.actions.find((a) => a.kind === "write") as WriteAction;
     const graph = pick(serversOf(w), "code-review-graph");
 
     expect(graph.type).toBe("stdio");
     if (graph.type !== "stdio") throw new Error("expected stdio server");
-    expect(graph.command).toBe("uvx");
-    expect(graph.args).toEqual([
-      "--offline",
-      "--no-python-downloads",
-      "--no-env-file",
-      "code-review-graph@2.3.7",
-      "serve",
-    ]);
+    expect(graph.command).toBe(process.execPath);
+    expect(graph.args[0]).toMatch(/ecc-runtime\.js$/);
+    expect(graph.args).toEqual(
+      expect.arrayContaining([
+        "code-review-graph",
+        "--package",
+        "code-review-graph==2.3.8",
+        "--dependency-lock-sha256",
+        "--project",
+      ]),
+    );
     expect(typeof graph.description).toBe("string");
   });
 
-  it("models codebase-memory-mcp as an offline uvx stdio server", async () => {
+  it("models codebase-memory-mcp as a project-bound managed stdio server", async () => {
     const p = await command.plan(makeCtx());
     const w = p.actions.find((a) => a.kind === "write") as WriteAction;
     const memory = pick(serversOf(w), "codebase-memory-mcp");
 
     expect(memory.type).toBe("stdio");
     if (memory.type !== "stdio") throw new Error("expected stdio server");
-    expect(memory.command).toBe("uvx");
-    expect(memory.args).toEqual([
-      "--offline",
-      "--no-python-downloads",
-      "--no-env-file",
-      "codebase-memory-mcp@0.10.5",
-    ]);
+    expect(memory.command).toBe(process.execPath);
+    expect(memory.args[0]).toMatch(/ecc-runtime\.js$/);
+    expect(memory.args).toEqual(
+      expect.arrayContaining([
+        "codebase-memory-mcp",
+        "--package",
+        "codebase-memory-mcp==0.10.8",
+        "--dependency-lock-sha256",
+        "--project",
+        "--runtime-home",
+      ]),
+    );
     expect(typeof memory.description).toBe("string");
   });
 
@@ -459,14 +468,13 @@ describe("aih mcp — generated mcpServers blueprint", () => {
     const p = await command.plan(makeCtx({ options: { scope: "project" } }));
     const w = p.actions.find((a) => a.kind === "write") as WriteAction;
     // The on-by-default, secret-free base: local code intelligence + memory + reasoning, plus
-    // the OAuth GitHub and hosted Context7 docs servers. No stack servers on a bare
-    // repo, and never the opt-in n24q02m toolset at project scope.
+    // the hosted Context7 docs server. GitHub and the n24q02m toolset stay opt-in.
     const names = Object.keys(serversOf(w));
     expect(names).toEqual([
       "code-review-graph",
       "codebase-memory-mcp",
+      "serena",
       "sequential-thinking",
-      "github",
       "context7",
     ]);
     expect(names.some((n) => n.startsWith("better-"))).toBe(false);
@@ -508,11 +516,11 @@ describe("aih mcp — generated mcpServers blueprint", () => {
     const servers = serversOf(w);
     const pw = pick(servers, "playwright");
     if (pw.type !== "stdio") throw new Error("expected stdio server");
-    expect(pw.args).toEqual(["@playwright/mcp@0.0.79"]);
+    expect(pw.args).toEqual(["@playwright/mcp@0.0.81"]);
     expect(pw.args.join(" ")).not.toContain("@latest");
   });
 
-  it("hardens every generated uvx MCP launcher against startup fetches and .env reads", async () => {
+  it("binds every managed Python MCP launcher to the authenticated runtime wrapper", async () => {
     const root = makeTmp();
     writeFileSync(
       join(root, "package.json"),
@@ -521,16 +529,17 @@ describe("aih mcp — generated mcpServers blueprint", () => {
     const w = (await command.plan(makeCtx({ root }))).actions.find(
       (a) => a.kind === "write",
     ) as WriteAction;
-    const uvxServers = Object.values(serversOf(w)).filter(
-      (server) => server.type === "stdio" && server.command === "uvx",
+    const managedServers = ["code-review-graph", "codebase-memory-mcp", "serena"].map((name) =>
+      pick(serversOf(w), name),
     );
 
-    expect(uvxServers.length).toBeGreaterThan(0);
-    for (const server of uvxServers) {
+    for (const server of managedServers) {
       if (server.type !== "stdio") throw new Error("expected stdio server");
-      expect(server.args).toEqual(
-        expect.arrayContaining(["--offline", "--no-python-downloads", "--no-env-file"]),
-      );
+      expect(server.command).toBe(process.execPath);
+      expect(server.args[0]).toMatch(/ecc-runtime\.js$/);
+      expect(server.args).toContain("--dependency-lock-sha256");
+      expect(server.args).toContain("--lock-root");
+      expect(server.args).toContain("--project");
     }
   });
 
@@ -566,8 +575,8 @@ describe("aih mcp — generated mcpServers blueprint", () => {
     const expected = [
       "code-review-graph",
       "codebase-memory-mcp",
+      "serena",
       "sequential-thinking",
-      "github",
       "context7",
       "better-email",
       "better-notion",
@@ -590,8 +599,8 @@ describe("aih mcp — generated mcpServers blueprint", () => {
     const servers = serversOf(w);
 
     const httpServers = Object.values(servers).filter((s) => s.type === "http");
-    // 5 hosted n24q02m + the 2 on-by-default remote servers (github, context7).
-    expect(httpServers.length).toBe(7);
+    // 5 hosted n24q02m + the on-by-default Context7 docs server.
+    expect(httpServers.length).toBe(6);
     for (const s of httpServers) {
       // A hosted endpoint is a dialed-later URL string, not a launchable process.
       const bag = s as unknown as Record<string, unknown>;
@@ -602,8 +611,9 @@ describe("aih mcp — generated mcpServers blueprint", () => {
   });
 
   it("produces deterministic JSON (stable key order, no dates)", async () => {
-    const a = await command.plan(makeCtx());
-    const b = await command.plan(makeCtx());
+    const root = makeTmp();
+    const a = await command.plan(makeCtx({ root }));
+    const b = await command.plan(makeCtx({ root }));
     const wa = a.actions.find((x) => x.kind === "write") as WriteAction;
     const wb = b.actions.find((x) => x.kind === "write") as WriteAction;
     expect(jsonFile(wa.json)).toBe(jsonFile(wb.json));
@@ -686,7 +696,7 @@ describe("aih mcp — --self-host (GitHub via local Docker + .env.example)", () 
     if (gh.type !== "stdio") throw new Error("expected stdio server");
     expect(gh.command).toBe("docker");
     expect(gh.args).toContain(
-      "ghcr.io/github/github-mcp-server@sha256:881b53d6f75f69bdbc1b5b10fc2f1361717c19054143b3a8529fb5c32061a50e",
+      "ghcr.io/github/github-mcp-server@sha256:0ba840c46a237879c8300e7fddb0b6347f20e029ccb9cbe2ce4a943daa1ff560",
     );
     expect(gh.env?.GITHUB_PERSONAL_ACCESS_TOKEN).toMatch(/^\$\{GITHUB_PERSONAL_ACCESS_TOKEN\}$/);
     expect(gh.credentials).toBe("token");
@@ -708,16 +718,11 @@ describe("aih mcp — --self-host (GitHub via local Docker + .env.example)", () 
     );
   });
 
-  it("default (no --self-host) keeps GitHub as the hosted OAuth http endpoint", async () => {
+  it("default (no --self-host) leaves the optional GitHub server unselected", async () => {
     const w = (await command.plan(makeCtx())).actions.find(
       (a) => a.kind === "write",
     ) as WriteAction;
-    const gh = pick(serversOf(w), "github");
-    expect(gh.type).toBe("http");
-    if (gh.type !== "http") throw new Error("expected http server");
-    expect(gh.url).toBe("https://api.githubcopilot.com/mcp/");
-    expect(gh.credentials).toBe("oauth");
-    expect(JSON.stringify(gh)).not.toContain("GITHUB_PERSONAL_ACCESS_TOKEN");
+    expect(serversOf(w).github).toBeUndefined();
   });
 
   it("--github-auth token keeps hosted GitHub and authenticates with an env-sourced header", async () => {
@@ -879,7 +884,7 @@ describe("aih mcp — --self-host (GitHub via local Docker + .env.example)", () 
   });
 });
 
-describe("aih mcp — curated default servers (secret-free, on by default)", () => {
+describe("aih mcp — curated base and opt-in hosted servers", () => {
   it("adds sequential-thinking as a pinned, zero-egress local stdio server in any repo", async () => {
     const p = await command.plan(makeCtx());
     const seq = pick(
@@ -897,8 +902,14 @@ describe("aih mcp — curated default servers (secret-free, on by default)", () 
     expect(seq.supplyChain).toBe("pinned");
   });
 
-  it("adds GitHub as a remote OAuth server — vendor-incumbent egress, NO secret in the file", async () => {
-    const p = await command.plan(makeCtx());
+  it("adds policy-selected GitHub as a remote OAuth server without writing a secret", async () => {
+    const root = makeTmp();
+    writeMcpPolicy(root, {
+      allowedServers: ["github"],
+      allowManagedOnly: false,
+      incumbentHosts: ["api.githubcopilot.com"],
+    });
+    const p = await command.plan(makeCtx({ root }));
     const w = p.actions.find((a) => a.kind === "write") as WriteAction;
     const gh = pick(serversOf(w), "github");
     expect(gh.type).toBe("http");
@@ -985,7 +996,7 @@ describe("aih mcp — merge preserves user config", () => {
     // User-only server survives...
     expect(merged.mcpServers.myServer).toEqual(existing.mcpServers.myServer);
     // ...alongside the harness blueprint.
-    expect(merged.mcpServers["code-review-graph"]?.command).toBe("uvx");
+    expect(merged.mcpServers["code-review-graph"]?.command).toBe(process.execPath);
   });
 
   it("is idempotent: merging the blueprint twice yields the same file", async () => {
@@ -1070,8 +1081,10 @@ describe("aih mcp — remote scope emits SSO gateway doc (cloud is doc, not writ
   });
 
   it("reports MCP catalog errors without blaming org-policy parsing", async () => {
+    const root = makeTmp();
+    writeMcpPolicy(root, { allowedServers: ["github"], allowManagedOnly: false });
     await expect(
-      command.plan(makeCtx({ env: { GITHUB_HOST: "github.internal.example" } })),
+      command.plan(makeCtx({ root, env: { GITHUB_HOST: "github.internal.example" } })),
     ).rejects.toThrow(/MCP catalog cannot be built: GITHUB_HOST must be an https origin/);
   });
 
@@ -1602,9 +1615,9 @@ describe("aih mcp — MCP write hygiene", () => {
       if (argv[0] === "uv") return { code: 0, stdout: "uv 0.5.0\n" };
       if (
         argv.join(" ") ===
-        "npm view @modelcontextprotocol/server-sequential-thinking@2026.7.4 version"
+        "npm view @modelcontextprotocol/server-sequential-thinking@2026.8.31 version"
       ) {
-        return { code: 0, stdout: "2026.7.5\n" };
+        return { code: 0, stdout: "2026.9.1\n" };
       }
       return undefined;
     });
@@ -1618,7 +1631,7 @@ describe("aih mcp — MCP write hygiene", () => {
     expect(check?.verdict).toBe("fail");
     expect(check?.code).toBe("mcp.version-drift");
     expect(check?.detail).toContain(
-      "@modelcontextprotocol/server-sequential-thinking pinned 2026.7.4 but registry resolved 2026.7.5",
+      "@modelcontextprotocol/server-sequential-thinking pinned 2026.8.31 but registry resolved 2026.9.1",
     );
   });
 
@@ -1629,9 +1642,9 @@ describe("aih mcp — MCP write hygiene", () => {
       if (argv[0] === "uv") return { code: 0, stdout: "uv 0.5.0\n" };
       if (
         argv.join(" ") ===
-        "cmd /c npm view @modelcontextprotocol/server-sequential-thinking@2026.7.4 version"
+        "cmd /c npm view @modelcontextprotocol/server-sequential-thinking@2026.8.31 version"
       ) {
-        return { code: 0, stdout: "2026.7.4\n" };
+        return { code: 0, stdout: "2026.8.31\n" };
       }
       return undefined;
     });
@@ -1648,7 +1661,7 @@ describe("aih mcp — MCP write hygiene", () => {
       "/c",
       "npm",
       "view",
-      "@modelcontextprotocol/server-sequential-thinking@2026.7.4",
+      "@modelcontextprotocol/server-sequential-thinking@2026.8.31",
       "version",
     ]);
   });
@@ -1760,7 +1773,7 @@ describe("aih mcp — per-CLI config (honors --cli)", () => {
       (action) =>
         action.kind === "digest" && action.describe === "MCP allowlist filtered all servers",
     );
-    expect(jsonClientWrites).toHaveLength(9);
+    expect(jsonClientWrites).toHaveLength(10);
     for (const write of jsonClientWrites) expect(jsonConfigServerNames(write)).toEqual([]);
     expect(codex?.contents).not.toContain("[mcp_servers.");
     expect((managed?.json as { allowedMcpServers?: unknown[] })?.allowedMcpServers).toEqual([]);
@@ -2260,6 +2273,7 @@ describe("aih mcp — per-CLI config (honors --cli)", () => {
 
   it("replaces generated JSON server entries so stale auth fields do not survive", async () => {
     const root = makeTmp();
+    writeMcpPolicy(root, { allowedServers: ["github"], allowManagedOnly: false });
     writeFileSync(
       join(root, ".mcp.json"),
       jsonFile({
@@ -2314,11 +2328,12 @@ describe("aih mcp — per-CLI config (honors --cli)", () => {
     const p = await command.plan(makeCtx({ options: { allTools: true } }));
     const writes = p.actions.filter((a): a is WriteAction => a.kind === "write");
     const paths = writes.map((w) => w.path.replace(/\\/g, "/"));
-    // Repo-relative natives keep their own paths (claude/kimi dedupe to one .mcp.json).
+    // Repo-relative natives keep their own paths.
     expect(paths).toContain(".mcp.json");
     expect(paths).toContain(".cursor/mcp.json");
     expect(paths.some((pa) => pa.endsWith(".config/opencode/opencode.json"))).toBe(true);
-    expect(paths.some((pa) => pa.endsWith(".vscode/mcp.json"))).toBe(true);
+    expect(paths).toContain(".github/mcp.json");
+    expect(paths).toContain(".kimi-code/mcp.json");
     // Codex gets its TOML written (external), NOT a .mcp.json it cannot read.
     const codex = writes.find((w) => w.path.replace(/\\/g, "/").endsWith(".codex/config.toml"));
     expect(codex?.external).toBe(true);
@@ -2546,7 +2561,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     expect(managed).toBeDefined();
     expect(managed?.merge).toBe(true);
     expect(managed?.json).toMatchObject({ allowManagedMcpServersOnly: true });
-    expect(JSON.stringify(managed?.json)).toContain("code-review-graph@2.3.7");
+    expect(JSON.stringify(managed?.json)).toContain("code-review-graph==2.3.8");
   });
 
   it("emits a ready-to-merge allowedServers snippet for generated servers the policy leaves undeclared", async () => {
@@ -2615,7 +2630,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
         references: { repoContract: "ai-coding/project.json" },
         governance: { supportedClis: [...SUPPORTED_CLIS] },
         mcp: {
-          allowedServers: ["code-review-graph"],
+          allowedServers: ["code-review-graph", "github"],
           allowManagedOnly: true,
           incumbentHosts: [],
         },
@@ -2659,7 +2674,11 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
   });
 
   it("uses GITHUB_HOST when no policy GitHub host is set", async () => {
-    const p = await command.plan(makeCtx({ env: { GITHUB_HOST: "https://github.env.example" } }));
+    const root = makeTmp();
+    writeMcpPolicy(root, { allowedServers: ["github"], allowManagedOnly: false });
+    const p = await command.plan(
+      makeCtx({ root, env: { GITHUB_HOST: "https://github.env.example" } }),
+    );
     const gh = pick(serversOf(p.actions.find((a) => a.kind === "write") as WriteAction), "github");
 
     expect(gh.type).toBe("http");
@@ -2668,7 +2687,10 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
   });
 
   it("does not classify a GITHUB_HOST override as incumbent without org-policy", async () => {
+    const root = makeTmp();
+    writeMcpPolicy(root, { allowedServers: ["github"], allowManagedOnly: false });
     const ctx = makeCtx({
+      root,
       env: { GITHUB_HOST: "https://unreviewed.example" },
       options: { posture: "enterprise" },
       verify: true,
@@ -2813,7 +2835,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     if (dotMcp === undefined) throw new Error("expected .mcp.json write");
     expect(Object.keys(serversOf(dotMcp))).not.toContain("sequential-thinking");
     const managedJson = JSON.stringify(managed?.json);
-    expect(managedJson).toContain("code-review-graph@2.3.7");
+    expect(managedJson).toContain("code-review-graph==2.3.8");
     expect(managedJson).not.toContain("server-sequential-thinking");
   });
 
@@ -3126,7 +3148,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     expect(Object.keys(serversOf(w))).toContain("context7");
   });
 
-  it("at remote scope the gate denies context7 AND the n24q02m hosted set, but not github/local", async () => {
+  it("at remote scope the gate denies context7 and the n24q02m hosted set, but not local servers", async () => {
     const ctx = makeCtx({ options: { posture: "enterprise", scope: "remote" }, verify: true });
     const p = await command.plan(ctx);
     const probe = p.actions.find(
@@ -3137,7 +3159,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     for (const denied of ["context7", "better-email", "wet-mcp"]) {
       expect(check?.detail).toContain(denied);
     }
-    // github (vendor-incumbent + oauth) and the local servers pass — not in the denied list.
+    // Local servers pass and are absent from the denied list.
     expect(check?.detail).not.toContain("github");
     expect(check?.detail).not.toContain("code-review-graph");
   });
@@ -3170,7 +3192,14 @@ describe("mcp pin currency — catalog-pin visibility guard (issue #504 review)"
     expect(declaredPins.some((spec) => spec.startsWith("code-review-graph@"))).toBe(true);
 
     const baked = new Set([...bakedCatalogPins().values()].map((pin) => pin.spec));
-    const invisible = declaredPins.filter((spec) => !baked.has(spec));
+    // Serena's repository-agnostic fallback uses uvx --from, which the currency
+    // parser deliberately refuses to call end-to-end pinned. Ordinary setup
+    // replaces it with the authenticated dependency-lock launcher tested above.
+    const authenticatedRuntimePins = new Set(["serena-agent==1.7.0"]);
+    expect(declaredPins).toEqual(expect.arrayContaining([...authenticatedRuntimePins]));
+    const invisible = declaredPins.filter(
+      (spec) => !baked.has(spec) && !authenticatedRuntimePins.has(spec),
+    );
     expect(
       invisible,
       "catalog pin(s) invisible to the offline pin-currency tier — extend ALL_SERVERS_STACK in src/mcp/currency.ts to enable the server(s) that carry them",

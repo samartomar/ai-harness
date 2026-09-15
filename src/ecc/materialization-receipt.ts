@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { isAbsolute, join } from "node:path";
 import { z } from "zod";
+import { SUPPORTED_CLIS } from "../internals/clis.js";
 import { inspectContainedRelativePath } from "../internals/contained-path.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
 import { AuthorizationSchema } from "./registration.js";
@@ -416,11 +417,18 @@ function materializationEvidenceBindingIssue(binding: {
   return undefined;
 }
 
+export const EccMaterializationTargetsSchema = z
+  .array(z.enum(SUPPORTED_CLIS))
+  .min(1)
+  .max(SUPPORTED_CLIS.length)
+  .superRefine((targets, context) => duplicateIssues(targets, "delivery target", context));
+
 const ComponentSchema = z
   .object({
     id: ComponentIdSchema,
     authorization: AuthorizationSchema,
     provenance: ProvenanceSchema,
+    targets: EccMaterializationTargetsSchema.optional(),
     files: z.array(OwnedFileSchema).min(1).max(MAX_MATERIALIZED_FILES_PER_COMPONENT),
   })
   .strict()
@@ -671,6 +679,9 @@ function normalizeReceipt(receipt: EccMaterializationReceipt): EccMaterializatio
   const components = [...receipt.components]
     .map((component) => ({
       ...component,
+      ...(component.targets === undefined
+        ? {}
+        : { targets: [...component.targets].sort(byCodeUnit) }),
       files: [...component.files]
         .map((file) =>
           file.operation === "merge-json"

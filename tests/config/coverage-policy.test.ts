@@ -222,6 +222,7 @@ describe("coverage policy", () => {
 
     expect(maxWorkersForPlatform("darwin", 12)).toBe(2);
     expect(maxWorkersForPlatform("linux", 12)).toBe(8);
+    expect(maxWorkersForPlatform("win32", 12)).toBe(2);
     expect(maxWorkersForPlatform("win32", 2)).toBe(1);
 
     expect(workerExecArgvForPlatform("darwin")).toEqual([]);

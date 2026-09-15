@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, parse as parsePath, relative, resolve } from "node:path";
 import { z } from "zod";
 import { parseNativeStrictJsonObjectV1 } from "../contract/native-strict-json-object-v1.js";
+import { GOVERNED_MCP_TARGETS } from "../internals/cli-registry.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
 import type { FileAssertion, PlanContext } from "../internals/plan.js";
 import { findOnPath } from "../live/runner.js";
@@ -33,7 +34,7 @@ const SafeId = z.string().regex(/^[a-z][a-z0-9-]{0,63}$/);
 const Sha256 = z.string().regex(/^sha256:[0-9a-f]{64}$/);
 const Repository = z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/);
 const IsoTimestamp = z.string().refine((value) => Number.isFinite(Date.parse(value)));
-const Target = z.enum(["claude", "codex", "kiro"]);
+const Target = z.enum(GOVERNED_MCP_TARGETS);
 
 const ReceiptEvidenceSchema = z
   .object({
@@ -154,7 +155,7 @@ const PolicyAuthorityReceiptV1Schema = z
     approvals: z.array(PolicyApprovalSchema).default([]),
     revocations: z.array(ReceiptRevocationSchema).default([]),
     /** Receipt-wide control coverage, checked against every active activation. */
-    targets: z.array(Target).min(1).max(3),
+    targets: z.array(Target).min(1).max(GOVERNED_MCP_TARGETS.length),
   })
   .strict()
   .superRefine(receiptBaseIssues);
@@ -172,7 +173,7 @@ const PolicyAuthorityReceiptV2Schema = z
     approvals: z.array(PolicyApprovalReceiptV2Schema).default([]),
     revocations: z.array(ReceiptRevocationV2Schema).default([]),
     /** Receipt-wide control coverage, checked against every active activation. */
-    targets: z.array(Target).min(1).max(3),
+    targets: z.array(Target).min(1).max(GOVERNED_MCP_TARGETS.length),
     /** Exact signed decision artifacts; policy may only reference their ids. */
     decisions: ReceiptDecisionsV2Schema,
     /** Exact signed revocation artifacts, never an inline decision state. */

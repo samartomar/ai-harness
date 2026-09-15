@@ -1,4 +1,5 @@
 import { isAbsolute, join } from "node:path";
+import { renderGovernedCodexRole, renderGovernedCodexWorkflow } from "../ecc-profile/render.js";
 import { AihError } from "../errors.js";
 import { inspectContainedRelativePath } from "../internals/contained-path.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
@@ -24,6 +25,10 @@ import type {
   EccMaterializationFileInput,
 } from "./materialization-types.js";
 import { eccComponentSourcePaths, eccContentDestinationMapping } from "./materialize.js";
+import type {
+  EccRuntimeAdapterCompatibilityV1,
+  EccRuntimeAdapterOutcomeV1,
+} from "./runtime-adapter-compatibility.js";
 
 /**
  * F4: the target adapter for governed materialization, parameterized by target.
@@ -216,12 +221,15 @@ export interface EccTargetMaterializationRequest {
    * component metadata.
    */
   componentPathsById?: ReadonlyMap<string, readonly string[]>;
+  /** Exact per-file destinations sealed by a historical runtime descriptor. */
+  historicalAdapterCompatibility?: EccRuntimeAdapterCompatibilityV1;
 }
 
 export interface EccTargetMaterializationResult {
   /** Ready for `EccMaterializationRequest.components` — nothing else to attach. */
   components: EccMaterializationComponentInput[];
   refused: EccTargetedRefusal[];
+  codexRoles: readonly { id: string; description: string; configFile: string }[];
 }
 
 /** One component's refusal, raised where it is detected and caught per component. */
@@ -327,10 +335,36 @@ function targetDestination(source: string, target: EccMaterializationTarget): st
 export function inspectEccTargetDestinationV1(
   source: string,
   target: EccMaterializationTarget,
+  componentId?: string,
 ):
   | { state: "mapped"; scope: "project" | "home"; relative: string }
   | { state: "refused"; reason: EccTargetRefusalReason } {
   try {
+    const qualifiedCommands =
+      componentId === "baseline:commands" || componentId === "module:commands-core";
+    if (
+      qualifiedCommands &&
+      (source === "scripts/harness-audit.js" ||
+        source === "scripts/skills-health.js" ||
+        source.startsWith("scripts/lib/"))
+    ) {
+      return { state: "mapped", scope: "project", relative: source };
+    }
+    if (qualifiedCommands && target === "codex" && /^commands\/.+\.md$/.test(source)) {
+      const id = source.slice("commands/".length, -".md".length);
+      return {
+        state: "mapped",
+        scope: "project",
+        relative: `.agents/skills/ecc-workflow-${id}/SKILL.md`,
+      };
+    }
+    if (target === "codex" && /^agents\/[a-z0-9][a-z0-9_-]*\.md$/.test(source)) {
+      return {
+        state: "mapped",
+        scope: "project",
+        relative: `.codex/agents/${source.slice("agents/".length, -".md".length)}.toml`,
+      };
+    }
     const mapping = targetDestination(source, target);
     const direct = eccContentDestinationMapping(source, target);
     if (direct === undefined || direct.scope !== "project" || direct.relative !== mapping) {
@@ -386,7 +420,11 @@ function componentFiles(
   id: EccComponentId,
   target: EccMaterializationTarget,
   componentPathsById?: ReadonlyMap<string, readonly string[]>,
-): EccMaterializationFileInput[] {
+  historicalOutcomes?: ReadonlyMap<string, EccRuntimeAdapterOutcomeV1>,
+): {
+  files: EccMaterializationFileInput[];
+  codexRoles: { id: string; description: string; configFile: string }[];
+} {
   let declared: string[];
   try {
     if (componentPathsById !== undefined) {
@@ -401,17 +439,172 @@ function componentFiles(
   } catch (error) {
     throw new TargetRefusal("no-install-descriptor", (error as Error).message);
   }
+  // Codex and OpenCode both discover the shared project-local `.agents`
+  // convention. When the pinned component carries that canonical projection,
+  // emitting its legacy `skills/` mirror as well creates two enabled native
+  // rows for one capability. Prefer the exact `.agents` source identity so a
+  // normal receipt-bound reapply also subtracts an older AIH-owned duplicate.
+  // Other targets retain their target-specific projections: in particular,
+  // Kimi's dual route is an explicit adapter contract rather than this Codex
+  // discovery duplication.
+  if (
+    (target === "codex" || target === "opencode") &&
+    id.startsWith("skill:") &&
+    declared.some((path) => path.startsWith(".agents/skills/"))
+  ) {
+    declared = declared.filter((path) => !path.startsWith("skills/"));
+  }
   const files: EccMaterializationFileInput[] = [];
+  const qualifiedCommandRuntime =
+    (id === "baseline:commands" || id === "module:commands-core") &&
+    declared.includes("scripts/lib") &&
+    declared.includes("scripts/harness-audit.js") &&
+    declared.includes("scripts/skills-health.js");
+  if ((id === "baseline:commands" || id === "module:commands-core") && !qualifiedCommandRuntime) {
+    throw new TargetRefusal(
+      "unsupported-component",
+      "commands-core is not project-portable: scripts/skills-health.js requires unselected hooks-runtime libraries and CommonJS execution that the selected source does not own in the destination project",
+    );
+  }
+  const codexRoles: { id: string; description: string; configFile: string }[] = [];
+  let firstHistoricalRefusal: string | undefined;
   for (const path of declared) {
     for (const file of sourceFiles(sourceRoot, path)) {
+      const historical = historicalOutcomes?.get(`${id}\0${file.source}\0${target}`);
+      if (historicalOutcomes !== undefined) {
+        if (historical === undefined) {
+          throw new TargetRefusal(
+            "no-install-descriptor",
+            `sealed historical adapter carries no ${TARGET_NAME[target]} outcome for ${displaySafe(file.source)}`,
+          );
+        }
+        if (historical.state === "refused") {
+          firstHistoricalRefusal ??= historical.reason;
+          continue;
+        }
+        try {
+          const historicalDestination = assertOwnedRelativePath(historical.relative);
+          if (
+            target === "codex" &&
+            file.source.startsWith("agents/") &&
+            historicalDestination.endsWith(".md")
+          ) {
+            throw new TargetRefusal(
+              "unsupported-component",
+              "sealed historical Codex agent authority predates native TOML role registration",
+            );
+          }
+          if (
+            target === "codex" &&
+            file.source.startsWith("agents/") &&
+            historicalDestination.endsWith(".toml")
+          ) {
+            const roleId = file.source.slice("agents/".length, -".md".length);
+            const rendered = renderGovernedCodexRole(
+              roleId,
+              file.source,
+              sourceBytes(file).toString("utf8"),
+            );
+            files.push({
+              path: historicalDestination,
+              kind: "copy-file",
+              contents: rendered.contents,
+            });
+            codexRoles.push({
+              id: roleId,
+              description: rendered.description,
+              configFile: historicalDestination,
+            });
+          } else if (
+            target === "codex" &&
+            (id === "baseline:commands" || id === "module:commands-core") &&
+            file.source.startsWith("commands/") &&
+            historicalDestination.endsWith("/SKILL.md")
+          ) {
+            const workflowId = file.source.slice("commands/".length, -".md".length);
+            files.push({
+              path: historicalDestination,
+              kind: "copy-file",
+              contents: renderGovernedCodexWorkflow(
+                workflowId,
+                file.source,
+                sourceBytes(file).toString("utf8"),
+              ),
+            });
+          } else {
+            files.push({
+              path: historicalDestination,
+              kind: "copy-file",
+              contents: sourceBytes(file),
+            });
+          }
+        } catch (error) {
+          if (error instanceof TargetRefusal) throw error;
+          throw new TargetRefusal("unowned-destination", (error as Error).message);
+        }
+        continue;
+      }
       // Destination first: a source this target does not own refuses without
       // its bytes ever being read.
-      files.push({
-        path: targetDestination(file.source, target),
-        kind: "copy-file",
-        contents: sourceBytes(file),
-      });
+      const qualifiedSupportFile =
+        qualifiedCommandRuntime &&
+        (file.source === "scripts/harness-audit.js" ||
+          file.source === "scripts/skills-health.js" ||
+          file.source.startsWith("scripts/lib/"));
+      const destination = qualifiedSupportFile
+        ? file.source
+        : targetDestination(file.source, target);
+      if (
+        target === "codex" &&
+        historicalOutcomes === undefined &&
+        file.source.startsWith("agents/") &&
+        file.source.endsWith(".md")
+      ) {
+        const roleId = file.source.slice("agents/".length, -".md".length);
+        const rendered = renderGovernedCodexRole(
+          roleId,
+          file.source,
+          sourceBytes(file).toString("utf8"),
+        );
+        const configFile = destination.replace(/\.md$/, ".toml");
+        files.push({ path: configFile, kind: "copy-file", contents: rendered.contents });
+        codexRoles.push({
+          id: roleId,
+          description: rendered.description,
+          configFile,
+        });
+      } else if (
+        target === "codex" &&
+        file.source.startsWith("commands/") &&
+        file.source.endsWith(".md")
+      ) {
+        const workflowId = file.source.slice("commands/".length, -".md".length);
+        files.push({
+          path: `.agents/skills/ecc-workflow-${workflowId}/SKILL.md`,
+          kind: "copy-file",
+          contents: renderGovernedCodexWorkflow(
+            workflowId,
+            file.source,
+            sourceBytes(file).toString("utf8"),
+          ),
+        });
+      } else {
+        files.push({ path: destination, kind: "copy-file", contents: sourceBytes(file) });
+      }
     }
+  }
+  if (qualifiedCommandRuntime && files.some((file) => file.path.startsWith("scripts/"))) {
+    files.push({
+      path: "scripts/package.json",
+      kind: "copy-file",
+      contents: '{"type":"commonjs"}\n',
+    });
+  }
+  if (firstHistoricalRefusal !== undefined) {
+    throw new TargetRefusal(
+      "unsupported-component",
+      `sealed historical adapter refused ${displaySafe(id)} for ${TARGET_NAME[target]}: ${displaySafe(firstHistoricalRefusal)}`,
+    );
   }
   if (files.length === 0) {
     throw new TargetRefusal(
@@ -432,7 +625,7 @@ function componentFiles(
       `two pinned sources claim one ${TARGET_NAME[target]} destination: ${displaySafe(collision.first)} and ${displaySafe(collision.second)} differ only by Unicode normalization or case`,
     );
   }
-  return files;
+  return { files, codexRoles };
 }
 
 /**
@@ -466,8 +659,21 @@ export function resolveEccTargetMaterialization(
   const sourceRoot = assertComponentSourceRoot(request.sourceRoot);
   const components: EccMaterializationComponentInput[] = [];
   const refused: EccTargetedRefusal[] = [];
-  const kiroRequested = request.targets.includes("kiro");
-  const genericTargets = request.targets.filter((target) => target !== "kiro");
+  const codexRoles: Array<{ id: string; description: string; configFile: string }> = [];
+  const historicalOutcomes =
+    request.historicalAdapterCompatibility === undefined
+      ? undefined
+      : new Map(
+          request.historicalAdapterCompatibility.outcomes.map((outcome) => [
+            `${outcome.componentId}\0${outcome.path}\0${outcome.target}`,
+            outcome,
+          ]),
+        );
+  const kiroRequested = historicalOutcomes === undefined && request.targets.includes("kiro");
+  const genericTargets =
+    historicalOutcomes === undefined
+      ? request.targets.filter((target) => target !== "kiro")
+      : request.targets;
   const kiroCandidates = request.components.filter(
     (component) =>
       component.id === "baseline:rules" ||
@@ -501,23 +707,45 @@ export function resolveEccTargetMaterialization(
   }
   for (const component of request.components) {
     const union = new Map<string, EccMaterializationFileInput>();
+    const deliveredTargets: EccMaterializationTarget[] = [];
     for (const target of genericTargets) {
       try {
-        for (const file of componentFiles(
+        const mapped = componentFiles(
           sourceRoot,
           component.id,
           target,
           request.componentPathsById,
-        )) {
+          historicalOutcomes,
+        );
+        for (const role of mapped.codexRoles) {
+          const existing = codexRoles.find((candidate) => candidate.id === role.id);
+          if (existing === undefined) codexRoles.push(role);
+          else if (
+            existing.configFile !== role.configFile ||
+            existing.description !== role.description
+          ) {
+            throw new TargetRefusal(
+              "duplicate-destination",
+              `two selected components disagree on Codex role ${displaySafe(role.id)}`,
+            );
+          }
+        }
+        for (const file of mapped.files) {
           const identity = destinationIdentity(file.path);
           if (!union.has(identity)) union.set(identity, file);
         }
+        deliveredTargets.push(target);
       } catch (error) {
         if (!(error instanceof TargetRefusal)) throw error;
         refused.push({ target, id: component.id, reason: error.reason, detail: error.message });
       }
     }
-    if (union.size > 0) components.push({ ...component, files: [...union.values()] });
+    if (union.size > 0)
+      components.push({
+        ...component,
+        targets: deliveredTargets,
+        files: [...union.values()],
+      });
   }
 
   if (kiroRequested) {
@@ -544,15 +772,20 @@ export function resolveEccTargetMaterialization(
     for (const component of kiro.components) {
       const existing = byId.get(component.id);
       if (existing === undefined) {
-        components.push(component);
-        byId.set(component.id, component);
+        const withTarget = { ...component, targets: ["kiro" as const] };
+        components.push(withTarget);
+        byId.set(component.id, withTarget);
         continue;
       }
       const index = components.indexOf(existing);
-      const combined = { ...existing, files: [...existing.files, ...component.files] };
+      const combined = {
+        ...existing,
+        targets: [...(existing.targets ?? []), "kiro" as const],
+        files: [...existing.files, ...component.files],
+      };
       components[index] = combined;
       byId.set(component.id, combined);
     }
   }
-  return { components, refused };
+  return { components, refused, codexRoles };
 }

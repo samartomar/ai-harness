@@ -1,3 +1,4 @@
+import type { RuntimeEvidenceResult } from "../heal/opencode-runtime-evidence.js";
 import {
   type Action,
   type CommandSpec,
@@ -12,7 +13,10 @@ import {
   computeReadiness,
   coreToolsMissing,
   type ReadinessResult,
+  readinessData,
   renderReadinessBody,
+  resetRuntimeEvidenceEvaluation,
+  runtimeEvidenceForContext,
 } from "../report/readiness.js";
 import {
   detectPms,
@@ -23,8 +27,7 @@ import {
 } from "../tools/install.js";
 
 /**
- * `aih ready` — the readiness GATE. Answers one question: can a developer start work
- * with an AI agent in THIS repo, on THIS machine, right now? It reuses the developer-
+ * `aih ready` — the host/configuration preflight GATE. It reuses the developer-
  * readiness composition ({@link computeReadiness}) — every signal is one of aih's
  * existing read-only probes (heal's node/npm/TLS ladder, per-CLI loadability, the
  * contract truth check, the secret scan) — and surfaces it two ways at once:
@@ -33,7 +36,7 @@ import {
  *    identical to what `aih report` renders, so the two never drift; and
  *  - ONE gate PROBE that fails iff there are blockers. `alwaysVerify` runs the probe on
  *    every invocation, so a bare `aih ready` DIAGNOSES by default (like `heal`) and
- *    exits non-zero when an agent cannot start here.
+ *    exits non-zero when a required preflight condition is failed or unverified.
  *
  * A single "readiness gate" probe (not one probe per check) keeps the exit signal
  * crisp: the digest already enumerates each blocker; the probe just gates on their
@@ -59,17 +62,23 @@ function handoffLine(firstCommand: string | null): string {
 }
 
 /** The gate probe's {@link Check}: fail with the blocker roll-up, or pass clean. */
-function gateCheck(r: ReadinessResult): Check {
+function gateCheck(r: ReadinessResult, evidence?: RuntimeEvidenceResult): Check {
   const name = "readiness — no blockers";
   if (r.blockers.length > 0) {
     return {
       name,
       verdict: "fail",
-      detail: `${r.blockers.length} blocker(s): ${r.blockers.map((b) => b.id).join(", ")}`,
+      detail: `${r.blockers.length} blocker(s): ${r.blockers.map((b) => b.id).join(", ")}${evidence ? "; runtime observation is reported separately and does not clear blockers" : ""}`,
       code: "ready.blocked",
     };
   }
-  return { name, verdict: "pass", detail: "no blockers — an agent can start here" };
+  return {
+    name,
+    verdict: "pass",
+    detail: evidence
+      ? `no preflight blockers; ${r.unverified.length} unverified MCP preflight observation(s); explicit runtime observation is reported separately`
+      : `no preflight blockers; ${r.unverified.length} unverified MCP observation(s); native execution not established`,
+  };
 }
 
 /** Map the missing core bin names (rg/fd/jq) to their {@link ToolSpec}s, in canonical order. */
@@ -117,21 +126,15 @@ async function coreToolInstallActions(ctx: PlanContext, specs: ToolSpec[]): Prom
 }
 
 async function readyPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
+  resetRuntimeEvidenceEvaluation(ctx);
   const r = await computeReadiness(ctx);
-  const body = `${renderReadinessBody(r)}\n${handoffLine(r.firstCommand)}\n`;
-  const data = {
-    banner: r.banner,
-    blockers: r.blockers,
-    warns: r.warns,
-    score: r.score,
-    rawScore: r.rawScore,
-    grade: r.grade,
-    firstCommand: r.firstCommand,
-  };
+  const evidence = await runtimeEvidenceForContext(ctx);
+  const body = `${renderReadinessBody(r, evidence)}\n${handoffLine(r.firstCommand)}\n`;
+  const data = readinessData(r, evidence);
   // The digest + gate probe always print (installs are ADDITIVE, never replace the report).
   const actions: Action[] = [
     digest("Developer readiness", body, data),
-    probe("readiness — no blockers", () => gateCheck(r)),
+    probe("readiness — no blockers", () => gateCheck(r, evidence)),
   ];
 
   // The ONE auto-fixable blocker: missing core shell tools (rg/fd/jq). Recompute the
@@ -154,11 +157,16 @@ async function readyPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
 
 export const command: CommandSpec = {
   name: "ready",
-  summary:
-    "Readiness gate — can a developer start work with an AI agent here? (graded, blocker-aware)",
+  summary: "Readiness preflight — host, configuration, and unverified MCP capabilities",
   alwaysVerify: true,
   // Offer the "Install rg, fd, jq now? [y/N]" confirmation on a bare `aih ready` in a
   // TTY (not just under `--detect`) — the install is what a first-time repo opener wants.
   wantsInstallPrompt: true,
+  options: [
+    {
+      flags: "--runtime-evidence <absolute-file>",
+      description: "evaluate one local OpenCode native runtime observation beside preflight",
+    },
+  ],
   plan: readyPlan,
 };

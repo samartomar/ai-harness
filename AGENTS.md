@@ -68,3 +68,20 @@ name what's unverified. State impact, what you skipped, and the remaining risk.
 
 
 <!-- END ai-canonical:shared -->
+
+## Approval continuity
+
+Once the user explicitly approves a scoped delivery action in the active
+conversation, carry that approval through the agreed work. For an approved
+branch and pull request, continue with publication, status checks, review
+responses, and necessary fixes and pushes within that scope without requesting
+the same approval again.
+
+Continue authorized work until it is complete or no authorized path remains.
+When blocked, state the concrete obstacle, what can still proceed, and the
+specific input or authority needed. A status update is not a reason to stop.
+
+Approval to publish a branch, issue, or pull request does not itself authorize
+merging, releasing packages, changing credentials or account-wide settings, or
+expanding the agreed scope. This section records how to honor approval; it does
+not grant approval on behalf of the user.

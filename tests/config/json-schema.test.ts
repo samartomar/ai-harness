@@ -55,6 +55,39 @@ describe("committed JSON Schemas", () => {
       rejectCommittedSchema("schemas/aih-org-policy.schema.json", invalid);
   });
 
+  it("publishes the V3 developer-tool selection grammar", () => {
+    const policy = {
+      schemaVersion: 3,
+      minimumPosture: "vibe",
+      references: { repoContract: "ai-coding/project.json" },
+      minimumCoreVersion: "0.6.0",
+      authoringSelections: {
+        selectionVersion: "workbench-selection/v1",
+        roots: [],
+        requests: [],
+        exclusions: [],
+        drafts: [],
+      },
+    };
+    validateCommittedSchema("schemas/aih-org-policy.schema.json", {
+      ...policy,
+      developerTools: {
+        selected: ["serena", "context7", "markitdown"],
+        excluded: ["token-optimizer"],
+      },
+    });
+    validateCommittedSchema("schemas/aih-org-policy.schema.json", {
+      ...policy,
+      developerTools: { selected: [] },
+    });
+    for (const invalid of [
+      { ...policy, developerTools: { selected: ["unknown"] } },
+      { ...policy, developerTools: { selected: "serena" } },
+      { ...policy, developerTools: { selected: [], unsupported: true } },
+    ])
+      rejectCommittedSchema("schemas/aih-org-policy.schema.json", invalid);
+  });
+
   it("emits editor schemas for config, governed policy, authority receipt, decision, observation, qualification evidence, and package graph", () => {
     const schemas = generatedConfigSchemas();
 
@@ -227,6 +260,59 @@ describe("committed JSON Schemas", () => {
       command: { deny: {} },
       trust: {},
     });
+  });
+
+  it("publishes all governed MCP target scopes in policy and legacy authority schemas", () => {
+    const targets = ["claude", "codex", "copilot", "cursor", "kimi", "kiro", "opencode"];
+    const candidate = {
+      id: "sequential-thinking",
+      kind: "mcp",
+      description: "Governed MCP",
+      source: {
+        type: "mcp",
+        server: "sequential-thinking",
+        subject: `mcp-server-sha256:${"a".repeat(64)}`,
+      },
+      targets,
+      projector: "mcp-managed-settings",
+      lifecycle: "supported",
+      evidence: { record: "aih-sequential-thinking" },
+    };
+    const policy = {
+      schemaVersion: 2,
+      minimumPosture: "enterprise",
+      references: { repoContract: "ai-coding/project.json" },
+      governance: {
+        policyVersion: "1",
+        supportedClis: targets,
+        catalog: { reviewed: [candidate], custom: [] },
+        activations: [{ candidate: candidate.id, state: "active", targets }],
+        authority: { approvals: [] },
+      },
+    };
+    validateCommittedSchema("schemas/aih-org-policy.schema.json", policy);
+    rejectCommittedSchema("schemas/aih-org-policy.schema.json", {
+      ...policy,
+      governance: {
+        ...policy.governance,
+        catalog: { reviewed: [{ ...candidate, targets: ["unknown-host"] }], custom: [] },
+      },
+    });
+    for (const version of [1, 2]) {
+      validateCommittedSchema("schemas/aih-policy-authority-receipt.schema.json", {
+        format: "aih-policy-authority-receipt",
+        version,
+        issuerRepository: "acme/governance",
+        issuedAt: "2026-08-01T00:00:00Z",
+        expiresAt: "2026-08-31T00:00:00Z",
+        targets,
+        trustedIssuers: [],
+        evidence: [],
+        approvals: [],
+        revocations: [],
+        ...(version === 2 ? { decisions: [], decisionRevocations: [] } : {}),
+      });
+    }
   });
 
   it("publishes strict v1 or decision-bound v2 MCP ownership receipts", () => {

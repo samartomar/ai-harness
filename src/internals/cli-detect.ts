@@ -37,6 +37,10 @@ export function homeDir(ctx: PlanContext): string {
  * `.kiro` root, unlike HOME which is the parent of every other registry path.
  */
 function configDirPath(ctx: PlanContext, cli: Cli, rel: string): { path: string; detail: string } {
+  const kimiHome = ctx.env.KIMI_CODE_HOME?.trim();
+  if (cli === "kimi" && kimiHome && rel === ".kimi-code") {
+    return { path: kimiHome, detail: "KIMI_CODE_HOME" };
+  }
   const kiroHome = ctx.env.KIRO_HOME?.trim();
   if (cli === "kiro" && kiroHome) {
     if (rel === ".kiro") return { path: kiroHome, detail: "KIRO_HOME" };

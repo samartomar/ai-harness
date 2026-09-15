@@ -1410,6 +1410,36 @@ describe("F1/F5 — AIH-direct per-component materialization", () => {
     expect(tree()).toEqual([]);
   });
 
+  it("co-owns exact command aliases without absorbing unowned files", () => {
+    const path = "scripts/package.json";
+    const request = (contents: string): EccMaterializationRequest => ({
+      root,
+      components: [
+        componentInput("baseline:commands", [{ path, contents }]),
+        componentInput("module:commands-core", [{ path, contents }]),
+      ],
+    });
+
+    writeFileSync(join(root, "package.json"), '{"type":"module"}\n');
+    mkdirSync(join(root, "scripts"));
+    writeFileSync(join(root, path), '{"type":"commonjs"}\n');
+    expect(() => applyEccMaterialization(request('{"type":"commonjs"}\n'))).toThrow(
+      /existing unowned/i,
+    );
+    expect(readFileSync(join(root, path), "utf8")).toBe('{"type":"commonjs"}\n');
+
+    rmSync(join(root, path));
+    applyEccMaterialization(request('{"type":"commonjs"}\n'));
+    expect(readFileSync(join(root, "package.json"), "utf8")).toBe('{"type":"module"}\n');
+    const updated = applyEccMaterialization(request('{"type":"commonjs","version":2}\n'));
+    expect(updated.receipt?.components.map((component) => component.id)).toEqual([
+      "baseline:commands",
+      "module:commands-core",
+    ]);
+    expect(readFileSync(join(root, path), "utf8")).toContain('"version":2');
+    expect(uninstallEccMaterialization(root).removed.map((file) => file.path)).toEqual([path]);
+  });
+
   it("refuses a reserved directory named in any segment, not just the first", () => {
     mkdirSync(join(root, "vendor", "libfoo", ".git", "hooks"), { recursive: true });
 

@@ -5,20 +5,13 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { enterpriseBaselineAttestationCheck } from "../../src/baseline/attestation.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
+import { defaultNativeMcpServers } from "../../src/mcp/default-native-runtime.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { spanningMcp } from "../../src/workspace/templates.js";
 
 let dir: string;
 const A_SHA = "a".repeat(40);
 const B_SHA = "b".repeat(40);
-const CODE_REVIEW_GRAPH_ARGS = [
-  "--offline",
-  "--no-python-downloads",
-  "--no-env-file",
-  "code-review-graph@2.3.7",
-  "serve",
-] as const;
-
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "aih-baseline-attestation-"));
 });
@@ -276,11 +269,14 @@ describe("enterprise baseline attestation", () => {
 
   it("attests OpenCode MCP maps by their normalized command and remote shapes", () => {
     writePolicy(["code-review-graph", "context7"]);
+    const graph = defaultNativeMcpServers(ctx())["code-review-graph"];
+    if (graph?.type !== "stdio") throw new Error("expected native Code Review Graph stdio server");
+    expect(graph.args).toContain("code-review-graph==2.3.8");
     writeMcpConfig("opencode.json", {
       mcp: {
         "code-review-graph": {
           type: "local",
-          command: ["uvx", ...CODE_REVIEW_GRAPH_ARGS],
+          command: [graph.command, ...graph.args],
           enabled: true,
         },
         context7: {
@@ -352,7 +348,7 @@ describe("enterprise baseline attestation", () => {
     writeMcp({
       "sequential-thinking": {
         command: "npx",
-        args: ["-y", "@modelcontextprotocol/server-sequential-thinking@2026.7.4"],
+        args: ["-y", "@modelcontextprotocol/server-sequential-thinking@2026.8.31"],
         env: { PATH: 7 },
       },
     });
@@ -416,7 +412,7 @@ describe("enterprise baseline attestation", () => {
           "--rm",
           "-e",
           "GITHUB_PERSONAL_ACCESS_TOKEN",
-          "ghcr.io/github/github-mcp-server@sha256:881b53d6f75f69bdbc1b5b10fc2f1361717c19054143b3a8529fb5c32061a50e",
+          "ghcr.io/github/github-mcp-server@sha256:0ba840c46a237879c8300e7fddb0b6347f20e029ccb9cbe2ce4a943daa1ff560",
         ],
         env: { GITHUB_PERSONAL_ACCESS_TOKEN: "$" + "{GITHUB_PERSONAL_ACCESS_TOKEN}" },
       },

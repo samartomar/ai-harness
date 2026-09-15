@@ -218,7 +218,7 @@ requirement.
 
 AIH uses the same collection command with `--catalog aih` and an exact Core
 checkout. Its preparer materializes the three delivered packs, generated usage
-hook, and six MCP configuration declarations outside the checkout. Copied pack
+hook, and seven MCP configuration declarations outside the checkout. Copied pack
 files must match the pinned Git objects. Configuration scans do not cover a
 hosted MCP service's private implementation. Operational temporary material is
 removed after verification, including failed attempts.
@@ -232,11 +232,15 @@ tree; scanning the ordinary repository checkout does not cover these declaration
 This preparation does not sign, publish, or qualify evidence.
 
 The scanned Core commit and the final packaging commit are distinct identities.
-An evidence-only packaging change can retain a report only when freshly generated
-materials match: package version, compiler inputs, asset identities, component
-files, and generated content. The original scanned commit remains in the report.
-A changed pack, hook, MCP declaration, or compiler input requires new matching
-evidence; changing only the evidence records does not renew report dates.
+An existing Scanner publication can be retained only when authenticated
+re-preparation proves that the generated requests, component files and scanned
+content are unchanged. The original scanned commit, findings and dates remain
+in the report. The wrapper and compiler bindings must be derived again for the
+current package version and declarations. A version change therefore requires
+matching Catalog qualifications even when the underlying scan can be retained.
+Changed scanned material requires new matching evidence. Release checks reject
+evidence that belongs to another package release; repackaging never renews its
+original dates.
 
 AIH scan coverage and Catalog qualification have different scopes. Pack
 qualification covers the declared pack files and manifest. MCP qualification
@@ -378,6 +382,13 @@ nor those raw files; it validates protected machine-local receipts. Unrelated
 source trust additions do not invalidate an accepted source. Changes to its
 applicable signer scope or publisher policy require re-verification.
 
+On Windows, local-receipt initialization uses direct .NET ACL constructors
+without PowerShell module autoload. Core still requires the current user's
+ownership, protected inheritance, and allow rules restricted to that user's SID;
+each ACL process has a 15-second deadline. The native regression in
+`tests/org-policy/workbench/source-data-local-receipt-acl.test.ts` initializes
+with module loading disabled and verifies refusal after actual ACL tampering.
+
 Saved policies retain their exact source revisions and content pins. A new
 revision does not silently move a saved selection. Back up the signed snapshots,
 referenced proof files, exact source material, and public trust configuration.
@@ -394,10 +405,11 @@ declaration from commit `974d940a1c5344210874150b98ff0d2c861fab6a` (v4.9.0). Its
 files. A literal reviewed digest binds the complete snapshot, including component
 metadata and file references. Snapshot validation happens on first preparation.
 
-Use the existing Source selector for `source:ponytail` and the Type selector to
-browse Skills, Profiles, Hooks, or MCP. The main Ponytail skill and optional
+Ponytail is omitted from the Workbench source picker, catalog browsing, and
+starting points. Its packaged records remain available to preserve existing saved
+policy pins and Core consumption. The main Ponytail skill and optional
 methodology profile share one methodology key; the five auxiliary skills are
-additive. Applying the methodology template selects its pinned skill closure.
+additive. Existing methodology selections retain their pinned skill closure.
 Hook and MCP requests must be recorded explicitly and have separate counts from
 selected controls. They never become implicit template dependencies.
 
@@ -410,7 +422,8 @@ support, a locked dependency closure, organization approval, or scanner evidence
 The root upstream npm package does not include the private MCP subtree, which has
 no dependency lock. A future Core runtime adapter would need an exact acquisition
 source, independently locked dependencies, and its own reviewed installation and
-activation contracts. The Workbench currently records pinned requests only.
+activation contracts. Historical Workbench hook and MCP records remain pinned
+requests only.
 
 File references identify covered source bytes. In particular, the gain skill's
 benchmark files are supporting material, not an installation or execution list.

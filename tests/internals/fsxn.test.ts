@@ -918,6 +918,7 @@ describe("FsTransaction", () => {
         path: target,
         contents: "generated",
         backup,
+        backupSha256: createHash("sha256").update("original").digest("hex"),
         created: false,
         parentGuard: { directories: [{ path: parent, dev: stats.dev, ino: stats.ino }] },
       },
@@ -959,6 +960,7 @@ describe("FsTransaction", () => {
         path: target,
         contents: "generated",
         backup,
+        backupSha256: createHash("sha256").update("original").digest("hex"),
         created: false,
         parentGuard: { directories: [{ path: parent, dev: stats.dev, ino: stats.ino }] },
       },
@@ -1005,6 +1007,51 @@ describe("FsTransaction", () => {
     expect(preserved).toEqual([target]);
     expect(readFileSync(target, "utf8")).toBe("operator edit\n");
     expect(readFileSync(backup, "utf8")).toBe("before\n");
+  });
+
+  it.each(["changed", "removed"])(
+    "preserves the live file when its rollback backup is %s",
+    (change) => {
+      const target = join(dir, "managed.json");
+      const second = join(dir, "second.json");
+      writeFileSync(target, "original");
+      fsEvents.afterTempWrite = (path) => {
+        if (path !== `${second}.aih.tmp`) return;
+        if (change === "changed") writeFileSync(`${target}.aih.bak`, "changed backup");
+        else rmSync(`${target}.aih.bak`);
+        throw new Error("later write failed");
+      };
+      const transaction = new FsTransaction();
+      transaction.stage(target, "generated", undefined, undefined, { root: dir });
+      transaction.stage(second, "second", undefined, undefined, { root: dir });
+
+      expect(() => transaction.commit()).toThrow(/preserved concurrent changes/);
+      expect(readFileSync(target, "utf8")).toBe("generated");
+      if (change === "changed")
+        expect(readFileSync(`${target}.aih.bak`, "utf8")).toBe("changed backup");
+      expect(existsSync(second)).toBe(false);
+    },
+  );
+
+  it("refuses a backup changed after rollback has read its original bytes", () => {
+    const target = join(dir, "managed.json");
+    const backup = `${target}.aih.bak`;
+    writeFileSync(target, "generated");
+    writeFileSync(backup, "original");
+    fsEvents.afterRollbackTempWrite = () => writeFileSync(backup, "later change");
+    const preserved = rollbackAppliedWrites([
+      {
+        path: target,
+        contents: "generated",
+        backup,
+        backupSha256: createHash("sha256").update("original").digest("hex"),
+        created: false,
+      },
+    ]);
+    expect(preserved).toEqual([target]);
+    expect(readFileSync(target, "utf8")).toBe("generated");
+    expect(readFileSync(backup, "utf8")).toBe("later change");
+    expect(existsSync(`${target}.aih.rollback.tmp`)).toBe(false);
   });
 
   it("dedupes repeated writes to one target so rollback restores the ORIGINAL", () => {
@@ -1394,10 +1441,13 @@ describe("FsTransaction — bounded property model", () => {
           });
 
           const preserved = rollbackAppliedWrites(
-            applied.map(({ path, generated, backup, existed }) => ({
+            applied.map(({ path, initial, generated, backup, existed }) => ({
               path,
               contents: generated,
               backup: existed ? backup : undefined,
+              backupSha256: existed
+                ? createHash("sha256").update(initial).digest("hex")
+                : undefined,
               created: !existed,
             })),
           );
@@ -1597,6 +1647,83 @@ describe("FsTransaction — removals (aih prune)", () => {
 
     expect(() => transaction.commit()).toThrow(/both asserts and mutates.*ownership\.json/i);
     expect(readFileSync(authority, "utf8")).toBe("owned bytes\n");
+  });
+});
+
+describe("FsTransaction — read-only absence assertions", () => {
+  it("does not create missing parents of an asserted-absent path", () => {
+    const absent = join(dir, "missing-parent", "alternate.jsonc");
+    const transaction = new FsTransaction();
+    transaction.stageAbsenceAssertion(absent, "alternate config must remain absent", dir);
+    expect(transaction.commit()).toEqual({ written: [], backups: [], removed: [] });
+    expect(existsSync(dirname(absent))).toBe(false);
+  });
+  it("commits without creating the asserted path", () => {
+    const absent = join(dir, "alternate.jsonc");
+    const transaction = new FsTransaction();
+    transaction.stageAbsenceAssertion(absent, "alternate config must remain absent", dir);
+    const written = join(dir, "generated.json");
+    transaction.stage(written, "generated\n", undefined, undefined, { root: dir });
+    expect(transaction.commit().written).toEqual([written]);
+    expect(existsSync(absent)).toBe(false);
+  });
+
+  it.each(["file", "directory", "symlink"])(
+    "refuses %s occupancy without following or removing it",
+    (kind) => {
+      const absent = join(dir, "alternate.jsonc");
+      const transaction = new FsTransaction();
+      transaction.stageAbsenceAssertion(absent, "alternate config must remain absent", dir);
+      const generated = join(dir, "generated.json");
+      transaction.stage(generated, "generated\n", undefined, undefined, { root: dir });
+      if (kind === "file") writeFileSync(absent, "operator\n");
+      else if (kind === "directory") mkdirSync(absent);
+      else {
+        const target = join(dir, "operator-directory");
+        mkdirSync(target);
+        symlinkSync(target, absent, process.platform === "win32" ? "junction" : "dir");
+      }
+      expect(() => transaction.commit()).toThrow(/must remain absent/);
+      expect(existsSync(generated)).toBe(false);
+      expect(lstatSync(absent)).toBeDefined();
+    },
+  );
+
+  it("rolls back writes when an asserted-absent path appears during commit", () => {
+    const absent = join(dir, "alternate.jsonc");
+    const generated = join(dir, "generated.json");
+    const transaction = new FsTransaction();
+    transaction.stageAbsenceAssertion(absent, "alternate config must remain absent", dir);
+    transaction.stage(generated, "generated\n", undefined, undefined, { root: dir });
+    fsEvents.afterRename = (to) => {
+      if (to === generated) writeFileSync(absent, "operator\n");
+    };
+    expect(() => transaction.commit()).toThrow(/must remain absent/);
+    expect(existsSync(generated)).toBe(false);
+    expect(readFileSync(absent, "utf8")).toBe("operator\n");
+  });
+
+  it("refuses a transaction that asserts absence and writes that same path", () => {
+    const absent = join(dir, "alternate.jsonc");
+    const transaction = new FsTransaction();
+    transaction.stageAbsenceAssertion(absent, "alternate config must remain absent", dir);
+    transaction.stage(absent, "generated\n");
+    expect(() => transaction.commit()).toThrow(/both asserts and mutates/);
+    expect(existsSync(absent)).toBe(false);
+  });
+
+  it("retains contradictory content and absence pins instead of dropping either", () => {
+    const path = join(dir, "alternate.jsonc");
+    writeFileSync(path, "operator\n");
+    const transaction = new FsTransaction();
+    transaction.stageAbsenceAssertion(path, "alternate config must remain absent", dir);
+    transaction.stageAssertion(
+      path,
+      createHash("sha256").update("operator\n").digest("hex"),
+      "content pin",
+      dir,
+    );
+    expect(() => transaction.commit()).toThrow(/must remain absent/);
   });
 });
 

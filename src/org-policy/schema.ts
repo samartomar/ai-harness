@@ -4,10 +4,12 @@ import { join, resolve } from "node:path";
 import { z } from "zod";
 import { parseNativeStrictJsonObjectV1 } from "../contract/native-strict-json-object-v1.js";
 import { AihError } from "../errors.js";
+import { GOVERNED_MCP_TARGETS } from "../internals/cli-registry.js";
 import { SUPPORTED_CLIS } from "../internals/clis.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
 import type { PlanContext } from "../internals/plan.js";
 import { STRIX_INVOCATION_LIMITS } from "../security/detectors/types.js";
+import { DEFAULT_DEVELOPER_TOOL_IDS } from "../tools/default-tool-selection.js";
 import { PolicyAuthorityReceiptV3Schema } from "./authority-v3.js";
 import { AIH_ORG_POLICY_FILE } from "./constants.js";
 import {
@@ -30,6 +32,48 @@ import {
 } from "./workbench/contracts.js";
 
 const PostureSchema = z.enum(["vibe", "enterprise"]);
+
+const DeveloperToolIdSchema = z.enum(DEFAULT_DEVELOPER_TOOL_IDS);
+
+/**
+ * V3 preserves a deliberate developer-tool decision separately from the
+ * catalog authoring envelope. `selected` is intentionally optional: absence
+ * is the legacy-unspecified form, while an empty array is an explicit choice.
+ */
+export const DeveloperToolSelectionV1Schema = z
+  .object({
+    selected: z.array(DeveloperToolIdSchema).max(DEFAULT_DEVELOPER_TOOL_IDS.length).optional(),
+    excluded: z.array(DeveloperToolIdSchema).max(DEFAULT_DEVELOPER_TOOL_IDS.length).optional(),
+  })
+  .strict()
+  .superRefine((selection, ctx) => {
+    for (const [field, values] of [
+      ["selected", selection.selected],
+      ["excluded", selection.excluded],
+    ] as const) {
+      if (values === undefined) continue;
+      const seen = new Set<string>();
+      for (const [index, value] of values.entries()) {
+        if (seen.has(value))
+          ctx.addIssue({
+            code: "custom",
+            path: [field, index],
+            message: `developerTools.${field} contains a duplicate id: ${value}`,
+          });
+        seen.add(value);
+      }
+    }
+    if (selection.selected === undefined || selection.excluded === undefined) return;
+    const excluded = new Set(selection.excluded);
+    for (const [index, value] of selection.selected.entries()) {
+      if (excluded.has(value))
+        ctx.addIssue({
+          code: "custom",
+          path: ["selected", index],
+          message: `developerTools.selected conflicts with developerTools.excluded: ${value}`,
+        });
+    }
+  });
 
 /** Bounded before decoding or parsing, including explicitly selected policy bundles. */
 export const MAX_ORG_POLICY_BYTES = WORKBENCH_MAX_POLICY_BYTES;
@@ -315,7 +359,7 @@ const SupportedCliListSchema = z
       });
     }
   });
-const PolicyTargetSchema = z.enum(["claude", "codex", "kiro"]);
+const PolicyTargetSchema = z.enum(GOVERNED_MCP_TARGETS);
 
 export function enterpriseSupportedClisJsonSchemaConstraint(): Record<string, unknown> {
   // JSON Schema conditional keyword; computed so this helper result is not a thenable.
@@ -535,7 +579,7 @@ const PolicyCandidateSchema = z
     capabilities: z.array(SafePolicyTextSchema).max(20).default([]),
     risks: z.array(SafePolicyTextSchema).max(20).default([]),
     source: CandidateSourceSchema,
-    targets: z.array(PolicyTargetSchema).min(1).max(3),
+    targets: z.array(PolicyTargetSchema).min(1).max(GOVERNED_MCP_TARGETS.length),
     projector: z.enum([
       "mcp-managed-settings",
       "hook-managed-settings",
@@ -572,16 +616,6 @@ const PolicyCandidateSchema = z
       ctx.addIssue({
         code: "custom",
         message: "built-in MCP candidate id must exactly match source.server",
-      });
-    }
-    if (
-      candidate.kind === "mcp" &&
-      candidate.targets.some((target) => target !== "claude" && target !== "kiro")
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        message:
-          "MCP managed-settings candidates support Claude targets only; Kiro workspace distribution is also supported",
       });
     }
     if (
@@ -641,7 +675,7 @@ const PolicyActivationSchema = z
   .object({
     candidate: SafePolicyIdentifierSchema,
     state: z.enum(["active", "disabled"]),
-    targets: z.array(PolicyTargetSchema).min(1).max(3),
+    targets: z.array(PolicyTargetSchema).min(1).max(GOVERNED_MCP_TARGETS.length),
     clarification: SafePolicyTextSchema.optional(),
   })
   .strict();
@@ -677,7 +711,7 @@ export const PolicyApprovalSchema = z
      * can never satisfy a waivable evidence gap; when present it is signed.
      */
     clarification: SafePolicyTextSchema.optional(),
-    scope: z.array(PolicyTargetSchema).min(1).max(3),
+    scope: z.array(PolicyTargetSchema).min(1).max(GOVERNED_MCP_TARGETS.length),
     notBefore: IsoTimestampSchema,
     expiresAt: IsoTimestampSchema,
     github: z
@@ -1175,9 +1209,9 @@ const GovernedPolicyGovernanceSchema = z
     /** Report-only external framework curation; never feeds an installer or projector. */
     externalCuration: z.array(ExternalFrameworkCurationSchema).default([]),
     /**
-     * Requested intent over externally-owned inventory, recorded before its
-     * audit evidence exists. Recording is not enforcement and never feeds an
-     * installer or projector.
+     * Requested intent over externally-owned inventory. Recording grants no
+     * permission: governed lifecycle consumers materialize a selection only
+     * after the applicable policy and source-evidence checks succeed.
      */
     externalSelections: z.array(ExternalFrameworkSelectionSchema).default([]),
     /**
@@ -1666,6 +1700,7 @@ const OrgPolicyV3Schema = OrgPolicyBaseSchema.extend({
   minimumCoreVersion: z.literal(WORKBENCH_MINIMUM_CORE_VERSION),
   authoringSelections: AuthoringSelectionsV1Schema,
   authoringSources: WorkbenchAuthoringSourcesV1Schema.optional(),
+  developerTools: DeveloperToolSelectionV1Schema.optional(),
 });
 
 /** V2 remains an exact legacy contract; V3 adds one required, strict authoring envelope. */
@@ -1674,6 +1709,7 @@ export const OrgPolicySchema = z
   .superRefine(refineOrgPolicy);
 type ParsedOrgPolicy = z.infer<typeof OrgPolicySchema>;
 export type AuthoringSelectionsV1 = z.infer<typeof AuthoringSelectionsV1Schema>;
+export type DeveloperToolSelectionV1 = z.infer<typeof DeveloperToolSelectionV1Schema>;
 type NarrowGovernance<T> = T extends unknown
   ? Omit<T, "governance"> & { governance?: z.infer<typeof GovernedPolicyGovernanceSchema> }
   : never;

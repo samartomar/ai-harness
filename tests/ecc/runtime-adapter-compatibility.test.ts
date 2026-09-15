@@ -1,7 +1,10 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
+import { canonicalStrictJsonBytesV1 } from "../../src/contract/strict-json-v1.js";
 import {
   assertHistoricalEccAdapterCompatibilityV1,
   currentEccRuntimeAdapterCompatibilityV1,
+  type EccRuntimeAdapterCompatibilityV1,
 } from "../../src/ecc/runtime-adapter-compatibility.js";
 
 const DIGEST = `sha256:${"a".repeat(64)}`;
@@ -19,6 +22,66 @@ const COMPONENTS = [
 ] as const;
 
 describe("historical ECC runtime adapter compatibility", () => {
+  it("accepts the exact legacy command closure while retaining every script library refusal", () => {
+    const components = [
+      {
+        id: "baseline:commands",
+        kind: "baseline",
+        files: [
+          { path: "commands/audit.md", digest: DIGEST },
+          { path: "scripts/harness-audit.js", digest: DIGEST },
+          { path: "scripts/lib/skill-evolution/health.js", digest: DIGEST },
+        ],
+      },
+    ] as const;
+    const current = currentEccRuntimeAdapterCompatibilityV1(components);
+    const outcomes = current.outcomes.map((outcome) => {
+      if (outcome.target === "codex" && outcome.path === "commands/audit.md") {
+        return { ...outcome, relative: ".codex/commands/audit.md" };
+      }
+      if (outcome.target !== "kiro" && outcome.path.startsWith("scripts/")) {
+        const {
+          scope: _scope,
+          relative: _relative,
+          ...identity
+        } = outcome as typeof outcome & {
+          scope?: string;
+          relative?: string;
+        };
+        return {
+          ...identity,
+          state: "refused" as const,
+          reason: "unowned-destination",
+        };
+      }
+      return outcome;
+    });
+    const contract = {
+      contractVersion: current.contractVersion,
+      relationContract: "compiled-requires-members-and-riders/v1",
+      targets: [...current.targets],
+      outcomes,
+    };
+    const legacy: EccRuntimeAdapterCompatibilityV1 = {
+      contractVersion: current.contractVersion,
+      contractDigest: `sha256:${createHash("sha256")
+        .update(canonicalStrictJsonBytesV1(contract))
+        .digest("hex")}`,
+      targets: current.targets,
+      outcomes,
+    };
+    expect(() => assertHistoricalEccAdapterCompatibilityV1(legacy, components)).not.toThrow();
+    const tampered = {
+      ...legacy,
+      outcomes: legacy.outcomes.map((outcome) =>
+        outcome.path.startsWith("scripts/lib/") && outcome.state === "refused"
+          ? { ...outcome, reason: "different-refusal" }
+          : outcome,
+      ),
+    };
+    expect(() => assertHistoricalEccAdapterCompatibilityV1(tampered, components)).toThrow();
+  });
+
   it("binds the proof to every sealed regular file and shipped target outcome", () => {
     const proof = currentEccRuntimeAdapterCompatibilityV1(COMPONENTS);
     expect(proof.outcomes).toHaveLength(COMPONENTS.length * 6);
@@ -50,7 +113,11 @@ describe("historical ECC runtime adapter compatibility", () => {
     for (const path of ["C:/outside/SKILL.md", "skills/x:stream", "skills/../x/SKILL.md"]) {
       expect(() =>
         currentEccRuntimeAdapterCompatibilityV1([
-          { id: "skill:renamed", kind: "skill", files: [{ path, digest: DIGEST }] },
+          {
+            id: "skill:renamed",
+            kind: "skill",
+            files: [{ path, digest: DIGEST }],
+          },
         ]),
       ).toThrow(/invalid historical ECC source file/i);
     }
@@ -119,7 +186,10 @@ describe("historical ECC runtime adapter compatibility", () => {
   it("refuses a proof generated for a different non-probe regular file", () => {
     const proof = currentEccRuntimeAdapterCompatibilityV1(COMPONENTS);
     const changed = [
-      { ...COMPONENTS[0], files: [{ path: "skills/changed/SKILL.md", digest: DIGEST }] },
+      {
+        ...COMPONENTS[0],
+        files: [{ path: "skills/changed/SKILL.md", digest: DIGEST }],
+      },
     ];
     expect(() => assertHistoricalEccAdapterCompatibilityV1(proof, changed)).toThrow(
       /adapter compatibility/i,

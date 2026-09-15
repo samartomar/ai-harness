@@ -429,7 +429,7 @@ Keep this table as a navigation index: do not add flag-level behavior or workflo
 | [`aih cleanup`](docs/commands.md#aih-cleanup) | Preview and remove framework-contaminated Claude user-scope surfaces with backup and rollback. |
 | [`aih heal`](docs/commands.md#aih-heal) | Diagnose and repair the broken runtime behind any TLS-intercepting proxy — corporate trust, npm, PATH, MCP pre-flight. |
 | [`aih tools`](docs/commands.md#aih-tools) | Install the agent shell tools the harness leans on (`rg`/`fd`/`jq`, `ast-grep`, `gh`, …) through the platform package manager. |
-| [`aih ready`](docs/commands.md#aih-ready) | Grade a blocker-aware readiness verdict: can a developer start work with an AI agent here, now? |
+| [`aih ready`](docs/commands.md#aih-ready) | Check host and selected-client configuration prerequisites, with blockers and unverified MCP capabilities visible. |
 | [`aih session-guard`](docs/commands.md#aih-session-guard) | Inspect session/action text offline for secret-like values and dangerous local actions. |
 | [`aih live`](docs/commands.md#aih-live) | Stream bounded progress from one explicitly selected local Codex, Claude, or opt-in non-read-only Kimi invocation. |
 | [`aih hardware`](docs/commands.md#aih-hardware) | Profile CPU/RAM/GPU and emit tuned Ollama/llama.cpp settings. |
@@ -449,7 +449,8 @@ still initialize under the vendor CLI. Aih does not attest those customizations 
 
 | Command | What it does |
 | --- | --- |
-| [`aih init`](docs/commands.md#aih-init) | Initialize a repo in one pass: profile + superpowers + bootstrap-ai + scaffold + contract + secrets + guardrails + mcp + sandbox + usage. |
+| [`aih init`](docs/commands.md#aih-init) | Initialize a repo in one pass: profile + superpowers + bootstrap-ai + scaffold + contract + secrets + guardrails + mcp + sandbox + usage, then preview or reconcile the effective developer-tool selection. |
+| [`aih developer-tools`](docs/commands.md#aih-developer-tools) | Preview or reconcile the effective developer-tool lifecycle; `--apply` sets up selected tools and can remove unchanged receipt-owned integration for policy exclusions. Token Optimizer requires explicit license acceptance. |
 | [`aih profile`](docs/commands.md#aih-profile) | Detect the repo's stack recursively and synthesize Cursor stack rules (`.cursor/rules/*.mdc`). |
 | [`aih change-profile`](docs/commands.md#aih-change-profile) | Deterministically classify one explicit bounded change-facts JSON file without Git/worktree discovery. |
 | [`aih scaffold`](docs/commands.md#aih-scaffold) | Scaffold repo hygiene — secret deny-list, pre-commit hook, `.gitignore` entries; `--canon legacy` adds the full context-doc family. |

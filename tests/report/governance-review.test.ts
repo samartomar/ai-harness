@@ -123,6 +123,74 @@ const RECEIPTS = {
 } as const;
 
 describe("governanceReviewView", () => {
+  it("reports each requested native MCP receipt without hiding a missing host", () => {
+    const original = candidate("code-review-graph");
+    const policy = {
+      ...effective([]),
+      candidates: [
+        {
+          ...original,
+          effective: true,
+          projection: {
+            ...original.projection,
+            requestedTargets: ["claude", "codex", "cursor"],
+            supportedTargets: ["claude", "codex", "cursor"],
+            availableTargets: ["claude", "codex", "cursor"],
+          },
+        },
+      ],
+    };
+    const receipts = {
+      ...RECEIPTS,
+      mcp: { state: "clean" as const },
+      native: { codex: { state: "clean" as const }, cursor: { state: "missing" as const } },
+    };
+    const view = governanceReviewView({
+      effective: policy,
+      receipts,
+      usage: { events: [], malformed: 0, unknownKind: 0 },
+    });
+    expect(view.data).toMatchObject({
+      subjects: [
+        {
+          materialization: {
+            state: "multiple",
+            targets: { claude: "clean", codex: "clean", cursor: "missing" },
+          },
+        },
+      ],
+    });
+  });
+
+  it("reports an unavailable receipt for an unobserved requested native host", () => {
+    const original = candidate("code-review-graph");
+    const policy = {
+      ...effective([]),
+      candidates: [
+        {
+          ...original,
+          effective: true,
+          projection: { ...original.projection, requestedTargets: ["codex"] },
+        },
+      ],
+    };
+    const view = governanceReviewView({
+      effective: policy,
+      receipts: RECEIPTS,
+      usage: { events: [], malformed: 0, unknownKind: 0 },
+    });
+    expect(view.data).toMatchObject({
+      subjects: [
+        {
+          materialization: {
+            state: "unavailable",
+            targets: { codex: "unavailable" },
+          },
+        },
+      ],
+    });
+  });
+
   it("surfaces observed npm lifecycle as read-only state rather than a projected subject", () => {
     const policy = effective(["context7"]);
     policy.npmPackageLifecycle = [

@@ -9,6 +9,12 @@ import {
   readOrgPolicy,
 } from "../org-policy/schema.js";
 import { type RepoStack, scanRepo } from "../profile/scan.js";
+import { defaultNativeMcpServers } from "./default-native-runtime.js";
+import {
+  type DefaultDeveloperMcpProjection,
+  projectDefaultDeveloperMcpSelection,
+} from "./default-tool-projection.js";
+import { optionalMarkItDownMcpServer } from "./markitdown.js";
 import {
   DEFAULT_GITHUB_MCP_URL,
   type GithubMcpAuth,
@@ -19,6 +25,8 @@ import {
 export interface PolicyAwareMcpCatalog {
   policy?: OrgPolicy;
   servers?: Record<string, McpServer>;
+  excludedDeveloperToolServers?: Record<string, McpServer>;
+  developerTools?: DefaultDeveloperMcpProjection["selection"];
   githubHost?: string;
   error?: unknown;
   errorSource?: "org-policy" | "catalog";
@@ -106,6 +114,8 @@ export function policyAwareMcpCatalog(
     stack?: RepoStack;
     includeHostedGitHub?: boolean;
     includeDisabledServers?: boolean;
+    /** Read-only inventory/attestation of known recipes, not a setup selection. */
+    includeOptionalServers?: boolean;
     /** A policy verified by the caller's one authority observation. */
     verifiedPolicy?: { policy?: OrgPolicy };
   },
@@ -119,7 +129,16 @@ export function policyAwareMcpCatalog(
     const stack = opts.stack ?? scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
     const includeDisabled = opts.includeDisabledServers === true;
     const githubDisabled = policyResult.policy?.mcp?.disabledServers?.includes("github") ?? false;
+    const requested = new Set(policyResult.policy?.mcp?.allowedServers ?? []);
+    const githubSelected =
+      opts.includeOptionalServers === true ||
+      opts.selfHost === true ||
+      opts.includeHostedGitHub === true ||
+      opts.githubAuth === "token" ||
+      requested.has("github") ||
+      policyResult.policy?.mcp?.githubHost !== undefined;
     const hostedGithub =
+      githubSelected &&
       opts.selfHost !== true &&
       opts.includeHostedGitHub !== false &&
       (includeDisabled || !githubDisabled);
@@ -146,11 +165,28 @@ export function policyAwareMcpCatalog(
       githubIncumbent: hostedGithub
         ? githubIsIncumbent(hostPolicyResult.policy, githubHost)
         : undefined,
+      localRuntimeServers: defaultNativeMcpServers(ctx),
     });
-    const servers = includeDisabled
+    const optionalExcluded: Record<string, McpServer> = {};
+    if (!githubSelected && rawServers.github !== undefined) {
+      optionalExcluded.github = rawServers.github;
+      delete rawServers.github;
+    }
+    const markitdown = optionalMarkItDownMcpServer();
+    if (opts.includeOptionalServers === true || requested.has("markitdown-mcp"))
+      rawServers["markitdown-mcp"] = markitdown;
+    else optionalExcluded["markitdown-mcp"] = markitdown;
+    const enabledServers = includeDisabled
       ? rawServers
       : removeDisabledServers(rawServers, policyResult.policy);
-    return { policy: policyResult.policy, servers, githubHost };
+    const projected = projectDefaultDeveloperMcpSelection(enabledServers, policyResult.policy);
+    return {
+      policy: policyResult.policy,
+      servers: projected.servers,
+      excludedDeveloperToolServers: { ...projected.excludedServers, ...optionalExcluded },
+      developerTools: projected.selection,
+      githubHost,
+    };
   } catch (error) {
     return { policy: policyResult.policy, error, errorSource: "catalog" };
   }

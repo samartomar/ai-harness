@@ -6,6 +6,147 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Add MarkItDown CLI to default developer-tool setup, with a pinned local-document runtime,
+  conversion verification and persistent policy opt-outs. Its MCP adapter is separately optional.
+- Refresh Playwright MCP to 0.0.81 and the optional self-hosted GitHub MCP image to v1.12.1
+  at its verified immutable digest. GitHub MCP now requires an explicit selection.
+- Add `aih developer-tools` for the policy-selected default developer-tool lifecycle, and run the
+  same lifecycle from ordinary `aih init`. The JSON result reports effective selection and per-tool
+  lifecycle state; `--apply` provisions selected tools and reconciles policy exclusions only through
+  unchanged receipt-owned integration. Token Optimizer remains blocked until
+  `--accept-token-optimizer-license` is supplied, with `--token-optimizer-profile quiet|balanced`
+  selecting its setup profile.
+- Register governed Codex agents as native project roles and expose complete
+  qualified command bundles through native workflow skills, with owned
+  configuration, runtime boundaries and conservative rollback.
+- Explain governed ECC selection provenance, exclusions, planned discovery paths
+  and separate installation owners through the existing preview and reports.
+
+- Bind an exact policy source and client set to a canonical project root with
+  `policy bind`, review changes through `policy rebind`, and retain a fail-closed
+  revoked assignment with `policy revoke`. Reconcile governed required content
+  through `policy project` and route native startup to receipt-owned guidance.
+- Report required policy content, ownership drift and binding conflicts beside
+  readiness and HTML results, keeping installed guidance separate from native
+  loading and enforced behavior. Document independent adopter delivery and the
+  required/optional content ownership contract.
+- Project authored organization command rules into Claude's native project
+  permissions with entry ownership, preserving custom rules and hooks during
+  updates and withdrawal. Keep other clients advisory and native refusal
+  verification separate from generated configuration.
+
+- Show explicitly selected OpenCode Linux runtime observations beside readiness
+  preflight. Recheck current material bindings and expiry, report exercised
+  operations, restart and specific denials separately, and retain unrelated
+  required-capability and policy blockers.
+- Configure a per-root OpenCode Linux sandbox launch with persisted non-secret
+  bindings and explicit launches through external bubblewrap and seccomp
+  confinement. Keep worktree state separate and retain the selected policy
+  across fresh processes; setup remains distinct from runtime acceptance.
+
+### Fixed
+
+- Prune ECC files only through recorded ownership and matching content digests, preserving
+  unreceipted or modified files and removing the automatic upstream-uninstaller fallback.
+
+- Require explicit ECC hook/runtime consent across direct and Codex materialization,
+  preview and reconciliation; Core and Full content profiles do not supply that consent.
+  Keep governed runtime exclusions and consult-only boundaries intact.
+- Preserve validated scoped MCP environment values in deterministic Codex TOML projection.
+- Support the pinned Token Optimizer 5.13.14 Codex quiet and balanced hooks,
+  keeping approved commands bound to the authenticated source and preserving
+  receipt ownership, custom hooks and policy exclusions.
+- Pin Commander to the maintained Node 20-compatible 14.0.3 release so Core's
+  runtime dependency agrees with its advertised Node floor and existing test matrix.
+- Restore effective ECC selections when importing an exactly qualified source
+  into Workbench. Bind components to the verified local descriptor and preserve
+  explicit organization overrides and historical destination authority.
+- Keep one governed Codex skill projection in `.agents/skills/` during normal
+  setup. Reconcile unchanged receipt-owned duplicate projections while preserving
+  edited/custom content and unrelated client settings. Route generated governed
+  guidance to the project selection instead of unselected broad baseline rules.
+
+- Emit Claude's sandbox egress list at `sandbox.network.allowedDomains` and
+  explain the supported settings deployment needed before the generated policy
+  takes effect. Distinguish Bash sandboxing from local MCP and container boundaries.
+- Remove an obsolete sandbox allowlist matching the prior generated defaults
+  during reapplication, with a check against changed settings bytes; preserve
+  customized legacy values and report the remaining review step.
+- Keep native MCP runtime observations separate from preflight, with an explicit
+  Codex fixture operation/restart probe and stale detection for changed material
+  bindings or expired observations.
+- Clarify enterprise policy continuity through administrator-managed launch
+  environments, with explicit policy selection and fresh-process validation
+  before project changes.
+- Explain the exact organization evidence required before Enterprise ECC or
+  Superpowers installation, including when packaged publisher evidence passes.
+- Keep repository bootstrap's memory graph admission and indexing ordered before
+  publishing client setup changes, with live index checks before marker reuse.
+- Derive managed codebase-memory runtime and cache roots from the canonical
+  repository root and memory pin, with `AIH_REPO_AI_TOOLS_HOME` preserving a
+  custom managed cache parent across clients. Keep existing toolset/worktree
+  installations available and use a new generation when the memory pin changes.
+- Separate MCP configuration and launcher prerequisites from native runtime
+  acceptance in readiness reports. Include registered native client paths, retain
+  unverified capabilities, and distinguish explicit Codex requirements from
+  optional or unspecified servers without starting configured third-party tools.
+
+## [Core 0.6.2] - 2026-09-11
+
+### Changed
+
+- Retain the Core 0.6 release line by explicit owner direction for this cut.
+  The merged changes remain minor-class and the standard version calculation
+  yields 0.7.0. This one-time numbering exception does not describe a patch-only
+  change; review the new native outputs and recovery requirements before adoption.
+- Require an original-content `backupSha256` for overwrite restoration through
+  the exported `rollbackAppliedWrites` API. `FsTransaction` supplies the pin;
+  callers constructing `AppliedWrite` records must retain it before replacement.
+  Missing pins preserve live files and report incomplete recovery.
+
+### Added
+
+- Extend governed, receipt-owned MCP workspace configuration to Codex, Cursor,
+  Copilot CLI, OpenCode V1, and Kimi Code alongside the existing Claude and Kiro
+  projectors. Preserve exact historical policy/control bindings without extending
+  old approvals, and report ownership separately for every requested host.
+- Add explicit-base/head local CI verification through `npm run verify:local`,
+  reusing the hosted change classifier and applicable validation commands.
+
+### Fixed
+
+- Bind the nine eligible first-party Workbench qualifications to Core 0.6.2 and
+  its current declarations, preserving the original Scanner findings and dates,
+  all 427 other qualifications, and historical Catalog publisher policies.
+- Initialize Windows local-receipt ACLs without PowerShell module autoload,
+  preserving owner, inheritance, allowed-SID checks and the process deadline.
+  Bound local Windows verification to two workers by default.
+- Preserve the three built-in capability decisions and enterprise approval
+  requirements on the reviewed Core 0.7 line; unreviewed minor lines still fail
+  closed.
+- Verify original backup bytes before rollback, preserving live files and
+  reporting incomplete recovery when backup contents change or disappear.
+- Require successful native probes and actual tool-catalog evidence before
+  reporting host acceptance; failed and request-only probes cannot pass.
+- Remove Ponytail from Workbench catalog browsing and starting points while
+  preserving existing saved policy pins and Core consumption.
+- Report governed project MCP receipts at their native paths, with global
+  configuration shown separately and policy-aware remediation. Align ordinary
+  and governed environment references, route offline generation through every
+  selected CLI, and keep fallback-only mode distinct from disabling live servers.
+- Expose feature-specific CLI support and runtime requirements in wiring reports
+  and MCP plans. Detect Kimi Code configuration without treating legacy Kimi
+  directories as proof of a Kimi Code install, including `KIMI_CODE_HOME` support.
+- Keep registered provider-test edits in their provider verification lane while
+  retaining broader coverage for shared or unknown changes.
+- Correct Copilot CLI and Kimi Code MCP paths and host-specific environment
+  references; preserve unrelated native configuration during governed updates
+  and ownership-proven removal.
+- Align contribution and review instructions with change-scoped verification
+  and one consolidated independent review for authority or ownership changes.
+
 ## [Core 0.6.1] - 2026-09-09
 
 ### Fixed
@@ -3263,7 +3404,8 @@ GitHub but **never published to npm**; the first published release is 0.2.0.
   (npm + github-actions), private vulnerability reporting, `@claude` workflow gated
   to trusted authors, and GitHub Actions pinned to commit SHAs.
 
-[Unreleased]: https://github.com/samartomar/ai-harness/compare/v-core-0.6.1...HEAD
+[Unreleased]: https://github.com/samartomar/ai-harness/compare/v-core-0.6.2...HEAD
+[Core 0.6.2]: https://github.com/samartomar/ai-harness/compare/v-core-0.6.1...v-core-0.6.2
 [Core 0.6.1]: https://github.com/samartomar/ai-harness/compare/v-core-0.6.0...v-core-0.6.1
 [Core 0.6.0]: https://github.com/samartomar/ai-harness/compare/v-core-0.5.0...v-core-0.6.0
 [Core 0.5.0]: https://github.com/samartomar/ai-harness/compare/v-core-0.4.3...v-core-0.5.0

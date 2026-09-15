@@ -10,10 +10,24 @@ describe("reviewed Scanner publisher identities", () => {
     "3510a267916dbbe102e5d18094b0de5332aab02b",
     "68f15423725d3568f9ebabbfbad8309f47d06cd7",
     "6a39ac3134435b686181ec830e37d09d9d14ffa8",
+    "981d50f19ec8923974597de28c4c7b7acf684ded",
   ])("retains exact reviewed publisher %s", (commit) => {
     const publisher = scannerBaselinePublicationPublisherForLocatorV1(locator(commit));
     expect(publisher?.commit).toBe(commit);
     expect(Object.isFrozen(publisher)).toBe(true);
+  });
+  it("retains immutable dated renewal locators accepted by the publication verifier", () => {
+    const commit = "981d50f19ec8923974597de28c4c7b7acf684ded";
+    expect(
+      scannerBaselinePublicationPublisherForLocatorV1(
+        locator(commit).replace("/publication.json", "-r20260914/publication.json"),
+      )?.commit,
+    ).toBe(commit);
+    expect(
+      scannerBaselinePublicationPublisherForLocatorV1(
+        locator(commit).replace("/publication.json", "-rlatest/publication.json"),
+      ),
+    ).toBeUndefined();
   });
   it.each([
     locator("f".repeat(40)),

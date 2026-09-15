@@ -140,6 +140,9 @@ const approvedJsonSourceRoots = new Set([
 /** Provider import authority is narrower than the CI trigger scope above. */
 const NEUTRAL_PROVIDER_IMPORT_PATHS = [
   "src/contract/strict-json-v1.ts",
+  // Workbench contracts share the canonical MCP target vocabulary. This registry
+  // has only its schema dependency; it does not acquire or project target state.
+  "src/internals/cli-registry.ts",
   "src/org-policy/catalog-provider-types.ts",
   "src/org-policy/workbench/compiler-input.ts",
   "src/org-policy/workbench/contracts.ts",

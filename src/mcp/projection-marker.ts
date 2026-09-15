@@ -13,6 +13,8 @@ function isProjectionMarkerAction(action: Action): action is WriteAction {
     isRecord(action.json) &&
     (Object.hasOwn(action.json, "managedMcpProjection") ||
       Object.hasOwn(action.json, "kiroMcpProjection") ||
+      Object.hasOwn(action.json, "nativeMcpProjections") ||
+      action.removeJsonKeys?.nativeMcpProjections !== undefined ||
       action.removeJsonTopLevelKeys?.some(
         (key) => key === "managedMcpProjection" || key === "kiroMcpProjection",
       ) === true)
@@ -51,26 +53,54 @@ export function coalesceMcpProjectionMarkerActions(actions: readonly Action[]): 
     if (writes.length > 0 && removes)
       throw new Error(`MCP ownership action both writes and removes ${key}`);
   }
-  const json = Object.assign({}, ...selected.map((action) => action.json));
+  const native: Record<string, unknown> = {};
+  const nativeRemoves = [
+    ...new Set(selected.flatMap((action) => action.removeJsonKeys?.nativeMcpProjections ?? [])),
+  ];
+  for (const action of selected) {
+    const projections = (action.json as Record<string, unknown>).nativeMcpProjections;
+    if (!isRecord(projections)) continue;
+    for (const [target, receipt] of Object.entries(projections)) {
+      if (
+        Object.hasOwn(native, target) &&
+        JSON.stringify(native[target]) !== JSON.stringify(receipt)
+      )
+        throw new Error(`conflicting MCP ownership replacement for native target ${target}`);
+      if (nativeRemoves.includes(target))
+        throw new Error(`MCP ownership action both writes and removes native target ${target}`);
+      native[target] = receipt;
+    }
+  }
+  const json = Object.assign(
+    {},
+    ...selected.map((action) => action.json),
+    Object.keys(native).length ? { nativeMcpProjections: native } : {},
+  );
   const replaceJsonKeys = [...new Set(selected.flatMap((action) => action.replaceJsonKeys ?? []))];
   const removeJsonTopLevelKeys = [
     ...new Set(selected.flatMap((action) => action.removeJsonTopLevelKeys ?? [])),
   ];
   const coalesced: WriteAction = {
-    ...writeJson(AIH_CONFIG_FILE, json, "reconcile Claude and Kiro MCP projection ownership", {
+    ...writeJson(AIH_CONFIG_FILE, json, "reconcile MCP projection ownership", {
       merge: true,
+      ...(Object.keys(native).length
+        ? { replaceJsonChildKeys: { nativeMcpProjections: Object.keys(native) } }
+        : {}),
+      ...(nativeRemoves.length ? { removeJsonKeys: { nativeMcpProjections: nativeRemoves } } : {}),
+      ...(selected.some((action) => action.durable) ? { durable: true } : {}),
       ...(replaceJsonKeys.length === 0 ? {} : { replaceJsonKeys }),
       ...(removeJsonTopLevelKeys.length === 0 ? {} : { removeJsonTopLevelKeys }),
     }),
     expect: first.expect,
+    assertAbsentPaths: [...new Set(selected.flatMap((action) => action.assertAbsentPaths ?? []))],
   };
   const output: Action[] = [];
-  let inserted = false;
+  let remaining = selected.length;
   for (const action of actions) {
     if (!isProjectionMarkerAction(action)) output.push(action);
-    else if (!inserted) {
-      output.push(coalesced);
-      inserted = true;
+    else {
+      remaining -= 1;
+      if (remaining === 0) output.push(coalesced);
     }
   }
   return output;

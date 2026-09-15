@@ -7,7 +7,7 @@ import { defaultRunner, type Runner } from "../internals/proc.js";
 import shippedAcceptanceJson from "./scan-acceptance.json";
 import { type DimensionReport, inspectTree, type ScanSeverity } from "./scan-gate.js";
 
-export const SUPERPOWERS_ACCEPTANCE_COMMIT = "3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9";
+export const SUPERPOWERS_ACCEPTANCE_COMMIT = "b36e0829c6d0140e93cfef2ca599b1b07d4a7797";
 
 const SHA256_HEX = /^[0-9a-f]{64}$/;
 const SHA40 = /^[0-9a-f]{40}$/;

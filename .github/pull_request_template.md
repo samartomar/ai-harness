@@ -11,14 +11,14 @@
 
 ## Checklist
 
-- [ ] `npm run verify` passes
+- [ ] `npm run verify:local -- --base <ref> --head <ref>` passes (include working changes explicitly when needed); command, result, and hosted gaps are recorded
 - [ ] New/changed behavior has tests (unit tests are hermetic — injected `Runner`, no real process/network)
 - [ ] Honors the action model: no remote mutation; cloud/setup stays `doc`; local-only `exec` runs under `--apply`
 - [ ] Generated files stay deterministic (no dates/nonces in output) and dry-run-safe
 - [ ] No hardcoded secrets; docs updated if the command surface changed
 - [ ] Impact/review context was recorded; code-review-graph was used only when locally available and useful
-- [ ] Required review skills/agents ran before ready-for-review or merge (`code-review`, `security-review`, and any domain-specific reviewer) and their feedback is recorded in this PR
-- [ ] High-risk or release PRs include ECC specialized internal review evidence before merge
+- [ ] Risky changes received one independent Astra/low review covering correctness, security, and the touched domain; findings and disposition are recorded
+- [ ] Any additional reviewer addresses a named unresolved boundary; protected CI and applicable release acceptance remain required
 
 ## Notes for the reviewer
 

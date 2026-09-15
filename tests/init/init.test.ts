@@ -25,6 +25,7 @@ import { readIfExists } from "../../src/internals/fsxn.js";
 import { beginLine, endLine } from "../../src/internals/markers.js";
 import type { Action, DocAction, PlanContext, WriteAction } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
+import { policyBindCommand, policyRevokeCommand } from "../../src/org-policy/binding.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { usageRecorderScript } from "../../src/usage/capture.js";
 
@@ -66,6 +67,65 @@ function seedNodeRepo(): void {
   );
   writeFileSync(join(dir, "tsconfig.json"), "{}");
 }
+
+describe("governed init convergence", () => {
+  it("does not apply a prepared setup after the binding is revoked", async () => {
+    seedNodeRepo();
+    writeFileSync(
+      join(dir, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 2,
+        minimumPosture: "enterprise",
+        references: { repoContract: ".ai-context/project.json" },
+        governance: { supportedClis: ["claude"] },
+      }),
+    );
+    const bound = ctx({ apply: true, options: { cli: "claude", project: "harbor-node-api" } });
+    await executePlan(await policyBindCommand.plan(bound), bound);
+    const prepared = await command.plan(bound);
+    await executePlan(await policyRevokeCommand.plan(bound), bound);
+    await expect(executePlan(prepared, bound)).rejects.toThrow();
+    expect(
+      JSON.parse(readFileSync(join(dir, ".aih-config.json"), "utf8")).policyBinding.state,
+    ).toBe("revoked");
+    expect(existsSync(join(dir, "CLAUDE.md"))).toBe(false);
+  });
+  it("refuses an explicit client override outside the persisted binding before writing", async () => {
+    seedNodeRepo();
+    writeFileSync(
+      join(dir, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 2,
+        minimumPosture: "enterprise",
+        references: { repoContract: ".ai-context/project.json" },
+        governance: { supportedClis: ["claude", "kiro"] },
+      }),
+    );
+    const bound = ctx({ apply: true, options: { cli: "claude", project: "harbor-node-api" } });
+    await executePlan(await policyBindCommand.plan(bound), bound);
+    const before = readFileSync(join(dir, ".aih-config.json"));
+    await expect(command.plan(ctx({ apply: true, options: { cli: "kiro" } }))).rejects.toThrow(
+      /targets conflict/,
+    );
+    expect(readFileSync(join(dir, ".aih-config.json"))).toEqual(before);
+    expect(existsSync(join(dir, ".kiro"))).toBe(false);
+  });
+  it("does not reinstall an unselected Superpowers baseline or advertise an unrestricted ECC install", async () => {
+    seedGovernedUsage("disabled", ["claude"]);
+    const planned = await command.plan(ctx({ posture: "vibe", targets: ["claude"] }));
+    expect(
+      planned.actions.filter(
+        (action) => action.kind === "doc" && action.describe === "init: superpowers",
+      ),
+    ).toEqual([]);
+    const docs = planned.actions
+      .filter((action) => action.kind === "doc")
+      .map((action) => action.text)
+      .join("\n");
+    expect(docs).toContain("aih policy project");
+    expect(docs).not.toContain("aih ecc --apply");
+  });
+});
 
 function seedOrgPolicy(allowedServers = ["code-review-graph"]): void {
   writeFileSync(
@@ -196,11 +256,14 @@ describe("aih init — command surface", () => {
   it("keeps the init name, the --mcp-mode option, and a real plan", async () => {
     expect(command.name).toBe("init");
     expect(command.options?.map((o) => o.flags)).toEqual([
+      "--ecc-path <path>",
       "--sidecar",
       "--sidecar-path <dir>",
       "--mcp-mode <mode>",
       "--mcp-compliant",
       "--v3",
+      "--accept-token-optimizer-license",
+      "--token-optimizer-profile <profile>",
       "--canon <mode>",
       "--baseline <id>",
       "--kiro-hook-runtime <runtime>",
@@ -252,7 +315,17 @@ describe("aih init — command surface", () => {
     const allowlist = JSON.stringify(merged.allowedMcpServers);
 
     expect(merged.sandbox).toMatchObject({ keep: true });
-    expect(allowlist).toContain("code-review-graph@2.3.7");
+    expect(merged.allowedMcpServers).toContainEqual(
+      expect.objectContaining({
+        serverCommand: expect.arrayContaining([
+          process.execPath,
+          expect.stringMatching(/[\\/]dist[\\/]ecc-runtime\.js$/),
+          "code-review-graph",
+          "--package",
+          "code-review-graph==2.3.8",
+        ]),
+      }),
+    );
     expect(allowlist).not.toContain("stale-denied-mcp");
   });
 
@@ -621,7 +694,7 @@ describe("aih init --v3 — bootstrap intelligence", () => {
 
     await expect(async () => {
       await command.plan(initV3Ctx());
-    }).rejects.toThrow(/\.aih-config\.json contains entries aih cannot parse/);
+    }).rejects.toThrow(/invalid policyBinding in \.aih-config\.json: marker is not valid JSON/);
   });
 });
 

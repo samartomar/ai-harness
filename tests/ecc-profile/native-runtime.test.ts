@@ -1,13 +1,30 @@
 import { EventEmitter } from "node:events";
-import { copyFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join, win32 } from "node:path";
 import { PassThrough, Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { SERENA_DEPENDENCY_LOCK_SHA256 } from "../../src/ecc-profile/native-registration.js";
 import { executeNativeEccHook } from "../../src/ecc-profile/native-runtime.js";
-import { runNativeEccRuntime } from "../../src/ecc-profile/native-runtime-cli.js";
+import {
+  runNativeEccRuntime,
+  serenaRuntimeEntrypoint,
+} from "../../src/ecc-profile/native-runtime-cli.js";
+import {
+  assertHardenedSerenaRuntimeConfig,
+  renderSerenaRuntimeConfig,
+} from "../../src/ecc-profile/serena-runtime-config.js";
 import { buildProgram } from "../../src/program.js";
 
 const roots: string[] = [];
@@ -25,10 +42,38 @@ function fixture() {
   const stateRoot = realpathSync(mkdtempSync(join(tmpdir(), "aih-ecc-native-runtime-state-")));
   roots.push(root, stateRoot);
   mkdirSync(join(stateRoot, "continuity"));
-  return { root, stateRoot };
+  const tools = join(stateRoot, "tools");
+  mkdirSync(tools);
+  const executableName = process.platform === "win32" ? "uv.exe" : "uv";
+  const projectUv = join(root, executableName);
+  const uvExecutable = join(tools, executableName);
+  writeFileSync(projectUv, "untrusted project executable\n");
+  writeFileSync(uvExecutable, "trusted test executable\n");
+  if (process.platform !== "win32") {
+    chmodSync(projectUv, 0o700);
+    chmodSync(uvExecutable, 0o700);
+  }
+  return { root, stateRoot, tools, uvExecutable: realpathSync.native(uvExecutable) };
 }
 
 describe("native ECC hook runtime", () => {
+  it("rejects malformed, aliased and non-object Serena configuration", () => {
+    const scope = fixture();
+    const configScope = { project: scope.root, home: scope.stateRoot, allowedTools: [] };
+    for (const source of [
+      "tools: [",
+      "duplicate: 1\nduplicate: 2\n",
+      "base: &anchor [1]\ncopy: *anchor\n",
+      "null\n",
+      "- array-entry\n",
+      "not-an-object\n",
+    ]) {
+      expect(() => assertHardenedSerenaRuntimeConfig(source, configScope)).toThrow(
+        "Serena config conflicts with the AIH-owned hardened profile",
+      );
+    }
+  });
+
   it("returns a client-native deny for repository-protection decisions", async () => {
     const scope = fixture();
     const output = await executeNativeEccHook({
@@ -200,7 +245,7 @@ describe("native ECC hook runtime", () => {
   it("rejects malformed internal runtime modes, options, clients, and hook input", async () => {
     const scope = fixture();
     await expect(runNativeEccRuntime(["unknown"], { stdin: Readable.from([]) })).rejects.toThrow(
-      /mode must be hook or serena/i,
+      /mode must be hook.*code-review-graph.*codebase-memory-mcp.*serena/i,
     );
     await expect(
       runNativeEccRuntime(["hook", "--client", "codex", "--client", "claude"], {
@@ -360,9 +405,76 @@ describe("native ECC hook runtime", () => {
     expect(JSON.stringify(output)).toContain("MCP serena unavailable");
   });
 
+  it("uses the pinned Python console function on Windows without changing Unix launchers", () => {
+    expect(serenaRuntimeEntrypoint("win32")).toEqual([
+      "python",
+      "-c",
+      "from serena.cli import top_level; top_level()",
+    ]);
+    expect(serenaRuntimeEntrypoint("linux")).toEqual(["serena"]);
+    expect(serenaRuntimeEntrypoint("darwin")).toEqual(["serena"]);
+  });
+
+  it.skipIf(process.platform !== "win32")(
+    "accepts only a Windows registered-project alias with the same native directory identity",
+    () => {
+      const scope = fixture();
+      const home = join(scope.stateRoot, "serena-config-identity");
+      const nativeAlias = realpathSync.native(scope.root);
+      const alias =
+        nativeAlias === scope.root
+          ? (() => {
+              const linkedAlias = join(scope.stateRoot, "project-alias");
+              symlinkSync(scope.root, linkedAlias, "junction");
+              return linkedAlias;
+            })()
+          : nativeAlias;
+      const configScope = {
+        project: scope.root,
+        home,
+        allowedTools: ["get_symbols_overview", "find_symbol"],
+      } as const;
+      const initial = renderSerenaRuntimeConfig(configScope);
+      const registered = (project: unknown) =>
+        initial.replace("projects: []", `projects:\n  - ${JSON.stringify(project)}`);
+
+      expect(alias).not.toBe(scope.root);
+      expect(() =>
+        assertHardenedSerenaRuntimeConfig(registered(alias), configScope, "win32"),
+      ).not.toThrow();
+      expect(() =>
+        assertHardenedSerenaRuntimeConfig(registered(scope.stateRoot), configScope, "win32"),
+      ).toThrow(/config conflicts/i);
+      const wrongDrive = win32.parse(scope.root).root.toLowerCase().startsWith("z:")
+        ? "Y:\\"
+        : "Z:\\";
+      expect(() =>
+        assertHardenedSerenaRuntimeConfig(
+          registered(win32.join(wrongDrive, "aih-serena-wrong-root")),
+          configScope,
+          "win32",
+        ),
+      ).toThrow(/config conflicts/i);
+      expect(() =>
+        assertHardenedSerenaRuntimeConfig(
+          registered(join(scope.stateRoot, "missing-project")),
+          configScope,
+          "win32",
+        ),
+      ).toThrow(/config conflicts/i);
+      expect(() => assertHardenedSerenaRuntimeConfig(registered(42), configScope, "win32")).toThrow(
+        /config conflicts/i,
+      );
+      expect(() =>
+        assertHardenedSerenaRuntimeConfig(registered(alias), configScope, "linux"),
+      ).toThrow(/config conflicts/i);
+    },
+  );
+
   it("runs the exact offline Serena pin behind the protocol guard with provider credentials scrubbed", async () => {
     const scope = fixture();
     const serenaHome = join(scope.stateRoot, "serena");
+    const foreignSerenaHome = join(scope.stateRoot, "foreign-serena");
     const clientInput = [
       { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} },
       { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "read_file", arguments: {} } },
@@ -375,14 +487,16 @@ describe("native ECC hook runtime", () => {
       rendered += chunk.toString();
     });
     let spawnArgs: readonly string[] = [];
-    let spawnEnv: NodeJS.ProcessEnv | undefined;
+    let spawnCommand = "";
+    const capturedEnvironments: Array<NodeJS.ProcessEnv | undefined> = [];
     const spawnProcess = ((
-      _command: string,
+      command: string,
       args: readonly string[],
       options: { env?: NodeJS.ProcessEnv },
     ) => {
+      spawnCommand = command;
       spawnArgs = args;
-      spawnEnv = options.env;
+      capturedEnvironments.push(options.env);
       const child = Object.assign(new EventEmitter(), {
         stdin: new PassThrough(),
         stdout: new PassThrough(),
@@ -417,53 +531,57 @@ describe("native ECC hook runtime", () => {
       return child;
     }) as never;
 
-    const exit = await runNativeEccRuntime(
-      [
-        "serena",
-        "--package",
-        "serena-agent==1.7.0",
-        "--dependency-lock-sha256",
-        SERENA_DEPENDENCY_LOCK_SHA256,
-        "--lock-root",
-        serenaRuntimeRoot,
-        "--context",
-        "codex",
-        "--mode",
-        "no-memories",
-        "--project",
-        scope.root,
-      ],
-      {
-        stdin,
-        stdout,
-        stderr,
-        env: {
-          SERENA_HOME: serenaHome,
-          OPENAI_API_KEY: "must-not-pass",
-          NPM_TOKEN: "must-not-pass",
-          DATABASE_URL: "must-not-pass",
-          SSH_AUTH_SOCK: "must-not-pass",
-          PATH: "fixture-path",
-        },
-        spawnProcess,
+    const runtimeArgs = [
+      "serena",
+      "--package",
+      "serena-agent==1.7.0",
+      "--dependency-lock-sha256",
+      SERENA_DEPENDENCY_LOCK_SHA256,
+      "--lock-root",
+      serenaRuntimeRoot,
+      "--context",
+      "codex",
+      "--mode",
+      "no-memories",
+      "--project",
+      scope.root,
+      "--state-root",
+      serenaHome,
+    ];
+    const exit = await runNativeEccRuntime(runtimeArgs, {
+      stdin,
+      stdout,
+      stderr,
+      env: {
+        SERENA_HOME: foreignSerenaHome,
+        OPENAI_API_KEY: "must-not-pass",
+        NPM_TOKEN: "must-not-pass",
+        DATABASE_URL: "must-not-pass",
+        SSH_AUTH_SOCK: "must-not-pass",
+        PATH: [scope.root, scope.tools].join(delimiter),
       },
-    );
+      spawnProcess,
+    });
     expect(exit).toBe(0);
-    expect(spawnArgs.slice(0, 5)).toEqual([
+    expect(spawnCommand).toBe(scope.uvExecutable);
+    expect(spawnArgs.slice(0, 7)).toEqual([
+      "--project",
+      realpathSync(serenaRuntimeRoot),
+      "run",
       "--offline",
       "--no-python-downloads",
       "--no-env-file",
       "--frozen",
-      "--project",
     ]);
-    expect(spawnArgs[5]).toBe(realpathSync(serenaRuntimeRoot));
-    expect(spawnArgs).toContain("serena");
-    expect(spawnEnv?.OPENAI_API_KEY).toBeUndefined();
-    expect(spawnEnv?.NPM_TOKEN).toBeUndefined();
-    expect(spawnEnv?.DATABASE_URL).toBeUndefined();
-    expect(spawnEnv?.SSH_AUTH_SOCK).toBeUndefined();
-    expect(spawnEnv?.PATH).toBe("fixture-path");
-    expect(spawnEnv?.SERENA_USAGE_REPORTING).toBe("false");
+    const expectedEntrypoint = serenaRuntimeEntrypoint(process.platform);
+    expect(spawnArgs.slice(7, 7 + expectedEntrypoint.length)).toEqual(expectedEntrypoint);
+    expect(capturedEnvironments[0]?.OPENAI_API_KEY).toBeUndefined();
+    expect(capturedEnvironments[0]?.NPM_TOKEN).toBeUndefined();
+    expect(capturedEnvironments[0]?.DATABASE_URL).toBeUndefined();
+    expect(capturedEnvironments[0]?.SSH_AUTH_SOCK).toBeUndefined();
+    expect(capturedEnvironments[0]?.PATH).toBe([scope.root, scope.tools].join(delimiter));
+    expect(capturedEnvironments[0]?.SERENA_HOME).toBe(serenaHome);
+    expect(capturedEnvironments[0]?.SERENA_USAGE_REPORTING).toBe("false");
     const messages = rendered
       .trim()
       .split("\n")
@@ -474,6 +592,31 @@ describe("native ECC hook runtime", () => {
         ?.result.tools.map((tool: { name: string }) => tool.name),
     ).not.toContain("read_file");
     expect(messages.find((message) => message.id === 2)?.error.code).toBe(-32601);
+
+    const configPath = join(serenaHome, "serena_config.yml");
+    const initialConfig = readFileSync(configPath, "utf8");
+    expect(initialConfig).toContain("web_dashboard: false");
+    expect(initialConfig).toContain("trusted_project_path_patterns: []");
+    expect(initialConfig).toContain(
+      `project_serena_folder_location: ${JSON.stringify(join(serenaHome, "projects", "$projectFolderName", ".serena"))}`,
+    );
+    writeFileSync(
+      configPath,
+      initialConfig.replace(
+        "projects: []",
+        `projects:\n  - ${JSON.stringify(process.platform === "win32" ? realpathSync.native(scope.root) : scope.root)}`,
+      ),
+    );
+
+    const noAmbientExit = await runNativeEccRuntime(runtimeArgs, {
+      stdin: Readable.from([]),
+      stdout: new PassThrough(),
+      stderr: new PassThrough(),
+      env: { PATH: [scope.root, scope.tools].join(delimiter) },
+      spawnProcess,
+    });
+    expect(noAmbientExit).toBe(0);
+    expect(capturedEnvironments[1]?.SERENA_HOME).toBe(serenaHome);
   });
 
   it("rejects modified packaged Serena lock bytes before spawning the runtime", async () => {

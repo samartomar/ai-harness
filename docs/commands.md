@@ -65,11 +65,38 @@ probe is an advisory skip — it does not block `aih tools` or `aih ready`.
 
 ## aih ready
 
-Readiness gate — one graded, blocker-aware verdict answering "can a developer start work with an AI
-agent here, now?", composed from aih's read-only probes (runtime/TLS/PATH/core tools, per-CLI
-loadability, contract, secret scan). Diagnoses by default (non-zero when blocked); the one
+Readiness preflight — a graded, blocker-aware view of host and configuration checks
+(runtime/TLS/PATH/core tools, per-CLI loadability, contract, secret scan). Native MCP
+configuration is inventoried separately from runtime acceptance. A launcher version
+does not prove a server can initialize, authenticate or perform a tool operation.
+Diagnoses by default (non-zero when blocked); the one
 auto-fixable blocker (missing `rg`/`fd`/`jq`) installs under confirmation. Surfaces a `sec-ready`
 panel in `aih report --v9`.
+
+Configured MCP servers remain unverified, including Codex project configuration and
+offline `uvx` declarations. Unverified capabilities for selected clients prevent a
+clean `READY` banner. Other clients' project configurations remain visible without
+affecting the selected workflow's score or banner.
+An explicitly required, enabled Codex server on a selected target blocks acceptance
+while its runtime is unavailable or unverified. Explicitly optional failures remain
+warnings; an omitted requirement stays unspecified. Disabled servers remain visible.
+AIH reads registered project configuration and selected clients' registered global
+configuration; this inventory does not resolve every native override or workspace
+trust decision. Routine readiness does not start configured third-party servers or
+run the repository's first command. Follow the
+[bounded native acceptance steps](governed-mcp.md#bounded-native-acceptance)
+to record actual tool use and policy behavior separately.
+
+For the bounded OpenCode Linux fixture, `--runtime-evidence <absolute-file>`
+explicitly adds a current-material evaluation beside preflight. Select the current
+consumer with `--root` and `--cli opencode`. The optional `runtimeEvidence` JSON
+result distinguishes unavailable, invalid, stale and current records, with
+observation/expiry times, exercise, restart and specific restrictions. It never
+removes preflight blockers or verifies unrelated configured servers. The same
+option is supported by local `aih report --v9`, including its JSON output.
+Reading the record does not launch its asserted commands. See
+[OpenCode runtime observations](../guides/opencode-linux-sandbox.md#current-runtime-observations)
+for the producer, current-binding checks and scope limits.
 
 The secret gate reports the finding's LOCATION class, because the remediation differs: a
 git-tracked finding is `no-committed-secret` (rotate the credential and rewrite it out of git
@@ -159,6 +186,65 @@ outside the repository root.
 plan, and derived `.aih/fingerprint.json`. Under `--apply`, it also writes committed capability
 intent via `aih-capabilities.json` and refreshes the rebuildable `$HOME/.aih/capabilities/cache.json`.
 The v3 lane stays offline and never treats `.aih/` or `~/.aih/` as authority.
+
+After its normal phases complete, `aih init` also runs the ordinary developer-tool lifecycle. A
+preview reports the effective selection without reconciling a tool. With `--apply`, it reconciles all
+six default tool IDs: selected tools are provisioned, while policy-excluded tools can remove only
+unchanged receipt-owned integration. During apply, Token Optimizer remains `blocked` until its
+license is explicitly accepted with `--accept-token-optimizer-license`; `--token-optimizer-profile
+quiet|balanced` selects its setup profile. A blocked prerequisite is reported for that tool while
+independent selected tools continue.
+
+## aih developer-tools
+
+Preview or reconcile the policy-selected default developer tools for one repository. Without an
+effective organization policy, the default selection is `code-review-graph`, `codebase-memory-mcp`,
+`serena`, `token-optimizer`, `context7`, and `markitdown` (the CLI). A valid policy can select a subset, explicitly exclude
+tools, or select none. A legacy valid policy that omits `selected` preserves the defaults, subject to
+its exclusions; `selected: []` is an explicit empty selection. A malformed selection or an invalid,
+missing, changed, revoked, or conflicting bound policy fails closed before the lifecycle runs, and
+does not fall back to defaults.
+
+Run `aih developer-tools <root>` to inspect the selection. Add `--apply` to acquire, configure, and
+verify selected tools; excluded tools are also reconciled only to remove unchanged receipt-owned
+integration. `aih init` already invokes this lifecycle after its ordinary setup, so the standalone
+command is useful for inspection or a later focused reconciliation. During apply, if Token Optimizer
+is selected, pass `--accept-token-optimizer-license`; otherwise its lifecycle result is `blocked`.
+Its default profile is `quiet`; pass `--token-optimizer-profile balanced` to choose the balanced
+profile.
+
+Token Optimizer's native project-hook integration currently supports Codex only. If a selected run
+does not target Codex, the tool reports `blocked` with that explicit target reason and does not
+assume another client. When policy marks Token Optimizer unselected, its receipt-owned cleanup still
+runs and removes only unchanged owned integration when present.
+
+For standalone `aih developer-tools --json`, the normal plan result also includes top-level
+`accepted`, `selection` (`source`, `selected`, `excluded`, and `diagnostics`), `tools` (`id`,
+`state`, `detail`, and `changed`), and `changed`. With `aih init --json`, the same lifecycle data is
+in the digest whose `describe` value is `Developer tool lifecycle`; its `data` contains `accepted`,
+`selection`, and `tools`, while `report.checks` records selected-tool outcomes. Tool states are
+`selected-pending`, `installed`, `configured`, `verified`, `policy-excluded`, and `blocked`.
+
+MarkItDown CLI converts local documents to Markdown. Setup installs version 0.1.7 with the PDF,
+Word, PowerPoint, Excel and Outlook converters into an external runtime keyed by its dependency
+lock using an existing Python 3.10–3.13 interpreter, verifies an actual conversion, and reports the installed CLI command. It does not change
+global PATH or replace a user-installed CLI. Azure services, YouTube and audio-transcription extras
+are not installed by default. Add `markitdown` to `developerTools.excluded` to opt out; repeat setup
+and worktree changes preserve the policy choice.
+
+MarkItDown MCP is a separate optional integration. Add `markitdown-mcp` to `mcp.allowedServers`
+to select the pinned official adapter (0.0.1a7 with converter 0.1.7); `mcp.disabledServers` overrides
+that selection. This adapter can access user-selected files and URLs with the current user's
+permissions, and its first launch acquires its dependencies. Selecting the default CLI does not
+enable the MCP adapter. GitHub MCP also requires an explicit choice through `mcp.allowedServers`,
+a configured policy GitHub host, `--github-auth token`, or `--self-host`; it is absent from an
+unconfigured project's default MCP set.
+
+On `--apply`, each selected tool checks its own prerequisites. Code Review Graph, Serena and MarkItDown require
+an external `uv`; Token Optimizer requires external Python, Git, and curl. Codebase Memory selects a
+native payload for the current platform and architecture. An unavailable prerequisite or payload is
+reported as that tool's `blocked` result while independent tools continue. This reference does not
+claim host-wide Windows or macOS qualification; use the per-tool result on the target host.
 
 ## aih profile
 
@@ -251,9 +337,9 @@ target refuses without `--force`. `--delete` hard-deletes to a gitignored `*.aih
 still-targeted CLI whose binary is absent from `PATH` (loud warning; never the default).
 Shared selection flags (`--cli`, `--all-tools`, `--detect`) are accepted by the command surface but
 ignored by `prune`; the digest says so and keeps the diff anchored to committed intent. When a
-dropped CLI is an ECC-supported target, prune also plans ECC's own install-state uninstall through
-`npx --yes --package ecc-universal ecc uninstall --target <cli>` under `--apply`, so ECC-owned
-files and merge records are removed by ECC's recorded footprint rather than by path guessing.
+dropped CLI is an ECC-supported target, prune uses the AIH registration ledger and ECC install
+state to identify its owned footprint. Without a registration ledger, it preserves unreceipted ECC
+client files and reports manual cleanup; ordinary AIH-owned adapter cleanup can still proceed.
 When Codex is dropped, prune also subtracts the recorded ECC TOML footprint from
 `~/.codex/config.toml` and the fenced ECC Codex block that `aih ecc` merges into
 `~/.codex/AGENTS.md`, leaving unrelated user config and text outside that block intact.
@@ -262,18 +348,15 @@ A bare prune also reads `~/.aih/ecc/registration-ledger.json`, even when no comm
 changed. Project registrations whose roots are missing retire from the machine union; common or
 shared components and MCPs remain until their last live contributor disappears. The dry-run digest
 names retired roots, orphaned component/MCP IDs, target states, and managed destinations without
-changing bytes. Under `--apply`, prune mutates only exact operations proven by strict ECC install
-state (plus aih's fenced Codex records) and coordinates the unavoidable upstream uninstall inside
-the same driver. Apply re-verifies every planned input, prepares recovery material, performs
-aih-owned removals, runs the upstream uninstall, writes target state, and replaces the primary
-ledger last. Missing home-target state, malformed/drifted state or markers, symlinks, concurrent
-input changes, or partial aih-owned writes fail closed and roll back; project-local state that never
-existed is not guessed. If an upstream uninstall may have mutated before failing—or a later step
-fails after an upstream uninstall succeeded—the command emits `ECC prune divergence` with the
-complete set of affected targets and paths, rolls back aih-owned changes, and never advances the
-ledger. The driver budgets the outer transaction above the bounded sequential uninstall budget;
-catchable POSIX `SIGINT` and `SIGTERM` during an active uninstall use the same rollback and
-divergence path. It does not claim that upstream-owned bytes were restored. When a registration
+changing bytes. Under `--apply`, prune removes only operations proven by ECC install state (plus
+aih's fenced Codex records). Copied files must match their recorded SHA-256; JSON cleanup subtracts
+only the recorded managed values. Modified files and legacy copies without a recorded digest are
+preserved, and the operation refuses with a manual-cleanup explanation. Apply re-verifies every
+planned input, prepares recovery material, performs owned removals, updates target state, and
+replaces the primary ledger last. It does not run an upstream uninstaller. Missing required target
+state, malformed or drifted state or markers, symlinks, concurrent input changes, or partial writes
+fail closed; failures during the transaction roll back its owned changes. Project-local state that
+never existed is not guessed. When a registration
 ledger predates a Codex target record, prune retains the state-file-based Codex cleanup path instead
 of treating the mere presence of a ledger as proof that Codex cleanup is coordinated.
 
@@ -351,10 +434,21 @@ drift or unsafe paths revoke the claim without mutating `.kiro/settings/mcp.json
 Register [affaan-m/ECC](https://github.com/affaan-m/ECC) for the selected CLIs. The default is the
 additive union of the locked common baseline, components detected from every registered project,
 repeatable advance declarations (`--with lang:cpp --with framework:react`), posture-selected
-security, and validated MCPs. Use `--profile full` only for an explicit full-surface install.
+security, and validated MCPs. Use `--profile full` for the full content selection.
 Unknown declarations fail closed. The ordinary native-installer path keeps Kiro and unsupported
 targets consult-only because their installers cannot materialize the scoped union safely. The
 governed lifecycle described below has a separate verified Kiro rules-and-skills adapter.
+
+Core and Full profiles do not authorize ECC hooks, executable plugins or host runtime.
+Outside policy governance, explicitly declare `--with baseline:hooks` to admit those operations.
+Governed delivery keeps upstream host runtime excluded even with that declaration; AIH retains
+its separate MCP and hook ownership boundaries. Preview, installation and reconciliation apply
+the same consent filter. Consult-only targets provide component advice and cannot authorize
+executable or runtime recommendations.
+
+Reinstall refuses before changes when a narrower consent selection would leave previously
+installed runtime content behind. It preserves the existing files and ownership state for
+review and cleanup before retrying; reinstall does not silently withdraw that integration.
 
 The AIH-owned Claude/Codex profile has a separate, explicit lifecycle mode on the same command:
 
@@ -405,6 +499,16 @@ run are one materialization into one root with one receipt: destinations two tar
 (`AGENTS.md`, `.agents/plugins/`, `.agents/skills/`) are written once, a target that refuses a
 component does not stop the targets that own it, and a later `--apply` with a narrower target set
 subtracts the dropped target's files and reports each removal.
+
+Governed Codex skill selection uses the shared project `.agents/skills/` route.
+Reapplication withdraws an older `.codex/skills/` duplicate only when unchanged
+materialization receipts prove ownership; edited and unowned copies are retained
+and reported. It does not replace disabled-skill settings or filter native plugin
+inventory. The governed preview includes exact selection/source and destination
+facts beside exclusions, refusals and ownership advisories. Proposed destinations,
+installed bytes and actual native loading remain different claims. See the
+[selection ownership guide](../guides/portable-policy-delivery.md#inspect-selection-and-discovery-ownership)
+for preview, ordinary reinitialization and migration.
 
 ECC MCP approvals have a separate explicit Add/Remove surface:
 
@@ -462,9 +566,9 @@ surface without inventing held components. Structural evidence failures that mak
 untrustworthy still fail the request, and aih refuses all installer execution unless
 `runtime:ecc-installer` itself has an authorization receipt.
 
-The validated MCP default is pinned local `sequential-thinking`, repo-declared
+The ECC registration lane's validated MCP default is pinned local `sequential-thinking`, repo-declared
 `code-review-graph`/`codebase-memory-mcp`, and GitHub OAuth at enterprise. Context7, Exa, and
-other egress-bearing servers are never defaults. Project config receives that project's set; global
+other egress-bearing servers are not defaults of that lane. Project config receives that project's set; global
 target config receives the machine union, with existing user-defined same-name servers preserved.
 
 aih fetches the catalog's exact commit into quarantine, verifies signed evidence for the installer
@@ -689,6 +793,38 @@ build); `validate --require-signature` then
 `aih workspace add` — the vet gate still runs at consume time.
 
 ## aih policy
+
+### Project assignment and required-content delivery
+
+`aih policy bind <root> --project <id> --cli <list> --policy <file>` previews a
+durable assignment; add `--apply` after review. It records the canonical root,
+project identifier, exact selected policy path/digest and complete approved
+target set in `.aih-config.json`. Fresh AIH processes restore that selection.
+Binding is not authority, account-wide environment configuration or implicit
+policy merging. Explicit conflicting sources or targets fail closed.
+
+`aih policy rebind <root> --project <same-id> --cli <list> --policy <file> --apply`
+acknowledges reviewed policy bytes, a reviewed target change, or a new canonical
+checkout of the same project. It reruns the policy authority and target checks.
+`aih policy revoke <root> --project <same-id> --apply` retains a revoked binding
+that blocks mutation; it does not delete content or stop native processes.
+Withdraw owned content through the authorized policy before revoking it. Rebind
+with current verified authority to recover.
+
+`aih policy project <root> --apply` projects supported controls and reconciles
+selected governed ECC content. `--ecc-path <path>` supplies a local checkout
+that must still pass exact source and qualification checks. An explicitly empty
+authorized ECC selection withdraws owned content; losing policy is not an
+unrestricted installer fallback. `aih init` also accepts `--ecc-path` for a bound
+project's required-content delivery and suppresses an unselected Superpowers
+baseline under governed policy.
+
+`policy evaluate --json`, readiness and HTML reports distinguish policy and
+binding blockers, selected content, ownership drift and unverified native
+loading. Receipt-current describes recorded source/owned bytes, not a native
+session or enforced practice. The full administrator/developer lifecycle and
+downstream content ownership contract are in
+[Project policy delivery](../guides/portable-policy-delivery.md).
 
 ### Unreleased Workbench authoring core (#967)
 
@@ -1003,19 +1139,21 @@ identity Core verifies. A relative `--policy` value resolves from the target roo
 over the environment variable, and a missing selected file fails closed rather than falling back to the
 default filename. For
 Claude this includes `.claude/managed-settings.json` and, at enterprise posture, the two system-path
-examples; selected Kiro reviewed stdio MCP candidates are distributed separately to
-`.kiro/settings/mcp.json`. An active
+examples. Selected reviewed stdio MCP candidates also have receipt-owned workspace
+distribution for Codex, Cursor, Copilot CLI, OpenCode V1, Kimi Code, and Kiro; see
+[governed MCP targets and compatibility](governed-mcp.md) for the native paths and limits. An active
 AIH-owned `usage-metering` policy hook may also project to the selected Claude or Codex host through
 the existing host-specific generator. A policy may separately declare `governance.eccHookControls`; for a Claude target, projection merges only receipt-owned `ECC_HOOK_PROFILE` and `ECC_DISABLED_HOOKS` values into `.claude/settings.json.env`, preserves every operator sibling, refuses unreceipted collisions or drift, and shares one content-pinned settings snapshot with the hook registrar. ECC—not AIH—executes and enforces those controls after process spawn, so a disabled hook still incurs one spawn.
 It does not run `aih init`, regenerate the canon, or modify unrelated settings. The managed settings/MCP
-portion is a Claude projection: it writes only when Claude is selected (the default); `--cli cursor`,
-for example, produces no managed-settings projection. When managed-only MCP is active, it records existing AIH ownership provenance in
+file is a Claude projection: it writes only when Claude is selected (the default).
+Other governed MCP targets receive their own workspace configuration rather than a Claude
+managed-settings file. When managed-only MCP is active, it records existing AIH ownership provenance in
 `.aih-config.json` so later deactivation can remove only the exact generated values. It refuses a
 configuration write when `AIH_ORG_POLICY` selects an ordinary override; previewing without `--apply`
 remains inspectable. The only external mutation source is the exact protected PolicyBundle V2 that
 Core has verified for the same path, and its bytes remain pinned through the transaction.
 
-New Claude and Kiro MCP ownership records are always strict schema V2 and bind the exact effective
+New governed MCP ownership records are always strict schema V2 and bind the exact effective
 decision identity for their own surface. New usage-hook ownership records are always V3 and bind the
 same decision facts plus the policy version under a domain-separated self-digest. The persisted
 records are comparison and rollback evidence, never authority: freshly verified organization
@@ -1714,15 +1852,27 @@ endpoints → `{ usage_report, skills }`).
 
 Generate the MCP server config **for the targeted CLIs** (`--cli`/`--all-tools`/`--detect`;
 otherwise the committed `.aih-config.json` targets, then Claude on a first run):
-Claude/Kimi share `.mcp.json`, Cursor uses `.cursor/mcp.json`, and Kiro uses
+Claude uses `.mcp.json`, Kimi Code uses `.kimi-code/mcp.json`, Cursor uses `.cursor/mcp.json`, and Kiro uses
 `.kiro/settings/mcp.json`; Codex gets native TOML in `~/.codex/config.toml` (including
 `bearer_token_env_var` for token auth), OpenCode gets its global
-`~/.config/opencode/opencode.json` `mcp` map, and Copilot/Zed or other global-config entries get
-their registry-specific native writes or guidance. Global config targets are selected only through
+`~/.config/opencode/opencode.json` V1 `mcp` map, and Copilot CLI uses `.github/mcp.json`
+with `mcpServers` (its CLI does not consume VS Code's `.vscode/mcp.json`). Zed and other
+global-config entries get their registry-specific native writes or guidance. Global config targets are selected only through
 an explicit flag or a committed marker; `--apply` can affect that CLI across all projects. Scopes:
-local/project/remote. For locked-down orgs,
-`--mode offline` (vendored local-command servers) or `--mode none` (no MCP + a CLI-tool fallback)
-plus a `managed-mcp.json` admin template. Enterprise org policy can also tune the hosted GitHub
+local/project/remote. `--mode offline` selects stdio servers and uses the same native
+paths, environment translation and preservation rules as standard generation for
+every selected CLI. Vendor package launchers before blocking egress; preserved
+operator-owned servers must be reviewed separately. `--mode none` emits CLI-tool
+fallback guidance and leaves active host configuration unchanged. Both modes emit
+a `managed-mcp.json.example` administrator template only when Claude is selected;
+deploying that template is a separate administrative step.
+
+Codex stdio environment references become `env_vars`; Cursor uses `${env:NAME}`,
+and OpenCode uses `{env:NAME}`. Copilot CLI and Kimi Code environment mappings with
+no supported native representation are refused before configuration is written.
+The plan reports feature support and host requirements separately from runtime
+acceptance. See [governed MCP configuration](governed-mcp.md) for the scope and
+verification differences. Enterprise org policy can also tune the hosted GitHub
 MCP entry: `mcp.incumbentHosts` declares which vendor hosts are reachable/incumbent,
 `mcp.githubHost` points at a GHES or internal GitHub MCP origin, and `mcp.disabledServers`
 can remove `github` entirely. Without committed org policy, the legacy github.com default remains
@@ -1784,7 +1934,53 @@ vetted pin bump that covers the UI variant's surface.
 
 Generate a devcontainer + managed sandbox settings (egress allowlist, `failIfUnavailable`).
 
+For a bounded OpenCode Linux workflow, configure `--cli opencode` with an
+external `--policy`, `--bwrap-executable`, `--opencode-executable`,
+`--seccomp-executable`, repeatable
+non-secret `--binding NAME=value` and native `--client-arg` values. Optional
+repeatable `--hide-path` and `--read-only-path` values name existing absolute
+paths. Preview first, then use `--apply` to save the per-root launch profile.
+`aih sandbox --cli opencode --launch --apply` reloads that root's bindings for a
+fresh native process. See [repeatable OpenCode Linux
+launches](../guides/opencode-linux-sandbox.md) for setup, restart, worktree
+ownership, filesystem exposure and the separate native acceptance boundary.
+
+The Claude policy writes the egress list at `sandbox.network.allowedDomains`, alongside
+`sandbox.enabled`, `sandbox.failIfUnavailable`, and `sandbox.allowUnsandboxedCommands: false`.
+The additional `sandbox.commandPolicy` block is AIH metadata; Claude's command permission
+rules use `permissions.allow`, `permissions.ask`, and `permissions.deny`.
+
+When reapplying, AIH removes the obsolete `sandbox.allowedDomains` key only if its
+ordered value exactly matches the previous generated defaults for the detected
+stack. The write is bound to the settings bytes inspected during planning and
+refuses the migration if they change. Other legacy values remain untouched with
+a review note; AIH does not copy them into the new network allowlist. This exact
+value match is a migration heuristic, not an ownership receipt.
+
+`.claude/managed-settings.json` is a deployment artifact. Claude does not load that filename
+from the project directory as managed policy. The adopter must deploy it through a supported
+[managed settings source](https://code.claude.com/docs/en/managed-settings).
+For a session-scoped trial on a supported host, `claude --settings .claude/managed-settings.json`
+loads the file explicitly; this does not make it an administrator-managed policy.
+
+Claude's built-in Bash sandbox currently supports macOS, Linux and WSL2, with host-specific
+prerequisites. Native Windows is unsupported. The Bash sandbox also does not automatically
+confine local MCP servers; those require their own process boundary. See Claude's
+[sandbox documentation](https://code.claude.com/docs/en/sandboxing) for platform support and
+the distinction between Bash sandboxing and tool permissions. Generating this Claude policy
+does not configure sandbox enforcement for another CLI.
+
 **Verification**
+
+The command checks Docker reachability; a missing binary or unreachable daemon is reported
+as skipped. It does not start a container or prove client execution. The generated container
+has no outbound network block, and a Git worktree does not provide a security boundary.
+
+In a disposable consumer project, verify that the intended client loads the policy, completes
+an allowed command, and denies an explicitly prohibited operation without the prohibited
+effect occurring. Test an actual local MCP tool call separately from discovery, and test
+network restrictions independently from file restrictions. A successful file-denial test
+does not prove a network boundary or another client's behavior.
 
 ## aih docs-lint
 

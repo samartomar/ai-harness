@@ -665,6 +665,21 @@ describe("aih governance-doctor — posture and org policy handling", () => {
 });
 
 describe("aih governance-doctor — closed boundary and zero-write proof", () => {
+  it("reaches the read-only diagnostic and repair preview with a malformed binding marker", async () => {
+    writeFileSync(join(dir, ".aih-config.json"), "{ malformed marker");
+    const before = readdirSync(dir);
+    const doctor = vi.spyOn(doctorCommand, "plan");
+
+    const { code, out } = await runCommand([dir, "--json", "--repair-plan"]);
+
+    expect(code).toBe(1);
+    expect(doctor).toHaveBeenCalledTimes(1);
+    expect(jsonPayload(out)).not.toHaveProperty("error");
+    expect(out).toContain("GovernanceDoctorPresentationV1");
+    expect(out).toContain("GovernanceDoctorRepairPlanPreviewV1");
+    expect(readdirSync(dir)).toEqual(before);
+  });
+
   it("refuses proxied, accessor-bearing, and forged inputs without invoking a getter", async () => {
     const policy = ownedPolicy();
     const operation = await localOperation(policy, localProfile());

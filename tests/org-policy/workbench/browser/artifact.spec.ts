@@ -380,6 +380,27 @@ test("installed package generates a complete offline artifact with usable export
   });
   expect(workbench.networkRequests).toEqual([]);
   const initialRows = page.locator("article[data-workbench-asset-id]");
+  // The package retains historical pins, but Ponytail is not offered in the UI.
+  await expect(page.locator('[data-workbench-source-tab="source:ponytail"]')).toHaveCount(0);
+  await expect(
+    page.locator('#workbench-source-filter option[value="source:ponytail"]'),
+  ).toHaveCount(0);
+  await expect(page.locator("#framework-rows")).not.toContainText("DietrichGebert/ponytail");
+  for (const sourceId of await page
+    .locator("[data-workbench-source-tab]")
+    .evaluateAll((tabs) => tabs.map((tab) => tab.getAttribute("data-workbench-source-tab")))) {
+    await page.locator(`[data-workbench-source-tab="${sourceId}"]`).click();
+    await page.getByRole("searchbox", { name: "Search catalog" }).fill("ponytail");
+    await expect(page.locator('article[data-workbench-asset-id^="ponytail/"]')).toHaveCount(0);
+    await page.locator(".workbench-starting-points").evaluate((element) => {
+      (element as HTMLDetailsElement).open = true;
+    });
+    await expect(
+      page.locator('[data-workbench-template-detail-id="template:ponytail/methodology"]'),
+    ).toHaveCount(0);
+  }
+  await page.getByRole("searchbox", { name: "Search catalog" }).fill("");
+  await page.locator('[data-workbench-source-tab="source:aih-core"]').click();
   expect(await initialRows.count()).toBeLessThanOrEqual(50);
   await expect(page.locator("#preset-select, #skill-rows, #agent-rows, #mcp-rows")).toHaveCount(0);
   const shape = await page.evaluate(() => {

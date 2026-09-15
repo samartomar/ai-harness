@@ -1,9 +1,11 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
+import { parse as parseToml } from "smol-toml";
 import { afterAll, describe, expect, it } from "vitest";
 import {
   buildEccMcpProfileProjection,
+  buildSerena161ReceiptProjection,
   CONTEXT7_SUBJECT_SHA256,
   evaluateEccMcpHealth,
   filterSerenaToolsList,
@@ -118,6 +120,26 @@ describe("ECC MCP profile projection", () => {
     for (const tool of SERENA_ALLOWED_TOOLS)
       expect(projection.serenaConfig).toContain(`  - ${tool}`);
   });
+
+  it.each([buildEccMcpProfileProjection, buildSerena161ReceiptProjection])(
+    "preserves literal Serena state and reporting settings in current and historical Codex receipts",
+    (project) => {
+      const request = input("codex");
+      const projection = project(request);
+      const parsed = parseToml(projection.native.body);
+      expect(parsed.mcp_servers).toMatchObject({
+        serena: {
+          env: { SERENA_HOME: request.serenaHome, SERENA_USAGE_REPORTING: "false" },
+        },
+      });
+      expect(
+        projection.native.body.endsWith(
+          `\n\n[mcp_servers."serena".env]\nSERENA_HOME = ${JSON.stringify(request.serenaHome)}\nSERENA_USAGE_REPORTING = "false"\n`,
+        ),
+      ).toBe(true);
+      expect(projection.native.body).not.toContain("env_vars");
+    },
+  );
 
   it("fails closed on malformed trust evidence or unsafe/ambiguous roots", () => {
     expect(() =>

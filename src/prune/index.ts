@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { SHARED_MARKER, sharedCanonicalBlockBody } from "../bootstrap-ai/canon.js";
 import { AIH_CONFIG_FILE } from "../config/marker.js";
 import { codexPruneRemovalActions } from "../ecc/codex.js";
-import { ECC_NPM_CLI_BIN, ECC_NPM_PACKAGE, isAihDirectEccInstallTarget } from "../ecc/install.js";
+import { isAihDirectEccInstallTarget } from "../ecc/install.js";
 import {
   eccPruneReconciliationActions,
   hasEccRegisteredTarget,
@@ -16,7 +16,7 @@ import {
   type Action,
   type CommandSpec,
   digest,
-  exec,
+  doc,
   type Plan,
   type PlanContext,
   plan,
@@ -30,8 +30,8 @@ import {
   managedMcpDeactivationActions,
   unprovableResidueReason,
 } from "../mcp/managed-projection.js";
+import { nativeMcpProjectionActions } from "../mcp/native-managed-projection.js";
 import { coalesceMcpProjectionMarkerActions } from "../mcp/projection-marker.js";
-import { execArgv } from "../tools/install.js";
 import {
   type PruneArtifact,
   type StalePruneSet,
@@ -74,6 +74,7 @@ const KIND_LABEL: Record<PruneArtifact["kind"], string> = {
   settings: "settings",
   "managed-settings": "projected managed-MCP allowlist",
   "kiro-managed-mcp": "Kiro workspace-MCP distribution",
+  "native-managed-mcp": "native governed MCP distribution",
   "kiro-steering": "Kiro steering",
   "kiro-hook": "Kiro hook",
 };
@@ -100,7 +101,10 @@ function bootloaderMinusBlock(ctx: PlanContext, rel: string): string | undefined
 /** The manual-review advisory lines for the artifacts aih can't safely auto-edit. */
 function advisoryLines(set: StalePruneSet): string[] {
   const advisory = set.artifacts.filter(
-    (a) => a.disposition === "advisory" && a.kind !== "managed-settings",
+    (a) =>
+      a.disposition === "advisory" &&
+      a.kind !== "managed-settings" &&
+      a.kind !== "native-managed-mcp",
   );
   if (advisory.length === 0) return [];
   return [
@@ -158,6 +162,18 @@ function kiroMcpLines(set: StalePruneSet): string[] {
     `Dropped-target Kiro workspace-MCP distribution — ${artifact.path}:`,
     "  [manual] aih will NOT touch drifted entries; its stale ownership claim is revoked.",
   ];
+}
+
+function nativeMcpLines(set: StalePruneSet): string[] {
+  return set.artifacts
+    .filter((artifact) => artifact.kind === "native-managed-mcp")
+    .flatMap((artifact) => [
+      "",
+      `Dropped-target ${artifact.clis.join(", ")} governed MCP distribution — ${artifact.path}:`,
+      artifact.disposition === "block"
+        ? "  [subtract] exactly the receipt-proven server entries; every other server and setting is preserved."
+        : "  [manual] aih will NOT touch unprovable entries; its stale ownership claim is revoked.",
+    ]);
 }
 
 /** The loud `--unrunnable` warning: a PATH problem looks identical to a dropped CLI. */
@@ -225,6 +241,7 @@ function contextBody(
       ...ignoredSelectionLines(ignoredFlags),
       ...managedMcpLines(set),
       ...kiroMcpLines(set),
+      ...nativeMcpLines(set),
     );
   }
   const disposal = hardDelete
@@ -241,6 +258,7 @@ function contextBody(
     ...advisoryLines(set),
     ...managedMcpLines(set),
     ...kiroMcpLines(set),
+    ...nativeMcpLines(set),
   );
 }
 
@@ -249,7 +267,12 @@ function actionFor(ctx: PlanContext, a: PruneArtifact, hardDelete: boolean): Act
   const who = `${a.clis.join(", ")} dropped`;
   // The projected managed-MCP allowlist is reconciled by the shared lifecycle helper
   // in prunePlan (an ordered subtract → ownership pair), not by this per-artifact map.
-  if (a.kind === "managed-settings" || a.kind === "kiro-managed-mcp") return undefined;
+  if (
+    a.kind === "managed-settings" ||
+    a.kind === "kiro-managed-mcp" ||
+    a.kind === "native-managed-mcp"
+  )
+    return undefined;
   if (a.disposition === "file") {
     return remove(a.path, `stale ${KIND_LABEL[a.kind]} (${who})`, { hardDelete });
   }
@@ -262,19 +285,14 @@ function actionFor(ctx: PlanContext, a: PruneArtifact, hardDelete: boolean): Act
   return undefined; // advisory → surfaced in the digest, never an auto-action
 }
 
-function eccUninstallAction(ctx: PlanContext, cli: Cli): Action {
-  return exec(
-    `Remove ECC-managed ${cli} footprint recorded in ECC install-state (under --apply)`,
-    execArgv(ctx.host.platform, [
-      "npx",
-      "--yes",
-      "--package",
-      ECC_NPM_PACKAGE,
-      ECC_NPM_CLI_BIN,
-      "uninstall",
-      "--target",
-      cli,
-    ]),
+function unreceiptedEccPreservationDoc(cli: Cli): Action {
+  return doc(
+    `Preserve unreceipted ECC ${cli} footprint`,
+    lines(
+      `No AIH ECC registration ledger target receipt authenticates the ${cli} install state.`,
+      "Prune preserves the target's client files and skips upstream uninstall execution.",
+      "AIH-owned repository adapters and managed bootloader blocks remain eligible for cleanup.",
+    ),
   );
 }
 
@@ -320,11 +338,18 @@ async function prunePlan(ctx: PlanContext): Promise<Plan> {
     actions.push(...kiroMcpProjectionActions(ctx, {}));
     if (set.kiroMcp.matches) subtracted += 1;
   }
+  for (const residue of set.nativeMcp ?? []) {
+    actions.push(...nativeMcpProjectionActions(ctx, residue.target, {}));
+    if (residue.matches) subtracted += 1;
+  }
   const coordinatedEccPrune = hasEccRegistrationLedger(ctx);
   const coordinatedCodexPrune = coordinatedEccPrune && hasEccRegisteredTarget(ctx, "codex");
   for (const cli of set.dropped) {
-    if (!coordinatedEccPrune && isAihDirectEccInstallTarget(cli)) {
-      actions.push(eccUninstallAction(ctx, cli));
+    if (
+      isAihDirectEccInstallTarget(cli) &&
+      (!coordinatedEccPrune || !hasEccRegisteredTarget(ctx, cli))
+    ) {
+      actions.push(unreceiptedEccPreservationDoc(cli));
     }
     if (!coordinatedCodexPrune && cli === "codex") {
       const codexPrune = codexPruneRemovalActions(ctx);

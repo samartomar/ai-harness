@@ -12021,8 +12021,8 @@
       "id": "superpowers",
       "owner": "obra",
       "repo": "Superpowers",
-      "pinnedSha": "3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9",
-      "sourceTreeSha256": "9668cef42ac9e6bec2158b057ecf6599f0b5b1d27d0609d5e5cad2557e4b400d",
+      "pinnedSha": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797",
+      "sourceTreeSha256": "3420d68292184fe345d2e3121ed2b3cb192d367ea6fb5f23d9d0fb3629a284b5",
       "components": [
         {
           "id": "runtime:superpowers-plugin",
@@ -12038,7 +12038,7 @@
             "package.json",
             "scripts"
           ],
-          "treeSha256": "598a078a1daaf172c88628d97e2cdbaa69ae333da3e831feced32c9d0e0c4b87",
+          "treeSha256": "49d90d72054c8bc28c5c4af8b864f4966b6a25b75b72823db2f3165afa133e44",
           "verdict": "pass",
           "analyzers": [
             {
@@ -12061,7 +12061,7 @@
           "paths": [
             "skills/brainstorming"
           ],
-          "treeSha256": "be6311a95101601d4f2a1ad5163ceeb2a9b84cb1c717c37df4a89986751cf068",
+          "treeSha256": "0a457b0837e65961929d1f1e0aa24c00612c12df37de6429219f2378289e67b5",
           "verdict": "pass",
           "analyzers": [
             {
@@ -12142,7 +12142,7 @@
           "paths": [
             "skills/finishing-a-development-branch"
           ],
-          "treeSha256": "e48f32b0307e081f594363823e1281a4929c326e5fe26bd47f2c8c2556317a84",
+          "treeSha256": "69af135357b074b916098420b79551f57258c529456fce94d6d84dc3a195a7c8",
           "verdict": "pass",
           "analyzers": [
             {
@@ -12196,7 +12196,7 @@
           "paths": [
             "skills/requesting-code-review"
           ],
-          "treeSha256": "c24afad71b3a8ca2b06f06f9fdcd6e48fe7d5313a52011a553ecad87d6d50ab2",
+          "treeSha256": "48a7d997e43d89dd6bf658a1dd99481e19abb3cf524ec00a971f7b7888e5fe11",
           "verdict": "pass",
           "analyzers": [
             {
@@ -12223,7 +12223,7 @@
           "paths": [
             "skills/subagent-driven-development"
           ],
-          "treeSha256": "24f647f537a856fde70ec218ade366c4275204136c8e3426605364d6b885c692",
+          "treeSha256": "e40a84b9075e1d3418e6cdbed1a6026f5ced291c3712116b69e03f4fc3aa1d93",
           "verdict": "pass",
           "analyzers": [
             {
@@ -12331,7 +12331,7 @@
           "paths": [
             "skills/using-superpowers"
           ],
-          "treeSha256": "74e9db4c46a36baa67c9ac6d55e2f2a71bc690b799cf19a7a1f536de6d2204ed",
+          "treeSha256": "21a9ef6db680b7756add499e5635d1e49faa43aa71524347ba625aada942f002",
           "verdict": "pass",
           "analyzers": [
             {
@@ -12385,7 +12385,7 @@
           "paths": [
             "skills/writing-plans"
           ],
-          "treeSha256": "04ad8b428d530023fbabe749fe4b76f48fbf3921ab6d246104aa2c826fe2ee50",
+          "treeSha256": "17f49518d578336fb7d6ee7f305eb4658d2adb03b9d39e2a7dc64f23d1ddc57c",
           "verdict": "pass",
           "analyzers": [
             {
@@ -12412,7 +12412,7 @@
           "paths": [
             "skills/writing-skills"
           ],
-          "treeSha256": "1d9ba64290350ab61219ed02c28dd2995e5b405ce31e251e14d7869b47390b7f",
+          "treeSha256": "df8159370bb6a8a546b0769405e29124661991fa0fc5415c70a54104c037db39",
           "verdict": "pass",
           "analyzers": [
             {

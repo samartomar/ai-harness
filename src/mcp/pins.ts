@@ -15,7 +15,7 @@ export interface ExactNpmPackagePin {
 const NPM_PACKAGE_SPEC =
   /^(@[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+|[A-Za-z0-9._-]+)@(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)$/;
 const PYTHON_PACKAGE_SPEC =
-  /^([A-Za-z0-9._-]+(?:\[[A-Za-z0-9._,-]+\])?)(?:@|==)(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)$/;
+  /^([A-Za-z0-9._-]+(?:\[[A-Za-z0-9._,-]+\])?)(?:@|==)(\d+\.\d+\.\d+(?:(?:a|b|rc)\d+)?(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)$/;
 
 const UVX_BOOLEAN_OPTIONS = new Set([
   "--isolated",

@@ -7,7 +7,7 @@ export function testTimeoutForPlatform(platform: NodeJS.Platform): number {
 
 export function maxWorkersForPlatform(platform: NodeJS.Platform, parallelism: number): number {
   const derivedWorkers = Math.max(parallelism - 1, 1);
-  return Math.min(platform === "darwin" ? 2 : 8, derivedWorkers);
+  return Math.min(platform === "darwin" || platform === "win32" ? 2 : 8, derivedWorkers);
 }
 
 export function workerExecArgvForPlatform(_platform: NodeJS.Platform): string[] {

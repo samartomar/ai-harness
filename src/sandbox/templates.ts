@@ -19,6 +19,13 @@ export const DEVCONTAINER_IMAGE = "mcr.microsoft.com/devcontainers/base:ubuntu-2
 /** Egress allowlist baked into the managed sandbox settings. */
 export const SANDBOX_ALLOWED_DOMAINS = ["github.com", "pypi.org", "registry.npmjs.org"] as const;
 
+/** Ordered egress domains generated for a detected repository stack. */
+export function sandboxAllowedDomains(stack?: RepoStack): string[] {
+  const allowedDomains: string[] = [...SANDBOX_ALLOWED_DOMAINS];
+  if (stack?.cloud.includes("AWS")) allowedDomains.push("*.amazonaws.com");
+  return allowedDomains;
+}
+
 /** Where worktree-isolated checkouts live, relative to the repo root. */
 export const WORKTREE_DIR = ".claude/worktrees";
 
@@ -31,9 +38,10 @@ export function worktreeGuidance(): string {
   return [
     "Sandbox isolation — git worktrees + devcontainer",
     "",
-    "Run each agent task in its own git worktree so a bad run can never corrupt",
-    `your main checkout. Worktrees live under ${WORKTREE_DIR}/<name> and share the`,
+    "Run each agent task in its own git worktree to separate its working files.",
+    `Worktrees live under ${WORKTREE_DIR}/<name> and share the`,
     "repo's object store, so branching is cheap and disposable.",
+    "A worktree is not a filesystem or process security boundary.",
     "",
     "  # carve off an isolated worktree on a fresh branch",
     `  git worktree add ${WORKTREE_DIR}/<name> -b sandbox/<name>`,
@@ -52,8 +60,13 @@ export function worktreeGuidance(): string {
     "",
     "Combine the two: open the worktree directory in its devcontainer to get a",
     "throwaway environment whose changes still land on the host branch you created",
-    "above. Claude egress policy is enforced by `.claude/managed-settings.json`; the",
-    "devcontainer itself does not claim an outbound network block. Run `aih sandbox`",
+    "above. `.claude/managed-settings.json` is a policy deployment artifact; Claude",
+    "does not load that project-local filename as managed policy. Deploy it through",
+    "a supported managed settings source and verify the active policy in Claude.",
+    "Claude's built-in Bash sandbox supports macOS, Linux and WSL2, not native Windows.",
+    "Local MCP servers need their own process boundary; the Bash sandbox does not",
+    "automatically confine them. The devcontainer has no outbound network block.",
+    "Generated files alone do not prove runtime enforcement. Run `aih sandbox`",
     "from the worktree root to scope generated files to that worktree.",
   ].join("\n");
 }
@@ -164,19 +177,19 @@ export function devcontainerConfig(opts: DevcontainerOptions): Record<string, un
  * and constrain egress to the registries the toolchain needs — plus the detected
  * cloud's API domain (e.g. `*.amazonaws.com`) so legitimate SDK calls aren't
  * blocked. The command-policy lexicon (deny/ask/safe) is spread in as
- * `commandPolicy` so the exec policy ships alongside the egress allowlist in the
- * one managed-settings file. Deep-merged onto any pre-existing
+ * `commandPolicy` metadata alongside the egress allowlist. Claude's native command
+ * enforcement comes from `permissions`; this metadata does not itself prove host
+ * enforcement. Deep-merged onto any pre-existing
  * `.claude/managed-settings.json`.
  */
 export function managedSandboxSettings(stack?: RepoStack): Record<string, unknown> {
-  const allowedDomains: string[] = [...SANDBOX_ALLOWED_DOMAINS];
-  if (stack?.cloud.includes("AWS")) allowedDomains.push("*.amazonaws.com");
+  const allowedDomains = sandboxAllowedDomains(stack);
   return {
     sandbox: {
       enabled: true,
       failIfUnavailable: true,
       allowUnsandboxedCommands: false,
-      allowedDomains,
+      network: { allowedDomains },
       ...sandboxExecPolicy(),
     },
   };

@@ -36,6 +36,7 @@ import {
   eccComponentSourcePaths,
   eccContentDestinationMapping,
 } from "../../src/ecc/materialize.js";
+import { currentEccRuntimeAdapterCompatibilityV1 } from "../../src/ecc/runtime-adapter-compatibility.js";
 
 /**
  * F4, the targets past the first: Codex and Kimi, and the seam that made them
@@ -63,13 +64,19 @@ const BINARY_ASSET = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x1a, 0x0a, 0xff
 const SOURCE_TREE: Readonly<Record<string, string | Buffer>> = {
   "AGENTS.md": "# agents bootloader\n",
   ".agents/plugins/marketplace.json": '{"plugins":[]}\n',
-  "agents/code-reviewer.md": "# code-reviewer\n",
+  "agents/code-reviewer.md":
+    "---\nname: code-reviewer\ndescription: Reviews code for correctness.\n---\n\n# code-reviewer\n",
   "agents/code-architect.md": "# code-architect\n",
   "skills/tdd-workflow/SKILL.md": "# tdd-workflow\n",
   "skills/tdd-workflow/assets/marker.bin": BINARY_ASSET,
   ".agents/skills/tdd-workflow/SKILL.md": "# tdd-workflow (agent copy)\n",
   "rules/README.md": "# rules\n",
   "rules/common/coding-style.md": "# coding style\n",
+  "commands/skill-health.md":
+    "---\ndescription: Inspect selected skill health.\n---\n\nRun node scripts/skills-health.js\n",
+  "scripts/harness-audit.js": "console.log('audit')\n",
+  "scripts/skills-health.js": "require('./lib/skill-evolution/health')\n",
+  "scripts/lib/skill-evolution/health.js": "module.exports = {}\n",
   ".mcp.json": '{"mcpServers":{}}\n',
   "mcp-configs/mcp-servers.json": '{"servers":{}}\n',
   "hooks/hooks.json": '{"hooks":{}}\n',
@@ -138,7 +145,57 @@ function resolve(
 }
 
 describe("the Codex target maps evidence-passed components onto the Codex project rows", () => {
-  it("maps an agent, a skill, and the rules baseline under .codex/", () => {
+  it("refuses commands-core when its selected runtime closure is incomplete", () => {
+    const result = resolve(["codex"], [selected("baseline:commands", "commands")]);
+    expect(result.components).toEqual([]);
+    expect(result.refused).toEqual([
+      expect.objectContaining({
+        target: "codex",
+        id: "baseline:commands",
+        reason: "unsupported-component",
+        detail: expect.stringMatching(/unselected hooks-runtime.*CommonJS/i),
+      }),
+    ]);
+  });
+
+  it("projects a reviewed complete command closure through Codex workflow skills", () => {
+    const paths = [
+      "commands/skill-health.md",
+      "scripts/harness-audit.js",
+      "scripts/skills-health.js",
+      "scripts/lib/skill-evolution/health.js",
+    ];
+    const historicalAdapterCompatibility = currentEccRuntimeAdapterCompatibilityV1([
+      {
+        id: "module:commands-core",
+        kind: "module",
+        files: paths.map((path) => ({ path, digest: `sha256:${"a".repeat(64)}` })),
+      },
+    ]);
+    const result = resolveEccTargetMaterialization({
+      sourceRoot,
+      targets: ["codex"],
+      components: [selected("module:commands-core", "commands")],
+      componentPathsById: new Map([
+        [
+          "module:commands-core",
+          ["commands", "scripts/harness-audit.js", "scripts/skills-health.js", "scripts/lib"],
+        ],
+      ]),
+      historicalAdapterCompatibility,
+    });
+    expect(result.refused).toEqual([]);
+    expect(destinations(result, "module:commands-core")).toEqual([
+      ".agents/skills/ecc-workflow-skill-health/SKILL.md",
+      "scripts/harness-audit.js",
+      "scripts/lib/skill-evolution/health.js",
+      "scripts/package.json",
+      "scripts/skills-health.js",
+    ]);
+    const workflow = result.components[0]?.files.find((file) => file.path.endsWith("SKILL.md"));
+    expect(workflow?.contents.toString()).toContain("name: ecc-workflow-skill-health");
+  });
+  it("maps an agent and rules under .codex while exposing a skill once through .agents", () => {
     const result = resolve(
       ["codex"],
       [
@@ -149,13 +206,11 @@ describe("the Codex target maps evidence-passed components onto the Codex projec
     );
 
     expect(result.refused).toEqual([]);
-    expect(destinations(result, "agent:code-reviewer")).toEqual([".codex/agents/code-reviewer.md"]);
+    expect(destinations(result, "agent:code-reviewer")).toEqual([
+      ".codex/agents/code-reviewer.toml",
+    ]);
     expect(destinations(result, "skill:tdd-workflow")).toEqual([
-      // The shared row is every target's; only the tool-owned rows carry the
-      // target's own directory.
       ".agents/skills/tdd-workflow/SKILL.md",
-      ".codex/skills/tdd-workflow/SKILL.md",
-      ".codex/skills/tdd-workflow/assets/marker.bin",
     ]);
     expect(destinations(result, "baseline:rules")).toEqual([
       ".codex/rules/README.md",
@@ -163,17 +218,103 @@ describe("the Codex target maps evidence-passed components onto the Codex projec
     ]);
   });
 
-  it("carries the exact source bytes for Codex, including a file that is not text", () => {
+  it("carries the exact canonical .agents source bytes for Codex", () => {
     const result = resolve(["codex"], [selected("skill:tdd-workflow", "skills/tdd-workflow")]);
 
     const files = result.components[0]?.files ?? [];
-    const asset = files.find(
-      (file) => file.path === ".codex/skills/tdd-workflow/assets/marker.bin",
+    const skill = files.find((file) => file.path === ".agents/skills/tdd-workflow/SKILL.md");
+    expect(Buffer.from(skill?.contents ?? "").toString("utf8")).toBe(
+      "# tdd-workflow (agent copy)\n",
     );
-    const skill = files.find((file) => file.path === ".codex/skills/tdd-workflow/SKILL.md");
-    expect(Buffer.from(asset?.contents ?? "").equals(BINARY_ASSET)).toBe(true);
-    expect(Buffer.from(skill?.contents ?? "").toString("utf8")).toBe("# tdd-workflow\n");
     expect([...new Set(files.map((file) => file.kind))]).toEqual(["copy-file"]);
+  });
+
+  it("migrates an older receipt-owned Codex duplicate to the canonical .agents path", () => {
+    const targetRoot = mkdtempSync(join(tmpdir(), "aih-codex-selection-migration-"));
+    const component = selected("skill:tdd-workflow", "skills/tdd-workflow");
+    try {
+      applyEccMaterialization({
+        root: targetRoot,
+        components: [
+          {
+            ...component,
+            targets: ["codex"],
+            files: [
+              {
+                path: ".agents/skills/tdd-workflow/SKILL.md",
+                kind: "copy-file",
+                contents: Buffer.from("# tdd-workflow (agent copy)\n"),
+              },
+              {
+                path: ".codex/skills/tdd-workflow/SKILL.md",
+                kind: "copy-file",
+                contents: Buffer.from("# tdd-workflow\n"),
+              },
+            ],
+          },
+        ],
+      });
+
+      const current = resolve(["codex"], [component]);
+      const migrated = applyEccMaterialization({
+        root: targetRoot,
+        components: current.components,
+      });
+
+      expect(migrated.removed.map((file) => file.path)).toEqual([
+        ".codex/skills/tdd-workflow/SKILL.md",
+      ]);
+      expect(migrated.unchanged.map((file) => file.path)).toEqual([
+        ".agents/skills/tdd-workflow/SKILL.md",
+      ]);
+      expect(existsSync(join(targetRoot, ".codex", "skills", "tdd-workflow", "SKILL.md"))).toBe(
+        false,
+      );
+    } finally {
+      rmSync(targetRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("preserves an edited legacy Codex duplicate during canonical migration", () => {
+    const targetRoot = mkdtempSync(join(tmpdir(), "aih-codex-selection-drift-"));
+    const component = selected("skill:tdd-workflow", "skills/tdd-workflow");
+    const legacyPath = ".codex/skills/tdd-workflow/SKILL.md";
+    try {
+      applyEccMaterialization({
+        root: targetRoot,
+        components: [
+          {
+            ...component,
+            targets: ["codex"],
+            files: [
+              {
+                path: ".agents/skills/tdd-workflow/SKILL.md",
+                kind: "copy-file",
+                contents: Buffer.from("# tdd-workflow (agent copy)\n"),
+              },
+              { path: legacyPath, kind: "copy-file", contents: Buffer.from("# tdd-workflow\n") },
+            ],
+          },
+        ],
+      });
+      writeFileSync(join(targetRoot, ...legacyPath.split("/")), "# operator edit\n");
+
+      const current = resolve(["codex"], [component]);
+      const migrated = applyEccMaterialization({
+        root: targetRoot,
+        components: current.components,
+      });
+
+      expect(migrated.removed).toEqual([]);
+      expect(migrated.advisories).toEqual([
+        expect.objectContaining({ path: legacyPath, reason: "drifted" }),
+      ]);
+      expect(readFileSync(join(targetRoot, ...legacyPath.split("/")), "utf8")).toBe(
+        "# operator edit\n",
+      );
+    } finally {
+      rmSync(targetRoot, { recursive: true, force: true });
+    }
   });
 
   it("refuses by name, in the Codex target's own voice, what Codex does not own", () => {
@@ -519,22 +660,26 @@ describe("the OpenCode target ships the shared rows and refuses the rest by name
     );
   });
 
-  it("refuses a half-shared component whole rather than installing the half it can map", () => {
+  it("prefers a component's shared .agents skill copy for OpenCode", () => {
     const result = resolve(
       ["opencode"],
       [
-        // `.agents/skills/tdd-workflow` is shared and WOULD map; `skills/tdd-workflow`
-        // does not. Per-target refusal is all-or-nothing, so neither lands.
+        // The active component declares both source copies. OpenCode consumes
+        // the shared `.agents/skills` convention, so the duplicate legacy copy
+        // is not projected a second time.
         selected("skill:tdd-workflow", "skills/tdd-workflow"),
         selected("baseline:agents", "AGENTS.md"),
       ],
     );
 
-    expect(result.components.map((component) => component.id)).toEqual(["baseline:agents"]);
-    expect(refusalFor(result, "skill:tdd-workflow", "opencode")?.reason).toBe(
-      "unowned-destination",
-    );
-    expect(destinations(result, "skill:tdd-workflow")).toEqual([]);
+    expect(result.components.map((component) => component.id)).toEqual([
+      "skill:tdd-workflow",
+      "baseline:agents",
+    ]);
+    expect(refusalFor(result, "skill:tdd-workflow", "opencode")).toBeUndefined();
+    expect(destinations(result, "skill:tdd-workflow")).toEqual([
+      ".agents/skills/tdd-workflow/SKILL.md",
+    ]);
   });
 
   it("produces no `.opencode/` destination for any evidence-passed component", () => {
@@ -550,7 +695,11 @@ describe("the OpenCode target ships the shared rows and refuses the rest by name
 
     expect(
       result.components.flatMap((component) => component.files.map((file) => file.path)),
-    ).toEqual([".agents/plugins/marketplace.json", "AGENTS.md"]);
+    ).toEqual([
+      ".agents/skills/tdd-workflow/SKILL.md",
+      ".agents/plugins/marketplace.json",
+      "AGENTS.md",
+    ]);
   });
 
   it("lets Claude materialize what OpenCode refuses, in one union", () => {
@@ -600,8 +749,6 @@ describe("a multi-target request is one union in one materialization", () => {
       ".agents/skills/tdd-workflow/SKILL.md",
       ".claude/skills/tdd-workflow/SKILL.md",
       ".claude/skills/tdd-workflow/assets/marker.bin",
-      ".codex/skills/tdd-workflow/SKILL.md",
-      ".codex/skills/tdd-workflow/assets/marker.bin",
     ]);
   });
 
@@ -631,10 +778,9 @@ describe("a multi-target request is one union in one materialization", () => {
 
     const applied = applyEccMaterialization({ root, components: result.components });
 
-    // Both tool-owned rows landed, and each carries the source bytes.
+    // Copy rows carry source bytes; the Codex role is rendered to its native TOML contract.
     for (const [source, destination] of [
       ["agents/code-reviewer.md", ".claude/agents/code-reviewer.md"],
-      ["agents/code-reviewer.md", ".codex/agents/code-reviewer.md"],
       ["AGENTS.md", "AGENTS.md"],
       [".agents/plugins/marketplace.json", ".agents/plugins/marketplace.json"],
     ] as const) {
@@ -645,6 +791,9 @@ describe("a multi-target request is one union in one materialization", () => {
         destination,
       ).toBe(true);
     }
+    expect(readFileSync(join(root, ".codex", "agents", "code-reviewer.toml"), "utf8")).toContain(
+      "developer_instructions",
+    );
     expect(applied.written).toHaveLength(4);
 
     const read = readEccMaterializationReceipt(root);
@@ -659,7 +808,7 @@ describe("a multi-target request is one union in one materialization", () => {
     ).toEqual([
       {
         id: "agent:code-reviewer",
-        files: [".claude/agents/code-reviewer.md", ".codex/agents/code-reviewer.md"],
+        files: [".claude/agents/code-reviewer.md", ".codex/agents/code-reviewer.toml"],
       },
       { id: "baseline:agents", files: [".agents/plugins/marketplace.json", "AGENTS.md"] },
     ]);
@@ -671,7 +820,7 @@ describe("a multi-target request is one union in one materialization", () => {
       [selected("agent:code-reviewer", "agents/code-reviewer.md")],
     );
     applyEccMaterialization({ root, components: both.components });
-    expect(existsSync(join(root, ".codex", "agents", "code-reviewer.md"))).toBe(true);
+    expect(existsSync(join(root, ".codex", "agents", "code-reviewer.toml"))).toBe(true);
 
     // Apply IS the reconcile: the same components for fewer targets.
     const claudeOnly = resolve(
@@ -680,8 +829,8 @@ describe("a multi-target request is one union in one materialization", () => {
     );
     const narrowed = applyEccMaterialization({ root, components: claudeOnly.components });
 
-    expect(narrowed.removed.map((file) => file.path)).toEqual([".codex/agents/code-reviewer.md"]);
-    expect(existsSync(join(root, ".codex", "agents", "code-reviewer.md"))).toBe(false);
+    expect(narrowed.removed.map((file) => file.path)).toEqual([".codex/agents/code-reviewer.toml"]);
+    expect(existsSync(join(root, ".codex", "agents", "code-reviewer.toml"))).toBe(false);
     // ...and the target that stayed is untouched, not rewritten.
     expect(existsSync(join(root, ".claude", "agents", "code-reviewer.md"))).toBe(true);
     expect(narrowed.unchanged.map((file) => file.path)).toEqual([
@@ -704,8 +853,6 @@ describe("a multi-target request is one union in one materialization", () => {
       ".agents/skills/tdd-workflow/SKILL.md",
       ".claude/skills/tdd-workflow/SKILL.md",
       ".claude/skills/tdd-workflow/assets/marker.bin",
-      ".codex/skills/tdd-workflow/SKILL.md",
-      ".codex/skills/tdd-workflow/assets/marker.bin",
     ]);
     expect(walkManagedRoot(root)).toEqual(["notes/OPERATOR.md"]);
   });
@@ -752,12 +899,12 @@ describe("a multi-target request is one union in one materialization", () => {
           .digest("hex"),
       ]),
     );
-    expect(Object.keys(first).length).toBeGreaterThan(5);
+    expect(Object.keys(first).length).toBe(4);
 
     const second = applyEccMaterialization({ root, components: components() });
 
     expect(second.written).toEqual([]);
-    expect(second.unchanged).toHaveLength(5);
+    expect(second.unchanged).toHaveLength(3);
     expect(
       Object.fromEntries(
         walkManagedRoot(root).map((path) => [
@@ -841,7 +988,7 @@ describe("two of one target's own sources may not claim one destination", () => 
     () => {
       // Skipped where the volume normalizes filenames (APFS): the pair cannot
       // exist there, so there is nothing for the resolver to see.
-      const skill = join(sourceRoot, "skills", "tdd-workflow");
+      const skill = join(sourceRoot, ".agents", "skills", "tdd-workflow");
       writeFileSync(join(skill, NFC_NAME), "# precomposed\n");
       writeFileSync(join(skill, NFD_NAME), "# decomposed\n");
 
@@ -1116,18 +1263,21 @@ describe("the one destination mapping keeps each target off the others' exclusiv
     }
   });
 
-  it("answers no generic project row for OpenCode, and never `.opencode/`", () => {
-    // Suppressed deliberately: no evidence records a per-component OpenCode
-    // PROJECT layout. Its only framework adapter is home-scoped, so `.opencode/`
-    // here would be a directory this lifecycle invented.
+  it("answers only the shared skill project row for OpenCode, and never `.opencode/`", () => {
+    // OpenCode's shared skill convention is project-scoped. Its own framework
+    // adapter remains home-scoped, so other generic rows still have no project
+    // destination and `.opencode/` is never invented here.
     for (const source of [
       "agents/code-reviewer.md",
-      "skills/tdd-workflow/SKILL.md",
       "commands/tdd.md",
       "rules/common/testing.md",
     ]) {
       expect(eccContentDestinationMapping(source, "opencode"), source).toBeUndefined();
     }
+    expect(eccContentDestinationMapping("skills/tdd-workflow/SKILL.md", "opencode")).toEqual({
+      scope: "project",
+      relative: ".agents/skills/tdd-workflow/SKILL.md",
+    });
     expect(
       GOVERNED_MATERIALIZATION_TARGETS.flatMap((target) =>
         ["agents/x.md", "skills/x/SKILL.md", "commands/x.md", "rules/x.md"].map(
@@ -1135,8 +1285,7 @@ describe("the one destination mapping keeps each target off the others' exclusiv
         ),
       ).filter((relative) => relative.startsWith(".opencode/")),
     ).toEqual([]);
-    // The shared rows still answer for OpenCode — the suppression removes the
-    // four generic rows, not the target.
+    // The target-independent shared rows still answer for OpenCode.
     expect(eccContentDestinationMapping("AGENTS.md", "opencode")).toEqual({
       scope: "project",
       relative: "AGENTS.md",
@@ -1319,20 +1468,16 @@ describe("the one destination mapping keeps each target off the others' exclusiv
   });
 
   /**
-   * The same lockstep, on the OpenCode suppression. The behavioural pins above
+   * The same lockstep, on the OpenCode shared-skill bridge. The behavioural pins above
    * only reach the importable copy; the child's restatement is a script string
-   * this suite can read but not call. Suppression applied to one copy only is a
-   * classifier and a planner that disagree about whether `.opencode/agents/` is
-   * a governed content destination at all.
+   * this suite can read but not call. The bridge applied to one copy only is a
+   * classifier and planner disagreement about the owned destination.
    */
-  it("keeps the runtime restatement of the mapping in lockstep on the OpenCode suppression", () => {
-    // The four generic rows must sit INSIDE the suppressed arm, so the regex
-    // spans from the target test through the first row it guards.
-    const suppression = /target === "opencode"\s*\?\s*\[\]\s*:\s*\(?\[\s*\[\s*"agents\/"/;
+  it("keeps the runtime restatement of the mapping in lockstep on the OpenCode bridge", () => {
     for (const module of ["materialize.ts", "verified.ts"]) {
-      expect(readFileSync(join(process.cwd(), "src", "ecc", module), "utf8"), module).toMatch(
-        suppression,
-      );
+      const source = readFileSync(join(process.cwd(), "src", "ecc", module), "utf8");
+      expect(source, module).toMatch(/(?:target|payload\.target) === "opencode"/);
+      expect(source, module).toContain('["skills/", ".agents/skills/"]');
     }
   });
 
@@ -1365,5 +1510,41 @@ describe("historical source paths through the closed target adapter", () => {
 
     expect(result.refused).toEqual([]);
     expect(destinations(result, id)).toEqual([".claude/skills/historical-only/SKILL.md"]);
+  });
+
+  it("refuses a historical component whole when OpenCode owns only some of its sealed files", () => {
+    const id = "framework:react";
+    const paths = [
+      ".agents/skills/frontend-patterns/SKILL.md",
+      "rules/react/component-architecture.md",
+    ] as const;
+    writeSource(sourceRoot, {
+      [paths[0]]: "# frontend patterns\n",
+      [paths[1]]: "# component architecture\n",
+    });
+    const compatibility = currentEccRuntimeAdapterCompatibilityV1([
+      {
+        id,
+        kind: "framework",
+        files: paths.map((path, index) => ({
+          path,
+          digest: `sha256:${String(index + 1).repeat(64)}`,
+        })),
+      },
+    ]);
+
+    const result = resolveEccTargetMaterialization({
+      sourceRoot,
+      targets: ["opencode"],
+      components: [selected(id, "frameworks/react")],
+      componentPathsById: new Map([[id, paths]]),
+      historicalAdapterCompatibility: compatibility,
+    });
+
+    expect(result.components).toEqual([]);
+    expect(refusalFor(result, id, "opencode")).toMatchObject({
+      reason: "unsupported-component",
+      detail: expect.stringContaining("unowned-destination"),
+    });
   });
 });

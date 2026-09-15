@@ -13,7 +13,7 @@ const checkout = resolve(tmpdir(), "vendor", "superpowers");
 const clean = {
   checkout: {
     repository: "obra/superpowers" as const,
-    commitSha: "3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9",
+    commitSha: "b36e0829c6d0140e93cfef2ca599b1b07d4a7797",
   },
   observations: [],
   accepted: [],

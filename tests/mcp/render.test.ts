@@ -39,7 +39,7 @@ const stdioEnv: McpServer = {
   egress: "vendor-incumbent",
   credentials: "token",
   supplyChain: "pinned",
-  env: { GH_TOKEN: "$GH_TOKEN" },
+  env: { GH_TOKEN: "${GH_TOKEN}" },
 };
 
 describe("mcpEntryFor — per-tool server shapes (verified against each tool's docs)", () => {
@@ -62,7 +62,7 @@ describe("mcpEntryFor — per-tool server shapes (verified against each tool's d
     });
   });
 
-  it("copilot (.vscode/mcp.json): keeps the type discriminator, strips aih metadata", () => {
+  it("copilot (.github/mcp.json): keeps the type discriminator, strips aih metadata", () => {
     expect(mcpEntryFor("copilot", stdio)).toEqual({
       type: "stdio",
       command: "uvx",
@@ -117,16 +117,16 @@ describe("mcpEntryFor — per-tool server shapes (verified against each tool's d
 });
 
 describe("mcpEntryFor — env rendering (stdio env rides each tool's key)", () => {
-  it("uses `env` for copilot/gemini/windsurf/zed/antigravity + canonical claude", () => {
-    for (const cli of ["copilot", "gemini", "windsurf", "zed", "antigravity", "claude"] as const) {
+  it("uses canonical `env` for gemini/windsurf/zed/antigravity + claude", () => {
+    for (const cli of ["gemini", "windsurf", "zed", "antigravity", "claude"] as const) {
       const entry = mcpEntryFor(cli, stdioEnv) as Record<string, unknown>;
-      expect(entry.env).toEqual({ GH_TOKEN: "$GH_TOKEN" });
+      expect(entry.env).toEqual({ GH_TOKEN: "${GH_TOKEN}" });
     }
   });
 
   it("uses `environment` (not `env`) for opencode", () => {
     const entry = mcpEntryFor("opencode", stdioEnv) as Record<string, unknown>;
-    expect(entry.environment).toEqual({ GH_TOKEN: "$GH_TOKEN" });
+    expect(entry.environment).toEqual({ GH_TOKEN: "{env:GH_TOKEN}" });
     expect(entry.env).toBeUndefined();
   });
 
@@ -153,11 +153,11 @@ describe("mcpTomlBody — Codex config.toml [mcp_servers.*] tables", () => {
     expect(body).toBe('[mcp_servers."email"]\nurl = "https://better-email-mcp.n24q02m.com/mcp"');
   });
 
-  it("renders a nested [mcp_servers.NAME.env] sub-table for a stdio server with env", () => {
+  it("forwards named process variables instead of storing placeholder literals", () => {
     const body = mcpTomlBody({ github: stdioEnv });
     expect(body).toContain('[mcp_servers."github"]');
-    expect(body).toContain('[mcp_servers."github".env]');
-    expect(body).toContain('GH_TOKEN = "$GH_TOKEN"');
+    expect(body).not.toContain('[mcp_servers."github".env]');
+    expect(body).toContain('env_vars = ["GH_TOKEN"]');
   });
 
   it("tomlServerCount counts [mcp_servers.*] tables", () => {

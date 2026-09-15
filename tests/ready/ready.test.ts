@@ -1,13 +1,15 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { sharedBlock } from "../../src/bootstrap-ai/canon.js";
+import type { RuntimeEvidenceResult } from "../../src/heal/opencode-runtime-evidence.js";
 import { mergeManagedBlock } from "../../src/internals/markers.js";
 import type { Action, PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner, type RunResult } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { command } from "../../src/ready/index.js";
+import { openCodeRuntimeFixture } from "../heal/opencode-runtime-evidence-fixture.js";
 
 const DIR_NAME = "ai-coding";
 
@@ -19,6 +21,7 @@ interface Tools {
   rg?: boolean;
   fd?: boolean;
   jq?: boolean;
+  uvx?: boolean;
   /** TLS handshake to the registry: "ok" (default) | "fail". */
   tls?: "ok" | "fail";
   /** Package-manager binaries to report on PATH (for the install path), e.g. ["brew"]. */
@@ -65,6 +68,7 @@ function toolRunner(t: Tools): PlanContext["run"] {
       return t.npm === false
         ? { code: 1, stderr: "Cannot find module" }
         : { code: 0, stdout: "10.9.2" };
+    if (cmd === "uvx") return present("uvx", t.uvx !== false);
     if (cmd === "git")
       return t.git === false
         ? { spawnError: true, code: 127 }
@@ -104,6 +108,12 @@ function put(rel: string, body: string): void {
   writeFileSync(abs, body);
 }
 
+function putHome(rel: string, body: string): void {
+  const abs = join(home, rel);
+  mkdirSync(join(abs, ".."), { recursive: true });
+  writeFileSync(abs, body);
+}
+
 /** An in-sync CLAUDE.md bootloader that routes to the router. */
 function inSyncBootloader(): string {
   return mergeManagedBlock(undefined, sharedBlock(DIR_NAME), "# Repo — Claude Code");
@@ -135,6 +145,26 @@ function actionsOf(actions: Action[]): {
   if (digest?.kind !== "digest") throw new Error("expected a digest action");
   if (gate?.kind !== "probe") throw new Error("expected a gate probe action");
   return { digest, gate };
+}
+
+interface McpReadinessData {
+  banner: string;
+  score: number;
+  blockers: Array<{ id: string }>;
+  warns: Array<{ id: string }>;
+  mcp: {
+    servers: Array<{
+      targetCli: string;
+      configPath: string;
+      name: string;
+      selected: boolean;
+      required: "required" | "optional" | "unspecified";
+      state: "unverified" | "unavailable" | "disabled";
+    }>;
+    issues: Array<Record<string, unknown>>;
+  };
+  unverified: Array<{ id: string }>;
+  runtimeEvidence?: RuntimeEvidenceResult;
 }
 
 describe("aih ready — plan shape", () => {
@@ -181,7 +211,8 @@ describe("aih ready — the gate probe drives the exit code", () => {
 
     const check = await gate.run(c);
     expect(check.verdict).toBe("pass");
-    expect(check.detail).toContain("an agent can start here");
+    expect(check.detail).toContain("no preflight blockers");
+    expect(check.detail).toContain("native execution not established");
     expect((digest.data as { banner: string }).banner).not.toBe("NOT READY");
   });
 });
@@ -324,5 +355,376 @@ describe("aih ready — confirmation-gated core-tool installs (slice 4)", () => 
     const check = await rgProbe?.run(c);
     expect(check?.verdict).toBe("fail");
     expect(check?.code).toBe("env.tool-install-blocked");
+  });
+});
+
+describe("aih ready — native MCP evidence boundary", () => {
+  it("shows explicitly selected current OpenCode evidence beside unchanged preflight blockers", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime("2026-09-13T12:10:00.000Z");
+    const native = openCodeRuntimeFixture();
+    rmSync(dir, { recursive: true, force: true });
+    dir = native.root;
+    try {
+      scaffoldReady();
+      put(
+        ".aih-config.json",
+        JSON.stringify({ schemaVersion: 1, contextDir: DIR_NAME, targets: ["opencode"] }),
+      );
+      const baseline = actionsOf(
+        (await command.plan(ctx({ rg: false }, { options: { cli: "opencode" } }))).actions,
+      ).digest.data as unknown as McpReadinessData;
+      const observedContext = ctx(
+        { rg: false },
+        { options: { cli: "opencode", runtimeEvidence: native.evidencePath } },
+      );
+      const readinessRun = observedContext.run;
+      observedContext.run = async (argv, options) =>
+        argv[0] === native.paths.opencode
+          ? { code: 0, stdout: "opencode version 1.18.11\n", stderr: "" }
+          : readinessRun(argv, options);
+      const built = await command.plan(observedContext);
+      const { digest, gate } = actionsOf(built.actions);
+      const data = digest.data as unknown as McpReadinessData;
+      expect(data.runtimeEvidence).toMatchObject({
+        recordState: "current",
+        exercised: "verified",
+        enforcement: "verified",
+      });
+      expect(data.banner).toBe(baseline.banner);
+      expect(data.score).toBe(baseline.score);
+      expect(data.blockers).toEqual(baseline.blockers);
+      expect(await gate.run(ctx())).toMatchObject({ verdict: "fail", code: "ready.blocked" });
+      expect(digest.text).toContain("fixed fixture / fixture_probe");
+      expect(digest.text).toContain("local unsigned observation");
+    } finally {
+      native.cleanup();
+      vi.useRealTimers();
+    }
+  });
+
+  it("registers the explicit runtime evidence option without changing default output", () => {
+    expect(command.options).toContainEqual({
+      flags: "--runtime-evidence <absolute-file>",
+      description: expect.stringContaining("OpenCode"),
+    });
+  });
+
+  it("re-evaluates current material on each plan built with the same context", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime("2026-09-13T12:10:00.000Z");
+    const native = openCodeRuntimeFixture();
+    rmSync(dir, { recursive: true, force: true });
+    dir = native.root;
+    try {
+      scaffoldReady();
+      const c = ctx({}, { options: { cli: "opencode", runtimeEvidence: native.evidencePath } });
+      const readinessRun = c.run;
+      c.run = async (argv, options) =>
+        argv[0] === native.paths.opencode
+          ? { code: 0, stdout: "1.18.11\n", stderr: "" }
+          : readinessRun(argv, options);
+      const first = actionsOf((await command.plan(c)).actions).digest.data as McpReadinessData;
+      expect(first.runtimeEvidence?.recordState).toBe("current");
+      writeFileSync(
+        native.paths.config,
+        `${JSON.stringify(JSON.parse(readFileSync(native.paths.config, "utf8")))}\n`,
+      );
+      const second = actionsOf((await command.plan(c)).actions).digest.data as McpReadinessData;
+      expect(second.runtimeEvidence).toMatchObject({
+        recordState: "stale",
+        reasons: expect.arrayContaining(["target-binding-changed"]),
+      });
+    } finally {
+      native.cleanup();
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    '[mcp_servers.other]\ncommand="uvx"\n',
+    '[mcp_servers.other]\nrequired=true\nbearer_token_env_var="MISSING_FIXTURE_AUTH"\n',
+    "[mcp_servers.other\n",
+  ])(
+    "keeps unselected client observations outside the selected readiness score: %s",
+    async (source) => {
+      scaffoldReady();
+      put(
+        ".aih-config.json",
+        JSON.stringify({ schemaVersion: 1, contextDir: DIR_NAME, targets: ["claude"] }),
+      );
+      const baseline = actionsOf((await command.plan(ctx())).actions).digest
+        .data as unknown as McpReadinessData;
+      put(".codex/config.toml", source);
+      const observed = actionsOf((await command.plan(ctx())).actions).digest
+        .data as unknown as McpReadinessData;
+      expect(observed.mcp.servers.length + observed.mcp.issues.length).toBeGreaterThan(0);
+      expect(observed.banner).toBe(baseline.banner);
+      expect(observed.score).toBe(baseline.score);
+      expect(observed.blockers).toEqual(baseline.blockers);
+      expect(observed.unverified).toEqual(baseline.unverified);
+    },
+  );
+
+  it("keeps a selected Codex-native server unverified when only .codex/config.toml exists", async () => {
+    scaffoldReady();
+    put(
+      ".aih-config.json",
+      JSON.stringify({ schemaVersion: 1, contextDir: DIR_NAME, targets: ["codex"] }),
+    );
+    put(
+      ".codex/config.toml",
+      '[mcp_servers.fixture]\ncommand = "uvx"\nargs = ["fixture-server"]\n',
+    );
+
+    const c = ctx();
+    const built = await command.plan(c);
+    const { digest } = actionsOf(built.actions);
+    const data = digest.data as unknown as McpReadinessData;
+    const server = data.mcp.servers.find((candidate) => candidate.name === "fixture");
+    expect(server).toMatchObject({
+      targetCli: "codex",
+      configPath: ".codex/config.toml",
+      selected: true,
+      state: "unverified",
+    });
+    expect(data.unverified.length).toBeGreaterThan(0);
+    expect(data.banner).toBe("READY, WITH GAPS");
+    expect(digest.text).not.toMatch(
+      /MCP servers can launch|runtime proven|successfully exercised/i,
+    );
+  });
+
+  it("does not execute an optional offline uvx server during routine readiness", async () => {
+    scaffoldReady();
+    put(
+      ".aih-config.json",
+      JSON.stringify({ schemaVersion: 1, contextDir: DIR_NAME, targets: ["codex"] }),
+    );
+    put(".codex/config.toml", '[mcp_servers.offline]\nrequired = false\ncommand = "uvx"\n');
+    const calls: string[][] = [];
+    const c = ctx();
+    const run = c.run;
+    c.run = async (argv, options) => {
+      calls.push([...argv]);
+      return run(argv, options);
+    };
+
+    const built = await command.plan(c);
+    const { digest } = actionsOf(built.actions);
+    const data = digest.data as unknown as McpReadinessData;
+    const server = data.mcp.servers.find((candidate) => candidate.name === "offline");
+    expect(server).toMatchObject({ targetCli: "codex", required: "optional", state: "unverified" });
+    expect(data.unverified.length).toBeGreaterThan(0);
+    expect(calls.some((argv) => argv[0] === "uvx" && !argv.includes("--version"))).toBe(false);
+  });
+
+  it.each([
+    ["unverified", 'command = "uvx"'],
+    ["unavailable", 'command = "uvx"'],
+  ] as const)(
+    "blocks a selected required Codex server when native state is %s",
+    async (state, declaration) => {
+      scaffoldReady();
+      put(
+        ".aih-config.json",
+        JSON.stringify({ schemaVersion: 1, contextDir: DIR_NAME, targets: ["codex"] }),
+      );
+      put(".codex/config.toml", `[mcp_servers.fixture]\nrequired = true\n${declaration}\n`);
+
+      const built = await command.plan(ctx(state === "unavailable" ? { uvx: false } : {}));
+      const { digest } = actionsOf(built.actions);
+      const data = digest.data as unknown as McpReadinessData;
+      const server = data.mcp.servers.find((candidate) => candidate.name === "fixture");
+      expect(server).toMatchObject({ targetCli: "codex", selected: true, required: "required" });
+      expect(["unverified", "unavailable", "disabled"]).toContain(server?.state);
+      expect(data.blockers.length).toBeGreaterThan(0);
+      expect(data.banner).toBe("NOT READY");
+      expect(state).toBe(server?.state);
+    },
+  );
+
+  it("keeps a disabled required Codex server visible without blocking solely on required=true", async () => {
+    scaffoldReady();
+    put(
+      ".aih-config.json",
+      JSON.stringify({ schemaVersion: 1, contextDir: DIR_NAME, targets: ["codex"] }),
+    );
+    put(
+      ".codex/config.toml",
+      '[mcp_servers.fixture]\nrequired = true\nenabled = false\ncommand = "uvx"\n',
+    );
+
+    const built = await command.plan(ctx());
+    const { digest } = actionsOf(built.actions);
+    const data = digest.data as unknown as McpReadinessData;
+    expect(data.mcp.servers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "fixture", required: "required", state: "disabled" }),
+      ]),
+    );
+    expect(data.blockers).toEqual([]);
+  });
+
+  it("keeps a selected optional Codex server unavailable as a warning", async () => {
+    scaffoldReady();
+    put(
+      ".aih-config.json",
+      JSON.stringify({ schemaVersion: 1, contextDir: DIR_NAME, targets: ["codex"] }),
+    );
+    put(".codex/config.toml", '[mcp_servers.fixture]\nrequired = false\ncommand = "uvx"\n');
+
+    const built = await command.plan(ctx({ uvx: false }));
+    const { digest } = actionsOf(built.actions);
+    const data = digest.data as unknown as McpReadinessData;
+    const server = data.mcp.servers.find((candidate) => candidate.name === "fixture");
+    expect(server).toMatchObject({ selected: true, required: "optional", state: "unavailable" });
+    expect(data.blockers).toEqual([]);
+    expect(data.warns.length).toBeGreaterThan(0);
+    expect(data.banner).not.toBe("NOT READY");
+  });
+
+  it("reports missing authentication for a required server without exposing environment values", async () => {
+    scaffoldReady();
+    put(
+      ".aih-config.json",
+      JSON.stringify({ schemaVersion: 1, contextDir: DIR_NAME, targets: ["codex"] }),
+    );
+    put(
+      ".codex/config.toml",
+      '[mcp_servers.fixture]\nrequired = true\nurl = "https://fixture.invalid"\nbearer_token_env_var = "FIXTURE_AUTH"\n',
+    );
+    const c = ctx();
+    c.env.UNRELATED_AUTH = "private-fixture-value";
+    const { digest } = actionsOf((await command.plan(c)).actions);
+    const data = digest.data as unknown as McpReadinessData;
+    expect(data.mcp.servers[0]).toMatchObject({
+      required: "required",
+      state: "unavailable",
+      reason: "missing-auth-env",
+    });
+    expect(data.blockers.some((row) => row.id.startsWith("mcp:"))).toBe(true);
+    expect(data.banner).toBe("NOT READY");
+    expect(JSON.stringify(digest.data)).not.toContain("private-fixture-value");
+  });
+
+  it("shows an unspecified configured server as unverified and recomputes after config changes", async () => {
+    scaffoldReady();
+    put(
+      ".aih-config.json",
+      JSON.stringify({ schemaVersion: 1, contextDir: DIR_NAME, targets: ["codex"] }),
+    );
+    const configPath = ".codex/config.toml";
+    put(configPath, '[mcp_servers.first]\ncommand = "uvx"\n');
+    const first = actionsOf((await command.plan(ctx())).actions).digest
+      .data as unknown as McpReadinessData;
+    expect(first.mcp.servers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "first", required: "unspecified", state: "unverified" }),
+      ]),
+    );
+    put(configPath, '[mcp_servers.second]\ncommand = "uvx"\n');
+    const second = actionsOf((await command.plan(ctx())).actions).digest
+      .data as unknown as McpReadinessData;
+    expect(second.mcp.servers).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: "second", state: "unverified" })]),
+    );
+    expect(second.mcp.servers).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: "first" })]),
+    );
+  });
+
+  it("does not read an unselected global Codex MCP config", async () => {
+    scaffoldReady();
+    put(
+      ".aih-config.json",
+      JSON.stringify({ schemaVersion: 1, contextDir: DIR_NAME, targets: ["claude"] }),
+    );
+    putHome(
+      ".codex/config.toml",
+      '[mcp_servers.global-secret]\ncommand = "missing-fixture-runtime"\n',
+    );
+    const built = await command.plan(ctx());
+    const { digest } = actionsOf(built.actions);
+    const data = digest.data as unknown as McpReadinessData;
+    expect(data.mcp.servers).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "global-secret", targetCli: "codex" }),
+      ]),
+    );
+  });
+
+  it("shows an npx server from the registered project config as unverified", async () => {
+    scaffoldReady();
+    put(
+      ".aih-config.json",
+      JSON.stringify({ schemaVersion: 1, contextDir: DIR_NAME, targets: ["claude"] }),
+    );
+    put(
+      ".mcp.json",
+      JSON.stringify({
+        mcpServers: { npmServer: { command: "npx", args: ["-y", "fixture-server"] } },
+      }),
+    );
+    const built = await command.plan(ctx());
+    const { digest } = actionsOf(built.actions);
+    const data = digest.data as unknown as McpReadinessData;
+    expect(data.mcp.servers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          targetCli: "claude",
+          configPath: ".mcp.json",
+          name: "npmServer",
+          selected: true,
+          state: "unverified",
+        }),
+      ]),
+    );
+  });
+
+  it("shows a registered project Codex config even when Codex is unselected", async () => {
+    scaffoldReady();
+    put(
+      ".aih-config.json",
+      JSON.stringify({ schemaVersion: 1, contextDir: DIR_NAME, targets: ["claude"] }),
+    );
+    put(".codex/config.toml", '[mcp_servers.project-only]\ncommand = "uvx"\n');
+    const built = await command.plan(ctx());
+    const { digest } = actionsOf(built.actions);
+    const data = digest.data as unknown as McpReadinessData;
+    expect(data.mcp.servers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          targetCli: "codex",
+          configPath: ".codex/config.toml",
+          name: "project-only",
+          selected: false,
+          state: "unverified",
+        }),
+      ]),
+    );
+  });
+
+  it("turns malformed selected native Codex config into a blocking MCP issue", async () => {
+    scaffoldReady();
+    put(
+      ".aih-config.json",
+      JSON.stringify({ schemaVersion: 1, contextDir: DIR_NAME, targets: ["codex"] }),
+    );
+    put(".codex/config.toml", "[mcp_servers.fixture\n");
+    const built = await command.plan(ctx());
+    const { digest } = actionsOf(built.actions);
+    const data = digest.data as unknown as McpReadinessData;
+    expect(data.mcp.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          targetCli: "codex",
+          configPath: ".codex/config.toml",
+          selected: true,
+        }),
+      ]),
+    );
+    expect(data.blockers.length).toBeGreaterThan(0);
+    expect(data.banner).toBe("NOT READY");
   });
 });

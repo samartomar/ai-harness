@@ -17,15 +17,135 @@ import { command as bootstrapAiCommand } from "../../src/bootstrap-ai/index.js";
 import { command as contractCommand } from "../../src/contract/index.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
+import { plan } from "../../src/internals/plan.js";
 import { defaultRunner, fakeRunner, type Runner } from "../../src/internals/proc.js";
 import { command as mcpCommand } from "../../src/mcp/index.js";
+import { kiroMcpProjectionActions } from "../../src/mcp/kiro-managed-projection.js";
+import { nativeMcpProjectionActions } from "../../src/mcp/native-managed-projection.js";
+import type { McpServer } from "../../src/mcp/servers.js";
+import {
+  assertPolicyBindingCurrent,
+  policyBindCommand,
+  policyRebindCommand,
+} from "../../src/org-policy/binding.js";
+import { planPolicyRequiredGuidance } from "../../src/org-policy/required-guidance.js";
 import { policyProjectCommand } from "../../src/org-policy/validate.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { command as profileCommand } from "../../src/profile/index.js";
-import { command as uninstallCommand } from "../../src/uninstall/index.js";
+import { executeUninstallCommand, command as uninstallCommand } from "../../src/uninstall/index.js";
 import { hermeticGitEnv } from "../git-fixture-env.js";
 
 const TEST_PROCESS_TIMEOUT_MS = 10_000;
+
+describe("governed uninstall continuity", () => {
+  it.each(["claude", "codex", "cursor", "copilot", "opencode", "kimi", "kiro"] as const)(
+    "clears subtracted %s MCP ownership so an authorized rebind can reinstall",
+    async (target) => {
+      await managedMcpProjectionFixture();
+      const ctx = makeCtx({ cli: "claude", project: "harbor-node-api" }, { apply: true });
+      await executePlan(await policyBindCommand.plan(ctx), ctx);
+      const servers: Record<string, McpServer> = {
+        approved: {
+          type: "stdio",
+          command: "node",
+          args: ["approved-server.js"],
+          description: "Approved fixture server",
+          classification: "local",
+          egress: "none",
+          credentials: "none",
+          supplyChain: "pinned",
+        },
+      };
+      const project = async () => {
+        const actions =
+          target === "claude"
+            ? (await policyProjectCommand.plan(ctx)).actions
+            : target === "kiro"
+              ? kiroMcpProjectionActions(ctx, servers)
+              : nativeMcpProjectionActions(ctx, target, servers);
+        return executePlan(plan("MCP fixture", ...actions), ctx);
+      };
+      await project();
+      await executeUninstallCommand(ctx);
+      const marker = JSON.parse(readFileSync(join(tmp, ".aih-config.json"), "utf8"));
+      expect(marker.policyBinding.state).toBe("revoked");
+      expect(marker.managedMcpProjection).toBeUndefined();
+      expect(marker.kiroMcpProjection).toBeUndefined();
+      expect(marker.nativeMcpProjections?.[target]).toBeUndefined();
+      await executePlan(await policyRebindCommand.plan(ctx), ctx);
+      await expect(project()).resolves.toMatchObject({ applied: true });
+      expect(
+        JSON.parse(readFileSync(join(tmp, ".claude/managed-settings.json"), "utf8")).operatorOnly,
+      ).toBe(true);
+    },
+  );
+
+  async function boundFixture(): Promise<PlanContext> {
+    await bootstrapFixture();
+    put(
+      ".claude/settings.json",
+      JSON.stringify({ permissions: { deny: ["Read(private/**)"] }, model: "operator-choice" }),
+    );
+    put(
+      "aih-org-policy.json",
+      JSON.stringify({
+        schemaVersion: 2,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        governance: { supportedClis: ["claude"] },
+        command: { deny: { add: [{ pattern: "rm -f harbor-forbidden.txt" }] } },
+      }),
+    );
+    const ctx = makeCtx({ cli: "claude", project: "harbor-node-api" }, { apply: true });
+    await executePlan(await policyBindCommand.plan(ctx), ctx);
+    await executePlan(await policyProjectCommand.plan(ctx), ctx);
+    put(".aih/operator-notes.txt", "keep my notes\n");
+    return ctx;
+  }
+
+  it("subtracts owned command rules while retaining a revoked binding and unrelated state", async () => {
+    const ctx = await boundFixture();
+    await executePlan(await uninstallCommand.plan(ctx), ctx);
+    const marker = JSON.parse(readFileSync(join(tmp, ".aih-config.json"), "utf8"));
+    expect(marker.policyBinding.state).toBe("revoked");
+    expect(() => assertPolicyBindingCurrent(tmp, ctx.env)).toThrow(/revoked/);
+    const settings = JSON.parse(readFileSync(join(tmp, ".claude/settings.json"), "utf8"));
+    expect(settings.permissions.deny).toEqual(["Read(private/**)"]);
+    expect(settings.model).toBe("operator-choice");
+    expect(existsSync(join(tmp, ".aih/org-policy/command-permissions-v1.json"))).toBe(false);
+    expect(readFileSync(join(tmp, ".aih/operator-notes.txt"), "utf8")).toBe("keep my notes\n");
+    await executePlan(await uninstallCommand.plan(ctx), ctx);
+    expect(
+      JSON.parse(readFileSync(join(tmp, ".aih-config.json"), "utf8")).policyBinding.state,
+    ).toBe("revoked");
+  });
+
+  it("keeps edited required guidance at its marker-owned path even with an explicit context override", async () => {
+    const ctx = await boundFixture();
+    const bridge = planPolicyRequiredGuidance(
+      tmp,
+      "ai-coding",
+      [{ id: "skill:tdd-workflow", files: [{ path: ".claude/skills/tdd-workflow/SKILL.md" }] }],
+      {
+        policyVersion: "1",
+        source: { repository: "fictional/ecc", commit: "a".repeat(40) },
+        targets: ["claude"],
+      },
+    );
+    await executePlan(plan("fixture", ...bridge.actions), ctx);
+    put("ai-coding/policy-required-guidance.md", "# Operator customization\n");
+    const receipt = readFileSync(join(tmp, "ai-coding/policy-required-guidance.receipt.json"));
+    const overridden = { ...ctx, contextDir: "other-context" };
+    const result = await executePlan(await uninstallCommand.plan(overridden), overridden);
+    expect(readFileSync(join(tmp, "ai-coding/policy-required-guidance.md"), "utf8")).toBe(
+      "# Operator customization\n",
+    );
+    expect(readFileSync(join(tmp, "ai-coding/policy-required-guidance.receipt.json"))).toEqual(
+      receipt,
+    );
+    expect(result.digests.map((entry) => entry.text).join("\n")).toMatch(/guidance.*preserv/i);
+  });
+});
 
 let tmp: string;
 
@@ -399,13 +519,13 @@ describe("aih uninstall", () => {
     writeFileSync(join(tmp, "ai-coding", "RULE_ROUTER.md"), "# dirty edit\n", "utf8");
 
     const ctx = gitCtx();
-    await expect(executePlan(await uninstallCommand.plan(ctx), ctx)).rejects.toMatchObject({
+    await expect(executeUninstallCommand(ctx)).rejects.toMatchObject({
       code: "AIH_DIRTY_WORKTREE",
     });
     expect(existsSync(join(tmp, "ai-coding"))).toBe(true);
 
     const forced = gitCtx({ force: true });
-    await executePlan(await uninstallCommand.plan(forced), forced);
+    await executeUninstallCommand(forced);
     expect(existsSync(join(tmp, "ai-coding"))).toBe(false);
     expect(readFileSync(join(tmp, "ai-coding.aih.bak", "RULE_ROUTER.md"), "utf8")).toBe(
       "# dirty edit\n",

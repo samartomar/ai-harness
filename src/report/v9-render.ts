@@ -161,30 +161,29 @@ function readyStyle(banner: V9Ready["banner"]): { cls: "ok" | "warn" | "bad"; ic
 }
 
 /**
- * The developer-readiness verdict (`.grid`): a banner + score/grade card, and the
- * blocker subset. It cross-links to the action board rather than duplicating the full
- * list — the single "can I start?" gate the maturity hero + action board don't state
- * as one verdict.
+ * The developer-readiness preflight (`.grid`): a banner + score/grade card, blockers,
+ * and MCP capabilities that still require native acceptance.
  */
 export function renderReady(r: V9Ready): string {
   const { cls, icon } = readyStyle(r.banner);
+  const unverified = r.unverified ?? [];
+  const mcp = r.mcp ?? { servers: [], issues: [] };
   const softVar = `var(--${cls}-soft)`;
   const strongVar = `var(--${cls})`;
   const sub =
     r.banner === "READY"
-      ? "an agent can make a correct first change here"
+      ? "no blockers or unverified capabilities for selected clients"
       : r.banner === "NOT READY"
-        ? "a blocker below stops an agent from working"
-        : "an agent can work, but with gaps in the gears";
-  // Banner + score/grade — the "can I start?" answer, in the loved drift-status shell.
+        ? "a required preflight condition is failed or unverified"
+        : "measured checks have gaps or unverified capabilities";
   const badge = `<span class="badge ${cls}">${r.score}/100 · ${escHtml(r.grade)}</span>`;
   const statusBox = `<div class="drift-status" style="background:${softVar};border-color:color-mix(in oklab,${strongVar} 22%,transparent)"><div class="dicon" style="background:${strongVar}">${icon}</div><div class="dtext"><b style="color:${strongVar}">${escHtml(r.banner)}</b><span>${sub}</span></div></div>`;
   const scoreRow = `<div class="donut-meta" style="margin-top:.6rem"><div class="row"><span class="k">Readiness score</span><span class="v">${r.score}/100 (${escHtml(r.grade)})</span></div><div class="row"><span class="k">Blockers</span><span class="v" style="color:${r.blockers.length > 0 ? "var(--bad)" : "var(--ok)"}">${r.blockers.length === 0 ? "none" : `${r.blockers.length} — must fix`}</span></div></div>`;
-  const verdict = `<div class="card span-5"><div class="card-head"><h3>Can I start?</h3>${badge}</div><div class="card-body">${statusBox}${scoreRow}<div class="method" style="margin-top:.6rem">Same gate as <code>aih ready</code> — machine · repo-contract · harness-wiring, over aih's read-only probes.</div></div></div>`;
+  const verdict = `<div class="card span-5"><div class="card-head"><h3>Readiness preflight</h3>${badge}</div><div class="card-body">${statusBox}${scoreRow}<div class="method" style="margin-top:.6rem">Same preflight as <code>aih ready</code> — host · configuration · unverified MCP capabilities. Native execution and enforcement require separate acceptance.</div></div></div>`;
   // Blocker subset — the drift-file row look; cross-link to the action board for the rest.
   let blockersBody: string;
   if (r.blockers.length === 0) {
-    blockersBody = `<div class="drift-status"><div class="dicon">${ICON_READY}</div><div class="dtext"><b>No blockers</b><span>nothing stops an agent from working here</span></div></div>`;
+    blockersBody = `<div class="drift-status"><div class="dicon">${ICON_READY}</div><div class="dtext"><b>No preflight blockers</b><span>no required condition failed in the measured checks</span></div></div>`;
   } else {
     const rows = r.blockers
       .map(
@@ -198,8 +197,93 @@ export function renderReady(r: V9Ready): string {
     r.blockers.length > 0
       ? `<span class="badge bad">${r.blockers.length} blocker${r.blockers.length === 1 ? "" : "s"}</span>`
       : '<span class="badge ok">clear</span>';
-  const blockers = `<div class="card span-7"><div class="card-head"><h3>Blockers · must fix before an agent can work</h3>${blockerBadge}</div><div class="card-body">${blockersBody}</div></div>`;
-  return verdict + blockers;
+  const blockers = `<div class="card span-7"><div class="card-head"><h3>Preflight blockers</h3>${blockerBadge}</div><div class="card-body">${blockersBody}</div></div>`;
+  const mcpRows = mcp.servers
+    .map((server) => {
+      const selection = server.selected ? "selected" : "unselected";
+      return `<div class="drift-file"><span class="fd" style="background:var(--warn)"></span><span class="fn">${escHtml(server.targetCli)} / ${escHtml(server.name)}<br><small>${escHtml(server.configPath)}</small></span><span class="fs"><b>${escHtml(selection)} · ${escHtml(server.required)}</b><br>${escHtml(server.detail)}${server.nextStep ? `<br><code style="${CODE_STYLE}">${escHtml(server.nextStep)}</code>` : ""}</span><span class="ft warn">${escHtml(server.state)}</span></div>`;
+    })
+    .join("");
+  const issueRows = mcp.issues
+    .map(
+      (issue) =>
+        `<div class="drift-file"><span class="fd" style="background:var(--bad)"></span><span class="fn">${escHtml(issue.targetCli)}<br><small>${escHtml(issue.configPath)}</small></span><span class="fs">${escHtml(issue.detail)}${issue.nextStep ? `<br><code style="${CODE_STYLE}">${escHtml(issue.nextStep)}</code>` : ""}</span><span class="ft bad">config</span></div>`,
+    )
+    .join("");
+  const mcpBody =
+    mcpRows + issueRows ||
+    `<div class="method">No configured MCP capability observations were reported.</div>`;
+  const mcpAcceptance = `<div class="card span-12"><div class="card-head"><h3>MCP capability acceptance</h3><span class="badge ${unverified.length > 0 ? "warn" : "ok"}">${unverified.length} selected unverified</span></div><div class="card-body"><div class="drift-files">${mcpBody}</div><div class="method" style="margin-top:.6rem">Configured means the client configuration was parsed. Discovery, a real tool call, policy enforcement and post-restart behavior are separate evidence.</div></div></div>`;
+  return (
+    verdict +
+    blockers +
+    mcpAcceptance +
+    renderPolicyDelivery(r.policyDelivery) +
+    renderRuntimeEvidence(r.runtimeEvidence)
+  );
+}
+
+function renderPolicyDelivery(report: V9Ready["policyDelivery"]): string {
+  if (!report) return "";
+  const selection = report.selection
+    ? `<details><summary>Governed ECC selection and project paths</summary><div class="method">Dependency provenance: ${escHtml(report.selection.dependencyAuthority)}. Projected paths do not establish active native discovery or complete loading.</div>${report.selection.components
+        .map(
+          (component) =>
+            `<div class="drift-file"><span class="fn">${escHtml(component.id)}<br>${escHtml(component.requirement)} / ${escHtml(component.selectionReason)}<br><small>${escHtml(component.source.repository)}@${escHtml(component.source.commit)}:${escHtml(component.source.componentPath)}</small></span><span class="fs">${escHtml(component.owner)} / ${escHtml(component.ownership)}<br>${component.destinations.map((destination) => `${escHtml(destination.path)} (${escHtml(destination.discovery)})`).join("<br>") || "No matching installed destination observed"}</span></div>`,
+        )
+        .join(
+          "",
+        )}${report.selection.otherOwners.map((owner) => `<div class="method">${escHtml(owner.owner)} / ${escHtml(owner.scope)}: ${escHtml(owner.state)}. ${escHtml(owner.detail)}</div>`).join("")}</details>`
+    : "";
+  const rows =
+    report.components
+      .map(
+        (component) =>
+          `<div class="drift-file"><span class="fn">${escHtml(component.id)}<br><small>${escHtml(component.source.repository)}@${escHtml(component.source.commit)}</small></span><span class="fs">${escHtml(component.state)}<br>Target coverage: ${escHtml(component.targetCoverage?.state ?? "unverified")} (${escHtml(component.targetCoverage?.recordedTargets.join(", ") || "not recorded")})<br>Native loading: ${escHtml(component.nativeLoading)} · effect: ${escHtml(component.practiceEffect)}</span></div>`,
+      )
+      .join("") +
+    (report.codexRoles
+      ? `<div class="method">Codex role registration: ${escHtml(report.codexRoles.state)}; expected roles: ${escHtml(report.codexRoles.expectedRoleIds.join(", ") || "none")}. Native role loading remains unverified.</div>`
+      : "");
+  return `<div class="card span-12"><div class="card-head"><h3>Required policy content</h3><span class="badge ${report.blocking ? "bad" : "warn"}">${report.blocking ? "blocked" : report.nativeLoading === "not-requested" ? "no required native content" : "native loading unverified"}</span></div><div class="card-body"><div class="method">Policy ${escHtml(report.policyVersion ?? "unspecified")} · receipt ${escHtml(report.receipt)}. ${escHtml(report.detail)}</div>${rows}${selection}<div class="method">Project binding: ${escHtml(report.binding?.state ?? "not recorded")}${report.binding?.projectId ? ` (${escHtml(report.binding.projectId)})` : ""}<br>Startup guidance: ${escHtml(report.startupGuidance?.state ?? "not inspected")}<br>Command permissions: ${escHtml(report.commandPermissions?.state ?? "not inspected")}; native enforcement: ${escHtml(report.commandPermissions?.nativeEnforcement ?? "unverified")}<br>Advisory command targets: ${escHtml(report.commandPermissions?.advisoryTargets.join(", ") || "none")}<br>Optional exclusions: ${escHtml(report.excludedOptionalAssets.join(", ") || "none")}<br>Unrequested owned content: ${escHtml(report.unrequestedOwnedComponents.join(", ") || "none")}<br>Unsupported ECC targets: ${escHtml(report.unsupportedTargets.join(", ") || "none")}<br><code>${escHtml(report.nextStep)}</code></div></div></div>`;
+}
+
+/** The same evaluated observation carried by CLI/JSON, beside the unchanged preflight. */
+function renderRuntimeEvidence(runtime: V9Ready["runtimeEvidence"]): string {
+  if (!runtime) return "";
+  const statusClass =
+    runtime.recordState === "current" &&
+    [
+      runtime.supported,
+      runtime.discovered,
+      runtime.exercised,
+      runtime.restart,
+      runtime.enforcement,
+    ].every((status) => status === "verified")
+      ? "ok"
+      : "warn";
+  const operation = runtime.operation
+    ? `${escHtml(runtime.operation.server)} / ${escHtml(runtime.operation.tool)}`
+    : "No operation verified";
+  const capabilities = [
+    `Supported: ${runtime.supported}`,
+    `Discovered: ${runtime.discovered}`,
+    `Exercised: ${runtime.exercised}`,
+    `Restart: ${runtime.restart}`,
+  ]
+    .map((value) => `<span>${escHtml(value)}</span>`)
+    .join(" · ");
+  const restrictions = runtime.restrictions
+    .map(
+      (row) =>
+        `<div class="drift-file"><span class="fn">${escHtml(row.id)}</span><span class="fs">${escHtml(row.boundary)}</span><span class="ft ${row.status === "verified" ? "ok" : "warn"}">${escHtml(row.status)}</span></div>`,
+    )
+    .join("");
+  const reasons =
+    runtime.reasons.length > 0
+      ? `<p>${runtime.reasons.map(escHtml).join(" · ")}</p><p>Review the changed or unavailable material and repeat the explicit OpenCode native fixture check to produce a fresh observation.</p>`
+      : "";
+  return `<div class="card span-12"><div class="card-head"><h3>Current runtime observation</h3><span class="badge ${statusClass}">${escHtml(runtime.recordState)}</span></div><div class="card-body"><p><b>${operation}</b> · ${escHtml(runtime.targetCli)} · local unsigned observation</p><p>${capabilities}</p><p>Observed at: ${escHtml(runtime.observedAt ?? "not recorded")}<br>Expires at: ${escHtml(runtime.expiresAt ?? "not recorded")}</p>${reasons}<p>Specific restrictions: ${escHtml(runtime.enforcement)}</p><div class="drift-files">${restrictions || '<div class="method">No specific restriction demonstrated.</div>'}</div><div class="method" style="margin-top:.6rem">Only the recorded fixture operation and listed restrictions are covered. This observation does not clear preflight blockers or verify arbitrary tools, real model inference, hosted authentication, paid usage, public-internet access, general credential isolation or vendor-native sandbox acceptance. Host files remain generally readable unless explicitly hidden. The local record is unsigned and is not policy authority.</div></div></div>`;
 }
 
 // ── ★ Actions ────────────────────────────────────────────────────────────────

@@ -1,6 +1,7 @@
 import { Window } from "happy-dom";
 import { afterEach, describe, expect, it } from "vitest";
 import { canonicalStrictJsonSha256V1 } from "../../src/contract/strict-json-v1.js";
+import { GOVERNED_MCP_TARGETS } from "../../src/internals/cli-registry.js";
 import { SUPPORTED_CLIS } from "../../src/internals/clis.js";
 import { parseOrgPolicy } from "../../src/org-policy/schema.js";
 import {
@@ -371,6 +372,16 @@ describe("organization-selected CLI activation scope", () => {
           targets: ["claude"],
         },
         {
+          supported: ["cursor"],
+          control: "code-review-graph",
+          targets: ["cursor"],
+        },
+        {
+          supported: ["kimi", "opencode"],
+          control: "code-review-graph",
+          targets: ["kimi", "opencode"],
+        },
+        {
           supported: ["claude", "codex"],
           control: "usage-metering",
           targets: ["claude", "codex"],
@@ -378,7 +389,7 @@ describe("organization-selected CLI activation scope", () => {
         {
           supported: [...SUPPORTED_CLIS],
           control: "code-review-graph",
-          targets: ["claude", "kiro"],
+          targets: [...GOVERNED_MCP_TARGETS].sort(),
         },
       ] as const;
 
@@ -399,11 +410,11 @@ describe("organization-selected CLI activation scope", () => {
   );
 
   it(
-    "refuses a reviewed control when none of its targets is sanctioned",
+    "refuses a reviewed hook when only an unsupported host is sanctioned",
     () => {
       const window = studio();
       click(window, '[data-sanctioned-cli="cursor"]');
-      selectCatalogControl(window, "code-review-graph");
+      selectCatalogControl(window, "usage-metering");
 
       expect(authored(window).governance.activations).toEqual([]);
       expect(window.document.querySelector("#framework-rows .error")?.textContent).not.toBe("");

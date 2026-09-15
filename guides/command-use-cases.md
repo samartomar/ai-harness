@@ -103,7 +103,7 @@ Do not use `aih prune --cli claude --apply` as a retargeting command. `prune` ig
 
 | Use case | Primary commands | When to use |
 |---|---|---|
-| Check whether a developer can start | `aih ready`, `aih doctor` | First run, onboarding, or a broken local setup. |
+| Check host and configuration prerequisites | `aih ready`, `aih doctor` | First run, onboarding, or a broken local setup; native tool operations require separate acceptance. |
 | Inspect configured state | `aih status` | Quick local inventory without mutation. |
 | Install missing shell tools | `aih tools`, then `aih ready` | Shell helpers such as `rg`, `fd`, `jq`, `ast-grep`, `gh`, or graph tools are missing. In enterprise, review the dry-run against the approved tool catalog. |
 | Fix corporate TLS/runtime problems | `aih heal`, `aih certs` | npm, pip, MCP, Go, git, JVM, Gradle, Maven, Docker, or HTTPS checks fail behind a TLS-intercepting proxy. `aih heal` emits reviewed npm/PATH repair instructions rather than silently editing shell profiles. |

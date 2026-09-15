@@ -1,7 +1,7 @@
 {
   "version": 1,
   "repository": "obra/Superpowers",
-  "commit": "3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9",
+  "commit": "b36e0829c6d0140e93cfef2ca599b1b07d4a7797",
   "agents": [],
   "skills": [
     {
@@ -11,7 +11,7 @@
       "summary": "You MUST use this before any creative work - creating features, building components, adding functionality, or modifying behavior. Explores user intent, requirements and design before implementation.",
       "usageContext": "You MUST use this before any creative work - creating features, building components, adding functionality, or modifying behavior. Explores user intent, requirements and design before implementation.",
       "allowedTools": [],
-      "sourceSha256": "4a54a4858b99807f3155ed1614b2f116e35ea5c1b788e793f565dd837fd3891f"
+      "sourceSha256": "74edf03ea6d24ef53db48677b93558d14a979bdf052ca3f57ecdca0c66791608"
     },
     {
       "id": "dispatching-parallel-agents",
@@ -38,7 +38,7 @@
       "summary": "Use when implementation is complete, all tests pass, and you need to decide how to integrate the work",
       "usageContext": "Use when implementation is complete, all tests pass, and you need to decide how to integrate the work",
       "allowedTools": [],
-      "sourceSha256": "d0ac8360ed9d59121776ef95c84bcb38e9747de0d7ae7e227dca81e437593b9b"
+      "sourceSha256": "8db5a922b242dd4e1bf824cb91c13b3e8d8e8a86d6ceaf7f0774eb9cce909d65"
     },
     {
       "id": "receiving-code-review",
@@ -65,7 +65,7 @@
       "summary": "Use when executing implementation plans with independent tasks in the current session",
       "usageContext": "vs. Executing Plans (parallel session): Same session (no context switch) Fresh subagent per task (no context pollution) Review after each task (spec compliance + code quality), broad review at the end Faster iteration (no human-in-loop between tasks)",
       "allowedTools": [],
-      "sourceSha256": "349a08ad8b59b19b86c13a7d2f34a1a38719bf88257004a863eefefa8d9f9e40"
+      "sourceSha256": "8dd1b8e698edec3700c6d89517dbe96febd3bacd3f6ea21c1a3569c62ea104b5"
     },
     {
       "id": "systematic-debugging",
@@ -101,7 +101,7 @@
       "summary": "Use when starting any conversation - establishes how to find and use skills, requiring skill invocation before ANY response including clarifying questions",
       "usageContext": "Use when starting any conversation - establishes how to find and use skills, requiring skill invocation before ANY response including clarifying questions",
       "allowedTools": [],
-      "sourceSha256": "55379fe7c1c473a02c61961c822996bff30e1320d6921d9062509bc508482c05"
+      "sourceSha256": "30f2ab78e20ddc27ee7158ae8d4a2abe161c360981c7cc3548070913142d3dc3"
     },
     {
       "id": "verification-before-completion",
@@ -119,7 +119,7 @@
       "summary": "Use when you have a spec or requirements for a multi-step task, before touching code",
       "usageContext": "Use when you have a spec or requirements for a multi-step task, before touching code",
       "allowedTools": [],
-      "sourceSha256": "72190c88b2b5a67a96b91d66aa72b9161913e10e8769da3f28a226f4cc7b99d0"
+      "sourceSha256": "48508f44bbfd7d24b029fbf3a314f3cd14c9615599059366e922f47b8dc08cf2"
     },
     {
       "id": "writing-skills",

@@ -22,7 +22,7 @@
   ],
   "commands": {
     "verify": {
-      "value": "npm run verify",
+      "value": "npm run verify:local",
       "confidence": "detected"
     },
     "typecheck": {
@@ -43,7 +43,7 @@
     }
   },
   "scale": {
-    "trackedFiles": 1647,
+    "trackedFiles": 1764,
     "class": "medium",
     "isMonorepo": false
   },

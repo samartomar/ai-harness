@@ -49,6 +49,19 @@ cuts compute from the preceding `v-core-*` tag.
 
 ### Pre-1.0 (0.x)
 
+#### Core 0.6.2 numbering exception
+
+For the governed native MCP train tracked in [#1009](https://github.com/samartomar/ai-harness/issues/1009),
+the owner explicitly selected the 0.6.x line. Core 0.6.2 is a one-time exception
+to the highest-bump numbering rule: the merged work retains its `semver:minor`
+classification and the unmodified preflight records 0.7.0 as its computed version.
+The acknowledgement records that discrepancy; it does not make preflight compute
+0.6.2. This release includes new native artifacts and stricter library recovery
+behavior, so its patch-shaped number is not a patch-only compatibility promise.
+The changelog and enterprise manifest disclose the changes and numbering waiver.
+All review, qualification, publication and promotion gates remain required.
+This exception does not apply to later cuts.
+
 While the major version is `0`, the surface is still settling. A **minor** bump
 (`0.2 → 0.3`) may include a breaking change; any such change is called out in the
 [CHANGELOG](CHANGELOG.md) under **Changed** and labeled `breaking-change` on the issue.

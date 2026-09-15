@@ -165,7 +165,7 @@ const WEB_FRAMEWORKS = new Set(["Next.js", "React", "Vue", "Svelte", "Angular"])
 
 /** Pinned GitHub MCP Docker image for the `--self-host` opt-out (bump deliberately). */
 const GITHUB_MCP_IMAGE =
-  "ghcr.io/github/github-mcp-server@sha256:881b53d6f75f69bdbc1b5b10fc2f1361717c19054143b3a8529fb5c32061a50e";
+  "ghcr.io/github/github-mcp-server@sha256:0ba840c46a237879c8300e7fddb0b6347f20e029ccb9cbe2ce4a943daa1ff560";
 
 /** Hosted GitHub MCP endpoint used when no org-specific host is configured. */
 export const DEFAULT_GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/";
@@ -178,6 +178,8 @@ export interface McpServersOptions {
   githubAuth?: GithubMcpAuth;
   githubHost?: string;
   githubIncumbent?: boolean;
+  /** Root-aware authenticated launchers supplied by the public setup catalog. */
+  localRuntimeServers?: Readonly<Record<string, McpServer>>;
 }
 
 /**
@@ -197,7 +199,7 @@ export function coreLocalMcpServers(): Record<string, McpServer> {
         "serve",
       ],
       description:
-        "Local code-review knowledge graph (impact radius, affected flows) served over stdio via uvx.",
+        "Legacy repository-agnostic Code Review Graph fallback. Root-aware project setup replaces this with AIH's authenticated 2.3.8 launcher and isolated worktree state.",
       classification: "local",
       egress: "none",
       credentials: "none",
@@ -208,7 +210,7 @@ export function coreLocalMcpServers(): Record<string, McpServer> {
       command: "uvx",
       args: ["--offline", "--no-python-downloads", "--no-env-file", "codebase-memory-mcp@0.10.5"],
       description:
-        "Local codebase memory/knowledge graph (index_repository, search_graph, query_graph, trace_path) — memory companion to code-review-graph, served over stdio via uvx. PROVISIONING EGRESS: the pinned wheel is a launcher shim, not the payload — on first run it downloads its ~273 MB native binary from the GitHub release and executes that. --offline pins wheel resolution only and does not govern that fetch, and the recorded wheel hash does not cover the fetched binary. LOCAL LISTENER: from 0.10.0 the graph UI is always included and its HTTP listener binds 127.0.0.1:9749 by default — loopback only, never a routable address. Steady state after provisioning is otherwise local: the coordination daemon is a child of the stdio launch and does not outlive it.",
+        "Legacy repository-agnostic Codebase Memory fallback. Root-aware project setup replaces this with AIH's authenticated 0.10.8 native payload and project-specific state. PROVISIONING EGRESS: this older wheel is a launcher shim and may fetch its payload; do not treat --offline as payload authentication.",
       classification: "local",
       // Not `none`: the server process itself dials github.com on first run (see the
       // description). `vendor-incumbent` names the actual destination — the ledger's
@@ -217,10 +219,35 @@ export function coreLocalMcpServers(): Record<string, McpServer> {
       credentials: "none",
       supplyChain: "pinned",
     },
+    serena: {
+      type: "stdio",
+      command: "uvx",
+      args: [
+        "--offline",
+        "--no-python-downloads",
+        "--no-env-file",
+        "--from",
+        "serena-agent==1.7.0",
+        "serena",
+        "start-mcp-server",
+        "--context",
+        "ide-assistant",
+        "--mode",
+        "no-memories",
+        "--project",
+        ".",
+      ],
+      description:
+        "Local Serena semantic code tools for the client project, with memories disabled; provisioned from the exact 1.7.0 dependency closure before offline launch.",
+      classification: "local",
+      egress: "none",
+      credentials: "none",
+      supplyChain: "pinned",
+    },
     "sequential-thinking": {
       type: "stdio",
       command: "npx",
-      args: ["-y", "@modelcontextprotocol/server-sequential-thinking@2026.7.4"],
+      args: ["-y", "@modelcontextprotocol/server-sequential-thinking@2026.8.31"],
       description:
         "Structured step-by-step reasoning scratchpad — no network, no filesystem, no credentials. Safe in any repo.",
       classification: "local",
@@ -261,7 +288,10 @@ export function mcpServers(
   stack: RepoStack,
   opts: McpServersOptions = {},
 ): Record<string, McpServer> {
-  const servers: Record<string, McpServer> = { ...coreLocalMcpServers() };
+  const servers: Record<string, McpServer> = {
+    ...coreLocalMcpServers(),
+    ...(opts.localRuntimeServers ?? {}),
+  };
 
   // AWS repos deliberately receive no local core-server launch. The latest
   // awslabs.core-mcp-server depends on a yanked diagram-server distribution;
@@ -272,7 +302,7 @@ export function mcpServers(
       type: "stdio",
       command: "npx",
       // Pinned (not @latest) for reproducible installs; bump deliberately.
-      args: ["@playwright/mcp@0.0.79"],
+      args: ["@playwright/mcp@0.0.81"],
       description:
         "Playwright browser automation MCP (navigate, snapshot, interact). Added for a web frontend. The browser it drives can reach any URL — point it at trusted origins.",
       classification: "local",

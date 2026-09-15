@@ -1,3 +1,5 @@
+import { type CliCapabilities, cliCapabilitySummary } from "../internals/cli-capabilities.js";
+import type { Cli } from "../internals/clis.js";
 import type { DigestAction } from "../internals/plan.js";
 import { lines, stripTrailingNewlines } from "../internals/render.js";
 import type { SupportTemplate } from "../support/render.js";
@@ -326,13 +328,14 @@ interface CovLoad {
   fix?: string;
 }
 interface CovRow {
-  cli: string;
+  cli: Cli;
   label: string;
   targeted: boolean;
   bootloader: CovCell;
   mcp: CovCell;
   settings: CovCell;
   load: CovLoad;
+  capabilities?: CliCapabilities;
 }
 
 /** State → CSS class / glyph for a per-CLI wiring cell (matches the terminal legend). */
@@ -411,7 +414,7 @@ function cliMatrixPanel(d: Bag): string {
     '<div class="cli-legend">' +
     '<span class="cli-cell ok">✓ wired</span>' +
     '<span class="cli-cell bad">✗ missing</span>' +
-    '<span class="cli-cell warn" tabindex="0" data-tip="aih can\'t safely write this tool\'s config (e.g. Codex TOML, Gemini global settings), so it emits guidance instead of a file. Not a failure — see `loads`.">◐ guidance only (not a failure)</span>' +
+    '<span class="cli-cell warn" tabindex="0" data-tip="aih has no registered writer for this configuration shape, so it emits guidance. Native JSON/TOML support, governed projection and runtime loading are separate capabilities.">◐ guidance only (not a failure)</span>' +
     '<span class="cli-cell muted">— n/a</span>' +
     `<span class="cli-src">targets: ${esc(src)}</span></div>`;
   const loadable = num(d.provenLoadable) ?? 0;
@@ -424,10 +427,18 @@ function cliMatrixPanel(d: Bag): string {
     sep +
     other.map(covRowHtml).join("") +
     "</tbody></table>";
+  const featureDetails = targeted.flatMap((row) =>
+    row.capabilities
+      ? [cliCapabilitySummary(row.cli, row.capabilities), ...row.capabilities.requirements]
+      : [],
+  );
+  const features = featureDetails.length
+    ? `<details><summary>Feature support and host requirements</summary><pre class="prose">${esc(featureDetails.join("\n"))}</pre></details>`
+    : "";
   return panel(
     "AI CLI wiring",
     `<span class="badge muted">${configured}/${totalT} configured · ${loadable} loadable</span>`,
-    legend + table,
+    legend + table + features,
     12,
   );
 }

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { GOVERNED_MCP_TARGETS, type GovernedMcpTarget } from "../internals/cli-registry.js";
 import {
   isVerifiedPolicyAuthority,
   type PolicyAuthorityReceipt,
@@ -10,6 +11,10 @@ import {
   UNWAIVABLE_POLICY_DANGER_CODES,
 } from "./finding-codes.js";
 import { type GovernanceDecisionV1, governanceDecisionDigestV1 } from "./governance-decision-v1.js";
+import {
+  hasExpandedMcpControlTargetsV1,
+  LEGACY_GOVERNED_MCP_TARGETS_V1,
+} from "./mcp-target-compatibility.js";
 import type { NpmPackageEffectiveStateV1 } from "./npm-package-effective-state-v1.js";
 import { candidateIdentityDigest, stableJson } from "./policy-identity.js";
 import { governanceOwnsAihSurfaces, type OrgPolicy } from "./schema.js";
@@ -402,6 +407,23 @@ export function reviewedControlDigest(control: AiReviewedControl): string {
   return `sha256:${createHash("sha256").update(stableJson(payload), "utf8").digest("hex")}`;
 }
 
+/** Match exact current or historical identity; never accept an arbitrary target subset. */
+function matchingReviewedControlDigest(
+  candidate: Candidate,
+  reviewed: RuntimeReviewedControl | undefined,
+): string | undefined {
+  if (reviewed === undefined || reviewed.controlDigest !== reviewedControlDigest(reviewed.control))
+    return undefined;
+  const candidateDigest = reviewedControlDigest(candidate);
+  if (candidateDigest === reviewed.controlDigest) return candidateDigest;
+  if (!hasExpandedMcpControlTargetsV1(reviewed.control)) return undefined;
+  const legacyDigest = reviewedControlDigest({
+    ...reviewed.control,
+    targets: [...LEGACY_GOVERNED_MCP_TARGETS_V1],
+  });
+  return candidateDigest === legacyDigest ? legacyDigest : undefined;
+}
+
 /**
  * Full approval subject, deliberately excluding only its post-signing transport
  * locator (`github.attestationId`) and its derived digest (`subjectDigest`).
@@ -486,7 +508,7 @@ function projectorSupportedTargets(
     const kiroProjectable =
       candidate.source.type !== "mcp" ||
       context.mcpIdentities?.[candidate.source.server]?.kiroProjectable !== false;
-    return kiroProjectable ? ["claude", "kiro"] : ["claude"];
+    return GOVERNED_MCP_TARGETS.filter((target) => target !== "kiro" || kiroProjectable);
   }
   if (candidate.kind === "hook" && candidate.projector === "hook-managed-settings") {
     return ["claude"];
@@ -586,7 +608,7 @@ function completeCoverage(projection: CandidateProjectionState, candidate: Candi
     projection.coverage === "complete" &&
     projection.requestedTargets.every((target) => supported.has(target) && available.has(target)) &&
     projection.requestedTargets.every((target) =>
-      candidate.targets.includes(target as "claude" | "codex" | "kiro"),
+      candidate.targets.includes(target as GovernedMcpTarget),
     )
   );
 }
@@ -597,11 +619,7 @@ function aihShippedEvidence(
 ): EvidenceRecord | undefined {
   const sourceDigest = candidateIdentityDigest(candidate);
   const reviewed = context.aihReviewedControls?.[candidate.id];
-  if (
-    reviewed === undefined ||
-    reviewed.controlDigest !== reviewedControlDigest(reviewed.control) ||
-    reviewed.controlDigest !== reviewedControlDigest(candidate)
-  ) {
+  if (matchingReviewedControlDigest(candidate, reviewed) === undefined) {
     return undefined;
   }
   if (
@@ -728,10 +746,8 @@ function matchingApproval(
     };
   }
   if (
-    !requestedTargets.every(
-      (target) =>
-        (target === "claude" || target === "codex" || target === "kiro") &&
-        authority.receipt.targets.includes(target),
+    !requestedTargets.every((target) =>
+      authority.receipt.targets.some((receiptTarget) => receiptTarget === target),
     )
   ) {
     return { code: "approval-scope-mismatch" };
@@ -866,11 +882,12 @@ function decisionJoinBlocker(
     };
   }
   const reviewed = context.aihReviewedControls?.[candidate.id];
+  const matchedControlDigest = matchingReviewedControlDigest(candidate, reviewed);
   if (
     origin !== "reviewed" ||
-    reviewed === undefined ||
-    reviewed.controlDigest !== reviewedControlDigest(reviewed.control) ||
-    decision.reviewedControlDigest !== reviewed.controlDigest
+    matchedControlDigest === undefined ||
+    (decision.reviewedControlDigest !== matchedControlDigest &&
+      decision.reviewedControlDigest !== reviewed?.controlDigest)
   ) {
     return {
       scope: "candidate",
@@ -1094,10 +1111,8 @@ function resolveCandidate(
     origin === "custom" &&
     externalEvidence !== undefined &&
     authority !== undefined &&
-    !requestedTargets.every(
-      (target) =>
-        (target === "claude" || target === "codex" || target === "kiro") &&
-        authority.receipt.targets.includes(target),
+    !requestedTargets.every((target) =>
+      authority.receipt.targets.some((receiptTarget) => receiptTarget === target),
     )
   ) {
     // Receipt-wide target coverage constrains verified evidence too, not just

@@ -31,8 +31,8 @@ describe("CLI program", () => {
     }
   });
 
-  it("declares 30 top-level capabilities and 9 read-only commands", () => {
-    expect(CAPABILITIES).toHaveLength(30);
+  it("declares 31 top-level capabilities and 9 read-only commands", () => {
+    expect(CAPABILITIES).toHaveLength(31);
     expect(READONLY).toHaveLength(9);
   });
 
@@ -140,9 +140,10 @@ describe("CLI program", () => {
     }
   });
 
-  it("registers policy workbench generation, starter, evidence resolution, evaluation, projection, validation, and pin verification as nested commands", () => {
+  it("registers policy workbench, binding, delivery, evaluation, and verification as nested commands", () => {
     const policy = buildProgram().commands.find((c) => c.name() === "policy");
     expect(policy?.commands.map((c) => c.name()).sort()).toEqual([
+      "bind",
       "data",
       "evaluate",
       "generate",
@@ -151,7 +152,9 @@ describe("CLI program", () => {
       "managed",
       "observe",
       "project",
+      "rebind",
       "resolve",
+      "revoke",
       "supported",
       "validate",
       "verify",

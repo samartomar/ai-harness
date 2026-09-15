@@ -5,15 +5,27 @@ import {
 } from "../baseline-evidence/pipeline.js";
 import type { BaselineEvidenceLock } from "../baseline-evidence/schema.js";
 import type { BaselineAuthorization, BaselineHeldComponent } from "../baseline-evidence/verify.js";
+import {
+  governedCodexRoleReceiptRoles,
+  planGovernedCodexRoleRegistration,
+} from "../ecc-profile/governed-codex-roles.js";
 import { AihError } from "../errors.js";
 import { executePlan, type PlanResult } from "../internals/execute.js";
 import { digest, type Plan, type PlanContext, plan } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import { resolveEffectiveOrgPolicy } from "../org-policy/effective.js";
+import {
+  type PolicyRequiredGuidancePlan,
+  planPolicyRequiredGuidance,
+} from "../org-policy/required-guidance.js";
 import type { OrgPolicy } from "../org-policy/schema.js";
 import { consumeWorkbenchPolicy } from "../org-policy/workbench/policy-consumption.js";
 import { cleanupQuarantine, type TrustSource } from "../trust/fetch.js";
 import { ECC_DECLARATION_RIDERS } from "./components.js";
+import {
+  describeEccEffectiveDiscovery,
+  type EccEffectiveDiscoveryReport,
+} from "./effective-discovery.js";
 import {
   applyEccMaterialization,
   type EccMaterializationAdvisory,
@@ -38,6 +50,7 @@ import {
   resolveEccTargetMaterialization,
 } from "./materialization-target.js";
 import { eccModuleSelectableMemberIds } from "./materialize.js";
+import type { EccRuntimeAdapterCompatibilityV1 } from "./runtime-adapter-compatibility.js";
 import { eccMandatoryRequirementIds, eccSelectionSourcePaths } from "./selection-closure.js";
 
 /**
@@ -116,6 +129,7 @@ export interface GovernedEccHistoricalContext {
     >;
   }>;
   readonly componentPathsById: ReadonlyMap<string, readonly string[]>;
+  readonly adapterCompatibility: EccRuntimeAdapterCompatibilityV1;
 }
 
 export interface GovernedEccMaterializationInput {
@@ -135,10 +149,14 @@ export interface GovernedEccMaterializationInput {
   historical?: GovernedEccHistoricalContext;
   /** One verified protected-policy observation carried to the direct writer. */
   transactionGuard?: EccMaterializationTransactionGuard;
+  /** Acquire and verify the source, then stop after building the exact destination plan. */
+  prepareOnly?: boolean;
+  /** Internal handoff for a verified request whose source quarantine can now be removed. */
+  onPrepared?: (prepared: PreparedGovernedEccDelivery) => void;
 }
 
 /** One normalized report for both halves of the `--apply` gate. */
-interface GovernedMaterializationReport {
+export interface GovernedMaterializationReport {
   root: string;
   applied: boolean;
   targets: readonly EccMaterializationTarget[];
@@ -147,6 +165,22 @@ interface GovernedMaterializationReport {
   advisories: EccMaterializationAdvisory[];
   excluded: EccSelectionExclusion[];
   refused: EccTargetedRefusal[];
+  /** Read-only intent, ownership and native-path explanation for report consumers. */
+  selection?: EccEffectiveDiscoveryReport;
+}
+
+/** Exact verified bytes and ownership plan retained in memory for one later commit. */
+export interface PreparedGovernedEccDelivery {
+  request: EccMaterializationRequest;
+  report: GovernedMaterializationReport;
+  guidance: PolicyRequiredGuidancePlan;
+  roleRegistration: Plan;
+  codexRoles: readonly { id: string; description: string; configFile: string }[];
+  transactionGuard?: EccMaterializationTransactionGuard;
+}
+
+export interface GovernedEccLifecycleDeps extends BaselineEvidencePipelineDeps {
+  executeRequiredGuidancePlan?: (body: Plan, ctx: PlanContext) => Promise<PlanResult>;
 }
 
 /**
@@ -202,8 +236,10 @@ export function governedEccComponentIds(
   const attributionRoots = new Set<string>();
   const unattributedRoots = new Set<string>();
   let hasRootMetadata = false;
+  let hasEccSelection = false;
   for (const selection of policy.governance?.externalSelections ?? []) {
     if (selection.framework !== GOVERNED_FRAMEWORK) continue;
+    hasEccSelection = true;
     const hasExplicitRoots = Array.isArray(selection.roots);
     const roots = new Set(selection.roots ?? []);
     const unattributed = new Set(selection.unattributedItems ?? []);
@@ -256,12 +292,13 @@ export function governedEccComponentIds(
       if (!hasExplicitRoots || unattributed.has(item.id)) legacyClosed.add(item.id);
     }
   }
-  if (selected.size === 0) {
+  if (selected.size === 0 && !hasEccSelection) {
     throw new AihError(
       "refusing the governed ECC framework lifecycle: the policy selects no ECC component to materialize",
       "AIH_CONFIG",
     );
   }
+  if (selected.size === 0) return [];
   const known = new Set(catalogById.keys());
   const relatedComponentsFor = (id: string, includeMembers: boolean): string[] => {
     if (id.startsWith("runtime:")) return [];
@@ -404,6 +441,23 @@ function reportBody(report: GovernedMaterializationReport): string {
   const verb = report.applied ? "wrote" : "would write";
   return lines(
     `Governed ECC framework materialization (${report.applied ? "applied" : "preview"}):`,
+    ...(report.selection === undefined
+      ? []
+      : [
+          "Effective selected discovery:",
+          ...report.selection.components.map(
+            (component) =>
+              `  [${component.requirement}/${component.selectionReason}] ${component.id} - ${component.owner}/${component.ownership}; ${component.source.repository}@${component.source.commit.slice(0, 12)}:${component.source.componentPath}; ${component.destinations.map((destination) => `${destination.path} (${destination.discovery})`).join(", ")}${component.retainedBy.length > 0 ? `; retained by ${component.retainedBy.join(", ")}` : ""}`,
+          ),
+          ...report.selection.authoringExclusions.map(
+            (exclusion) =>
+              `  [excluded] ${exclusion.assetId} - ${exclusion.sourceId}@${exclusion.sourceRevisionId}`,
+          ),
+          ...report.selection.otherOwners.map(
+            (owner) => `  [${owner.state}] ${owner.owner}/${owner.scope} - ${owner.detail}`,
+          ),
+          "",
+        ]),
     ...report.write.map((file) => `  [${verb}] ${file.path} - ${file.componentId}`),
     // Neutral wording: a receipt entry the request no longer carries may be a
     // genuine deselection OR a component this run could not map, and this layer
@@ -432,6 +486,26 @@ function reportBody(report: GovernedMaterializationReport): string {
       : []),
     ...(report.applied ? [] : ["", "Dry-run: nothing was written; pass --apply to materialize."]),
   );
+}
+
+function guardedPlan(body: Plan, guard?: EccMaterializationTransactionGuard): Plan {
+  return {
+    ...body,
+    ...(guard?.fileAssertions === undefined ? {} : { fileAssertions: guard.fileAssertions }),
+    ...(guard?.commitNotAfter === undefined ? {} : { commitNotAfter: guard.commitNotAfter }),
+    ...(guard?.commitLock === undefined ? {} : { commitLock: guard.commitLock }),
+  };
+}
+
+function appendPlanResult(target: PlanResult, added: PlanResult): void {
+  target.applied ||= added.applied;
+  target.writes.push(...added.writes);
+  target.docs.push(...added.docs);
+  target.probes.push(...added.probes);
+  target.execs.push(...added.execs);
+  target.digests.push(...added.digests);
+  target.backups.push(...added.backups);
+  target.removed.push(...added.removed);
 }
 
 /** Refuse a target-specific partial map that drops a structural dependency. */
@@ -518,7 +592,15 @@ function governedMaterializationPlan(
   authorizations: readonly BaselineAuthorization[],
   held: readonly BaselineHeldComponent[],
   historical?: GovernedEccHistoricalContext,
-  onPrepared?: (request: EccMaterializationRequest, report: GovernedMaterializationReport) => void,
+  onPrepared?: (
+    request: EccMaterializationRequest,
+    report: GovernedMaterializationReport,
+    guidance: PolicyRequiredGuidancePlan,
+    roleRegistration: Plan,
+    codexRoles: readonly { id: string; description: string; configFile: string }[],
+  ) => void,
+  transactionGuard?: EccMaterializationTransactionGuard,
+  prepareOnly = false,
 ): Plan {
   const effective = resolveEffectiveOrgPolicy(policy);
   const selection = resolveEccMaterializationSelection(
@@ -535,6 +617,7 @@ function governedMaterializationPlan(
     components: selection.included,
     evidence: { authorizations: [...authorizations], held: [...held] },
     componentPathsById: historical?.componentPathsById,
+    historicalAdapterCompatibility: historical?.adapterCompatibility,
   });
   assertGovernedEccTargetClosure(
     targets,
@@ -562,28 +645,83 @@ function governedMaterializationPlan(
   const coreDerivedEvidence = receiptCoreDerivedEvidence(historical, target.components);
   const request = {
     root: ctx.root,
-    components: target.components,
+    components: target.components.map((component) => ({
+      ...component,
+      targets: component.targets ?? [...targets],
+    })),
     ...(coreDerivedEvidence === undefined ? {} : { coreDerivedEvidence }),
   };
   // Keep planning pure. The direct materializer runs later, inside its own
   // authority assertion/lease boundary, after the evidence pipeline accepted
   // this exact request.
   const outcome = previewEccMaterialization(request);
+  const guidanceSource = target.components[0]?.provenance;
+  const guidance = planPolicyRequiredGuidance(
+    ctx.root,
+    ctx.contextDir,
+    target.components,
+    guidanceSource === undefined || effective.policyVersion === undefined
+      ? undefined
+      : {
+          policyVersion: effective.policyVersion,
+          source: {
+            repository: guidanceSource.repository,
+            commit: guidanceSource.commit,
+          },
+          targets,
+        },
+  );
+  const roleRegistration = planGovernedCodexRoleRegistration(ctx.root, target.codexRoles);
   const report: GovernedMaterializationReport = {
     root: ctx.root,
     applied: false,
     targets,
     write: outcome.write,
     subtract: outcome.subtract,
-    advisories: outcome.advisories,
+    advisories: [
+      ...outcome.advisories,
+      ...guidance.advisories.map((detail) => ({
+        path: guidance.inspection.path,
+        reason: "drifted" as const,
+        detail,
+      })),
+    ],
     excluded: selection.excluded,
     refused: target.refused,
+    selection: describeEccEffectiveDiscovery({
+      policy,
+      targets,
+      components: target.components.map((component) => ({ ...component, ownership: "planned" })),
+      unavailable: selection.excluded,
+      refused: target.refused,
+      relations: historical?.relations ?? {
+        mandatoryRequirementsById: new Map(
+          selection.included.map((component) => [
+            component.id,
+            eccMandatoryRequirementIds(component.id),
+          ]),
+        ),
+      },
+    }),
   };
-  onPrepared?.(request, report);
-  return plan(
-    "ecc: governed framework materialization",
-    digest("governed ECC framework materialization", reportBody(report), report),
-  );
+  onPrepared?.(request, report, guidance, roleRegistration, target.codexRoles);
+  return {
+    ...plan(
+      "ecc: governed framework materialization",
+      ...(!ctx.apply && !prepareOnly ? guidance.actions : []),
+      ...(!ctx.apply && !prepareOnly ? roleRegistration.actions : []),
+      digest("governed ECC framework materialization", reportBody(report), report),
+    ),
+    ...(transactionGuard?.fileAssertions === undefined
+      ? {}
+      : { fileAssertions: transactionGuard.fileAssertions }),
+    ...(transactionGuard?.commitNotAfter === undefined
+      ? {}
+      : { commitNotAfter: transactionGuard.commitNotAfter }),
+    ...(transactionGuard?.commitLock === undefined
+      ? {}
+      : { commitLock: transactionGuard.commitLock }),
+  };
 }
 
 /**
@@ -594,13 +732,13 @@ function governedMaterializationPlan(
 export async function executeGovernedEccMaterialization(
   ctx: PlanContext,
   input: GovernedEccMaterializationInput,
-  deps: BaselineEvidencePipelineDeps = {},
+  deps: GovernedEccLifecycleDeps = {},
 ): Promise<PlanResult> {
   // A remote pin in dry run: the evidence pipeline would return after the
   // unrun acquisition and never build a plan, so answer here instead of
   // reporting nothing. The quarantine that resolving the source created is
   // removed the way the sibling preview does it (`pipeline.ts:268-270`).
-  if (!ctx.apply && input.source.kind === "github") {
+  if (!ctx.apply && !input.prepareOnly && input.source.kind === "github") {
     try {
       return await executePlan(
         sourceAbsentPlan(input.catalog, input.componentIds, input.targets),
@@ -620,9 +758,13 @@ export async function executeGovernedEccMaterialization(
   ) {
     evidenceComponentIds.push(ECC_KIRO_RUNTIME_COMPONENT_ID);
   }
-  let prepared:
-    | { request: EccMaterializationRequest; report: GovernedMaterializationReport }
-    | undefined;
+  let prepared: PreparedGovernedEccDelivery | undefined;
+  const hasApplicableBaselineOverride = input.policy.trust?.baselineOverrides?.some(
+    (override) =>
+      override.catalog === input.catalog.id &&
+      override.owner === input.catalog.owner &&
+      override.repo === input.catalog.repo,
+  );
   const result = await executeBaselineEvidencePipeline(
     ctx,
     {
@@ -630,6 +772,7 @@ export async function executeGovernedEccMaterialization(
       source: input.source,
       componentIds: evidenceComponentIds,
       policy: input.policy,
+      transactionPins: input.transactionGuard,
       // A governed selection is expected to carry components the vet blocked or
       // never recorded. Each is reported with its reason by the resolver; one of
       // them must not take the whole install down with it.
@@ -643,9 +786,21 @@ export async function executeGovernedEccMaterialization(
           authorizations,
           held,
           input.historical,
-          (request, report) => {
-            prepared = { request, report };
+          (request, report, guidance, roleRegistration, codexRoles) => {
+            prepared = {
+              request,
+              report,
+              guidance,
+              roleRegistration,
+              codexRoles,
+              ...(input.transactionGuard === undefined
+                ? {}
+                : { transactionGuard: input.transactionGuard }),
+            };
+            input.onPrepared?.(prepared);
           },
+          input.transactionGuard,
+          input.prepareOnly === true,
         ),
     },
     input.historical === undefined
@@ -655,17 +810,109 @@ export async function executeGovernedEccMaterialization(
           vendorLock: input.historical.evidence.vendorLock,
           vendorLockSha256: input.historical.evidence.vendorLockSha256,
           expectedSourceTreeSha256: input.historical.source.treeSha256,
+          // The sealed descriptor was admitted through the active source-data
+          // trust root and its machine-local verification receipt. Requiring a
+          // second repository-authored baseline override would discard that
+          // independently verified historical authority before its exact
+          // descriptor-derived vendor lock can run.
+          ...(hasApplicableBaselineOverride
+            ? {}
+            : { resolveOrgEvidence: async () => ({ checks: [] }) }),
         },
   );
-  if (!ctx.apply || prepared === undefined) return result;
+  if (!ctx.apply || input.prepareOnly || prepared === undefined) return result;
 
-  const outcome = applyEccMaterialization(prepared.request, {}, input.transactionGuard);
+  return applyPreparedGovernedEccDelivery(ctx, prepared, result, deps);
+}
+
+/** Commit one exact in-memory preparation without reacquiring or reverifying its source. */
+export async function applyPreparedGovernedEccDelivery(
+  ctx: PlanContext,
+  prepared: PreparedGovernedEccDelivery,
+  result: PlanResult,
+  deps: GovernedEccLifecycleDeps = {},
+): Promise<PlanResult> {
+  // Refresh after policy projection: that command may have composed MCP changes
+  // into the same config after preparation. Validate and write registration
+  // before materializing role files so a config refusal leaves no orphan role.
+  const refreshedRoleRegistration = planGovernedCodexRoleRegistration(
+    ctx.root,
+    prepared.codexRoles,
+  );
+  const priorCodexRoles = governedCodexRoleReceiptRoles(ctx.root);
+  const transactionGuard =
+    prepared.transactionGuard === undefined
+      ? undefined
+      : {
+          ...prepared.transactionGuard,
+          fileAssertions: prepared.transactionGuard.fileAssertions?.filter(
+            (assertion) =>
+              assertion.path.replace(/\\/g, "/").replace(/^\.\//, "") !== ".codex/config.toml",
+          ),
+        };
+  if (refreshedRoleRegistration.actions.length > 0) {
+    const registrationResult = await executePlan(
+      guardedPlan(refreshedRoleRegistration, transactionGuard),
+      ctx,
+    );
+    appendPlanResult(result, registrationResult);
+  }
+  let outcome: ReturnType<typeof applyEccMaterialization>;
+  try {
+    outcome = applyEccMaterialization(prepared.request, {}, transactionGuard);
+  } catch (error) {
+    if (refreshedRoleRegistration.actions.length > 0) {
+      const rollback = planGovernedCodexRoleRegistration(ctx.root, priorCodexRoles);
+      if (rollback.actions.length > 0) await executePlan(rollback, ctx);
+    }
+    throw error;
+  }
+  if (outcome.advisories.length > 0 && refreshedRoleRegistration.actions.length > 0) {
+    const rollback = planGovernedCodexRoleRegistration(ctx.root, priorCodexRoles);
+    if (rollback.actions.length > 0) await executePlan(rollback, ctx);
+  }
+  if (outcome.advisories.length === 0 && prepared.guidance.actions.length > 0) {
+    const executeGuidance = deps.executeRequiredGuidancePlan ?? executePlan;
+    try {
+      const guidanceResult = await executeGuidance(
+        guardedPlan(
+          plan("ecc: required organization guidance", ...prepared.guidance.actions),
+          transactionGuard,
+        ),
+        ctx,
+      );
+      appendPlanResult(result, guidanceResult);
+    } catch (error) {
+      if (refreshedRoleRegistration.actions.length > 0) {
+        const rollback = planGovernedCodexRoleRegistration(ctx.root, priorCodexRoles);
+        if (rollback.actions.length > 0) await executePlan(rollback, ctx);
+      }
+      throw error;
+    }
+  }
   const report: GovernedMaterializationReport = {
     ...prepared.report,
     applied: true,
+    selection:
+      prepared.report.selection === undefined
+        ? undefined
+        : {
+            ...prepared.report.selection,
+            components: prepared.report.selection.components.map((component) => ({
+              ...component,
+              ownership: outcome.advisories.length === 0 ? "receipt-recorded" : "missing-receipt",
+            })),
+          },
     write: outcome.written,
     subtract: outcome.removed,
-    advisories: outcome.advisories,
+    advisories: [
+      ...outcome.advisories,
+      ...prepared.guidance.advisories.map((detail) => ({
+        path: prepared.guidance.inspection.path,
+        reason: "drifted" as const,
+        detail,
+      })),
+    ],
   };
   const digestIndex = result.digests.findIndex((entry) =>
     entry.describe.includes("governed ECC framework materialization"),
@@ -678,4 +925,71 @@ export async function executeGovernedEccMaterialization(
     };
   }
   return result;
+}
+
+/**
+ * Reconcile an explicitly empty ECC selection without acquiring or trusting any
+ * incoming framework bytes. The receipt remains the sole removal authority, so
+ * drifted and operator-owned files retain the materializer's conservative rules.
+ */
+export async function executeGovernedEccWithdrawal(
+  ctx: PlanContext,
+  targets: readonly EccMaterializationTarget[],
+  transactionGuard?: EccMaterializationTransactionGuard,
+  prepareOnly = false,
+  onPrepared?: (prepared: PreparedGovernedEccDelivery) => void,
+  deps: GovernedEccLifecycleDeps = {},
+): Promise<PlanResult> {
+  const request: EccMaterializationRequest = { root: ctx.root, components: [] };
+  const preview = previewEccMaterialization(request);
+  const guidance = planPolicyRequiredGuidance(ctx.root, ctx.contextDir, []);
+  const roleRegistration = planGovernedCodexRoleRegistration(ctx.root, []);
+  const report: GovernedMaterializationReport = {
+    root: ctx.root,
+    applied: false,
+    targets,
+    write: preview.write,
+    subtract: preview.subtract,
+    advisories: [
+      ...preview.advisories,
+      ...guidance.advisories.map((detail) => ({
+        path: guidance.inspection.path,
+        reason: "drifted" as const,
+        detail,
+      })),
+    ],
+    excluded: [],
+    refused: [],
+  };
+  const prepared: PreparedGovernedEccDelivery = {
+    request,
+    report,
+    guidance,
+    roleRegistration,
+    codexRoles: [],
+    ...(transactionGuard === undefined ? {} : { transactionGuard }),
+  };
+  onPrepared?.(prepared);
+  const result = await executePlan(
+    {
+      ...plan(
+        "ecc: governed framework withdrawal",
+        ...(!ctx.apply && !prepareOnly ? guidance.actions : []),
+        ...(!ctx.apply && !prepareOnly ? roleRegistration.actions : []),
+        digest("governed ECC framework materialization", reportBody(report), report),
+      ),
+      ...(transactionGuard?.fileAssertions === undefined
+        ? {}
+        : { fileAssertions: transactionGuard.fileAssertions }),
+      ...(transactionGuard?.commitNotAfter === undefined
+        ? {}
+        : { commitNotAfter: transactionGuard.commitNotAfter }),
+      ...(transactionGuard?.commitLock === undefined
+        ? {}
+        : { commitLock: transactionGuard.commitLock }),
+    },
+    ctx,
+  );
+  if (!ctx.apply || prepareOnly) return result;
+  return applyPreparedGovernedEccDelivery(ctx, prepared, result, deps);
 }

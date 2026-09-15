@@ -206,15 +206,15 @@ describe("mcp cell — content check + manual model", () => {
     expect(r.mcp.detail).toMatch(/mcp_servers/);
   });
 
-  it("native repo-relative tool (copilot): {} is missing, a populated `servers` map is wired", () => {
+  it("native repo-relative tool (copilot): {} is missing, a populated `mcpServers` map is wired", () => {
     marker("copilot");
-    mkdirSync(join(dir, ".vscode"), { recursive: true });
-    writeFileSync(join(dir, ".vscode", "mcp.json"), "{}");
+    mkdirSync(join(dir, ".github"), { recursive: true });
+    writeFileSync(join(dir, ".github", "mcp.json"), "{}");
     let r = row(scanCliCoverage(ctx()), "copilot");
     expect(r.mcp.state).toBe("missing");
     writeFileSync(
-      join(dir, ".vscode", "mcp.json"),
-      JSON.stringify({ servers: { x: { type: "stdio", command: "y" } } }),
+      join(dir, ".github", "mcp.json"),
+      JSON.stringify({ mcpServers: { x: { type: "stdio", command: "y" } } }),
     );
     r = row(scanCliCoverage(ctx()), "copilot");
     expect(r.mcp.state).toBe("wired");

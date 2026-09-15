@@ -876,4 +876,15 @@ describe("executeEccCommand — consult-only targets", () => {
     expect(docs).toContain("Install ECC for windsurf (via the consult advisor)");
     expect(docs).toContain("supply chain — ECC runs LATEST upstream unless you pin it");
   });
+
+  it("keeps consult output review-only so it cannot bypass executable consent", async () => {
+    const context: PlanContext = { ...ctx(false), options: { cli: "windsurf" }, apply: false };
+    const result = await executeEccCommand(context);
+    const text = result.docs.map((entry) => entry.text).join("\n");
+
+    expect(text).toContain(
+      "Do not apply executable, plugin, hook, process, environment, or permission",
+    );
+    expect(text).not.toContain("then apply them");
+  });
 });

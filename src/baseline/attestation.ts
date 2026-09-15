@@ -252,7 +252,7 @@ function generatedMcpCatalog(ctx: PlanContext): { catalog: McpCatalog; error?: C
   ];
   const catalog: McpCatalog = {};
   for (const variant of variants) {
-    const catalogResult = policyAwareMcpCatalog(ctx, variant);
+    const catalogResult = policyAwareMcpCatalog(ctx, { ...variant, includeOptionalServers: true });
     if (catalogResult.error !== undefined && catalogResult.errorSource === "catalog") {
       return {
         catalog: {},

@@ -23,6 +23,7 @@ import {
   writeText,
 } from "../internals/plan.js";
 import { managedMcpAllowlistSettings } from "../mcp/allowlist.js";
+import { defaultNativeMcpServers } from "../mcp/default-native-runtime.js";
 import { managedMcpExample } from "../mcp/enterprise.js";
 import {
   kiroMcpProjectionActions,
@@ -42,6 +43,14 @@ import {
   unprovableResidueReason,
   withExpectedContents,
 } from "../mcp/managed-projection.js";
+import {
+  NATIVE_MCP_TARGETS,
+  type NativeMcpTarget,
+  nativeMcpProjectionActions,
+  nativeMcpProjectionExpected,
+  nativeMcpProjectionOnDisk,
+  nativeMcpProjectionState,
+} from "../mcp/native-managed-projection.js";
 import { mcpApprovalSubject } from "../mcp/policy.js";
 import { coalesceMcpProjectionMarkerActions } from "../mcp/projection-marker.js";
 import { type McpServer, mcpServers, type StdioServer } from "../mcp/servers.js";
@@ -54,6 +63,7 @@ import {
   verifiedPolicyFileAuthorityPolicyV1,
   verifyPolicyAuthorityReceipt,
 } from "./authority.js";
+import { projectCommandPermissions } from "./command-permissions.js";
 import { composeOrgPolicy } from "./compose.js";
 import { planEccHookControlsProjection } from "./ecc-hook-controls-projection.js";
 import {
@@ -74,6 +84,17 @@ import {
 } from "./schema.js";
 
 export const ORG_POLICY_HOOK_RECEIPT_PATH = ".aih/org-policy-hook-receipt.json";
+
+/**
+ * All policy projections must describe the same root-aware native MCP launchers
+ * that ordinary setup writes. This does not read policy; it only supplies the
+ * current project's authenticated launcher identities to the shared catalog.
+ */
+function rootAwareMcpCatalog(ctx: PlanContext): Record<string, McpServer> {
+  return mcpServers("project", scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir }), {
+    localRuntimeServers: defaultNativeMcpServers(ctx),
+  });
+}
 
 /**
  * All effectful plans derived from the protected policy transport share this
@@ -1028,10 +1049,7 @@ export function orgPolicyMcpReceiptState(
         candidate.projection.requestedTargets.includes("claude"),
     )
     .map((candidate) => candidate.id);
-  const catalog = mcpServers(
-    "project",
-    scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir }),
-  );
+  const catalog = rootAwareMcpCatalog(ctx);
   const expected = managedMcpAllowlistSettings(
     Object.fromEntries(
       activeIds.flatMap((id) => (catalog[id] === undefined ? [] : [[id, catalog[id]]])),
@@ -1105,10 +1123,7 @@ export function orgPolicyKiroMcpReceiptState(
         candidate.projection.requestedTargets.includes("kiro"),
     )
     .map((candidate) => candidate.id);
-  const catalog = mcpServers(
-    "project",
-    scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir }),
-  );
+  const catalog = rootAwareMcpCatalog(ctx);
   const expected = kiroMcpProjectionExpected(
     Object.fromEntries(
       activeIds.flatMap((id) => {
@@ -1158,6 +1173,81 @@ export function orgPolicyKiroMcpReceiptState(
     };
   }
   return state;
+}
+
+/** Read-only per-host configuration ownership; a receipt does not prove host consumption. */
+export function orgPolicyNativeMcpReceiptState(
+  ctx: PlanContext,
+  effective: EffectiveOrgPolicy,
+  target: NativeMcpTarget,
+): { state: ReturnType<typeof orgPolicyKiroMcpReceiptState>["state"]; detail: string } {
+  const activeIds = effective.candidates
+    .filter(
+      (candidate) =>
+        candidate.effective &&
+        isProjectionSurfaceCandidate(candidate, "mcp") &&
+        candidate.projection.requestedTargets.includes(target),
+    )
+    .map((candidate) => candidate.id);
+  const state = nativeMcpProjectionState(ctx.root, target);
+  const prior = nativeMcpProjectionOnDisk(ctx.root, target);
+  const bindingState =
+    state.state === "clean" && prior !== undefined
+      ? decisionReceiptState(prior.ownership, effective, "mcp", target)
+      : undefined;
+  if (bindingState !== undefined) {
+    return {
+      state: bindingState,
+      detail: `${target} workspace-MCP receipt retains a decision binding that requires policy reconciliation`,
+    };
+  }
+  if (activeIds.length === 0) {
+    if (state.state === "clean" && prior !== undefined) {
+      return {
+        state: "retained",
+        detail: `${target} workspace-MCP receipt retains a prior selection; policy project must reconcile its removal`,
+      };
+    }
+    return state.state === "absent"
+      ? {
+          state: "not-requested",
+          detail: `no effective ${target} workspace-MCP control or ownership receipt`,
+        }
+      : state;
+  }
+  const catalog = rootAwareMcpCatalog(ctx);
+  const expected = nativeMcpProjectionExpected(
+    target,
+    Object.fromEntries(
+      activeIds.flatMap((id) => {
+        const server = catalog[id];
+        return server?.type === "stdio" ? [[id, server] as const] : [];
+      }),
+    ),
+  );
+  if (
+    state.state === "clean" &&
+    prior !== undefined &&
+    stableJson(prior.ownership.expected) !== stableJson(expected)
+  ) {
+    return {
+      state: "retained",
+      detail: `${target} workspace-MCP receipt retains a different selection; policy project must reconcile the requested selection`,
+    };
+  }
+  return state;
+}
+
+export function orgPolicyNativeMcpReceiptStates(
+  ctx: PlanContext,
+  effective: EffectiveOrgPolicy,
+): Record<NativeMcpTarget, ReturnType<typeof orgPolicyNativeMcpReceiptState>> {
+  return Object.fromEntries(
+    NATIVE_MCP_TARGETS.map((target) => [
+      target,
+      orgPolicyNativeMcpReceiptState(ctx, effective, target),
+    ]),
+  ) as Record<NativeMcpTarget, ReturnType<typeof orgPolicyNativeMcpReceiptState>>;
 }
 
 /**
@@ -1855,6 +1945,31 @@ function projectionActionsFromRuntime(
   // that lifecycle for a legacy policy would mistake its generic recorder for
   // an unreceipted governed artifact.
   if (governanceOwnsAihSurfaces(policy)) {
+    for (const target of NATIVE_MCP_TARGETS) {
+      if (!targets.includes(target)) continue;
+      const selectedIds = runtime.effective.candidates
+        .filter(
+          (candidate) =>
+            candidate.effective &&
+            isProjectionSurfaceCandidate(candidate, "mcp") &&
+            candidate.projection.requestedTargets.includes(target),
+        )
+        .map((candidate) => candidate.id);
+      const selected = Object.fromEntries(
+        selectedIds.flatMap((id) => {
+          const server = runtime.catalog[id];
+          return server?.type === "stdio" ? [[id, server] as const] : [];
+        }),
+      );
+      actions.push(
+        ...nativeMcpProjectionActions(
+          ctx,
+          target,
+          selected,
+          decisionBindingsFor(runtime.effective, "mcp", target),
+        ),
+      );
+    }
     const usage = usageHookProjectionActions(ctx, runtime.effective);
     actions.push(...usage);
     if (targets.includes("claude")) {
@@ -1919,7 +2034,9 @@ function projectionActionsFromRuntime(
       }
     }
   }
-  return coalesceMcpProjectionMarkerActions(actions);
+  return coalesceMcpProjectionMarkerActions(
+    projectCommandPermissions(ctx, policy, targets, actions),
+  );
 }
 
 export interface VerifiedOrgPolicyProjection {
@@ -2102,10 +2219,7 @@ export function orgPolicyProjectionActions(ctx: PlanContext, policy: OrgPolicy):
       "governed policy projection requires verified organization authority; use the verified policy projector",
     );
   }
-  const catalog = mcpServers(
-    "project",
-    scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir }),
-  );
+  const catalog = rootAwareMcpCatalog(ctx);
   const effective = resolveEffectiveOrgPolicy(policy, {
     targets: ctx.targets ?? ["claude"],
     mcpIdentities: Object.fromEntries(

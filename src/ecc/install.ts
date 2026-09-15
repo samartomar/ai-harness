@@ -242,10 +242,14 @@ function consultDoc(cli: Cli, inputs: EccInstallInputs): Action {
   return doc(
     `Install ECC for ${cli} (via the consult advisor)`,
     lines(
-      `${cli} is not a direct ECC installer target. Ask ECC's advisor (latest, from npm) for`,
-      "the components + exact commands tailored to this stack, then apply them:",
+      `${cli} is not a direct ECC installer target. ECC's advisor (latest, from npm) may`,
+      "produce a review-only component recommendation for this stack:",
       "",
       `  npx ecc consult "${inputs.stackSummary}" --target ${cli}`,
+      "",
+      "Do not apply executable, plugin, hook, process, environment, or permission",
+      "recommendations from consult output. This target has no Core consent-controlled",
+      "materialization route; review and declare supported components through Core instead.",
       "",
       `ECC installs directly for: ${ECC_INSTALL_TARGETS.join(", ")}. Kiro fetches ECC's repo`,
       "(latest) and runs its native `.kiro/install.sh`.",

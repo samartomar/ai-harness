@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { join } from "node:path";
+import { join, posix, win32 } from "node:path";
 import { z } from "zod";
 import { type BindingDeclaration, BindingDeclarationSchema } from "../binding/schema.js";
 import { SettingsError } from "../errors.js";
@@ -10,6 +10,8 @@ import {
   DEFAULT_BASELINE_SOURCE_ID,
   isBaselineSourceId,
 } from "../internals/baseline-sources.js";
+import { entry, GOVERNED_MCP_TARGETS, type GovernedMcpTarget } from "../internals/cli-registry.js";
+import { SUPPORTED_CLIS } from "../internals/clis.js";
 import { readIfExists } from "../internals/fsxn.js";
 import {
   isLegacyGstackId,
@@ -30,6 +32,39 @@ import { ContextDir } from "./settings.js";
  */
 export const AIH_CONFIG_FILE = ".aih-config.json";
 const AihConfigPostureSchema = z.enum(["vibe", "enterprise"]);
+const PolicyBindingTargetSchema = z.enum(SUPPORTED_CLIS);
+
+function isPortableAbsolutePath(value: string): boolean {
+  if (value.includes("\0") || value.includes("\r") || value.includes("\n")) return false;
+  if (posix.isAbsolute(value)) return true;
+  const windowsRoot = win32.parse(value).root;
+  return win32.isAbsolute(value) && (windowsRoot.includes(":") || windowsRoot.startsWith("\\\\"));
+}
+
+export const PolicyBindingSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    state: z.enum(["active", "revoked"]),
+    projectId: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/),
+    rootSha256: z.string().regex(/^[a-f0-9]{64}$/),
+    source: z
+      .object({
+        path: z
+          .string()
+          .min(1)
+          .max(4096)
+          .refine(isPortableAbsolutePath, "must be an absolute POSIX or Windows path"),
+        sha256: z.string().regex(/^[a-f0-9]{64}$/),
+      })
+      .strict(),
+    targets: z
+      .array(PolicyBindingTargetSchema)
+      .min(1)
+      .max(SUPPORTED_CLIS.length)
+      .refine((targets) => new Set(targets).size === targets.length, "targets must be unique"),
+  })
+  .strict();
+export type PolicyBinding = z.infer<typeof PolicyBindingSchema>;
 const KiroHookRuntimeSchema = z.enum(["ide1-cli3", "cli2"]);
 const ManagedMcpProjectionExpectedSchema = z
   .object({
@@ -196,6 +231,126 @@ export type ActiveKiroMcpProjectionOwnership = KiroMcpProjectionOwnership & { st
 export type McpProjectionDecisionBinding = z.infer<typeof DecisionBindingSchema>;
 export type McpProjectionDecisionBindings = readonly z.infer<typeof DecisionBindingSchema>[];
 
+export type NativeMcpTarget = Exclude<GovernedMcpTarget, "claude" | "kiro">;
+export const NATIVE_MCP_TARGETS = GOVERNED_MCP_TARGETS.filter(
+  (target): target is NativeMcpTarget => target !== "claude" && target !== "kiro",
+);
+const NativeMcpTargetSchema = z.enum(NATIVE_MCP_TARGETS);
+const NativeCommand = z.string().min(1).max(512);
+const NativeArgs = z.array(z.string().max(2048)).max(128);
+const NativeEnv = z.record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/), z.string().max(4096));
+const NativeMcpEntrySchema = z.union([
+  z.object({ command: NativeCommand, args: NativeArgs, env: NativeEnv.optional() }).strict(),
+  z
+    .object({
+      command: NativeCommand,
+      args: NativeArgs,
+      env_vars: z
+        .array(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/))
+        .max(128)
+        .optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("stdio"),
+      command: NativeCommand,
+      args: NativeArgs,
+      env: NativeEnv.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("local"),
+      command: z.array(z.string().max(2048)).min(1).max(129),
+      enabled: z.literal(true),
+      environment: NativeEnv.optional(),
+    })
+    .strict(),
+]);
+export const NativeMcpProjectionExpectedSchema = z
+  .object({
+    entries: z.record(z.string().regex(/^[a-z][a-z0-9-]{0,119}$/), NativeMcpEntrySchema),
+  })
+  .strict();
+const NativeMcpProjectionOwnershipSchema = z
+  .object({
+    schemaVersion: z.literal(2),
+    target: NativeMcpTargetSchema,
+    path: z.string().min(1).max(240),
+    contract: z.string().min(1).max(80),
+    state: z.enum(["active", "revoked"]),
+    expected: NativeMcpProjectionExpectedSchema,
+    decisions: McpProjectionDecisionBindingsSchema,
+    sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  })
+  .strict();
+export type NativeMcpProjectionOwnership = z.infer<typeof NativeMcpProjectionOwnershipSchema>;
+export type ActiveNativeMcpProjectionOwnership = NativeMcpProjectionOwnership & { state: "active" };
+export const NativeMcpProjectionsSchema = z.partialRecord(
+  NativeMcpTargetSchema,
+  NativeMcpProjectionOwnershipSchema,
+);
+
+function nativeMcpProjectionSha256(
+  ownership: Omit<NativeMcpProjectionOwnership, "sha256">,
+): string {
+  return createHash("sha256")
+    .update(
+      stableJson({
+        format: "aih-mcp-projection-ownership",
+        surface: "native-project-mcp",
+        ...ownership,
+      }),
+      "utf8",
+    )
+    .digest("hex");
+}
+
+export function nativeMcpProjectionOwnership(
+  target: NativeMcpTarget,
+  expected: NativeMcpProjectionOwnership["expected"],
+  decisions: McpProjectionDecisionBindings = [],
+): NativeMcpProjectionOwnership {
+  const profile = entry(target).mcp.governed;
+  if (profile === undefined) throw new Error(`no governed native MCP contract for ${target}`);
+  const body = {
+    schemaVersion: 2 as const,
+    state: "active" as const,
+    target,
+    path: profile.configPath,
+    contract: profile.contract,
+    expected: NativeMcpProjectionExpectedSchema.parse(expected),
+    decisions: McpProjectionDecisionBindingsSchema.parse(decisions),
+  };
+  return { ...body, sha256: nativeMcpProjectionSha256(body) };
+}
+
+export function isNativeMcpProjectionOwnership(
+  value: unknown,
+  target: NativeMcpTarget,
+): value is NativeMcpProjectionOwnership {
+  const parsed = NativeMcpProjectionOwnershipSchema.safeParse(value);
+  if (!parsed.success) return false;
+  const { sha256, ...body } = parsed.data;
+  const profile = entry(target).mcp.governed;
+  return (
+    body.target === target &&
+    profile !== undefined &&
+    body.path === profile.configPath &&
+    body.contract === profile.contract &&
+    sha256 === nativeMcpProjectionSha256(body)
+  );
+}
+
+export function revokedNativeMcpProjectionOwnership(
+  ownership: NativeMcpProjectionOwnership,
+): NativeMcpProjectionOwnership {
+  const { sha256: _, ...body } = ownership;
+  const revoked = { ...body, state: "revoked" as const };
+  return { ...revoked, sha256: nativeMcpProjectionSha256(revoked) };
+}
+
 function stableJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
   if (value !== null && typeof value === "object") {
@@ -269,6 +424,8 @@ export const AihConfigSchema = z.object({
   managedMcpProjection: ManagedMcpProjectionOwnershipSchema.optional(),
   /** Provenance for AIH-owned Kiro workspace MCP server entries, never an enforcement control. */
   kiroMcpProjection: KiroMcpProjectionOwnershipSchema.optional(),
+  /** Target-scoped native project distributions, independent of Claude/Kiro receipts. */
+  nativeMcpProjections: NativeMcpProjectionsSchema.optional(),
   /**
    * `aih adopt`'s team decisions: CLI-native paths the team has acknowledged as
    * intentionally tool-native (so re-runs stop flagging them as import candidates —
@@ -282,10 +439,45 @@ export const AihConfigSchema = z.object({
    * surrounding marker schema is otherwise lenient. See `../binding/schema.ts`.
    */
   binding: BindingDeclarationSchema.optional(),
+  /** Durable, root-bound organization policy assignment. */
+  policyBinding: PolicyBindingSchema.optional(),
 });
 
 export type AihConfig = z.infer<typeof AihConfigSchema>;
 export type { BindingDeclaration };
+
+/**
+ * Read the committed organization-policy assignment as a strict control value.
+ * A malformed marker cannot be treated as an unbound project: doing so would
+ * silently drop authority after corruption or a copied partial binding.
+ */
+export function readPolicyBinding(root: string): PolicyBinding | undefined {
+  const raw = readIfExists(join(root, AIH_CONFIG_FILE));
+  if (raw === undefined) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new SettingsError(
+      `invalid policyBinding in ${AIH_CONFIG_FILE}: marker is not valid JSON`,
+    );
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new SettingsError(
+      `invalid policyBinding in ${AIH_CONFIG_FILE}: marker must be an object`,
+    );
+  }
+  if (!("policyBinding" in parsed)) return undefined;
+  const binding = (parsed as { policyBinding?: unknown }).policyBinding;
+  if (binding === undefined) return undefined;
+  const result = PolicyBindingSchema.safeParse(binding);
+  if (result.success) return result.data;
+  throw new SettingsError(
+    `invalid policyBinding in ${AIH_CONFIG_FILE}: ${result.error.issues
+      .map((issue) => `${issue.path.join(".") || "(root)"} — ${issue.message}`)
+      .join("; ")}`,
+  );
+}
 
 export type AihConfigReadDiagnostic =
   | { invalid: false; present: false }

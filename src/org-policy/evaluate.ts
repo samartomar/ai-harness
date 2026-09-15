@@ -1,13 +1,17 @@
 import { type DigestAction, digest, type PlanContext } from "../internals/plan.js";
 import { lines } from "../internals/render.js";
 import type { Check } from "../internals/verify.js";
+import { applyPolicyBindingDefaults, assertPolicyBindingCurrent } from "./binding.js";
+import { hasCommandPermissionOwnership, inspectCommandPermissions } from "./command-permissions.js";
 import { type EffectiveOrgPolicy, stableJson } from "./effective.js";
 import { hookRegistrarReport } from "./hook-registrar.js";
+import { renderPolicyDelivery, summarizePolicyDelivery } from "./policy-delivery-report.js";
 import {
   ORG_POLICY_HOOK_RECEIPT_PATH,
   orgPolicyHookReceiptState,
   orgPolicyKiroMcpReceiptState,
   orgPolicyMcpReceiptState,
+  orgPolicyNativeMcpReceiptStates,
   publicDecisionView,
 } from "./project.js";
 import { resolveRuntimeOrgPolicy } from "./runtime.js";
@@ -19,6 +23,7 @@ export interface OrgPolicyEffectiveDigestResolution {
     hook: Pick<ReturnType<typeof orgPolicyHookReceiptState>, "state">;
     mcp: Pick<ReturnType<typeof orgPolicyMcpReceiptState>, "state">;
     kiro: Pick<ReturnType<typeof orgPolicyKiroMcpReceiptState>, "state">;
+    native?: Readonly<Record<string, { state: string }>>;
     registrar: Pick<ReturnType<typeof hookRegistrarReport>, "state">;
   };
 }
@@ -125,9 +130,47 @@ function blockedDetail(effective: EffectiveOrgPolicy): string {
 }
 
 /** Read-only verdict used by doctor and policy evaluate; never trusts policy booleans as proof. */
-export async function orgPolicyEffectiveCheck(ctx: PlanContext): Promise<Check> {
+export async function orgPolicyEffectiveCheck(
+  ctx: PlanContext,
+  options: { includeDelivery?: boolean } = {},
+): Promise<Check> {
   try {
+    assertPolicyBindingCurrent(
+      ctx.root,
+      applyPolicyBindingDefaults(ctx.root, ctx.env, {}).env,
+      ctx.targets,
+    );
     const policy = readOrgPolicy(ctx.root, ctx.env);
+    if (options.includeDelivery) {
+      const delivery = summarizePolicyDelivery(
+        ctx.root,
+        ctx.targets ?? ["claude"],
+        policy,
+        false,
+        ctx.env,
+        ctx.contextDir,
+      );
+      if (delivery.blocking)
+        return {
+          name: "org policy delivery",
+          verdict: "fail",
+          code: "org-policy.effective-blocked",
+          detail: renderPolicyDelivery(delivery),
+        };
+    }
+    const commandPermissions = inspectCommandPermissions(
+      ctx.root,
+      policy,
+      ctx.targets ?? ["claude"],
+    );
+    if (!["not-requested", "current"].includes(commandPermissions.state)) {
+      return {
+        name: "org policy effective resolution",
+        verdict: "fail",
+        code: "org-policy.effective-blocked",
+        detail: `Native command-policy configuration is ${commandPermissions.state}. ${commandPermissions.detail}`,
+      };
+    }
     if (policy === undefined) {
       const hookReceipt = orgPolicyHookReceiptState(ctx, {
         candidates: [],
@@ -159,6 +202,7 @@ export async function orgPolicyEffectiveCheck(ctx: PlanContext): Promise<Check> 
     const hookReceipt = orgPolicyHookReceiptState(ctx, effective);
     const mcpReceipt = orgPolicyMcpReceiptState(ctx, effective);
     const kiroMcpReceipt = orgPolicyKiroMcpReceiptState(ctx, effective);
+    const nativeMcpReceipts = orgPolicyNativeMcpReceiptStates(ctx, effective);
     if (!governanceOwnsAihSurfaces(policy)) {
       if (hookReceipt.state !== "absent" && hookReceipt.state !== "active") {
         return {
@@ -235,6 +279,23 @@ export async function orgPolicyEffectiveCheck(ctx: PlanContext): Promise<Check> 
         fingerprint: `org-policy-kiro-mcp-receipt:${kiroMcpReceipt.state}`,
       };
     }
+    const blockedNative = Object.entries(nativeMcpReceipts).find(
+      ([, receipt]) => receipt.state !== "not-requested" && receipt.state !== "clean",
+    );
+    if (blockedNative !== undefined) {
+      const [target, receipt] = blockedNative;
+      return {
+        name: "org policy effective resolution",
+        verdict: "fail",
+        code: "org-policy.effective-blocked",
+        detail: withRequestedCandidateSummary(
+          `${target} workspace-MCP ownership is ${receipt.state}: ${receipt.detail}`,
+          effective,
+        ),
+        location: { uri: ".aih-config.json" },
+        fingerprint: `org-policy-native-mcp-receipt:${target}:${receipt.state}`,
+      };
+    }
     if (effective.blocking) {
       return {
         name: "org policy effective resolution",
@@ -278,14 +339,25 @@ export async function orgPolicyEffectiveDigest(
     const effective = (await resolveRuntimeOrgPolicy(ctx, policy)).effective;
     if (
       !governanceOwnsAihSurfaces(policy) &&
+      !policy.command &&
+      !hasCommandPermissionOwnership(ctx.root) &&
       (effective.upstreamArtifactLifecycle ?? []).length === 0
     )
       return undefined;
     const hookReceipt = orgPolicyHookReceiptState(ctx, effective);
     const mcpReceipt = orgPolicyMcpReceiptState(ctx, effective);
     const kiroMcpReceipt = orgPolicyKiroMcpReceiptState(ctx, effective);
+    const nativeMcpReceipts = orgPolicyNativeMcpReceiptStates(ctx, effective);
     const hookRegistrar = hookRegistrarReport(ctx.root);
     const candidates = effective.candidates;
+    const policyDelivery = summarizePolicyDelivery(
+      ctx.root,
+      ctx.targets ?? ["claude"],
+      policy,
+      effective.blocking,
+      ctx.env,
+      ctx.contextDir,
+    );
     const lifecycle = effective.npmPackageLifecycle ?? [];
     const upstreamLifecycle = effective.upstreamArtifactLifecycle ?? [];
     const body = lines(
@@ -309,9 +381,9 @@ export async function orgPolicyEffectiveDigest(
           candidate.kind === "mcp" && candidate.projection.projector === "mcp-managed-settings"
             ? requestedTargets
                 .map((target) =>
-                  target === "kiro"
-                    ? "kiro / workspace MCP distribution"
-                    : `${target} / mcp-managed-settings`,
+                  target === "claude"
+                    ? "claude / mcp-managed-settings"
+                    : `${target} / workspace MCP distribution`,
                 )
                 .join(", ") || "none / mcp-managed-settings"
             : `${requestedTargets.join(",") || "none"} / ${candidate.projection.projector}`;
@@ -325,7 +397,17 @@ export async function orgPolicyEffectiveDigest(
           candidate.kind === "hook"
             ? `${hookReceipt.state}: ${hookReceipt.detail}`
             : candidate.kind === "mcp"
-              ? `${candidate.projection.requestedTargets.includes("kiro") ? `${kiroMcpReceipt.state}: ${kiroMcpReceipt.detail}` : `${mcpReceipt.state}: ${mcpReceipt.detail}`}`
+              ? candidate.projection.requestedTargets
+                  .map((target) => {
+                    const receipt =
+                      target === "claude"
+                        ? mcpReceipt
+                        : target === "kiro"
+                          ? kiroMcpReceipt
+                          : nativeMcpReceipts[target as keyof typeof nativeMcpReceipts];
+                    return `${target}: ${receipt?.state ?? "unavailable"}: ${receipt?.detail ?? "no supported host receipt"}`;
+                  })
+                  .join("; ")
               : candidate.projection.receipt;
         const notes =
           [candidate.clarification, candidate.annotation].filter(Boolean).join(" / ") || "—";
@@ -349,6 +431,12 @@ export async function orgPolicyEffectiveDigest(
       `Hook receipt: ${hookReceipt.state} — ${hookReceipt.detail}.`,
       `Managed-MCP receipt: ${mcpReceipt.state} — ${mcpReceipt.detail}.`,
       `Kiro workspace-MCP receipt: ${kiroMcpReceipt.state} — ${kiroMcpReceipt.detail}.`,
+      ...Object.entries(nativeMcpReceipts)
+        .filter(([, receipt]) => receipt.state !== "not-requested")
+        .map(
+          ([target, receipt]) =>
+            `${target} workspace-MCP receipt: ${receipt.state} — ${receipt.detail}; host consumption is not verified by this receipt.`,
+        ),
       `Hook registrar: ${hookRegistrar.state} — ${hookRegistrar.detail}.`,
       `Policy decision blockers: ${publicPolicyDecisionBlockers(effective)}.`,
       ...((effective.aihMcpRequests ?? []).length === 0
@@ -402,13 +490,16 @@ export async function orgPolicyEffectiveDigest(
         ),
       ),
       ...(effective.externalCuration.length === 0 ? ["- none"] : []),
+      "",
+      renderPolicyDelivery(policyDelivery),
     );
     const result = digest(
       `Effective org policy — ${candidates.filter((candidate) => candidate.effective).length} effective · ${candidates.filter((candidate) => candidate.requested && !candidate.effective).length} blocked`,
       body,
       {
         policyVersion: effective.policyVersion,
-        blocking: effective.blocking,
+        blocking: effective.blocking || policyDelivery.blocking,
+        effectivePolicyBlocked: effective.blocking,
         decisionBlockers: effective.decisionBlockers,
         candidates: candidates.map((candidate) => ({
           ...candidate,
@@ -418,6 +509,7 @@ export async function orgPolicyEffectiveDigest(
         })),
         activeMcpServerIds: effective.activeMcpServerIds,
         frameworkSelections: effective.frameworkSelections,
+        policyDelivery,
         externalCuration: effective.externalCuration,
         authoringIntent: effective.authoringIntent,
         authoringDiagnostics: effective.authoringDiagnostics,
@@ -427,6 +519,7 @@ export async function orgPolicyEffectiveDigest(
         hookReceipt,
         mcpReceipt,
         kiroMcpReceipt,
+        nativeMcpReceipts,
         hookRegistrar,
       },
     );
@@ -436,6 +529,7 @@ export async function orgPolicyEffectiveDigest(
         hook: hookReceipt,
         mcp: mcpReceipt,
         kiro: kiroMcpReceipt,
+        native: nativeMcpReceipts,
         registrar: hookRegistrar,
       },
     });

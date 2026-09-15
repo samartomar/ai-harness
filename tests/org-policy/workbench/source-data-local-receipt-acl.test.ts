@@ -14,8 +14,8 @@ vi.mock("node:child_process", async (original) => {
 });
 
 it.skipIf(process.platform !== "win32")(
-  "rechecks directory and key ACLs together on every existing-key write",
-  () => {
+  "initializes without module autoload and rechecks ACLs on every existing-key write",
+  async () => {
     const root = mkdtempSync(join(tmpdir(), "aih-verifier-acl-"));
     try {
       const store = join(root, "store");
@@ -27,6 +27,19 @@ it.skipIf(process.platform !== "win32")(
         verifiedAt: "2026-09-09T00:00:00.000Z",
         expiresAt: "2026-09-10T00:00:00.000Z",
       };
+      const native =
+        await vi.importActual<typeof import("node:child_process")>("node:child_process");
+      vi.mocked(execFileSync).mockImplementationOnce((file, args, options) => {
+        if (!Array.isArray(args)) throw new Error("expected explicit PowerShell arguments");
+        expect(options?.timeout).toBe(15_000);
+        expect(options?.env?.AIH_VERIFIER_INITIALIZE).toBe("1");
+        expect(args.slice(0, 3)).toEqual(["-NoProfile", "-NonInteractive", "-Command"]);
+        return Reflect.apply(native.execFileSync, undefined, [
+          file,
+          [...args.slice(0, 3), `$PSModuleAutoLoadingPreference='None';${args[3]}`],
+          options,
+        ]);
+      });
       writeSourceDataLocalReceiptV1(store, receipt);
       vi.mocked(execFileSync).mockClear();
       writeSourceDataLocalReceiptV1(store, receipt);
@@ -40,12 +53,13 @@ it.skipIf(process.platform !== "win32")(
       // The next operation must observe a changed real ACL, rather than reuse a
       // previous permission decision. Only this temporary fixture is modified.
       const script =
-        "$ErrorActionPreference='Stop';$p=$env:AIH_TEST_ACL_DIRECTORY;$a=[System.IO.Directory]::GetAccessControl($p);$r=New-Object System.Security.AccessControl.FileSystemAccessRule([System.Security.Principal.SecurityIdentifier]'S-1-1-0','Read','Allow');$a.AddAccessRule($r);[System.IO.Directory]::SetAccessControl($p,$a)";
+        "$ErrorActionPreference='Stop';$p=$env:AIH_TEST_ACL_DIRECTORY;$a=[System.IO.Directory]::GetAccessControl($p);$r=[System.Security.AccessControl.FileSystemAccessRule]::new([System.Security.Principal.SecurityIdentifier]'S-1-1-0','Read','Allow');$a.AddAccessRule($r);[System.IO.Directory]::SetAccessControl($p,$a)";
       execFileSync(
         join(process.env.SystemRoot!, "System32/WindowsPowerShell/v1.0/powershell.exe"),
         ["-NoProfile", "-NonInteractive", "-Command", script],
         {
           windowsHide: true,
+          timeout: 15_000,
           env: { ...process.env, AIH_TEST_ACL_DIRECTORY: verifier },
           stdio: "pipe",
         },

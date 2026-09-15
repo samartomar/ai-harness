@@ -88,6 +88,82 @@ function ctx(over: Partial<PlanContext> = {}): PlanContext {
   };
 }
 
+describe("transaction absence assertions", () => {
+  it("asserts an absent sibling without emitting a write for that path", async () => {
+    const result = await executePlan(
+      plan("absence", {
+        ...writeText("generated.json", "generated\n", "generated file"),
+        assertAbsentPaths: ["alternate.jsonc"],
+      }),
+      ctx({ apply: true }),
+    );
+    expect(result.writes.map((write) => write.path)).toEqual(["generated.json"]);
+    expect(existsSync(join(dir, "alternate.jsonc"))).toBe(false);
+  });
+
+  it("rejects malformed and escaping absence paths before creating output", async () => {
+    for (const invalid of [
+      null,
+      "alternate.jsonc",
+      [""],
+      ["../outside"],
+      [join(dir, "absolute")],
+      ["~/.config/alternate"],
+    ]) {
+      await expect(
+        executePlan(
+          plan("absence", {
+            ...writeText("generated.json", "generated\n", "generated file"),
+            assertAbsentPaths: invalid as unknown as readonly string[],
+          }),
+          ctx({ apply: true }),
+        ),
+      ).rejects.toThrow(/invalid transaction absence assertion/);
+      expect(existsSync(join(dir, "generated.json"))).toBe(false);
+    }
+  });
+
+  it("rejects symlinked parents of an absence assertion without following them", async () => {
+    const destination = join(dir, "operator-directory");
+    mkdirSync(destination);
+    symlinkSync(
+      destination,
+      join(dir, "linked"),
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    await expect(
+      executePlan(
+        plan("absence", {
+          ...writeText("generated.json", "generated\n", "generated file"),
+          assertAbsentPaths: ["linked/alternate.jsonc"],
+        }),
+        ctx({ apply: true }),
+      ),
+    ).rejects.toThrow(/symlink/);
+    expect(existsSync(join(destination, "alternate.jsonc"))).toBe(false);
+    expect(existsSync(join(dir, "generated.json"))).toBe(false);
+  });
+
+  it("retains absence guards across execs before deferred writes", async () => {
+    const run = fakeRunner(() => {
+      writeFileSync(join(dir, "alternate.jsonc"), "operator\n");
+      return { code: 0, stdout: "", stderr: "" };
+    });
+    await expect(
+      executePlan(
+        plan("absence", exec("fixture", ["node", "fixture"]), {
+          ...writeText("deferred.json", "generated\n", "deferred file"),
+          requiresPriorExecSuccess: true,
+          assertAbsentPaths: ["alternate.jsonc"],
+        }),
+        ctx({ apply: true, run }),
+      ),
+    ).rejects.toThrow(/must remain absent/);
+    expect(existsSync(join(dir, "deferred.json"))).toBe(false);
+    expect(readFileSync(join(dir, "alternate.jsonc"), "utf8")).toBe("operator\n");
+  });
+});
+
 describe("external shared commit locks", () => {
   it("accepts only a contained, non-linked absolute external lock shared by different target roots", async () => {
     const trustedBase = join(dir, "shared-admin-store");

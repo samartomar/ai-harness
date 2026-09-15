@@ -115,7 +115,20 @@ function inspectOutcome(
       reason: "historical-kiro-runtime-proof-unavailable",
     };
   }
-  const outcome = inspectEccTargetDestinationV1(path, target);
+  // v1 predates OpenCode's generic `skills/**` bridge. Its sealed contract
+  // deliberately maps only the repository's `.agents/skills/**` copies, so a
+  // compatible newer Core must retain that historical outcome even when its
+  // live adapter can also translate a legacy `skills/**` source.
+  if (target === "opencode" && path.startsWith("skills/")) {
+    return {
+      componentId: component.id,
+      path,
+      target,
+      state: "refused",
+      reason: "unowned-destination",
+    };
+  }
+  const outcome = inspectEccTargetDestinationV1(path, target, component.id);
   return outcome.state === "mapped"
     ? {
         componentId: component.id,
@@ -171,6 +184,76 @@ function compatibilityContractV1(components: readonly HistoricalEccAdapterCompon
   };
 }
 
+/** The previously sealed v1 projection, retained only for exact old descriptors. */
+function legacyCompatibilityContractV1(components: readonly HistoricalEccAdapterComponentV1[]) {
+  const outcomes = outcomesFor(components).map((outcome): EccRuntimeAdapterOutcomeV1 => {
+    if (
+      outcome.target === "codex" &&
+      outcome.path.startsWith("agents/") &&
+      outcome.path.endsWith(".md")
+    ) {
+      return {
+        componentId: outcome.componentId,
+        path: outcome.path,
+        target: outcome.target,
+        state: "mapped",
+        scope: "project",
+        relative: `.codex/agents/${outcome.path.slice("agents/".length)}`,
+      };
+    }
+    if (
+      outcome.target === "codex" &&
+      (outcome.componentId === "baseline:commands" ||
+        outcome.componentId === "module:commands-core") &&
+      outcome.path.startsWith("commands/") &&
+      outcome.path.endsWith(".md")
+    ) {
+      return {
+        componentId: outcome.componentId,
+        path: outcome.path,
+        target: outcome.target,
+        state: "mapped",
+        scope: "project",
+        relative: `.codex/commands/${outcome.path.slice("commands/".length)}`,
+      };
+    }
+    if (
+      outcome.target !== "kiro" &&
+      (outcome.componentId === "baseline:commands" ||
+        outcome.componentId === "module:commands-core") &&
+      (outcome.path === "scripts/harness-audit.js" ||
+        outcome.path === "scripts/skills-health.js" ||
+        outcome.path.startsWith("scripts/lib/"))
+    ) {
+      return {
+        componentId: outcome.componentId,
+        path: outcome.path,
+        target: outcome.target,
+        state: "refused",
+        reason: "unowned-destination",
+      };
+    }
+    return outcome;
+  });
+  return {
+    contractVersion: "ecc-governed-materialization-targets/v1" as const,
+    relationContract: "compiled-requires-members-and-riders/v1",
+    targets: [...HISTORICAL_ECC_ADAPTER_TARGETS],
+    outcomes,
+  };
+}
+
+function compatibilityForContract(
+  contract: ReturnType<typeof compatibilityContractV1>,
+): EccRuntimeAdapterCompatibilityV1 {
+  return {
+    contractVersion: contract.contractVersion,
+    contractDigest: sha256(contract),
+    targets: contract.targets,
+    outcomes: contract.outcomes,
+  };
+}
+
 /**
  * The exact target and closure behavior this Core can apply to a sealed
  * historical ECC descriptor. Every verified regular file is inspected through
@@ -207,7 +290,8 @@ export function assertHistoricalEccAdapterCompatibilityV1(
   components: readonly HistoricalEccAdapterComponentV1[],
 ): void {
   const expected = currentEccRuntimeAdapterCompatibilityV1(components);
-  if (!sameCompatibility(compatibility, expected)) {
+  const legacy = compatibilityForContract(legacyCompatibilityContractV1(components));
+  if (!sameCompatibility(compatibility, expected) && !sameCompatibility(compatibility, legacy)) {
     throw new Error("historical ECC runtime adapter compatibility does not match this Core");
   }
 }

@@ -1311,7 +1311,7 @@ describe("heal — mcp pre-flight", () => {
     expect(findCheck(p.actions, "mcp: npx launcher")?.verdict).toBe("skip");
   });
 
-  it("broken npx + failing registry → chains the cause to certs/TLS", async () => {
+  it("broken npx + failing registry → names both prerequisite and certs/TLS failures", async () => {
     const p = await command.plan(
       makeCtx({
         root: freshTmp(),
@@ -1326,7 +1326,7 @@ describe("heal — mcp pre-flight", () => {
     expect(c?.detail).toContain("certs/TLS");
   });
 
-  it("broken npx + healthy registry → chains the cause to npm", async () => {
+  it("broken npx + healthy registry → recommends the npm diagnostic", async () => {
     const p = await command.plan(
       makeCtx({
         root: freshTmp(),
@@ -1336,7 +1336,7 @@ describe("heal — mcp pre-flight", () => {
         registry: "ok",
       }),
     );
-    expect(findCheck(p.actions, "mcp: npx launcher")?.detail).toContain("npm is broken");
+    expect(findCheck(p.actions, "mcp: npx launcher")?.detail).toContain("aih heal --scope npm");
   });
 });
 

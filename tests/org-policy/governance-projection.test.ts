@@ -17,10 +17,12 @@ import {
   kiroMcpProjectionOwnership,
   managedMcpProjectionOwnership,
 } from "../../src/config/marker.js";
+import { GOVERNED_MCP_TARGETS, type GovernedMcpTarget } from "../../src/internals/cli-registry.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext, WriteAction } from "../../src/internals/plan.js";
 import { plan } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
+import { defaultNativeMcpServers } from "../../src/mcp/default-native-runtime.js";
 import { command as mcpCommand } from "../../src/mcp/index.js";
 import { managedMcpProjectionState } from "../../src/mcp/managed-projection.js";
 import { mcpApprovalSubject } from "../../src/mcp/policy.js";
@@ -134,6 +136,12 @@ function customSource() {
     version: "1.2.3",
     integrity: DIGEST,
   };
+}
+
+function rootAwareMcpServers() {
+  return mcpServers("project", scanRepo(dir, { maxDepth: 8, contextDir: "ai-coding" }), {
+    localRuntimeServers: defaultNativeMcpServers(ctx()),
+  });
 }
 
 function customPolicy(targets: string[] = ["claude"], approvals: unknown[] = []) {
@@ -259,9 +267,7 @@ function currentReviewedDecision(
   if (candidate?.source.type !== "mcp" || policy.governance === undefined) {
     throw new Error("expected reviewed MCP fixture");
   }
-  const control = aihPolicyControls(
-    mcpServers("project", scanRepo(dir, { maxDepth: 8, contextDir: "ai-coding" })),
-  ).find((item) => item.id === candidate.id);
+  const control = aihPolicyControls(rootAwareMcpServers()).find((item) => item.id === candidate.id);
   if (control === undefined) throw new Error("expected AIH-owned reviewed control");
   const now = Date.now();
   return {
@@ -563,11 +569,9 @@ function reviewedMcpPolicy({
   allowedServers?: string[];
   disabledServers?: string[];
   serverId?: "code-review-graph" | "playwright" | "sequential-thinking";
-  targets?: ("claude" | "kiro")[];
+  targets?: GovernedMcpTarget[];
 } = {}) {
-  const server = mcpServers("project", scanRepo(dir, { maxDepth: 8, contextDir: "ai-coding" }))[
-    serverId
-  ];
+  const server = rootAwareMcpServers()[serverId];
   if (server === undefined) throw new Error(`expected ${serverId} catalog entry`);
   const source = {
     type: "mcp" as const,
@@ -591,7 +595,9 @@ function reviewedMcpPolicy({
             capabilities: [],
             risks: [],
             source,
-            targets: ["claude", "kiro"],
+            targets: targets.some((target) => target !== "claude" && target !== "kiro")
+              ? [...GOVERNED_MCP_TARGETS]
+              : ["claude", "kiro"],
             projector: "mcp-managed-settings",
             lifecycle: "supported",
             evidence: { record: "ignored-self-assertion" },
@@ -606,6 +612,48 @@ function reviewedMcpPolicy({
 }
 
 describe("governed candidate projection", () => {
+  it.each(["codex", "cursor", "copilot", "opencode", "kimi"] as const)(
+    "projects and reconciles a %s-only governed MCP through its own receipt",
+    async (target) => {
+      const governed = reviewedMcpPolicy({
+        allowedServers: [],
+        disabledServers: [],
+        targets: [target],
+      });
+      const applied = ctx({ apply: true, targets: [target] });
+      const actions = await verifiedOrgPolicyProjectionActions(applied, governed);
+      expect(
+        actions.some((action) => action.kind === "write" && action.path !== ".aih-config.json"),
+      ).toBe(true);
+      await executePlan(plan(`governed ${target} MCP`, ...actions), applied);
+      const marker = JSON.parse(readFileSync(join(dir, ".aih-config.json"), "utf8"));
+      expect(Object.keys(marker.nativeMcpProjections)).toEqual([target]);
+      expect(marker.nativeMcpProjections[target]).toMatchObject({ state: "active", target });
+      expect(marker.managedMcpProjection).toBeUndefined();
+      expect(marker.kiroMcpProjection).toBeUndefined();
+      expect(await verifiedOrgPolicyProjectionActions(applied, governed)).toEqual([]);
+
+      writeFileSync(join(dir, "aih-org-policy.json"), JSON.stringify(governed));
+      const digest = await orgPolicyEffectiveDigest(applied);
+      expect(digest?.data).toMatchObject({ nativeMcpReceipts: { [target]: { state: "clean" } } });
+      expect(digest?.text).toContain(`${target} / workspace MCP distribution`);
+      expect(digest?.text).toContain("host consumption is not verified by this receipt");
+
+      const disabled = parseOrgPolicy({
+        ...governed,
+        governance: { ...governed.governance, activations: [] },
+      });
+      await executePlan(
+        plan(
+          `remove governed ${target} MCP`,
+          ...(await verifiedOrgPolicyProjectionActions(applied, disabled)),
+        ),
+        applied,
+      );
+      expect(await verifiedOrgPolicyProjectionActions(applied, disabled)).toEqual([]);
+    },
+  );
+
   it("keeps the exact Playwright runtime identity blocked while protected evidence is absent", async () => {
     writeFileSync(
       join(dir, "package.json"),
@@ -622,7 +670,7 @@ describe("governed candidate projection", () => {
     const playwright = runtime.catalog.playwright;
     expect(playwright?.type).toBe("stdio");
     if (playwright?.type !== "stdio") throw new Error("expected configured Playwright stdio MCP");
-    expect(playwright.args).toEqual(["@playwright/mcp@0.0.79"]);
+    expect(playwright.args).toEqual(["@playwright/mcp@0.0.81"]);
     expect(runtime.effective.candidates[0]).toMatchObject({
       id: "playwright",
       requested: true,
@@ -1888,7 +1936,7 @@ describe("governed candidate projection", () => {
     expect(report?.text).toContain("missing-projector");
     expect(report?.text).toContain("projector-disabled-at-vibe-posture");
     expect(report?.text).toContain(
-      "kiro / workspace MCP distribution; supported=claude,kiro; selected=kiro (this invocation); blocked",
+      "kiro / workspace MCP distribution; supported=claude,codex,cursor,copilot,opencode,kimi,kiro; selected=kiro (this invocation); blocked",
     );
   });
 
@@ -2447,9 +2495,7 @@ describe("governed candidate projection", () => {
   });
 
   it("allows an exact AIH-shipped reviewed MCP without accepting a self-declared custom review", async () => {
-    const server = mcpServers("project", scanRepo(dir, { maxDepth: 8, contextDir: "ai-coding" }))[
-      "code-review-graph"
-    ];
+    const server = rootAwareMcpServers()["code-review-graph"];
     if (server === undefined) throw new Error("expected code-review-graph catalog entry");
     const source = {
       type: "mcp" as const,
@@ -2505,7 +2551,13 @@ describe("governed candidate projection", () => {
     expect(managed?.json).toMatchObject({
       allowedMcpServers: [
         expect.objectContaining({
-          serverCommand: expect.arrayContaining(["code-review-graph@2.3.7"]),
+          serverCommand: expect.arrayContaining([
+            process.execPath,
+            expect.stringMatching(/[\\/]dist[\\/]ecc-runtime\.js$/),
+            "code-review-graph",
+            "--package",
+            "code-review-graph==2.3.8",
+          ]),
         }),
       ],
     });
@@ -2527,7 +2579,13 @@ describe("governed candidate projection", () => {
     const settings = JSON.parse(readFileSync(join(dir, ".kiro", "settings", "mcp.json"), "utf8"));
     expect(settings.mcpServers["code-review-graph"]).toMatchObject({
       type: "stdio",
-      command: "uvx",
+      command: process.execPath,
+      args: expect.arrayContaining([
+        expect.stringMatching(/[\\/]dist[\\/]ecc-runtime\.js$/),
+        "code-review-graph",
+        "--package",
+        "code-review-graph==2.3.8",
+      ]),
     });
     const marker = JSON.parse(readFileSync(join(dir, ".aih-config.json"), "utf8"));
     expect(marker.kiroMcpProjection).toMatchObject({ state: "active" });

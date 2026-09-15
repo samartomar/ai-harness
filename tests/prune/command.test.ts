@@ -1,11 +1,21 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { SHARED_MARKER, sharedBlock } from "../../src/bootstrap-ai/canon.js";
 import { CODEX_AGENTS_BLOCK_MARKER, CODEX_INSTALL_STATE_FILE } from "../../src/ecc/codex.js";
+import { eccPruneReconciliationActions } from "../../src/ecc/prune-reconcile.js";
 import { registrationLedgerPath } from "../../src/ecc/registration.js";
 import { executePlan } from "../../src/internals/execute.js";
 import { mergeManagedBlock } from "../../src/internals/markers.js";
@@ -25,6 +35,7 @@ afterEach(() => {
 
 function ctx(over: Partial<PlanContext> = {}): PlanContext {
   const run = fakeRunner(() => undefined);
+  const env = { HOME: join(dir, "home"), USERPROFILE: join(dir, "home") };
   return {
     root: dir,
     contextDir: "ai-coding",
@@ -32,8 +43,8 @@ function ctx(over: Partial<PlanContext> = {}): PlanContext {
     verify: false,
     json: false,
     run,
-    host: makeHostAdapter({ platform: "linux", run, env: {} }),
-    env: {},
+    host: makeHostAdapter({ platform: "linux", run, env }),
+    env,
     options: {},
     ...over,
   };
@@ -55,7 +66,10 @@ function marker(...targets: string[]): void {
 const actionsOf = async (over: Partial<PlanContext> = {}): Promise<Action[]> =>
   (await command.plan(ctx(over))).actions;
 const digestText = (actions: Action[]): string => {
-  const d = actions.find((a): a is Extract<Action, { kind: "digest" }> => a.kind === "digest");
+  const d = actions.find(
+    (a): a is Extract<Action, { kind: "digest" }> =>
+      a.kind === "digest" && a.describe.startsWith("Stale artifacts"),
+  );
   return d?.text ?? "";
 };
 
@@ -108,25 +122,34 @@ describe("aih prune command", () => {
     expect(text).toContain(".cursor/mcp.json");
   });
 
-  it("routes dropped direct ECC installer CLIs through ECC's install-state uninstall", async () => {
+  it("preserves unreceipted ECC content instead of launching an upstream uninstall", async () => {
     marker("claude");
     write("ai-coding/adapters/claude.md");
     write("ai-coding/adapters/cursor.md");
+    write(".cursor/plugins/operator.js", "operator\n");
     const actions = await actionsOf();
-    const ecc = actions.find(
-      (a): a is Extract<Action, { kind: "exec" }> =>
-        a.kind === "exec" && a.describe.includes("ECC-managed cursor footprint"),
+    expect(actions.some((action) => action.kind === "exec" && action.argv.includes("npx"))).toBe(
+      false,
     );
-    expect(ecc?.argv).toEqual([
-      "npx",
-      "--yes",
-      "--package",
-      "ecc-universal",
-      "ecc",
-      "uninstall",
-      "--target",
-      "cursor",
-    ]);
+    expect(
+      actions.some(
+        (action) => action.kind === "remove" && action.path === "ai-coding/adapters/cursor.md",
+      ),
+    ).toBe(true);
+    expect(
+      actions.some(
+        (action) =>
+          (action.kind === "remove" || action.kind === "write") &&
+          action.path === ".cursor/plugins/operator.js",
+      ),
+    ).toBe(false);
+    expect(
+      actions.some(
+        (action) =>
+          action.kind === "doc" &&
+          action.text.includes("No AIH ECC registration ledger target receipt"),
+      ),
+    ).toBe(true);
   });
 
   describe("dropped-target managed-MCP residue", () => {
@@ -687,6 +710,7 @@ describe("aih prune ECC registration reconciliation", () => {
       strategy: "preserve-relative-path",
       ownership: "managed",
       scaffoldOnly: false,
+      contentSha256: createHash("sha256").update(readFileSync(destinationPath)).digest("hex"),
     });
     writeFileSync(
       statePath,
@@ -776,6 +800,112 @@ describe("aih prune ECC registration reconciliation", () => {
       ].join("\n"),
       "utf8",
     );
+  }
+
+  function writeDroppedCursorReceipt(
+    home: string,
+    options: { includeContentDigest?: boolean } = {},
+  ): {
+    ledgerPath: string;
+    managed: string;
+    operator: string;
+    statePath: string;
+  } {
+    const projectRoot = join(home, "projects", "active");
+    const cursorRoot = join(projectRoot, ".cursor");
+    const statePath = join(cursorRoot, "ecc-install-state.json");
+    const managed = join(cursorRoot, "skills", "tdd-workflow", "SKILL.md");
+    const operator = join(cursorRoot, "operator-notes.md");
+    mkdirSync(dirname(managed), { recursive: true });
+    writeFileSync(managed, "managed\n", "utf8");
+    writeFileSync(operator, "operator\n", "utf8");
+    const authorization = {
+      componentId: "skill:tdd-workflow",
+      source: "affaan-m/ECC",
+      pinnedSha: "a".repeat(40),
+      treeSha256: "b".repeat(64),
+      tier: "vendor",
+      issuer: "@aihq/core release",
+      evidenceSha256: "c".repeat(64),
+    };
+    const ledgerPath = registrationLedgerPath(home);
+    mkdirSync(dirname(ledgerPath), { recursive: true });
+    writeFileSync(
+      ledgerPath,
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          projects: [
+            {
+              root: projectRoot,
+              scope: "scoped",
+              components: ["skill:tdd-workflow"],
+              mcps: [],
+            },
+          ],
+          targets: [
+            {
+              target: "cursor",
+              components: [{ id: "skill:tdd-workflow", authorization }],
+              mcps: [],
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+    writeFileSync(
+      statePath,
+      `${JSON.stringify(
+        {
+          schemaVersion: "ecc.install.v1",
+          installedAt: "2026-09-15T00:00:00.000Z",
+          target: {
+            id: "cursor-project",
+            target: "cursor",
+            kind: "project",
+            root: cursorRoot,
+            installStatePath: statePath,
+          },
+          request: {
+            profile: null,
+            modules: ["workflow-quality"],
+            includeComponents: [],
+            excludeComponents: [],
+            legacyLanguages: [],
+            legacyMode: false,
+          },
+          resolution: { selectedModules: ["workflow-quality"], skippedModules: [] },
+          source: {
+            repoVersion: "2.2.1",
+            repoCommit: "a".repeat(40),
+            manifestVersion: 1,
+          },
+          operations: [
+            {
+              kind: "copy-file",
+              moduleId: "workflow-quality",
+              sourceRelativePath: "skills/tdd-workflow/SKILL.md",
+              destinationPath: managed,
+              strategy: "preserve-relative-path",
+              ownership: "managed",
+              scaffoldOnly: false,
+              ...(options.includeContentDigest === false
+                ? {}
+                : {
+                    contentSha256: createHash("sha256").update("managed\n").digest("hex"),
+                  }),
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+    return { ledgerPath, managed, operator, statePath };
   }
 
   it("plans and applies a deterministic ledger-last diff even without committed CLI intent", async () => {
@@ -882,7 +1012,7 @@ describe("aih prune ECC registration reconciliation", () => {
     );
   });
 
-  it("coordinates a whole-target uninstall inside the ledger-last transaction", async () => {
+  it("refuses whole-target removal without authoritative install state", async () => {
     const home = join(dir, "home");
     const reactRoot = join(home, "projects", "react");
     const cppRoot = join(home, "projects", "deleted-cpp");
@@ -906,28 +1036,75 @@ describe("aih prune ECC registration reconciliation", () => {
     });
     const apply = ctx({ apply: true, env: { HOME: home, USERPROFILE: home }, run });
 
-    const planned = await command.plan(apply);
-    const reconcile = planned.actions.find(
-      (action): action is Extract<Action, { kind: "exec" }> =>
-        action.kind === "exec" && action.describe.includes("atomic ledger-last transaction"),
+    await expect(command.plan(apply)).rejects.toThrow(
+      /missing ECC install state for dropped target/i,
     );
-    if (reconcile === undefined) throw new Error("missing coordinated reconciliation action");
-    const encoded = reconcile.argv.at(-1);
-    if (encoded === undefined) throw new Error("missing coordinated reconciliation payload");
-    const payload = JSON.parse(Buffer.from(encoded, "base64").toString("utf8")) as {
-      uninstalls: Array<{ target: string; argv: string[]; paths: string[] }>;
-    };
-    expect(payload.uninstalls).toEqual([
-      expect.objectContaining({ target: "cursor", argv: expect.arrayContaining(["uninstall"]) }),
-    ]);
-
-    const result = await executePlan(planned, apply);
-
-    expect(result.execs).toEqual([
-      expect.objectContaining({ argv: expect.arrayContaining([process.execPath]), ok: true }),
-    ]);
     expect(calls.some((argv) => argv[0] === "npx")).toBe(false);
     expect(readFileSync(ledgerPath)).toEqual(before);
+  });
+
+  it("drops a direct target from receipt-bound state without launching upstream code", async () => {
+    const home = join(dir, "home");
+    const { ledgerPath, managed, operator, statePath } = writeDroppedCursorReceipt(home);
+
+    const actions = eccPruneReconciliationActions(ctx({ env: { HOME: home, USERPROFILE: home } }), [
+      "cursor",
+    ]);
+    const reconcile = actions.find(
+      (action): action is Extract<Action, { kind: "exec" }> => action.kind === "exec",
+    );
+    if (reconcile === undefined) throw new Error("missing dropped-target reconciliation action");
+    const encoded = reconcile.argv.at(-1);
+    if (encoded === undefined) throw new Error("missing reconciliation payload");
+    const payload = JSON.parse(Buffer.from(encoded, "base64").toString("utf8")) as {
+      mutations: Array<{ kind: string; path: string }>;
+      uninstalls: unknown[];
+    };
+
+    expect(payload.uninstalls).toEqual([]);
+    expect(payload.mutations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "remove-file", path: managed }),
+        expect.objectContaining({ kind: "remove-file", path: statePath }),
+      ]),
+    );
+    expect(payload.mutations).not.toContainEqual(expect.objectContaining({ path: operator }));
+
+    await executePlan(
+      { capability: "prune", actions },
+      ctx({
+        apply: true,
+        env: { HOME: home, USERPROFILE: home },
+        run: async (argv) => {
+          const result = spawnSync(argv[0] ?? "", argv.slice(1), { encoding: "utf8" });
+          return {
+            code: result.status ?? 1,
+            stdout: result.stdout ?? "",
+            stderr: result.stderr ?? "",
+          };
+        },
+      }),
+    );
+    expect(existsSync(managed)).toBe(false);
+    expect(existsSync(statePath)).toBe(false);
+    expect(readFileSync(operator, "utf8")).toBe("operator\n");
+    const ledger = JSON.parse(readFileSync(ledgerPath, "utf8")) as { targets: unknown[] };
+    expect(ledger.targets).toEqual([]);
+  });
+
+  it("preserves legacy managed files whose state has no content proof", () => {
+    const home = join(dir, "home");
+    const { ledgerPath, managed, operator, statePath } = writeDroppedCursorReceipt(home, {
+      includeContentDigest: false,
+    });
+    const before = new Map(
+      [ledgerPath, managed, operator, statePath].map((path) => [path, readFileSync(path)]),
+    );
+
+    expect(() =>
+      eccPruneReconciliationActions(ctx({ env: { HOME: home, USERPROFILE: home } }), ["cursor"]),
+    ).toThrow(/without a recorded content digest.*preserve it for manual cleanup/i);
+    for (const [path, contents] of before) expect(readFileSync(path)).toEqual(contents);
   });
 
   it("moves dropped Codex config, block, and state removals into the coordinated payload", async () => {
@@ -935,11 +1112,13 @@ describe("aih prune ECC registration reconciliation", () => {
     const reactRoot = join(home, "projects", "react");
     const cppRoot = join(home, "projects", "deleted-cpp");
     mkdirSync(reactRoot, { recursive: true });
-    writeLedger(home, reactRoot, cppRoot);
+    const ledgerPath = writeLedger(home, reactRoot, cppRoot);
     const cppSkill = join(home, ".codex", "skills", "cpp-testing", "SKILL.md");
     const reactSkill = join(home, ".codex", "skills", "react-patterns", "SKILL.md");
-    writeCodexState(home, cppSkill, reactSkill);
+    const upstreamStatePath = writeCodexState(home, cppSkill, reactSkill);
     writeCodexMergeState(home);
+    const operatorFile = join(home, ".codex", "operator-notes.md");
+    writeFileSync(operatorFile, "operator\n", "utf8");
     marker("claude");
     write("ai-coding/adapters/claude.md");
     write("ai-coding/adapters/codex.md");
@@ -975,8 +1154,24 @@ describe("aih prune ECC registration reconciliation", () => {
           phase: "target-state",
           path: join(home, ".codex", CODEX_INSTALL_STATE_FILE),
         }),
+        expect.objectContaining({
+          kind: "remove-file",
+          phase: "owned-removal",
+          path: cppSkill,
+        }),
+        expect.objectContaining({
+          kind: "remove-file",
+          phase: "owned-removal",
+          path: reactSkill,
+        }),
+        expect.objectContaining({
+          kind: "remove-file",
+          phase: "target-state",
+          path: upstreamStatePath,
+        }),
       ]),
     );
+    expect(payload.mutations).not.toContainEqual(expect.objectContaining({ path: operatorFile }));
     expect(
       actions.some(
         (action) =>
@@ -984,6 +1179,29 @@ describe("aih prune ECC registration reconciliation", () => {
           (action.path.endsWith("config.toml") || action.path.endsWith("AGENTS.md")),
       ),
     ).toBe(false);
+
+    await executePlan(
+      { capability: "prune", actions },
+      ctx({
+        apply: true,
+        env: { HOME: home, USERPROFILE: home },
+        run: async (argv) => {
+          const result = spawnSync(argv[0] ?? "", argv.slice(1), { encoding: "utf8" });
+          return {
+            code: result.status ?? 1,
+            stdout: result.stdout ?? "",
+            stderr: result.stderr ?? "",
+          };
+        },
+      }),
+    );
+    expect(existsSync(cppSkill)).toBe(false);
+    expect(existsSync(reactSkill)).toBe(false);
+    expect(existsSync(upstreamStatePath)).toBe(false);
+    expect(existsSync(join(home, ".codex", CODEX_INSTALL_STATE_FILE))).toBe(false);
+    expect(readFileSync(operatorFile, "utf8")).toBe("operator\n");
+    const ledger = JSON.parse(readFileSync(ledgerPath, "utf8")) as { targets: unknown[] };
+    expect(ledger.targets).toEqual([]);
   });
 
   it("falls back to standalone Codex cleanup when the ledger has no Codex target record", async () => {

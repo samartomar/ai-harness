@@ -11,6 +11,32 @@ function read(path: string): string {
 }
 
 describe("Core package identity (#866)", () => {
+  it("keeps direct runtime dependency engines compatible with the advertised Node floor", () => {
+    const manifest = JSON.parse(read("package.json")) as {
+      engines: { node: string };
+      dependencies: Record<string, string>;
+    };
+    const lock = JSON.parse(read("package-lock.json")) as {
+      packages: Record<string, { engines?: { node?: string } }>;
+    };
+    const minimum = (range: string): number => {
+      const match = /^>=\s*(\d+)(?:\.(\d+))?(?:\.(\d+))?$/.exec(range);
+      if (!match) throw new Error(`Review unsupported Node engine range: ${range}`);
+      return Number(match[1]) * 1_000_000 + Number(match[2] ?? 0) * 1_000 + Number(match[3] ?? 0);
+    };
+    const floor = minimum(manifest.engines.node);
+    for (const name of Object.keys(manifest.dependencies)) {
+      const dependency = lock.packages[`node_modules/${name}`];
+      expect(dependency, `${name} must have a locked runtime identity`).toBeDefined();
+      if (dependency?.engines?.node) {
+        expect(
+          minimum(dependency.engines.node),
+          `${name} must support ${manifest.engines.node}`,
+        ).toBeLessThanOrEqual(floor);
+      }
+    }
+  });
+
   it("uses the current Core release identity without changing the command or exports", () => {
     const manifest = JSON.parse(read("package.json")) as Record<string, unknown>;
 

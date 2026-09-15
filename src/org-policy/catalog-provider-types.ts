@@ -105,7 +105,7 @@ export interface AihPolicyControl {
   source:
     | { type: "mcp"; server: string; subject: string }
     | { type: "hook"; handler: "usage-metering"; scriptDigest: string };
-  targets: ("claude" | "codex" | "kiro")[];
+  targets: GovernedMcpTarget[];
   projector: "mcp-managed-settings" | "usage-hook";
   lifecycle: "supported";
 }
@@ -148,3 +148,5 @@ export interface AihCatalogSourceV1 {
   aihSkills: AihCatalogContentPackV1[];
   aihAgents: AihCatalogContentPackV1[];
 }
+
+import type { GovernedMcpTarget } from "../internals/cli-registry.js";

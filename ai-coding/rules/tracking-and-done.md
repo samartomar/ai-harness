@@ -28,8 +28,10 @@ touched is stale. Before claiming done, check each and update in the *same* PR:
 
 - Alters a documented command, flag, behavior, or public surface → update that doc.
 - User-facing change → an `[Unreleased]` CHANGELOG entry.
-- Command or flag change → `docs/commands.md` **and** a regenerated
+- Public CLI command or flag change → `docs/commands.md` **and** a regenerated
   command-surface fixture.
+- Repository verification command change → `CONTRIBUTING.md` and the command
+  mirrors under `ai-coding/`; it does not change the product CLI contract.
 - Generated or byte-locked docs change via their renderer, never by hand.
 
 If a doc genuinely needs no change, say so; silence is not the same as checked.

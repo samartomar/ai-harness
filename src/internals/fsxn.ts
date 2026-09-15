@@ -83,6 +83,8 @@ export interface AppliedWrite {
   path: string;
   contents: string;
   backup?: string;
+  /** Pin the original bytes before replacing the live file; backups remain mutable. */
+  backupSha256?: string;
   created: boolean;
   parentGuard?: ParentGuard;
 }
@@ -111,7 +113,7 @@ interface AppliedRemoval {
   legacyParentGuard?: ParentGuard;
 }
 
-interface StagedAssertion {
+interface StagedContentAssertion {
   path: string;
   sha256: string;
   maxBytes?: number;
@@ -119,6 +121,15 @@ interface StagedAssertion {
   root?: string;
   externalCustody?: ExternalFileCustody;
 }
+
+interface StagedAbsenceAssertion {
+  path: string;
+  absent: true;
+  describe: string;
+  root?: string;
+}
+
+type StagedAssertion = StagedContentAssertion | StagedAbsenceAssertion;
 
 interface ExternalFileCustody {
   readonly file: { readonly dev: string; readonly ino: string };
@@ -250,6 +261,16 @@ export class FsTransaction {
     externalCustody?: ExternalFileCustody,
   ): void {
     this.stagedAssertions.push({ path, sha256, describe, root, maxBytes, externalCustody });
+  }
+
+  /** Read-only no-follow assertion: any file, directory or link occupying this path refuses commit. */
+  stageAbsenceAssertion(path: string, describe: string, root?: string): void {
+    this.stagedAssertions.push({ path, absent: true, describe, root });
+  }
+
+  private guardAssertionParents(assertion: StagedAssertion): void {
+    if ("absent" in assertion) this.guardExistingParents(assertion.path, assertion.root);
+    else this.guardParents(assertion.path, assertion.root, false);
   }
 
   preview(): ReadonlyArray<StagedWrite> {
@@ -975,11 +996,11 @@ export class FsTransaction {
       // create even the durable lock anchor. Re-check under the acquired lock
       // below so a swap during acquisition still cannot reach an effect.
       this.assertCommitDeadline();
-      for (const assertion of assertions) this.guardParents(assertion.path, assertion.root, false);
+      for (const assertion of assertions) this.guardAssertionParents(assertion);
       validateAssertions(assertions);
       lockIdentity = this.acquireCommitLock();
       this.assertCommitDeadline();
-      for (const assertion of assertions) this.guardParents(assertion.path, assertion.root, false);
+      for (const assertion of assertions) this.guardAssertionParents(assertion);
       validateAssertions(assertions);
       // Scratch expectations are effect-boundary preconditions. Validate every
       // one before any staged write can create a directory, clear scratch, or
@@ -1023,7 +1044,11 @@ export class FsTransaction {
         });
         if (w.expectScratch === undefined) clearExpectedScratch();
         let backup: string | undefined;
+        let backupSha256: string | undefined;
         if (existed) {
+          const original = readRegularFile(w.path);
+          if (original === undefined) throw new FsTxnError("write baseline is not a regular file");
+          backupSha256 = createHash("sha256").update(original).digest("hex");
           backup = backupPath;
           // Reads the just-written source; retry the transient Windows scanner lock.
           this.guardParents(w.path, w.root, false);
@@ -1032,6 +1057,13 @@ export class FsTransaction {
             this.assertCommitDeadline();
             return copyFileSync(w.path, backupPath, fsConstants.COPYFILE_EXCL);
           });
+          const saved = readRegularFile(backupPath);
+          if (
+            saved === undefined ||
+            createHash("sha256").update(saved).digest("hex") !== backupSha256
+          ) {
+            throw new FsTxnError("write backup changed before commit");
+          }
         }
         this.guardParents(w.path, w.root, false);
         this.assertCommitDeadline();
@@ -1058,6 +1090,7 @@ export class FsTransaction {
           path: w.path,
           contents: w.contents,
           backup,
+          backupSha256,
           created: !existed,
           parentGuard,
         });
@@ -1113,7 +1146,7 @@ export class FsTransaction {
         }
       }
       this.assertCommitDeadline();
-      for (const assertion of assertions) this.guardParents(assertion.path, assertion.root, false);
+      for (const assertion of assertions) this.guardAssertionParents(assertion);
       validateAssertions(assertions);
       this.assertCommitDeadline();
       return {
@@ -1163,7 +1196,7 @@ export class FsTransaction {
     const revalidate = (): void => {
       if (heartbeatError !== undefined) throw heartbeatError;
       this.assertCommitDeadline();
-      for (const assertion of assertions) this.guardParents(assertion.path, assertion.root, false);
+      for (const assertion of assertions) this.guardAssertionParents(assertion);
       validateAssertions(assertions);
       this.assertCommitDeadline();
     };
@@ -1233,12 +1266,24 @@ export class FsTransaction {
 
 function dedupeAssertions(staged: StagedAssertion[]): StagedAssertion[] {
   const byPath = new Map<string, StagedAssertion>();
-  for (const assertion of staged) byPath.set(assertion.path, assertion);
+  // A content pin and an absence pin for one path contradict each other; preserve both so validation refuses.
+  for (const assertion of staged)
+    byPath.set(`${"absent" in assertion ? "absent" : "contents"}:${assertion.path}`, assertion);
   return [...byPath.values()];
 }
 
 function validateAssertions(assertions: StagedAssertion[]): void {
   for (const assertion of assertions) {
+    if ("absent" in assertion) {
+      let absent = false;
+      try {
+        lstatSync(assertion.path);
+      } catch (error) {
+        absent = (error as NodeJS.ErrnoException).code === "ENOENT";
+      }
+      if (!absent) throw new FsTxnError(`${assertion.describe}: path must remain absent`);
+      continue;
+    }
     const opened = readRegularFileWithStats(assertion.path, {
       ...(assertion.maxBytes === undefined ? {} : { maxBytes: assertion.maxBytes }),
     });
@@ -1471,7 +1516,7 @@ export function rollbackAppliedWrites(
         } else if (current === a.contents) {
           preserved.push(a.path);
         } else if (current !== undefined) preserved.push(a.path);
-      } else if (a.backup && existsSync(a.backup)) {
+      } else {
         if (current === a.contents && restoreOverwrittenWrite(a, assertCanMutate)) {
           continue;
         }
@@ -1491,11 +1536,15 @@ export function rollbackAppliedWrites(
  * rename and a swapped leaf is preserved rather than followed.
  */
 function restoreOverwrittenWrite(applied: AppliedWrite, assertCanMutate: () => void): boolean {
-  if (applied.backup === undefined) return false;
+  if (applied.backup === undefined || applied.backupSha256 === undefined) return false;
   if (!parentGuardMatches(applied.parentGuard)) return false;
   const backup = readRegularFile(applied.backup);
   if (!parentGuardMatches(applied.parentGuard)) return false;
-  if (backup === undefined) return false;
+  if (
+    backup === undefined ||
+    createHash("sha256").update(backup).digest("hex") !== applied.backupSha256
+  )
+    return false;
   const tmpPath = `${applied.path}.aih.rollback.tmp`;
   if (!clearRollbackScratch(tmpPath, applied.parentGuard, assertCanMutate)) return false;
   try {
@@ -1512,6 +1561,12 @@ function restoreOverwrittenWrite(applied: AppliedWrite, assertCanMutate: () => v
     const final = lstatSafe(applied.path);
     if (final === undefined || final.isSymbolicLink()) return false;
     if (readFileSync(applied.path, "utf8") !== applied.contents) return false;
+    const finalBackup = readRegularFile(applied.backup);
+    if (
+      finalBackup === undefined ||
+      createHash("sha256").update(finalBackup).digest("hex") !== applied.backupSha256
+    )
+      return false;
     if (!parentGuardMatches(applied.parentGuard)) return false;
     assertCanMutate();
     renameSync(tmpPath, applied.path);
@@ -1519,6 +1574,7 @@ function restoreOverwrittenWrite(applied: AppliedWrite, assertCanMutate: () => v
     if (
       backupInfo !== undefined &&
       !backupInfo.isSymbolicLink() &&
+      readRegularFile(applied.backup)?.equals(backup) === true &&
       parentGuardMatches(applied.parentGuard)
     ) {
       assertCanMutate();

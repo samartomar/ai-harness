@@ -145,6 +145,32 @@ function receiptAccepts(value: unknown): boolean {
 }
 
 describe("F5 — the destination-scoped materialization receipt document", () => {
+  it("retains explicit delivery targets while legacy receipts remain target-unverified", () => {
+    expect(
+      parseEccMaterializationReceipt(JSON.stringify(receiptValue())).components[0]?.targets,
+    ).toBeUndefined();
+    const value = receiptValue({
+      components: [{ ...componentValue(), targets: ["claude", "codex"] }],
+    });
+    expect(parseEccMaterializationReceipt(JSON.stringify(value)).components[0]?.targets).toEqual([
+      "claude",
+      "codex",
+    ]);
+    expect(() =>
+      parseEccMaterializationReceipt(
+        JSON.stringify(
+          receiptValue({ components: [{ ...componentValue(), targets: ["claude", "claude"] }] }),
+        ),
+      ),
+    ).toThrow();
+    expect(() =>
+      parseEccMaterializationReceipt(
+        JSON.stringify(
+          receiptValue({ components: [{ ...componentValue(), targets: ["invented"] }] }),
+        ),
+      ),
+    ).toThrow();
+  });
   it("round-trips through a canonical, deterministically ordered serialization", () => {
     const receipt = parseEccMaterializationReceipt(
       JSON.stringify(

@@ -475,18 +475,31 @@ describe("ECC continuity hook", () => {
         repositoryId: "repo",
         harness: "codex",
       });
-      for (let index = 0; index <= CONTINUITY_LIMITS.maxRecords; index += 1) {
-        store.save({
-          version: 1,
-          repositoryId: "repo",
-          canonicalWorktree: worktree,
-          harness: "codex",
-          sessionId: `session-${index.toString().padStart(3, "0")}`,
-          updatedAtEpochMs: index,
-          summary: `checkpoint ${index}`,
-          activity: [],
-        });
-      }
+      const record = (index: number): ContinuityRecord => ({
+        version: 1,
+        repositoryId: "repo",
+        canonicalWorktree: worktree,
+        harness: "codex",
+        sessionId: `session-${index.toString().padStart(3, "0")}`,
+        updatedAtEpochMs: index,
+        summary: `checkpoint ${index}`,
+        activity: [],
+      });
+      // Bootstrap with the real writer, seed a valid at-cap snapshot, then
+      // exercise the actual cap-crossing save instead of 129 growing rewrites.
+      store.save(record(0));
+      const files = readdirSync(join(stateRoot, "continuity"));
+      expect(files).toHaveLength(1);
+      const [file] = files;
+      if (!file) throw new Error("continuity state file missing");
+      writeFileSync(
+        join(stateRoot, "continuity", file),
+        JSON.stringify(
+          Array.from({ length: CONTINUITY_LIMITS.maxRecords }, (_, index) => record(index)),
+        ),
+      );
+      expect(store.list()).toHaveLength(CONTINUITY_LIMITS.maxRecords);
+      store.save(record(CONTINUITY_LIMITS.maxRecords));
       const records = store.list();
       expect(records).toHaveLength(CONTINUITY_LIMITS.maxRecords);
       expect(records.some((record) => record.sessionId === "session-000")).toBe(false);

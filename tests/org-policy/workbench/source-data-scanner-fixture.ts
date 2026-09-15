@@ -90,7 +90,7 @@ function baselineInput() {
 
 function collectionInput() {
   const input = mattPocockPinnedSkillCollectionFixtureV1();
-  input.source.repository = "https://github.com/fixture/collection";
+  input.source = { ...input.source, repository: "https://github.com/fixture/collection" };
   const { collectionDigest: _digest, ...body } = input;
   return { ...body, collectionDigest: pinnedSkillCollectionDigestV1(body) };
 }
@@ -117,10 +117,14 @@ function signedPublication(
   root: string,
   catalog: ReturnType<typeof prepareSourceDataBaselineCoverageV1>["catalog"],
   detail: string,
+  times = { signedAt, verificationExpiresAt, attestedAt, preparedAt },
 ) {
+  const { signedAt, verificationExpiresAt, attestedAt, preparedAt } = times;
   const request = createCoreBaselineVetRequests(root, catalog)[0];
   if (request === undefined) throw new Error("fixture Scanner request missing");
-  const annexArtifacts = request.components[0]?.analyzers.map((analyzer) => {
+  const annexArtifacts = [
+    ...new Set(request.components.flatMap((component) => component.analyzers)),
+  ].map((analyzer) => {
     const bytes = canonicalStrictJsonBytesV1(
       analyzer === "aih-native"
         ? { protocol: "BaselineNativeObservationV1", files: [] }
@@ -130,7 +134,7 @@ function signedPublication(
               {
                 tool: { driver: { name: analyzer } },
                 results:
-                  analyzer === "skillspector"
+                  analyzer === "skillspector" && detail !== ""
                     ? [
                         {
                           ruleId: "skillspector.prompt-injection",
@@ -280,7 +284,7 @@ function signedPublication(
   return { discovery, publicationBytes, attestationResult };
 }
 
-function bundleForBaseline(root: string, input: ReturnType<typeof baselineInput>) {
+function bundleForBaseline(root: string, input: unknown) {
   const prepared = prepareSourceDataBaselineCoverageV1(root, input);
   return {
     bundle: assembleAuthoringCatalogBundleFromCompilerOutputsV1([
@@ -307,6 +311,59 @@ function bundleForBaseline(root: string, input: ReturnType<typeof baselineInput>
       },
     ]),
     catalog: prepared.catalog,
+  };
+}
+
+/** Synthetic public-CLI acceptance seam. Never creates consumer authority or receipts. */
+export function scannerBaselineSourceFixtureV1(
+  root: string,
+  compilerInput: unknown,
+  timestamp: string,
+) {
+  const time = Date.parse(timestamp);
+  if (!Number.isFinite(time)) throw new Error("fixture timestamp invalid");
+  const times = {
+    signedAt: new Date(time - 60_000).toISOString(),
+    verificationExpiresAt: new Date(time + 2_700_000).toISOString(),
+    attestedAt: new Date(time - 30_000).toISOString(),
+    preparedAt: timestamp,
+  };
+  const prepared = bundleForBaseline(root, compilerInput);
+  // Published coverage is disjoint; declarations may retain exact aliases.
+  const seenPaths = new Set<string>();
+  const publishedCatalog = {
+    ...prepared.catalog,
+    components: prepared.catalog.components.filter((component) => {
+      const identity = JSON.stringify([...component.paths].sort());
+      if (seenPaths.has(identity)) return false;
+      seenPaths.add(identity);
+      return true;
+    }),
+  };
+  if (createCoreBaselineVetRequests(root, publishedCatalog).length !== 1)
+    throw new Error("fixture requires one complete Scanner batch");
+  const publication = signedPublication(root, publishedCatalog, "", times);
+  return {
+    root,
+    bundle: prepared.bundle,
+    compilerInput,
+    proof: {
+      version: "source-data-scanner-proof/v1",
+      compilerInput,
+      publishedCatalog,
+      preparedAt: timestamp,
+      publisherCommit: SCANNER_BASELINE_PUBLICATION_PUBLISHER_V1.commit,
+      batches: [
+        {
+          discoveryBytesBase64: canonicalStrictJsonBytesV1(publication.discovery).toString(
+            "base64",
+          ),
+          publicationBytesBase64: publication.publicationBytes.toString("base64"),
+          attestation: "Synthetic GitHub transport; local publication signature is verified",
+        },
+      ],
+    },
+    attestationResult: publication.attestationResult,
   };
 }
 
