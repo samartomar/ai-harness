@@ -158,7 +158,8 @@ describe("Codebase Memory native payload authentication", () => {
     const runtimeHome = fixture();
     const external = join(runtimeHome, "external");
     mkdirSync(external);
-    const linkedDirectory = join(runtimeHome, "codebase-memory-mcp");
+    const linkedDirectory = dirname(dirname(payloadPath(runtimeHome)));
+    mkdirSync(dirname(linkedDirectory), { recursive: true });
     try {
       symlinkSync(external, linkedDirectory, process.platform === "win32" ? "junction" : "dir");
     } catch (error) {

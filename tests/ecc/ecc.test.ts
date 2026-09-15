@@ -79,7 +79,7 @@ const symlinksAvailable = supportsSymlinks();
 
 let tmp: string;
 beforeEach(() => {
-  tmp = mkdtempSync(join(tmpdir(), "aih-ecc-"));
+  tmp = realpathSync(mkdtempSync(join(tmpdir(), "aih-ecc-")));
 });
 afterEach(() => {
   rmSync(tmp, { recursive: true, force: true });
