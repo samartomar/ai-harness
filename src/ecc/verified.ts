@@ -22,6 +22,7 @@ import {
 } from "./codex.js";
 import type { EccComponentSelection } from "./components.js";
 import { authorizedEccSelection, installedEccComponentRegistrations } from "./evidence.js";
+import { ECC_UPSTREAM_HOOK_CONSENT_ADAPTER_SOURCE } from "./hook-consent.js";
 import { codexEccActions, type EccRepoCheckout, kiroEccActions } from "./index.js";
 import { eccActionsForCli, eccToolsDoc, isAihDirectEccInstallTarget } from "./install.js";
 import { eccMaterializationSpec } from "./materialize.js";
@@ -96,6 +97,7 @@ for (const step of steps) {
 const VERIFIED_ECC_MATERIALIZE_DRIVER = String.raw`
 const fs = require("node:fs");
 const path = require("node:path");
+${ECC_UPSTREAM_HOOK_CONSENT_ADAPTER_SOURCE}
 const payload = JSON.parse(fs.readFileSync(0, "utf8"));
 if (!payload || typeof payload.sourceRoot !== "string" || typeof payload.target !== "string" || typeof payload.homeDir !== "string" || typeof payload.projectRoot !== "string" || !payload.spec) {
   throw new Error("invalid scoped ECC materialization payload");
@@ -103,7 +105,8 @@ if (!payload || typeof payload.sourceRoot !== "string" || typeof payload.target 
 const { createManifestInstallPlan, applyInstallPlan } = require(path.join(payload.sourceRoot, "scripts", "lib", "install-executor.js"));
 const spec = payload.spec;
 if (spec.executableConsent !== "enabled" && spec.executableConsent !== "declined") throw new Error("invalid ECC executable consent");
-const plan = createManifestInstallPlan({
+const effectiveHookConsent = spec.excludeAihOwnedSurfaces === true ? "declined" : spec.executableConsent;
+let plan = createManifestInstallPlan({
   sourceRoot: payload.sourceRoot,
   target: payload.target,
   profileId: spec.scope === "full" ? "full" : null,
@@ -111,6 +114,7 @@ const plan = createManifestInstallPlan({
   homeDir: payload.homeDir,
   projectRoot: payload.projectRoot,
 });
+plan = applyEccUpstreamHookConsent(plan, payload.sourceRoot, effectiveHookConsent);
 const expectedInstallTargets = {
   claude: [{ root: path.join(payload.homeDir, ".claude"), state: path.join(payload.homeDir, ".claude", "ecc", "install-state.json") }],
   cursor: [{ root: path.join(payload.projectRoot, ".cursor"), state: path.join(payload.projectRoot, ".cursor", "ecc-install-state.json") }],
