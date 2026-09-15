@@ -113,7 +113,7 @@ function evidenceDeliveryLine(model: PolicyStudioModel): string {
       "Catalog head",
       "No verified Catalog head is included in this build; no item qualification is claimed.",
     ]);
-  return `<details class="gcard" id="evidence-delivery"><summary>Evidence &amp; versions · Core ${safeHtmlAttribute(delivery.coreVersion)}</summary><div class="help"><dl>${rows.map(([label, value]) => `<dt><strong>${safeHtmlAttribute(label)}</strong></dt><dd style="overflow-wrap:anywhere">${safeHtmlAttribute(value)}</dd>`).join("")}</dl><p>The library and allowed publisher are preparation inputs. Each item’s security review describes the report actually included. A scan does not grant organization approval.</p></div></details>`;
+  return `<details id="evidence-delivery" class="reference-evidence"><summary>Evidence &amp; versions</summary><div class="reference-evidence-panel"><div class="reference-evidence-heading"><h2>Evidence &amp; versions · Core ${safeHtmlAttribute(delivery.coreVersion)}</h2><button type="button" class="btn sm reference-evidence-close" id="evidence-delivery-close" aria-label="Close evidence and versions" title="Close evidence and versions">Close</button></div><div class="help"><dl>${rows.map(([label, value]) => `<dt><strong>${safeHtmlAttribute(label)}</strong></dt><dd style="overflow-wrap:anywhere">${safeHtmlAttribute(value)}</dd>`).join("")}</dl><p>The library and allowed publisher are preparation inputs. Each item’s security review describes the report actually included. A scan does not grant organization approval.</p></div></div></details>`;
 }
 
 /** Portable, dependency-free policy authoring surface. */
@@ -123,6 +123,7 @@ export function policyStudioHtml(model: PolicyStudioModel): string {
   const workbenchBrowserScript = loadWorkbenchBrowserScript();
   const workbenchModel = model;
   const protectedPolicyMarkup = protectedPolicyWorkbenchMarkup();
+  const evidenceDelivery = evidenceDeliveryLine(model);
   return String.raw`<!doctype html>
 <html lang="en" data-theme="light">
 <head>
@@ -171,9 +172,9 @@ a:hover{color:var(--ink-2)}
 #side{grid-column:1;grid-row:1/-1;position:sticky;top:0;align-self:start;z-index:60;width:250px;border-right:1px solid var(--rule);background:var(--surface);padding:12px 10px;display:flex;flex-direction:column;gap:10px;transition:width var(--motion)}
 body[data-workbench-shell="generic"] .stage{grid-template-columns:minmax(0,1fr)}
 body[data-workbench-shell="generic"] #side{display:none}
-body[data-workbench-shell="generic"] .bar,body[data-workbench-shell="generic"] .announce,body[data-workbench-shell="generic"] .ticker,body[data-workbench-shell="generic"] .work,body[data-workbench-shell="generic"] .ledger{grid-column:1}
+body[data-workbench-shell="generic"] .bar,body[data-workbench-shell="generic"] .reference-shelf,body[data-workbench-shell="generic"] .announce,body[data-workbench-shell="generic"] .ticker,body[data-workbench-shell="generic"] .work,body[data-workbench-shell="generic"] .ledger{grid-column:1}
 body[data-rail="off"] #side{width:58px;padding:12px 7px}
-.bar,.announce,.ticker,.work,.ledger{grid-column:2}
+.bar,.reference-shelf,.announce,.ticker,.work,.ledger{grid-column:2}
 .sidehead{display:flex;align-items:center;gap:8px}
 .sidehead .brand{flex:1;min-width:0}
 #rail-toggle{width:24px;height:24px;border:1px solid var(--rule);border-radius:3px;color:var(--ink-3);display:grid;place-items:center;font-size:var(--body);flex:0 0 auto}
@@ -586,6 +587,62 @@ button[data-workbench-removal="true"]:hover{background:#faeced!important;color:#
 @media(max-width:700px){.workbench-browse-tools{flex-direction:column;flex-wrap:nowrap;align-items:stretch}.workbench-type-tabs{flex:0 0 auto;width:100%;max-width:100%}.workbench-browse-tools>input{order:0;flex:0 0 auto;box-sizing:border-box;width:100%}}
 .adoption-drawer{position:fixed;inset:0 0 0 auto;z-index:840;width:min(460px,94vw);overflow:auto;padding:20px;background:var(--surface);border-left:1px solid var(--rule);box-shadow:-8px 0 28px #0002;animation:adoption-enter 140ms ease-out}
 @keyframes adoption-enter{from{transform:translateX(24px);opacity:0}to{transform:translateX(0);opacity:1}}
+/* Compact setup surfaces keep policy controls in view while preserving their explanations. */
+.reference-shelf{display:flex;align-items:center;gap:5px;min-height:34px;height:34px;padding:3px 16px;border-bottom:1px solid var(--rule);background:var(--surface);overflow:hidden}
+.reference-entry{display:contents}
+.reference-chip{display:inline-flex;align-items:center;min-height:26px;padding:0 8px;border:1px solid var(--rule);border-radius:3px;background:var(--fill);color:var(--ink-2);font:600 var(--cap)/1 var(--mono);letter-spacing:.025em;white-space:nowrap}
+.reference-chip:hover{background:var(--fill-hover);color:var(--ink)}
+#adoption-recipe-toggle.reference-chip{display:inline-flex;width:auto;justify-content:flex-start;padding-inline:8px}
+.reference-drawer{position:fixed;inset:0 0 0 auto;z-index:840;width:min(500px,94vw);overflow:auto;padding:20px;background:var(--surface);border-left:1px solid var(--rule);box-shadow:-8px 0 28px #0002;animation:adoption-enter 140ms ease-out}
+.reference-drawer .help{max-width:none;font-size:var(--body);line-height:1.55}
+.reference-drawer dl,.reference-evidence-panel dl{display:grid;grid-template-columns:minmax(0,1fr);gap:3px 12px;margin:0}
+.reference-drawer dt,.reference-evidence-panel dt{margin-top:8px;color:var(--ink)}
+.reference-drawer dd,.reference-evidence-panel dd{margin:0;color:var(--ink-2)}
+.reference-evidence{position:relative;margin:0}
+.reference-evidence>summary{display:inline-flex;align-items:center;min-height:26px;padding:0 8px;border:1px solid var(--rule);border-radius:3px;background:var(--fill);color:var(--ink-2);font:600 var(--cap)/1 var(--mono);letter-spacing:.025em;white-space:nowrap}
+.reference-evidence>summary::before{display:none}
+.reference-evidence>summary:hover,.reference-evidence[open]>summary{background:var(--fill-hover);color:var(--ink)}
+.reference-evidence-panel{position:fixed;inset:0 0 0 auto;z-index:840;width:min(500px,94vw);overflow:auto;padding:20px;background:var(--surface);border-left:1px solid var(--rule);box-shadow:-8px 0 28px #0002;animation:adoption-enter 140ms ease-out}
+.reference-evidence-heading{display:flex;align-items:flex-start;gap:10px;margin-bottom:12px}
+.reference-evidence-heading h2{min-width:0;margin:0;font:650 var(--title)/1.35 var(--sans)}
+.reference-evidence-close{flex:0 0 auto}
+.reference-evidence-panel .help{max-width:none;font-size:var(--body);line-height:1.55}
+.compact-instrument{display:grid;gap:6px;padding:8px 12px}
+.compact-instrument .tooltip,.compact-tool-selection .tooltip{white-space:normal;text-transform:none;letter-spacing:normal;font-family:var(--sans);overflow-wrap:anywhere}
+.instrument-strip{display:grid;grid-template-columns:auto auto minmax(0,1fr) auto;gap:6px 14px;align-items:center;min-width:0}
+.instrument-heading{display:flex;align-items:center;gap:4px;min-width:0;white-space:nowrap}
+.instrument-heading h2{font:650 var(--body)/1.3 var(--sans);letter-spacing:.01em}
+.instrument-heading .tip-wrap,.instrument-label .tip-wrap{margin-left:0}
+.instrument-info{display:inline-grid;place-items:center;width:20px;height:20px;padding:0;border-radius:999px;background:var(--fill-2);color:var(--ink-2);font:700 var(--cap)/1 var(--sans)}
+.instrument-info:hover{background:var(--fill-hover);color:var(--ink)}
+.instrument-posture,.instrument-toggle{display:flex;align-items:center;gap:6px;min-width:0;color:var(--ink-2);font:600 var(--meta)/1.2 var(--sans);white-space:nowrap}
+.instrument-posture select{width:auto;min-width:92px;height:28px}
+.instrument-clis{display:flex;align-items:center;gap:6px;min-width:0}
+.instrument-label{display:flex;align-items:center;gap:5px;flex:0 0 auto;color:var(--ink-3);font:600 var(--cap)/1.2 var(--mono);letter-spacing:.1em;text-transform:uppercase;white-space:nowrap}
+.instrument-label .end{letter-spacing:0;text-transform:none;font-family:var(--sans);color:var(--ink)}
+.instrument-clis .chips{min-width:0;gap:3px}
+.instrument-clis .chip{height:22px;padding:0 7px;font-size:var(--cap)}
+.instrument-toggle{padding:4px 7px;border:1px solid var(--rule);border-radius:3px;background:var(--fill)}
+.instrument-toggle input{width:15px;height:15px;margin:0;accent-color:var(--ink);flex:0 0 auto}
+.instrument-readiness{grid-column:1/-1;max-width:none;padding-top:4px;border-top:1px solid var(--rule-soft);font-size:var(--cap);line-height:1.35}
+.compact-tool-selection{display:grid;gap:6px;padding:8px 12px}
+.tool-selection-heading{display:flex;align-items:center;gap:4px;min-width:0}
+.tool-selection-heading h2{font:650 var(--body)/1.3 var(--sans);letter-spacing:.01em}
+.tool-selection-heading .tip-wrap{margin-left:0}
+#developer-tool-selection-status{max-width:none;font-size:var(--cap);line-height:1.35}
+#developer-tool-rows{display:grid;min-width:0;border-top:1px solid var(--rule-soft)}
+.developer-tool-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 14px;align-items:center;min-width:0;padding:7px 0;border-bottom:1px solid var(--rule-soft)}
+.developer-tool-copy{display:grid;gap:2px;min-width:0}
+.developer-tool-heading{display:flex;align-items:baseline;gap:7px;min-width:0;flex-wrap:wrap}
+.developer-tool-row h3{font:650 var(--meta)/1.25 var(--sans);overflow-wrap:anywhere}
+.developer-tool-row .help{max-width:none;font-size:var(--cap);line-height:1.35}
+.developer-tool-state{color:var(--ink-3);font:600 var(--cap)/1.2 var(--sans);white-space:nowrap}
+.developer-tool-row[data-developer-tool-state="selected-pending"] .developer-tool-state{color:var(--pass)}
+.developer-tool-row[data-developer-tool-state="excluded"] .developer-tool-state,.developer-tool-row[data-developer-tool-state="blocked"] .developer-tool-state{color:var(--blocked)}
+.developer-tool-actions{justify-content:flex-end;align-items:center;max-width:100%}
+.developer-tool-actions .btn{height:auto;min-height:28px;max-width:100%;padding-block:5px;white-space:normal;text-align:center;line-height:1.2}
+@media(max-width:900px){.reference-shelf{grid-column:1}.instrument-strip{grid-template-columns:auto minmax(0,1fr)}.instrument-clis{grid-column:1/-1}.instrument-toggle{justify-self:start}}
+@media(max-width:560px){.reference-shelf{padding-inline:8px}.reference-chip{padding-inline:6px}.compact-instrument,.compact-tool-selection{padding-inline:10px}.instrument-strip{display:flex;align-items:flex-start;flex-wrap:wrap}.instrument-heading{width:100%}.instrument-posture{flex:1}.instrument-posture select{flex:1}.instrument-clis{display:grid;width:100%}.instrument-label{width:100%}.instrument-clis .chips{width:100%}.instrument-toggle{white-space:normal}.developer-tool-row{grid-template-columns:minmax(0,1fr)}.developer-tool-actions{justify-content:flex-start;width:100%}.developer-tool-actions .btn{flex:1 1 132px;justify-content:center}}
 .grp[data-open="0"]>:not(.grphead){display:none}
 summary{gap:7px;list-style:none}summary::-webkit-details-marker{display:none}
 summary::before{content:"";display:inline-block;width:5px;height:5px;margin-right:6px;border-right:1px solid currentColor;border-bottom:1px solid currentColor;transform:rotate(-45deg);transition:transform var(--motion)}
@@ -612,7 +669,7 @@ details[open]>summary::before{transform:rotate(45deg)}
 .bar{padding:8px}
 .stage{grid-template-columns:minmax(0,1fr);grid-template-rows:none}
 #side{grid-column:1;grid-row:auto;position:static;width:100%!important;border-right:0;border-bottom:2px solid var(--ink);padding:10px 12px}
-.bar,.announce,.ticker,.work,.ledger{grid-column:1}
+ .bar,.reference-shelf,.announce,.ticker,.work,.ledger{grid-column:1}
 #rail-toggle{display:none}
 #side .rail{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:2px 26px;align-items:start}
 body[data-rail="off"] #side .brand-name,body[data-rail="off"] #side .seek .lbl2,body[data-rail="off"] #side .seek kbd,body[data-rail="off"] #side .cap,body[data-rail="off"] #side .pop-row .pl,body[data-rail="off"] #side .pop-row .selcount,body[data-rail="off"] #side .pop-row .pc{display:revert}
@@ -663,34 +720,36 @@ body[data-rail="off"] .sidehead .brand{display:flex}
     <input class="hidden" id="decision-file" type="file" accept="application/json">
   </header>
 
-  <p id="announcement" class="announce" aria-live="polite"></p>${catalogProvenance}${baselineEvidenceProvenance}${evidenceDeliveryLine(model)}
+  <nav class="reference-shelf" aria-label="Reference shelf">
+    <div id="adoption-recipe" class="reference-entry">
+      <button type="button" class="reference-chip" id="adoption-recipe-toggle" aria-expanded="false" aria-controls="adoption-recipe-panel"><span id="adoption-recipe-title">Adoption recipe &#8594;</span></button>
+      <aside id="adoption-recipe-panel" class="reference-drawer adoption-drawer" hidden aria-labelledby="adoption-guide-title">
+        <div class="dhead"><h2 id="adoption-guide-title">Adoption recipe</h2><button type="button" class="x" id="adoption-recipe-close" aria-label="Close adoption recipe">&#10005;</button></div>
+        <p class="help">Use this guide to decide who handles each step. Reading it does not change your policy.</p>
+        <div id="adoption-recipe-roles"></div>
+      </aside>
+    </div>
+    ${evidenceDelivery}
+  </nav>
+
+  <p id="announcement" class="announce" aria-live="polite"></p>${catalogProvenance}${baselineEvidenceProvenance}
 
   <div class="work">
     <main class="plane" id="workbench" tabindex="-1">
-      <section class="gcard adoption-recipe" id="adoption-recipe" aria-labelledby="adoption-recipe-title">
-        <button type="button" id="adoption-recipe-toggle" aria-expanded="false" aria-controls="adoption-recipe-panel"><span id="adoption-recipe-title">Adoption recipe</span><span aria-hidden="true">&#8594;</span></button>
-        <aside id="adoption-recipe-panel" class="adoption-drawer" hidden aria-labelledby="adoption-guide-title">
-          <div class="dhead"><h2 id="adoption-guide-title">Adoption recipe</h2><button type="button" class="x" id="adoption-recipe-close" aria-label="Close adoption recipe">&#10005;</button></div>
-          <p class="help">Use this guide to decide who handles each step. Reading it does not change your policy.</p>
-          <div id="adoption-recipe-roles"></div>
-        </aside>
-      </section>
-
       <p class="gcard grpnote" id="plane-empty" hidden></p>
-      <section class="gcard sect" id="policy-settings" aria-labelledby="policy-settings-title">
-        <h2 id="policy-settings-title">Deployment setup</h2>
-        <p class="help">Choose the hosts this policy may target before adding Core controls. These choices record policy intent; they do not install, start, or contact a server.</p>
-        <label>Posture <select id="posture"><option value="vibe">Vibe</option><option value="enterprise">Enterprise</option></select></label>
-        <div><div class="cap">Allowed CLI <span class="end" id="supported-cli-count"></span></div><div class="chips" id="supported-cli-hosts"></div><p class="help" id="supported-cli-note"></p></div>
-        <label><input id="managed-mcp-projection" type="checkbox"> Allow AIH to configure selected MCP tools</label>
-        <p class="help">Required for supported MCP tools you select. Preview the changes in your project before applying.</p>
-        <p class="help" id="deployment-readiness" role="status" aria-live="polite"></p>
+      <section class="gcard compact-instrument" id="policy-settings" aria-labelledby="policy-settings-title">
+        <div class="instrument-strip">
+          <div class="instrument-heading"><h2 id="policy-settings-title">Deployment setup</h2><span class="tip-wrap"><button type="button" class="instrument-info" id="deployment-setup-info" aria-label="About deployment setup" aria-describedby="deployment-setup-help" aria-expanded="false" data-tooltip-button="deployment-setup-help">&#9432;</button><span id="deployment-setup-help" class="tooltip" role="tooltip" data-open="false">Choose the hosts this policy may target before adding Core controls. These choices record policy intent; they do not install, start, or contact a server.</span></span></div>
+          <label class="instrument-posture"><span>Posture</span><select id="posture"><option value="vibe">Vibe</option><option value="enterprise">Enterprise</option></select></label>
+          <div class="instrument-clis"><div class="instrument-label">Allowed CLI <span class="end" id="supported-cli-count"></span><span class="tip-wrap"><button type="button" class="instrument-info" id="supported-cli-info" aria-label="About allowed CLIs" aria-describedby="supported-cli-note" aria-expanded="false" data-tooltip-button="supported-cli-note">&#9432;</button><span id="supported-cli-note" class="tooltip" role="tooltip" data-open="false"></span></span></div><div class="chips" id="supported-cli-hosts"></div></div>
+          <label class="instrument-toggle"><input id="managed-mcp-projection" type="checkbox" aria-describedby="managed-mcp-help"><span>Allow AIH to configure selected MCP tools</span><span class="tip-wrap"><button type="button" class="instrument-info" id="managed-mcp-info" aria-label="About managed MCP projection" aria-describedby="managed-mcp-help" aria-expanded="false" data-tooltip-button="managed-mcp-help">&#9432;</button><span id="managed-mcp-help" class="tooltip" role="tooltip" data-open="false">Required for supported MCP tools you select. Preview the changes in your project before applying.</span></span></label>
+          <p class="help instrument-readiness" id="deployment-readiness" role="status" aria-live="polite"></p>
+        </div>
       </section>
-      <section class="gcard sect" id="developer-tool-selection" aria-labelledby="developer-tool-selection-title">
-        <h2 id="developer-tool-selection-title">Developer tool setup</h2>
-        <p class="help">Choose the default developer tools for later setup. This authoring view records selection intent only; it does not claim a tool is installed, configured, or verified.</p>
+      <section class="gcard compact-tool-selection" id="developer-tool-selection" aria-labelledby="developer-tool-selection-title">
+        <div class="tool-selection-heading"><h2 id="developer-tool-selection-title">Developer tool setup</h2><span class="tip-wrap"><button type="button" class="instrument-info" id="developer-tool-info" aria-label="About developer tool setup" aria-describedby="developer-tool-help" aria-expanded="false" data-tooltip-button="developer-tool-help">&#9432;</button><span id="developer-tool-help" class="tooltip" role="tooltip" data-open="false">Choose the default developer tools for later setup. This authoring view records selection intent only; it does not claim a tool is installed, configured, or verified.</span></span></div>
         <p class="help" id="developer-tool-selection-status" role="status" aria-live="polite"></p>
-        <div class="stack" id="developer-tool-rows"></div>
+        <div id="developer-tool-rows"></div>
       </section>
       <div id="deployment-advanced-actions" class="brow" hidden><button type="button" class="btn sm" id="open-ecc-mcp">Approve ECC MCP</button><button type="button" class="btn sm" id="open-artifacts">Organization artifacts</button><button type="button" class="btn sm" id="open-custom-hook-info" data-detail="AIH Governance &amp; Telemetry Hooks information">Why custom Hooks are unavailable</button></div>
       <div id="framework-rows"></div>

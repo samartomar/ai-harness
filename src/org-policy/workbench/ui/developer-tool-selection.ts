@@ -113,6 +113,7 @@ export function mountDeveloperToolSelection(
 
   const button = (
     label: string,
+    accessibleLabel: string,
     action: "include" | "remove" | "exclude",
     id: DeveloperToolId,
   ): HTMLButtonElement => {
@@ -120,6 +121,8 @@ export function mountDeveloperToolSelection(
     control.type = "button";
     control.className = "btn sm";
     control.textContent = label;
+    control.setAttribute("aria-label", accessibleLabel);
+    control.title = accessibleLabel;
     control.addEventListener("click", () => persist(action, id));
     return control;
   };
@@ -139,7 +142,7 @@ export function mountDeveloperToolSelection(
       const selected = resolution.accepted && resolution.selected.includes(id);
       const excluded = resolution.accepted && resolution.excluded.includes(id);
       const row = document.createElement("article");
-      row.className = "gcard developer-tool-row";
+      row.className = "developer-tool-row";
       row.dataset.developerToolId = id;
       row.dataset.developerToolState = !resolution.accepted
         ? "blocked"
@@ -148,13 +151,17 @@ export function mountDeveloperToolSelection(
           : selected
             ? "selected-pending"
             : "not-selected";
+      const copy = document.createElement("div");
+      copy.className = "developer-tool-copy";
+      const heading = document.createElement("div");
+      heading.className = "developer-tool-heading";
       const title = document.createElement("h3");
       title.textContent = presentation.label;
       const detail = document.createElement("p");
       detail.className = "help";
       detail.textContent = presentation.detail;
       const state = document.createElement("p");
-      state.className = "help";
+      state.className = "developer-tool-state";
       state.textContent = !resolution.accepted
         ? "Blocked — resolve the policy binding or selection diagnostic before setup."
         : excluded
@@ -163,24 +170,29 @@ export function mountDeveloperToolSelection(
             ? "Selected — pending setup"
             : "Not selected";
       const actions = document.createElement("div");
-      actions.className = "brow";
+      actions.className = "brow developer-tool-actions";
       if (resolution.accepted) {
         if (excluded) {
-          actions.append(button(`Include ${presentation.label} in setup`, "include", id));
+          actions.append(
+            button("Include", `Include ${presentation.label} in setup`, "include", id),
+          );
         } else {
           actions.append(
             button(
+              selected ? "Remove" : "Include",
               selected
                 ? `Remove ${presentation.label} from selection`
                 : `Include ${presentation.label} in setup`,
               selected ? "remove" : "include",
               id,
             ),
-            button(`Exclude ${presentation.label} from setup`, "exclude", id),
+            button("Exclude", `Exclude ${presentation.label} from setup`, "exclude", id),
           );
         }
       }
-      row.append(title, detail, state, actions);
+      heading.append(title, state);
+      copy.append(heading, detail);
+      row.append(copy, actions);
       options.root.append(row);
     }
   };
