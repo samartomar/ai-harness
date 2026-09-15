@@ -1,4 +1,5 @@
 import type { PlanContext } from "../internals/plan.js";
+import { defaultNativeMcpServers } from "../mcp/default-native-runtime.js";
 import { mcpApprovalSubject } from "../mcp/policy.js";
 import { type McpServer, mcpServers } from "../mcp/servers.js";
 import { scanRepo } from "../profile/scan.js";
@@ -51,6 +52,7 @@ export async function resolveRuntimeOrgPolicy(
   const catalog = mcpServers(
     "project",
     scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir }),
+    { localRuntimeServers: defaultNativeMcpServers(ctx) },
   );
   const governance = governanceOwnsAihSurfaces(evaluatedPolicy)
     ? evaluatedPolicy.governance

@@ -23,9 +23,17 @@ const transport = vi.hoisted(() => ({
 // The package bytes and GitHub boundaries are supplied by this fixture. Scanner
 // preparation, proof replay, source signing, receipt creation, and activation
 // remain the production implementations.
-vi.mock("../../src/org-policy/workbench/core/packaged-source-data.js", () => ({
-  packagedWorkbenchSourceDataRecordsV1: () => transport.records,
-}));
+vi.mock("../../src/org-policy/workbench/core/packaged-source-data-data.js", async () => {
+  const { createHash } = await import("node:crypto");
+  const { canonicalStrictJsonBytesV1 } = await import("../../src/contract/strict-json-v1.js");
+  return {
+    packagedWorkbenchSourceDataInputV1: () =>
+      transport.records.map((record) => {
+        const bytes = canonicalStrictJsonBytesV1(record).toString("utf8");
+        return { bytes, sha256: createHash("sha256").update(bytes).digest("hex") };
+      }),
+  };
+});
 vi.mock("../../src/internals/bounded-github-source-archive.js", async (original) => ({
   ...(await original<typeof import("../../src/internals/bounded-github-source-archive.js")>()),
   acquireBoundedGithubSourceArchiveV1: transport.archive,

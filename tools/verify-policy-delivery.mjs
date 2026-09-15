@@ -13,6 +13,7 @@
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import {
+  cpSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -39,18 +40,20 @@ function fail(message) {
 function parseArgs(argv) {
   let source;
   let output;
+  let retainActiveRoots = false;
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
     if (flag === "--source") source = argv[++index];
     else if (flag === "--output") output = argv[++index];
+    else if (flag === "--retain-active-roots") retainActiveRoots = true;
     else if (flag === "--help") {
-      process.stdout.write("Usage: node tools/verify-policy-delivery.mjs --source ABSOLUTE_ECC_CHECKOUT --output ABSOLUTE_EMPTY_DIR\n");
+      process.stdout.write("Usage: node tools/verify-policy-delivery.mjs --source ABSOLUTE_ECC_CHECKOUT --output ABSOLUTE_EMPTY_DIR [--retain-active-roots]\n");
       process.exit(0);
     } else fail("expected --source and --output");
   }
   if (typeof source !== "string" || !isAbsolute(source)) fail("--source must be absolute");
   if (typeof output !== "string" || !isAbsolute(output)) fail("--output must be absolute");
-  return { source: realpathSync(source), output: resolve(output) };
+  return { source: realpathSync(source), output: resolve(output), retainActiveRoots };
 }
 
 function sha256(bytes) {
@@ -285,7 +288,7 @@ function recordStructuredRefusals(run, result) {
 }
 
 function main() {
-  const { source, output } = parseArgs(process.argv.slice(2));
+  const { source, output, retainActiveRoots } = parseArgs(process.argv.slice(2));
   if (existsSync(output)) fail("--output must not already exist");
   if (!lstatSync(source).isDirectory()) fail("--source is not a directory");
   const sourceHeadValue = sourceHead(source);
@@ -361,6 +364,24 @@ function main() {
       assertion(JSON.stringify(tree(root)) === JSON.stringify(beforeRepeat), `${name} repeated install changed owned state`);
       commitDelivery(root, "initial governed delivery");
       result.roots[name] = { root, initialTargets: target, required: items[0].id, excluded: excluded.id, initialReceipt: receipt(root) };
+    }
+
+    // Native probes require a disposable root whose ordinary public-CLI setup
+    // is still active. Preserve it before the default lifecycle below walks
+    // update, withdrawal, and uninstall on the original roots.
+    if (retainActiveRoots) {
+      const nativeRoots = join(output, "native-active-roots");
+      mkdirSync(nativeRoots);
+      result.retainedNativeRoots = {};
+      for (const name of ["Harbor", "Cedar"]) {
+        const retained = join(nativeRoots, name);
+        cpSync(result.roots[name].root, retained, { recursive: true, errorOnExist: true });
+        result.retainedNativeRoots[name] = {
+          root: retained,
+          source: "public CLI setup after repeat-convergence, before lifecycle update/uninstall",
+          lifecycleStatus: "active retained copy; original fixture continues complete lifecycle",
+        };
+      }
     }
 
     const a = result.roots.Harbor.root;

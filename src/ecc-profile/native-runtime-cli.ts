@@ -1,18 +1,50 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lstatSync, realpathSync, writeFileSync } from "node:fs";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { basename, isAbsolute, join, parse, relative, resolve } from "node:path";
 import { readRegularFile, readRegularFileWithStats } from "../internals/fsxn.js";
+import { findOnPath } from "../live/runner.js";
+import {
+  CODE_REVIEW_GRAPH_ALLOWED_TOOLS,
+  CodeReviewGraphMcpPolicyGuard,
+  isolatedCodeReviewGraphEnvironment,
+} from "./code-review-graph-runtime.js";
+import {
+  assertCodebaseMemoryCoordinationRoot,
+  prepareCodebaseMemoryCoordinationRoot,
+} from "./codebase-memory-coordination.js";
+import { authenticateCodebaseMemoryNativePayload } from "./codebase-memory-payload.js";
+import { isolatedCodebaseMemoryEnvironment } from "./codebase-memory-runtime.js";
+import { authenticateDefaultMcpRuntimeRoot } from "./default-mcp-runtime-auth.js";
+import {
+  CODE_REVIEW_GRAPH_RUNTIME_PIN,
+  CODEBASE_MEMORY_RUNTIME_PIN,
+  DEFAULT_MCP_DEPENDENCY_LOCK_SHA256,
+} from "./default-mcp-runtime-lock.js";
 import { HOOK_INPUT_LIMITS, type HookClient } from "./hook-core.js";
-import { renderSerenaConfig, SERENA_RUNTIME_PIN, SerenaMcpPolicyGuard } from "./mcp-profile.js";
+import { SERENA_ALLOWED_TOOLS, SERENA_RUNTIME_PIN, SerenaMcpPolicyGuard } from "./mcp-profile.js";
 import {
   SERENA_DEPENDENCY_LOCK_SHA256,
   SERENA_RUNTIME_PYPROJECT_SHA256,
   SERENA_RUNTIME_UV_LOCK_SHA256,
 } from "./native-registration.js";
 import { executeNativeEccHook, prepareOwnedStateDirectory } from "./native-runtime.js";
+import {
+  assertHardenedSerenaRuntimeConfig,
+  renderSerenaRuntimeConfig,
+} from "./serena-runtime-config.js";
 
 const MAX_MCP_LINE_BYTES = 1024 * 1024;
+const SERENA_WINDOWS_PYTHON_ENTRYPOINT = "from serena.cli import top_level; top_level()";
+
+/**
+ * Windows console-script shims canonicalize MSIX-virtualized AppData paths and
+ * can push pinned module filenames past the legacy import limit. Invoke the
+ * exact pinned console function through the environment interpreter instead.
+ */
+export function serenaRuntimeEntrypoint(platform: NodeJS.Platform): readonly string[] {
+  return platform === "win32" ? ["python", "-c", SERENA_WINDOWS_PYTHON_ENTRYPOINT] : ["serena"];
+}
 
 export interface NativeRuntimeIo {
   stdin?: NodeJS.ReadableStream;
@@ -20,6 +52,7 @@ export interface NativeRuntimeIo {
   stderr?: NodeJS.WritableStream;
   env?: NodeJS.ProcessEnv;
   spawnProcess?: typeof spawn;
+  authenticateCodebaseMemoryPayload?: typeof authenticateCodebaseMemoryNativePayload;
 }
 
 function optionMap(args: readonly string[]): Map<string, string> {
@@ -69,16 +102,77 @@ function containsPath(parent: string, child: string): boolean {
   return relation === "" || (!relation.startsWith("..") && !isAbsolute(relation));
 }
 
-function canonicalProject(value: string): string {
-  if (!isAbsolute(value)) throw new Error("Serena project must be absolute");
+function canonicalProject(value: string, label = "Serena"): string {
+  if (!isAbsolute(value)) throw new Error(`${label} project must be absolute`);
   const stats = lstatSync(value);
   if (stats.isSymbolicLink() || !stats.isDirectory()) {
-    throw new Error("Serena project must be a real directory");
+    throw new Error(`${label} project must be a real directory`);
   }
   return realpathSync(value);
 }
 
-function authenticatedSerenaRuntimeRoot(value: string, project: string, home: string): string {
+function trustedUvExecutable(env: NodeJS.ProcessEnv, project: string): string {
+  const executable = findOnPath("uv", env, process.platform, {
+    excludeRoot: project,
+    windowsExeOnly: true,
+  });
+  if (executable === undefined) {
+    throw new Error("uv must resolve to an absolute executable outside the target project");
+  }
+  return executable;
+}
+
+function assertOwnedStateDestination(value: string, project: string, label: string): string {
+  if (!isAbsolute(value)) throw new Error(`${label} must be an absolute state directory`);
+  const destination = resolve(value);
+  if (containsPath(project, destination) || containsPath(destination, project)) {
+    throw new Error(`${label} must remain outside and disjoint from the project`);
+  }
+  const rootPath = parse(destination).root;
+  const segments = relative(rootPath, destination)
+    .split(/[\\/]+/u)
+    .filter(Boolean);
+  let cursor = rootPath;
+  for (const segment of segments) {
+    cursor = resolve(cursor, segment);
+    const stats = lstatSync(cursor, { throwIfNoEntry: false });
+    if (stats === undefined) break;
+    if (stats.isSymbolicLink() || !stats.isDirectory()) {
+      throw new Error(`${label} has a non-directory or linked path segment`);
+    }
+  }
+  return destination;
+}
+
+function safeOwnedStateRoot(value: string, project: string, label: string): string {
+  const destination = assertOwnedStateDestination(value, project, label);
+  const root = prepareOwnedStateDirectory(destination, label);
+  const stats = lstatSync(root);
+  if (!stats.isDirectory() || stats.isSymbolicLink()) {
+    throw new Error(`${label} must be a real directory`);
+  }
+  return root;
+}
+
+function assertDisjointMemoryRoots(roots: readonly string[]): void {
+  for (let left = 0; left < roots.length; left += 1) {
+    for (let right = left + 1; right < roots.length; right += 1) {
+      const a = roots[left];
+      const b = roots[right];
+      if (a && b && (containsPath(a, b) || containsPath(b, a))) {
+        throw new Error(
+          "Codebase Memory state, coordination, payload, and uv cache roots must be disjoint",
+        );
+      }
+    }
+  }
+}
+
+export function authenticatedSerenaRuntimeRoot(
+  value: string,
+  project: string,
+  home: string,
+): string {
   if (!isAbsolute(value)) throw new Error("Serena runtime lock root must be absolute");
   const stats = lstatSync(value);
   if (stats.isSymbolicLink() || !stats.isDirectory()) {
@@ -130,17 +224,21 @@ function safeSerenaHome(env: NodeJS.ProcessEnv, project: string): string {
   if (containsPath(project, home) || containsPath(home, project)) {
     throw new Error("SERENA_HOME must remain outside the Serena project");
   }
+  prepareOwnedStateDirectory(
+    join(home, "projects", basename(project), ".serena"),
+    "Serena project metadata root",
+  );
   const configPath = join(home, "serena_config.yml");
-  const expected = renderSerenaConfig();
+  const scope = { project, home, allowedTools: SERENA_ALLOWED_TOOLS };
+  const expected = renderSerenaRuntimeConfig(scope);
   const existing = readRegularFile(configPath, { maxBytes: 128 * 1024 });
   if (existing === undefined)
     writeFileSync(configPath, expected, { encoding: "utf8", flag: "wx", mode: 0o600 });
-  else if (existing.toString("utf8") !== expected)
-    throw new Error("Serena config conflicts with the AIH-owned hardened profile");
+  else assertHardenedSerenaRuntimeConfig(existing.toString("utf8"), scope);
   return home;
 }
 
-function isolatedSerenaEnvironment(env: NodeJS.ProcessEnv, home: string): NodeJS.ProcessEnv {
+export function isolatedSerenaEnvironment(env: NodeJS.ProcessEnv, home: string): NodeJS.ProcessEnv {
   const next: NodeJS.ProcessEnv = {};
   for (const key of [
     "PATH",
@@ -171,6 +269,7 @@ function isolatedSerenaEnvironment(env: NodeJS.ProcessEnv, home: string): NodeJS
   next.UV_OFFLINE = "1";
   next.UV_NO_ENV_FILE = "1";
   next.UV_PROJECT_ENVIRONMENT = join(home, "runtime-env");
+  next.SERENA_HOME = home;
   next.SERENA_USAGE_REPORTING = "false";
   return next;
 }
@@ -191,7 +290,7 @@ function transformLines(
   source.on("data", (chunk: string) => {
     buffer += chunk;
     if (Buffer.byteLength(buffer, "utf8") > MAX_MCP_LINE_BYTES) {
-      onError(new Error("Serena MCP frame exceeds its byte limit"));
+      onError(new Error("MCP frame exceeds its byte limit"));
       return;
     }
     for (;;) {
@@ -209,16 +308,20 @@ function transformLines(
     }
   });
   source.on("end", () => {
-    if (buffer.trim().length > 0)
-      onError(new Error("Serena MCP stream ended with a partial frame"));
+    if (buffer.trim().length > 0) onError(new Error("MCP stream ended with a partial frame"));
   });
 }
 
-async function proxySerena(
+interface McpProtocolGuard {
+  inspectClientRequest(value: unknown): { forward: boolean; response?: unknown };
+  filterToolsList(value: unknown): unknown;
+}
+
+async function proxyGuardedMcp(
   child: ChildProcessWithoutNullStreams,
   io: Required<Pick<NativeRuntimeIo, "stdin" | "stdout" | "stderr">>,
+  guard: McpProtocolGuard,
 ): Promise<number> {
-  const guard = new SerenaMcpPolicyGuard();
   const toolsList = new Set<string>();
   let failed: Error | undefined;
   const fail = (error: Error) => {
@@ -266,6 +369,19 @@ async function proxySerena(
   return exit;
 }
 
+async function proxyTransparentMcp(
+  child: ChildProcessWithoutNullStreams,
+  io: Required<Pick<NativeRuntimeIo, "stdin" | "stdout" | "stderr">>,
+): Promise<number> {
+  io.stdin.pipe(child.stdin);
+  child.stdout.on("data", (chunk) => io.stdout.write(chunk));
+  child.stderr.on("data", (chunk) => io.stderr.write(chunk));
+  return new Promise<number>((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", (code, signal) => resolve(code ?? (signal === null ? 1 : 128)));
+  });
+}
+
 export async function runNativeEccRuntime(
   argv: readonly string[],
   io: NativeRuntimeIo = {},
@@ -290,37 +406,208 @@ export async function runNativeEccRuntime(
     stdout.write(`${JSON.stringify(output)}\n`);
     return 0;
   }
-  if (mode !== "serena") throw new Error("ECC runtime mode must be hook or serena");
+  if (mode === "code-review-graph") {
+    const options = optionMap(rest);
+    exactOptions(options, [
+      "--package",
+      "--dependency-lock-sha256",
+      "--lock-root",
+      "--project",
+      "--state-root",
+      "--uv-cache",
+    ]);
+    if (options.get("--package") !== CODE_REVIEW_GRAPH_RUNTIME_PIN.package) {
+      throw new Error("Code Review Graph package pin is not accepted");
+    }
+    if (options.get("--dependency-lock-sha256") !== DEFAULT_MCP_DEPENDENCY_LOCK_SHA256) {
+      throw new Error("default MCP dependency lock is not accepted");
+    }
+    const project = canonicalProject(options.get("--project") ?? "", "Code Review Graph");
+    const stateRoot = safeOwnedStateRoot(
+      options.get("--state-root") ?? "",
+      project,
+      "CRG_DATA_DIR",
+    );
+    const uvCache = safeOwnedStateRoot(
+      options.get("--uv-cache") ?? "",
+      project,
+      "Code Review Graph uv cache",
+    );
+    if (containsPath(stateRoot, uvCache) || containsPath(uvCache, stateRoot)) {
+      throw new Error("Code Review Graph state and uv cache roots must be disjoint");
+    }
+    const lockRoot = authenticateDefaultMcpRuntimeRoot(options.get("--lock-root") ?? "", project, [
+      stateRoot,
+      uvCache,
+    ]);
+    const uvExecutable = trustedUvExecutable(env, project);
+    const child = (io.spawnProcess ?? spawn)(
+      uvExecutable,
+      [
+        "--project",
+        lockRoot,
+        "run",
+        "--offline",
+        "--no-python-downloads",
+        "--no-env-file",
+        "--frozen",
+        "code-review-graph",
+        "serve",
+        "--repo",
+        project,
+        "--tools",
+        CODE_REVIEW_GRAPH_ALLOWED_TOOLS.join(","),
+      ],
+      {
+        cwd: project,
+        stdio: ["pipe", "pipe", "pipe"],
+        env: isolatedCodeReviewGraphEnvironment(env, stateRoot, uvCache),
+        windowsHide: true,
+      },
+    ) as ChildProcessWithoutNullStreams;
+    return proxyGuardedMcp(
+      child,
+      { stdin, stdout, stderr },
+      new CodeReviewGraphMcpPolicyGuard(project),
+    );
+  }
+  if (mode === "codebase-memory-mcp") {
+    const options = optionMap(rest);
+    exactOptions(options, [
+      "--package",
+      "--dependency-lock-sha256",
+      "--lock-root",
+      "--project",
+      "--state-root",
+      "--coordination-root",
+      "--runtime-home",
+      "--uv-cache",
+    ]);
+    if (options.get("--package") !== CODEBASE_MEMORY_RUNTIME_PIN.package) {
+      throw new Error("Codebase Memory package pin is not accepted");
+    }
+    if (options.get("--dependency-lock-sha256") !== DEFAULT_MCP_DEPENDENCY_LOCK_SHA256) {
+      throw new Error("default MCP dependency lock is not accepted");
+    }
+    const project = canonicalProject(options.get("--project") ?? "", "Codebase Memory");
+    const stateDestination = assertOwnedStateDestination(
+      options.get("--state-root") ?? "",
+      project,
+      "Codebase Memory state root",
+    );
+    const runtimeHomeDestination = assertOwnedStateDestination(
+      options.get("--runtime-home") ?? "",
+      project,
+      "Codebase Memory payload root",
+    );
+    const uvCacheDestination = assertOwnedStateDestination(
+      options.get("--uv-cache") ?? "",
+      project,
+      "Codebase Memory uv cache",
+    );
+    const coordinationDestination = assertCodebaseMemoryCoordinationRoot(
+      options.get("--coordination-root") ?? "",
+      env,
+      project,
+      process.platform,
+    );
+    const destinations = [
+      stateDestination,
+      coordinationDestination,
+      runtimeHomeDestination,
+      uvCacheDestination,
+    ];
+    assertDisjointMemoryRoots(destinations);
+    const lockRoot = authenticateDefaultMcpRuntimeRoot(
+      options.get("--lock-root") ?? "",
+      project,
+      destinations,
+    );
+    const coordinationRoot = prepareCodebaseMemoryCoordinationRoot(
+      coordinationDestination,
+      env,
+      project,
+      process.platform,
+    );
+    const stateRoot = safeOwnedStateRoot(stateDestination, project, "Codebase Memory state root");
+    const runtimeHome = safeOwnedStateRoot(
+      runtimeHomeDestination,
+      project,
+      "Codebase Memory payload root",
+    );
+    const uvCache = safeOwnedStateRoot(uvCacheDestination, project, "Codebase Memory uv cache");
+    const stateRoots = [stateRoot, coordinationRoot, runtimeHome, uvCache];
+    assertDisjointMemoryRoots(stateRoots);
+    authenticateDefaultMcpRuntimeRoot(lockRoot, project, stateRoots);
+    prepareOwnedStateDirectory(join(stateRoot, "index"), "CBM_CACHE_DIR");
+    const payload = await (
+      io.authenticateCodebaseMemoryPayload ?? authenticateCodebaseMemoryNativePayload
+    )({
+      runtimeHome,
+      platform: process.platform,
+      arch: process.arch,
+    });
+    const child = (io.spawnProcess ?? spawn)(payload.path, [], {
+      cwd: project,
+      stdio: ["pipe", "pipe", "pipe"],
+      env: isolatedCodebaseMemoryEnvironment(
+        env,
+        project,
+        stateRoot,
+        coordinationRoot,
+        runtimeHome,
+        uvCache,
+        true,
+      ),
+      windowsHide: true,
+    }) as ChildProcessWithoutNullStreams;
+    return proxyTransparentMcp(child, { stdin, stdout, stderr });
+  }
+  if (mode !== "serena") {
+    throw new Error(
+      "ECC runtime mode must be hook, code-review-graph, codebase-memory-mcp, or serena",
+    );
+  }
   const options = optionMap(rest);
-  exactOptions(options, [
+  const serenaOptions = [
     "--package",
     "--dependency-lock-sha256",
     "--lock-root",
     "--context",
     "--mode",
     "--project",
-  ]);
+  ];
+  exactOptions(
+    options,
+    options.has("--state-root") ? [...serenaOptions, "--state-root"] : serenaOptions,
+  );
   if (options.get("--package") !== SERENA_RUNTIME_PIN.package)
     throw new Error("Serena package pin is not accepted");
   if (options.get("--dependency-lock-sha256") !== SERENA_DEPENDENCY_LOCK_SHA256)
     throw new Error("Serena dependency lock is not accepted");
   const context = options.get("--context");
-  if (context !== "claude-code" && context !== "codex")
+  if (context !== "claude-code" && context !== "codex" && context !== "ide-assistant")
     throw new Error("Serena context is not accepted");
   if (options.get("--mode") !== "no-memories") throw new Error("Serena mode is not accepted");
   const project = canonicalProject(options.get("--project") ?? "");
-  const home = safeSerenaHome(env, project);
+  const stateRoot = options.get("--state-root");
+  const home = safeSerenaHome(
+    stateRoot === undefined ? env : { ...env, SERENA_HOME: stateRoot },
+    project,
+  );
   const lockRoot = authenticatedSerenaRuntimeRoot(options.get("--lock-root") ?? "", project, home);
+  const uvExecutable = trustedUvExecutable(env, project);
   const child = (io.spawnProcess ?? spawn)(
-    "uv",
+    uvExecutable,
     [
+      "--project",
+      lockRoot,
+      "run",
       "--offline",
       "--no-python-downloads",
       "--no-env-file",
       "--frozen",
-      "--project",
-      lockRoot,
-      "serena",
+      ...serenaRuntimeEntrypoint(process.platform),
       "start-mcp-server",
       "--context",
       context,
@@ -335,5 +622,5 @@ export async function runNativeEccRuntime(
       windowsHide: true,
     },
   ) as ChildProcessWithoutNullStreams;
-  return proxySerena(child, { stdin, stdout, stderr });
+  return proxyGuardedMcp(child, { stdin, stdout, stderr }, new SerenaMcpPolicyGuard());
 }

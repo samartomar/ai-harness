@@ -891,6 +891,70 @@
       "commands": []
     },
     {
+      "name": "developer-tools",
+      "hasDescription": true,
+      "arguments": [
+        {
+          "name": "root",
+          "required": false
+        }
+      ],
+      "options": [
+        {
+          "flags": "--accept-token-optimizer-license"
+        },
+        {
+          "flags": "--all-tools"
+        },
+        {
+          "flags": "--apply"
+        },
+        {
+          "flags": "--cli <list>"
+        },
+        {
+          "flags": "--context-dir <dir>",
+          "defaultValue": "ai-coding"
+        },
+        {
+          "flags": "--detect"
+        },
+        {
+          "flags": "--force"
+        },
+        {
+          "flags": "--json"
+        },
+        {
+          "flags": "--no-log"
+        },
+        {
+          "flags": "--policy <file>"
+        },
+        {
+          "flags": "--posture <posture>",
+          "defaultValue": "vibe"
+        },
+        {
+          "flags": "--root <dir>"
+        },
+        {
+          "flags": "--support-out <dir>"
+        },
+        {
+          "flags": "--token-optimizer-profile <profile>",
+          "defaultValue": "quiet"
+        },
+        {
+          "flags": "--verify"
+        },
+        {
+          "flags": "--yes"
+        }
+      ],
+      "commands": []
+    },
+    {
       "name": "docs-lint",
       "hasDescription": true,
       "arguments": [
@@ -1541,6 +1605,9 @@
       ],
       "options": [
         {
+          "flags": "--accept-token-optimizer-license"
+        },
+        {
           "flags": "--all-tools"
         },
         {
@@ -1603,6 +1670,10 @@
         },
         {
           "flags": "--support-out <dir>"
+        },
+        {
+          "flags": "--token-optimizer-profile <profile>",
+          "defaultValue": "quiet"
         },
         {
           "flags": "--v3"

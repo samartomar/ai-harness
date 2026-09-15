@@ -4,13 +4,17 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { applyEccMaterialization } from "../../src/ecc/materialization.js";
+import { planGovernedCodexRoleRegistration } from "../../src/ecc-profile/governed-codex-roles.js";
+import { executePlan } from "../../src/internals/execute.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { policyRootSha256 } from "../../src/org-policy/binding.js";
 import { orgPolicyEffectiveCheck } from "../../src/org-policy/evaluate.js";
 import {
   inspectPolicyDelivery,
+  renderPolicyDelivery,
   summarizePolicyDelivery,
 } from "../../src/org-policy/policy-delivery-report.js";
+import { planPolicyRequiredGuidance } from "../../src/org-policy/required-guidance.js";
 import { parseOrgPolicy } from "../../src/org-policy/schema.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 
@@ -62,6 +66,159 @@ afterEach(() => {
 });
 
 describe("policy delivery reporting", () => {
+  it("blocks missing native Codex role registration independently of current role files", async () => {
+    const selected = parseOrgPolicy({
+      ...policy(),
+      governance: {
+        ...policy().governance,
+        supportedClis: ["codex"],
+        externalSelections: [
+          {
+            framework: "ecc",
+            items: [
+              {
+                id: "agent:planner",
+                kind: "agent",
+                source: { ...source, path: "agents/planner.md" },
+              },
+            ],
+          },
+        ],
+      },
+    });
+    const rolePath = ".codex/agents/planner.toml";
+    applyEccMaterialization({
+      root,
+      components: [
+        {
+          id: "agent:planner",
+          provenance: {
+            repository: source.repository,
+            commit: pin,
+            componentPath: "agents/planner.md",
+          },
+          targets: ["codex"],
+          authorization: {
+            componentId: "agent:planner",
+            source: source.repository,
+            pinnedSha: pin,
+            treeSha256: "b".repeat(64),
+            tier: "org",
+            issuer: "fictional-adopter/governance",
+            evidenceSha256: "c".repeat(64),
+          },
+          files: [
+            {
+              path: rolePath,
+              kind: "copy-file",
+              contents: 'developer_instructions = "Plan from evidence."\n',
+            },
+          ],
+        },
+      ],
+    });
+    expect(summarizePolicyDelivery(root, ["codex"], selected, false)).toMatchObject({
+      blocking: true,
+      components: [{ state: "receipt-current" }],
+      codexRoles: { state: "missing", expectedRoleIds: ["planner"] },
+    });
+    const run = fakeRunner(() => undefined);
+    await executePlan(
+      planGovernedCodexRoleRegistration(root, [
+        { id: "planner", configFile: rolePath, description: "Plan from evidence." },
+      ]),
+      {
+        root,
+        contextDir: "ai-coding",
+        apply: true,
+        verify: false,
+        json: true,
+        options: {},
+        env: {},
+        run,
+        host: makeHostAdapter({ platform: "linux", run, env: {} }),
+      },
+    );
+    const current = summarizePolicyDelivery(root, ["codex"], selected, false);
+    expect(current).toMatchObject({
+      blocking: false,
+      codexRoles: { state: "current" },
+      nativeLoading: "unverified",
+    });
+    expect(renderPolicyDelivery(current)).toContain("Codex role registration: current");
+    rmSync(join(root, ".codex/config.toml"));
+    rmSync(join(root, ".aih/ecc/codex-role-registration-v1.json"));
+    expect(summarizePolicyDelivery(root, ["codex"], selected, false)).toMatchObject({
+      blocking: true,
+      codexRoles: { state: "missing" },
+    });
+  });
+  it("joins selected source and receipt ownership without treating installed files as native discovery", () => {
+    install();
+    const selected = policy();
+    const receiptPath = join(root, ".aih/ecc/materialization-v1.json");
+    const receiptBefore = readFileSync(receiptPath);
+    const report = summarizePolicyDelivery(root, ["claude"], selected, false);
+    expect(report.selection).toMatchObject({
+      targets: ["claude"],
+      dependencyAuthority: "unverified",
+      components: [
+        {
+          id: "skill:tdd-workflow",
+          requirement: "required",
+          selectionReason: "legacy-unattributed",
+          source: { repository: source.repository, commit: pin, componentPath: source.path },
+          owner: "aih-materialization",
+          ownership: "receipt-recorded",
+          destinations: [{ path, discovery: "project-skill-entry" }],
+        },
+      ],
+    });
+    expect(report.nativeLoading).toBe("unverified");
+    expect(renderPolicyDelivery(report)).toContain("project-skill-entry");
+    expect(renderPolicyDelivery(report)).toContain("native-plugin");
+    expect(readFileSync(receiptPath)).toEqual(receiptBefore);
+    expect(readFileSync(join(root, path), "utf8")).toBe(body);
+  });
+
+  it("keeps missing and mismatched installation provenance separate from the requested source", () => {
+    const selected = policy();
+    expect(
+      summarizePolicyDelivery(root, ["claude"], selected, false).selection?.components[0],
+    ).toMatchObject({ ownership: "missing-receipt", destinations: [] });
+    install();
+    const changed = parseOrgPolicy({
+      ...selected,
+      governance: {
+        ...selected.governance,
+        externalSelections: [
+          {
+            framework: "ecc",
+            roots: ["skill:tdd-workflow"],
+            items: [
+              {
+                id: "skill:tdd-workflow",
+                kind: "skill",
+                source: { ...source, commit: "d".repeat(40) },
+              },
+            ],
+          },
+        ],
+      },
+    });
+    const report = summarizePolicyDelivery(root, ["claude", "copilot"], changed, false);
+    expect(report.selection?.targets).toEqual(["claude"]);
+    expect(report.unsupportedTargets).toEqual(["copilot"]);
+    expect(report.selection?.components[0]).toMatchObject({
+      ownership: "source-mismatch",
+      selectionReason: "selected-root",
+      source: { commit: "d".repeat(40) },
+      destinations: [],
+    });
+    expect(report.components[0]?.state).toBe("source-mismatch");
+    expect(report.blocking).toBe(true);
+  });
+
   it("reports orphan required-guidance receipts even when no policy or component receipt remains", async () => {
     mkdirSync(join(root, "ai-coding"));
     writeFileSync(join(root, "ai-coding/policy-required-guidance.receipt.json"), "{malformed");
@@ -103,7 +260,7 @@ describe("policy delivery reporting", () => {
     expect(check.verdict).toBe("fail");
     expect(check.code).toBe("org-policy.effective-blocked");
   });
-  it("keeps legacy target coverage unverified and blocks a receipt for the wrong selected client", () => {
+  it("keeps legacy target coverage unverified and checks required agent guidance for the selected client", async () => {
     const agentSource = { ...source, path: "agents/planner.md" };
     const selected = parseOrgPolicy({
       ...policy(),
@@ -155,6 +312,33 @@ describe("policy delivery reporting", () => {
         unselectedTargets: ["claude"],
       },
     });
+    const run = fakeRunner(() => undefined);
+    const guidance = planPolicyRequiredGuidance(root, "ai-coding", [component], {
+      policyVersion: "harbor-1",
+      source: { repository: source.repository, commit: pin },
+      targets: ["claude"],
+    });
+    await executePlan(
+      { capability: "guidance", actions: guidance.actions },
+      {
+        root,
+        contextDir: "ai-coding",
+        apply: true,
+        verify: false,
+        json: true,
+        options: {},
+        env: {},
+        run,
+        host: makeHostAdapter({ platform: "linux", run, env: {} }),
+      },
+    );
+    expect(summarizePolicyDelivery(root, ["claude"], selected, false)).toMatchObject({
+      blocking: false,
+      startupGuidance: { state: "current" },
+      nativeLoading: "unverified",
+    });
+    rmSync(join(root, "ai-coding/policy-required-guidance.md"));
+    expect(summarizePolicyDelivery(root, ["claude"], selected, false).blocking).toBe(true);
   });
   it("blocks a target override, copied binding and changed policy bytes even when owned bytes are current", () => {
     install();

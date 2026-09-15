@@ -1,7 +1,7 @@
 import { defineConfig } from "tsup";
 
 // cli.ts carries a leading `#!/usr/bin/env node` shebang which esbuild preserves
-// on the entry chunk, so we do not inject a banner (that would also shebang index.js).
+// on the entry chunk, so we do not inject another shebang (including into index.js).
 export default defineConfig({
   entry: { cli: "src/cli.ts", "ecc-runtime": "src/ecc-runtime.ts", index: "src/index.ts" },
   format: ["esm"],
@@ -24,10 +24,16 @@ export default defineConfig({
   //
   // The native ECC runtime (`ecc-runtime.js`) is executed from wherever it was
   // projected, outside the installed package and with no dependency closure
-  // beside it — a bare `import "zod"` in a shared chunk therefore fails ESM
-  // resolution before the runtime handles any command (#611). Bundle zod so the
+  // beside it — a bare dependency import in a shared chunk therefore fails ESM
+  // resolution before the runtime handles any command (#611). Bundle zod and
+  // yaml (used to validate Serena's owned config) so the
   // projected runtime is self-contained; the other runtime dependencies stay
   // external because nothing in that entry's graph reaches them, and
   // tests/ecc-profile/projected-runtime.test.ts fails if one ever does.
-  noExternal: ["zod"],
+  noExternal: ["zod", "yaml"],
+  // YAML's bundled CommonJS distribution requires Node's built-in process module.
+  // Keep that built-in resolution available in each standalone ESM chunk.
+  banner: {
+    js: 'import { createRequire as __aihCreateRequire } from "node:module"; const require = __aihCreateRequire(import.meta.url);',
+  },
 });

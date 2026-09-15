@@ -1770,9 +1770,15 @@ describe("doctor — MCP pin currency (issue #504)", () => {
   });
 
   it("passes when every pin matches its registry's latest release", async () => {
-    writeMcp({ "codebase-memory-mcp": cmmServer("0.10.5"), "sequential-thinking": SEQ_SERVER });
+    writeMcp({
+      "codebase-memory-mcp": cmmServer("0.10.5"),
+      "sequential-thinking": {
+        ...SEQ_SERVER,
+        args: ["-y", "@modelcontextprotocol/server-sequential-thinking@2026.8.31"],
+      },
+    });
     const { run } = registryRunner({
-      npm: { "@modelcontextprotocol/server-sequential-thinking": "2026.7.4" },
+      npm: { "@modelcontextprotocol/server-sequential-thinking": "2026.8.31" },
       pypi: { "codebase-memory-mcp": "0.10.5" },
     });
     const c = rooted({ checkPinCurrency: true }, run);

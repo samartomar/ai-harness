@@ -193,6 +193,15 @@ describe("mcpServersDigest", () => {
     expect(data.thirdParty).toBe(1);
   });
 
+  it("classifies an already configured optional MarkItDown adapter without claiming observed traffic", () => {
+    put(".mcp.json", JSON.stringify({ mcpServers: { "markitdown-mcp": {} } }));
+    const report = mcpServersDigest(ctx());
+    const data = report?.data as ServerData;
+    expect(data.servers).toContainEqual(["markitdown-mcp", "third-party"]);
+    expect(report?.text).toContain("can contact external services");
+    expect(report?.text).not.toContain("No third-party egress");
+  });
+
   it("uses org-policy MCP egress and disabled-server rules", () => {
     put(
       ".mcp.json",

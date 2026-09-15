@@ -46,7 +46,12 @@ function context(apply = true): PlanContext {
 
 const components = [
   { id: "skill:security-review", files: [{ path: ".codex/skills/security-review/SKILL.md" }] },
-  { id: "agent:reviewer", files: [{ path: ".codex/agents/reviewer.md" }] },
+  {
+    id: "agent:reviewer",
+    files: [{ path: ".codex/agents/reviewer.md" }, { path: ".kiro/agents/reviewer.json" }],
+  },
+  { id: "baseline:commands", files: [{ path: ".claude/commands/review.md" }] },
+  { id: "module:core", files: [{ path: ".codex/rules/review.md" }] },
   { id: "skill:tdd-workflow", files: [{ path: ".codex/skills/tdd-workflow/SKILL.md" }] },
 ] as const;
 
@@ -64,7 +69,11 @@ describe("required policy guidance bridge", () => {
     );
     expect(contents).toContain("Governed targets: codex, opencode");
     expect(contents).toContain(".codex/skills/security-review/SKILL.md");
-    expect(contents).not.toContain("reviewer.md");
+    expect(contents).toContain(".codex/agents/reviewer.md");
+    expect(contents).toContain(".claude/commands/review.md");
+    expect(contents).toContain(".codex/rules/review.md");
+    expect(contents).not.toContain("reviewer.json");
+    expect(contents).toContain("read every selected guidance file listed below in full");
   });
 
   it("subtracts no bridge when no evidence-passed required guidance was owned", () => {

@@ -262,6 +262,8 @@ describe("aih init — command surface", () => {
       "--mcp-mode <mode>",
       "--mcp-compliant",
       "--v3",
+      "--accept-token-optimizer-license",
+      "--token-optimizer-profile <profile>",
       "--canon <mode>",
       "--baseline <id>",
       "--kiro-hook-runtime <runtime>",
@@ -313,7 +315,17 @@ describe("aih init — command surface", () => {
     const allowlist = JSON.stringify(merged.allowedMcpServers);
 
     expect(merged.sandbox).toMatchObject({ keep: true });
-    expect(allowlist).toContain("code-review-graph@2.3.7");
+    expect(merged.allowedMcpServers).toContainEqual(
+      expect.objectContaining({
+        serverCommand: expect.arrayContaining([
+          process.execPath,
+          expect.stringMatching(/[\\/]dist[\\/]ecc-runtime\.js$/),
+          "code-review-graph",
+          "--package",
+          "code-review-graph==2.3.8",
+        ]),
+      }),
+    );
     expect(allowlist).not.toContain("stale-denied-mcp");
   });
 

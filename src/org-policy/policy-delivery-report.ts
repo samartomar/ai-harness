@@ -1,4 +1,8 @@
 import { readAihConfig, readPolicyBinding } from "../config/marker.js";
+import {
+  describeEccEffectiveDiscovery,
+  type EccEffectiveDiscoveryReport,
+} from "../ecc/effective-discovery.js";
 import { inspectDestination, materializationRoot } from "../ecc/materialization-fs.js";
 import { ownedFragmentDigest, parseJsonObject } from "../ecc/materialization-plan.js";
 import {
@@ -6,7 +10,14 @@ import {
   ownedFileSha256,
   readEccMaterializationReceipt,
 } from "../ecc/materialization-receipt.js";
-import { GOVERNED_MATERIALIZATION_TARGETS } from "../ecc/materialization-target.js";
+import {
+  type EccMaterializationTarget,
+  GOVERNED_MATERIALIZATION_TARGETS,
+} from "../ecc/materialization-target.js";
+import {
+  type GovernedCodexRoleRegistrationInspection,
+  inspectGovernedCodexRoleRegistration,
+} from "../ecc-profile/governed-codex-roles.js";
 import type { Cli } from "../internals/clis.js";
 import type { PlanContext } from "../internals/plan.js";
 import { applyPolicyBindingDefaults, assertPolicyBindingCurrent } from "./binding.js";
@@ -17,6 +28,7 @@ import {
 } from "./command-permissions.js";
 import {
   expectedPolicyRequiredGuidance,
+  hasRequiredGuidanceComponents,
   inspectPolicyRequiredGuidance,
   type PolicyRequiredGuidanceInspection,
 } from "./required-guidance.js";
@@ -56,6 +68,8 @@ export interface PolicyDeliveryReport {
   binding?: { state: "unbound" | "current" | "blocked"; projectId?: string; detail: string };
   startupGuidance?: Pick<PolicyRequiredGuidanceInspection, "state" | "path" | "detail">;
   commandPermissions?: CommandPermissionInspection;
+  codexRoles?: GovernedCodexRoleRegistrationInspection;
+  selection?: EccEffectiveDiscoveryReport;
 }
 
 function inspectBinding(
@@ -192,8 +206,23 @@ export function summarizePolicyDelivery(
         )
       : undefined;
   const startupGuidance = inspectPolicyRequiredGuidance(root, contextDir, expectedGuidance);
-  const needsGuidance = requested.some((item) => item.kind === "skill");
+  const needsGuidance = hasRequiredGuidanceComponents(
+    owned.filter((item) => selectedIds.has(item.id)),
+  );
   const commandPermissions = inspectCommandPermissions(root, policy, targets);
+  const codexRoles = targets.includes("codex")
+    ? inspectGovernedCodexRoleRegistration(
+        root,
+        components
+          .filter((component) => component.state === "receipt-current")
+          .flatMap((component) =>
+            component.files.flatMap((file) => {
+              const id = /^\.codex\/agents\/([a-z0-9][a-z0-9_-]*)\.toml$/.exec(file.path)?.[1];
+              return id ? [{ id, configFile: file.path }] : [];
+            }),
+          ),
+      )
+    : undefined;
   const blocking =
     policyBlocked ||
     binding.state === "blocked" ||
@@ -204,6 +233,7 @@ export function summarizePolicyDelivery(
     (needsGuidance && startupGuidance.state !== "current") ||
     (!needsGuidance && startupGuidance.state !== "absent") ||
     !["not-requested", "current"].includes(commandPermissions.state) ||
+    (codexRoles !== undefined && codexRoles.state !== "current") ||
     unrequestedOwnedComponents.length > 0;
   return {
     ...(governance?.policyVersion === undefined ? {} : { policyVersion: governance.policyVersion }),
@@ -212,10 +242,37 @@ export function summarizePolicyDelivery(
     binding,
     startupGuidance,
     commandPermissions,
+    ...(codexRoles === undefined ? {} : { codexRoles }),
     targets: [...targets].sort(),
     unsupportedTargets,
     receipt: receipt.state,
     components,
+    ...(policy && governance?.externalSelections.some((item) => item.framework === "ecc")
+      ? {
+          selection: describeEccEffectiveDiscovery({
+            policy,
+            targets: targets.filter((target): target is EccMaterializationTarget =>
+              (GOVERNED_MATERIALIZATION_TARGETS as readonly string[]).includes(target),
+            ),
+            components: components.map((component) => ({
+              id: component.id,
+              provenance: {
+                repository: component.source.repository,
+                commit: component.source.commit,
+                componentPath: component.source.path,
+              },
+              ownership:
+                component.state === "missing-receipt" || component.state === "source-mismatch"
+                  ? component.state
+                  : "receipt-recorded",
+              files:
+                component.state === "missing-receipt" || component.state === "source-mismatch"
+                  ? []
+                  : component.files,
+            })),
+          }),
+        }
+      : {}),
     excludedOptionalAssets:
       policy?.schemaVersion === 3
         ? [...new Set(policy.authoringSelections.exclusions.map((item) => item.assetId))].sort()
@@ -294,10 +351,27 @@ export function renderPolicyDelivery(report: PolicyDeliveryReport): string {
           `  Project binding: ${report.binding.state}${report.binding.projectId ? ` (${report.binding.projectId})` : ""}. ${report.binding.detail}`,
         ]
       : []),
+    ...(report.codexRoles
+      ? [
+          `  Codex role registration: ${report.codexRoles.state}; expected roles=${report.codexRoles.expectedRoleIds.join(", ") || "none"}; native loading=unverified${report.codexRoles.detail ? `; ${report.codexRoles.detail}` : ""}`,
+        ]
+      : []),
     ...report.components.map(
       (component) =>
         `  ${component.id}@${component.source.commit}: ${component.state}; target coverage=${component.targetCoverage?.state ?? "unverified"}; recorded targets=${component.targetCoverage?.recordedTargets.join(", ") || "unverified"}; native loading=${component.nativeLoading}; effect=${component.practiceEffect}`,
     ),
+    ...(report.selection
+      ? [
+          `  Governed ECC selection; dependency provenance=${report.selection.dependencyAuthority}; native discovery and complete loading remain unverified.`,
+          ...report.selection.components.map(
+            (component) =>
+              `  ${component.id}: ${component.requirement}/${component.selectionReason}; owner=${component.owner}/${component.ownership}; source=${component.source.repository}@${component.source.commit}:${component.source.componentPath}; destinations=${component.destinations.map((destination) => `${destination.path} (${destination.discovery})`).join(", ") || "none observed"}`,
+          ),
+          ...report.selection.otherOwners.map(
+            (owner) => `  Other owner ${owner.owner}: ${owner.state}. ${owner.detail}`,
+          ),
+        ]
+      : []),
     `  Optional exclusions: ${report.excludedOptionalAssets.join(", ") || "none"}`,
     `  Unrequested owned components requiring reconciliation: ${report.unrequestedOwnedComponents.join(", ") || "none"}`,
     `  Unsupported ECC targets: ${report.unsupportedTargets.join(", ") || "none"}`,

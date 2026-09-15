@@ -139,7 +139,7 @@ export class SuperpowersBindingError extends AihError {
  * baseline pin ever moves, this constant must be updated explicitly in the
  * same review, never silently follow. Do not set this to a different commit.
  */
-export const SUPERPOWERS_PIN_COMMIT = "3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9";
+export const SUPERPOWERS_PIN_COMMIT = "b36e0829c6d0140e93cfef2ca599b1b07d4a7797";
 
 /**
  * The Superpowers adapter version (W7 §C.2) — bumped when this adapter's

@@ -18,7 +18,7 @@ import { hermeticGitEnv } from "../git-fixture-env.js";
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 });
 
-const SUPERPOWERS_COMMIT = "3dcbd5c4b48e02263fbf4a3c01e3fe4f81d584d9";
+const SUPERPOWERS_COMMIT = "b36e0829c6d0140e93cfef2ca599b1b07d4a7797";
 const ZWSP = String.fromCharCode(0x200b);
 
 let tempRoot: string;
@@ -89,7 +89,7 @@ afterEach(() => {
 
 describe("checkSuperpowersScanAcceptance", () => {
   it("ships no historical accepted rows", async () => {
-    // The exact vendor tree is intentionally external; its 3dcbd5c audit belongs
+    // The exact vendor tree is intentionally external; its b36e0829 audit belongs
     // to a disposable checkout. This regression proves the shipped ledger itself
     // has no historical rows through the production checker seam.
     initVendorCheckout({ "SKILL.md": "safe\n" });

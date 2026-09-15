@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -48,6 +48,14 @@ vi.mock("../../src/baseline-evidence/schema.js", () => ({
 import { runScannerBridge } from "../../src/baseline-evidence/scanner-cli.js";
 
 const PIN = "a".repeat(40);
+const RETAINED_PUBLISHER = "f6189c0211fe27369fb15672f00da76c2072361c";
+const WEEKLY_PUBLISHER = "981d50f19ec8923974597de28c4c7b7acf684ded";
+const discoveryBytes = (commit = RETAINED_PUBLISHER, request = "d".repeat(64), renewal = "") =>
+  Buffer.from(
+    JSON.stringify({
+      locator: `https://github.com/samartomar/aih-scan/releases/download/baseline-v1-${commit}-${request}${renewal}/publication.json`,
+    }),
+  );
 
 let root: string;
 let stdout: ReturnType<typeof vi.spyOn>;
@@ -161,63 +169,70 @@ describe("baseline Scanner bridge CLI", () => {
     ).rejects.toThrow(`ecc checkout is ${"c".repeat(40)}, expected ${PIN}`);
   });
 
-  it("consumes independently published bytes with the pinned Scanner publisher", async () => {
-    const source = makeDirectory("published-source");
-    const discovery = join(root, "discovery.json");
-    const publication = join(root, "publication.json");
-    const attestation = join(root, "attestation.json");
-    const output = join(root, "published-source-evidence.json");
-    const provenanceOutput = join(root, "published-provenance.json");
-    writeFileSync(discovery, '{"discovery":1}');
-    writeFileSync(publication, '{"publication":1}');
-    writeFileSync(attestation, '[{"attestation":1}]');
-    mocks.consumePublication.mockResolvedValue({
-      evidence: { id: "ecc", pinnedSha: PIN, components: [] },
-      provenance: {
-        authority: "none",
-        sourceCommit: "f6189c0211fe27369fb15672f00da76c2072361c",
-      },
-    });
+  it.each([
+    [RETAINED_PUBLISHER, ""],
+    [WEEKLY_PUBLISHER, ""],
+    [WEEKLY_PUBLISHER, "-r20260914"],
+  ])(
+    "consumes independently published bytes with reviewed publisher %s%s",
+    async (commit, renewal) => {
+      const source = makeDirectory("published-source");
+      const discovery = join(root, "discovery.json");
+      const publication = join(root, "publication.json");
+      const attestation = join(root, "attestation.json");
+      const output = join(root, "published-source-evidence.json");
+      const provenanceOutput = join(root, "published-provenance.json");
+      writeFileSync(discovery, discoveryBytes(commit, "d".repeat(64), renewal));
+      writeFileSync(publication, '{"publication":1}');
+      writeFileSync(attestation, '[{"attestation":1}]');
+      mocks.consumePublication.mockResolvedValue({
+        evidence: { id: "ecc", pinnedSha: PIN, components: [] },
+        provenance: {
+          authority: "none",
+          sourceCommit: "f6189c0211fe27369fb15672f00da76c2072361c",
+        },
+      });
 
-    await runScannerBridge([
-      "consume-publication",
-      "--catalog",
-      "ecc",
-      "--source",
-      source,
-      "--discovery",
-      discovery,
-      "--publication",
-      publication,
-      "--attestation",
-      attestation,
-      "--request-sha256",
-      "d".repeat(64),
-      "--output",
-      output,
-      "--provenance-output",
-      provenanceOutput,
-    ]);
+      await runScannerBridge([
+        "consume-publication",
+        "--catalog",
+        "ecc",
+        "--source",
+        source,
+        "--discovery",
+        discovery,
+        "--publication",
+        publication,
+        "--attestation",
+        attestation,
+        "--request-sha256",
+        "d".repeat(64),
+        "--output",
+        output,
+        "--provenance-output",
+        provenanceOutput,
+      ]);
 
-    expect(mocks.consumePublication).toHaveBeenCalledWith(
-      expect.objectContaining({
-        sourceRoot: source,
-        expectedRequestSha256: "d".repeat(64),
-        discoveryBytes: Buffer.from('{"discovery":1}'),
-        publicationBytes: Buffer.from('{"publication":1}'),
-        attestationResultBytes: Buffer.from('[{"attestation":1}]'),
-        maxAgeSeconds: 604800,
-        publisher: expect.objectContaining({
-          commit: "f6189c0211fe27369fb15672f00da76c2072361c",
+      expect(mocks.consumePublication).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sourceRoot: source,
+          expectedRequestSha256: "d".repeat(64),
+          discoveryBytes: discoveryBytes(commit, "d".repeat(64), renewal),
+          publicationBytes: Buffer.from('{"publication":1}'),
+          attestationResultBytes: Buffer.from('[{"attestation":1}]'),
+          maxAgeSeconds: 604800,
+          publisher: expect.objectContaining({
+            commit,
+          }),
         }),
-      }),
-    );
-    expect(JSON.parse(readFileSync(output, "utf8"))).toMatchObject({ id: "ecc" });
-    expect(JSON.parse(readFileSync(provenanceOutput, "utf8"))).toMatchObject({
-      authority: "none",
-    });
-    expect(stdout).toHaveBeenCalledWith(`consumed published ecc@${PIN}\n`);
-  });
+      );
+      expect(JSON.parse(readFileSync(output, "utf8"))).toMatchObject({ id: "ecc" });
+      expect(JSON.parse(readFileSync(provenanceOutput, "utf8"))).toMatchObject({
+        authority: "none",
+      });
+      expect(stdout).toHaveBeenCalledWith(`consumed published ecc@${PIN}\n`);
+    },
+  );
 
   it("consumes a closed contiguous set of independently published batches", async () => {
     const source = makeDirectory("published-batch-source");
@@ -231,7 +246,10 @@ describe("baseline Scanner bridge CLI", () => {
     for (const [index, requestSha256] of requestDigests.entries()) {
       const batch = join(publicationRoot, `batch-${String(index + 1).padStart(3, "0")}`);
       mkdirSync(batch);
-      writeFileSync(join(batch, "discovery.json"), `{"request":"${requestSha256}"}`);
+      writeFileSync(
+        join(batch, "discovery.json"),
+        discoveryBytes(RETAINED_PUBLISHER, requestSha256),
+      );
       writeFileSync(join(batch, "publication.json"), `{"batch":${index + 1}}`);
       writeFileSync(join(batch, "attestation.json"), `[{"batch":${index + 1}}]`);
     }
@@ -259,7 +277,7 @@ describe("baseline Scanner bridge CLI", () => {
         sourceRoot: source,
         publications: requestDigests.map((expectedRequestSha256, index) => ({
           expectedRequestSha256,
-          discoveryBytes: Buffer.from(`{"request":"${expectedRequestSha256}"}`),
+          discoveryBytes: discoveryBytes(RETAINED_PUBLISHER, expectedRequestSha256),
           publicationBytes: Buffer.from(`{"batch":${index + 1}}`),
           attestationResultBytes: Buffer.from(`[{"batch":${index + 1}}]`),
         })),
@@ -297,6 +315,88 @@ describe("baseline Scanner bridge CLI", () => {
       ]),
     ).rejects.toThrow("publication batch layout");
     expect(mocks.consumePublications).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    discoveryBytes("f".repeat(40)),
+    Buffer.from(
+      '{"locator":"https://github.com/samartomar/aih-scan/releases/latest/download/publication.json"}',
+    ),
+    Buffer.from("{}"),
+    Buffer.from("null"),
+    Buffer.from("[1]"),
+    Buffer.from("invalid JSON"),
+    Buffer.from('{"locator":"unreviewed","locator":"duplicate"}'),
+    Buffer.from([0xff]),
+  ])(
+    "rejects discovery without a reviewed immutable publisher before consumption",
+    async (bytes) => {
+      const source = makeDirectory("unknown-publisher-source");
+      const discovery = join(root, "discovery.json");
+      const output = join(root, "evidence.json");
+      const publication = join(root, "publication.json");
+      const attestation = join(root, "attestation.json");
+      writeFileSync(discovery, bytes);
+      writeFileSync(publication, "{}");
+      writeFileSync(attestation, "[]");
+      await expect(
+        runScannerBridge([
+          "consume-publication",
+          "--catalog",
+          "ecc",
+          "--source",
+          source,
+          "--discovery",
+          discovery,
+          "--output",
+          output,
+          "--publication",
+          publication,
+          "--attestation",
+          attestation,
+          "--request-sha256",
+          "d".repeat(64),
+          "--provenance-output",
+          join(root, "provenance.json"),
+        ]),
+      ).rejects.toThrow(/discovery.*publisher/);
+      expect(mocks.consumePublication).not.toHaveBeenCalled();
+      expect(existsSync(output)).toBe(false);
+    },
+  );
+
+  it("rejects a batch set mixing reviewed publisher revisions before consumption", async () => {
+    const source = makeDirectory("mixed-publisher-source");
+    const publicationRoot = makeDirectory("mixed-publications");
+    const output = join(root, "mixed-evidence.json");
+    const requestDigests = ["1".repeat(64), "2".repeat(64)];
+    mocks.createRequests.mockReturnValue(
+      requestDigests.map((requestSha256) => ({ requestSha256 })),
+    );
+    for (const [index, commit] of [RETAINED_PUBLISHER, WEEKLY_PUBLISHER].entries()) {
+      const batch = join(publicationRoot, `batch-${String(index + 1).padStart(3, "0")}`);
+      mkdirSync(batch);
+      writeFileSync(join(batch, "discovery.json"), discoveryBytes(commit, requestDigests[index]));
+      writeFileSync(join(batch, "publication.json"), "{}");
+      writeFileSync(join(batch, "attestation.json"), "[]");
+    }
+    await expect(
+      runScannerBridge([
+        "consume-publications",
+        "--catalog",
+        "ecc",
+        "--source",
+        source,
+        "--publication-root",
+        publicationRoot,
+        "--output",
+        output,
+        "--provenance-output",
+        join(root, "mixed-provenance.json"),
+      ]),
+    ).rejects.toThrow("publication batches must use one reviewed publisher");
+    expect(mocks.consumePublications).not.toHaveBeenCalled();
+    expect(existsSync(output)).toBe(false);
   });
 
   it("assembles exact source evidence and the authorized ECC preview without overwriting", async () => {

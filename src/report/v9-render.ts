@@ -225,13 +225,27 @@ export function renderReady(r: V9Ready): string {
 
 function renderPolicyDelivery(report: V9Ready["policyDelivery"]): string {
   if (!report) return "";
-  const rows = report.components
-    .map(
-      (component) =>
-        `<div class="drift-file"><span class="fn">${escHtml(component.id)}<br><small>${escHtml(component.source.repository)}@${escHtml(component.source.commit)}</small></span><span class="fs">${escHtml(component.state)}<br>Target coverage: ${escHtml(component.targetCoverage?.state ?? "unverified")} (${escHtml(component.targetCoverage?.recordedTargets.join(", ") || "not recorded")})<br>Native loading: ${escHtml(component.nativeLoading)} · effect: ${escHtml(component.practiceEffect)}</span></div>`,
-    )
-    .join("");
-  return `<div class="card span-12"><div class="card-head"><h3>Required policy content</h3><span class="badge ${report.blocking ? "bad" : "warn"}">${report.blocking ? "blocked" : report.nativeLoading === "not-requested" ? "no required native content" : "native loading unverified"}</span></div><div class="card-body"><div class="method">Policy ${escHtml(report.policyVersion ?? "unspecified")} · receipt ${escHtml(report.receipt)}. ${escHtml(report.detail)}</div>${rows}<div class="method">Project binding: ${escHtml(report.binding?.state ?? "not recorded")}${report.binding?.projectId ? ` (${escHtml(report.binding.projectId)})` : ""}<br>Startup guidance: ${escHtml(report.startupGuidance?.state ?? "not inspected")}<br>Command permissions: ${escHtml(report.commandPermissions?.state ?? "not inspected")}; native enforcement: ${escHtml(report.commandPermissions?.nativeEnforcement ?? "unverified")}<br>Advisory command targets: ${escHtml(report.commandPermissions?.advisoryTargets.join(", ") || "none")}<br>Optional exclusions: ${escHtml(report.excludedOptionalAssets.join(", ") || "none")}<br>Unrequested owned content: ${escHtml(report.unrequestedOwnedComponents.join(", ") || "none")}<br>Unsupported ECC targets: ${escHtml(report.unsupportedTargets.join(", ") || "none")}<br><code>${escHtml(report.nextStep)}</code></div></div></div>`;
+  const selection = report.selection
+    ? `<details><summary>Governed ECC selection and project paths</summary><div class="method">Dependency provenance: ${escHtml(report.selection.dependencyAuthority)}. Projected paths do not establish active native discovery or complete loading.</div>${report.selection.components
+        .map(
+          (component) =>
+            `<div class="drift-file"><span class="fn">${escHtml(component.id)}<br>${escHtml(component.requirement)} / ${escHtml(component.selectionReason)}<br><small>${escHtml(component.source.repository)}@${escHtml(component.source.commit)}:${escHtml(component.source.componentPath)}</small></span><span class="fs">${escHtml(component.owner)} / ${escHtml(component.ownership)}<br>${component.destinations.map((destination) => `${escHtml(destination.path)} (${escHtml(destination.discovery)})`).join("<br>") || "No matching installed destination observed"}</span></div>`,
+        )
+        .join(
+          "",
+        )}${report.selection.otherOwners.map((owner) => `<div class="method">${escHtml(owner.owner)} / ${escHtml(owner.scope)}: ${escHtml(owner.state)}. ${escHtml(owner.detail)}</div>`).join("")}</details>`
+    : "";
+  const rows =
+    report.components
+      .map(
+        (component) =>
+          `<div class="drift-file"><span class="fn">${escHtml(component.id)}<br><small>${escHtml(component.source.repository)}@${escHtml(component.source.commit)}</small></span><span class="fs">${escHtml(component.state)}<br>Target coverage: ${escHtml(component.targetCoverage?.state ?? "unverified")} (${escHtml(component.targetCoverage?.recordedTargets.join(", ") || "not recorded")})<br>Native loading: ${escHtml(component.nativeLoading)} · effect: ${escHtml(component.practiceEffect)}</span></div>`,
+      )
+      .join("") +
+    (report.codexRoles
+      ? `<div class="method">Codex role registration: ${escHtml(report.codexRoles.state)}; expected roles: ${escHtml(report.codexRoles.expectedRoleIds.join(", ") || "none")}. Native role loading remains unverified.</div>`
+      : "");
+  return `<div class="card span-12"><div class="card-head"><h3>Required policy content</h3><span class="badge ${report.blocking ? "bad" : "warn"}">${report.blocking ? "blocked" : report.nativeLoading === "not-requested" ? "no required native content" : "native loading unverified"}</span></div><div class="card-body"><div class="method">Policy ${escHtml(report.policyVersion ?? "unspecified")} · receipt ${escHtml(report.receipt)}. ${escHtml(report.detail)}</div>${rows}${selection}<div class="method">Project binding: ${escHtml(report.binding?.state ?? "not recorded")}${report.binding?.projectId ? ` (${escHtml(report.binding.projectId)})` : ""}<br>Startup guidance: ${escHtml(report.startupGuidance?.state ?? "not inspected")}<br>Command permissions: ${escHtml(report.commandPermissions?.state ?? "not inspected")}; native enforcement: ${escHtml(report.commandPermissions?.nativeEnforcement ?? "unverified")}<br>Advisory command targets: ${escHtml(report.commandPermissions?.advisoryTargets.join(", ") || "none")}<br>Optional exclusions: ${escHtml(report.excludedOptionalAssets.join(", ") || "none")}<br>Unrequested owned content: ${escHtml(report.unrequestedOwnedComponents.join(", ") || "none")}<br>Unsupported ECC targets: ${escHtml(report.unsupportedTargets.join(", ") || "none")}<br><code>${escHtml(report.nextStep)}</code></div></div></div>`;
 }
 
 /** The same evaluated observation carried by CLI/JSON, beside the unchanged preflight. */

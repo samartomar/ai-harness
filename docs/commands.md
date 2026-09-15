@@ -187,6 +187,65 @@ plan, and derived `.aih/fingerprint.json`. Under `--apply`, it also writes commi
 intent via `aih-capabilities.json` and refreshes the rebuildable `$HOME/.aih/capabilities/cache.json`.
 The v3 lane stays offline and never treats `.aih/` or `~/.aih/` as authority.
 
+After its normal phases complete, `aih init` also runs the ordinary developer-tool lifecycle. A
+preview reports the effective selection without reconciling a tool. With `--apply`, it reconciles all
+six default tool IDs: selected tools are provisioned, while policy-excluded tools can remove only
+unchanged receipt-owned integration. During apply, Token Optimizer remains `blocked` until its
+license is explicitly accepted with `--accept-token-optimizer-license`; `--token-optimizer-profile
+quiet|balanced` selects its setup profile. A blocked prerequisite is reported for that tool while
+independent selected tools continue.
+
+## aih developer-tools
+
+Preview or reconcile the policy-selected default developer tools for one repository. Without an
+effective organization policy, the default selection is `code-review-graph`, `codebase-memory-mcp`,
+`serena`, `token-optimizer`, `context7`, and `markitdown` (the CLI). A valid policy can select a subset, explicitly exclude
+tools, or select none. A legacy valid policy that omits `selected` preserves the defaults, subject to
+its exclusions; `selected: []` is an explicit empty selection. A malformed selection or an invalid,
+missing, changed, revoked, or conflicting bound policy fails closed before the lifecycle runs, and
+does not fall back to defaults.
+
+Run `aih developer-tools <root>` to inspect the selection. Add `--apply` to acquire, configure, and
+verify selected tools; excluded tools are also reconciled only to remove unchanged receipt-owned
+integration. `aih init` already invokes this lifecycle after its ordinary setup, so the standalone
+command is useful for inspection or a later focused reconciliation. During apply, if Token Optimizer
+is selected, pass `--accept-token-optimizer-license`; otherwise its lifecycle result is `blocked`.
+Its default profile is `quiet`; pass `--token-optimizer-profile balanced` to choose the balanced
+profile.
+
+Token Optimizer's native project-hook integration currently supports Codex only. If a selected run
+does not target Codex, the tool reports `blocked` with that explicit target reason and does not
+assume another client. When policy marks Token Optimizer unselected, its receipt-owned cleanup still
+runs and removes only unchanged owned integration when present.
+
+For standalone `aih developer-tools --json`, the normal plan result also includes top-level
+`accepted`, `selection` (`source`, `selected`, `excluded`, and `diagnostics`), `tools` (`id`,
+`state`, `detail`, and `changed`), and `changed`. With `aih init --json`, the same lifecycle data is
+in the digest whose `describe` value is `Developer tool lifecycle`; its `data` contains `accepted`,
+`selection`, and `tools`, while `report.checks` records selected-tool outcomes. Tool states are
+`selected-pending`, `installed`, `configured`, `verified`, `policy-excluded`, and `blocked`.
+
+MarkItDown CLI converts local documents to Markdown. Setup installs version 0.1.7 with the PDF,
+Word, PowerPoint, Excel and Outlook converters into an external runtime keyed by its dependency
+lock using an existing Python 3.10–3.13 interpreter, verifies an actual conversion, and reports the installed CLI command. It does not change
+global PATH or replace a user-installed CLI. Azure services, YouTube and audio-transcription extras
+are not installed by default. Add `markitdown` to `developerTools.excluded` to opt out; repeat setup
+and worktree changes preserve the policy choice.
+
+MarkItDown MCP is a separate optional integration. Add `markitdown-mcp` to `mcp.allowedServers`
+to select the pinned official adapter (0.0.1a7 with converter 0.1.7); `mcp.disabledServers` overrides
+that selection. This adapter can access user-selected files and URLs with the current user's
+permissions, and its first launch acquires its dependencies. Selecting the default CLI does not
+enable the MCP adapter. GitHub MCP also requires an explicit choice through `mcp.allowedServers`,
+a configured policy GitHub host, `--github-auth token`, or `--self-host`; it is absent from an
+unconfigured project's default MCP set.
+
+On `--apply`, each selected tool checks its own prerequisites. Code Review Graph, Serena and MarkItDown require
+an external `uv`; Token Optimizer requires external Python, Git, and curl. Codebase Memory selects a
+native payload for the current platform and architecture. An unavailable prerequisite or payload is
+reported as that tool's `blocked` result while independent tools continue. This reference does not
+claim host-wide Windows or macOS qualification; use the per-tool result on the target host.
+
 ## aih profile
 
 Recursively detect the repo's stack and synthesize Cursor stack rules (`.cursor/rules/*.mdc`). Root
@@ -278,9 +337,9 @@ target refuses without `--force`. `--delete` hard-deletes to a gitignored `*.aih
 still-targeted CLI whose binary is absent from `PATH` (loud warning; never the default).
 Shared selection flags (`--cli`, `--all-tools`, `--detect`) are accepted by the command surface but
 ignored by `prune`; the digest says so and keeps the diff anchored to committed intent. When a
-dropped CLI is an ECC-supported target, prune also plans ECC's own install-state uninstall through
-`npx --yes --package ecc-universal ecc uninstall --target <cli>` under `--apply`, so ECC-owned
-files and merge records are removed by ECC's recorded footprint rather than by path guessing.
+dropped CLI is an ECC-supported target, prune uses the AIH registration ledger and ECC install
+state to identify its owned footprint. Without a registration ledger, it preserves unreceipted ECC
+client files and reports manual cleanup; ordinary AIH-owned adapter cleanup can still proceed.
 When Codex is dropped, prune also subtracts the recorded ECC TOML footprint from
 `~/.codex/config.toml` and the fenced ECC Codex block that `aih ecc` merges into
 `~/.codex/AGENTS.md`, leaving unrelated user config and text outside that block intact.
@@ -289,18 +348,15 @@ A bare prune also reads `~/.aih/ecc/registration-ledger.json`, even when no comm
 changed. Project registrations whose roots are missing retire from the machine union; common or
 shared components and MCPs remain until their last live contributor disappears. The dry-run digest
 names retired roots, orphaned component/MCP IDs, target states, and managed destinations without
-changing bytes. Under `--apply`, prune mutates only exact operations proven by strict ECC install
-state (plus aih's fenced Codex records) and coordinates the unavoidable upstream uninstall inside
-the same driver. Apply re-verifies every planned input, prepares recovery material, performs
-aih-owned removals, runs the upstream uninstall, writes target state, and replaces the primary
-ledger last. Missing home-target state, malformed/drifted state or markers, symlinks, concurrent
-input changes, or partial aih-owned writes fail closed and roll back; project-local state that never
-existed is not guessed. If an upstream uninstall may have mutated before failing—or a later step
-fails after an upstream uninstall succeeded—the command emits `ECC prune divergence` with the
-complete set of affected targets and paths, rolls back aih-owned changes, and never advances the
-ledger. The driver budgets the outer transaction above the bounded sequential uninstall budget;
-catchable POSIX `SIGINT` and `SIGTERM` during an active uninstall use the same rollback and
-divergence path. It does not claim that upstream-owned bytes were restored. When a registration
+changing bytes. Under `--apply`, prune removes only operations proven by ECC install state (plus
+aih's fenced Codex records). Copied files must match their recorded SHA-256; JSON cleanup subtracts
+only the recorded managed values. Modified files and legacy copies without a recorded digest are
+preserved, and the operation refuses with a manual-cleanup explanation. Apply re-verifies every
+planned input, prepares recovery material, performs owned removals, updates target state, and
+replaces the primary ledger last. It does not run an upstream uninstaller. Missing required target
+state, malformed or drifted state or markers, symlinks, concurrent input changes, or partial writes
+fail closed; failures during the transaction roll back its owned changes. Project-local state that
+never existed is not guessed. When a registration
 ledger predates a Codex target record, prune retains the state-file-based Codex cleanup path instead
 of treating the mere presence of a ledger as proof that Codex cleanup is coordinated.
 
@@ -378,10 +434,21 @@ drift or unsafe paths revoke the claim without mutating `.kiro/settings/mcp.json
 Register [affaan-m/ECC](https://github.com/affaan-m/ECC) for the selected CLIs. The default is the
 additive union of the locked common baseline, components detected from every registered project,
 repeatable advance declarations (`--with lang:cpp --with framework:react`), posture-selected
-security, and validated MCPs. Use `--profile full` only for an explicit full-surface install.
+security, and validated MCPs. Use `--profile full` for the full content selection.
 Unknown declarations fail closed. The ordinary native-installer path keeps Kiro and unsupported
 targets consult-only because their installers cannot materialize the scoped union safely. The
 governed lifecycle described below has a separate verified Kiro rules-and-skills adapter.
+
+Core and Full profiles do not authorize ECC hooks, executable plugins or host runtime.
+Outside policy governance, explicitly declare `--with baseline:hooks` to admit those operations.
+Governed delivery keeps upstream host runtime excluded even with that declaration; AIH retains
+its separate MCP and hook ownership boundaries. Preview, installation and reconciliation apply
+the same consent filter. Consult-only targets provide component advice and cannot authorize
+executable or runtime recommendations.
+
+Reinstall refuses before changes when a narrower consent selection would leave previously
+installed runtime content behind. It preserves the existing files and ownership state for
+review and cleanup before retrying; reinstall does not silently withdraw that integration.
 
 The AIH-owned Claude/Codex profile has a separate, explicit lifecycle mode on the same command:
 
@@ -432,6 +499,16 @@ run are one materialization into one root with one receipt: destinations two tar
 (`AGENTS.md`, `.agents/plugins/`, `.agents/skills/`) are written once, a target that refuses a
 component does not stop the targets that own it, and a later `--apply` with a narrower target set
 subtracts the dropped target's files and reports each removal.
+
+Governed Codex skill selection uses the shared project `.agents/skills/` route.
+Reapplication withdraws an older `.codex/skills/` duplicate only when unchanged
+materialization receipts prove ownership; edited and unowned copies are retained
+and reported. It does not replace disabled-skill settings or filter native plugin
+inventory. The governed preview includes exact selection/source and destination
+facts beside exclusions, refusals and ownership advisories. Proposed destinations,
+installed bytes and actual native loading remain different claims. See the
+[selection ownership guide](../guides/portable-policy-delivery.md#inspect-selection-and-discovery-ownership)
+for preview, ordinary reinitialization and migration.
 
 ECC MCP approvals have a separate explicit Add/Remove surface:
 
@@ -489,9 +566,9 @@ surface without inventing held components. Structural evidence failures that mak
 untrustworthy still fail the request, and aih refuses all installer execution unless
 `runtime:ecc-installer` itself has an authorization receipt.
 
-The validated MCP default is pinned local `sequential-thinking`, repo-declared
+The ECC registration lane's validated MCP default is pinned local `sequential-thinking`, repo-declared
 `code-review-graph`/`codebase-memory-mcp`, and GitHub OAuth at enterprise. Context7, Exa, and
-other egress-bearing servers are never defaults. Project config receives that project's set; global
+other egress-bearing servers are not defaults of that lane. Project config receives that project's set; global
 target config receives the machine union, with existing user-defined same-name servers preserved.
 
 aih fetches the catalog's exact commit into quarantine, verifies signed evidence for the installer

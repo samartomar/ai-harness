@@ -105,6 +105,10 @@ import { command as status } from "../status.js";
 import { command as superpowers } from "../superpowers/index.js";
 import { executeSuperpowersCommand } from "../superpowers/pipeline.js";
 import { command as telemetry } from "../telemetry/index.js";
+import {
+  developerToolsCommand,
+  executeDeveloperToolsCommand,
+} from "../tools/developer-tools-command.js";
 import { command as tools } from "../tools/index.js";
 import { command as track } from "../track/index.js";
 import {
@@ -155,6 +159,7 @@ export const CAPABILITIES: CommandSpec[] = [
   track,
   usage,
   tools,
+  developerToolsCommand,
   crispy,
   bootstrap,
   bootstrapAi,
@@ -505,6 +510,7 @@ function registerSpec(program: Command, spec: CommandSpec): void {
       if (spec === ecc) deps.execute = executeEccCommand;
       if (spec === governanceDoctorRepairCommand)
         deps.execute = executeGovernanceDoctorRepairCommandV1;
+      if (spec === developerToolsCommand) deps.execute = executeDeveloperToolsCommand;
       if (spec === init) deps.execute = executeInitCommand;
       if (spec === uninstall) deps.execute = executeUninstallCommand;
       if (spec === superpowers) deps.execute = executeSuperpowersCommand;

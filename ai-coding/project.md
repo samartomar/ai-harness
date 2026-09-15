@@ -34,7 +34,7 @@ See `CONTRIBUTING.md` for prerequisites, `--plan`, and review requirements.
 
 ## Scale
 
-- 1647 tracked files (bounded snapshot) · medium · single-package repository
+- 1764 tracked files (bounded snapshot) · medium · single-package repository
 
 ## Entry points
 

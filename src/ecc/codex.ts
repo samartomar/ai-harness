@@ -18,7 +18,13 @@ type CodexMcpScope = "project" | "global" | "planned ECC";
 
 /** Codex's scoped TOML writer accepts this local projection only. */
 export type CodexScopedMcpServer =
-  | { type: "stdio"; command: string; args: string[]; startupTimeoutSec?: number }
+  | {
+      type: "stdio";
+      command: string;
+      args: string[];
+      env?: Record<string, string>;
+      startupTimeoutSec?: number;
+    }
   | { type: "http"; url: string; startupTimeoutSec?: number };
 export type CodexScopedMcpServers = Record<string, CodexScopedMcpServer>;
 

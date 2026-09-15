@@ -82,6 +82,7 @@ function operationKey(operation: ContingentEccInstallOperation): string {
 
 function componentOperations(
   installer: UpstreamInstaller,
+  targetRegistry: UpstreamTargetRegistry,
   eccRoot: string,
   componentId: EccComponentId,
   target: (typeof ECC_INSTALL_TARGETS)[number],
@@ -118,7 +119,14 @@ function componentOperations(
     }
     throw error;
   }
-  filterEccManifestPlan(upstream, selection);
+  const targetRoot = targetRegistry.getInstallTargetAdapter(target).resolveRoot({
+    repoRoot: eccRoot,
+    projectRoot: PROJECT_FIXTURE,
+    homeDir: HOME_FIXTURE,
+  });
+  filterEccManifestPlan(upstream, selection, {
+    roots: { projectRoot: PROJECT_FIXTURE, homeDir: HOME_FIXTURE, target, targetRoot },
+  });
   return upstream.operations
     .filter(
       (operation) =>
@@ -148,7 +156,9 @@ export function generateEccInstallPreviewArtifact(
   const operations: ContingentEccInstallOperation[] = [];
   for (const { id } of manifests.listInstallComponents()) {
     for (const target of ECC_INSTALL_TARGETS) {
-      operations.push(...componentOperations(installer, eccRoot, id as EccComponentId, target));
+      operations.push(
+        ...componentOperations(installer, targetRegistry, eccRoot, id as EccComponentId, target),
+      );
     }
   }
   for (const target of ECC_INSTALL_TARGETS) {

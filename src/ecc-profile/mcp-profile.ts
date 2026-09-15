@@ -2,6 +2,7 @@ import { isAbsolute, normalize, relative } from "node:path";
 import { mcpApprovalSubject } from "../mcp/policy.js";
 import { mcpEntries, mcpTomlBody } from "../mcp/render.js";
 import { coreLocalMcpServers, type McpServer } from "../mcp/servers.js";
+import { renderSerenaRuntimeConfig } from "./serena-runtime-config.js";
 
 const SHA256 = /^[a-f0-9]{64}$/;
 const CONTEXT7_ENDPOINT = "https://mcp.context7.com/mcp";
@@ -319,7 +320,11 @@ function buildEccMcpProfileProjectionForRuntime(
     activation: "prepared-not-registered",
     servers,
     disabled: ECC_MCP_DISABLED,
-    serenaConfig: renderSerenaConfig(),
+    serenaConfig: renderSerenaRuntimeConfig({
+      project: canonicalWorktree,
+      home: serenaHome,
+      allowedTools: SERENA_ALLOWED_TOOLS,
+    }),
     provenance: {
       serena: {
         ...runtimePin,

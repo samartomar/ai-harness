@@ -122,10 +122,17 @@ run `node tools/repo-ai-tools.mjs token-optimizer-coach`. These are the same
 entry points for Claude and Codex and do not modify either client's global
 configuration.
 
+The adopter runtime uses authenticated Code Review Graph 2.3.8 and native
+Codebase Memory MCP 0.10.8 launchers. This checkout's separate repository helper
+remains on code-review-graph 2.3.7 and codebase-memory-mcp 0.10.5: its raw
+`uv tool` launchers do not enforce the 2.3.8 provider boundary or authenticate
+the separately downloaded 0.10.8 native payload. Do not treat those frozen
+helper identities as the active adopter runtime pins.
+
 Serena 1.7.0, Token Savior 4.21.0, code-review-graph 2.3.7, and
 codebase-memory-mcp 0.10.5 are MIT-licensed. Serena's installer applies the exact
 patched transitive overrides recorded by `repo-ai-tools.mjs`; changing them
 requires a fresh dependency audit and health/start probe. Token Optimizer
-5.11.68 uses PolyForm Noncommercial 1.0.0; this repo installs an untracked local
+5.13.14 uses PolyForm Noncommercial 1.0.0; this repo installs an untracked local
 checkout and does not vendor or redistribute it. Commercial use requires an
 appropriate license from its author.

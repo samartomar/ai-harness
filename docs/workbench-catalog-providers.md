@@ -218,7 +218,7 @@ requirement.
 
 AIH uses the same collection command with `--catalog aih` and an exact Core
 checkout. Its preparer materializes the three delivered packs, generated usage
-hook, and six MCP configuration declarations outside the checkout. Copied pack
+hook, and seven MCP configuration declarations outside the checkout. Copied pack
 files must match the pinned Git objects. Configuration scans do not cover a
 hosted MCP service's private implementation. Operational temporary material is
 removed after verification, including failed attempts.

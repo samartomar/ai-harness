@@ -2,8 +2,13 @@ import { join, resolve } from "node:path";
 import { readRegularFileWithStats } from "./internals/fsxn.js";
 import { gitRead } from "./internals/git.js";
 import { type DigestAction, digest, type PlanContext } from "./internals/plan.js";
+import type { RunOptions } from "./internals/proc.js";
 import { lines } from "./internals/render.js";
 import type { Check } from "./internals/verify.js";
+import {
+  defaultNativeMcpServers,
+  managedCodeReviewGraphCliInvocation,
+} from "./mcp/default-native-runtime.js";
 import { aihWorkspaceGraphRepo } from "./workspace/templates.js";
 
 export const LARGE_REPO_FILE_THRESHOLD = 1000;
@@ -75,7 +80,26 @@ interface GraphStatus {
   files?: number;
 }
 
-function parseCodeReviewGraphStatus(stdout: string): GraphStatus {
+function parseCodeReviewGraphStatus(stdout: string, json = false): GraphStatus | undefined {
+  if (json) {
+    try {
+      const status: unknown = JSON.parse(stdout);
+      if (!status || typeof status !== "object" || Array.isArray(status)) return undefined;
+      const { nodes, files } = status as Record<string, unknown>;
+      if (
+        typeof nodes !== "number" ||
+        !Number.isSafeInteger(nodes) ||
+        nodes < 0 ||
+        typeof files !== "number" ||
+        !Number.isSafeInteger(files) ||
+        files < 0
+      )
+        return undefined;
+      return { nodes, files };
+    } catch {
+      return undefined;
+    }
+  }
   return {
     nodes: parseStatusCount(stdout, "Nodes"),
     files: parseStatusCount(stdout, "Files"),
@@ -100,11 +124,22 @@ function graphStatusSummary(status: GraphStatus): string {
 async function ensureCodeReviewGraphPopulated(
   ctx: PlanContext,
   detail: string,
-  argvFor: (command: "status" | "build") => string[],
+  invocationFor: (
+    command: "status" | "build",
+  ) => string[] | { argv: string[]; cwd: string; env: NodeJS.ProcessEnv },
   rebuildWhenEmpty = true,
+  jsonStatus = false,
 ): Promise<{ available: boolean; detail: string }> {
-  const statusArgv = argvFor("status");
-  const first = await ctx.run(statusArgv, { cwd: ctx.root, timeoutMs: 120_000 });
+  const invoke = (command: "status" | "build") => {
+    const invocation = invocationFor(command);
+    const options: RunOptions = {
+      cwd: ctx.root,
+      timeoutMs: command === "status" ? 120_000 : 300_000,
+    };
+    if (Array.isArray(invocation)) return ctx.run(invocation, options);
+    return ctx.run(invocation.argv, { ...options, cwd: invocation.cwd, env: invocation.env });
+  };
+  const first = await invoke("status");
   if (first.spawnError || first.code !== 0) {
     return {
       available: false,
@@ -112,7 +147,10 @@ async function ensureCodeReviewGraphPopulated(
     };
   }
 
-  const firstStatus = parseCodeReviewGraphStatus(first.stdout);
+  const firstStatus = parseCodeReviewGraphStatus(first.stdout, jsonStatus);
+  if (firstStatus === undefined) {
+    return { available: false, detail: `${detail}; code-review-graph status output was invalid` };
+  }
   if (graphIsPopulated(firstStatus)) {
     return {
       available: true,
@@ -127,8 +165,7 @@ async function ensureCodeReviewGraphPopulated(
     };
   }
 
-  const buildArgv = argvFor("build");
-  const build = await ctx.run(buildArgv, { cwd: ctx.root, timeoutMs: 300_000 });
+  const build = await invoke("build");
   if (build.spawnError || build.code !== 0) {
     return {
       available: false,
@@ -138,8 +175,14 @@ async function ensureCodeReviewGraphPopulated(
     };
   }
 
-  const second = await ctx.run(statusArgv, { cwd: ctx.root, timeoutMs: 120_000 });
-  const secondStatus = parseCodeReviewGraphStatus(second.stdout);
+  const second = await invoke("status");
+  const secondStatus = parseCodeReviewGraphStatus(second.stdout, jsonStatus);
+  if (secondStatus === undefined) {
+    return {
+      available: false,
+      detail: `${detail}; code-review-graph status output was invalid after rebuild`,
+    };
+  }
   if (!second.spawnError && second.code === 0 && graphIsPopulated(secondStatus)) {
     return {
       available: true,
@@ -153,6 +196,56 @@ async function ensureCodeReviewGraphPopulated(
       `${detail}; graph status was empty (${graphStatusSummary(firstStatus)}) and offline rebuild did not populate the graph ` +
       `(${graphStatusSummary(secondStatus)})`,
   };
+}
+
+async function managedGraphAvailability(
+  ctx: PlanContext,
+  server: unknown,
+): Promise<{ available: boolean; detail: string } | undefined> {
+  if (!server || typeof server !== "object") return undefined;
+  const { type, command, args, env } = server as {
+    type?: unknown;
+    command?: unknown;
+    args?: unknown;
+    env?: unknown;
+  };
+  if (
+    !Array.isArray(args) ||
+    typeof args[0] !== "string" ||
+    (!/(?:^|[\\/])ecc-runtime\.js$/u.test(args[0]) && args[1] !== "code-review-graph")
+  )
+    return undefined;
+  try {
+    const expected = defaultNativeMcpServers(ctx)["code-review-graph"];
+    if (
+      expected === undefined ||
+      expected.type !== "stdio" ||
+      type !== expected.type ||
+      command !== expected.command ||
+      env !== undefined ||
+      args.length !== expected.args?.length ||
+      args.some((arg, index) => arg !== expected.args?.[index])
+    ) {
+      return {
+        available: false,
+        detail:
+          "managed Graph registration is stale; re-run `aih developer-tools --apply` for this worktree",
+      };
+    }
+    return await ensureCodeReviewGraphPopulated(
+      ctx,
+      "managed Graph runtime with authenticated dependencies and worktree state",
+      (operation) => managedCodeReviewGraphCliInvocation(ctx, operation),
+      true,
+      true,
+    );
+  } catch {
+    return {
+      available: false,
+      detail:
+        "managed Graph runtime could not be authenticated; re-run `aih developer-tools --apply` for this worktree",
+    };
+  }
 }
 
 async function codeReviewGraphAvailabilityFor(
@@ -192,6 +285,12 @@ async function codeReviewGraphAvailabilityFor(
         "workspace graph MCP server for this child is missing or stale; re-run `aih workspace --apply`",
     };
   }
+
+  const managed = await managedGraphAvailability(
+    { ...ctx, root: repoRoot },
+    readRepoMcpCodeReviewGraph(mcpRoot),
+  );
+  if (managed !== undefined) return managed;
 
   if (await onPath(ctx, "code-review-graph")) {
     return ensureCodeReviewGraphPopulated(ctx, "code-review-graph binary on PATH", (command) => [

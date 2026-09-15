@@ -141,8 +141,8 @@ it("authors exact generated delivery material rather than scanning the source ch
   });
   expect(request.source.pinnedCommit).toBe(commit);
   expect(request.source.treeSha256).toBe(manifest.sourceTreeSha256);
-  expect(request.components).toHaveLength(10);
-  expect(coverage.components).toHaveLength(10);
+  expect(request.components).toHaveLength(11);
+  expect(coverage.components).toHaveLength(11);
   expect(manifest.sourceRoot).not.toBe(source);
   expect(execFileSync("git", ["-C", source, "status", "--porcelain"], { encoding: "utf8" })).toBe(
     "",

@@ -37,6 +37,8 @@ export interface EccMaterializationSpec {
   agents: string[];
   sourceRoots: string[];
   agentScaffolding: boolean;
+  /** Host runtime may materialize only after the operator declares `baseline:hooks`. */
+  executableConsent: EccExecutableConsent;
   /**
    * Governance leaves ECC's agents, skills, rules, and commands intact, but
    * AIH is the sole owner of MCP and host-hook/runtime configuration. The
@@ -447,6 +449,7 @@ export function eccMaterializationSpec(selection: EccComponentSelection): EccMat
     agents: [...surface.agents],
     sourceRoots: [...surface.sourceRoots],
     agentScaffolding: surface.agentScaffolding,
+    executableConsent: eccExecutableConsent(selection),
   };
 }
 
@@ -500,26 +503,29 @@ export function eccManifestOperationSelected(
   return selectedOperation(operation, selectedInstallSurface(selection));
 }
 
-export function filterEccManifestPlan<Operation extends EccManifestOperation>(
-  plan: EccManifestPlan<Operation>,
-  selection: EccComponentSelection,
-): void {
-  assertPlanShape(plan);
-  if (selection.scope === "full") return;
-  const operations = plan.operations.filter((operation) =>
-    eccManifestOperationSelected(operation, selection),
-  );
-  plan.operations = operations;
-  plan.statePreview.operations = operations;
+export type GovernedEccOperationClass = "ecc-content" | "mcp" | "host-runtime";
+
+export type EccExecutableConsent = "enabled" | "declined";
+
+export interface EccConsentFilterOptions {
+  /** A policy-owned projection always wins over local executable consent. */
+  governance?: boolean;
+  roots?: GovernedEccDestinationRoots;
 }
 
-export type GovernedEccOperationClass = "ecc-content" | "mcp" | "host-runtime";
+export function eccExecutableConsent(
+  selection: Pick<EccComponentSelection, "components">,
+): EccExecutableConsent {
+  return selection.components.includes("baseline:hooks") ? "enabled" : "declined";
+}
 
 /** Runtime roots used to bind a verified upstream destination to this install. */
 export interface GovernedEccDestinationRoots {
   projectRoot: string;
   homeDir: string;
   target: string;
+  /** Exact upstream adapter root after target-specific environment resolution. */
+  targetRoot?: string;
 }
 
 function assertSourceRelativePath(value: string): string {
@@ -567,9 +573,17 @@ function isMcpPath(path: string): boolean {
 
 function isHostRuntimePath(path: string): boolean {
   return (
-    /(?:^|\/)(?:\.claude|\.codex|\.cursor|\.kiro|\.gemini|\.opencode|\.zed)\/(?:hooks(?:\/|$)|(?:settings(?:\.local)?\.json|config\.(?:json|toml)))$/i.test(
+    /(?:^|\/)opencode\.json$/i.test(path) ||
+    /(?:^|\/)(?:\.claude|\.codex|\.cursor|\.kiro|\.gemini|\.opencode|\.zed)\/(?:hooks(?:\.json)?|plugins)(?:\/|$)/i.test(
       path,
-    ) || /^(?:hooks|scripts\/hooks)(?:\/|$)/i.test(path)
+    ) ||
+    /(?:^|\/)(?:\.claude|\.codex|\.cursor|\.kiro|\.gemini|\.opencode|\.zed)\/(?:settings(?:\.local)?\.json|config\.(?:json|toml))$/i.test(
+      path,
+    ) ||
+    /^(?:hooks(?:\.json)?|plugins|scripts\/hooks)(?:\/|$)/i.test(path) ||
+    /^scaffolds\/(?:claude|codex|cursor|kiro|gemini|opencode|zed)\/(?:hooks(?:\.json)?|plugins|settings(?:\.local)?\.json|config\.(?:json|toml))(?:\/|$)/i.test(
+      path,
+    )
   );
 }
 
@@ -610,8 +624,16 @@ function isEccContentDestination(
   destination: string,
   roots?: GovernedEccDestinationRoots,
 ): boolean {
+  if (
+    roots?.targetRoot !== undefined &&
+    containedRelative(roots.targetRoot, destination) === source
+  ) {
+    return true;
+  }
   const mapping = eccContentDestinationMapping(source, roots?.target);
-  if (mapping === undefined) return false;
+  if (mapping === undefined) {
+    return roots === undefined && normalizedPath(destination).endsWith(`/${source}`);
+  }
   if (roots === undefined) return normalizedPath(destination).endsWith(`/${mapping.relative}`);
   const root = mapping.scope === "project" ? roots.projectRoot : roots.homeDir;
   return containedRelative(root, destination) === mapping.relative;
@@ -708,6 +730,13 @@ export function classifyGovernedEccOperation(
   }
   const source = assertSourceRelativePath(operation.sourceRelativePath);
   const destination = assertDestinationPath(operation.destinationPath);
+  if (
+    roots !== undefined &&
+    containedRelative(roots.projectRoot, destination) === undefined &&
+    containedRelative(roots.homeDir, destination) === undefined
+  ) {
+    throw new Error(`ECC destination escapes authorized project/home roots: ${destination}`);
+  }
 
   if (isMcpPath(source) || isMcpPath(destination)) return "mcp";
   if (
@@ -733,6 +762,53 @@ export function classifyGovernedEccOperation(
 }
 
 /**
+ * Decide one upstream operation at the final operation boundary. Profiles and
+ * module ids select content, but they never imply executable consent. MCP
+ * projection stays AIH-owned on every verified route, and organization policy
+ * ownership overrides a local `baseline:hooks` declaration.
+ */
+export function eccManifestOperationAllowedByConsent(
+  operation: EccManifestOperation,
+  selection: EccComponentSelection,
+  options: EccConsentFilterOptions = {},
+): boolean {
+  const classification = classifyGovernedEccOperation(operation, options.roots);
+  if (!eccManifestOperationSelected(operation, selection)) return false;
+  if (classification === "ecc-content") return true;
+  if (classification === "mcp") return false;
+  return options.governance !== true && eccExecutableConsent(selection) === "enabled";
+}
+
+/**
+ * The single TypeScript consent boundary for preview, reconciliation, and any
+ * in-process materialization. It keeps the applied operation list and recorded
+ * install state identical so lifecycle commands cannot later reactivate a
+ * filtered operation.
+ */
+export function filterEccManifestPlan<Operation extends EccManifestOperation>(
+  plan: EccManifestPlan<Operation>,
+  selection: EccComponentSelection,
+  options: EccConsentFilterOptions = {},
+): void {
+  assertPlanShape(plan);
+  const destinations = new Set<string>();
+  const operations = plan.operations.filter((operation) => {
+    if (!eccManifestOperationAllowedByConsent(operation, selection, options)) return false;
+    const destination = normalizedPath(operation.destinationPath);
+    const collisionKey = destination.normalize("NFC").toLowerCase();
+    if (destinations.has(collisionKey)) {
+      throw new Error(
+        `normalized ${options.governance === true ? "governed " : ""}ECC destination collision: ${destination}`,
+      );
+    }
+    destinations.add(collisionKey);
+    return true;
+  });
+  plan.operations = operations;
+  plan.statePreview.operations = operations;
+}
+
+/**
  * Apply normal component selection first, then remove only the explicitly
  * classified AIH-owned surfaces. This is intentionally operation-level even
  * for Core/platform and full scope, whose modules contain mixed ownership.
@@ -742,21 +818,5 @@ export function filterGovernedEccManifestPlan<Operation extends EccManifestOpera
   selection: EccComponentSelection,
   roots?: GovernedEccDestinationRoots,
 ): void {
-  assertPlanShape(plan);
-  const selected = plan.operations.filter((operation) =>
-    eccManifestOperationSelected(operation, selection),
-  );
-  const destinations = new Set<string>();
-  const operations = selected.filter((operation) => {
-    if (classifyGovernedEccOperation(operation, roots) !== "ecc-content") return false;
-    const destination = normalizedPath(operation.destinationPath);
-    const collisionKey = destination.normalize("NFC").toLowerCase();
-    if (destinations.has(collisionKey)) {
-      throw new Error(`normalized governed ECC destination collision: ${destination}`);
-    }
-    destinations.add(collisionKey);
-    return true;
-  });
-  plan.operations = operations;
-  plan.statePreview.operations = operations;
+  filterEccManifestPlan(plan, selection, { governance: true, roots });
 }

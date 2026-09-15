@@ -55,6 +55,39 @@ describe("committed JSON Schemas", () => {
       rejectCommittedSchema("schemas/aih-org-policy.schema.json", invalid);
   });
 
+  it("publishes the V3 developer-tool selection grammar", () => {
+    const policy = {
+      schemaVersion: 3,
+      minimumPosture: "vibe",
+      references: { repoContract: "ai-coding/project.json" },
+      minimumCoreVersion: "0.6.0",
+      authoringSelections: {
+        selectionVersion: "workbench-selection/v1",
+        roots: [],
+        requests: [],
+        exclusions: [],
+        drafts: [],
+      },
+    };
+    validateCommittedSchema("schemas/aih-org-policy.schema.json", {
+      ...policy,
+      developerTools: {
+        selected: ["serena", "context7", "markitdown"],
+        excluded: ["token-optimizer"],
+      },
+    });
+    validateCommittedSchema("schemas/aih-org-policy.schema.json", {
+      ...policy,
+      developerTools: { selected: [] },
+    });
+    for (const invalid of [
+      { ...policy, developerTools: { selected: ["unknown"] } },
+      { ...policy, developerTools: { selected: "serena" } },
+      { ...policy, developerTools: { selected: [], unsupported: true } },
+    ])
+      rejectCommittedSchema("schemas/aih-org-policy.schema.json", invalid);
+  });
+
   it("emits editor schemas for config, governed policy, authority receipt, decision, observation, qualification evidence, and package graph", () => {
     const schemas = generatedConfigSchemas();
 

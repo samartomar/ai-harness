@@ -45,7 +45,7 @@ describe("baseline evidence release payload", () => {
   it("delegates baseline execution to the exact public Scanner and keeps Core consumption explicit", () => {
     const manifest = packageJson();
     const scripts = manifest.scripts;
-    expect(manifest.devDependencies["@aihq/scan"]).toBe("0.3.0");
+    expect(manifest.devDependencies["@aihq/scan"]).toBe("0.4.0");
     expect(scripts["baseline:request"]).toContain("scanner-cli.ts request");
     expect(scripts["baseline:vet"]).toBeUndefined();
     expect(scripts["baseline:consume"]).toBeUndefined();

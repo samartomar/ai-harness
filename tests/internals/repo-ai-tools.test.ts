@@ -412,9 +412,9 @@ describe("ai-harness repo AI tooling", () => {
           securityOverrides: ["python-multipart==0.0.32", "starlette==1.3.1"],
         },
         tokenOptimizer: {
-          tag: "v5.11.68",
-          commit: "ffe3b8007542260b17648a2d9228c3dedda380ad",
-          tree: "d044ba6038ac705e8d0da6a4b545cbee00abe7d5",
+          tag: "v5.13.14",
+          commit: "37a9546b9fecba2c4e9a02ef4e90855d449bf08f",
+          tree: "b86bba7e8f3caea3a32d41ad134d81c3fea3e9e6",
           license: "PolyForm-Noncommercial-1.0.0",
         },
         tokenSavior: { package: "token-savior-recall[mcp]==4.21.0", license: "MIT" },

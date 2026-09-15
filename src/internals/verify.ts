@@ -16,6 +16,9 @@ export type CheckCode =
   | "env.git-bash-missing"
   | "env.dev-tool-missing"
   | "env.tool-install-blocked"
+  // A selected ordinary developer tool installed or launched but did not complete
+  // its concrete verification operation. The per-tool detail owns remediation.
+  | "developer-tools.runtime-verification"
   // certificates / TLS
   | "cert.ca-missing"
   | "tls.verify-failed"

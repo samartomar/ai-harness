@@ -117,7 +117,7 @@ describe("first-party Catalog qualification preparation", () => {
       kind: "prepared-aih-scanner-publications/v1",
     });
     expect(prepared).toBeDefined();
-    expect(Object.keys(prepared!.bindings)).toHaveLength(9);
+    expect(Object.keys(prepared!.bindings)).toHaveLength(10);
     expect(
       Object.values(prepared!.bindings).filter(
         (binding) => binding.material.kind === "source-files",
@@ -127,7 +127,10 @@ describe("first-party Catalog qualification preparation", () => {
       Object.values(prepared!.bindings).filter(
         (binding) => binding.material.kind === "configuration-only",
       ),
-    ).toHaveLength(6);
+    ).toHaveLength(7);
+    expect(prepared!.bindings["aih/serena"]).toMatchObject({
+      material: { kind: "configuration-only" },
+    });
     expect(prepared!.unsupported).toEqual([
       { assetId: "aih/usage-metering", reason: "unsupported-governance-subject-kind" },
     ]);

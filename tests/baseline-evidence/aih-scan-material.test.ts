@@ -479,7 +479,7 @@ function signedPublication(request: BaselineVetRequestV1) {
 }
 
 describe("AIH scan material", () => {
-  it("binds the ten actual Core deliveries to their unchanged compiled identities", () => {
+  it("binds the eleven actual Core deliveries to their unchanged compiled identities", () => {
     const materialized = materialize();
     const request = createCoreBaselineVetRequest(materialized.sourceRoot, materialized.catalog);
 
@@ -495,12 +495,12 @@ describe("AIH scan material", () => {
       scope: "declared-source-files",
       sourceTreeSha256: hashSourceTree(materialized.sourceRoot).treeSha256,
     });
-    expect(materialized.coverage.components).toHaveLength(10);
-    expect(materialized.subjects).toHaveLength(10);
-    expect(request.components).toHaveLength(10);
+    expect(materialized.coverage.components).toHaveLength(11);
+    expect(materialized.subjects).toHaveLength(11);
+    expect(request.components).toHaveLength(11);
     expect(
       new Set(materialized.coverage.components.map((component) => component.componentId)).size,
-    ).toBe(10);
+    ).toBe(11);
 
     for (const subject of materialized.subjects) {
       const coverage = materialized.coverage.components.find(
@@ -543,7 +543,7 @@ describe("AIH scan material", () => {
         subject.assetId !== "aih/usage-metering" &&
         !subject.assetId.startsWith("aih/package:"),
     );
-    expect(mcp).toHaveLength(6);
+    expect(mcp).toHaveLength(7);
     for (const subject of mcp) {
       expect(subject.paths).toHaveLength(1);
       expect(subject.paths[0]).toMatch(/^declarations\/claude\/project\/.+\.json$/);
@@ -718,7 +718,7 @@ describe("AIH scan material", () => {
       compiled,
     });
     materializedRoots.push(materialized);
-    expect(materialized.subjects).toHaveLength(10);
+    expect(materialized.subjects).toHaveLength(11);
 
     writeFileSync(
       join(packageRoot, "packs/docs-quality/aih-betterdoc/SKILL.md"),
@@ -815,7 +815,7 @@ describe("AIH scan material", () => {
       prepared,
     );
     expect(firstParty).toBeDefined();
-    expect(Object.keys(firstParty!.bindings)).toHaveLength(9);
+    expect(Object.keys(firstParty!.bindings)).toHaveLength(10);
     expect(
       Object.values(firstParty!.bindings).filter(
         (binding) => binding.material.kind === "source-files",
@@ -825,7 +825,7 @@ describe("AIH scan material", () => {
       Object.values(firstParty!.bindings).filter(
         (binding) => binding.material.kind === "configuration-only",
       ),
-    ).toHaveLength(6);
+    ).toHaveLength(7);
     expect(firstParty!.unsupported).toEqual([
       { assetId: "aih/usage-metering", reason: "unsupported-governance-subject-kind" },
     ]);
@@ -1119,7 +1119,7 @@ describe("AIH scan material", () => {
         preparedAt: "2026-09-07T12:10:00.000Z",
       },
     });
-    expect(record.coverage.components).toHaveLength(10);
+    expect(record.coverage.components).toHaveLength(11);
     expect(sealed.bytes).not.toContain("ageSeconds");
     expect(sealed.bytes).not.toContain("reverifiedAt");
     expect(authorPreparedAihScannerPublicationV1(structuredClone(prepared))).toBeUndefined();

@@ -979,6 +979,22 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
         mcpEntries(cli, writeServers),
         hygieneIssues,
       );
+      const excludedDeveloperToolEntries = mcpEntries(
+        cli,
+        catalog.excludedDeveloperToolServers ?? {},
+      );
+      const excludedDeveloperToolAlternates = applyMcpHygieneToEntries(
+        cli,
+        excludedDeveloperToolEntries,
+        mcpHygieneIssues(catalog.excludedDeveloperToolServers ?? {}, {}),
+      );
+      const excludedDeveloperToolNames = matchingGeneratedJsonServerNames(
+        abs,
+        p.configKey,
+        excludedDeveloperToolEntries,
+        excludedDeveloperToolAlternates,
+        source,
+      );
       const staleGeneratedNames = matchingGeneratedJsonServerNames(
         abs,
         p.configKey,
@@ -993,7 +1009,13 @@ async function planMcp(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
         {},
         source,
       );
-      const removalNames = [...new Set([...staleGeneratedNames, ...retiredGeneratedNames])];
+      const removalNames = [
+        ...new Set([
+          ...staleGeneratedNames,
+          ...retiredGeneratedNames,
+          ...excludedDeveloperToolNames,
+        ]),
+      ];
       for (const name of staleGeneratedNames) {
         const policy = deniedGeneratedPoliciesByName.get(name);
         if (policy !== undefined) quarantinedPolicies.set(name, policy);
