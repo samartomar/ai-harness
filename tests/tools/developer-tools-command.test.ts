@@ -238,7 +238,7 @@ describe("developer-tools command", () => {
         state: "blocked",
         detail: expect.stringContaining("XDG_RUNTIME_DIR"),
       });
-      expect(result.tools.filter((tool) => tool.state === "verified")).toHaveLength(4);
+      expect(result.tools.filter((tool) => tool.state === "verified")).toHaveLength(5);
     },
   );
 

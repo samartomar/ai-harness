@@ -8,7 +8,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { PassThrough, Readable } from "node:stream";
 import { fileURLToPath } from "node:url";
@@ -30,7 +30,9 @@ afterEach(() => {
 function fixture() {
   const project = realpathSync(mkdtempSync(join(tmpdir(), "aih-default-mcp-project-")));
   const stateBase = realpathSync(mkdtempSync(join(tmpdir(), "aih-default-mcp-state-")));
-  roots.push(project, stateBase);
+  const coordinationBase = realpathSync(mkdtempSync(join(homedir(), "aih-")));
+  roots.push(project, stateBase, coordinationBase);
+  chmodSync(coordinationBase, 0o700);
   const directories = {
     project,
     graph: join(stateBase, "graph"),
@@ -50,7 +52,13 @@ function fixture() {
     chmodSync(projectUv, 0o700);
     chmodSync(uvExecutable, 0o700);
   }
-  return { ...directories, stateBase, tools, uvExecutable: realpathSync.native(uvExecutable) };
+  return {
+    ...directories,
+    coordinationBase,
+    stateBase,
+    tools,
+    uvExecutable: realpathSync.native(uvExecutable),
+  };
 }
 
 function memoryEnvironment(scope: ReturnType<typeof fixture>): NodeJS.ProcessEnv {
@@ -58,7 +66,7 @@ function memoryEnvironment(scope: ReturnType<typeof fixture>): NodeJS.ProcessEnv
     PATH: "fixture-path",
     HOME: scope.stateBase,
     LOCALAPPDATA: scope.stateBase,
-    XDG_RUNTIME_DIR: join(scope.stateBase, "xdg-runtime"),
+    XDG_RUNTIME_DIR: scope.coordinationBase,
   };
 }
 

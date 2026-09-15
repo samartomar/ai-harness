@@ -12,7 +12,9 @@ import {
   runPolicyWorkbenchUi,
   startPolicyWorkbenchUi,
 } from "../../src/org-policy/ui-server.js";
-import { testTimeoutForPlatform } from "../../vitest.config.js";
+
+// This ownership check starts a cold source process beside Chromium in hosted CI.
+const ROOTLESS_UI_TEST_TIMEOUT_MS = 15_000;
 
 const { resolveGithubSkillMock, spawnMock } = vi.hoisted(() => ({
   resolveGithubSkillMock: vi.fn(),
@@ -267,22 +269,26 @@ describe("Policy Workbench UI server", () => {
     expect(await (await fetch(running.url)).text()).toBe(before);
   });
 
-  it("does not inspect or write the current repository", async () => {
-    const cwd = mkdtempSync(join(tmpdir(), "aih-ui-rootless-"));
-    try {
-      const fixture = fileURLToPath(new URL("./ui-server-rootless-fixture.mts", import.meta.url));
-      const tsxLoader = new URL("../../node_modules/tsx/dist/loader.mjs", import.meta.url).href;
-      const { stdout, stderr } = await promisify(execFile)(
-        process.execPath,
-        ["--import", tsxLoader, fixture],
-        { cwd, timeout: testTimeoutForPlatform(process.platform) - 1_000, windowsHide: true },
-      );
-      expect(stderr).toBe("");
-      expect(stdout).toContain("rootless UI server preserved the temporary directory");
-    } finally {
-      rmSync(cwd, { recursive: true, force: true });
-    }
-  });
+  it(
+    "does not inspect or write the current repository",
+    async () => {
+      const cwd = mkdtempSync(join(tmpdir(), "aih-ui-rootless-"));
+      try {
+        const fixture = fileURLToPath(new URL("./ui-server-rootless-fixture.mts", import.meta.url));
+        const tsxLoader = new URL("../../node_modules/tsx/dist/loader.mjs", import.meta.url).href;
+        const { stdout, stderr } = await promisify(execFile)(
+          process.execPath,
+          ["--import", tsxLoader, fixture],
+          { cwd, timeout: ROOTLESS_UI_TEST_TIMEOUT_MS - 1_000, windowsHide: true },
+        );
+        expect(stderr).toBe("");
+        expect(stdout).toContain("rootless UI server preserved the temporary directory");
+      } finally {
+        rmSync(cwd, { recursive: true, force: true });
+      }
+    },
+    ROOTLESS_UI_TEST_TIMEOUT_MS,
+  );
 
   it("keeps serving and reports a browser-launch failure with the usable URL", async () => {
     const messages: string[] = [];

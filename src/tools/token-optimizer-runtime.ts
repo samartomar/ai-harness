@@ -1,12 +1,15 @@
 import { createHash, randomBytes } from "node:crypto";
 import {
   accessSync,
+  type BigIntStats,
+  closeSync,
   constants,
   existsSync,
+  fstatSync,
   lstatSync,
   mkdirSync,
+  openSync,
   readdirSync,
-  readFileSync,
   realpathSync,
   renameSync,
   rmSync,
@@ -14,6 +17,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { readBoundedFileDescriptor } from "../internals/fsxn.js";
 import { hermeticGitEnv } from "../internals/git-env.js";
 import { defaultRunner, type Runner } from "../internals/proc.js";
 import { findOnPath } from "../live/runner.js";
@@ -608,24 +612,37 @@ function inspectOwnedIntegration(
 }
 
 function inspectOwnedFile(owned: TokenOptimizerOwnedPath): string | undefined {
+  return inspectOwnedFileSnapshot(owned).conflict;
+}
+
+function inspectOwnedFileSnapshot(owned: TokenOptimizerOwnedPath): {
+  readonly conflict?: string;
+  readonly snapshot?: RegularFileSnapshot;
+} {
   try {
     assertNoSymlinkOnExistingPath(owned.path, "Token Optimizer receipt-owned path");
   } catch {
-    return `Token Optimizer receipt-owned path traverses a symlink; integration preserved (${owned.path})`;
+    return {
+      conflict: `Token Optimizer receipt-owned path traverses a symlink; integration preserved (${owned.path})`,
+    };
   }
-  if (!existsSync(owned.path)) return undefined;
+  if (!existsSync(owned.path)) return {};
   try {
-    const stat = lstatSync(owned.path);
-    if (stat.isSymbolicLink() || !stat.isFile()) {
-      return `Token Optimizer receipt-owned path is no longer a regular file; integration preserved (${owned.path})`;
+    const snapshot = readRegularFileSnapshot(
+      owned.path,
+      MAX_RECEIPT_BYTES,
+      "Token Optimizer receipt-owned path",
+    );
+    if (snapshot.sha256 !== owned.sha256) {
+      return {
+        conflict: `Token Optimizer receipt-owned file changed; integration preserved (${owned.path})`,
+      };
     }
-    const actual = sha256Hex(readFileSync(owned.path));
-    if (actual !== owned.sha256) {
-      return `Token Optimizer receipt-owned file changed; integration preserved (${owned.path})`;
-    }
-    return undefined;
+    return { snapshot };
   } catch {
-    return `Token Optimizer receipt-owned file could not be inspected; integration preserved (${owned.path})`;
+    return {
+      conflict: `Token Optimizer receipt-owned file could not be inspected; integration preserved (${owned.path})`,
+    };
   }
 }
 
@@ -639,26 +656,19 @@ function inspectManagedBlocks(
     return `Token Optimizer hooks path traverses a symlink; integration preserved (${path})`;
   }
   if (!existsSync(path)) return undefined;
-  let parsed: Record<string, unknown>;
   try {
-    const stat = lstatSync(path);
-    if (stat.isSymbolicLink() || !stat.isFile())
-      return `Token Optimizer hooks path is not a regular file; integration preserved (${path})`;
-    const value: unknown = JSON.parse(readFileSync(path, "utf8"));
-    if (value === null || typeof value !== "object" || Array.isArray(value))
-      throw new Error("hooks root");
-    parsed = value as Record<string, unknown>;
+    const { root: parsed } = readHooksSnapshot(path);
+    const expected = new Set(claims.map((claim) => claim.sha256));
+    for (const group of hookGroups(parsed)) {
+      const digest = tokenOptimizerManagedBlockSha256(group.value);
+      if (containsTokenOptimizerMarker(group.value) && !expected.has(digest)) {
+        return `Token Optimizer managed hook changed or is unreceipted; integration preserved (${path})`;
+      }
+    }
+    return undefined;
   } catch {
     return `Token Optimizer hooks configuration is unreadable; integration preserved (${path})`;
   }
-  const expected = new Set(claims.map((claim) => claim.sha256));
-  for (const group of hookGroups(parsed)) {
-    const digest = tokenOptimizerManagedBlockSha256(group.value);
-    if (containsTokenOptimizerMarker(group.value) && !expected.has(digest)) {
-      return `Token Optimizer managed hook changed or is unreceipted; integration preserved (${path})`;
-    }
-  }
-  return undefined;
 }
 
 async function reconcileExcluded(
@@ -718,10 +728,27 @@ async function reconcileExcluded(
   };
 }
 
+interface RegularFileIdentity {
+  readonly dev: bigint;
+  readonly ino: bigint;
+  // Existing receipts may own a regular hardlink; bind its link count rather than changing that policy.
+  readonly nlink: bigint;
+  readonly size: bigint;
+  readonly mtimeNs: bigint;
+  readonly ctimeNs: bigint;
+}
+
+interface RegularFileSnapshot {
+  readonly bytes: Buffer;
+  readonly sha256: string;
+  readonly identity: RegularFileIdentity;
+}
+
 interface CleanupOperation {
   readonly kind: "remove-file" | "write-hooks";
   readonly path: string;
   readonly expectedSha256?: string;
+  readonly expectedIdentity?: RegularFileIdentity;
   readonly bytes?: Buffer;
 }
 
@@ -737,9 +764,16 @@ function planCleanup(receipt: TokenOptimizerReceipt): CleanupPlan {
   for (const owned of receipt.ownedPaths) {
     if (owned.ownership === "file") {
       if (!existsSync(owned.path)) continue;
-      const conflict = inspectOwnedFile(owned);
-      if (conflict !== undefined) return { operations: [], conflict, changed: false };
-      operations.push({ kind: "remove-file", path: owned.path, expectedSha256: owned.sha256 });
+      const inspection = inspectOwnedFileSnapshot(owned);
+      if (inspection.conflict !== undefined)
+        return { operations: [], conflict: inspection.conflict, changed: false };
+      if (inspection.snapshot === undefined) continue;
+      operations.push({
+        kind: "remove-file",
+        path: owned.path,
+        expectedSha256: inspection.snapshot.sha256,
+        expectedIdentity: inspection.snapshot.identity,
+      });
       continue;
     }
     const claims = managedByPath.get(owned.path) ?? [];
@@ -748,14 +782,12 @@ function planCleanup(receipt: TokenOptimizerReceipt): CleanupPlan {
   }
   for (const [path, claims] of managedByPath) {
     if (!existsSync(path)) continue;
-    let root: Record<string, unknown>;
+    let hooksSnapshot: {
+      readonly root: Record<string, unknown>;
+      readonly snapshot: RegularFileSnapshot;
+    };
     try {
-      const stat = lstatSync(path);
-      if (stat.isSymbolicLink() || !stat.isFile()) throw new Error("hooks path");
-      const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
-      if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed))
-        throw new Error("hooks root");
-      root = parsed as Record<string, unknown>;
+      hooksSnapshot = readHooksSnapshot(path);
     } catch {
       return {
         operations: [],
@@ -765,7 +797,7 @@ function planCleanup(receipt: TokenOptimizerReceipt): CleanupPlan {
     }
     const expected = new Set(claims.map((claim) => claim.sha256));
     let removed = 0;
-    const hooks = root.hooks;
+    const hooks = hooksSnapshot.root.hooks;
     if (hooks !== null && typeof hooks === "object" && !Array.isArray(hooks)) {
       const hookObject = hooks as Record<string, unknown>;
       for (const [event, value] of Object.entries(hookObject)) {
@@ -791,12 +823,13 @@ function planCleanup(receipt: TokenOptimizerReceipt): CleanupPlan {
       }
     }
     if (removed > 0) {
-      const bytes = Buffer.from(`${JSON.stringify(root, null, 2)}\n`, "utf8");
+      const bytes = Buffer.from(`${JSON.stringify(hooksSnapshot.root, null, 2)}\n`, "utf8");
       operations.push({
         kind: "write-hooks",
         path,
         bytes,
-        expectedSha256: sha256Hex(readFileSync(path)),
+        expectedSha256: hooksSnapshot.snapshot.sha256,
+        expectedIdentity: hooksSnapshot.snapshot.identity,
       });
     }
   }
@@ -807,27 +840,56 @@ function applyCleanup(plan: CleanupPlan): void {
   for (const operation of plan.operations) {
     if (operation.kind === "remove-file") {
       if (!existsSync(operation.path)) continue;
-      const stat = lstatSync(operation.path);
-      if (stat.isSymbolicLink() || !stat.isFile())
-        throw new Error(`owned path changed before removal (${operation.path})`);
-      if (sha256Hex(readFileSync(operation.path)) !== operation.expectedSha256) {
+      let snapshot: RegularFileSnapshot;
+      try {
+        snapshot = readRegularFileSnapshot(
+          operation.path,
+          MAX_RECEIPT_BYTES,
+          "Token Optimizer receipt-owned path",
+        );
+      } catch {
         throw new Error(`owned path changed before removal (${operation.path})`);
       }
+      if (!cleanupSnapshotMatches(operation, snapshot)) {
+        throw new Error(`owned path changed before removal (${operation.path})`);
+      }
+      assertSnapshotStillNamesFile(
+        operation.path,
+        snapshot.identity,
+        `owned path changed before removal (${operation.path})`,
+      );
       unlinkSync(operation.path);
       continue;
     }
     if (operation.bytes === undefined) throw new Error("invalid cleanup operation");
     if (!existsSync(operation.path))
       throw new Error(`hooks path changed before removal (${operation.path})`);
-    assertRegularFile(operation.path, "Token Optimizer hooks path");
-    if (
-      operation.expectedSha256 !== undefined &&
-      sha256Hex(readFileSync(operation.path)) !== operation.expectedSha256
-    ) {
+    let snapshot: RegularFileSnapshot;
+    try {
+      snapshot = readRegularFileSnapshot(
+        operation.path,
+        MAX_RECEIPT_BYTES,
+        "Token Optimizer hooks path",
+      );
+    } catch {
       throw new Error(`hooks path changed before removal (${operation.path})`);
     }
-    writeFileAtomically(operation.path, operation.bytes);
+    if (!cleanupSnapshotMatches(operation, snapshot)) {
+      throw new Error(`hooks path changed before removal (${operation.path})`);
+    }
+    writeFileAtomically(operation.path, operation.bytes, snapshot.identity);
   }
+}
+
+function cleanupSnapshotMatches(
+  operation: CleanupOperation,
+  snapshot: RegularFileSnapshot,
+): boolean {
+  return (
+    (operation.expectedSha256 === undefined || operation.expectedSha256 === snapshot.sha256) &&
+    (operation.expectedIdentity === undefined ||
+      sameRegularFileIdentity(operation.expectedIdentity, snapshot.identity))
+  );
 }
 
 interface HookGroup {
@@ -1863,10 +1925,99 @@ function readOptionalRegularBytes(path: string): Buffer | undefined {
 }
 
 function readRegularBytes(path: string, maxBytes: number): Buffer {
-  assertRegularFile(path, "file");
-  const bytes = readFileSync(path);
-  if (bytes.length > maxBytes) throw new Error("file exceeds bounded size");
-  return bytes;
+  return readRegularFileSnapshot(path, maxBytes, "file").bytes;
+}
+
+function readHooksSnapshot(path: string): {
+  readonly root: Record<string, unknown>;
+  readonly snapshot: RegularFileSnapshot;
+} {
+  const snapshot = readRegularFileSnapshot(path, MAX_RECEIPT_BYTES, "Token Optimizer hooks path");
+  return { root: parseHooks(snapshot.bytes, path), snapshot };
+}
+
+function readRegularFileSnapshot(
+  path: string,
+  maxBytes: number,
+  label: string,
+): RegularFileSnapshot {
+  assertNoSymlinkOnExistingPath(path, label);
+  let before: RegularFileIdentity;
+  try {
+    before = regularFileIdentity(lstatSync(path, { bigint: true }), label);
+  } catch {
+    throw new Error(`${label} must be a regular file`);
+  }
+  const noFollow = (constants as Record<string, number | undefined>).O_NOFOLLOW ?? 0;
+  const nonblock = (constants as Record<string, number | undefined>).O_NONBLOCK ?? 0;
+  let descriptor: number;
+  try {
+    descriptor = openSync(path, constants.O_RDONLY | noFollow | nonblock, 0o600);
+  } catch {
+    throw new Error(`${label} could not be opened safely`);
+  }
+  try {
+    const opened = regularFileIdentity(fstatSync(descriptor, { bigint: true }), label);
+    const current = regularFileIdentity(lstatSync(path, { bigint: true }), label);
+    assertNoSymlinkOnExistingPath(path, label);
+    if (!sameRegularFileIdentity(before, opened) || !sameRegularFileIdentity(opened, current)) {
+      throw new Error(`${label} changed while opening`);
+    }
+    if (opened.size > BigInt(maxBytes)) throw new Error("file exceeds bounded size");
+    const bytes = readBoundedFileDescriptor(descriptor, maxBytes);
+    if (bytes === undefined) throw new Error("file exceeds bounded size");
+    const after = regularFileIdentity(fstatSync(descriptor, { bigint: true }), label);
+    const currentAfter = regularFileIdentity(lstatSync(path, { bigint: true }), label);
+    assertNoSymlinkOnExistingPath(path, label);
+    if (!sameRegularFileIdentity(opened, after) || !sameRegularFileIdentity(opened, currentAfter)) {
+      throw new Error(`${label} changed while reading`);
+    }
+    return { bytes, sha256: sha256Hex(bytes), identity: opened };
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
+function regularFileIdentity(stats: BigIntStats, label: string): RegularFileIdentity {
+  if (stats.isSymbolicLink() || !stats.isFile() || stats.ino === 0n) {
+    throw new Error(`${label} must be a regular file`);
+  }
+  return {
+    dev: stats.dev,
+    ino: stats.ino,
+    nlink: stats.nlink,
+    size: stats.size,
+    mtimeNs: stats.mtimeNs,
+    ctimeNs: stats.ctimeNs,
+  };
+}
+
+function sameRegularFileIdentity(left: RegularFileIdentity, right: RegularFileIdentity): boolean {
+  return (
+    left.dev === right.dev &&
+    left.ino === right.ino &&
+    left.nlink === right.nlink &&
+    left.size === right.size &&
+    left.mtimeNs === right.mtimeNs &&
+    left.ctimeNs === right.ctimeNs
+  );
+}
+
+function assertSnapshotStillNamesFile(
+  path: string,
+  expected: RegularFileIdentity,
+  message: string,
+): void {
+  try {
+    assertNoSymlinkOnExistingPath(path, "Token Optimizer output");
+    const current = regularFileIdentity(
+      lstatSync(path, { bigint: true }),
+      "Token Optimizer output",
+    );
+    if (!sameRegularFileIdentity(expected, current)) throw new Error(message);
+  } catch {
+    throw new Error(message);
+  }
 }
 
 function assertRegularFile(path: string, label: string): void {
@@ -1897,25 +2048,29 @@ function parseHooks(bytes: Buffer, path: string): Record<string, unknown> {
   }
 }
 
-function writeFileAtomically(path: string, bytes: Buffer): void {
+function writeFileAtomically(
+  path: string,
+  bytes: Buffer,
+  expectedIdentity?: RegularFileIdentity,
+): void {
   assertNoSymlinkOnExistingPath(path, "Token Optimizer output");
   mkdirSync(dirname(path), { recursive: true });
-  if (existsSync(path)) assertRegularFile(path, "Token Optimizer output");
+  if (existsSync(path)) {
+    if (expectedIdentity === undefined) assertRegularFile(path, "Token Optimizer output");
+    else assertSnapshotStillNamesFile(path, expectedIdentity, "Token Optimizer output changed");
+  }
   const temporary = join(
     dirname(path),
     `.${path.split(/[\\/]/).pop() ?? "output"}.${process.pid}.${randomBytes(8).toString("hex")}.tmp`,
   );
   writeFileSync(temporary, bytes, { flag: "wx", mode: 0o600 });
   try {
-    try {
-      renameSync(temporary, path);
-    } catch {
-      // Node's Windows rename cannot replace an existing file on some volumes;
-      // re-check the target before the narrow fallback write.
+    if (expectedIdentity === undefined) {
       if (existsSync(path)) assertRegularFile(path, "Token Optimizer output");
-      writeFileSync(path, bytes, { flag: "w", mode: 0o600 });
-      if (existsSync(temporary)) unlinkSync(temporary);
+    } else {
+      assertSnapshotStillNamesFile(path, expectedIdentity, "Token Optimizer output changed");
     }
+    renameSync(temporary, path);
   } catch (error) {
     if (existsSync(temporary)) rmSync(temporary, { force: true });
     throw error;

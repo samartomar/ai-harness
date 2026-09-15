@@ -12,7 +12,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { fakeRunner } from "../../src/internals/proc.js";
 import {
   buildTokenOptimizerReportInvocation,
@@ -33,8 +33,21 @@ const PINNED_RELEASE_MANIFEST =
   "90f7ebcd5d67059a2002028c5bb0c311e32f81dfa6b509fc6df5297a5a20f900  .claude-plugin/marketplace.json\n374f28a03e88364095bebcb20732c83892c616d5e7609be570770ee9b47c596d  .claude-plugin/plugin.json\n857b5b6c0cae88d9fbb0d4ecb94bdad65bbf5a05c19e75f89972161cb2162b23  .codex-plugin/plugin.json\n8ffd584493c1cc77d756027d1b68861282fdf9b87305aace31922e7c9f048cf1  hooks/codex-hooks.json\n4bf49a3e5ee1e27435d7973d1d6e53df541dc0ca1ac1ca8521cabb4cbc1926cf  hooks/hooks.json\ndd8df583078060b62a9a06b04b53dbfbbbf89d410e90ec044dac38aa9d42172b  hooks/module_runner.py\n78bc226f5671a60f62d4f1253a8445e9403234209254b4ab907bfd1e6be8082c  hooks/posttooluse_runner.py\n0e4ed1bca220dd7aadc90bef7e1c0be96668595d9eb4a1410a5de9c7e5d29f1d  hooks/python-launcher.sh\n400442750c056e5822c27b5e03ca2ce549843b1f029736f8ed185aebede656c4  hooks/run.py\n6ad25938134b053d70c90c247a85d0a4e5e05172269896a7903e1542288aafb4  hooks/sessionstart_runner.py\n5862482801579a970b379519cd5d58eb7cfab691fd26c79800608227d336ba6f  hooks/stop_runner.py\nd4990741d213105a3455237806d30279df9ac562580c92bdb512902cfad4cc36  hooks/userpromptsubmit_runner.py\ndbdc027072c97ba02a4e5fc7a3b6b589b6f01c0e6e05d091a5e9ed2ad026dc53  install.sh\n01701c0c9a80b074d0589a2f0d299efaa18c828fb8f7f853fffc7d0f9129eab7  skills/fleet-auditor/SKILL.md\n078dbfe73bd3b86b03b65655c61a2d8bf84d95df9861c454ea753aba416e4fdb  skills/fleet-auditor/references/fleet-systems.md\n3e5203b719acb1d4fed1a6d742c3bcae08f4f64f2210cd566f2e95bec5c34249  skills/fleet-auditor/references/waste-patterns.md\n2cf3ebc61df3c32f8d8cda9f422e0f6f526b159ffc2a3a03b5c5b5577e104c3d  skills/fleet-auditor/scripts/fleet.py\n8ea774d6adcbfcfc770c13252c16f71595d284a5389b81b6867ae0a5c3bd2503  skills/fleet-auditor/scripts/shared.py\nec8c4faa651f3fa70ad19aa24f93449f0e2d9cff547a486313f736a22283f819  skills/resume-checkpoint/SKILL.md\ndeb694350e05fcf23eeba5a02f72d9daaa688fab0ba29e19e76917dbba685b04  skills/resume-checkpoint/scripts/pull_checkpoint.py\nd8de713c8e9809916e41da24a2518958e760bb9c451cd92d424ba0b089c0f6e3  skills/token-coach/SKILL.md\n9410dcc6339c19217e3e1fed67b258f035203638ff943fd9b58f83af897246cc  skills/token-coach/assets/coach-dashboard-tab.html\n71b5491602344cb2474c922e7b03eaa3a95d6c9c9748ccc5e6c3ace6f7be6ec1  skills/token-coach/examples/coaching-session-agentic.md\n63791e259203d592dd2c99050a5fde26b1b15e9455687bd2fd1b1d3f480f595d  skills/token-coach/examples/coaching-session-heavy-setup.md\n404498e61a70ca4398d8c149f7b2a979f4b80477ae4c57d023b2ae232b346c29  skills/token-coach/examples/coaching-session-new-project.md\ncf1ec48194ba18346f726957067205227c3e0f9b8094b8ebdbbfe941e4a7432c  skills/token-coach/references/agentic-systems.md\neccabc8bba20cd28c5debe51ba2ca76bef6beeef15674903cf88c0433cea6f2e  skills/token-coach/references/coach-patterns.md\n3053fe9a319d274e299c0bee179261efd66df5d82c516ed71d61db09578211ed  skills/token-coach/references/coaching-scripts.md\ne4329fdcacbfeee2e90fe37f0ae01fed8ea6b66a6d36a0a5397fe51bcb68e58c  skills/token-coach/references/quick-reference.md\n469b4ac26d5c1f0d04bd3ec6ce51a701179fbfb9054f73b69a34b6632741ce3e  skills/token-dashboard/SKILL.md\n0d42f4ea127069f1ed2839241ce169a5019d81c8331aec83452c61b3196501e6  skills/token-optimizer/SKILL.md\n0eb5fddc16bd9913e525defa9d53397d0f9521198ffa05faded2156405aea182  skills/token-optimizer/assets/active-compression-hero.svg\n2c2bd2a6282fac11c5559c5ab6f9785de0ca6dddb6e30a3baa32214c7cec2595  skills/token-optimizer/assets/automated-flow.svg\na70264fe1939d3d278aa4770db5fc497288adac57dc9b60f3b3a00deedffb079  skills/token-optimizer/assets/bash-compression.svg\n6221e23e643ca00eb6da56fee7c9d57811e5b728c93f3ad3b2118d68b2b4ab7b  skills/token-optimizer/assets/before-after.svg\nd58cd90f6503a92816417e158edd632253b2470ae72dba497d0d5cedd551a298  skills/token-optimizer/assets/dashboard-demo.gif\n56f9b41cc979dc9f96fbc28ffabbe47e9e6bd48e74ae16905e52fddbbcd8d840  skills/token-optimizer/assets/dashboard-demo.mp4\n02c4f7c70a14a4a23a1f629a18906ca70e011e3cbe993219d5eceb2b468c5943  skills/token-optimizer/assets/dashboard-overview.png\n277523a16c21a5af1d303d0020ebc2f5bf6a0557e8ef4f51dc65c6af83dd19be  skills/token-optimizer/assets/dashboard.html\n98fb7e1f60abb982a620a0e6a981ee30c77136cb4bb58927266aa158e6ecd2b1  skills/token-optimizer/assets/delta-mode.svg\n306a88ea301858b5e92625256dc4828a81ed213140c4715714ce7ec26498f4e0  skills/token-optimizer/assets/fleet-demo.html\nd0f05944252fc00f15d4b1abc8ba4507741b3f0e5ad822ea5e8f886964cf4509  skills/token-optimizer/assets/hero-terminal.svg\n4d95f14459b765e550e3a54756fe71c0ae8df8c5815590f862e477b0ee04e102  skills/token-optimizer/assets/how-it-works.svg\n4d185b01bbf7ebf2bed1992d94d0c793a2173c7e7bd499a115b17c29aa7ab8fe  skills/token-optimizer/assets/logo.svg\nd69d215a2fb3880bef5a1c6575b24740c9b85ace4deb63669e1ca96b4232e723  skills/token-optimizer/assets/logo.txt\n7821f986184e9725833a19867b1a221299aac15f8f0df6caf24e1d35e6c80447  skills/token-optimizer/assets/quality-example.svg\nd5c014a223609c6fe76ae02c39d91462ce6a461b930d96d899129bd223d70e14  skills/token-optimizer/assets/quality-nudges-loops.svg\n91abcacc40107f348c7c488b375694eaf867baee7848391ab93a096561ec0a01  skills/token-optimizer/assets/real-savings.svg\n3abe4c1a6a7aaf4f71dabe63cda9a6a48d714dea6333acfc1efd963eb7eddd14  skills/token-optimizer/assets/session-database-flow.svg\n4802987c471bad975b0be57b21e3d2a99ac3e8a65f48408fba0be8f038acadb6  skills/token-optimizer/assets/status-bar.svg\n50b2d3469f996a75c40f1e6685c3e28b8e5cdf02fda041a8373d4fb959da17d5  skills/token-optimizer/assets/user-profiles.svg\nf22252b76f9f798c3c764c91ba081a8b8c4a0d2f3bd06436c5ddf75b5496dc5d  skills/token-optimizer/examples/claude-md-optimized.md\nb7dd90a17e1016c9b7cb5f905c5203500b7087e6fdee31f727b90c22e196db5f  skills/token-optimizer/examples/hooks-starter.json\nee2be403e15f3affd6951d10f9018f4e2283441a7dac21e191b3c054989bdc8c  skills/token-optimizer/examples/permissions-deny-template.json\n0a4adb8851b2b71f72edf46dfb2efac28809743f87631c9c088e8248db30a67c  skills/token-optimizer/references/agent-prompts.md\n9a3f0146726ec1cabe767843fc2e9171d497a8aaac9de852bd203c5454a558a0  skills/token-optimizer/references/cli-reference.md\nbe2a92d8ee30c98c8a7051989099edde18a2dcdf26e1131e0bcd906817afd7f0  skills/token-optimizer/references/codex-workflow.md\n2473e04cae5712af02d645613fb06a9d29c44b7d50b8395292d7e89782879a75  skills/token-optimizer/references/cursor-workflow.md\n30dde7f9c7af43e66e109c32c6dd6624d5136bfae7b4852b29ab2a2ce3bb001a  skills/token-optimizer/references/error-recovery.md\n6542aaaa88f7027afb355ad3d0c1814194d261319afcfbbe2c5c9f6a9fabc245  skills/token-optimizer/references/implementation-playbook.md\n4d50ccc927e46a6e8d2e1b0038fd0a5d7a7dfe6b6cf1313a7c25d77f8cf22099  skills/token-optimizer/references/opencode-workflow.md\n29436aad71b223be70d607f86ca80dbf1506cbcf15c28e172d3f564199f42f06  skills/token-optimizer/references/optimization-checklist.md\n4bd1590fb8741ec937d7c4313238983edd5cbe477d478c80ed29fa58dace569f  skills/token-optimizer/references/phase0-setup.md\n45fba0389eb950c47ee6dd4a87632c625ffdaf865ff2c43cc93f7997e64e9c63  skills/token-optimizer/references/presentation-workflow.md\nd51a8fbb84be48d09db883703d402f9b0619f8bf88eb7142e233218cd25d5004  skills/token-optimizer/references/token-flow-architecture.md\nb1ccc6e69e2632966bc474db62027579966bba36e9fd33aed75233b71c921bcf  skills/token-optimizer/scripts/activity_tracker.py\ncc59768feaf7b883cef597ad519fbd61b25654dc30f1f0cc4467c8a4646c7fa6  skills/token-optimizer/scripts/antigravity_doctor.py\n71fa704332b704164ce78bbcbd6735db972221bcbe82bbfa38888fa9c88b953b  skills/token-optimizer/scripts/antigravity_hook_bridge.py\n30c68a2773718fd280600b5eed170356015762b96559255977bd158c30067ba9  skills/token-optimizer/scripts/antigravity_install.py\n144dec5879d912a08769da62b23194c228d51065fdf626bd5acc5e7b585c04d9  skills/token-optimizer/scripts/antigravity_proto.py\nede7082b24e046b2d289bc66ba03389b8a5bd6f878259b20a3eafa29bf6f9edd  skills/token-optimizer/scripts/antigravity_session.py\n60052e41f2c776745a89dfd26fc09f77fad6996c38f5ed43b14c63ebdef6d4be  skills/token-optimizer/scripts/antigravity_state.py\na41cde8b9267618ecaf0ccaef10d6e1a732549d300ac1cabe8ceb3fe654f5763  skills/token-optimizer/scripts/archive_result.py\n541d80525539585be41cdd2267d486b40a3e2a91c255b415aa9944681e4a30c9  skills/token-optimizer/scripts/bash_compress.py\nd9537dfb881f1b4512846474c9edc2aa85c711c04a66778ccd107d9b0c1e4bd4  skills/token-optimizer/scripts/bash_compress_hook.py\n80459ff70b07beb55745ecd355406176a811623d37149dcf5ad61fdb7c1378ff  skills/token-optimizer/scripts/bash_hook.py\n575999417ebb78c5b8ef2971290cc9c5a4900d07027b4cd57d60ee1fb9074bc2  skills/token-optimizer/scripts/bash_whitelist.py\n72914be6f04f89516d8ae2ec0e0c92b50373314a7a502ae63bc8579204818505  skills/token-optimizer/scripts/benchmark.py\nf6a2bafd11aec3559ac1791bfc0a4b1665788491452c5243b7fbfa3961470254  skills/token-optimizer/scripts/build_output_compress.py\n2929d1838762dc28d67f9d73c76279bc9399ce1c46b7cbe93c263da4cf274d6d  skills/token-optimizer/scripts/codex_command_compress.py\n5145f92c58a04a70d54aeda1932ff5ad3b7d2f684dc0e71e9781f4da005d5c93  skills/token-optimizer/scripts/codex_compact_prompt.py\n7872e56dd26e19a2b925f31c6291aac00a3857fdc3ded2b9c44f42522e928101  skills/token-optimizer/scripts/codex_doctor.py\n0a9115da55f27f6110efea994261d308e6a8cd770d12fbe93212891636b622f8  skills/token-optimizer/scripts/codex_hook_bridge.py\ne2086721cc853591816a85e11a09fea3d0d9cc0a1fb30ad51364a21dcb705c0c  skills/token-optimizer/scripts/codex_install.py\n39c2d05a032487efdf5b8523799de21375cb7a70de4637d4d931d47fbbe85afd  skills/token-optimizer/scripts/codex_io.py\n267150b7b278178158439f65938e1ad15b86b234823cf820e16369061ae552f6  skills/token-optimizer/scripts/codex_log_index.py\n251a4e359454641cd8c74445d769d00f3dc4a85d0098616473d204809bda7f4c  skills/token-optimizer/scripts/codex_models.py\nece6f5f034474c0d27eb1611cb933c29c1ab1bc6a1f00603bf5a8e3031103f1e  skills/token-optimizer/scripts/codex_session.py\ndcc2ebe434d19fbad2229450066c3fc3a060ce646a63a110bb362ec349b2bd2d  skills/token-optimizer/scripts/codex_state.py\ne23f6588109fcf67569c237b0aabba0eb2debf0179b22abfa9588e5177f11c4b  skills/token-optimizer/scripts/codex_statusline.py\nbbb2e5845933d4e4f166e1a551b743a56db61e49d0b0cf715f8a1ca239cae5a9  skills/token-optimizer/scripts/command_filters.py\n7a6700c6a4d8b8ddc845cf99204c5e12307617af47acc2674399a6455b717907  skills/token-optimizer/scripts/compression_backfill.py\n347df1e311d1fdd993661b909406921a8dc3c36a8bdc47e2a56972aa794a5aad  skills/token-optimizer/scripts/compression_log.py\nec76ead70f24db78d3c5df70c908affd740cf9b92909ce3a181f453bc5345c1c  skills/token-optimizer/scripts/context_intel.py\ndbd7e280acfbe4b0842839d221748b6ba1122fb6828bd822a4e36d61c4e7d2be  skills/token-optimizer/scripts/context_pressure.py\n52f14b6a55a2273af90d89ea24d6a1eec18dae580f701afa515a8968a39a29d7  skills/token-optimizer/scripts/copilot_doctor.py\n0622aee5afa7ccda19ba99ef06e4362e5711f00338f721e16294835e818b6a3f  skills/token-optimizer/scripts/copilot_hook_bridge.py\n7a841e4a7ef4716bd2ab8841c5a945101e518c92a9d6bbc6fe8b1084a6a1d0b7  skills/token-optimizer/scripts/copilot_install.py\nb3eae57156d76a39b20eb8f3f5c9272aa64023d5d37f223a90c8a8453728b32e  skills/token-optimizer/scripts/copilot_session.py\n8c034fc52778e8194d54c12b1cecccde56d1ccbaaf5119914634331929cd927e  skills/token-optimizer/scripts/copilot_state.py\n0870dac309e6904621968b2efee829763510b8736f3bdea2b004cadf03cf7d52  skills/token-optimizer/scripts/copilot_vscode.py\nfa4ac79ecb32f17df14649dde03391b1f6cf540672b6be3899da4df71fae930e  skills/token-optimizer/scripts/cowork_doctor.py\na0ea11012e46e305949a219c52f5a1af5c263cd15d5ff71c3125ce73770223ff  skills/token-optimizer/scripts/cowork_install.py\n7c3ffcbdbab51cab0cc594e642dc95550d5dc7b8c24b062b971cf8993afe8549  skills/token-optimizer/scripts/credential_patterns.py\n24fcb1021c48d4bdbd498207331fb6b71257dc4fab2578776d0d14a03e5c5aa1  skills/token-optimizer/scripts/cursor_doctor.py\n9db31f14ff27afc1f65840ddb1045d956639db300547c837540737d862c34de3  skills/token-optimizer/scripts/cursor_hook_bridge.py\nb614616163cdf982f3a56ec05f9e124509fadba8cae34fe6455af16db01a36c3  skills/token-optimizer/scripts/cursor_install.py\nd79e23538591018c7b0fe659974fdd8862a39a5e5fc00e906a315f9fe41ef160  skills/token-optimizer/scripts/cursor_session.py\n093216550b4a1928d696ea753a03b1312e5de76e2f84d1a270d5eafa190ab1d5  skills/token-optimizer/scripts/cursor_state.py\nde506f1aea65d21570b6cd8d47ba12feed7d5dca51e0a8fcbeaad63c32465cf1  skills/token-optimizer/scripts/delta_diff.py\na010b8469a17165848e4a0777af59350c308dd4139721271894f3df2063a75d0  skills/token-optimizer/scripts/detectors/__init__.py\ncf4e8751d33ae096ffee05171fb739d0f167d253ab1dcaa544e755f03e25da7f  skills/token-optimizer/scripts/detectors/bad_decomposition.py\n49f2f1a253e9d390d0301ec3306573c8c208455a7b40ccd8df57139b228a4dbb  skills/token-optimizer/scripts/detectors/cache_instability.py\nbda6d69a36ff7a0fcff1e4a55372c37035e172ed03d89a911fbfc83a6e0800ba  skills/token-optimizer/scripts/detectors/looping.py\ne843d6e486cf429a4d54808cff1542744f5a564087cfc4c9265d03ee37908ce3  skills/token-optimizer/scripts/detectors/output_waste.py\n0ef74987eef51826d57735193f5c0a491c7041065cd26964e317718b920a5894  skills/token-optimizer/scripts/detectors/overpowered.py\nf72ea1bfed510c1e2711c314a9e0d6d81ba82c185b6a3655d6772af124e8c243  skills/token-optimizer/scripts/detectors/pdf_ingestion.py\n81a93d3c01a7fe80b16fcff7151680243b40ced6671903fe843a3aa0069470b8  skills/token-optimizer/scripts/detectors/registry.py\naf5a096114dbf90c1ace395b751e7178baaf000e82b90e71c4fcfb3e6fdd51e1  skills/token-optimizer/scripts/detectors/respond_to_bash.py\nee5b0e91cce18a825a401f7fe6b85911be15e259db3f2f4afc0b326b19128385  skills/token-optimizer/scripts/detectors/retry_churn.py\n833496b308cd3034ac1fd9401c1b824c3c64cd02f89abac02d6f4cd97e9ea16f  skills/token-optimizer/scripts/detectors/tool_cascade.py\nb8345d767a48f40d275480973681baf56dc76329d8f3eaa6260966d6d6b787cd  skills/token-optimizer/scripts/detectors/wasteful_thinking.py\n19bd7d9fcb292e21377e8f21a0c401019e90e6e925cf8f0ed1087c196c1b8c55  skills/token-optimizer/scripts/detectors/weak_model.py\nfef4a2385caf3c9495987007d16edf73a022cddbd0aecf2293025e3d9599996d  skills/token-optimizer/scripts/detectors/websearch_routing.py\n7c7443075daafd297218cc4e30178e43d4f5ed1319c9bf9d252412b3e586bc8b  skills/token-optimizer/scripts/grok_doctor.py\nb4c28ae5e1c89de069d149fe549955b5e4e1704d2e38edabc3f71517d4cca087  skills/token-optimizer/scripts/grok_hook_bridge.py\n20b97dd589644692fdc0d8d7c3bb99dcc3bd96b26bf5bf3e73d6ac2817a0d742  skills/token-optimizer/scripts/grok_install.py\n6792c75ebcbc1066b61275d0ef5278a9af7a4cb776eff2e3add1b40704402f44  skills/token-optimizer/scripts/grok_session.py\nbb3d3a4289216607a95695b1f9f30acbab04d2a4b305c95b9f3d6541a2180e59  skills/token-optimizer/scripts/grok_state.py\na98e37ce9f7d7b8cc12eb8e38a5c2b94e660b2404bf5100793ccba686b5e7510  skills/token-optimizer/scripts/hermes_doctor.py\n4b4faeea428535fa2b5f9e7994e287ab043fef82a3fa2bad0208691679498431  skills/token-optimizer/scripts/hermes_hook_bridge.py\nf64b5c2fa2a3415fdf0b9097f8274a74eb943aabd8861040bc915eedb2baca78  skills/token-optimizer/scripts/hermes_install.py\na62fde80c927ae187efe3915e24c9bceff13d3749d0a1eb7c1ab46a87188ceee  skills/token-optimizer/scripts/hermes_session.py\n74ca40b79fa3811382b29e34094dbfdfb568af2969fc7a34382c4e47fd386b52  skills/token-optimizer/scripts/hermes_state.py\nc68d12578671bcbe8273ded991858e17ecd97ea6c087dc306b95e410cba42de9  skills/token-optimizer/scripts/hook_io.py\n270dfa3ced4819591876d21ce3df747e3867b5ea62b9ec04e28a807c265d39f6  skills/token-optimizer/scripts/hook_runtime.py\nf647eabc7067499b74f72c4ba5c55738fdc18c6539a7a5b99c65d03126016d8d  skills/token-optimizer/scripts/injection.py\n8504876437930537702f954c3339e3c84fa9099bf4ad8dfa53dce2299caa9dd1  skills/token-optimizer/scripts/install_reconcile.py\ncad09bac209cc4360fd05d4a4e5182b333e9be4ade2671ee726a392984aa3314  skills/token-optimizer/scripts/measure.py\nbd27835f85c5fd45c9cf67cb8b969038489249c56182ec2638a4f1223799b98f  skills/token-optimizer/scripts/outline.py\n4e103d92829aa5fa851be923ad87aa1b548b17638ce3b090c66fa558f0279f17  skills/token-optimizer/scripts/pipeline_analyzer.py\n94e4c12851d746ba4caba68ccb04793eafd24b88a32189a86d515d21fca05540  skills/token-optimizer/scripts/plugin_env.py\nc1e9af1560aa99cfb48f205076fb3c30b7b48e7a9ec0cd36155778b711e71fb8  skills/token-optimizer/scripts/py_trust.py\n03f6dce67e36484baa8d85d2ba3cda8198f9c9c82b560cf98d646718385131d8  skills/token-optimizer/scripts/quality_cache_gate.py\naab6d7ae2dcf9ec591a4b19f32a3001b546429794e95bf682a52670d95d771b5  skills/token-optimizer/scripts/read_cache.py\n722499df4363f1bbb4259a8d33fad47c571c83e0304483781d79003d9ee7a910  skills/token-optimizer/scripts/refetch_fingerprint.py\nc768a1cb5cdaa2bce6d765f8fc328891213f528aa876d66eb479768d3a348f42  skills/token-optimizer/scripts/refetch_guard.py\nf098ece01bc8acf55493ee1f2f482af8fb16f4a9c6a4664784074fd73f41e866  skills/token-optimizer/scripts/routing_advisor.py\ne2605f386ebf88fbbdba87d56395debb12710a2baabcc9094a4e2a31df5debc5  skills/token-optimizer/scripts/runtime_env.py\n47c3eb92ad33dadaa29437a91e82fb7500429f1c5e75b6ee07cc7272337f6f52  skills/token-optimizer/scripts/session_store.py\nedcad0d766033f18b0decdc7a85365322037d2423ffb02fa13bd1bf89ac9ddbd  skills/token-optimizer/scripts/spawn_utils.py\n9f6cee162c701470bb6dd12472dcbc5b53c01d45e4057b0c047fb24cb1edb6bb  skills/token-optimizer/scripts/statusline.js\ne43ca6e2bf0955bd88f1dcf1103bf8ca747f388a8947570591e31fec11009e38  skills/token-optimizer/scripts/structure_map.py\n4fe0f40dc7e482bc21ff3091d1761a70af454b0d1dd6bcb985457f72315a5481  skills/token-optimizer/scripts/structure_map_ts.py\n2d6e2ae6e0c571a5178515403ca0a58c3368526e3c65926301b6278f09f4edd9  skills/token-optimizer/scripts/structure_replay.py\ncd338022b5477e291438ba59601aea0f8171cc699e521f41f7bead8ec2fe22c2  skills/token-optimizer/scripts/thrash_guard.py\n9bc912e9896e16c921c907d6fdf2e558413846c7f20a43eaa153a87c30a4d5e5  skills/token-optimizer/scripts/token_estimate.py\n012434c528a9b440f1fce2786ba702c2b03c2a4af9c7e5392589b74d7b812a06  skills/token-optimizer/scripts/utf8_io.py\n";
 
 afterEach(() => {
+  vi.doUnmock("node:fs");
+  vi.resetModules();
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
+
+async function tokenRuntimeWithFs(
+  overrides: (original: typeof import("node:fs")) => Record<string, unknown>,
+) {
+  vi.resetModules();
+  vi.doMock("node:fs", async (importOriginal) => {
+    const original = await importOriginal<typeof import("node:fs")>();
+    return { ...original, ...overrides(original) };
+  });
+  return import("../../src/tools/token-optimizer-runtime.js");
+}
 
 function fixture(): {
   root: string;
@@ -1218,6 +1231,150 @@ describe("Token Optimizer ordinary adopter runtime", () => {
     expect(unreceipted.detail).toMatch(/managed hook changed|unreceipted/i);
   });
 
+  it("preserves a hooks edit that occurs while exclusion snapshots cleanup input", async () => {
+    const values = fixture();
+    const owned = managedOwnedPaths(values.project, values.checkoutRoot);
+    const receipt = baseReceipt(values.project, owned);
+    const hooks = hooksPath(values.project);
+    const original = JSON.parse(readFileSync(hooks, "utf8")) as Record<string, unknown>;
+    writeFileSync(hooks, `${JSON.stringify({ ...original, custom: "old" }, null, 2)}\n`, "utf8");
+    const edited = Buffer.from(
+      `${JSON.stringify({ ...original, custom: "new value retained by the user" }, null, 2)}\n`,
+      "utf8",
+    );
+    const descriptorPaths = new Map<number, string>();
+    let pathnameHooksReads = 0;
+    let descriptorHooksReads = 0;
+    const runtime = await tokenRuntimeWithFs((fs) => ({
+      readFileSync: ((...args: unknown[]) => {
+        const value = Reflect.apply(fs.readFileSync, fs, args);
+        if (String(args[0]) === hooks && ++pathnameHooksReads === 2) {
+          writeFileSync(hooks, edited);
+        }
+        return value;
+      }) as typeof fs.readFileSync,
+      openSync: ((...args: unknown[]) => {
+        const descriptor = Reflect.apply(fs.openSync, fs, args) as number;
+        descriptorPaths.set(descriptor, String(args[0]));
+        return descriptor;
+      }) as typeof fs.openSync,
+      readSync: ((...args: unknown[]) => {
+        const read = Reflect.apply(fs.readSync, fs, args) as number;
+        if (descriptorPaths.get(Number(args[0])) === hooks && ++descriptorHooksReads === 2) {
+          writeFileSync(hooks, edited);
+        }
+        return read;
+      }) as typeof fs.readSync,
+    }));
+    let deleted = false;
+
+    const result = await runtime.reconcileTokenOptimizer(
+      {
+        project: values.project,
+        installRoot: values.installRoot,
+        selected: false,
+        acceptLicense: true,
+        profile: "quiet",
+      },
+      {
+        readReceipt: async () => receipt,
+        deleteReceipt: async () => {
+          deleted = true;
+        },
+      },
+    );
+
+    expect(result.state).toBe("blocked");
+    expect(readFileSync(hooks)).toEqual(edited);
+    expect(deleted).toBe(false);
+  });
+
+  it("blocks cleanup when a receipt-owned hooks path changes while its snapshot opens", async () => {
+    const values = fixture();
+    const owned = managedOwnedPaths(values.project, values.checkoutRoot);
+    const receipt = baseReceipt(values.project, owned);
+    const hooks = hooksPath(values.project);
+    const displaced = join(values.root, "receipt-owned-hooks.json");
+    const replacement = Buffer.from('{"custom":"replacement owned by a user"}\n', "utf8");
+    let swapped = false;
+    const runtime = await tokenRuntimeWithFs((fs) => ({
+      openSync: ((...args: unknown[]) => {
+        if (!swapped && String(args[0]) === hooks) {
+          fs.renameSync(hooks, displaced);
+          writeFileSync(hooks, replacement);
+          swapped = true;
+        }
+        return Reflect.apply(fs.openSync, fs, args);
+      }) as typeof fs.openSync,
+    }));
+    let deleted = false;
+
+    const result = await runtime.reconcileTokenOptimizer(
+      {
+        project: values.project,
+        installRoot: values.installRoot,
+        selected: false,
+        acceptLicense: true,
+        profile: "quiet",
+      },
+      {
+        readReceipt: async () => receipt,
+        deleteReceipt: async () => {
+          deleted = true;
+        },
+      },
+    );
+
+    expect(swapped).toBe(true);
+    expect(result.state).toBe("blocked");
+    expect(readFileSync(hooks)).toEqual(replacement);
+    expect(existsSync(integrationPath(values.project))).toBe(true);
+    expect(deleted).toBe(false);
+  });
+
+  it("preserves a replacement hooks file when the atomic rename cannot complete", async () => {
+    const values = fixture();
+    const owned = managedOwnedPaths(values.project, values.checkoutRoot);
+    const receipt = baseReceipt(values.project, owned);
+    const hooks = hooksPath(values.project);
+    const displaced = join(values.root, "receipt-owned-hooks.json");
+    const replacement = Buffer.from('{"custom":"replacement owned by a user"}\n', "utf8");
+    let failedRenames = 0;
+    const runtime = await tokenRuntimeWithFs((fs) => ({
+      renameSync: ((from: string, to: string) => {
+        if (to === hooks) {
+          failedRenames += 1;
+          fs.renameSync(hooks, displaced);
+          writeFileSync(hooks, replacement);
+          throw new Error("injected rename failure");
+        }
+        return fs.renameSync(from, to);
+      }) as typeof fs.renameSync,
+    }));
+    let deleted = false;
+
+    const result = await runtime.reconcileTokenOptimizer(
+      {
+        project: values.project,
+        installRoot: values.installRoot,
+        selected: false,
+        acceptLicense: true,
+        profile: "quiet",
+      },
+      {
+        readReceipt: async () => receipt,
+        deleteReceipt: async () => {
+          deleted = true;
+        },
+      },
+    );
+
+    expect(failedRenames).toBe(1);
+    expect(result.state).toBe("blocked");
+    expect(readFileSync(hooks)).toEqual(replacement);
+    expect(deleted).toBe(false);
+  });
+
   it("reports a blocked exclusion when receipt deletion fails after safe cleanup", async () => {
     const values = fixture();
     const owned = managedOwnedPaths(values.project, values.checkoutRoot);
@@ -1597,24 +1754,29 @@ describe("Token Optimizer ordinary adopter runtime", () => {
         message: /invalid hook command/i,
       },
       {
-        name: "selected Python mismatch",
-        hooks: (values) =>
-          managedHooks("quiet", values.checkoutRoot, join(values.root, "other.exe")),
-        message: /did not use the selected Python/i,
-      },
-      {
-        name: "selected Python path prefix impostor",
-        hooks: (values, pythonExecutable) =>
-          managedHooks("quiet", values.checkoutRoot, `${pythonExecutable}-impostor`),
-        message: /did not use the selected Python/i,
-      },
-      {
         name: "relative Python override",
         hooks: (values) => managedHooks("quiet", values.checkoutRoot, "relative-python"),
         python: () => "relative-python",
         message: /Python executable must be absolute/i,
       },
     ];
+
+    if (process.platform === "win32") {
+      scenarios.push(
+        {
+          name: "selected Python mismatch",
+          hooks: (values) =>
+            managedHooks("quiet", values.checkoutRoot, join(values.root, "other.exe")),
+          message: /did not use the selected Python/i,
+        },
+        {
+          name: "selected Python path prefix impostor",
+          hooks: (values, pythonExecutable) =>
+            managedHooks("quiet", values.checkoutRoot, `${pythonExecutable}-impostor`),
+          message: /did not use the selected Python/i,
+        },
+      );
+    }
 
     for (const scenario of scenarios) {
       const values = fixture();
@@ -1922,7 +2084,9 @@ describe("Token Optimizer ordinary adopter runtime", () => {
     const bin = join(values.root, "external-tools");
     externalBin(bin, "git");
     const curlExecutable = externalBin(bin, "curl");
+    const calls: string[][] = [];
     const runner = fakeRunner((argv) => {
+      calls.push([...argv]);
       if (argv.includes("HEAD^{tree}")) return { stdout: `${TOKEN_OPTIMIZER_PIN.tree}\n` };
       if (argv.includes(`${TOKEN_OPTIMIZER_PIN.tag}^{commit}`)) {
         return { stdout: `${TOKEN_OPTIMIZER_PIN.commit}\n` };
@@ -1938,8 +2102,24 @@ describe("Token Optimizer ordinary adopter runtime", () => {
         return deps.acquire({ installRoot: values.installRoot, source: TOKEN_OPTIMIZER_PIN });
       }),
     ).rejects.toThrow(/manifest identity mismatch/i);
-    expect(realpathSync.native(curlExecutable).toLowerCase()).toContain(
-      "\\external-tools\\curl.exe",
+    const expectedCurl = realpathSync.native(curlExecutable);
+    const normalizeExecutable = (value: string) =>
+      process.platform === "win32" ? value.toLowerCase() : value;
+    const curlCall = calls.find(
+      ([executable]) =>
+        executable !== undefined &&
+        normalizeExecutable(executable) === normalizeExecutable(expectedCurl),
+    );
+    expect(curlCall).toEqual(
+      expect.arrayContaining([
+        expectedCurl,
+        "--fail",
+        "--location",
+        "--silent",
+        "--show-error",
+        "--max-time",
+        "120",
+      ]),
     );
 
     const missingValues = fixture();
