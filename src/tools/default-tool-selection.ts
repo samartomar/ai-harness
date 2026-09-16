@@ -10,6 +10,7 @@ export const DEFAULT_DEVELOPER_TOOL_IDS = [
   "token-optimizer",
   "context7",
   "markitdown",
+  "playwright",
 ] as const;
 
 export type DeveloperToolId = (typeof DEFAULT_DEVELOPER_TOOL_IDS)[number];

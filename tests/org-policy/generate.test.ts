@@ -947,24 +947,34 @@ describe("policy generate", () => {
         };
       }
     ).__aihWorkbenchModel;
-    const control = Object.values(model.workbenchBundle.assets).find((asset) => {
-      const candidate = model.workbenchBindings[asset.id]?.candidate;
-      return asset.authoring.action === "select-control" && candidate?.kind === "mcp";
-    });
-    if (control === undefined) throw new Error("expected a generic MCP control");
-    const search = document.querySelector('[aria-label="Search catalog"]') as unknown as {
-      value: string;
-      dispatchEvent(event: unknown): boolean;
-    } | null;
-    if (search === null) throw new Error("expected catalog search");
-    search.value = control.id;
-    search.dispatchEvent(new window.Event("input", { bubbles: true }));
-    const controlButton = document.querySelector(
-      `button[data-workbench-row-action][data-workbench-asset-id="${control.id}"]`,
-    );
-    if (controlButton === null) throw new Error("expected generic control row");
-    controlButton.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
-    await settle(window, () => preview.value.includes('"schemaVersion": 3'));
+    const control = model.workbenchBundle.assets["aih/sequential-thinking"];
+    const controlCandidate = control && model.workbenchBindings[control.id]?.candidate;
+    if (
+      control === undefined ||
+      control.authoring.action !== "select-control" ||
+      controlCandidate?.kind !== "mcp"
+    )
+      throw new Error("expected the visible sequential-thinking MCP control");
+    const isSelected = (
+      JSON.parse(preview.value) as {
+        authoringSelections?: { roots?: Array<{ assetId?: string }> };
+      }
+    ).authoringSelections?.roots?.some((root) => root.assetId === control.id);
+    if (!isSelected) {
+      const search = document.querySelector('[aria-label="Search catalog"]') as unknown as {
+        value: string;
+        dispatchEvent(event: unknown): boolean;
+      } | null;
+      if (search === null) throw new Error("expected catalog search");
+      search.value = control.id;
+      search.dispatchEvent(new window.Event("input", { bubbles: true }));
+      const controlButton = document.querySelector(
+        `button[data-workbench-row-action][data-workbench-asset-id="${control.id}"]`,
+      );
+      if (controlButton === null) throw new Error("expected generic control row");
+      controlButton.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+      await settle(window, () => preview.value.includes('"schemaVersion": 3'));
+    }
 
     const versioned = JSON.parse(preview.value) as {
       schemaVersion: number;
@@ -1072,7 +1082,8 @@ describe("policy generate", () => {
 
   it("resets generic Workbench state before the next catalog selection", async () => {
     const window = workbenchWindow();
-    const html = policyStudioHtml(tinyStudioModel());
+    const initialModel = tinyStudioModel();
+    const html = policyStudioHtml(initialModel);
     window.document.write(html);
     loadStudio(window, html);
     const document = window.document;
@@ -1112,7 +1123,7 @@ describe("policy generate", () => {
     await settle(window, () =>
       (document.getElementById("framework-rows")?.textContent ?? "").includes("Controls 0"),
     );
-    expect(JSON.parse(preview.value)).toEqual(defaultStudioPolicy());
+    expect(JSON.parse(preview.value)).toEqual(initialModel.initialPolicy);
     expect(requestButton()?.hasAttribute("aria-pressed")).toBe(false);
     expect(requestButton()?.textContent).toBe("Request review");
 
@@ -1329,11 +1340,13 @@ describe("policy generate", () => {
         ?.getAttribute("data-open"),
     ).toBe("false");
     expect(help?.getAttribute("aria-expanded")).toBe("false");
+    expect(document.querySelector("main#workbench")?.getAttribute("tabindex")).toBe("-1");
+    expect(document.querySelector("#workbench-detail-title")?.getAttribute("tabindex")).toBe("-1");
     expect(
-      Array.from(document.querySelectorAll("[tabindex]")).map((element) =>
-        element.getAttribute("tabindex"),
+      Array.from(document.querySelectorAll("[tabindex]")).every(
+        (element) => element.getAttribute("tabindex") === "-1",
       ),
-    ).toEqual(["-1"]);
+    ).toBe(true);
     expect(defaultStudioPolicy().governance?.externalCuration).toEqual([]);
   });
 

@@ -81,6 +81,7 @@ describe("developer-tool runtime receipts", () => {
         serena: operation("serena"),
         context7: operation("context7"),
         markitdown: operation("markitdown"),
+        playwright: operation("playwright"),
         "token-optimizer": operation("token-optimizer"),
       },
     });
@@ -92,6 +93,7 @@ describe("developer-tool runtime receipts", () => {
       "token-optimizer",
       "context7",
       "markitdown",
+      "playwright",
     ] as const) {
       await reconcile({
         id,
@@ -113,13 +115,14 @@ describe("developer-tool runtime receipts", () => {
         serena: { sourceDigest: sha("source:serena") },
         context7: { sourceDigest: sha("source:context7") },
         markitdown: { sourceDigest: sha("source:markitdown") },
+        playwright: { sourceDigest: sha("source:playwright") },
       },
     });
     expect(receipt.tools["token-optimizer"]).toBeUndefined();
     expect(layout.runtimeReceiptPath.startsWith(layout.projectStateRoot)).toBe(true);
   });
 
-  it.each(["code-review-graph", "codebase-memory-mcp", "context7"] as const)(
+  it.each(["code-review-graph", "codebase-memory-mcp", "context7", "playwright"] as const)(
     "rejects a forged same-root $id ownership claim without deleting project data",
     (id) => {
       const ctx = context();

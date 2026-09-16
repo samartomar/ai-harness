@@ -33,6 +33,7 @@ const developerTools = [
   "token-optimizer",
   "context7",
   "markitdown",
+  "playwright",
 ] as const;
 
 function consumerRoot(): string {
@@ -270,7 +271,7 @@ describe("public developer-tools setup", () => {
     });
   });
 
-  it("includes the same six-tool selection in the ordinary public init preview", () => {
+  it("includes the same seven-tool selection in the ordinary public init preview", () => {
     const root = consumerRoot();
     const before = snapshot(root);
 
@@ -419,7 +420,7 @@ describe("public developer-tools setup", () => {
     expect(snapshot(root)).toEqual(before);
   });
 
-  it("reconciles all six through repeated setup, restart, worktree switching, and a later pin change", async () => {
+  it("reconciles all seven through repeated setup, restart, worktree switching, and a later pin change", async () => {
     const stateRoot = consumerRoot();
     const worktreeA = consumerRoot();
     const worktreeB = consumerRoot();
@@ -511,7 +512,13 @@ describe("public developer-tools setup", () => {
       mcpServers: Record<string, unknown>;
     };
     expect(Object.keys(projected.mcpServers)).toEqual(
-      expect.arrayContaining(["code-review-graph", "codebase-memory-mcp", "serena", "context7"]),
+      expect.arrayContaining([
+        "code-review-graph",
+        "codebase-memory-mcp",
+        "serena",
+        "context7",
+        "playwright",
+      ]),
     );
   });
 
@@ -624,6 +631,7 @@ describe("public developer-tools setup", () => {
       "token-optimizer": "verified",
       context7: "verified",
       markitdown: "verified",
+      playwright: "verified",
     });
     expect(result.report?.ok).toBe(false);
   });

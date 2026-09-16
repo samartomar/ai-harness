@@ -8,6 +8,7 @@ const MCP_SERVER_BY_DEVELOPER_TOOL = {
   "codebase-memory-mcp": "codebase-memory-mcp",
   serena: "serena",
   context7: "context7",
+  playwright: "playwright",
 } as const;
 
 const DEFAULT_DEVELOPER_MCP_NAMES = new Set<string>(Object.values(MCP_SERVER_BY_DEVELOPER_TOOL));

@@ -21,7 +21,7 @@ function v3Policy(overrides: Record<string, unknown> = {}): Record<string, unkno
 }
 
 describe("developer tool policy selection", () => {
-  it("uses the six defaults for no policy and preserves legacy V3 omission semantics", () => {
+  it("uses the seven defaults for no policy and preserves legacy V3 omission semantics", () => {
     expect(resolveDeveloperToolSelectionForOrgPolicyV1(undefined)).toMatchObject({
       accepted: true,
       source: "default",
@@ -32,6 +32,7 @@ describe("developer tool policy selection", () => {
         "token-optimizer",
         "context7",
         "markitdown",
+        "playwright",
       ],
     });
     expect(resolveDeveloperToolSelectionForOrgPolicyV1(parseOrgPolicy(v3Policy()))).toMatchObject({
@@ -44,6 +45,7 @@ describe("developer tool policy selection", () => {
         "token-optimizer",
         "context7",
         "markitdown",
+        "playwright",
       ],
     });
     expect(
@@ -64,6 +66,7 @@ describe("developer tool policy selection", () => {
         "token-optimizer",
         "context7",
         "markitdown",
+        "playwright",
       ],
     });
   });
@@ -112,6 +115,26 @@ describe("developer tool policy selection", () => {
       accepted: true,
       source: "explicit",
       selected: [],
+    });
+  });
+
+  it("keeps an existing six-tool policy unchanged and round-trips a Playwright exclusion", () => {
+    const priorSelection = [
+      "code-review-graph",
+      "codebase-memory-mcp",
+      "serena",
+      "token-optimizer",
+      "context7",
+      "markitdown",
+    ];
+    const existing = parseOrgPolicy(v3Policy({ developerTools: { selected: priorSelection } }));
+    expect(resolveDeveloperToolSelectionForOrgPolicyV1(existing).selected).toEqual(priorSelection);
+    const excluded = parseOrgPolicy(v3Policy({ developerTools: { excluded: ["playwright"] } }));
+    const reopened = parseOrgPolicy(JSON.parse(JSON.stringify(excluded)));
+    expect(resolveDeveloperToolSelectionForOrgPolicyV1(reopened)).toMatchObject({
+      accepted: true,
+      selected: priorSelection,
+      excluded: ["playwright"],
     });
   });
 

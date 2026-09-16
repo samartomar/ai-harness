@@ -33,6 +33,18 @@ describe("catalog source providers", () => {
   const superpowersSnapshot = snapshots.get("superpowers")!;
   const canonicalEccSnapshot = { ...eccSnapshot, owner: "affaan-m", repo: "ECC" };
 
+  it("keeps Playwright's runtime pin visible without granting protected control authority", () => {
+    const catalog = policyAuthoringCatalog();
+    const playwright = catalog.unavailableMcp.find((entry) => entry.id === "playwright");
+    expect(playwright?.configuredIdentity).toBe("@playwright/mcp@0.0.81");
+    expect(playwright?.server).toMatchObject({
+      type: "stdio",
+      args: expect.arrayContaining(["@playwright/mcp@0.0.81", "--headless", "--isolated"]),
+    });
+    expect(playwright?.reason).toContain("no current protected Scanner evidence");
+    expect(catalog.mcp.some((entry) => entry.id === "playwright")).toBe(false);
+  });
+
   it("prepares first-party content from an explicit package identity", () => {
     const catalog = policyAuthoringCatalog();
     expect(

@@ -3,9 +3,38 @@ import { createHash } from "node:crypto";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import type { Page } from "@playwright/test";
 import { expect, test } from "./fixture.js";
 
 test.use({ artifact: "packed-policy-workbench.html" });
+
+const emptyImportedPolicy = {
+  schemaVersion: 2,
+  minimumPosture: "vibe",
+  references: { repoContract: "ai-coding/project.json" },
+  governance: {
+    policyVersion: "1",
+    catalog: { reviewed: [], custom: [] },
+    activations: [],
+    authority: { approvals: [], decisions: [] },
+    externalCuration: [],
+    externalSelections: [],
+    eccMcpApprovals: [],
+    hookRegistrations: [],
+  },
+};
+const emptyImportedPolicyBytes = `${JSON.stringify(emptyImportedPolicy, null, 2)}\n`;
+
+async function importEmptyPolicy(page: Page): Promise<void> {
+  await page.locator("#policy-file").setInputFiles({
+    name: "empty-policy.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(emptyImportedPolicyBytes),
+  });
+  await expect(page.locator("#announcement")).toContainText("Policy imported");
+  await expect(page.locator("#config-preview")).toHaveValue(emptyImportedPolicyBytes);
+}
+
 test("one installed Core version refreshes a source and preserves old browser policy pins", async ({
   page,
   workbench,
@@ -22,6 +51,7 @@ test("one installed Core version refreshes a source and preserves old browser po
     { encoding: "utf8", windowsHide: true, timeout: 30_000 },
   );
   expect(preparation.status, preparation.stderr || preparation.stdout).toBe(0);
+  await importEmptyPolicy(page);
   const env = { ...process.env, AIH_WORKBENCH_DATA: resolve(fixture, "store") };
   const commandTimings: Array<{ command: string; wallMs: number }> = [];
   const invoke = (args: string[], extraEnv: Record<string, string> = {}) => {
@@ -191,6 +221,7 @@ test("one installed Core version refreshes a source and preserves old browser po
   const ui = JSON.parse(expectAsyncSuccess(uiResult));
   expect(ui.catalogSourceRevisions["source:mattpocock"]).toBe("f".repeat(40));
   await page.goto(pathToFileURL(currentHtml).href);
+  await importEmptyPolicy(page);
   await page.locator('[data-workbench-source-tab="source:mattpocock"]').click();
   await page
     .locator(
@@ -282,12 +313,19 @@ test("published source evidence survives installed browser export and inert poli
   workbench,
 }, testInfo) => {
   const assetId = "mattpocock/skill:tdd";
+  await importEmptyPolicy(page);
   await page.locator('[data-workbench-source-tab="source:mattpocock"]').click();
   const row = page.locator(`article[data-workbench-asset-id="${assetId}"]`);
+  const inspector = page.locator("#workbench-detail-panel[data-workbench-detail]");
   await expect(row).toBeVisible();
-  await row.locator("button[data-workbench-expand-id]").click();
-  await expect(row.locator(".workbench-evidence-sheet")).toContainText("Reported result:");
-  await row.locator("button[data-workbench-detail-id]").click();
+  await row.locator("button.workbench-row-title[data-workbench-expand-id]").click();
+  await expect(inspector).toHaveAttribute("data-workbench-inspector-asset-id", assetId);
+  await expect(inspector.locator("#workbench-detail-title")).toBeVisible();
+  await expect(inspector.locator(".workbench-evidence-sheet")).toContainText("Reported result:");
+  await inspector.locator(".workbench-item-technical > summary").click();
+  await inspector.locator("button[data-workbench-detail-id]").click();
+  await expect(inspector.locator(".workbench-detail-advanced")).not.toHaveAttribute("open", "");
+  await inspector.locator(".workbench-detail-advanced > summary").click();
   const detail = JSON.parse(
     (await page.locator(".workbench-detail-advanced pre").textContent()) ?? "{}",
   );
@@ -413,11 +451,22 @@ test("installed package generates a complete offline artifact with usable export
     const activeSource = document.querySelector<HTMLElement>(
       '[data-workbench-source-tab][aria-pressed="true"]',
     )?.dataset.workbenchSourceTab;
+    const setupAssetIds = new Set(
+      [...document.querySelectorAll<HTMLElement>("[data-developer-tool-catalog-asset-id]")].map(
+        (element) => element.dataset.developerToolCatalogAssetId,
+      ),
+    );
     return {
       assetCount: Object.keys(bundle.assets).length,
-      activeSourceCount: Object.values(bundle.assets).filter(
-        (asset) => asset.sourceId === activeSource,
+      activeSourceCount: Object.entries(bundle.assets).filter(
+        ([assetId, asset]) =>
+          asset.sourceId === activeSource &&
+          !setupAssetIds.has(assetId) &&
+          assetId !== "aih/github",
       ).length,
+      setupEntriesDuplicated: [
+        ...document.querySelectorAll<HTMLElement>("article[data-workbench-asset-id]"),
+      ].some((row) => setupAssetIds.has(row.dataset.workbenchAssetId)),
       sourceIsolated: [
         ...document.querySelectorAll<HTMLElement>("article[data-workbench-asset-id]"),
       ].every((row) => {
@@ -434,9 +483,11 @@ test("installed package generates a complete offline artifact with usable export
   expect(shape.assetCount).toBeGreaterThan(100);
   expect(shape.activeSourceCount).toBeGreaterThan(0);
   await expect(initialRows).toHaveCount(Math.min(50, shape.activeSourceCount));
+  expect(shape.setupEntriesDuplicated).toBe(false);
   expect(shape.sourceIsolated).toBe(true);
   expect(shape.legacyArrays).toEqual([]);
   expect(shape.organizationKinds).toEqual(["agent", "mcp", "skill"]);
+  await importEmptyPolicy(page);
   await page.locator('[data-workbench-source-tab="source:packed-organization"]').click();
   await page.getByRole("searchbox", { name: "Search catalog" }).fill("Packed organization MCP");
   await expect(page.locator("article[data-workbench-asset-id]")).toHaveCount(1);
@@ -477,18 +528,173 @@ test("installed package generates a complete offline artifact with usable export
   await download.saveAs(path);
   expect(await readFile(path, "utf8")).toBe(initial);
 
-  // Following an overlap must make its programmatic filter visible to the user.
-  await page.locator('[data-workbench-source-tab="source:aih-core"]').click();
+  // A saved hidden Core request remains inspectable from the overlapping ECC source.
   const search = page.getByRole("searchbox", { name: "Search catalog" });
-  await search.fill("context7");
-  await page.getByRole("button", { name: "Request review for Context7", exact: true }).click();
+  const githubRequest = await page.evaluate(() => {
+    const model = window as unknown as {
+      __aihWorkbenchModel: {
+        workbenchBundle: {
+          assets: Record<
+            string,
+            {
+              id: string;
+              sourceId: string;
+              sourceRevisionId: string;
+              contentDigest: string;
+              authoring: { action: string };
+            }
+          >;
+        };
+      };
+    };
+    const asset = model.__aihWorkbenchModel.workbenchBundle.assets["aih/github"];
+    if (asset === undefined || asset.authoring.action !== "record-request")
+      throw new Error("expected the retained GitHub pending-request item");
+    return {
+      assetId: asset.id,
+      sourceId: asset.sourceId,
+      sourceRevisionId: asset.sourceRevisionId,
+      contentDigest: asset.contentDigest,
+      origin: { kind: "administrator" },
+    };
+  });
+  const savedRequestPolicy = JSON.parse(initial);
+  savedRequestPolicy.authoringSelections.requests = [
+    githubRequest,
+    ...savedRequestPolicy.authoringSelections.requests,
+  ];
+  await page.locator("#policy-file").setInputFiles({
+    name: "saved-github-request.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(savedRequestPolicy)),
+  });
+  await expect(page.locator("#announcement")).toContainText("Policy imported");
+  await expect
+    .poll(async () => JSON.parse(await page.locator("#config-preview").inputValue()))
+    .toMatchObject({
+      authoringSelections: {
+        requests: expect.arrayContaining([githubRequest]),
+      },
+    });
+  const policyWithSavedRequest = await page.locator("#config-preview").inputValue();
   await page.locator('[data-workbench-source-tab="source:ecc"]').click();
-  await search.fill("context");
+  await search.fill("github");
+  const templatesVisible = await page.locator(".workbench-starting-points").isVisible();
   await page.getByRole("button", { name: "Review @aihq/core choice", exact: true }).click();
-  await expect(search).toHaveValue("context7");
-  await expect(page.locator(".workbench-starting-points")).toBeHidden();
-  await expect(page.locator('[data-workbench-source-tab="source:aih-core"]')).toHaveAttribute(
+  const inspector = page.locator("#workbench-detail-panel[data-workbench-detail]");
+  await expect(inspector).toHaveAttribute("data-workbench-inspector-asset-id", "aih/github");
+  await expect(search).toHaveValue("github");
+  expect(await page.locator(".workbench-starting-points").isVisible()).toBe(templatesVisible);
+  await expect(page.locator('[data-workbench-source-tab="source:ecc"]')).toHaveAttribute(
     "aria-pressed",
     "true",
   );
+  await expect(page.locator("#config-preview")).toHaveValue(policyWithSavedRequest);
+});
+
+test("starts the Core catalog with its baseline selected and no GitHub choice", async ({
+  page,
+  workbench,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  expect(workbench.networkRequests).toEqual([]);
+  await page.locator('[data-workbench-source-tab="source:aih-core"]').click();
+  const rows = page.locator("article[data-workbench-asset-id]");
+  await expect(rows).toHaveCount(5);
+  await expect(page.locator('article[data-workbench-asset-id="aih/github"]')).toHaveCount(0);
+  for (const id of [
+    "aih/package:skill-pack/docs-quality",
+    "aih/package:skill-pack/governance-quality",
+    "aih/package:skill-pack/review-quality",
+    "aih/sequential-thinking",
+    "aih/usage-metering",
+  ]) {
+    await expect(
+      page.locator(`button[data-workbench-row-action][data-workbench-asset-id="${id}"]`),
+    ).toHaveAccessibleName(/^Remove my choice for /u);
+  }
+  const policy = JSON.parse(await page.locator("#config-preview").inputValue());
+  expect(policy.capabilityPackages.roots).toEqual([
+    "package:skill-pack/docs-quality",
+    "package:skill-pack/governance-quality",
+    "package:skill-pack/review-quality",
+  ]);
+  expect(
+    policy.governance.activations.map((activation: { candidate: string }) => activation.candidate),
+  ).toEqual(["sequential-thinking", "usage-metering"]);
+  expect(policy.governance.authority.approvals).toEqual([]);
+  const docs = "aih/package:skill-pack/docs-quality";
+  await expect(page.locator(`article[data-workbench-asset-id="${docs}"]`)).toContainText(
+    "Included with Core",
+  );
+  await page.locator(`button.workbench-row-title[data-workbench-expand-id="${docs}"]`).click();
+  const component = page.locator("[data-workbench-core-component]");
+  await expect(component).toContainText("packs/docs-quality/aih-betterdoc");
+  await expect(page.locator("[data-workbench-checks]")).toContainText(
+    "Current scan report not attached",
+  );
+  await expect(page.locator("[data-workbench-checks]")).toHaveAttribute(
+    "data-workbench-evidence-tone",
+    "neutral",
+  );
+  await page.locator('[data-sanctioned-cli="codex"]').click();
+  await page.locator("#posture").selectOption("enterprise");
+  await page.locator("#managed-mcp-projection").check();
+  expect(JSON.parse(await page.locator("#config-preview").inputValue()).minimumPosture).toBe(
+    "enterprise",
+  );
+  const downloadEvent = page.waitForEvent("download");
+  await page.locator("#download").click();
+  const download = await downloadEvent;
+  const output = await download.path();
+  if (output === null) throw new Error("Expected the baseline policy download");
+  const exported = JSON.parse(await readFile(output, "utf8"));
+  expect(exported.authoringSelections.roots).toHaveLength(5);
+  expect(exported.capabilityPackages.roots).toEqual(policy.capabilityPackages.roots);
+  expect(exported.governance.activations).toHaveLength(2);
+  expect(
+    exported.governance.activations.every(
+      (activation: { targets: string[] }) =>
+        activation.targets.length === 1 && activation.targets[0] === "codex",
+    ),
+  ).toBe(true);
+  expect(exported.governance.authority.approvals).toEqual([]);
+});
+
+test("shows each first-party component path and separate scan status on desktop and mobile", async ({
+  page,
+  workbench,
+}) => {
+  expect(workbench.networkRequests).toEqual([]);
+  for (const width of [1440, 375]) {
+    await page.setViewportSize({ width, height: 900 });
+    if (width === 375) {
+      await page
+        .getByRole("combobox", { name: "Choose catalog source" })
+        .selectOption("source:aih-core");
+    } else {
+      await page.locator('[data-workbench-source-tab="source:aih-core"]').click();
+    }
+    for (const [id, path] of [
+      ["aih/package:skill-pack/docs-quality", "packs/docs-quality/aih-betterdoc"],
+      ["aih/package:skill-pack/governance-quality", "packs/governance-quality/aih-gov-doctor"],
+      ["aih/package:skill-pack/review-quality", "packs/review-quality/aih-bugbounty"],
+      ["aih/usage-metering", "core-control/usage-metering"],
+    ] as const) {
+      await page.locator(`button.workbench-row-title[data-workbench-expand-id="${id}"]`).click();
+      await expect(page.locator("[data-workbench-core-component]")).toContainText(path);
+      await expect(page.locator("[data-workbench-checks]")).toContainText(
+        "Current scan report not attached",
+      );
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+        width,
+      );
+      await page
+        .getByRole("button", {
+          name: width === 375 ? "Back to catalog" : "Close details",
+          exact: true,
+        })
+        .click();
+    }
+  }
 });

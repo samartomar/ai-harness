@@ -11,6 +11,7 @@ import {
   type WorkbenchSourceInputsV1,
 } from "../contracts.js";
 import { importWorkbenchPolicySelections, serializeWorkbenchRepairV1 } from "../policy-import.js";
+import { WorkbenchReferenceReportsV1Schema } from "../reference-reports.js";
 import {
   reduceWorkbenchAction,
   type WorkbenchReductionV1,
@@ -18,6 +19,7 @@ import {
 } from "../selection-engine.js";
 import { mountArtifactIntakeWorkbench } from "./artifact-intake-runtime.js";
 import { mountWorkbench } from "./catalog-inventory.js";
+import { availableDeveloperToolCatalogDetails } from "./developer-tool-catalog.js";
 import { mountDeveloperToolSelection } from "./developer-tool-selection.js";
 import { mountLegacyWorkbench } from "./legacy-runtime.js";
 
@@ -28,6 +30,7 @@ interface WorkbenchSession {
 interface BrowserModel {
   initialPolicy: unknown;
   workbenchBundle?: unknown;
+  workbenchReferenceReports?: unknown;
   workbenchBindings?: unknown;
   workbenchSourceInputs: WorkbenchSourceInputsV1;
 }
@@ -97,6 +100,9 @@ const browserModel = model as unknown as BrowserModel;
 const sourceInputs = browserModel.workbenchSourceInputs;
 const bundleResult = AuthoringCatalogBundleV1Schema.safeParse(browserModel.workbenchBundle);
 const bindings = object(browserModel.workbenchBindings) as WorkbenchPolicyBindingsV1 | undefined;
+const referenceReports = WorkbenchReferenceReportsV1Schema.parse(
+  browserModel.workbenchReferenceReports ?? {},
+);
 
 // Legacy forms continue to own their grammar; generic inventory owns all catalog selection.
 const bundle = bundleResult.success ? bundleResult.data : undefined;
@@ -133,12 +139,21 @@ if (preparedCatalogValid) {
   let applyingWorkbenchProjection = false;
   const developerToolRows = document.getElementById("developer-tool-rows");
   const developerToolStatus = document.getElementById("developer-tool-selection-status");
+  const developerToolSummary = document.getElementById("developer-tool-selection-summary");
+  let inspectDeveloperToolDetails:
+    | ((assetId: string, trigger: HTMLButtonElement) => void)
+    | undefined;
   const developerTools =
     developerToolRows instanceof HTMLElement && developerToolStatus instanceof HTMLElement
       ? mountDeveloperToolSelection({
           root: developerToolRows,
           status: developerToolStatus,
+          summary: developerToolSummary instanceof HTMLElement ? developerToolSummary : undefined,
           initialPolicy: session.snapshotPolicy(),
+          catalogDetails: availableDeveloperToolCatalogDetails(bundle.assets),
+          inspectCatalogDetails(assetId, trigger) {
+            inspectDeveloperToolDetails?.(assetId, trigger);
+          },
           persist(selection) {
             const snapshot = session.snapshotPolicy();
             const basePolicy = object(snapshot);
@@ -194,6 +209,7 @@ if (preparedCatalogValid) {
       : undefined;
   const mounted = mountWorkbench(root, {
     bundle,
+    referenceReports,
     adoptionBindings: bindings,
     initialState: importedState(browserModel.initialPolicy, bundle, bindings, sourceInputs).state,
     initialDiagnostics: importedState(browserModel.initialPolicy, bundle, bindings, sourceInputs)
@@ -338,6 +354,7 @@ if (preparedCatalogValid) {
       };
     },
   });
+  inspectDeveloperToolDetails = (assetId, trigger) => mounted.inspectAssetDetails(assetId, trigger);
   document.addEventListener("aih-workbench-add-draft", (event) => {
     const detail = event instanceof CustomEvent ? event.detail : undefined;
     const candidate = object(detail);

@@ -7,6 +7,7 @@ import type {
   EvidenceSummaryV1,
   WorkbenchStateV1,
 } from "../contracts.js";
+import type { WorkbenchReferenceReportV1 } from "../reference-reports.js";
 import { resolveWorkbenchSelection } from "../selection-engine.js";
 import {
   type EvidenceDisplayState,
@@ -201,6 +202,7 @@ export interface AssetDecisionPresentation {
 }
 
 export interface AssetEvidencePresentation {
+  component?: { label: "Included with Core"; package: string; path: string };
   state: EvidenceDisplayState;
   tone: "neutral" | "warning" | "positive";
   statusLabel: string;
@@ -217,6 +219,40 @@ export interface AssetEvidencePresentation {
   scopePaths: readonly string[];
   nextStep: string;
   limitation: string;
+  reportGap?: {
+    owner: string;
+    missing: string;
+  };
+  sourceItemReports?: {
+    total: number;
+    attachedExactVersionReports: number;
+    completeCoverageReports: number;
+    partialCoverageReports: number;
+    noCoverageReports: number;
+    reportsWithFindings: number;
+    findingCount: number;
+    summary: string;
+    reportItems: readonly {
+      assetId: string;
+      label: string;
+      statusLabel: string;
+      coverage: "complete" | "partial" | "none";
+      findingCount: number;
+    }[];
+  };
+}
+
+/** Reading-only context for a report from an earlier catalog source snapshot. */
+export interface PreviousCatalogReportPresentation {
+  summary: string;
+  reportedOutcome: string;
+  sourceSnapshot: string;
+  dates: string;
+  scope: string;
+  mcpScope: string | undefined;
+  analyzers: readonly { name: string; version: string }[];
+  findings: readonly string[];
+  publicationUrl: string;
 }
 
 /** Source totals are independent of pagination and do not parse any detail chunks. */
@@ -308,6 +344,164 @@ export function findingExplanation(finding: string): string | undefined {
   return undefined;
 }
 
+function isGeneratedMethodologyProfile(asset: AuthoringAssetV1): boolean {
+  return asset.derivation === "core-derived" && asset.exclusiveSlot === "methodology";
+}
+
+function isAihBundledAsset(asset: AuthoringAssetV1, bundle: AuthoringCatalogBundleV1): boolean {
+  const source = bundle.sources[asset.sourceId];
+  return (
+    source?.id === "source:aih-core" &&
+    source.inputFormat === "built-in/v1" &&
+    source.upstreamOrigin.kind === "aih"
+  );
+}
+
+/** Distribution identity only; it supplies no scan or qualification authority. */
+function bundledCoreComponent(
+  asset: AuthoringAssetV1,
+  bundle: AuthoringCatalogBundleV1,
+): AssetEvidencePresentation["component"] {
+  const source = bundle.sources[asset.sourceId];
+  const pack =
+    (asset.kind === "skill" || asset.kind === "agent") &&
+    /^aih\/package:skill-pack\/[a-z][a-z0-9-]*$/.test(asset.id) &&
+    asset.originalPath.startsWith(`packs/${asset.id.split("/").at(-1)}/`);
+  const hook =
+    asset.kind === "hook" &&
+    asset.id === "aih/usage-metering" &&
+    asset.originalPath === "core-control/usage-metering" &&
+    asset.authoring.projectorId === "usage-hook";
+  if (
+    !isAihBundledAsset(asset, bundle) ||
+    source?.upstreamOrigin.locator !== "@aihq/core" ||
+    source.distributor.kind !== "aih" ||
+    source.distributor.locator !== "@aihq/core" ||
+    source.compiler.id !== "built-in" ||
+    asset.derivation !== "built-in" ||
+    source.revision.id !== asset.sourceRevisionId ||
+    !asset.sourceRevisionId.startsWith("package:@aihq/core@") ||
+    !(pack || hook)
+  )
+    return undefined;
+  return {
+    label: "Included with Core",
+    package: asset.sourceRevisionId.slice("package:".length),
+    path: asset.originalPath,
+  };
+}
+
+function hasAttachedExactVersionReport(state: EvidenceDisplayState): boolean {
+  return state === "verified" || state === "unverified" || state === "stale";
+}
+
+function sourceItemReportsPresentation(
+  profile: AuthoringAssetV1,
+  bundle: AuthoringCatalogBundleV1,
+  now: number,
+): NonNullable<AssetEvidencePresentation["sourceItemReports"]> {
+  const sourceItems = Object.values(bundle.assets)
+    .filter(
+      (candidate) =>
+        candidate.id !== profile.id &&
+        candidate.sourceId === profile.sourceId &&
+        candidate.derivation === "upstream",
+    )
+    .sort((left, right) => left.id.localeCompare(right.id));
+  const summaries = Object.values(bundle.evidence);
+  const reportItems = sourceItems.flatMap((candidate) => {
+    const display = assetEvidencePresentation(candidate, bundle, now);
+    if (!hasAttachedExactVersionReport(display.state)) return [];
+    const evidence = matchingEvidence(candidate, summaries);
+    if (evidence === undefined) return [];
+    return [
+      {
+        assetId: candidate.id,
+        label: humanizedAssetLabel(candidate),
+        statusLabel: display.statusLabel,
+        coverage: evidence.scan.coverage,
+        findingCount: evidence.findings.length,
+      },
+    ];
+  });
+  const completeCoverageReports = reportItems.filter((item) => item.coverage === "complete").length;
+  const partialCoverageReports = reportItems.filter((item) => item.coverage === "partial").length;
+  const noCoverageReports = reportItems.filter((item) => item.coverage === "none").length;
+  const reportsWithFindings = reportItems.filter((item) => item.findingCount > 0).length;
+  const findingCount = reportItems.reduce((total, item) => total + item.findingCount, 0);
+  return {
+    total: sourceItems.length,
+    attachedExactVersionReports: reportItems.length,
+    completeCoverageReports,
+    partialCoverageReports,
+    noCoverageReports,
+    reportsWithFindings,
+    findingCount,
+    summary:
+      `Attached exact-version reports: ${reportItems.length} of ${sourceItems.length} source items. ` +
+      `Reported coverage: ${completeCoverageReports} complete, ${partialCoverageReports} partial, ${noCoverageReports} none. ` +
+      `Findings: ${reportsWithFindings} reports list ${findingCount} findings. ` +
+      "These are separate source items and do not establish coverage of this generated profile.",
+    reportItems,
+  };
+}
+
+/**
+ * Presents a prior report only when both its exact subject and the current
+ * source snapshot match the visible asset. It never changes current evidence.
+ */
+export function previousCatalogReportPresentation(
+  asset: AuthoringAssetV1,
+  bundle: AuthoringCatalogBundleV1,
+  report: WorkbenchReferenceReportV1 | undefined,
+): PreviousCatalogReportPresentation | undefined {
+  const source = bundle.sources[asset.sourceId];
+  if (
+    report === undefined ||
+    matchingEvidence(
+      asset,
+      Object.values(bundle.evidence).filter(
+        (evidence) => evidence.verification.state !== "missing",
+      ),
+    ) !== undefined ||
+    report.kind !== "previous-catalog-report" ||
+    report.authority !== "none" ||
+    report.assetId !== asset.id ||
+    report.subject.assetId !== asset.id ||
+    report.subject.sourceId !== asset.sourceId ||
+    report.subject.sourceRevisionId !== asset.sourceRevisionId ||
+    report.subject.contentDigest !== asset.contentDigest ||
+    source === undefined ||
+    source.id !== asset.sourceId ||
+    source.revision.id !== asset.sourceRevisionId ||
+    source.revision.contentDigest !== report.currentSourceContentDigest ||
+    report.previousSourceContentDigest === report.currentSourceContentDigest
+  )
+    return undefined;
+  return {
+    summary:
+      "This previous report names the same exact item, but its source snapshot is older. Current catalog evidence remains pending.",
+    reportedOutcome:
+      report.outcome === "failed"
+        ? "Previous reported result: failed. Review the findings below. This is not current evidence."
+        : "Previous reported result: pass. This is not current evidence.",
+    sourceSnapshot:
+      `Previous source snapshot: ${report.previousSourceContentDigest}. ` +
+      `Current source snapshot: ${report.currentSourceContentDigest}.`,
+    dates:
+      `Signed ${report.reportSignedAt}; published ${report.publishedAt}; ` +
+      `original report expiry ${report.validUntil}.`,
+    scope: "Previous report scope: " + report.coveredPaths.join(", ") + ".",
+    mcpScope:
+      asset.kind === "mcp"
+        ? "For this MCP entry, the historical report covers AIH configuration declarations and the listed paths; it is not a security audit of the full upstream MCP runtime."
+        : undefined,
+    analyzers: report.analyzers,
+    findings: report.findings,
+    publicationUrl: report.publicationUrl,
+  };
+}
+
 /** Presents Core's bounded summary, without inventing scan dates, severities or approval. */
 export function assetEvidencePresentation(
   asset: AuthoringAssetV1,
@@ -320,6 +514,32 @@ export function assetEvidencePresentation(
   const readable = evidence !== undefined && state !== "none" && state !== "missing";
   const sharedReport = evidence?.scan.scope === "published-component-containment";
   const qualification = qualificationDisplayFor(asset, bundle, now);
+  const component = bundledCoreComponent(asset, bundle);
+  if (isGeneratedMethodologyProfile(asset)) {
+    const sourceItemReports = sourceItemReportsPresentation(asset, bundle, now);
+    return {
+      state: "none",
+      tone: "neutral",
+      statusLabel: "Review source reports",
+      reportedResult: undefined,
+      analyzers: [],
+      binding:
+        "Generated profile; no standalone scan. Review source item reports below. These items are not automatically selected.",
+      coverage: sourceItemReports.summary,
+      qualification: qualification.text,
+      showQualification: true,
+      qualificationState: qualification.state === "current" ? "qualified" : "unknown",
+      freshness: "No standalone profile report has a Core verification interval.",
+      findings: [],
+      findingsLabel: "Source item report findings",
+      scopePaths: [],
+      nextStep:
+        "Review source item reports and their findings. These counts do not establish coverage of the generated profile.",
+      limitation:
+        "Source item reports describe separate material. They do not establish coverage of this generated profile or organization approval.",
+      sourceItemReports,
+    };
+  }
   let reportExpiry = "unavailable";
   if (evidence?.scan.reportSignedAt !== undefined) {
     try {
@@ -328,7 +548,7 @@ export function assetEvidencePresentation(
         evidence.verification.validUntil,
       );
     } catch {
-      reportExpiry = "unavailable — invalid report dates";
+      reportExpiry = "unavailable: invalid report dates";
     }
   }
   const statusLabels = {
@@ -365,7 +585,12 @@ export function assetEvidencePresentation(
     verified:
       "Core verified the attached evidence for this version. Review its findings and scope; this is not your organization's approval.",
   };
+  const reportGap =
+    isAihBundledAsset(asset, bundle) && (state === "none" || state === "missing")
+      ? { owner: "AIH", missing: "an exact-version report for this bundled item" }
+      : undefined;
   return {
+    ...(component === undefined ? {} : { component }),
     state,
     tone:
       !readable || state === "stale"
@@ -377,7 +602,12 @@ export function assetEvidencePresentation(
           : state === "verified"
             ? "positive"
             : "neutral",
-    statusLabel: statusLabels[state],
+    statusLabel:
+      reportGap === undefined
+        ? statusLabels[state]
+        : component === undefined
+          ? "AIH evidence pending"
+          : "Current scan report not attached",
     reportedResult: readable
       ? evidence.scan.outcome === "pass"
         ? "Pass"
@@ -387,11 +617,13 @@ export function assetEvidencePresentation(
       : undefined,
     analyzers: readable ? (evidence.scan.analyzers ?? []) : [],
     binding:
-      state === "verified"
-        ? "Core verified evidence bound to this item's source, revision and content digest."
-        : state === "unverified" || state === "stale"
-          ? "The attached report names this item's exact source, version, and content."
-          : "This Workbench has no current report covering this exact version.",
+      reportGap !== undefined
+        ? `Owner: ${reportGap.owner}. Missing: ${reportGap.missing}.`
+        : state === "verified"
+          ? "Core verified evidence bound to this item's source, revision and content digest."
+          : state === "unverified" || state === "stale"
+            ? "The attached report names this item's exact source, version, and content."
+            : "This Workbench has no current report covering this exact version.",
     coverage:
       readable && sharedReport
         ? `${state === "stale" ? "Historical coverage: " : ""}This item's files are covered by a broader source report. The result and findings describe that report, including shared files; they do not establish runtime behavior or organization approval.`
@@ -413,11 +645,15 @@ export function assetEvidencePresentation(
     qualificationState: qualification.state === "current" ? "qualified" : "unknown",
     findings: readable ? evidence.findings : [],
     findingsLabel:
-      state === "stale" ? "Historical report findings — refresh required" : "Report findings",
+      state === "stale" ? "Historical report findings: refresh required" : "Report findings",
     scopePaths: readable ? evidence.coveredPaths : [],
-    nextStep: nextSteps[state],
+    nextStep:
+      reportGap === undefined
+        ? nextSteps[state]
+        : "Find or reuse an existing matching report, then publish one if it is missing.",
     limitation:
       "A scan describes the covered material. Adding this item saves a draft choice; it does not approve, install, or grant access.",
+    reportGap,
   };
 }
 
@@ -443,8 +679,14 @@ export function assetDecisionPresentation(
       access ??
       "Access is not described in this catalog. Review the source's tools, commands, and data handling before adoption.",
     consequence: effectFor(asset),
-    evidenceLabel: report.statusLabel,
-    evidenceHelp: report.nextStep,
+    evidenceLabel:
+      report.component !== undefined && (report.state === "none" || report.state === "missing")
+        ? report.component.label
+        : report.statusLabel,
+    evidenceHelp:
+      report.component === undefined
+        ? report.nextStep
+        : `${report.component.package} · Bundled path: ${report.component.path}. Scan status: ${report.statusLabel}.`,
     needsInformation:
       purpose === undefined ||
       access === undefined ||
@@ -482,6 +724,16 @@ function evidenceFact(
   asset: AuthoringAssetV1,
   bundle: AuthoringCatalogBundleV1,
 ): CatalogDetailFact[] {
+  if (isGeneratedMethodologyProfile(asset)) {
+    const sourceItemReports = sourceItemReportsPresentation(asset, bundle, Date.now());
+    return [{ label: "Source item reports", value: sourceItemReports.summary }];
+  }
+  const presentation = assetEvidencePresentation(asset, bundle);
+  if (presentation.reportGap !== undefined)
+    return [
+      { label: "Evidence owner", value: presentation.reportGap.owner },
+      { label: "Evidence missing", value: presentation.reportGap.missing },
+    ];
   const display = evidenceDisplayFor(asset, Object.values(bundle.evidence));
   const evidence = matchingEvidence(asset, Object.values(bundle.evidence));
   if (display.state === "none" || display.state === "missing" || evidence === undefined) return [];
@@ -703,6 +955,7 @@ export function assetDetailsPresentation(
     .map((relation) => relationText(relation, asset, bundle))
     .filter((value): value is string => value !== undefined);
   const decision = assetDecisionPresentation(asset, bundle);
+  const report = assetEvidencePresentation(asset, bundle);
   const reason = nestedString(parsed, ["declaration", "reason"]);
   const usage = nestedString(parsed, ["asset", "metadata", "usageContext"]);
   const trigger = nestedString(parsed, ["declaration", "behaviour", "trigger"]);
@@ -713,6 +966,15 @@ export function assetDetailsPresentation(
       ? "Prepared metadata is unavailable or malformed, so no additional purpose can be shown."
       : decision.purpose,
     facts: [
+      ...(report.component === undefined
+        ? []
+        : [
+            {
+              label: "Component origin",
+              value: `${report.component.label} · ${report.component.package}`,
+            },
+            { label: "Bundled path or control", value: report.component.path },
+          ]),
       ...(usage === undefined ? [] : [{ label: "When to use it", value: usage }]),
       { label: "Access declared by the source", value: decision.access },
       ...(trigger === undefined ? [] : [{ label: "When it runs", value: trigger }]),
@@ -737,7 +999,7 @@ export function assetDetailsPresentation(
               ? `Governed MCP configuration for ${asset.authoring.supportedTargets.join(", ")}. Configuration readiness does not verify that the host loaded the server or connected to it.`
               : `Managed control for ${asset.authoring.supportedTargets.join(", ")}. This does not describe every host the upstream tool may support.`,
       },
-      { label: "Security review", value: `${decision.evidenceLabel}. ${decision.evidenceHelp}` },
+      { label: "Security review", value: `${report.statusLabel}. ${report.nextStep}` },
       ...evidenceFact(asset, bundle),
       ...(relations.length === 0
         ? [

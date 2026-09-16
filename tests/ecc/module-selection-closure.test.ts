@@ -15,7 +15,7 @@ import {
   eccMandatoryRequirementIds,
   eccSelectionSourcePaths,
 } from "../../src/ecc/selection-closure.js";
-import { type OrgPolicy, OrgPolicySchema } from "../../src/org-policy/schema.js";
+import { type OrgPolicy, OrgPolicySchema, parseOrgPolicy } from "../../src/org-policy/schema.js";
 import { defaultStudioPolicy } from "../../src/org-policy/studio-model.js";
 import { verifyAuthoringCatalogBundleIntegrityV1 } from "../../src/org-policy/workbench/catalog-integrity.js";
 import { parseAuthoringCatalogBundleV1 } from "../../src/org-policy/workbench/contracts.js";
@@ -112,8 +112,28 @@ function selectedPolicyIds(policy: ReturnType<typeof defaultStudioPolicy>): stri
   ];
 }
 
+// These ECC guard tests exercise synthetic catalogs; the Core baseline that
+// defaultStudioPolicy() now ships belongs to the real packaged catalog and
+// would only add unrelated selections here. Use the empty starting policy the
+// studio uses when no baseline applies.
+function emptyBasePolicy(): ReturnType<typeof defaultStudioPolicy> {
+  return parseOrgPolicy({
+    schemaVersion: 2,
+    minimumPosture: "vibe",
+    references: { repoContract: "ai-coding/project.json" },
+    governance: {
+      policyVersion: "1",
+      catalog: { reviewed: [], custom: [] },
+      activations: [],
+      authority: { approvals: [] },
+      externalCuration: [],
+      externalSelections: [],
+    },
+  });
+}
+
 function policyWithModules(moduleIds: readonly string[]) {
-  const policy = defaultStudioPolicy();
+  const policy = emptyBasePolicy();
   const governance = policy.governance;
   if (governance === undefined) throw new Error("expected governance");
   governance.externalSelections = [
@@ -159,7 +179,7 @@ function policyWithModules(moduleIds: readonly string[]) {
 }
 
 function policyWithBareModule(moduleId: string) {
-  const policy = defaultStudioPolicy();
+  const policy = emptyBasePolicy();
   const component = catalog.components.find((item) => item.id === `module:${moduleId}`);
   const path = component?.paths[0];
   if (path === undefined) throw new Error(`missing module:${moduleId}`);
@@ -267,7 +287,7 @@ describe("schema-v3 Workbench ECC guard", () => {
     });
     expect(selected.accepted).toBe(true);
     const compiled = compilePolicy(
-      defaultStudioPolicy(),
+      emptyBasePolicy(),
       selected.state,
       prepared.bundle,
       prepared.bindings,

@@ -22,6 +22,7 @@ test("keeps startup DOM bounded while groups, browse filters, details, and keybo
     }
     await expect(page.locator("#framework-rows")).toHaveClass(/workbench-inventory/u);
     const rows = page.locator("article[data-workbench-asset-id]");
+    const inspector = page.locator("#workbench-detail-panel[data-workbench-detail]");
     const activeSourceCount = await page.evaluate(() => {
       const model = window as unknown as {
         __aihWorkbenchModel: {
@@ -63,26 +64,35 @@ test("keeps startup DOM bounded while groups, browse filters, details, and keybo
     }
     const initial = await page.locator("*").count();
     expect(await rows.count()).toBeLessThanOrEqual(50);
-    await page.locator('button[data-workbench-expand-id="mcp:request"]').click();
-    await page.locator('button[data-workbench-detail-id="mcp:request"]').click();
-    await expect(page.locator("[data-workbench-detail]")).toBeVisible();
-    await expect(page.locator(".workbench-detail-advanced pre")).toBeHidden();
-    await expect(page.locator(".workbench-detail-advanced summary")).toHaveAccessibleName(
-      "Advanced prepared metadata",
+    await page
+      .locator('button.workbench-row-title[data-workbench-expand-id="mcp:request"]')
+      .click();
+    await inspector.locator(".workbench-item-technical > summary").click();
+    await inspector.locator('button[data-workbench-detail-id="mcp:request"]').click();
+    await expect(inspector).toHaveAttribute("data-workbench-inspector-open", "true");
+    await expect(inspector.locator("#workbench-detail-title")).toHaveText("MCP Request");
+    await expect(inspector.locator(".workbench-detail-advanced pre")).toBeHidden();
+    await expect(inspector.locator(".workbench-detail-advanced summary")).toHaveAccessibleName(
+      "More technical details",
     );
-    await page.locator(".workbench-detail-advanced summary").click();
-    await expect(page.locator(".workbench-detail-advanced pre")).toBeVisible();
-    await expect(page.locator(".workbench-detail-advanced pre")).toContainText(
+    await inspector.locator(".workbench-detail-advanced summary").click();
+    await expect(inspector.locator(".workbench-detail-advanced pre")).toBeVisible();
+    await expect(inspector.locator(".workbench-detail-advanced pre")).toContainText(
       "Offline fixture details",
     );
     await page.keyboard.press("Escape");
-    await expect(page.locator("[data-workbench-detail]")).toBeHidden();
+    await expect(inspector).toHaveAttribute("data-workbench-inspector-open", "false");
+    await expect(inspector.locator("[data-workbench-exposure-overview]")).toBeHidden();
     if (size === 10) {
-      const detailButton = page.locator('button[data-workbench-detail-id="mcp:request"]');
+      await page
+        .locator('button.workbench-row-title[data-workbench-expand-id="mcp:request"]')
+        .click();
+      await inspector.locator(".workbench-item-technical > summary").click();
+      const detailButton = inspector.locator('button[data-workbench-detail-id="mcp:request"]');
       await expect(detailButton).toHaveAccessibleDescription("MCP Request");
       await detailButton.click();
       await chooseSource("source:b");
-      await expect(page.locator("[data-workbench-detail]")).toBeHidden();
+      await expect(inspector).toHaveAttribute("data-workbench-inspector-open", "false");
       await chooseSource("source:a");
     }
     const policyBeforeFilters = await page.locator("#config-preview").inputValue();
@@ -122,20 +132,24 @@ test("keeps startup DOM bounded while groups, browse filters, details, and keybo
     await chooseSource("source:a");
     await expect(page.locator("#config-preview")).toHaveValue(policyBeforeFilters);
 
-    await page.locator('button[data-workbench-expand-id="mcp:request"]').click();
-    await page.locator('button[data-workbench-detail-id="mcp:request"]').click();
-    await expect(page.locator("[data-workbench-detail]")).toBeVisible();
-    await expect(page.locator(".workbench-detail-advanced pre")).toBeHidden();
-    await expect(page.locator(".workbench-detail-advanced summary")).toHaveAccessibleName(
-      "Advanced prepared metadata",
+    await page
+      .locator('button.workbench-row-title[data-workbench-expand-id="mcp:request"]')
+      .click();
+    await inspector.locator(".workbench-item-technical > summary").click();
+    await inspector.locator('button[data-workbench-detail-id="mcp:request"]').click();
+    await expect(inspector).toHaveAttribute("data-workbench-inspector-open", "true");
+    await expect(inspector.locator("#workbench-detail-title")).toHaveText("MCP Request");
+    await expect(inspector.locator(".workbench-detail-advanced pre")).toBeHidden();
+    await expect(inspector.locator(".workbench-detail-advanced summary")).toHaveAccessibleName(
+      "More technical details",
     );
-    await page.locator(".workbench-detail-advanced summary").click();
-    await expect(page.locator(".workbench-detail-advanced pre")).toBeVisible();
-    await expect(page.locator(".workbench-detail-advanced pre")).toContainText(
+    await inspector.locator(".workbench-detail-advanced summary").click();
+    await expect(inspector.locator(".workbench-detail-advanced pre")).toBeVisible();
+    await expect(inspector.locator(".workbench-detail-advanced pre")).toContainText(
       "Offline fixture details",
     );
     await page.keyboard.press("Escape");
-    await expect(page.locator("[data-workbench-detail]")).toBeHidden();
+    await expect(inspector).toHaveAttribute("data-workbench-inspector-open", "false");
     const unrelated = await page
       .locator('article[data-workbench-asset-id="approval-item"]')
       .elementHandle();
@@ -218,7 +232,7 @@ test("keeps startup DOM bounded while groups, browse filters, details, and keybo
       pathToFileURL(resolve(process.env.AIH_WORKBENCH_FIXTURE_DIR!, "invalid-" + missing + ".html"))
         .href,
     );
-    await expect(page.locator("#framework-rows > .error")).toContainText(
+    await expect(page.locator("#framework-rows .error")).toContainText(
       "Prepared catalog is invalid",
     );
     await expect(page.locator("#validate")).toBeDisabled();
@@ -245,6 +259,10 @@ test("keeps startup DOM bounded while groups, browse filters, details, and keybo
   page.on("download", (download) => downloads.push(download.suggestedFilename()));
   await page.locator("#validate").click();
   await expect(page.locator("#announcement")).toContainText(/maxTurns|schema variant/u);
+  await expect(page.locator("#validate")).toHaveClass(/check-failed/u);
+  const validateTitle = await page.locator("#validate").getAttribute("title");
+  expect(validateTitle).toMatch(/^Policy check failed: /u);
+  expect(validateTitle).toMatch(/maxTurns|schema variant/u);
   await page.locator("#download").click();
   await expect(page.locator("#announcement")).toContainText(/maxTurns|schema variant/u);
   expect(downloads).toEqual([]);
@@ -255,13 +273,15 @@ test("expands templates, rejects methodology conflicts atomically, and preserves
   workbench,
 }) => {
   expect(workbench.networkRequests).toEqual([]);
+  const inspector = page.locator("#workbench-detail-panel[data-workbench-detail]");
   await page.locator('[data-workbench-source-tab="source:a"]').click();
   await page.locator(".workbench-starting-points > summary").click();
   const unchanged = await page.locator("#config-preview").inputValue();
   await page.locator('[data-workbench-template-detail-id="template:alpha"]').click();
-  await expect(page.locator("[data-workbench-detail]")).toContainText("Alpha ready set");
-  await expect(page.locator(".workbench-template-preview")).toContainText("This preview adds");
-  await expect(page.locator(".workbench-detail-advanced pre")).toBeHidden();
+  await expect(inspector).toHaveAttribute("data-workbench-inspector-open", "true");
+  await expect(inspector.locator("#workbench-detail-title")).toHaveText("Alpha ready set");
+  await expect(inspector.locator(".workbench-template-preview")).toContainText("This preview adds");
+  await expect(inspector.locator(".workbench-detail-advanced pre")).toBeHidden();
   await expect(page.locator("#config-preview")).toHaveValue(unchanged);
   await page.getByRole("button", { name: "Cancel preview", exact: true }).click();
   await expect(page.locator("#config-preview")).toHaveValue(unchanged);
@@ -271,7 +291,7 @@ test("expands templates, rejects methodology conflicts atomically, and preserves
     mimeType: "application/json",
     buffer: Buffer.from(unchanged),
   });
-  await expect(page.locator("[data-workbench-detail]")).toBeHidden();
+  await expect(inspector).toHaveAttribute("data-workbench-inspector-open", "false");
   await expect(page.locator("#config-preview")).toHaveValue(unchanged);
   const search = page.getByRole("searchbox", { name: "Search catalog" });
   await page.locator('[data-workbench-source-tab="source:b"]').click();
@@ -292,9 +312,14 @@ test("expands templates, rejects methodology conflicts atomically, and preserves
   await search.fill("scale:000008");
   const excludedRow = page.locator('article[data-workbench-asset-id="scale:000008"]');
   await expect(excludedRow).toContainText("Exclusion origin: Template template:alpha");
-  await excludedRow.locator('button[data-workbench-expand-id="scale:000008"]').click();
-  await excludedRow.getByText("More options", { exact: true }).click();
   await excludedRow
+    .locator('button.workbench-row-title[data-workbench-expand-id="scale:000008"]')
+    .click();
+  await expect(inspector).toHaveAttribute("data-workbench-inspector-asset-id", "scale:000008");
+  await expect(inspector.locator("#workbench-detail-title")).toHaveText("Scale 000008");
+  await inspector.locator(".workbench-item-technical > summary").click();
+  await inspector.getByText("More options", { exact: true }).click();
+  await inspector
     .getByRole("button", {
       name: "Exclude from optional groups for Scale 000008",
       exact: true,
@@ -303,7 +328,7 @@ test("expands templates, rejects methodology conflicts atomically, and preserves
   expect(
     JSON.parse(await page.locator("#config-preview").inputValue()).authoringSelections.exclusions,
   ).toHaveLength(2);
-  await excludedRow
+  await inspector
     .getByRole("button", {
       name: "Undo my exclusion for Scale 000008",
       exact: true,
@@ -341,7 +366,8 @@ test("expands templates, rejects methodology conflicts atomically, and preserves
       `[data-workbench-template-remove-id="template:alpha"][data-workbench-template-remove-digest="${retiredTemplateDigest}"]`,
     ),
   ).toHaveCount(0);
-  await page.locator(".workbench-draft-review > summary").click();
+  await page.setViewportSize({ width: 375, height: 900 });
+  await page.locator(".workbench-draft-review > button[data-workbench-draft-open]").click();
   const changedTemplateRemoval = page
     .locator(
       `[data-workbench-template-remove-id="template:alpha"][data-workbench-template-remove-digest="${retiredTemplateDigest}"]`,
@@ -349,6 +375,7 @@ test("expands templates, rejects methodology conflicts atomically, and preserves
     .first();
   await expect(changedTemplateRemoval).toBeVisible();
   await changedTemplateRemoval.click();
+  await expect(inspector.locator("#workbench-detail-title")).toBeFocused();
   const changedTemplateRemoved = JSON.parse(await page.locator("#config-preview").inputValue());
   expect(changedTemplateRemoved.authoringSelections.roots).toEqual([
     expect.objectContaining({ assetId: "skill:dependency", origin: { kind: "administrator" } }),
@@ -359,6 +386,7 @@ test("expands templates, rejects methodology conflicts atomically, and preserves
     mimeType: "application/json",
     buffer: Buffer.from(before),
   });
+  await page.setViewportSize({ width: 1280, height: 900 });
   const structural = structuredClone(policy);
   const directRoot = structural.authoringSelections.roots.find(
     (root: { assetId: string; origin: { kind: string } }) =>
@@ -468,20 +496,22 @@ test("keeps requests and local draft bytes separate from controls and effective 
   workbench,
 }, testInfo) => {
   expect(workbench.networkRequests).toEqual([]);
+  const inspector = page.locator("#workbench-detail-panel[data-workbench-detail]");
   await page.locator('[data-workbench-source-tab="source:a"]').click();
   const untouched = await page.locator("#config-preview").inputValue();
   await page
     .locator('button[data-workbench-row-action][data-workbench-asset-id="inspect-item"]')
     .click();
-  await expect(page.locator("[data-workbench-detail]")).toBeVisible();
-  await expect(page.locator(".workbench-detail-advanced pre")).toBeHidden();
-  await page.locator(".workbench-detail-advanced summary").click();
-  await expect(page.locator(".workbench-detail-advanced pre")).toBeVisible();
-  await expect(page.locator(".workbench-detail-advanced pre")).toContainText(
+  await expect(inspector).toHaveAttribute("data-workbench-inspector-open", "true");
+  await expect(inspector.locator("#workbench-detail-title")).toHaveText("Inspect Item");
+  await expect(inspector.locator(".workbench-detail-advanced pre")).toBeHidden();
+  await inspector.locator(".workbench-detail-advanced summary").click();
+  await expect(inspector.locator(".workbench-detail-advanced pre")).toBeVisible();
+  await expect(inspector.locator(".workbench-detail-advanced pre")).toContainText(
     "Offline fixture details",
   );
   await page.keyboard.press("Escape");
-  await expect(page.locator("[data-workbench-detail]")).toBeHidden();
+  await expect(inspector).toHaveAttribute("data-workbench-inspector-open", "false");
   await expect(page.locator("#config-preview")).toHaveValue(untouched);
   await page
     .locator('button[data-workbench-row-action][data-workbench-asset-id="approval-item"]')
@@ -522,7 +552,8 @@ test("keeps requests and local draft bytes separate from controls and effective 
       .find((root: { assetId: string }) => root.assetId === "skill:root")
       .resolvedItems.map((pin: { assetId: string }) => pin.assetId),
   ).toContain("skill:dependency");
-  await page.locator(".workbench-draft-review > summary").click();
+  await page.locator(".workbench-draft-review > button[data-workbench-draft-open]").click();
+  await expect(inspector).toHaveAttribute("data-workbench-inspector-view", "draft");
   const review = page.locator(".workbench-draft-review-list");
   await expect(review).toContainText("Skill Root");
   await expect(review).toContainText("Skill Dependency");
@@ -533,9 +564,19 @@ test("keeps requests and local draft bytes separate from controls and effective 
   const rootReview = review
     .locator(".workbench-draft-review-item")
     .filter({ has: page.getByRole("heading", { name: "Skill Root", exact: true }) });
+  const reasonDetails = rootReview.locator("details").filter({ hasText: "Add a reason" });
+  await expect(reasonDetails).not.toHaveAttribute("open", "");
+  await expect(reasonDetails.locator("summary")).toHaveText("Add a reason");
+  await expect(rootReview.getByRole("textbox")).toBeHidden();
+  await reasonDetails.locator("summary").click();
   await rootReview.getByRole("textbox").fill(reason);
   await rootReview.getByRole("button", { name: "Save reason", exact: true }).click();
   await expect(rootReview.getByRole("status")).toContainText("Reason saved");
+  await inspector.locator('[data-workbench-panel-view="item"]').click();
+  await page.locator(".workbench-draft-review > button[data-workbench-draft-open]").click();
+  const savedReasonDetails = rootReview.locator("details.workbench-review-rationale");
+  await expect(savedReasonDetails).not.toHaveAttribute("open", "");
+  await expect(savedReasonDetails.locator(":scope > summary")).toHaveText("Edit reason");
   const withReason = JSON.parse(
     await page.locator("#config-preview").inputValue(),
   ).authoringSelections;
@@ -549,8 +590,8 @@ test("keeps requests and local draft bytes separate from controls and effective 
     selection.roots.find((root: { assetId: string }) => root.assetId === "skill:root")
       .resolvedItems,
   );
-  await page.locator(".workbench-draft-review > summary").click();
-  await expect(review.locator(".workbench-draft-review-item")).toHaveCount(0);
+  await expect(inspector).toHaveAttribute("data-workbench-inspector-view", "draft");
+  await expect(review.locator(".workbench-draft-review-item")).toHaveCount(3);
   await page
     .locator('button[data-workbench-row-action][data-workbench-asset-id="skill:root"]')
     .click();

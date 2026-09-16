@@ -58,7 +58,7 @@ function v3Policy(developerTools?: unknown): unknown {
 }
 
 describe("developer-tools command", () => {
-  it("returns the six no-policy defaults as selected-pending without side effects", async () => {
+  it("returns the seven no-policy defaults as selected-pending without side effects", async () => {
     const reconcileTool = vi.fn();
 
     const result = await executeDeveloperToolsCommand(context(), {
@@ -80,6 +80,7 @@ describe("developer-tools command", () => {
           "token-optimizer",
           "context7",
           "markitdown",
+          "playwright",
         ],
         excluded: [],
       },
@@ -90,6 +91,7 @@ describe("developer-tools command", () => {
         { id: "token-optimizer", state: "selected-pending" },
         { id: "context7", state: "selected-pending" },
         { id: "markitdown", state: "selected-pending" },
+        { id: "playwright", state: "selected-pending" },
       ],
       changed: false,
     });
@@ -125,12 +127,13 @@ describe("developer-tools command", () => {
       "token-optimizer",
       "context7",
       "markitdown",
+      "playwright",
     ]);
     expect(result.tools.find((tool) => tool.id === "codebase-memory-mcp")).toMatchObject({
       state: "blocked",
       detail: "archive unavailable",
     });
-    expect(result.tools.filter((tool) => tool.state === "verified")).toHaveLength(5);
+    expect(result.tools.filter((tool) => tool.state === "verified")).toHaveLength(6);
     expect(result.report?.ok).toBe(false);
     expect(
       result.report?.checks.find((check) => check.name === "codebase-memory-mcp developer tool"),
@@ -139,6 +142,29 @@ describe("developer-tools command", () => {
       detail: "archive unavailable",
     });
     expect(result.changed).toBe(true);
+  });
+
+  it("reports an unavailable Playwright browser engine as blocked", async () => {
+    const reconcileTool = vi.fn(async ({ id }): Promise<DeveloperToolLifecycleResult> => {
+      if (id === "playwright") {
+        throw new Error(
+          "Playwright browser_navigate returned an MCP tool error — browser executable is unavailable",
+        );
+      }
+      return { id, state: "verified", detail: `${id} exercised`, changed: false };
+    });
+
+    const result = await executeDeveloperToolsCommand(context({ apply: true }), {
+      reconcileTool,
+      projectMcp: false,
+    });
+
+    expect(result.tools.find((tool) => tool.id === "playwright")).toMatchObject({
+      state: "blocked",
+      detail: expect.stringContaining("browser executable is unavailable"),
+      changed: false,
+    });
+    expect(result.report?.ok).toBe(false);
   });
 
   it("contains a reconciler response that claims a different tool identity", async () => {
@@ -165,6 +191,7 @@ describe("developer-tools command", () => {
       "token-optimizer",
       "context7",
       "markitdown",
+      "playwright",
     ]);
     expect(result.tools.find((tool) => tool.id === "serena")).toMatchObject({
       state: "blocked",
@@ -203,6 +230,7 @@ describe("developer-tools command", () => {
             "token-optimizer": siblingOperation,
             context7: siblingOperation,
             markitdown: siblingOperation,
+            playwright: siblingOperation,
           },
           production: {
             acquireMemory: async () => ({
@@ -233,12 +261,13 @@ describe("developer-tools command", () => {
         "token-optimizer",
         "context7",
         "markitdown",
+        "playwright",
       ]);
       expect(result.tools.find((tool) => tool.id === "codebase-memory-mcp")).toMatchObject({
         state: "blocked",
         detail: expect.stringContaining("XDG_RUNTIME_DIR"),
       });
-      expect(result.tools.filter((tool) => tool.state === "verified")).toHaveLength(5);
+      expect(result.tools.filter((tool) => tool.state === "verified")).toHaveLength(6);
     },
   );
 
@@ -266,6 +295,7 @@ describe("developer-tools command", () => {
       { id: "token-optimizer", selected: false },
       { id: "context7", selected: false },
       { id: "markitdown", selected: false },
+      { id: "playwright", selected: false },
     ]);
     expect(result.tools.find((tool) => tool.id === "code-review-graph")?.state).toBe(
       "policy-excluded",

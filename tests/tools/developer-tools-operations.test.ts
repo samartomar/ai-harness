@@ -55,7 +55,13 @@ function fixture(run: Runner): PlanContext {
 
 function input(
   ctx: PlanContext,
-  id: "code-review-graph" | "codebase-memory-mcp" | "context7" | "serena" | "token-optimizer",
+  id:
+    | "code-review-graph"
+    | "codebase-memory-mcp"
+    | "context7"
+    | "playwright"
+    | "serena"
+    | "token-optimizer",
 ) {
   return {
     id,
@@ -146,6 +152,161 @@ const graphToolsList = {
 };
 
 describe("concrete developer-tool operations", () => {
+  it("launches the configured Playwright pin with an isolated profile and exercises the browser", async () => {
+    const calls: Array<{ argv: string[]; options?: RunOptions }> = [];
+    const run: Runner = async (argv, options) => {
+      calls.push({ argv, options });
+      return {
+        code: 0,
+        stdout: generatedMcpOutput(
+          processInput(options),
+          ["browser_navigate", "browser_evaluate"],
+          (request) => {
+            const name = (request.params as { name?: unknown } | undefined)?.name;
+            return {
+              content: [
+                {
+                  type: "text",
+                  text:
+                    name === "browser_evaluate"
+                      ? '### Result\n"AIH Playwright MCP verification"'
+                      : "Page URL: about:blank",
+                },
+              ],
+            };
+          },
+        ),
+        stderr: "",
+      };
+    };
+    const ctx = fixture(run);
+    const operation = createDefaultDeveloperToolRuntimeOperations(ctx).playwright;
+
+    const result = await operation(input(ctx, "playwright"));
+
+    expect(result).toMatchObject({
+      state: "verified",
+      changed: false,
+      detail: expect.stringContaining("browser_evaluate"),
+    });
+    expect(calls).toHaveLength(1);
+    const npmCli = ctx.host.npmCliPath();
+    expect(npmCli).toBeDefined();
+    expect(calls[0]?.argv).toEqual([
+      process.execPath,
+      npmCli,
+      "exec",
+      "--yes",
+      "--",
+      "@playwright/mcp@0.0.81",
+      "--headless",
+      "--isolated",
+    ]);
+    const requests = (processInput(calls[0]?.options) ?? "")
+      .trim()
+      .split(/\r?\n/u)
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(requests.map((request) => request.method)).toEqual([
+      "initialize",
+      "notifications/initialized",
+      "tools/list",
+      "tools/call",
+      "tools/call",
+    ]);
+    expect(requests[3]).toMatchObject({
+      params: { name: "browser_navigate", arguments: { url: "about:blank" } },
+    });
+    expect(requests[4]).toMatchObject({
+      params: {
+        name: "browser_evaluate",
+        arguments: { function: expect.stringContaining("AIH Playwright MCP verification") },
+      },
+    });
+    expect(calls[0]?.options?.timeoutMs).toBe(5 * 60_000);
+    expect(calls[0]?.options?.inputSequence).toHaveLength(4);
+  });
+
+  it("rejects a Playwright response that only echoes the verification marker in source", async () => {
+    const run: Runner = async (_argv, options) => ({
+      code: 0,
+      stdout: generatedMcpOutput(
+        processInput(options),
+        ["browser_navigate", "browser_evaluate"],
+        (request) => {
+          const name = (request.params as { name?: unknown } | undefined)?.name;
+          return {
+            content: [
+              {
+                type: "text",
+                text:
+                  name === "browser_evaluate"
+                    ? '### Result\n"wrong value"\n### Ran Playwright code\n```js\nawait page.evaluate(() => "AIH Playwright MCP verification");\n```'
+                    : "Page URL: about:blank",
+              },
+            ],
+          };
+        },
+      ),
+      stderr: "",
+    });
+    const ctx = fixture(run);
+    const operation = createDefaultDeveloperToolRuntimeOperations(ctx).playwright;
+
+    await expect(operation(input(ctx, "playwright"))).rejects.toThrow(
+      "Playwright browser_evaluate did not return the isolated fixture marker",
+    );
+  });
+
+  it("rejects Playwright verification when the isolated browser engine is unavailable", async () => {
+    const run: Runner = async (_argv, options) => ({
+      code: 0,
+      stdout: generatedMcpOutput(
+        processInput(options),
+        ["browser_navigate", "browser_evaluate"],
+        (request) => {
+          const name = (request.params as { name?: unknown } | undefined)?.name;
+          return name === "browser_navigate"
+            ? {
+                isError: true,
+                content: [
+                  {
+                    type: "text",
+                    text: "browserType.launch: Executable doesn't exist",
+                  },
+                ],
+              }
+            : {
+                content: [{ type: "text", text: "AIH Playwright MCP verification" }],
+              };
+        },
+      ),
+      stderr: "",
+    });
+    const ctx = fixture(run);
+    const operation = createDefaultDeveloperToolRuntimeOperations(ctx).playwright;
+
+    await expect(operation(input(ctx, "playwright"))).rejects.toThrow(
+      /Playwright browser_navigate returned an MCP tool error.*Executable doesn't exist/u,
+    );
+  });
+
+  it("checks Playwright MCP policy before launching a browser process", async () => {
+    const calls: string[][] = [];
+    const ctx = fixture(async (argv) => {
+      calls.push(argv);
+      return { code: 0, stdout: "", stderr: "" };
+    });
+    writeOrgPolicy(ctx, { allowManagedOnly: true, allowedServers: ["serena"] });
+    const operation = createDefaultDeveloperToolRuntimeOperations(ctx).playwright;
+
+    await expect(operation(input(ctx, "playwright"))).resolves.toMatchObject({
+      state: "policy-excluded",
+      detail: "playwright is outside the org-managed MCP allowlist",
+      changed: false,
+    });
+    expect(calls).toEqual([]);
+  });
+
   it("syncs Graph into its isolated environment and verifies a populated supported status", async () => {
     const calls: Array<{ argv: string[]; env?: NodeJS.ProcessEnv }> = [];
     const run: Runner = async (argv, options) => {
