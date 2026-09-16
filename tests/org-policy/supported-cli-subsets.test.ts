@@ -291,8 +291,11 @@ async function importPolicy(window: Window, value: unknown): Promise<void> {
 }
 
 describe("organization-selected CLI activation scope", () => {
-  it("accepts only the exact supported-target intersection for every non-empty registry subset", () => {
-    for (const supportedClis of subsets(SUPPORTED_CLIS)) {
+  // Keep every non-empty subset, with the normal test budget applied to each
+  // independent case rather than one exponentially growing validation loop.
+  it.each(subsets(SUPPORTED_CLIS).map((supportedClis) => ({ supportedClis })))(
+    "accepts only the exact supported-target intersection for $supportedClis",
+    ({ supportedClis }) => {
       for (const control of controls) {
         const exact = control.targets.filter((target) =>
           supportedClis.some((cli) => cli === target),
@@ -324,8 +327,8 @@ describe("organization-selected CLI activation scope", () => {
           ).toThrow(/must exactly match the organization-sanctioned projector targets/);
         }
       }
-    }
-  });
+    },
+  );
 
   it("keeps representative multi-control policies bound to each control's exact intersection", () => {
     const cases: ReadonlyArray<readonly (typeof SUPPORTED_CLIS)[number][]> = [
