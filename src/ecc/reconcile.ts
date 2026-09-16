@@ -72,6 +72,7 @@ const EccInstallStateSchema = z
         excludeComponents: StringArray,
         legacyLanguages: StringArray,
         legacyMode: z.boolean(),
+        hookConsent: z.enum(["enabled", "declined"]).nullable().optional(),
       })
       .strict(),
     resolution: z.object({ selectedModules: StringArray, skippedModules: StringArray }).strict(),

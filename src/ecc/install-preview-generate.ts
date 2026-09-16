@@ -2,6 +2,7 @@ import { createRequire } from "node:module";
 import { join } from "node:path";
 import { entry } from "../internals/cli-registry.js";
 import type { EccComponentId } from "./components.js";
+import { applyEccUpstreamHookConsent } from "./hook-consent.js";
 import {
   type ContingentEccInstallOperation,
   type EccInstallPreviewArtifact,
@@ -86,6 +87,7 @@ function componentOperations(
   eccRoot: string,
   componentId: EccComponentId,
   target: (typeof ECC_INSTALL_TARGETS)[number],
+  loadModule: (path: string) => unknown,
 ): ContingentEccInstallOperation[] {
   const selection = {
     scope: "scoped" as const,
@@ -101,14 +103,19 @@ function componentOperations(
   }
   let upstream: UpstreamPlan;
   try {
-    upstream = installer.createManifestInstallPlan({
-      sourceRoot: eccRoot,
-      target,
-      profileId: null,
-      moduleIds: spec.moduleIds,
-      homeDir: HOME_FIXTURE,
-      projectRoot: PROJECT_FIXTURE,
-    });
+    upstream = applyEccUpstreamHookConsent(
+      installer.createManifestInstallPlan({
+        sourceRoot: eccRoot,
+        target,
+        profileId: null,
+        moduleIds: spec.moduleIds,
+        homeDir: HOME_FIXTURE,
+        projectRoot: PROJECT_FIXTURE,
+      }),
+      eccRoot,
+      spec.executableConsent,
+      loadModule,
+    );
   } catch (error) {
     if (
       target === "opencode" &&
@@ -157,7 +164,14 @@ export function generateEccInstallPreviewArtifact(
   for (const { id } of manifests.listInstallComponents()) {
     for (const target of ECC_INSTALL_TARGETS) {
       operations.push(
-        ...componentOperations(installer, targetRegistry, eccRoot, id as EccComponentId, target),
+        ...componentOperations(
+          installer,
+          targetRegistry,
+          eccRoot,
+          id as EccComponentId,
+          target,
+          require,
+        ),
       );
     }
   }
