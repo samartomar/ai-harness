@@ -29,6 +29,10 @@ const PRESENTATION: Readonly<Record<DeveloperToolId, { label: string; detail: st
     detail:
       "Hosted documentation service; setup can make network requests subject to egress policy.",
   },
+  playwright: {
+    label: "Playwright",
+    detail: "Automate a local browser with web access. Setup verification is pending.",
+  },
   markitdown: {
     label: "MarkItDown CLI",
     detail:
@@ -41,6 +45,8 @@ export interface DeveloperToolSelectionUiOptions {
   readonly status: HTMLElement;
   readonly summary?: HTMLElement;
   readonly initialPolicy: unknown;
+  readonly catalogDetails?: Readonly<Partial<Record<DeveloperToolId, string>>>;
+  readonly inspectCatalogDetails?: (assetId: string, trigger: HTMLButtonElement) => void;
   readonly persist: (selection: {
     selected: readonly DeveloperToolId[];
     excluded: readonly DeveloperToolId[];
@@ -133,18 +139,18 @@ export function mountDeveloperToolSelection(
     options.root.replaceChildren();
     if (options.summary !== undefined) {
       if (!resolution.accepted) {
-        options.summary.textContent = "Developer tool setup — Blocked";
+        options.summary.textContent = "Developer tool setup: Blocked";
       } else if (resolution.source === "default" || resolution.source === "legacy-unspecified") {
-        options.summary.textContent = "Developer tool setup — All default tools selected";
+        options.summary.textContent = "Developer tool setup: All default tools selected";
       } else {
         const counts = [`${String(resolution.selected.length)} selected`];
         if (resolution.excluded.length > 0)
           counts.push(`${String(resolution.excluded.length)} excluded`);
-        options.summary.textContent = `Developer tool setup — ${counts.join(" · ")}`;
+        options.summary.textContent = `Developer tool setup: ${counts.join(" · ")}`;
       }
     }
     if (!resolution.accepted) {
-      options.status.textContent = `Blocked — ${resolution.diagnostics.map((diagnostic) => diagnostic.message).join(" ")}`;
+      options.status.textContent = `Blocked: ${resolution.diagnostics.map((diagnostic) => diagnostic.message).join(" ")}`;
       options.status.className = "help error";
     } else {
       options.status.textContent = feedback ?? sourceLabel(resolution.source);
@@ -176,14 +182,28 @@ export function mountDeveloperToolSelection(
       const state = document.createElement("p");
       state.className = "developer-tool-state";
       state.textContent = !resolution.accepted
-        ? "Blocked — resolve the policy binding or selection diagnostic before setup."
+        ? "Blocked: resolve the policy binding or selection diagnostic before setup."
         : excluded
           ? "Excluded by policy"
           : selected
-            ? "Selected — pending setup"
+            ? "Selected: pending setup"
             : "Not selected";
       const actions = document.createElement("div");
       actions.className = "brow developer-tool-actions";
+      const detailsAssetId = options.catalogDetails?.[id];
+      if (detailsAssetId !== undefined && options.inspectCatalogDetails !== undefined) {
+        const details = document.createElement("button");
+        details.type = "button";
+        details.className = "btn sm secondary developer-tool-details";
+        details.dataset.developerToolDetailsId = id;
+        details.dataset.developerToolCatalogAssetId = detailsAssetId;
+        details.textContent = "Details";
+        details.setAttribute("aria-label", `View catalog details for ${presentation.label}`);
+        details.addEventListener("click", () =>
+          options.inspectCatalogDetails?.(detailsAssetId, details),
+        );
+        actions.append(details);
+      }
       if (resolution.accepted) {
         if (excluded) {
           actions.append(

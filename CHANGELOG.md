@@ -8,6 +8,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Add Playwright to default developer-tool setup for every project, with a headless isolated
+  browser check and persistent policy opt-outs. Existing explicit tool selections stay unchanged.
+- Group default tool choices inside the compact Workbench Deployment setup. Keep catalog details
+  accessible there and remove duplicate default-tool rows from catalog browsing.
 - Add MarkItDown CLI to default developer-tool setup, with a pinned local-document runtime,
   conversion verification and persistent policy opt-outs. Its MCP adapter is separately optional.
 - Refresh Playwright MCP to 0.0.81 and the optional self-hosted GitHub MCP image to v1.12.1
@@ -48,6 +52,16 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Select the five Core baseline choices in new Workbench drafts and remove
+  GitHub from the Core browse list, preserving imported choices. Identify bundled
+  first-party skills, agents, and hooks separately from scan and qualification
+  status, with their package paths visible in the inspector.
+- Explain missing Workbench reports with an owner and next step. Show matching
+  reports from previous AIH catalog snapshots for reading, preserving findings
+  and dates without treating them as current evidence. Generated methodology
+  profiles link to separate source-item reports without claiming profile coverage.
+- Use one page scroll for the Workbench catalog and Policy exposure panel, so moving
+  the mouse between columns does not switch scrollbars. Mobile detail drawers scroll separately.
 - Prune ECC files only through recorded ownership and matching content digests, preserving
   unreceipted or modified files and removing the automatic upstream-uninstaller fallback.
 

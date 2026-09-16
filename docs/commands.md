@@ -189,7 +189,7 @@ The v3 lane stays offline and never treats `.aih/` or `~/.aih/` as authority.
 
 After its normal phases complete, `aih init` also runs the ordinary developer-tool lifecycle. A
 preview reports the effective selection without reconciling a tool. With `--apply`, it reconciles all
-six default tool IDs: selected tools are provisioned, while policy-excluded tools can remove only
+seven default tool IDs: selected tools are provisioned, while policy-excluded tools can remove only
 unchanged receipt-owned integration. During apply, Token Optimizer remains `blocked` until its
 license is explicitly accepted with `--accept-token-optimizer-license`; `--token-optimizer-profile
 quiet|balanced` selects its setup profile. A blocked prerequisite is reported for that tool while
@@ -199,11 +199,16 @@ independent selected tools continue.
 
 Preview or reconcile the policy-selected default developer tools for one repository. Without an
 effective organization policy, the default selection is `code-review-graph`, `codebase-memory-mcp`,
-`serena`, `token-optimizer`, `context7`, and `markitdown` (the CLI). A valid policy can select a subset, explicitly exclude
+`serena`, `token-optimizer`, `context7`, `markitdown` (the CLI), and `playwright`. A valid policy can select a subset, explicitly exclude
 tools, or select none. A legacy valid policy that omits `selected` preserves the defaults, subject to
 its exclusions; `selected: []` is an explicit empty selection. A malformed selection or an invalid,
 missing, changed, revoked, or conflicting bound policy fails closed before the lifecycle runs, and
 does not fall back to defaults.
+
+The Workbench keeps these choices together in Deployment setup's Developer tool setup section.
+Their AIH and ECC catalog duplicates are omitted from the browsing list. Existing saved catalog
+entries remain available for review; browsing does not rewrite them or change their authority.
+An explicit selection saved before Playwright became a default stays unchanged until edited.
 
 Run `aih developer-tools <root>` to inspect the selection. Add `--apply` to acquire, configure, and
 verify selected tools; excluded tools are also reconciled only to remove unchanged receipt-owned
@@ -239,6 +244,14 @@ permissions, and its first launch acquires its dependencies. Selecting the defau
 enable the MCP adapter. GitHub MCP also requires an explicit choice through `mcp.allowedServers`,
 a configured policy GitHub host, `--github-auth token`, or `--self-host`; it is absent from an
 unconfigured project's default MCP set.
+
+Playwright MCP uses the pinned `@playwright/mcp@0.0.81` runtime. It is selected by default for
+all project types. Add `playwright` to `developerTools.excluded` to opt out; an explicit subset or
+empty selection also omits it. MCP policy restrictions still apply. Its browser can access websites
+with the current user's permissions; a local MCP process does not confine browser network access.
+The generated launcher uses a headless, isolated browser session. Setup checks the MCP connection
+and a browser operation on a blank page before reporting the tool as verified. It requires npm
+alongside the current Node runtime and a browser supported by that Playwright release.
 
 On `--apply`, each selected tool checks its own prerequisites. Code Review Graph, Serena and MarkItDown require
 an external `uv`; Token Optimizer requires external Python, Git, and curl. Codebase Memory selects a
@@ -853,6 +866,13 @@ Developer-tool rows retain selection status beside compact actions. MarkItDown
 CLI is selected by default and can be excluded; its MCP adapter remains optional
 and is not enabled by that CLI selection.
 
+New policy drafts select the Core baseline: Docs Quality, Governance Quality,
+Review Quality, Sequential Thinking, and Usage Metering. These choices use the
+existing capability-package and control adoption paths; they do not add approval
+records. Imported policies retain their saved choices and exclusions. GitHub is
+not offered in the Core list. Existing GitHub requests remain visible in Draft
+and Exposure and can be removed from Draft.
+
 Catalog actions describe the policy change they make:
 
 | Action | Meaning |
@@ -863,21 +883,55 @@ Catalog actions describe the policy change they make:
 | Remove my choice | Remove your direct choice; a template or required dependency can still retain the item. |
 | More options → Exclude from optional groups / Undo my exclusion | Add or remove your own exclusion from optional inclusion. Template exclusions remain until their template is removed; required dependencies cannot be overridden. |
 
-Browse one source at a time; changing source keeps your draft choices and shows
-only that source's catalog, types, and starting points. Expand a catalog row to
-read its purpose, declared access, draft consequence, and security evidence.
+The workspace uses the available width. On wide screens, source navigation,
+catalog rows, and an item inspector sit side by side. Browse one source at a
+time; changing source keeps your draft choices and shows only that source's
+catalog, types, and starting points. Click an item name to open **Item** in the
+side panel. **Claims** shows its purpose and declared access; **Checks** shows
+report results and findings. **More technical details** holds draft provenance,
+covered paths, analyzer versions, report records, and prepared metadata.
+The same panel has **Draft** and **Exposure** views; switching views does not
+change choices. **Review draft** opens that panel beside the catalog, with
+reasons and adoption commands in closed disclosures. On smaller screens,
+choose a source from the picker and open the item
+panel when needed. The main workspace scrolls as one page across all columns;
+an open detail drawer on smaller screens scrolls separately. Browsing and opening
+details do not change the policy.
+The **Exposure** view, also opened by **Policy exposure**, summarizes catalog
+choices across all sources. The statement “A policy is a shape of exposure”
+appears in this view.
+It shows selected items separately from pending requests, with each item's
+declared access and report status. Missing or stale saved versions remain visible
+as unresolved pins. Developer tool setup is reviewed separately in Deployment
+setup. The catalog does not consistently record network destinations, filesystem
+limits, or credential scope; this view does not infer those permissions.
 Reports show their reported result, covered paths, findings, and analyzer names
 and versions when supplied. **Reports included** counts attached exact-version
 reports separately from those currently verified by Core. Packaged unverified
 reports remain readable without another scan, with one provenance notice; they
 do not establish a verified passing result or approval. Current verified reports
 also show their Core verification interval; a verification date is not a scanner
-run date. Missing bundled reports are an AIH preparation gap; new or changed
-content needs its own matching report. **Starting points** previews changes before applying
+run date. Bundled first-party skills, agents, and hooks show **Included with Core**
+and their package and bundled path or control identity. Their scan status and
+Catalog qualification remain separate in Checks; inclusion does not claim a
+passing scan or qualification. A missing report for those components says
+**Current scan report not attached**. Other missing AIH reports show
+**AIH evidence pending** with AIH as the owner
+and an explicit next step. Where the item identity still matches a packaged
+report from an earlier catalog, Details shows **Previous report — current catalog
+evidence pending**. It retains the reported result, findings, scope, original
+dates, source snapshots and public publication link. This reading material does
+not count as current evidence, renew expiry, or grant approval. MCP declaration
+reports cover the listed configuration files, not the entire upstream runtime.
+
+Generated methodology profiles show **Source item reports**: counts and Details
+links for other items from that source. These are separate reports; they do not
+establish coverage of the generated profile or automatically select those items.
+New or changed content needs its own matching report. **Starting points** previews changes before applying
 them; cancel leaves the draft unchanged. **Review draft** lists current choices
 and requests separately. Missing, stale, and unverified
 evidence are identified explicitly. Prepared scan results do not grant organization
-approval or make a control effective. **Advanced prepared metadata** retains the
+approval or make a control effective. **More technical details** retains the
 raw JSON for technical inspection. Browser validation does not require `eval` or
 browser storage. Report facts and current verification remain separate.
 
@@ -1062,19 +1116,20 @@ and keeps the rail available on compact screens. The inspector contains no polic
 narrates the selected-to-materialized journey and routes one next action to the canonical selection or a
 separate authoring sidebar. The MCP availability planes list all 35 entries from ECC's pinned source: 31
 ECC-owned entries route to the separate Add MCP sidebar, which authors approved/revoked
-`governance.eccMcpApprovals` records at the pinned catalog digest; the four AIH-owned source declarations are
-all selectable. One is represented by the shared AIH control row recorded in `governance.catalog.reviewed`;
-the other three record requested intent in `governance.aihMcpRequests` and name the AIH gate a selection does
-not satisfy — either no policy projector or AIH evidence required. A request never creates or implies a
+`governance.eccMcpApprovals` records at the pinned catalog digest. Default developer tools have one
+selection surface in Deployment setup; their duplicate catalog entries remain stored only for detail
+inspection and existing-policy round trips. Other catalog entries may select a reviewed control or
+record requested intent in `governance.aihMcpRequests`. A request never creates or implies a
 matching Core control. Only entries labeled
 HTTPS-configurable can use the later `aih ecc mcp add <id> --cli <client>` path; manual entries remain
 approval-only. The browser does not install, contact, scan, attest, or observe the endpoint.
-The configured Playwright runtime identity remains exactly `@playwright/mcp@0.0.79`, but AIH ships no
-reviewed control for it because AIH has no current protected Scanner evidence record for that identity. The Workbench identifies this as an AIH-owned evidence gap; an
-administrator cannot waive it or substitute organization approval, and runtime evaluation does not infer
-reviewed evidence from a matching npm identity. The row remains selectable; an administrator can record the
-request in `governance.aihMcpRequests`, which changes no gate and grants no evidence, approval, projection,
-activation, or reachability. Importing the exact legacy Core 0.5.0 enterprise Workbench
+The configured Playwright runtime identity is `@playwright/mcp@0.0.81`. Ordinary Developer tool setup
+can select and verify this runtime, but AIH ships no protected reviewed control for it because there
+is no current protected Scanner evidence record for that identity. A setup check does not provide
+that evidence, and organization approval cannot substitute for it. Context7 and Playwright are
+managed through Developer tool setup rather than duplicate request buttons in the catalog. Existing
+`governance.aihMcpRequests` entries remain preserved as requests without granting evidence or authority.
+Importing the exact legacy Core 0.5.0 enterprise Workbench
 footprint removes the unavailable Playwright candidate and activation, rebuilds the managed MCP allow-list
 from current projectable controls, and preserves all remaining targets and authority.
 

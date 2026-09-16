@@ -32,6 +32,7 @@ import {
   defaultNativeMcpServers,
   managedCodeReviewGraphCliInvocation,
 } from "../mcp/default-native-runtime.js";
+import { playwrightMcpServer } from "../mcp/servers.js";
 import { readOrgPolicy } from "../org-policy/schema.js";
 import type { DeveloperToolId } from "./default-tool-selection.js";
 import type {
@@ -55,6 +56,7 @@ const PROCESS_DIAGNOSTIC_OMISSION = " … [truncated] … ";
 const SHA256 = /^[a-f0-9]{64}$/u;
 const DEFAULT_MCP_EXCLUDE_NEWER = "2026-09-14T00:00:00Z";
 const SERENA_EXCLUDE_NEWER = "2026-08-10T00:00:00Z";
+const PLAYWRIGHT_SMOKE_MARKER = "AIH Playwright MCP verification";
 const SOURCE_EXTENSIONS = new Set([
   ".c",
   ".cc",
@@ -205,6 +207,15 @@ function initializedMcpRequests(call: {
   readonly name: string;
   readonly arguments: Record<string, unknown>;
 }): LocalMcpRequest[] {
+  return initializedMcpRequestsForCalls([call]);
+}
+
+function initializedMcpRequestsForCalls(
+  calls: readonly {
+    readonly name: string;
+    readonly arguments: Record<string, unknown>;
+  }[],
+): LocalMcpRequest[] {
   return [
     {
       jsonrpc: "2.0",
@@ -218,12 +229,14 @@ function initializedMcpRequests(call: {
     },
     { jsonrpc: "2.0", method: "notifications/initialized", params: {} },
     { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} },
-    {
-      jsonrpc: "2.0",
-      id: 3,
-      method: "tools/call",
-      params: { name: call.name, arguments: call.arguments },
-    },
+    ...calls.map(
+      (call, index): LocalMcpRequest => ({
+        jsonrpc: "2.0",
+        id: index + 3,
+        method: "tools/call",
+        params: { name: call.name, arguments: call.arguments },
+      }),
+    ),
   ];
 }
 
@@ -310,6 +323,51 @@ function sameCanonicalProject(candidate: unknown, expected: string): boolean {
   } catch {
     return false;
   }
+}
+
+function externalRuntimeFile(ctx: PlanContext, candidate: string, label: string): string {
+  if (!isAbsolute(candidate)) throw new Error(`${label} must be an absolute path`);
+  let canonical: string;
+  let project: string;
+  try {
+    canonical = realpathSync.native(candidate);
+    project = realpathSync.native(ctx.root);
+  } catch {
+    throw new Error(`${label} is unavailable`);
+  }
+  const relation = relative(project, canonical);
+  if (relation === "" || (!relation.startsWith("..") && !isAbsolute(relation))) {
+    throw new Error(`${label} must remain outside the target project`);
+  }
+  const stats = lstatSync(canonical);
+  if (!stats.isFile()) throw new Error(`${label} is not a regular file`);
+  return canonical;
+}
+
+function playwrightMcpSourceDigest(): string {
+  const server = playwrightMcpServer();
+  return sha256(JSON.stringify({ command: server.command, args: server.args }));
+}
+
+function playwrightMcpArgv(ctx: PlanContext): {
+  readonly argv: string[];
+  readonly sourceDigest: string;
+} {
+  const server = playwrightMcpServer();
+  const [yes, ...launchArgs] = server.args;
+  if (server.command !== "npx" || yes !== "-y" || launchArgs.length === 0) {
+    throw new Error("Playwright MCP canonical launch recipe is invalid");
+  }
+  const npmCliPath = ctx.host.npmCliPath();
+  if (npmCliPath === undefined) {
+    throw new Error("Playwright MCP requires npm alongside the current Node runtime");
+  }
+  const node = externalRuntimeFile(ctx, process.execPath, "Playwright Node runtime");
+  const npmCli = externalRuntimeFile(ctx, npmCliPath, "Playwright npm CLI");
+  return {
+    argv: [node, npmCli, "exec", "--yes", "--", ...launchArgs],
+    sourceDigest: playwrightMcpSourceDigest(),
+  };
 }
 
 function memoryProjectName(result: Record<string, unknown>, expectedRoot: string): string {
@@ -579,6 +637,29 @@ function verifyToolCall(result: Record<string, unknown>, label: string): string 
   return text;
 }
 
+function verifyPlaywrightEvaluationResult(text: string): void {
+  const lines = text.replaceAll("\r\n", "\n").split("\n");
+  const resultSections = lines.flatMap((line, index) => (line === "### Result" ? [index] : []));
+  if (resultSections.length !== 1) {
+    throw new Error("Playwright browser_evaluate returned a malformed result section");
+  }
+  const start = (resultSections[0] as number) + 1;
+  const nextSection = lines.findIndex((line, index) => index >= start && /^###\s/u.test(line));
+  const serialized = lines
+    .slice(start, nextSection === -1 ? undefined : nextSection)
+    .join("\n")
+    .trim();
+  let value: unknown;
+  try {
+    value = JSON.parse(serialized) as unknown;
+  } catch {
+    throw new Error("Playwright browser_evaluate returned a malformed JSON result");
+  }
+  if (value !== PLAYWRIGHT_SMOKE_MARKER) {
+    throw new Error("Playwright browser_evaluate did not return the isolated fixture marker");
+  }
+}
+
 function structuredToolResult(
   result: Record<string, unknown>,
   label: string,
@@ -588,6 +669,51 @@ function structuredToolResult(
     throw new Error(`${label} returned no structured result`);
   }
   return value as Record<string, unknown>;
+}
+
+function playwrightOperation(ctx: PlanContext, run: Runner): DeveloperToolRuntimeOperation {
+  return async () => {
+    const exclusion = policyExclusion(ctx, "playwright");
+    if (exclusion !== undefined) {
+      return excludedResult(exclusion, playwrightMcpSourceDigest());
+    }
+    const { argv, sourceDigest } = playwrightMcpArgv(ctx);
+    const result = await run(argv, {
+      cwd: ctx.root,
+      env: ctx.env,
+      inputSequence: sequencedMcpInput(
+        initializedMcpRequestsForCalls([
+          { name: "browser_navigate", arguments: { url: "about:blank" } },
+          {
+            name: "browser_evaluate",
+            arguments: {
+              function:
+                '() => { const main = document.createElement("main"); main.id = "aih-playwright-smoke"; main.textContent = "AIH Playwright MCP verification"; document.body.replaceChildren(main); return main.textContent; }',
+            },
+          },
+        ]),
+      ),
+      timeoutMs: LOCAL_TIMEOUT_MS,
+      maxBufferBytes: MCP_OUTPUT_LIMIT,
+    });
+    requireSuccess("Playwright MCP", result);
+    localMcpResponse(result.stdout, 1);
+    verifyToolsList(localMcpResponse(result.stdout, 2), ["browser_navigate", "browser_evaluate"]);
+    verifyToolCall(localMcpResponse(result.stdout, 3), "Playwright browser_navigate");
+    const evaluated = verifyToolCall(
+      localMcpResponse(result.stdout, 4),
+      "Playwright browser_evaluate",
+    );
+    verifyPlaywrightEvaluationResult(evaluated);
+    return {
+      state: "verified",
+      detail:
+        "pinned Playwright MCP completed browser_navigate and browser_evaluate against an isolated headless about:blank fixture",
+      sourceDigest,
+      ownedPaths: [],
+      changed: false,
+    };
+  };
 }
 
 function serenaOperation(ctx: PlanContext, run: Runner): DeveloperToolRuntimeOperation {
@@ -990,5 +1116,6 @@ export function createDefaultDeveloperToolRuntimeOperations(
     "token-optimizer": tokenOptimizerOperation(ctx, deps),
     context7: context7Operation(ctx, deps.fetch ?? fetch),
     markitdown: createMarkItDownOperation(ctx, run),
+    playwright: playwrightOperation(ctx, run),
   };
 }

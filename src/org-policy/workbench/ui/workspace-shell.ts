@@ -100,7 +100,9 @@ export function mountGenericWorkspaceShell(context: GenericWorkspaceShellContext
         `<button type="button" data-view-tab="${id}" aria-pressed="false">${label}</button>`,
     )
     .join("");
-  toolbar.prepend(tabs);
+  const brand = toolbar.querySelector<HTMLElement>(".brand");
+  if (brand === null) toolbar.prepend(tabs);
+  else brand.after(tabs);
 
   const panels: Record<"artifacts" | "author" | "imports", HTMLElement> = {
     artifacts: document.createElement("div"),

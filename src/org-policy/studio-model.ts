@@ -72,12 +72,14 @@ import {
   preparePackagedCatalogQualificationV1,
 } from "./workbench/core/catalog-qualification-v1.js";
 import type { FreshOrganizationPreparationV1 } from "./workbench/core/organization-preparation.js";
+import { packagedWorkbenchReferenceReportsV1 } from "./workbench/core/packaged-reference-reports.js";
 import { packagedWorkbenchSourcePublicationsV1 } from "./workbench/core/packaged-source-data.js";
 import { applyWorkbenchSourceDataV1 } from "./workbench/core/source-data.js";
 import {
   defaultCatalogPreassemblyAdmissionV1,
   packagedDefaultCatalogPreassemblyCompanionV1,
 } from "./workbench/default-catalog-preassembly.js";
+import { compilePolicy } from "./workbench/policy-compiler.js";
 import { historicalWorkbenchCatalogForPolicyV1 } from "./workbench/policy-consumption.js";
 import { withLegacyPolicyCandidateDefaultsV1 } from "./workbench/policy-import.js";
 import type { PreparedWorkbenchCatalogV1 } from "./workbench/prepared-catalog.js";
@@ -85,9 +87,17 @@ import {
   packagedPreparedWorkbenchCatalogV1,
   prepareWorkbenchCatalog,
 } from "./workbench/prepared-catalog.js";
+import type { WorkbenchReferenceReportsV1 } from "./workbench/reference-reports.js";
+import { createWorkbenchState, reduceWorkbenchAction } from "./workbench/selection-engine.js";
 
-/** Valid, no-repository starting point for the generated Policy Workbench. */
-export function defaultStudioPolicy(): OrgPolicy {
+const DEFAULT_CORE_CONTROL_IDS = ["sequential-thinking", "usage-metering"] as const;
+const DEFAULT_CORE_CAPABILITY_ROOTS = [
+  "package:skill-pack/docs-quality",
+  "package:skill-pack/governance-quality",
+  "package:skill-pack/review-quality",
+] as const;
+
+function emptyStudioPolicy(): OrgPolicy {
   return parseOrgPolicy({
     schemaVersion: 2,
     minimumPosture: "vibe",
@@ -101,6 +111,70 @@ export function defaultStudioPolicy(): OrgPolicy {
       externalSelections: [],
     },
   });
+}
+
+/** A narrowed or synthetic catalog must never receive a partial Core baseline. */
+function defaultCoreAssetIds(prepared: PreparedWorkbenchCatalogV1): string[] | undefined {
+  const controls = DEFAULT_CORE_CONTROL_IDS.map((candidateId) =>
+    Object.entries(prepared.bindings)
+      .filter(([, binding]) => binding.kind === "control" && binding.candidate?.id === candidateId)
+      .map(([assetId]) => assetId),
+  );
+  const packages = DEFAULT_CORE_CAPABILITY_ROOTS.map((root) =>
+    Object.entries(prepared.bindings)
+      .filter(
+        ([, binding]) => binding.kind === "package-root" && binding.packageRoot?.root === root,
+      )
+      .map(([assetId]) => assetId),
+  );
+  const assetIds = [...controls, ...packages].flat();
+  if (
+    [...controls, ...packages].some((matches) => matches.length !== 1) ||
+    new Set(assetIds).size !== assetIds.length ||
+    assetIds.some((assetId) => prepared.bundle.assets[assetId] === undefined)
+  )
+    return undefined;
+  return assetIds;
+}
+
+function defaultCoreWorkbenchState(prepared: PreparedWorkbenchCatalogV1) {
+  const assetIds = defaultCoreAssetIds(prepared);
+  if (assetIds === undefined) return undefined;
+  let state = createWorkbenchState();
+  for (const assetId of assetIds) {
+    const reduced = reduceWorkbenchAction(prepared.bundle, state, {
+      type: "select-root",
+      assetId,
+      origin: { kind: "administrator" },
+    });
+    if (!reduced.accepted) return undefined;
+    state = reduced.state;
+  }
+  return state;
+}
+
+function defaultStudioPolicyForPreparedCatalog(prepared: PreparedWorkbenchCatalogV1): OrgPolicy {
+  const state = defaultCoreWorkbenchState(prepared);
+  if (state === undefined) return emptyStudioPolicy();
+  const compiled = compilePolicy(
+    emptyStudioPolicy(),
+    state,
+    prepared.bundle,
+    prepared.bindings,
+    "author",
+    prepared.sourceInputs,
+  );
+  if (!compiled.accepted)
+    throw new Error(`Core default policy projection failed: ${compiled.diagnostics.join("; ")}`);
+  return parseOrgPolicy(compiled.policy);
+}
+
+/** Valid, no-repository starting point for the generated Policy Workbench. */
+export function defaultStudioPolicy(): OrgPolicy {
+  const prepared = packagedPreparedWorkbenchCatalogV1();
+  return prepared === undefined
+    ? emptyStudioPolicy()
+    : defaultStudioPolicyForPreparedCatalog(prepared);
 }
 
 /**
@@ -267,6 +341,8 @@ export interface PolicyStudioModel {
   initialPolicy: OrgPolicy;
   /** The sole browser inventory for portable authoring selections. */
   workbenchBundle: AuthoringCatalogBundleV1;
+  /** Previous catalog reports for reading only, never current evidence or approval. */
+  workbenchReferenceReports?: WorkbenchReferenceReportsV1;
   /** Compact compatibility mapping; Core reconstructs and verifies it on consume. */
   workbenchBindings: WorkbenchPolicyBindingsV1;
   /** Exact organization compiler inputs for portable V3 source reconstruction. */
@@ -524,6 +600,7 @@ function buildPolicyStudioModel(
     initialPolicy,
     catalog: studioFormCatalog(prepared.catalog),
     workbenchBundle: prepared.bundle,
+    workbenchReferenceReports: packagedWorkbenchReferenceReportsV1(prepared.bundle),
     workbenchBindings: prepared.bindings,
     workbenchSourceInputs: prepared.sourceInputs,
     adoptionRecipe: buildAdoptionRecipe(),
@@ -580,9 +657,10 @@ function staticStudioShellV1(
   catalog: PolicyAuthoringCatalog,
   scannerCollectionRecords: ReturnType<typeof packagedScannerCollectionEvidenceV1>,
   publicBaseline: ReturnType<typeof packagedPublicBaselineEvidenceV1>,
+  defaultPolicy: OrgPolicy,
 ): StaticStudioShellV1 {
   return {
-    defaultPolicy: defaultStudioPolicy(),
+    defaultPolicy: structuredClone(defaultPolicy),
     catalog: studioFormCatalog(catalog),
     adoptionRecipe: buildAdoptionRecipe(),
     schema: z.toJSONSchema(OrgPolicySchema, { io: "input" }) as Record<string, unknown>,
@@ -663,7 +741,12 @@ export function buildDefaultStudioPackageBaseV1(
   }
   return {
     prepared,
-    shell: staticStudioShellV1(prepared.catalog, scannerCollectionRecords, publicBaseline),
+    shell: staticStudioShellV1(
+      prepared.catalog,
+      scannerCollectionRecords,
+      publicBaseline,
+      defaultStudioPolicyForPreparedCatalog(prepared),
+    ),
   };
 }
 
@@ -717,6 +800,7 @@ function modelFromDefaultStudioPackageBaseV1(
     initialPolicy: structuredClone(initialPolicy),
     catalog: structuredClone(base.shell.catalog),
     workbenchBundle: prepared.bundle,
+    workbenchReferenceReports: packagedWorkbenchReferenceReportsV1(prepared.bundle),
     workbenchBindings: prepared.bindings,
     workbenchSourceInputs: prepared.sourceInputs,
     adoptionRecipe: structuredClone(base.shell.adoptionRecipe),
@@ -800,9 +884,13 @@ function studioInputSeals(input: readonly Readonly<{ bytes: string; sha256: stri
 }
 
 function studioStaticInputV1() {
-  const shell = staticStudioShellV1(policyAuthoringCatalog(), [], undefined);
+  const shell = staticStudioShellV1(policyAuthoringCatalog(), [], undefined, emptyStudioPolicy());
   return {
     defaultPolicy: shell.defaultPolicy,
+    defaultCoreSelections: {
+      controls: DEFAULT_CORE_CONTROL_IDS,
+      capabilityRoots: DEFAULT_CORE_CAPABILITY_ROOTS,
+    },
     catalog: shell.catalog,
     adoptionRecipe: shell.adoptionRecipe,
     schema: shell.schema,
@@ -944,6 +1032,11 @@ export function admitDefaultStudioPreassemblyV1(
   parseOrgPolicy(base.shell.defaultPolicy);
   const bundle = AuthoringCatalogBundleV1Schema.parse(base.prepared.bundle);
   verifyAuthoringCatalogBundleIntegrityV1(bundle);
+  if (
+    studioCanonical(base.shell.defaultPolicy) !==
+    studioCanonical(defaultStudioPolicyForPreparedCatalog(base.prepared))
+  )
+    return undefined;
   // This graph was parsed privately for this call. Cache consumers freeze their
   // own snapshot; returning it directly preserves detached mutable output.
   return base;
@@ -987,15 +1080,6 @@ export function policyStudioModel(
   // Reject display provenance before selecting either package cache; it must not trigger preparation.
   if (baselineEvidenceProvenance !== undefined)
     baselineEvidenceWorkbenchProvenance(baselineEvidenceProvenance);
-  const initialPolicy = options?.initialPolicy ?? defaultStudioPolicy();
-  const savedState =
-    initialPolicy.schemaVersion === 3 && initialPolicy.authoringSelections
-      ? WorkbenchStateV1Schema.parse(
-          (({ selectionVersion: _version, ...state }) => state)(initialPolicy.authoringSelections),
-        )
-      : undefined;
-  const sourceDataPins =
-    savedState === undefined ? undefined : referencedWorkbenchSourcePinsV1(savedState);
   if (
     options?.verifiedBaseline === undefined &&
     options?.initialPolicy === undefined &&
@@ -1004,13 +1088,11 @@ export function policyStudioModel(
   ) {
     const base = packagedDefaultStudioPreassemblyV1() ?? fallbackDefaultStudioPackageBaseV1();
     // Source selection, signature checks, expiry and protected local receipts remain live.
-    const prepared = applyWorkbenchSourceDataV1(structuredClone(base.prepared), {
-      pins: sourceDataPins,
-    });
+    const prepared = applyWorkbenchSourceDataV1(structuredClone(base.prepared));
     return modelFromDefaultStudioPackageBaseV1(
       base,
       prepared,
-      initialPolicy,
+      base.shell.defaultPolicy,
       catalogProvenance,
       baselineEvidenceProvenance,
     );

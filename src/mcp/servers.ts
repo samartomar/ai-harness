@@ -2,8 +2,8 @@ import type { RepoStack } from "../profile/scan.js";
 import { mcpResolverPinState } from "./pins.js";
 
 /**
- * The `.mcp.json` server set is assembled from the DETECTED stack, not a fixed
- * boilerplate list:
+ * The `.mcp.json` server set combines repository-agnostic defaults with scoped
+ * and policy-filtered additions:
  *  - `code-review-graph` + `codebase-memory-mcp` + `sequential-thinking` (local, stdio) —
  *    code intelligence (impact/blast radius), codebase memory (search/trace/ADR), and
  *    structured reasoning; useful in any repo, zero credentials. Two of the three are
@@ -12,9 +12,9 @@ import { mcpResolverPinState } from "./pins.js";
  *  - `github` + `context7` — on-by-default remote servers (GitHub via the client's
  *    OAuth by default, or an env-sourced token header when requested; Context7 hosted docs). Each names its
  *    egress in its own description so it is visible in `.mcp.json` at a glance;
- *  - Playwright (`@playwright/mcp`) is added for a web frontend; the retired
- *    `awslabs.core-mcp-server` is not generated for AWS repos because its
- *    required diagram-server distribution is yanked;
+ *  - Playwright (`@playwright/mcp`) is an ordinary default for every project;
+ *    the retired `awslabs.core-mcp-server` is not generated for AWS repos because
+ *    its required diagram-server distribution is yanked;
  *  - the hosted `n24q02m` toolset ONLY under `scope === "remote"` (opt-in gateway).
  * Every entry is configuration the client dials later — emitting it contacts nothing.
  */
@@ -160,8 +160,26 @@ export function validateMcpSecretReferences(servers: Record<string, McpServer>):
 /** Base host for the n24q02m hosted enterprise toolset. */
 export const N24Q02M_HOST = "n24q02m.com";
 
-/** Frameworks that warrant a browser-automation (Playwright) MCP server. */
-const WEB_FRAMEWORKS = new Set(["Next.js", "React", "Vue", "Svelte", "Angular"]);
+/** Exact Playwright MCP package identity shared by projection and runtime verification. */
+export const PLAYWRIGHT_MCP_PACKAGE_SPEC = "@playwright/mcp@0.0.81";
+
+/**
+ * The canonical Playwright MCP recipe. Headless isolated sessions avoid the
+ * operator's browser profile, and `-y` keeps resolver startup non-interactive.
+ */
+export function playwrightMcpServer(): StdioServer {
+  return {
+    type: "stdio",
+    command: "npx",
+    args: ["-y", PLAYWRIGHT_MCP_PACKAGE_SPEC, "--headless", "--isolated"],
+    description:
+      "Pinned Playwright browser automation MCP for every project (navigate, snapshot, interact). It runs headless with an isolated in-memory profile. The browser can reach any URL — point it at trusted origins.",
+    classification: "local",
+    egress: "local-only",
+    credentials: "none",
+    supplyChain: "pinned",
+  };
+}
 
 /** Pinned GitHub MCP Docker image for the `--self-host` opt-out (bump deliberately). */
 const GITHUB_MCP_IMAGE =
@@ -285,7 +303,7 @@ function normalizeResolverSupplyChains(
  */
 export function mcpServers(
   scope: string,
-  stack: RepoStack,
+  _stack: RepoStack,
   opts: McpServersOptions = {},
 ): Record<string, McpServer> {
   const servers: Record<string, McpServer> = {
@@ -297,20 +315,7 @@ export function mcpServers(
   // awslabs.core-mcp-server depends on a yanked diagram-server distribution;
   // operators can explicitly approve the hosted AWS Knowledge endpoint or
   // adopt the successor Agent Toolkit after their own egress/tool review.
-  if (stack.frameworks.some((f) => WEB_FRAMEWORKS.has(f))) {
-    servers.playwright = {
-      type: "stdio",
-      command: "npx",
-      // Pinned (not @latest) for reproducible installs; bump deliberately.
-      args: ["@playwright/mcp@0.0.81"],
-      description:
-        "Playwright browser automation MCP (navigate, snapshot, interact). Added for a web frontend. The browser it drives can reach any URL — point it at trusted origins.",
-      classification: "local",
-      egress: "local-only",
-      credentials: "none",
-      supplyChain: "pinned",
-    };
-  }
+  servers.playwright = playwrightMcpServer();
 
   // On-by-default, secret-free remote servers — useful in any repo. GitHub defaults to
   // the client's interactive OAuth (no token written into this file); `--self-host`

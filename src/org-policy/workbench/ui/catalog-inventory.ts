@@ -14,6 +14,7 @@ import type {
   WorkbenchStateV1,
 } from "../contracts.js";
 import { planWorkbenchAdoptionV1 } from "../core/adoption-plan-v1.js";
+import type { WorkbenchReferenceReportsV1 } from "../reference-reports.js";
 import {
   reduceWorkbenchAction,
   resolveWorkbenchSelection,
@@ -30,9 +31,14 @@ import {
   catalogRowPresentation,
   findingExplanation,
   humanizedAssetLabel,
+  previousCatalogReportPresentation,
   sourceEvidenceSummary,
   templateDetailsPresentation,
 } from "./catalog-presentation.js";
+import {
+  isDeveloperToolCatalogAssetId,
+  projectDeveloperToolCatalogInventory,
+} from "./developer-tool-catalog.js";
 import {
   mcpRuntimeOverlapPresentation,
   selectionComparisonPresentation,
@@ -40,6 +46,7 @@ import {
 
 export interface WorkbenchMountOptions {
   bundle: AuthoringCatalogBundleV1;
+  referenceReports?: WorkbenchReferenceReportsV1;
   adoptionBindings?: WorkbenchPolicyBindingsV1;
   initialState: WorkbenchStateV1;
   initialDiagnostics?: readonly string[];
@@ -52,6 +59,7 @@ export interface MountedWorkbench {
   state(): WorkbenchStateV1;
   restore(state: WorkbenchStateV1, diagnostics?: readonly string[]): void;
   dispatch(action: WorkbenchActionV1, expectedState?: WorkbenchStateV1): WorkbenchReductionV1;
+  inspectAssetDetails(assetId: string, trigger: HTMLButtonElement): void;
   destroy(): void;
 }
 
@@ -89,6 +97,7 @@ function assetLabel(asset: AuthoringAssetV1): string {
 }
 
 const administratorOrigin: WorkbenchOriginV1 = { kind: "administrator" };
+const EXPOSURE_PAGE_SIZE = 8;
 
 function originKey(origin: WorkbenchOriginV1): string {
   if (origin.kind === "template") return `template:${origin.id}\u0000${origin.digest}`;
@@ -101,6 +110,114 @@ function originLabel(origin: WorkbenchOriginV1): string {
 }
 function compareText(left: string, right: string): number {
   return left === right ? 0 : left < right ? -1 : 1;
+}
+
+function sourceItemReportsElement(
+  reports: NonNullable<ReturnType<typeof assetEvidencePresentation>["sourceItemReports"]>,
+): HTMLElement {
+  const section = document.createElement("section");
+  const heading = document.createElement("p");
+  const summary = document.createElement("p");
+  section.dataset.workbenchSourceItemReports = "true";
+  heading.textContent = "Source item reports";
+  summary.textContent = reports.summary;
+  section.append(heading, summary);
+  if (reports.reportItems.length === 0) return section;
+  const details = document.createElement("details");
+  const detailsSummary = document.createElement("summary");
+  const list = document.createElement("ul");
+  detailsSummary.textContent = `Open ${reports.reportItems.length} source item report${reports.reportItems.length === 1 ? "" : "s"}`;
+  for (const report of reports.reportItems) {
+    const item = document.createElement("li");
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "btn sm secondary";
+    button.dataset.workbenchDetailId = report.assetId;
+    button.setAttribute("aria-label", "Details for " + report.label);
+    button.textContent =
+      `Details: ${report.label} · ${report.statusLabel}; ${report.coverage} coverage; ` +
+      `${report.findingCount} finding${report.findingCount === 1 ? "" : "s"}`;
+    item.append(button);
+    list.append(item);
+  }
+  details.append(detailsSummary, list);
+  section.append(details);
+  return section;
+}
+
+function previousCatalogReportElement(
+  report: NonNullable<ReturnType<typeof previousCatalogReportPresentation>>,
+  { compact = false }: { compact?: boolean } = {},
+): HTMLElement {
+  const section = document.createElement("section");
+  const heading = document.createElement("h4");
+  const summary = document.createElement("p");
+  const outcome = document.createElement("p");
+  const sourceSnapshot = document.createElement("p");
+  const dates = document.createElement("p");
+  const scope = document.createElement("p");
+  const metadata = document.createElement("details");
+  const metadataSummary = document.createElement("summary");
+  section.className = "workbench-evidence-sheet";
+  section.dataset.workbenchPreviousReport = "true";
+  heading.textContent = "Previous report: current catalog evidence pending";
+  summary.textContent = report.summary;
+  outcome.textContent = report.reportedOutcome;
+  sourceSnapshot.textContent = report.sourceSnapshot;
+  dates.textContent = report.dates;
+  scope.textContent = report.scope;
+  section.append(heading, ...(compact ? [outcome] : [summary, outcome, scope]));
+  if (!compact && report.mcpScope !== undefined) {
+    const mcpScope = document.createElement("p");
+    mcpScope.textContent = report.mcpScope;
+    section.append(mcpScope);
+  }
+  const findingsHeading = document.createElement("p");
+  findingsHeading.textContent = `Previous report findings (${report.findings.length} listed)`;
+  section.append(findingsHeading);
+  if (report.findings.length === 0) {
+    const noFindings = document.createElement("p");
+    noFindings.textContent = "No findings are listed in this previous report.";
+    section.append(noFindings);
+  } else {
+    const findings = document.createElement("ul");
+    for (const finding of report.findings) {
+      const item = document.createElement("li");
+      const explanation = findingExplanation(finding);
+      if (explanation !== undefined) {
+        const explanationText = document.createElement("p");
+        const original = document.createElement("details");
+        const originalSummary = document.createElement("summary");
+        const originalText = document.createElement("p");
+        explanationText.textContent = explanation;
+        originalSummary.textContent = "Original finding";
+        originalText.textContent = finding;
+        original.append(originalSummary, originalText);
+        item.append(explanationText, original);
+      } else item.textContent = finding;
+      findings.append(item);
+    }
+    section.append(findings);
+  }
+  if (compact) return section;
+  const publication = document.createElement("a");
+  publication.href = report.publicationUrl;
+  publication.target = "_blank";
+  publication.rel = "noopener noreferrer";
+  publication.dataset.workbenchPreviousReportPublication = "true";
+  publication.textContent = "Open previous report publication";
+  section.append(publication);
+  metadataSummary.textContent = "Report dates and identifiers";
+  metadata.append(metadataSummary, sourceSnapshot, dates);
+  if (report.analyzers.length > 0) {
+    const analyzers = document.createElement("p");
+    analyzers.textContent =
+      "Analyzers named in the previous report: " +
+      report.analyzers.map((analyzer) => analyzer.name + " · " + analyzer.version).join(", ");
+    metadata.append(analyzers);
+  }
+  section.append(metadata);
+  return section;
 }
 
 function actionFor(
@@ -158,26 +275,40 @@ export function mountWorkbench(
 ): MountedWorkbench {
   let state = options.initialState;
   // Retain the complete bundle for saved-policy round trips. Ponytail is no
-  // longer offered by the catalog UI; this projection carries no authority.
-  const browseInventory: CatalogBrowseInventory = {
+  // longer offered by the catalog UI, and GitHub is not part of the Core
+  // baseline. This browse projection carries no authority.
+  const browseInventory: CatalogBrowseInventory = projectDeveloperToolCatalogInventory({
     sources: Object.fromEntries(
       Object.entries(options.bundle.sources).filter(([id]) => id !== "source:ponytail"),
     ),
     assets: Object.fromEntries(
       Object.entries(options.bundle.assets).filter(
-        ([, asset]) => asset.sourceId !== "source:ponytail",
+        ([, asset]) =>
+          asset.sourceId !== "source:ponytail" &&
+          !(asset.sourceId === "source:aih-core" && asset.id === "aih/github"),
       ),
     ),
+  });
+  const browseBundle: AuthoringCatalogBundleV1 = {
+    ...options.bundle,
+    sources: browseInventory.sources,
+    assets: browseInventory.assets,
   };
-  const groups = sourceGroups(options.bundle).filter((group) => browseInventory.sources[group.id]);
+  const groups = sourceGroups(browseBundle);
   const teardown = new AbortController();
   const draftSummary = document.createElement("section");
   const draftSummaryHeading = document.createElement("h2");
   const draftSummaryIntro = document.createElement("p");
   const counts = document.createElement("p");
-  const draftReview = document.createElement("details");
-  const draftReviewSummary = document.createElement("summary");
+  const exposureButton = document.createElement("button");
+  const draftReview = document.createElement("div");
+  const draftReviewSummary = document.createElement("button");
   const draftReviewList = document.createElement("div");
+  const inspectorNavigation = document.createElement("nav");
+  const catalogLayout = document.createElement("div");
+  const sourceRail = document.createElement("aside");
+  const sourceRailHeading = document.createElement("h2");
+  const catalogRegister = document.createElement("section");
   const sourceTabs = document.createElement("nav");
   const filters = document.createElement("div");
   const sourceReview = document.createElement("section");
@@ -195,33 +326,88 @@ export function mountWorkbench(
   const drafts = document.createElement("details");
   const draftSummaryControl = document.createElement("summary");
   const draftList = document.createElement("div");
-  const details = document.createElement("section");
+  const details = document.createElement("aside");
+  const inspectorScrim = document.createElement("div");
   details.className = "workbench-detail";
   details.id = "workbench-detail-panel";
   details.dataset.workbenchDetail = "true";
-  details.hidden = true;
+  details.dataset.workbenchInspectorOpen = "false";
   let filtersState: CatalogBrowseFilters = { sourceId: groups[0]?.id };
   let openDetailKey: string | undefined;
+  let openCatalogDetail: { assetId: string; mode: "catalog" | "developer-tool-setup" } | undefined;
   let detailTrigger: HTMLButtonElement | undefined;
+  let inspectorOpen = false;
   let evidenceRefreshTimer: ReturnType<typeof setTimeout> | undefined;
   let draftReviewPage = 0;
+  let exposureSelectedPage = 0;
+  let exposureRequestPage = 0;
   let expandedAssetId: string | undefined;
   let comparisonPreview: { assetId: string; expectedState: WorkbenchStateV1 } | undefined;
+  let inspectorMode: "item" | "draft" | "exposure" = "item";
+  let lastInspectedAssetId: string | undefined;
+  let lastFullDetail:
+    | {
+        key: string;
+        presentation: ReturnType<typeof assetDetailsPresentation>;
+        catalogDetail?: {
+          asset: AuthoringAssetV1;
+          mode: "catalog" | "developer-tool-setup";
+        };
+      }
+    | undefined;
+  let draftEntryCount = 0;
 
   root.replaceChildren();
   root.classList.add("workbench-inventory");
   draftSummary.className = "workbench-draft-summary";
   draftSummary.dataset.workbenchDraftSummary = "true";
   draftSummaryHeading.textContent = "Build your policy";
-  draftSummaryIntro.textContent =
-    "Save source-scoped choices, then review the combined draft before Core checks it against a repository.";
+  draftSummaryIntro.textContent = "Choose items. Review their declarations and evidence.";
   counts.className = "workbench-draft-counts";
   counts.setAttribute("aria-live", "polite");
+  exposureButton.type = "button";
+  exposureButton.className = "btn sm secondary workbench-exposure-open";
+  exposureButton.dataset.workbenchExposureOpen = "true";
+  exposureButton.setAttribute("aria-controls", details.id);
+  exposureButton.setAttribute("aria-expanded", "false");
+  exposureButton.textContent = "Policy exposure";
   draftReview.className = "workbench-draft-review";
+  draftReviewSummary.type = "button";
+  draftReviewSummary.className = "btn sm primary";
+  draftReviewSummary.dataset.workbenchDraftOpen = "true";
+  draftReviewSummary.setAttribute("aria-controls", details.id);
   draftReviewSummary.textContent = "Review draft";
   draftReviewList.className = "workbench-draft-review-list";
-  draftReview.append(draftReviewSummary, draftReviewList);
-  draftSummary.append(draftSummaryHeading, draftSummaryIntro, counts, draftReview);
+  draftReview.append(draftReviewSummary);
+  inspectorNavigation.className = "workbench-inspector-navigation";
+  inspectorNavigation.setAttribute("aria-label", "Workbench panel views");
+  for (const [view, label] of [
+    ["item", "Item"],
+    ["draft", "Draft"],
+    ["exposure", "Exposure"],
+  ] as const) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.workbenchPanelView = view;
+    button.textContent = label;
+    button.setAttribute("aria-controls", details.id);
+    inspectorNavigation.append(button);
+  }
+  draftSummary.append(draftSummaryHeading, draftSummaryIntro, counts, exposureButton, draftReview);
+  catalogLayout.className = "workbench-catalog-layout";
+  catalogLayout.dataset.workbenchCatalogLayout = "true";
+  sourceRail.className = "workbench-source-rail";
+  sourceRail.dataset.workbenchSourceRail = "true";
+  sourceRail.setAttribute("aria-labelledby", "workbench-source-rail-title");
+  sourceRailHeading.id = "workbench-source-rail-title";
+  sourceRailHeading.textContent = "Sources";
+  catalogRegister.className = "workbench-catalog-register";
+  catalogRegister.dataset.workbenchCatalogRegister = "true";
+  catalogRegister.setAttribute("aria-label", "Catalog register");
+  inspectorScrim.className = "workbench-inspector-scrim";
+  inspectorScrim.dataset.workbenchInspectorScrim = "true";
+  inspectorScrim.setAttribute("aria-hidden", "true");
+  inspectorScrim.hidden = true;
   templateSummary.textContent = "Starting points";
   templateList.className = "workbench-template-list";
   templates.className = "workbench-starting-points";
@@ -258,19 +444,110 @@ export function mountWorkbench(
   repairs.setAttribute("aria-label", "Saved selections needing review");
   drafts.setAttribute("aria-label", "Prepared local drafts");
   diagnostics.className = "help error";
-  root.append(
-    draftSummary,
-    sourceTabs,
-    filters,
-    sourceReview,
-    browseTools,
-    diagnostics,
-    templates,
-    repairs,
-    drafts,
-    inventory,
-    details,
-  );
+  sourceRail.append(sourceRailHeading, sourceTabs, filters, sourceReview);
+  catalogRegister.append(browseTools, diagnostics, templates, repairs, drafts, inventory);
+  catalogLayout.append(sourceRail, catalogRegister, details, inspectorScrim);
+  root.append(draftSummary, catalogLayout);
+
+  const compactInspector = window.matchMedia("(max-width: 1100px)");
+  const modalInertElements = new Set<HTMLElement>();
+  const clearModalInert = (): void => {
+    for (const element of modalInertElements) element.removeAttribute("inert");
+    modalInertElements.clear();
+  };
+  const setOutsideInspectorInert = (): void => {
+    clearModalInert();
+    let branch: HTMLElement = details;
+    while (true) {
+      const parent = branch.parentElement;
+      if (parent === null) break;
+      for (const sibling of parent.children) {
+        if (
+          sibling === branch ||
+          sibling === inspectorScrim ||
+          !(sibling instanceof HTMLElement) ||
+          sibling.hasAttribute("inert")
+        )
+          continue;
+        sibling.setAttribute("inert", "");
+        modalInertElements.add(sibling);
+      }
+      branch = parent;
+    }
+  };
+  const syncInspectorPresentation = (): void => {
+    details.prepend(inspectorNavigation);
+    for (const button of inspectorNavigation.querySelectorAll<HTMLButtonElement>("button")) {
+      button.setAttribute(
+        "aria-pressed",
+        String(button.dataset.workbenchPanelView === inspectorMode),
+      );
+      if (button.dataset.workbenchPanelView === "draft")
+        button.textContent = `Draft (${draftEntryCount})`;
+    }
+    draftReviewSummary.setAttribute(
+      "aria-expanded",
+      String(inspectorMode === "draft" && inspectorOpen),
+    );
+    const modal = compactInspector.matches && inspectorOpen;
+    details.dataset.workbenchInspectorOpen = String(inspectorOpen);
+    if (modal) {
+      details.setAttribute("role", "dialog");
+      details.setAttribute("aria-modal", "true");
+    } else {
+      details.removeAttribute("role");
+      details.removeAttribute("aria-modal");
+    }
+    inspectorScrim.hidden = !modal;
+    if (modal) setOutsideInspectorInert();
+    else clearModalInert();
+    exposureButton.setAttribute(
+      "aria-expanded",
+      String(
+        details.dataset.workbenchInspectorView === "exposure" &&
+          (!compactInspector.matches || inspectorOpen),
+      ),
+    );
+    for (const button of root.querySelectorAll<HTMLButtonElement>("[data-workbench-expand-id]"))
+      button.setAttribute(
+        "aria-expanded",
+        String(
+          button.dataset.workbenchExpandId === expandedAssetId &&
+            (!compactInspector.matches || inspectorOpen),
+        ),
+      );
+  };
+  compactInspector.addEventListener("change", syncInspectorPresentation, {
+    signal: teardown.signal,
+  });
+  syncInspectorPresentation();
+
+  const renderItemPlaceholder = (): void => {
+    const heading = document.createElement("h3");
+    const hint = document.createElement("p");
+    heading.id = "workbench-detail-title";
+    heading.tabIndex = -1;
+    heading.textContent = "Item details";
+    hint.textContent = "Select an item name to review its purpose, declared access and checks.";
+    details.dataset.workbenchInspectorView = "item";
+    details.removeAttribute("data-workbench-inspector-asset-id");
+    details.setAttribute("aria-labelledby", heading.id);
+    details.replaceChildren(heading, hint);
+    if (inspectorOpen) {
+      const back = document.createElement("button");
+      back.type = "button";
+      back.className = "btn sm secondary workbench-exposure-back";
+      back.dataset.workbenchDetailsClose = "true";
+      back.textContent = "Back to catalog";
+      details.prepend(back);
+    }
+    syncInspectorPresentation();
+  };
+  const renderIdleInspector = (): void => {
+    if (inspectorMode === "draft") renderDraftReview();
+    else if (inspectorMode === "exposure") renderExposureOverview();
+    else renderItemPlaceholder();
+  };
 
   const refreshCounts = (): void => {
     const value = workbenchSelectionCounts(options.bundle, state);
@@ -363,22 +640,335 @@ export function mountWorkbench(
         String(openDetailKey === "template:" + button.dataset.workbenchTemplateDetailId),
       );
   };
+  const renderExposureOverview = ({ focusHeading = false } = {}): void => {
+    const resolved = resolveWorkbenchSelection(options.bundle, state);
+    const selectedAssets = resolved.assetIds
+      .map((assetId) => options.bundle.assets[assetId])
+      .filter((asset): asset is AuthoringAssetV1 => asset !== undefined)
+      .sort((left, right) => compareText(assetLabel(left), assetLabel(right)));
+    const exactRequests: Array<{
+      asset: AuthoringAssetV1;
+      origin: WorkbenchOriginV1;
+    }> = [];
+    let missingRequests = 0;
+    let staleRequests = 0;
+    for (const request of state.requests) {
+      const asset = options.bundle.assets[request.assetId];
+      if (asset === undefined) {
+        missingRequests++;
+        continue;
+      }
+      if (
+        asset.sourceId !== request.sourceId ||
+        asset.sourceRevisionId !== request.sourceRevisionId ||
+        asset.contentDigest !== request.contentDigest
+      ) {
+        staleRequests++;
+        continue;
+      }
+      exactRequests.push({ asset, origin: request.origin });
+    }
+    exactRequests.sort(
+      (left, right) =>
+        compareText(assetLabel(left.asset), assetLabel(right.asset)) ||
+        compareText(originKey(left.origin), originKey(right.origin)),
+    );
+    const missingPins = resolved.missingAssetIds.length + missingRequests;
+    const stalePins = resolved.staleAssetIds.length + staleRequests;
+    const unresolvedPins = missingPins + stalePins;
+    const verifiedReports = selectedAssets.filter(
+      (asset) => assetEvidencePresentation(asset, options.bundle).state === "verified",
+    ).length;
+    exposureSelectedPage = Math.min(
+      exposureSelectedPage,
+      Math.max(0, Math.ceil(selectedAssets.length / EXPOSURE_PAGE_SIZE) - 1),
+    );
+    exposureRequestPage = Math.min(
+      exposureRequestPage,
+      Math.max(0, Math.ceil(exactRequests.length / EXPOSURE_PAGE_SIZE) - 1),
+    );
+
+    const overview = document.createElement("section");
+    const header = document.createElement("header");
+    const heading = document.createElement("h3");
+    const close = document.createElement("button");
+    const intro = document.createElement("p");
+    const scope = document.createElement("p");
+    const exposureCounts = document.createElement("div");
+    const limits = document.createElement("p");
+    const selectedGroup = document.createElement("section");
+    const selectedHeading = document.createElement("h4");
+    const selectedList = document.createElement("div");
+    const requestGroup = document.createElement("section");
+    const requestHeading = document.createElement("h4");
+    const requestIntro = document.createElement("p");
+    const requestList = document.createElement("div");
+    overview.className = "workbench-exposure-overview";
+    overview.dataset.workbenchExposureOverview = "true";
+    header.className = "workbench-exposure-header";
+    heading.id = "workbench-detail-title";
+    heading.tabIndex = -1;
+    heading.textContent = "A policy is a shape of exposure";
+    close.type = "button";
+    close.className = "btn sm secondary workbench-inspector-close";
+    close.dataset.workbenchDetailsClose = "true";
+    close.textContent = "Close details";
+    header.append(heading, close);
+    intro.className = "workbench-exposure-intro";
+    intro.textContent =
+      "Access declared by your catalog choices. Setup and host permissions determine actual access.";
+    scope.className = "workbench-exposure-scope";
+    scope.textContent = "Developer tools: see Deployment setup.";
+    exposureCounts.className = "workbench-exposure-counts";
+    exposureCounts.setAttribute("aria-label", "Catalog exposure counts");
+    const appendCount = (
+      kind: "selected" | "requests" | "unresolved" | "verified",
+      label: string,
+      value: number,
+      title: string,
+    ): void => {
+      const count = document.createElement("p");
+      const number = document.createElement("strong");
+      const caption = document.createElement("span");
+      count.className = "workbench-exposure-count";
+      count.dataset.workbenchExposureCount = kind;
+      count.title = title;
+      number.textContent = String(value);
+      caption.textContent = label;
+      count.append(number, caption);
+      exposureCounts.append(count);
+    };
+    appendCount(
+      "selected",
+      "Selected items",
+      selectedAssets.length,
+      "Catalog items currently resolved from saved choices and dependency relations.",
+    );
+    appendCount(
+      "requests",
+      "Current pending requests",
+      exactRequests.length,
+      "Saved requests that exactly match the current catalog. Requests do not select or activate items.",
+    );
+    appendCount(
+      "unresolved",
+      "Unresolved pins",
+      unresolvedPins,
+      `${missingPins} missing and ${stalePins} changed catalog pins.`,
+    );
+    appendCount(
+      "verified",
+      "Items with verified reports",
+      verifiedReports,
+      "Selected items with Core-verified evidence for the current version. This is not organization approval.",
+    );
+    limits.className = "workbench-exposure-limits";
+    limits.textContent =
+      "Destinations, file access and credential scope may be unspecified. Review each item’s declaration and checks.";
+    selectedGroup.className = "workbench-exposure-group";
+    selectedHeading.textContent = "Selected item declarations";
+    selectedList.className = "workbench-exposure-list";
+    selectedList.dataset.workbenchExposureList = "true";
+    requestGroup.className = "workbench-exposure-group";
+    requestHeading.textContent = "Pending requests";
+    requestIntro.textContent = "Saved for follow-up. Requests do not select or activate items.";
+    requestList.className = "workbench-exposure-list";
+    requestList.dataset.workbenchExposureRequests = "true";
+
+    const appendAsset = (
+      host: HTMLElement,
+      asset: AuthoringAssetV1,
+      requestOrigin?: WorkbenchOriginV1,
+    ): void => {
+      const item = document.createElement("article");
+      const inspect = document.createElement("button");
+      const meta = document.createElement("p");
+      const access = document.createElement("p");
+      const evidence = document.createElement("p");
+      const label = humanizedAssetLabel(asset);
+      const declaration = assetDecisionPresentation(asset, options.bundle);
+      const checks = assetEvidencePresentation(asset, options.bundle);
+      item.className = "workbench-exposure-item";
+      if (requestOrigin === undefined) item.dataset.workbenchExposureItemId = asset.id;
+      else item.dataset.workbenchExposureRequestId = asset.id;
+      inspect.type = "button";
+      inspect.className = "workbench-exposure-inspect";
+      inspect.dataset.workbenchExposureInspectId = asset.id;
+      inspect.setAttribute("aria-controls", details.id);
+      inspect.setAttribute("aria-label", "Inspect declaration and checks for " + label);
+      inspect.textContent = label;
+      meta.className = "workbench-exposure-meta";
+      meta.textContent =
+        catalogSourceDisplayName(options.bundle, asset.sourceId) +
+        (requestOrigin === undefined ? "" : " · " + originLabel(requestOrigin));
+      access.className = "workbench-exposure-access";
+      access.dataset.workbenchExposureAccess = "true";
+      access.textContent = "Declared access: " + declaration.access;
+      evidence.className = "workbench-exposure-evidence";
+      evidence.dataset.workbenchExposureEvidence = "true";
+      evidence.dataset.workbenchEvidenceTone = checks.tone;
+      evidence.textContent = "Checks: " + checks.statusLabel;
+      item.append(inspect, meta, access, evidence);
+      host.append(item);
+    };
+    const appendPager = (
+      host: HTMLElement,
+      kind: "selected" | "requests",
+      page: number,
+      total: number,
+      onPage: (next: number) => void,
+    ): void => {
+      if (total <= EXPOSURE_PAGE_SIZE) return;
+      const pages = document.createElement("div");
+      const previous = document.createElement("button");
+      const status = document.createElement("span");
+      const next = document.createElement("button");
+      pages.className = "workbench-exposure-pages";
+      pages.setAttribute("role", "group");
+      pages.setAttribute(
+        "aria-label",
+        `${kind === "selected" ? "Selected item" : "Pending request"} pages`,
+      );
+      const changePage = (nextPage: number, direction: "previous" | "next"): void => {
+        onPage(nextPage);
+        renderExposureOverview();
+        const preferred = details.querySelector<HTMLButtonElement>(
+          `[data-workbench-exposure-page="${kind}-${direction}"]`,
+        );
+        const available = details.querySelector<HTMLButtonElement>(
+          `[data-workbench-exposure-page^="${kind}-"]:not(:disabled)`,
+        );
+        if (preferred !== null && !preferred.disabled) preferred.focus();
+        else if (available !== null) available.focus();
+        else details.querySelector<HTMLElement>("#workbench-detail-title")?.focus();
+      };
+      previous.type = "button";
+      previous.className = "btn sm secondary";
+      previous.dataset.workbenchExposurePage = `${kind}-previous`;
+      previous.textContent = "Previous";
+      previous.disabled = page === 0;
+      previous.addEventListener("click", () => changePage(page - 1, "previous"), {
+        signal: teardown.signal,
+      });
+      status.textContent = `${page * EXPOSURE_PAGE_SIZE + 1}–${Math.min((page + 1) * EXPOSURE_PAGE_SIZE, total)} of ${total}`;
+      next.type = "button";
+      next.className = "btn sm secondary";
+      next.dataset.workbenchExposurePage = `${kind}-next`;
+      next.textContent = "Next";
+      next.disabled = (page + 1) * EXPOSURE_PAGE_SIZE >= total;
+      next.addEventListener("click", () => changePage(page + 1, "next"), {
+        signal: teardown.signal,
+      });
+      pages.append(previous, status, next);
+      host.append(pages);
+    };
+
+    const selectedStart = exposureSelectedPage * EXPOSURE_PAGE_SIZE;
+    for (const asset of selectedAssets.slice(selectedStart, selectedStart + EXPOSURE_PAGE_SIZE))
+      appendAsset(selectedList, asset);
+    if (selectedAssets.length === 0) {
+      const empty = document.createElement("p");
+      empty.textContent = "No catalog items are selected.";
+      selectedList.append(empty);
+    }
+    selectedGroup.append(selectedHeading, selectedList);
+    appendPager(selectedGroup, "selected", exposureSelectedPage, selectedAssets.length, (next) => {
+      exposureSelectedPage = next;
+    });
+    const requestStart = exposureRequestPage * EXPOSURE_PAGE_SIZE;
+    for (const request of exactRequests.slice(requestStart, requestStart + EXPOSURE_PAGE_SIZE))
+      appendAsset(requestList, request.asset, request.origin);
+    if (exactRequests.length === 0) {
+      const empty = document.createElement("p");
+      empty.textContent =
+        missingRequests + staleRequests > 0
+          ? `No requests match the current catalog; ${missingRequests + staleRequests} saved request${missingRequests + staleRequests === 1 ? " needs" : "s need"} version review.`
+          : "No current catalog requests are pending.";
+      requestList.append(empty);
+    }
+    requestGroup.append(requestHeading, requestIntro, requestList);
+    appendPager(requestGroup, "requests", exposureRequestPage, exactRequests.length, (next) => {
+      exposureRequestPage = next;
+    });
+    overview.append(header, intro, scope, exposureCounts, limits, selectedGroup, requestGroup);
+    details.removeAttribute("data-workbench-inspector-asset-id");
+    details.dataset.workbenchInspectorView = "exposure";
+    inspectorMode = "exposure";
+    details.setAttribute("aria-labelledby", heading.id);
+    details.replaceChildren(overview);
+    syncInspectorPresentation();
+    if (focusHeading) heading.focus();
+  };
   const closeDetails = (): void => {
     const trigger = detailTrigger;
+    const triggerIdentity =
+      trigger === undefined
+        ? undefined
+        : {
+            assetId: trigger.dataset.workbenchAssetId,
+            detailId: trigger.dataset.workbenchDetailId,
+            expandId: trigger.dataset.workbenchExpandId,
+            exposureInspectId: trigger.dataset.workbenchExposureInspectId,
+            exposureOpen: trigger.dataset.workbenchExposureOpen,
+            rowAction:
+              trigger.dataset.workbenchRowAction ?? trigger.dataset.workbenchInspectorAction,
+            inDraftReview: draftReviewList.contains(trigger),
+          };
     openDetailKey = undefined;
+    openCatalogDetail = undefined;
     detailTrigger = undefined;
-    details.hidden = true;
-    details.replaceChildren();
+    expandedAssetId = undefined;
+    comparisonPreview = undefined;
+    inspectorOpen = false;
+    inspectorMode = "item";
+    draftReviewList.replaceChildren();
+    syncInspectorPresentation();
     updateDetailButtons();
-    if (trigger?.isConnected) trigger.focus();
+    renderItemPlaceholder();
+    const replacement =
+      trigger?.isConnected === true
+        ? trigger
+        : [...root.querySelectorAll<HTMLButtonElement>("button")].find((button) => {
+            if (triggerIdentity?.inDraftReview === true)
+              return button.dataset.workbenchDetailId === triggerIdentity.detailId;
+            if (triggerIdentity?.expandId !== undefined)
+              return button.dataset.workbenchExpandId === triggerIdentity.expandId;
+            if (triggerIdentity?.exposureInspectId !== undefined)
+              return (
+                button.dataset.workbenchExposureInspectId === triggerIdentity.exposureInspectId
+              );
+            if (triggerIdentity?.exposureOpen !== undefined)
+              return button.dataset.workbenchExposureOpen !== undefined;
+            if (triggerIdentity?.rowAction !== undefined)
+              return (
+                button.dataset.workbenchAssetId === triggerIdentity.assetId &&
+                button.dataset.workbenchRowAction !== undefined
+              );
+            return (
+              triggerIdentity?.detailId !== undefined &&
+              button.dataset.workbenchExpandId === triggerIdentity.detailId
+            );
+          });
+    const visibleReplacement =
+      compactInspector.matches && replacement !== undefined && details.contains(replacement)
+        ? exposureButton
+        : replacement;
+    if (visibleReplacement !== undefined) visibleReplacement.focus();
     else search.focus();
   };
   const renderDetails = (
     presentation: ReturnType<typeof assetDetailsPresentation>,
     {
+      catalogAsset,
+      referenceAsset,
       focusHeading = false,
       preserveFocus = false,
-    }: { focusHeading?: boolean; preserveFocus?: boolean },
+    }: {
+      catalogAsset?: AuthoringAssetV1;
+      referenceAsset?: AuthoringAssetV1;
+      focusHeading?: boolean;
+      preserveFocus?: boolean;
+    },
   ): void => {
     const active = document.activeElement;
     const advancedWasOpen =
@@ -395,6 +985,7 @@ export function mountWorkbench(
               : undefined
         : undefined;
     const heading = document.createElement("h3");
+    const back = document.createElement("button");
     const close = document.createElement("button");
     const summary = document.createElement("p");
     const facts = document.createElement("dl");
@@ -405,6 +996,10 @@ export function mountWorkbench(
     heading.tabIndex = -1;
     heading.textContent = presentation.title;
     details.setAttribute("aria-labelledby", heading.id);
+    back.type = "button";
+    back.className = "btn sm secondary workbench-exposure-back";
+    back.dataset.workbenchDetailsClose = "true";
+    back.textContent = "Back to catalog";
     close.type = "button";
     close.className = "btn sm secondary";
     close.dataset.workbenchDetailsClose = "true";
@@ -419,12 +1014,68 @@ export function mountWorkbench(
       definition.textContent = fact.value;
       facts.append(term, definition);
     }
+    const previousReport =
+      referenceAsset === undefined
+        ? undefined
+        : previousCatalogReportPresentation(
+            referenceAsset,
+            options.bundle,
+            options.referenceReports?.[referenceAsset.id],
+          );
+    const previousReportSection =
+      previousReport === undefined ? undefined : previousCatalogReportElement(previousReport);
+    const catalogContext: HTMLElement[] = [];
+    if (catalogAsset !== undefined) {
+      const decision = assetDecisionPresentation(catalogAsset, options.bundle);
+      const evidence = assetEvidencePresentation(catalogAsset, options.bundle);
+      const declaration = document.createElement("section");
+      const declarationHeading = document.createElement("h4");
+      const purpose = document.createElement("p");
+      const access = document.createElement("p");
+      const checks = document.createElement("section");
+      const checksHeading = document.createElement("h4");
+      const checksStatus = document.createElement("p");
+      const checksBinding = document.createElement("p");
+      const checksNextStep = document.createElement("p");
+      const checksLimitation = document.createElement("p");
+      declaration.className = "workbench-expanded-why";
+      declaration.dataset.workbenchDeclaration = "true";
+      declarationHeading.textContent = "Source declaration";
+      purpose.textContent = decision.purpose;
+      access.textContent = "Declared access: " + decision.access;
+      declaration.append(declarationHeading, purpose, access);
+      checks.className = "workbench-evidence-sheet";
+      checks.dataset.workbenchChecks = "true";
+      checks.dataset.workbenchEvidenceState = evidence.state;
+      checks.dataset.workbenchEvidenceTone = evidence.tone;
+      checksHeading.textContent = "Checks";
+      checksStatus.textContent = evidence.statusLabel;
+      checksBinding.textContent = evidence.binding;
+      checksNextStep.textContent =
+        (evidence.state === "unverified" ? "Verification: " : "Next step: ") + evidence.nextStep;
+      checksLimitation.textContent = evidence.limitation;
+      checks.append(checksHeading, checksStatus, checksBinding, checksNextStep, checksLimitation);
+      if (evidence.sourceItemReports !== undefined)
+        checks.append(sourceItemReportsElement(evidence.sourceItemReports));
+      catalogContext.push(declaration, checks);
+    }
     advanced.className = "workbench-detail-advanced";
     advanced.open = advancedWasOpen;
-    advancedSummary.textContent = "Advanced prepared metadata";
+    advancedSummary.textContent = "More technical details";
     raw.textContent = presentation.advancedJson;
-    advanced.append(advancedSummary, raw);
-    details.replaceChildren(heading, close, summary, facts, advanced);
+    advanced.append(advancedSummary, facts, raw);
+    inspectorMode = "item";
+    details.dataset.workbenchInspectorView = "details";
+    details.replaceChildren(
+      heading,
+      back,
+      close,
+      summary,
+      ...(previousReportSection === undefined ? [] : [previousReportSection]),
+      ...catalogContext,
+      advanced,
+    );
+    syncInspectorPresentation();
     if (focusHeading) heading.focus();
     else if (focusTarget === "close") close.focus();
     else if (focusTarget === "advanced") advancedSummary.focus();
@@ -433,38 +1084,129 @@ export function mountWorkbench(
   const invalidateTemplatePreview = (): void => {
     if (openDetailKey?.startsWith("template:")) closeDetails();
   };
+  const developerToolDetailsPresentation = (
+    asset: AuthoringAssetV1,
+  ): ReturnType<typeof assetDetailsPresentation> => {
+    const catalog = assetDetailsPresentation(asset, options.bundle);
+    return {
+      ...catalog,
+      facts: catalog.facts.flatMap((fact) => {
+        if (fact.label === "Why this needs follow-up") return [];
+        if (fact.label === "If you add this")
+          return [
+            {
+              label: "Setup selection",
+              value:
+                "Choose or exclude this tool in Developer tool setup. Viewing its catalog details does not add a catalog choice or request.",
+            },
+          ];
+        if (fact.label === "Policy support") return [{ ...fact, label: "Catalog policy support" }];
+        if (fact.label === "Security review")
+          return [{ ...fact, label: "Catalog security review" }];
+        return [fact];
+      }),
+    };
+  };
   const acceptState = (nextState: WorkbenchStateV1): void => {
     invalidateTemplatePreview();
     comparisonPreview = undefined;
     state = nextState;
     draftReviewPage = 0;
+    exposureSelectedPage = 0;
+    exposureRequestPage = 0;
   };
 
   const showDetails = (
     key: string,
     presentation: ReturnType<typeof assetDetailsPresentation>,
     trigger: HTMLButtonElement,
+    catalogDetail?: {
+      asset: AuthoringAssetV1;
+      mode: "catalog" | "developer-tool-setup";
+    },
   ): void => {
-    if (openDetailKey === key && !details.hidden) {
+    if (openDetailKey === key && inspectorOpen) {
       closeDetails();
       return;
     }
-    details.hidden = false;
-    renderDetails(presentation, { focusHeading: true });
     openDetailKey = key;
+    expandedAssetId = undefined;
+    if (key.startsWith("asset:")) {
+      lastInspectedAssetId = key.slice("asset:".length);
+      lastFullDetail = {
+        key,
+        presentation,
+        ...(catalogDetail === undefined ? {} : { catalogDetail }),
+      };
+    }
+    openCatalogDetail =
+      catalogDetail === undefined
+        ? undefined
+        : { assetId: catalogDetail.asset.id, mode: catalogDetail.mode };
     detailTrigger = trigger;
+    inspectorOpen = true;
+    if (key.startsWith("asset:")) details.dataset.workbenchInspectorAssetId = key.slice(6);
+    else details.removeAttribute("data-workbench-inspector-asset-id");
+    const referenceAsset = key.startsWith("asset:")
+      ? options.bundle.assets[key.slice("asset:".length)]
+      : undefined;
+    renderDetails(presentation, {
+      catalogAsset: catalogDetail?.asset,
+      referenceAsset,
+      focusHeading: true,
+    });
     updateDetailButtons();
   };
 
   details.addEventListener(
     "keydown",
     (event) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      closeDetails();
+      if (event.key === "Escape" && inspectorOpen) {
+        event.preventDefault();
+        closeDetails();
+        return;
+      }
+      if (event.key !== "Tab" || !compactInspector.matches || !inspectorOpen) return;
+      const focusable = [
+        ...details.querySelectorAll<HTMLElement>(
+          'button:not([disabled]),summary,[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])',
+        ),
+      ].filter((element) => element.getClientRects().length > 0);
+      if (focusable.length === 0) return;
+      const first = focusable[0]!;
+      const last = focusable.at(-1)!;
+      const active = document.activeElement;
+      if (
+        !details.contains(active) ||
+        !(active instanceof HTMLElement) ||
+        !focusable.includes(active)
+      ) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (event.shiftKey && active === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
     },
     { signal: teardown.signal },
   );
+  inspectorScrim.addEventListener("click", closeDetails, { signal: teardown.signal });
+
+  const updateExclusionButton = (
+    button: HTMLButtonElement,
+    asset: AuthoringAssetV1,
+    presentation: { exclusionAction: string; exclusionHelp: string },
+  ): void => {
+    button.textContent = presentation.exclusionAction;
+    button.title = presentation.exclusionHelp;
+    button.setAttribute(
+      "aria-label",
+      presentation.exclusionAction + " for " + humanizedAssetLabel(asset),
+    );
+  };
 
   const updateRow = (row: HTMLElement, asset: AuthoringAssetV1): void => {
     const detail = row.querySelector<HTMLElement>("[data-workbench-row-detail]");
@@ -523,14 +1265,30 @@ export function mountWorkbench(
         review.addEventListener("click", () => {
           const other = options.bundle.assets[candidate.assetId];
           if (other === undefined) return;
-          selectSource(other.sourceId, false);
-          expandedAssetId = other.id;
-          updateFilters({
-            sourceId: other.sourceId,
-            kind: other.kind,
-            query: other.label,
-            page: 0,
-          });
+          if (browseInventory.assets[other.id] === undefined) {
+            showDetails(
+              "asset:" + other.id,
+              assetDetailsPresentation(other, options.bundle),
+              review,
+              {
+                asset: other,
+                mode: "catalog",
+              },
+            );
+            return;
+          }
+          templates.open = false;
+          templateList.replaceChildren();
+          updateFilters(
+            {
+              sourceId: other.sourceId,
+              kind: other.kind,
+              query: other.label,
+              page: 0,
+            },
+            other.id,
+          );
+          renderTemplates();
         });
         notice.append(review);
       }
@@ -577,14 +1335,7 @@ export function mountWorkbench(
           .sort(compareText)
           .join(", ") +
         ". Exclusions do not remove recorded requests or structural roots.";
-    if (exclusion !== null) {
-      exclusion.textContent = presentation.exclusionAction;
-      exclusion.title = presentation.exclusionHelp;
-      exclusion.setAttribute(
-        "aria-label",
-        presentation.exclusionAction + " for " + humanizedAssetLabel(asset),
-      );
-    }
+    if (exclusion !== null) updateExclusionButton(exclusion, asset, presentation);
     action.textContent = presentation.primaryAction;
     action.dataset.workbenchRemoval = String(
       nextAction?.type === "remove-root" || nextAction?.type === "remove-request",
@@ -647,6 +1398,95 @@ export function mountWorkbench(
     }
   };
 
+  const refreshActiveInspector = (): void => {
+    if (inspectorMode === "draft") return;
+    if (details.dataset.workbenchInspectorView === "exposure") {
+      renderExposureOverview();
+      return;
+    }
+    if (openDetailKey !== undefined) return;
+    const assetId = details.dataset.workbenchInspectorAssetId;
+    const asset = assetId === undefined ? undefined : options.bundle.assets[assetId];
+    const facts = details.querySelector<HTMLElement>(
+      "[data-workbench-selection] .workbench-detail-facts",
+    );
+    if (asset === undefined || facts === null) return;
+    const panelAction = details.querySelector<HTMLButtonElement>(
+      "[data-workbench-inspector-action]",
+    );
+    const rowAction = [
+      ...inventory.querySelectorAll<HTMLButtonElement>("[data-workbench-row-action]"),
+    ].find((button) => button.dataset.workbenchAssetId === asset.id);
+    if (panelAction !== null && rowAction !== undefined) {
+      panelAction.textContent = rowAction.textContent;
+      panelAction.disabled = rowAction.disabled;
+      panelAction.title = rowAction.title;
+      const label = rowAction.getAttribute("aria-label");
+      if (label !== null) panelAction.setAttribute("aria-label", label);
+    }
+    const selected = new Set(resolveWorkbenchSelection(options.bundle, state).assetIds);
+    const directRoots = state.roots.filter((entry) => entry.assetId === asset.id);
+    const directRequests = state.requests.filter((entry) => entry.assetId === asset.id);
+    const exclusionEntries = state.exclusions.filter((entry) => entry.assetId === asset.id);
+    const directOrigins = [...directRoots, ...directRequests].map((entry) => entry.origin);
+    const presentation = catalogRowPresentation({
+      asset,
+      state: catalogAssetState({
+        excluded: exclusionEntries.length > 0,
+        requested: directRequests.length > 0,
+        structuralDirect: directRoots.some((entry) => entry.mode === "structural"),
+        directSelect: directRoots.some((entry) => entry.mode === "select"),
+        selected: selected.has(asset.id),
+      }),
+      nextAction: actionFor(asset, state)?.type,
+      explicitAdministratorExclusion: exclusionEntries.some(
+        (entry) => entry.origin.kind === "administrator",
+      ),
+      hasNonAdministratorExclusion: exclusionEntries.some(
+        (entry) => entry.origin.kind !== "administrator",
+      ),
+    });
+    const appendFact = (label: string, value: string): void => {
+      const term = document.createElement("dt");
+      const definition = document.createElement("dd");
+      term.textContent = label;
+      definition.textContent = value;
+      facts.append(term, definition);
+    };
+    facts.replaceChildren();
+    appendFact("State", presentation.status);
+    appendFact("Meaning", presentation.explanation);
+    appendFact("If you add this", assetDecisionPresentation(asset, options.bundle).consequence);
+    appendFact(
+      "Direct origin",
+      directOrigins.length === 0
+        ? "None."
+        : Array.from(
+            new Map(
+              directOrigins.map((origin) => [originKey(origin), originLabel(origin)]),
+            ).values(),
+          )
+            .sort(compareText)
+            .join(", "),
+    );
+    appendFact(
+      "Exclusion origin",
+      exclusionEntries.length === 0
+        ? "None."
+        : Array.from(
+            new Map(
+              exclusionEntries.map((entry) => [originKey(entry.origin), originLabel(entry.origin)]),
+            ).values(),
+          )
+            .sort(compareText)
+            .join(", "),
+    );
+    const exclusion = [
+      ...details.querySelectorAll<HTMLButtonElement>("[data-workbench-exclusion-id]"),
+    ].find((button) => button.dataset.workbenchExclusionId === asset.id);
+    if (exclusion !== undefined) updateExclusionButton(exclusion, asset, presentation);
+  };
+
   const scheduleEvidenceRefresh = (): void => {
     if (evidenceRefreshTimer !== undefined) {
       clearTimeout(evidenceRefreshTimer);
@@ -677,13 +1517,26 @@ export function mountWorkbench(
         );
         refreshVisibleRows(visibleAssetIds);
         if (expandedAssetId !== undefined) renderInventory();
-        else renderSourceSummary();
-        if (openDetailKey?.startsWith("asset:") && !details.hidden) {
+        else {
+          renderSourceSummary();
+          if (details.dataset.workbenchInspectorView === "exposure") renderExposureOverview();
+        }
+        if (openDetailKey?.startsWith("asset:") && inspectorOpen) {
           const asset = options.bundle.assets[openDetailKey.slice("asset:".length)];
-          if (asset !== undefined)
-            renderDetails(assetDetailsPresentation(asset, options.bundle), {
-              preserveFocus: true,
-            });
+          if (asset !== undefined) {
+            const catalogDetail =
+              openCatalogDetail?.assetId === asset.id ? openCatalogDetail : undefined;
+            renderDetails(
+              catalogDetail?.mode === "developer-tool-setup"
+                ? developerToolDetailsPresentation(asset)
+                : assetDetailsPresentation(asset, options.bundle),
+              {
+                catalogAsset: catalogDetail === undefined ? undefined : asset,
+                referenceAsset: asset,
+                preserveFocus: true,
+              },
+            );
+          }
         }
         scheduleEvidenceRefresh();
       },
@@ -715,7 +1568,7 @@ export function mountWorkbench(
       const asset = options.bundle.assets[assetId];
       if (asset === undefined) continue;
       const row = document.createElement("article");
-      const title = document.createElement("h3");
+      const title = document.createElement("button");
       const action = document.createElement("button");
       const detailsButton = document.createElement("button");
       const expandButton = document.createElement("button");
@@ -734,6 +1587,9 @@ export function mountWorkbench(
       row.className = "workbench-asset";
       row.dataset.workbenchAssetId = asset.id;
       title.className = "workbench-row-title";
+      title.type = "button";
+      title.dataset.workbenchExpandId = asset.id;
+      title.setAttribute("aria-controls", details.id);
       title.id = "workbench-asset-title-" + asset.id;
       title.textContent = humanizedAssetLabel(asset);
       const decision = assetDecisionPresentation(asset, options.bundle);
@@ -757,12 +1613,17 @@ export function mountWorkbench(
       detail.dataset.workbenchRowDetail = "true";
       actions.className = "workbench-row-actions";
       expandButton.type = "button";
+      expandButton.tabIndex = -1;
       expandButton.className = "btn sm secondary workbench-row-expand";
       expandButton.dataset.workbenchExpandId = asset.id;
-      expandButton.setAttribute("aria-expanded", String(expandedAssetId === asset.id));
-      expandButton.setAttribute("aria-controls", "workbench-expanded-" + asset.id);
+      expandButton.setAttribute(
+        "aria-expanded",
+        String(expandedAssetId === asset.id && (!compactInspector.matches || inspectorOpen)),
+      );
+      expandButton.setAttribute("aria-controls", details.id);
       expandButton.setAttribute("aria-describedby", title.id);
-      expandButton.textContent = expandedAssetId === asset.id ? "Close item" : "Open item";
+      expandButton.setAttribute("aria-label", "Inspect " + humanizedAssetLabel(asset));
+      expandButton.textContent = "Inspect";
       action.type = "button";
       action.className = "btn sm primary";
       action.dataset.workbenchAssetId = asset.id;
@@ -789,15 +1650,30 @@ export function mountWorkbench(
       detailsButton.setAttribute("aria-describedby", title.id);
       detailsButton.setAttribute("aria-label", "Details for " + humanizedAssetLabel(asset));
       detailsButton.setAttribute("aria-expanded", String(openDetailKey === "asset:" + asset.id));
-      detailsButton.textContent = "Read details";
+      detailsButton.textContent =
+        previousCatalogReportPresentation(
+          asset,
+          options.bundle,
+          options.referenceReports?.[asset.id],
+        ) === undefined
+          ? "Read details"
+          : "Read previous report";
       actions.append(action, expandButton);
       row.append(title, kind, purpose, decisionFacts, methodology, detail, actions);
-      if (expandedAssetId === asset.id) {
+      updateRow(row, asset);
+      if (expandedAssetId === asset.id && openDetailKey === undefined) {
+        const inspectorHeader = document.createElement("header");
+        const inspectorHeading = document.createElement("h3");
+        const inspectorMeta = document.createElement("p");
+        const back = document.createElement("button");
+        const close = document.createElement("button");
+        const selection = document.createElement("section");
+        const selectionHeading = document.createElement("h4");
+        const selectionFacts = document.createElement("dl");
         const expanded = document.createElement("section");
         const why = document.createElement("section");
         const whyHeading = document.createElement("h4");
         const whyAccess = document.createElement("p");
-        const whyAction = document.createElement("p");
         const evidenceSheet = document.createElement("section");
         const evidenceHeading = document.createElement("h4");
         const evidenceStatus = document.createElement("p");
@@ -812,17 +1688,110 @@ export function mountWorkbench(
         const evidenceNextStep = document.createElement("p");
         const evidenceCaveat = document.createElement("p");
         const evidence = assetEvidencePresentation(asset, options.bundle);
+        const selected = new Set(resolveWorkbenchSelection(options.bundle, state).assetIds);
+        const directRoots = state.roots.filter((entry) => entry.assetId === asset.id);
+        const directRequests = state.requests.filter((entry) => entry.assetId === asset.id);
+        const exclusionEntries = state.exclusions.filter((entry) => entry.assetId === asset.id);
+        const directOrigins = [...directRoots, ...directRequests].map((entry) => entry.origin);
+        const assetState = catalogAssetState({
+          excluded: exclusionEntries.length > 0,
+          requested: directRequests.length > 0,
+          structuralDirect: directRoots.some((entry) => entry.mode === "structural"),
+          directSelect: directRoots.some((entry) => entry.mode === "select"),
+          selected: selected.has(asset.id),
+        });
+        const inspectorStatus = catalogRowPresentation({
+          asset,
+          state: assetState,
+          nextAction: actionFor(asset, state)?.type,
+          explicitAdministratorExclusion: exclusionEntries.some(
+            (entry) => entry.origin.kind === "administrator",
+          ),
+          hasNonAdministratorExclusion: exclusionEntries.some(
+            (entry) => entry.origin.kind !== "administrator",
+          ),
+        });
+        updateExclusionButton(exclusionButton, asset, inspectorStatus);
+        const appendSelectionFact = (label: string, value: string): void => {
+          const term = document.createElement("dt");
+          const definition = document.createElement("dd");
+          term.textContent = label;
+          definition.textContent = value;
+          selectionFacts.append(term, definition);
+        };
+        inspectorHeader.className = "workbench-inspector-header";
+        inspectorHeading.id = "workbench-detail-title";
+        inspectorHeading.tabIndex = -1;
+        inspectorHeading.textContent = humanizedAssetLabel(asset);
+        inspectorMeta.className = "workbench-inspector-meta";
+        inspectorMeta.textContent =
+          catalogSourceDisplayName(options.bundle, asset.sourceId) +
+          " · " +
+          catalogKindLabel(asset.kind);
+        back.type = "button";
+        back.className = "btn sm secondary workbench-exposure-back";
+        back.dataset.workbenchDetailsClose = "true";
+        back.textContent = "Back to catalog";
+        close.type = "button";
+        close.className = "btn sm secondary workbench-inspector-close";
+        close.dataset.workbenchDetailsClose = "true";
+        close.textContent = "Close details";
+        inspectorHeader.append(back, inspectorHeading, inspectorMeta, close);
+        if (evidence.component !== undefined) {
+          const component = document.createElement("p");
+          component.dataset.workbenchCoreComponent = "true";
+          component.textContent =
+            `${evidence.component.label} · ${evidence.component.package}. ` +
+            `Bundled ${asset.kind === "hook" ? "control" : "path"}: ${evidence.component.path}.`;
+          inspectorHeader.append(component);
+        }
+        selection.className = "workbench-inspector-selection";
+        selection.dataset.workbenchSelection = "true";
+        selectionFacts.className = "workbench-detail-facts";
+        selectionHeading.textContent = "Draft status";
+        appendSelectionFact("State", inspectorStatus.status);
+        appendSelectionFact("Meaning", inspectorStatus.explanation);
+        appendSelectionFact("If you add this", decision.consequence);
+        appendSelectionFact(
+          "Direct origin",
+          directOrigins.length === 0
+            ? "None."
+            : Array.from(
+                new Map(
+                  directOrigins.map((origin) => [originKey(origin), originLabel(origin)]),
+                ).values(),
+              )
+                .sort(compareText)
+                .join(", "),
+        );
+        appendSelectionFact(
+          "Exclusion origin",
+          exclusionEntries.length === 0
+            ? "None."
+            : Array.from(
+                new Map(
+                  exclusionEntries.map((entry) => [
+                    originKey(entry.origin),
+                    originLabel(entry.origin),
+                  ]),
+                ).values(),
+              )
+                .sort(compareText)
+                .join(", "),
+        );
+        selection.append(selectionHeading, selectionFacts);
         expanded.className = "workbench-expanded-item";
         expanded.id = "workbench-expanded-" + asset.id;
         why.className = "workbench-expanded-why";
-        whyHeading.textContent = "Why use it";
-        whyAccess.textContent = "Source-declared access: " + decision.access;
-        whyAction.textContent = "What the action saves: " + decision.consequence;
-        why.append(whyHeading, purpose.cloneNode(true), whyAccess, whyAction);
+        why.dataset.workbenchDeclaration = "true";
+        whyHeading.textContent = "Claims";
+        whyAccess.textContent = "What it can access: " + decision.access;
+        why.append(whyHeading, purpose.cloneNode(true), whyAccess);
         evidenceSheet.className = "workbench-evidence-sheet";
+        evidenceSheet.dataset.workbenchChecks = "true";
         evidenceSheet.dataset.workbenchEvidenceState = evidence.state;
         evidenceSheet.dataset.workbenchEvidenceTone = evidence.tone;
-        evidenceHeading.textContent = "Security review";
+        evidenceHeading.textContent = "Checks";
         evidenceStatus.textContent = evidence.statusLabel;
         evidenceResult.className = "workbench-report-result";
         evidenceResult.textContent =
@@ -882,12 +1851,7 @@ export function mountWorkbench(
           evidence.state === "unverified" ||
           evidence.state === "stale"
         ) {
-          evidenceFacts.push(evidenceResult, evidenceCoverage, evidenceScope);
-          if (evidence.analyzers.length > 0) {
-            const analyzerHeading = document.createElement("p");
-            analyzerHeading.textContent = "Analyzers named in the report";
-            evidenceFacts.push(analyzerHeading, evidenceAnalyzers);
-          }
+          evidenceFacts.push(evidenceResult, evidenceCoverage);
           evidenceFacts.push(evidenceFindings);
           if (evidence.state === "verified" || evidence.state === "stale")
             evidenceFacts.push(evidenceFreshness);
@@ -895,12 +1859,48 @@ export function mountWorkbench(
         } else {
           evidenceFacts.push(evidenceBinding);
         }
-        evidenceFacts.push(evidenceNextStep, evidenceCaveat);
+        if (evidence.sourceItemReports !== undefined)
+          evidenceFacts.push(sourceItemReportsElement(evidence.sourceItemReports));
         evidenceSheet.append(...evidenceFacts);
+        const technical = document.createElement("details");
+        const technicalSummary = document.createElement("summary");
+        const metadata = document.createElement("pre");
+        technical.className = "workbench-item-technical";
+        technicalSummary.textContent = "More technical details";
+        metadata.textContent = assetDetailsPresentation(asset, options.bundle).advancedJson;
+        const raw = document.createElement("details");
+        const rawSummary = document.createElement("summary");
+        rawSummary.textContent = "Prepared metadata";
+        raw.append(rawSummary, metadata);
+        technical.append(
+          technicalSummary,
+          selection,
+          evidenceNextStep,
+          evidenceCaveat,
+          evidenceScope,
+          evidenceAnalyzers,
+          detailsButton,
+          moreOptions,
+          raw,
+        );
+        const previousReport = previousCatalogReportPresentation(
+          asset,
+          options.bundle,
+          options.referenceReports?.[asset.id],
+        );
+        if (previousReport !== undefined) {
+          evidenceSheet.append(previousCatalogReportElement(previousReport, { compact: true }));
+          technical.insertBefore(previousCatalogReportElement(previousReport), raw);
+        }
         const expandedActions = document.createElement("div");
         expandedActions.className = "workbench-expanded-actions";
-        expandedActions.append(detailsButton, moreOptions);
-        expanded.append(why, evidenceSheet, expandedActions);
+        const panelAction = action.cloneNode(true) as HTMLButtonElement;
+        delete panelAction.dataset.workbenchRowAction;
+        panelAction.dataset.workbenchInspectorAction = "true";
+        const consequence = document.createElement("p");
+        consequence.textContent = decision.consequence;
+        expandedActions.append(panelAction, consequence);
+        expanded.append(why, evidenceSheet, expandedActions, technical);
         if (comparisonPreview?.assetId === asset.id) {
           const comparison = selectionComparisonPresentation(asset, options.bundle, state);
           const preview = document.createElement("section");
@@ -1000,9 +2000,15 @@ export function mountWorkbench(
           );
           expanded.append(preview);
         }
-        row.append(expanded);
+        details.dataset.workbenchInspectorAssetId = asset.id;
+        details.dataset.workbenchInspectorView = "item";
+        details.setAttribute("aria-labelledby", inspectorHeading.id);
+        inspectorMode = "item";
+        lastInspectedAssetId = asset.id;
+        lastFullDetail = undefined;
+        details.replaceChildren(inspectorHeader, expanded);
+        syncInspectorPresentation();
       }
-      updateRow(row, asset);
       rows.append(row);
     }
     host.replaceChildren(rows);
@@ -1023,7 +2029,8 @@ export function mountWorkbench(
     const sourceId = filtersState.sourceId;
     sourceReview.replaceChildren();
     if (sourceId !== undefined) {
-      const summary = sourceEvidenceSummary(options.bundle, sourceId, state);
+      const summary = sourceEvidenceSummary(browseBundle, sourceId, state);
+      const choicesInDraft = sourceEvidenceSummary(options.bundle, sourceId, state).choicesInDraft;
       const heading = document.createElement("h3");
       heading.textContent = catalogSourceDisplayName(options.bundle, sourceId);
       const cells = document.createElement("div");
@@ -1052,7 +2059,7 @@ export function mountWorkbench(
       );
       addCell(
         "Choices in draft",
-        summary.choicesInDraft,
+        choicesInDraft,
         "Current source choices and requests. Choices from other sources stay in the shared draft.",
       );
       sourceReview.append(heading, cells);
@@ -1133,9 +2140,13 @@ export function mountWorkbench(
     browseResults.hidden = !browse.active;
     if (!browse.active) {
       browseResults.replaceChildren();
+      expandedAssetId = undefined;
+      if (openDetailKey === undefined) renderIdleInspector();
       return;
     }
     if (browse.total === 0) {
+      expandedAssetId = undefined;
+      if (openDetailKey === undefined) renderIdleInspector();
       const empty = document.createElement("p");
       empty.className = "help";
       empty.textContent = emptyBrowseMessage(browse);
@@ -1160,17 +2171,25 @@ export function mountWorkbench(
       } else browseResults.replaceChildren(empty);
       return;
     }
+    if (expandedAssetId !== undefined && !browse.pageAssetIds.includes(expandedAssetId))
+      expandedAssetId = undefined;
     renderRows(
       browseResults,
       browse.pageAssetIds,
       browse.page,
       (next) => {
         filtersState = { ...filtersState, page: next };
+        expandedAssetId = undefined;
+        openDetailKey = undefined;
+        detailTrigger = undefined;
+        inspectorOpen = false;
+        syncInspectorPresentation();
         renderInventory();
       },
       browse.total,
       true,
     );
+    if (openDetailKey === undefined && expandedAssetId === undefined) renderIdleInspector();
   };
 
   const renderInventory = (): void => {
@@ -1202,7 +2221,7 @@ export function mountWorkbench(
       templateDetailsPresentation(template, options.bundle),
       trigger,
     );
-    if (details.hidden) return;
+    if (!inspectorOpen) return;
     const close = details.querySelector<HTMLButtonElement>("[data-workbench-details-close]");
     if (close !== null) close.textContent = "Cancel preview";
     const preview = document.createElement("section");
@@ -1441,8 +2460,89 @@ export function mountWorkbench(
     "click",
     (event) => {
       const target = event.target as Element;
+      const panelView = target.closest<HTMLButtonElement>("[data-workbench-panel-view]");
+      const draftOpen = target.closest<HTMLButtonElement>("[data-workbench-draft-open]");
+      if (panelView !== null || draftOpen !== null) {
+        const view = draftOpen !== null ? "draft" : panelView?.dataset.workbenchPanelView;
+        if (view !== "item" && view !== "draft" && view !== "exposure") return;
+        inspectorMode = view;
+        inspectorOpen = true;
+        openDetailKey = undefined;
+        openCatalogDetail = undefined;
+        expandedAssetId = undefined;
+        comparisonPreview = undefined;
+        if (draftOpen !== null || detailTrigger === undefined)
+          detailTrigger = draftOpen ?? panelView ?? undefined;
+        if (view === "item" && lastFullDetail !== undefined && detailTrigger !== undefined) {
+          showDetails(
+            lastFullDetail.key,
+            lastFullDetail.presentation,
+            detailTrigger,
+            lastFullDetail.catalogDetail,
+          );
+        } else if (view === "item" && lastInspectedAssetId !== undefined) {
+          expandedAssetId = lastInspectedAssetId;
+          renderInventory();
+        } else renderIdleInspector();
+        updateDetailButtons();
+        details.querySelector<HTMLElement>("#workbench-detail-title")?.focus();
+        return;
+      }
+      const exposureOpen = target.closest<HTMLButtonElement>("[data-workbench-exposure-open]");
+      if (exposureOpen !== null) {
+        openDetailKey = undefined;
+        expandedAssetId = undefined;
+        comparisonPreview = undefined;
+        detailTrigger = exposureOpen;
+        inspectorOpen = true;
+        updateDetailButtons();
+        renderExposureOverview({ focusHeading: true });
+        return;
+      }
+      if (target.closest<HTMLButtonElement>("[data-workbench-exposure-back]") !== null) {
+        openDetailKey = undefined;
+        expandedAssetId = undefined;
+        comparisonPreview = undefined;
+        updateDetailButtons();
+        renderExposureOverview({ focusHeading: true });
+        return;
+      }
       if (target.closest<HTMLButtonElement>("[data-workbench-details-close]") !== null) {
         closeDetails();
+        return;
+      }
+      const exposureInspect = target.closest<HTMLButtonElement>(
+        "[data-workbench-exposure-inspect-id]",
+      );
+      const exposureAssetId = exposureInspect?.dataset.workbenchExposureInspectId;
+      if (exposureInspect !== null && exposureAssetId !== undefined) {
+        const asset = options.bundle.assets[exposureAssetId];
+        if (asset === undefined) return;
+        if (browseInventory.assets[asset.id] === undefined) {
+          showDetails(
+            "asset:" + asset.id,
+            assetDetailsPresentation(asset, options.bundle),
+            exposureInspect,
+            { asset, mode: "catalog" },
+          );
+          return;
+        }
+        templates.open = false;
+        templateList.replaceChildren();
+        filtersState = {
+          sourceId: asset.sourceId,
+          kind: asset.kind,
+          query: asset.id,
+          page: 0,
+        };
+        search.value = asset.id;
+        openDetailKey = undefined;
+        expandedAssetId = asset.id;
+        comparisonPreview = undefined;
+        detailTrigger = exposureInspect;
+        inspectorOpen = true;
+        renderInventory();
+        root.querySelector<HTMLElement>("#workbench-detail-title")?.focus();
         return;
       }
       const repairButton = target.closest<HTMLButtonElement>("[data-workbench-repair-type]");
@@ -1514,6 +2614,13 @@ export function mountWorkbench(
           refreshCounts();
           renderDraftReview();
           refreshVisibleRows(changedAssetIds(previous, state));
+          renderSourceSummary();
+          refreshActiveInspector();
+          queueMicrotask(() =>
+            [...root.querySelectorAll<HTMLButtonElement>("[data-workbench-exclusion-id]")]
+              .find((button) => button.dataset.workbenchExclusionId === exclusionId)
+              ?.focus({ preventScroll: true }),
+          );
         } else
           diagnostics.textContent =
             result.diagnostics?.map((diagnostic) => diagnostic.message).join(" ") ??
@@ -1526,7 +2633,7 @@ export function mountWorkbench(
       const removeTemplateId = removeTemplate?.dataset.workbenchTemplateRemoveId;
       const removeTemplateDigest = removeTemplate?.dataset.workbenchTemplateRemoveDigest;
       if (removeTemplateId !== undefined && removeTemplateDigest !== undefined) {
-        const fromDraftReview = removeTemplate !== null && draftReview.contains(removeTemplate);
+        const fromDraftReview = removeTemplate !== null && draftReviewList.contains(removeTemplate);
         const result = options.dispatch({
           type: "remove-template",
           templateId: removeTemplateId,
@@ -1536,7 +2643,11 @@ export function mountWorkbench(
           acceptState(result.state);
           showDiagnostics(result);
           refresh();
-          if (fromDraftReview) draftReviewSummary.focus();
+          if (fromDraftReview) {
+            if (compactInspector.matches && inspectorOpen)
+              details.querySelector<HTMLElement>("#workbench-detail-title")?.focus();
+            else draftReviewSummary.focus();
+          }
         } else
           diagnostics.textContent =
             result.diagnostics?.map((diagnostic) => diagnostic.message).join(" ") ??
@@ -1612,9 +2723,15 @@ export function mountWorkbench(
       }
       const expandButton = target.closest<HTMLButtonElement>("[data-workbench-expand-id]");
       const expandId = expandButton?.dataset.workbenchExpandId;
-      if (expandId !== undefined) {
-        expandedAssetId = expandedAssetId === expandId ? undefined : expandId;
+      if (expandId !== undefined && expandButton !== null) {
+        expandedAssetId = expandId;
+        openDetailKey = undefined;
+        comparisonPreview = undefined;
+        detailTrigger = expandButton;
+        inspectorOpen = true;
+        syncInspectorPresentation();
         renderInventory();
+        root.querySelector<HTMLElement>("#workbench-detail-title")?.focus();
         return;
       }
       const detailButton = target.closest<HTMLButtonElement>("[data-workbench-detail-id]");
@@ -1630,7 +2747,7 @@ export function mountWorkbench(
         return;
       }
       const button = target.closest<HTMLButtonElement>(
-        "button[data-workbench-row-action][data-workbench-asset-id]",
+        "button[data-workbench-row-action][data-workbench-asset-id], button[data-workbench-inspector-action]",
       );
       const assetId = button?.dataset.workbenchAssetId;
       const asset = assetId === undefined ? undefined : options.bundle.assets[assetId];
@@ -1648,6 +2765,10 @@ export function mountWorkbench(
         const comparison = selectionComparisonPresentation(asset, options.bundle, state);
         if (comparison.kind === "conflict" && comparison.preview.accepted) {
           expandedAssetId = asset.id;
+          openDetailKey = undefined;
+          detailTrigger = button;
+          inspectorOpen = true;
+          syncInspectorPresentation();
           comparisonPreview = {
             assetId: asset.id,
             expectedState: structuredClone(state),
@@ -1670,6 +2791,8 @@ export function mountWorkbench(
       refreshCounts();
       renderDraftReview();
       refreshVisibleRows(changedAssetIds(previous, state));
+      renderSourceSummary();
+      refreshActiveInspector();
     },
     { signal: teardown.signal },
   );
@@ -1684,8 +2807,14 @@ export function mountWorkbench(
       replacement?.focus();
     });
   };
-  const updateFilters = (next: CatalogBrowseFilters): void => {
+  const updateFilters = (next: CatalogBrowseFilters, preferredAssetId?: string): void => {
     filtersState = { ...next, page: 0 };
+    openDetailKey = undefined;
+    detailTrigger = undefined;
+    comparisonPreview = undefined;
+    expandedAssetId = preferredAssetId;
+    inspectorOpen = false;
+    syncInspectorPresentation();
     if (search.value !== (filtersState.query ?? "")) search.value = filtersState.query ?? "";
     renderInventory();
   };
@@ -1693,8 +2822,6 @@ export function mountWorkbench(
     if (sourceId === undefined || sourceId === filtersState.sourceId) return;
     templates.open = false;
     templateList.replaceChildren();
-    expandedAssetId = undefined;
-    if (openDetailKey !== undefined) closeDetails();
     updateFilters({ sourceId, query: filtersState.query, kind: undefined });
     renderTemplates();
     if (focusSearch) search.focus();
@@ -1751,7 +2878,11 @@ export function mountWorkbench(
       const row = document.createElement("p");
       const remove = document.createElement("button");
       row.textContent =
-        "Local draft—requires Core preparation: " + draft.id + " (" + draft.declaration.kind + ") ";
+        "Local draft · requires Core preparation: " +
+        draft.id +
+        " (" +
+        draft.declaration.kind +
+        ") ";
       remove.type = "button";
       remove.dataset.workbenchDraftId = draft.id;
       remove.textContent = "Remove draft";
@@ -1818,8 +2949,27 @@ export function mountWorkbench(
       });
     }
     draftReviewSummary.textContent = "Review draft (" + entries.length + " entries)";
+    draftEntryCount = entries.length;
     draftReviewList.replaceChildren();
-    if (!draftReview.open) return;
+    syncInspectorPresentation();
+    if (inspectorMode !== "draft") return;
+    const heading = document.createElement("h3");
+    const intro = document.createElement("p");
+    const back = document.createElement("button");
+    heading.id = "workbench-detail-title";
+    heading.tabIndex = -1;
+    heading.textContent = "Review draft";
+    intro.textContent = `${entries.length} saved entries. Changes here update your policy draft.`;
+    intro.className = "help";
+    back.type = "button";
+    back.className = "btn sm secondary workbench-exposure-back";
+    back.dataset.workbenchDetailsClose = "true";
+    back.textContent = "Back to catalog";
+    details.dataset.workbenchInspectorView = "draft";
+    details.removeAttribute("data-workbench-inspector-asset-id");
+    details.setAttribute("aria-labelledby", heading.id);
+    details.replaceChildren(back, heading, intro, draftReviewList);
+    syncInspectorPresentation();
     if (entries.length === 0) {
       const empty = document.createElement("p");
       empty.textContent = "This draft has no saved choices, requests, dependencies, or exclusions.";
@@ -1890,6 +3040,41 @@ export function mountWorkbench(
           row.append(removal);
         }
       }
+      if (
+        (isDeveloperToolCatalogAssetId(entry.assetId) || entry.assetId === "aih/github") &&
+        entry.savedEntry !== undefined &&
+        entry.entryKind !== undefined &&
+        entry.origin !== undefined &&
+        (entry.origin.kind === "administrator" || entry.origin.kind === "legacy-unattributed")
+      ) {
+        const retained = document.createElement("p");
+        const remove = document.createElement("button");
+        const kind =
+          entry.entryKind === "root"
+            ? "choice"
+            : entry.entryKind === "request"
+              ? "request"
+              : "exclusion";
+        const label = asset === undefined ? entry.assetId : humanizedAssetLabel(asset);
+        retained.className = "workbench-review-context";
+        retained.textContent = isDeveloperToolCatalogAssetId(entry.assetId)
+          ? "This saved catalog entry is retained for compatibility. Developer tool setup owns new choices for this tool."
+          : "This saved catalog entry is retained for compatibility. GitHub is not part of the Core baseline.";
+        remove.type = "button";
+        remove.className = "btn sm secondary";
+        remove.dataset.workbenchSetupPinRemoveId = entry.assetId;
+        remove.dataset.workbenchRepairType =
+          entry.entryKind === "root"
+            ? "remove-root"
+            : entry.entryKind === "request"
+              ? "remove-request"
+              : "remove-exclusion";
+        remove.dataset.workbenchRepairAssetId = entry.assetId;
+        remove.dataset.workbenchRepairOrigin = entry.origin.kind;
+        remove.textContent = "Remove saved catalog " + kind;
+        remove.setAttribute("aria-label", `Remove saved catalog ${kind} for ${label}`);
+        row.append(retained, remove);
+      }
       if (asset !== undefined && !entry.needsReview) {
         const decision = assetDecisionPresentation(asset, options.bundle);
         const evidence = assetEvidencePresentation(asset, options.bundle);
@@ -1909,17 +3094,21 @@ export function mountWorkbench(
           (evidence.findings.length === 0
             ? ""
             : " · " + evidence.findings.length + " findings to review");
-        context.append(purpose, consequence, report);
+        const adoptionDetails = document.createElement("details");
+        const adoptionSummary = document.createElement("summary");
+        adoptionSummary.textContent = "Adoption details";
+        adoptionDetails.append(adoptionSummary, consequence);
+        context.append(purpose, report, adoptionDetails);
         if (entry.entryKind !== "exclusion") {
           const handoff = adoption?.items.find((item) => item.assetId === asset.id);
           if (handoff !== undefined) {
             const next = document.createElement("p");
             next.textContent = "Next step: " + handoff.nextAction;
-            context.append(next);
+            adoptionDetails.append(next);
             if (adoption?.accepted && handoff.command !== undefined) {
               const command = document.createElement("code");
               command.textContent = handoff.command;
-              context.append(command);
+              adoptionDetails.append(command);
             }
           }
         }
@@ -1928,6 +3117,10 @@ export function mountWorkbench(
         const entryKind = entry.entryKind;
         if (savedEntry !== undefined && entryKind !== undefined) {
           const reasonPanel = document.createElement("div");
+          const reasonDisclosure = document.createElement("details");
+          const reasonSummary = document.createElement("summary");
+          reasonDisclosure.className = "workbench-review-rationale";
+          reasonSummary.textContent = savedEntry.rationale ? "Edit reason" : "Add a reason";
           reasonPanel.className = "workbench-review-reason";
           const label = document.createElement("label");
           const reason = document.createElement("textarea");
@@ -1972,14 +3165,22 @@ export function mountWorkbench(
                 "The reason could not be saved. Review this item's current version.";
           });
           reasonPanel.append(label, reason, save, feedback);
-          row.append(reasonPanel);
+          reasonDisclosure.append(reasonSummary, reasonPanel);
+          row.append(reasonDisclosure);
         }
         detailsButton.type = "button";
         detailsButton.className = "btn sm secondary";
         detailsButton.dataset.workbenchDetailId = asset.id;
         detailsButton.setAttribute("aria-controls", details.id);
         detailsButton.setAttribute("aria-label", "Read details for " + humanizedAssetLabel(asset));
-        detailsButton.textContent = "Read details";
+        detailsButton.textContent =
+          previousCatalogReportPresentation(
+            asset,
+            options.bundle,
+            options.referenceReports?.[asset.id],
+          ) === undefined
+            ? "Read details"
+            : "Read previous report";
         row.append(detailsButton);
       }
       draftReviewList.append(row);
@@ -1996,9 +3197,6 @@ export function mountWorkbench(
     );
   };
   drafts.addEventListener("toggle", renderDraftRows, {
-    signal: teardown.signal,
-  });
-  draftReview.addEventListener("toggle", renderDraftReview, {
     signal: teardown.signal,
   });
 
@@ -2027,6 +3225,14 @@ export function mountWorkbench(
         refresh();
       }
       return result;
+    },
+    inspectAssetDetails(assetId, trigger) {
+      const asset = options.bundle.assets[assetId];
+      if (asset === undefined) return;
+      showDetails("asset:" + asset.id, developerToolDetailsPresentation(asset), trigger, {
+        asset,
+        mode: "developer-tool-setup",
+      });
     },
     destroy: () => {
       if (evidenceRefreshTimer !== undefined) clearTimeout(evidenceRefreshTimer);

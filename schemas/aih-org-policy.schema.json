@@ -6127,7 +6127,7 @@
           "type": "object",
           "properties": {
             "selected": {
-              "maxItems": 6,
+              "maxItems": 7,
               "type": "array",
               "items": {
                 "type": "string",
@@ -6137,12 +6137,13 @@
                   "serena",
                   "token-optimizer",
                   "context7",
-                  "markitdown"
+                  "markitdown",
+                  "playwright"
                 ]
               }
             },
             "excluded": {
-              "maxItems": 6,
+              "maxItems": 7,
               "type": "array",
               "items": {
                 "type": "string",
@@ -6152,7 +6153,8 @@
                   "serena",
                   "token-optimizer",
                   "context7",
-                  "markitdown"
+                  "markitdown",
+                  "playwright"
                 ]
               }
             }

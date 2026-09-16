@@ -63,7 +63,7 @@ describe("ECC hook profile authoring", () => {
   it("records the pinned profile and reversibly disables only eligible pinned hooks", () => {
     const window = studio();
     const controls = eccHookControls();
-    const baseline = JSON.stringify(policy(window));
+    const baseline = policy(window);
     const panel = window.document.getElementById("ecc-hook-controls");
     if (panel === null) throw new Error("expected ECC hook controls panel");
     const eccSurface = window.document.getElementById("surface-ecc-hooks");
@@ -182,7 +182,11 @@ describe("ECC hook profile authoring", () => {
     });
 
     click(window, window.document.getElementById("clear-policy"), "profile inverse");
-    expect(JSON.stringify(policy(window))).toBe(baseline);
+    // Clear restores the initial policy semantically. Byte order differs: the
+    // load-time preview is serialized from the compiled workbench state while
+    // Clear reassigns the embedded initialPolicy as-is, so compare parsed
+    // objects rather than serialized strings.
+    expect(policy(window)).toEqual(baseline);
     window.close();
   });
 });

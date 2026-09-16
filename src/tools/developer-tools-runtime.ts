@@ -36,6 +36,7 @@ const RECEIPT_TOOL_IDS = [
   "serena",
   "context7",
   "markitdown",
+  "playwright",
 ] as const;
 type ReceiptToolId = (typeof RECEIPT_TOOL_IDS)[number];
 
@@ -138,6 +139,7 @@ function ownershipRoot(layout: DefaultNativeRuntimeLayout, id: ReceiptToolId): s
       return layout.serenaStateRoot;
     case "context7":
     case "markitdown":
+    case "playwright":
       return layout.projectStateRoot;
   }
 }

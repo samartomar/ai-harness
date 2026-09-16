@@ -52,16 +52,25 @@ describe("connected GitHub Skill bridge", () => {
     const policy = structuredClone(initial.policy) as {
       authoringSelections: { roots: Array<Record<string, unknown>> };
     };
-    const existingRoot = policy.authoringSelections.roots[0];
+    // The default policy ships Core baseline roots first; the bridged Skill
+    // root is identified by its assetId, not its position.
+    const existingRoot = policy.authoringSelections.roots.find(
+      (root) => root.assetId === initial.root.assetId,
+    );
     if (existingRoot === undefined) throw new Error("expected the initial pending Skill root");
     existingRoot.rationale = "Needed for documented frontend reviews.";
 
     const repeated = bridgeConnectedGithubSkillV1(policy, first);
-    expect(repeated.policy).toMatchObject({
-      authoringSelections: {
-        roots: [expect.objectContaining({ rationale: "Needed for documented frontend reviews." })],
-      },
-    });
+    const repeatedRoots = (
+      repeated.policy as { authoringSelections: { roots: Array<Record<string, unknown>> } }
+    ).authoringSelections.roots;
+    expect(repeatedRoots).toHaveLength(policy.authoringSelections.roots.length);
+    expect(repeatedRoots).toContainEqual(
+      expect.objectContaining({
+        assetId: initial.root.assetId,
+        rationale: "Needed for documented frontend reviews.",
+      }),
+    );
     expect(repeated.manifestBytes).toHaveLength(1);
   });
 
@@ -74,12 +83,26 @@ describe("connected GitHub Skill bridge", () => {
         commit: "a".repeat(40),
       },
     } satisfies ResolvedGithubSkillV1;
+    // The default policy already carries the Core baseline roots; the two
+    // bridged pins must land as two additional, distinct source identities.
+    const baselineRoots = (
+      defaultStudioPolicy() as unknown as { authoringSelections: { roots: unknown[] } }
+    ).authoringSelections.roots.length;
     const one = bridgeConnectedGithubSkillV1(defaultStudioPolicy(), first);
     const two = bridgeConnectedGithubSkillV1(one.policy, another);
 
     expect(two.manifestBytes).toHaveLength(2);
     expect(two.policy).toMatchObject({ authoringSelections: { roots: expect.any(Array) } });
     const roots = (two.policy.authoringSelections as { roots: unknown[] }).roots;
-    expect(roots).toHaveLength(2);
+    expect(roots).toHaveLength(baselineRoots + 2);
+    const bridgedSourceIds = new Set(
+      roots
+        .map((root) => (root as { sourceId?: string }).sourceId)
+        .filter(
+          (sourceId) =>
+            sourceId !== undefined && sourceId.startsWith("source:connected-github-skill-"),
+        ),
+    );
+    expect(bridgedSourceIds.size).toBe(2);
   });
 });

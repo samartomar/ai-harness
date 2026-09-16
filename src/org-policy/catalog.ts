@@ -8,6 +8,7 @@ import {
   GOVERNED_USAGE_TARGETS,
   REGISTRY_IDS,
 } from "../internals/cli-registry.js";
+import { npxLaunchPins } from "../mcp/pins.js";
 import { mcpApprovalSubject } from "../mcp/policy.js";
 import { type McpServer, mcpServers } from "../mcp/servers.js";
 import { usageRecorderScript } from "../usage/capture.js";
@@ -244,14 +245,14 @@ function policyAuthoringUnavailableMcpCatalog(): PolicyAuthoringCatalog["unavail
     frameworks: ["React"],
   });
   const playwright = web.playwright;
-  if (
-    playwright?.type !== "stdio" ||
-    playwright.args.length !== 1 ||
-    playwright.args[0] === undefined
-  ) {
-    throw new Error("AIH's web MCP catalog is missing Playwright");
+  if (playwright?.type !== "stdio" || playwright.command !== "npx") {
+    throw new Error("AIH's MCP catalog is missing the Playwright npm launcher");
   }
-  const configuredIdentity = playwright.args[0];
+  const pins = npxLaunchPins(playwright.args);
+  const pin = pins[0];
+  if (pins.length !== 1 || pin?.packageName !== "@playwright/mcp")
+    throw new Error("AIH's MCP catalog is missing the exact Playwright package pin");
+  const configuredIdentity = pin.spec;
   return [
     {
       id: "playwright",

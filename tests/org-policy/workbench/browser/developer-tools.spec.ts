@@ -11,11 +11,25 @@ const tools = [
   ["token-optimizer", "Token Optimizer"],
   ["context7", "Context7"],
   ["markitdown", "MarkItDown CLI"],
+  ["playwright", "Playwright"],
+] as const;
+
+const setupOwnedCatalogAssets = [
+  ["source:aih-core", "aih/code-review-graph"],
+  ["source:aih-core", "aih/codebase-memory-mcp"],
+  ["source:aih-core", "aih/context7"],
+  ["source:aih-core", "aih/playwright"],
+  ["source:aih-core", "aih/serena"],
+  ["source:ecc", "ecc/mcp:code-review-graph"],
+  ["source:ecc", "ecc/mcp:codebase-memory-mcp"],
+  ["source:ecc", "ecc/mcp:context7"],
+  ["source:ecc", "ecc/mcp:token-optimizer"],
 ] as const;
 
 for (const [excludedId, excludedLabel] of [
   ["context7", "Context7"],
   ["markitdown", "MarkItDown CLI"],
+  ["playwright", "Playwright"],
 ] as const) {
   test(`persists ${excludedLabel} opt-out and explicit-empty choices through browser export, import, and public CLI reopen`, async ({
     page,
@@ -61,11 +75,28 @@ for (const [excludedId, excludedLabel] of [
     for (const [id, label] of tools) {
       const row = page.locator(`[data-developer-tool-id="${id}"]`);
       await expect(row).toContainText(label);
-      await expect(row).toContainText("Selected — pending setup");
+      await expect(row).toContainText("Selected: pending setup");
     }
     expect(JSON.parse(await page.locator("#config-preview").inputValue())).not.toHaveProperty(
       "developerTools",
     );
+    // This journey isolates developer setup from Core control deployment prerequisites.
+    await page.locator("#policy-file").setInputFiles({
+      name: "developer-tools-only.json",
+      mimeType: "application/json",
+      buffer: Buffer.from(
+        JSON.stringify({
+          schemaVersion: 2,
+          minimumPosture: "vibe",
+          references: { repoContract: "ai-coding/project.json" },
+        }),
+      ),
+    });
+    await expect
+      .poll(
+        async () => JSON.parse(await page.locator("#config-preview").inputValue()).schemaVersion,
+      )
+      .toBe(2);
 
     await expect(page.locator('[data-developer-tool-id="context7"]')).toContainText(
       "network requests subject to egress policy",
@@ -176,3 +207,148 @@ for (const [excludedId, excludedLabel] of [
     expect(networkRequests).toEqual([]);
   });
 }
+
+test("keeps setup-owned catalog duplicates out of browse while preserving saved Playwright requests", async ({
+  page,
+  context,
+}, testInfo) => {
+  test.setTimeout(120_000);
+  const directory = await mkdtemp(testInfo.outputPath("developer-tool-catalog-"));
+  const cli = resolve("dist/cli.js");
+  const generated = spawnSync(
+    process.execPath,
+    [cli, "policy", "generate", "--out", "author.html", "--apply", "--json"],
+    {
+      cwd: directory,
+      env: {
+        ...process.env,
+        AIH_WORKBENCH_DATA: resolve(directory, "source-data"),
+        AIH_WORKBENCH_VERIFIER_HOME: resolve(directory, "verifier"),
+      },
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: 40_000,
+    },
+  );
+  expect(generated.status, generated.stderr || generated.stdout).toBe(0);
+
+  const errors: string[] = [];
+  const networkRequests: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("request", (request) => {
+    if (/^https?:/u.test(request.url())) networkRequests.push(request.url());
+  });
+  await context.route(/^https?:/u, (route) => route.abort());
+  await page.goto(pathToFileURL(resolve(directory, "author.html")).href);
+
+  const preview = page.locator("#config-preview");
+  const disclosure = page.locator("#developer-tool-selection");
+  await disclosure.locator("summary").click();
+  const playwrightTool = page.locator('[data-developer-tool-id="playwright"]');
+  await expect(page.locator("[data-developer-tool-id]")).toHaveCount(7);
+  await expect(playwrightTool).toHaveAttribute("data-developer-tool-state", "selected-pending");
+  const beforeDetails = await preview.inputValue();
+  await playwrightTool.locator('[data-developer-tool-details-id="playwright"]').click();
+  const inspector = page.locator("#workbench-detail-panel[data-workbench-detail]");
+  await expect(inspector).toHaveAttribute("data-workbench-inspector-asset-id", "aih/playwright");
+  await expect(inspector.locator("[data-workbench-declaration]")).toBeVisible();
+  await expect(inspector.locator("[data-workbench-checks]")).toBeVisible();
+  await expect(preview).toHaveValue(beforeDetails);
+
+  await playwrightTool
+    .getByRole("button", { name: "Exclude Playwright from setup", exact: true })
+    .click();
+  await expect(playwrightTool).toHaveAttribute("data-developer-tool-state", "excluded");
+  const excludedPolicy = JSON.parse(await preview.inputValue());
+  expect(excludedPolicy.developerTools).toMatchObject({ excluded: ["playwright"] });
+  if (excludedPolicy.authoringSelections === undefined)
+    throw new Error("Expected a baseline Workbench selection state");
+  const playwrightPin = await page.evaluate(() => {
+    const model = (
+      window as unknown as {
+        __aihWorkbenchModel: {
+          workbenchBundle: {
+            assets: Record<
+              string,
+              {
+                id: string;
+                sourceId: string;
+                sourceRevisionId: string;
+                contentDigest: string;
+              }
+            >;
+          };
+        };
+      }
+    ).__aihWorkbenchModel;
+    const asset = model.workbenchBundle.assets["aih/playwright"];
+    if (asset === undefined) throw new Error("Expected the retained Playwright catalog asset");
+    return {
+      assetId: asset.id,
+      sourceId: asset.sourceId,
+      sourceRevisionId: asset.sourceRevisionId,
+      contentDigest: asset.contentDigest,
+      origin: { kind: "administrator" },
+    };
+  });
+  const legacyPolicy = {
+    ...excludedPolicy,
+    authoringSelections: {
+      ...excludedPolicy.authoringSelections,
+      requests: [playwrightPin],
+    },
+  };
+  await page.locator("#policy-file").setInputFiles({
+    name: "saved-playwright-request.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(legacyPolicy)),
+  });
+  await expect
+    .poll(async () => JSON.parse(await preview.inputValue()).authoringSelections.requests)
+    .toEqual([playwrightPin]);
+  await expect(playwrightTool).toHaveAttribute("data-developer-tool-state", "excluded");
+
+  const search = page.getByRole("searchbox", { name: "Search catalog" });
+  for (const [sourceId, assetId] of setupOwnedCatalogAssets) {
+    await search.fill("");
+    await page.locator(`[data-workbench-source-tab="${sourceId}"]`).click();
+    const row = page.locator(`article[data-workbench-asset-id="${assetId}"]`);
+    await expect(row).toHaveCount(0);
+    await search.fill(assetId);
+    await expect(row).toHaveCount(0);
+  }
+  await page.locator('[data-workbench-source-tab="source:aih-core"]').click();
+  await search.fill("aih/github");
+  await expect(page.locator('article[data-workbench-asset-id="aih/github"]')).toHaveCount(0);
+  for (const [sourceId, assetId] of [["source:ecc", "ecc/mcp:github"]] as const) {
+    await page.locator(`[data-workbench-source-tab="${sourceId}"]`).click();
+    await search.fill(assetId);
+    await expect(page.locator(`article[data-workbench-asset-id="${assetId}"]`)).toBeVisible();
+  }
+
+  await page.locator(".workbench-draft-review > button[data-workbench-draft-open]").click();
+  await expect(inspector).toHaveAttribute("data-workbench-inspector-view", "draft");
+  const review = inspector.locator(".workbench-draft-review-list");
+  const retainedPin = review.locator('[data-workbench-setup-pin-remove-id="aih/playwright"]');
+  await expect(retainedPin).toHaveAccessibleName("Remove saved catalog request for Playwright");
+  await expect(review).toContainText(
+    "This saved catalog entry is retained for compatibility. Developer tool setup owns new choices for this tool.",
+  );
+  await inspector.locator('[data-workbench-panel-view="exposure"]').click();
+  const overview = inspector.locator("[data-workbench-exposure-overview]");
+  const retainedRequest = overview.locator('[data-workbench-exposure-request-id="aih/playwright"]');
+  await expect(retainedRequest).toBeVisible();
+  const beforeInspect = await preview.inputValue();
+  await retainedRequest.locator('[data-workbench-exposure-inspect-id="aih/playwright"]').click();
+  await expect(inspector).toHaveAttribute("data-workbench-inspector-asset-id", "aih/playwright");
+  await expect(inspector.locator("[data-workbench-declaration]")).toBeVisible();
+  await expect(inspector.locator("[data-workbench-checks]")).toBeVisible();
+  await expect(preview).toHaveValue(beforeInspect);
+
+  await writeFile(
+    testInfo.outputPath("developer-tool-catalog-browser-receipt.json"),
+    JSON.stringify({ errors, networkRequests }, null, 2),
+  );
+  expect(errors).toEqual([]);
+  expect(networkRequests).toEqual([]);
+});

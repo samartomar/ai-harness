@@ -60,6 +60,34 @@ test("authors independent required practices in the browser and reopens exact ex
   const exports: Record<string, string> = {};
   for (const adopter of cases) {
     await page.goto(pathToFileURL(resolve(directory, "author.html")).href);
+    // This journey authors independent practices from a deliberate empty policy.
+    await page.locator("#policy-file").setInputFiles({
+      name: "practice-only.json",
+      mimeType: "application/json",
+      buffer: Buffer.from(
+        JSON.stringify({
+          schemaVersion: 2,
+          minimumPosture: "vibe",
+          references: { repoContract: "ai-coding/project.json" },
+          governance: {
+            policyVersion: "1",
+            catalog: { reviewed: [], custom: [] },
+            activations: [],
+            authority: { approvals: [], decisions: [] },
+            externalCuration: [],
+            externalSelections: [],
+            eccMcpApprovals: [],
+            hookRegistrations: [],
+          },
+        }),
+      ),
+    });
+    await expect
+      .poll(
+        async () => JSON.parse(await page.locator("#config-preview").inputValue()).schemaVersion,
+      )
+      .toBe(2);
+    const inspector = page.locator("#workbench-detail-panel[data-workbench-detail]");
     await page.locator('[data-view-tab="compose"]').click();
     const sanctioned = page.locator("[data-sanctioned-cli]");
     for (let index = 0; index < (await sanctioned.count()); index++) {
@@ -75,22 +103,35 @@ test("authors independent required practices in the browser and reopens exact ex
     const excludedId = `ecc/skill:${adopter.excluded}`;
     await search.fill(adopter.required);
     await page.locator(`button[data-workbench-asset-id="${requiredId}"]`).click();
-    await page.locator(`button[data-workbench-expand-id="${requiredId}"]`).click();
-    await page.locator(`button[data-workbench-detail-id="${requiredId}"]`).click();
-    await expect(page.locator("[data-workbench-detail]")).toContainText("instruction guidance");
+    await page
+      .locator(`button.workbench-row-title[data-workbench-expand-id="${requiredId}"]`)
+      .click();
+    await expect(inspector).toHaveAttribute("data-workbench-inspector-asset-id", requiredId);
+    await expect(inspector.locator("#workbench-detail-title")).toBeVisible();
+    await inspector.locator(".workbench-item-technical > summary").click();
+    await inspector.locator(`button[data-workbench-detail-id="${requiredId}"]`).click();
+    await expect(inspector).toContainText("instruction guidance");
     await page.keyboard.press("Escape");
-    const requiredRow = page.locator(`article[data-workbench-asset-id="${requiredId}"]`);
-    await requiredRow.getByText("More options", { exact: true }).click();
+    await inspector.locator('[data-workbench-panel-view="exposure"]').click();
+    await expect(inspector.locator("[data-workbench-exposure-overview]")).toBeVisible();
+    await page
+      .locator(`button.workbench-row-title[data-workbench-expand-id="${requiredId}"]`)
+      .click();
+    await expect(inspector).toHaveAttribute("data-workbench-inspector-asset-id", requiredId);
+    await inspector.locator(".workbench-item-technical > summary").click();
+    await inspector.getByText("More options", { exact: true }).click();
     const beforeRefusal = await page.locator("#config-preview").inputValue();
     await page.locator(`button[data-workbench-exclusion-id="${requiredId}"]`).click();
-    await expect(page.locator("#framework-rows > .error")).toContainText("requires excluded asset");
+    await expect(page.locator("#framework-rows .error")).toContainText("requires excluded asset");
     await expect(page.locator("#config-preview")).toHaveValue(beforeRefusal);
     await search.fill(adopter.excluded);
-    await page.locator(`button[data-workbench-expand-id="${excludedId}"]`).click();
     await page
-      .locator(`article[data-workbench-asset-id="${excludedId}"]`)
-      .getByText("More options", { exact: true })
+      .locator(`button.workbench-row-title[data-workbench-expand-id="${excludedId}"]`)
       .click();
+    await expect(inspector).toHaveAttribute("data-workbench-inspector-asset-id", excludedId);
+    await expect(inspector.locator("#workbench-detail-title")).toBeVisible();
+    await inspector.locator(".workbench-item-technical > summary").click();
+    await inspector.getByText("More options", { exact: true }).click();
     await page.locator(`button[data-workbench-exclusion-id="${excludedId}"]`).click();
     const policyBytes = await page.locator("#config-preview").inputValue();
     const policy = JSON.parse(policyBytes);
