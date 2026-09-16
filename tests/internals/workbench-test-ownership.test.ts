@@ -28,6 +28,7 @@ describe("Workbench lane ownership", () => {
       "tests/org-policy/workbench/studio-model-source-data.test.ts",
       "tests/org-policy/workbench/governed-mcp-compatibility.test.ts",
       "tests/org-policy/workbench/core-defaults.test.ts",
+      "tests/org-policy/workbench/first-party-presentation.test.ts",
       "tests/org-policy/workbench/reference-reports.test.ts",
     ]) {
       expect(WORKBENCH_PURE_TEST_EXCLUDE_PATTERNS).toContain(pattern);

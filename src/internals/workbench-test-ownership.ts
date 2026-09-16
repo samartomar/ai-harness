@@ -34,6 +34,7 @@ export const WORKBENCH_CONTRACT_TEST_PATTERNS = [
   "tests/org-policy/workbench/default-catalog-preassembly.test.ts",
   "tests/org-policy/workbench/default-studio-preassembly.test.ts",
   "tests/org-policy/workbench/core-defaults.test.ts",
+  "tests/org-policy/workbench/first-party-presentation.test.ts",
   "tests/org-policy/workbench/reference-reports.test.ts",
   "tests/org-policy/workbench/core/**/*.test.ts",
   // These exercise authenticated disk stores, operator commands, and the
