@@ -83,6 +83,10 @@ function canonical(value: unknown): string {
   return canonicalStrictJsonBytesV1(value).toString("utf8");
 }
 
+function digest(value: unknown): string {
+  return `sha256:${createHash("sha256").update(canonical(value)).digest("hex")}`;
+}
+
 function reseal(
   input: Readonly<{ bytes: string }>,
   mutate: (payload: Record<string, unknown>) => void,
@@ -100,6 +104,25 @@ function reseal(
 }
 
 describe("default Studio preassembly", () => {
+  it("rejects a sealed default policy that no longer projects from its prepared catalog", () => {
+    const prepared = {
+      catalog: structuredClone(tinyCatalog),
+      bundle: { provenance: { bundleDigest: `sha256:${emptySha256}` }, qualifications: {} },
+      bindings: {},
+      sourceInputs: {},
+    } as never;
+    const studio = createDefaultStudioPreassemblyV1(buildDefaultStudioPackageBaseV1(prepared));
+    const staleDefault = reseal(studio, (payload) => {
+      const base = payload.base as {
+        shell: { defaultPolicy: { governance: { policyVersion: string } } };
+      };
+      base.shell.defaultPolicy.governance.policyVersion = "stale";
+      (payload.output as Record<string, unknown>).baseDigest = digest(base);
+    });
+
+    expect(admitDefaultStudioPreassemblyV1(staleDefault)).toBeUndefined();
+  });
+
   it("does not capture host state, detaches admitted data, and applies live source verification", () => {
     const prepared = {
       catalog: structuredClone(tinyCatalog),

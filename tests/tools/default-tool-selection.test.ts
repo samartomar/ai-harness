@@ -6,6 +6,18 @@ import {
 } from "../../src/tools/default-tool-selection.js";
 
 describe("default developer tool selection", () => {
+  it("keeps Playwright as the seventh ordinary setup default", () => {
+    expect(DEFAULT_DEVELOPER_TOOL_IDS).toEqual([
+      "code-review-graph",
+      "codebase-memory-mcp",
+      "serena",
+      "token-optimizer",
+      "context7",
+      "markitdown",
+      "playwright",
+    ]);
+  });
+
   it("includes MarkItDown CLI by default while keeping GitHub and MarkItDown MCP optional", () => {
     const result = resolveDefaultToolSelection({ policy: { kind: "none" } });
     expect(result.selected).toContain("markitdown");
@@ -75,7 +87,7 @@ describe("default developer tool selection", () => {
     ).toEqual({
       accepted: true,
       source: "legacy-unspecified",
-      selected: ["code-review-graph", "codebase-memory-mcp", "serena", "markitdown"],
+      selected: ["code-review-graph", "codebase-memory-mcp", "serena", "markitdown", "playwright"],
       excluded: ["token-optimizer", "context7"],
       diagnostics: [],
     });
@@ -129,6 +141,7 @@ describe("default developer tool selection", () => {
   it("recognizes only supported developer tool ids", () => {
     expect(isDeveloperToolId("code-review-graph")).toBe(true);
     expect(isDeveloperToolId("token-optimizer")).toBe(true);
+    expect(isDeveloperToolId("playwright")).toBe(true);
     expect(isDeveloperToolId("github")).toBe(false);
     expect(isDeveloperToolId(42)).toBe(false);
   });

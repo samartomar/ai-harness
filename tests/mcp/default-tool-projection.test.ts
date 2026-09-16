@@ -84,11 +84,17 @@ describe("default developer-tool MCP projection", () => {
     expect(excluded.servers?.["markitdown-mcp"]).toBeUndefined();
   });
 
-  it("projects all four MCP-backed defaults when no policy is supplied", () => {
+  it("projects all five MCP-backed defaults when no policy is supplied", () => {
     const result = policyAwareMcpCatalog(context(), { scope: "project" });
     expect(result.error).toBeUndefined();
     expect(Object.keys(result.servers ?? {})).toEqual(
-      expect.arrayContaining(["code-review-graph", "codebase-memory-mcp", "serena", "context7"]),
+      expect.arrayContaining([
+        "code-review-graph",
+        "codebase-memory-mcp",
+        "serena",
+        "context7",
+        "playwright",
+      ]),
     );
     expect(result.servers?.["token-optimizer"]).toBeUndefined();
     expect(result.servers?.markitdown).toBeUndefined();
@@ -102,6 +108,12 @@ describe("default developer-tool MCP projection", () => {
     const subset = projectDefaultDeveloperMcpSelection(base, v3({ selected: ["context7"] }));
     expect(Object.keys(subset.servers)).toEqual(["sequential-thinking", "context7"]);
     expect(subset.selection.source).toBe("explicit");
+
+    const playwrightOnly = projectDefaultDeveloperMcpSelection(
+      base,
+      v3({ selected: ["playwright"] }),
+    );
+    expect(Object.keys(playwrightOnly.servers)).toEqual(["sequential-thinking", "playwright"]);
 
     const excluded = projectDefaultDeveloperMcpSelection(base, v3({ excluded: ["serena"] }));
     expect(excluded.servers.serena).toBeUndefined();
@@ -123,6 +135,7 @@ describe("default developer-tool MCP projection", () => {
     expect(malformed.servers["codebase-memory-mcp"]).toBeUndefined();
     expect(malformed.servers.serena).toBeUndefined();
     expect(malformed.servers.context7).toBeUndefined();
+    expect(malformed.servers.playwright).toBeUndefined();
 
     const legacyRestricted = v3();
     legacyRestricted.mcp = {
@@ -140,5 +153,6 @@ describe("default developer-tool MCP projection", () => {
     expect(catalog.servers?.["codebase-memory-mcp"]).toBeDefined();
     expect(catalog.servers?.serena).toBeDefined();
     expect(catalog.servers?.context7).toBeDefined();
+    expect(catalog.servers?.playwright).toBeDefined();
   });
 });

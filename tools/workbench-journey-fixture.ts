@@ -61,7 +61,25 @@ function requiredClosure(
 }
 
 function compactJourneyModel(): PolicyStudioModel {
-  const model = policyStudioModel();
+  // Navigation journeys start with an intentionally empty imported policy.
+  // New-draft defaults are exercised by the packed Core-defaults journey.
+  const model = policyStudioModel(undefined, undefined, {
+    initialPolicy: {
+      schemaVersion: 2,
+      minimumPosture: "vibe",
+      references: { repoContract: "ai-coding/project.json" },
+      governance: {
+        policyVersion: "1",
+        catalog: { reviewed: [], custom: [] },
+        activations: [],
+        authority: { approvals: [], decisions: [] },
+        externalCuration: [],
+        externalSelections: [],
+        eccMcpApprovals: [],
+        hookRegistrations: [],
+      },
+    },
+  });
   const bundle = model.workbenchBundle;
   const context7 = uniqueRequiredAsset(
     model,
@@ -75,7 +93,15 @@ function compactJourneyModel(): PolicyStudioModel {
     "codex control",
     (asset) =>
       asset.authoring.action === "select-control" &&
+      asset.id === "aih/sequential-thinking" &&
       model.workbenchBindings[asset.id]?.candidate?.targets.includes("codex") === true,
+  );
+  const github = uniqueRequiredAsset(
+    model,
+    "GitHub request",
+    (asset) =>
+      asset.authoring.action === "record-request" &&
+      model.workbenchBindings[asset.id]?.legacyRequestId === "github",
   );
   const eccSkill = requiredAsset(
     model,
@@ -100,6 +126,7 @@ function compactJourneyModel(): PolicyStudioModel {
 
   const retainedAssetIds = requiredClosure(bundle, [
     context7.id,
+    github.id,
     control.id,
     eccSkill.id,
     superpowersSkill.id,

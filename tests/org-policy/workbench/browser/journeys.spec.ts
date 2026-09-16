@@ -43,9 +43,10 @@ test("opens offline and keeps exact prepared evidence separate from permission a
       "input:not([id]):not([name]),select:not([id]):not([name]),textarea:not([id]):not([name])",
     ),
   ).toHaveCount(0);
-  await page.getByRole("button", { name: "Dark", exact: true }).click();
+  await page.getByRole("button", { name: "Switch to dark theme", exact: true }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  await page.getByRole("button", { name: "Light", exact: true }).click();
+  await page.getByRole("button", { name: "Switch to light theme", exact: true }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   const guide = page.locator("#adoption-recipe-panel");
   const guideToggle = page.locator("#adoption-recipe-toggle");
   await expect(guide).toBeHidden();
@@ -87,15 +88,26 @@ test("opens offline and keeps exact prepared evidence separate from permission a
   await page.getByRole("button", { name: "Compose", exact: true }).click();
   const beforeReport = await page.locator("#config-preview").inputValue();
   await page.locator('[data-workbench-source-tab="source:ecc"]').click();
-  await page.locator("button[data-workbench-expand-id]").first().click();
-  const packagedReport = page.locator(".workbench-evidence-sheet");
+  const inspector = page.locator("#workbench-detail-panel[data-workbench-detail]");
+  const firstInspection = page
+    .locator("button.workbench-row-title[data-workbench-expand-id]")
+    .first();
+  const firstAssetId = await firstInspection.getAttribute("data-workbench-expand-id");
+  if (firstAssetId === null) throw new Error("Expected a catalog item to inspect");
+  await firstInspection.click();
+  await expect(inspector).toHaveAttribute("data-workbench-inspector-asset-id", firstAssetId);
+  await expect(inspector.locator("#workbench-detail-title")).toBeVisible();
+  const packagedReport = inspector.locator(".workbench-evidence-sheet");
   await expect(packagedReport).toContainText("Reported result:");
   await expect(packagedReport).toContainText("complete coverage");
   await expect(packagedReport).toContainText("covered by a broader source report");
-  await expect(packagedReport.locator(".workbench-report-analyzers li").first()).toBeVisible();
+  const itemTechnical = inspector.locator(".workbench-item-technical");
+  await expect(itemTechnical).not.toHaveAttribute("open", "");
+  await itemTechnical.locator(":scope > summary").click();
+  await expect(itemTechnical.locator(".workbench-report-analyzers li").first()).toBeVisible();
   await expect(packagedReport).toContainText("Report findings");
   await expect(packagedReport).toHaveAttribute("data-workbench-evidence-state", "verified");
-  await expect(packagedReport).toContainText(
+  await expect(itemTechnical).toContainText(
     "Core verified the attached evidence for this version.",
   );
   await expect(packagedReport).toContainText("Repackaging does not renew this date.");
@@ -126,10 +138,10 @@ test("opens offline and keeps exact prepared evidence separate from permission a
   await expect(page.locator("article[data-workbench-asset-id]")).toContainText(
     "Findings to review",
   );
-  await page.locator('button[data-workbench-expand-id="inspect-item"]').click();
-  const passWithFindings = page.locator(
-    'article[data-workbench-asset-id="inspect-item"] .workbench-evidence-sheet',
-  );
+  await page.locator('button.workbench-row-title[data-workbench-expand-id="inspect-item"]').click();
+  await expect(inspector).toHaveAttribute("data-workbench-inspector-asset-id", "inspect-item");
+  await expect(inspector.locator("#workbench-detail-title")).toBeVisible();
+  const passWithFindings = inspector.locator(".workbench-evidence-sheet");
   await expect(passWithFindings).toHaveAttribute("data-workbench-evidence-tone", "warning");
   await expect(passWithFindings).toContainText("Review outbound access in shared configuration.");
   await expect(passWithFindings).toContainText("broader source report");
@@ -138,31 +150,30 @@ test("opens offline and keeps exact prepared evidence separate from permission a
     "Scan found concerns",
   );
   await search.fill("mcp:request");
-  await page.locator('button[data-workbench-expand-id="mcp:request"]').click();
+  await page.locator('button.workbench-row-title[data-workbench-expand-id="mcp:request"]').click();
+  await inspector.locator(".workbench-item-technical > summary").click();
   await page.locator('button[data-workbench-detail-id="mcp:request"]').click();
-  const evidenceDetail = page.locator("[data-workbench-detail]");
+  const evidenceDetail = inspector;
   await expect(evidenceDetail).toContainText("Prepared evidence is verified");
-  await evidenceDetail.locator("summary").click();
-  await expect(evidenceDetail.locator("details")).toHaveAttribute("open", "");
+  const fullRecordTechnical = evidenceDetail.locator(".workbench-detail-advanced");
+  await fullRecordTechnical.locator(":scope > summary").click();
+  await expect(fullRecordTechnical).toHaveAttribute("open", "");
   await page.clock.fastForward(30 * 60 * 1000);
   await expect(evidenceDetail).toContainText("Scan report needs refreshing");
   await expect(evidenceDetail).not.toContainText("Prepared evidence is verified");
   await expect(page.locator(".workbench-source-review")).toContainText("0 currently verified");
-  await expect(evidenceDetail.locator("details")).toHaveAttribute("open", "");
-  await expect(evidenceDetail.locator("summary")).toBeFocused();
-  await expect(
-    page.locator('article[data-workbench-asset-id="mcp:request"] .workbench-evidence-sheet'),
-  ).toContainText("Scan report needs refreshing");
+  await expect(fullRecordTechnical).toHaveAttribute("open", "");
+  await expect(fullRecordTechnical.locator(":scope > summary")).toBeFocused();
   await expect(page.locator("article[data-workbench-asset-id]")).toContainText(
     "Scan report needs refreshing",
   );
   await expect(page.locator("article[data-workbench-asset-id]")).not.toContainText("pass/complete");
   await page.keyboard.press("Escape");
   await search.fill("skill:root");
-  await page.locator('button[data-workbench-expand-id="skill:root"]').click();
-  const historical = page.locator(
-    'article[data-workbench-asset-id="skill:root"] .workbench-evidence-sheet',
-  );
+  await page.locator('button.workbench-row-title[data-workbench-expand-id="skill:root"]').click();
+  await expect(inspector).toHaveAttribute("data-workbench-inspector-asset-id", "skill:root");
+  await expect(inspector.locator("#workbench-detail-title")).toBeVisible();
+  const historical = inspector.locator(".workbench-evidence-sheet");
   await expect(historical).toHaveAttribute("data-workbench-evidence-tone", "neutral");
   await expect(historical).toContainText("Historical reported result: Concerns found");
   await expect(historical).toContainText("Historical report findings");
@@ -320,19 +331,19 @@ test("imports legacy policy, rolls back invalid input, and downloads exact bytes
       buffer: Buffer.from(body),
     });
   await importBytes(JSON.stringify(stalePolicy));
-  await expect(page.locator("#framework-rows > .error")).toContainText(/stale/i);
-  await page.locator(".workbench-draft-review > summary").click();
+  await expect(page.locator("#framework-rows .error")).toContainText(/stale/i);
+  await page.locator(".workbench-draft-review > button[data-workbench-draft-open]").click();
   await expect(page.locator(".workbench-draft-review-list")).toContainText(/needs review/i);
   await expect(page.locator(".workbench-draft-review-list [data-workbench-detail-id]")).toHaveCount(
     0,
   );
-  await page.locator(".workbench-draft-review > summary").click();
+  await page.locator('#workbench-detail-panel [data-workbench-panel-view="item"]').click();
   await page.locator(`[data-workbench-source-tab="${staleRoots[0]!.sourceId}"]`).click();
   await page.getByRole("searchbox", { name: "Search catalog" }).fill(staleRoots[0]!.assetId);
   await page.locator("button[data-workbench-asset-id]").click();
   const intermediate = await page.locator("#config-preview").inputValue();
   expect(JSON.parse(intermediate).authoringSelections.roots).toEqual([staleRoots[1]]);
-  await expect(page.locator("#framework-rows > .error")).toContainText(/stale/i);
+  await expect(page.locator("#framework-rows .error")).toContainText(/stale/i);
   const repairDownloadEvent = page.waitForEvent("download");
   await page.locator("#download").click();
   const repairDownload = await repairDownloadEvent;
@@ -341,14 +352,14 @@ test("imports legacy policy, rolls back invalid input, and downloads exact bytes
   expect(await readFile(repairPath, "utf8")).toBe(intermediate);
   await page.reload();
   await importBytes(intermediate);
-  await expect(page.locator("#framework-rows > .error")).toContainText(/stale/i);
+  await expect(page.locator("#framework-rows .error")).toContainText(/stale/i);
   await page.locator(`[data-workbench-source-tab="${staleRoots[1]!.sourceId}"]`).click();
   await page.getByRole("searchbox", { name: "Search catalog" }).fill(staleRoots[1]!.assetId);
   await page.locator("button[data-workbench-asset-id]").click();
   const repaired = JSON.parse(await page.locator("#config-preview").inputValue());
   expect(repaired.authoringSelections.roots).toEqual([]);
   expect(repaired.governance.activations).toEqual([]);
-  await expect(page.locator("#framework-rows > .error")).toHaveText("");
+  await expect(page.locator("#framework-rows .error")).toHaveText("");
   const removedPin = (assetId: string) => ({
     assetId,
     sourceId: "source:removed",
@@ -388,14 +399,14 @@ test("imports legacy policy, rolls back invalid input, and downloads exact bytes
   expect(savedMissing.roots).toEqual([]);
   expect(savedMissing.requests).toEqual([missingRequest]);
   expect(savedMissing.exclusions).toEqual([missingExclusion]);
-  await expect(page.locator("#framework-rows > .error")).toContainText(/missing|unknown/i);
+  await expect(page.locator("#framework-rows .error")).toContainText(/missing|unknown/i);
   await page.reload();
   await importBytes(missingIntermediate);
   await expect(page.locator('[aria-label="Saved selections needing review"] button')).toHaveCount(
     2,
   );
   await page.locator('[data-workbench-repair-type="remove-request"]').click();
-  await expect(page.locator("#framework-rows > .error")).toContainText(/missing|unknown/i);
+  await expect(page.locator("#framework-rows .error")).toContainText(/missing|unknown/i);
   await page.locator('[data-workbench-repair-type="remove-exclusion"]').click();
   const completeRepair = JSON.parse(await page.locator("#config-preview").inputValue());
   expect(completeRepair.authoringSelections).toEqual(state);
@@ -523,7 +534,7 @@ test("imports legacy policy, rolls back invalid input, and downloads exact bytes
     expect(rejected).toBe(true);
   }
 
-  await expect(page.locator("#framework-rows > .error")).toHaveText("");
+  await expect(page.locator("#framework-rows .error")).toHaveText("");
 });
 
 test("authors a protected decision through ordinary fields", async ({ page, workbench }) => {

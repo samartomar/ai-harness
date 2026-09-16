@@ -18,7 +18,7 @@ import { parseAuthoringCatalogBundleV1 } from "../../src/org-policy/workbench/co
 function compactCliControlsModel(): PolicyStudioModel {
   const model = policyStudioModel();
   const bundle = model.workbenchBundle;
-  const retainedAssets = ["code-review-graph", "usage-metering"].map((candidateId) => {
+  const retainedAssets = ["sequential-thinking", "usage-metering"].map((candidateId) => {
     const asset = Object.values(bundle.assets).find(
       (candidate) =>
         candidate.authoring.action === "select-control" &&
@@ -95,6 +95,23 @@ function compactCliControlsModel(): PolicyStudioModel {
       return sourceInput === undefined ? [] : [[sourceId, sourceInput]];
     }),
   );
+  // The model was built from the full packaged catalog, so its initialPolicy
+  // carries the Core baseline selections. This compact fixture narrows the
+  // catalog on purpose, and a narrowed catalog must not keep that baseline —
+  // reset to the same empty starting policy the studio uses without one.
+  model.initialPolicy = parseOrgPolicy({
+    schemaVersion: 2,
+    minimumPosture: "vibe",
+    references: { repoContract: "ai-coding/project.json" },
+    governance: {
+      policyVersion: "1",
+      catalog: { reviewed: [], custom: [] },
+      activations: [],
+      authority: { approvals: [] },
+      externalCuration: [],
+      externalSelections: [],
+    },
+  });
   return model;
 }
 
@@ -105,7 +122,7 @@ const workbenchScripts = [...workbenchHtml.matchAll(/<script>([\s\S]*?)<\/script
 );
 const WORKBENCH_TEST_TIMEOUT_MS = 45_000;
 const WORKBENCH_IMPORT_TIMEOUT_MS = 15_000;
-const controls = ["code-review-graph", "usage-metering"].map((candidateId) => {
+const controls = ["sequential-thinking", "usage-metering"].map((candidateId) => {
   const binding = Object.values(model.workbenchBindings).find(
     (candidate) => candidate.kind === "control" && candidate.candidate?.id === candidateId,
   );
@@ -368,17 +385,17 @@ describe("organization-selected CLI activation scope", () => {
       const cases = [
         {
           supported: ["claude"],
-          control: "code-review-graph",
+          control: "sequential-thinking",
           targets: ["claude"],
         },
         {
           supported: ["cursor"],
-          control: "code-review-graph",
+          control: "sequential-thinking",
           targets: ["cursor"],
         },
         {
           supported: ["kimi", "opencode"],
-          control: "code-review-graph",
+          control: "sequential-thinking",
           targets: ["kimi", "opencode"],
         },
         {
@@ -388,7 +405,7 @@ describe("organization-selected CLI activation scope", () => {
         },
         {
           supported: [...SUPPORTED_CLIS],
-          control: "code-review-graph",
+          control: "sequential-thinking",
           targets: [...GOVERNED_MCP_TARGETS].sort(),
         },
       ] as const;
@@ -428,7 +445,7 @@ describe("organization-selected CLI activation scope", () => {
       for (const supportedCli of ["kiro", "cursor"] as const) {
         const window = studio();
         click(window, `[data-sanctioned-cli="${supportedCli}"]`);
-        selectCatalogControl(window, "code-review-graph");
+        selectCatalogControl(window, "sequential-thinking");
         const before = authored(window);
         selectPosture(window, "vibe");
 
@@ -452,11 +469,11 @@ describe("organization-selected CLI activation scope", () => {
       ).not.toBeNull();
       click(window, '[data-sanctioned-cli="claude"]');
       selectPosture(window, "enterprise");
-      selectCatalogControl(window, "code-review-graph");
+      selectCatalogControl(window, "sequential-thinking");
 
       const readiness = window.document.getElementById("deployment-readiness")?.textContent;
       expect(readiness).toContain(
-        "Exact selected target intersections: code-review-graph → claude",
+        "Exact selected target intersections: sequential-thinking → claude",
       );
       expect(readiness).toContain("enable managed MCP projection");
       window.document
@@ -472,7 +489,7 @@ describe("organization-selected CLI activation scope", () => {
       };
       const control = controls.find(
         (candidate): candidate is ManagedMcpControl =>
-          candidate.id === "code-review-graph" && isManagedMcpControl(candidate),
+          candidate.id === "sequential-thinking" && isManagedMcpControl(candidate),
       );
       if (control === undefined) throw new Error("expected managed MCP control");
       expect(policy.minimumPosture).toBe("enterprise");
@@ -488,7 +505,7 @@ describe("organization-selected CLI activation scope", () => {
         allowedServers: [control.source.server],
       });
       expect(window.document.getElementById("deployment-readiness")?.textContent).toContain(
-        "ready for the selected Core controls",
+        "Draft is ready to export.",
       );
       window.document
         .getElementById("export")
@@ -497,7 +514,7 @@ describe("organization-selected CLI activation scope", () => {
         "preview refreshed",
       );
 
-      selectCatalogControl(window, "code-review-graph");
+      selectCatalogControl(window, "sequential-thinking");
       expect(authored(window).governance.activations).toEqual([]);
       setManagedMcpProjection(window, false);
       expect((authored(window) as { mcp?: unknown }).mcp).toBeUndefined();
@@ -527,7 +544,7 @@ describe("organization-selected CLI activation scope", () => {
       const window = studio();
       click(window, '[data-sanctioned-cli="claude"]');
       click(window, '[data-sanctioned-cli="kiro"]');
-      selectCatalogControl(window, "code-review-graph");
+      selectCatalogControl(window, "sequential-thinking");
       expect(authored(window).governance.activations[0]?.targets).toEqual(["claude", "kiro"]);
 
       click(window, '[data-sanctioned-cli="kiro"]');
@@ -539,11 +556,11 @@ describe("organization-selected CLI activation scope", () => {
   it(
     "deterministically narrows a legacy Workbench activation without changing support metadata",
     async () => {
-      const control = controls.find((item) => item.id === "code-review-graph");
-      if (control === undefined) throw new Error("expected code-review-graph control");
+      const control = controls.find((item) => item.id === "sequential-thinking");
+      if (control === undefined) throw new Error("expected sequential-thinking control");
       const source = studio();
       click(source, '[data-sanctioned-cli="claude"]');
-      selectCatalogControl(source, "code-review-graph");
+      selectCatalogControl(source, "sequential-thinking");
       const legacy = authored(source);
       const invalidV3 = structuredClone(legacy);
       const invalidV3Activation = invalidV3.governance.activations[0];

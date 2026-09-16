@@ -3,6 +3,7 @@ import type {
   AuthoringAssetV1,
   EvidenceSummaryV1,
 } from "../../../src/org-policy/workbench/contracts.js";
+import type { WorkbenchReferenceReportV1 } from "../../../src/org-policy/workbench/reference-reports.js";
 import {
   createWorkbenchState,
   reduceWorkbenchAction,
@@ -16,6 +17,7 @@ import {
   findingExplanation,
   humanizedAssetLabel,
   normalizedCatalogBrowseFilters,
+  previousCatalogReportPresentation,
   sourceEvidenceSummary,
   visibleCatalogKindOptions,
 } from "../../../src/org-policy/workbench/ui/catalog-presentation.js";
@@ -207,6 +209,190 @@ describe("catalog presentation", () => {
       findings: [],
       scopePaths: [],
       statusLabel: "Report not attached",
+    });
+  });
+
+  it("names AIH report gaps while preserving the generic copy for other sources", () => {
+    const bundle = structuredClone(tinyStudioModel().workbenchBundle);
+    const bundled = Object.values(bundle.assets)[0];
+    if (bundled === undefined) throw new Error("expected bundled asset");
+    const source = bundle.sources[bundled.sourceId];
+    if (source === undefined) throw new Error("expected bundled source");
+    const aihSourceId = "source:aih-core";
+    bundle.sources[aihSourceId] = { ...source, id: aihSourceId };
+    bundle.assets[bundled.id] = { ...bundled, sourceId: aihSourceId };
+
+    const aih = assetEvidencePresentation(bundle.assets[bundled.id]!, bundle);
+    expect(aih).toMatchObject({
+      state: "none",
+      statusLabel: "AIH evidence pending",
+      reportGap: {
+        owner: "AIH",
+        missing: "an exact-version report for this bundled item",
+      },
+      nextStep: "Find or reuse an existing matching report, then publish one if it is missing.",
+    });
+    const detailsFacts = assetDetailsPresentation(bundle.assets[bundled.id]!, bundle).facts;
+    expect(detailsFacts).toContainEqual({
+      label: "Security review",
+      value: expect.stringContaining("AIH evidence pending"),
+    });
+    expect(detailsFacts).toContainEqual({ label: "Evidence owner", value: "AIH" });
+    expect(detailsFacts).toContainEqual({
+      label: "Evidence missing",
+      value: "an exact-version report for this bundled item",
+    });
+
+    const custom = Object.values(tinyStudioModel().workbenchBundle.assets)[0]!;
+    expect(assetEvidencePresentation(custom, tinyStudioModel().workbenchBundle)).toMatchObject({
+      state: "none",
+      statusLabel: "Report not attached",
+      reportGap: undefined,
+    });
+  });
+
+  it("keeps a previous report in Details context without changing current evidence", () => {
+    const bundle = structuredClone(tinyStudioModel().workbenchBundle);
+    const asset = Object.values(bundle.assets).find((candidate) => candidate.kind === "mcp");
+    if (asset === undefined) throw new Error("expected MCP asset");
+    const source = bundle.sources[asset.sourceId];
+    if (source === undefined) throw new Error("expected source");
+    const previousReport: WorkbenchReferenceReportV1 = {
+      kind: "previous-catalog-report",
+      authority: "none",
+      assetId: asset.id,
+      subject: {
+        assetId: asset.id,
+        sourceId: asset.sourceId,
+        sourceRevisionId: asset.sourceRevisionId,
+        contentDigest: asset.contentDigest,
+      },
+      previousSourceContentDigest: `sha256:${"c".repeat(64)}`,
+      currentSourceContentDigest: source.revision.contentDigest,
+      componentTreeDigest: `sha256:${"d".repeat(64)}`,
+      coveredPaths: ["ai-coding/configuration.json"],
+      reportSignedAt: "2026-09-01T00:00:00.000Z",
+      publishedAt: "2026-09-02T00:00:00.000Z",
+      validUntil: "2026-10-01T00:00:00.000Z",
+      outcome: "failed",
+      analyzers: [{ name: "Scanner", version: "1.0.0" }],
+      findings: ["trust.external-egress: review the configured endpoint."],
+      publicationUrl: `https://github.com/samartomar/aih-scan/releases/download/baseline-v1-${"a".repeat(40)}-${"b".repeat(64)}/publication.json`,
+      publicationDigest: `sha256:${"e".repeat(64)}`,
+      recordDigest: `sha256:${"f".repeat(64)}`,
+    };
+
+    expect(previousCatalogReportPresentation(asset, bundle, previousReport)).toMatchObject({
+      summary: expect.stringContaining("Current catalog evidence remains pending"),
+      reportedOutcome: expect.stringContaining("failed"),
+      sourceSnapshot: expect.stringContaining(previousReport.previousSourceContentDigest),
+      dates: expect.stringContaining("Signed 2026-09-01T00:00:00.000Z"),
+      scope: expect.stringContaining("ai-coding/configuration.json"),
+      mcpScope: expect.stringContaining("configuration declarations"),
+      findings: previousReport.findings,
+      publicationUrl: previousReport.publicationUrl,
+    });
+
+    bundle.evidence = {
+      "evidence:current": {
+        id: "evidence:current",
+        projectionVersion: "evidence-summary/v1",
+        subjects: [previousReport.subject],
+        evidenceDigest: `sha256:${"a".repeat(64)}`,
+        coveredPaths: ["ai-coding/configuration.json"],
+        verification: { state: "unverified" },
+        scan: { outcome: "failed", coverage: "partial" },
+        qualification: { state: "unknown" },
+        findings: [],
+      },
+    };
+    expect(previousCatalogReportPresentation(asset, bundle, previousReport)).toBeUndefined();
+    bundle.evidence["evidence:current"]!.verification = { state: "missing" };
+    expect(previousCatalogReportPresentation(asset, bundle, previousReport)).toBeDefined();
+  });
+
+  it("keeps generated methodology source reports separate from profile coverage", () => {
+    const bundle = structuredClone(tinyStudioModel().workbenchBundle);
+    const sourceItem = Object.values(bundle.assets)[0];
+    if (sourceItem === undefined) throw new Error("expected source item");
+    bundle.assets[sourceItem.id] = { ...sourceItem, derivation: "upstream" };
+    const unreportedItem = {
+      ...sourceItem,
+      id: "fixture:source-item-without-report",
+      label: "fixture source item without report",
+      contentDigest: "sha256:" + "d".repeat(64),
+      derivation: "upstream" as const,
+    };
+    const profile = {
+      ...sourceItem,
+      id: "fixture/profile:methodology",
+      label: "fixture methodology profile",
+      kind: "profile",
+      derivation: "core-derived" as const,
+      exclusiveSlot: "methodology" as const,
+      methodologyKey: "fixture",
+      authoring: { action: "record-selection" as const, supportedTargets: [] },
+    };
+    bundle.assets[unreportedItem.id] = unreportedItem;
+    bundle.assets[profile.id] = profile;
+    bundle.evidence = {
+      "evidence:source-item": {
+        id: "evidence:source-item",
+        projectionVersion: "evidence-summary/v1",
+        subjects: [
+          {
+            assetId: sourceItem.id,
+            sourceId: sourceItem.sourceId,
+            sourceRevisionId: sourceItem.sourceRevisionId,
+            contentDigest: sourceItem.contentDigest,
+          },
+        ],
+        evidenceDigest: "sha256:" + "a".repeat(64),
+        coveredPaths: ["source-item.json"],
+        verification: {
+          state: "verified",
+          verifiedAt: "2026-09-01T00:00:00.000Z",
+          validUntil: "2027-09-01T00:00:00.000Z",
+          contextDigest: "sha256:" + "b".repeat(64),
+        },
+        scan: { outcome: "pass", coverage: "complete" },
+        qualification: { state: "qualified" },
+        findings: ["Review this source item finding."],
+      },
+    };
+
+    const presentation = assetEvidencePresentation(
+      profile,
+      bundle,
+      Date.parse("2026-09-07T00:00:00Z"),
+    );
+
+    expect(presentation).toMatchObject({
+      state: "none",
+      statusLabel: "Review source reports",
+      binding: expect.stringContaining("Generated profile; no standalone scan"),
+      sourceItemReports: {
+        total: 2,
+        attachedExactVersionReports: 1,
+        completeCoverageReports: 1,
+        partialCoverageReports: 0,
+        noCoverageReports: 0,
+        reportsWithFindings: 1,
+        findingCount: 1,
+        reportItems: [
+          expect.objectContaining({
+            assetId: sourceItem.id,
+            coverage: "complete",
+            findingCount: 1,
+          }),
+        ],
+      },
+      nextStep: expect.stringContaining("source item reports"),
+      limitation: expect.stringContaining("do not establish coverage"),
+    });
+    expect(assetDetailsPresentation(profile, bundle).facts).toContainEqual({
+      label: "Source item reports",
+      value: expect.stringContaining("separate source items"),
     });
   });
   it("puts source purpose, access and draft consequence before technical metadata", () => {

@@ -1287,7 +1287,7 @@ export function mountLegacyWorkbench(t) {
                     ? !Object.prototype.hasOwnProperty.call(c.source, "administrativeStatus")
                       ? "Remote origin: " +
                         c.source.origin +
-                        " · Preserved remote declaration — read-only · Content scan: none"
+                        " · Preserved remote declaration, read-only · Content scan: none"
                       : "Remote origin: " +
                         c.source.origin +
                         " · Administrative status: " +
@@ -1829,13 +1829,16 @@ export function mountLegacyWorkbench(t) {
         }, 1400));
     }),
     document.addEventListener("click", function (s) {
-      let c = s.target.closest && s.target.closest("[data-theme-set]");
-      c &&
-        ((document.documentElement.dataset.theme =
-          c.getAttribute("data-theme-set")),
-        document.querySelectorAll("[data-theme-set]").forEach(function (l) {
-          l.setAttribute("aria-pressed", l === c ? "true" : "false");
-        }));
+      let c = s.target.closest && s.target.closest("#theme-toggle");
+      if (c) {
+        let l = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+        ((document.documentElement.dataset.theme = l),
+          c.setAttribute(
+            "aria-label",
+            "Switch to " + (l === "dark" ? "light" : "dark") + " theme",
+          ),
+          c.setAttribute("title", c.getAttribute("aria-label")));
+      }
     }));
   let Nf = o("sheet"),
     Oy = function () {
@@ -2600,23 +2603,34 @@ export function mountLegacyWorkbench(t) {
       );
     }),
     o("validate").addEventListener("click", function () {
-      let s = validateCurrentPolicy(), c = Qe();
-      (s.length
-        ? p(
-            "Schema and policy-grammar validation failed: " +
-              s.slice(0, 3).join("; "),
-            !0,
-          )
-        : c.length
-          ? p(
-              "Schema and policy-grammar validation passed, but deployment setup needs attention: " +
-                c.join("; ") +
-                ".",
+      let s = validateCurrentPolicy(),
+        c = Qe(),
+        v = o("validate");
+      (v.classList.remove("check-failed", "check-attention"),
+        s.length
+          ? (v.classList.add("check-failed"),
+            v.setAttribute("title", "Policy check failed: " + s.join("; ")),
+            p(
+              "Schema and policy-grammar validation failed: " +
+                s.slice(0, 3).join("; "),
               !0,
-            )
-          : p(
-              "Schema and policy-grammar validation passed. Authority, scans, projection, and effective state require the AIH engine in a target repository.",
-            ),
+            ))
+          : c.length
+            ? (v.classList.add("check-attention"),
+              v.setAttribute(
+                "title",
+                "Deployment setup needs attention: " + c.join("; "),
+              ),
+              p(
+                "Schema and policy-grammar validation passed, but deployment setup needs attention: " +
+                  c.join("; ") +
+                  ".",
+                !0,
+              ))
+            : (v.setAttribute("title", "Validate"),
+              p(
+                "Schema and policy-grammar validation passed. Authority, scans, projection, and effective state require the AIH engine in a target repository.",
+              )),
         renderPolicyPreview());
     }),
     o("export").addEventListener("click", function () {
@@ -2697,8 +2711,6 @@ export function mountLegacyWorkbench(t) {
         }),
         v = [];
       if (!f.length) return v;
-      s = r.policy.minimumPosture || "vibe";
-      s !== "enterprise" && v.push("selected Core controls need Enterprise posture");
       Ke(r.policy).length && !r.managedMcpOptIn && v.push("enable managed MCP projection");
       return v;
     },
@@ -2729,7 +2741,7 @@ export function mountLegacyWorkbench(t) {
       s.textContent = v.length
         ? c.length
           ? "Deployment setup needs attention before download: " + c.join("; ") + ". Exact selected target intersections: " + w + "."
-          : "Deployment setup is ready for the selected Core controls. Exact selected target intersections: " + w + ". Export records the managed-MCP setting."
+          : "Draft is ready to export. " + ((r.policy.minimumPosture || "vibe") === "vibe" ? "Governance MCP and hook projection remains disabled in Vibe; choose Enterprise for governed deployment. " : "Governed deployment still requires policy authority and target verification. ") + "Exact selected target intersections: " + w + ". Export records the managed-MCP setting."
         : "No Core controls selected. Choose controls after setting the hosts and posture you intend to use.";
     },
     Jf = function () {

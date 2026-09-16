@@ -104,4 +104,30 @@ export function mountWorkspaceInteractions(): void {
   document.addEventListener("click", (event) => {
     if (event.target instanceof Element && event.target.closest("[data-view-tab]")) setOpen(false);
   });
+
+  const evidence = document.getElementById("evidence-delivery");
+  const evidenceSummary = evidence?.querySelector<HTMLElement>("summary") ?? null;
+  const evidenceClose =
+    evidence?.querySelector<HTMLButtonElement>("#evidence-delivery-close") ?? null;
+  if (evidence instanceof HTMLDetailsElement && evidenceSummary !== null) {
+    const closeEvidence = (restoreFocus = false) => {
+      if (!evidence.open) return;
+      evidence.open = false;
+      if (restoreFocus) evidenceSummary.focus({ preventScroll: true });
+    };
+    evidenceClose?.addEventListener("click", () => closeEvidence(true));
+    document.addEventListener("click", (event) => {
+      if (event.target instanceof Node && !evidence.contains(event.target)) closeEvidence();
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && evidence.open) {
+        event.preventDefault();
+        closeEvidence(true);
+      }
+    });
+    document.addEventListener("click", (event) => {
+      if (event.target instanceof Element && event.target.closest("[data-view-tab]"))
+        closeEvidence();
+    });
+  }
 }

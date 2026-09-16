@@ -29,6 +29,10 @@ const PRESENTATION: Readonly<Record<DeveloperToolId, { label: string; detail: st
     detail:
       "Hosted documentation service; setup can make network requests subject to egress policy.",
   },
+  playwright: {
+    label: "Playwright",
+    detail: "Automate a local browser with web access. Setup verification is pending.",
+  },
   markitdown: {
     label: "MarkItDown CLI",
     detail:
@@ -39,7 +43,10 @@ const PRESENTATION: Readonly<Record<DeveloperToolId, { label: string; detail: st
 export interface DeveloperToolSelectionUiOptions {
   readonly root: HTMLElement;
   readonly status: HTMLElement;
+  readonly summary?: HTMLElement;
   readonly initialPolicy: unknown;
+  readonly catalogDetails?: Readonly<Partial<Record<DeveloperToolId, string>>>;
+  readonly inspectCatalogDetails?: (assetId: string, trigger: HTMLButtonElement) => void;
   readonly persist: (selection: {
     selected: readonly DeveloperToolId[];
     excluded: readonly DeveloperToolId[];
@@ -113,6 +120,7 @@ export function mountDeveloperToolSelection(
 
   const button = (
     label: string,
+    accessibleLabel: string,
     action: "include" | "remove" | "exclude",
     id: DeveloperToolId,
   ): HTMLButtonElement => {
@@ -120,6 +128,8 @@ export function mountDeveloperToolSelection(
     control.type = "button";
     control.className = "btn sm";
     control.textContent = label;
+    control.setAttribute("aria-label", accessibleLabel);
+    control.title = accessibleLabel;
     control.addEventListener("click", () => persist(action, id));
     return control;
   };
@@ -127,8 +137,20 @@ export function mountDeveloperToolSelection(
   const render = (): void => {
     const resolution = resolveDeveloperToolSelectionForOrgPolicyV1(currentPolicy);
     options.root.replaceChildren();
+    if (options.summary !== undefined) {
+      if (!resolution.accepted) {
+        options.summary.textContent = "Developer tool setup: Blocked";
+      } else if (resolution.source === "default" || resolution.source === "legacy-unspecified") {
+        options.summary.textContent = "Developer tool setup: All default tools selected";
+      } else {
+        const counts = [`${String(resolution.selected.length)} selected`];
+        if (resolution.excluded.length > 0)
+          counts.push(`${String(resolution.excluded.length)} excluded`);
+        options.summary.textContent = `Developer tool setup: ${counts.join(" · ")}`;
+      }
+    }
     if (!resolution.accepted) {
-      options.status.textContent = `Blocked — ${resolution.diagnostics.map((diagnostic) => diagnostic.message).join(" ")}`;
+      options.status.textContent = `Blocked: ${resolution.diagnostics.map((diagnostic) => diagnostic.message).join(" ")}`;
       options.status.className = "help error";
     } else {
       options.status.textContent = feedback ?? sourceLabel(resolution.source);
@@ -139,7 +161,7 @@ export function mountDeveloperToolSelection(
       const selected = resolution.accepted && resolution.selected.includes(id);
       const excluded = resolution.accepted && resolution.excluded.includes(id);
       const row = document.createElement("article");
-      row.className = "gcard developer-tool-row";
+      row.className = "developer-tool-row";
       row.dataset.developerToolId = id;
       row.dataset.developerToolState = !resolution.accepted
         ? "blocked"
@@ -148,39 +170,62 @@ export function mountDeveloperToolSelection(
           : selected
             ? "selected-pending"
             : "not-selected";
+      const copy = document.createElement("div");
+      copy.className = "developer-tool-copy";
+      const heading = document.createElement("div");
+      heading.className = "developer-tool-heading";
       const title = document.createElement("h3");
       title.textContent = presentation.label;
       const detail = document.createElement("p");
       detail.className = "help";
       detail.textContent = presentation.detail;
       const state = document.createElement("p");
-      state.className = "help";
+      state.className = "developer-tool-state";
       state.textContent = !resolution.accepted
-        ? "Blocked — resolve the policy binding or selection diagnostic before setup."
+        ? "Blocked: resolve the policy binding or selection diagnostic before setup."
         : excluded
           ? "Excluded by policy"
           : selected
-            ? "Selected — pending setup"
+            ? "Selected: pending setup"
             : "Not selected";
       const actions = document.createElement("div");
-      actions.className = "brow";
+      actions.className = "brow developer-tool-actions";
+      const detailsAssetId = options.catalogDetails?.[id];
+      if (detailsAssetId !== undefined && options.inspectCatalogDetails !== undefined) {
+        const details = document.createElement("button");
+        details.type = "button";
+        details.className = "btn sm secondary developer-tool-details";
+        details.dataset.developerToolDetailsId = id;
+        details.dataset.developerToolCatalogAssetId = detailsAssetId;
+        details.textContent = "Details";
+        details.setAttribute("aria-label", `View catalog details for ${presentation.label}`);
+        details.addEventListener("click", () =>
+          options.inspectCatalogDetails?.(detailsAssetId, details),
+        );
+        actions.append(details);
+      }
       if (resolution.accepted) {
         if (excluded) {
-          actions.append(button(`Include ${presentation.label} in setup`, "include", id));
+          actions.append(
+            button("Include", `Include ${presentation.label} in setup`, "include", id),
+          );
         } else {
           actions.append(
             button(
+              selected ? "Remove" : "Include",
               selected
                 ? `Remove ${presentation.label} from selection`
                 : `Include ${presentation.label} in setup`,
               selected ? "remove" : "include",
               id,
             ),
-            button(`Exclude ${presentation.label} from setup`, "exclude", id),
+            button("Exclude", `Exclude ${presentation.label} from setup`, "exclude", id),
           );
         }
       }
-      row.append(title, detail, state, actions);
+      heading.append(title, state);
+      copy.append(heading, detail);
+      row.append(copy, actions);
       options.root.append(row);
     }
   };

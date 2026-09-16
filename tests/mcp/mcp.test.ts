@@ -467,20 +467,22 @@ describe("aih mcp — generated mcpServers blueprint", () => {
   it("project scope on a bare repo writes the always-on base set — no hosted n24q02m boilerplate", async () => {
     const p = await command.plan(makeCtx({ options: { scope: "project" } }));
     const w = p.actions.find((a) => a.kind === "write") as WriteAction;
-    // The on-by-default, secret-free base: local code intelligence + memory + reasoning, plus
-    // the hosted Context7 docs server. GitHub and the n24q02m toolset stay opt-in.
+    // The on-by-default, secret-free base: local code intelligence, memory, reasoning, and
+    // isolated browser automation, plus the hosted Context7 docs server. GitHub and the
+    // n24q02m toolset stay opt-in.
     const names = Object.keys(serversOf(w));
     expect(names).toEqual([
       "code-review-graph",
       "codebase-memory-mcp",
       "serena",
       "sequential-thinking",
+      "playwright",
       "context7",
     ]);
     expect(names.some((n) => n.startsWith("better-"))).toBe(false);
   });
 
-  it("does not generate the retired AWS core package while a web repo still gets Playwright", async () => {
+  it("does not generate the retired AWS core package while every repo gets Playwright", async () => {
     const awsRoot = makeTmp();
     writeFileSync(
       join(awsRoot, "package.json"),
@@ -491,7 +493,7 @@ describe("aih mcp — generated mcpServers blueprint", () => {
     ) as WriteAction;
     const awsServers = serversOf(awsW);
     expect(awsServers["awslabs.core-mcp-server"]).toBeUndefined();
-    expect(awsServers.playwright).toBeUndefined();
+    expect(awsServers.playwright).toBeDefined();
 
     const webRoot = makeTmp();
     writeFileSync(
@@ -516,7 +518,7 @@ describe("aih mcp — generated mcpServers blueprint", () => {
     const servers = serversOf(w);
     const pw = pick(servers, "playwright");
     if (pw.type !== "stdio") throw new Error("expected stdio server");
-    expect(pw.args).toEqual(["@playwright/mcp@0.0.81"]);
+    expect(pw.args).toEqual(["-y", "@playwright/mcp@0.0.81", "--headless", "--isolated"]);
     expect(pw.args.join(" ")).not.toContain("@latest");
   });
 
@@ -583,6 +585,7 @@ describe("aih mcp — generated mcpServers blueprint", () => {
       "better-telegram",
       "mnemo-mcp",
       "wet-mcp",
+      "playwright",
     ];
     for (const name of expected) {
       const server = pick(servers, name);
@@ -627,7 +630,7 @@ describe("aih mcp — risk classification (P1-B)", () => {
     expect(pick(serversOf(w), "code-review-graph").classification).toBe("local");
   });
 
-  it("labels the supported stack-added Playwright stdio server `local`", async () => {
+  it("labels the default Playwright stdio server `local`", async () => {
     const awsRoot = makeTmp();
     writeFileSync(
       join(awsRoot, "package.json"),
@@ -637,6 +640,7 @@ describe("aih mcp — risk classification (P1-B)", () => {
       (a) => a.kind === "write",
     ) as WriteAction;
     expect(serversOf(awsW)["awslabs.core-mcp-server"]).toBeUndefined();
+    expect(pick(serversOf(awsW), "playwright").classification).toBe("local");
 
     const webRoot = makeTmp();
     writeFileSync(
@@ -1640,6 +1644,9 @@ describe("aih mcp — MCP write hygiene", () => {
     const run = fakeRunner((argv) => {
       calls.push(argv);
       if (argv[0] === "uv") return { code: 0, stdout: "uv 0.5.0\n" };
+      if (argv.join(" ") === "cmd /c npm view @playwright/mcp@0.0.81 version") {
+        return { code: 0, stdout: "0.0.81\n" };
+      }
       if (
         argv.join(" ") ===
         "cmd /c npm view @modelcontextprotocol/server-sequential-thinking@2026.8.31 version"
