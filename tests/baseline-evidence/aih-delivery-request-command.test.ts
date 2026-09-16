@@ -18,7 +18,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { buildSync } from "esbuild";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { hashSourceTree } from "../../src/baseline-evidence/hash.js";
 
@@ -76,13 +77,27 @@ function fixture() {
   execFileSync("git", ["init", "-q", source]);
   execFileSync("git", ["-C", source, "config", "core.autocrlf", "false"]);
   symlinkSync(resolve("node_modules"), join(parent, "node_modules"), "junction");
-  cpSync(resolve("src"), join(source, "src"), { recursive: true });
+  // Discover the real helper's import closure without executing it or using a
+  // transformed bundle. Copy those original bytes at their original paths;
+  // unrelated CLI/UI modules made Git fixture setup exceed its Windows budget.
+  const helper = "tools/prepare-aih-delivery-baseline-requests.mjs";
+  const { metafile } = buildSync({
+    entryPoints: [helper],
+    bundle: true,
+    packages: "external",
+    platform: "node",
+    format: "esm",
+    write: false,
+    metafile: true,
+  });
+  for (const input of Object.keys(metafile.inputs).sort()) {
+    if (input !== helper && !input.startsWith("src/"))
+      throw new Error(`unexpected delivery helper fixture input: ${input}`);
+    const destination = join(source, input);
+    mkdirSync(dirname(destination), { recursive: true });
+    cpSync(resolve(input), destination);
+  }
   cpSync(resolve("package.json"), join(source, "package.json"));
-  mkdirSync(join(source, "tools"));
-  cpSync(
-    resolve("tools/prepare-aih-delivery-baseline-requests.mjs"),
-    join(source, "tools/prepare-aih-delivery-baseline-requests.mjs"),
-  );
   cpSync(resolve("aih-packs.json"), join(source, "aih-packs.json"));
   cpSync(resolve("packs"), join(source, "packs"), { recursive: true });
   execFileSync("git", ["-C", source, "add", "."]);

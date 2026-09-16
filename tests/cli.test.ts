@@ -11,6 +11,7 @@ import {
   PARENT_GROUPS,
   READONLY,
 } from "../src/commands/index.js";
+import * as processRunner from "../src/internals/proc.js";
 import { buildProgram, isUiFastPath } from "../src/program.js";
 
 describe("CLI program", () => {
@@ -342,6 +343,11 @@ describe("CLI program", () => {
     const dir = mkdtempSync(join(tmpdir(), "aih-cli-repair-"));
     const priorExitCode = process.exitCode;
     const writes: string[] = [];
+    // Keep the real CLI, audit and repair planner, but make external tool
+    // availability a fixture instead of probing the CI workstation's programs.
+    const runner = vi
+      .spyOn(processRunner, "defaultRunner")
+      .mockImplementation(processRunner.missingToolRunner);
     const spy = vi
       .spyOn(process.stdout, "write")
       .mockImplementation((chunk: string | Uint8Array) => {
@@ -386,8 +392,10 @@ describe("CLI program", () => {
       });
       expect(report.digests?.[0]?.data?.preconditionSha256).toMatch(/^[a-f0-9]{64}$/);
       expect(existsSync(join(dir, "ai-coding"))).toBe(false);
+      expect(runner).toHaveBeenCalled();
     } finally {
       spy.mockRestore();
+      runner.mockRestore();
       process.exitCode = priorExitCode;
       rmSync(dir, { recursive: true, force: true });
     }
