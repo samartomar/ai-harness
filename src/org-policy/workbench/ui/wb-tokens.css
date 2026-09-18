@@ -214,3 +214,22 @@ html[data-theme="dark"] .btn.primary:hover {
   background: #1d4ed8;
   border-color: #1d4ed8;
 }
+
+/*
+ * Navigation and selection accents take the design-system blue; --pass stays
+ * the status colour (vet results, ok badges, positive evidence). Accent text
+ * uses primary-bright: >= 5.8:1 on every light surface and >= 6.4:1 on dark.
+ */
+html[data-theme] {
+  --wb-accent: var(--wb-color-primary-bright);
+}
+html[data-theme] .brand-name { color: var(--wb-color-on-surface); }
+html[data-theme] .brand-mark { background: var(--wb-color-primary-container); color: #ffffff; }
+html[data-theme] .tabs button[aria-pressed="true"] { color: var(--wb-accent); box-shadow: inset 0 -2px 0 var(--wb-accent); }
+html[data-theme] .workbench-source-tab[aria-pressed="true"] { border-left-color: var(--wb-accent); color: var(--wb-accent); }
+html[data-theme] .workbench-source-tab[aria-pressed="true"] span { color: var(--wb-accent); }
+html[data-theme] .workbench-type-tab[aria-pressed="true"] { color: var(--wb-accent); }
+html[data-theme] .workbench-inventory-rows article.workbench-asset:has(.workbench-row-expand[aria-expanded="true"]) { border-left-color: var(--wb-accent); }
+html[data-theme] .workbench-row-title:hover { color: var(--wb-accent); }
+html[data-theme] .workbench-inspector-navigation button[aria-pressed="true"] { color: var(--wb-accent); box-shadow: inset 0 -2px var(--wb-accent); }
+html[data-theme] .workbench-exposure-inspect { color: var(--wb-accent); }
