@@ -389,7 +389,9 @@ if (newShell) {
       ).assetIds;
     },
     selectionValidator: () => window.__aihWorkbenchValidatePolicy,
+    openInspectorView: (view) => catalog?.showInspectorView(view),
   });
+  let catalog: MountedWorkbench | undefined;
   window.__aihPolicyWorkbenchSession = session;
   if (model.door === "chooser") mountChooserNote(document.getElementById("announcement"));
   // S3: the sources screen hosts the shared catalog controller; it re-projects
@@ -398,7 +400,7 @@ if (newShell) {
     const sources = shell.screenBody("sources");
     const root = withId(el("div", "min-w-0"), "framework-rows");
     sources.replaceChildren(root);
-    mountCatalogController(
+    catalog = mountCatalogController(
       root,
       session,
       bundle,

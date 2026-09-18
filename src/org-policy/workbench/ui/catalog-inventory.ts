@@ -87,6 +87,8 @@ export interface MountedWorkbench {
   restore(state: WorkbenchStateV1, diagnostics?: readonly string[]): void;
   dispatch(action: WorkbenchActionV1, expectedState?: WorkbenchStateV1): WorkbenchReductionV1;
   inspectAssetDetails(assetId: string, trigger: HTMLButtonElement): void;
+  /** S5: open the draft review or exposure view, as its panel-view button does. */
+  showInspectorView(view: "draft" | "exposure"): void;
   destroy(): void;
 }
 
@@ -3442,6 +3444,11 @@ export function mountWorkbench(
         asset,
         mode: "developer-tool-setup",
       });
+    },
+    showInspectorView(view) {
+      inspectorNavigation
+        .querySelector<HTMLButtonElement>(`[data-workbench-panel-view="${view}"]`)
+        ?.click();
     },
     destroy: () => {
       if (evidenceRefreshTimer !== undefined) clearTimeout(evidenceRefreshTimer);

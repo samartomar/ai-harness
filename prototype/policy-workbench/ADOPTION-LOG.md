@@ -187,3 +187,9 @@ Recorded with evidence, cost and reopen bar in `ADOPTION-PLAN.md` §3. Owners: D
 - Moved to the new shell, assertions unchanged: compact-setup "keeps Back to catalog…", "closes the mobile inspector…", scrolling "keeps the mobile Workbench inspector…". Intentional change (orchestrator): scrolling "uses the document…" became "uses the main panel…" (wheel moves `#wb-main` / `#wb-inspector-panel`, document never scrolls; all other assertions kept).
 - Stays on legacy: compact-setup "keeps the catalog anchored…" also reads `#deployment-readiness` (admin-org), so it waits for the org screen.
 - Gate: build:workbench 714,898 B (+951 vs S3 713,947); `npx vitest run tests/org-policy` 167 files, 3997 passed / 1 skipped; typecheck clean; biome clean; `npm run test:workbench:ui` 39 passed. New-shell frame light/dark baselines regenerated (rail width and content).
+
+## S5 — changes screen (new shell)
+
+- `shell/changes-screen.ts` (prototype `admin-changes.html`): change count and selection counts, Copy JSON (clipboard; failure announced, never claimed), Review draft / Policy exposure open the inspector rail's views, and a Changes / Whole file switch. Whole file (default) is the S2 `#json-editor` with `#config-preview` / `#report-preview`, copy unchanged. Changes is a line diff (`shell/policy-diff.ts`, LCS over the differing middle, bounded fallback) of the draft against the serialised `initialPolicy`, three lines of context, gaps folded. All model text via `textContent`. Not built (no product data or behaviour): Reset to template, a second Download, the Publish footer, "Ready to publish" status.
+- No legacy spec waited on S5.
+- Gate: build:workbench 720,618 B (+5,720 vs S4); `npx vitest run tests/org-policy` 168 files, 4007 passed / 1 skipped; typecheck clean; biome clean; `npm run test:workbench:ui` 40 passed (clipboard write verified offline under the strict CSP).

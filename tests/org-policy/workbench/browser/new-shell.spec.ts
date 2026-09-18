@@ -201,3 +201,47 @@ test("keeps Check Policy and Publish disabled for an invalid prepared catalog", 
   expect(await page.locator("#config-preview").inputValue()).toBe(invalidInitial);
   void workbench;
 });
+
+// NEW-SHELL-PLAN.md S5: the changes screen.
+test("shows the draft's changes, the whole file and copies the JSON offline", async ({
+  page,
+  context,
+  workbench,
+}) => {
+  await reopenUnderStrictCsp(page, workbench.path);
+  const preview = page.locator("#config-preview");
+  const before = await preview.inputValue();
+  await page.locator("button[data-workbench-row-action]").first().click();
+  const selected = await preview.inputValue();
+  expect(selected).not.toBe(before);
+
+  await page.getByRole("button", { name: "Review changes", exact: true }).click();
+  const screen = page.locator('[data-wb-screen-panel="changes"]');
+  await expect(screen).toBeVisible();
+  await expect(screen.locator("#config-preview")).toBeVisible();
+  await expect(screen.locator("[data-wb-changes-count]")).toHaveText(/^\d+ changed lines?$/u);
+
+  await screen.getByRole("button", { name: "Changes", exact: true }).click();
+  await expect(screen.locator("#json-editor")).toBeHidden();
+  const diff = screen.getByRole("region", { name: "Changes from the starting policy" });
+  await expect(diff).toBeVisible();
+  await expect(diff.locator('[data-wb-diff-line="added"]').first()).toBeVisible();
+  await expect(preview).toHaveValue(selected);
+
+  await screen.getByRole("button", { name: "Whole file", exact: true }).click();
+  await expect(screen.locator("#config-preview")).toBeVisible();
+  await expect(diff).toBeHidden();
+
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await screen.getByRole("button", { name: "Copy JSON" }).click();
+  await expect(page.locator("#announcement")).toHaveText("Policy JSON copied to the clipboard.");
+
+  await screen.getByRole("button", { name: "Review draft", exact: true }).click();
+  await expect(page.locator("#workbench-detail-panel")).toHaveAttribute(
+    "data-workbench-inspector-view",
+    "draft",
+  );
+  await expect(preview).toHaveValue(selected);
+  expect(await violations(page)).toEqual([]);
+  expect(workbench.networkRequests).toEqual([]);
+});

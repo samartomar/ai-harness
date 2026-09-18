@@ -1,7 +1,9 @@
 import { buildKindLedgerViewModel } from "../kind-ledger.js";
 import { type AdminShell, mountAdminShell } from "./admin-shell.js";
+import { type ChangesScreen, mountChangesScreen } from "./changes-screen.js";
 import { el, withId } from "./dom.js";
 import { mountFileTransfer } from "./file-transfer.js";
+import { serializePolicy } from "./policy-grammar.js";
 import {
   createPolicySession,
   type PolicySession,
@@ -25,11 +27,15 @@ export interface NewWorkbenchOptions {
   selectedAssetIds(policy: unknown): readonly string[];
   /** The selection validator the policy grammar consults. */
   selectionValidator(): unknown;
+  /** S5: opens the catalog inspector's draft or exposure view from the changes screen. */
+  openInspectorView?(view: "draft" | "exposure"): void;
 }
 
 export interface NewWorkbench {
   readonly shell: AdminShell;
   readonly session: PolicySession;
+  /** S5: the changes screen (diff, whole file, Copy JSON). */
+  readonly changes: ChangesScreen;
   /** Remove the file transfer controls and their document listener. */
   destroy(): void;
 }
@@ -46,75 +52,15 @@ function shellHost(): HTMLElement {
   return host;
 }
 
-const PREVIEW =
-  "w-full min-h-[240px] p-2.5 rounded border border-solid border-outline-variant bg-surface-container-lowest text-on-surface font-mono text-[12px] leading-relaxed resize-y";
-const PREVIEW_LABEL = "text-[11px] font-medium text-on-surface-variant";
-
-/**
- * The changes screen's JSON region: `#config-preview` stays the readonly
- * textarea every journey reads the canonical policy from.
- */
-function mountPolicyPreview(body: HTMLElement): (policy: unknown, text: string) => void {
-  const region = withId(el("section", "flex flex-col gap-2 min-w-0"), "json-editor");
-  region.setAttribute("aria-label", "Authored policy and evaluated report");
-  const configLabel = el("label", PREVIEW_LABEL, "Authored policy — actual schema fields");
-  configLabel.htmlFor = "config-preview";
-  const config = withId(el("textarea", PREVIEW), "config-preview");
-  config.readOnly = true;
-  config.spellcheck = false;
-  config.setAttribute("aria-label", "Authored policy actual schema fields");
-  const reportLabel = el(
-    "label",
-    PREVIEW_LABEL,
-    "Evaluated report — unavailable without target evaluation",
-  );
-  reportLabel.htmlFor = "report-preview";
-  const report = withId(el("textarea", `${PREVIEW} min-h-[160px]`), "report-preview");
-  report.readOnly = true;
-  report.setAttribute("aria-label", "Evaluated report unavailable without target evaluation");
-  region.append(
-    configLabel,
-    config,
-    reportLabel,
-    report,
-    el(
-      "p",
-      "m-0 text-[11px] text-on-surface-variant",
-      "Author portable intent without repository access. Imported audit and authority data is preserved/preflight-only here; AIH engine evaluation in a target repository is the only source of effective state.",
-    ),
-  );
-  body.replaceChildren(region);
-  return (policy, text) => {
-    const selection =
-      policy !== null && typeof policy === "object"
-        ? (policy as { authoringSelections?: unknown }).authoringSelections
-        : undefined;
-    const record =
-      selection !== null && typeof selection === "object"
-        ? (selection as Record<string, unknown>)
-        : {};
-    const count = (key: string) => {
-      const value = record[key];
-      return Array.isArray(value) ? value.length : 0;
-    };
-    config.value = text;
-    report.value = [
-      "Policy Workbench preview",
-      "",
-      "Generic authoring state is represented by prepared catalog identities.",
-      `Direct roots: ${count("roots")}`,
-      `Requests: ${count("requests")}`,
-      `Exclusions: ${count("exclusions")}`,
-      `Local drafts: ${count("drafts")}`,
-      "",
-      "Effective: not evaluated - choose a target repository for Core evaluation.",
-    ].join("\n");
-  };
-}
-
 export function mountNewWorkbench(options: NewWorkbenchOptions): NewWorkbench {
   const shell = mountAdminShell(shellHost());
-  const renderPreviewText = mountPolicyPreview(shell.screenBody("changes"));
+  const changes = mountChangesScreen(shell.screenBody("changes"), {
+    baseline: serializePolicy(options.model.initialPolicy),
+    announce: shell.announce,
+    ...(options.catalogValid
+      ? { openInspectorView: (view: "draft" | "exposure") => options.openInspectorView?.(view) }
+      : {}),
+  });
   if (!options.catalogValid) {
     // S3: the note sits in the catalog root, as the legacy `#framework-rows .error`.
     const note = el(
@@ -130,7 +76,7 @@ export function mountNewWorkbench(options: NewWorkbenchOptions): NewWorkbench {
 
   let session: PolicySession | undefined;
   const renderPreview = () => {
-    if (session !== undefined) renderPreviewText(session.snapshotPolicy(), session.serialize());
+    if (session !== undefined) changes.render(session.snapshotPolicy(), session.serialize());
   };
   const render = () => {
     if (session === undefined) return;
@@ -156,5 +102,5 @@ export function mountNewWorkbench(options: NewWorkbenchOptions): NewWorkbench {
     renderPreview,
   });
   render();
-  return { shell, session, destroy: () => transfer.destroy() };
+  return { shell, session, changes, destroy: () => transfer.destroy() };
 }
