@@ -966,6 +966,33 @@ Each input must be a readable non-symlink regular file no larger than 1 MiB and 
 strict organization-manifest compiler. This offline preparation does not scan, fetch, verify,
 approve, activate, or make the declared assets effective.
 
+The Workbench serves the admin page, a project page, or a chooser depending on the launch folder, chosen read-only by `classifyWorkbenchDoorV1`
+(never by an argument to `--ui`, which stays exact argv). The **admin page** is unchanged from the description above.
+The **user (project) page** opens when the folder holds a project bound to an org policy (`.aih-config.json`) or an
+`aih-project-policy.json` file: it lists the items the bound org policy's authoring selections allow, each with a
+Required / Optional / Skip choice, and a **Save `aih-project-policy.json`** action. Save triggers a browser download —
+the Workbench writes nothing to disk — and is disabled when the policy source is invalid or its digest is unavailable.
+The connected GitHub Skill routes (`/api/artifact-intake/github-skill/resolve` and `/prepare`) are refused with a 409 on
+the project page, because that page shows only the bound org policy and must not fetch a Skill or re-render with a
+different policy while keeping the bound digest.
+
+`aih-project-policy.json` (schema `schemaVersion: 1`, `kind: "aih-project-policy"`) is a narrow-only selection file:
+
+```json
+{
+  "schemaVersion": 1,
+  "kind": "aih-project-policy",
+  "cutFrom": { "schemaVersion": 2, "sha256": "<64-hex org policy content digest>" },
+  "for": { "type": "project", "name": "<name>" },
+  "aiTools": ["claude"],
+  "items": [{ "assetId": "<id>", "origin": { "kind": "administrator" }, "use": "required" }]
+}
+```
+
+It never carries `allow`, `risk`, `security`, or issuer-trust/signature fields; those remain the org policy's authority.
+No `aih` command reads this file yet — `parseProjectPolicyV1` and `checkProjectPolicyNarrowsV1`
+(`src/org-policy/project-policy.ts`) exist and are tested but are not wired into any command.
+
 `--policy-input <path>` restores a bounded saved policy while preparing a new HTML artifact.
 For schema-v3 input, Core resolves the saved exact source revisions and content digests
 against retained source data before rendering. It does not silently move selections to

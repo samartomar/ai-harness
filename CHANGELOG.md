@@ -106,6 +106,24 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   acceptance in readiness reports. Include registered native client paths, retain
   unverified capabilities, and distinguish explicit Codex requirements from
   optional or unspecified servers without starting configured third-party tools.
+- Restyle the Policy Workbench with Tailwind CSS compiled at build time and
+  inlined, design tokens for the existing light and dark themes, and inline SVG
+  icons; the Workbench still loads no font, script, or stylesheet from the network.
+- Add a kind ledger to the admin shell showing selected/available counts per
+  catalog kind against the resolved authoring selection.
+- Read the launch folder, read-only, when `npx @aihq/core --ui` starts, to choose
+  between the existing admin page, a new user (project) page, or a chooser, based
+  on whether an org policy resolves at that folder or a project there is bound to
+  one (`.aih-config.json`) or holds `aih-project-policy.json`.
+- Add a user (project) page listing the items the bound org policy's authoring
+  selections allow as Required / Optional / Skip, with a browser-download Save of
+  `aih-project-policy.json` (nothing is written to disk by the Workbench). Save is
+  disabled when the policy source is invalid or its digest is unavailable, and the
+  connected GitHub Skill routes are refused on this page.
+- Add the `aih-project-policy.json` schema (`schemaVersion: 1`,
+  `src/org-policy/project-policy-schema.ts`) and a pure narrowing check
+  (`checkProjectPolicyNarrowsV1`, `src/org-policy/project-policy.ts`) against an
+  org policy's authoring selections. Not yet consumed by any `aih` command.
 
 ## [Core 0.6.2] - 2026-09-11
 

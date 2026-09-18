@@ -161,8 +161,16 @@ analyzer policy is an expected preparation input, not an observed Scanner run
 identity. Release verification independently checks the actual protected
 publication attestation; the offline coverage check is not a signature verifier.
 
-The default `npx @aihq/core --ui` flow consumes only package-owned prepared data.
-It does not require the user to run Scanner or install GitHub CLI. The browser
+The default `npx @aihq/core --ui` flow consumes package-owned prepared data. It
+also reads the launch folder, read-only, to choose which page to serve: the
+admin page when an org policy resolves at that folder through the existing
+lookup order, the user (project) page when the folder holds a project bound to
+an org policy (`.aih-config.json`) or an `aih-project-policy.json` file, or a
+chooser when neither is present. For a bound project, the bound org policy is
+read with the binding's own custody checks — active, same canonical root, a
+safe single-link regular file, size, and digest — and shown on the user page.
+This folder read never writes anything and does not require the user to run
+Scanner or install GitHub CLI. The browser
 does not fetch or verify evidence. Original verification expiry is preserved;
 historical findings remain visible after the current verification interval ends.
 Public report freshness defaults to 90 days from the authenticated Scanner
