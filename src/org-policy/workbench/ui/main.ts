@@ -22,6 +22,7 @@ import { mountWorkbench } from "./catalog-inventory.js";
 import { availableDeveloperToolCatalogDetails } from "./developer-tool-catalog.js";
 import { mountDeveloperToolSelection } from "./developer-tool-selection.js";
 import { mountLegacyWorkbench } from "./legacy-runtime.js";
+import { mountChooserNote, mountUserDoor, mountUserDoorTheme } from "./user-door.js";
 
 interface WorkbenchSession {
   snapshotPolicy(): unknown;
@@ -97,6 +98,16 @@ function browserCommandArgumentErrors(policy: unknown): string[] {
 const model = object(window.__aihWorkbenchModel);
 if (model === undefined) throw new Error("Policy Workbench model is unavailable.");
 const browserModel = model as unknown as BrowserModel;
+// P5b: the user door renders its own page; "admin", "chooser" and an absent
+// door keep the admin workspace exactly as before.
+const userDoor = model.door === "user";
+if (userDoor) {
+  const userRoot = document.getElementById("user-door");
+  if (userRoot === null) throw new Error("Project selection page is unavailable.");
+  mountUserDoorTheme(document.getElementById("theme-toggle"));
+  mountUserDoor(userRoot, model);
+}
+if (model.door === "chooser") mountChooserNote(document.getElementById("announcement"));
 const sourceInputs = browserModel.workbenchSourceInputs;
 const bundleResult = AuthoringCatalogBundleV1Schema.safeParse(browserModel.workbenchBundle);
 const bindings = object(browserModel.workbenchBindings) as WorkbenchPolicyBindingsV1 | undefined;
@@ -128,10 +139,12 @@ if (preparedCatalogValid) {
     return { accepted: imported.accepted, diagnostics: imported.diagnostics };
   };
 }
-mountLegacyWorkbench(browserModel);
-mountArtifactIntakeWorkbench();
+if (!userDoor) {
+  mountLegacyWorkbench(browserModel);
+  mountArtifactIntakeWorkbench();
+}
 
-if (preparedCatalogValid) {
+if (!userDoor && preparedCatalogValid) {
   const root = document.getElementById("framework-rows");
   const session = window.__aihPolicyWorkbenchSession;
   if (root === null || session === undefined)
@@ -425,7 +438,7 @@ if (preparedCatalogValid) {
     }
   });
 }
-if (!preparedCatalogValid) {
+if (!userDoor && !preparedCatalogValid) {
   const root = document.getElementById("framework-rows");
   if (root !== null) {
     const message = document.createElement("p");

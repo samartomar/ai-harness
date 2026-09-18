@@ -119,7 +119,52 @@ function evidenceDeliveryLine(model: PolicyStudioModel): string {
 }
 
 /** Portable, dependency-free policy authoring surface. */
+/**
+ * The user door (P5b). Static markup only: the browser bundle renders the
+ * trim list from the model, writing every model-derived string as text.
+ */
+function userDoorHtml(model: PolicyStudioModel): string {
+  const workbenchBrowserScript = loadWorkbenchBrowserScript();
+  const workbenchCss = loadWorkbenchCss();
+  return String.raw`<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AIH Project Selection</title>
+<link rel="icon" href="data:,">
+<style>
+*,*::before,*::after{box-sizing:border-box}
+html[data-theme="light"]{color-scheme:light}
+html[data-theme="dark"]{color-scheme:dark}
+body{margin:0;min-height:100vh;font:400 13px/1.5 "Segoe UI Variable","Segoe UI",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+h1,h2,p{margin:0}
+button,input,select{font:inherit}
+button{cursor:pointer;border:0;background:none;color:inherit}
+[hidden]{display:none!important}
+*:focus-visible{outline:2px solid currentColor;outline-offset:2px;border-radius:3px}
+</style>
+<style id="wb-styles">${workbenchCss}</style>
+</head>
+<body class="bg-background text-on-surface flex flex-col">
+<header class="wb-header flex flex-wrap items-center gap-2.5 min-h-14 px-3 py-2 border-0 border-b border-solid border-outline-variant bg-surface-container-lowest text-on-surface" aria-label="Project selection toolbar">
+  <span class="flex items-center gap-2 min-w-0">
+    <span class="w-6 h-6 rounded bg-primary text-on-primary grid place-items-center shrink-0 [&>svg]:w-4 [&>svg]:h-4" aria-hidden="true">${workbenchIcon("shield_with_house")}</span>
+    <h1 class="font-semibold text-[13px] tracking-tight text-on-surface">Project selection</h1>
+    <span class="text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-surface-container-highest text-on-surface-variant font-medium">User</span>
+  </span>
+  <span class="flex-1"></span>
+  <button type="button" class="p-1.5 rounded bg-surface-container-low hover:bg-surface-container border border-solid border-outline-variant text-on-surface-variant hover:text-on-surface transition-colors shrink-0 w-8 h-8 grid place-items-center [&>svg]:w-4 [&>svg]:h-4" id="theme-toggle" aria-label="Switch to dark theme" title="Switch to dark theme">${workbenchIcon("dark_mode")}</button>
+</header>
+<main id="user-door" class="user-door flex-1" tabindex="-1"></main>
+<script>window.__aihWorkbenchModel=__AIH_DATA__;</script>
+<script>${workbenchBrowserScript}</script>
+</body>
+</html>`.replace("__AIH_DATA__", () => safeScriptJson(model));
+}
+
 export function policyStudioHtml(model: PolicyStudioModel): string {
+  if (model.door === "user") return userDoorHtml(model);
   const catalogProvenance = catalogProvenanceLine(model);
   const baselineEvidenceProvenance = baselineEvidenceProvenanceLine(model);
   const workbenchBrowserScript = loadWorkbenchBrowserScript();

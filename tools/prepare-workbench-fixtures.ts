@@ -1,7 +1,9 @@
 import { syntheticWorkbenchModel, syntheticEvidenceWorkbenchModel } from "./workbench-synthetic-fixture.js";
+import { createHash } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { compactJourneyWorkbenchModel } from "./workbench-journey-fixture.js";
+import { policyStudioModel } from "../src/org-policy/studio-model.js";
 import { policyStudioHtml } from "../src/org-policy/studio-template.js";
 
 const directory = process.argv[2];
@@ -37,3 +39,18 @@ Object.assign(malformedPolicy.initialPolicy, {
   security: { strix: { ...{ enabled: false, required: false, targetKind: "local-fixture", mode: "quick", maxBudgetCents: 1, maxTurns: 1, timeoutMs: 1, telemetry: "off", imageDigest: "sha256:" + "a".repeat(64), allowLiveTargets: false, allowMounts: false }, maxTurns: 999 } },
 });
 await writeFile(resolve(directory, "invalid-policy.html"), policyStudioHtml(malformedPolicy), "utf8");
+
+// P5b user door: the packaged default policy stands in for the bound org
+// policy; its digest is the SHA-256 of the exact JSON bytes the fixture pins.
+const userDoorModel = policyStudioModel();
+const userDoorBinding = resolve(directory, "project", ".aih-config.json");
+await writeFile(resolve(directory, "user-door.html"), policyStudioHtml({
+  ...userDoorModel,
+  door: "user",
+  policySource: { kind: "binding", path: userDoorBinding, sha256: createHash("sha256").update(JSON.stringify(userDoorModel.initialPolicy)).digest("hex"), valid: true },
+}), "utf8");
+await writeFile(resolve(directory, "user-door-invalid.html"), policyStudioHtml({
+  ...userDoorModel,
+  door: "user",
+  policySource: { kind: "binding", path: userDoorBinding, valid: false, error: "Policy binding is invalid: <marker>" },
+}), "utf8");
