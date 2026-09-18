@@ -116,13 +116,9 @@ function compactCliControlsModel(): PolicyStudioModel {
 }
 
 const model = compactCliControlsModel();
-// NEW-SHELL-PLAN.md S6: deployment setup moved to the new shell's organization
-// screen. The layout check of "requires explicit managed MCP opt-in…" still
-// reads the legacy panels (the ECC MCP approval drawer has not moved yet).
-const pages = {
-  new: policyStudioHtml({ ...model, shell: "new" }),
-  legacy: policyStudioHtml(model),
-};
+// NEW-SHELL-PLAN.md S6/S7: deployment setup lives on the new shell's
+// organization screen and the ECC MCP approval panel on its additions screen.
+const page = policyStudioHtml({ ...model, shell: "new" });
 const pageScripts = (html: string) =>
   [...html.matchAll(/<script>([\s\S]*?)<\/script>/gi)].map((match) => match[1]);
 const WORKBENCH_TEST_TIMEOUT_MS = 45_000;
@@ -178,13 +174,13 @@ function policyFor(
   };
 }
 
-function studio(shell: "legacy" | "new" = "new"): Window {
+function studio(): Window {
   const window = new Window({ url: "http://localhost/" });
   openWindows.add(window);
-  window.document.write(pages[shell]);
+  window.document.write(page);
   (window as unknown as { structuredClone: typeof structuredClone }).structuredClone =
     structuredClone;
-  const workbenchScripts = pageScripts(pages[shell]);
+  const workbenchScripts = pageScripts(page);
   if (workbenchScripts.length === 0) throw new Error("expected generated workbench script");
   window.eval(workbenchScripts.join("\n"));
   return window;
@@ -469,12 +465,14 @@ describe("organization-selected CLI activation scope", () => {
   it(
     "requires explicit managed MCP opt-in and every selected control host before export",
     async () => {
-      const window = studio("legacy");
-      expect(window.document.body.dataset.view).toBe("compose");
+      const window = studio();
+      expect(window.document.getElementById("wb-root")?.getAttribute("data-wb-screen")).toBe(
+        "sources",
+      );
       const settings = window.document.getElementById("policy-settings");
-      expect(settings?.closest("#workbench")).not.toBeNull();
+      expect(settings?.closest("#wb-main")).not.toBeNull();
       expect(
-        window.document.getElementById("open-ecc-mcp")?.closest("#panel-author"),
+        window.document.getElementById("open-ecc-mcp")?.closest('[data-wb-screen-panel="acme"]'),
       ).not.toBeNull();
       click(window, '[data-sanctioned-cli="claude"]');
       selectPosture(window, "enterprise");

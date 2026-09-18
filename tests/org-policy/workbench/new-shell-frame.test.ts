@@ -100,8 +100,9 @@ describe("new admin shell frame", () => {
     ).toEqual(
       Object.fromEntries(WORKBENCH_SCREENS.map((screen) => [screen, screen !== "sources"])),
     );
-    // The frame renders no legacy layout hooks.
-    for (const retired of ["[data-view-tab]", ".bar", "#byo-actions", "#panel-author"])
+    // The frame renders no legacy layout hooks. (`#byo-actions` is kept: the
+    // additions screen carries it, see id-contract.md slice A.)
+    for (const retired of ["[data-view-tab]", ".bar", "#panel-author"])
       expect(document.querySelector(retired)).toBeNull();
     expect(document.querySelectorAll("#wb-root img, #wb-root script")).toHaveLength(0);
   });

@@ -46,6 +46,15 @@ const PRIMARY_BUTTON =
 const FIELD =
   "h-7 w-full min-w-0 px-1.5 rounded border border-solid border-outline-variant bg-surface-container-lowest text-[12px] text-on-surface";
 
+const POP_ROW =
+  "pop-row flex items-center w-full min-h-8 px-2 rounded text-left text-[12px] font-medium text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors";
+
+/** The legacy `iy`: why custom hooks are not authorable here. */
+const HOOK_INFO_NOTE =
+  "Only AIH-owned governance and telemetry identities are authorable here. Custom hooks are not supported. AIH records the supported hook policy fields; each named owner remains the executor. This Workbench does not install, run, inspect, or register custom hooks.";
+const HOOK_INFO_HELP =
+  "Hook entry, overlap, and process-spawn inventories are intentionally not embedded in the portable form model. Core preparation is required to evaluate an exact target repository.";
+
 const CURATION_PURPOSE =
   "Add audited ECC or Superpowers guidance. This is framework curation, not an organization-owned source and not MCP. AIH records report-only policy intent and does not install, run, or enforce the source.";
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -246,12 +255,136 @@ export function mountAcmeScreen(body: HTMLElement, options: AcmeScreenOptions): 
   const screen = el("div", "flex flex-col gap-3 min-w-0");
   screen.dataset.wbAcme = "";
 
+  // Bring Your Own (legacy `#byo-actions`): organization intake and the
+  // custom-hook note, kept apart from framework curation.
+  const byo = el("section", CARD);
+  byo.setAttribute("aria-labelledby", "wb-acme-byo-title");
+  const openArtifacts = button(POP_ROW, "Organization artifacts", "open-artifacts");
+  const openHookInfo = button(POP_ROW, "Why custom Hooks are unavailable", "open-custom-hook-info");
+  const byoActions = withId(el("div", "flex flex-col min-w-0"), "byo-actions");
+  byoActions.append(openArtifacts, openHookInfo);
+  const hookInfo = withId(
+    el(
+      "div",
+      "flex flex-col gap-2 p-3 rounded border border-solid border-outline-variant bg-surface-container-low min-w-0",
+    ),
+    "wb-acme-hook-info",
+  );
+  hookInfo.setAttribute("role", "region");
+  hookInfo.setAttribute("aria-labelledby", "wb-acme-hook-info-title");
+  hookInfo.hidden = true;
+  const closeHookInfo = button(TOOL_BUTTON, "Close", "wb-acme-hook-info-close");
+  closeHookInfo.setAttribute("aria-label", "Close details");
+  const hookInfoHead = el("div", "flex items-center justify-between gap-2");
+  hookInfoHead.append(
+    withId(el("h4", HEADING, "AIH Governance & Telemetry Hooks"), "wb-acme-hook-info-title"),
+    closeHookInfo,
+  );
+  const hookBadges = el("div", "flex flex-wrap gap-1.5");
+  for (const text of ["AIH registers", "Owners vary"])
+    hookBadges.append(
+      el(
+        "span",
+        "px-1.5 py-0.5 rounded border border-solid border-outline-variant font-mono text-[10px] text-on-surface",
+        text,
+      ),
+    );
+  hookInfo.append(
+    hookInfoHead,
+    hookBadges,
+    el(
+      "p",
+      "m-0 font-mono text-[10px] uppercase tracking-wider text-on-surface-variant",
+      "Hook registration information",
+    ),
+    el("p", "m-0 text-[12px] text-on-surface", HOOK_INFO_NOTE),
+    el("p", HELP, HOOK_INFO_HELP),
+  );
+  openHookInfo.setAttribute("aria-controls", "wb-acme-hook-info");
+  openHookInfo.setAttribute("aria-expanded", "false");
+  byo.append(
+    withId(el("h3", HEADING, "Bring Your Own"), "wb-acme-byo-title"),
+    byoActions,
+    hookInfo,
+  );
+
+  // ECC MCP approval (legacy `#ecc-mcp-actions` and the `#ecc-mcp-sidebar` drawer).
+  const ecc = el("section", CARD);
+  ecc.setAttribute("aria-labelledby", "wb-acme-ecc-mcp-title");
+  const openEcc = button(POP_ROW, "Approve ECC MCP", "open-ecc-mcp");
+  const eccActions = withId(el("div", "flex flex-col min-w-0"), "ecc-mcp-actions");
+  eccActions.append(openEcc);
+  const eccPanel = withId(
+    el(
+      "div",
+      "flex flex-col gap-2 p-3 rounded border border-solid border-outline-variant bg-surface-container-low min-w-0",
+    ),
+    "ecc-mcp-sidebar",
+  );
+  eccPanel.setAttribute("role", "region");
+  eccPanel.setAttribute("aria-label", "ECC MCP approval authoring");
+  eccPanel.hidden = true;
+  const closeEcc = button(TOOL_BUTTON, "Close", "ecc-mcp-close");
+  closeEcc.setAttribute("aria-label", "Close Add MCP");
+  const eccHead = el("div", "flex items-center justify-between gap-2");
+  eccHead.append(el("h4", HEADING, "Add MCP"), closeEcc);
+  const eccHelp = el("p", HELP);
+  eccHelp.append(
+    "Approval records permission for this pinned ECC MCP. Enter the approving person's email so the policy identifies the human decision-maker; it is an audit identity, not a credential. Only ",
+    el("code", "font-mono", "https-configurable"),
+    " entries can use later explicit Add; manual entries remain approval-only/manual. For an eligible entry, the seat operator explicitly chooses one client with ",
+    el("code", "font-mono", "aih ecc mcp add <id> --cli <client>"),
+    "; no policy field chooses it. This panel does not install, contact, scan, attest, or claim reachability or a tool surface.",
+  );
+  const eccId = select("ecc-mcp-id", []);
+  const eccGrid = el("div", "form-grid grid grid-cols-1 md:grid-cols-3 gap-2 min-w-0");
+  eccGrid.append(
+    labelled("ECC MCP", eccId),
+    labelled(
+      "Administrative status",
+      select("ecc-mcp-state", [
+        ["approved", "approved"],
+        ["revoked", "revoked"],
+      ]),
+    ),
+    labelled(
+      "Approver email",
+      input("ecc-mcp-approved-by", {
+        type: "email",
+        autocomplete: "email",
+        placeholder: "name@company.example",
+        required: "",
+      }),
+    ),
+    labelled(
+      "Authentication mode",
+      input("ecc-mcp-authentication-mode", { placeholder: "oauth", required: "" }),
+    ),
+    labelled(
+      "Allowed data classes",
+      input("ecc-mcp-data-classes", {
+        placeholder: "issue-metadata, design-metadata",
+        required: "",
+      }),
+    ),
+  );
+  const eccSaveRow = el("div", "brow flex flex-wrap gap-1.5");
+  eccSaveRow.append(button(PRIMARY_BUTTON, "Save MCP approval", "save-ecc-mcp-approval"));
+  const eccRows = withId(el("div", "flex flex-col gap-1.5 min-w-0"), "ecc-mcp-approval-rows");
+  const eccEditor = withId(el("section", "dform flex flex-col gap-2 min-w-0"), "ecc-mcp-editor");
+  eccEditor.append(eccHelp, eccGrid, eccSaveRow, eccRows);
+  eccPanel.append(eccHead, eccEditor);
+  openEcc.setAttribute("aria-controls", "ecc-mcp-sidebar");
+  openEcc.setAttribute("aria-expanded", "false");
+  ecc.append(
+    withId(el("h3", HEADING, "ECC MCP approval"), "wb-acme-ecc-mcp-title"),
+    eccActions,
+    eccPanel,
+  );
+
   // Organization artifact intake (the artifact intake runtime fills #panel-artifacts).
   const artifacts = el("section", CARD);
   artifacts.setAttribute("aria-labelledby", "wb-acme-artifacts-title");
-  const openArtifacts = button(TOOL_BUTTON, "Organization artifacts", "open-artifacts");
-  const artifactActions = el("div", "flex flex-wrap gap-1.5");
-  artifactActions.append(openArtifacts);
   artifacts.append(
     withId(el("h3", HEADING, "Organization artifacts"), "wb-acme-artifacts-title"),
     el(
@@ -259,7 +392,6 @@ export function mountAcmeScreen(body: HTMLElement, options: AcmeScreenOptions): 
       HELP,
       "Say what the MCP, Skill or Agent is and where its exact source lives, then scan it in a target repository. Candidates here are non-authoritative until Core verifies them.",
     ),
-    artifactActions,
     withId(el("div", "flex flex-col gap-3 min-w-0"), "panel-artifacts"),
   );
 
@@ -354,9 +486,108 @@ export function mountAcmeScreen(body: HTMLElement, options: AcmeScreenOptions): 
   protectedHost.dataset.wbAcmeProtected = "";
   protectedHost.append(cloneTemplate("wb-protected-policy"));
 
-  screen.append(artifacts, protectedHost, curation, custom);
+  screen.append(byo, artifacts, protectedHost, curation, custom, ecc);
   body.replaceChildren(screen);
   wireGroupCards(screen);
+
+  /** The legacy `Ds`/`Nr` for the custom-hook note, and `Rf`/`dn` for ECC MCP. */
+  const showHookInfo = (open: boolean) => {
+    hookInfo.hidden = !open;
+    openHookInfo.setAttribute("aria-expanded", String(open));
+  };
+  const showEcc = (open: boolean) => {
+    eccPanel.hidden = !open;
+    openEcc.setAttribute("aria-expanded", String(open));
+  };
+  openHookInfo.addEventListener("click", () => {
+    showEcc(false);
+    showHookInfo(true);
+  });
+  closeHookInfo.addEventListener("click", () => {
+    showHookInfo(false);
+    openHookInfo.focus({ preventScroll: true });
+  });
+  const openEccPanel = () => {
+    showHookInfo(false);
+    showEcc(true);
+    eccId.focus();
+  };
+  openEcc.addEventListener("click", openEccPanel);
+  closeEcc.addEventListener("click", () => {
+    showEcc(false);
+    openEcc.focus({ preventScroll: true });
+  });
+  for (const [panel, close] of [
+    [hookInfo, () => showHookInfo(false)],
+    [eccPanel, () => showEcc(false)],
+  ] as const)
+    panel.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") close();
+    });
+  /** The legacy `Py`: an adoption route's `[data-ecc-mcp-approval]` preselects a pinned entry. */
+  document.addEventListener("click", (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    const route = target?.closest<HTMLElement>("[data-ecc-mcp-approval]");
+    if (!route) return;
+    const id = route.getAttribute("data-ecc-mcp-approval") ?? "";
+    const pinned: Loose[] = Array.isArray(catalog.externalMcp) ? catalog.externalMcp : [];
+    if (!pinned.some((entry) => entry.id === id)) return;
+    openEccPanel();
+    eccId.value = id;
+    options.announce(
+      `ECC MCP ${id} selected for approval authoring only; it is not installed or contacted.`,
+    );
+  });
+  eccRows.addEventListener("click", (event) => {
+    const target = event.target instanceof Element ? event.target : null;
+    const remove = target?.closest<HTMLElement>("[data-ecc-mcp-approval-remove]");
+    const current = session();
+    if (!remove || current === undefined) return;
+    const id = remove.getAttribute("data-ecc-mcp-approval-remove");
+    current.edit((draft) => {
+      const writable = writableGovernance(draft);
+      writable.eccMcpApprovals = (
+        Array.isArray(writable.eccMcpApprovals) ? writable.eccMcpApprovals : []
+      ).filter((entry: Loose) => entry.id !== id);
+      return undefined;
+    }, `ECC MCP approval removed for ${id}.`);
+  });
+
+  /** The legacy `sy`: pinned ECC MCP options and recorded approvals. */
+  const renderEcc = () => {
+    const pinned: Loose[] = Array.isArray(catalog.externalMcp) ? catalog.externalMcp : [];
+    const recorded = governance();
+    const approvals: Loose[] = Array.isArray(recorded.eccMcpApprovals)
+      ? recorded.eccMcpApprovals
+      : [];
+    const chosen = eccId.value;
+    const placeholder = el("option", "", "Choose pinned ECC MCP");
+    placeholder.value = "";
+    eccId.replaceChildren(
+      placeholder,
+      ...pinned.map((entry) => {
+        const option = el("option", "", `${entry.id} — ${entry.addability}`);
+        option.value = entry.id;
+        return option;
+      }),
+    );
+    eccId.value = pinned.some((entry) => entry.id === chosen) ? chosen : "";
+    eccRows.replaceChildren(
+      ...(approvals.length
+        ? approvals.map((approval) => {
+            const row = el("p", HELP);
+            const remove = button(TOOL_BUTTON, "Remove approval");
+            remove.dataset.eccMcpApprovalRemove = approval.id;
+            row.append(
+              el("code", "font-mono", approval.id),
+              ` — ${approval.state}; ${approval.authenticationMode}. `,
+              remove,
+            );
+            return row;
+          })
+        : [el("p", HELP, "No ECC MCP approvals recorded.")]),
+    );
+  };
 
   let editing: { framework: string; kind: string; id: string } | null = null;
 
@@ -813,6 +1044,7 @@ export function mountAcmeScreen(body: HTMLElement, options: AcmeScreenOptions): 
     render() {
       renderFrameworks();
       renderRows();
+      renderEcc();
     },
     mountProtected(model) {
       if (protectedMounted || document.getElementById("protected-form") === null) return;

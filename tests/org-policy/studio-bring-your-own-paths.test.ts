@@ -5,13 +5,12 @@ import { tinyStudioModel } from "./studio-test-fixture.js";
 
 const openWindows: Window[] = [];
 
-function studio(shell: "legacy" | "new" = "new"): Window {
+function studio(): Window {
   const window = new Window({ url: "http://localhost/" });
   openWindows.push(window);
-  // NEW-SHELL-PLAN.md S7: artifact intake, curation and custom MCP moved to the
-  // new shell's additions screen. The left-navigation test stays on the legacy
-  // shell until the ECC MCP approval drawer and custom-hook note move.
-  const html = policyStudioHtml({ ...tinyStudioModel(), shell });
+  // NEW-SHELL-PLAN.md S7: artifact intake, curation, custom MCP, the ECC MCP
+  // approval panel and the custom-hook note live on the additions screen.
+  const html = policyStudioHtml({ ...tinyStudioModel(), shell: "new" });
   window.document.write(html);
   (window as unknown as { structuredClone: typeof structuredClone }).structuredClone =
     structuredClone;
@@ -45,7 +44,7 @@ function inputValue(window: Window, id: string, value: string): void {
 
 describe("policy studio Bring Your Own paths", () => {
   it("separates organization-owned intake from framework curation in the left navigation", () => {
-    const window = studio("legacy");
+    const window = studio();
     const actions = window.document.getElementById("byo-actions");
 
     expect(actions?.querySelectorAll(".pop-row")).toHaveLength(2);
@@ -62,13 +61,12 @@ describe("policy studio Bring Your Own paths", () => {
     expect(eccMcpActions?.textContent).toContain("Approve ECC MCP");
 
     click(window, window.document.getElementById("open-artifacts"), "organization artifacts");
+    // New shell: framework curation is an inline disclosure, not a drawer, and
+    // the legacy "artifacts" view is the additions screen.
     expect(
-      (window.document.getElementById("authoring-sidebar") as unknown as { hidden: boolean })
-        .hidden,
-    ).toBe(true);
-    expect((window.document.body as unknown as { dataset: { view: string } }).dataset.view).toBe(
-      "artifacts",
-    );
+      (window.document.getElementById("curation-editor") as unknown as { open: boolean }).open,
+    ).toBe(false);
+    expect(window.document.getElementById("wb-root")?.getAttribute("data-wb-screen")).toBe("acme");
     expect(window.document.getElementById("artifact-intake-review")?.textContent).toContain(
       "shared workspace",
     );
@@ -85,12 +83,13 @@ describe("policy studio Bring Your Own paths", () => {
 
     click(window, window.document.getElementById("open-custom-hook-info"), "custom Hook support");
     expect(
-      (window.document.getElementById("drawer") as unknown as { hidden: boolean }).hidden,
+      (window.document.getElementById("wb-acme-hook-info") as unknown as { hidden: boolean })
+        .hidden,
     ).toBe(false);
-    expect(window.document.getElementById("drawer-detail")?.textContent).toContain(
+    expect(window.document.getElementById("wb-acme-hook-info")?.textContent).toContain(
       "Custom hooks are not supported.",
     );
-    expect(window.document.getElementById("drawer-detail")?.textContent).toContain(
+    expect(window.document.getElementById("wb-acme-hook-info")?.textContent).toContain(
       "Only AIH-owned governance and telemetry identities are authorable here.",
     );
   });
