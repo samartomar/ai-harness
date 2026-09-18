@@ -607,3 +607,351 @@ html[data-theme] .workbench-detail pre {
     box-shadow: var(--wb-panel-shadow);
   }
 }
+
+/*
+ * P3.3 — changes review (admin-changes.html #inspector-rail): the draft summary
+ * bar, the inspector's Review draft and Policy exposure views, and the
+ * Approval / evidence group. CSS only; DOM and test hooks are unchanged.
+ * The prototype's JSON delta, Reset / Copy / Download, Changes / Whole file and
+ * Publish have no product counterpart in this view and are not built.
+ * Text stays on on-surface / on-surface-variant; colour marks only bars.
+ * Contrast (computed): see ADOPTION-LOG P3.3.
+ */
+html[data-theme] .workbench-draft-summary h2 {
+  color: var(--wb-theme-heading-text);
+  font: var(--wb-fw-title) 15px/20px var(--wb-font-title);
+  letter-spacing: var(--wb-track-title);
+}
+html[data-theme] .workbench-draft-summary > p { color: var(--wb-color-on-surface-variant); }
+html[data-theme] .workbench-draft-counts span {
+  color: var(--wb-color-on-surface-variant);
+  font: var(--wb-fw-medium) 11px/16px var(--wb-mono);
+  font-variant-numeric: tabular-nums;
+}
+/* Review draft view: header, entry cards with a mono category chip. */
+html[data-theme] .workbench-detail[data-workbench-inspector-view="draft"] > h3,
+html[data-theme] .workbench-exposure-header h3 {
+  margin: 4px 0 0;
+  max-width: none;
+  color: var(--wb-theme-heading-text);
+  font: var(--wb-fw-strong) 14px/20px var(--wb-font);
+  letter-spacing: 0;
+}
+html[data-theme] .workbench-detail[data-workbench-inspector-view="draft"] > .help {
+  margin: 0;
+  color: var(--wb-color-on-surface-variant);
+  font: var(--wb-fw-medium) 11px/16px var(--wb-mono);
+}
+html[data-theme] .workbench-detail .workbench-draft-review-list { gap: 8px; }
+html[data-theme] .workbench-detail .workbench-draft-review-item {
+  padding: 10px;
+  border: 1px solid var(--wb-card-border);
+  border-left: 3px solid var(--wb-color-outline-variant);
+  border-radius: var(--wb-r);
+  background: var(--wb-color-surface-container-low);
+}
+html[data-theme] .workbench-draft-review-category {
+  padding: 1px 6px;
+  border: 1px solid var(--wb-card-cat-border);
+  border-radius: var(--wb-r-sm);
+  background: var(--wb-color-surface-container);
+  color: var(--wb-color-on-surface-variant);
+  font: var(--wb-fw-strong) 10px/16px var(--wb-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+html[data-theme] .workbench-draft-review-item > h3 {
+  color: var(--wb-color-on-surface);
+  font: var(--wb-fw-strong) 13px/18px var(--wb-font);
+}
+html[data-theme] .workbench-draft-review-item > p:not(.workbench-draft-review-category),
+html[data-theme] .workbench-review-context,
+html[data-theme] .workbench-template-removal p {
+  color: var(--wb-color-on-surface-variant);
+  font: var(--wb-fw-regular) 12px/18px var(--wb-font);
+}
+html[data-theme] .workbench-overlap-notice {
+  border: 1px solid var(--wb-card-border);
+  border-left: 3px solid var(--wb-color-tertiary);
+  border-radius: var(--wb-r);
+  background: var(--wb-color-surface-container-low);
+  color: var(--wb-color-on-surface);
+}
+/* Policy exposure view: counts as bordered tiles, items as cards. */
+html[data-theme] .workbench-exposure-counts {
+  gap: 8px;
+  padding: 0;
+  border: 0;
+}
+html[data-theme] .workbench-exposure-counts .workbench-exposure-count {
+  padding: 8px 10px;
+  border: 1px solid var(--wb-card-border);
+  border-radius: var(--wb-r);
+  background: var(--wb-color-surface-container-low);
+  color: var(--wb-color-on-surface-variant);
+  font: var(--wb-fw-medium) 11px/16px var(--wb-font);
+}
+html[data-theme] .workbench-exposure-count strong {
+  color: var(--wb-theme-heading-text);
+  font: var(--wb-fw-title) 20px/24px var(--wb-mono);
+}
+html[data-theme] .workbench-exposure-intro,
+html[data-theme] .workbench-exposure-scope { color: var(--wb-color-on-surface-variant); }
+html[data-theme] .workbench-exposure-limits {
+  border-left: 3px solid var(--wb-color-tertiary);
+  border-radius: var(--wb-r);
+  background: var(--wb-color-surface-container-low);
+  color: var(--wb-color-on-surface-variant);
+}
+html[data-theme] .workbench-exposure-group > h4 {
+  color: var(--wb-color-on-surface-variant);
+  font: var(--wb-fw-strong) 10px/14px var(--wb-mono);
+  letter-spacing: 0.08em;
+}
+html[data-theme] .workbench-exposure-group > p,
+html[data-theme] .workbench-exposure-list > p { color: var(--wb-color-on-surface-variant); }
+html[data-theme] .workbench-exposure-list { gap: 8px; }
+html[data-theme] .workbench-exposure-item {
+  padding: 10px;
+  border: 1px solid var(--wb-card-border);
+  border-left: 3px solid var(--wb-color-outline-variant);
+  border-radius: var(--wb-r);
+  background: var(--wb-color-surface-container-low);
+}
+html[data-theme] .workbench-exposure-item:has([data-workbench-evidence-tone="warning"]) { border-left-color: var(--wb-color-tertiary); }
+html[data-theme] .workbench-exposure-item:has([data-workbench-evidence-tone="positive"]) { border-left-color: var(--wb-color-secondary); }
+html[data-theme] .workbench-exposure-item p,
+html[data-theme] .workbench-exposure-item .workbench-exposure-meta { color: var(--wb-color-on-surface-variant); }
+html[data-theme] .workbench-exposure-item .workbench-exposure-meta { font-family: var(--wb-mono); }
+/* Approval / evidence group: mono uppercase sub-labels, code wells for records. */
+html[data-theme] .grp:has(#approval-rows) .grpnote { max-width: none; color: var(--wb-color-on-surface-variant); }
+html[data-theme] .grp:has(#approval-rows) .grpnote h3 {
+  margin: 12px 0 4px;
+  color: var(--wb-color-on-surface-variant);
+  font: var(--wb-fw-strong) 10px/14px var(--wb-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+html[data-theme] .grp:has(#approval-rows) .grpnote pre:not(:empty) {
+  margin: 6px 0;
+  padding: 8px;
+  border: 1px solid var(--wb-border-hairline);
+  border-radius: var(--wb-r);
+  background: var(--wb-theme-code-bg);
+  color: var(--wb-color-on-surface);
+  font: var(--wb-fw-regular) 11px/16px var(--wb-mono);
+  overflow-x: auto;
+}
+html[data-theme] .grp:has(#approval-rows) .grpnote details > summary {
+  color: var(--wb-color-on-surface);
+  font: var(--wb-fw-strong) 12px/18px var(--wb-font);
+}
+
+/*
+ * P3.4 — scan review (admin-scan.html "The scan at a glance" tiles, the
+ * "Do I need to run a scan?" command card): the rail's source evidence
+ * summary as bordered tiles, the Evidence & versions drawer (#evidence-delivery)
+ * and the Imports panel. CSS only; DOM and test hooks are unchanged.
+ * Legacy hexes replaced by tokens: the source-review warning number
+ * (#9a6619 / dark #ebc788) is now neutral text with a tertiary tone bar, and
+ * the evidence drawer shadow (#0002) uses --wb-panel-shadow.
+ * The prototype's grouped findings, per-finding decision, scanner list, "what
+ * each result means" and "when a source updates" cards have no product data
+ * and are not built. Contrast (computed): see ADOPTION-LOG P3.4.
+ */
+html[data-theme] .workbench-source-review { border-radius: 0; }
+html[data-theme] .workbench-source-review h3 {
+  color: var(--wb-color-on-surface);
+  font: var(--wb-fw-strong) 12px/16px var(--wb-mono);
+}
+html[data-theme] .workbench-source-review-cells { gap: 6px; }
+html[data-theme] .workbench-source-review-cells p {
+  padding: 6px 8px;
+  border: 1px solid var(--wb-card-border);
+  border-left: 3px solid var(--wb-color-outline-variant);
+  border-radius: var(--wb-r);
+  background: var(--wb-color-surface-container-low);
+  color: var(--wb-color-on-surface-variant);
+  font: var(--wb-fw-regular) 11px/16px var(--wb-font);
+}
+html[data-theme] .workbench-source-review-cells p[data-workbench-evidence-tone="warning"] { border-left-color: var(--wb-color-tertiary); }
+html[data-theme] .workbench-source-review-cells strong,
+html[data-theme] .workbench-source-review-cells p[data-workbench-evidence-tone="warning"] strong {
+  color: var(--wb-theme-heading-text);
+  font: var(--wb-fw-title) 16px/20px var(--wb-mono);
+  font-variant-numeric: tabular-nums;
+}
+/* Evidence & versions drawer: mono labels over mono values, like a scan report. */
+html[data-theme] .reference-evidence-panel {
+  background: var(--wb-theme-inspector-bg);
+  border-left: 1px solid var(--wb-border-hairline);
+  box-shadow: var(--wb-panel-shadow);
+}
+html[data-theme] .reference-evidence-heading h2 {
+  color: var(--wb-theme-heading-text);
+  font: var(--wb-fw-title) 15px/20px var(--wb-font-title);
+  letter-spacing: var(--wb-track-title);
+}
+html[data-theme] .reference-evidence-panel dt {
+  margin-top: 12px;
+  color: var(--wb-color-on-surface-variant);
+  font: var(--wb-fw-strong) 10px/14px var(--wb-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+html[data-theme] .reference-evidence-panel dt strong { font-weight: inherit; }
+html[data-theme] .reference-evidence-panel dd {
+  color: var(--wb-color-on-surface);
+  font: var(--wb-fw-regular) 11px/16px var(--wb-mono);
+}
+html[data-theme] .reference-evidence-panel .help > p {
+  margin-top: 14px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--wb-color-outline-variant);
+  border-radius: var(--wb-r);
+  background: var(--wb-color-surface-container-low);
+  color: var(--wb-color-on-surface-variant);
+  font: var(--wb-fw-regular) 12px/18px var(--wb-font);
+}
+/* Imports panel: title, mono section label and the command in a code well. */
+html[data-theme] #panel-imports .importbar > h2 {
+  color: var(--wb-theme-heading-text);
+  font: var(--wb-fw-title) 15px/20px var(--wb-font-title);
+  letter-spacing: var(--wb-track-title);
+}
+html[data-theme] #panel-imports .importbar > .cap {
+  margin-top: 6px;
+  color: var(--wb-color-on-surface-variant);
+  font: var(--wb-fw-strong) 10px/14px var(--wb-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+html[data-theme] #panel-imports #policy-file-command {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--wb-border-hairline);
+  border-radius: var(--wb-r);
+  background: var(--wb-theme-code-bg);
+  color: var(--wb-color-on-surface);
+  font: var(--wb-fw-regular) 11px/16px var(--wb-mono);
+}
+
+/*
+ * P3.5 — organization (admin-org.html): Deployment setup (posture, allowed CLI,
+ * managed MCP toggle, developer tool setup, adoption recipe drawer) and the
+ * protected-policy authoring form (#panel-author .form-grid) as the
+ * prototype's mono-labelled form. CSS only; DOM and test hooks are unchanged.
+ * Developer tool state text is neutral; its tone moves to a dot (decorative
+ * ::before with empty content). The adoption recipe drawer shadow (#0002)
+ * uses --wb-panel-shadow. The prototype's first-time steps, organization
+ * name / short id / repo / people fields, "where this shows up" and signing
+ * cards have no product data and are not built. Contrast: ADOPTION-LOG P3.5.
+ */
+html[data-theme] .compact-instrument .instrument-heading h2,
+html[data-theme] .tool-selection-heading h2 {
+  color: var(--wb-theme-heading-text);
+  font: var(--wb-fw-title) 14px/20px var(--wb-font-title);
+  letter-spacing: var(--wb-track-title);
+}
+html[data-theme] .instrument-posture > span,
+html[data-theme] .instrument-label {
+  color: var(--wb-color-on-surface-variant);
+  font: var(--wb-fw-strong) 10px/14px var(--wb-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+html[data-theme] .instrument-label .end {
+  color: var(--wb-color-on-surface);
+  font: var(--wb-fw-medium) 11px/14px var(--wb-mono);
+  letter-spacing: 0;
+  text-transform: none;
+}
+html[data-theme] .instrument-clis .chip {
+  border-color: var(--wb-card-border);
+  border-radius: var(--wb-r);
+  background: var(--wb-color-surface-container-low);
+  color: var(--wb-color-on-surface-variant);
+  font: var(--wb-fw-medium) 11px/1 var(--wb-mono);
+}
+html[data-theme] .instrument-clis .chip:hover { color: var(--wb-color-on-surface); }
+html[data-theme] .instrument-clis .chip[aria-pressed="true"] {
+  border-color: var(--wb-accent);
+  background: var(--wb-color-surface-container);
+  color: var(--wb-accent);
+  box-shadow: none;
+}
+html[data-theme] .instrument-toggle {
+  border-color: var(--wb-card-border);
+  border-radius: var(--wb-r);
+  background: var(--wb-color-surface-container-low);
+  color: var(--wb-color-on-surface);
+}
+html[data-theme] .instrument-toggle input { accent-color: var(--wb-color-primary-container); }
+html[data-theme] .instrument-readiness {
+  border-top-color: var(--wb-border-hairline);
+  color: var(--wb-color-on-surface-variant);
+}
+html[data-theme] .developer-tools-disclosure > summary { color: var(--wb-color-on-surface); }
+html[data-theme] .developer-tool-row { border-bottom-color: var(--wb-border-hairline); }
+html[data-theme] .developer-tool-row h3 {
+  color: var(--wb-color-on-surface);
+  font: var(--wb-fw-strong) 12px/16px var(--wb-font);
+}
+html[data-theme] .developer-tool-row .developer-tool-state,
+html[data-theme] .developer-tool-row[data-developer-tool-state] .developer-tool-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--wb-color-on-surface-variant);
+  font: var(--wb-fw-medium) 10px/14px var(--wb-mono);
+}
+html[data-theme] .developer-tool-state::before {
+  content: "";
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--wb-color-outline);
+}
+html[data-theme] .developer-tool-row[data-developer-tool-state="selected-pending"] .developer-tool-state::before { background: var(--wb-color-secondary); }
+html[data-theme] .developer-tool-row[data-developer-tool-state="excluded"] .developer-tool-state::before,
+html[data-theme] .developer-tool-row[data-developer-tool-state="blocked"] .developer-tool-state::before { background: var(--wb-color-error); }
+html[data-theme] .deployment-reference-control,
+html[data-theme] .reference-evidence > summary {
+  border-color: var(--wb-card-border);
+  border-radius: var(--wb-r);
+}
+html[data-theme] .reference-drawer {
+  background: var(--wb-theme-inspector-bg);
+  border-left: 1px solid var(--wb-border-hairline);
+  box-shadow: var(--wb-panel-shadow);
+}
+/* Protected-policy authoring form: mono uppercase labels, taller inputs. */
+html[data-theme] #panel-author .form-grid { gap: 10px 12px; }
+html[data-theme] #panel-author .form-grid label {
+  gap: 5px;
+  color: var(--wb-color-on-surface-variant);
+  font: var(--wb-fw-strong) 10px/14px var(--wb-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+html[data-theme] #panel-author .form-grid input,
+html[data-theme] #panel-author .form-grid select {
+  height: 34px;
+  border-color: var(--wb-color-outline-variant);
+  border-radius: var(--wb-r);
+  background: var(--wb-theme-input-bg);
+  color: var(--wb-color-on-surface);
+  font: var(--wb-fw-regular) 12px/1.4 var(--wb-font);
+  letter-spacing: 0;
+  text-transform: none;
+}
+html[data-theme] #panel-author .form-grid input:focus,
+html[data-theme] #panel-author .form-grid select:focus { border-color: var(--wb-accent); }
+html[data-theme] #panel-author .form-grid input::placeholder { color: var(--wb-color-outline); }
+html[data-theme] #panel-author textarea[readonly] {
+  border-color: var(--wb-border-hairline);
+  border-radius: var(--wb-r);
+  background: var(--wb-theme-code-bg);
+  color: var(--wb-color-on-surface);
+}

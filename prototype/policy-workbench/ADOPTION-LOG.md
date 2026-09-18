@@ -170,3 +170,13 @@ Recorded with evidence, cost and reopen bar in `ADOPTION-PLAN.md` §3. Owners: D
 - Gate (main): vitest 94 files 590/590; biome clean; `npm run test:workbench:ui` → 31 passed (visual baselines unchanged). Worker: typecheck clean; no horizontal scroll at 375.
 - Screenshots: `p3-2-*.png` (before/after light, dark, inspector, 375 drawer, prototype).
 - Not built (no product data): Details/Security/Policy JSON tabs, finding banner, scanner grid, evidence excerpt, reach grid, allow toggle and per-finding decision, prev/next footer, status dot and version chip.
+
+## P3.3–P3.5 — changes review, scan review, organization (uncommitted)
+
+- Worker: Opus in a worktree. CSS only: three blocks appended to `wb-tokens.css`, every rule `html[data-theme]`. No markup, hook, text or view-logic change, so no vitest added or re-pinned; visual-shell baselines unchanged.
+- P3.3 (`admin-changes.html`): draft summary bar (mono title, mono counts), inspector Review draft view (entry cards, mono category chip), Policy exposure view (count tiles, tone bar on items from `data-workbench-evidence-tone`), Approval / evidence group (mono labels, code wells). Not built (no product data): JSON delta, Reset / Copy / Download, Changes / Whole file, Publish.
+- P3.4 (`admin-scan.html`): rail source evidence summary as tiles (warning = tertiary bar; legacy `#9a6619` / dark `#ebc788` number colour now neutral), Evidence & versions drawer (mono labels, `--wb-panel-shadow` replaces `#0002`), Imports panel (command in a code well). Not built: grouped findings, per-finding decisions, scanner list, result-meaning and source-update cards.
+- P3.5 (`admin-org.html`): Deployment setup (mono labels, accent on pressed CLI chips, neutral developer-tool state text with a tone dot), adoption recipe drawer (`#0002` shadow → token), protected-policy form (mono uppercase labels, 34 px inputs, code-well previews). Not built: first-time steps, organization name / id / repo / people, where-it-shows-up, signing cards.
+- Contrast (computed from rendered styles), light / dark minimum per slice: P3.3 5.48 / 9.60 (category chip on surface-container); P3.4 5.85 / 10.04; P3.5 4.55 (placeholder, outline on white) / 5.37 (developer-tool status, outline on card). Accent: pressed chip 5.88 / 6.43.
+- Gate (worktree): vitest 94 files, 589/590 (only the known worktree `ui-server` tsx failure); typecheck clean; biome clean; `npm run test:workbench:ui` 31 passed after each slice. 375 px: no horizontal scroll.
+- Screenshots: `p3-3-*`, `p3-4-*`, `p3-5-*` (before/after light, dark, 375, prototype).
