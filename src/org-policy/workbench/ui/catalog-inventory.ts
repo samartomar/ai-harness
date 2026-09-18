@@ -39,7 +39,8 @@ import {
   isDeveloperToolCatalogAssetId,
   projectDeveloperToolCatalogInventory,
 } from "./developer-tool-catalog.js";
-import { mountKindLedger } from "./kind-ledger.js";
+import { workbenchIcon } from "./icons.js";
+import { catalogKindIcon, mountKindLedger } from "./kind-ledger.js";
 import {
   mcpRuntimeOverlapPresentation,
   selectionComparisonPresentation,
@@ -1593,6 +1594,13 @@ export function mountWorkbench(
       title.setAttribute("aria-controls", details.id);
       title.id = "workbench-asset-title-" + asset.id;
       title.textContent = humanizedAssetLabel(asset);
+      const kindIcon = catalogKindIcon(asset.kind);
+      const icon = document.createElement("span");
+      icon.className = "workbench-row-icon";
+      if (kindIcon.colorClass !== undefined) icon.classList.add(kindIcon.colorClass);
+      icon.setAttribute("aria-hidden", "true");
+      // Static glyph markup from the package-owned icon table; no catalog text.
+      icon.innerHTML = workbenchIcon(kindIcon.name);
       const decision = assetDecisionPresentation(asset, options.bundle);
       purpose.className = "workbench-row-purpose";
       purpose.textContent = decision.purpose;
@@ -1660,7 +1668,7 @@ export function mountWorkbench(
           ? "Read details"
           : "Read previous report";
       actions.append(action, expandButton);
-      row.append(title, kind, purpose, decisionFacts, methodology, detail, actions);
+      row.append(icon, title, kind, purpose, decisionFacts, methodology, detail, actions);
       updateRow(row, asset);
       if (expandedAssetId === asset.id && openDetailKey === undefined) {
         const inspectorHeader = document.createElement("header");

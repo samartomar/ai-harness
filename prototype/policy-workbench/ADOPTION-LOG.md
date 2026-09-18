@@ -146,3 +146,19 @@ Recorded with evidence, cost and reopen bar in `ADOPTION-PLAN.md` §3. Owners: D
 - Fable adversarial review: no blocking. Applied advisory: the user door now refuses `/resolve` (outbound GitHub fetch) as well as `/prepare`; test extended.
 - Gate (main): `npx vitest run tests/org-policy tests/config` → 168 files, 3998 passed, 1 skipped; typecheck clean; `npx biome ci src tests tools --diagnostic-level=error` → clean; `npm run test:workbench:ui` → 31 passed (1.5m).
 - Open (advisory): failure chip shows the marker path, success shows the policy path; a bound v3 policy with unsatisfiable `authoringSelections` pins fails server startup (fail-closed, untested); `readPolicyBinding` reads the marker unbounded (pre-existing).
+
+## Verification against main (2026-09-18)
+
+- `npm run verify:local -- --base main --head HEAD` failed twice in `test:workbench:pr`: once on the "pure" 10 s budget (11.4 s, machine loaded), once with 25 source-data receipt failures ("Workbench local verification receipt unavailable or invalid").
+- Baseline, same machine, clean `main` worktree `C:\dev\aih-main-baseline`: `npm run test:workbench:pr` → the same 25 receipt failures (Tests 25 failed | 2546 passed). Pre-existing and machine-specific, not caused by this branch. `npm run test:cov` on main: 649 files passed, 12,135 tests passed.
+- Branch, the 9 failing files alone and together: 29/29 passed.
+- Branch `test:workbench:pr` rerun stopped on the "pure" budget again (10.7 s) while a worker ran in parallel — timing, not a test failure. Still unverified: a clean, unloaded full `verify:local` pass on this machine; CI remains the authority.
+
+## P3.1 — catalog card grid (this commit)
+
+- Worker: Opus in a worktree. CSS-first (new block in `wb-tokens.css`, every rule scoped `html[data-theme]`), one added `span.workbench-row-icon` per card (aria-hidden, fixed glyph), `catalogKindIcon()` in `kind-ledger.ts`. No hook renamed or removed.
+- Reviewer changes: ledger visual test pins `[data-kind-ledger]` to 44 px (its real height, 43.5 px, is unchanged; the image size flipped with sub-pixel offset) and the two ledger baselines were regenerated once (Fable: visually equivalent); footer ledger static below 768 px (it wrapped to ~240 px and covered phone screens); card footer spans the card so the kind chip no longer inherits the actions' column width; chip truncates at 20ch.
+- Fable adversarial review: no blocking. Contrast of every new text pair ≥ 5.48:1 light / ≥ 9.60:1 dark. Advisory left: empty methodology row keeps its gap; ledger y is still fractional (fix tile line-height to let the baseline exercise product CSS); 768–1000 px the sticky ledger is ~102 px.
+- Gate (main): `npx vitest run tests/org-policy/workbench tests/org-policy/studio tests/org-policy/ui-server tests/org-policy/workbench-door.test.ts` → 94 files, 590/590; typecheck clean; biome clean; `npm run test:workbench:ui` → 31 passed (run 3 times).
+- Screenshots: `p3-1-*.png` (worker, light/dark/375, synthetic 1000-item page, before/after, prototype) and `p3-1-final-*.png`.
+- Not built (no product data): source masthead with profile/provenance chips, quick filters, catalog tree, sort, pass badge + toggle switch, token-cost chip (D6).

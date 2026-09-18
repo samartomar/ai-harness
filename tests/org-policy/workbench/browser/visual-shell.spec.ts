@@ -10,7 +10,11 @@ test.skip(
 );
 
 async function disableTransitions(page: import("@playwright/test").Page): Promise<void> {
-  await page.addStyleTag({ content: "*{transition:none!important;animation:none!important}" });
+  // Pin the ledger to whole pixels: its sub-pixel offset otherwise follows the
+  // height of whatever content sits above it and flips the image size.
+  await page.addStyleTag({
+    content: "*{transition:none!important;animation:none!important}[data-kind-ledger]{height:44px}",
+  });
 }
 
 async function toggleTheme(page: import("@playwright/test").Page): Promise<void> {

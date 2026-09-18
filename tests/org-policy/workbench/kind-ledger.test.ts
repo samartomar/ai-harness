@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { workbenchIcons } from "../../../src/org-policy/workbench/ui/icons.js";
 import {
   buildKindLedgerViewModel,
+  catalogKindIcon,
   KIND_LEDGER_KINDS,
   renderKindLedger,
 } from "../../../src/org-policy/workbench/ui/kind-ledger.js";
@@ -80,5 +82,24 @@ describe("kind ledger view-model (P2b)", () => {
     expect(html).toContain('font-semibold text-on-surface-variant">');
     const classes = [...html.matchAll(/class="([^"]*)"/g)].map((match) => match[1]).join(" ");
     expect(classes).not.toMatch(/(?:bg|border|text)-[a-z-]+\/\d+/);
+  });
+});
+
+describe("catalog card kind icon (P3.1)", () => {
+  it("gives every ledger kind its ledger glyph and primitive colour class", () => {
+    for (const kind of KIND_LEDGER_KINDS) {
+      const icon = catalogKindIcon(kind);
+      expect(workbenchIcons[icon.name]).toBeDefined();
+      expect(icon.colorClass).toBe(`wb-primitive-${kind}`);
+    }
+    expect(catalogKindIcon("mcp").name).toBe("dns");
+  });
+
+  it("falls back to a neutral glyph without a colour class for other kinds", () => {
+    for (const kind of ["profile", "lang", "module", "<img src=x>"]) {
+      const icon = catalogKindIcon(kind);
+      expect(icon).toEqual({ name: "inventory_2", colorClass: undefined });
+      expect(workbenchIcons[icon.name]).toBeDefined();
+    }
   });
 });

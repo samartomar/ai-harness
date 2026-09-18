@@ -243,3 +243,242 @@ html[data-theme] .workbench-inventory-rows article.workbench-asset:has(.workbenc
 html[data-theme] .workbench-row-title:hover { color: var(--wb-accent); }
 html[data-theme] .workbench-inspector-navigation button[aria-pressed="true"] { color: var(--wb-accent); box-shadow: inset 0 -2px var(--wb-accent); }
 html[data-theme] .workbench-exposure-inspect { color: var(--wb-accent); }
+
+/*
+ * P3.1 — admin catalog: source rail, browse filters and the item list as the
+ * prototype's card grid (admin-sources.html #nav-rail, filter strip,
+ * #cards-grid). DOM and test hooks are unchanged; only layout and colour move.
+ * Every selector carries html[data-theme] so it outranks the legacy rules
+ * (including their media-query variants) without !important. Text stays on
+ * on-surface / on-surface-variant; the accent only marks selection.
+ * Contrast (computed): on-surface-variant >= 5.5:1 light, >= 9.6:1 dark on every
+ * surface below; accent on surface-container 5.88:1 light, 6.43:1 dark.
+ */
+html[data-theme] .workbench-source-rail { background: var(--wb-theme-nav-rail-bg); }
+html[data-theme] .workbench-source-rail > h2 {
+  padding: 12px 16px 6px;
+  font: var(--wb-fw-strong) 10px/14px var(--wb-mono);
+  letter-spacing: 0.08em;
+  color: var(--wb-color-on-surface-variant);
+}
+html[data-theme] .workbench-source-tabs { gap: 2px; padding: 0 8px; }
+html[data-theme] .workbench-source-tab {
+  min-height: 32px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--wb-r);
+  background: transparent;
+  color: var(--wb-color-on-surface-variant);
+  font: var(--wb-fw-medium) 12px/16px var(--wb-font);
+}
+html[data-theme] .workbench-source-tab:hover { background: var(--wb-color-surface-container-low); color: var(--wb-color-on-surface); }
+html[data-theme] .workbench-source-tab[aria-pressed="true"] {
+  background: var(--wb-color-surface-container);
+  color: var(--wb-accent);
+  font-weight: var(--wb-fw-strong);
+}
+html[data-theme] .workbench-source-tab span {
+  padding: 0 4px;
+  border-radius: var(--wb-r-sm);
+  font: var(--wb-fw-medium) 10px/15px var(--wb-mono);
+  color: var(--wb-color-on-surface-variant);
+}
+html[data-theme] .workbench-source-review { margin: 12px 16px 0; }
+html[data-theme] .workbench-source-picker { color: var(--wb-color-on-surface-variant); font: var(--wb-fw-strong) 10px/14px var(--wb-mono); letter-spacing: 0.06em; text-transform: uppercase; }
+html[data-theme] .workbench-source-picker select {
+  min-height: 32px;
+  padding: 5px 8px;
+  border: 1px solid var(--wb-color-outline-variant);
+  border-radius: var(--wb-r);
+  background: var(--wb-theme-input-bg);
+  color: var(--wb-color-on-surface);
+  font: var(--wb-fw-regular) 12px/16px var(--wb-font);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+html[data-theme] .workbench-browse-tools {
+  gap: 8px;
+  padding: 8px 16px;
+  background: var(--wb-theme-subhead-bg);
+  border-bottom: 1px solid var(--wb-border-hairline);
+}
+html[data-theme] .workbench-browse-tools > input {
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 1px solid var(--wb-color-outline-variant);
+  border-radius: var(--wb-r);
+  background: var(--wb-theme-input-bg);
+  color: var(--wb-color-on-surface);
+  font: var(--wb-fw-regular) 12px/16px var(--wb-font);
+}
+html[data-theme] .workbench-type-tabs { gap: 4px; }
+html[data-theme] .workbench-type-tab {
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: var(--wb-r);
+  background: transparent;
+  color: var(--wb-color-on-surface-variant);
+  font: var(--wb-fw-medium) 11px/16px var(--wb-mono);
+  white-space: nowrap;
+}
+html[data-theme] .workbench-type-tab:hover { background: var(--wb-color-surface-container-low); color: var(--wb-color-on-surface); }
+html[data-theme] .workbench-type-tab[aria-pressed="true"] {
+  background: var(--wb-color-surface-container);
+  color: var(--wb-accent);
+  font-weight: var(--wb-fw-strong);
+}
+
+html[data-theme] .workbench-page-controls {
+  padding: 10px 16px 0;
+  border: 0;
+  background: var(--wb-theme-cards-bg);
+  font: var(--wb-fw-regular) 11px/16px var(--wb-mono);
+}
+html[data-theme] .workbench-page-controls > [role="status"] { color: var(--wb-color-on-surface-variant); }
+
+/* Card grid. min(280px,100%) keeps one column without overflow at 375px. */
+html[data-theme] .workbench-inventory-rows {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
+  gap: 12px;
+  padding: 12px 16px 16px;
+  border: 0;
+  border-radius: 0;
+  background: var(--wb-theme-cards-bg);
+}
+html[data-theme] .workbench-inventory-rows article.workbench-asset {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto 1fr auto auto;
+  align-items: start;
+  gap: 8px 0;
+  min-height: 0;
+  padding: 12px;
+  border: 1px solid var(--wb-card-border);
+  border-radius: var(--wb-r-lg);
+  background: var(--wb-card-bg);
+  box-shadow: var(--wb-shadow-xs);
+  transition: border-color var(--wb-ease), background-color var(--wb-ease), box-shadow var(--wb-ease);
+}
+html[data-theme] .workbench-inventory-rows article.workbench-asset:last-child { border-bottom: 1px solid var(--wb-card-border); }
+html[data-theme] .workbench-inventory-rows article.workbench-asset:hover {
+  border-color: var(--wb-card-border-hover);
+  background: var(--wb-card-bg-hover);
+  box-shadow: var(--wb-shadow-sm);
+}
+html[data-theme] .workbench-inventory-rows article.workbench-asset:has(.workbench-row-expand[aria-expanded="true"]) {
+  border-color: var(--wb-accent);
+  background: var(--wb-theme-card-active-bg);
+  box-shadow: 0 0 0 1px var(--wb-accent), var(--wb-shadow-sm);
+}
+html[data-theme] .workbench-inventory-rows .workbench-row-icon {
+  grid-column: 1;
+  grid-row: 1;
+  display: inline-flex;
+  width: 15px;
+  height: 15px;
+  margin: 2px 6px 0 0;
+  color: var(--wb-color-on-surface-variant);
+}
+html[data-theme] .workbench-inventory-rows .workbench-row-icon svg { width: 100%; height: 100%; }
+html[data-theme] .workbench-inventory-rows .workbench-row-title {
+  grid-column: 2;
+  grid-row: 1;
+  color: var(--wb-color-on-surface);
+  font: var(--wb-fw-title) 13px/18px var(--wb-font-title);
+  letter-spacing: var(--wb-track-title);
+  overflow-wrap: anywhere;
+}
+html[data-theme] .workbench-inventory-rows .workbench-row-kind {
+  grid-column: 3;
+  grid-row: 1;
+  align-self: start;
+  margin-left: 8px;
+  padding: 2px 6px;
+  border: 1px solid var(--wb-card-cat-border);
+  border-radius: var(--wb-r-sm);
+  background: var(--wb-card-cat-bg);
+  color: var(--wb-color-on-surface-variant);
+  font: var(--wb-fw-medium) 10px/14px var(--wb-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+html[data-theme] .workbench-inventory-rows .workbench-row-purpose {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  white-space: normal;
+  color: var(--wb-color-on-surface-variant);
+  font: var(--wb-fw-regular) 12px/18px var(--wb-font);
+}
+html[data-theme] .workbench-inventory-rows .workbench-methodology-badge { grid-column: 1 / -1 !important; grid-row: 3; }
+/* Card footer: a divider (grid pseudo-item) across row 4, the evidence pill
+ * left and the actions right. The pill keeps its legacy tone colours. */
+html[data-theme] .workbench-inventory-rows article.workbench-asset::before {
+  content: "";
+  grid-column: 1 / -1;
+  grid-row: 4;
+  align-self: start;
+  border-top: 1px solid var(--wb-card-footer-border);
+}
+html[data-theme] .workbench-inventory-rows .workbench-row-evidence {
+  grid-column: 1 / 3;
+  grid-row: 4;
+  align-self: center;
+  justify-self: start;
+  max-width: 100%;
+  margin: 10px 0 0;
+  padding: 2px 8px;
+  border-radius: var(--wb-r-sm);
+  font: var(--wb-fw-medium) 11px/16px var(--wb-font);
+  overflow-wrap: anywhere;
+}
+html[data-theme] .workbench-inventory-rows .workbench-row-actions {
+  grid-column: 3;
+  grid-row: 4;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 10px;
+  padding-left: 8px;
+}
+html[data-theme] .workbench-inventory-rows .workbench-overlap-notice { grid-column: 1 / -1; }
+html[data-theme] .workbench-source-review h3 { font: var(--wb-fw-strong) 12px/16px var(--wb-font); }
+html[data-theme] .workbench-source-review-cells p { font: var(--wb-fw-regular) 11px/16px var(--wb-font); color: var(--wb-color-on-surface-variant); }
+html[data-theme] .workbench-source-review-cells strong { font: var(--wb-fw-strong) 15px/20px var(--wb-mono); }
+
+/*
+ * Below md the footer ledger wraps to several rows; kept sticky it would
+ * cover most of a phone screen, so it scrolls with the page there (as the
+ * header does).
+ */
+@media (max-width: 767px) {
+  html[data-theme] .ledger {
+    position: static;
+  }
+}
+
+/*
+ * P3.1 review: evidence and actions share the whole footer row, so the kind
+ * chip's column is no longer widened by the action buttons.
+ */
+html[data-theme] .workbench-inventory-rows .workbench-row-evidence {
+  grid-column: 1 / -1;
+  justify-self: start;
+  max-width: calc(100% - 148px);
+}
+html[data-theme] .workbench-inventory-rows .workbench-row-actions {
+  grid-column: 1 / -1;
+  justify-self: end;
+}
+html[data-theme] .workbench-inventory-rows .workbench-row-kind {
+  max-width: 20ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

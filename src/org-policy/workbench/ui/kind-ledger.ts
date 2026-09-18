@@ -27,6 +27,20 @@ const KIND_LEDGER_ICONS: Record<KindLedgerKind, string> = {
   hook: "webhook",
 };
 
+/**
+ * P3.1: the kind glyph for a catalog card (prototype `#cards-grid` card
+ * header). Ledger kinds reuse the ledger glyph and its `wb-primitive-*`
+ * colour; any other catalog kind (profile, lang, module, ...) gets a neutral
+ * package glyph and no colour class, so an unknown kind never throws.
+ */
+export function catalogKindIcon(kind: string): { name: string; colorClass: string | undefined } {
+  if ((KIND_LEDGER_KINDS as readonly string[]).includes(kind)) {
+    const ledgerKind = kind as KindLedgerKind;
+    return { name: KIND_LEDGER_ICONS[ledgerKind], colorClass: `wb-primitive-${ledgerKind}` };
+  }
+  return { name: "inventory_2", colorClass: undefined };
+}
+
 export interface KindLedgerAsset {
   readonly id: string;
   readonly kind: string;
