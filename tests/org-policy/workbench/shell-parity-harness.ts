@@ -278,6 +278,31 @@ export const importCases: ReadonlyArray<readonly [string, () => unknown]> = [
   ],
   ["policy without governance", () => ({ schemaVersion: 2, minimumPosture: "vibe" })],
   ["schema version 1 policy", () => ({ ...basePolicy(), schemaVersion: 1 })],
+  // An imported schema-3 policy is re-projected through the prepared catalog
+  // (main.ts, shared by both shells): the stale reviewed hook activation is
+  // dropped by the projection, so the preview differs from the imported bytes.
+  [
+    "schema version 3 policy re-projected through the prepared catalog",
+    () => {
+      const policy = {
+        ...basePolicy(),
+        schemaVersion: 3,
+        minimumCoreVersion: "0.6.0",
+        authoringSelections: {
+          selectionVersion: "workbench-selection/v1",
+          roots: [],
+          exclusions: [],
+          requests: [],
+          drafts: [],
+        },
+      };
+      governance(policy).catalog = { reviewed: [hookControl], custom: [] };
+      governance(policy).activations = [
+        { candidate: "usage-metering", state: "active", targets: ["claude", "codex"] },
+      ];
+      return policy;
+    },
+  ],
 ];
 
 export const githubControl = {

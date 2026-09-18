@@ -74,6 +74,21 @@ describe("new shell imports match the legacy shell", () => {
     },
   );
 
+  it("re-projects an imported schema-3 policy through the prepared catalog on both shells", async () => {
+    const found = importCases.find(([label]) => label.startsWith("schema version 3 policy"));
+    if (found === undefined) throw new Error("expected the schema-3 import case");
+    const imported = `${JSON.stringify(found[1](), null, 2)}
+`;
+    const previews = [];
+    for (const current of [studio(), newShell()]) {
+      await importFile(current.window, "policy-file", JSON.stringify(found[1]()));
+      previews.push(preview(current.window));
+    }
+    expect(previews[0]).not.toBe(imported);
+    expect(JSON.parse(previews[0] ?? "").schemaVersion).toBe(3);
+    expect(previews[1]).toBe(previews[0]);
+  });
+
   it("rejects a policy file that is not strict JSON with the legacy messages", async () => {
     const { window } = newShell();
     expect(await importFile(window, "policy-file", '{"schemaVersion":2,"schemaVersion":2}')).toBe(

@@ -167,7 +167,12 @@ S5/S6/S7/S8 run beside it with two workers.
   A screen that needs a new field is a stop (already true for org name/people).
 - **Byte-identical downloads:** policy = `JSON.stringify(policy, null, 2) + "\n"`
   (`legacy-runtime.js:101`); decision = `stableDecisionJson + "\n"` (`:2679`);
-  protected bundle/evidence via `canonicalJson`; artifact intake = `JSON.stringify(intake, null, 2) + "\n"` (`artifact-intake-runtime.js:126`, pinned by golden). S0 golden tests
+  protected bundle = `JSON.stringify(bundle, null, 2) + "
+"`, not `canonicalJson`
+  (`studio-protected-authority-runtime.js:1018,1174`); the protected evidence
+  download `aih-organization-evidence.json` (`:1203`) has no golden yet. The S7 gate
+  must produce the protected bundle through the real bundle builder and compare
+  those bytes, not round-trip a golden through the serializer; artifact intake = `JSON.stringify(intake, null, 2) + "\n"` (`artifact-intake-runtime.js:126`, pinned by golden). S0 golden tests
   are missing today (only `journeys.spec.ts:282` checks policy bytes) and are the gate
   for S2/S7/S8. Filename regex `^[A-Za-z0-9][A-Za-z0-9._-]{0,126}\.json$` unchanged.
 - **Security headers / CSP:** server headers (`ui-server.ts:73-79,357-363`) untouched;

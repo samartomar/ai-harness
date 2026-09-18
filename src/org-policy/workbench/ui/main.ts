@@ -23,6 +23,8 @@ import { mountWorkbench, workbenchBrowseBundle } from "./catalog-inventory.js";
 import { availableDeveloperToolCatalogDetails } from "./developer-tool-catalog.js";
 import { mountDeveloperToolSelection } from "./developer-tool-selection.js";
 import { mountLegacyWorkbench } from "./legacy-runtime.js";
+import { reprojectSchema3Policy, type Schema3ReprojectionSteps } from "./schema3-reprojection.js";
+import { el } from "./shell/dom.js";
 import { mountNewWorkbench } from "./shell/new-workbench.js";
 import { resolveWorkbenchShell } from "./shell/screens.js";
 import { mountChooserNote, mountUserDoor, mountUserDoorTheme } from "./user-door.js";
@@ -64,6 +66,19 @@ function importedState(
   sourceInputs: WorkbenchSourceInputsV1,
 ) {
   return importWorkbenchPolicySelections(policy, bundle, bindings, sourceInputs);
+}
+
+function schema3ReprojectionSteps(
+  bundle: import("../contracts.js").AuthoringCatalogBundleV1,
+  bindings: WorkbenchPolicyBindingsV1,
+  restore: (policy: unknown) => void,
+): Schema3ReprojectionSteps {
+  return {
+    importSelections: (policy) => importedState(policy, bundle, bindings, sourceInputs),
+    project: (policy, state) =>
+      projectWorkbenchPolicy(policy, state, bundle, bindings, "author", sourceInputs),
+    restore,
+  };
 }
 
 function browserCommandArgumentErrors(policy: unknown): string[] {
@@ -152,7 +167,7 @@ if (!userDoor && !newShell) {
 }
 
 if (newShell) {
-  const { session } = mountNewWorkbench({
+  const { session, shell } = mountNewWorkbench({
     model: model as unknown as Parameters<typeof mountNewWorkbench>[0]["model"],
     catalogValid: preparedCatalogValid,
     ledgerAssets: bundle === undefined ? [] : Object.values(workbenchBrowseBundle(bundle).assets),
@@ -167,35 +182,32 @@ if (newShell) {
   });
   window.__aihPolicyWorkbenchSession = session;
   if (model.door === "chooser") mountChooserNote(document.getElementById("announcement"));
-  // The legacy listener below re-projects an imported schema-3 policy through
-  // the prepared catalog; the new shell keeps that exact step (S2 byte parity).
-  let applyingNewShellProjection = false;
-  window.addEventListener("aih-workbench-policy-change", () => {
-    if (applyingNewShellProjection || !preparedCatalogValid) return;
-    const snapshot = session.snapshotPolicy();
-    const imported = importedState(snapshot, bundle, bindings, sourceInputs);
-    const basePolicy = object(snapshot);
-    if (!imported.accepted || basePolicy === undefined || basePolicy.schemaVersion !== 3) return;
-    const projected = projectWorkbenchPolicy(
-      basePolicy,
-      imported.state,
-      bundle,
-      bindings,
-      "author",
-      sourceInputs,
-    );
-    if (!projected.accepted) return;
-    try {
-      applyingNewShellProjection = true;
-      window.__aihWorkbenchApplyingProjection = true;
-      session.restorePolicy(projected.policy);
-    } catch {
-      // The legacy listener reports this only through the catalog panel (S3).
-    } finally {
-      window.__aihWorkbenchApplyingProjection = false;
-      applyingNewShellProjection = false;
-    }
-  });
+  // Both shells re-project an imported schema-3 policy through the prepared
+  // catalog with the same step (S2 byte parity) and surface its diagnostics.
+  if (preparedCatalogValid) {
+    const diagnostics = el("ul", "m-0 pl-4 text-[12px] text-error empty:hidden");
+    diagnostics.dataset.wbSourcesDiagnostics = "";
+    diagnostics.setAttribute("role", "status");
+    shell.screenBody("sources").append(diagnostics);
+    let applyingNewShellProjection = false;
+    window.addEventListener("aih-workbench-policy-change", () => {
+      if (applyingNewShellProjection) return;
+      const outcome = reprojectSchema3Policy(
+        session.snapshotPolicy(),
+        schema3ReprojectionSteps(bundle, bindings, (policy) => {
+          try {
+            applyingNewShellProjection = true;
+            window.__aihWorkbenchApplyingProjection = true;
+            session.restorePolicy(policy);
+          } finally {
+            window.__aihWorkbenchApplyingProjection = false;
+            applyingNewShellProjection = false;
+          }
+        }),
+      );
+      diagnostics.replaceChildren(...outcome.diagnostics.map((message) => el("li", "", message)));
+    });
+  }
 }
 
 if (!userDoor && !newShell && preparedCatalogValid) {
@@ -454,42 +466,20 @@ if (!userDoor && !newShell && preparedCatalogValid) {
     if (applyingWorkbenchProjection) return;
     const snapshot = session.snapshotPolicy();
     developerTools?.restore(snapshot);
-    const imported = importedState(snapshot, bundle, bindings, sourceInputs);
-    const basePolicy = object(snapshot);
-    if (!imported.accepted || basePolicy === undefined) {
-      mounted.restore(imported.state, imported.diagnostics);
-      return;
-    }
-    if (basePolicy.schemaVersion !== 3) {
-      mounted.restore(imported.state, imported.diagnostics);
-      return;
-    }
-    const projected = projectWorkbenchPolicy(
-      basePolicy,
-      imported.state,
-      bundle,
-      bindings,
-      "author",
-      sourceInputs,
+    const outcome = reprojectSchema3Policy(
+      snapshot,
+      schema3ReprojectionSteps(bundle, bindings, (policy) => {
+        try {
+          applyingWorkbenchProjection = true;
+          window.__aihWorkbenchApplyingProjection = true;
+          session.restorePolicy(policy);
+        } finally {
+          window.__aihWorkbenchApplyingProjection = false;
+          applyingWorkbenchProjection = false;
+        }
+      }),
     );
-    if (!projected.accepted) {
-      mounted.restore(imported.state, [...imported.diagnostics, ...projected.diagnostics]);
-      return;
-    }
-    try {
-      applyingWorkbenchProjection = true;
-      window.__aihWorkbenchApplyingProjection = true;
-      session.restorePolicy(projected.policy);
-      mounted.restore(imported.state, imported.diagnostics);
-    } catch (error) {
-      mounted.restore(imported.state, [
-        ...imported.diagnostics,
-        error instanceof Error ? error.message : "Policy update was rejected.",
-      ]);
-    } finally {
-      window.__aihWorkbenchApplyingProjection = false;
-      applyingWorkbenchProjection = false;
-    }
+    mounted.restore(outcome.state, outcome.diagnostics);
   });
 }
 if (!userDoor && !newShell && !preparedCatalogValid) {

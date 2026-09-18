@@ -83,9 +83,15 @@ function menuItem(id: string, glyph: string, label: string): HTMLButtonElement {
   return item;
 }
 
-export function mountFileTransfer(options: FileTransferOptions): void {
+export interface FileTransfer {
+  /** Remove the header controls and every listener, including the document one. */
+  destroy(): void;
+}
+
+export function mountFileTransfer(options: FileTransferOptions): FileTransfer {
   const { shell, session } = options;
   const announce = shell.announce;
+  const teardown = new AbortController();
 
   const validate = button(
     "flex items-center gap-1.5 h-7 px-2.5 rounded bg-surface-container hover:bg-surface-container-high border border-solid border-outline-variant text-on-surface text-[12px] font-medium transition-colors shrink-0",
@@ -213,11 +219,15 @@ export function mountFileTransfer(options: FileTransferOptions): void {
     setMenu(false);
     menuToggle.focus();
   });
-  document.addEventListener("click", (event) => {
-    const target = event.target;
-    if (menu.hidden || !(target instanceof Node) || anchor.contains(target)) return;
-    setMenu(false);
-  });
+  document.addEventListener(
+    "click",
+    (event) => {
+      const target = event.target;
+      if (menu.hidden || !(target instanceof Node) || anchor.contains(target)) return;
+      setMenu(false);
+    },
+    { signal: teardown.signal },
+  );
 
   const updateFilenameHelp = () => {
     const value = filename.value.trim();
@@ -390,4 +400,10 @@ export function mountFileTransfer(options: FileTransferOptions): void {
     validate.disabled = true;
     download.disabled = true;
   }
+  return {
+    destroy() {
+      teardown.abort();
+      anchor.remove();
+    },
+  };
 }

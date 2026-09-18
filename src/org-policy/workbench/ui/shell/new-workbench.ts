@@ -30,6 +30,8 @@ export interface NewWorkbenchOptions {
 export interface NewWorkbench {
   readonly shell: AdminShell;
   readonly session: PolicySession;
+  /** Remove the file transfer controls and their document listener. */
+  destroy(): void;
 }
 
 export const POLICY_CHANGE_EVENT = "aih-workbench-policy-change";
@@ -143,7 +145,7 @@ export function mountNewWorkbench(options: NewWorkbenchOptions): NewWorkbench {
     changed: () => window.dispatchEvent(new Event(POLICY_CHANGE_EVENT)),
     selectionValidator: options.selectionValidator,
   });
-  mountFileTransfer({
+  const transfer = mountFileTransfer({
     shell,
     session,
     decisionSchema: options.model.decisionSchema,
@@ -151,5 +153,5 @@ export function mountNewWorkbench(options: NewWorkbenchOptions): NewWorkbench {
     renderPreview,
   });
   render();
-  return { shell, session };
+  return { shell, session, destroy: () => transfer.destroy() };
 }

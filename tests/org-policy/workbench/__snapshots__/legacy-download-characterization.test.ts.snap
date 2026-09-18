@@ -86,6 +86,13 @@ exports[`legacy Workbench policy grammar characterization > pins the import outc
 }
 `;
 
+exports[`legacy Workbench policy grammar characterization > pins the import outcome for schema version 3 policy re-projected through the prepared catalog 1`] = `
+{
+  "changed": true,
+  "message": "Policy imported without transformation after prepared Workbench catalog.",
+}
+`;
+
 exports[`legacy Workbench policy grammar characterization > pins the import outcome for unchanged initial policy 1`] = `
 {
   "changed": false,
