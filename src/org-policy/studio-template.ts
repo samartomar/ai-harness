@@ -1,3 +1,4 @@
+import { EVIDENCE_DELIVERY_NOTE, evidenceDeliveryRows } from "./evidence-delivery-rows.js";
 import type { PolicyStudioModel } from "./studio-model.js";
 import { protectedPolicyWorkbenchMarkup } from "./studio-protected-authority.js";
 import { loadWorkbenchBrowserScript } from "./workbench/browser-script.js";
@@ -60,62 +61,9 @@ function baselineEvidenceProvenanceLine(model: PolicyStudioModel): string {
 }
 function evidenceDeliveryLine(model: PolicyStudioModel): string {
   const delivery = model.evidenceDelivery;
-  if (!delivery) return "";
-  const rows: Array<[string, string]> = [
-    ["Core package", `@aihq/core ${delivery.coreVersion}`],
-    ["This Workbench catalog", delivery.workbenchCatalogDigest],
-    ["Bundled report lock", delivery.vendorLockDigest],
-    ["Core Scanner library input", `@aihq/scan ${delivery.scannerLibraryVersion}`],
-    [
-      "Allowed Scanner publisher",
-      `${delivery.expectedScannerPublisher.repository}@${delivery.expectedScannerPublisher.commit}`,
-    ],
-  ];
-  const baseline = delivery.publicBaseline;
-  if (delivery.expectedCatalogPublisher)
-    rows.push([
-      "Allowed Catalog publisher",
-      `${delivery.expectedCatalogPublisher.repository}@${delivery.expectedCatalogPublisher.catalogCommit} · qualification consumer policy v${delivery.expectedCatalogPublisher.version}`,
-    ]);
-  rows.push([
-    "Freshness policy",
-    `Reports and qualifications expire after ${delivery.freshnessDays ?? 90} days from their original signed dates; earlier signed qualification expiry wins. A changed version needs matching evidence.`,
-  ]);
-  for (const publication of delivery.scanPublications ?? [])
-    rows.push([
-      `${publication.source} Scanner publication`,
-      `${publication.publisher}@${publication.commit} · ${publication.digest}`,
-    ]);
-  if (baseline) {
-    rows.push(
-      ["Included evidence publisher", `${baseline.publisher} · ${baseline.workflow}`],
-      [
-        "Verification during Core release preparation",
-        `${baseline.verifiedAt}; valid until ${baseline.validUntil}`,
-      ],
-      ["Verified artifact digest", baseline.artifactDigest],
-    );
-  } else if (!delivery.scanPublications?.length)
-    rows.push([
-      "Prepared public evidence",
-      "Not included in this build. Bundled report claims have not acquired verified publication provenance.",
-    ]);
-  for (const publication of delivery.qualificationPublications ?? [])
-    rows.push([
-      "Included Catalog qualification publication",
-      `${publication.publisher}@${publication.commit} · catalog ${publication.catalogDigest} · receipt set ${publication.receiptSetDigest}`,
-    ]);
-  if (model.catalogProvenance) {
-    rows.push([
-      "Catalog delivery",
-      `${model.catalogProvenance.sourceId} · ${model.catalogProvenance.channel} · resolved ${model.catalogProvenance.resolvedAt}`,
-    ]);
-  } else if (!delivery.qualificationPublications?.length)
-    rows.push([
-      "Catalog head",
-      "No verified Catalog head is included in this build; no item qualification is claimed.",
-    ]);
-  return `<details id="evidence-delivery" class="reference-evidence"><summary>Evidence &amp; versions</summary><div class="reference-evidence-panel"><div class="reference-evidence-heading"><h2>Evidence &amp; versions · Core ${safeHtmlAttribute(delivery.coreVersion)}</h2><button type="button" class="btn sm reference-evidence-close" id="evidence-delivery-close" aria-label="Close evidence and versions" title="Close evidence and versions">Close</button></div><div class="help"><dl>${rows.map(([label, value]) => `<dt><strong>${safeHtmlAttribute(label)}</strong></dt><dd style="overflow-wrap:anywhere">${safeHtmlAttribute(value)}</dd>`).join("")}</dl><p>The library and allowed publisher are preparation inputs. Each item’s security review describes the report actually included. A scan does not grant organization approval.</p></div></div></details>`;
+  const rows = evidenceDeliveryRows(model);
+  if (!delivery || rows === undefined) return "";
+  return `<details id="evidence-delivery" class="reference-evidence"><summary>Evidence &amp; versions</summary><div class="reference-evidence-panel"><div class="reference-evidence-heading"><h2>Evidence &amp; versions · Core ${safeHtmlAttribute(delivery.coreVersion)}</h2><button type="button" class="btn sm reference-evidence-close" id="evidence-delivery-close" aria-label="Close evidence and versions" title="Close evidence and versions">Close</button></div><div class="help"><dl>${rows.map(([label, value]) => `<dt><strong>${safeHtmlAttribute(label)}</strong></dt><dd style="overflow-wrap:anywhere">${safeHtmlAttribute(value)}</dd>`).join("")}</dl><p>${EVIDENCE_DELIVERY_NOTE}</p></div></div></details>`;
 }
 
 /** Portable, dependency-free policy authoring surface. */
@@ -164,6 +112,19 @@ button{cursor:pointer;border:0;background:none;color:inherit}
 }
 
 /**
+ * S6: the organization screen's "Evidence & versions" rows, computed here as
+ * for the legacy page and embedded as inert JSON data (never executed), so
+ * the page carries them only when the model has evidence delivery.
+ */
+function newShellEvidenceDelivery(model: PolicyStudioModel): string {
+  const rows = evidenceDeliveryRows(model);
+  const delivery = model.evidenceDelivery;
+  if (rows === undefined || delivery === undefined) return "";
+  return `
+<script type="application/json" id="wb-evidence-delivery">${safeScriptJson({ coreVersion: delivery.coreVersion, rows, note: EVIDENCE_DELIVERY_NOTE })}</script>`;
+}
+
+/**
  * The new admin shell (NEW-SHELL-PLAN.md S1). Head, one root and the model:
  * the browser bundle builds every element, writing model strings as text.
  */
@@ -181,7 +142,7 @@ function newShellHtml(model: PolicyStudioModel): string {
 </head>
 <body>
 <div id="wb-root" data-wb-shell="new"></div>
-<script>window.__aihWorkbenchModel=__AIH_DATA__;</script>
+<script>window.__aihWorkbenchModel=__AIH_DATA__;</script>${newShellEvidenceDelivery(model)}
 <script>${workbenchBrowserScript}</script>
 </body>
 </html>`.replace("__AIH_DATA__", () => safeScriptJson(model));

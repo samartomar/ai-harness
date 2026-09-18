@@ -3,6 +3,7 @@ import { type AdminShell, mountAdminShell } from "./admin-shell.js";
 import { type ChangesScreen, mountChangesScreen } from "./changes-screen.js";
 import { el, withId } from "./dom.js";
 import { mountFileTransfer } from "./file-transfer.js";
+import { mountOrgScreen, type OrgScreen, type OrgScreenModel } from "./org-screen.js";
 import { serializePolicy } from "./policy-grammar.js";
 import {
   createPolicySession,
@@ -19,13 +20,14 @@ import { mountScanScreen } from "./scan-screen.js";
  * compiled CSS.
  */
 export interface NewWorkbenchOptions {
-  readonly model: PolicySessionModel & {
-    readonly decisionSchema: unknown;
-    readonly findings: {
-      readonly dispositionable: readonly string[];
-      readonly fenced: readonly string[];
+  readonly model: PolicySessionModel &
+    OrgScreenModel & {
+      readonly decisionSchema: unknown;
+      readonly findings: {
+        readonly dispositionable: readonly string[];
+        readonly fenced: readonly string[];
+      };
     };
-  };
   /** False when the prepared catalog is invalid: Check Policy and Publish stay disabled. */
   readonly catalogValid: boolean;
   /** The catalog the admin browses, as `{ id, kind }`; empty when the catalog is invalid. */
@@ -43,6 +45,8 @@ export interface NewWorkbench {
   readonly session: PolicySession;
   /** S5: the changes screen (diff, whole file, Copy JSON). */
   readonly changes: ChangesScreen;
+  /** S6: the organization screen (deployment setup, developer tools, ECC hooks). */
+  readonly org: OrgScreen;
   /** Remove the file transfer controls and their document listener. */
   destroy(): void;
 }
@@ -86,6 +90,12 @@ export function mountNewWorkbench(options: NewWorkbenchOptions): NewWorkbench {
     announce: shell.announce,
   });
   let session: PolicySession | undefined;
+  const org = mountOrgScreen(shell.screenBody("org"), {
+    model: options.model,
+    session: () => session,
+    announce: shell.announce,
+    render: () => render(),
+  });
   const renderPreview = () => {
     if (session !== undefined) changes.render(session.snapshotPolicy(), session.serialize());
   };
@@ -93,6 +103,7 @@ export function mountNewWorkbench(options: NewWorkbenchOptions): NewWorkbench {
     if (session === undefined) return;
     renderPreview();
     scan.render(session.receipt(), session.decision());
+    org.render();
     shell.renderLedger(
       buildKindLedgerViewModel(
         options.ledgerAssets,
@@ -114,5 +125,5 @@ export function mountNewWorkbench(options: NewWorkbenchOptions): NewWorkbench {
     renderPreview,
   });
   render();
-  return { shell, session, changes, destroy: () => transfer.destroy() };
+  return { shell, session, changes, org, destroy: () => transfer.destroy() };
 }

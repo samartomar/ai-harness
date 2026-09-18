@@ -53,6 +53,15 @@ export interface PolicySession {
    * when the grammar rejects it (the legacy `commitPolicy`).
    */
   commitPolicy(prior: unknown, message: string): boolean;
+  /**
+   * Change the current policy in place and keep it through `commitPolicy`
+   * (the legacy `b()` edits). `change` returns a message to refuse the
+   * change instead: the prior policy is restored and the message announced
+   * as an error.
+   */
+  edit(change: (policy: Loose) => string | undefined, message: string): boolean;
+  /** Set the managed MCP opt-in and keep it through `commitPolicy`, or restore it. */
+  setManagedMcpOptIn(optIn: boolean, message: string): boolean;
   /** Schema and grammar errors of the current policy, at most one message. */
   validate(): string[];
   /** Deployment setup still owed before export or download. */
@@ -90,6 +99,21 @@ export function createPolicySession(
     preparePolicyImport(policy, (candidate) => policyGrammarErrors(candidate, model), grammar);
   const reconcile = () => reconcileManagedMcpProjection(state.policy, state.managedMcpOptIn);
 
+  const commitPolicy = (prior: unknown, message: string): boolean => {
+    reconcile();
+    const errors = validatePolicy(state.policy, grammar);
+    if (errors.length) {
+      state.policy = prior;
+      hooks.announce(`Policy change rejected: ${errors.slice(0, 3).join("; ")}`, true);
+      hooks.render();
+      return false;
+    }
+    hooks.announce(message);
+    hooks.render();
+    hooks.changed();
+    return true;
+  };
+
   return {
     snapshotPolicy: () => structuredClone(state.policy),
     validatePolicy: (policy) => genericImport(policy),
@@ -111,19 +135,25 @@ export function createPolicySession(
       hooks.changed();
       return prepared.message;
     },
-    commitPolicy(prior, message) {
-      reconcile();
-      const errors = validatePolicy(state.policy, grammar);
-      if (errors.length) {
+    commitPolicy,
+    edit(change, message) {
+      const prior = structuredClone(state.policy);
+      const refused = change(state.policy);
+      if (refused !== undefined) {
         state.policy = prior;
-        hooks.announce(`Policy change rejected: ${errors.slice(0, 3).join("; ")}`, true);
+        hooks.announce(refused, true);
         hooks.render();
         return false;
       }
-      hooks.announce(message);
+      return commitPolicy(prior, message);
+    },
+    setManagedMcpOptIn(optIn, message) {
+      const previous = state.managedMcpOptIn;
+      state.managedMcpOptIn = optIn;
+      if (commitPolicy(structuredClone(state.policy), message)) return true;
+      state.managedMcpOptIn = previous;
       hooks.render();
-      hooks.changed();
-      return true;
+      return false;
     },
     validate: () => validatePolicy(state.policy, grammar),
     readinessBlockers: () => deploymentReadinessBlockers(state.policy, state.managedMcpOptIn),

@@ -240,7 +240,8 @@ describe("policy studio adoption recipe", () => {
     const role = model.adoptionRecipe.roles[0];
     if (role === undefined) throw new Error("expected Token Savior recipe role");
     role.guidance = '<img src=x onerror="globalThis.__unsafe=true"> hostile';
-    const window = studio(model);
+    // NEW-SHELL-PLAN.md S6: the adoption recipe moved to the new shell's organization screen.
+    const window = studio({ ...model, shell: "new" });
     const panel = window.document.getElementById("adoption-recipe");
     if (panel === null) throw new Error("expected adoption recipe panel");
     expect(panel.querySelectorAll(".row")).toHaveLength(0);

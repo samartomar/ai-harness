@@ -27,7 +27,10 @@ import {
   workbenchBrowseBundle,
 } from "./catalog-inventory.js";
 import { availableDeveloperToolCatalogDetails } from "./developer-tool-catalog.js";
-import { mountDeveloperToolSelection } from "./developer-tool-selection.js";
+import {
+  type DeveloperToolSelectionUi,
+  mountDeveloperToolSelection,
+} from "./developer-tool-selection.js";
 import { mountLegacyWorkbench } from "./legacy-runtime.js";
 import { reprojectSchema3Policy, type Schema3ReprojectionSteps } from "./schema3-reprojection.js";
 import { el, withId } from "./shell/dom.js";
@@ -323,6 +326,78 @@ function mountCatalogController(
   return mounted;
 }
 
+/**
+ * Developer tool setup, shared by both shells (S6 moves it to the new
+ * shell's organization screen): the selection persists through the catalog
+ * projection into the policy session, exactly as before.
+ */
+function mountDeveloperTools(
+  session: WorkbenchSession,
+  bundle: AuthoringCatalogBundleV1,
+  bindings: WorkbenchPolicyBindingsV1,
+  guard: { applying: boolean },
+  elements: { root: HTMLElement; status: HTMLElement; summary?: HTMLElement },
+  inspectCatalogDetails: (assetId: string, trigger: HTMLButtonElement) => void,
+): DeveloperToolSelectionUi {
+  return mountDeveloperToolSelection({
+    root: elements.root,
+    status: elements.status,
+    ...(elements.summary === undefined ? {} : { summary: elements.summary }),
+    initialPolicy: session.snapshotPolicy(),
+    catalogDetails: availableDeveloperToolCatalogDetails(bundle.assets),
+    inspectCatalogDetails,
+    persist(selection) {
+      const snapshot = session.snapshotPolicy();
+      const basePolicy = object(snapshot);
+      const imported = importedState(snapshot, bundle, bindings, sourceInputs);
+      if (basePolicy === undefined || !imported.accepted)
+        return {
+          accepted: false,
+          diagnostics:
+            basePolicy === undefined
+              ? ["Policy session returned an invalid policy."]
+              : imported.diagnostics,
+        };
+      const compiled = projectWorkbenchPolicy(
+        basePolicy,
+        imported.state,
+        bundle,
+        bindings,
+        "author",
+        sourceInputs,
+      );
+      if (!compiled.accepted) return { accepted: false, diagnostics: compiled.diagnostics };
+      const policy = {
+        ...compiled.policy,
+        developerTools: explicitDeveloperToolSelectionForOrgPolicyV1(
+          selection.selected,
+          selection.excluded,
+        ),
+      };
+      const developerTools = resolveDeveloperToolSelectionForOrgPolicyV1(policy);
+      if (!developerTools.accepted)
+        return {
+          accepted: false,
+          diagnostics: developerTools.diagnostics.map((diagnostic) => diagnostic.message),
+        };
+      try {
+        guard.applying = true;
+        window.__aihWorkbenchApplyingProjection = true;
+        session.restorePolicy(policy);
+        return { accepted: true, policy };
+      } catch (error) {
+        return {
+          accepted: false,
+          diagnostics: [error instanceof Error ? error.message : "Policy update was rejected."],
+        };
+      } finally {
+        window.__aihWorkbenchApplyingProjection = false;
+        guard.applying = false;
+      }
+    },
+  });
+}
+
 const model = object(window.__aihWorkbenchModel);
 if (model === undefined) throw new Error("Policy Workbench model is unavailable.");
 const browserModel = model as unknown as BrowserModel;
@@ -377,7 +452,7 @@ if (!userDoor && !newShell) {
 }
 
 if (newShell) {
-  const { session, shell } = mountNewWorkbench({
+  const { session, shell, org } = mountNewWorkbench({
     model: model as unknown as Parameters<typeof mountNewWorkbench>[0]["model"],
     catalogValid: preparedCatalogValid,
     ledgerAssets: bundle === undefined ? [] : Object.values(workbenchBrowseBundle(bundle).assets),
@@ -400,27 +475,31 @@ if (newShell) {
     const sources = shell.screenBody("sources");
     const root = withId(el("div", "min-w-0"), "framework-rows");
     sources.replaceChildren(root);
-    catalog = mountCatalogController(
-      root,
+    const guard = { applying: false };
+    // S6: developer tool setup lives on the organization screen.
+    const developerTools = mountDeveloperTools(
       session,
       bundle,
       bindings,
-      { applying: false },
-      {
-        shell: "new",
-        inspectorHost: shell.inspectorPanel,
-        revealInspector: () => shell.revealInspector(),
-        prepareApproval(asset) {
-          // The protected approval form moves to the acme screen in S7.
-          shell.router.setScreen("acme");
-          document.dispatchEvent(
-            new CustomEvent("aih-workbench-prepare-approval", {
-              detail: { assetId: asset.id },
-            }),
-          );
-        },
-      },
+      guard,
+      org.developerTools,
+      (assetId, trigger) => catalog?.inspectAssetDetails(assetId, trigger),
     );
+    catalog = mountCatalogController(root, session, bundle, bindings, guard, {
+      shell: "new",
+      inspectorHost: shell.inspectorPanel,
+      revealInspector: () => shell.revealInspector(),
+      prepareApproval(asset) {
+        // The protected approval form moves to the acme screen in S7.
+        shell.router.setScreen("acme");
+        document.dispatchEvent(
+          new CustomEvent("aih-workbench-prepare-approval", {
+            detail: { assetId: asset.id },
+          }),
+        );
+      },
+      beforeRestore: (snapshot) => developerTools.restore(snapshot),
+    });
   }
 }
 
@@ -438,67 +517,20 @@ if (!userDoor && !newShell && preparedCatalogValid) {
     | undefined;
   const developerTools =
     developerToolRows instanceof HTMLElement && developerToolStatus instanceof HTMLElement
-      ? mountDeveloperToolSelection({
-          root: developerToolRows,
-          status: developerToolStatus,
-          summary: developerToolSummary instanceof HTMLElement ? developerToolSummary : undefined,
-          initialPolicy: session.snapshotPolicy(),
-          catalogDetails: availableDeveloperToolCatalogDetails(bundle.assets),
-          inspectCatalogDetails(assetId, trigger) {
-            inspectDeveloperToolDetails?.(assetId, trigger);
+      ? mountDeveloperTools(
+          session,
+          bundle,
+          bindings,
+          guard,
+          {
+            root: developerToolRows,
+            status: developerToolStatus,
+            ...(developerToolSummary instanceof HTMLElement
+              ? { summary: developerToolSummary }
+              : {}),
           },
-          persist(selection) {
-            const snapshot = session.snapshotPolicy();
-            const basePolicy = object(snapshot);
-            const imported = importedState(snapshot, bundle, bindings, sourceInputs);
-            if (basePolicy === undefined || !imported.accepted)
-              return {
-                accepted: false,
-                diagnostics:
-                  basePolicy === undefined
-                    ? ["Policy session returned an invalid policy."]
-                    : imported.diagnostics,
-              };
-            const compiled = projectWorkbenchPolicy(
-              basePolicy,
-              imported.state,
-              bundle,
-              bindings,
-              "author",
-              sourceInputs,
-            );
-            if (!compiled.accepted) return { accepted: false, diagnostics: compiled.diagnostics };
-            const policy = {
-              ...compiled.policy,
-              developerTools: explicitDeveloperToolSelectionForOrgPolicyV1(
-                selection.selected,
-                selection.excluded,
-              ),
-            };
-            const developerTools = resolveDeveloperToolSelectionForOrgPolicyV1(policy);
-            if (!developerTools.accepted)
-              return {
-                accepted: false,
-                diagnostics: developerTools.diagnostics.map((diagnostic) => diagnostic.message),
-              };
-            try {
-              guard.applying = true;
-              window.__aihWorkbenchApplyingProjection = true;
-              session.restorePolicy(policy);
-              return { accepted: true, policy };
-            } catch (error) {
-              return {
-                accepted: false,
-                diagnostics: [
-                  error instanceof Error ? error.message : "Policy update was rejected.",
-                ],
-              };
-            } finally {
-              window.__aihWorkbenchApplyingProjection = false;
-              guard.applying = false;
-            }
-          },
-        })
+          (assetId, trigger) => inspectDeveloperToolDetails?.(assetId, trigger),
+        )
       : undefined;
   const mounted = mountCatalogController(root, session, bundle, bindings, guard, {
     shell: "legacy",

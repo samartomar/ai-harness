@@ -4,6 +4,21 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { expect, test } from "@playwright/test";
 
+/**
+ * NEW-SHELL-PLAN.md S6: developer tool setup moved to the new shell's
+ * organization screen. The generated pages open with `?shell=new` (the local
+ * shell switch) and the journeys navigate to the screen that holds each
+ * control; every assertion is unchanged.
+ */
+const NEW_SHELL = "?shell=new";
+
+async function openScreen(page: import("@playwright/test").Page, name: string) {
+  await page
+    .getByRole("navigation", { name: "Workbench screens" })
+    .getByRole("button", { name, exact: true })
+    .click();
+}
+
 const tools = [
   ["code-review-graph", "Code Review Graph"],
   ["codebase-memory-mcp", "Codebase Memory MCP"],
@@ -64,10 +79,11 @@ for (const [excludedId, excludedLabel] of [
     await context.route(/^https?:/u, (route) => route.abort());
 
     invoke(["policy", "generate", "--out", "author.html", "--apply", "--json"]);
-    await page.goto(pathToFileURL(resolve(directory, "author.html")).href);
+    await page.goto(pathToFileURL(resolve(directory, "author.html")).href + NEW_SHELL);
     const disclosure = page.locator("#developer-tool-selection");
     await expect(disclosure).not.toHaveAttribute("open", "");
     await expect(disclosure.locator("summary")).toContainText(/all default tools selected/i);
+    await openScreen(page, "Organization");
     await disclosure.locator("summary").click();
 
     const rows = page.locator("[data-developer-tool-id]");
@@ -134,7 +150,7 @@ for (const [excludedId, excludedLabel] of [
       "--apply",
       "--json",
     ]);
-    await page.goto(pathToFileURL(resolve(directory, "excluded-reopened.html")).href);
+    await page.goto(pathToFileURL(resolve(directory, "excluded-reopened.html")).href + NEW_SHELL);
     await expect(disclosure).not.toHaveAttribute("open", "");
     await expect(disclosure.locator("summary")).toContainText("1 excluded");
     await expect(excludedRow).toContainText("Excluded by policy");
@@ -143,7 +159,9 @@ for (const [excludedId, excludedLabel] of [
     );
 
     invoke(["policy", "generate", "--out", "excluded-import-target.html", "--apply", "--json"]);
-    await page.goto(pathToFileURL(resolve(directory, "excluded-import-target.html")).href);
+    await page.goto(
+      pathToFileURL(resolve(directory, "excluded-import-target.html")).href + NEW_SHELL,
+    );
     await page.locator("#policy-file").setInputFiles(excludedExported);
     await expect
       .poll(
@@ -153,6 +171,7 @@ for (const [excludedId, excludedLabel] of [
     await expect(excludedRow).toContainText("Excluded by policy");
 
     await expect(disclosure.locator("summary")).toContainText("1 excluded");
+    await openScreen(page, "Organization");
     await disclosure.locator("summary").click();
     await excludedRow.getByRole("button", { name: `Include ${excludedLabel} in setup` }).click();
     for (const [id, label] of tools) {
@@ -182,7 +201,7 @@ for (const [excludedId, excludedLabel] of [
       "--apply",
       "--json",
     ]);
-    await page.goto(pathToFileURL(resolve(directory, "reopened.html")).href);
+    await page.goto(pathToFileURL(resolve(directory, "reopened.html")).href + NEW_SHELL);
     await expect(disclosure).not.toHaveAttribute("open", "");
     await expect(disclosure.locator("summary")).toContainText("0 selected");
     await expect(rows).toHaveCount(tools.length);
@@ -190,7 +209,7 @@ for (const [excludedId, excludedLabel] of [
       await expect(page.locator(`[data-developer-tool-id="${id}"]`)).toContainText("Not selected");
 
     invoke(["policy", "generate", "--out", "import-target.html", "--apply", "--json"]);
-    await page.goto(pathToFileURL(resolve(directory, "import-target.html")).href);
+    await page.goto(pathToFileURL(resolve(directory, "import-target.html")).href + NEW_SHELL);
     await page.locator("#policy-file").setInputFiles(emptyExported);
     await expect
       .poll(
@@ -239,10 +258,11 @@ test("keeps setup-owned catalog duplicates out of browse while preserving saved 
     if (/^https?:/u.test(request.url())) networkRequests.push(request.url());
   });
   await context.route(/^https?:/u, (route) => route.abort());
-  await page.goto(pathToFileURL(resolve(directory, "author.html")).href);
+  await page.goto(pathToFileURL(resolve(directory, "author.html")).href + NEW_SHELL);
 
   const preview = page.locator("#config-preview");
   const disclosure = page.locator("#developer-tool-selection");
+  await openScreen(page, "Organization");
   await disclosure.locator("summary").click();
   const playwrightTool = page.locator('[data-developer-tool-id="playwright"]');
   await expect(page.locator("[data-developer-tool-id]")).toHaveCount(7);
@@ -308,6 +328,7 @@ test("keeps setup-owned catalog duplicates out of browse while preserving saved 
     .toEqual([playwrightPin]);
   await expect(playwrightTool).toHaveAttribute("data-developer-tool-state", "excluded");
 
+  await openScreen(page, "Sources & Catalogs");
   const search = page.getByRole("searchbox", { name: "Search catalog" });
   for (const [sourceId, assetId] of setupOwnedCatalogAssets) {
     await search.fill("");

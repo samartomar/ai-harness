@@ -4,6 +4,13 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { expect, test } from "@playwright/test";
 
+/**
+ * NEW-SHELL-PLAN.md S6: allowed CLIs and posture moved to the new shell's
+ * organization screen. Generated pages open with `?shell=new` (the local
+ * shell switch); the Compose tab became the nav rail. Assertions unchanged.
+ */
+const NEW_SHELL = "?shell=new";
+
 test("authors independent required practices in the browser and reopens exact exports through the public CLI", async ({
   page,
   context,
@@ -59,7 +66,7 @@ test("authors independent required practices in the browser and reopens exact ex
   ];
   const exports: Record<string, string> = {};
   for (const adopter of cases) {
-    await page.goto(pathToFileURL(resolve(directory, "author.html")).href);
+    await page.goto(pathToFileURL(resolve(directory, "author.html")).href + NEW_SHELL);
     // This journey authors independent practices from a deliberate empty policy.
     await page.locator("#policy-file").setInputFiles({
       name: "practice-only.json",
@@ -88,7 +95,8 @@ test("authors independent required practices in the browser and reopens exact ex
       )
       .toBe(2);
     const inspector = page.locator("#workbench-detail-panel[data-workbench-detail]");
-    await page.locator('[data-view-tab="compose"]').click();
+    const nav = page.getByRole("navigation", { name: "Workbench screens" });
+    await nav.getByRole("button", { name: "Organization", exact: true }).click();
     const sanctioned = page.locator("[data-sanctioned-cli]");
     for (let index = 0; index < (await sanctioned.count()); index++) {
       const control = sanctioned.nth(index);
@@ -97,6 +105,7 @@ test("authors independent required practices in the browser and reopens exact ex
       if (selected !== adopter.targets.includes(target ?? "")) await control.click();
     }
     await page.locator("#posture").selectOption("enterprise");
+    await nav.getByRole("button", { name: "Sources & Catalogs", exact: true }).click();
     await page.locator('[data-workbench-source-tab="source:ecc"]').click();
     const search = page.getByRole("searchbox", { name: "Search catalog" });
     const requiredId = `ecc/skill:${adopter.required}`;
@@ -165,12 +174,14 @@ test("authors independent required practices in the browser and reopens exact ex
       "--apply",
       "--json",
     ]);
-    await page.goto(pathToFileURL(resolve(directory, `${adopter.name}-reopened.html`)).href);
+    await page.goto(
+      pathToFileURL(resolve(directory, `${adopter.name}-reopened.html`)).href + NEW_SHELL,
+    );
     expect(JSON.parse(await page.locator("#config-preview").inputValue())).toEqual(policy);
     await page.reload();
     expect(JSON.parse(await page.locator("#config-preview").inputValue())).toEqual(policy);
     // Importing into another fresh artifact uses the supported browser input too.
-    await page.goto(pathToFileURL(resolve(directory, "author.html")).href);
+    await page.goto(pathToFileURL(resolve(directory, "author.html")).href + NEW_SHELL);
     await page.locator("#policy-file").setInputFiles(exportedPath);
     await expect
       .poll(async () => JSON.parse(await page.locator("#config-preview").inputValue()))

@@ -22,6 +22,7 @@ import type { AdminCatalogProvenanceV1 } from "./admin-catalog-operations-v1.js"
 import { type AdoptionRecipe, buildAdoptionRecipe } from "./adoption-recipe.js";
 import { type PolicyAuthoringCatalog, policyAuthoringCatalog } from "./catalog.js";
 import { POLICY_APPROVER_EMAIL_PATTERN } from "./ecc-mcp-approval.js";
+import type { StudioEvidenceDelivery } from "./evidence-delivery-rows.js";
 import {
   DISPOSITIONABLE_POLICY_FINDING_CODES,
   FENCED_POLICY_PREREQUISITE_CODES,
@@ -311,34 +312,7 @@ function studioFormCatalog(catalog: PolicyAuthoringCatalog): StudioFormCatalogV1
 }
 
 export interface PolicyStudioModel {
-  evidenceDelivery?: {
-    coreVersion: string;
-    workbenchCatalogDigest: string;
-    vendorLockDigest: string;
-    scannerLibraryVersion: string;
-    freshnessDays?: number;
-    expectedCatalogPublisher?: {
-      repository: string;
-      workflow: string;
-      catalogCommit: string;
-      version: number;
-    };
-    scanPublications?: Array<{ source: string; publisher: string; commit: string; digest: string }>;
-    qualificationPublications?: Array<{
-      publisher: string;
-      commit: string;
-      catalogDigest: string;
-      receiptSetDigest: string;
-    }>;
-    expectedScannerPublisher: { repository: string; workflow: string; ref: string; commit: string };
-    publicBaseline?: {
-      publisher: string;
-      workflow: string;
-      artifactDigest: string;
-      verifiedAt: string;
-      validUntil: string;
-    };
-  };
+  evidenceDelivery?: StudioEvidenceDelivery;
   initialPolicy: OrgPolicy;
   /** The sole browser inventory for portable authoring selections. */
   workbenchBundle: AuthoringCatalogBundleV1;

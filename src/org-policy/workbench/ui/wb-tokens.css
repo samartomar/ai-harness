@@ -1044,3 +1044,47 @@ html[data-wb-shell="new"] .wb-theme-icon-light { display: none; }
 html[data-wb-shell="new"][data-theme="dark"] .wb-theme-icon-light { display: inline-flex; }
 html[data-wb-shell="new"][data-theme="dark"] .wb-theme-icon-dark { display: none; }
 html[data-wb-shell="new"] .wb-announcement[data-wb-tone="error"] { color: var(--wb-color-error); }
+/*
+ * S6: the organization screen. Developer tool rows come from the shared
+ * `developer-tool-selection.ts` renderer (legacy class names), so the new
+ * shell styles them here; everything else on the screen uses utilities.
+ */
+html[data-wb-shell="new"] [data-wb-org] summary { list-style: none; }
+html[data-wb-shell="new"] [data-wb-org] summary::-webkit-details-marker { display: none; }
+html[data-wb-shell="new"] #developer-tool-rows { display: grid; min-width: 0; border-top: 1px solid var(--wb-color-outline-variant); }
+html[data-wb-shell="new"] .developer-tool-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 5px 14px;
+  align-items: center;
+  min-width: 0;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--wb-color-outline-variant);
+}
+html[data-wb-shell="new"] .developer-tool-copy { display: grid; gap: 2px; min-width: 0; }
+html[data-wb-shell="new"] .developer-tool-heading { display: flex; flex-wrap: wrap; align-items: baseline; gap: 7px; min-width: 0; }
+html[data-wb-shell="new"] .developer-tool-row h3 { margin: 0; font: var(--wb-fw-strong) 12px/1.25 var(--wb-font); color: var(--wb-color-on-surface); overflow-wrap: anywhere; }
+html[data-wb-shell="new"] .developer-tool-row .help { margin: 0; max-width: 72ch; font-size: 11px; line-height: 1.35; color: var(--wb-color-on-surface-variant); }
+html[data-wb-shell="new"] .developer-tool-state { margin: 0; font: var(--wb-fw-strong) 11px/1.2 var(--wb-font); color: var(--wb-color-on-surface-variant); white-space: nowrap; }
+html[data-wb-shell="new"] .developer-tool-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 6px; max-width: 100%; }
+html[data-wb-shell="new"] .developer-tool-actions .btn {
+  min-height: 28px;
+  max-width: 100%;
+  padding: 5px 10px;
+  border: 1px solid var(--wb-color-outline-variant);
+  border-radius: var(--wb-r);
+  background: var(--wb-color-surface-container-low);
+  color: var(--wb-color-on-surface);
+  font-size: 11px;
+  font-weight: var(--wb-fw-medium);
+  line-height: 1.2;
+  white-space: normal;
+  text-align: center;
+}
+html[data-wb-shell="new"] .developer-tool-actions .btn:hover { background: var(--wb-color-surface-container); }
+html[data-wb-shell="new"] #developer-tool-selection-status.error { color: var(--wb-color-error); }
+@media (max-width: 520px) {
+  html[data-wb-shell="new"] .developer-tool-row { grid-template-columns: minmax(0, 1fr); }
+  html[data-wb-shell="new"] .developer-tool-actions { justify-content: flex-start; width: 100%; }
+  html[data-wb-shell="new"] .developer-tool-actions .btn { flex: 1 1 132px; }
+}

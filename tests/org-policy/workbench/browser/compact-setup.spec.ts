@@ -10,368 +10,6 @@ async function bounds(locator: Locator) {
   return box;
 }
 
-test("keeps the catalog anchored while panel navigation and inspection preserve policy", async ({
-  page,
-  workbench,
-}) => {
-  await expect(page).toHaveURL(pathToFileURL(workbench.path).href);
-  const preview = page.locator("#config-preview");
-  const before = await preview.inputValue();
-  const layout = page.locator("[data-workbench-catalog-layout]");
-  const frameworkRows = page.locator("#framework-rows");
-  const sourceRail = page.locator("[data-workbench-source-rail]");
-  const register = page.locator("[data-workbench-catalog-register]");
-  const inspector = page.locator("#workbench-detail-panel[data-workbench-detail]");
-  const panelView = (view: "item" | "draft" | "exposure") =>
-    inspector.locator(`[data-workbench-panel-view="${view}"]`);
-  const overview = inspector.locator("[data-workbench-exposure-overview]");
-
-  for (const width of [1440, 1920]) {
-    await page.setViewportSize({ width, height: 900 });
-    await expect(layout).toBeVisible();
-    await expect(sourceRail).toBeVisible();
-    await expect(register).toBeVisible();
-    await expect(inspector).toBeVisible();
-    const [layoutBox, frameworkRowsBox, railBox, registerBox, inspectorBox] = await Promise.all([
-      bounds(layout),
-      bounds(frameworkRows),
-      bounds(sourceRail),
-      bounds(register),
-      bounds(inspector),
-    ]);
-    expect(layoutBox.width).toBeGreaterThanOrEqual(width - 48);
-    expect(frameworkRowsBox.width).toBeGreaterThanOrEqual(width - 48);
-    expect(railBox.width).toBeGreaterThanOrEqual(width >= 1700 ? 195 : 180);
-    expect(registerBox.width).toBeGreaterThanOrEqual(480);
-    expect(inspectorBox.width).toBeGreaterThanOrEqual(width >= 1700 ? 360 : 320);
-    expect(railBox.x).toBeGreaterThanOrEqual(layoutBox.x - 1);
-    expect(registerBox.x).toBeGreaterThanOrEqual(railBox.x + railBox.width - 1);
-    expect(inspectorBox.x).toBeGreaterThanOrEqual(registerBox.x + registerBox.width - 1);
-    expect(inspectorBox.x + inspectorBox.width).toBeLessThanOrEqual(
-      layoutBox.x + layoutBox.width + 1,
-    );
-    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
-      width,
-    );
-  }
-
-  const readiness = page.locator("#deployment-readiness");
-  await expect(readiness).not.toContainText("Enterprise posture");
-  await page.locator("#validate").click();
-  await expect(page.locator("#announcement")).toContainText(
-    "Schema and policy-grammar validation passed.",
-  );
-  await expect(page.locator("#announcement")).not.toContainText("needs attention");
-  const vibeDownload = page.waitForEvent("download");
-  await page.locator("#download").click();
-  expect((await vibeDownload).suggestedFilename()).toMatch(/\.json$/u);
-  await expect(page.locator("#announcement")).toContainText("Policy download started.");
-
-  await page.locator('[data-workbench-source-tab="source:ecc"]').click();
-  const selectionAction = page.locator("button[data-workbench-row-action]").first();
-  await expect(selectionAction).toBeVisible();
-  const assetId = await selectionAction.getAttribute("data-workbench-asset-id");
-  if (assetId === null) throw new Error("Expected an ECC catalog item to inspect");
-  const itemTitle = page.locator(
-    `button.workbench-row-title[data-workbench-expand-id="${assetId}"]`,
-  );
-  await expect(itemTitle).toBeVisible();
-  const catalogTop = (await bounds(register)).y;
-  await selectionAction.click();
-  const selectedPolicy = await preview.inputValue();
-  expect(selectedPolicy).not.toBe(before);
-
-  const draftOpen = page.locator(".workbench-draft-review > button[data-workbench-draft-open]");
-  await expect(draftOpen).toBeVisible();
-  await draftOpen.click();
-  await expect(inspector).toHaveAttribute("data-workbench-inspector-view", "draft");
-  await expect(inspector.locator(".workbench-draft-review-list")).toBeVisible();
-  expect(Math.abs((await bounds(register)).y - catalogTop)).toBeLessThanOrEqual(1);
-  await expect(preview).toHaveValue(selectedPolicy);
-
-  await panelView("item").click();
-  await expect(inspector.locator(".workbench-draft-review-list")).toBeHidden();
-  await expect(overview).toBeHidden();
-  await expect(preview).toHaveValue(selectedPolicy);
-
-  await panelView("exposure").click();
-  await expect(inspector).toHaveAttribute("data-workbench-inspector-view", "exposure");
-  await expect(overview).toBeVisible();
-  await expect(
-    overview.getByRole("heading", { name: "A policy is a shape of exposure", exact: true }),
-  ).toBeVisible();
-  await expect(preview).toHaveValue(selectedPolicy);
-
-  await panelView("draft").click();
-  await expect(inspector).toHaveAttribute("data-workbench-inspector-view", "draft");
-  await expect(inspector.locator(".workbench-draft-review-list")).toBeVisible();
-  await expect(preview).toHaveValue(selectedPolicy);
-
-  await itemTitle.click();
-  await expect(inspector).toHaveAttribute("data-workbench-inspector-asset-id", assetId);
-  await expect(inspector.locator("#workbench-detail-title")).toBeVisible();
-  await expect(preview).toHaveValue(selectedPolicy);
-  const technicalDetails = inspector.locator(".workbench-item-technical");
-  const technicalSummary = inspector.locator(".workbench-item-technical > summary");
-  await expect(technicalDetails).not.toHaveAttribute("open", "");
-  await expect(technicalSummary).toHaveText("More technical details");
-  const selection = technicalDetails.locator(".workbench-inspector-selection");
-  await expect(selection).toBeHidden();
-  await technicalSummary.click();
-  await expect(selection).toBeVisible();
-  await expect(selection).toContainText("Draft status");
-  await expect(preview).toHaveValue(selectedPolicy);
-
-  await inspector.getByRole("button", { name: "Close details", exact: true }).click();
-  await expect(inspector).toHaveAttribute("data-workbench-inspector-open", "false");
-  await expect(inspector).toBeVisible();
-  await expect(itemTitle).toBeFocused();
-  await expect(preview).toHaveValue(selectedPolicy);
-});
-
-test("unifies references and collapsed developer tools inside deployment", async ({
-  page,
-  workbench,
-}) => {
-  await expect(page).toHaveURL(pathToFileURL(workbench.path).href);
-  await expect(page.locator(".reference-shelf")).toHaveCount(0);
-  const setup = page.locator("#policy-settings");
-  const developerTools = setup.locator("details#developer-tool-selection");
-  const policy = page.getByRole("heading", { name: "Build your policy", exact: true });
-  await expect(page.locator("[data-developer-tool-id]")).toHaveCount(7);
-  await expect(developerTools).not.toHaveAttribute("open", "");
-  await expect(developerTools.locator("summary")).toContainText(/all default tools selected/i);
-  await expect(page.locator("#developer-tool-rows")).toBeHidden();
-  const toolbarBox = await bounds(page.locator(".bar"));
-  const setupBox = await bounds(setup);
-  const toolsBox = await bounds(developerTools);
-  const policyBox = await bounds(policy);
-  expect(setupBox.height).toBeLessThan(180);
-  expect(toolsBox.height).toBeLessThan(42);
-  expect(setupBox.y - toolbarBox.y - toolbarBox.height).toBeLessThanOrEqual(24);
-  expect(toolsBox.y + toolsBox.height).toBeLessThanOrEqual(setupBox.y + setupBox.height);
-  expect(policyBox.y).toBeGreaterThanOrEqual(setupBox.y + setupBox.height);
-  expect(policyBox.y).toBeLessThan(300);
-
-  const before = await page.locator("#config-preview").inputValue();
-  const evidence = setup.locator("#evidence-delivery");
-  await expect(setup.locator("#adoption-recipe-toggle")).toBeVisible();
-  const adoptionChip = await bounds(setup.locator("#adoption-recipe-toggle"));
-  const evidenceChip = await bounds(evidence.locator("summary"));
-  expect(adoptionChip.width).toBeLessThan(220);
-  expect(evidenceChip.x - (adoptionChip.x + adoptionChip.width)).toBeLessThan(12);
-  await expect(evidence.locator("summary")).toHaveText("Evidence & versions");
-  await evidence.locator("summary").click();
-  await expect(evidence).toHaveAttribute("open", "");
-  await expect(evidence).toContainText("A scan does not grant organization approval.");
-  expect((await bounds(policy)).y).toBeCloseTo(policyBox.y, 0);
-  await page.getByRole("button", { name: "Close evidence and versions", exact: true }).click();
-  await expect(evidence).not.toHaveAttribute("open", "");
-  await expect(evidence.locator("summary")).toBeFocused();
-  await evidence.locator("summary").click();
-  await page.keyboard.press("Escape");
-  await expect(evidence).not.toHaveAttribute("open", "");
-  await page.locator("#adoption-recipe-toggle").focus();
-  await page.keyboard.press("Enter");
-  await expect(page.locator("#adoption-recipe-panel")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Close adoption recipe" })).toBeFocused();
-  expect((await bounds(policy)).y).toBeCloseTo(policyBox.y, 0);
-  await page.keyboard.press("Escape");
-  await expect(page.locator("#adoption-recipe-toggle")).toBeFocused();
-  await developerTools.locator("summary").focus();
-  await page.keyboard.press("Space");
-  await expect(page.locator("#developer-tool-rows")).toBeVisible();
-  await expect(developerTools).toHaveAttribute("open", "");
-  await page.keyboard.press("Enter");
-  await expect(developerTools).not.toHaveAttribute("open", "");
-  await expect(page.locator("#developer-tool-rows")).toBeHidden();
-  await expect(page.locator("#config-preview")).toHaveValue(before);
-});
-
-test("opens setup explanations by pointer and keyboard without editing policy", async ({
-  page,
-  workbench,
-}) => {
-  await expect(page).toHaveURL(pathToFileURL(workbench.path).href);
-  await page.locator("#developer-tool-selection > summary").click();
-  const before = await page.locator("#config-preview").inputValue();
-  const explanation = page.locator("#deployment-setup-help");
-  await expect(explanation).toHaveText(
-    "Choose the hosts this policy may target before adding Core controls. These choices record policy intent; they do not install, start, or contact a server.",
-  );
-  await expect(page.locator("#developer-tool-help")).toHaveText(
-    "Choose the default developer tools for later setup. This authoring view records selection intent only; it does not claim a tool is installed, configured, or verified.",
-  );
-  for (const [buttonId, panelId] of [
-    ["deployment-setup-info", "deployment-setup-help"],
-    ["supported-cli-info", "supported-cli-note"],
-    ["developer-tool-info", "developer-tool-help"],
-    ["managed-mcp-info", "managed-mcp-help"],
-  ]) {
-    const button = page.locator(`#${buttonId}`);
-    const panel = page.locator(`#${panelId}`);
-    await button.hover();
-    await expect(panel).toBeVisible();
-    expect(await panel.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
-      true,
-    );
-    await page.keyboard.press("Escape");
-    await expect(panel).toBeHidden();
-    await button.focus();
-    await page.keyboard.press("Enter");
-    await expect(panel).toBeVisible();
-    await expect(button).toHaveAttribute("aria-expanded", "true");
-    await page.getByRole("heading", { name: "Build your policy", exact: true }).click();
-    await expect(panel).toBeHidden();
-    await button.click();
-    await expect(panel).toBeVisible();
-    await page.keyboard.press("Escape");
-    await expect(panel).toBeHidden();
-    await expect(button).toBeFocused();
-  }
-  await expect(page.locator("#supported-cli-note")).toContainText(
-    "Sanctioned, materialization-capable, and projector-capable are separate sets.",
-  );
-  await expect(page.locator("#config-preview")).toHaveValue(before);
-});
-
-test("keeps compact controls usable and preserves MarkItDown CLI opt-out", async ({
-  page,
-  workbench,
-}) => {
-  await expect(page).toHaveURL(pathToFileURL(workbench.path).href);
-  const developerTools = page.locator("#developer-tool-selection");
-  await developerTools.locator("summary").click();
-  const row = page.locator('[data-developer-tool-id="markitdown"]');
-  await expect(row).toContainText("MarkItDown CLI");
-  await expect(row).toContainText("Selected: pending setup");
-  await expect(row).toContainText(
-    "The MCP adapter is optional and is not enabled by this selection.",
-  );
-  await row.getByRole("button", { name: "Exclude MarkItDown CLI from setup", exact: true }).click();
-  await expect(row).toContainText("Excluded by policy");
-  await developerTools.locator("summary").click();
-  await expect(developerTools.locator("summary")).toContainText("6 selected");
-  await expect(developerTools.locator("summary")).toContainText("1 excluded");
-  await expect(row).toBeHidden();
-  expect(
-    JSON.parse(await page.locator("#config-preview").inputValue()).developerTools,
-  ).toMatchObject({
-    excluded: ["markitdown"],
-  });
-  await developerTools.locator("summary").click();
-  await row.getByRole("button", { name: "Include MarkItDown CLI in setup", exact: true }).click();
-  await expect(row).toContainText("Selected: pending setup");
-
-  await page.locator('[data-sanctioned-cli="claude"]').click();
-  await expect(page.locator("#supported-cli-count")).toContainText("1 selected");
-  await page
-    .getByRole("button", { name: "Add to draft for Sequential Thinking", exact: true })
-    .click();
-  await expect(page.locator("#deployment-readiness")).toContainText(
-    "enable managed MCP projection",
-  );
-  await expect(page.locator("#deployment-readiness")).not.toContainText("Enterprise posture");
-  const toggle = page.locator("#managed-mcp-projection");
-  await toggle.check();
-  await expect(page.locator("#deployment-readiness")).toContainText("Draft is ready to export.");
-  await expect(page.locator("#deployment-readiness")).toContainText(
-    "Governance MCP and hook projection remains disabled in Vibe",
-  );
-  expect(JSON.parse(await page.locator("#config-preview").inputValue()).minimumPosture).toBe(
-    "vibe",
-  );
-  await page.locator("#posture").selectOption("enterprise");
-  await expect(page.locator("#deployment-readiness")).not.toContainText("disabled in Vibe");
-  expect(
-    JSON.parse(await page.locator("#config-preview").inputValue()).governance.supportedClis,
-  ).toEqual(["claude"]);
-  await toggle.check();
-  await expect(toggle).toBeChecked();
-  await toggle.click();
-  await expect(toggle).toBeChecked();
-  await expect(page.locator("#announcement")).toContainText(
-    "Remove those controls before disabling this setting.",
-  );
-  await page
-    .getByRole("button", { name: "Remove my choice for Sequential Thinking", exact: true })
-    .click();
-  await toggle.uncheck();
-  await expect(toggle).not.toBeChecked();
-  await expect(page.locator("#deployment-readiness")).toBeVisible();
-
-  for (const width of [768, 375]) {
-    await page.setViewportSize({ width, height: 900 });
-    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
-      width,
-    );
-    await expect(page.locator("#posture")).toBeVisible();
-    if (width === 768) {
-      const copy = await bounds(row.locator(".developer-tool-copy"));
-      const actions = await bounds(row.locator(".developer-tool-actions"));
-      expect(actions.x).toBeGreaterThanOrEqual(copy.x + copy.width);
-      expect(actions.y).toBeLessThan(copy.y + copy.height);
-    }
-    expect(
-      await page
-        .locator(".developer-tool-actions button")
-        .evaluateAll((buttons) =>
-          buttons.every((button) => button.scrollHeight <= button.clientHeight),
-        ),
-    ).toBe(true);
-    await row
-      .getByRole("button", { name: "Exclude MarkItDown CLI from setup", exact: true })
-      .click();
-    await expect(row).toContainText("Excluded by policy");
-    await row.getByRole("button", { name: "Include MarkItDown CLI in setup", exact: true }).click();
-    await expect(row).toContainText("Selected: pending setup");
-    const evidence = page.locator("#evidence-delivery");
-    await evidence.locator("summary").click();
-    const close = page.getByRole("button", { name: "Close evidence and versions", exact: true });
-    await expect(close).toBeInViewport();
-    await close.click();
-    await expect(evidence).not.toHaveAttribute("open", "");
-    await page.locator("#supported-cli-info").click();
-    const note = page.locator("#supported-cli-note");
-    await expect(note).toBeInViewport();
-    expect(await note.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
-    await page.keyboard.press("Escape");
-  }
-});
-
-test("keeps every tab dense and within the viewport without changing policy", async ({
-  page,
-  workbench,
-}) => {
-  await expect(page).toHaveURL(pathToFileURL(workbench.path).href);
-  const before = await page.locator("#config-preview").inputValue();
-  for (const width of [1920, 1440, 768, 375]) {
-    await page.setViewportSize({ width, height: 900 });
-    for (const [tab, panelId] of [
-      ["Compose", "workbench"],
-      ["Artifacts", "panel-artifacts"],
-      ["Authoring", "panel-author"],
-      ["Imports", "panel-imports"],
-    ]) {
-      await page.getByRole("button", { name: tab, exact: true }).click();
-      await page.evaluate(() => scrollTo(0, 0));
-      const toolbar = await bounds(page.locator(".bar"));
-      const panel = await bounds(page.locator(`#${panelId}`));
-      expect(panel.y - toolbar.y - toolbar.height).toBeLessThanOrEqual(24);
-      if (width >= 1440) expect(panel.width).toBeGreaterThanOrEqual(width - 48);
-      if (panelId === "workbench" && width >= 1440)
-        expect((await bounds(page.locator("#framework-rows"))).width).toBeGreaterThanOrEqual(
-          width - 48,
-        );
-      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
-        width,
-      );
-      await expect(page.locator(".reference-shelf")).toHaveCount(0);
-      await expect(page.locator("#config-preview")).toHaveValue(before);
-    }
-  }
-});
-
 // NEW-SHELL-PLAN.md S3: sources-screen journeys moved to the new shell, assertions unchanged.
 test.describe("new shell", () => {
   test.use({ shell: "new" });
@@ -614,5 +252,407 @@ test.describe("new shell", () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
       375,
     );
+  });
+});
+
+/**
+ * NEW-SHELL-PLAN.md S6: the organization-screen journeys moved to the new
+ * shell. Behavioural assertions are unchanged; screen navigation is added
+ * where a control now lives on another screen. Layout geometry the legacy
+ * page measured against its toolbar (`.bar`) and the "Build your policy"
+ * heading (both COSMETIC in id-contract.md) is measured against the new
+ * shell's main panel `#wb-main`, the organization screen title and the
+ * section after deployment setup; the legacy tab loop visits every new-shell
+ * screen (ledger rows S6).
+ */
+test.describe("new shell organization screen", () => {
+  test.use({ shell: "new" });
+
+  async function openScreen(page: import("@playwright/test").Page, name: string) {
+    const nav = page.getByRole("navigation", { name: "Workbench screens" });
+    const collapsed = !(await nav.isVisible());
+    if (collapsed) await page.locator("#toggle-nav-btn").click();
+    await nav.getByRole("button", { name, exact: true }).click();
+    if (collapsed) await page.locator("#toggle-nav-btn").click();
+  }
+
+  test("keeps the catalog anchored while panel navigation and inspection preserve policy", async ({
+    page,
+    workbench,
+  }) => {
+    await expect(page).toHaveURL(pathToFileURL(workbench.path).href);
+    const preview = page.locator("#config-preview");
+    const before = await preview.inputValue();
+    const main = page.locator("#wb-main");
+    const layout = page.locator("[data-workbench-catalog-layout]");
+    const frameworkRows = page.locator("#framework-rows");
+    const sourceRail = page.locator("[data-workbench-source-rail]");
+    const register = page.locator("[data-workbench-catalog-register]");
+    const inspector = page.locator("#workbench-detail-panel[data-workbench-detail]");
+    const panelView = (view: "item" | "draft" | "exposure") =>
+      inspector.locator(`[data-workbench-panel-view="${view}"]`);
+    const overview = inspector.locator("[data-workbench-exposure-overview]");
+
+    for (const width of [1440, 1920]) {
+      await page.setViewportSize({ width, height: 900 });
+      await expect(layout).toBeVisible();
+      await expect(sourceRail).toBeVisible();
+      await expect(register).toBeVisible();
+      await expect(inspector).toBeVisible();
+      const [mainBox, layoutBox, frameworkRowsBox, railBox, registerBox, inspectorBox] =
+        await Promise.all([
+          bounds(main),
+          bounds(layout),
+          bounds(frameworkRows),
+          bounds(sourceRail),
+          bounds(register),
+          bounds(inspector),
+        ]);
+      expect(layoutBox.width).toBeGreaterThanOrEqual(mainBox.width - 48);
+      expect(frameworkRowsBox.width).toBeGreaterThanOrEqual(mainBox.width - 48);
+      expect(railBox.width).toBeGreaterThanOrEqual(width >= 1700 ? 195 : 180);
+      expect(registerBox.width).toBeGreaterThanOrEqual(480);
+      expect(inspectorBox.width).toBeGreaterThanOrEqual(width >= 1700 ? 360 : 320);
+      expect(railBox.x).toBeGreaterThanOrEqual(layoutBox.x - 1);
+      expect(registerBox.x).toBeGreaterThanOrEqual(railBox.x + railBox.width - 1);
+      expect(inspectorBox.x).toBeGreaterThanOrEqual(registerBox.x + registerBox.width - 1);
+      expect(inspectorBox.x + inspectorBox.width).toBeLessThanOrEqual(width + 1);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+        width,
+      );
+    }
+
+    const readiness = page.locator("#deployment-readiness");
+    await expect(readiness).not.toContainText("Enterprise posture");
+    await page.locator("#validate").click();
+    await expect(page.locator("#announcement")).toContainText(
+      "Schema and policy-grammar validation passed.",
+    );
+    await expect(page.locator("#announcement")).not.toContainText("needs attention");
+    const vibeDownload = page.waitForEvent("download");
+    await page.locator("#download").click();
+    expect((await vibeDownload).suggestedFilename()).toMatch(/\.json$/u);
+    await expect(page.locator("#announcement")).toContainText("Policy download started.");
+
+    await page.locator('[data-workbench-source-tab="source:ecc"]').click();
+    const selectionAction = page.locator("button[data-workbench-row-action]").first();
+    await expect(selectionAction).toBeVisible();
+    const assetId = await selectionAction.getAttribute("data-workbench-asset-id");
+    if (assetId === null) throw new Error("Expected an ECC catalog item to inspect");
+    const itemTitle = page.locator(
+      `button.workbench-row-title[data-workbench-expand-id="${assetId}"]`,
+    );
+    await expect(itemTitle).toBeVisible();
+    const catalogTop = (await bounds(register)).y;
+    await selectionAction.click();
+    const selectedPolicy = await preview.inputValue();
+    expect(selectedPolicy).not.toBe(before);
+
+    const draftOpen = page.locator(".workbench-draft-review > button[data-workbench-draft-open]");
+    await expect(draftOpen).toBeVisible();
+    await draftOpen.click();
+    await expect(inspector).toHaveAttribute("data-workbench-inspector-view", "draft");
+    await expect(inspector.locator(".workbench-draft-review-list")).toBeVisible();
+    expect(Math.abs((await bounds(register)).y - catalogTop)).toBeLessThanOrEqual(1);
+    await expect(preview).toHaveValue(selectedPolicy);
+
+    await panelView("item").click();
+    await expect(inspector.locator(".workbench-draft-review-list")).toBeHidden();
+    await expect(overview).toBeHidden();
+    await expect(preview).toHaveValue(selectedPolicy);
+
+    await panelView("exposure").click();
+    await expect(inspector).toHaveAttribute("data-workbench-inspector-view", "exposure");
+    await expect(overview).toBeVisible();
+    await expect(
+      overview.getByRole("heading", { name: "A policy is a shape of exposure", exact: true }),
+    ).toBeVisible();
+    await expect(preview).toHaveValue(selectedPolicy);
+
+    await panelView("draft").click();
+    await expect(inspector).toHaveAttribute("data-workbench-inspector-view", "draft");
+    await expect(inspector.locator(".workbench-draft-review-list")).toBeVisible();
+    await expect(preview).toHaveValue(selectedPolicy);
+
+    await itemTitle.click();
+    await expect(inspector).toHaveAttribute("data-workbench-inspector-asset-id", assetId);
+    await expect(inspector.locator("#workbench-detail-title")).toBeVisible();
+    await expect(preview).toHaveValue(selectedPolicy);
+    const technicalDetails = inspector.locator(".workbench-item-technical");
+    const technicalSummary = inspector.locator(".workbench-item-technical > summary");
+    await expect(technicalDetails).not.toHaveAttribute("open", "");
+    await expect(technicalSummary).toHaveText("More technical details");
+    const selection = technicalDetails.locator(".workbench-inspector-selection");
+    await expect(selection).toBeHidden();
+    await technicalSummary.click();
+    await expect(selection).toBeVisible();
+    await expect(selection).toContainText("Draft status");
+    await expect(preview).toHaveValue(selectedPolicy);
+
+    await inspector.getByRole("button", { name: "Close details", exact: true }).click();
+    await expect(inspector).toHaveAttribute("data-workbench-inspector-open", "false");
+    await expect(inspector).toBeVisible();
+    await expect(itemTitle).toBeFocused();
+    await expect(preview).toHaveValue(selectedPolicy);
+  });
+
+  test("unifies references and collapsed developer tools inside deployment", async ({
+    page,
+    workbench,
+  }) => {
+    await expect(page).toHaveURL(pathToFileURL(workbench.path).href);
+    await openScreen(page, "Organization");
+    await expect(page.locator(".reference-shelf")).toHaveCount(0);
+    const setup = page.locator("#policy-settings");
+    const developerTools = setup.locator("details#developer-tool-selection");
+    const screenTitle = page.locator("#wb-screen-title-org");
+    const main = page.locator("#wb-main");
+    const policy = page.locator("#surface-ecc-hooks");
+    await expect(page.locator("[data-developer-tool-id]")).toHaveCount(7);
+    await expect(developerTools).not.toHaveAttribute("open", "");
+    await expect(developerTools.locator("summary")).toContainText(/all default tools selected/i);
+    await expect(page.locator("#developer-tool-rows")).toBeHidden();
+    const titleBox = await bounds(screenTitle);
+    const mainBox = await bounds(main);
+    const setupBox = await bounds(setup);
+    const toolsBox = await bounds(developerTools);
+    const policyBox = await bounds(policy);
+    expect(setupBox.height).toBeLessThan(180);
+    expect(toolsBox.height).toBeLessThan(42);
+    expect(setupBox.y - titleBox.y - titleBox.height).toBeLessThanOrEqual(24);
+    expect(toolsBox.y + toolsBox.height).toBeLessThanOrEqual(setupBox.y + setupBox.height);
+    expect(policyBox.y).toBeGreaterThanOrEqual(setupBox.y + setupBox.height);
+    expect(policyBox.y - mainBox.y).toBeLessThan(300);
+
+    const before = await page.locator("#config-preview").inputValue();
+    const evidence = setup.locator("#evidence-delivery");
+    await expect(setup.locator("#adoption-recipe-toggle")).toBeVisible();
+    const adoptionChip = await bounds(setup.locator("#adoption-recipe-toggle"));
+    const evidenceChip = await bounds(evidence.locator("summary"));
+    expect(adoptionChip.width).toBeLessThan(220);
+    expect(evidenceChip.x - (adoptionChip.x + adoptionChip.width)).toBeLessThan(12);
+    await expect(evidence.locator("summary")).toHaveText("Evidence & versions");
+    await evidence.locator("summary").click();
+    await expect(evidence).toHaveAttribute("open", "");
+    await expect(evidence).toContainText("A scan does not grant organization approval.");
+    expect((await bounds(policy)).y).toBeCloseTo(policyBox.y, 0);
+    await page.getByRole("button", { name: "Close evidence and versions", exact: true }).click();
+    await expect(evidence).not.toHaveAttribute("open", "");
+    await expect(evidence.locator("summary")).toBeFocused();
+    await evidence.locator("summary").click();
+    await page.keyboard.press("Escape");
+    await expect(evidence).not.toHaveAttribute("open", "");
+    await page.locator("#adoption-recipe-toggle").focus();
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#adoption-recipe-panel")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Close adoption recipe" })).toBeFocused();
+    expect((await bounds(policy)).y).toBeCloseTo(policyBox.y, 0);
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#adoption-recipe-toggle")).toBeFocused();
+    await developerTools.locator("summary").focus();
+    await page.keyboard.press("Space");
+    await expect(page.locator("#developer-tool-rows")).toBeVisible();
+    await expect(developerTools).toHaveAttribute("open", "");
+    await page.keyboard.press("Enter");
+    await expect(developerTools).not.toHaveAttribute("open", "");
+    await expect(page.locator("#developer-tool-rows")).toBeHidden();
+    await expect(page.locator("#config-preview")).toHaveValue(before);
+  });
+
+  test("opens setup explanations by pointer and keyboard without editing policy", async ({
+    page,
+    workbench,
+  }) => {
+    await expect(page).toHaveURL(pathToFileURL(workbench.path).href);
+    await openScreen(page, "Organization");
+    await page.locator("#developer-tool-selection > summary").click();
+    const before = await page.locator("#config-preview").inputValue();
+    const explanation = page.locator("#deployment-setup-help");
+    await expect(explanation).toHaveText(
+      "Choose the hosts this policy may target before adding Core controls. These choices record policy intent; they do not install, start, or contact a server.",
+    );
+    await expect(page.locator("#developer-tool-help")).toHaveText(
+      "Choose the default developer tools for later setup. This authoring view records selection intent only; it does not claim a tool is installed, configured, or verified.",
+    );
+    for (const [buttonId, panelId] of [
+      ["deployment-setup-info", "deployment-setup-help"],
+      ["supported-cli-info", "supported-cli-note"],
+      ["developer-tool-info", "developer-tool-help"],
+      ["managed-mcp-info", "managed-mcp-help"],
+    ]) {
+      const button = page.locator(`#${buttonId}`);
+      const panel = page.locator(`#${panelId}`);
+      await button.hover();
+      await expect(panel).toBeVisible();
+      expect(await panel.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+        true,
+      );
+      await page.keyboard.press("Escape");
+      await expect(panel).toBeHidden();
+      await button.focus();
+      await page.keyboard.press("Enter");
+      await expect(panel).toBeVisible();
+      await expect(button).toHaveAttribute("aria-expanded", "true");
+      await page.getByRole("heading", { name: "Organization", exact: true }).click();
+      await expect(panel).toBeHidden();
+      await button.click();
+      await expect(panel).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(panel).toBeHidden();
+      await expect(button).toBeFocused();
+    }
+    await expect(page.locator("#supported-cli-note")).toContainText(
+      "Sanctioned, materialization-capable, and projector-capable are separate sets.",
+    );
+    await expect(page.locator("#config-preview")).toHaveValue(before);
+  });
+
+  test("keeps compact controls usable and preserves MarkItDown CLI opt-out", async ({
+    page,
+    workbench,
+  }) => {
+    await expect(page).toHaveURL(pathToFileURL(workbench.path).href);
+    await openScreen(page, "Organization");
+    const developerTools = page.locator("#developer-tool-selection");
+    await developerTools.locator("summary").click();
+    const row = page.locator('[data-developer-tool-id="markitdown"]');
+    await expect(row).toContainText("MarkItDown CLI");
+    await expect(row).toContainText("Selected: pending setup");
+    await expect(row).toContainText(
+      "The MCP adapter is optional and is not enabled by this selection.",
+    );
+    await row
+      .getByRole("button", { name: "Exclude MarkItDown CLI from setup", exact: true })
+      .click();
+    await expect(row).toContainText("Excluded by policy");
+    await developerTools.locator("summary").click();
+    await expect(developerTools.locator("summary")).toContainText("6 selected");
+    await expect(developerTools.locator("summary")).toContainText("1 excluded");
+    await expect(row).toBeHidden();
+    expect(
+      JSON.parse(await page.locator("#config-preview").inputValue()).developerTools,
+    ).toMatchObject({
+      excluded: ["markitdown"],
+    });
+    await developerTools.locator("summary").click();
+    await row.getByRole("button", { name: "Include MarkItDown CLI in setup", exact: true }).click();
+    await expect(row).toContainText("Selected: pending setup");
+
+    await page.locator('[data-sanctioned-cli="claude"]').click();
+    await expect(page.locator("#supported-cli-count")).toContainText("1 selected");
+    await openScreen(page, "Sources & Catalogs");
+    await page
+      .getByRole("button", { name: "Add to draft for Sequential Thinking", exact: true })
+      .click();
+    await openScreen(page, "Organization");
+    await expect(page.locator("#deployment-readiness")).toContainText(
+      "enable managed MCP projection",
+    );
+    await expect(page.locator("#deployment-readiness")).not.toContainText("Enterprise posture");
+    const toggle = page.locator("#managed-mcp-projection");
+    await toggle.check();
+    await expect(page.locator("#deployment-readiness")).toContainText("Draft is ready to export.");
+    await expect(page.locator("#deployment-readiness")).toContainText(
+      "Governance MCP and hook projection remains disabled in Vibe",
+    );
+    expect(JSON.parse(await page.locator("#config-preview").inputValue()).minimumPosture).toBe(
+      "vibe",
+    );
+    await page.locator("#posture").selectOption("enterprise");
+    await expect(page.locator("#deployment-readiness")).not.toContainText("disabled in Vibe");
+    expect(
+      JSON.parse(await page.locator("#config-preview").inputValue()).governance.supportedClis,
+    ).toEqual(["claude"]);
+    await toggle.check();
+    await expect(toggle).toBeChecked();
+    await toggle.click();
+    await expect(toggle).toBeChecked();
+    await expect(page.locator("#announcement")).toContainText(
+      "Remove those controls before disabling this setting.",
+    );
+    await openScreen(page, "Sources & Catalogs");
+    await page
+      .getByRole("button", { name: "Remove my choice for Sequential Thinking", exact: true })
+      .click();
+    await openScreen(page, "Organization");
+    await toggle.uncheck();
+    await expect(toggle).not.toBeChecked();
+    await expect(page.locator("#deployment-readiness")).toBeVisible();
+
+    for (const width of [768, 375]) {
+      await page.setViewportSize({ width, height: 900 });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+        width,
+      );
+      await expect(page.locator("#posture")).toBeVisible();
+      if (width === 768) {
+        const copy = await bounds(row.locator(".developer-tool-copy"));
+        const actions = await bounds(row.locator(".developer-tool-actions"));
+        expect(actions.x).toBeGreaterThanOrEqual(copy.x + copy.width);
+        expect(actions.y).toBeLessThan(copy.y + copy.height);
+      }
+      expect(
+        await page
+          .locator(".developer-tool-actions button")
+          .evaluateAll((buttons) =>
+            buttons.every((button) => button.scrollHeight <= button.clientHeight),
+          ),
+      ).toBe(true);
+      await row
+        .getByRole("button", { name: "Exclude MarkItDown CLI from setup", exact: true })
+        .click();
+      await expect(row).toContainText("Excluded by policy");
+      await row
+        .getByRole("button", { name: "Include MarkItDown CLI in setup", exact: true })
+        .click();
+      await expect(row).toContainText("Selected: pending setup");
+      const evidence = page.locator("#evidence-delivery");
+      await evidence.locator("summary").click();
+      const close = page.getByRole("button", { name: "Close evidence and versions", exact: true });
+      await expect(close).toBeInViewport();
+      await close.click();
+      await expect(evidence).not.toHaveAttribute("open", "");
+      await page.locator("#supported-cli-info").click();
+      const note = page.locator("#supported-cli-note");
+      await expect(note).toBeInViewport();
+      expect(await note.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+        true,
+      );
+      await page.keyboard.press("Escape");
+    }
+  });
+
+  test("keeps every tab dense and within the viewport without changing policy", async ({
+    page,
+    workbench,
+  }) => {
+    await expect(page).toHaveURL(pathToFileURL(workbench.path).href);
+    const before = await page.locator("#config-preview").inputValue();
+    for (const width of [1920, 1440, 768, 375]) {
+      await page.setViewportSize({ width, height: 900 });
+      for (const [name, screen] of [
+        ["Sources & Catalogs", "sources"],
+        ["Scan Review", "scan"],
+        ["Policies & Publish", "changes"],
+        ["Organization", "org"],
+        ["Additions & Approvals", "acme"],
+      ] as const) {
+        await openScreen(page, name);
+        await page.locator("#wb-main").evaluate((element) => element.scrollTo(0, 0));
+        const main = await bounds(page.locator("#wb-main"));
+        const panel = await bounds(page.locator(`[data-wb-screen-panel="${screen}"]`));
+        expect(panel.y - main.y).toBeLessThanOrEqual(24);
+        if (width >= 1440) expect(panel.width).toBeGreaterThanOrEqual(main.width - 48);
+        if (screen === "sources" && width >= 1440)
+          expect((await bounds(page.locator("#framework-rows"))).width).toBeGreaterThanOrEqual(
+            main.width - 48,
+          );
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+          width,
+        );
+        await expect(page.locator(".reference-shelf")).toHaveCount(0);
+        await expect(page.locator("#config-preview")).toHaveValue(before);
+      }
+    }
   });
 });
