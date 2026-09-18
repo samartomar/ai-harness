@@ -7,6 +7,7 @@ import { policyStudioModel } from "./studio-model.js";
 import { policyStudioHtml } from "./studio-template.js";
 import { resolveConnectedGithubSkillV1 } from "./workbench/core/bounded-github-skill-resolver.js";
 import { bridgeConnectedGithubSkillV1 } from "./workbench/core/connected-github-skill-bridge.js";
+import { classifyWorkbenchDoorV1 } from "./workbench-door.js";
 
 const LOOPBACK_HOST = "127.0.0.1";
 const WORKBENCH_PATH = "/aih-policy-workbench.html";
@@ -23,6 +24,13 @@ export interface PolicyWorkbenchUi {
 export interface StartPolicyWorkbenchUiOptions {
   openBrowser?: (url: string) => Promise<void> | void;
   writeError?: (message: string) => void;
+  /**
+   * The folder the Workbench was launched from, classified read-only into
+   * `{door, policySource}` (P5a). Defaults to `process.cwd()`. `--ui` itself
+   * stays exact argv (`isUiFastPath`, `program.ts`); this never comes from a
+   * new flag, only from the process launch folder or a test fixture root.
+   */
+  cwd?: string;
 }
 
 function defaultBrowserCommand(url: string): readonly [string, readonly string[]] {
@@ -202,7 +210,9 @@ async function boundedJsonBody(
 export async function startPolicyWorkbenchUi(
   options: StartPolicyWorkbenchUiOptions = {},
 ): Promise<PolicyWorkbenchUi> {
-  let html = policyStudioHtml(policyStudioModel());
+  const root = options.cwd ?? process.cwd();
+  const { door, policySource } = classifyWorkbenchDoorV1(root, process.env);
+  let html = policyStudioHtml({ ...policyStudioModel(), door, policySource });
   let htmlLength = Buffer.byteLength(html);
   const requestToken = randomBytes(32).toString("hex");
   let resolvedSkill: Awaited<ReturnType<typeof resolveConnectedGithubSkillV1>> | undefined;
@@ -277,6 +287,8 @@ export async function startPolicyWorkbenchUi(
           organizationManifestBytes: bridge.manifestBytes,
         });
         nextModel.initialPolicy = parseOrgPolicy(bridge.policy);
+        nextModel.door = door;
+        nextModel.policySource = policySource;
         const expected = nextModel.workbenchBundle.assets[bridge.root.assetId];
         if (
           expected === undefined ||

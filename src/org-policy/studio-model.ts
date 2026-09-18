@@ -89,6 +89,7 @@ import {
 } from "./workbench/prepared-catalog.js";
 import type { WorkbenchReferenceReportsV1 } from "./workbench/reference-reports.js";
 import { createWorkbenchState, reduceWorkbenchAction } from "./workbench/selection-engine.js";
+import type { WorkbenchDoorV1, WorkbenchPolicySourceV1 } from "./workbench-door.js";
 
 const DEFAULT_CORE_CONTROL_IDS = ["sequential-thinking", "usage-metering"] as const;
 const DEFAULT_CORE_CAPABILITY_ROOTS = [
@@ -378,6 +379,15 @@ export interface PolicyStudioModel {
     httpsOriginPattern: string;
     approverEmailPattern: string;
   };
+  /**
+   * Read-only classification of the folder the Workbench server was launched
+   * from (P5a). Absent from every existing caller of {@link policyStudioModel}
+   * that does not pass it; `startPolicyWorkbenchUi` is the only caller that
+   * sets it, from {@link classifyWorkbenchDoorV1}. Never influences rendering
+   * in this slice — the admin page's markup is unchanged.
+   */
+  door?: WorkbenchDoorV1;
+  policySource?: WorkbenchPolicySourceV1;
 }
 
 function invalidBaselineEvidenceWorkbenchProvenance(): never {

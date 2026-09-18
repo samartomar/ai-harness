@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -341,5 +341,55 @@ describe("Policy Workbench UI server", () => {
     expect(messages.join("\n")).toContain(`AIH Policy Workbench: ${opened[0]}`);
     expect(messages.join("\n")).toContain("Press Ctrl+C to stop.");
     await expect(fetch(opened[0] ?? "")).rejects.toThrow();
+  });
+
+  function embeddedModel(html: string): Record<string, unknown> {
+    const match = /window\.__aihWorkbenchModel=(.*?);<\/script>/s.exec(html);
+    if (match === null) throw new Error("model script not found");
+    return JSON.parse(match[1] as string) as Record<string, unknown>;
+  }
+
+  it("classifies the injected cwd and embeds {door, policySource} in the model (P5a)", async () => {
+    const root = mkdtempSync(join(tmpdir(), "aih-workbench-ui-server-"));
+    try {
+      writeFileSync(
+        join(root, "aih-org-policy.json"),
+        JSON.stringify({
+          schemaVersion: 2,
+          minimumPosture: "enterprise",
+          references: { repoContract: "ai-coding/project.json" },
+          governance: { supportedClis: ["claude"] },
+        }),
+      );
+      const before = readdirSync(root).sort();
+
+      running = await startPolicyWorkbenchUi({ openBrowser: async () => {}, cwd: root });
+      const html = await (await fetch(running.url)).text();
+      const model = embeddedModel(html);
+
+      expect(model.door).toBe("admin");
+      expect(model.policySource).toMatchObject({
+        kind: "root",
+        valid: true,
+        path: join(root, "aih-org-policy.json"),
+      });
+      expect(readdirSync(root).sort()).toEqual(before);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("classifies an empty cwd as the chooser door", async () => {
+    const root = mkdtempSync(join(tmpdir(), "aih-workbench-ui-server-empty-"));
+    try {
+      running = await startPolicyWorkbenchUi({ openBrowser: async () => {}, cwd: root });
+      const html = await (await fetch(running.url)).text();
+      const model = embeddedModel(html);
+
+      expect(model.door).toBe("chooser");
+      expect(model.policySource).toEqual({ kind: "none", valid: true });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
