@@ -1,0 +1,174 @@
+/* Design tokens: the one design system of the Policy Workbench.
+ * Extracted from admin-sources.html, the owner's final prototype (2026-09-18). Every screen, admin-sources.html included, reads these.
+ * Mode: <html class="dark"> (default) or <html class="light">. There are no other themes.
+ * Type: Inter for text, JetBrains Mono for names, counts and commands; icons are Material Symbols Outlined (fonts.css). */
+
+/* 1. Colour roles (the names admin-sources' Tailwind config maps to utilities) */
+:root, html.dark, [data-mode="dark"] {
+  --color-background: #0f131b;
+  --color-on-background: #dfe2ed;
+  --color-surface: #0f131b;
+  --color-surface-dim: #0f131b;
+  --color-surface-container-lowest: #0a0e15;
+  --color-surface-container-low: #181c23;
+  --color-surface-container: #1c2027;
+  --color-surface-container-high: #262a32;
+  --color-surface-container-highest: #31353d;
+  --color-surface-card: #181c23;
+  --color-surface-variant: #31353d;
+  --color-surface-bright: #353941;
+  --color-on-surface: #dfe2ed;
+  --color-on-surface-variant: #c2c6d6;
+  --color-outline: #8c909f;
+  --color-outline-variant: #424754;
+  --color-primary: #3b82f6;
+  --color-primary-bright: #60a5fa;
+  --color-primary-container: #2563eb;
+  --color-secondary: #4edea3;
+  --color-secondary-container: #00a572;
+  --color-tertiary: #ffb95f;
+  --color-tertiary-container: #ca8100;
+  --color-on-tertiary: #472a00;
+  --color-error: #ffb4ab;
+  --color-inverse-surface: #dfe2ed;
+  --color-scrollbar-thumb: #31353d;
+  --color-scrollbar-thumb-hover: #424754;
+  /* surfaces by panel */
+  --theme-center-bg: #0c1017;
+  --theme-cards-bg: #0d111a;
+  --theme-card-bg: #141822;
+  --theme-card-active-bg: #191e2b;
+  --theme-input-bg: #141822;
+  --theme-manifest-header-bg: #121622;
+  --theme-nav-rail-bg: #0a0e15;
+  --theme-inspector-bg: #12161f;
+  --theme-heading-text: #ffffff;
+  --theme-subhead-bg: #0e131d;
+  --theme-code-bg: #0a0e15;
+  /* hairlines and cards */
+  --border-hairline: rgba(255, 255, 255, 0.07);
+  --card-bg: #141822;
+  --card-bg-hover: #191e2b;
+  --card-border: rgba(255, 255, 255, 0.08);
+  --card-border-hover: #3b82f6;
+  --card-title: #ffffff;
+  --card-desc: #c2c6d6;
+  --card-badge-bg: rgba(255, 185, 95, 0.12);
+  --card-badge-border: rgba(255, 185, 95, 0.35);
+  --card-badge-text: #ffb95f;
+  --card-cat-bg: #181c23;
+  --card-cat-border: rgba(255, 255, 255, 0.08);
+  --card-cat-text: #8c909f;
+  --card-footer-border: rgba(255, 255, 255, 0.08);
+  --card-token-bg: #181c23;
+  --card-token-border: rgba(255, 255, 255, 0.08);
+  --card-token-text: #8c909f;
+  --card-status-pass-bg: rgba(0, 165, 114, 0.18);
+  --card-status-pass-text: #4edea3;
+  --card-status-rev-bg: rgba(202, 129, 0, 0.2);
+  --card-status-rev-text: #ffb95f;
+  --card-status-bad-bg: rgba(147, 0, 10, 0.35);
+  --card-toggle-inactive-bg: #31353d;
+  --card-toggle-knob-inactive: #8c909f;
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.25);
+  --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.35);
+  --panel-shadow: -8px 0 24px rgba(0, 0, 0, 0.35);
+}
+
+html:not(.dark), html.light, [data-mode="light"], [data-theme="light"] {
+  --color-background: #f6f8fa;
+  --color-on-background: #1f2328;
+  --color-surface: #f6f8fa;
+  --color-surface-dim: #eaedf1;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #f3f5f8;
+  --color-surface-container: #eaeef2;
+  --color-surface-container-high: #d8dee4;
+  --color-surface-container-highest: #cfd6dd;
+  --color-surface-card: #ffffff;
+  --color-surface-variant: #e1e4e8;
+  --color-surface-bright: #ffffff;
+  --color-on-surface: #1f2328;
+  --color-on-surface-variant: #57606a;
+  --color-outline: #6e7781;
+  --color-outline-variant: #d0d7de;
+  --color-primary: #0969da;
+  --color-primary-bright: #0757b8;
+  --color-primary-container: #0969da;
+  --color-secondary: #1a7f37;
+  --color-secondary-container: #2da44e;
+  --color-tertiary: #b05700;
+  --color-tertiary-container: #fff8c5;
+  --color-on-tertiary: #78350f;
+  --color-error: #cf222e;
+  --color-inverse-surface: #1f2328;
+  --color-scrollbar-thumb: #d0d7de;
+  --color-scrollbar-thumb-hover: #afb8c1;
+  --theme-center-bg: #f6f8fa;
+  --theme-cards-bg: #f0f3f6;
+  --theme-card-bg: #ffffff;
+  --theme-card-active-bg: #ebf5ff;
+  --theme-input-bg: #ffffff;
+  --theme-manifest-header-bg: #ffffff;
+  --theme-nav-rail-bg: #ffffff;
+  --theme-inspector-bg: #ffffff;
+  --theme-heading-text: #1f2328;
+  --theme-subhead-bg: #fbfcfd;
+  --theme-code-bg: #f6f8fa;
+  --border-hairline: #e2e8f0;
+  --card-bg: #ffffff;
+  --card-bg-hover: #f8fafc;
+  --card-border: #e2e8f0;
+  --card-border-hover: #0969da;
+  --card-title: #0f172a;
+  --card-desc: #475569;
+  --card-badge-bg: #fff8eb;
+  --card-badge-border: #fde68a;
+  --card-badge-text: #b45309;
+  --card-cat-bg: #f1f5f9;
+  --card-cat-border: #cbd5e1;
+  --card-cat-text: #475569;
+  --card-footer-border: #e2e8f0;
+  --card-token-bg: #f8fafc;
+  --card-token-border: #e2e8f0;
+  --card-token-text: #475569;
+  --card-status-pass-bg: #ecfdf5;
+  --card-status-pass-text: #047857;
+  --card-status-rev-bg: #fffbeb;
+  --card-status-rev-text: #b45309;
+  --card-status-bad-bg: #ffebe9;
+  --card-toggle-inactive-bg: #cbd5e1;
+  --card-toggle-knob-inactive: #64748b;
+  --shadow-xs: 0 1px 3px rgba(31, 35, 40, 0.06);
+  --shadow-sm: 0 4px 12px rgba(31, 35, 40, 0.08);
+  --panel-shadow: -8px 0 24px rgba(31, 35, 40, 0.06);
+}
+
+/* 2. The six primitives: one colour each, for icons and kind chips */
+:root {
+  --primitive-skill: #f59e0b;
+  --primitive-command: #06b6d4;
+  --primitive-agent: #a855f7;
+  --primitive-mcp: #3b82f6;
+  --primitive-hook: #10b981;
+  --primitive-token: #f97316;
+}
+.primitive-skill { color: var(--primitive-skill) !important; }
+.primitive-command { color: var(--primitive-command) !important; }
+.primitive-agent { color: var(--primitive-agent) !important; }
+.primitive-mcp { color: var(--primitive-mcp) !important; }
+.primitive-hook { color: var(--primitive-hook) !important; }
+.primitive-token { color: var(--primitive-token) !important; }
+
+/* 3. Type, shape, motion (admin-sources' Tailwind config: radius 2/4/6/8px, Inter + JetBrains Mono, 13px base) */
+:root {
+  --font: "Inter", sans-serif;
+  --mono: "JetBrains Mono", monospace;
+  --fw-regular: 400; --fw-medium: 500; --fw-strong: 600; --fw-title: 700;
+  --track-title: -0.01em;
+  --font-title: var(--mono); --font-lab: var(--mono);
+  --r-sm: 2px; --r: 4px; --r-lg: 6px; --r-full: 8px;
+  --ease: 180ms ease;
+  --ease-rail: 240ms cubic-bezier(0.2, 0, 0, 1);
+  --ease-panel: 260ms cubic-bezier(0.16, 1, 0.3, 1);
+}

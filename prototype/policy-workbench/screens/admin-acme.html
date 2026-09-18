@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html class="dark" lang="en" data-mode="dark">
+<head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Admin: Acme additions · Policy Workbench</title>
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="wb.css">
+<script src="mode.js"></script>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script src="tw-config.js"></script>
+<script src="shell.js"></script>
+</head>
+<body class="bg-background font-body text-on-surface text-[13px] leading-normal antialiased select-none">
+<script>WB.top()</script>
+<div class="flex w-full h-[calc(100vh-4.75rem)] overflow-hidden relative">
+<aside class="rail-transition shrink-0 bg-[#0a0e15] border-r border-surface-container-high/60 flex flex-col overflow-hidden w-60" id="nav-rail">
+  <div class="p-2 space-y-1 overflow-y-auto flex-1">
+    <div class="px-2 py-0.5 text-[10px] font-mono tracking-wider text-outline uppercase font-semibold flex items-center justify-between"><span>Acme · your own source</span><button class="flex items-center gap-0.5 px-1.5 rounded bg-surface-container hover:bg-surface-container-high text-primary normal-case tracking-normal font-body text-[10.5px]" type="button"><span class="material-symbols-outlined text-[12px]">add</span>Add</button></div>
+    <div class="rounded bg-surface-container-low/40 hover:bg-surface-container-low/80 p-2 border border-surface-container-high/40 cursor-pointer space-y-0.5"><div class="flex items-center justify-between gap-1"><span class="font-mono font-semibold text-[11px] text-on-surface truncate">@acme/payments-mcp 2.1.0</span><span class="px-1 rounded bg-secondary-container/20 text-secondary font-mono text-[9.5px] shrink-0">Allowed</span></div><div class="text-[10.5px] text-outline flex items-center gap-1"><span class="material-symbols-outlined text-[12px] primitive-mcp">dns</span>MCP server · npm package</div></div>
+    <div class="rounded bg-surface-container-high p-2 border border-primary cursor-pointer space-y-0.5"><div class="flex items-center justify-between gap-1"><span class="font-mono font-semibold text-[11px] text-primary truncate">release-notes</span><span class="px-1 rounded bg-tertiary-container text-on-tertiary font-mono text-[9.5px] font-bold shrink-0">Needs scan</span></div><div class="text-[10.5px] text-outline flex items-center gap-1"><span class="material-symbols-outlined text-[12px] primitive-skill">extension</span>Skill · acme/ai-skills at [commit]</div></div>
+    <div class="rounded bg-surface-container-low/40 hover:bg-surface-container-low/80 p-2 border border-surface-container-high/40 cursor-pointer space-y-0.5"><div class="flex items-center justify-between gap-1"><span class="font-mono font-semibold text-[11px] text-on-surface truncate">[public source]</span><span class="px-1 rounded bg-tertiary-container/20 text-tertiary font-mono text-[9.5px] shrink-0">Needs review</span></div><div class="text-[10.5px] text-outline flex items-center gap-1"><span class="material-symbols-outlined text-[12px] text-outline">folder</span>Another public source · [owner/repo] at [commit]</div></div>
+    <div class="rounded bg-surface-container-low/40 hover:bg-surface-container-low/80 p-2 border border-surface-container-high/40 cursor-pointer space-y-0.5"><div class="flex items-center justify-between gap-1"><span class="font-mono font-semibold text-[11px] text-on-surface truncate">acme-cli</span><span class="px-1 rounded bg-surface-container text-outline font-mono text-[9.5px] shrink-0">[scan rule]</span></div><div class="text-[10.5px] text-outline flex items-center gap-1"><span class="material-symbols-outlined text-[12px] primitive-command">terminal</span>Internal developer tool</div></div>
+  </div>
+  <p class="p-3 text-[10.5px] text-outline leading-snug border-t border-surface-container-high/40">Everything here shows to users as one source called Acme, next to aih Core, ECC and the others. You can select an item before its scan. It joins a published policy once a result is loaded.</p>
+</aside>
+<main class="flex-1 flex flex-col min-w-0 bg-[#0c1017] overflow-hidden">
+  <div class="px-5 pt-4 pb-3 border-b border-surface-container-high/40 bg-[#0e131d]/90 shrink-0">
+    <div class="text-[10px] font-mono tracking-wider uppercase text-outline/80 font-semibold mb-0.5">Acme additions · later</div>
+    <h1 class="text-[22px] font-bold text-white tracking-tight flex items-center gap-2 font-mono"><span>Add to Acme</span><span class="text-outline/60 font-light">—</span><span class="text-[#ffb95f]">release-notes</span></h1>
+    <p class="text-[11.5px] text-on-surface-variant mt-1">The only place you run a scan yourself. Everything aih ships is already scanned.</p>
+  </div>
+  <div class="flex-1 flex overflow-hidden">
+    <div class="flex-1 overflow-y-auto p-4 bg-[#0d111a] flex flex-col gap-3 min-w-0">
+      <div class="rounded border border-surface-container-high/60 bg-[#141822] p-3.5 flex flex-col gap-2.5 shadow-xs">
+        <div class="flex items-center gap-2"><span class="w-5 h-5 rounded bg-tertiary-container text-on-tertiary font-mono text-[11px] font-bold flex items-center justify-center">1</span><span class="font-bold text-white text-[13.5px]">Say exactly what it is</span></div>
+        <div class="flex items-center bg-surface-container-lowest p-0.5 rounded border border-surface-container-high/60 text-[11px] self-start">
+          <button class="px-2.5 py-1 rounded bg-surface-container text-primary font-semibold shadow-xs" type="button">Skill, agent or command</button>
+          <button class="px-2.5 py-1 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors" type="button">MCP server</button>
+          <button class="px-2.5 py-1 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors" type="button">Another public source</button>
+          <button class="px-2.5 py-1 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors" type="button">Developer tool</button>
+        </div>
+        <div class="grid grid-cols-4 gap-2">
+          <div class="space-y-1"><label class="block font-mono text-[10px] uppercase tracking-wider text-outline font-semibold">GitHub repository</label><input type="text" value="acme/ai-skills" class="w-full px-2.5 py-1.5 rounded bg-surface-container-lowest border border-surface-container-high/60 font-mono text-on-surface text-[11.5px] focus:border-primary focus:outline-none focus:ring-0"></div>
+          <div class="space-y-1"><label class="block font-mono text-[10px] uppercase tracking-wider text-outline font-semibold">Exact commit</label><input type="text" placeholder="[40 character commit]" class="w-full px-2.5 py-1.5 rounded bg-surface-container-lowest border border-surface-container-high/60 font-mono text-on-surface text-[11.5px] placeholder:text-outline focus:border-primary focus:outline-none focus:ring-0"></div>
+          <div class="space-y-1"><label class="block font-mono text-[10px] uppercase tracking-wider text-outline font-semibold">Name</label><input type="text" value="release-notes" class="w-full px-2.5 py-1.5 rounded bg-surface-container-lowest border border-surface-container-high/60 font-mono text-on-surface text-[11.5px] focus:border-primary focus:outline-none focus:ring-0"></div>
+          <div class="space-y-1"><label class="block font-mono text-[10px] uppercase tracking-wider text-outline font-semibold">Accountable person</label><input type="text" placeholder="[work email]" class="w-full px-2.5 py-1.5 rounded bg-surface-container-lowest border border-surface-container-high/60 font-mono text-on-surface text-[11.5px] placeholder:text-outline focus:border-primary focus:outline-none focus:ring-0"></div>
+        </div>
+        <p class="text-[10.5px] text-outline">An exact version, never a branch. The email records who answers for this item. It is not a login.</p>
+      </div>
+      <div class="rounded border border-surface-container-high/60 bg-[#141822] p-3.5 flex flex-col gap-2.5 shadow-xs">
+        <div class="flex items-center gap-2"><span class="w-5 h-5 rounded bg-tertiary-container text-on-tertiary font-mono text-[11px] font-bold flex items-center justify-center">2</span><span class="font-bold text-white text-[13.5px]">Scan it. You run this, aih does not install anything</span></div>
+        <div class="flex items-stretch gap-2"><div class="flex-1 p-2 rounded bg-surface-container-lowest border border-surface-container-high/50 font-mono text-[11px] text-on-surface break-all">aih skill vet acme/ai-skills --pin [commit] --name release-notes --apply</div><button class="px-2.5 rounded bg-surface-container hover:bg-surface-container-high text-primary font-mono text-[10.5px] transition-colors" type="button">Copy</button></div>
+        <div class="p-3 rounded border border-dashed border-surface-container-high hover:border-primary text-center text-[11.5px] text-outline transition-colors cursor-pointer flex items-center justify-center gap-1.5"><span class="material-symbols-outlined text-[16px]">upload_file</span>Drop the result file here, or choose it</div>
+        <p class="text-[10.5px] text-outline leading-snug">Other kinds get their own command: <span class="font-mono text-on-surface-variant">aih trust scan [owner/repo] --pin [commit] --apply</span> for a repo, the matching trust scan for an npm MCP package. A remote MCP address cannot be scanned: aih records the exact address and who verified it, and labels it not scanned.</p>
+      </div>
+      <div class="rounded border border-surface-container-high/60 bg-[#141822] p-3.5 flex flex-col gap-2.5 shadow-xs">
+        <div class="flex items-center gap-2"><span class="w-5 h-5 rounded bg-tertiary-container text-on-tertiary font-mono text-[11px] font-bold flex items-center justify-center">3</span><span class="font-bold text-white text-[13.5px]">Read the result and decide</span></div>
+        <div class="flex items-center gap-2"><span class="px-1.5 py-0.5 rounded bg-surface-container-low border border-surface-container-high/40 text-outline font-mono text-[10px] shrink-0">[result appears here]</span><span class="text-[11.5px] text-on-surface-variant">Same reading as scan review: what was found, in plain words, with the line. A result is evidence, not approval. You still decide.</span></div>
+        <div class="flex items-center gap-2">
+          <div class="flex items-center bg-surface-container-lowest p-0.5 rounded border border-surface-container-high/60 text-[11px]">
+            <button class="px-2.5 py-1 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors" type="button">Allow</button>
+            <button class="px-2.5 py-1 rounded bg-[#ffb95f]/15 border border-[#ffb95f]/40 text-[#ffb95f] font-semibold" type="button">Hold back</button>
+          </div>
+          <span class="flex-1"></span>
+          <a class="flex items-center gap-1 px-2.5 py-1 rounded bg-surface-container hover:bg-surface-container-high text-on-surface text-[11px] font-medium transition-colors" href="../index.html#admin-scan" target="_top">See how findings read <span class="material-symbols-outlined text-[13px]">arrow_forward</span></a>
+        </div>
+      </div>
+    </div>
+    <aside class="shrink-0 w-[300px] bg-[#12161f] border-l border-surface-container-high/60 flex flex-col overflow-y-auto p-3 gap-3 text-[11.5px]" id="inspector-rail">
+      <div class="space-y-1.5"><div class="text-[10px] font-mono uppercase tracking-wider text-outline font-semibold">What users will see</div>
+        <div class="rounded bg-surface-container-low border border-surface-container-high/40 divide-y divide-surface-container-high/40">
+          <div class="flex justify-between px-2.5 py-1.5"><span class="font-semibold text-on-surface">aih Core</span><span class="font-mono text-outline">5</span></div>
+          <div class="flex justify-between px-2.5 py-1.5"><span class="font-semibold text-on-surface">ECC</span><span class="font-mono text-outline">[n]</span></div>
+          <div class="flex justify-between px-2.5 py-1.5"><span class="font-semibold text-on-surface">Superpowers</span><span class="font-mono text-outline">16</span></div>
+          <div class="flex justify-between px-2.5 py-1.5 bg-surface-container"><span class="font-semibold text-primary">Acme</span><span class="font-mono text-outline">[n]</span></div>
+        </div>
+        <p class="text-on-surface-variant leading-relaxed">Same fact sheet, same scan reading, same Required, Optional, Skip. Nothing marks Acme items as second class.</p></div>
+      <div class="space-y-1.5"><div class="text-[10px] font-mono uppercase tracking-wider text-outline font-semibold">States an addition can be in</div>
+        <div class="rounded bg-surface-container-low border border-surface-container-high/40 divide-y divide-surface-container-high/40">
+          <div class="flex justify-between gap-2 px-2.5 py-1.5"><span class="text-tertiary">Needs scan</span><span class="text-outline">copy the command</span></div>
+          <div class="flex justify-between gap-2 px-2.5 py-1.5"><span class="text-tertiary">Needs review</span><span class="text-outline">read and decide</span></div>
+          <div class="flex justify-between gap-2 px-2.5 py-1.5"><span class="text-secondary">Allowed</span><span class="text-outline">in the next publish</span></div>
+          <div class="flex justify-between gap-2 px-2.5 py-1.5"><span class="text-on-surface-variant">Not scanned</span><span class="text-outline">remote address only</span></div>
+        </div></div>
+      <div class="mt-auto p-2 rounded bg-surface-container-low border border-surface-container-high/30 text-[10px] text-outline flex gap-1.5"><span class="material-symbols-outlined text-[13px] text-primary">sync</span><span>If the commit or version changes, the old result no longer counts and the item goes back to needs scan.</span></div>
+    </aside>
+  </div>
+</main>
+</div>
+</body>
+</html>

@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html class="dark" lang="en" data-mode="dark">
+<head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Who uses this · Policy Workbench</title>
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="wb.css">
+<script src="mode.js"></script>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script src="tw-config.js"></script>
+</head>
+<body class="bg-[#0d111a] font-body text-on-surface text-[13px] leading-normal antialiased select-none">
+<div class="h-full overflow-y-auto px-8 py-6 flex flex-col gap-4">
+  <div>
+    <div class="text-[10px] font-mono tracking-wider uppercase text-outline/80 font-semibold mb-0.5">Who uses this, and how they come in</div>
+    <h1 class="text-[26px] font-bold text-white tracking-tight font-mono">Two doors. One policy format. Everything else is data.</h1>
+  </div>
+  <div class="rounded border border-surface-container-high/60 bg-[#121622] px-4 py-2.5 flex items-center gap-4">
+    <span class="text-[10px] font-mono tracking-wider uppercase text-outline font-semibold shrink-0">aih, every release</span>
+    <span class="flex-1 text-[12px] text-on-surface-variant">Ships the catalog with its scan results already joined, and ready-made templates. All of it is data files. Nobody at Acme scans what aih ships. With no organization policy present, the Recommended template is the policy.</span>
+    <span class="px-1.5 py-0.5 rounded bg-surface-container-low border border-surface-container-high/40 font-mono text-[10px] text-outline shrink-0">catalog + scan results</span>
+    <span class="px-1.5 py-0.5 rounded bg-surface-container-low border border-surface-container-high/40 font-mono text-[10px] text-outline shrink-0">templates</span>
+  </div>
+  <div class="grid grid-cols-[minmax(0,1fr)_300px_minmax(0,1fr)] gap-4 flex-1 min-h-0">
+    <div class="rounded border border-surface-container-high/60 bg-[#141822] p-4 flex flex-col gap-2.5 shadow-xs" id="door1"></div>
+    <div class="flex flex-col gap-3">
+      <div class="rounded border border-surface-container-high/60 bg-[#12161f] p-3 space-y-1.5">
+        <div class="text-[10px] font-mono tracking-wider uppercase text-outline font-semibold">What travels between them</div>
+        <p class="text-[12px] text-on-surface-variant">Two plain files. No server, no account, no new command.</p>
+        <div class="p-2 rounded bg-surface-container-lowest border border-surface-container-high/50 font-mono text-[11px] leading-relaxed text-on-surface"><span class="text-outline">acme/ai-policies (any git repo)</span><br>&nbsp;&nbsp;<span class="text-secondary">acme.policy.json</span><br><span class="text-outline">payments-api (the project repo)</span><br>&nbsp;&nbsp;<span class="text-secondary">aih-project-policy.json</span> <span class="text-outline">your choices</span></div>
+      </div>
+      <div class="rounded border border-surface-container-high/60 bg-[#12161f] p-3 space-y-1.5">
+        <div class="text-[10px] font-mono tracking-wider uppercase text-outline font-semibold">Every policy file says</div>
+        <div class="rounded bg-surface-container-low border border-surface-container-high/40 divide-y divide-surface-container-high/40 text-[11.5px]">
+          <div class="flex justify-between gap-2 px-2.5 py-1.5"><span class="text-on-surface">Name, description</span><span class="text-outline">text</span></div>
+          <div class="flex justify-between gap-2 px-2.5 py-1.5"><span class="text-on-surface">For whom</span><span class="text-outline text-right">everyone, project, persona, agent</span></div>
+          <div class="flex justify-between gap-2 px-2.5 py-1.5"><span class="text-on-surface">Cut from</span><span class="text-outline text-right">which policy, which version</span></div>
+          <div class="flex justify-between gap-2 px-2.5 py-1.5"><span class="text-on-surface">Items</span><span class="text-outline">required or optional</span></div>
+        </div>
+        <p class="text-[10.5px] text-outline">A template is the same file. So is a project policy.</p>
+      </div>
+      <div class="rounded border border-surface-container-high/60 bg-[#12161f] p-3 space-y-1">
+        <div class="text-[10px] font-mono tracking-wider uppercase text-outline font-semibold">When something changes</div>
+        <p class="text-[12px] text-on-surface-variant leading-relaxed">The admin withdraws an item, or a new aih release lands: aih trims every policy built on it and tells each owner what went and why.</p>
+      </div>
+    </div>
+    <div class="rounded border border-surface-container-high/60 bg-[#141822] p-4 flex flex-col gap-2.5 shadow-xs" id="door2"></div>
+  </div>
+  <p class="text-[10.5px] text-outline">No fixed order: a developer needs no admin, an admin needs no review to publish, a team needs no setup. Nothing hard-coded: sources, categories, templates, for-whom labels and risk labels are rows in data files. A new aih release adds rows, not screens.</p>
+</div>
+<script>
+  function row(k, v) { return '<div class="flex gap-3 text-[12px]"><span class="w-24 shrink-0 text-[10px] font-mono uppercase tracking-wider text-outline font-semibold pt-0.5">' + k + '</span><span class="flex-1 text-on-surface-variant leading-relaxed">' + v + '</span></div>'; }
+  function head(door, who, name, icon, sub) {
+    return '<div class="flex items-center justify-between"><span class="text-[10px] font-mono uppercase tracking-wider text-outline font-semibold">' + door + '</span><span class="px-1.5 py-0.5 rounded bg-surface-container-low border border-surface-container-high/40 font-mono text-[10px] text-outline">' + who + '</span></div>' +
+      '<div class="flex items-center gap-2"><span class="material-symbols-outlined text-[20px] text-primary">' + icon + '</span><span class="text-[19px] font-bold text-white font-mono tracking-tight">' + name + '</span></div><p class="text-[12px] text-on-surface-variant">' + sub + '</p>';
+  }
+  function cta(label, hash) { return '<span class="flex-1"></span><a class="self-start flex items-center gap-1 px-3 py-1.5 rounded bg-primary hover:bg-primary-bright text-white text-[12px] font-medium transition-colors shadow-xs" href="../index.html#' + hash + '" target="_top">' + label + ' <span class="material-symbols-outlined text-[14px]">arrow_forward</span></a>'; }
+  function cmd(t) { return '<span class="font-mono text-on-surface">' + t + '</span>'; }
+  document.getElementById("door1").innerHTML = head("Door 1", "one or two people", "Admin", "admin_panel_settings", "The security or platform owner. Answers for what the organization allows, and can explain why.") +
+    row("Comes in by", cmd("npx @aihq/core --ui") + " in the policy repo clone. The folder decides the page: a policy repo opens the admin page.") +
+    row("Starts from", "A template aih ships, already rendered with its defaults. Never a blank page. Can publish on day one: anything with a finding stays held back until reviewed.") +
+    row("Sees", "Every source side by side, including Acme’s own. For each source, category and item: a fact sheet.") +
+    row("Decides", "Allowed AI tools. Allow or hold back by source, by category or kind, by rule, by item. What to do with each scan finding.") +
+    row("Runs a scan", "Not in the first release. Everything aih ships is already scanned. Scanning your own additions comes later.") +
+    row("Produces", "One organization policy file. Shared with git, a file share, or one environment variable set by IT. Several named policies come later.") +
+    row("Never has to", "Edit JSON by hand. Decide the same item twice. Scan the shipped catalog.") + cta("Open the admin page", "admin-sources");
+  function persona(t, a, b) { return '<div class="rounded bg-surface-container-low border border-surface-container-high/40 p-2.5 space-y-0.5"><div class="font-semibold text-on-surface text-[12px]">' + t + '</div><div class="text-[11.5px] text-on-surface-variant">' + a + '</div><div class="text-[10.5px] text-outline">' + b + '</div></div>'; }
+  document.getElementById("door2").innerHTML = head("Door 2", "anyone at Acme", "User", "person", "One light page, several reasons to open it. Nobody here can add anything. They only trim.") +
+    '<div class="grid grid-cols-2 gap-2">' +
+      persona("Team or tech lead", "Give 12 developers the same setup.", "Picks the Acme policy or a template, marks items required or optional, commits the file to the project.") +
+      persona("Developer", "Get my setup. Move between projects.", "Clones the project, runs one command, may skip optional items.") +
+      persona("Project manager", "See what a project uses and what it can touch.", "Opens a policy to read it, or uses a template as it is.") +
+      persona("Agent builder", "Give an agent its tool set.", "Same form, labelled agent. For now aih provides the tool surface only.") + '</div>' +
+    row("Comes in by", "The same " + cmd("npx @aihq/core --ui") + ", run in the project folder. A project folder opens the user page.") +
+    row("Sees", "Only what Acme published, already scanned and decided. The same facts the admin saw, read-only.") +
+    row("Produces", "A policy file in the project repo. Teammates clone and run the command they already use. Named profiles come later.") +
+    row("Approval", "None. aih checks the project file against the Acme policy when it runs.") + cta("Open the user page", "user-start");
+</script>
+</body>
+</html>

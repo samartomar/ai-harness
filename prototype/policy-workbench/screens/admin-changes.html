@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html class="dark" lang="en" data-mode="dark">
+<head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Admin: changes as JSON · Policy Workbench</title>
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="wb.css">
+<script src="mode.js"></script>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script src="tw-config.js"></script>
+<script src="shell.js"></script>
+</head>
+<body class="bg-background font-body text-on-surface text-[13px] leading-normal antialiased select-none">
+<script>WB.top()</script>
+<div class="flex w-full h-[calc(100vh-4.75rem)] overflow-hidden relative">
+<script>WB.nav("policies")</script>
+<div class="flex-1 flex flex-col min-w-0 overflow-hidden">
+<script>WB.ledger()</script>
+<div class="flex-1 flex w-full overflow-hidden relative">
+<script>WB.main()</script>
+<!-- RIGHT: changes from the template, as JSON -->
+<aside class="inspector-transition shrink-0 w-[480px] bg-[#12161f] border-l border-surface-container-high/60 flex flex-col overflow-hidden" id="inspector-rail">
+  <div class="p-2.5 bg-surface-container-lowest border-b border-surface-container-high/50 space-y-2 shrink-0">
+    <div class="flex items-center justify-between">
+      <span class="font-semibold text-on-surface text-[13px]">Changes from the template</span>
+      <a class="p-1 rounded hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface transition-colors" href="../index.html#admin-sources" target="_top" title="Close"><span class="material-symbols-outlined text-[16px]">chevron_right</span></a>
+    </div>
+    <div class="flex items-center justify-between text-[11px]">
+      <div class="flex items-center gap-1.5">
+        <span class="px-1.5 py-0.5 rounded bg-primary/15 text-primary font-mono text-[10px] font-semibold">[n] changes</span>
+        <span class="px-1.5 py-0.5 rounded bg-secondary-container/20 text-secondary font-mono text-[10px] font-medium flex items-center gap-1"><span class="w-1 h-1 rounded-full bg-secondary"></span>Ready to publish</span>
+      </div>
+      <span class="text-outline">86 wait for review, stay held back</span>
+    </div>
+    <div class="flex items-center gap-1.5 text-[11px]">
+      <button class="px-2 py-1 rounded bg-surface-container-low hover:bg-surface-container text-on-surface-variant hover:text-on-surface transition-colors" type="button">Reset to template</button>
+      <button class="px-2 py-1 rounded bg-surface-container hover:bg-surface-container-high text-primary transition-colors font-mono text-[10.5px]" type="button" data-copy>Copy JSON</button>
+      <button class="px-2 py-1 rounded bg-surface-container hover:bg-surface-container-high text-on-surface-variant transition-colors font-mono text-[10.5px]" type="button">Download</button>
+      <span class="flex-1"></span>
+      <div class="flex items-center p-0.5 rounded bg-surface-container-low border border-surface-container-high/40 gap-0.5">
+        <button class="px-2 py-0.5 rounded bg-surface-container text-primary font-semibold shadow-xs" type="button">Changes</button>
+        <button class="px-2 py-0.5 rounded text-on-surface-variant hover:text-on-surface" type="button">Whole file</button>
+      </div>
+    </div>
+  </div>
+  <div class="flex-1 overflow-y-auto p-3 space-y-2">
+    <div class="flex items-center justify-between"><span class="text-[10px] font-mono uppercase tracking-wider text-outline font-semibold">Staged policy delta</span><span class="font-mono text-[10px] text-outline">acme.policy.json</span></div>
+    <div class="py-2 rounded bg-surface-container-lowest border border-surface-container-high/60 font-mono text-[10.5px] leading-relaxed text-on-surface overflow-x-auto whitespace-pre" id="json-editor"></div>
+    <p class="text-[10.5px] text-outline leading-snug">Green lines are yours, amber is what the template had. Keys are a sketch; the real file is the policy format plus the organization block.</p>
+  </div>
+  <div class="p-2 bg-surface-container-lowest border-t border-surface-container-high/60 flex items-center gap-2 shrink-0">
+    <span class="flex-1 text-[10.5px] text-outline">Publish writes <span class="font-mono text-on-surface-variant">acme.policy.json</span> into this folder. You commit and push it.</span>
+    <button class="flex items-center gap-1 px-3 py-1.5 rounded bg-primary hover:bg-primary-bright text-white text-[12px] font-medium transition-colors shadow-xs" type="button"><span>Publish</span><span class="material-symbols-outlined text-[13px]">arrow_forward</span></button>
+  </div>
+</aside>
+</div>
+</div>
+</div>
+<script>
+  // [kind, text]: " " unchanged, "+" yours, "-" what the template had
+  var LINES = [
+    [" ", '{'],
+    [" ", '  "organization": { "id": "acme", "name": "Acme Corp" },'],
+    [" ", '  "template": "recommended@[version]",'],
+    [" ", '  "aiTools": ["claude", "codex", "cursor"],'],
+    [" ", '  "sources": {'],
+    [" ", '    "ecc": {'],
+    [" ", '      "decision": "allow-with-exceptions",'],
+    [" ", '      "categories": {'],
+    ["-", '        "research-content-growth": "allow",'],
+    ["+", '        "research-content-growth": {'],
+    ["+", '          "decision": "hold",'],
+    ["+", '          "reason": "Marketing use is out of scope"'],
+    ["+", '        },'],
+    ["+", '        "domain-vertical-ops": { "decision": "hold", "reason": "Not relevant" }'],
+    [" ", '      },'],
+    [" ", '      "items": {'],
+    ["+", '        "eval-harness": {'],
+    ["+", '          "decision": "allow", "acceptedRisk": "wide-permissions",'],
+    ["+", '          "by": "[work email]"'],
+    ["+", '        }'],
+    [" ", '      }'],
+    [" ", '    },'],
+    ["+", '    "matt-pocock": { "decision": "hold", "reason": "No scan yet" }'],
+    [" ", '  },'],
+    [" ", '  "rules": {'],
+    [" ", '    "needs-review": "hold", "not-scanned": "hold",'],
+    [" ", '    "sends-data-out": "allow", "wide-permissions": "hold"'],
+    [" ", '  }'],
+    [" ", '}']
+  ];
+  var ROW = { " ": "px-3", "+": "px-3 bg-secondary-container/20 border-l-2 border-secondary", "-": "px-3 bg-tertiary-container/20 border-l-2 border-tertiary" };
+  function esc(t) { return t.replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
+  function paint(t) { return esc(t).replace(/("[^"]*")(\s*:)?/g, function (m, s, colon) { return colon ? '<span class="text-primary">' + s + '</span>' + colon : '<span class="text-secondary">' + s + '</span>'; }); }
+  document.getElementById("json-editor").innerHTML = LINES.map(function (l, i) {
+    return '<div class="' + ROW[l[0]] + '"><span class="inline-block w-6 text-outline select-none">' + (i + 1) + '</span>' + paint(l[1]) + '</div>';
+  }).join("");
+  document.querySelector("[data-copy]").addEventListener("click", function (e) { var b = e.currentTarget, t = b.textContent; b.textContent = "Copied!"; setTimeout(function () { b.textContent = t; }, 1200); });
+</script>
+</body>
+</html>

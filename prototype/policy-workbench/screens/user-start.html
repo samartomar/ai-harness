@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html class="dark" lang="en" data-mode="dark">
+<head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>User: pick a starting point · Policy Workbench</title>
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="wb.css">
+<script src="mode.js"></script>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script src="tw-config.js"></script>
+<script src="user-shell.js"></script>
+</head>
+<body class="bg-background font-body text-on-surface text-[13px] leading-normal antialiased select-none">
+<script>WBU.top()</script>
+<div class="flex w-full h-[calc(100vh-4.75rem)] overflow-hidden">
+<main class="flex-1 flex flex-col min-w-0 bg-[#0c1017] overflow-hidden">
+  <div class="px-5 pt-4 pb-3 border-b border-surface-container-high/40 bg-[#0e131d]/90 shrink-0">
+    <div class="text-[10px] font-mono tracking-wider uppercase text-outline/80 font-semibold mb-0.5">Setup · payments-api</div>
+    <h1 class="text-[22px] font-bold text-white tracking-tight font-mono">Pick a starting point</h1>
+    <p class="text-[11.5px] text-on-surface-variant mt-1">Everything here is already scanned. Use it as it is, or trim it. You cannot add to it.</p>
+  </div>
+  <div class="flex-1 overflow-y-auto p-4 bg-[#0d111a] flex flex-col gap-3" id="body"></div>
+</main>
+<aside id="inspector-rail" class="shrink-0 w-[320px] bg-[#12161f] border-l border-surface-container-high/60 flex flex-col overflow-y-auto p-3 gap-3 text-[11.5px] text-on-surface-variant">
+  <div class="space-y-1.5"><div class="text-[10px] font-mono uppercase tracking-wider text-outline font-semibold">This project</div>
+    <div class="p-2.5 rounded bg-surface-container-low border border-surface-container-high/40 space-y-0.5"><div class="flex items-center justify-between"><span class="font-mono font-semibold text-on-surface">payments-api</span><script>document.write(WBU.source === "project" ? '<span class="px-1.5 py-0.5 rounded bg-secondary-container/20 text-secondary font-mono text-[10px]">has a copy of the Acme policy</span>' : '<span class="px-1.5 py-0.5 rounded bg-tertiary-container/20 text-tertiary font-mono text-[10px]">No policy file yet</span>')</script></div><div class="text-[10.5px] text-outline">the folder you opened this page in</div></div></div>
+  <div class="space-y-1.5"><div class="text-[10px] font-mono uppercase tracking-wider text-outline font-semibold">How your team gets the same setup</div>
+    <p>1. Trim and save. The page downloads <span class="font-mono text-on-surface">aih-project-policy.json</span>. It records the policy it was cut from and never changes that policy.</p><p>2. Put it in the project folder and commit it.</p><p>3. Teammates clone the project and run the command they already use:</p>
+    <div class="p-2 rounded bg-surface-container-lowest border border-surface-container-high/50 font-mono text-[11px] text-on-surface">aih init . --apply</div>
+    <p class="text-[10.5px] text-outline">Nothing new to learn, nothing to point at, no account.</p></div>
+  <div class="space-y-1.5"><div class="text-[10px] font-mono uppercase tracking-wider text-outline font-semibold">Where the organization policy comes from</div>
+    <script>document.write(WBU.lookup())</script>
+    <div class="text-[10px] font-mono uppercase tracking-wider text-outline font-semibold pt-1">Two files, never the same one</div>
+    <script>document.write(WBU.files())</script>
+    <p class="text-[10.5px] text-outline">aih stops at the first one it finds. Try the other cases: <a class="text-primary hover:underline" href="?source=project">project file</a> · <a class="text-primary hover:underline" href="?source=env">AIH_ORG_POLICY</a> · <a class="text-primary hover:underline" href="?source=none">nothing found</a></p></div>
+  <div class="mt-auto p-2 rounded bg-surface-container-low border border-surface-container-high/30 text-[10px] text-outline flex gap-1.5"><span class="material-symbols-outlined text-[13px] text-primary">info</span><span>When aih runs, it checks the project file against the organization policy. Anything Acme no longer allows is trimmed, and you are told what and why. No one has to approve anything.</span></div>
+</aside>
+</div>
+<script>
+  var LAB = '<div class="text-[10px] font-mono tracking-wider text-outline uppercase font-semibold">';
+  function card(name, forWhom, desc, facts, icon) {
+    return '<div class="group rounded border border-surface-container-high/60 bg-[#141822] p-3 flex flex-col justify-between gap-2 hover:border-primary transition-all shadow-xs">' +
+      '<div><div class="flex items-start justify-between gap-2"><div class="flex items-center gap-1.5 min-w-0"><span class="material-symbols-outlined text-[15px] text-primary">' + icon + '</span><span class="font-mono font-bold text-white text-[13px] tracking-tight truncate">' + name + '</span></div>' +
+      '<span class="px-1.5 py-0.5 rounded bg-surface-container-low border border-surface-container-high/40 text-[8.5px] font-mono text-outline/90 uppercase">' + forWhom + '</span></div>' +
+      '<p class="text-[11px] text-on-surface-variant mt-2 leading-relaxed">' + desc + '</p>' +
+      facts.map(function (f) { return '<p class="text-[10.5px] font-mono text-outline mt-1">' + f + '</p>'; }).join("") + '</div>' +
+      '<div class="pt-2.5 mt-1 border-t border-surface-container-high/40 flex items-center gap-1.5 text-[11px]">' +
+      '<button class="px-2.5 py-1 rounded bg-surface-container hover:bg-surface-container-high text-on-surface font-medium transition-colors" type="button">Use as it is</button>' +
+      '<a class="flex items-center gap-1 px-2.5 py-1 rounded bg-primary hover:bg-primary-bright text-white font-medium transition-colors" href="../index.html#user-trim" target="_top">Trim it <span class="material-symbols-outlined text-[13px]">arrow_forward</span></a>' +
+      '<span class="flex-1"></span><button class="text-primary hover:underline" type="button">Read</button></div></div>';
+  }
+  var FOUND = WBU.source !== "none";
+  // no organization policy found: say so, and show the two ways to connect one
+  var CONNECT = '<div class="col-span-3 rounded border border-dashed border-surface-container-high bg-surface-container-low/40 p-3.5 space-y-2.5">' +
+    '<div class="flex items-center gap-2"><span class="material-symbols-outlined text-[18px] text-tertiary">link</span><span class="font-semibold text-on-surface text-[13px]">No organization policy found on this machine</span></div>' +
+    '<p class="text-[11.5px] text-on-surface-variant leading-relaxed">Nothing is missing: aih’s Recommended template below is what gets set up. If your organization has a policy, connect it and this page shows only what it allows.</p>' +
+    '<div class="grid grid-cols-2 gap-3">' +
+      '<div class="rounded bg-[#141822] border border-surface-container-high/60 p-2.5 space-y-1.5"><div class="text-[10px] font-mono uppercase tracking-wider text-outline font-semibold">Point at the policy file</div>' +
+        '<div class="flex gap-1.5"><input class="flex-1 px-2 py-1 rounded bg-surface-container-lowest border border-surface-container-high/60 font-mono text-[11px] text-on-surface placeholder:text-outline focus:border-primary focus:outline-none focus:ring-0" placeholder="…/ai-policies/acme.policy.json"><button class="px-2.5 py-1 rounded bg-primary hover:bg-primary-bright text-white text-[11px] font-medium" type="button">Open</button></div>' +
+        '<p class="text-[10.5px] text-outline">For a one-off look. It is not remembered.</p></div>' +
+      '<div class="rounded bg-[#141822] border border-surface-container-high/60 p-2.5 space-y-1.5"><div class="text-[10px] font-mono uppercase tracking-wider text-outline font-semibold">Set it up for good</div>' +
+        '<p class="text-[11px] text-on-surface-variant">Ask your admin or IT to set <span class="font-mono text-on-surface">AIH_ORG_POLICY</span> on this machine, or ask your lead to commit an unchanged copy of it as <span class="font-mono text-on-surface">aih-org-policy.json</span>.</p>' +
+        '<button class="px-2.5 py-1 rounded bg-surface-container hover:bg-surface-container-high text-primary font-mono text-[10.5px]" type="button">Copy the request</button></div>' +
+    '</div></div>';
+  document.getElementById("body").innerHTML =
+    LAB + 'From your organization</div>' +
+    '<div class="grid grid-cols-3 gap-3">' +
+      (FOUND ? card("Acme policy", "Everyone", "[Description written by the admin.] What Acme allows.", ["[n] items from 4 sources · 3 AI tools", "published [date] · v[n]"], "domain") +
+        '<div class="col-span-2 rounded border border-surface-container-high/60 bg-[#12161f] p-3 space-y-2"><div class="text-[10px] font-mono uppercase tracking-wider text-outline font-semibold">Found it here</div>' + WBU.lookup() + '</div>'
+      : CONNECT) +
+    '</div>' +
+    LAB + (FOUND ? 'Templates from aih · shown as far as Acme allows them' : 'Templates from aih') + '</div>' +
+    '<div class="grid grid-cols-3 gap-3">' +
+      card("Recommended", "Everyone", "[Description shipped with the template.] What aih sets up by default.", ["[n] of [n] items allowed at Acme", "template file shipped with aih [version]"], "verified") +
+      card("Backend engineer", "Persona", "[Description shipped with the template.]", ["[n] of [n] items allowed at Acme", "template file shipped with aih [version]"], "person") +
+      card("Release agent", "Agent", "[Description shipped with the template.] The tool set one agent may have.", ["[n] of [n] items allowed at Acme", "template file shipped with aih [version]"], "smart_toy") +
+    '</div>' +
+    '<div class="flex items-center gap-2 text-[10.5px] text-outline"><span class="px-1 rounded bg-surface-container font-mono text-[9.5px]">later</span>A shelf of policies shared by teams. Several organization policies. Named profiles you switch between.</div>' +
+    '<p class="text-[10.5px] text-outline">Cards are files. A new template is a new file in a folder. The page has no list of its own.</p>';
+</script>
+</body>
+</html>

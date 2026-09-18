@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html class="dark" lang="en" data-mode="dark">
+<head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Admin: your organization · Policy Workbench</title>
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="wb.css">
+<script src="mode.js"></script>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script src="tw-config.js"></script>
+<script src="shell.js"></script>
+</head>
+<body class="bg-background font-body text-on-surface text-[13px] leading-normal antialiased select-none">
+<script>WB.top()</script>
+<div class="flex w-full h-[calc(100vh-4.75rem)] overflow-hidden relative">
+<!-- LEFT: first-time steps, in the nav rail's place -->
+<aside class="rail-transition shrink-0 bg-[#0a0e15] border-r border-surface-container-high/60 flex flex-col overflow-hidden w-60" id="nav-rail">
+  <div class="p-2 space-y-1 overflow-y-auto">
+    <div class="px-2 py-0.5 text-[10px] font-mono tracking-wider text-outline uppercase font-semibold flex items-center justify-between"><span>First time here</span><span class="material-symbols-outlined text-[12px] text-outline">flag</span></div>
+    <div class="px-2 py-1.5 rounded bg-surface-container space-y-0.5"><div class="flex items-center justify-between text-[11.5px] text-primary font-semibold"><span>1 · Say who you are</span><span class="font-mono text-[9.5px] px-1 rounded bg-surface-container-highest text-secondary">now</span></div><p class="text-[10.5px] text-outline leading-snug">Once. Later it opens from your organization name in the top bar.</p></div>
+    <div class="px-2 py-1.5 rounded hover:bg-surface-container-low space-y-0.5"><div class="text-[11.5px] text-on-surface font-medium">2 · Pick a template</div><p class="text-[10.5px] text-outline leading-snug">aih ships them. It fills in every default.</p></div>
+    <div class="px-2 py-1.5 rounded hover:bg-surface-container-low space-y-0.5"><div class="text-[11.5px] text-on-surface font-medium">3 · Publish</div><p class="text-[10.5px] text-outline leading-snug">On day one if you like. Anything with a finding stays held back.</p></div>
+    <div class="px-2 py-1.5 rounded hover:bg-surface-container-low space-y-0.5"><div class="text-[11.5px] text-on-surface font-medium">4 · Review at your own pace</div><p class="text-[10.5px] text-outline leading-snug">A backlog, not a gate. Allow or hold back with the facts in front of you.</p></div>
+    <div class="px-2 py-1.5 rounded hover:bg-surface-container-low space-y-0.5"><div class="flex items-center justify-between text-[11.5px] text-on-surface font-medium"><span>5 · Add your own</span><span class="font-mono text-[9.5px] px-1 rounded bg-surface-container text-outline">later</span></div><p class="text-[10.5px] text-outline leading-snug">Not in the first release.</p></div>
+  </div>
+</aside>
+<main class="flex-1 flex flex-col min-w-0 bg-[#0c1017] overflow-hidden">
+  <div class="px-5 pt-4 pb-3 border-b border-surface-container-high/40 bg-[#0e131d]/90 shrink-0">
+    <div class="text-[10px] font-mono tracking-wider uppercase text-outline/80 font-semibold mb-0.5">Organization · enterprise policy</div>
+    <h1 class="text-[22px] font-bold text-white tracking-tight flex items-center gap-2 font-mono"><span class="material-symbols-outlined text-primary text-[22px]">domain</span><span>Your organization</span></h1>
+    <p class="text-[11.5px] text-on-surface-variant leading-relaxed max-w-2xl mt-1">You opened this page inside a clone of your policy repo, so three of these are already filled in from git. Check them and go on. Stored in your organization policy; everything else reads it from there.</p>
+  </div>
+  <div class="flex-1 flex overflow-hidden">
+    <div class="flex-1 overflow-y-auto p-5 bg-[#0d111a] min-w-0">
+      <div class="max-w-2xl rounded border border-surface-container-high/60 bg-surface-container-lowest shadow-xs">
+        <div class="p-5 space-y-4 text-[12px]">
+          <div class="space-y-1"><label class="block font-mono text-[10.5px] uppercase tracking-wider text-outline font-semibold">Name</label><input type="text" value="Acme Corp" class="w-full px-3 py-1.5 rounded bg-[#141822] border border-surface-container-high/60 text-on-surface text-[12px] font-medium focus:border-primary focus:outline-none focus:ring-0"><p class="text-[10.5px] text-outline/80">Shown at the top of both pages, and as the name of your own source.</p></div>
+          <div class="space-y-1"><div class="flex items-center gap-1.5"><label class="block font-mono text-[10.5px] uppercase tracking-wider text-outline font-semibold">Short id</label><span class="px-1 rounded bg-surface-container-highest text-secondary font-mono text-[9px]">from git</span></div><input type="text" value="acme" class="w-60 px-3 py-1.5 rounded bg-[#141822] border border-surface-container-high/60 font-mono text-on-surface text-[12px] font-medium focus:border-primary focus:outline-none focus:ring-0"><p class="text-[10.5px] text-outline/80">Lower case, no spaces. Used in file names and as the issuer of every policy. Hard to change later.</p></div>
+          <div class="space-y-1"><div class="flex items-center gap-1.5"><label class="block font-mono text-[10.5px] uppercase tracking-wider text-outline font-semibold">Policy repo</label><span class="px-1 rounded bg-surface-container-highest text-secondary font-mono text-[9px]">from git</span></div><input type="text" value="github.com/acme/ai-policies" class="w-full px-3 py-1.5 rounded bg-[#141822] border border-surface-container-high/60 font-mono text-primary text-[12px] font-medium focus:border-primary focus:outline-none focus:ring-0"><p class="text-[10.5px] text-outline/80 leading-normal">The folder you opened this page in. Publish writes the policy file here; you commit and push. Everyone gets read access. Who can write is decided in GitHub, not here. One organization per repo: a unit that needs a different posture gets its own repo.</p></div>
+          <div class="space-y-1.5"><div class="flex items-center gap-1.5"><label class="block font-mono text-[10.5px] uppercase tracking-wider text-outline font-semibold">People who answer for it</label><span class="px-1 rounded bg-surface-container-highest text-secondary font-mono text-[9px]">first one from git</span></div>
+            <div class="flex flex-wrap items-center gap-2">
+              <div class="flex items-center gap-1 px-2.5 py-1 rounded bg-[#141822] border border-surface-container-high/60 text-[11.5px] font-mono text-on-surface"><span class="material-symbols-outlined text-[13px] text-outline">mail</span><span>[work email]</span></div>
+              <div class="flex items-center gap-1 px-2.5 py-1 rounded bg-[#141822] border border-surface-container-high/60 text-[11.5px] font-mono text-on-surface"><span class="material-symbols-outlined text-[13px] text-outline">mail</span><span>[work email]</span></div>
+              <button type="button" class="flex items-center gap-1 px-2.5 py-1 rounded border border-dashed border-surface-container-high hover:border-primary text-primary text-[11px] font-medium transition-colors"><span class="material-symbols-outlined text-[13px]">add</span><span>Add email</span></button>
+            </div>
+            <p class="text-[10.5px] text-outline/80">Work emails. They appear as decided by on every risk you accept. They are not logins.</p></div>
+          <div class="space-y-1.5 pt-3 border-t border-surface-container-high/30"><div class="flex items-center gap-1.5"><label class="block font-mono text-[10.5px] uppercase tracking-wider text-outline font-semibold">How users know a policy is really yours</label><span class="px-1 rounded bg-surface-container text-outline font-mono text-[9px]">later</span></div>
+            <div class="grid grid-cols-2 gap-2 max-w-md">
+              <div class="p-2.5 rounded bg-[#141822] border border-surface-container-high/50 cursor-pointer hover:border-surface-container-high"><div class="flex items-center justify-between"><span class="text-[12px] font-semibold text-on-surface-variant">Vibe</span><span class="text-[10px] font-mono text-outline">repo location</span></div><p class="text-[10.5px] text-outline mt-1 leading-snug">The repo the machine was pointed at is enough.</p></div>
+              <div class="p-2.5 rounded bg-surface-container border border-primary cursor-pointer shadow-xs"><div class="flex items-center justify-between"><span class="text-[12px] font-semibold text-white flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>Enterprise</span><span class="material-symbols-outlined text-[14px] text-primary">verified_user</span></div><p class="text-[10.5px] text-on-surface-variant mt-1 leading-snug">Every published policy also carries your organization’s signature.</p></div>
+            </div>
+            <p class="text-[10.5px] text-outline/80">Enterprise uses the signing the product already has. A screen for setting it up is not in the first release.</p></div>
+        </div>
+        <div class="p-3 px-5 border-t border-surface-container-high/40 flex items-center justify-end">
+          <a class="flex items-center gap-1.5 px-4 py-1.5 rounded bg-primary hover:bg-primary-bright text-white text-[12px] font-medium transition-colors shadow-xs" href="../index.html#admin-sources" target="_top"><span class="material-symbols-outlined text-[14px]">check</span><span>Save and pick a template</span></a>
+        </div>
+      </div>
+    </div>
+    <!-- RIGHT: where this shows up -->
+    <aside class="shrink-0 w-[340px] bg-[#12161f] border-l border-surface-container-high/60 flex flex-col overflow-y-auto p-3 gap-3 text-[11.5px]" id="inspector-rail">
+      <div class="space-y-1.5"><div class="text-[10px] font-mono uppercase tracking-wider text-outline font-semibold">Where this shows up</div>
+        <div class="rounded bg-surface-container-low border border-surface-container-high/40 divide-y divide-surface-container-high/40">
+          <div class="flex justify-between gap-3 px-2.5 py-1.5"><span class="text-on-surface-variant">Admin page, top bar</span><span class="text-on-surface text-right">Acme Corp</span></div>
+          <div class="flex justify-between gap-3 px-2.5 py-1.5"><span class="text-on-surface-variant">User page, top bar</span><span class="text-on-surface text-right">Acme Corp · acme/ai-policies</span></div>
+          <div class="flex justify-between gap-3 px-2.5 py-1.5"><span class="text-on-surface-variant">Your own source</span><span class="text-on-surface text-right">Acme</span></div>
+          <div class="flex justify-between gap-3 px-2.5 py-1.5"><span class="text-on-surface-variant">Every policy cut from the master</span><span class="text-on-surface text-right">cut from acme-master v[n]</span></div>
+        </div></div>
+      <div class="space-y-1.5"><div class="text-[10px] font-mono uppercase tracking-wider text-outline font-semibold">In the organization policy file</div>
+        <pre class="p-2.5 rounded bg-surface-container-lowest border border-surface-container-high/60 font-mono text-[10.5px] leading-relaxed text-on-surface overflow-x-auto m-0">"organization": {
+  <span class="text-primary">"name"</span>: <span class="text-secondary">"Acme Corp"</span>,
+  <span class="text-primary">"id"</span>: <span class="text-secondary">"acme"</span>,
+  <span class="text-primary">"repo"</span>: <span class="text-secondary">"github.com/acme/ai-policies"</span>,
+  <span class="text-primary">"accountable"</span>: [<span class="text-secondary">"[work email]"</span>]
+}</pre></div>
+      <div class="space-y-1"><div class="text-[10px] font-mono uppercase tracking-wider text-outline font-semibold">On a user’s machine</div><p class="text-on-surface-variant leading-relaxed">Pointed at the repo once. It reads this block and shows Acme Corp. A user never defines the organization and cannot change it.</p></div>
+      <div class="mt-auto p-2 rounded bg-surface-container-low border border-surface-container-high/30 text-[10px] text-outline flex gap-1.5"><span class="material-symbols-outlined text-[13px] text-primary">info</span><span>Today the product has no named organization: only an issuer field on the bundle, approver emails, and a signature in Enterprise mode. This block is new.</span></div>
+    </aside>
+  </div>
+</main>
+</div>
+</body>
+</html>

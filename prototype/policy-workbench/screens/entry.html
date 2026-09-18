@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html class="dark" lang="en" data-mode="dark">
+<head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>One command, two pages · Policy Workbench</title>
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="wb.css">
+<script src="mode.js"></script>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script src="tw-config.js"></script>
+</head>
+<body class="bg-background font-body text-on-surface text-[13px] leading-normal antialiased select-none">
+<header class="h-11 w-full bg-surface-container-lowest border-b border-surface-container-high/60 px-3 flex items-center justify-between shrink-0">
+  <div class="flex items-center gap-2.5">
+    <div class="w-5 h-5 rounded bg-primary flex items-center justify-center shadow-sm"><span class="material-symbols-outlined text-white text-[14px]">shield_with_house</span></div>
+    <span class="font-semibold text-[13px] tracking-tight text-on-surface">aih Policy</span>
+    <div class="h-3.5 w-px bg-surface-container-high mx-0.5"></div>
+    <span class="flex items-center gap-1.5 px-2 py-0.5 rounded bg-surface-container-low text-[11px]"><span class="material-symbols-outlined text-[13px] text-outline">folder</span><span class="font-mono text-on-surface">C:\work\shared-scripts</span></span>
+  </div>
+  <button aria-label="Toggle theme" class="p-1 rounded bg-surface-container-low hover:bg-surface-container border border-surface-container-high/60 text-on-surface-variant hover:text-on-surface transition-colors flex items-center justify-center shadow-xs" data-mode-toggle type="button"><span class="material-symbols-outlined text-[15px] text-[#ffb95f]">light_mode</span></button>
+</header>
+<div class="h-[calc(100vh-2.75rem)] overflow-y-auto bg-[#0d111a]">
+  <div class="max-w-5xl mx-auto px-6 py-6 flex flex-col gap-5">
+    <div>
+      <div class="text-[10px] font-mono tracking-wider uppercase text-outline/80 font-semibold mb-0.5">One command, two pages</div>
+      <h1 class="text-[24px] font-bold text-white tracking-tight font-mono">What should this folder be?</h1>
+      <p class="text-[12px] text-on-surface-variant mt-1">You ran <span class="font-mono text-on-surface">npx @aihq/core --ui</span> in a folder that is neither your organization’s policy repo nor a project. Pick what you came to do. aih remembers nothing about this choice.</p>
+    </div>
+    <!-- the chooser -->
+    <div class="grid grid-cols-2 gap-4">
+      <a class="group rounded border border-surface-container-high/60 bg-[#141822] p-4 flex flex-col gap-2.5 hover:border-primary transition-all shadow-xs" href="../index.html#admin-org" target="_top">
+        <div class="flex items-center justify-between"><span class="text-[10px] font-mono uppercase tracking-wider text-outline font-semibold">Admin page</span><span class="px-1.5 py-0.5 rounded bg-surface-container-low border border-surface-container-high/40 font-mono text-[10px] text-outline">one or two people</span></div>
+        <div class="flex items-center gap-2"><span class="material-symbols-outlined text-[22px] text-primary">admin_panel_settings</span><span class="text-[18px] font-bold text-white font-mono tracking-tight">Set the policy for your organization</span></div>
+        <p class="text-[11.5px] text-on-surface-variant leading-relaxed">Decide what the organization allows and publish <span class="font-mono text-on-surface">&lt;org&gt;.policy.json</span>. Best opened in a clone of your policy repo, so the name, id and repo fill themselves in from git.</p>
+        <span class="mt-auto self-start flex items-center gap-1 px-3 py-1.5 rounded bg-primary group-hover:bg-primary-bright text-white text-[12px] font-medium transition-colors">Open the admin page <span class="material-symbols-outlined text-[14px]">arrow_forward</span></span>
+      </a>
+      <a class="group rounded border border-surface-container-high/60 bg-[#141822] p-4 flex flex-col gap-2.5 hover:border-primary transition-all shadow-xs" href="../index.html#user-start" target="_top">
+        <div class="flex items-center justify-between"><span class="text-[10px] font-mono uppercase tracking-wider text-outline font-semibold">User page</span><span class="px-1.5 py-0.5 rounded bg-surface-container-low border border-surface-container-high/40 font-mono text-[10px] text-outline">anyone</span></div>
+        <div class="flex items-center gap-2"><span class="material-symbols-outlined text-[22px] text-primary">person</span><span class="text-[18px] font-bold text-white font-mono tracking-tight">Set up a project</span></div>
+        <p class="text-[11.5px] text-on-surface-variant leading-relaxed">Pick what your AI carries from what your organization allows, and save <span class="font-mono text-on-surface">aih-project-policy.json</span> into the project. The organization's policy is never changed. Best opened in the project folder.</p>
+        <span class="mt-auto self-start flex items-center gap-1 px-3 py-1.5 rounded bg-surface-container group-hover:bg-surface-container-high text-on-surface text-[12px] font-medium transition-colors">Open the user page <span class="material-symbols-outlined text-[14px]">arrow_forward</span></span>
+      </a>
+    </div>
+    <!-- how the folder decides -->
+    <div class="grid grid-cols-[minmax(0,1fr)_320px] gap-4">
+      <div class="rounded border border-surface-container-high/60 bg-[#12161f] p-3.5 space-y-2">
+        <div class="text-[10px] font-mono uppercase tracking-wider text-outline font-semibold">How the folder decides the page</div>
+        <div class="rounded bg-surface-container-low border border-surface-container-high/40 divide-y divide-surface-container-high/40 text-[11.5px]">
+          <div class="flex items-center gap-3 px-3 py-2"><span class="material-symbols-outlined text-[16px] text-primary">policy</span><span class="flex-1"><span class="text-on-surface font-medium">A policy repo</span><span class="block text-[10.5px] text-outline">holds an organization policy file, or is where the admin published one</span></span><span class="font-mono text-[10.5px] text-on-surface shrink-0">admin page</span></div>
+          <div class="flex items-center gap-3 px-3 py-2"><span class="material-symbols-outlined text-[16px] text-primary">code</span><span class="flex-1"><span class="text-on-surface font-medium">A project</span><span class="block text-[10.5px] text-outline">has code, and maybe <span class="font-mono">aih-org-policy.json</span></span></span><span class="font-mono text-[10.5px] text-on-surface shrink-0">user page</span></div>
+          <div class="flex items-center gap-3 px-3 py-2 bg-surface-container"><span class="material-symbols-outlined text-[16px] text-tertiary">help</span><span class="flex-1"><span class="text-on-surface font-medium">Anything else</span><span class="block text-[10.5px] text-outline">empty, a home folder, a folder of scripts</span></span><span class="font-mono text-[10.5px] text-tertiary shrink-0">this chooser</span></div>
+        </div>
+        <p class="text-[10.5px] text-outline">Both pages link to the other in their top bar, so a wrong guess costs one click.</p>
+      </div>
+      <div class="rounded border border-surface-container-high/60 bg-[#12161f] p-3.5 space-y-2">
+        <div class="text-[10px] font-mono uppercase tracking-wider text-outline font-semibold">The command</div>
+        <div class="p-2 rounded bg-surface-container-lowest border border-surface-container-high/50 font-mono text-[11px] text-on-surface"><span class="text-outline">&gt;</span> npx @aihq/core --ui</div>
+        <p class="text-[11px] text-on-surface-variant leading-relaxed">Serves the page on this machine only (loopback) and opens it. No account, no server, nothing installed.</p>
+        <p class="text-[10.5px] text-outline">Today the product opens one workbench and takes no other arguments. Choosing the page by folder is the proposal shown here.</p>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

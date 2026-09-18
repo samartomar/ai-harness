@@ -1,0 +1,112 @@
+/* Base styles of admin-sources.html, shared by every screen. Values come from tokens.css. */
+* { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; overflow: hidden; }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--color-scrollbar-thumb, #31353d); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--color-scrollbar-thumb-hover, #424754); }
+
+    /* Transitions for collapsible panels */
+    .rail-transition {
+      transition: width 240ms cubic-bezier(0.2, 0, 0, 1), min-width 240ms cubic-bezier(0.2, 0, 0, 1), opacity 200ms ease;
+    }
+    .inspector-transition {
+      transition: width 260ms cubic-bezier(0.16, 1, 0.3, 1), min-width 260ms cubic-bezier(0.16, 1, 0.3, 1), transform 260ms cubic-bezier(0.16, 1, 0.3, 1), opacity 200ms ease;
+    }
+
+    /* Theme variables live in tokens.css */
+
+    /* Light mode dynamic surface styling overrides */
+    html:not(.dark) .bg-\[\#0a0e15\], html.light .bg-\[\#0a0e15\] { background-color: var(--theme-nav-rail-bg) !important; }
+    html:not(.dark) .bg-\[\#0f131b\], html.light .bg-\[\#0f131b\] { background-color: var(--color-background) !important; }
+    html:not(.dark) .bg-\[\#0c1017\], html.light .bg-\[\#0c1017\] { background-color: var(--theme-center-bg) !important; }
+    html:not(.dark) .bg-\[\#0d111a\], html.light .bg-\[\#0d111a\] { background-color: var(--theme-cards-bg) !important; }
+    html:not(.dark) .bg-\[\#141822\], html.light .bg-\[\#141822\] { background-color: var(--theme-card-bg) !important; }
+    html:not(.dark) .bg-\[\#121622\], html.light .bg-\[\#121622\] { background-color: var(--theme-manifest-header-bg) !important; }
+    html:not(.dark) .bg-\[\#0e131d\], html.light .bg-\[\#0e131d\] { background-color: var(--theme-subhead-bg) !important; }
+    html:not(.dark) .bg-\[\#0e131d\]\/90, html.light .bg-\[\#0e131d\]\/90 { background-color: var(--theme-subhead-bg) !important; }
+    html:not(.dark) .bg-\[\#12161f\], html.light .bg-\[\#12161f\] { background-color: var(--theme-inspector-bg) !important; }
+    html:not(.dark) .bg-\[\#191e2b\], html.light .bg-\[\#191e2b\] { background-color: var(--theme-card-active-bg) !important; }
+    html:not(.dark) .text-white, html.light .text-white { color: var(--theme-heading-text) !important; }
+    html:not(.dark) #cards-grid .group, html.light #cards-grid .group { box-shadow: 0 1px 3px rgba(31,35,40,0.06); }
+/* Universal Card rules across modes */
+[data-card-id] {
+  background-color: var(--card-bg) !important;
+  border: 1px solid var(--card-border) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+  transition: all 180ms ease !important;
+}
+[data-card-id]:hover {
+  background-color: var(--card-bg-hover) !important;
+  border-color: var(--card-border-hover) !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
+}
+[data-card-id] .font-mono.font-bold {
+  color: var(--card-title) !important;
+}
+[data-card-id] p {
+  color: var(--card-desc) !important;
+}
+[data-card-id] .pt-2\.5.mt-2\.5 {
+  border-color: var(--card-footer-border) !important;
+}
+
+/* Badge chips */
+[data-card-id] span.font-mono.uppercase.tracking-wider {
+  background-color: var(--card-badge-bg) !important;
+  border-color: var(--card-badge-border) !important;
+  color: var(--card-badge-text) !important;
+}
+[data-card-id] span.text-\[8\.5px\] {
+  background-color: var(--card-cat-bg) !important;
+  border-color: var(--card-cat-border) !important;
+  color: var(--card-cat-text) !important;
+}
+
+/* Status pills & tokens in card footer */
+[data-card-id] .bg-secondary-container\/20 {
+  background-color: var(--card-status-pass-bg) !important;
+  color: var(--card-status-pass-text) !important;
+}
+[data-card-id] .bg-secondary-container\/20 span.rounded-full {
+  background-color: var(--card-status-pass-text) !important;
+}
+[data-card-id] .bg-tertiary-container\/20 {
+  background-color: var(--card-status-rev-bg) !important;
+  color: var(--card-status-rev-text) !important;
+}
+[data-card-id] .bg-tertiary-container\/20 span.rounded-full {
+  background-color: var(--card-status-rev-text) !important;
+}
+[data-card-id] .text-outline.font-mono.flex {
+  background-color: var(--card-token-bg) !important;
+  border-color: var(--card-token-border) !important;
+  color: var(--card-token-text) !important;
+}
+[data-card-id] .toggle-switch[data-active="false"] {
+  background-color: var(--card-toggle-inactive-bg) !important;
+}
+[data-card-id] .toggle-switch[data-active="false"] div {
+  background-color: var(--card-toggle-knob-inactive) !important;
+}
+
+/* Selected card state */
+[data-card-id].border-primary {
+  border: 1px solid var(--card-border-hover) !important;
+  box-shadow: 0 0 0 1px var(--card-border-hover), 0 4px 12px rgba(0,0,0,0.08) !important;
+}
+
+/* General border styling harmonization */
+html.dark .border, html.dark .border-t, html.dark .border-b, html.dark .border-l, html.dark .border-r {
+  border-color: rgba(255, 255, 255, 0.07) !important;
+}
+html:not(.dark) .border, html:not(.dark) .border-t, html:not(.dark) .border-b, html:not(.dark) .border-l, html:not(.dark) .border-r,
+html.light .border, html.light .border-t, html.light .border-b, html.light .border-l, html.light .border-r {
+  border-color: #e2e8f0 !important;
+}
+
+/* Search input and control bar light mode harmonization */
+html:not(.dark) #cards-grid ~ *, html.light #cards-grid ~ * {
+  border-color: #e2e8f0 !important;
+}[data-card-id] .primitive-skill-icon { color: var(--primitive-skill) !important; }
+[data-card-id] .primitive-token-icon { color: var(--primitive-token) !important; }

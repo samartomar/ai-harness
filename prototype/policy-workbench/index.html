@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Policy Workbench · prototype guide</title>
+<script src="screens/mode.js"></script>
+<link rel="stylesheet" href="screens/fonts.css">
+<link rel="stylesheet" href="screens/tokens.css">
+<style>
+  * { box-sizing: border-box; }
+  html.dark { color-scheme: dark; }
+  body { margin: 0; font: 400 14px/1.55 "Inter", sans-serif; -webkit-font-smoothing: antialiased; color: var(--color-on-surface); background: var(--theme-cards-bg); display: grid; grid-template-columns: 300px minmax(0, 1fr); min-height: 100vh; }
+  aside { background: var(--color-surface-container-low); border-right: 1px solid var(--border-hairline); padding: 20px 14px; position: sticky; top: 0; height: 100vh; overflow: auto; }
+  h1 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -0.01em; } h2 { margin: 0; font-size: 22px; font-weight: 650; letter-spacing: -0.015em; }
+  .sub { color: var(--color-on-surface-variant); font-size: 12px; margin-top: 2px; }
+  .grp { margin: 18px 8px 4px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--color-on-surface-variant); }
+  .step { display: flex; gap: 8px; align-items: center; padding: 6px 8px; border-radius: 6px; font-size: 13px; color: var(--color-on-surface); text-decoration: none; }
+  .step:hover { background: var(--color-surface-container); } .step.on { background: var(--theme-card-active-bg); color: var(--color-primary); font-weight: 600; }
+  .plab { margin: 14px 2px 4px; font-size: 11px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--color-outline); }
+  .pseg { display: flex; gap: 2px; padding: 2px; border-radius: 7px; background: var(--color-surface-container-high); }
+  .pseg button { flex: 1 1 0; height: 24px; border: 0; border-radius: 5px; background: transparent; font: 500 12px "Inter", sans-serif; color: var(--color-on-surface-variant); cursor: pointer; }
+  .pseg button.on { background: var(--color-surface-container-low); color: var(--color-on-surface); font-weight: 600; box-shadow: 0 0 0 1px var(--border-hairline); }
+  .num { width: 18px; font: 600 12px ui-monospace, Consolas, monospace; opacity: .7; }
+  main { padding: 20px 24px 32px; min-width: 0; }
+  .head { display: flex; align-items: flex-start; gap: 12px; }
+  .head .grow { flex: 1 1 0; min-width: 0; }
+  .btn { display: inline-flex; align-items: center; height: 30px; padding: 0 12px; border: 1px solid var(--color-outline-variant); border-radius: 6px; background: var(--color-surface-container-low); color: var(--color-on-surface); text-decoration: none; font-size: 13px; font-weight: 500; white-space: nowrap; }
+  .what { margin: 8px 0 0; max-width: 900px; }
+  .check { margin: 8px 0 14px; padding-left: 18px; max-width: 900px; color: var(--color-on-surface-variant); } .check li { margin: 2px 0; }
+  #stage { border: 1px solid var(--border-hairline); background: var(--color-surface-container-low); overflow: hidden; border-radius: 6px; }
+  #frame { width: 1440px; height: 900px; border: 0; transform-origin: top left; display: block; }
+  #note { background: var(--color-surface-container-low); border: 1px solid var(--border-hairline); border-radius: 6px; padding: 16px 20px 16px 36px; max-width: 900px; } #note li { margin: 6px 0; }
+  .foot { color: var(--color-on-surface-variant); font-size: 12px; margin-top: 10px; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<aside>
+  <h1>Policy Workbench</h1>
+  <div class="sub">Concept v3 &middot; 17 Sep 2026 &middot; [n] marks a number nobody has yet</div>
+  <div class="plab">Mode</div><div class="pseg" id="modeSeg"><button data-v="light">Light</button><button data-v="dark">Dark</button></div>
+  <nav id="nav"></nav>
+</aside>
+<main>
+  <div class="head"><div class="grow"><h2 id="title"></h2></div><a class="btn" id="prev" href="#">&lsaquo; Back</a><a class="btn" id="next" href="#">Next &rsaquo;</a></div>
+  <p class="what" id="what"></p>
+  <ul class="check" id="check"></ul>
+  <div id="stage"><iframe id="frame" title="Prototype screen"></iframe></div>
+  <ul id="note" hidden></ul>
+  <div class="foot" id="foot"></div>
+</main>
+<script>
+// The guide is data: add a step or a note here and the menu follows.
+const STEPS = [
+  {
+    "id": "system",
+    "group": "Design system",
+    "nav": "Specimen sheet",
+    "title": "Design system: tokens and components",
+    "what": "Everything the screens are built from, on one sheet: colour roles, type, actions and controls, labels and status, navigation, the ledger, cards and fact rows. There is one design system: the one in screens/admin-sources.html, your final prototype of 18 September. screens/tokens.css holds its values and every screen, admin-sources included, reads them. Mode on the left switches light and dark.",
+    "check": [
+      "Dark is the native mode; light is the same roles with the admin-sources light values. Colours, hairlines, corners and per-panel surfaces are admin-sources values, unchanged.",
+      "Values in use: 2/4/6/8 corners, white hairlines at 7 percent, amber #ffb95f, mint #4edea3, blue #3b82f6, titles at 700, Inter 13px base with JetBrains Mono for names and counts.",
+      "Carried over from admin-sources as it is (owner, 18 Sep): the six-kind ledger (Skills, Commands, Agents, MCP servers, Hook events, Token budget), token cost per item, the Telemetry section and the Egress Guard box in the nav rail. Their numbers are prototype values until real data stands behind them.",
+      "Icons are Material Symbols Outlined, as in admin-sources. The six primitives keep one colour each: skill amber, command cyan, agent purple, MCP blue, hook green, token orange."
+    ]
+  },
+  {
+    "id": "overview",
+    "group": "Start here",
+    "nav": "Who uses this",
+    "title": "Two doors, one policy format",
+    "what": "The whole model on one screen: what aih ships, who comes through each door, and the policy repo that sits between them.",
+    "check": [
+      "Are these the right people, and is each job described the way you would say it?",
+      "Is the policy repo layout (master, policies, teams) how you would publish?",
+      "Is anything a person has to do missing here?"
+    ]
+  },
+  {
+    "id": "entry",
+    "group": "Start here",
+    "nav": "One command, two pages",
+    "title": "npx @aihq/core --ui: which page opens",
+    "what": "Admin and user run the same command. The folder decides the page: a policy repo opens the admin page, a project opens the user page, anything else shows this chooser. Both pages link to the other.",
+    "check": [
+      "Today the product serves one workbench and takes no other arguments; choosing the page by folder is a proposal.",
+      "The chooser remembers nothing. Running the command in the right folder skips it."
+    ]
+  },
+  {
+    "id": "admin-org",
+    "group": "Door 1 · Admin",
+    "nav": "Your organization",
+    "title": "Admin: say who you are, once",
+    "what": "This is where Acme gets defined. The admin opens the page inside a clone of the policy repo, so the short id, the repo and the first accountable person are already filled in from git. It is stored as one block in the organization policy, and both pages read it from there. A user's machine never defines it.",
+    "check": [
+      "Are these the right four things, and nothing more?",
+      "First-time list on the left: say who you are, pick a template, publish, then review at your own pace.",
+      "One organization per policy repo. Signing setup is not in the first release."
+    ]
+  },
+  {
+    "id": "admin-sources",
+    "group": "Door 1 · Admin",
+    "nav": "Sources and categories",
+    "title": "Admin: sources, with details on the right",
+    "what": "The top bar now carries Mode and AI tools, so the second row is gone. The template picker is gone too: the template is chosen once on the organization screen and 'Reset to template' lives in Review changes. The category box is gone: you decide with the switch on a card, or with Allow all, Allow with exceptions, Hold back on the source. The right side is a context panel: clicking a title in the middle (here ECC) shows its details, with a security block that opens the security view.",
+    "check": [
+      "The composition follows the export: 44px header without tabs (the section navigation sits in the rail under WORKBENCH), a provenance strip (aih, scan pack, catalog snapshot, read-only mirror) with the two panel toggles, the kind ledger above centre and panel, the masthead with the source policy segment, mono filter pills, three cards across.",
+      "The two panel toggles at the right of the provenance strip collapse the sources rail and the context panel.",
+      "Is anything missing from the source details, or anything there you would not read?",
+      "Category decisions are now only visible as counts and a held-back label on the category title. Is that enough?"
+    ]
+  },
+  {
+    "id": "admin-item",
+    "group": "Door 1 · Admin",
+    "nav": "Item, security view",
+    "title": "Admin: an item's security in the panel",
+    "what": "Clicking a card name opens the item in the same right panel. Details | Security switches the view. This shows Security: the scan result with the lines, what it can reach, who scanned it, and the decision on the finding.",
+    "check": [
+      "Is this the security detail you meant when you said 'click on that it opens details on security'?",
+      "Two facts still have no data today: secrets, and changes to the computer."
+    ]
+  },
+  {
+    "id": "admin-changes",
+    "group": "Door 1 · Admin",
+    "nav": "Review changes, JSON",
+    "title": "Admin: the changes as JSON, in a dark editor",
+    "what": "Review changes in the top bar opens the right panel with the policy as JSON in a dark editor. Green lines are what you changed from the template, amber is what the template had. Reset to template, Copy JSON and Download sit above it; Changes | Whole file switches what the editor shows.",
+    "check": [
+      "The keys are a sketch. The real file is the policy format plus the organization block.",
+      "Is a diff against the template the right default, with the whole file one click away?"
+    ]
+  },
+  {
+    "id": "admin-acme",
+    "group": "Door 1 · Admin",
+    "nav": "Acme additions (later)",
+    "title": "Admin: add your own, and scan it",
+    "what": "Not in the first release. The only place you run a scan yourself. Say exactly what the item is, copy the command, run it, load the result file, then decide. Everything added here appears to users as one source called Acme.",
+    "check": [
+      "Four kinds: skill, agent or command; MCP server; another public source; developer tool.",
+      "The commands are the ones the product has today: aih skill vet and aih trust scan.",
+      "A remote MCP address cannot be scanned. It is recorded and labelled not scanned."
+    ]
+  },
+  {
+    "id": "admin-scan",
+    "group": "Door 1 · Admin",
+    "nav": "Scan review",
+    "title": "Admin: every finding in one place",
+    "what": "Findings grouped by what they mean, one item read like a short report, and the three decisions aih's own rules allow. The new box on the left answers: do I need to run a scan? This is the review backlog. It never blocks publishing.",
+    "check": [
+      "Shipped catalog: nothing to run. Your additions: the command is on the item.",
+      "Numbers still to reconcile: 42 scan records in the evidence file, 86 items in today's Workbench."
+    ]
+  },
+  {
+    "id": "user-start",
+    "group": "Door 2 · User",
+    "nav": "Pick a starting point",
+    "title": "User: a separate, light page",
+    "what": "A separate light page with no admin controls. It starts from the organization policy if this machine has one, and from the aih templates if it does not, so nobody waits for an admin. The right side shows this project and how the team gets the same setup.",
+    "check": [
+      "With no organization policy, the templates are the starting point. Is that the right promise?",
+      "Team sharing is a file committed to the project. Teammates run the command they already use.",
+      "Shared-by-teams shelf, several organization policies and named profiles are marked later."
+    ]
+  },
+  {
+    "id": "user-trim",
+    "group": "Door 2 · User",
+    "nav": "Trim",
+    "title": "User: trim, save, apply, share",
+    "what": "The admin-sources layout for the user: the same six-kind ledger on top, now counting what you keep and the tokens it costs. Mark Required, Optional or Skip on a source, a category or one item; every count, the token budget and the warnings update at once. Security is not shown: Acme already decided it.",
+    "check": [
+      "Token budget, overlaps (two items doing one job) and needs (an item whose MCP you skipped) come from the Acme policy. Token figures are sample values until aih measures them.",
+      "Required and Optional are set by the lead. A developer can skip Optional items, nothing more.",
+      "No approval step: aih checks the project file against the Acme policy when it runs.",
+      "Persona and agent setups wait for named profiles, which come later."
+    ]
+  }
+];
+const NOTES = [
+  {
+    "id": "adoption",
+    "nav": "Adoption path",
+    "title": "Adoption path: least resistance",
+    "items": [
+      "Rule: no fixed order. A developer needs no admin. An admin needs no review to publish. A team needs no setup.",
+      "Rung 0, one developer, 2 minutes: aih init . --apply. With no policy present, the Recommended template is the policy.",
+      "Rung 1, a lead, 10 minutes: trim on the light page, save aih-project-policy.json into the project repo, commit. Teammates clone and run the same command. aih reading this file is new work: today aih reads only the organization policy (aih-org-policy.json).",
+      "Rung 2, the admin, 10 minutes: open the admin page inside a clone of the policy repo. The organization is pre-filled from git, a template is applied, Publish writes one file, they push it.",
+      "Rung 3, the admin, over weeks: work the review backlog. Anything with a finding stays held back until then.",
+      "Rung 4, enterprise, when required: signing, and IT sets AIH_ORG_POLICY once per machine.",
+      "Use what people already have: git, the project repo, one environment variable, the commands they know. No tokens, no GitHub API, no new verb for developers.",
+      "The pages are optional. Everything a page does ends in a file, and the file works without the page."
+    ]
+  },
+  {
+    "id": "scope",
+    "nav": "First release: in and later",
+    "title": "First release: in and later",
+    "items": [
+      "In: both doors, polished together.",
+      "In: admin page with the organization pre-filled, template defaults, sources, fact sheet, review backlog, and Publish writing one organization policy file.",
+      "In: user page that opens the organization policy or an aih template, trims it, and saves the project file.",
+      "Later: aih fetching policies from the organization repo by itself.",
+      "Later: several named policies cut from a master.",
+      "Later: adding your own sources, with the scan commands.",
+      "Later: a screen for setting up Enterprise signing.",
+      "Later: named profiles and a switch command, for persona and agent setups that belong to no repo."
+    ]
+  },
+  {
+    "id": "decided",
+    "nav": "Decisions so far",
+    "title": "Decisions so far",
+    "items": [
+      "Least resistance: no fixed order, defaults decide, use what people already have, review is a backlog, the pages are optional.",
+      "Both doors are polished together for the first release.",
+      "The admin may publish the template as it is on day one. Anything with a finding stays held back until reviewed.",
+      "Two separate pages: admin and user. Never one page with roles.",
+      "aih ships the catalog and scan results joined, plus templates, all as data.",
+      "The admin starts from an aih template. The page renders that template's defaults and marks what the admin changed.",
+      "The admin types the organization once: name, short id, policy repo, accountable people. It is stored in the master policy and everything reads it from there.",
+      "One organization per policy repo.",
+      "Trust by mode: Vibe trusts the repo location, Enterprise also requires the organization's signature.",
+      "First release publishes one organization policy. A master with named cuts (Minimum, Standard) is agreed, and comes later.",
+      "One file format for a template, a cut, and a project, persona or agent policy.",
+      "Later: everything the admin adds shows as one source named after the organization.",
+      "Later: the admin scans only their own additions: copy the command, load the result.",
+      "First release: the organization policy is a plain file, shared by git, a file share or AIH_ORG_POLICY. aih fetching from the repo by itself comes later.",
+      "Users only trim: Required, Optional, Skip. No approval. aih checks the subset.",
+      "First release: a team shares one setup by committing the policy file to the project repo. Named profiles and a switch command come later.",
+      "Later: sharing through the organization repo teams folder.",
+      "When something changes: trim, and tell each owner what went and why.",
+      "Agents: tool surface only for now, same form, labelled agent.",
+      "Control wording: Allow / Hold back for the admin, Required / Optional / Skip for users. Never Yes.",
+      "Design system: one only, taken from screens/admin-sources.html (18 September). The earlier themes (Stitch-derived, Graphite, Mono, Harbor) and the paper-and-ink look are gone. Components read screens/tokens.css only.",
+      "Admin screen layout (owner, 17 Sep): no template picker (Reset to template instead), Mode and AI tools in the top bar, no category decision box, a hamburger to collapse Sources, and the right side as a context panel: details of whatever title you click, its security view, or Review changes as JSON in a dark editor.",
+      "admin-sources.html is the reference screen. When a screen and admin-sources disagree on a colour, surface, icon or control, admin-sources wins.",
+      "Section navigation lives in the left rail under WORKBENCH, as in the export: Sources and catalogs, Scan review, Policies and publish. The header keeps identity, organization, mode, AI tools and the actions.",
+      "Colours, hairlines, corners and per-panel surfaces follow admin-sources: faint white hairlines, creamy amber, mint green, 2/4/6/8 corners, Inter with JetBrains Mono, Material Symbols icons."
+    ]
+  },
+  {
+    "id": "open",
+    "nav": "Open questions",
+    "title": "Open questions",
+    "items": [
+      "admin-sources gives each item a Policy JSON tab with that item's staged lines, next to the whole-file review. Keep both, or only the whole file?",
+      "The two panel toggles in the provenance strip replaced the hamburger. Keep them there?",
+      "Agent-specific fields: left out for now, room kept in the file format.",
+      "42 scan records in the evidence file versus 86 items in today's Workbench.",
+      "Facts with no data today: needs secrets, changes to the computer, which AI tools a third-party item supports.",
+      "One command, npx @aihq/core --ui, opens both pages. Choosing the page by folder (policy repo, project, otherwise a chooser) is proposed; today the product opens one workbench and takes no other arguments.",
+      "The user's choices need their own file. aih-org-policy.json is the organization policy itself (src/org-policy/constants.ts), so saving a trim under that name would replace Acme's policy in the project. Proposed: aih-project-policy.json, holding only the choices plus the policy id, version and digest it was cut from. Name, format and how aih combines the two are open.",
+      "Remembering the policy repo on a machine (point at it once) is not built. Today aih finds the policy only through --policy, AIH_ORG_POLICY or the project's aih-org-policy.json.",
+      "User trim is about context, not security: token budget, pick-one groups (overlaps) and depends-on links would be new fields in the organization policy, and the admin page needs a place to author them. Token figures must be measured by aih per AI tool, never estimated.",
+      "Wording: policy and cut from. Say if another word fits better.",
+      "How the Enterprise signing key is set up. The product has signing today; the screen for it is not designed.",
+      "Exactly how the project file and the organization policy combine when both are present on a machine.",
+      "Network: the prototype loads Tailwind, Inter, JetBrains Mono and Material Symbols from CDNs. The product Workbench is served on loopback; decide whether these are bundled into the product or loaded from the network."
+    ]
+  },
+  {
+    "id": "asks",
+    "nav": "What this asks of aih",
+    "title": "What this asks of aih",
+    "items": [
+      "First release: templates shipped as policy files, and the Recommended template used when no policy is present.",
+      "First release: when an organization policy and a project file are both present, aih checks the project file against it, trims, and tells. Today there is one policy at a time.",
+      "An organization block in the master policy: name, id, repo, accountable people. Today there is only an issuer field on the bundle.",
+      "Policy file gains a name, a description, a for-whom label and a cut-from reference. The format is strict today, so that is a version bump.",
+      "aih reads policies from a repo location, keeps named profiles, and switches between them. Today it reads one local file.",
+      "Sources become data rows. Today ECC and Superpowers are a fixed list in code.",
+      "Templates ship as policy files with each release.",
+      "Per-item facts that do not exist yet, if the admin should see them."
+    ]
+  }
+];
+const ALL = STEPS.concat(NOTES);
+const $ = (id) => document.getElementById(id);
+(function () { let g = ""; const nav = $("nav"); ALL.forEach((s) => { const grp = s.group || "Notes"; if (grp !== g) { g = grp; const d = document.createElement("div"); d.className = "grp"; d.textContent = g; nav.appendChild(d); } const a = document.createElement("a"); a.className = "step"; a.href = "#" + s.id; a.dataset.id = s.id; const n = document.createElement("span"); n.className = "num"; n.textContent = s.what ? String(STEPS.indexOf(s) + 1) : "·"; a.appendChild(n); a.appendChild(document.createTextNode(s.nav)); nav.appendChild(a); }); })();
+const LOOK = { mode: document.documentElement.dataset.mode }; let shown = "";
+function look(key, val) { LOOK[key] = val; document.documentElement.dataset.mode = val; document.documentElement.classList.toggle("dark", val === "dark"); document.documentElement.classList.toggle("light", val !== "dark"); try { localStorage.setItem("wb-" + key, val); } catch (e) {} paint(); show(); }
+function paint() { for (const [id, key] of [["modeSeg", "mode"]]) document.querySelectorAll("#" + id + " button").forEach((b) => { b.classList.toggle("on", b.dataset.v === LOOK[key]); b.onclick = () => look(key, b.dataset.v); }); }
+function fit() { const s = Math.min(1, $("stage").clientWidth / 1440); $("frame").style.transform = "scale(" + s + ")"; $("stage").style.height = Math.round(900 * s) + "px"; }
+function show() {
+  const id = (location.hash || "#" + ALL[0].id).slice(1);
+  const i = Math.max(0, ALL.findIndex((s) => s.id === id));
+  const s = ALL[i], isNote = !s.what;
+  document.querySelectorAll(".step").forEach((a) => a.classList.toggle("on", a.dataset.id === s.id));
+  $("title").textContent = s.title;
+  $("what").textContent = s.what || "";
+  $("check").innerHTML = ""; (s.check || []).forEach((c) => { const li = document.createElement("li"); li.textContent = c; $("check").appendChild(li); });
+  $("stage").hidden = isNote; $("note").hidden = !isNote;
+  if (isNote) { $("note").innerHTML = ""; s.items.forEach((t) => { const li = document.createElement("li"); li.textContent = t; $("note").appendChild(li); }); }
+  else { const want = "screens/" + s.id + ".html?mode=" + LOOK.mode; if (shown !== want) { shown = want; $("frame").src = want; } }
+  $("foot").innerHTML = isNote ? "" : 'Screen file: <a href="screens/' + s.id + '.html">screens/' + s.id + ".html</a> &middot; design system: screens/tokens.css, taken from screens/admin-sources.html";
+  $("prev").href = "#" + ALL[(i + ALL.length - 1) % ALL.length].id; $("next").href = "#" + ALL[(i + 1) % ALL.length].id;
+  fit();
+}
+paint(); addEventListener("hashchange", show); addEventListener("resize", fit); show();
+</script>
+</body>
+</html>

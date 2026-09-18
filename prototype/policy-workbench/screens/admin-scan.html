@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html class="dark" lang="en" data-mode="dark">
+<head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Admin: scan review · Policy Workbench</title>
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="wb.css">
+<script src="mode.js"></script>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script src="tw-config.js"></script>
+<script src="shell.js"></script>
+</head>
+<body class="bg-background font-body text-on-surface text-[13px] leading-normal antialiased select-none">
+<script>WB.top()</script>
+<div class="flex w-full h-[calc(100vh-4.75rem)] overflow-hidden relative">
+<script>WB.nav("scan")</script>
+<main class="flex-1 flex flex-col min-w-0 bg-[#0c1017] overflow-hidden">
+  <!-- masthead -->
+  <div class="px-5 pt-4 pb-3 border-b border-surface-container-high/40 bg-[#0e131d]/90 flex flex-col gap-2 shrink-0">
+    <div class="flex items-center justify-between flex-wrap gap-2">
+      <div>
+        <div class="text-[10px] font-mono tracking-wider uppercase text-outline/80 font-semibold mb-0.5">Scan review · every source aih ships</div>
+        <h1 class="text-[22px] font-bold text-white tracking-tight flex items-center gap-2 font-mono"><span>Scan Review</span><span class="text-outline/60 font-light">—</span><span class="text-[#ffb95f]">42 need review</span></h1>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="text-[10.5px] font-mono text-outline uppercase tracking-wider">Group by:</span>
+        <div class="flex items-center bg-surface-container-lowest p-0.5 rounded border border-surface-container-high/60 text-[11px]">
+          <button class="px-2.5 py-1 rounded bg-surface-container text-primary font-semibold shadow-xs" type="button">Meaning</button>
+          <button class="px-2.5 py-1 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors" type="button">Source</button>
+          <button class="px-2.5 py-1 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors" type="button">Kind</button>
+        </div>
+      </div>
+    </div>
+    <div class="flex flex-wrap items-center gap-2 text-[11px] font-mono text-outline/90 pt-0.5">
+      <span>4 scanners</span><span class="text-outline/40">•</span><span>version <strong class="text-on-surface font-semibold">[fingerprint]</strong></span><span class="text-outline/40">•</span><span>pin <strong class="text-on-surface font-semibold">[commit]</strong></span>
+    </div>
+  </div>
+  <div class="flex-1 flex overflow-hidden">
+    <!-- 1 · the scan at a glance -->
+    <div class="w-[300px] shrink-0 overflow-y-auto p-4 bg-[#0d111a] border-r border-surface-container-high/40 flex flex-col gap-3">
+      <div class="text-[10px] font-mono tracking-wider text-outline uppercase font-semibold">1 · The scan at a glance</div>
+      <div class="grid grid-cols-3 divide-x divide-surface-container-high/40 rounded border border-surface-container-high/60 bg-[#141822]">
+        <div class="p-2.5 flex flex-col gap-1"><span class="text-lg font-bold text-white font-mono">384</span><span class="self-start px-1.5 py-0.5 rounded bg-secondary-container/20 text-secondary font-mono text-[10px] font-medium flex items-center gap-1"><span class="w-1 h-1 rounded-full bg-secondary"></span>Passed</span><span class="text-[10px] text-outline leading-tight">no scanner flagged it</span></div>
+        <div class="p-2.5 flex flex-col gap-1"><span class="text-lg font-bold text-white font-mono">42</span><span class="self-start px-1.5 py-0.5 rounded bg-tertiary-container/20 text-tertiary font-mono text-[10px] font-medium flex items-center gap-1"><span class="w-1 h-1 rounded-full bg-tertiary"></span>Review</span><span class="text-[10px] text-outline leading-tight">a person should read it</span></div>
+        <div class="p-2.5 flex flex-col gap-1"><span class="text-lg font-bold text-white font-mono">25</span><span class="self-start px-1.5 py-0.5 rounded bg-surface-container-low border border-surface-container-high/40 text-outline font-mono text-[10px]">Not scanned</span><span class="text-[10px] text-outline leading-tight">nobody has looked</span></div>
+      </div>
+      <div class="rounded border border-surface-container-high/60 bg-[#141822] p-3 space-y-1.5 text-[11.5px] text-on-surface-variant leading-relaxed">
+        <div class="text-[10px] font-mono tracking-wider text-outline uppercase font-semibold">What each result means</div>
+        <p><strong class="text-on-surface">Passed.</strong> Four scanners read it and none raised a flag. Lower risk, not a guarantee.</p>
+        <p><strong class="text-on-surface">Needs review.</strong> A scanner found something a person should read. Not proof of harm. Held back until you decide.</p>
+        <p><strong class="text-on-surface">Not scanned.</strong> No scan exists for it. Unknown, so treated like needs review.</p>
+      </div>
+      <div class="rounded border border-surface-container-high/60 bg-[#141822] p-3 space-y-1.5 text-[11.5px] text-on-surface-variant leading-relaxed">
+        <div class="text-[10px] font-mono tracking-wider text-outline uppercase font-semibold">Do I need to run a scan?</div>
+        <p><strong class="text-on-surface">What aih ships: no.</strong> Every item was scanned at its exact pinned version before the release, by aih built-in checks, Semgrep, SkillSpector and the Cisco scanner.</p>
+        <p><strong class="text-on-surface">What Acme adds: yes.</strong> Each addition shows its own command. You run it, then load the result.</p>
+        <div class="p-2 rounded bg-surface-container-lowest border border-surface-container-high/50 font-mono text-[10.5px] text-on-surface break-all">aih trust scan [owner/repo] --pin [commit] --apply</div>
+        <a class="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-surface-container hover:bg-surface-container-high text-on-surface text-[11px] font-medium transition-colors" href="../index.html#admin-acme" target="_top">Go to Acme additions <span class="material-symbols-outlined text-[13px]">arrow_forward</span></a>
+      </div>
+      <div class="rounded border border-surface-container-high/60 bg-[#141822] p-3 space-y-1 text-[11.5px] text-on-surface-variant leading-relaxed">
+        <div class="text-[10px] font-mono tracking-wider text-outline uppercase font-semibold">When a source updates</div>
+        <p>A scan belongs to one exact version. New version, new scan. You are asked again only about items whose content changed.</p>
+      </div>
+    </div>
+    <!-- 2 · needs review, grouped by meaning -->
+    <div class="flex-1 overflow-y-auto p-4 bg-[#0d111a] flex flex-col gap-3 min-w-0" id="groups">
+      <div class="flex items-center justify-between text-[11px] font-mono text-outline pb-1"><div><strong class="text-white font-bold">2 ·</strong> Needs review, grouped by what it means</div><div><strong class="text-white font-bold">49</strong> items in 4 groups</div></div>
+    </div>
+    <!-- 3 · one item, read like a short report -->
+    <aside class="shrink-0 w-[390px] bg-[#12161f] border-l border-surface-container-high/60 flex flex-col overflow-hidden" id="inspector-rail">
+      <div class="p-2.5 bg-surface-container-lowest border-b border-surface-container-high/50 space-y-2 shrink-0">
+        <div class="text-[10px] font-mono tracking-wider text-outline uppercase font-semibold">3 · One item, read like a short report</div>
+        <div class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-tertiary"></span><span class="font-semibold text-on-surface text-[13px] font-mono">fal-ai-media</span></div>
+        <div class="flex items-center gap-1.5 text-[10px] font-mono">
+          <span class="px-1.5 py-0.5 rounded bg-surface-container-low border border-surface-container-high/40 text-outline inline-flex items-center gap-1"><span class="material-symbols-outlined text-[12px] primitive-skill">extension</span>Skill</span>
+          <span class="px-1.5 py-0.5 rounded bg-surface-container-low border border-surface-container-high/40 text-outline">ECC</span>
+          <span class="px-1.5 py-0.5 rounded bg-tertiary-container/20 text-tertiary font-medium flex items-center gap-1"><span class="w-1 h-1 rounded-full bg-tertiary"></span>Needs review</span>
+        </div>
+      </div>
+      <div class="flex-1 overflow-y-auto p-3 space-y-3 text-[11.5px] text-on-surface-variant leading-relaxed">
+        <div class="space-y-1"><div class="text-[10px] font-mono uppercase tracking-wider text-outline font-semibold">What it does</div><p>Generates images, video and audio through the fal.ai service. [summary written by the source]</p></div>
+        <div class="space-y-1"><div class="text-[10px] font-mono uppercase tracking-wider text-outline font-semibold">What the scan found</div><p><strong class="text-on-surface">6 findings, all one kind:</strong> sends data to an outside service. First of 6 lines:</p>
+          <div class="p-2 rounded bg-surface-container-lowest border border-surface-container-high/50 font-mono text-[10.5px]"><div class="p-1 rounded bg-tertiary-container/30 text-tertiary font-semibold">&gt; SKILL.md:214  resp = requests.post(</div></div></div>
+        <div class="space-y-1"><div class="text-[10px] font-mono uppercase tracking-wider text-outline font-semibold">Why it matters</div><p>Whatever a developer gives this skill can be sent to fal.ai. The question for you: may project content go to that service?</p></div>
+        <div class="space-y-1.5">
+          <div class="text-[10px] font-mono uppercase tracking-wider text-outline font-semibold">Your decision</div>
+          <label class="flex items-start gap-2 p-2 rounded bg-surface-container-low border border-primary cursor-pointer hover:bg-surface-container transition-colors"><input checked class="mt-0.5 accent-primary" name="decision" type="radio"><div><span class="text-on-surface font-medium block leading-none mb-1">Keep held back</span><span class="text-outline text-[10px] leading-tight block">Default. Nobody below you is offered this item.</span></div></label>
+          <label class="flex items-start gap-2 p-2 rounded bg-surface-container-low border border-surface-container-high/40 cursor-pointer hover:bg-surface-container transition-colors"><input class="mt-0.5 accent-primary" name="decision" type="radio"><div><span class="text-on-surface font-medium block leading-none mb-1">Not a real problem</span><span class="text-outline text-[10px] leading-tight block">The scanner was wrong here. Recorded as a false alarm.</span></div></label>
+          <label class="flex items-start gap-2 p-2 rounded bg-surface-container-low border border-surface-container-high/40 cursor-pointer hover:bg-surface-container transition-colors"><input class="mt-0.5 accent-primary" name="decision" type="radio"><div><span class="text-on-surface font-medium block leading-none mb-1">Accept the risk and allow</span><span class="text-outline text-[10px] leading-tight block">The finding is real and you allow it anyway.</span></div></label>
+          <input class="w-full px-3 py-1.5 rounded bg-[#141822] border border-surface-container-high/60 text-on-surface text-[11.5px] placeholder:text-outline focus:border-primary focus:outline-none focus:ring-0" placeholder="Reason (required to allow)…" type="text">
+          <p class="text-[10px] text-outline leading-snug">Your name, reason and date travel with the policy. Leads and developers see “Allowed by admin, with a note” on this item.</p>
+        </div>
+      </div>
+      <div class="p-2 bg-surface-container-lowest border-t border-surface-container-high/60 flex items-center justify-between gap-2 shrink-0 text-[10px] font-mono text-outline">
+        <span>4 scanners · version [fingerprint] · pin [commit]</span>
+        <a class="flex items-center gap-1 px-2.5 py-1 rounded bg-primary hover:bg-primary-bright text-white text-[11px] font-body font-medium transition-colors" href="../index.html#admin-item" target="_top">Open item <span class="material-symbols-outlined text-[13px]">arrow_forward</span></a>
+      </div>
+    </aside>
+  </div>
+</main>
+</div>
+<script>
+  var GROUPS = [
+    ["Sends data to an outside service", 35, "", "The item contains code or instructions that call a service on the internet.", "Project code or prompts can leave the developer machine.", "fal-ai-media · SKILL.md:214 · resp = requests.post(", "trust.external-egress", "public"],
+    ["Asks for wide permissions", 8, "", "The item asks to run commands and edit files (Bash, Write, Edit).", "A mistake or a bad instruction can change or delete files.", "eval-harness · SKILL.md:4 · allowed-tools: Read, Write, Edit, Bash", "trust.permission-risk", "terminal"],
+    ["Tries to steer the AI", 3, "Scanner says: serious", "Text that reads like an order to the AI: send this somewhere, skip asking.", "The AI may act without the developer agreeing to it.", "council-multi-model · SKILL.md:25 · send that packet to OpenAI", "trust.prompt-injection", "psychology_alt"],
+    ["Other scanner flag", 3, "", "A scanner matched a risky pattern that fits no group above.", "Depends on the item. Read the evidence line.", "visa-doc-translate · SKILL.md:10 · AUTOMATICALLY execute WITHOUT asking", "trust.detector-finding", "flag"]
+  ];
+  var LAB = 'text-[10px] font-mono uppercase tracking-wider text-outline font-semibold w-[104px] shrink-0 pt-px';
+  document.getElementById("groups").insertAdjacentHTML("beforeend", GROUPS.map(function (g) {
+    return '<div class="rounded border border-surface-container-high/60 bg-[#141822] p-3 flex flex-col gap-2 hover:border-primary transition-all shadow-xs">' +
+      '<div class="flex items-center gap-2 flex-wrap"><span class="material-symbols-outlined text-[16px] text-[#ffb95f]">' + g[7] + '</span><span class="font-bold text-white text-[13.5px] tracking-tight">' + g[0] + '</span>' +
+      '<span class="px-1.5 py-0.5 rounded bg-tertiary-container/20 text-tertiary font-mono text-[10px] font-medium flex items-center gap-1"><span class="w-1 h-1 rounded-full bg-tertiary"></span>' + g[1] + ' items</span>' +
+      (g[2] ? '<span class="px-1.5 py-0.5 rounded bg-surface-container-low border border-surface-container-high/40 text-outline font-mono text-[10px]">' + g[2] + '</span>' : '') +
+      '<span class="flex-1"></span><div class="flex items-center bg-surface-container-lowest p-0.5 rounded border border-surface-container-high/60 text-[11px]">' +
+      '<button class="px-2.5 py-1 rounded bg-[#ffb95f]/15 border border-[#ffb95f]/40 text-[#ffb95f] font-semibold" type="button">Keep held back</button>' +
+      '<button class="px-2.5 py-1 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors" type="button">Review one by one</button></div></div>' +
+      '<div class="flex text-[11.5px] text-on-surface-variant"><span class="' + LAB + '">Means</span><span>' + g[3] + '</span></div>' +
+      '<div class="flex text-[11.5px] text-on-surface-variant"><span class="' + LAB + '">Could go wrong</span><span>' + g[4] + '</span></div>' +
+      '<div class="pt-2 mt-0.5 border-t border-surface-container-high/40 flex items-center gap-2 text-[10.5px] font-mono text-outline"><span class="' + LAB + '">Example</span><span class="truncate flex-1 text-on-surface-variant">' + g[5] + '</span><span class="shrink-0">' + g[6] + '</span></div></div>';
+  }).join("") +
+  '<div class="rounded border border-dashed border-surface-container-high bg-surface-container-low/40 p-3 space-y-1"><div class="flex items-center gap-2"><span class="font-semibold text-on-surface text-[12.5px]">Nobody can decide these</span><span class="px-1.5 py-0.5 rounded bg-surface-container-low border border-surface-container-high/40 text-outline font-mono text-[10px]">0 today</span></div>' +
+  '<p class="text-[11.5px] text-on-surface-variant leading-relaxed">A scanner failed to run, or the content changed after the scan. There is nothing to judge yet, so no approval can stand in for it. The item waits for a new scan.</p></div>');
+  document.querySelectorAll('input[name="decision"]').forEach(function (r) { r.addEventListener("change", function () {
+    document.querySelectorAll('input[name="decision"]').forEach(function (x) { var l = x.closest("label"); l.classList.toggle("border-primary", x.checked); l.classList.toggle("border-surface-container-high/40", !x.checked); });
+  }); });
+</script>
+</body>
+</html>

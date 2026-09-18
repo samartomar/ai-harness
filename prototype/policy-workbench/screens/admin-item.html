@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html class="dark" lang="en" data-mode="dark">
+<head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Admin: item security · Policy Workbench</title>
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="wb.css">
+<script src="mode.js"></script>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script src="tw-config.js"></script>
+<script src="shell.js"></script>
+</head>
+<body class="bg-background font-body text-on-surface text-[13px] leading-normal antialiased select-none">
+<script>WB.top()</script>
+<div class="flex w-full h-[calc(100vh-4.75rem)] overflow-hidden relative">
+<script>WB.nav("sources")</script>
+<div class="flex-1 flex flex-col min-w-0 overflow-hidden">
+<script>WB.ledger()</script>
+<div class="flex-1 flex w-full overflow-hidden relative">
+<script>WB.main("fal-ai-media")</script>
+<!-- RIGHT: item inspector, Security tab -->
+<aside class="inspector-transition shrink-0 w-[390px] bg-[#12161f] border-l border-surface-container-high/60 flex flex-col overflow-hidden" id="inspector-rail">
+  <div class="p-2.5 bg-surface-container-lowest border-b border-surface-container-high/50 space-y-2 shrink-0">
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-1.5 min-w-0"><span class="w-2 h-2 rounded-full bg-tertiary"></span><span class="font-semibold text-on-surface text-[13px] truncate font-mono">fal-ai-media</span><span class="text-[10px] font-mono px-1 rounded bg-surface-container-highest text-secondary">[version]</span></div>
+      <a class="p-1 rounded hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface transition-colors" href="../index.html#admin-sources" target="_top" title="Close"><span class="material-symbols-outlined text-[16px]">chevron_right</span></a>
+    </div>
+    <div class="flex items-center justify-between text-[11px]"><span class="text-outline inline-flex items-center gap-1"><span class="material-symbols-outlined text-[13px] primitive-skill">extension</span><span class="font-medium text-on-surface">Skill</span> · ECC · Needs review</span><span class="font-mono text-tertiary font-semibold">6 findings</span></div>
+    <div class="flex items-center p-0.5 rounded bg-surface-container-low border border-surface-container-high/40 text-[11px] gap-0.5">
+      <a class="flex-1 py-1 px-1 rounded text-center text-on-surface-variant hover:text-on-surface transition-colors" href="../index.html#admin-sources" target="_top">Details</a>
+      <button class="flex-1 py-1 px-1 rounded text-center bg-surface-container text-primary font-semibold shadow-xs" type="button">Security Scan</button>
+      <a class="flex-1 py-1 px-1 rounded text-center text-on-surface-variant hover:text-on-surface transition-colors flex items-center justify-center gap-1" href="../index.html#admin-changes" target="_top"><span>Policy JSON</span><span class="w-1.5 h-1.5 rounded-full bg-tertiary"></span></a>
+    </div>
+  </div>
+  <div class="flex-1 overflow-y-auto p-3 text-[12px] space-y-3">
+    <div class="flex items-center gap-2 text-[11.5px]">
+      <button class="toggle-switch w-6 h-3.5 rounded-full bg-surface-container-highest p-0.5 flex items-center transition-colors" data-active="false" type="button" aria-label="Allow fal-ai-media"><div class="w-2.5 h-2.5 rounded-full bg-outline transition-transform"></div></button>
+      <span class="font-semibold text-on-surface">Held back</span><span class="text-outline">by the rule <i>needs review</i></span>
+    </div>
+    <div class="p-2.5 rounded bg-tertiary-container/15 border border-tertiary/30 space-y-1">
+      <div class="flex items-center justify-between"><div class="flex items-center gap-1.5 text-tertiary font-semibold text-[11px]"><span class="material-symbols-outlined text-[15px]">radar</span><span>6 findings, all one kind</span></div><span class="px-1.5 py-0.5 rounded bg-tertiary-container/30 text-tertiary font-mono text-[9.5px] font-bold">trust.external-egress</span></div>
+      <p class="text-[11px] text-on-surface-variant leading-tight">Sends data to an outside service. Prompt content or files can leave the machine.</p>
+    </div>
+    <div class="space-y-1.5">
+      <div class="flex items-center justify-between text-[10px] font-mono uppercase tracking-wider text-outline font-semibold"><span>Scanned by</span><span class="text-secondary normal-case">4 of 4 scanners ran</span></div>
+      <div class="grid grid-cols-2 gap-1.5 text-[11px]">
+        <div class="p-2 rounded bg-surface-container-low border border-surface-container-high/40 flex items-center justify-between"><span class="text-on-surface font-medium">aih built-in</span><span class="font-mono text-tertiary text-[10px] font-semibold">[n] findings</span></div>
+        <div class="p-2 rounded bg-surface-container-low border border-surface-container-high/40 flex items-center justify-between"><span class="text-on-surface font-medium">Semgrep</span><span class="font-mono text-tertiary text-[10px] font-semibold">[n] rules</span></div>
+        <div class="p-2 rounded bg-surface-container-low border border-surface-container-high/40 flex items-center justify-between"><span class="text-on-surface font-medium">SkillSpector</span><span class="font-mono text-tertiary text-[10px] font-semibold">[n] flags</span></div>
+        <div class="p-2 rounded bg-surface-container-low border border-surface-container-high/40 flex items-center justify-between"><span class="text-on-surface font-medium">Cisco</span><span class="font-mono text-secondary text-[10px] font-semibold">clean</span></div>
+      </div>
+    </div>
+    <div class="space-y-1">
+      <div class="flex items-center justify-between text-[10px] font-mono"><span class="text-outline font-semibold">EVIDENCE: SKILL.md:214</span><span class="text-tertiary font-medium">requests.post</span></div>
+      <div class="p-2 rounded bg-surface-container-lowest border border-surface-container-high/50 font-mono text-[10.5px] leading-relaxed space-y-0.5">
+        <div class="text-outline/70"># 3 of 6 lines. Open the file at this version.</div>
+        <div class="p-1 rounded bg-tertiary-container/30 text-tertiary font-semibold">&gt; SKILL.md:214  resp = requests.post(</div>
+        <div class="text-on-surface-variant">SKILL.md:[n]  [next line]</div>
+        <div class="text-on-surface-variant">SKILL.md:[n]  [next line]</div>
+      </div>
+    </div>
+    <div class="space-y-1.5">
+      <span class="text-[10px] font-mono uppercase tracking-wider text-outline font-semibold">What it can reach</span>
+      <div class="grid grid-cols-2 gap-1.5 text-[11px]">
+        <div class="p-2 rounded bg-surface-container-low border border-surface-container-high/40 flex items-center justify-between gap-2"><span class="flex items-center gap-1.5 text-on-surface"><span class="material-symbols-outlined text-[14px] text-outline">public</span>Internet</span><span class="font-mono text-tertiary text-[10px]">fal.ai</span></div>
+        <div class="p-2 rounded bg-surface-container-low border border-surface-container-high/40 flex items-center justify-between gap-2"><span class="flex items-center gap-1.5 text-on-surface"><span class="material-symbols-outlined text-[14px] text-outline">terminal</span>Commands</span><span class="font-mono text-outline text-[10px]">[from its tools]</span></div>
+        <div class="p-2 rounded bg-surface-container-low border border-surface-container-high/40 flex items-center justify-between gap-2"><span class="flex items-center gap-1.5 text-on-surface"><span class="material-symbols-outlined text-[14px] text-outline">key</span>Secrets</span><span class="font-mono text-outline text-[10px]">[no data yet]</span></div>
+        <div class="p-2 rounded bg-surface-container-low border border-surface-container-high/40 flex items-center justify-between gap-2"><span class="flex items-center gap-1.5 text-on-surface"><span class="material-symbols-outlined text-[14px] text-outline">hard_drive</span>Changes to PC</span><span class="font-mono text-outline text-[10px]">[no data yet]</span></div>
+      </div>
+    </div>
+    <div class="space-y-1.5 pt-1">
+      <span class="text-[10px] font-mono uppercase tracking-wider text-outline font-semibold">Your decision on this finding</span>
+      <div class="space-y-1 text-[11px]">
+        <label class="flex items-start gap-2 p-2 rounded bg-surface-container-low border border-primary text-on-surface cursor-pointer hover:bg-surface-container transition-colors"><input checked class="mt-0.5 accent-primary" name="decision" type="radio"><div><span class="text-on-surface font-medium block leading-none mb-1">Keep held back (Recommended)</span><span class="text-outline text-[10px] leading-tight block">Stays out of every Acme workspace.</span></div></label>
+        <label class="flex items-start gap-2 p-2 rounded bg-surface-container-low border border-surface-container-high/40 cursor-pointer hover:bg-surface-container transition-colors"><input class="mt-0.5 accent-primary" name="decision" type="radio"><div><span class="text-on-surface font-medium block leading-none mb-1">Not a real problem</span><span class="text-outline text-[10px] leading-tight block">Recorded as a false alarm, with your name.</span></div></label>
+        <label class="flex items-start gap-2 p-2 rounded bg-surface-container-low border border-surface-container-high/40 cursor-pointer hover:bg-surface-container transition-colors"><input class="mt-0.5 accent-primary" name="decision" type="radio"><div><span class="text-on-surface font-medium block leading-none mb-1">Accept the risk and allow</span><span class="text-outline text-[10px] leading-tight block">Reason required. It travels with the policy.</span></div></label>
+      </div>
+    </div>
+  </div>
+  <div class="p-2 bg-surface-container-lowest border-t border-surface-container-high/60 flex items-center gap-2 shrink-0">
+    <button class="px-2.5 py-1.5 rounded hover:bg-surface-container text-on-surface-variant hover:text-on-surface text-[11px] transition-colors" type="button">‹ Previous</button>
+    <button class="px-2.5 py-1.5 rounded hover:bg-surface-container text-on-surface-variant hover:text-on-surface text-[11px] transition-colors" type="button">Next ›</button>
+    <span class="flex-1 text-right text-[10px] text-outline">Your name and reason travel with the policy.</span>
+  </div>
+</aside>
+</div>
+</div>
+</div>
+<script>
+  document.querySelectorAll('input[name="decision"]').forEach(function (r) { r.addEventListener("change", function () {
+    document.querySelectorAll('input[name="decision"]').forEach(function (x) { var l = x.closest("label"); l.classList.toggle("border-primary", x.checked); l.classList.toggle("border-surface-container-high/40", !x.checked); });
+  }); });
+</script>
+</body>
+</html>

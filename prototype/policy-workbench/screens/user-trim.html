@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html class="dark" lang="en" data-mode="dark">
+<head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>User: trim · Policy Workbench</title>
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="wb.css">
+<script src="mode.js"></script>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script src="tw-config.js"></script>
+<script src="user-shell.js"></script>
+<style>
+  /* a count that just changed glows once */
+  @keyframes wb-flash { from { background-color: color-mix(in srgb, var(--color-primary) 35%, transparent); } to { background-color: transparent; } }
+  .wb-flash { animation: wb-flash 700ms ease-out; border-radius: 2px; }
+</style>
+</head>
+<body class="bg-background font-body text-on-surface text-[13px] leading-normal antialiased select-none">
+<script>WBU.top()</script>
+<!-- sub-header: what is being trimmed, and for whom. AI tools are picked once, in the header. -->
+<div class="h-8 bg-surface-container-lowest/90 border-b border-surface-container-high/40 px-3 flex items-center gap-2.5 text-[11px] shrink-0">
+  <a class="flex items-center gap-0.5 text-primary hover:underline" href="../index.html#user-start" target="_top"><span class="material-symbols-outlined text-[14px]">chevron_left</span>Starting points</a>
+  <span class="text-outline/40">•</span>
+  <span class="font-mono uppercase tracking-wider text-[10px] text-outline font-semibold">Trimming</span><span class="font-semibold text-on-surface">Acme policy</span><span class="px-1.5 py-0.5 rounded bg-surface-container text-outline font-mono text-[10px] flex items-center gap-1"><span class="material-symbols-outlined text-[11px]">lock</span>v[n] · locked</span>
+  <span class="px-1.5 py-0.5 rounded bg-secondary-container/20 text-secondary font-mono text-[10px] flex items-center gap-1"><span class="material-symbols-outlined text-[11px]">verified_user</span>everything here is allowed by Acme</span>
+  <div class="h-3.5 w-px bg-surface-container-high mx-0.5"></div>
+  <span class="font-mono uppercase tracking-wider text-[10px] text-outline font-semibold">For</span>
+  <div class="flex items-center bg-surface-container-lowest p-0.5 rounded border border-surface-container-high/40"><button class="px-2 py-0.5 rounded bg-surface-container text-[11px] text-primary font-semibold shadow-xs" type="button">Project</button></div>
+  <input class="w-32 h-6 px-2 py-0 leading-6 rounded bg-[#141822] border border-surface-container-high/60 font-mono text-on-surface text-[11px] focus:border-primary focus:outline-none focus:ring-0" type="text" value="Payments API" id="for-name">
+</div>
+<div class="flex w-full h-[calc(100vh-6.75rem)] overflow-hidden">
+  <!-- LEFT: sources and their categories, live counts -->
+  <aside id="nav-rail" class="shrink-0 w-60 bg-[#0a0e15] border-r border-surface-container-high/60 flex flex-col overflow-hidden">
+    <div class="p-2 space-y-1 flex-1 overflow-y-auto">
+      <div class="px-2 py-0.5 text-[10px] font-mono tracking-wider text-outline uppercase font-semibold flex items-center justify-between"><span>Sources in this policy</span><span class="normal-case tracking-normal font-normal">kept / offered</span></div>
+      <div class="space-y-0.5 text-[11px]" id="rail"></div>
+    </div>
+    <p class="p-3 text-[10.5px] text-outline leading-snug border-t border-surface-container-high/40">Only what Acme allows is listed. Security was decided by Acme; here you choose what your AI carries.</p>
+  </aside>
+  <!-- CENTER + RIGHT: the ledger spans both, so its numbers get the full width -->
+  <div class="flex-1 flex flex-col min-w-0 overflow-hidden">
+    <!-- the admin-sources ledger: six kinds, what you keep, live. A kind tile filters the cards. -->
+    <div class="grid grid-cols-6 divide-x divide-surface-container-high/40 border-b border-surface-container-high/50 bg-[#121622] shrink-0 select-none w-full" id="ledger"></div>
+    <div class="flex-1 flex min-h-0 overflow-hidden">
+    <main class="flex-1 flex flex-col min-w-0 bg-[#0c1017] overflow-hidden">
+      <div class="px-5 pt-4 pb-3 border-b border-surface-container-high/40 bg-[#0e131d]/90 flex flex-col gap-2 shrink-0">
+        <div class="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <div class="text-[10px] font-mono tracking-wider uppercase text-outline/80 font-semibold mb-0.5" id="src-over"></div>
+            <h1 class="text-[22px] font-bold text-white tracking-tight flex items-center gap-2 font-mono" id="src-title"></h1>
+          </div>
+          <div class="flex items-center gap-2"><span class="text-[10.5px] font-mono text-outline uppercase tracking-wider" id="src-seg-label"></span><span id="src-seg"></span></div>
+        </div>
+        <div class="flex flex-wrap items-center gap-2 text-[11px] font-mono text-outline/90" id="src-meta"></div>
+      </div>
+      <div class="flex-1 overflow-y-auto p-4 bg-[#0d111a] flex flex-col gap-4" id="groups"></div>
+    </main>
+  <!-- RIGHT: what this costs your AI, live -->
+  <aside id="inspector-rail" class="shrink-0 w-[330px] bg-[#12161f] border-l border-surface-container-high/60 flex flex-col overflow-hidden text-[11.5px] text-on-surface-variant">
+    <div class="p-2.5 bg-surface-container-lowest border-b border-surface-container-high/50 space-y-1 shrink-0">
+      <div class="flex items-center justify-between"><span class="font-semibold text-on-surface text-[13px]">What your AI carries</span><span class="px-1.5 py-0.5 rounded bg-primary/15 text-primary font-mono text-[10px] font-semibold" id="changed-chip">0 changes</span></div>
+      <div class="text-[10.5px] text-outline">Updates as you choose. Nothing is saved until you save.</div>
+    </div>
+    <div class="flex-1 overflow-y-auto p-3 space-y-3">
+      <div class="space-y-1.5" id="meter"></div>
+      <div class="space-y-1.5"><div class="text-[10px] font-mono uppercase tracking-wider text-outline font-semibold flex items-center justify-between"><span>How this selection behaves</span><span class="normal-case tracking-normal font-normal" id="warn-count"></span></div><div class="space-y-1.5" id="warnings"></div></div>
+      <div class="rounded bg-surface-container-low border border-surface-container-high/40 divide-y divide-surface-container-high/40" id="facts"></div>
+      <div class="space-y-1.5"><div class="text-[10px] font-mono uppercase tracking-wider text-outline font-semibold">Last changes</div><div class="space-y-1 font-mono text-[10.5px]" id="log"><div class="text-outline">Nothing changed yet.</div></div></div>
+      <div class="p-2 rounded bg-surface-container-low border border-surface-container-high/30 text-[10px] text-outline flex gap-1.5"><span class="material-symbols-outlined text-[13px] text-primary">straighten</span><span>Token figures are sample values. aih measures them per AI tool from the exact pinned content, and the budget comes from the Acme policy.</span></div>
+      <div class="space-y-1.5"><div class="text-[10px] font-mono uppercase tracking-wider text-outline font-semibold">Save and use</div>
+        <script>document.write(WBU.files())</script>
+        <p>Save downloads <span class="font-mono text-on-surface">aih-project-policy.json</span>, with the policy and version it was cut from. The Acme policy is never changed. Put it in the project folder and commit it. Teammates clone the project and run the command they already use:</p>
+        <div class="p-2 rounded bg-surface-container-lowest border border-surface-container-high/50 font-mono text-[11px] text-on-surface">aih init . --apply</div></div>
+    </div>
+    <div class="p-2 bg-surface-container-lowest border-t border-surface-container-high/60 flex items-center gap-2 shrink-0">
+      <button class="px-2.5 py-1.5 rounded hover:bg-surface-container text-on-surface-variant hover:text-on-surface text-[11px] transition-colors" type="button" id="reset">Reset</button>
+      <button class="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded bg-primary hover:bg-primary-bright text-white text-[12px] font-medium transition-colors shadow-xs" type="button" id="save"><span class="material-symbols-outlined text-[14px]">save</span><span>Save aih-project-policy.json</span></button>
+    </div>
+  </aside>
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  // ---- from the Acme policy: the context budget for this template, and which items overlap or depend on each other
+  var POLICY = { budget: 12000, overlaps: [["tdd-workflow", "test-driven-development"], ["deep-research", "exa-deep-research"]], needs: [["deep-research", "exa-search"], ["council", "github-mcp"]] };
+
+  // kinds, in admin-sources' ledger order and colours
+  var KINDS = [
+    { k: "skill", label: "Skills", icon: "extension", color: "text-[#f59e0b]", tint: "#ffb95f" },
+    { k: "command", label: "Commands", icon: "terminal", color: "text-[#38bdf8]" },
+    { k: "agent", label: "Agents", icon: "smart_toy", color: "text-[#c084fc]" },
+    { k: "mcp", label: "MCP Servers", icon: "dns", color: "text-[#60a5fa]" },
+    { k: "hook", label: "Hook Events", icon: "webhook", color: "text-[#34d399]" }
+  ];
+  var KIND = {}; KINDS.forEach(function (x) { KIND[x.k] = x; });
+
+  // [id, kind, summary, tokens at start, tokens when used, flags]. Sample values; aih measures the real ones.
+  var SOURCES = [
+    { id: "core", name: "aih Core", icon: "folder", over: "Core · shipped with aih", pin: "0.6.2", repo: "aih", desc: "What aih itself sets up.", cats: [
+      { name: "Core", items: [["policy-check", "hook", "Checks the project file against the Acme policy on every run.", 0, 120], ["trim-report", "command", "Tells you what was trimmed and why.", 25, 600], ["aih-context", "skill", "Loads the project’s policy into the session.", 45, 1800], ["safe-shell", "hook", "Asks before commands that change many files.", 0, 80], ["setup-doctor", "command", "Shows what is installed and where it came from.", 25, 900]] }] },
+    { id: "ecc", name: "ECC", icon: "folder_open", over: "Third party · pinned", pin: "16563d4a", repo: "samartomar/ECC", desc: "Chosen and scanned by Acme. You pick what your AI carries.", cats: [
+      { name: "Testing & Quality", items: [["tdd-workflow", "skill", "Write the failing test first, then the smallest change that passes.", 60, 3400], ["e2e-runner", "agent", "Runs end-to-end journeys and quarantines flaky tests.", 90, 5200], ["eval-harness", "skill", "Scores agent output against a rubric.", 55, 4100], ["test-coverage", "command", "Reports untested paths in the change.", 30, 1200]] },
+      { name: "Languages & Stacks", items: [["typescript-reviewer", "agent", "Reviews TypeScript for type safety and async bugs.", 85, 4800], ["python-patterns", "skill", "Idiomatic Python, typing and packaging.", 50, 6200], ["go-build", "command", "Fixes Go build and vet errors.", 30, 1500], ["rust-patterns", "skill", "Ownership, errors and idiomatic Rust.", 50, 5900]] },
+      { name: "Agent Orchestration", items: [["plan-orchestrate", "skill", "Splits a task into agents with clear hand-offs.", 70, 3800], ["loop-operator", "agent", "Runs and watches long agent loops.", 80, 4400], ["council", "skill", "Asks several models and merges the answers.", 65, 3100]] },
+      { name: "Research & Search", items: [["deep-research", "skill", "Cited multi-source research reports.", 60, 4600], ["exa-deep-research", "skill", "Research reports built on Exa search.", 55, 3900], ["exa-search", "mcp", "Neural web search: 8 tools.", 2900, 400], ["github-mcp", "mcp", "Issues, pull requests and code search: 26 tools.", 6100, 600]] },
+      { name: "Infra & DevOps", items: [["docker-patterns", "skill", "Multi-stage builds and small images.", 50, 4300], ["kubernetes-patterns", "skill", "Deployments, probes and rollbacks.", 55, 5100], ["deployment-patterns", "skill", "Blue-green, canary and rollback plans.", 50, 3700]] },
+      { name: "Session Hooks", items: [["session-summary", "hook", "Writes a summary when the session ends.", 0, 300], ["context-budget-guard", "hook", "Warns when the context window passes 70%.", 0, 90]] }] },
+    { id: "sp", name: "Superpowers", icon: "folder", over: "Third party · pinned", pin: "6.3.0", repo: "superpowers-ai/superpowers", desc: "Working habits for coding agents.", cats: [
+      { name: "Working habits", items: [["brainstorming", "skill", "Turns a rough idea into a design before code.", 55, 2600], ["writing-plans", "skill", "Writes a step plan with checks.", 50, 2900], ["test-driven-development", "skill", "Red, green, refactor, strictly.", 55, 3000], ["systematic-debugging", "skill", "Reproduce, isolate, fix, verify.", 50, 3300]] }] },
+    { id: "anth", name: "Anthropic Skills", icon: "shield", over: "Third party · pinned", pin: "34040c9", repo: "anthropics/skills", desc: "Document and design skills from Anthropic.", cats: [
+      { name: "Documents", items: [["docx", "skill", "Creates and edits Word documents.", 45, 7800], ["xlsx", "skill", "Spreadsheets with formulas and charts.", 45, 7100], ["pdf", "skill", "Reads, fills and merges PDFs.", 40, 6400]] },
+      { name: "Design", items: [["frontend-design", "skill", "Distinct, intentional interface design.", 50, 3600], ["canvas-design", "skill", "Posters and static art as PNG or PDF.", 45, 4200]] }] }
+  ];
+  // the template's starting choice: 0 Required, 1 Optional, 2 Skip
+  var DEFAULT = { "tdd-workflow": 0, "e2e-runner": 0, "policy-check": 0, "trim-report": 0, "context-budget-guard": 0, "github-mcp": 1, "exa-search": 1, "docker-patterns": 2, "kubernetes-patterns": 2, "deployment-patterns": 2, "docx": 2, "xlsx": 2, "pdf": 2, "canvas-design": 2 };
+  var ALL = [], BY = {};
+  SOURCES.forEach(function (s) { s.cats.forEach(function (c) { c.items = c.items.map(function (t) {
+    var it = { id: t[0], kind: t[1], sum: t[2], start: t[3], use: t[4], src: s, cat: c };
+    it.v = it.id in DEFAULT ? DEFAULT[it.id] : 1; it.v0 = it.v; ALL.push(it); BY[it.id] = it; return it; }); }); });
+
+  var state = { src: SOURCES[1], cat: null, kind: null };
+  var LABEL = ["Required", "Optional", "Skip"], LOG = [];
+  var $ = function (id) { return document.getElementById(id); };
+  var fmt = function (n) { return n >= 1000 ? (n / 1000).toFixed(1).replace(/\.0$/, "") + "k" : String(n); };
+  var keptOf = function (items) { return items.filter(function (i) { return i.v !== 2; }); };
+  var srcItems = function (s) { return ALL.filter(function (i) { return i.src === s; }); };
+  function common(items) { var v = items[0] ? items[0].v : -1; for (var i = 1; i < items.length; i++) if (items[i].v !== v) return -1; return v; }
+  function visible(items) { return state.kind ? items.filter(function (i) { return i.kind === state.kind; }) : items; }
+
+  // ---- what the selection costs and how it behaves
+  function context() {
+    var k = keptOf(ALL), start = 0, peak = [];
+    k.forEach(function (i) { start += i.start; peak.push(i.use); });
+    peak.sort(function (a, b) { return b - a; });
+    return { start: start, working: start + peak.slice(0, 3).reduce(function (a, b) { return a + b; }, 0), mcp: k.filter(function (i) { return i.kind === "mcp"; }).reduce(function (a, i) { return a + i.start; }, 0) };
+  }
+  function warnings() {
+    var w = [];
+    POLICY.overlaps.forEach(function (p) { var a = BY[p[0]], b = BY[p[1]]; if (a.v !== 2 && b.v !== 2) w.push({ type: "overlap", icon: "call_split", text: "<b>" + a.id + "</b> and <b>" + b.id + "</b> do the same job. The AI may pick the wrong one.", fix: [b.id, "Skip " + b.id] }); });
+    POLICY.needs.forEach(function (p) { var a = BY[p[0]], b = BY[p[1]]; if (a.v !== 2 && b.v === 2) w.push({ type: "needs", icon: "link_off", text: "<b>" + a.id + "</b> needs <b>" + b.id + "</b>, which you skipped. It will not work.", fix: [a.id, "Skip " + a.id, b.id, "Keep " + b.id] }); });
+    var skills = keptOf(ALL).filter(function (i) { return i.kind === "skill"; }).length;
+    if (skills > 18) w.push({ type: "crowd", icon: "groups", text: "<b>" + skills + " skills</b> kept. Past about 18, similar descriptions compete and the right one triggers less often." });
+    return w;
+  }
+  function itemWarn(i) {
+    var out = [];
+    POLICY.overlaps.forEach(function (p) { var o = p[0] === i.id ? p[1] : p[1] === i.id ? p[0] : null; if (o && i.v !== 2 && BY[o].v !== 2) out.push('<span class="px-1.5 py-0.5 rounded bg-tertiary-container/20 text-tertiary font-mono flex items-center gap-1 shrink-0" title="Does the same job as ' + o + '"><span class="material-symbols-outlined text-[12px]">call_split</span>overlaps</span>'); });
+    POLICY.needs.forEach(function (p) { if (p[0] === i.id && i.v !== 2 && BY[p[1]].v === 2) out.push('<span class="px-1.5 py-0.5 rounded bg-tertiary-container/20 text-tertiary font-mono flex items-center gap-1 shrink-0" title="Needs ' + p[1] + '"><span class="material-symbols-outlined text-[12px]">link_off</span>needs ' + p[1] + '</span>'); });
+    return out.join("");
+  }
+
+  // ---- the Required / Optional / Skip control, in admin-sources' segmented style
+  function seg(v, scope, size) {
+    var pad = size === "sm" ? "px-2 py-0.5 text-[10.5px]" : "px-2.5 py-1 text-[11px]";
+    return '<div class="flex items-center bg-surface-container-lowest p-0.5 rounded border border-surface-container-high/60 shrink-0">' +
+      LABEL.map(function (l, i) {
+        var on = v === i, cls = !on ? "text-on-surface-variant hover:text-on-surface hover:bg-surface-container"
+          : i === 0 ? "bg-secondary-container/20 text-secondary font-semibold" : i === 1 ? "bg-surface-container text-primary font-semibold shadow-xs" : "bg-surface-container-highest text-on-surface font-semibold";
+        return '<button class="' + pad + ' rounded transition-colors ' + cls + '" data-set="' + scope + '" data-v="' + i + '" type="button">' + l + '</button>';
+      }).join("") + (v === -1 ? '<span class="px-1.5 text-[9.5px] font-mono text-tertiary" title="The items below are not all set the same way. Pick one to set them all.">mixed</span>' : '') + '</div>';
+  }
+
+  // ---- render
+  function renderLedger() {
+    // one tile shape, one left edge: label and % on top, count and its token cost on one baseline, a thin bar for the share
+    function tile(o) {
+      var tag = o.kind ? "button" : "div";
+      return '<' + tag + ' class="px-4 pt-3 pb-3 flex flex-col gap-2 text-left transition-colors focus:outline-none ' +
+        (o.kind ? "cursor-pointer " + (o.on ? "bg-[#ffb95f]/[0.07]" : "hover:bg-surface-container/50") : "") + '"' +
+        (o.kind ? ' data-kind="' + o.kind + '" type="button" aria-pressed="' + !!o.on + '"' : '') + '>' +
+        '<div class="flex items-center justify-between gap-2 min-w-0"><span class="flex items-center gap-1.5 min-w-0"><span class="material-symbols-outlined text-[14px] ' + o.color + '">' + o.icon + '</span>' +
+        '<span class="text-[10px] uppercase font-semibold tracking-[0.08em] truncate ' + (o.on ? "text-white" : "text-outline") + '">' + o.label + '</span></span>' +
+        '<span class="text-[10px] font-mono tabular-nums shrink-0 ' + o.pctTone + '">' + o.pct + '%</span></div>' +
+        '<div class="flex items-baseline justify-between gap-2"><span class="flex items-baseline gap-1"><span class="text-[22px] leading-none font-semibold font-mono tabular-nums tracking-tight ' + (o.numTone || "text-white") + '" data-count="led-' + o.id + '">' + o.num + '</span>' +
+        '<span class="text-[11px] font-mono tabular-nums text-outline">/' + o.of + '</span></span>' +
+        '<span class="text-[10px] font-mono tabular-nums whitespace-nowrap ' + (o.subTone || "text-outline") + '" data-count="ledsub-' + o.id + '">' + o.sub + '</span></div>' +
+        '<div class="h-[3px] rounded-full bg-surface-container-highest/70 overflow-hidden"><div class="h-full rounded-full transition-all duration-300" style="width:' + Math.min(100, o.pct) + '%;background:' + o.bar + '"></div></div></' + tag + '>';
+    }
+    var BAR = { skill: "#f59e0b", command: "#38bdf8", agent: "#c084fc", mcp: "#60a5fa", hook: "#34d399" };
+    var tiles = KINDS.map(function (x) {
+      var all = ALL.filter(function (i) { return i.kind === x.k; }), kept = keptOf(all).length, pct = all.length ? Math.round(kept * 100 / all.length) : 0;
+      var tok = keptOf(all).reduce(function (a, i) { return a + i.start; }, 0);
+      return tile({ kind: x.k, id: x.k, on: state.kind === x.k, icon: x.icon, color: x.color, label: x.label, pct: pct, pctTone: "text-outline",
+        num: kept, of: all.length, sub: fmt(tok) + " tok", bar: BAR[x.k] });
+    });
+    var C = context(), over = C.start > POLICY.budget, pct = Math.round(C.start * 100 / POLICY.budget);
+    tiles.push(tile({ id: "tok", icon: "toll", color: "text-[#f97316]", label: "Token Budget", pct: pct, pctTone: over ? "text-[#ffb95f]" : "text-outline",
+      num: fmt(C.start), of: fmt(POLICY.budget), numTone: over ? "text-[#ffb95f]" : "text-white",
+      sub: "", subTone: "text-outline", bar: over ? "#ffb95f" : "#f97316" }));
+    $("ledger").innerHTML = tiles.join("");
+  }
+
+  function renderRail() {
+    $("rail").innerHTML = SOURCES.map(function (s) {
+      var it = srcItems(s), on = s === state.src;
+      var head = '<div class="flex items-center justify-between px-1.5 py-1 cursor-pointer" data-src="' + s.id + '"><div class="flex items-center gap-2 min-w-0"><span class="material-symbols-outlined text-[15px] ' + (on ? "text-primary" : "text-outline") + '">' + (on ? "folder_open" : s.icon) + '</span><span class="truncate font-semibold text-[11.5px] ' + (on ? "text-primary" : "text-on-surface") + '">' + s.name + '</span></div>' +
+        '<span class="font-mono text-[10px] px-1 rounded ' + (on ? "bg-surface-container-highest text-secondary font-bold" : "text-outline") + '" data-count="src-' + s.id + '">' + keptOf(it).length + ' / ' + it.length + '</span></div>';
+      var cats = !on ? "" : '<div class="pl-2 space-y-0.5 text-[10.5px] pb-0.5">' + s.cats.map(function (c, ci) {
+        var sel = state.cat === c, v = common(c.items);
+        var dot = v === -1 ? "bg-tertiary" : v === 2 ? "bg-surface-container-highest" : v === 0 ? "bg-secondary" : "bg-primary";
+        return '<div class="flex items-center justify-between px-1.5 py-0.5 rounded cursor-pointer ' + (sel ? "bg-surface-container-high text-primary font-medium" : "hover:bg-surface-container text-on-surface-variant hover:text-on-surface") + '" data-cat="' + ci + '"><span class="flex items-center gap-1.5 truncate"><span class="w-1.5 h-1.5 rounded-full shrink-0 ' + dot + '"></span><span class="truncate">' + c.name + '</span></span><span class="font-mono text-outline text-[10px]" data-count="cat-' + s.id + '-' + ci + '">' + keptOf(c.items).length + ' / ' + c.items.length + '</span></div>';
+      }).join("") + '</div>';
+      return '<div class="rounded ' + (on ? "bg-surface-container-low/80" : "bg-surface-container-low/40 hover:bg-surface-container-low/80") + ' p-1 border border-surface-container-high/40 transition-colors">' + head + cats + '</div>';
+    }).join("") +
+    '<div class="rounded bg-surface-container-low/40 p-1 border border-surface-container-high/40"><div class="flex items-center justify-between px-1.5 py-1"><span class="flex items-center gap-2 font-semibold text-on-surface text-[11.5px]"><span class="material-symbols-outlined text-[15px] text-outline">extension</span>Acme</span><span class="px-1 rounded bg-surface-container text-outline font-mono text-[9.5px]">later</span></div></div>';
+  }
+
+  function renderMain() {
+    var s = state.src, it = srcItems(s), vis = visible(it);
+    $("src-over").textContent = s.over + (state.kind ? " · showing " + KIND[state.kind].label.toLowerCase() : "");
+    $("src-title").innerHTML = '<span>' + s.name + '</span><span class="text-outline/60 font-light">—</span><span class="text-[#ffb95f]">' + s.repo + '</span>';
+    $("src-seg-label").textContent = "Set all " + vis.length + (state.kind ? " " + KIND[state.kind].label.toLowerCase() : "") + " in " + s.name;
+    $("src-seg").innerHTML = seg(common(vis), "src", "");
+    $("src-meta").innerHTML = '<span>pinned <strong class="text-on-surface font-semibold">' + s.pin + '</strong></span><span class="text-outline/40">•</span><span class="font-body text-on-surface-variant">' + s.desc + '</span>' +
+      ((state.kind || state.cat) ? '<span class="ml-auto flex items-center gap-1.5"><span class="text-outline">showing</span>' +
+        (state.cat ? '<button class="px-2 py-0.5 rounded bg-surface-container hover:bg-surface-container-high text-on-surface-variant flex items-center gap-1" data-cat="all" type="button" title="Show every category"><span class="material-symbols-outlined text-[12px]">close</span>' + state.cat.name + '</button>' : '') +
+        (state.kind ? '<button class="px-2 py-0.5 rounded bg-surface-container hover:bg-surface-container-high text-on-surface-variant flex items-center gap-1" data-kind="' + state.kind + '" type="button" title="Show every kind"><span class="material-symbols-outlined text-[12px]">close</span>' + KIND[state.kind].label + '</button>' : '') + '</span>' : '');
+    var cats = (state.cat ? [state.cat] : s.cats).filter(function (c) { return visible(c.items).length; });
+    $("groups").innerHTML = cats.length ? cats.map(function (c) {
+      var ci = s.cats.indexOf(c), items = visible(c.items), tok = keptOf(items).reduce(function (a, i) { return a + i.start; }, 0);
+      return '<section class="flex flex-col gap-2"><div class="flex items-center justify-between gap-2"><div class="flex items-center gap-2 min-w-0"><span class="font-bold text-white text-[13px] tracking-tight">' + c.name + '</span><span class="font-mono text-[10.5px] text-outline" data-count="grp-' + ci + '">' + fmt(tok) + ' tok at start</span></div>' +
+        '<div class="flex items-center gap-2"><span class="text-[10px] font-mono text-outline uppercase tracking-wider">Set all ' + items.length + '</span>' + seg(common(items), "cat:" + ci, "sm") + '</div></div>' +
+        '<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">' + items.map(card).join("") + '</div></section>';
+    }).join("") : '<div class="text-[11.5px] text-outline p-6 text-center">No ' + KIND[state.kind].label.toLowerCase() + ' in ' + s.name + '.</div>';
+  }
+
+  function card(i) {
+    var k = KIND[i.kind], skipped = i.v === 2;
+    var cost = i.kind === "hook"
+      ? '<span class="px-1.5 py-0.5 rounded bg-surface-container-low border border-surface-container-high/40 text-outline font-mono flex items-center gap-1 shrink-0" title="Hooks run outside the window; only their output enters it"><span class="material-symbols-outlined text-[12px] text-[#f97316]">toll</span>0 start · output ~' + fmt(i.use) + '</span>'
+      : '<span class="px-1.5 py-0.5 rounded font-mono flex items-center gap-1 shrink-0 ' + (i.start >= 1000 ? "bg-tertiary-container/20 text-tertiary" : "bg-surface-container-low border border-surface-container-high/40 text-outline") + '" title="Always loaded · loaded when used"><span class="material-symbols-outlined text-[12px] text-[#f97316]">toll</span>' + fmt(i.start) + ' start · ' + fmt(i.use) + ' used</span>';
+    return '<div class="group rounded border ' + (i.v !== i.v0 ? "border-primary/60" : "border-surface-container-high/60") + ' bg-[#141822] p-3 flex flex-col justify-between hover:border-primary transition-all shadow-xs ' + (skipped ? "opacity-55" : "") + '" data-item="' + i.id + '">' +
+      '<div><div class="flex items-start justify-between gap-2"><div class="flex items-center gap-1.5 min-w-0"><span class="material-symbols-outlined text-[15px] ' + k.color + '">' + k.icon + '</span><span class="font-mono font-bold text-white text-[13px] tracking-tight truncate ' + (skipped ? "line-through decoration-outline/60" : "") + '">' + i.id + '</span></div>' +
+      '<span class="px-1.5 py-0.5 rounded bg-surface-container-low border border-surface-container-high/40 text-[8.5px] font-mono text-outline/90 uppercase shrink-0">' + k.label.replace(/s$/, "").replace(/ Event$/, "") + '</span></div>' +
+      '<p class="text-[11px] text-on-surface-variant mt-2 leading-relaxed line-clamp-2">' + i.sum + '</p></div>' +
+      '<div class="pt-2.5 mt-2.5 border-t border-surface-container-high/40 flex flex-col gap-2 text-[10px]"><div class="flex items-center gap-1.5 flex-wrap">' + cost + itemWarn(i) + '</div>' +
+      '<div class="flex justify-end">' + seg(i.v, "item:" + i.id, "sm") + '</div></div></div>';
+  }
+
+  function renderSide() {
+    var C = context(), tools = [].slice.call(document.querySelectorAll("[data-tool]:checked")).map(function (x) { return x.dataset.tool; });
+    var bar = function (label, v, note) {
+      var pct = Math.min(100, Math.round(v * 100 / POLICY.budget)), over = v > POLICY.budget;
+      return '<div class="space-y-1"><div class="flex items-center justify-between"><span class="text-on-surface">' + label + '</span><span class="font-mono ' + (over ? "text-tertiary" : "text-on-surface") + '" data-count="m-' + label + '">' + fmt(v) + ' tok</span></div>' +
+        '<div class="w-full bg-surface-container-highest rounded h-1.5 overflow-hidden"><div class="h-full transition-all duration-300 ' + (over ? "bg-tertiary" : "bg-secondary") + '" style="width:' + pct + '%"></div></div><div class="text-[10px] text-outline">' + note + '</div></div>';
+    };
+    $("meter").innerHTML = '<div class="text-[10px] font-mono uppercase tracking-wider text-outline font-semibold flex items-center justify-between"><span>Context it takes</span><span class="normal-case tracking-normal font-normal">Acme budget ' + fmt(POLICY.budget) + '</span></div>' +
+      bar("While working", C.working, "The start cost in the Token Budget tile, plus the three largest items when they are used.") +
+      '<div class="flex items-center justify-between text-[10.5px]"><span>MCP servers’ share of the start cost</span><span class="font-mono text-on-surface" data-count="m-mcp">' + fmt(C.mcp) + ' of ' + fmt(C.start) + '</span></div>';
+    var W = warnings();
+    $("warn-count").textContent = W.length ? W.length + " to look at" : "";
+    $("warnings").innerHTML = W.length ? W.map(function (w) {
+      var fixes = (w.fix || []).reduce(function (a, x, n, arr) { if (n % 2 === 0) a.push('<button class="px-2 py-0.5 rounded bg-surface-container hover:bg-surface-container-high text-primary font-mono text-[10px]" data-fix="' + x + '" data-fixv="' + (/^Keep/.test(arr[n + 1]) ? 1 : 2) + '" type="button">' + arr[n + 1] + '</button>'); return a; }, []).join("");
+      return '<div class="p-2 rounded bg-tertiary-container/15 border border-tertiary/30 space-y-1.5"><div class="flex gap-1.5 text-[11px] leading-snug"><span class="material-symbols-outlined text-[15px] text-tertiary">' + w.icon + '</span><span>' + w.text.replace(/<b>/g, '<b class="font-mono text-on-surface font-semibold">') + '</span></div>' + (fixes ? '<div class="flex gap-1.5 pl-5">' + fixes + '</div>' : '') + '</div>';
+    }).join("") : '<div class="p-2 rounded bg-secondary-container/10 border border-secondary/30 text-[11px] flex gap-1.5"><span class="material-symbols-outlined text-[15px] text-secondary">check_circle</span>No overlaps, no broken links.</div>';
+    var T = [0, 0, 0]; ALL.forEach(function (i) { T[i.v]++; });
+    $("facts").innerHTML = [["For", "Project · " + ($("for-name").value || "—")], ["On", tools.join(", ") || "no AI tool"], ["Required", '<span class="text-secondary font-mono" data-count="f-req">' + T[0] + '</span>'], ["Optional", '<span class="text-primary font-mono" data-count="f-opt">' + T[1] + '</span>'], ["Skipped", '<span class="font-mono" data-count="f-skip">' + T[2] + '</span>']]
+      .map(function (r) { return '<div class="flex justify-between gap-2 px-2.5 py-1.5"><span>' + r[0] + '</span><span class="text-on-surface text-right">' + r[1] + '</span></div>'; }).join("");
+    var ch = ALL.filter(function (i) { return i.v !== i.v0; }).length;
+    $("changed-chip").textContent = ch + (ch === 1 ? " change" : " changes");
+  }
+
+  // re-render everything, then flash each count whose value moved
+  function render() {
+    var before = {};
+    document.querySelectorAll("[data-count]").forEach(function (e) { before[e.dataset.count] = e.textContent; });
+    renderLedger(); renderRail(); renderMain(); renderSide();
+    document.querySelectorAll("[data-count]").forEach(function (e) { var k = e.dataset.count; if (k in before && before[k] !== e.textContent) { e.classList.remove("wb-flash"); void e.offsetWidth; e.classList.add("wb-flash"); } });
+  }
+  function log(text) {
+    LOG.unshift(text); LOG = LOG.slice(0, 5);
+    $("log").innerHTML = LOG.map(function (t, n) { return '<div class="' + (n ? "text-outline" : "text-on-surface") + '">' + t + '</div>'; }).join("");
+  }
+  function apply(items, v, what) {
+    var moved = items.filter(function (i) { return i.v !== v; }).length, before = context().start;
+    items.forEach(function (i) { i.v = v; });
+    var d = context().start - before;
+    if (moved) log(what + " → " + LABEL[v] + (items.length > 1 ? " · " + moved + " changed" : "") + (d ? " · " + (d > 0 ? "+" : "−") + fmt(Math.abs(d)) + " tok" : ""));
+    render();
+  }
+
+  // ---- one handler: a choice at any level sets every visible item under it
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest("[data-set]");
+    if (b) {
+      var v = Number(b.dataset.v), scope = b.dataset.set, items, what, kindNote = state.kind ? " " + KIND[state.kind].label.toLowerCase() : "";
+      if (scope === "src") { items = visible(srcItems(state.src)); what = state.src.name + kindNote + " (" + items.length + ")"; }
+      else if (scope.indexOf("cat:") === 0) { var c = state.src.cats[Number(scope.slice(4))]; items = visible(c.items); what = c.name + kindNote + " (" + items.length + ")"; }
+      else { items = [BY[scope.slice(5)]]; what = items[0].id; }
+      apply(items, v, what); return;
+    }
+    var f = e.target.closest("[data-fix]"); if (f) { apply([BY[f.dataset.fix]], Number(f.dataset.fixv), f.dataset.fix); return; }
+    var kd = e.target.closest("[data-kind]"); if (kd) { state.kind = state.kind === kd.dataset.kind ? null : kd.dataset.kind; state.cat = null; render(); return; }
+    var s = e.target.closest("[data-src]"); if (s) { state.src = SOURCES.filter(function (x) { return x.id === s.dataset.src; })[0]; state.cat = null; render(); return; }
+    var c2 = e.target.closest("[data-cat]"); if (c2) { state.cat = c2.dataset.cat === "all" ? null : state.src.cats[Number(c2.dataset.cat)]; render(); $("groups").scrollTop = 0; }
+  });
+  document.addEventListener("change", function (e) { if (e.target.matches("[data-tool]")) renderSide(); });
+  $("for-name").addEventListener("input", renderSide);
+  $("reset").addEventListener("click", function () { ALL.forEach(function (i) { i.v = i.v0; }); LOG = []; $("log").innerHTML = '<div class="text-outline">Nothing changed yet.</div>'; render(); });
+  document.querySelectorAll("[data-save]").forEach(function (b) { b.addEventListener("click", function () { $("save").click(); }); });
+  $("save").addEventListener("click", function () { var b = $("save"), h = b.innerHTML; b.innerHTML = '<span class="material-symbols-outlined text-[14px]">done_all</span><span>Downloaded · move it into payments-api</span>'; setTimeout(function () { b.innerHTML = h; }, 1400); });
+  render();
+})();
+</script>
+</body>
+</html>

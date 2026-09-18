@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html class="dark" lang="en" data-mode="dark">
+<head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Design system · Policy Workbench</title>
+<link rel="stylesheet" href="fonts.css">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="wb.css">
+<script src="mode.js"></script>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script src="tw-config.js"></script>
+</head>
+<body class="bg-[#0d111a] font-body text-on-surface text-[13px] leading-normal antialiased">
+<div class="h-full overflow-y-auto px-8 py-7 grid grid-cols-2 gap-x-10 gap-y-7 content-start">
+  <div class="col-span-2">
+    <div class="text-[10px] font-mono tracking-wider uppercase text-outline/80 font-semibold mb-0.5">Design system</div>
+    <h1 class="text-[24px] font-bold text-white tracking-tight font-mono">One set of tokens, one set of components</h1>
+    <p class="text-[12.5px] text-on-surface-variant max-w-3xl mt-1">The design system of admin-sources.html, the final prototype, and nothing else. Tailwind with admin-sources’ config (tw-config.js), colours from tokens.css, Inter for text, JetBrains Mono for names and counts, Material Symbols for icons. 13px base, hairline borders, 2/4/6/8 corners, one blue accent, amber for attention, mint for passed.</p>
+  </div>
+
+  <section class="space-y-2"><h2 class="text-[15px] font-bold text-white">Colour roles</h2><div class="grid grid-cols-4 gap-2.5" id="swatches"></div></section>
+
+  <section class="space-y-2.5"><h2 class="text-[15px] font-bold text-white">Type</h2>
+    <div class="text-[24px] font-bold text-white tracking-tight font-mono">Page title 24</div>
+    <div class="text-[22px] font-bold text-white tracking-tight font-mono flex items-center gap-2">ECC Manifest <span class="text-outline/60 font-light">—</span><span class="text-[#ffb95f]">ecc@ecc v2.0.0</span></div>
+    <div class="text-[15px] font-bold text-white">Section title 15</div>
+    <div>Body 13. Generates images, video and audio through an outside service.</div>
+    <div class="text-[11px] text-on-surface-variant">Secondary 11. Held back with its category.</div>
+    <div class="text-[10px] font-mono tracking-wider uppercase text-outline font-semibold">Overline label 10</div>
+    <div class="flex items-center gap-3"><span class="font-mono font-bold text-white text-[13px]">fal-ai-media</span><span class="font-mono text-[11px] text-outline">skills/fal-ai-media</span><span class="text-lg font-bold text-white font-mono">201</span><span class="text-xs text-outline">/ 286</span></div>
+  </section>
+
+  <section class="space-y-2.5"><h2 class="text-[15px] font-bold text-white">Actions and controls</h2>
+    <div class="flex flex-wrap items-center gap-2">
+      <button class="flex items-center gap-1 px-3 py-1 rounded bg-primary hover:bg-primary-bright text-white text-[12px] font-medium shadow-xs">Publish <span class="material-symbols-outlined text-[13px]">arrow_forward</span></button>
+      <button class="px-2.5 py-1 rounded bg-surface-container hover:bg-surface-container-high text-on-surface text-[12px] font-medium">Check Policy</button>
+      <button class="flex items-center gap-1.5 px-2 py-1 rounded bg-surface-container-low hover:bg-surface-container text-on-surface-variant text-[12px]">Review Changes <span class="text-[10px] font-mono px-1 rounded bg-tertiary-container text-on-tertiary font-bold">4</span></button>
+      <button class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface-container hover:bg-surface-container-high text-primary">Copy JSON</button>
+    </div>
+    <div class="flex flex-wrap items-center gap-2">
+      <div class="flex items-center bg-surface-container-lowest p-0.5 rounded border border-surface-container-high/60 text-[11px]"><button class="px-2.5 py-1 rounded text-on-surface-variant">Allow all</button><button class="px-2.5 py-1 rounded bg-[#ffb95f]/15 border border-[#ffb95f]/40 text-[#ffb95f] font-semibold">Allow with exceptions</button><button class="px-2.5 py-1 rounded text-error">Hold back</button></div>
+      <div class="flex items-center bg-surface-container-lowest p-0.5 rounded border border-surface-container-high/40"><button class="px-2 py-0.5 rounded text-[11px] text-on-surface-variant">Vibe</button><button class="px-2 py-0.5 rounded bg-surface-container text-[11px] text-primary font-semibold shadow-xs">Enterprise</button></div>
+    </div>
+    <div class="flex flex-wrap items-center gap-3 text-[11.5px]">
+      <span class="flex items-center gap-1.5"><span class="w-6 h-3.5 rounded-full bg-primary p-0.5 flex items-center"><span class="w-2.5 h-2.5 rounded-full bg-white translate-x-2.5"></span></span>Allowed</span>
+      <span class="flex items-center gap-1.5 text-on-surface-variant"><span class="w-6 h-3.5 rounded-full bg-surface-container-highest p-0.5 flex items-center"><span class="w-2.5 h-2.5 rounded-full bg-outline"></span></span>Held back</span>
+      <label class="flex items-center gap-1"><input checked class="accent-primary" type="radio" name="r">This item only</label>
+      <label class="flex items-center gap-1 text-on-surface-variant"><input class="accent-primary" type="radio" name="r">Whole category</label>
+    </div>
+    <input class="w-72 px-3 py-1.5 rounded bg-[#141822] border border-surface-container-high/60 text-on-surface text-[12px] placeholder:text-outline focus:border-primary focus:outline-none focus:ring-0" placeholder="Marketing use is out of scope">
+    <div class="p-2 rounded bg-surface-container-lowest border border-surface-container-high/50 font-mono text-[10.5px] text-on-surface">aih skill vet acme/ai-skills --pin [commit] --name release-notes --apply</div>
+  </section>
+
+  <section class="space-y-2.5"><h2 class="text-[15px] font-bold text-white">Labels, status and filters</h2>
+    <div class="flex flex-wrap items-center gap-2 text-[10.5px] font-mono">
+      <span class="px-1.5 py-0.5 rounded bg-secondary-container/20 text-secondary font-medium flex items-center gap-1"><span class="w-1 h-1 rounded-full bg-secondary"></span>Passed</span>
+      <span class="px-1.5 py-0.5 rounded bg-tertiary-container/20 text-tertiary font-medium flex items-center gap-1"><span class="w-1 h-1 rounded-full bg-tertiary"></span>Needs Review</span>
+      <span class="px-2 py-0.5 rounded bg-secondary-container/20 border border-secondary/30 text-secondary font-semibold flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>ENABLED</span>
+      <span class="px-1.5 py-0.5 rounded bg-surface-container-low border border-surface-container-high/40 text-[8.5px] text-outline/90">RESEARCH, CONTENT &amp; GROWTH</span>
+      <span class="px-1 rounded bg-surface-container-highest text-secondary">v1.3.4</span>
+      <span class="px-1 rounded bg-surface-container text-outline text-[9.5px]">later</span>
+      <span class="px-1.5 py-0.5 rounded bg-surface-container-low border border-surface-container-high/40 text-outline flex items-center gap-1"><span class="material-symbols-outlined text-[13px] primitive-token">toll</span>~2.4k</span>
+    </div>
+    <div class="flex items-center gap-2 text-[10.5px] font-mono">
+      <button class="px-2.5 py-1 rounded bg-surface-container-highest text-on-surface font-semibold shadow-xs">All Items (278)</button><button class="px-2.5 py-1 rounded hover:bg-surface-container text-on-surface-variant">Needs Review (82)</button>
+      <a class="px-2.5 py-1 rounded bg-tertiary-container/20 border border-tertiary/40 text-tertiary flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-tertiary"></span>82 need review</a>
+    </div>
+    <div class="flex items-center gap-3 text-[12px]" id="primitives"></div>
+  </section>
+
+  <section class="space-y-2.5"><h2 class="text-[15px] font-bold text-white">Navigation</h2>
+    <div class="w-60 rounded border border-surface-container-high/60 bg-[#0a0e15] p-2 space-y-1 text-[11px]">
+      <div class="px-2 py-0.5 text-[10px] font-mono tracking-wider text-outline uppercase font-semibold">Workbench</div>
+      <a class="flex items-center justify-between px-2 py-1 rounded bg-surface-container text-primary font-medium"><span class="flex items-center gap-1.5"><span class="material-symbols-outlined text-[14px]">inventory_2</span>Sources &amp; Catalogs</span><span class="font-mono text-[10px] px-1 rounded bg-surface-container-highest text-secondary font-semibold">13</span></a>
+      <a class="flex items-center justify-between px-2 py-1 rounded text-on-surface-variant hover:bg-surface-container-low"><span class="flex items-center gap-1.5"><span class="material-symbols-outlined text-[14px] text-outline">security_update_good</span>Scan Review</span><span class="font-mono text-[10px] text-outline">3</span></a>
+      <div class="flex items-center justify-between px-1.5 py-0.5 rounded bg-surface-container-high text-primary font-medium"><span class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-tertiary"></span>Research, Content &amp; Growth</span><span class="font-mono text-[10px] px-1 rounded bg-tertiary-container text-on-tertiary font-bold">21</span></div>
+    </div>
+  </section>
+
+  <section class="space-y-2.5"><h2 class="text-[15px] font-bold text-white">Card</h2>
+    <div class="w-80 group rounded border border-surface-container-high/60 bg-[#141822] p-3 flex flex-col justify-between hover:border-primary transition-all cursor-pointer shadow-xs">
+      <div><div class="flex items-start justify-between gap-2"><div class="flex items-center gap-1.5 min-w-0"><span class="material-symbols-outlined text-[15px] text-[#ffb95f]">extension</span><span class="font-mono font-bold text-white text-[13px] tracking-tight truncate">fal-ai-media</span></div><span class="px-1.5 py-0.5 rounded bg-surface-container-low border border-surface-container-high/40 text-[8.5px] font-mono text-outline/90">RESEARCH</span></div>
+      <p class="text-[11px] text-on-surface-variant mt-2 leading-relaxed">Unified media generation via fal.ai MCP: image, video and audio, from text or from an image.</p></div>
+      <div class="pt-2.5 mt-2.5 border-t border-surface-container-high/40 flex items-center justify-between text-[10px]"><span class="px-1.5 py-0.5 rounded bg-tertiary-container/20 text-tertiary font-mono font-medium flex items-center gap-1"><span class="w-1 h-1 rounded-full bg-tertiary"></span>Needs Review</span><span class="w-6 h-3.5 rounded-full bg-surface-container-highest p-0.5 flex items-center"><span class="w-2.5 h-2.5 rounded-full bg-outline"></span></span></div>
+    </div>
+  </section>
+</div>
+<script>
+  var roles = ["color-background", "theme-cards-bg", "theme-card-bg", "theme-card-active-bg", "theme-nav-rail-bg", "theme-manifest-header-bg", "theme-inspector-bg", "color-surface-container", "color-surface-container-high", "border-hairline", "color-on-surface", "color-on-surface-variant", "color-outline", "color-primary", "color-secondary", "color-tertiary", "color-error"];
+  var cs = getComputedStyle(document.documentElement);
+  document.getElementById("swatches").innerHTML = roles.map(function (r) {
+    return '<div class="flex flex-col gap-0.5"><i class="block h-9 rounded border border-surface-container-high/60" style="background: var(--' + r + ')"></i><b class="font-mono text-[10px] font-medium text-on-surface break-all">' + r + '</b><span class="font-mono text-[10px] text-outline">' + cs.getPropertyValue("--" + r).trim() + '</span></div>';
+  }).join("");
+  document.getElementById("primitives").innerHTML = [["skill", "extension"], ["command", "terminal"], ["agent", "smart_toy"], ["mcp", "dns"], ["hook", "webhook"], ["token", "toll"]].map(function (p) {
+    return '<span class="flex items-center gap-1"><span class="material-symbols-outlined text-[16px] primitive-' + p[0] + '">' + p[1] + '</span><span class="text-on-surface-variant text-[11px]">' + p[0] + '</span></span>';
+  }).join("");
+</script>
+</body>
+</html>
