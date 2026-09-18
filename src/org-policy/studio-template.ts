@@ -227,6 +227,9 @@ kbd{font:500 var(--cap)/1 var(--mono);background:var(--fill-2);border-radius:3px
 .btn.export-policy{height:40px;padding:0 16px;gap:8px;border-radius:10px;background:#b91c1c;border-color:#b91c1c;color:#fff;font-weight:700}
 .btn.export-policy:hover{background:#991b1b;border-color:#991b1b}
 .btn.export-policy svg{width:18px;height:18px;display:block;flex:0 0 auto}
+.btn.danger-zone{margin-left:22px;position:relative}
+.btn.danger-zone::before{content:"";position:absolute;left:-13px;top:8px;bottom:8px;width:1px;background:var(--rule)}
+.btn.danger-zone:hover{border-color:#b91c1c;color:#b91c1c;background:var(--blocked-soft)}
 #theme-toggle .icon-sun{display:none}
 html[data-theme="dark"] #theme-toggle .icon-sun{display:block}
 html[data-theme="dark"] #theme-toggle .icon-moon{display:none}
@@ -908,7 +911,6 @@ body[data-rail="off"] .sidehead .brand{display:flex}
     <span id="status">Ready - no repository is required.</span>
 
     <button type="button" class="btn icon-btn" id="theme-toggle" aria-label="Switch to dark theme" title="Switch to dark theme"><svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.4 13.2A8 8 0 1 1 10.8 3.6a6.6 6.6 0 0 0 9.6 9.6z"/></svg><svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M3 12h2M19 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></button>
-    <button type="button" class="btn icon-btn" id="clear-policy" aria-label="Clear policy" title="Clear policy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4v6h6"/><path d="M3.5 13a9 9 0 1 0 2.2-8.4L3 10"/></svg></button>
     <button type="button" class="btn" id="import-policy">Import policy (replaces current)</button>
     <button type="button" class="btn" id="import-evidence">Import evidence (non-destructive preflight)</button>
     <button type="button" class="btn" id="import-decision">Import decision (inspection only)</button>
@@ -916,6 +918,7 @@ body[data-rail="off"] .sidehead .brand{display:flex}
     <button type="button" class="btn icon-btn" id="download" aria-label="Download" title="Download"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4"/><path d="M7.5 8.5L12 4l4.5 4.5"/><path d="M5 15v3.5A2.5 2.5 0 0 0 7.5 21h9a2.5 2.5 0 0 0 2.5-2.5V15"/></svg></button>
     <a class="github-link" href="https://github.com/samartomar/ai-harness" target="_blank" rel="noopener noreferrer" aria-label="Open AIH on GitHub" title="Open AIH on GitHub"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.4a9.8 9.8 0 0 0-3.1 19.1c.5.1.7-.2.7-.5v-1.9c-2.8.6-3.4-1.2-3.4-1.2-.5-1.2-1.1-1.5-1.1-1.5-.9-.6.1-.6.1-.6 1 0 1.6 1.1 1.6 1.1.9 1.6 2.4 1.1 3 .9.1-.7.4-1.1.7-1.4-2.3-.3-4.7-1.1-4.7-4.9 0-1.1.4-2 1-2.7-.1-.3-.4-1.3.1-2.7 0 0 .8-.3 2.7 1a9.3 9.3 0 0 1 4.9 0c1.9-1.3 2.7-1 2.7-1 .5 1.4.2 2.4.1 2.7.6.7 1 1.6 1 2.7 0 3.8-2.4 4.6-4.7 4.9.4.3.7 1 .7 1.9V21c0 .3.2.6.7.5A9.8 9.8 0 0 0 12 2.4Z"/></svg></a>
     <button type="button" class="btn export-policy" id="export"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9.8 13.5L8.2 15.1l1.6 1.6"/><path d="M14.2 13.5l1.6 1.6-1.6 1.6"/></svg>Policy JSON</button>
+    <button type="button" class="btn icon-btn danger-zone" id="clear-policy" aria-label="Clear policy (resets your work)" title="Clear policy (resets your work)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4v6h6"/><path d="M3.5 13a9 9 0 1 0 2.2-8.4L3 10"/></svg></button>
     <input class="hidden" id="policy-file" type="file" accept="application/json">
     <input class="hidden" id="evidence-file" type="file" accept="application/json">
     <input class="hidden" id="decision-file" type="file" accept="application/json">
