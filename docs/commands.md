@@ -950,7 +950,9 @@ The browser artifact has separate pure-contract, browser-journey, and packed-art
 
 Starter seeding, portable authoring, effective-resolution, schema, projection, and trusted-channel gates for the org policy.
 `aih policy generate` is deliberately rootless with respect to a governed target repository: it writes a self-contained
-Policy Workbench and does not inspect a target repository, resolve repository state, or append a repository run ledger. Its
+Policy Workbench and does not inspect a target repository, resolve repository state, or append a repository run ledger.
+The Workbench is one offline document: its styles are compiled at build time and inlined, its icons are inline SVG,
+and it loads no font, script, or stylesheet from the network. Its
 Bring Your Own guides link to public MCP, Skill, npm, and GitHub search surfaces only for discovery. A directory page,
 README, popularity count, advertised install command, or third-party audit is never imported as identity, evidence, or
 authority. After an administrator enters a canonical npm package or exact GitHub repository/commit/path, the Workbench
