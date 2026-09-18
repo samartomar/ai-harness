@@ -73,6 +73,13 @@ export interface WorkbenchMountOptions {
   dispatch(action: WorkbenchActionV1, expectedState?: WorkbenchStateV1): WorkbenchReductionV1;
   inspectEvidence?(asset: AuthoringAssetV1): void;
   prepareApproval?(asset: AuthoringAssetV1): void;
+  /**
+   * S4 (NEW-SHELL-PLAN.md): the new shell's inspector rail panel. The item,
+   * draft and exposure inspector mounts there instead of beside the catalog.
+   */
+  inspectorHost?: HTMLElement;
+  /** Show the inspector rail when the user closed it and an inspector view opens. */
+  revealInspector?(): void;
 }
 
 export interface MountedWorkbench {
@@ -368,8 +375,8 @@ export function mountWorkbench(
   details.id = "workbench-detail-panel";
   details.dataset.workbenchDetail = "true";
   details.dataset.workbenchInspectorOpen = "false";
-  // S3: the item inspector keeps its own row until S4 moves it to the inspector rail.
-  tw(details, "min-w-0 md:col-span-2");
+  // S4: the item inspector lives in the new shell's inspector rail.
+  tw(details, "wb-item-inspector flex flex-col gap-3 min-w-0");
   let filtersState: CatalogBrowseFilters = { sourceId: groups[0]?.id };
   let openDetailKey: string | undefined;
   let openCatalogDetail: { assetId: string; mode: "catalog" | "developer-tool-setup" } | undefined;
@@ -541,9 +548,22 @@ export function mountWorkbench(
     sourceRail.append(sourceRailHeading, sourceTabs, filters, sourceReview);
     catalogRegister.append(browseTools, diagnostics, templates, repairs, drafts, inventory);
   }
-  catalogLayout.append(sourceRail, catalogRegister, details, inspectorScrim);
+  if (newShell && options.inspectorHost !== undefined) {
+    catalogLayout.append(sourceRail, catalogRegister);
+    options.inspectorHost.replaceChildren(details, inspectorScrim);
+  } else catalogLayout.append(sourceRail, catalogRegister, details, inspectorScrim);
   root.append(draftSummary, catalogLayout);
 
+  /*
+   * S4: in the new shell the inspector lives in the inspector rail, outside
+   * `root`; lookups and the delegated click handler cover both.
+   */
+  const scopes: readonly HTMLElement[] =
+    newShell && options.inspectorHost !== undefined ? [root, details] : [root];
+  const scopeAll = <T extends Element>(selector: string): T[] =>
+    scopes.flatMap((scope) => [...scope.querySelectorAll<T>(selector)]);
+  const scopeOne = <T extends Element>(selector: string): T | null =>
+    scopeAll<T>(selector)[0] ?? null;
   const compactInspector = window.matchMedia("(max-width: 1100px)");
   const modalInertElements = new Set<HTMLElement>();
   const clearModalInert = (): void => {
@@ -586,6 +606,7 @@ export function mountWorkbench(
     );
     const modal = compactInspector.matches && inspectorOpen;
     details.dataset.workbenchInspectorOpen = String(inspectorOpen);
+    if (inspectorOpen) options.revealInspector?.();
     if (modal) {
       details.setAttribute("role", "dialog");
       details.setAttribute("aria-modal", "true");
@@ -603,7 +624,7 @@ export function mountWorkbench(
           (!compactInspector.matches || inspectorOpen),
       ),
     );
-    for (const button of root.querySelectorAll<HTMLButtonElement>("[data-workbench-expand-id]"))
+    for (const button of scopeAll<HTMLButtonElement>("[data-workbench-expand-id]"))
       button.setAttribute(
         "aria-expanded",
         String(
@@ -725,14 +746,12 @@ export function mountWorkbench(
   };
 
   const updateDetailButtons = (): void => {
-    for (const button of root.querySelectorAll<HTMLButtonElement>("[data-workbench-detail-id]"))
+    for (const button of scopeAll<HTMLButtonElement>("[data-workbench-detail-id]"))
       button.setAttribute(
         "aria-expanded",
         String(openDetailKey === "asset:" + button.dataset.workbenchDetailId),
       );
-    for (const button of root.querySelectorAll<HTMLButtonElement>(
-      "[data-workbench-template-detail-id]",
-    ))
+    for (const button of scopeAll<HTMLButtonElement>("[data-workbench-template-detail-id]"))
       button.setAttribute(
         "aria-expanded",
         String(openDetailKey === "template:" + button.dataset.workbenchTemplateDetailId),
@@ -1026,7 +1045,7 @@ export function mountWorkbench(
     const replacement =
       trigger?.isConnected === true
         ? trigger
-        : [...root.querySelectorAll<HTMLButtonElement>("button")].find((button) => {
+        : [...scopeAll<HTMLButtonElement>("button")].find((button) => {
             if (triggerIdentity?.inDraftReview === true)
               return button.dataset.workbenchDetailId === triggerIdentity.detailId;
             if (triggerIdentity?.expandId !== undefined)
@@ -1488,7 +1507,7 @@ export function mountWorkbench(
   };
 
   const refreshVisibleRows = (affected: ReadonlySet<string>): void => {
-    for (const row of root.querySelectorAll<HTMLElement>("article[data-workbench-asset-id]")) {
+    for (const row of scopeAll<HTMLElement>("article[data-workbench-asset-id]")) {
       const id = row.dataset.workbenchAssetId;
       if (id === undefined || !affected.has(id)) continue;
       const asset = options.bundle.assets[id];
@@ -1609,7 +1628,7 @@ export function mountWorkbench(
       () => {
         evidenceRefreshTimer = undefined;
         const visibleAssetIds = new Set(
-          [...root.querySelectorAll<HTMLElement>("article[data-workbench-asset-id]")]
+          [...scopeAll<HTMLElement>("article[data-workbench-asset-id]")]
             .map((row) => row.dataset.workbenchAssetId)
             .filter((id): id is string => id !== undefined),
         );
@@ -2624,349 +2643,362 @@ export function mountWorkbench(
 
   inventory.append(browseResults);
 
-  root.addEventListener(
-    "click",
-    (event) => {
-      const target = event.target as Element;
-      const panelView = target.closest<HTMLButtonElement>("[data-workbench-panel-view]");
-      const draftOpen = target.closest<HTMLButtonElement>("[data-workbench-draft-open]");
-      if (panelView !== null || draftOpen !== null) {
-        const view = draftOpen !== null ? "draft" : panelView?.dataset.workbenchPanelView;
-        if (view !== "item" && view !== "draft" && view !== "exposure") return;
-        inspectorMode = view;
-        inspectorOpen = true;
-        openDetailKey = undefined;
-        openCatalogDetail = undefined;
-        expandedAssetId = undefined;
-        comparisonPreview = undefined;
-        if (draftOpen !== null || detailTrigger === undefined)
-          detailTrigger = draftOpen ?? panelView ?? undefined;
-        if (view === "item" && lastFullDetail !== undefined && detailTrigger !== undefined) {
-          showDetails(
-            lastFullDetail.key,
-            lastFullDetail.presentation,
-            detailTrigger,
-            lastFullDetail.catalogDetail,
-          );
-        } else if (view === "item" && lastInspectedAssetId !== undefined) {
-          expandedAssetId = lastInspectedAssetId;
-          renderInventory();
-        } else renderIdleInspector();
-        updateDetailButtons();
-        details.querySelector<HTMLElement>("#workbench-detail-title")?.focus();
-        return;
-      }
-      const exposureOpen = target.closest<HTMLButtonElement>("[data-workbench-exposure-open]");
-      if (exposureOpen !== null) {
-        openDetailKey = undefined;
-        expandedAssetId = undefined;
-        comparisonPreview = undefined;
-        detailTrigger = exposureOpen;
-        inspectorOpen = true;
-        updateDetailButtons();
-        renderExposureOverview({ focusHeading: true });
-        return;
-      }
-      if (target.closest<HTMLButtonElement>("[data-workbench-exposure-back]") !== null) {
-        openDetailKey = undefined;
-        expandedAssetId = undefined;
-        comparisonPreview = undefined;
-        updateDetailButtons();
-        renderExposureOverview({ focusHeading: true });
-        return;
-      }
-      if (target.closest<HTMLButtonElement>("[data-workbench-details-close]") !== null) {
-        closeDetails();
-        return;
-      }
-      const exposureInspect = target.closest<HTMLButtonElement>(
-        "[data-workbench-exposure-inspect-id]",
-      );
-      const exposureAssetId = exposureInspect?.dataset.workbenchExposureInspectId;
-      if (exposureInspect !== null && exposureAssetId !== undefined) {
-        const asset = options.bundle.assets[exposureAssetId];
-        if (asset === undefined) return;
-        if (browseInventory.assets[asset.id] === undefined) {
-          showDetails(
-            "asset:" + asset.id,
-            assetDetailsPresentation(asset, options.bundle),
-            exposureInspect,
-            { asset, mode: "catalog" },
-          );
-          return;
-        }
-        templates.open = false;
-        templateList.replaceChildren();
-        filtersState = {
-          sourceId: asset.sourceId,
-          kind: asset.kind,
-          query: asset.id,
-          page: 0,
-        };
-        search.value = asset.id;
-        openDetailKey = undefined;
-        expandedAssetId = asset.id;
-        comparisonPreview = undefined;
-        detailTrigger = exposureInspect;
-        inspectorOpen = true;
-        renderInventory();
-        root.querySelector<HTMLElement>("#workbench-detail-title")?.focus();
-        return;
-      }
-      const repairButton = target.closest<HTMLButtonElement>("[data-workbench-repair-type]");
-      const repairType = repairButton?.dataset.workbenchRepairType;
-      const repairAssetId = repairButton?.dataset.workbenchRepairAssetId;
-      const repairOrigin = repairButton?.dataset.workbenchRepairOrigin;
-      if (
-        repairType !== undefined &&
-        repairAssetId !== undefined &&
-        (repairOrigin === "administrator" || repairOrigin === "legacy-unattributed")
-      ) {
-        const result = options.dispatch({
-          type: repairType as "remove-root" | "remove-request" | "remove-exclusion",
-          assetId: repairAssetId,
-          origin: { kind: repairOrigin },
-        });
-        if (result.accepted) {
-          acceptState(result.state);
-          showDiagnostics(result);
-          refresh();
-        } else
-          diagnostics.textContent =
-            result.diagnostics?.map((diagnostic) => diagnostic.message).join(" ") ??
-            "Saved selection removal rejected.";
-        return;
-      }
-      if (target.closest<HTMLButtonElement>("[data-workbench-repair-more]") !== null) {
-        repairLimit += PAGE_SIZE;
-        renderRepairs();
-        return;
-      }
-      const draftId = target.closest<HTMLButtonElement>("[data-workbench-draft-id]")?.dataset
-        .workbenchDraftId;
-      if (draftId !== undefined) {
-        const result = options.dispatch({ type: "remove-draft", id: draftId });
-        if (result.accepted) {
-          acceptState(result.state);
-          showDiagnostics(result);
-          refresh();
-        } else
-          diagnostics.textContent =
-            result.diagnostics?.map((diagnostic) => diagnostic.message).join(" ") ??
-            "Draft removal rejected.";
-        return;
-      }
-      const exclusionId = target.closest<HTMLButtonElement>("[data-workbench-exclusion-id]")
-        ?.dataset.workbenchExclusionId;
-      if (exclusionId !== undefined) {
-        const result = options.dispatch(
-          state.exclusions.some(
-            (exclusion) =>
-              exclusion.assetId === exclusionId && exclusion.origin.kind === "administrator",
-          )
-            ? {
-                type: "remove-exclusion",
-                assetId: exclusionId,
-                origin: administratorOrigin,
-              }
-            : {
-                type: "add-exclusion",
-                assetId: exclusionId,
-                origin: administratorOrigin,
-              },
-        );
-        if (result.accepted) {
-          const previous = state;
-          acceptState(result.state);
-          showDiagnostics(result);
-          refreshCounts();
-          renderDraftReview();
-          refreshVisibleRows(changedAssetIds(previous, state));
-          renderSourceSummary();
-          refreshActiveInspector();
-          queueMicrotask(() =>
-            [...root.querySelectorAll<HTMLButtonElement>("[data-workbench-exclusion-id]")]
-              .find((button) => button.dataset.workbenchExclusionId === exclusionId)
-              ?.focus({ preventScroll: true }),
-          );
-        } else
-          diagnostics.textContent =
-            result.diagnostics?.map((diagnostic) => diagnostic.message).join(" ") ??
-            "Exclusion rejected.";
-        return;
-      }
-      const removeTemplate = target.closest<HTMLButtonElement>(
-        "[data-workbench-template-remove-id]",
-      );
-      const removeTemplateId = removeTemplate?.dataset.workbenchTemplateRemoveId;
-      const removeTemplateDigest = removeTemplate?.dataset.workbenchTemplateRemoveDigest;
-      if (removeTemplateId !== undefined && removeTemplateDigest !== undefined) {
-        const fromDraftReview = removeTemplate !== null && draftReviewList.contains(removeTemplate);
-        const result = options.dispatch({
-          type: "remove-template",
-          templateId: removeTemplateId,
-          digest: removeTemplateDigest,
-        });
-        if (result.accepted) {
-          acceptState(result.state);
-          showDiagnostics(result);
-          refresh();
-          if (fromDraftReview) {
-            if (compactInspector.matches && inspectorOpen)
-              details.querySelector<HTMLElement>("#workbench-detail-title")?.focus();
-            else draftReviewSummary.focus();
-          }
-        } else
-          diagnostics.textContent =
-            result.diagnostics?.map((diagnostic) => diagnostic.message).join(" ") ??
-            "Template removal rejected.";
-        return;
-      }
-      const templateDetailButton = target.closest<HTMLButtonElement>(
-        "[data-workbench-template-detail-id]",
-      );
-      const templateDetailId = templateDetailButton?.dataset.workbenchTemplateDetailId;
-      if (templateDetailId !== undefined && templateDetailButton !== null) {
-        const template = options.bundle.templates[templateDetailId];
-        if (template !== undefined) showTemplatePreview(template, templateDetailButton);
-        return;
-      }
-      const templateId = target.closest<HTMLButtonElement>("[data-workbench-template-id]")?.dataset
-        .workbenchTemplateId;
-      if (templateId !== undefined) {
-        const result = options.dispatch({ type: "apply-template", templateId });
-        if (result.accepted) {
-          acceptState(result.state);
-          showDiagnostics(result);
-          refresh();
-        } else
-          diagnostics.textContent =
-            result.diagnostics?.map((diagnostic) => diagnostic.message).join(" ") ??
-            "Template rejected.";
-        return;
-      }
-      if (target.closest<HTMLButtonElement>("[data-workbench-comparison-cancel]") !== null) {
-        const assetId = comparisonPreview?.assetId;
-        comparisonPreview = undefined;
-        renderInventory();
-        if (assetId !== undefined) restoreComparisonFocus(assetId, "expand");
-        return;
-      }
-      const comparisonConfirm = target.closest<HTMLButtonElement>(
-        "[data-workbench-comparison-confirm-id]",
-      );
-      const comparisonAssetId = comparisonConfirm?.dataset.workbenchComparisonConfirmId;
-      if (comparisonAssetId !== undefined && comparisonPreview?.assetId === comparisonAssetId) {
-        const comparisonAsset = options.bundle.assets[comparisonAssetId];
-        if (comparisonAsset === undefined) return;
-        const comparison = selectionComparisonPresentation(comparisonAsset, options.bundle, state);
-        if (
-          !workbenchStatesEqualV1(state, comparisonPreview.expectedState) ||
-          comparison.kind !== "conflict" ||
-          !comparison.preview.accepted ||
-          comparison.preview.action === undefined
-        ) {
-          comparisonPreview = undefined;
-          diagnostics.textContent = "The draft changed. Review the replacement again.";
-          renderInventory();
-          restoreComparisonFocus(comparisonAssetId, "expand");
-          return;
-        }
-        const result = options.dispatch(comparison.preview.action, comparisonPreview.expectedState);
-        if (result.accepted) {
-          acceptState(result.state);
-          showDiagnostics(result);
-          refresh();
-          restoreComparisonFocus(comparisonAssetId, "primary");
-        } else {
-          acceptState(result.state);
-          comparisonPreview = undefined;
-          diagnostics.textContent =
-            result.diagnostics?.map((diagnostic) => diagnostic.message).join(" ") ??
-            "Replacement rejected. Review the current draft again.";
-          renderInventory();
-          restoreComparisonFocus(comparisonAssetId, "expand");
-        }
-        return;
-      }
-      const expandButton = target.closest<HTMLButtonElement>("[data-workbench-expand-id]");
-      const expandId = expandButton?.dataset.workbenchExpandId;
-      if (expandId !== undefined && expandButton !== null) {
-        expandedAssetId = expandId;
-        openDetailKey = undefined;
-        comparisonPreview = undefined;
-        detailTrigger = expandButton;
-        inspectorOpen = true;
-        syncInspectorPresentation();
-        renderInventory();
-        root.querySelector<HTMLElement>("#workbench-detail-title")?.focus();
-        return;
-      }
-      const detailButton = target.closest<HTMLButtonElement>("[data-workbench-detail-id]");
-      const detailId = detailButton?.dataset.workbenchDetailId;
-      if (detailId !== undefined && detailButton !== null) {
-        const detailAsset = options.bundle.assets[detailId];
-        if (detailAsset !== undefined)
-          showDetails(
-            "asset:" + detailAsset.id,
-            assetDetailsPresentation(detailAsset, options.bundle),
-            detailButton,
-          );
-        return;
-      }
-      const button = target.closest<HTMLButtonElement>(
-        "button[data-workbench-row-action][data-workbench-asset-id], button[data-workbench-inspector-action]",
-      );
-      const assetId = button?.dataset.workbenchAssetId;
-      const asset = assetId === undefined ? undefined : options.bundle.assets[assetId];
-      if (asset === undefined || button === null) return;
-      const action = actionFor(asset, state);
-      if (action === undefined) {
-        if (asset.authoring.action === "inspect-evidence") {
-          showDetails("asset:" + asset.id, assetDetailsPresentation(asset, options.bundle), button);
-          options.inspectEvidence?.(asset);
-        }
-        if (asset.authoring.action === "prepare-approval") options.prepareApproval?.(asset);
-        return;
-      }
-      if (action.type === "select-root" || action.type === "record-request") {
-        const comparison = selectionComparisonPresentation(asset, options.bundle, state);
-        if (comparison.kind === "conflict" && comparison.preview.accepted) {
-          expandedAssetId = asset.id;
+  for (const scope of scopes)
+    scope.addEventListener(
+      "click",
+      (event) => {
+        const target = event.target as Element;
+        const panelView = target.closest<HTMLButtonElement>("[data-workbench-panel-view]");
+        const draftOpen = target.closest<HTMLButtonElement>("[data-workbench-draft-open]");
+        if (panelView !== null || draftOpen !== null) {
+          const view = draftOpen !== null ? "draft" : panelView?.dataset.workbenchPanelView;
+          if (view !== "item" && view !== "draft" && view !== "exposure") return;
+          inspectorMode = view;
+          inspectorOpen = true;
           openDetailKey = undefined;
-          detailTrigger = button;
+          openCatalogDetail = undefined;
+          expandedAssetId = undefined;
+          comparisonPreview = undefined;
+          if (draftOpen !== null || detailTrigger === undefined)
+            detailTrigger = draftOpen ?? panelView ?? undefined;
+          if (view === "item" && lastFullDetail !== undefined && detailTrigger !== undefined) {
+            showDetails(
+              lastFullDetail.key,
+              lastFullDetail.presentation,
+              detailTrigger,
+              lastFullDetail.catalogDetail,
+            );
+          } else if (view === "item" && lastInspectedAssetId !== undefined) {
+            expandedAssetId = lastInspectedAssetId;
+            renderInventory();
+          } else renderIdleInspector();
+          updateDetailButtons();
+          details.querySelector<HTMLElement>("#workbench-detail-title")?.focus();
+          return;
+        }
+        const exposureOpen = target.closest<HTMLButtonElement>("[data-workbench-exposure-open]");
+        if (exposureOpen !== null) {
+          openDetailKey = undefined;
+          expandedAssetId = undefined;
+          comparisonPreview = undefined;
+          detailTrigger = exposureOpen;
+          inspectorOpen = true;
+          updateDetailButtons();
+          renderExposureOverview({ focusHeading: true });
+          return;
+        }
+        if (target.closest<HTMLButtonElement>("[data-workbench-exposure-back]") !== null) {
+          openDetailKey = undefined;
+          expandedAssetId = undefined;
+          comparisonPreview = undefined;
+          updateDetailButtons();
+          renderExposureOverview({ focusHeading: true });
+          return;
+        }
+        if (target.closest<HTMLButtonElement>("[data-workbench-details-close]") !== null) {
+          closeDetails();
+          return;
+        }
+        const exposureInspect = target.closest<HTMLButtonElement>(
+          "[data-workbench-exposure-inspect-id]",
+        );
+        const exposureAssetId = exposureInspect?.dataset.workbenchExposureInspectId;
+        if (exposureInspect !== null && exposureAssetId !== undefined) {
+          const asset = options.bundle.assets[exposureAssetId];
+          if (asset === undefined) return;
+          if (browseInventory.assets[asset.id] === undefined) {
+            showDetails(
+              "asset:" + asset.id,
+              assetDetailsPresentation(asset, options.bundle),
+              exposureInspect,
+              { asset, mode: "catalog" },
+            );
+            return;
+          }
+          templates.open = false;
+          templateList.replaceChildren();
+          filtersState = {
+            sourceId: asset.sourceId,
+            kind: asset.kind,
+            query: asset.id,
+            page: 0,
+          };
+          search.value = asset.id;
+          openDetailKey = undefined;
+          expandedAssetId = asset.id;
+          comparisonPreview = undefined;
+          detailTrigger = exposureInspect;
+          inspectorOpen = true;
+          renderInventory();
+          scopeOne<HTMLElement>("#workbench-detail-title")?.focus();
+          return;
+        }
+        const repairButton = target.closest<HTMLButtonElement>("[data-workbench-repair-type]");
+        const repairType = repairButton?.dataset.workbenchRepairType;
+        const repairAssetId = repairButton?.dataset.workbenchRepairAssetId;
+        const repairOrigin = repairButton?.dataset.workbenchRepairOrigin;
+        if (
+          repairType !== undefined &&
+          repairAssetId !== undefined &&
+          (repairOrigin === "administrator" || repairOrigin === "legacy-unattributed")
+        ) {
+          const result = options.dispatch({
+            type: repairType as "remove-root" | "remove-request" | "remove-exclusion",
+            assetId: repairAssetId,
+            origin: { kind: repairOrigin },
+          });
+          if (result.accepted) {
+            acceptState(result.state);
+            showDiagnostics(result);
+            refresh();
+          } else
+            diagnostics.textContent =
+              result.diagnostics?.map((diagnostic) => diagnostic.message).join(" ") ??
+              "Saved selection removal rejected.";
+          return;
+        }
+        if (target.closest<HTMLButtonElement>("[data-workbench-repair-more]") !== null) {
+          repairLimit += PAGE_SIZE;
+          renderRepairs();
+          return;
+        }
+        const draftId = target.closest<HTMLButtonElement>("[data-workbench-draft-id]")?.dataset
+          .workbenchDraftId;
+        if (draftId !== undefined) {
+          const result = options.dispatch({ type: "remove-draft", id: draftId });
+          if (result.accepted) {
+            acceptState(result.state);
+            showDiagnostics(result);
+            refresh();
+          } else
+            diagnostics.textContent =
+              result.diagnostics?.map((diagnostic) => diagnostic.message).join(" ") ??
+              "Draft removal rejected.";
+          return;
+        }
+        const exclusionId = target.closest<HTMLButtonElement>("[data-workbench-exclusion-id]")
+          ?.dataset.workbenchExclusionId;
+        if (exclusionId !== undefined) {
+          const result = options.dispatch(
+            state.exclusions.some(
+              (exclusion) =>
+                exclusion.assetId === exclusionId && exclusion.origin.kind === "administrator",
+            )
+              ? {
+                  type: "remove-exclusion",
+                  assetId: exclusionId,
+                  origin: administratorOrigin,
+                }
+              : {
+                  type: "add-exclusion",
+                  assetId: exclusionId,
+                  origin: administratorOrigin,
+                },
+          );
+          if (result.accepted) {
+            const previous = state;
+            acceptState(result.state);
+            showDiagnostics(result);
+            refreshCounts();
+            renderDraftReview();
+            refreshVisibleRows(changedAssetIds(previous, state));
+            renderSourceSummary();
+            refreshActiveInspector();
+            queueMicrotask(() =>
+              [...scopeAll<HTMLButtonElement>("[data-workbench-exclusion-id]")]
+                .find((button) => button.dataset.workbenchExclusionId === exclusionId)
+                ?.focus({ preventScroll: true }),
+            );
+          } else
+            diagnostics.textContent =
+              result.diagnostics?.map((diagnostic) => diagnostic.message).join(" ") ??
+              "Exclusion rejected.";
+          return;
+        }
+        const removeTemplate = target.closest<HTMLButtonElement>(
+          "[data-workbench-template-remove-id]",
+        );
+        const removeTemplateId = removeTemplate?.dataset.workbenchTemplateRemoveId;
+        const removeTemplateDigest = removeTemplate?.dataset.workbenchTemplateRemoveDigest;
+        if (removeTemplateId !== undefined && removeTemplateDigest !== undefined) {
+          const fromDraftReview =
+            removeTemplate !== null && draftReviewList.contains(removeTemplate);
+          const result = options.dispatch({
+            type: "remove-template",
+            templateId: removeTemplateId,
+            digest: removeTemplateDigest,
+          });
+          if (result.accepted) {
+            acceptState(result.state);
+            showDiagnostics(result);
+            refresh();
+            if (fromDraftReview) {
+              if (compactInspector.matches && inspectorOpen)
+                details.querySelector<HTMLElement>("#workbench-detail-title")?.focus();
+              else draftReviewSummary.focus();
+            }
+          } else
+            diagnostics.textContent =
+              result.diagnostics?.map((diagnostic) => diagnostic.message).join(" ") ??
+              "Template removal rejected.";
+          return;
+        }
+        const templateDetailButton = target.closest<HTMLButtonElement>(
+          "[data-workbench-template-detail-id]",
+        );
+        const templateDetailId = templateDetailButton?.dataset.workbenchTemplateDetailId;
+        if (templateDetailId !== undefined && templateDetailButton !== null) {
+          const template = options.bundle.templates[templateDetailId];
+          if (template !== undefined) showTemplatePreview(template, templateDetailButton);
+          return;
+        }
+        const templateId = target.closest<HTMLButtonElement>("[data-workbench-template-id]")
+          ?.dataset.workbenchTemplateId;
+        if (templateId !== undefined) {
+          const result = options.dispatch({ type: "apply-template", templateId });
+          if (result.accepted) {
+            acceptState(result.state);
+            showDiagnostics(result);
+            refresh();
+          } else
+            diagnostics.textContent =
+              result.diagnostics?.map((diagnostic) => diagnostic.message).join(" ") ??
+              "Template rejected.";
+          return;
+        }
+        if (target.closest<HTMLButtonElement>("[data-workbench-comparison-cancel]") !== null) {
+          const assetId = comparisonPreview?.assetId;
+          comparisonPreview = undefined;
+          renderInventory();
+          if (assetId !== undefined) restoreComparisonFocus(assetId, "expand");
+          return;
+        }
+        const comparisonConfirm = target.closest<HTMLButtonElement>(
+          "[data-workbench-comparison-confirm-id]",
+        );
+        const comparisonAssetId = comparisonConfirm?.dataset.workbenchComparisonConfirmId;
+        if (comparisonAssetId !== undefined && comparisonPreview?.assetId === comparisonAssetId) {
+          const comparisonAsset = options.bundle.assets[comparisonAssetId];
+          if (comparisonAsset === undefined) return;
+          const comparison = selectionComparisonPresentation(
+            comparisonAsset,
+            options.bundle,
+            state,
+          );
+          if (
+            !workbenchStatesEqualV1(state, comparisonPreview.expectedState) ||
+            comparison.kind !== "conflict" ||
+            !comparison.preview.accepted ||
+            comparison.preview.action === undefined
+          ) {
+            comparisonPreview = undefined;
+            diagnostics.textContent = "The draft changed. Review the replacement again.";
+            renderInventory();
+            restoreComparisonFocus(comparisonAssetId, "expand");
+            return;
+          }
+          const result = options.dispatch(
+            comparison.preview.action,
+            comparisonPreview.expectedState,
+          );
+          if (result.accepted) {
+            acceptState(result.state);
+            showDiagnostics(result);
+            refresh();
+            restoreComparisonFocus(comparisonAssetId, "primary");
+          } else {
+            acceptState(result.state);
+            comparisonPreview = undefined;
+            diagnostics.textContent =
+              result.diagnostics?.map((diagnostic) => diagnostic.message).join(" ") ??
+              "Replacement rejected. Review the current draft again.";
+            renderInventory();
+            restoreComparisonFocus(comparisonAssetId, "expand");
+          }
+          return;
+        }
+        const expandButton = target.closest<HTMLButtonElement>("[data-workbench-expand-id]");
+        const expandId = expandButton?.dataset.workbenchExpandId;
+        if (expandId !== undefined && expandButton !== null) {
+          expandedAssetId = expandId;
+          openDetailKey = undefined;
+          comparisonPreview = undefined;
+          detailTrigger = expandButton;
           inspectorOpen = true;
           syncInspectorPresentation();
-          comparisonPreview = {
-            assetId: asset.id,
-            expectedState: structuredClone(state),
-          };
           renderInventory();
-          root.querySelector<HTMLElement>("[data-workbench-comparison-heading]")?.focus();
+          scopeOne<HTMLElement>("#workbench-detail-title")?.focus();
           return;
         }
-      }
-      const result = options.dispatch(action);
-      if (!result.accepted) {
-        diagnostics.textContent =
-          result.diagnostics?.map((diagnostic) => diagnostic.message).join(" ") ??
-          "Selection rejected.";
-        return;
-      }
-      showDiagnostics(result);
-      const previous = state;
-      acceptState(result.state);
-      refreshCounts();
-      renderDraftReview();
-      refreshVisibleRows(changedAssetIds(previous, state));
-      renderSourceSummary();
-      refreshActiveInspector();
-    },
-    { signal: teardown.signal },
-  );
+        const detailButton = target.closest<HTMLButtonElement>("[data-workbench-detail-id]");
+        const detailId = detailButton?.dataset.workbenchDetailId;
+        if (detailId !== undefined && detailButton !== null) {
+          const detailAsset = options.bundle.assets[detailId];
+          if (detailAsset !== undefined)
+            showDetails(
+              "asset:" + detailAsset.id,
+              assetDetailsPresentation(detailAsset, options.bundle),
+              detailButton,
+            );
+          return;
+        }
+        const button = target.closest<HTMLButtonElement>(
+          "button[data-workbench-row-action][data-workbench-asset-id], button[data-workbench-inspector-action]",
+        );
+        const assetId = button?.dataset.workbenchAssetId;
+        const asset = assetId === undefined ? undefined : options.bundle.assets[assetId];
+        if (asset === undefined || button === null) return;
+        const action = actionFor(asset, state);
+        if (action === undefined) {
+          if (asset.authoring.action === "inspect-evidence") {
+            showDetails(
+              "asset:" + asset.id,
+              assetDetailsPresentation(asset, options.bundle),
+              button,
+            );
+            options.inspectEvidence?.(asset);
+          }
+          if (asset.authoring.action === "prepare-approval") options.prepareApproval?.(asset);
+          return;
+        }
+        if (action.type === "select-root" || action.type === "record-request") {
+          const comparison = selectionComparisonPresentation(asset, options.bundle, state);
+          if (comparison.kind === "conflict" && comparison.preview.accepted) {
+            expandedAssetId = asset.id;
+            openDetailKey = undefined;
+            detailTrigger = button;
+            inspectorOpen = true;
+            syncInspectorPresentation();
+            comparisonPreview = {
+              assetId: asset.id,
+              expectedState: structuredClone(state),
+            };
+            renderInventory();
+            scopeOne<HTMLElement>("[data-workbench-comparison-heading]")?.focus();
+            return;
+          }
+        }
+        const result = options.dispatch(action);
+        if (!result.accepted) {
+          diagnostics.textContent =
+            result.diagnostics?.map((diagnostic) => diagnostic.message).join(" ") ??
+            "Selection rejected.";
+          return;
+        }
+        showDiagnostics(result);
+        const previous = state;
+        acceptState(result.state);
+        refreshCounts();
+        renderDraftReview();
+        refreshVisibleRows(changedAssetIds(previous, state));
+        renderSourceSummary();
+        refreshActiveInspector();
+      },
+      { signal: teardown.signal },
+    );
   const restoreComparisonFocus = (assetId: string, action: "expand" | "primary"): void => {
     queueMicrotask(() => {
-      const replacement = [...root.querySelectorAll<HTMLButtonElement>("button")].find((button) =>
+      const replacement = [...scopeAll<HTMLButtonElement>("button")].find((button) =>
         action === "expand"
           ? button.dataset.workbenchExpandId === assetId
           : button.dataset.workbenchAssetId === assetId &&

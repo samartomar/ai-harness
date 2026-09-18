@@ -180,3 +180,10 @@ Recorded with evidence, cost and reopen bar in `ADOPTION-PLAN.md` §3. Owners: D
 - Contrast (computed from rendered styles), light / dark minimum per slice: P3.3 5.48 / 9.60 (category chip on surface-container); P3.4 5.85 / 10.04; P3.5 4.55 (placeholder, outline on white) / 5.37 (developer-tool status, outline on card). Accent: pressed chip 5.88 / 6.43.
 - Gate (worktree): vitest 94 files, 589/590 (only the known worktree `ui-server` tsx failure); typecheck clean; biome clean; `npm run test:workbench:ui` 31 passed after each slice. 375 px: no horizontal scroll.
 - Screenshots: `p3-3-*`, `p3-4-*`, `p3-5-*` (before/after light, dark, 375, prototype).
+
+## S4 — inspector rail (new shell)
+
+- The catalog's item/draft/exposure inspector (`#workbench-detail-panel`) mounts in `#inspector-rail #wb-inspector-panel`; lookups and the delegated click handler cover the catalog root and the rail. Rail 390 px (prototype). At ≤1100 px the rail steps out of layout and the open inspector is the fixed, self-scrolling modal drawer (inert outside, scrim). Rail tabs Security / Policy JSON reveal the evidence sheet / advanced record. Opening an item reopens a closed rail.
+- Moved to the new shell, assertions unchanged: compact-setup "keeps Back to catalog…", "closes the mobile inspector…", scrolling "keeps the mobile Workbench inspector…". Intentional change (orchestrator): scrolling "uses the document…" became "uses the main panel…" (wheel moves `#wb-main` / `#wb-inspector-panel`, document never scrolls; all other assertions kept).
+- Stays on legacy: compact-setup "keeps the catalog anchored…" also reads `#deployment-readiness` (admin-org), so it waits for the org screen.
+- Gate: build:workbench 714,898 B (+951 vs S3 713,947); `npx vitest run tests/org-policy` 167 files, 3997 passed / 1 skipped; typecheck clean; biome clean; `npm run test:workbench:ui` 39 passed. New-shell frame light/dark baselines regenerated (rail width and content).

@@ -52,6 +52,36 @@ export interface AdminShell {
   /** Live status text: `#announcement` (polite live region) and `#status`. */
   announce(message: string, error?: boolean): void;
   renderLedger(view: KindLedgerViewModel): void;
+  /** S4: the inspector rail's panel, where the catalog's item inspector mounts. */
+  readonly inspectorPanel: HTMLElement;
+  /** S4: reopen the inspector rail when the user closed it. */
+  revealInspector(): void;
+}
+
+/**
+ * S4: the rail's Details / Security / Policy JSON tabs move within the item
+ * inspector to its evidence sheet and its advanced JSON record.
+ */
+const INSPECTOR_SECTIONS: Record<string, string> = {
+  security: ".workbench-evidence-sheet",
+  json: ".workbench-detail-advanced",
+};
+
+function revealInspectorSection(panel: HTMLElement, key: string): void {
+  const selector = INSPECTOR_SECTIONS[key];
+  if (selector === undefined) {
+    panel.scrollTop = 0;
+    return;
+  }
+  const section = panel.querySelector<HTMLElement>(selector);
+  if (section === null) return;
+  for (
+    let node: HTMLElement | null = section;
+    node !== null && node !== panel;
+    node = node.parentElement
+  )
+    if (node instanceof HTMLDetailsElement) node.open = true;
+  section.scrollIntoView?.({ block: "start" });
 }
 
 function header(): { element: HTMLElement; actions: HTMLElement } {
@@ -202,7 +232,7 @@ function screenPanel(definition: ScreenDefinition): { panel: HTMLElement; body: 
 function inspectorRail(): HTMLElement {
   const rail = el(
     "aside",
-    "wb-rail shrink-0 w-80 bg-surface-container-lowest border-0 border-l border-solid border-outline-variant flex-col min-h-0 max-lg:absolute max-lg:inset-y-0 max-lg:right-0 max-lg:z-40",
+    "wb-rail shrink-0 w-[390px] bg-surface-container-lowest border-0 border-l border-solid border-outline-variant flex-col min-h-0 max-lg:absolute max-lg:inset-y-0 max-lg:right-0 max-lg:z-40",
   );
   withId(rail, "inspector-rail");
   rail.dataset.wbInspector = "";
@@ -250,6 +280,7 @@ function inspectorRail(): HTMLElement {
       other.setAttribute("aria-selected", other === tab ? "true" : "false");
     panel.dataset.wbInspectorPanel = key;
     panel.setAttribute("aria-labelledby", tab.id);
+    revealInspectorSection(panel, key);
   });
   return rail;
 }
@@ -361,6 +392,7 @@ export function mountAdminShell(
     sub.element.querySelector<HTMLButtonElement>("#toggle-nav-btn") as HTMLButtonElement,
     rail,
   );
+  const inspectorPanel = inspector.querySelector<HTMLElement>("#wb-inspector-panel") as HTMLElement;
   const syncInspector = wireRailToggle(
     sub.element.querySelector<HTMLButtonElement>("#btn-toggle-inspector") as HTMLButtonElement,
     inspector,
@@ -389,6 +421,12 @@ export function mountAdminShell(
     },
     renderLedger(view) {
       ledger.replaceChildren(...view.entries.map(ledgerTile));
+    },
+    inspectorPanel,
+    revealInspector() {
+      if (inspector.dataset.wbRailState !== "closed") return;
+      inspector.dataset.wbRailState = "auto";
+      syncInspector();
     },
   };
 }

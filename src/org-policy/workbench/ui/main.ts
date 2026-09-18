@@ -125,6 +125,9 @@ interface CatalogControllerHooks {
   prepareApproval(asset: AuthoringAssetV1): void;
   /** Runs on every outside policy change before the catalog re-projects it. */
   beforeRestore?(snapshot: unknown): void;
+  /** S4: the new shell's inspector rail panel and its reveal action. */
+  inspectorHost?: HTMLElement;
+  revealInspector?(): void;
 }
 
 /**
@@ -156,6 +159,8 @@ function mountCatalogController(
       );
     },
     prepareApproval: hooks.prepareApproval,
+    ...(hooks.inspectorHost === undefined ? {} : { inspectorHost: hooks.inspectorHost }),
+    ...(hooks.revealInspector === undefined ? {} : { revealInspector: hooks.revealInspector }),
     dispatch(action, expectedState) {
       const imported = importedState(session.snapshotPolicy(), bundle, bindings, sourceInputs);
       const current = imported.state;
@@ -401,6 +406,8 @@ if (newShell) {
       { applying: false },
       {
         shell: "new",
+        inspectorHost: shell.inspectorPanel,
+        revealInspector: () => shell.revealInspector(),
         prepareApproval(asset) {
           // The protected approval form moves to the acme screen in S7.
           shell.router.setScreen("acme");

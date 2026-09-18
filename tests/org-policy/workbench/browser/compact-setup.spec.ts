@@ -129,53 +129,6 @@ test("keeps the catalog anchored while panel navigation and inspection preserve 
   await expect(preview).toHaveValue(selectedPolicy);
 });
 
-test("keeps Back to catalog available in an empty mobile Item drawer", async ({
-  page,
-  workbench,
-}) => {
-  await expect(page).toHaveURL(pathToFileURL(workbench.path).href);
-  await page.setViewportSize({ width: 375, height: 900 });
-  const preview = page.locator("#config-preview");
-  const before = await preview.inputValue();
-  const inspector = page.locator("#workbench-detail-panel[data-workbench-detail]");
-  const draftOpen = page.locator(".workbench-draft-review > button[data-workbench-draft-open]");
-  await draftOpen.click();
-  await expect(inspector).toBeVisible();
-  await inspector.locator('[data-workbench-panel-view="item"]').click();
-  const back = inspector.getByRole("button", { name: "Back to catalog", exact: true });
-  await expect(back).toBeVisible();
-  await back.click();
-  await expect(inspector).toBeHidden();
-  await expect(draftOpen).toBeFocused();
-  await expect(preview).toHaveValue(before);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
-});
-
-test("closes the mobile inspector with focus restoration without mutating policy", async ({
-  page,
-  workbench,
-}) => {
-  await expect(page).toHaveURL(pathToFileURL(workbench.path).href);
-  await page.setViewportSize({ width: 375, height: 900 });
-  const preview = page.locator("#config-preview");
-  const before = await preview.inputValue();
-  await page.getByRole("combobox", { name: "Choose catalog source" }).selectOption("source:ecc");
-  const inspect = page.locator("button.workbench-row-title[data-workbench-expand-id]").first();
-  await expect(inspect).toBeVisible();
-  const inspector = page.locator("#workbench-detail-panel[data-workbench-detail]");
-  await inspect.focus();
-  await page.keyboard.press("Enter");
-  await expect(inspector).toBeVisible();
-  await expect(inspector.locator("#workbench-detail-title")).toBeFocused();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
-  await page.keyboard.press("Escape");
-  await expect(inspector).toBeHidden();
-  await expect(inspect).toBeFocused();
-  await expect(inspect).toHaveAttribute("aria-expanded", "false");
-  await expect(preview).toHaveValue(before);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
-});
-
 test("unifies references and collapsed developer tools inside deployment", async ({
   page,
   workbench,
@@ -607,5 +560,59 @@ test.describe("new shell", () => {
     await expect(
       page.getByText("Choices in draft", { exact: true }).locator("..").locator("strong"),
     ).toHaveText("0");
+  });
+
+  // NEW-SHELL-PLAN.md S4: inspector-rail journeys moved to the new shell, assertions unchanged.
+  test("keeps Back to catalog available in an empty mobile Item drawer", async ({
+    page,
+    workbench,
+  }) => {
+    await expect(page).toHaveURL(pathToFileURL(workbench.path).href);
+    await page.setViewportSize({ width: 375, height: 900 });
+    const preview = page.locator("#config-preview");
+    const before = await preview.inputValue();
+    const inspector = page.locator("#workbench-detail-panel[data-workbench-detail]");
+    const draftOpen = page.locator(".workbench-draft-review > button[data-workbench-draft-open]");
+    await draftOpen.click();
+    await expect(inspector).toBeVisible();
+    await inspector.locator('[data-workbench-panel-view="item"]').click();
+    const back = inspector.getByRole("button", { name: "Back to catalog", exact: true });
+    await expect(back).toBeVisible();
+    await back.click();
+    await expect(inspector).toBeHidden();
+    await expect(draftOpen).toBeFocused();
+    await expect(preview).toHaveValue(before);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      375,
+    );
+  });
+
+  test("closes the mobile inspector with focus restoration without mutating policy", async ({
+    page,
+    workbench,
+  }) => {
+    await expect(page).toHaveURL(pathToFileURL(workbench.path).href);
+    await page.setViewportSize({ width: 375, height: 900 });
+    const preview = page.locator("#config-preview");
+    const before = await preview.inputValue();
+    await page.getByRole("combobox", { name: "Choose catalog source" }).selectOption("source:ecc");
+    const inspect = page.locator("button.workbench-row-title[data-workbench-expand-id]").first();
+    await expect(inspect).toBeVisible();
+    const inspector = page.locator("#workbench-detail-panel[data-workbench-detail]");
+    await inspect.focus();
+    await page.keyboard.press("Enter");
+    await expect(inspector).toBeVisible();
+    await expect(inspector.locator("#workbench-detail-title")).toBeFocused();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      375,
+    );
+    await page.keyboard.press("Escape");
+    await expect(inspector).toBeHidden();
+    await expect(inspect).toBeFocused();
+    await expect(inspect).toHaveAttribute("aria-expanded", "false");
+    await expect(preview).toHaveValue(before);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+      375,
+    );
   });
 });

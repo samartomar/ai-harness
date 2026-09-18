@@ -997,8 +997,39 @@ html[data-wb-shell="new"] .wb-rail[data-wb-rail-state="closed"] { display: none;
 @media (max-width: 767px) {
   html[data-wb-shell="new"] #nav-rail[data-wb-rail-state="auto"] { display: none; }
 }
-@media (max-width: 1023px) {
+/*
+ * S4: the inspector rail hosts the catalog's item inspector. It hides at the
+ * catalog's compact width (1100 px, `compactInspector` in catalog-inventory);
+ * there an open inspector becomes the fixed, self-scrolling drawer, and the
+ * rail steps out of layout (display: contents) so the drawer can render.
+ */
+html[data-wb-shell="new"] .wb-item-inspector { padding: 0; border-left: 0; background: transparent; }
+@media (max-width: 1100px) {
   html[data-wb-shell="new"] #inspector-rail[data-wb-rail-state="auto"] { display: none; }
+  html[data-wb-shell="new"] #inspector-rail:not([data-wb-rail-state="closed"]):has([data-workbench-inspector-open="true"]) { display: contents; }
+  html[data-wb-shell="new"] #inspector-rail:has([data-workbench-inspector-open="true"]) > :not(#wb-inspector-panel) { display: none; }
+  html[data-wb-shell="new"] #inspector-rail:has([data-workbench-inspector-open="true"]) > #wb-inspector-panel { display: contents; }
+  html[data-wb-shell="new"] .wb-item-inspector { display: none; }
+  html[data-wb-shell="new"] .wb-item-inspector[data-workbench-inspector-open="true"] {
+    display: flex;
+    position: fixed;
+    inset: 0 0 0 auto;
+    z-index: 60;
+    width: min(480px, 100%);
+    max-height: 100dvh;
+    overflow: auto;
+    overscroll-behavior: contain;
+    padding: 16px;
+    background: var(--wb-color-surface-container-lowest);
+    border-left: 1px solid var(--wb-color-outline-variant);
+    box-shadow: var(--wb-panel-shadow);
+  }
+  html[data-wb-shell="new"] .workbench-inspector-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    background: rgba(15, 19, 27, 0.45);
+  }
 }
 html[data-wb-shell="new"] .wb-nav-link[aria-current="page"] {
   background: var(--wb-color-surface-container);
