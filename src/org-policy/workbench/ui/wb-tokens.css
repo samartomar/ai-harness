@@ -194,3 +194,23 @@ html[data-theme] {
   --sans: var(--wb-font);
   --mono: var(--wb-mono);
 }
+
+/*
+ * Primary actions take the prototype's blue instead of the legacy --pass
+ * green, which stays a status colour. primary-container keeps white text at
+ * >= 5.1:1 in both themes (plain dark primary #3b82f6 would be 3.7:1).
+ */
+html[data-theme] .btn.primary,
+html[data-theme] .workbench-draft-review > summary {
+  background: var(--wb-color-primary-container);
+  border-color: var(--wb-color-primary-container);
+  color: #ffffff;
+}
+html[data-theme] .btn.primary:hover {
+  background: var(--wb-color-primary-bright);
+  border-color: var(--wb-color-primary-bright);
+}
+html[data-theme="dark"] .btn.primary:hover {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+}
