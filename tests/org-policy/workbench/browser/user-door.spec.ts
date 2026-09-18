@@ -41,7 +41,7 @@ test("user door trims the org policy and downloads a valid aih-project-policy.js
   const probe = await openUserDoor(page, "user-door.html", testInfo.outputPath("user-door.html"));
   await expect(page.locator("#user-door")).toBeVisible();
   await expect(page.locator("#framework-rows")).toHaveCount(0);
-  await expect(page.locator("#user-policy-source")).toContainText(".aih-config.json");
+  await expect(page.locator("#user-policy-source")).toContainText("aih-org-policy.json");
   await expect(page.locator("#user-policy-source")).toHaveAttribute("data-valid", "true");
 
   const rows = page.locator("#user-trim-list > li");
@@ -50,14 +50,19 @@ test("user door trims the org policy and downloads a valid aih-project-policy.js
   const second = rows.nth(1);
   const firstId = await first.getAttribute("data-asset-id");
   const secondId = await second.getAttribute("data-asset-id");
-  await first.getByRole("button", { name: "Required", exact: true }).click();
+  await first.getByRole("radio", { name: "Required", exact: true }).click();
   await expect(first).toHaveAttribute("data-use", "required");
-  await second.getByRole("button", { name: "Skip", exact: true }).click();
-  await expect(second.getByRole("button", { name: "Skip", exact: true })).toHaveAttribute(
-    "aria-pressed",
+  await second.getByRole("radio", { name: "Optional", exact: true }).focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(second.getByRole("radio", { name: "Skip", exact: true })).toHaveAttribute(
+    "aria-checked",
     "true",
   );
+  await expect(second.getByRole("radio", { name: "Skip", exact: true })).toBeFocused();
+  await expect(second).toHaveAttribute("data-use", "skip");
 
+  await expect(page.locator("#user-for-name")).toHaveAttribute("aria-required", "true");
+  await expect(page.locator("#user-save")).toHaveAttribute("aria-describedby", "user-save-message");
   await page.locator("#user-for-name").fill("Payments API");
   await page.locator("#user-ai-tool-claude").check();
   await page.getByRole("button", { name: "Switch to dark theme", exact: true }).click();

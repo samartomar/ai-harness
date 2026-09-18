@@ -1924,9 +1924,18 @@ export function readOrgPolicy(root: string, env: NodeJS.ProcessEnv): OrgPolicy |
     }
     return undefined;
   }
+  return parseOrgPolicyContents(path, opened.contents);
+}
+
+/**
+ * Parse org-policy bytes already read under the product's file-custody rules.
+ * `readOrgPolicy` and callers that must digest and parse the SAME bytes (the
+ * Workbench user door's bound policy) share this one decoder.
+ */
+export function parseOrgPolicyContents(path: string, contents: Buffer): OrgPolicy {
   let raw: string;
   try {
-    raw = new TextDecoder("utf-8", { fatal: true }).decode(opened.contents);
+    raw = new TextDecoder("utf-8", { fatal: true }).decode(contents);
   } catch {
     throw new OrgPolicyError(`aih-org-policy at ${path} is not valid UTF-8`);
   }

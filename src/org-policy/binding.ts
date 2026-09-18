@@ -125,7 +125,7 @@ function canonical(path: string): string {
   return realpathSync.native(resolve(path));
 }
 
-function sourceDigest(path: string): string {
+function readBoundSource(path: string): { contents: Buffer; sha256: string } {
   const opened = readRegularFileWithStats(path, { maxBytes: MAX_ORG_POLICY_BYTES });
   if (opened === undefined || opened.identity.nlink !== 1n) {
     throw new AihError(
@@ -133,7 +133,30 @@ function sourceDigest(path: string): string {
       "AIH_ORG_POLICY",
     );
   }
-  return sha256(opened.contents);
+  return { contents: opened.contents, sha256: sha256(opened.contents) };
+}
+
+function sourceDigest(path: string): string {
+  return readBoundSource(path).sha256;
+}
+
+const BOUND_SOURCE_DIGEST_CHANGED =
+  "bound policy source digest changed; review the policy and run policy rebind before material mutation";
+
+function assertBindingActiveAtRoot(root: string, binding: PolicyBinding): void {
+  if (binding.state === "revoked") {
+    throw new AihError(
+      `project policy binding for ${binding.projectId} is revoked; use policy rebind with verified authority to recover`,
+      "AIH_ORG_POLICY",
+    );
+  }
+  const actualRoot = policyRootSha256(canonical(root));
+  if (actualRoot !== binding.rootSha256) {
+    throw new AihError(
+      `project policy binding belongs to a different canonical root; use policy rebind for ${binding.projectId} to adopt this checkout`,
+      "AIH_ORG_POLICY",
+    );
+  }
 }
 
 function samePath(left: string, right: string): boolean {
@@ -181,19 +204,7 @@ export function assertPolicyBindingCurrent(
     }
     return undefined;
   }
-  if (binding.state === "revoked") {
-    throw new AihError(
-      `project policy binding for ${binding.projectId} is revoked; use policy rebind with verified authority to recover`,
-      "AIH_ORG_POLICY",
-    );
-  }
-  const actualRoot = policyRootSha256(canonical(root));
-  if (actualRoot !== binding.rootSha256) {
-    throw new AihError(
-      `project policy binding belongs to a different canonical root; use policy rebind for ${binding.projectId} to adopt this checkout`,
-      "AIH_ORG_POLICY",
-    );
-  }
+  assertBindingActiveAtRoot(root, binding);
   const requestedSource = orgPolicyPath(root, env);
   if (!samePath(requestedSource, binding.source.path)) {
     throw new AihError(
@@ -203,10 +214,7 @@ export function assertPolicyBindingCurrent(
   }
   const selected = selectedPolicyPath(root, env);
   if (sourceDigest(selected) !== binding.source.sha256) {
-    throw new AihError(
-      "bound policy source digest changed; review the policy and run policy rebind before material mutation",
-      "AIH_ORG_POLICY",
-    );
+    throw new AihError(BOUND_SOURCE_DIGEST_CHANGED, "AIH_ORG_POLICY");
   }
   if (targets !== undefined && !sameTargets([...targets].sort(), [...binding.targets].sort())) {
     throw new AihError(
@@ -215,6 +223,28 @@ export function assertPolicyBindingCurrent(
     );
   }
   return binding;
+}
+
+/**
+ * Read-only: the bound policy source bytes for a project whose binding is
+ * current (active, same canonical root, digest unchanged), using the exact
+ * checks {@link assertPolicyBindingCurrent} applies with the binding's own
+ * source selected (as {@link applyPolicyBindingDefaults} selects it). The
+ * digest is of the returned `contents`, so a caller parsing those bytes cannot
+ * drift from the digest. Returns undefined when the project has no binding.
+ */
+export function readCurrentPolicyBindingSource(
+  root: string,
+): { binding: PolicyBinding; contents: Buffer; sha256: string } | undefined {
+  const binding = readPolicyBinding(root);
+  if (binding === undefined) return undefined;
+  assertBindingActiveAtRoot(root, binding);
+  const selected = selectedPolicyPath(root, { AIH_ORG_POLICY: binding.source.path });
+  const source = readBoundSource(selected);
+  if (source.sha256 !== binding.source.sha256) {
+    throw new AihError(BOUND_SOURCE_DIGEST_CHANGED, "AIH_ORG_POLICY");
+  }
+  return { binding, contents: source.contents, sha256: source.sha256 };
 }
 
 /** Restore the durable source/target selection for a fresh process. */

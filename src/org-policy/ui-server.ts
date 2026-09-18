@@ -211,8 +211,14 @@ export async function startPolicyWorkbenchUi(
   options: StartPolicyWorkbenchUiOptions = {},
 ): Promise<PolicyWorkbenchUi> {
   const root = options.cwd ?? process.cwd();
-  const { door, policySource } = classifyWorkbenchDoorV1(root, process.env);
-  let html = policyStudioHtml({ ...policyStudioModel(), door, policySource });
+  const { door, policySource, policy: boundPolicy } = classifyWorkbenchDoorV1(root, process.env);
+  // User door: the page lists the bound org policy whose digest it shows,
+  // never the packaged default (user-door-model.ts contract).
+  const initialModel =
+    boundPolicy === undefined
+      ? policyStudioModel()
+      : policyStudioModel(undefined, undefined, { initialPolicy: boundPolicy });
+  let html = policyStudioHtml({ ...initialModel, door, policySource });
   let htmlLength = Buffer.byteLength(html);
   const requestToken = randomBytes(32).toString("hex");
   let resolvedSkill: Awaited<ReturnType<typeof resolveConnectedGithubSkillV1>> | undefined;
@@ -250,6 +256,15 @@ export async function startPolicyWorkbenchUi(
           : undefined;
       if (requestBody === undefined || !sameToken(requestToken, requestBody.token)) {
         json(response, 403, { error: "connected Workbench request was rejected" });
+        return;
+      }
+      if (door === "user") {
+        // The project page shows the bound org policy only: no connected
+        // Skill resolution (an outbound fetch) and no re-render with a new
+        // policy, which would leave the bound digest describing other bytes.
+        json(response, 409, {
+          error: "The project page shows the bound org policy and cannot prepare changes to it.",
+        });
         return;
       }
       try {

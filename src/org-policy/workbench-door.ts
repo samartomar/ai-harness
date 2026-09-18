@@ -2,12 +2,15 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
-import { AIH_CONFIG_FILE, readPolicyBinding } from "../config/marker.js";
+import { AIH_CONFIG_FILE } from "../config/marker.js";
+import { readCurrentPolicyBindingSource } from "./binding.js";
 import { AIH_ORG_POLICY_FILE } from "./constants.js";
 import {
   hasExplicitOrgPolicySource,
+  type OrgPolicy,
   OrgPolicyError,
   orgPolicyPath,
+  parseOrgPolicyContents,
   readOrgPolicy,
 } from "./schema.js";
 
@@ -34,6 +37,11 @@ export type WorkbenchPolicySourceV1 = z.infer<typeof WorkbenchPolicySourceV1Sche
 export interface WorkbenchDoorClassificationV1 {
   readonly door: WorkbenchDoorV1;
   readonly policySource: WorkbenchPolicySourceV1;
+  /**
+   * Only for a valid `binding` source: the org policy parsed from the exact
+   * bytes whose SHA-256 is `policySource.sha256`.
+   */
+  readonly policy?: OrgPolicy;
 }
 
 function sha256OfFile(path: string): string | undefined {
@@ -86,17 +94,16 @@ export function classifyWorkbenchDoorV1(
 
   const bindingPath = join(root, AIH_CONFIG_FILE);
   try {
-    const binding = readPolicyBinding(root);
-    if (binding !== undefined) {
+    // The product's own custody checks (active, same canonical root, safe
+    // single-link bounded source, unchanged digest); digest and policy come
+    // from the same bytes, so they cannot drift.
+    const bound = readCurrentPolicyBindingSource(root);
+    if (bound !== undefined) {
+      const path = bound.binding.source.path;
       return {
         door: "user",
-        policySource: {
-          // No sha256: hashing the marker file would be mistaken for the
-          // bound policy's digest, which the binding records itself.
-          kind: "binding",
-          path: bindingPath,
-          valid: true,
-        },
+        policySource: { kind: "binding", path, sha256: bound.sha256, valid: true },
+        policy: parseOrgPolicyContents(path, bound.contents),
       };
     }
   } catch (error) {

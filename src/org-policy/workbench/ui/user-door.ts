@@ -150,7 +150,7 @@ export function mountUserDoor(root: HTMLElement, model: unknown): void {
       "div",
       "flex items-center gap-0.5 p-0.5 rounded border border-solid border-outline-variant bg-surface-container-low shrink-0",
     );
-    group.setAttribute("role", "group");
+    group.setAttribute("role", "radiogroup");
     group.setAttribute("aria-label", `Use of ${item.label ?? item.assetId}`);
     const buttons: HTMLButtonElement[] = [];
     const paint = () => {
@@ -158,7 +158,8 @@ export function mountUserDoor(root: HTMLElement, model: unknown): void {
       row.dataset.use = current;
       for (const button of buttons) {
         const on = button.dataset.use === current;
-        button.setAttribute("aria-pressed", on ? "true" : "false");
+        button.setAttribute("aria-checked", on ? "true" : "false");
+        button.tabIndex = on ? 0 : -1;
         button.className = `px-2 py-0.5 rounded text-[11px] transition-colors ${
           on
             ? "bg-surface-container-highest text-on-surface font-semibold"
@@ -166,14 +167,30 @@ export function mountUserDoor(root: HTMLElement, model: unknown): void {
         }`;
       }
     };
-    for (const option of USES) {
+    const choose = (use: TrimUseV1) => {
+      choices.set(item.assetId, use);
+      paint();
+      renderCounts();
+    };
+    for (const [index, option] of USES.entries()) {
       const button = el("button", "", option.label);
       button.type = "button";
+      button.setAttribute("role", "radio");
       button.dataset.use = option.use;
-      button.addEventListener("click", () => {
-        choices.set(item.assetId, option.use);
-        paint();
-        renderCounts();
+      button.addEventListener("click", () => choose(option.use));
+      button.addEventListener("keydown", (event) => {
+        const step =
+          event.key === "ArrowRight" || event.key === "ArrowDown"
+            ? 1
+            : event.key === "ArrowLeft" || event.key === "ArrowUp"
+              ? -1
+              : 0;
+        if (step === 0) return;
+        event.preventDefault();
+        const next = USES[(index + step + USES.length) % USES.length];
+        if (next === undefined) return;
+        choose(next.use);
+        buttons.find((candidate) => candidate.dataset.use === next.use)?.focus();
       });
       buttons.push(button);
       group.append(button);
@@ -206,6 +223,8 @@ export function mountUserDoor(root: HTMLElement, model: unknown): void {
   forName.id = "user-for-name";
   forName.type = "text";
   forName.autocomplete = "off";
+  forName.required = true;
+  forName.setAttribute("aria-required", "true");
   forLabel.append(forName);
   const typeLabel = el("label", "flex flex-col gap-1");
   typeLabel.append(el("span", LABEL, "For"));
@@ -252,6 +271,7 @@ export function mountUserDoor(root: HTMLElement, model: unknown): void {
   );
   save.id = "user-save";
   save.type = "button";
+  save.setAttribute("aria-describedby", "user-save-message");
   save.append(icon("save", ""), el("span", "", `Save ${PROJECT_POLICY_FILENAME}`));
   if (view.saveBlocked !== undefined) {
     save.disabled = true;

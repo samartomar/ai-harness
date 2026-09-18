@@ -1,11 +1,20 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { policyRootSha256 } from "../../src/org-policy/binding.js";
 import { defaultStudioPolicy } from "../../src/org-policy/studio-model.js";
 import {
   type PolicyWorkbenchUi,
@@ -376,6 +385,102 @@ describe("Policy Workbench UI server", () => {
       expect(readdirSync(root).sort()).toEqual(before);
     } finally {
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("puts the bound org policy in the user-door model and refuses prepare there (P5c)", async () => {
+    const root = mkdtempSync(join(tmpdir(), "aih-workbench-ui-server-user-"));
+    const policyDir = mkdtempSync(join(tmpdir(), "aih-workbench-ui-server-policy-"));
+    try {
+      const policyPath = join(policyDir, "aih-org-policy.json");
+      writeFileSync(
+        policyPath,
+        JSON.stringify({
+          schemaVersion: 2,
+          minimumPosture: "enterprise",
+          references: { repoContract: "ai-coding/project.json" },
+          governance: { supportedClis: ["codex"] },
+        }),
+      );
+      const digest = createHash("sha256").update(readFileSync(policyPath)).digest("hex");
+      writeFileSync(
+        join(root, ".aih-config.json"),
+        JSON.stringify({
+          policyBinding: {
+            schemaVersion: 1,
+            state: "active",
+            projectId: "sample-project",
+            rootSha256: policyRootSha256(realpathSync.native(root)),
+            source: { path: policyPath, sha256: digest },
+            targets: ["codex"],
+          },
+        }),
+      );
+      const before = readdirSync(root).sort();
+
+      running = await startPolicyWorkbenchUi({ openBrowser: async () => {}, cwd: root });
+      const html = await (await fetch(running.url)).text();
+      const model = embeddedModel(html);
+
+      expect(model.door).toBe("user");
+      expect(model.policySource).toEqual({
+        kind: "binding",
+        path: policyPath,
+        sha256: digest,
+        valid: true,
+      });
+      const initialPolicy = model.initialPolicy as Record<string, unknown>;
+      expect(initialPolicy.governance).toMatchObject({ supportedClis: ["codex"] });
+      expect(initialPolicy).not.toEqual(defaultStudioPolicy());
+
+      const launcher = new URL(running.url);
+      const prepared = await fetch(
+        new URL("/api/artifact-intake/github-skill/prepare", running.url),
+        {
+          method: "POST",
+          headers: {
+            Origin: launcher.origin,
+            "Sec-Fetch-Site": "same-origin",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            token: launcher.hash.slice(1),
+            policy: defaultStudioPolicy(),
+            source: {
+              repository: "anthropics/skills",
+              skill: "frontend-design",
+              commit: "41bbe19d1a1a7eaab5e7bb9050a417e5c6cffc8f",
+              path: "skills/frontend-design/SKILL.md",
+            },
+          }),
+        },
+      );
+      expect(prepared.status).toBe(409);
+      await expect(prepared.json()).resolves.toEqual({
+        error: "The project page shows the bound org policy and cannot prepare changes to it.",
+      });
+      const resolved = await fetch(
+        new URL("/api/artifact-intake/github-skill/resolve", running.url),
+        {
+          method: "POST",
+          headers: {
+            Origin: launcher.origin,
+            "Sec-Fetch-Site": "same-origin",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            token: launcher.hash.slice(1),
+            repository: "anthropics/skills",
+            skill: "frontend-design",
+          }),
+        },
+      );
+      expect(resolved.status).toBe(409);
+      expect(await (await fetch(running.url)).text()).toBe(html);
+      expect(readdirSync(root).sort()).toEqual(before);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(policyDir, { recursive: true, force: true });
     }
   });
 
