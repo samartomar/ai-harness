@@ -171,3 +171,26 @@ html[data-theme="dark"] {
   --wb-shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.35);
   --wb-panel-shadow: -8px 0 24px rgba(0, 0, 0, 0.35);
 }
+
+/*
+ * Legacy bridge (P3): the hand-written panels style themselves through
+ * --paper/--surface/--rule/--fill/--ink. Pointing them at the --wb-* tokens
+ * gives every legacy panel the prototype palette without touching markup or
+ * test hooks. Both themes resolve through the --wb-* values above; this rule
+ * loads after the legacy theme blocks and has the same specificity, so it wins.
+ * Status colours (--pass/--blocked/--owed, --s-*) keep their legacy values.
+ */
+html[data-theme] {
+  --paper: var(--wb-color-background);
+  --surface: var(--wb-color-surface-card);
+  --rule: var(--wb-color-outline-variant);
+  --rule-soft: var(--wb-color-surface-container);
+  --fill: var(--wb-color-surface-container);
+  --fill-2: var(--wb-color-surface-container-high);
+  --fill-hover: var(--wb-color-surface-container-highest);
+  --ink: var(--wb-color-on-surface);
+  --ink-2: var(--wb-color-on-surface-variant);
+  --ink-3: var(--wb-color-outline);
+  --sans: var(--wb-font);
+  --mono: var(--wb-mono);
+}
