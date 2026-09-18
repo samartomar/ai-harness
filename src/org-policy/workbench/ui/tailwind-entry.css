@@ -1,0 +1,5 @@
+/* Tailwind entry point compiled by tools/build-workbench.mjs. Only utilities
+ * are generated (corePlugins.preflight is off; the existing inline styles in
+ * studio-template.ts already establish a base). Content globs are declared in
+ * tools/workbench-tailwind.config.cjs. */
+@tailwind utilities;

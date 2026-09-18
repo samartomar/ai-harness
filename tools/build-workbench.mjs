@@ -3,10 +3,42 @@ import { execFile } from "node:child_process";
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import postcss from "postcss";
+import tailwindcss from "tailwindcss";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const generatedPath = "src/org-policy/workbench/bundle.generated.cjs";
 const preassemblyPath = "src/org-policy/workbench/default-catalog-preassembly.generated.cjs";
+const cssGeneratedPath = "src/org-policy/workbench/css.generated.cjs";
+const tokensSourcePath = "src/org-policy/workbench/ui/wb-tokens.css";
+const tailwindEntryPath = "src/org-policy/workbench/ui/tailwind-entry.css";
+const tailwindConfigPath = "tools/workbench-tailwind.config.cjs";
+
+/**
+ * Compile the Policy Workbench design foundation CSS (D1): namespaced design
+ * tokens plus Tailwind utilities scanned from the workbench UI sources.
+ * Nothing here fetches a network resource; Tailwind runs through the PostCSS
+ * JS API against local files only.
+ */
+export async function buildWorkbenchCss(root = repositoryRoot) {
+  const tokensCss = await readFile(resolve(root, tokensSourcePath), "utf8");
+  const entryCss = await readFile(resolve(root, tailwindEntryPath), "utf8");
+  const result = await postcss([tailwindcss(resolve(root, tailwindConfigPath))]).process(entryCss, {
+    from: resolve(root, tailwindEntryPath),
+  });
+  const combined = `/* aih-workbench-css/v1 */\n${tokensCss}\n${result.css}`;
+  const generated = "module.exports = " + JSON.stringify(combined) + ";\n";
+  const target = resolve(root, cssGeneratedPath);
+  await mkdir(dirname(target), { recursive: true });
+  let previous;
+  try {
+    previous = await readFile(target, "utf8");
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  if (previous !== generated) await writeFile(target, generated);
+  return { bytes: Buffer.byteLength(combined) };
+}
 
 function runPreassemblyBuild(root) {
   return new Promise((resolveBuild, rejectBuild) => {
@@ -29,6 +61,7 @@ function runPreassemblyBuild(root) {
 /** Explicit UI/package build step; importing a Vitest config never invokes it. */
 export async function buildWorkbench(root = repositoryRoot) {
   await runPreassemblyBuild(root);
+  await buildWorkbenchCss(root);
   const result = await build({
     absWorkingDir: root,
     entryPoints: ["src/org-policy/workbench/ui/main.ts"],
@@ -67,6 +100,7 @@ export async function copyWorkbenchToDist(root = repositoryRoot) {
     resolve(root, preassemblyPath),
     resolve(root, "dist/default-catalog-preassembly.generated.cjs"),
   );
+  await copyFile(resolve(root, cssGeneratedPath), resolve(root, "dist/css.generated.cjs"));
   for (const source of [
     "src/org-policy/workbench/core/packaged-source-data-data.json",
     "src/org-policy/workbench/core/catalog-qualification-data.json",

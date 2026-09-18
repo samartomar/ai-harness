@@ -1,0 +1,173 @@
+/* Design tokens ported from prototype/policy-workbench/screens/tokens.css.
+ * Namespaced with `--wb-` so nothing here can shadow or change the values of
+ * the existing inline variables in studio-template.ts (D8: light is the
+ * default, dark applies through the product's existing html[data-theme="dark"]
+ * toggle — the same attribute the legacy inline styles already use). */
+:root {
+  --wb-color-background: #f6f8fa;
+  --wb-color-on-background: #1f2328;
+  --wb-color-surface: #f6f8fa;
+  --wb-color-surface-dim: #eaedf1;
+  --wb-color-surface-container-lowest: #ffffff;
+  --wb-color-surface-container-low: #f3f5f8;
+  --wb-color-surface-container: #eaeef2;
+  --wb-color-surface-container-high: #d8dee4;
+  --wb-color-surface-container-highest: #cfd6dd;
+  --wb-color-surface-card: #ffffff;
+  --wb-color-surface-variant: #e1e4e8;
+  --wb-color-surface-bright: #ffffff;
+  --wb-color-on-surface: #1f2328;
+  --wb-color-on-surface-variant: #57606a;
+  --wb-color-outline: #6e7781;
+  --wb-color-outline-variant: #d0d7de;
+  --wb-color-primary: #0969da;
+  --wb-color-primary-bright: #0757b8;
+  --wb-color-primary-container: #0969da;
+  --wb-color-secondary: #1a7f37;
+  --wb-color-secondary-container: #2da44e;
+  --wb-color-tertiary: #b05700;
+  --wb-color-tertiary-container: #fff8c5;
+  --wb-color-on-tertiary: #78350f;
+  --wb-color-error: #cf222e;
+  --wb-color-inverse-surface: #1f2328;
+  --wb-color-scrollbar-thumb: #d0d7de;
+  --wb-color-scrollbar-thumb-hover: #afb8c1;
+  --wb-theme-center-bg: #f6f8fa;
+  --wb-theme-cards-bg: #f0f3f6;
+  --wb-theme-card-bg: #ffffff;
+  --wb-theme-card-active-bg: #ebf5ff;
+  --wb-theme-input-bg: #ffffff;
+  --wb-theme-manifest-header-bg: #ffffff;
+  --wb-theme-nav-rail-bg: #ffffff;
+  --wb-theme-inspector-bg: #ffffff;
+  --wb-theme-heading-text: #1f2328;
+  --wb-theme-subhead-bg: #fbfcfd;
+  --wb-theme-code-bg: #f6f8fa;
+  --wb-border-hairline: #e2e8f0;
+  --wb-card-bg: #ffffff;
+  --wb-card-bg-hover: #f8fafc;
+  --wb-card-border: #e2e8f0;
+  --wb-card-border-hover: #0969da;
+  --wb-card-title: #0f172a;
+  --wb-card-desc: #475569;
+  --wb-card-badge-bg: #fff8eb;
+  --wb-card-badge-border: #fde68a;
+  --wb-card-badge-text: #b45309;
+  --wb-card-cat-bg: #f1f5f9;
+  --wb-card-cat-border: #cbd5e1;
+  --wb-card-cat-text: #475569;
+  --wb-card-footer-border: #e2e8f0;
+  --wb-card-token-bg: #f8fafc;
+  --wb-card-token-border: #e2e8f0;
+  --wb-card-token-text: #475569;
+  --wb-card-status-pass-bg: #ecfdf5;
+  --wb-card-status-pass-text: #047857;
+  --wb-card-status-rev-bg: #fffbeb;
+  --wb-card-status-rev-text: #b45309;
+  --wb-card-status-bad-bg: #ffebe9;
+  --wb-card-toggle-inactive-bg: #cbd5e1;
+  --wb-card-toggle-knob-inactive: #64748b;
+  --wb-shadow-xs: 0 1px 3px rgba(31, 35, 40, 0.06);
+  --wb-shadow-sm: 0 4px 12px rgba(31, 35, 40, 0.08);
+  --wb-panel-shadow: -8px 0 24px rgba(31, 35, 40, 0.06);
+
+  --wb-primitive-skill: #f59e0b;
+  --wb-primitive-command: #06b6d4;
+  --wb-primitive-agent: #a855f7;
+  --wb-primitive-mcp: #3b82f6;
+  --wb-primitive-hook: #10b981;
+  --wb-primitive-token: #f97316;
+
+  --wb-font: system-ui, "Segoe UI", sans-serif;
+  --wb-mono: ui-monospace, "Segoe UI Mono", Consolas, monospace;
+  --wb-fw-regular: 400;
+  --wb-fw-medium: 500;
+  --wb-fw-strong: 600;
+  --wb-fw-title: 700;
+  --wb-track-title: -0.01em;
+  --wb-font-title: var(--wb-mono);
+  --wb-font-lab: var(--wb-mono);
+  --wb-r-sm: 2px;
+  --wb-r: 4px;
+  --wb-r-lg: 6px;
+  --wb-r-full: 8px;
+  --wb-ease: 180ms ease;
+  --wb-ease-rail: 240ms cubic-bezier(0.2, 0, 0, 1);
+  --wb-ease-panel: 260ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.wb-primitive-skill { color: var(--wb-primitive-skill) !important; }
+.wb-primitive-command { color: var(--wb-primitive-command) !important; }
+.wb-primitive-agent { color: var(--wb-primitive-agent) !important; }
+.wb-primitive-mcp { color: var(--wb-primitive-mcp) !important; }
+.wb-primitive-hook { color: var(--wb-primitive-hook) !important; }
+.wb-primitive-token { color: var(--wb-primitive-token) !important; }
+
+html[data-theme="dark"] {
+  --wb-color-background: #0f131b;
+  --wb-color-on-background: #dfe2ed;
+  --wb-color-surface: #0f131b;
+  --wb-color-surface-dim: #0f131b;
+  --wb-color-surface-container-lowest: #0a0e15;
+  --wb-color-surface-container-low: #181c23;
+  --wb-color-surface-container: #1c2027;
+  --wb-color-surface-container-high: #262a32;
+  --wb-color-surface-container-highest: #31353d;
+  --wb-color-surface-card: #181c23;
+  --wb-color-surface-variant: #31353d;
+  --wb-color-surface-bright: #353941;
+  --wb-color-on-surface: #dfe2ed;
+  --wb-color-on-surface-variant: #c2c6d6;
+  --wb-color-outline: #8c909f;
+  --wb-color-outline-variant: #424754;
+  --wb-color-primary: #3b82f6;
+  --wb-color-primary-bright: #60a5fa;
+  --wb-color-primary-container: #2563eb;
+  --wb-color-secondary: #4edea3;
+  --wb-color-secondary-container: #00a572;
+  --wb-color-tertiary: #ffb95f;
+  --wb-color-tertiary-container: #ca8100;
+  --wb-color-on-tertiary: #472a00;
+  --wb-color-error: #ffb4ab;
+  --wb-color-inverse-surface: #dfe2ed;
+  --wb-color-scrollbar-thumb: #31353d;
+  --wb-color-scrollbar-thumb-hover: #424754;
+  --wb-theme-center-bg: #0c1017;
+  --wb-theme-cards-bg: #0d111a;
+  --wb-theme-card-bg: #141822;
+  --wb-theme-card-active-bg: #191e2b;
+  --wb-theme-input-bg: #141822;
+  --wb-theme-manifest-header-bg: #121622;
+  --wb-theme-nav-rail-bg: #0a0e15;
+  --wb-theme-inspector-bg: #12161f;
+  --wb-theme-heading-text: #ffffff;
+  --wb-theme-subhead-bg: #0e131d;
+  --wb-theme-code-bg: #0a0e15;
+  --wb-border-hairline: rgba(255, 255, 255, 0.07);
+  --wb-card-bg: #141822;
+  --wb-card-bg-hover: #191e2b;
+  --wb-card-border: rgba(255, 255, 255, 0.08);
+  --wb-card-border-hover: #3b82f6;
+  --wb-card-title: #ffffff;
+  --wb-card-desc: #c2c6d6;
+  --wb-card-badge-bg: rgba(255, 185, 95, 0.12);
+  --wb-card-badge-border: rgba(255, 185, 95, 0.35);
+  --wb-card-badge-text: #ffb95f;
+  --wb-card-cat-bg: #181c23;
+  --wb-card-cat-border: rgba(255, 255, 255, 0.08);
+  --wb-card-cat-text: #8c909f;
+  --wb-card-footer-border: rgba(255, 255, 255, 0.08);
+  --wb-card-token-bg: #181c23;
+  --wb-card-token-border: rgba(255, 255, 255, 0.08);
+  --wb-card-token-text: #8c909f;
+  --wb-card-status-pass-bg: rgba(0, 165, 114, 0.18);
+  --wb-card-status-pass-text: #4edea3;
+  --wb-card-status-rev-bg: rgba(202, 129, 0, 0.2);
+  --wb-card-status-rev-text: #ffb95f;
+  --wb-card-status-bad-bg: rgba(147, 0, 10, 0.35);
+  --wb-card-toggle-inactive-bg: #31353d;
+  --wb-card-toggle-knob-inactive: #8c909f;
+  --wb-shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.25);
+  --wb-shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.35);
+  --wb-panel-shadow: -8px 0 24px rgba(0, 0, 0, 0.35);
+}

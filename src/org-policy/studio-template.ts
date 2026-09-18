@@ -1,6 +1,7 @@
 import type { PolicyStudioModel } from "./studio-model.js";
 import { protectedPolicyWorkbenchMarkup } from "./studio-protected-authority.js";
 import { loadWorkbenchBrowserScript } from "./workbench/browser-script.js";
+import { loadWorkbenchCss } from "./workbench/css.js";
 
 /**
  * Escape the model for embedding inside an inline script. Angle brackets go to
@@ -121,6 +122,7 @@ export function policyStudioHtml(model: PolicyStudioModel): string {
   const catalogProvenance = catalogProvenanceLine(model);
   const baselineEvidenceProvenance = baselineEvidenceProvenanceLine(model);
   const workbenchBrowserScript = loadWorkbenchBrowserScript();
+  const workbenchCss = loadWorkbenchCss();
   const workbenchModel = model;
   const protectedPolicyMarkup = protectedPolicyWorkbenchMarkup();
   const evidenceDelivery = evidenceDeliveryLine(model);
@@ -896,6 +898,7 @@ body[data-rail="off"] .sidehead .brand{display:flex}
   #panel-author,#panel-imports .form-grid{grid-template-columns:minmax(0,1fr)}
 }
 </style>
+<style id="wb-styles">${workbenchCss}</style>
 </head>
 <body>
 <a class="skip" href="#workbench">Skip to policy workbench</a>
