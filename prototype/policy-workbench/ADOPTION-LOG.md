@@ -162,3 +162,11 @@ Recorded with evidence, cost and reopen bar in `ADOPTION-PLAN.md` §3. Owners: D
 - Gate (main): `npx vitest run tests/org-policy/workbench tests/org-policy/studio tests/org-policy/ui-server tests/org-policy/workbench-door.test.ts` → 94 files, 590/590; typecheck clean; biome clean; `npm run test:workbench:ui` → 31 passed (run 3 times).
 - Screenshots: `p3-1-*.png` (worker, light/dark/375, synthetic 1000-item page, before/after, prototype) and `p3-1-final-*.png`.
 - Not built (no product data): source masthead with profile/provenance chips, quick filters, catalog tree, sort, pass badge + toggle switch, token-cost chip (D6).
+
+## P3.2 — item inspector (this commit)
+
+- Worker: Opus in a worktree. CSS only (P3.2 block in `wb-tokens.css`); no markup, hook or view-logic change, so no vitest added or re-pinned. Legacy hard-coded evidence-sheet divider and drawer shadow now tokens (dark mode).
+- Contrast (computed): neutral text ≥ 5.85 light / ≥ 10.04 dark; accent on selected tile 5.88 / 6.43.
+- Gate (main): vitest 94 files 590/590; biome clean; `npm run test:workbench:ui` → 31 passed (visual baselines unchanged). Worker: typecheck clean; no horizontal scroll at 375.
+- Screenshots: `p3-2-*.png` (before/after light, dark, inspector, 375 drawer, prototype).
+- Not built (no product data): Details/Security/Policy JSON tabs, finding banner, scanner grid, evidence excerpt, reach grid, allow toggle and per-finding decision, prev/next footer, status dot and version chip.
