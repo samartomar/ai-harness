@@ -39,6 +39,7 @@ import {
   isDeveloperToolCatalogAssetId,
   projectDeveloperToolCatalogInventory,
 } from "./developer-tool-catalog.js";
+import { mountKindLedger } from "./kind-ledger.js";
 import {
   mcpRuntimeOverlapPresentation,
   selectionComparisonPresentation,
@@ -3200,6 +3201,14 @@ export function mountWorkbench(
     signal: teardown.signal,
   });
 
+  const refreshKindLedger = (): void => {
+    const mount = document.querySelector("[data-kind-ledger-mount]");
+    if (mount === null) return;
+    const selectedAssetIds = resolveWorkbenchSelection(options.bundle, state).assetIds;
+    // Same population as the visible catalog (browseBundle hides setup-owned assets).
+    mountKindLedger(mount, Object.values(browseBundle.assets), selectedAssetIds);
+  };
+
   const refresh = (): void => {
     refreshCounts();
     renderDraftReview();
@@ -3207,6 +3216,7 @@ export function mountWorkbench(
     renderTemplates();
     renderRepairs();
     renderInventory();
+    refreshKindLedger();
     scheduleEvidenceRefresh();
   };
   refresh();

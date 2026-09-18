@@ -2,6 +2,7 @@ import type { PolicyStudioModel } from "./studio-model.js";
 import { protectedPolicyWorkbenchMarkup } from "./studio-protected-authority.js";
 import { loadWorkbenchBrowserScript } from "./workbench/browser-script.js";
 import { loadWorkbenchCss } from "./workbench/css.js";
+import { workbenchIcon } from "./workbench/ui/icons.js";
 
 /**
  * Escape the model for embedding inside an inline script. Angle brackets go to
@@ -905,23 +906,26 @@ body[data-rail="off"] .sidehead .brand{display:flex}
 <div class="field" aria-hidden="true"></div>
 
 <div class="stage">
-  <header class="bar" aria-label="Policy workbench toolbar">
-    <span class="brand">
-      <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.4" fill="none" stroke="currentColor" stroke-opacity=".92" stroke-width="1.7"/><circle cx="12" cy="12" r="2.7" fill="currentColor"/><circle cx="17.3" cy="6.7" r="2.1" fill="currentColor"/></svg></span>
-      <h1 class="brand-name">Policy Workbench <span>&middot; no repository required</span></h1>
+  <header class="bar wb-header max-md:static flex items-center gap-2.5 min-h-14 px-3 border-b border-outline-variant bg-surface-container-lowest text-on-surface" aria-label="Policy workbench toolbar">
+    <span class="brand flex items-center gap-2 pr-1 min-w-0">
+      <span class="brand-mark w-6 h-6 rounded bg-primary text-on-primary grid place-items-center shrink-0" aria-hidden="true">${workbenchIcon("shield_with_house")}</span>
+      <h1 class="brand-name font-semibold text-[13px] tracking-tight text-on-surface whitespace-nowrap">Policy Workbench <span class="hidden sm:inline font-normal text-on-surface-variant">&middot; no repository required</span></h1>
+      <span class="hidden sm:inline text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-surface-container-highest text-on-surface-variant font-medium">Workbench</span>
     </span>
-    <span class="sp"></span>
-    <span id="status">Ready - no repository is required.</span>
+    <span class="sp flex-1"></span>
+    <span id="status" class="text-[12px] text-on-surface-variant truncate">Ready - no repository is required.</span>
 
-    <button type="button" class="btn icon-btn" id="theme-toggle" aria-label="Switch to dark theme" title="Switch to dark theme"><svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.4 13.2A8 8 0 1 1 10.8 3.6a6.6 6.6 0 0 0 9.6 9.6z"/></svg><svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M3 12h2M19 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></button>
-    <button type="button" class="btn" id="import-policy">Import policy (replaces current)</button>
-    <button type="button" class="btn" id="import-evidence">Import evidence (non-destructive preflight)</button>
-    <button type="button" class="btn" id="import-decision">Import decision (inspection only)</button>
-    <button type="button" class="btn icon-btn" id="validate" aria-label="Validate" title="Validate"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 2.8v5.4c0 4.4-2.9 7.6-7 9.3-4.1-1.7-7-4.9-7-9.3V5.8L12 3z"/><path d="M8.8 11.8l2.2 2.2 4.2-4.2"/></svg></button>
-    <button type="button" class="btn icon-btn" id="download" aria-label="Download" title="Download"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4"/><path d="M7.5 8.5L12 4l4.5 4.5"/><path d="M5 15v3.5A2.5 2.5 0 0 0 7.5 21h9a2.5 2.5 0 0 0 2.5-2.5V15"/></svg></button>
-    <a class="github-link" href="https://github.com/samartomar/ai-harness" target="_blank" rel="noopener noreferrer" aria-label="Open AIH on GitHub" title="Open AIH on GitHub"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.4a9.8 9.8 0 0 0-3.1 19.1c.5.1.7-.2.7-.5v-1.9c-2.8.6-3.4-1.2-3.4-1.2-.5-1.2-1.1-1.5-1.1-1.5-.9-.6.1-.6.1-.6 1 0 1.6 1.1 1.6 1.1.9 1.6 2.4 1.1 3 .9.1-.7.4-1.1.7-1.4-2.3-.3-4.7-1.1-4.7-4.9 0-1.1.4-2 1-2.7-.1-.3-.4-1.3.1-2.7 0 0 .8-.3 2.7 1a9.3 9.3 0 0 1 4.9 0c1.9-1.3 2.7-1 2.7-1 .5 1.4.2 2.4.1 2.7.6.7 1 1.6 1 2.7 0 3.8-2.4 4.6-4.7 4.9.4.3.7 1 .7 1.9V21c0 .3.2.6.7.5A9.8 9.8 0 0 0 12 2.4Z"/></svg></a>
-    <button type="button" class="btn export-policy" id="export"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9.8 13.5L8.2 15.1l1.6 1.6"/><path d="M14.2 13.5l1.6 1.6-1.6 1.6"/></svg>Policy JSON</button>
-    <button type="button" class="btn icon-btn danger-zone" id="clear-policy" aria-label="Clear policy (resets your work)" title="Clear policy (resets your work)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4v6h6"/><path d="M3.5 13a9 9 0 1 0 2.2-8.4L3 10"/></svg></button>
+    <button type="button" class="btn icon-btn p-1.5 rounded bg-surface-container-low hover:bg-surface-container border border-outline-variant text-on-surface-variant hover:text-on-surface transition-colors shrink-0" id="theme-toggle" aria-label="Switch to dark theme" title="Switch to dark theme"><svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.4 13.2A8 8 0 1 1 10.8 3.6a6.6 6.6 0 0 0 9.6 9.6z"/></svg><svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M3 12h2M19 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></button>
+    <span class="hidden lg:flex items-center gap-2 shrink-0">
+      <button type="button" class="btn px-2.5 py-1 rounded bg-surface-container-low hover:bg-surface-container text-on-surface-variant hover:text-on-surface text-[12px] font-medium transition-colors" id="import-policy">Import policy (replaces current)</button>
+      <button type="button" class="btn px-2.5 py-1 rounded bg-surface-container-low hover:bg-surface-container text-on-surface-variant hover:text-on-surface text-[12px] font-medium transition-colors" id="import-evidence">Import evidence (non-destructive preflight)</button>
+      <button type="button" class="btn px-2.5 py-1 rounded bg-surface-container-low hover:bg-surface-container text-on-surface-variant hover:text-on-surface text-[12px] font-medium transition-colors" id="import-decision">Import decision (inspection only)</button>
+    </span>
+    <button type="button" class="btn icon-btn p-1.5 rounded bg-surface-container-low hover:bg-surface-container border border-outline-variant text-on-surface-variant hover:text-on-surface transition-colors shrink-0" id="validate" aria-label="Validate" title="Validate"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 2.8v5.4c0 4.4-2.9 7.6-7 9.3-4.1-1.7-7-4.9-7-9.3V5.8L12 3z"/><path d="M8.8 11.8l2.2 2.2 4.2-4.2"/></svg></button>
+    <button type="button" class="btn icon-btn p-1.5 rounded bg-surface-container-low hover:bg-surface-container border border-outline-variant text-on-surface-variant hover:text-on-surface transition-colors shrink-0" id="download" aria-label="Download" title="Download"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V4"/><path d="M7.5 8.5L12 4l4.5 4.5"/><path d="M5 15v3.5A2.5 2.5 0 0 0 7.5 21h9a2.5 2.5 0 0 0 2.5-2.5V15"/></svg></button>
+    <a class="github-link w-8 h-8 rounded grid place-items-center bg-surface-container-low hover:bg-surface-container border border-outline-variant text-on-surface-variant hover:text-on-surface transition-colors shrink-0" href="https://github.com/samartomar/ai-harness" target="_blank" rel="noopener noreferrer" aria-label="Open AIH on GitHub" title="Open AIH on GitHub"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" width="16" height="16"><path d="M12 2.4a9.8 9.8 0 0 0-3.1 19.1c.5.1.7-.2.7-.5v-1.9c-2.8.6-3.4-1.2-3.4-1.2-.5-1.2-1.1-1.5-1.1-1.5-.9-.6.1-.6.1-.6 1 0 1.6 1.1 1.6 1.1.9 1.6 2.4 1.1 3 .9.1-.7.4-1.1.7-1.4-2.3-.3-4.7-1.1-4.7-4.9 0-1.1.4-2 1-2.7-.1-.3-.4-1.3.1-2.7 0 0 .8-.3 2.7 1a9.3 9.3 0 0 1 4.9 0c1.9-1.3 2.7-1 2.7-1 .5 1.4.2 2.4.1 2.7.6.7 1 1.6 1 2.7 0 3.8-2.4 4.6-4.7 4.9.4.3.7 1 .7 1.9V21c0 .3.2.6.7.5A9.8 9.8 0 0 0 12 2.4Z"/></svg></a>
+    <button type="button" class="btn export-policy flex items-center gap-1.5 px-3 py-1.5 rounded text-[12px] font-medium transition-colors shadow-sm shrink-0" id="export"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" width="16" height="16"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M9.8 13.5L8.2 15.1l1.6 1.6"/><path d="M14.2 13.5l1.6 1.6-1.6 1.6"/></svg>Policy JSON</button>
+    <button type="button" class="btn icon-btn danger-zone p-1.5 rounded bg-surface-container-low hover:bg-surface-container border border-outline-variant hover:border-error text-on-surface-variant hover:text-error transition-colors shrink-0 ml-1" id="clear-policy" aria-label="Clear policy (resets your work)" title="Clear policy (resets your work)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4v6h6"/><path d="M3.5 13a9 9 0 1 0 2.2-8.4L3 10"/></svg></button>
     <input class="hidden" id="policy-file" type="file" accept="application/json">
     <input class="hidden" id="evidence-file" type="file" accept="application/json">
     <input class="hidden" id="decision-file" type="file" accept="application/json">
@@ -981,6 +985,7 @@ ${protectedPolicyMarkup}
   </div>
 
   <div class="ledger" aria-label="Repository status">
+    <div class="kind-ledger flex flex-1 min-w-0 overflow-hidden" data-kind-ledger-mount></div>
     <span class="sp"></span>
     <span class="eff">effective: not evaluated &mdash; needs a target repository</span>
   </div>

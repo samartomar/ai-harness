@@ -80,3 +80,24 @@ Recorded with evidence, cost and reopen bar in `ADOPTION-PLAN.md` §3. Owners: D
 - Size: rendered page +7.4 KB (tokens; no utility classes in use yet).
 - Open: `--wb-color-on-tertiary-container` has no token (falls back to the dark hex); Tailwind `filter`/`blur` utilities will no-op until the `--tw-*` defaults are emitted (preflight off) — handle when first used; `policy` and `verified_user` icons are identical.
 - Screenshots: none — P1 changes no visible markup.
+
+## P5a — launch folder classification (commit 10227bf2)
+
+- Worker: Sonnet in a worktree; committed from the main checkout because worktrees lack `node_modules/tsx`, which a ui-server subprocess test needs (environmental, not a regression).
+- Reviewer fix: removed a `sha256` of `.aih-config.json` presented as if it were the bound policy's digest.
+- Gate (main): `npx vitest run tests/org-policy/ui-server tests/org-policy/workbench-door.test.ts tests/org-policy/generate.test.ts tests/org-policy/admin-catalog-cli-route.test.ts` → 5 files, 49/49 passed; the pre-commit hook lanes passed.
+- Setup slip found: `build:workbench` had not been re-run in the main checkout after merging P1, so `css.generated.cjs` was missing and 11 tests failed; after the rebuild they pass.
+- Docs to update in P6: `docs/workbench-catalog-providers.md:164` says `--ui` consumes only package-owned data; it now also reads the launch folder, read-only, to pick a door.
+
+## P2 — admin shell: header + kind ledger (this commit)
+
+- Workers: P2a header, P2b kind ledger (Sonnet, worktrees). A first P2 worker delegated and stopped without output; relaunched as two narrow slices.
+- Fable adversarial review, blocking findings, all fixed with tests:
+  - B1 header fixed `h-14` overflowed below ~1000 px → `min-h-14`; a mobile regression that followed (sticky 141 px header covering content at 375×360, caught by `scrolling.spec.ts`) fixed with `max-md:static`.
+  - B2 ledger counted assets the catalog hides (MCP 0/3 beside a 1-item catalog) → uses `browseBundle.assets`.
+  - B3 light-mode label contrast 2.0–3.7:1 → labels neutral, colour only on icon and bar.
+  - B4 opacity modifiers on `var()` colours generate no CSS (empty bar track, missing hover) → removed; tests forbid them.
+  - Advisory applied: ledger mount takes free width, labels carry `title`; dead `bg-primary` classes on Export removed (the owner's red Export stays).
+- Gate (main): `npm run build:workbench` → 670,857 B (+7.2 KB vs 663,691); `npx vitest run tests/org-policy/workbench tests/org-policy/studio tests/org-policy/ui-server tests/org-policy/workbench-door.test.ts` → 92 files, 569/569; `npm run typecheck` → clean; `npx biome ci src tests --diagnostic-level=error` → clean; `npm run test:workbench:ui` → 27 passed (1.5m).
+- Screenshots: `screenshots/p2a-*`, `p2b-*` (taken before the review fixes). Prototype elements omitted because the product has no data or behaviour for them: org switcher, Vibe/Enterprise header switch, AI-tools count, Review Changes / Check Policy / Publish, user avatar, Token Budget tile (D6).
+- Open: ledger "selected" counts the resolved closure (includes dependencies), a third count definition beside Selections/Requests — label or align in P3; ledger sits in the footer, the prototype puts it at the top — revisit with the P3 source masthead; no Playwright viewport below 1280 except `scrolling.spec.ts` mobile case — P4 adds screenshot checks.
