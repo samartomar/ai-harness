@@ -101,3 +101,48 @@ Recorded with evidence, cost and reopen bar in `ADOPTION-PLAN.md` §3. Owners: D
 - Gate (main): `npm run build:workbench` → 670,857 B (+7.2 KB vs 663,691); `npx vitest run tests/org-policy/workbench tests/org-policy/studio tests/org-policy/ui-server tests/org-policy/workbench-door.test.ts` → 92 files, 569/569; `npm run typecheck` → clean; `npx biome ci src tests --diagnostic-level=error` → clean; `npm run test:workbench:ui` → 27 passed (1.5m).
 - Screenshots: `screenshots/p2a-*`, `p2b-*` (taken before the review fixes). Prototype elements omitted because the product has no data or behaviour for them: org switcher, Vibe/Enterprise header switch, AI-tools count, Review Changes / Check Policy / Publish, user avatar, Token Budget tile (D6).
 - Open: ledger "selected" counts the resolved closure (includes dependencies), a third count definition beside Selections/Requests — label or align in P3; ledger sits in the footer, the prototype puts it at the top — revisit with the P3 source masthead; no Playwright viewport below 1280 except `scrolling.spec.ts` mobile case — P4 adds screenshot checks.
+
+## P3.0 — legacy token bridge (commit 7ad4da48)
+
+- New route (reviewer's call after a Sonnet worker stalled on the full P3.1 restyle): map the legacy `--paper/--surface/--rule/--fill/--ink/--sans/--mono` variables onto `--wb-*` in `wb-tokens.css`. Every legacy panel takes the prototype palette in both themes with zero markup or hook changes (plan D3: CSS first).
+- Contrast: faintest text `--ink-3` → `--wb-color-outline`, 4.6:1 light on white, ~5.6:1 dark.
+- Finding: the earlier P2 dark screenshots showing light buttons were an artefact of capturing mid `transition-colors`; screenshots now wait 600 ms after a theme switch.
+- Gate: `npx vitest run tests/org-policy/workbench tests/org-policy/studio tests/org-policy/ui-server tests/org-policy/workbench-door.test.ts tests/org-policy/project-policy.test.ts` → 93 files, 578/578; typecheck clean; biome clean; `npm run test:workbench:ui` → 27 passed.
+- Screenshots: `screenshots/p3-bridge-light.png`, `p3-bridge-dark.png`.
+- Open: primary action buttons still use the legacy green accent; the prototype uses blue.
+
+## D5 schema (commit a1557c02)
+
+- `src/org-policy/project-policy.ts`: strict `ProjectPolicyV1Schema`, `parseProjectPolicyV1`, pure `checkProjectPolicyNarrowsV1`. Not wired into any command.
+- Owner questions (policy semantics — stop condition, not built on):
+  1. The org policy has no identity or version string of its own; only `schemaVersion` (2|3). `cutFrom` pins `{schemaVersion, sha256}`. Is the digest alone an acceptable pin?
+  2. `authoringSelections` has no flat allowed-asset list. The check uses the most conservative reading (resolved roots + requests, minus any excluded assetId, ignoring origin). Is that the right definition of "allowed", or must exclusions be origin-scoped?
+- Gate: `npx vitest run tests/org-policy/project-policy.test.ts tests/org-policy/workbench-door.test.ts` → 17/17 (worker); full lanes above include it.
+
+## P3 primary colour (commit fc2357c1)
+
+- `.btn.primary` and the draft-review summary used the `--pass` status green; now `--wb-color-primary-container` with white text (5.19:1 light, 5.17:1 dark; plain dark primary would be 3.68:1). Dark hover `#1d4ed8` (6.7:1) because `primary-bright` would be ~2.5:1.
+- Gate: vitest 93 files 578/578; biome clean; `npm run test:workbench:ui` 27 passed. Screenshots `p3-primary-*.png`.
+- Open: active tab underline and selected source edge still green.
+
+## P4 — visual checks (commit e7cc0e6e)
+
+- `tests/org-policy/workbench/browser/visual-shell.spec.ts`: header + kind ledger screenshots, light and dark, 1440×900, transitions disabled, `#status` masked, `maxDiffPixelRatio` 0.01; header height = scrollHeight at 1440 and 375.
+- Reviewer change: baselines are `-win32` only and CI runs this lane on ubuntu/macos/windows, so the spec skips off win32 with a stated reason. New scope (S): generate linux/darwin baselines on CI runners — needs a push, so owner.
+- Gate: `npm run test:workbench:ui` → 29 passed (worker ran twice, both green; reviewer re-ran after the skip: 29 passed); typecheck clean; biome clean.
+
+## P5b — user door page (commit 8a3ca3c1)
+
+- Worker: Opus in a worktree (Sonnet stalled twice on large slices; model choice recorded here).
+- Gate (main): `npm run build:workbench` → 683,974 B (+13.1 KB, includes the project-policy zod schema); `npx vitest run tests/org-policy/workbench tests/org-policy/studio tests/org-policy/ui-server tests/org-policy/workbench-door.test.ts tests/org-policy/project-policy.test.ts` → 94 files, 589/589; typecheck clean; biome clean; `npm run test:workbench:ui` → 31 passed (1.6m).
+- Fable adversarial review: fail-closed holds, admin output byte-identical apart from model data, no XSS, single zod copy, no cycles. Blocking for P5c: B1 `/prepare` could re-render the user page with another policy while keeping the bound digest; B2 fixture digests an in-memory object, not file bytes. Advisory: radiogroup semantics, `aria-describedby` on Save, `required` on the name field; empty `items` is a valid "skip everything" file.
+- Screenshots: `p5b-user-1440-light/dark.png`, `p5b-user-375-light.png`, `p5b-user-invalid-1440-light.png`, prototype `p5b-prototype-user-trim-1440.png`.
+- Owner questions added (policy semantics, not built on): AI tools offered = org `governance.supportedClis` when set, else every supported tool; no cascade via `requires` relations.
+- P5c in progress: the server reads the bound policy with the product's own binding reader and digest check, sends it as `initialPolicy`, refuses `/prepare` for the user door, and the fixture digests real file bytes.
+
+## P5c — bound policy to the user door (this commit)
+
+- Worker: Opus in a worktree. Refactor: `binding.ts` (`readBoundSource`, `assertBindingActiveAtRoot`, new export `readCurrentPolicyBindingSource`) and `schema.ts` (new export `parseOrgPolicyContents`), both behaviour-identical per Fable (check order, messages, error classes unchanged; digest and parsed bytes from one read).
+- Fable adversarial review: no blocking. Applied advisory: the user door now refuses `/resolve` (outbound GitHub fetch) as well as `/prepare`; test extended.
+- Gate (main): `npx vitest run tests/org-policy tests/config` → 168 files, 3998 passed, 1 skipped; typecheck clean; `npx biome ci src tests tools --diagnostic-level=error` → clean; `npm run test:workbench:ui` → 31 passed (1.5m).
+- Open (advisory): failure chip shows the marker path, success shows the policy path; a bound v3 policy with unsatisfiable `authoringSelections` pins fails server startup (fail-closed, untested); `readPolicyBinding` reads the marker unbounded (pre-existing).
