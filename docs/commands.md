@@ -856,7 +856,17 @@ opens a reading panel; dismiss it with Escape, its close button, or by moving th
 pointer away. Keyboard focus keeps the guide available while reading it. Adoption
 recipe and Evidence & versions sit in the Deployment setup header.
 
-The working surface starts with Deployment setup, followed by Build your policy.
+The admin page has a header and a navigation rail with five screens. **Sources**
+holds the catalog. **Changes** shows the draft as a diff against the starting
+policy or as the whole file, with **Copy JSON**. **Scan** holds imported evidence,
+an imported decision and the finding model. **Organization** holds Deployment
+setup, Developer tool setup, the adoption recipe, Evidence & versions and the ECC
+hook controls. **Additions** holds organization artifacts, the protected
+Enterprise policy file, framework curation, pending custom and remote MCP, and
+ECC MCP approval. The header carries **Check Policy** (validate), **Publish**
+(download the policy) and a menu for imports, the policy JSON, clearing the
+draft and the GitHub link. When the page is built with a resolved catalog or
+baseline evidence, a provenance strip under the header shows it.
 Developer tool setup is a collapsed section inside Deployment setup; its summary
 shows the current selections and exclusions. Expand it to review or change tools.
 The setup strip keeps posture, allowed CLI choices, managed
@@ -894,8 +904,8 @@ The same panel has **Draft** and **Exposure** views; switching views does not
 change choices. **Review draft** opens that panel beside the catalog, with
 reasons and adoption commands in closed disclosures. On smaller screens,
 choose a source from the picker and open the item
-panel when needed. The main workspace scrolls as one page across all columns;
-an open detail drawer on smaller screens scrolls separately. Browsing and opening
+panel when needed. The main panel and the item panel scroll on their own; the
+page itself does not scroll. An open detail drawer on smaller screens scrolls separately. Browsing and opening
 details do not change the policy.
 The **Exposure** view, also opened by **Policy exposure**, summarizes catalog
 choices across all sources. The statement “A policy is a shape of exposure”
@@ -1078,7 +1088,7 @@ like `aih init .` (`--root` and `AIH_ROOT` still apply). The `policy supported a
 administrator commands use `--root <target>` instead of a positional root so their input surface
 contains only the exact decision binding and code-owned target.
 
-The **Compose** catalog has **Source** and **Type** filters with counts. Choose a source and a type such as Skills, Agents, or Profiles, then search by name within that selection. Empty categories describe only the prepared catalog. Results remain paged at 50 entries and details load when opened. Methodology profiles are optional and permit at most one methodology; additive skill and agent selections can span sources. Selection templates display readable names when supplied, with technical identities retained for inspection.
+The **Sources** catalog has **Source** and **Type** filters with counts. Choose a source and a type such as Skills, Agents, or Profiles, then search by name within that selection. Empty categories describe only the prepared catalog. Results remain paged at 50 entries and details load when opened. Methodology profiles are optional and permit at most one methodology; additive skill and agent selections can span sources. Selection templates display readable names when supplied, with technical identities retained for inspection.
 
 `generate --apply` writes `aih-policy-workbench.html` (or `--out <path>`). The workbench authors the actual
 org-policy schema and downloads it under a safe administrator-chosen JSON filename. The default remains
@@ -1121,7 +1131,7 @@ untrusted fields as text, and download the same deterministic canonical bytes as
 The record stays outside the policy and receipt state and is always labeled unverified and not effective;
 the browser cannot edit, verify, sign, fetch, resolve, project, or materialize it. Invalid and out-of-order
 replacement reads fail closed without changing the decision displayed when the latest import began.
-Scanner evidence imported through the Artifacts workspace remains a separate preflight record. The browser
+Scanner evidence imported through **Organization artifacts** on the Additions screen remains a separate preflight record. The browser
 can create one mixed intake for up to 100 MCP, Skill, and Agent items; `aih trust scan` emits one evidence
 bundle for that intake. After merging the bundle, **Save team review workspace** downloads one resumable,
 strictly non-authoritative file containing the current draft policy, intake, and evidence history. Opening that
@@ -1143,12 +1153,14 @@ identifier against the active pinned catalog. Dependency reachability follows re
 riders at every depth, while direct aggregate members remain suggestions that the center inventory can exclude.
 Reopening a saved policy preserves those exclusions. Kiro baseline-rule provenance uses the canonical
 selection-source mapping, so its accepted source paths cannot drift from the catalog helper.
-The flat Ledger paper-and-ink presentation reserves colour for evidence state, supports a neutral dark theme,
-and keeps the rail available on compact screens. The inspector contains no policy mutation controls: it
+The Workbench reserves colour for evidence state, has light and dark themes,
+and keeps the navigation rail available on compact screens. The inspector contains no policy mutation controls: it
 narrates the selected-to-materialized journey and routes one next action to the canonical selection or a
-separate authoring sidebar. The MCP availability planes list all 35 entries from ECC's pinned source: 31
-ECC-owned entries route to the separate Add MCP sidebar, which authors approved/revoked
-`governance.eccMcpApprovals` records at the pinned catalog digest. Default developer tools have one
+Additions screen. The MCP availability planes list all 35 entries from ECC's pinned source: 31
+ECC-owned entries route to the ECC MCP approval panel on the Additions screen. That panel
+lists the recorded approved/revoked `governance.eccMcpApprovals` records at the pinned
+catalog digest and can remove one; its **Save MCP approval** button does not yet record
+a new approval. Default developer tools have one
 selection surface in Deployment setup; their duplicate catalog entries remain stored only for detail
 inspection and existing-policy round trips. Other catalog entries may select a reviewed control or
 record requested intent in `governance.aihMcpRequests`. A request never creates or implies a

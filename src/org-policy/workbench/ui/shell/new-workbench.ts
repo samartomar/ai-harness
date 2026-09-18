@@ -14,11 +14,7 @@ import {
 import { mountScanScreen } from "./scan-screen.js";
 
 /**
- * Mounts the new admin shell (NEW-SHELL-PLAN.md S1, S2) in place of the
- * legacy markup. The emitted new-shell page already holds `#wb-root`; a
- * legacy page opened with `?shell=new` has its legacy markup and inline
- * styles removed first, so both routes render the same frame from the same
- * compiled CSS.
+ * Mounts the admin shell (NEW-SHELL-PLAN.md S1, S2) on the page's `#wb-root`.
  */
 export interface NewWorkbenchOptions {
   readonly model: PolicySessionModel &
@@ -57,12 +53,8 @@ export interface NewWorkbench {
 export const POLICY_CHANGE_EVENT = "aih-workbench-policy-change";
 
 function shellHost(): HTMLElement {
-  const existing = document.getElementById("wb-root");
-  if (existing !== null) return existing;
-  for (const style of document.head.querySelectorAll("style:not(#wb-styles)")) style.remove();
-  document.body.removeAttribute("class");
-  const host = withId(document.createElement("div"), "wb-root");
-  document.body.replaceChildren(host);
+  const host = document.getElementById("wb-root");
+  if (host === null) throw new Error("Policy Workbench root is unavailable.");
   return host;
 }
 

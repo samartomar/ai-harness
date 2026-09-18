@@ -173,30 +173,6 @@ html[data-theme="dark"] {
 }
 
 /*
- * Legacy bridge (P3): the hand-written panels style themselves through
- * --paper/--surface/--rule/--fill/--ink. Pointing them at the --wb-* tokens
- * gives every legacy panel the prototype palette without touching markup or
- * test hooks. Both themes resolve through the --wb-* values above; this rule
- * loads after the legacy theme blocks and has the same specificity, so it wins.
- * Status colours (--pass/--blocked/--owed, --s-*) keep their legacy values.
- */
-html[data-theme] {
-  --paper: var(--wb-color-background);
-  --surface: var(--wb-color-surface-card);
-  --rule: var(--wb-color-outline-variant);
-  --rule-soft: var(--wb-color-surface-container);
-  --fill: var(--wb-color-surface-container);
-  --fill-2: var(--wb-color-surface-container-high);
-  /* One step below highest so faint text keeps >= 4.5:1 on hover (both themes). */
-  --fill-hover: var(--wb-color-surface-container-high);
-  --ink: var(--wb-color-on-surface);
-  --ink-2: var(--wb-color-on-surface-variant);
-  --ink-3: var(--wb-color-outline);
-  --sans: var(--wb-font);
-  --mono: var(--wb-mono);
-}
-
-/*
  * Primary actions take the prototype's blue instead of the legacy --pass
  * green, which stays a status colour. primary-container keeps white text at
  * >= 5.1:1 in both themes (plain dark primary #3b82f6 would be 3.7:1).
@@ -221,20 +197,10 @@ html[data-theme="dark"] .btn.primary:hover {
  * the status colour (vet results, ok badges, positive evidence). Accent text
  * uses primary-bright: >= 5.8:1 on every light surface and >= 6.4:1 on dark.
  */
-/*
- * Light theme: the outline token is 4.27:1 on --paper and 3.35:1 on --fill-2,
- * so faint legacy text (--ink-3) uses on-surface-variant (>= 4.71:1 on every
- * light surface it sits on). Dark keeps outline (>= 4.53:1).
- */
-html[data-theme="light"] {
-  --ink-3: var(--wb-color-on-surface-variant);
-}
-
 html[data-theme] {
   --wb-accent: var(--wb-color-primary-bright);
 }
-html[data-theme] .brand-name { color: var(--wb-color-on-surface); }
-html[data-theme] .brand-mark { background: var(--wb-color-primary-container); color: #ffffff; }
+
 html[data-theme] .tabs button[aria-pressed="true"] { color: var(--wb-accent); box-shadow: inset 0 -2px 0 var(--wb-accent); }
 html[data-theme] .workbench-source-tab[aria-pressed="true"] { border-left-color: var(--wb-accent); color: var(--wb-accent); }
 html[data-theme] .workbench-source-tab[aria-pressed="true"] span { color: var(--wb-accent); }
@@ -243,247 +209,6 @@ html[data-theme] .workbench-inventory-rows article.workbench-asset:has(.workbenc
 html[data-theme] .workbench-row-title:hover { color: var(--wb-accent); }
 html[data-theme] .workbench-inspector-navigation button[aria-pressed="true"] { color: var(--wb-accent); box-shadow: inset 0 -2px var(--wb-accent); }
 html[data-theme] .workbench-exposure-inspect { color: var(--wb-accent); }
-
-/*
- * S3: scoped to the legacy shell; the new shell styles the sources screen
- * with utility classes (catalog-inventory.ts) and must not inherit these.
- * P3.1 — admin catalog: source rail, browse filters and the item list as the
- * prototype's card grid (admin-sources.html #nav-rail, filter strip,
- * #cards-grid). DOM and test hooks are unchanged; only layout and colour move.
- * Every selector carries html[data-theme] so it outranks the legacy rules
- * (including their media-query variants) without !important. Text stays on
- * on-surface / on-surface-variant; the accent only marks selection.
- * Contrast (computed): on-surface-variant >= 5.5:1 light, >= 9.6:1 dark on every
- * surface below; accent on surface-container 5.88:1 light, 6.43:1 dark.
- */
-html[data-wb-shell="legacy"] .workbench-source-rail { background: var(--wb-theme-nav-rail-bg); }
-html[data-wb-shell="legacy"] .workbench-source-rail > h2 {
-  padding: 12px 16px 6px;
-  font: var(--wb-fw-strong) 10px/14px var(--wb-mono);
-  letter-spacing: 0.08em;
-  color: var(--wb-color-on-surface-variant);
-}
-html[data-wb-shell="legacy"] .workbench-source-tabs { gap: 2px; padding: 0 8px; }
-html[data-wb-shell="legacy"] .workbench-source-tab {
-  min-height: 32px;
-  padding: 6px 8px;
-  border: 0;
-  border-radius: var(--wb-r);
-  background: transparent;
-  color: var(--wb-color-on-surface-variant);
-  font: var(--wb-fw-medium) 12px/16px var(--wb-font);
-}
-html[data-wb-shell="legacy"] .workbench-source-tab:hover { background: var(--wb-color-surface-container-low); color: var(--wb-color-on-surface); }
-html[data-wb-shell="legacy"] .workbench-source-tab[aria-pressed="true"] {
-  background: var(--wb-color-surface-container);
-  color: var(--wb-accent);
-  font-weight: var(--wb-fw-strong);
-}
-html[data-wb-shell="legacy"] .workbench-source-tab span {
-  padding: 0 4px;
-  border-radius: var(--wb-r-sm);
-  font: var(--wb-fw-medium) 10px/15px var(--wb-mono);
-  color: var(--wb-color-on-surface-variant);
-}
-html[data-wb-shell="legacy"] .workbench-source-review { margin: 12px 16px 0; }
-html[data-wb-shell="legacy"] .workbench-source-picker { color: var(--wb-color-on-surface-variant); font: var(--wb-fw-strong) 10px/14px var(--wb-mono); letter-spacing: 0.06em; text-transform: uppercase; }
-html[data-wb-shell="legacy"] .workbench-source-picker select {
-  min-height: 32px;
-  padding: 5px 8px;
-  border: 1px solid var(--wb-color-outline-variant);
-  border-radius: var(--wb-r);
-  background: var(--wb-theme-input-bg);
-  color: var(--wb-color-on-surface);
-  font: var(--wb-fw-regular) 12px/16px var(--wb-font);
-  letter-spacing: 0;
-  text-transform: none;
-}
-
-html[data-wb-shell="legacy"] .workbench-browse-tools {
-  gap: 8px;
-  padding: 8px 16px;
-  background: var(--wb-theme-subhead-bg);
-  border-bottom: 1px solid var(--wb-border-hairline);
-}
-html[data-wb-shell="legacy"] .workbench-browse-tools > input {
-  min-height: 32px;
-  padding: 6px 10px;
-  border: 1px solid var(--wb-color-outline-variant);
-  border-radius: var(--wb-r);
-  background: var(--wb-theme-input-bg);
-  color: var(--wb-color-on-surface);
-  font: var(--wb-fw-regular) 12px/16px var(--wb-font);
-}
-html[data-wb-shell="legacy"] .workbench-type-tabs { gap: 4px; }
-html[data-wb-shell="legacy"] .workbench-type-tab {
-  min-height: 28px;
-  padding: 4px 10px;
-  border: 0;
-  border-radius: var(--wb-r);
-  background: transparent;
-  color: var(--wb-color-on-surface-variant);
-  font: var(--wb-fw-medium) 11px/16px var(--wb-mono);
-  white-space: nowrap;
-}
-html[data-wb-shell="legacy"] .workbench-type-tab:hover { background: var(--wb-color-surface-container-low); color: var(--wb-color-on-surface); }
-html[data-wb-shell="legacy"] .workbench-type-tab[aria-pressed="true"] {
-  background: var(--wb-color-surface-container);
-  color: var(--wb-accent);
-  font-weight: var(--wb-fw-strong);
-}
-
-html[data-wb-shell="legacy"] .workbench-page-controls {
-  padding: 10px 16px 0;
-  border: 0;
-  background: var(--wb-theme-cards-bg);
-  font: var(--wb-fw-regular) 11px/16px var(--wb-mono);
-}
-html[data-wb-shell="legacy"] .workbench-page-controls > [role="status"] { color: var(--wb-color-on-surface-variant); }
-
-/* Card grid. min(280px,100%) keeps one column without overflow at 375px. */
-html[data-wb-shell="legacy"] .workbench-inventory-rows {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
-  gap: 12px;
-  padding: 12px 16px 16px;
-  border: 0;
-  border-radius: 0;
-  background: var(--wb-theme-cards-bg);
-}
-html[data-wb-shell="legacy"] .workbench-inventory-rows article.workbench-asset {
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  grid-template-rows: auto 1fr auto auto;
-  align-items: start;
-  gap: 8px 0;
-  min-height: 0;
-  padding: 12px;
-  border: 1px solid var(--wb-card-border);
-  border-radius: var(--wb-r-lg);
-  background: var(--wb-card-bg);
-  box-shadow: var(--wb-shadow-xs);
-  transition: border-color var(--wb-ease), background-color var(--wb-ease), box-shadow var(--wb-ease);
-}
-html[data-wb-shell="legacy"] .workbench-inventory-rows article.workbench-asset:last-child { border-bottom: 1px solid var(--wb-card-border); }
-html[data-wb-shell="legacy"] .workbench-inventory-rows article.workbench-asset:hover {
-  border-color: var(--wb-card-border-hover);
-  background: var(--wb-card-bg-hover);
-  box-shadow: var(--wb-shadow-sm);
-}
-html[data-wb-shell="legacy"] .workbench-inventory-rows article.workbench-asset:has(.workbench-row-expand[aria-expanded="true"]) {
-  border-color: var(--wb-accent);
-  background: var(--wb-theme-card-active-bg);
-  box-shadow: 0 0 0 1px var(--wb-accent), var(--wb-shadow-sm);
-}
-html[data-wb-shell="legacy"] .workbench-inventory-rows .workbench-row-icon {
-  grid-column: 1;
-  grid-row: 1;
-  display: inline-flex;
-  width: 15px;
-  height: 15px;
-  margin: 2px 6px 0 0;
-  color: var(--wb-color-on-surface-variant);
-}
-html[data-wb-shell="legacy"] .workbench-inventory-rows .workbench-row-icon svg { width: 100%; height: 100%; }
-html[data-wb-shell="legacy"] .workbench-inventory-rows .workbench-row-title {
-  grid-column: 2;
-  grid-row: 1;
-  color: var(--wb-color-on-surface);
-  font: var(--wb-fw-title) 13px/18px var(--wb-font-title);
-  letter-spacing: var(--wb-track-title);
-  overflow-wrap: anywhere;
-}
-html[data-wb-shell="legacy"] .workbench-inventory-rows .workbench-row-kind {
-  grid-column: 3;
-  grid-row: 1;
-  align-self: start;
-  margin-left: 8px;
-  padding: 2px 6px;
-  border: 1px solid var(--wb-card-cat-border);
-  border-radius: var(--wb-r-sm);
-  background: var(--wb-card-cat-bg);
-  color: var(--wb-color-on-surface-variant);
-  font: var(--wb-fw-medium) 10px/14px var(--wb-mono);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  white-space: nowrap;
-}
-html[data-wb-shell="legacy"] .workbench-inventory-rows .workbench-row-purpose {
-  grid-column: 1 / -1;
-  grid-row: 2;
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-  white-space: normal;
-  color: var(--wb-color-on-surface-variant);
-  font: var(--wb-fw-regular) 12px/18px var(--wb-font);
-}
-html[data-wb-shell="legacy"] .workbench-inventory-rows .workbench-methodology-badge { grid-column: 1 / -1 !important; grid-row: 3; }
-/* Card footer: a divider (grid pseudo-item) across row 4, the evidence pill
- * left and the actions right. The pill keeps its legacy tone colours. */
-html[data-wb-shell="legacy"] .workbench-inventory-rows article.workbench-asset::before {
-  content: "";
-  grid-column: 1 / -1;
-  grid-row: 4;
-  align-self: start;
-  border-top: 1px solid var(--wb-card-footer-border);
-}
-html[data-wb-shell="legacy"] .workbench-inventory-rows .workbench-row-evidence {
-  grid-column: 1 / 3;
-  grid-row: 4;
-  align-self: center;
-  justify-self: start;
-  max-width: 100%;
-  margin: 10px 0 0;
-  padding: 2px 8px;
-  border-radius: var(--wb-r-sm);
-  font: var(--wb-fw-medium) 11px/16px var(--wb-font);
-  overflow-wrap: anywhere;
-}
-html[data-wb-shell="legacy"] .workbench-inventory-rows .workbench-row-actions {
-  grid-column: 3;
-  grid-row: 4;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 4px;
-  margin-top: 10px;
-  padding-left: 8px;
-}
-html[data-wb-shell="legacy"] .workbench-inventory-rows .workbench-overlap-notice { grid-column: 1 / -1; }
-html[data-wb-shell="legacy"] .workbench-source-review h3 { font: var(--wb-fw-strong) 12px/16px var(--wb-font); }
-html[data-wb-shell="legacy"] .workbench-source-review-cells p { font: var(--wb-fw-regular) 11px/16px var(--wb-font); color: var(--wb-color-on-surface-variant); }
-html[data-wb-shell="legacy"] .workbench-source-review-cells strong { font: var(--wb-fw-strong) 15px/20px var(--wb-mono); }
-
-/*
- * Below md the footer ledger wraps to several rows; kept sticky it would
- * cover most of a phone screen, so it scrolls with the page there (as the
- * header does).
- */
-@media (max-width: 767px) {
-  html[data-wb-shell="legacy"] .ledger {
-    position: static;
-  }
-}
-
-/*
- * P3.1 review: evidence and actions share the whole footer row, so the kind
- * chip's column is no longer widened by the action buttons.
- */
-html[data-wb-shell="legacy"] .workbench-inventory-rows .workbench-row-evidence {
-  grid-column: 1 / -1;
-  justify-self: start;
-  max-width: calc(100% - 148px);
-}
-html[data-wb-shell="legacy"] .workbench-inventory-rows .workbench-row-actions {
-  grid-column: 1 / -1;
-  justify-self: end;
-}
-html[data-wb-shell="legacy"] .workbench-inventory-rows .workbench-row-kind {
-  max-width: 20ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 
 /*
  * P3.2 — item inspector (admin-item.html #inspector-rail): segmented view
@@ -725,30 +450,6 @@ html[data-theme] .workbench-exposure-item:has([data-workbench-evidence-tone="pos
 html[data-theme] .workbench-exposure-item p,
 html[data-theme] .workbench-exposure-item .workbench-exposure-meta { color: var(--wb-color-on-surface-variant); }
 html[data-theme] .workbench-exposure-item .workbench-exposure-meta { font-family: var(--wb-mono); }
-/* Approval / evidence group: mono uppercase sub-labels, code wells for records. */
-html[data-theme] .grp:has(#approval-rows) .grpnote { max-width: none; color: var(--wb-color-on-surface-variant); }
-html[data-theme] .grp:has(#approval-rows) .grpnote h3 {
-  margin: 12px 0 4px;
-  color: var(--wb-color-on-surface-variant);
-  font: var(--wb-fw-strong) 10px/14px var(--wb-mono);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-html[data-theme] .grp:has(#approval-rows) .grpnote pre:not(:empty) {
-  margin: 6px 0;
-  padding: 8px;
-  border: 1px solid var(--wb-border-hairline);
-  border-radius: var(--wb-r);
-  background: var(--wb-theme-code-bg);
-  color: var(--wb-color-on-surface);
-  font: var(--wb-fw-regular) 11px/16px var(--wb-mono);
-  overflow-x: auto;
-}
-html[data-theme] .grp:has(#approval-rows) .grpnote details > summary {
-  color: var(--wb-color-on-surface);
-  font: var(--wb-fw-strong) 12px/18px var(--wb-font);
-}
-
 /*
  * P3.4 — scan review (admin-scan.html "The scan at a glance" tiles, the
  * "Do I need to run a scan?" command card): the rail's source evidence
@@ -789,11 +490,7 @@ html[data-theme] .reference-evidence-panel {
   border-left: 1px solid var(--wb-border-hairline);
   box-shadow: var(--wb-panel-shadow);
 }
-html[data-theme] .reference-evidence-heading h2 {
-  color: var(--wb-theme-heading-text);
-  font: var(--wb-fw-title) 15px/20px var(--wb-font-title);
-  letter-spacing: var(--wb-track-title);
-}
+
 html[data-theme] .reference-evidence-panel dt {
   margin-top: 12px;
   color: var(--wb-color-on-surface-variant);
@@ -815,29 +512,6 @@ html[data-theme] .reference-evidence-panel .help > p {
   color: var(--wb-color-on-surface-variant);
   font: var(--wb-fw-regular) 12px/18px var(--wb-font);
 }
-/* Imports panel: title, mono section label and the command in a code well. */
-html[data-theme] #panel-imports .importbar > h2 {
-  color: var(--wb-theme-heading-text);
-  font: var(--wb-fw-title) 15px/20px var(--wb-font-title);
-  letter-spacing: var(--wb-track-title);
-}
-html[data-theme] #panel-imports .importbar > .cap {
-  margin-top: 6px;
-  color: var(--wb-color-on-surface-variant);
-  font: var(--wb-fw-strong) 10px/14px var(--wb-mono);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-html[data-theme] #panel-imports #policy-file-command {
-  margin-top: 6px;
-  padding: 8px 10px;
-  border: 1px solid var(--wb-border-hairline);
-  border-radius: var(--wb-r);
-  background: var(--wb-theme-code-bg);
-  color: var(--wb-color-on-surface);
-  font: var(--wb-fw-regular) 11px/16px var(--wb-mono);
-}
-
 /*
  * P3.5 — organization (admin-org.html): Deployment setup (posture, allowed CLI,
  * managed MCP toggle, developer tool setup, adoption recipe drawer) and the
@@ -849,39 +523,7 @@ html[data-theme] #panel-imports #policy-file-command {
  * name / short id / repo / people fields, "where this shows up" and signing
  * cards have no product data and are not built. Contrast: ADOPTION-LOG P3.5.
  */
-html[data-theme] .compact-instrument .instrument-heading h2,
-html[data-theme] .tool-selection-heading h2 {
-  color: var(--wb-theme-heading-text);
-  font: var(--wb-fw-title) 14px/20px var(--wb-font-title);
-  letter-spacing: var(--wb-track-title);
-}
-html[data-theme] .instrument-posture > span,
-html[data-theme] .instrument-label {
-  color: var(--wb-color-on-surface-variant);
-  font: var(--wb-fw-strong) 10px/14px var(--wb-mono);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-html[data-theme] .instrument-label .end {
-  color: var(--wb-color-on-surface);
-  font: var(--wb-fw-medium) 11px/14px var(--wb-mono);
-  letter-spacing: 0;
-  text-transform: none;
-}
-html[data-theme] .instrument-clis .chip {
-  border-color: var(--wb-card-border);
-  border-radius: var(--wb-r);
-  background: var(--wb-color-surface-container-low);
-  color: var(--wb-color-on-surface-variant);
-  font: var(--wb-fw-medium) 11px/1 var(--wb-mono);
-}
-html[data-theme] .instrument-clis .chip:hover { color: var(--wb-color-on-surface); }
-html[data-theme] .instrument-clis .chip[aria-pressed="true"] {
-  border-color: var(--wb-accent);
-  background: var(--wb-color-surface-container);
-  color: var(--wb-accent);
-  box-shadow: none;
-}
+
 html[data-theme] .instrument-toggle {
   border-color: var(--wb-card-border);
   border-radius: var(--wb-r);
@@ -918,49 +560,14 @@ html[data-theme] .developer-tool-state::before {
 html[data-theme] .developer-tool-row[data-developer-tool-state="selected-pending"] .developer-tool-state::before { background: var(--wb-color-secondary); }
 html[data-theme] .developer-tool-row[data-developer-tool-state="excluded"] .developer-tool-state::before,
 html[data-theme] .developer-tool-row[data-developer-tool-state="blocked"] .developer-tool-state::before { background: var(--wb-color-error); }
-html[data-theme] .deployment-reference-control,
 html[data-theme] .reference-evidence > summary {
   border-color: var(--wb-card-border);
   border-radius: var(--wb-r);
 }
-html[data-theme] .reference-drawer {
-  background: var(--wb-theme-inspector-bg);
-  border-left: 1px solid var(--wb-border-hairline);
-  box-shadow: var(--wb-panel-shadow);
-}
-/* Protected-policy authoring form: mono uppercase labels, taller inputs. */
-html[data-theme] #panel-author .form-grid { gap: 10px 12px; }
-html[data-theme] #panel-author .form-grid label {
-  gap: 5px;
-  color: var(--wb-color-on-surface-variant);
-  font: var(--wb-fw-strong) 10px/14px var(--wb-mono);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-html[data-theme] #panel-author .form-grid input,
-html[data-theme] #panel-author .form-grid select {
-  height: 34px;
-  border-color: var(--wb-color-outline-variant);
-  border-radius: var(--wb-r);
-  background: var(--wb-theme-input-bg);
-  color: var(--wb-color-on-surface);
-  font: var(--wb-fw-regular) 12px/1.4 var(--wb-font);
-  letter-spacing: 0;
-  text-transform: none;
-}
-html[data-theme] #panel-author .form-grid input:focus,
-html[data-theme] #panel-author .form-grid select:focus { border-color: var(--wb-accent); }
-html[data-theme] #panel-author .form-grid input::placeholder { color: var(--wb-color-outline); }
-html[data-theme] #panel-author textarea[readonly] {
-  border-color: var(--wb-border-hairline);
-  border-radius: var(--wb-r);
-  background: var(--wb-theme-code-bg);
-  color: var(--wb-color-on-surface);
-}
 
 /*
  * New shell base (NEW-SHELL-PLAN.md S1). Scoped to html[data-wb-shell="new"],
- * which only the new shell sets, so nothing here reaches the legacy page.
+ * which the admin page sets (the user door page does not).
  * Tailwind preflight stays off; this is the minimum reset the frame needs.
  */
 html[data-wb-shell="new"] { color-scheme: light; }

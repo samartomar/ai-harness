@@ -199,3 +199,23 @@ S5/S6/S7/S8 run beside it with two workers.
    1.5-minute lane. Recommend accept; drop at S10.
 5. **Copy JSON / Changes-vs-whole-file.** Cheap and data-free; include in S5 or defer?
    Recommend include (S, ~2 h inside S5).
+
+## 7. Status after the flip and deletion (2026-09-18)
+
+- **Done.** A: ECC MCP approval panel and custom-hook note on the additions screen.
+  B (S10): the new shell is the only admin page; `AIH_WORKBENCH_SHELL`, `?shell=`, the
+  model's `shell` field and the fixture option are gone. C (S11): `legacy-runtime.js`,
+  the legacy template and its inline CSS, `workspace-shell.ts`,
+  `workspace-interactions.ts`, the catalog's legacy render branches, the P3.0 bridge and
+  every `wb-tokens.css` rule whose selector names only legacy markup are deleted.
+- **Changed from §1 and S11 (orchestrator decision).** `studio-protected-authority-runtime.js`
+  and `artifact-intake-runtime.js` are **kept**, not rewritten: they are the behaviour
+  layer the new shell mounts (on the cloned protected-policy markup and on
+  `#panel-artifacts`), and their downloads are pinned byte for byte by the S0 goldens.
+- **Follow-up (not scheduled).** Rewrite those two runtimes as typed modules: headless
+  digest and validation logic (already partly in `protected-digest.ts` and
+  `artifact-intake-model.ts`) plus a textContent-only DOM layer, against the same
+  goldens. Also still open: `#save-ecc-mcp-approval` has no handler (it had none in the
+  legacy runtime either; recording a new approval is policy semantics for the owner);
+  linux/darwin visual baselines; the `test:workbench:pr` "pure" budget (10 s), which the
+  branch's DOM tests exceed (27 s at S7, 29 s now; 8.5 s on `main`).

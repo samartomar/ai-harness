@@ -84,7 +84,7 @@ describe("Policy Workbench UI server", () => {
       });
       const html = await (await fetch(running.url)).text();
       expect(html).toContain('<div id="wb-root" data-wb-shell="new"></div>');
-      expect(html).not.toContain('<html lang="en" data-theme="light" data-wb-shell="legacy">');
+      expect(html).not.toContain('data-wb-shell="legacy"');
       expect(html).not.toContain('"shell":');
     } finally {
       vi.unstubAllEnvs();

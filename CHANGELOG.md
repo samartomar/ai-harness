@@ -125,6 +125,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`checkProjectPolicyNarrowsV1`, `src/org-policy/project-policy.ts`) against an
   org policy's authoring selections. Not yet consumed by any `aih` command.
 
+### Changed
+
+- Render the Policy Workbench admin page as one layout: a header, a navigation rail and
+  five screens (Sources, Changes, Scan, Organization, Additions). `aih policy generate`, the
+  packed page and `npx @aihq/core --ui` all serve it; the earlier single-page layout is
+  removed. Downloaded policy, decision, protected bundle and artifact intake bytes are
+  unchanged. The ECC MCP approval panel lists and removes recorded approvals; its Save
+  button still records nothing.
+
 ## [Core 0.6.2] - 2026-09-11
 
 ### Changed

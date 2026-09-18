@@ -15,7 +15,10 @@ The existing root entry remains the user-facing UI route:
 npx @aihq/core --ui
 ```
 
-That route builds and serves the same portable Workbench artifact. It does not
+That route builds and serves the same portable Workbench artifact. Its admin page,
+like the page `aih policy generate` writes and the page in the packed artifact, has one
+layout: a header, a navigation rail and five screens (Sources, Changes, Scan,
+Organization and Additions). There is no alternative layout or layout switch. It does not
 discover executable providers from the network or from an arbitrary local directory.
 It also reads explicitly imported, authenticated source-data snapshots without
 replacing the installed Core version. This data path is separate from executable

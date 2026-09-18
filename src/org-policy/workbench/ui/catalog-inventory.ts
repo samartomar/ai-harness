@@ -47,11 +47,10 @@ import {
 } from "./selection-comparison.js";
 
 /*
- * S3 (NEW-SHELL-PLAN.md): in the new shell the sources screen follows
- * prototype/policy-workbench/screens/admin-sources.html. The prototype's
- * utility classes are added only there (`shell: "new"`); every behavioural
- * hook (legacy class names, data-workbench-* attributes, ARIA names) stays on
- * the same element, and the legacy shell's markup is unchanged until S11.
+ * S3 (NEW-SHELL-PLAN.md): the sources screen follows
+ * prototype/policy-workbench/screens/admin-sources.html. Every behavioural
+ * hook (class names, data-workbench-* attributes, ARIA names) stays on the
+ * same element the tests pin.
  */
 const BTN =
   "inline-flex items-center justify-center gap-1 h-7 px-2.5 rounded text-[11px] font-medium cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
@@ -63,8 +62,6 @@ const CHIP =
   "px-1.5 py-0.5 rounded border border-solid border-outline-variant bg-surface-container-low font-mono text-[9px] uppercase tracking-wide text-on-surface-variant";
 
 export interface WorkbenchMountOptions {
-  /** Which admin shell hosts the catalog; "new" adds the prototype markup (S3). */
-  shell?: "legacy" | "new";
   bundle: AuthoringCatalogBundleV1;
   referenceReports?: WorkbenchReferenceReportsV1;
   adoptionBindings?: WorkbenchPolicyBindingsV1;
@@ -329,10 +326,9 @@ export function mountWorkbench(
   options: WorkbenchMountOptions,
 ): MountedWorkbench {
   let state = options.initialState;
-  const newShell = options.shell === "new";
-  /** Add the prototype's utility classes in the new shell only. */
+  /** Add the prototype's utility classes. */
   const tw = (node: Element, classes: string): void => {
-    if (newShell) node.classList.add(...classes.split(" "));
+    node.classList.add(...classes.split(" "));
   };
   const browseBundle = workbenchBrowseBundle(options.bundle);
   const browseInventory: CatalogBrowseInventory = {
@@ -527,30 +523,17 @@ export function mountWorkbench(
   drafts.setAttribute("aria-label", "Prepared local drafts");
   diagnostics.className = "help error";
   tw(diagnostics, "m-0 text-[12px] text-error empty:hidden");
-  if (newShell) {
-    // The prototype masthead: the source's name and its review cells.
-    const masthead = document.createElement("header");
-    masthead.dataset.wbSourcesMasthead = "";
-    tw(
-      masthead,
-      "flex flex-col gap-2 pb-3 border-0 border-b border-solid border-outline-variant min-w-0",
-    );
-    masthead.append(sourceReview);
-    sourceRail.append(sourceRailHeading, sourceTabs, filters);
-    catalogRegister.append(
-      masthead,
-      browseTools,
-      diagnostics,
-      templates,
-      repairs,
-      drafts,
-      inventory,
-    );
-  } else {
-    sourceRail.append(sourceRailHeading, sourceTabs, filters, sourceReview);
-    catalogRegister.append(browseTools, diagnostics, templates, repairs, drafts, inventory);
-  }
-  if (newShell && options.inspectorHost !== undefined) {
+  // The prototype masthead: the source's name and its review cells.
+  const masthead = document.createElement("header");
+  masthead.dataset.wbSourcesMasthead = "";
+  tw(
+    masthead,
+    "flex flex-col gap-2 pb-3 border-0 border-b border-solid border-outline-variant min-w-0",
+  );
+  masthead.append(sourceReview);
+  sourceRail.append(sourceRailHeading, sourceTabs, filters);
+  catalogRegister.append(masthead, browseTools, diagnostics, templates, repairs, drafts, inventory);
+  if (options.inspectorHost !== undefined) {
     catalogLayout.append(sourceRail, catalogRegister);
     options.inspectorHost.replaceChildren(details, inspectorScrim);
   } else catalogLayout.append(sourceRail, catalogRegister, details, inspectorScrim);
@@ -561,7 +544,7 @@ export function mountWorkbench(
    * `root`; lookups and the delegated click handler cover both.
    */
   const scopes: readonly HTMLElement[] =
-    newShell && options.inspectorHost !== undefined ? [root, details] : [root];
+    options.inspectorHost !== undefined ? [root, details] : [root];
   const scopeAll = <T extends Element>(selector: string): T[] =>
     scopes.flatMap((scope) => [...scope.querySelectorAll<T>(selector)]);
   const scopeOne = <T extends Element>(selector: string): T | null =>
@@ -1683,7 +1666,7 @@ export function mountWorkbench(
         : undefined;
     const rows = document.createElement("div");
     rows.className = "workbench-inventory-rows";
-    if (newShell) rows.dataset.wbSourcesCards = "";
+    rows.dataset.wbSourcesCards = "";
     tw(rows, "grid grid-cols-[repeat(auto-fill,minmax(min(260px,100%),1fr))] gap-3");
     for (const assetId of alreadyPaged ? assetIds : pageItems(assetIds, page)) {
       const asset = options.bundle.assets[assetId];
@@ -1812,12 +1795,10 @@ export function mountWorkbench(
           ? "Read details"
           : "Read previous report";
       actions.append(action, expandButton);
-      if (newShell) {
-        const heading = document.createElement("div");
-        tw(heading, "flex items-start gap-1.5 min-w-0");
-        heading.append(icon, title, kind);
-        row.append(heading, purpose, decisionFacts, methodology, detail, actions);
-      } else row.append(icon, title, kind, purpose, decisionFacts, methodology, detail, actions);
+      const heading = document.createElement("div");
+      tw(heading, "flex items-start gap-1.5 min-w-0");
+      heading.append(icon, title, kind);
+      row.append(heading, purpose, decisionFacts, methodology, detail, actions);
       updateRow(row, asset);
       if (expandedAssetId === asset.id && openDetailKey === undefined) {
         const inspectorHeader = document.createElement("header");

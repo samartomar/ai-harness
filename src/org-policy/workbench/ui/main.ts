@@ -143,7 +143,6 @@ function mountCatalogController(
   hooks: CatalogControllerHooks,
 ): MountedWorkbench {
   const mounted = mountWorkbench(root, {
-    shell: "new",
     bundle,
     referenceReports,
     adoptionBindings: bindings,

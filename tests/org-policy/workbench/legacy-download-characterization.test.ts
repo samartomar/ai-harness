@@ -1,11 +1,12 @@
 /**
- * S0 characterization of the legacy Workbench runtime (NEW-SHELL-PLAN.md §4).
+ * S0 characterization (NEW-SHELL-PLAN.md §4), now run against the new shell.
  *
- * These tests pin what the legacy runtime does today, through its own DOM
- * hooks: the policy-grammar messages it announces on import and validate, and
- * the exact bytes of every file it downloads. The golden files under
- * `goldens/` were captured from the legacy runtime before any extraction and
- * are the byte-compatibility gate for the new shell (S2, S7, S8).
+ * The golden files under `goldens/` and the snapshots were captured from the
+ * legacy runtime before any extraction. The legacy runtime is deleted (S11);
+ * the same tests drive the new shell through the same DOM hooks, and every
+ * policy-grammar message and every downloaded file must still match those
+ * captures byte for byte. The describe names keep "legacy" so the snapshot
+ * keys, and therefore the captured values, stay exactly as recorded.
  */
 import { afterEach, describe, expect, it } from "vitest";
 import {

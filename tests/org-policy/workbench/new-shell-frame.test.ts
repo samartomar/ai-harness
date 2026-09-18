@@ -51,7 +51,7 @@ describe("admin page", () => {
     expect(next).toContain('<html lang="en" data-theme="light" data-wb-shell="new">');
     expect(next).toContain('<div id="wb-root" data-wb-shell="new"></div>');
     expect(next).not.toContain('id="framework-rows"');
-    expect(next).not.toContain('<html lang="en" data-theme="light" data-wb-shell="legacy">');
+    expect(next).not.toContain('data-wb-shell="legacy"');
     expect(next).toContain('<style id="wb-styles">');
   });
 });
