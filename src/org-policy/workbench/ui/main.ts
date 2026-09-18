@@ -6,6 +6,8 @@ import {
 import { safePolicyCommandArgument } from "../command-arguments.js";
 import { projectWorkbenchPolicy, type WorkbenchPolicyBindingsV1 } from "../compile-policy.js";
 import {
+  type AuthoringAssetV1,
+  type AuthoringCatalogBundleV1,
   AuthoringCatalogBundleV1Schema,
   WorkbenchActionV1Schema,
   type WorkbenchSourceInputsV1,
@@ -19,12 +21,16 @@ import {
   workbenchStatesEqualV1,
 } from "../selection-engine.js";
 import { mountArtifactIntakeWorkbench } from "./artifact-intake-runtime.js";
-import { mountWorkbench, workbenchBrowseBundle } from "./catalog-inventory.js";
+import {
+  type MountedWorkbench,
+  mountWorkbench,
+  workbenchBrowseBundle,
+} from "./catalog-inventory.js";
 import { availableDeveloperToolCatalogDetails } from "./developer-tool-catalog.js";
 import { mountDeveloperToolSelection } from "./developer-tool-selection.js";
 import { mountLegacyWorkbench } from "./legacy-runtime.js";
 import { reprojectSchema3Policy, type Schema3ReprojectionSteps } from "./schema3-reprojection.js";
-import { el } from "./shell/dom.js";
+import { el, withId } from "./shell/dom.js";
 import { mountNewWorkbench } from "./shell/new-workbench.js";
 import { resolveWorkbenchShell } from "./shell/screens.js";
 import { mountChooserNote, mountUserDoor, mountUserDoorTheme } from "./user-door.js";
@@ -113,6 +119,205 @@ function browserCommandArgumentErrors(policy: unknown): string[] {
   return [...new Set(errors)];
 }
 
+interface CatalogControllerHooks {
+  /** Which admin shell hosts the catalog (S3 adds the prototype markup in "new"). */
+  shell: "legacy" | "new";
+  prepareApproval(asset: AuthoringAssetV1): void;
+  /** Runs on every outside policy change before the catalog re-projects it. */
+  beforeRestore?(snapshot: unknown): void;
+}
+
+/**
+ * The catalog controller wiring both shells share (NEW-SHELL-PLAN.md S3):
+ * dispatch through the selection engine into the policy session, local
+ * draft intake, and the schema-3 re-projection on every policy change.
+ */
+function mountCatalogController(
+  root: HTMLElement,
+  session: WorkbenchSession,
+  bundle: AuthoringCatalogBundleV1,
+  bindings: WorkbenchPolicyBindingsV1,
+  guard: { applying: boolean },
+  hooks: CatalogControllerHooks,
+): MountedWorkbench {
+  const mounted = mountWorkbench(root, {
+    shell: hooks.shell,
+    bundle,
+    referenceReports,
+    adoptionBindings: bindings,
+    initialState: importedState(browserModel.initialPolicy, bundle, bindings, sourceInputs).state,
+    initialDiagnostics: importedState(browserModel.initialPolicy, bundle, bindings, sourceInputs)
+      .diagnostics,
+    inspectEvidence(asset) {
+      document.dispatchEvent(
+        new CustomEvent("aih-workbench-inspect-evidence", {
+          detail: { assetId: asset.id },
+        }),
+      );
+    },
+    prepareApproval: hooks.prepareApproval,
+    dispatch(action, expectedState) {
+      const imported = importedState(session.snapshotPolicy(), bundle, bindings, sourceInputs);
+      const current = imported.state;
+      if (!imported.accepted)
+        return {
+          accepted: false,
+          state: current,
+          diagnostics: imported.diagnostics.map((message) => ({
+            code: "unknown-asset" as const,
+            message,
+          })),
+        };
+      if (expectedState !== undefined && !workbenchStatesEqualV1(current, expectedState))
+        return {
+          accepted: false,
+          state: current,
+          diagnostics: [
+            {
+              code: "invalid-action" as const,
+              message: "Your draft changed. Review a fresh comparison before applying it.",
+            },
+          ],
+        };
+      const reduced = reduceWorkbenchAction(bundle, current, action);
+      if (!reduced.accepted) return reduced;
+      const basePolicy = object(session.snapshotPolicy());
+      if (basePolicy === undefined) {
+        return {
+          accepted: false,
+          state: current,
+          diagnostics: [
+            {
+              code: "unknown-asset",
+              message: "Policy session returned an invalid policy.",
+            },
+          ],
+        };
+      }
+      const persist = (policy: unknown): WorkbenchReductionV1 | undefined => {
+        try {
+          guard.applying = true;
+          window.__aihWorkbenchApplyingProjection = true;
+          session.restorePolicy(policy);
+          return undefined;
+        } catch (error) {
+          return {
+            accepted: false,
+            state: current,
+            diagnostics: [
+              {
+                code: "unknown-asset",
+                message: error instanceof Error ? error.message : "Policy update was rejected.",
+              },
+            ],
+          };
+        } finally {
+          window.__aihWorkbenchApplyingProjection = false;
+          guard.applying = false;
+        }
+      };
+      const compiled = projectWorkbenchPolicy(
+        basePolicy,
+        reduced.state,
+        bundle,
+        bindings,
+        "author",
+        sourceInputs,
+      );
+      if (compiled.accepted) {
+        const failed = persist(compiled.policy);
+        if (failed !== undefined) return failed;
+        const refreshed = importedState(compiled.policy, bundle, bindings, sourceInputs);
+        return {
+          ...reduced,
+          state: refreshed.state,
+          diagnostics: refreshed.diagnostics.map((message) => ({
+            code: "unknown-asset" as const,
+            message,
+          })),
+        };
+      }
+      const repair = serializeWorkbenchRepairV1(
+        basePolicy,
+        current,
+        action,
+        bundle,
+        bindings,
+        sourceInputs,
+      );
+      if (repair.accepted && repair.policy !== undefined) {
+        const failed = persist(repair.policy);
+        return (
+          failed ?? {
+            accepted: true,
+            state: repair.state,
+            diagnostics: repair.diagnostics.map((message) => ({
+              code: "unknown-asset" as const,
+              message,
+            })),
+          }
+        );
+      }
+      return {
+        accepted: false,
+        state: current,
+        diagnostics: compiled.diagnostics.map((message) => ({
+          code: "unknown-asset" as const,
+          message,
+        })),
+      };
+    },
+  });
+  document.addEventListener("aih-workbench-add-draft", (event) => {
+    const detail = event instanceof CustomEvent ? event.detail : undefined;
+    const candidate = object(detail);
+    const parsed = WorkbenchActionV1Schema.safeParse(
+      candidate === undefined ? undefined : { type: "add-draft", draft: candidate.draft },
+    );
+    if (!parsed.success) {
+      document.dispatchEvent(
+        new CustomEvent("aih-workbench-draft-rejected", {
+          detail: {
+            diagnostics: parsed.error.issues.map((issue) => issue.message),
+          },
+        }),
+      );
+      return;
+    }
+    const result = mounted.dispatch(parsed.data);
+    document.dispatchEvent(
+      new CustomEvent(
+        result.accepted ? "aih-workbench-draft-accepted" : "aih-workbench-draft-rejected",
+        {
+          detail: {
+            diagnostics: (result.diagnostics ?? []).map((diagnostic) => diagnostic.message),
+          },
+        },
+      ),
+    );
+  });
+  window.addEventListener("aih-workbench-policy-change", () => {
+    if (guard.applying) return;
+    const snapshot = session.snapshotPolicy();
+    hooks.beforeRestore?.(snapshot);
+    const outcome = reprojectSchema3Policy(
+      snapshot,
+      schema3ReprojectionSteps(bundle, bindings, (policy) => {
+        try {
+          guard.applying = true;
+          window.__aihWorkbenchApplyingProjection = true;
+          session.restorePolicy(policy);
+        } finally {
+          window.__aihWorkbenchApplyingProjection = false;
+          guard.applying = false;
+        }
+      }),
+    );
+    mounted.restore(outcome.state, outcome.diagnostics);
+  });
+  return mounted;
+}
+
 const model = object(window.__aihWorkbenchModel);
 if (model === undefined) throw new Error("Policy Workbench model is unavailable.");
 const browserModel = model as unknown as BrowserModel;
@@ -182,31 +387,31 @@ if (newShell) {
   });
   window.__aihPolicyWorkbenchSession = session;
   if (model.door === "chooser") mountChooserNote(document.getElementById("announcement"));
-  // Both shells re-project an imported schema-3 policy through the prepared
-  // catalog with the same step (S2 byte parity) and surface its diagnostics.
+  // S3: the sources screen hosts the shared catalog controller; it re-projects
+  // an imported schema-3 policy and reports diagnostics in the catalog.
   if (preparedCatalogValid) {
-    const diagnostics = el("ul", "m-0 pl-4 text-[12px] text-error empty:hidden");
-    diagnostics.dataset.wbSourcesDiagnostics = "";
-    diagnostics.setAttribute("role", "status");
-    shell.screenBody("sources").append(diagnostics);
-    let applyingNewShellProjection = false;
-    window.addEventListener("aih-workbench-policy-change", () => {
-      if (applyingNewShellProjection) return;
-      const outcome = reprojectSchema3Policy(
-        session.snapshotPolicy(),
-        schema3ReprojectionSteps(bundle, bindings, (policy) => {
-          try {
-            applyingNewShellProjection = true;
-            window.__aihWorkbenchApplyingProjection = true;
-            session.restorePolicy(policy);
-          } finally {
-            window.__aihWorkbenchApplyingProjection = false;
-            applyingNewShellProjection = false;
-          }
-        }),
-      );
-      diagnostics.replaceChildren(...outcome.diagnostics.map((message) => el("li", "", message)));
-    });
+    const sources = shell.screenBody("sources");
+    const root = withId(el("div", "min-w-0"), "framework-rows");
+    sources.replaceChildren(root);
+    mountCatalogController(
+      root,
+      session,
+      bundle,
+      bindings,
+      { applying: false },
+      {
+        shell: "new",
+        prepareApproval(asset) {
+          // The protected approval form moves to the acme screen in S7.
+          shell.router.setScreen("acme");
+          document.dispatchEvent(
+            new CustomEvent("aih-workbench-prepare-approval", {
+              detail: { assetId: asset.id },
+            }),
+          );
+        },
+      },
+    );
   }
 }
 
@@ -215,7 +420,7 @@ if (!userDoor && !newShell && preparedCatalogValid) {
   const session = window.__aihPolicyWorkbenchSession;
   if (root === null || session === undefined)
     throw new Error("Policy Workbench selection controller is unavailable.");
-  let applyingWorkbenchProjection = false;
+  const guard = { applying: false };
   const developerToolRows = document.getElementById("developer-tool-rows");
   const developerToolStatus = document.getElementById("developer-tool-selection-status");
   const developerToolSummary = document.getElementById("developer-tool-selection-summary");
@@ -268,7 +473,7 @@ if (!userDoor && !newShell && preparedCatalogValid) {
                 diagnostics: developerTools.diagnostics.map((diagnostic) => diagnostic.message),
               };
             try {
-              applyingWorkbenchProjection = true;
+              guard.applying = true;
               window.__aihWorkbenchApplyingProjection = true;
               session.restorePolicy(policy);
               return { accepted: true, policy };
@@ -281,25 +486,13 @@ if (!userDoor && !newShell && preparedCatalogValid) {
               };
             } finally {
               window.__aihWorkbenchApplyingProjection = false;
-              applyingWorkbenchProjection = false;
+              guard.applying = false;
             }
           },
         })
       : undefined;
-  const mounted = mountWorkbench(root, {
-    bundle,
-    referenceReports,
-    adoptionBindings: bindings,
-    initialState: importedState(browserModel.initialPolicy, bundle, bindings, sourceInputs).state,
-    initialDiagnostics: importedState(browserModel.initialPolicy, bundle, bindings, sourceInputs)
-      .diagnostics,
-    inspectEvidence(asset) {
-      document.dispatchEvent(
-        new CustomEvent("aih-workbench-inspect-evidence", {
-          detail: { assetId: asset.id },
-        }),
-      );
-    },
+  const mounted = mountCatalogController(root, session, bundle, bindings, guard, {
+    shell: "legacy",
     prepareApproval(asset) {
       window.__aihSetWorkbenchView?.("author");
       const form = document.getElementById("protected-form");
@@ -321,166 +514,9 @@ if (!userDoor && !newShell && preparedCatalogValid) {
         }),
       );
     },
-    dispatch(action, expectedState) {
-      const imported = importedState(session.snapshotPolicy(), bundle, bindings, sourceInputs);
-      const current = imported.state;
-      if (!imported.accepted)
-        return {
-          accepted: false,
-          state: current,
-          diagnostics: imported.diagnostics.map((message) => ({
-            code: "unknown-asset" as const,
-            message,
-          })),
-        };
-      if (expectedState !== undefined && !workbenchStatesEqualV1(current, expectedState))
-        return {
-          accepted: false,
-          state: current,
-          diagnostics: [
-            {
-              code: "invalid-action" as const,
-              message: "Your draft changed. Review a fresh comparison before applying it.",
-            },
-          ],
-        };
-      const reduced = reduceWorkbenchAction(bundle, current, action);
-      if (!reduced.accepted) return reduced;
-      const basePolicy = object(session.snapshotPolicy());
-      if (basePolicy === undefined) {
-        return {
-          accepted: false,
-          state: current,
-          diagnostics: [
-            {
-              code: "unknown-asset",
-              message: "Policy session returned an invalid policy.",
-            },
-          ],
-        };
-      }
-      const persist = (policy: unknown): WorkbenchReductionV1 | undefined => {
-        try {
-          applyingWorkbenchProjection = true;
-          window.__aihWorkbenchApplyingProjection = true;
-          session.restorePolicy(policy);
-          return undefined;
-        } catch (error) {
-          return {
-            accepted: false,
-            state: current,
-            diagnostics: [
-              {
-                code: "unknown-asset",
-                message: error instanceof Error ? error.message : "Policy update was rejected.",
-              },
-            ],
-          };
-        } finally {
-          window.__aihWorkbenchApplyingProjection = false;
-          applyingWorkbenchProjection = false;
-        }
-      };
-      const compiled = projectWorkbenchPolicy(
-        basePolicy,
-        reduced.state,
-        bundle,
-        bindings,
-        "author",
-        sourceInputs,
-      );
-      if (compiled.accepted) {
-        const failed = persist(compiled.policy);
-        if (failed !== undefined) return failed;
-        const refreshed = importedState(compiled.policy, bundle, bindings, sourceInputs);
-        return {
-          ...reduced,
-          state: refreshed.state,
-          diagnostics: refreshed.diagnostics.map((message) => ({
-            code: "unknown-asset" as const,
-            message,
-          })),
-        };
-      }
-      const repair = serializeWorkbenchRepairV1(
-        basePolicy,
-        current,
-        action,
-        bundle,
-        bindings,
-        sourceInputs,
-      );
-      if (repair.accepted && repair.policy !== undefined) {
-        const failed = persist(repair.policy);
-        return (
-          failed ?? {
-            accepted: true,
-            state: repair.state,
-            diagnostics: repair.diagnostics.map((message) => ({
-              code: "unknown-asset" as const,
-              message,
-            })),
-          }
-        );
-      }
-      return {
-        accepted: false,
-        state: current,
-        diagnostics: compiled.diagnostics.map((message) => ({
-          code: "unknown-asset" as const,
-          message,
-        })),
-      };
-    },
+    beforeRestore: (snapshot) => developerTools?.restore(snapshot),
   });
   inspectDeveloperToolDetails = (assetId, trigger) => mounted.inspectAssetDetails(assetId, trigger);
-  document.addEventListener("aih-workbench-add-draft", (event) => {
-    const detail = event instanceof CustomEvent ? event.detail : undefined;
-    const candidate = object(detail);
-    const parsed = WorkbenchActionV1Schema.safeParse(
-      candidate === undefined ? undefined : { type: "add-draft", draft: candidate.draft },
-    );
-    if (!parsed.success) {
-      document.dispatchEvent(
-        new CustomEvent("aih-workbench-draft-rejected", {
-          detail: {
-            diagnostics: parsed.error.issues.map((issue) => issue.message),
-          },
-        }),
-      );
-      return;
-    }
-    const result = mounted.dispatch(parsed.data);
-    document.dispatchEvent(
-      new CustomEvent(
-        result.accepted ? "aih-workbench-draft-accepted" : "aih-workbench-draft-rejected",
-        {
-          detail: {
-            diagnostics: (result.diagnostics ?? []).map((diagnostic) => diagnostic.message),
-          },
-        },
-      ),
-    );
-  });
-  window.addEventListener("aih-workbench-policy-change", () => {
-    if (applyingWorkbenchProjection) return;
-    const snapshot = session.snapshotPolicy();
-    developerTools?.restore(snapshot);
-    const outcome = reprojectSchema3Policy(
-      snapshot,
-      schema3ReprojectionSteps(bundle, bindings, (policy) => {
-        try {
-          applyingWorkbenchProjection = true;
-          window.__aihWorkbenchApplyingProjection = true;
-          session.restorePolicy(policy);
-        } finally {
-          window.__aihWorkbenchApplyingProjection = false;
-          applyingWorkbenchProjection = false;
-        }
-      }),
-    );
-    mounted.restore(outcome.state, outcome.diagnostics);
-  });
 }
 if (!userDoor && !newShell && !preparedCatalogValid) {
   const root = document.getElementById("framework-rows");

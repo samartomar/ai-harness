@@ -7,7 +7,7 @@ const openWindows = new Set<Window>();
 
 function studio(): Window {
   const window = new Window({ url: "http://localhost/" });
-  const html = policyStudioHtml(tinyStudioModel());
+  const html = policyStudioHtml({ ...tinyStudioModel(), shell: "new" });
   window.document.write(html);
   (window as unknown as { structuredClone: typeof structuredClone }).structuredClone =
     structuredClone;

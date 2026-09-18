@@ -137,7 +137,14 @@ function subHeader(): { element: HTMLElement; status: HTMLElement } {
     panelToggle("toggle-nav-btn", "Toggle navigation", "left_panel", "nav-rail"),
     panelToggle("btn-toggle-inspector", "Toggle inspector", "right_panel", "inspector-rail"),
   );
-  element.append(status, toggles);
+  // The legacy ledger's statement: effective state needs a target repository.
+  const effective = el(
+    "span",
+    "ml-auto font-mono text-[10.5px] text-on-surface-variant truncate min-w-0 max-sm:hidden",
+    "effective: not evaluated — needs a target repository",
+  );
+  effective.dataset.wbEffective = "";
+  element.append(status, effective, toggles);
   return { element, status };
 }
 

@@ -116,13 +116,16 @@ export function mountNewWorkbench(options: NewWorkbenchOptions): NewWorkbench {
   const shell = mountAdminShell(shellHost());
   const renderPreviewText = mountPolicyPreview(shell.screenBody("changes"));
   if (!options.catalogValid) {
+    // S3: the note sits in the catalog root, as the legacy `#framework-rows .error`.
     const note = el(
       "p",
-      "m-0 text-[12px] text-error",
+      "help error m-0 text-[12px] text-error",
       "Prepared catalog is invalid. Catalog selection and policy download are disabled.",
     );
     note.setAttribute("role", "alert");
-    shell.screenBody("sources").replaceChildren(note);
+    const catalog = withId(el("div", "min-w-0"), "framework-rows");
+    catalog.append(note);
+    shell.screenBody("sources").replaceChildren(catalog);
   }
 
   let session: PolicySession | undefined;

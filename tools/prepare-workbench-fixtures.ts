@@ -29,7 +29,11 @@ await Promise.all([
   writeFile(resolve(directory, "new-shell", "journeys-compact.html"), newShellJourneyHtml, "utf8"),
 ]);
 
-for (const size of [10, 1000, 10000]) await writeFile(resolve(directory, `synthetic-${size}.html`), policyStudioHtml(syntheticWorkbenchModel(size)), "utf8");
+for (const size of [10, 1000, 10000]) {
+  await writeFile(resolve(directory, `synthetic-${size}.html`), policyStudioHtml(syntheticWorkbenchModel(size)), "utf8");
+  // S3: the sources screen specs run these on the new shell.
+  await writeFile(resolve(directory, "new-shell", `synthetic-${size}.html`), policyStudioHtml({ ...syntheticWorkbenchModel(size), shell: "new" }), "utf8");
+}
 
 await writeFile(resolve(directory, "synthetic-evidence.html"), policyStudioHtml(syntheticEvidenceWorkbenchModel()), "utf8");
 

@@ -46,7 +46,25 @@ import {
   selectionComparisonPresentation,
 } from "./selection-comparison.js";
 
+/*
+ * S3 (NEW-SHELL-PLAN.md): in the new shell the sources screen follows
+ * prototype/policy-workbench/screens/admin-sources.html. The prototype's
+ * utility classes are added only there (`shell: "new"`); every behavioural
+ * hook (legacy class names, data-workbench-* attributes, ARIA names) stays on
+ * the same element, and the legacy shell's markup is unchanged until S11.
+ */
+const BTN =
+  "inline-flex items-center justify-center gap-1 h-7 px-2.5 rounded text-[11px] font-medium cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
+const BTN_PRIMARY = `${BTN} border-0 bg-primary-container hover:bg-primary-bright text-on-primary`;
+const BTN_SECONDARY = `${BTN} border border-solid border-outline-variant bg-surface-container-low hover:bg-surface-container text-on-surface`;
+const REPAIR_ROW =
+  "m-0 flex flex-wrap items-center gap-2 px-3 py-2 rounded border border-solid border-outline-variant bg-surface-container-low";
+const CHIP =
+  "px-1.5 py-0.5 rounded border border-solid border-outline-variant bg-surface-container-low font-mono text-[9px] uppercase tracking-wide text-on-surface-variant";
+
 export interface WorkbenchMountOptions {
+  /** Which admin shell hosts the catalog; "new" adds the prototype markup (S3). */
+  shell?: "legacy" | "new";
   bundle: AuthoringCatalogBundleV1;
   referenceReports?: WorkbenchReferenceReportsV1;
   adoptionBindings?: WorkbenchPolicyBindingsV1;
@@ -302,6 +320,11 @@ export function mountWorkbench(
   options: WorkbenchMountOptions,
 ): MountedWorkbench {
   let state = options.initialState;
+  const newShell = options.shell === "new";
+  /** Add the prototype's utility classes in the new shell only. */
+  const tw = (node: Element, classes: string): void => {
+    if (newShell) node.classList.add(...classes.split(" "));
+  };
   const browseBundle = workbenchBrowseBundle(options.bundle);
   const browseInventory: CatalogBrowseInventory = {
     sources: browseBundle.sources,
@@ -345,6 +368,8 @@ export function mountWorkbench(
   details.id = "workbench-detail-panel";
   details.dataset.workbenchDetail = "true";
   details.dataset.workbenchInspectorOpen = "false";
+  // S3: the item inspector keeps its own row until S4 moves it to the inspector rail.
+  tw(details, "min-w-0 md:col-span-2");
   let filtersState: CatalogBrowseFilters = { sourceId: groups[0]?.id };
   let openDetailKey: string | undefined;
   let openCatalogDetail: { assetId: string; mode: "catalog" | "developer-tool-setup" } | undefined;
@@ -372,6 +397,7 @@ export function mountWorkbench(
 
   root.replaceChildren();
   root.classList.add("workbench-inventory");
+  tw(root, "flex flex-col gap-3 min-w-0");
   draftSummary.className = "workbench-draft-summary";
   draftSummary.dataset.workbenchDraftSummary = "true";
   draftSummaryHeading.textContent = "Build your policy";
@@ -409,13 +435,23 @@ export function mountWorkbench(
   draftSummary.append(draftSummaryHeading, draftSummaryIntro, counts, exposureButton, draftReview);
   catalogLayout.className = "workbench-catalog-layout";
   catalogLayout.dataset.workbenchCatalogLayout = "true";
+  tw(
+    catalogLayout,
+    "flex flex-col gap-4 min-w-0 md:grid md:grid-cols-[14rem_minmax(0,1fr)] md:items-start",
+  );
   sourceRail.className = "workbench-source-rail";
   sourceRail.dataset.workbenchSourceRail = "true";
+  tw(sourceRail, "shrink-0 flex flex-col gap-2 min-w-0");
   sourceRail.setAttribute("aria-labelledby", "workbench-source-rail-title");
   sourceRailHeading.id = "workbench-source-rail-title";
   sourceRailHeading.textContent = "Sources";
+  tw(
+    sourceRailHeading,
+    "m-0 px-2 text-[10px] font-mono uppercase tracking-wider font-semibold text-on-surface-variant",
+  );
   catalogRegister.className = "workbench-catalog-register";
   catalogRegister.dataset.workbenchCatalogRegister = "true";
+  tw(catalogRegister, "flex-1 flex flex-col gap-3 min-w-0");
   catalogRegister.setAttribute("aria-label", "Catalog register");
   inspectorScrim.className = "workbench-inspector-scrim";
   inspectorScrim.dataset.workbenchInspectorScrim = "true";
@@ -424,16 +460,25 @@ export function mountWorkbench(
   templateSummary.textContent = "Starting points";
   templateList.className = "workbench-template-list";
   templates.className = "workbench-starting-points";
+  tw(templateSummary, "cursor-pointer text-[12px] font-medium text-on-surface");
+  tw(templateList, "grid grid-cols-1 md:grid-cols-2 gap-2 pt-2");
+  tw(
+    templates,
+    "rounded border border-solid border-outline-variant bg-surface-container-lowest px-3 py-2",
+  );
   templates.append(templateSummary, templateList);
   draftSummaryControl.textContent = "Prepared local drafts";
   draftList.className = "workbench-draft-list";
   drafts.className = "workbench-drafts";
   drafts.append(draftSummaryControl, draftList);
   sourceTabs.className = "workbench-source-tabs";
+  tw(sourceTabs, "flex flex-col gap-0.5 max-md:hidden");
   sourceTabs.setAttribute("aria-label", "Catalog sources");
   filters.className = "workbench-catalog-filters";
   const sourceLabel = document.createElement("label");
   sourceLabel.className = "workbench-source-picker";
+  tw(filters, "md:hidden");
+  tw(sourceLabel, "flex flex-col gap-1 text-[11px] font-medium text-on-surface-variant");
   sourceLabel.textContent = "Choose source";
   sourceLabel.htmlFor = "workbench-source-filter";
   sourceLabel.append(sourceFilter);
@@ -442,6 +487,16 @@ export function mountWorkbench(
   sourceReview.className = "workbench-source-review";
   browseTools.className = "workbench-browse-tools";
   typeTabs.className = "workbench-type-tabs";
+  tw(
+    sourceFilter,
+    "h-8 px-2 rounded border border-solid border-outline-variant bg-surface-container-lowest text-on-surface text-[12px]",
+  );
+  tw(sourceReview, "flex flex-col gap-2 min-w-0");
+  tw(
+    browseTools,
+    "flex flex-wrap items-center gap-2 pb-2 border-0 border-b border-solid border-outline-variant",
+  );
+  tw(typeTabs, "flex items-center gap-1.5 overflow-x-auto min-w-0");
   typeTabs.setAttribute("aria-label", "Catalog item types");
   browseTools.append(search, typeTabs);
   sourceFilter.id = "workbench-source-filter";
@@ -451,14 +506,41 @@ export function mountWorkbench(
   search.name = "workbench-catalog-search";
   search.placeholder = "Search catalog";
   search.setAttribute("aria-label", "Search catalog");
+  tw(
+    search,
+    "h-8 w-full sm:w-64 px-2.5 rounded border border-solid border-outline-variant bg-surface-container-lowest text-on-surface text-[12px]",
+  );
   inventory.setAttribute("aria-label", "Catalog inventory");
   browseResults.setAttribute("aria-label", "Catalog browse results");
   templates.setAttribute("aria-label", "Selection templates");
   repairs.setAttribute("aria-label", "Saved selections needing review");
+  tw(repairs, "flex flex-col gap-1.5 text-[12px] text-on-surface-variant");
   drafts.setAttribute("aria-label", "Prepared local drafts");
   diagnostics.className = "help error";
-  sourceRail.append(sourceRailHeading, sourceTabs, filters, sourceReview);
-  catalogRegister.append(browseTools, diagnostics, templates, repairs, drafts, inventory);
+  tw(diagnostics, "m-0 text-[12px] text-error empty:hidden");
+  if (newShell) {
+    // The prototype masthead: the source's name and its review cells.
+    const masthead = document.createElement("header");
+    masthead.dataset.wbSourcesMasthead = "";
+    tw(
+      masthead,
+      "flex flex-col gap-2 pb-3 border-0 border-b border-solid border-outline-variant min-w-0",
+    );
+    masthead.append(sourceReview);
+    sourceRail.append(sourceRailHeading, sourceTabs, filters);
+    catalogRegister.append(
+      masthead,
+      browseTools,
+      diagnostics,
+      templates,
+      repairs,
+      drafts,
+      inventory,
+    );
+  } else {
+    sourceRail.append(sourceRailHeading, sourceTabs, filters, sourceReview);
+    catalogRegister.append(browseTools, diagnostics, templates, repairs, drafts, inventory);
+  }
   catalogLayout.append(sourceRail, catalogRegister, details, inspectorScrim);
   root.append(draftSummary, catalogLayout);
 
@@ -592,6 +674,7 @@ export function mountWorkbench(
     if (total <= PAGE_SIZE && placement === "after") return;
     const controls = document.createElement("div");
     controls.className = "workbench-page-controls";
+    tw(controls, "flex flex-wrap items-center gap-2 text-[11px] font-mono text-on-surface-variant");
     controls.setAttribute("role", "group");
     controls.setAttribute("aria-label", "Result pages");
     const previous = document.createElement("button");
@@ -618,6 +701,8 @@ export function mountWorkbench(
     previous.textContent = "Previous 50";
     next.textContent = "Next 50";
     previous.className = next.className = "btn sm secondary";
+    tw(previous, BTN_SECONDARY);
+    tw(next, BTN_SECONDARY);
     previous.disabled = page === 0;
     next.disabled = (page + 1) * PAGE_SIZE >= total;
     previous.addEventListener("click", () => changePage("previous", page - 1), {
@@ -1577,6 +1662,8 @@ export function mountWorkbench(
         : undefined;
     const rows = document.createElement("div");
     rows.className = "workbench-inventory-rows";
+    if (newShell) rows.dataset.wbSourcesCards = "";
+    tw(rows, "grid grid-cols-[repeat(auto-fill,minmax(min(260px,100%),1fr))] gap-3");
     for (const assetId of alreadyPaged ? assetIds : pageItems(assetIds, page)) {
       const asset = options.bundle.assets[assetId];
       if (asset === undefined) continue;
@@ -1598,8 +1685,16 @@ export function mountWorkbench(
       const methodology = document.createElement("span");
       const detail = document.createElement("p");
       row.className = "workbench-asset";
+      tw(
+        row,
+        "relative rounded border border-solid border-outline-variant bg-surface-card p-3 flex flex-col gap-2 min-w-0 hover:border-primary transition-colors",
+      );
       row.dataset.workbenchAssetId = asset.id;
       title.className = "workbench-row-title";
+      tw(
+        title,
+        "min-w-0 flex-1 p-0 border-0 bg-transparent text-left font-mono font-bold text-[13px] tracking-tight text-on-surface truncate cursor-pointer hover:underline",
+      );
       title.type = "button";
       title.dataset.workbenchExpandId = asset.id;
       title.setAttribute("aria-controls", details.id);
@@ -1608,33 +1703,49 @@ export function mountWorkbench(
       const kindIcon = catalogKindIcon(asset.kind);
       const icon = document.createElement("span");
       icon.className = "workbench-row-icon";
+      tw(icon, "inline-flex w-4 h-4 shrink-0 [&>svg]:w-full [&>svg]:h-full");
       if (kindIcon.colorClass !== undefined) icon.classList.add(kindIcon.colorClass);
       icon.setAttribute("aria-hidden", "true");
       // Static glyph markup from the package-owned icon table; no catalog text.
       icon.innerHTML = workbenchIcon(kindIcon.name);
       const decision = assetDecisionPresentation(asset, options.bundle);
       purpose.className = "workbench-row-purpose";
+      tw(purpose, "m-0 text-[11px] leading-relaxed text-on-surface-variant line-clamp-3");
       purpose.textContent = decision.purpose;
       kind.className = "workbench-row-kind";
+      tw(kind, `shrink-0 ${CHIP}`);
       kind.textContent = catalogKindLabel(asset.kind);
       decisionFacts.className = "workbench-row-decision";
+      tw(decisionFacts, "flex flex-col gap-1 text-[11px] text-on-surface-variant min-w-0");
+      tw(access, "m-0 truncate");
       access.textContent = "Access: " + decision.access;
       access.title = decision.access;
       evidence.className = "workbench-row-evidence";
+      tw(
+        evidence,
+        "m-0 self-start px-1.5 py-0.5 rounded bg-surface-container font-mono text-[10px] text-on-surface",
+      );
       evidence.dataset.workbenchRowEvidence = "true";
       evidence.textContent = decision.evidenceLabel;
       evidence.title = decision.evidenceHelp;
       evidence.dataset.workbenchNeedsInformation = String(decision.needsInformation);
       decisionFacts.append(access, evidence);
       methodology.className = "workbench-methodology-badge";
+      tw(methodology, "font-mono text-[10.5px] text-tertiary");
       methodology.textContent = "Optional: choose up to one methodology.";
       methodology.hidden = asset.exclusiveSlot !== "methodology";
       detail.className = "workbench-row-summary";
+      tw(detail, "m-0 font-mono text-[10.5px] text-on-surface-variant");
       detail.dataset.workbenchRowDetail = "true";
       actions.className = "workbench-row-actions";
+      tw(
+        actions,
+        "mt-auto pt-2.5 border-0 border-t border-solid border-outline-variant flex flex-wrap items-center justify-end gap-1.5",
+      );
       expandButton.type = "button";
       expandButton.tabIndex = -1;
       expandButton.className = "btn sm secondary workbench-row-expand";
+      tw(expandButton, BTN_SECONDARY);
       expandButton.dataset.workbenchExpandId = asset.id;
       expandButton.setAttribute(
         "aria-expanded",
@@ -1646,6 +1757,7 @@ export function mountWorkbench(
       expandButton.textContent = "Inspect";
       action.type = "button";
       action.className = "btn sm primary";
+      tw(action, BTN_PRIMARY);
       action.dataset.workbenchAssetId = asset.id;
       action.dataset.workbenchRowAction = "true";
       action.setAttribute("aria-describedby", title.id);
@@ -1679,7 +1791,12 @@ export function mountWorkbench(
           ? "Read details"
           : "Read previous report";
       actions.append(action, expandButton);
-      row.append(icon, title, kind, purpose, decisionFacts, methodology, detail, actions);
+      if (newShell) {
+        const heading = document.createElement("div");
+        tw(heading, "flex items-start gap-1.5 min-w-0");
+        heading.append(icon, title, kind);
+        row.append(heading, purpose, decisionFacts, methodology, detail, actions);
+      } else row.append(icon, title, kind, purpose, decisionFacts, methodology, detail, actions);
       updateRow(row, asset);
       if (expandedAssetId === asset.id && openDetailKey === undefined) {
         const inspectorHeader = document.createElement("header");
@@ -2053,12 +2170,19 @@ export function mountWorkbench(
       const choicesInDraft = sourceEvidenceSummary(options.bundle, sourceId, state).choicesInDraft;
       const heading = document.createElement("h3");
       heading.textContent = catalogSourceDisplayName(options.bundle, sourceId);
+      tw(heading, "m-0 text-[20px] font-bold tracking-tight font-mono text-on-surface break-words");
       const cells = document.createElement("div");
       cells.className = "workbench-source-review-cells";
+      tw(cells, "flex flex-wrap items-center gap-2 font-mono text-[11px]");
       const addCell = (label: string, value: number, help: string): void => {
         const cell = document.createElement("p");
         const count = document.createElement("strong");
         const caption = document.createElement("span");
+        tw(
+          cell,
+          "m-0 flex items-center gap-1.5 px-2 py-0.5 rounded border border-solid border-outline-variant bg-surface-container-low text-on-surface-variant data-[workbench-evidence-tone=warning]:text-tertiary",
+        );
+        tw(count, "font-semibold text-on-surface");
         count.textContent = String(value);
         caption.textContent = label;
         cell.title = help;
@@ -2104,6 +2228,10 @@ export function mountWorkbench(
       const tab = document.createElement("button");
       tab.type = "button";
       tab.className = "workbench-type-tab";
+      tw(
+        tab,
+        "shrink-0 px-2.5 py-1 rounded border-0 bg-transparent font-mono text-[10.5px] text-on-surface-variant cursor-pointer hover:bg-surface-container aria-pressed:bg-surface-container-highest aria-pressed:text-on-surface aria-pressed:font-semibold",
+      );
       tab.dataset.workbenchType = id ?? "";
       tab.setAttribute("aria-pressed", String(filtersState.kind === id));
       tab.textContent = `${label} (${count})`;
@@ -2116,11 +2244,16 @@ export function mountWorkbench(
       const tab = document.createElement("button");
       tab.type = "button";
       tab.className = "workbench-source-tab";
+      tw(
+        tab,
+        "flex items-center justify-between gap-2 w-full px-2 py-1 rounded border-0 bg-transparent text-left text-[11px] text-on-surface-variant cursor-pointer hover:bg-surface-container-low hover:text-on-surface aria-pressed:bg-surface-container aria-pressed:text-primary aria-pressed:font-medium",
+      );
       tab.dataset.workbenchSourceTab = item.id;
       tab.setAttribute("aria-pressed", String(item.id === filtersState.sourceId));
       tab.textContent = item.label + " ";
       const count = document.createElement("span");
       count.textContent = String(item.count);
+      tw(count, "font-mono text-[10px] px-1 rounded bg-surface-container-highest text-secondary");
       count.setAttribute("aria-hidden", "true");
       tab.append(count);
       sourceTabs.append(tab);
@@ -2169,12 +2302,14 @@ export function mountWorkbench(
       if (openDetailKey === undefined) renderIdleInspector();
       const empty = document.createElement("p");
       empty.className = "help";
+      tw(empty, "m-0 text-[12px] text-on-surface-variant");
       empty.textContent = emptyBrowseMessage(browse);
       const otherMatches = otherTypeMatchCount(browse);
       if (filtersState.kind !== undefined && otherMatches > 0) {
         const showAll = document.createElement("button");
         showAll.type = "button";
         showAll.className = "btn sm secondary";
+        tw(showAll, BTN_SECONDARY);
         showAll.dataset.workbenchShowAllTypes = "true";
         showAll.textContent = "Show all types";
         showAll.addEventListener(
@@ -2354,6 +2489,12 @@ export function mountWorkbench(
       const description = document.createElement("p");
       const preview = document.createElement("button");
       row.className = "workbench-template-option";
+      tw(
+        row,
+        "rounded border border-solid border-outline-variant bg-surface-card p-3 flex flex-col gap-1.5 min-w-0",
+      );
+      tw(title, "m-0 text-[13px] font-semibold font-mono text-on-surface");
+      tw(description, "m-0 text-[11px] text-on-surface-variant");
       title.textContent = template.label ?? template.id;
       description.textContent =
         template.roots.length +
@@ -2366,6 +2507,7 @@ export function mountWorkbench(
         ".";
       preview.type = "button";
       preview.className = "btn sm secondary";
+      tw(preview, `self-start ${BTN_SECONDARY}`);
       preview.dataset.workbenchTemplateDetailId = template.id;
       preview.setAttribute("aria-controls", details.id);
       preview.setAttribute("aria-expanded", String(openDetailKey === "template:" + template.id));
@@ -2390,6 +2532,7 @@ export function mountWorkbench(
       const templateLabel =
         template?.digest === origin.digest ? (template.label ?? origin.id) : origin.id;
       remove.textContent = "Remove starting point " + templateLabel;
+      tw(remove, `self-start ${BTN_SECONDARY}`);
       templateList.append(remove);
     }
   };
@@ -2435,6 +2578,8 @@ export function mountWorkbench(
       remove.dataset.workbenchTemplateRemoveId = origin.id;
       remove.dataset.workbenchTemplateRemoveDigest = origin.digest;
       remove.textContent = "Remove " + origin.id;
+      tw(remove, BTN_SECONDARY);
+      tw(row, REPAIR_ROW);
       row.append("Saved template selection needs review: " + originLabel(origin) + ". ", remove);
       repairs.append(row);
     }
@@ -2447,6 +2592,8 @@ export function mountWorkbench(
       remove.dataset.workbenchRepairAssetId = entry.assetId;
       remove.dataset.workbenchRepairOrigin = entry.origin.kind;
       remove.textContent = "Remove saved " + type.replace("remove-", "") + ": " + entry.assetId;
+      tw(remove, BTN_SECONDARY);
+      tw(row, REPAIR_ROW);
       row.append(
         "Saved " +
           type.replace("remove-", "") +
@@ -2464,6 +2611,7 @@ export function mountWorkbench(
       more.type = "button";
       more.dataset.workbenchRepairMore = "true";
       more.textContent = "Show more saved selections";
+      tw(more, `self-start ${BTN_SECONDARY}`);
       repairs.append(more);
     }
     repairs.hidden = !repairs.hasChildNodes();

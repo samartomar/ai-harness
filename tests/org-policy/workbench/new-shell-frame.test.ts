@@ -194,7 +194,14 @@ describe("new admin shell frame", () => {
     const document = window.document;
     expect(document.documentElement.getAttribute("data-wb-shell")).toBe("new");
     expect(document.getElementById("wb-root")?.getAttribute("data-wb-screen")).toBe("sources");
-    expect(document.getElementById("framework-rows")).toBeNull();
+    // S3: #framework-rows is the new shell's catalog root; no legacy markup remains.
+    expect(document.querySelector("[data-view-tab]")).toBeNull();
+    expect(
+      document
+        .getElementById("framework-rows")
+        ?.closest("[data-wb-screen-panel]")
+        ?.getAttribute("data-wb-screen-panel"),
+    ).toBe("sources");
     expect(document.querySelectorAll("#wb-root")).toHaveLength(1);
     expect([...document.querySelectorAll("style")].map((style) => style.id)).toEqual(["wb-styles"]);
   });

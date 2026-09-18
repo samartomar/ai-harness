@@ -109,7 +109,9 @@ test("renders the same frame from a legacy page opened with ?shell=new", async (
   await expect(page.locator("html")).toHaveAttribute("data-wb-shell", "new");
   await expect(page.locator("#wb-root")).toHaveAttribute("data-wb-screen", "sources");
   await expect(page.locator("#wb-root")).toHaveCount(1);
-  await expect(page.locator("#framework-rows")).toHaveCount(0);
+  // S3: the legacy markup is gone and #framework-rows is the sources screen's catalog.
+  await expect(page.locator("[data-view-tab]")).toHaveCount(0);
+  await expect(page.locator('[data-wb-screen-panel="sources"] #framework-rows')).toHaveCount(1);
   await expect(page.locator("[data-kind-ledger-tile]")).toHaveCount(5);
   expect(await violations(page)).toEqual([]);
 });

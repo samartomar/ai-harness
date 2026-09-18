@@ -129,40 +129,6 @@ test("keeps the catalog anchored while panel navigation and inspection preserve 
   await expect(preview).toHaveValue(selectedPolicy);
 });
 
-test("keeps the latest full item detail when switching through Exposure", async ({
-  page,
-  workbench,
-}) => {
-  await expect(page).toHaveURL(pathToFileURL(workbench.path).href);
-  const preview = page.locator("#config-preview");
-  const before = await preview.inputValue();
-  const inspector = page.locator("#workbench-detail-panel[data-workbench-detail]");
-  await page.locator('[data-workbench-source-tab="source:ecc"]').click();
-  const firstItem = page.locator("button.workbench-row-title[data-workbench-expand-id]").first();
-  await expect(firstItem).toBeVisible();
-
-  await firstItem.click();
-  await page.locator('[data-workbench-source-tab="source:aih-core"]').click();
-  const secondItem = page.locator("button.workbench-row-title[data-workbench-expand-id]").first();
-  await expect(secondItem).toBeVisible();
-  const secondAssetId = await secondItem.getAttribute("data-workbench-expand-id");
-  if (secondAssetId === null) throw new Error("Expected a second catalog item to inspect");
-
-  await secondItem.click();
-  await expect(inspector).toHaveAttribute("data-workbench-inspector-asset-id", secondAssetId);
-  await inspector.locator(".workbench-item-technical > summary").click();
-  await inspector.locator(`button[data-workbench-detail-id="${secondAssetId}"]`).click();
-  await expect(inspector.locator(".workbench-detail-advanced")).toBeVisible();
-  await expect(preview).toHaveValue(before);
-
-  await inspector.locator('[data-workbench-panel-view="exposure"]').click();
-  await expect(inspector.locator("[data-workbench-exposure-overview]")).toBeVisible();
-  await inspector.locator('[data-workbench-panel-view="item"]').click();
-  await expect(inspector).toHaveAttribute("data-workbench-inspector-asset-id", secondAssetId);
-  await expect(inspector.locator(".workbench-detail-advanced")).toBeVisible();
-  await expect(preview).toHaveValue(before);
-});
-
 test("keeps Back to catalog available in an empty mobile Item drawer", async ({
   page,
   workbench,
@@ -183,158 +149,6 @@ test("keeps Back to catalog available in an empty mobile Item drawer", async ({
   await expect(draftOpen).toBeFocused();
   await expect(preview).toHaveValue(before);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(375);
-});
-
-test("keeps policy exposure view-only while separating selections from pending requests", async ({
-  page,
-  workbench,
-}) => {
-  await expect(page).toHaveURL(pathToFileURL(workbench.path).href);
-  const preview = page.locator("#config-preview");
-  const emptyPolicy = await preview.inputValue();
-  const inspector = page.locator("#workbench-detail-panel[data-workbench-detail]");
-  const overview = inspector.locator("[data-workbench-exposure-overview]");
-  const exposureButton = inspector.locator('[data-workbench-panel-view="exposure"]');
-  const count = (kind: "selected" | "requests" | "unresolved" | "verified") =>
-    overview.locator(`[data-workbench-exposure-count="${kind}"]`);
-
-  await expect(overview).toBeHidden();
-  await exposureButton.click();
-  await expect(inspector).toHaveAttribute("data-workbench-inspector-view", "exposure");
-  await expect(overview).toBeVisible();
-  await expect(
-    overview.getByRole("heading", { name: "A policy is a shape of exposure", exact: true }),
-  ).toBeVisible();
-  await expect(exposureButton).toHaveAttribute("aria-controls", "workbench-detail-panel");
-  for (const kind of ["selected", "requests", "unresolved", "verified"] as const)
-    await expect(count(kind)).toContainText("0");
-  await expect(overview.locator("[data-workbench-exposure-item-id]")).toHaveCount(0);
-  await expect(overview.locator("[data-workbench-exposure-request-id]")).toHaveCount(0);
-  await expect(overview).toContainText("Access declared by your catalog choices");
-  await expect(overview).toContainText("credential scope may be unspecified");
-  await expect(preview).toHaveValue(emptyPolicy);
-
-  await page.locator('[data-workbench-source-tab="source:ecc"]').click();
-  const selectedAction = page.locator("button[data-workbench-row-action]").first();
-  await expect(selectedAction).toBeVisible();
-  const selectedAssetId = await selectedAction.getAttribute("data-workbench-asset-id");
-  if (selectedAssetId === null) throw new Error("Expected a compact ECC selection item");
-  await selectedAction.click();
-  const selectedPolicy = await preview.inputValue();
-  expect(selectedPolicy).not.toBe(emptyPolicy);
-  await exposureButton.click();
-  await expect(count("selected")).toContainText("1");
-  const selectedItem = overview.locator(`[data-workbench-exposure-item-id="${selectedAssetId}"]`);
-  await expect(selectedItem).toBeVisible();
-  await expect(selectedItem.locator("[data-workbench-exposure-access]")).toHaveText(
-    /^Declared access: /u,
-  );
-
-  const request = await page.evaluate(() => {
-    const model = window as unknown as {
-      __aihWorkbenchModel: {
-        workbenchBundle: {
-          assets: Record<
-            string,
-            {
-              id: string;
-              sourceId: string;
-              sourceRevisionId: string;
-              contentDigest: string;
-              authoring: { action: string };
-            }
-          >;
-        };
-      };
-    };
-    const asset = Object.values(model.__aihWorkbenchModel.workbenchBundle.assets).find(
-      (candidate) =>
-        candidate.id === "aih/github" && candidate.authoring.action === "record-request",
-    );
-    if (asset === undefined) throw new Error("Expected the retained GitHub pending-request item");
-    return {
-      assetId: asset.id,
-      sourceId: asset.sourceId,
-      sourceRevisionId: asset.sourceRevisionId,
-      contentDigest: asset.contentDigest,
-      origin: { kind: "administrator" },
-    };
-  });
-  await page.locator(`[data-workbench-source-tab="${request.sourceId}"]`).click();
-  await expect(page.locator(`article[data-workbench-asset-id="${request.assetId}"]`)).toHaveCount(
-    0,
-  );
-  const importedPolicy = JSON.parse(selectedPolicy);
-  importedPolicy.authoringSelections.requests = [request];
-  await page.locator("#policy-file").setInputFiles({
-    name: "saved-github-request.json",
-    mimeType: "application/json",
-    buffer: Buffer.from(JSON.stringify(importedPolicy)),
-  });
-  await expect
-    .poll(async () => JSON.parse(await preview.inputValue()).authoringSelections.requests)
-    .toEqual([request]);
-  const policyWithRequest = await preview.inputValue();
-  expect(policyWithRequest).not.toBe(selectedPolicy);
-  await expect(
-    page.getByText("Choices in draft", { exact: true }).locator("..").locator("strong"),
-  ).toHaveText("1");
-  await exposureButton.click();
-  await expect(count("selected")).toContainText("1");
-  await expect(count("requests")).toContainText("1");
-  const pendingRequest = overview.locator(
-    `[data-workbench-exposure-request-id="${request.assetId}"]`,
-  );
-  await expect(pendingRequest).toBeVisible();
-  await expect(pendingRequest.locator("[data-workbench-exposure-access]")).toHaveText(
-    /^Declared access: /u,
-  );
-
-  await selectedItem.locator(`[data-workbench-exposure-inspect-id="${selectedAssetId}"]`).click();
-  await expect(inspector).toHaveAttribute("data-workbench-inspector-asset-id", selectedAssetId);
-  await expect(inspector.locator("[data-workbench-declaration]")).toBeVisible();
-  await expect(inspector.locator("[data-workbench-checks]")).toBeVisible();
-  await expect(preview).toHaveValue(policyWithRequest);
-  await inspector.getByRole("button", { name: "Close details", exact: true }).click();
-  await expect(overview).toBeHidden();
-  await expect(preview).toHaveValue(policyWithRequest);
-
-  await page.locator('[data-workbench-source-tab="source:ecc"]').click();
-  const removal = page.locator(
-    `button[data-workbench-row-action][data-workbench-asset-id="${selectedAssetId}"]`,
-  );
-  await expect(removal).toHaveAccessibleName(/^Remove my choice for /u);
-  await removal.click();
-  expect(await preview.inputValue()).not.toBe(policyWithRequest);
-  await exposureButton.click();
-  await expect(count("selected")).toContainText("0");
-  await expect(overview.locator("[data-workbench-exposure-item-id]")).toHaveCount(0);
-  await expect(count("requests")).toContainText("1");
-  await expect(pendingRequest).toBeVisible();
-  await page.locator('[data-workbench-panel-view="draft"]').click();
-  const removeSaved = page.getByRole("button", {
-    name: "Remove saved catalog request for Github",
-    exact: true,
-  });
-  await expect(removeSaved).toBeVisible();
-  await removeSaved.click();
-  expect(JSON.parse(await preview.inputValue()).authoringSelections.requests).toEqual([]);
-
-  const staleRequest = { ...request, contentDigest: `sha256:${"0".repeat(64)}` };
-  const stalePolicy = JSON.parse(await preview.inputValue());
-  stalePolicy.authoringSelections.requests = [staleRequest];
-  await page.locator("#policy-file").setInputFiles({
-    name: "stale-github-request.json",
-    mimeType: "application/json",
-    buffer: Buffer.from(JSON.stringify(stalePolicy)),
-  });
-  await expect
-    .poll(async () => JSON.parse(await preview.inputValue()).authoringSelections.requests)
-    .toEqual([staleRequest]);
-  await page.locator('[data-workbench-source-tab="source:aih-core"]').click();
-  await expect(
-    page.getByText("Choices in draft", { exact: true }).locator("..").locator("strong"),
-  ).toHaveText("0");
 });
 
 test("closes the mobile inspector with focus restoration without mutating policy", async ({
@@ -603,4 +417,195 @@ test("keeps every tab dense and within the viewport without changing policy", as
       await expect(page.locator("#config-preview")).toHaveValue(before);
     }
   }
+});
+
+// NEW-SHELL-PLAN.md S3: sources-screen journeys moved to the new shell, assertions unchanged.
+test.describe("new shell", () => {
+  test.use({ shell: "new" });
+
+  test("keeps the latest full item detail when switching through Exposure", async ({
+    page,
+    workbench,
+  }) => {
+    await expect(page).toHaveURL(pathToFileURL(workbench.path).href);
+    const preview = page.locator("#config-preview");
+    const before = await preview.inputValue();
+    const inspector = page.locator("#workbench-detail-panel[data-workbench-detail]");
+    await page.locator('[data-workbench-source-tab="source:ecc"]').click();
+    const firstItem = page.locator("button.workbench-row-title[data-workbench-expand-id]").first();
+    await expect(firstItem).toBeVisible();
+
+    await firstItem.click();
+    await page.locator('[data-workbench-source-tab="source:aih-core"]').click();
+    const secondItem = page.locator("button.workbench-row-title[data-workbench-expand-id]").first();
+    await expect(secondItem).toBeVisible();
+    const secondAssetId = await secondItem.getAttribute("data-workbench-expand-id");
+    if (secondAssetId === null) throw new Error("Expected a second catalog item to inspect");
+
+    await secondItem.click();
+    await expect(inspector).toHaveAttribute("data-workbench-inspector-asset-id", secondAssetId);
+    await inspector.locator(".workbench-item-technical > summary").click();
+    await inspector.locator(`button[data-workbench-detail-id="${secondAssetId}"]`).click();
+    await expect(inspector.locator(".workbench-detail-advanced")).toBeVisible();
+    await expect(preview).toHaveValue(before);
+
+    await inspector.locator('[data-workbench-panel-view="exposure"]').click();
+    await expect(inspector.locator("[data-workbench-exposure-overview]")).toBeVisible();
+    await inspector.locator('[data-workbench-panel-view="item"]').click();
+    await expect(inspector).toHaveAttribute("data-workbench-inspector-asset-id", secondAssetId);
+    await expect(inspector.locator(".workbench-detail-advanced")).toBeVisible();
+    await expect(preview).toHaveValue(before);
+  });
+
+  test("keeps policy exposure view-only while separating selections from pending requests", async ({
+    page,
+    workbench,
+  }) => {
+    await expect(page).toHaveURL(pathToFileURL(workbench.path).href);
+    const preview = page.locator("#config-preview");
+    const emptyPolicy = await preview.inputValue();
+    const inspector = page.locator("#workbench-detail-panel[data-workbench-detail]");
+    const overview = inspector.locator("[data-workbench-exposure-overview]");
+    const exposureButton = inspector.locator('[data-workbench-panel-view="exposure"]');
+    const count = (kind: "selected" | "requests" | "unresolved" | "verified") =>
+      overview.locator(`[data-workbench-exposure-count="${kind}"]`);
+
+    await expect(overview).toBeHidden();
+    await exposureButton.click();
+    await expect(inspector).toHaveAttribute("data-workbench-inspector-view", "exposure");
+    await expect(overview).toBeVisible();
+    await expect(
+      overview.getByRole("heading", { name: "A policy is a shape of exposure", exact: true }),
+    ).toBeVisible();
+    await expect(exposureButton).toHaveAttribute("aria-controls", "workbench-detail-panel");
+    for (const kind of ["selected", "requests", "unresolved", "verified"] as const)
+      await expect(count(kind)).toContainText("0");
+    await expect(overview.locator("[data-workbench-exposure-item-id]")).toHaveCount(0);
+    await expect(overview.locator("[data-workbench-exposure-request-id]")).toHaveCount(0);
+    await expect(overview).toContainText("Access declared by your catalog choices");
+    await expect(overview).toContainText("credential scope may be unspecified");
+    await expect(preview).toHaveValue(emptyPolicy);
+
+    await page.locator('[data-workbench-source-tab="source:ecc"]').click();
+    const selectedAction = page.locator("button[data-workbench-row-action]").first();
+    await expect(selectedAction).toBeVisible();
+    const selectedAssetId = await selectedAction.getAttribute("data-workbench-asset-id");
+    if (selectedAssetId === null) throw new Error("Expected a compact ECC selection item");
+    await selectedAction.click();
+    const selectedPolicy = await preview.inputValue();
+    expect(selectedPolicy).not.toBe(emptyPolicy);
+    await exposureButton.click();
+    await expect(count("selected")).toContainText("1");
+    const selectedItem = overview.locator(`[data-workbench-exposure-item-id="${selectedAssetId}"]`);
+    await expect(selectedItem).toBeVisible();
+    await expect(selectedItem.locator("[data-workbench-exposure-access]")).toHaveText(
+      /^Declared access: /u,
+    );
+
+    const request = await page.evaluate(() => {
+      const model = window as unknown as {
+        __aihWorkbenchModel: {
+          workbenchBundle: {
+            assets: Record<
+              string,
+              {
+                id: string;
+                sourceId: string;
+                sourceRevisionId: string;
+                contentDigest: string;
+                authoring: { action: string };
+              }
+            >;
+          };
+        };
+      };
+      const asset = Object.values(model.__aihWorkbenchModel.workbenchBundle.assets).find(
+        (candidate) =>
+          candidate.id === "aih/github" && candidate.authoring.action === "record-request",
+      );
+      if (asset === undefined) throw new Error("Expected the retained GitHub pending-request item");
+      return {
+        assetId: asset.id,
+        sourceId: asset.sourceId,
+        sourceRevisionId: asset.sourceRevisionId,
+        contentDigest: asset.contentDigest,
+        origin: { kind: "administrator" },
+      };
+    });
+    await page.locator(`[data-workbench-source-tab="${request.sourceId}"]`).click();
+    await expect(page.locator(`article[data-workbench-asset-id="${request.assetId}"]`)).toHaveCount(
+      0,
+    );
+    const importedPolicy = JSON.parse(selectedPolicy);
+    importedPolicy.authoringSelections.requests = [request];
+    await page.locator("#policy-file").setInputFiles({
+      name: "saved-github-request.json",
+      mimeType: "application/json",
+      buffer: Buffer.from(JSON.stringify(importedPolicy)),
+    });
+    await expect
+      .poll(async () => JSON.parse(await preview.inputValue()).authoringSelections.requests)
+      .toEqual([request]);
+    const policyWithRequest = await preview.inputValue();
+    expect(policyWithRequest).not.toBe(selectedPolicy);
+    await expect(
+      page.getByText("Choices in draft", { exact: true }).locator("..").locator("strong"),
+    ).toHaveText("1");
+    await exposureButton.click();
+    await expect(count("selected")).toContainText("1");
+    await expect(count("requests")).toContainText("1");
+    const pendingRequest = overview.locator(
+      `[data-workbench-exposure-request-id="${request.assetId}"]`,
+    );
+    await expect(pendingRequest).toBeVisible();
+    await expect(pendingRequest.locator("[data-workbench-exposure-access]")).toHaveText(
+      /^Declared access: /u,
+    );
+
+    await selectedItem.locator(`[data-workbench-exposure-inspect-id="${selectedAssetId}"]`).click();
+    await expect(inspector).toHaveAttribute("data-workbench-inspector-asset-id", selectedAssetId);
+    await expect(inspector.locator("[data-workbench-declaration]")).toBeVisible();
+    await expect(inspector.locator("[data-workbench-checks]")).toBeVisible();
+    await expect(preview).toHaveValue(policyWithRequest);
+    await inspector.getByRole("button", { name: "Close details", exact: true }).click();
+    await expect(overview).toBeHidden();
+    await expect(preview).toHaveValue(policyWithRequest);
+
+    await page.locator('[data-workbench-source-tab="source:ecc"]').click();
+    const removal = page.locator(
+      `button[data-workbench-row-action][data-workbench-asset-id="${selectedAssetId}"]`,
+    );
+    await expect(removal).toHaveAccessibleName(/^Remove my choice for /u);
+    await removal.click();
+    expect(await preview.inputValue()).not.toBe(policyWithRequest);
+    await exposureButton.click();
+    await expect(count("selected")).toContainText("0");
+    await expect(overview.locator("[data-workbench-exposure-item-id]")).toHaveCount(0);
+    await expect(count("requests")).toContainText("1");
+    await expect(pendingRequest).toBeVisible();
+    await page.locator('[data-workbench-panel-view="draft"]').click();
+    const removeSaved = page.getByRole("button", {
+      name: "Remove saved catalog request for Github",
+      exact: true,
+    });
+    await expect(removeSaved).toBeVisible();
+    await removeSaved.click();
+    expect(JSON.parse(await preview.inputValue()).authoringSelections.requests).toEqual([]);
+
+    const staleRequest = { ...request, contentDigest: `sha256:${"0".repeat(64)}` };
+    const stalePolicy = JSON.parse(await preview.inputValue());
+    stalePolicy.authoringSelections.requests = [staleRequest];
+    await page.locator("#policy-file").setInputFiles({
+      name: "stale-github-request.json",
+      mimeType: "application/json",
+      buffer: Buffer.from(JSON.stringify(stalePolicy)),
+    });
+    await expect
+      .poll(async () => JSON.parse(await preview.inputValue()).authoringSelections.requests)
+      .toEqual([staleRequest]);
+    await page.locator('[data-workbench-source-tab="source:aih-core"]').click();
+    await expect(
+      page.getByText("Choices in draft", { exact: true }).locator("..").locator("strong"),
+    ).toHaveText("0");
+  });
 });

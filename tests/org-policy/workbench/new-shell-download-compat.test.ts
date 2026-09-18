@@ -53,7 +53,14 @@ describe("new shell imports match the legacy shell", () => {
   it("renders the page from the new shell", () => {
     const { window } = newShell();
     expect(window.document.getElementById("wb-root")?.getAttribute("data-wb-shell")).toBe("new");
-    expect(window.document.getElementById("framework-rows")).toBeNull();
+    // S3: #framework-rows is the new shell's catalog root; no legacy markup remains.
+    expect(window.document.querySelector("[data-view-tab]")).toBeNull();
+    expect(
+      window.document
+        .getElementById("framework-rows")
+        ?.closest("[data-wb-screen-panel]")
+        ?.getAttribute("data-wb-screen-panel"),
+    ).toBe("sources");
     expect(preview(window)).toBe(golden("aih-org-policy.vibe.json"));
   });
 
