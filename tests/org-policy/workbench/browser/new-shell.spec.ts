@@ -245,3 +245,41 @@ test("shows the draft's changes, the whole file and copies the JSON offline", as
   expect(await violations(page)).toEqual([]);
   expect(workbench.networkRequests).toEqual([]);
 });
+
+// Scan screen (NEW-SHELL-PLAN.md admin-scan).
+test("inspects imported evidence and a decision on the scan screen offline", async ({
+  page,
+  workbench,
+}) => {
+  await reopenUnderStrictCsp(page, workbench.path);
+  const preview = page.locator("#config-preview");
+  const before = await preview.inputValue();
+  await page
+    .getByRole("navigation", { name: "Workbench screens" })
+    .getByRole("button", { name: "Scan Review" })
+    .click();
+  const screen = page.locator('[data-wb-screen-panel="scan"]');
+  await expect(screen.locator("#receipt-state")).toHaveText("No authority receipt imported.");
+  await page.locator("#evidence-file").setInputFiles({
+    name: "audit.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(
+      JSON.stringify({
+        approvals: [{ id: "approval-browser", issuer: "security-team" }],
+        evidence: [{ id: "evidence-browser", state: "failed", note: "<img src=x>" }],
+      }),
+    ),
+  });
+  await expect(screen.locator("#approval-rows")).toContainText("approval-browser");
+  await expect(screen.locator("#approval-rows")).toContainText(
+    "failed evidence — preserved/preflight-only",
+  );
+  await expect(screen.locator("#approval-rows img")).toHaveCount(0);
+  await expect(screen.locator("#receipt-state")).toContainText("preflight only");
+  await expect(screen.locator("#copy-approvals")).toBeDisabled();
+  await screen.locator("[data-wb-scan-finding-model] > summary").click();
+  await expect(screen.locator("#hard-blockers")).toBeVisible();
+  await expect(preview).toHaveValue(before);
+  expect(await violations(page)).toEqual([]);
+  expect(workbench.networkRequests).toEqual([]);
+});

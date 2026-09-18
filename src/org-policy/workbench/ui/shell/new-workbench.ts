@@ -9,6 +9,7 @@ import {
   type PolicySession,
   type PolicySessionModel,
 } from "./policy-session.js";
+import { mountScanScreen } from "./scan-screen.js";
 
 /**
  * Mounts the new admin shell (NEW-SHELL-PLAN.md S1, S2) in place of the
@@ -18,7 +19,13 @@ import {
  * compiled CSS.
  */
 export interface NewWorkbenchOptions {
-  readonly model: PolicySessionModel & { readonly decisionSchema: unknown };
+  readonly model: PolicySessionModel & {
+    readonly decisionSchema: unknown;
+    readonly findings: {
+      readonly dispositionable: readonly string[];
+      readonly fenced: readonly string[];
+    };
+  };
   /** False when the prepared catalog is invalid: Check Policy and Publish stay disabled. */
   readonly catalogValid: boolean;
   /** The catalog the admin browses, as `{ id, kind }`; empty when the catalog is invalid. */
@@ -74,6 +81,10 @@ export function mountNewWorkbench(options: NewWorkbenchOptions): NewWorkbench {
     shell.screenBody("sources").replaceChildren(catalog);
   }
 
+  const scan = mountScanScreen(shell.screenBody("scan"), {
+    findings: options.model.findings,
+    announce: shell.announce,
+  });
   let session: PolicySession | undefined;
   const renderPreview = () => {
     if (session !== undefined) changes.render(session.snapshotPolicy(), session.serialize());
@@ -81,6 +92,7 @@ export function mountNewWorkbench(options: NewWorkbenchOptions): NewWorkbench {
   const render = () => {
     if (session === undefined) return;
     renderPreview();
+    scan.render(session.receipt(), session.decision());
     shell.renderLedger(
       buildKindLedgerViewModel(
         options.ledgerAssets,

@@ -141,10 +141,12 @@ export function createPolicySession(
     receipt: () => state.receipt,
     setReceipt(receipt) {
       state.receipt = receipt;
+      hooks.render();
     },
     decision: () => state.decision,
     setDecision(decision) {
       state.decision = decision;
+      hooks.render();
     },
   };
 }

@@ -7,9 +7,9 @@ import {
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
 import { tinyStudioModel } from "./studio-test-fixture.js";
 
-function studio() {
+function studio(shell: "legacy" | "new" = "legacy") {
   const window = new Window({ url: "http://localhost/" });
-  const html = policyStudioHtml(tinyStudioModel());
+  const html = policyStudioHtml({ ...tinyStudioModel(), shell });
   window.document.write(html);
   (window as unknown as { structuredClone: typeof structuredClone }).structuredClone =
     structuredClone;
@@ -37,13 +37,23 @@ describe("policy studio finding model", () => {
     expect(html).toContain("8 administrator-dispositionable, 6 hard blockers");
   });
 
+  // NEW-SHELL-PLAN.md: the finding model moved to the new shell's scan screen, assertion unchanged.
   it("renders each finding partition into its matching list", () => {
-    const window = studio();
+    const window = studio("new");
     expect(window.document.getElementById("dispositionable-findings")?.textContent).toBe(
       DISPOSITIONABLE_POLICY_FINDING_CODES.join(" | "),
     );
     expect(window.document.getElementById("hard-blockers")?.textContent).toBe(
       FENCED_POLICY_PREREQUISITE_CODES.join(" | "),
     );
+  });
+
+  it("states the partition counts on the new shell's scan screen", () => {
+    const window = studio("new");
+    const summary = window.document.querySelector("[data-wb-scan-finding-model] > summary");
+    expect(summary?.textContent).toBe(
+      `Finding model: ${DISPOSITIONABLE_POLICY_FINDING_CODES.length} administrator-dispositionable, ${FENCED_POLICY_PREREQUISITE_CODES.length} hard blockers`,
+    );
+    expect(summary?.closest('[data-wb-screen-panel="scan"]')).not.toBeNull();
   });
 });

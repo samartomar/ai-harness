@@ -397,7 +397,8 @@ describe("policy generate", () => {
 
   it("keeps standalone decision import strict, inert, and parity-checked in the browser", async () => {
     const window = workbenchWindow();
-    const html = policyStudioHtml(tinyStudioModel());
+    // NEW-SHELL-PLAN.md: the decision panel moved to the new shell's scan screen, assertions unchanged.
+    const html = policyStudioHtml({ ...tinyStudioModel(), shell: "new" });
     window.document.write(html);
     loadStudio(window, html);
     const document = window.document;
@@ -534,7 +535,8 @@ describe("policy generate", () => {
       configurable: true,
       value: ControlledFileReader,
     });
-    const html = policyStudioHtml(tinyStudioModel());
+    // NEW-SHELL-PLAN.md: the decision panel moved to the new shell's scan screen, assertions unchanged.
+    const html = policyStudioHtml({ ...tinyStudioModel(), shell: "new" });
     window.document.write(html);
     loadStudio(window, html);
     const document = window.document;
