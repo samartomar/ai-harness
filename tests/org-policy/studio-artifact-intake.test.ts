@@ -65,7 +65,7 @@ function studio(
 ): Window {
   const window = new Window({ url });
   // NEW-SHELL-PLAN.md S7: artifact intake moved to the new shell's additions screen.
-  const html = policyStudioHtml({ ...studioModel, shell: "new" });
+  const html = policyStudioHtml(studioModel);
   window.document.write(html);
   Object.defineProperty(window, "crypto", { configurable: true, value: globalThis.crypto });
   Object.defineProperty(window, "TextEncoder", { configurable: true, value: TextEncoder });

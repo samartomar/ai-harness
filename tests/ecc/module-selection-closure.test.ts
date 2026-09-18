@@ -16,7 +16,7 @@ import {
   eccSelectionSourcePaths,
 } from "../../src/ecc/selection-closure.js";
 import { type OrgPolicy, OrgPolicySchema, parseOrgPolicy } from "../../src/org-policy/schema.js";
-import { defaultStudioPolicy } from "../../src/org-policy/studio-model.js";
+import type { defaultStudioPolicy } from "../../src/org-policy/studio-model.js";
 import { verifyAuthoringCatalogBundleIntegrityV1 } from "../../src/org-policy/workbench/catalog-integrity.js";
 import { parseAuthoringCatalogBundleV1 } from "../../src/org-policy/workbench/contracts.js";
 import { packagedWorkbenchSourceDataRecordsV1 } from "../../src/org-policy/workbench/core/packaged-source-data.js";

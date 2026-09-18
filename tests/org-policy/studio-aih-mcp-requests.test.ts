@@ -45,7 +45,7 @@ describe("#973 generic request intent", () => {
   it("wires generic request control to count while effective remains unevaluated", () => {
     const { asset } = requestFixture();
     const window = new Window({ url: "http://localhost/" });
-    const html = policyStudioHtml({ ...tinyStudioModel(), shell: "new" });
+    const html = policyStudioHtml(tinyStudioModel());
     window.document.write(html);
     (window as unknown as { structuredClone: typeof structuredClone }).structuredClone =
       structuredClone;

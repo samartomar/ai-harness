@@ -22,54 +22,24 @@ async function toggleTheme(page: import("@playwright/test").Page): Promise<void>
   await disableTransitions(page);
 }
 
-for (const theme of ["light", "dark"] as const) {
-  test(`admin shell header and kind ledger match the ${theme} baseline`, async ({
-    page,
-    workbench,
-  }) => {
-    await disableTransitions(page);
-    if (theme === "dark") await toggleTheme(page);
-    await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
-
-    const header = page.locator("header.bar");
-    const ledger = page.locator("[data-kind-ledger]");
-    await expect(header).toBeVisible();
-    await expect(ledger).toBeVisible();
-
-    await expect(header).toHaveScreenshot(`shell-header-${theme}.png`, {
-      maxDiffPixelRatio: 0.01,
-      mask: [page.locator("#status")],
-    });
-    await expect(ledger).toHaveScreenshot(`shell-kind-ledger-${theme}.png`, {
-      maxDiffPixelRatio: 0.01,
-    });
-
-    // No header overflow at desktop width (allow < 1px of subpixel rounding).
-    const desktopMetrics = await header.evaluate((element) => ({
+// The legacy header and kind-ledger screenshots retired with the legacy shell
+// (id-contract.md, slice B); their overflow check runs on the new header.
+test("admin shell header does not overflow at 1440 and 375 px", async ({ page, workbench }) => {
+  const header = page.locator("[data-wb-header]");
+  await expect(header).toBeVisible();
+  for (const width of [1440, 375]) {
+    await page.setViewportSize({ width, height: 900 });
+    const metrics = await header.evaluate((element) => ({
       height: element.getBoundingClientRect().height,
       scrollHeight: element.scrollHeight,
     }));
-    expect(Math.abs(desktopMetrics.height - desktopMetrics.scrollHeight)).toBeLessThan(1.5);
+    expect(Math.abs(metrics.height - metrics.scrollHeight)).toBeLessThan(1.5);
+  }
+  void workbench;
+});
 
-    // No header overflow at narrow (mobile) width either.
-    await page.setViewportSize({ width: 375, height: 900 });
-    const narrowMetrics = await header.evaluate((element) => ({
-      height: element.getBoundingClientRect().height,
-      scrollHeight: element.scrollHeight,
-    }));
-    expect(Math.abs(narrowMetrics.height - narrowMetrics.scrollHeight)).toBeLessThan(1.5);
-
-    // Restore viewport in case Playwright reuses page state across assertions.
-    await page.setViewportSize({ width: 1440, height: 900 });
-    void workbench;
-  });
-}
-
-// NEW-SHELL-PLAN.md §3: the new shell's frame is snapshotted beside the legacy
-// header until the flip slice.
+// NEW-SHELL-PLAN.md §3: the new shell's frame baselines.
 test.describe("new shell", () => {
-  test.use({ shell: "new" });
-
   for (const theme of ["light", "dark"] as const) {
     test(`new shell frame matches the ${theme} baseline`, async ({ page, workbench }) => {
       await disableTransitions(page);

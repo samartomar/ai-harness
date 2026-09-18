@@ -1,6 +1,6 @@
 /**
- * S1 (NEW-SHELL-PLAN.md §4): the new admin shell frame and screen router,
- * behind the dual-shell switch. The legacy shell stays the default.
+ * S1 (NEW-SHELL-PLAN.md §4): the new admin shell frame and screen router.
+ * The new shell is the only admin page (S10); there is no shell switch.
  */
 import { TextEncoder } from "node:util";
 import { Window } from "happy-dom";
@@ -9,7 +9,6 @@ import type { PolicyStudioModel } from "../../../src/org-policy/studio-model.js"
 import { policyStudioHtml } from "../../../src/org-policy/studio-template.js";
 import {
   isWorkbenchScreen,
-  resolveWorkbenchShell,
   WORKBENCH_SCREENS,
 } from "../../../src/org-policy/workbench/ui/shell/screens.js";
 import { tinyStudioModel } from "../studio-test-fixture.js";
@@ -43,34 +42,17 @@ function click(window: Window, selector: string): void {
 }
 
 function newShellModel(): PolicyStudioModel {
-  return { ...tinyStudioModel(), shell: "new" };
+  return tinyStudioModel();
 }
 
-describe("dual-shell switch", () => {
-  it("keeps the legacy shell as the default and lets the model or ?shell= choose", () => {
-    expect(resolveWorkbenchShell(undefined, "")).toBe("legacy");
-    expect(resolveWorkbenchShell("new", "")).toBe("new");
-    expect(resolveWorkbenchShell("new", "?shell=legacy")).toBe("legacy");
-    expect(resolveWorkbenchShell(undefined, "?shell=new")).toBe("new");
-    expect(resolveWorkbenchShell(undefined, "?shell=%3Cb%3E")).toBe("legacy");
-    expect(resolveWorkbenchShell("other", "")).toBe("legacy");
-  });
-
-  it("emits data-wb-shell on both pages and a lean root for the new shell", () => {
-    const legacy = policyStudioHtml(tinyStudioModel());
-    expect(legacy).toContain('<html lang="en" data-theme="light" data-wb-shell="legacy">');
-    expect(legacy).toContain('id="framework-rows"');
+describe("admin page", () => {
+  it("emits the new shell's lean root and no legacy markup", () => {
     const next = policyStudioHtml(newShellModel());
     expect(next).toContain('<html lang="en" data-theme="light" data-wb-shell="new">');
     expect(next).toContain('<div id="wb-root" data-wb-shell="new"></div>');
     expect(next).not.toContain('id="framework-rows"');
+    expect(next).not.toContain('<html lang="en" data-theme="light" data-wb-shell="legacy">');
     expect(next).toContain('<style id="wb-styles">');
-  });
-
-  it("renders the legacy workspace by default", () => {
-    const window = open(tinyStudioModel());
-    expect(window.document.getElementById("framework-rows")).not.toBeNull();
-    expect(window.document.querySelector("[data-wb-screen]")).toBeNull();
   });
 });
 
@@ -190,8 +172,8 @@ describe("new admin shell frame", () => {
     expect(document.getElementById("toggle-nav-btn")?.getAttribute("aria-expanded")).toBe("false");
   });
 
-  it("replaces the legacy markup when a legacy page is opened with ?shell=new", () => {
-    const window = open(tinyStudioModel(), "http://localhost/?shell=new");
+  it("ignores a ?shell= query: the new shell is the only admin page", () => {
+    const window = open(tinyStudioModel(), "http://localhost/?shell=legacy");
     const document = window.document;
     expect(document.documentElement.getAttribute("data-wb-shell")).toBe("new");
     expect(document.getElementById("wb-root")?.getAttribute("data-wb-screen")).toBe("sources");

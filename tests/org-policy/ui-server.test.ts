@@ -74,29 +74,18 @@ describe("Policy Workbench UI server", () => {
     expect(missing.status).toBe(404);
   });
 
-  it("renders the admin shell the fixture-only AIH_WORKBENCH_SHELL asks for", async () => {
+  it("serves the new admin shell and has no shell switch", async () => {
     try {
-      running = await startPolicyWorkbenchUi({
-        cwd: emptyLaunchFolder,
-        openBrowser: async () => {},
-      });
-      await expect((await fetch(running.url)).text()).resolves.toContain('data-wb-shell="legacy"');
-      await running.close();
-      running = undefined;
-      vi.stubEnv("AIH_WORKBENCH_SHELL", "new");
+      // A stale AIH_WORKBENCH_SHELL from the migration is ignored, not honoured.
+      vi.stubEnv("AIH_WORKBENCH_SHELL", "legacy");
       running = await startPolicyWorkbenchUi({
         cwd: emptyLaunchFolder,
         openBrowser: async () => {},
       });
       const html = await (await fetch(running.url)).text();
       expect(html).toContain('<div id="wb-root" data-wb-shell="new"></div>');
-      expect(html).toContain('"shell":"new"');
-      await running.close();
-      running = undefined;
-      vi.stubEnv("AIH_WORKBENCH_SHELL", "modern");
-      await expect(
-        startPolicyWorkbenchUi({ cwd: emptyLaunchFolder, openBrowser: async () => {} }),
-      ).rejects.toThrow('AIH_WORKBENCH_SHELL must be "legacy" or "new"');
+      expect(html).not.toContain('<html lang="en" data-theme="light" data-wb-shell="legacy">');
+      expect(html).not.toContain('"shell":');
     } finally {
       vi.unstubAllEnvs();
     }

@@ -6,10 +6,9 @@ import { pathToFileURL } from "node:url";
 import type { Page } from "@playwright/test";
 import { expect, test } from "./fixture.js";
 
-// NEW-SHELL-PLAN.md S7: the installed package's page runs on the new shell (the
-// fixture sets the model's shell field, as AIH_WORKBENCH_SHELL does). Journeys
-// navigate to the screen that holds each control; assertions unchanged.
-test.use({ artifact: "packed-policy-workbench.html", shell: "new" });
+// The installed package's page is the new shell. Journeys navigate to the
+// screen that holds each control.
+test.use({ artifact: "packed-policy-workbench.html" });
 
 const emptyImportedPolicy = {
   schemaVersion: 2,
@@ -223,7 +222,7 @@ test("one installed Core version refreshes a source and preserves old browser po
   expectAsyncSuccess(historicalResult);
   const ui = JSON.parse(expectAsyncSuccess(uiResult));
   expect(ui.catalogSourceRevisions["source:mattpocock"]).toBe("f".repeat(40));
-  await page.goto(`${pathToFileURL(currentHtml).href}?shell=new`);
+  await page.goto(`${pathToFileURL(currentHtml).href}`);
   await importEmptyPolicy(page);
   await page.locator('[data-workbench-source-tab="source:mattpocock"]').click();
   await page
@@ -285,7 +284,7 @@ test("one installed Core version refreshes a source and preserves old browser po
     });
   }
   expectAsyncSuccess(consumptionResult, "verify both exported policies");
-  await page.goto(`${pathToFileURL(historicalHtml).href}?shell=new`);
+  await page.goto(`${pathToFileURL(historicalHtml).href}`);
   const restored = JSON.parse(await page.locator("#config-preview").inputValue());
   expect(restored.authoringSelections).toEqual(JSON.parse(oldPolicy).authoringSelections);
   expect(restored.authoringSelections.roots[0].sourceRevisionId).toBe(sourceBefore);

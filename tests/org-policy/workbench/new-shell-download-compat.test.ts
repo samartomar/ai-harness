@@ -114,7 +114,7 @@ const ARTIFACT_INTAKE_GOLDEN_INPUT = {
 };
 
 function newShell(model: PolicyStudioModel = tinyStudioModel()) {
-  return studio({ ...model, shell: "new" });
+  return studio(model);
 }
 
 describe("new shell imports match the legacy shell", () => {
@@ -207,7 +207,7 @@ describe("new shell imports match the legacy shell", () => {
     const results = [];
     for (const open of [
       studio,
-      (model?: PolicyStudioModel) => studio({ ...(model ?? tinyStudioModel()), shell: "new" }),
+      (model?: PolicyStudioModel) => studio(model ?? tinyStudioModel()),
     ]) {
       for (const model of [tinyStudioModel(), tinyEnterpriseStudioModel()]) {
         const { window } = open(model);
@@ -464,7 +464,7 @@ describe("S0 golden files through the new shell's download path", () => {
 
 describe("new shell with an invalid prepared catalog", () => {
   it("disables Check Policy and Publish and rejects imports", async () => {
-    const model = { ...tinyStudioModel(), shell: "new" } as PolicyStudioModel;
+    const model = tinyStudioModel() as PolicyStudioModel;
     Reflect.deleteProperty(model, "workbenchBindings");
     expect(policyStudioHtml(model)).toContain('data-wb-shell="new"');
     const { window } = studio(model);

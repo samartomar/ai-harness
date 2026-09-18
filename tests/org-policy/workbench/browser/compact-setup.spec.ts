@@ -12,8 +12,6 @@ async function bounds(locator: Locator) {
 
 // NEW-SHELL-PLAN.md S3: sources-screen journeys moved to the new shell, assertions unchanged.
 test.describe("new shell", () => {
-  test.use({ shell: "new" });
-
   test("keeps the latest full item detail when switching through Exposure", async ({
     page,
     workbench,
@@ -266,8 +264,6 @@ test.describe("new shell", () => {
  * screen (ledger rows S6).
  */
 test.describe("new shell organization screen", () => {
-  test.use({ shell: "new" });
-
   async function openScreen(page: import("@playwright/test").Page, name: string) {
     const nav = page.getByRole("navigation", { name: "Workbench screens" });
     const collapsed = !(await nav.isVisible());

@@ -118,7 +118,7 @@ function compactCliControlsModel(): PolicyStudioModel {
 const model = compactCliControlsModel();
 // NEW-SHELL-PLAN.md S6/S7: deployment setup lives on the new shell's
 // organization screen and the ECC MCP approval panel on its additions screen.
-const page = policyStudioHtml({ ...model, shell: "new" });
+const page = policyStudioHtml(model);
 const pageScripts = (html: string) =>
   [...html.matchAll(/<script>([\s\S]*?)<\/script>/gi)].map((match) => match[1]);
 const WORKBENCH_TEST_TIMEOUT_MS = 45_000;

@@ -1,7 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { policyStudioModel } from "../../src/org-policy/studio-model.js";
+import { afterEach, describe, expect, it } from "vitest";
+import { type PolicyStudioModel, policyStudioModel } from "../../src/org-policy/studio-model.js";
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
 import { tinyStudioModel } from "./studio-test-fixture.js";
+import { closeStudios, studio } from "./workbench/shell-parity-harness.js";
+
+afterEach(closeStudios);
 
 /**
  * The template's own escaping, restated here so the test pins the bytes that
@@ -9,6 +12,24 @@ import { tinyStudioModel } from "./studio-test-fixture.js";
  */
 function embeddedJson(value: unknown): string {
   return JSON.stringify(value).replace(/</g, "\\u003c").replace(/>/g, "\\u003e");
+}
+
+/** The rendered "Evidence & versions" drawer: heading, dt → dd rows, text, element count. */
+function evidenceDelivery(model: PolicyStudioModel) {
+  const { window } = studio(model);
+  const details = window.document.getElementById("evidence-delivery");
+  if (details === null) throw new Error("expected the Evidence & versions drawer");
+  const rows = new Map<string, string>();
+  for (const term of details.querySelectorAll("dt"))
+    rows.set(term.textContent ?? "", term.nextElementSibling?.textContent ?? "");
+  const list = details.querySelector("dl");
+  return {
+    heading: details.querySelector("h3")?.textContent ?? "",
+    rows,
+    text: details.textContent ?? "",
+    // Elements inside the dd values: model text never becomes markup.
+    elements: list === null ? -1 : list.querySelectorAll("dd *").length,
+  };
 }
 
 function scriptCloseCount(html: string): number {
@@ -30,20 +51,19 @@ describe("policy workbench data embedding", () => {
         commit: "a".repeat(40),
       },
     };
+    // The new shell renders the rows from inert page JSON on the organization
+    // screen; the assertions read the rendered drawer (id-contract.md, slice B).
     const html = policyStudioHtml(model);
-    expect(html).toContain('id="evidence-delivery"');
-    expect(html).toContain("Core 0.5.0");
-    expect(html).toContain(
-      `This Workbench catalog</strong></dt><dd style="overflow-wrap:anywhere">sha256:${"c".repeat(64)}`,
-    );
-    expect(html).toContain(
-      `Bundled report lock</strong></dt><dd style="overflow-wrap:anywhere">sha256:${"d".repeat(64)}`,
-    );
-    expect(html).toContain("@aihq/scan 0.3.0");
-    expect(html).toContain("Allowed Scanner publisher");
-    expect(html).toContain("No verified Catalog head is included");
-    expect(html).toContain("Not included in this build");
-    expect(html).not.toContain("Included evidence publisher</strong>");
+    const delivery = evidenceDelivery(model);
+    expect(delivery.heading).toContain("Core 0.5.0");
+    expect(delivery.rows.get("This Workbench catalog")).toBe(`sha256:${"c".repeat(64)}`);
+    expect(delivery.rows.get("Bundled report lock")).toBe(`sha256:${"d".repeat(64)}`);
+    expect(delivery.text).toContain("@aihq/scan 0.3.0");
+    expect(delivery.text).toContain("Allowed Scanner publisher");
+    expect(delivery.text).toContain("No verified Catalog head is included");
+    expect(delivery.text).toContain("Not included in this build");
+    expect(delivery.rows.has("Included evidence publisher")).toBe(false);
+    expect(html).toContain('id="wb-evidence-delivery"');
     model.evidenceDelivery.publicBaseline = {
       publisher: "fixture/core<script>",
       workflow: "fixture/core/.github/workflows/vendor.yml",
@@ -52,8 +72,10 @@ describe("policy workbench data embedding", () => {
       validUntil: "2026-09-07T00:00:00Z",
     };
     const prepared = policyStudioHtml(model);
-    expect(prepared).toContain("Verification during Core release preparation");
-    expect(prepared).toContain("fixture/core&lt;script&gt;");
+    const preparedDelivery = evidenceDelivery(model);
+    expect(preparedDelivery.text).toContain("Verification during Core release preparation");
+    expect(preparedDelivery.text).toContain("fixture/core<script>");
+    expect(preparedDelivery.elements).toBe(0);
     expect(prepared).not.toContain("fixture/core<script>");
     delete model.evidenceDelivery.publicBaseline;
     model.evidenceDelivery.expectedCatalogPublisher = {
@@ -78,7 +100,7 @@ describe("policy workbench data embedding", () => {
         receiptSetDigest: `sha256:${"a".repeat(64)}`,
       },
     ];
-    const direct = policyStudioHtml(model);
+    const direct = evidenceDelivery(model).text;
     expect(direct).toContain("expire after 90 days");
     expect(direct).toContain("Allowed Catalog publisher");
     expect(direct).toContain("fixture Scanner publication");
@@ -139,7 +161,13 @@ describe("policy workbench data embedding", () => {
       sourceIds: ["ecc", "superpowers"],
       tier: "last-downloaded",
     });
-    expect(html).toContain("Baseline evidence");
+    expect(html).toContain('<p class="help" id="baseline-evidence-provenance">Baseline evidence');
+    const { window } = studio(model);
+    expect(
+      window.document
+        .getElementById("baseline-evidence-provenance")
+        ?.closest("[data-wb-provenance]"),
+    ).not.toBeNull();
     expect(html).not.toContain("leak.example.test");
     expect(html).not.toContain("C:\\secret\\baseline");
     expect(html).not.toContain("signature bytes");

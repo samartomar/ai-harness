@@ -34,7 +34,7 @@ function withApproval(): PolicyStudioModel {
 
 describe("new shell additions screen: ECC MCP approval and custom hooks", () => {
   it("lists pinned ECC MCP and recorded approvals as text, and removes an approval", () => {
-    const { window } = studio({ ...withApproval(), shell: "new" });
+    const { window } = studio(withApproval());
     const document = window.document;
     const panel = document.getElementById("ecc-mcp-sidebar") as unknown as { hidden: boolean };
     expect(panel.hidden).toBe(true);
@@ -69,7 +69,7 @@ describe("new shell additions screen: ECC MCP approval and custom hooks", () => 
   });
 
   it("preselects a pinned ECC MCP from an adoption route and ignores unknown ids", () => {
-    const { window } = studio({ ...withApproval(), shell: "new" });
+    const { window } = studio(withApproval());
     const document = window.document;
     const route = document.createElement("button");
     route.setAttribute("data-ecc-mcp-approval", "not-pinned");
@@ -92,7 +92,7 @@ describe("new shell additions screen: ECC MCP approval and custom hooks", () => 
   });
 
   it("opens and closes the custom-hook note", () => {
-    const { window } = studio({ ...tinyStudioModel(), shell: "new" });
+    const { window } = studio(tinyStudioModel());
     const document = window.document;
     const note = document.getElementById("wb-acme-hook-info") as unknown as { hidden: boolean };
     const trigger = document.getElementById("open-custom-hook-info");

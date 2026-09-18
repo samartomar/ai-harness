@@ -21,22 +21,12 @@ await Promise.all([
 ]);
 console.log("Prepared compact offline Workbench fixture: " + Buffer.byteLength(journeyHtml) + " bytes");
 
-// NEW-SHELL-PLAN.md §3: the same models rendered by the new admin shell, for
-// specs that run with the fixture option `shell: "new"`.
-await mkdir(resolve(directory, "new-shell"), { recursive: true });
 // S7 byte gate: the S0 characterization model, so the protected bundle and
 // artifact intake downloads can be compared with the S0 goldens in a browser.
-await writeFile(resolve(directory, "new-shell", "golden-downloads.html"), policyStudioHtml({ ...tinyEnterpriseStudioModel(), shell: "new" }), "utf8");
-const newShellJourneyHtml = policyStudioHtml({ ...compactJourneyWorkbenchModel(), shell: "new" });
-await Promise.all([
-  writeFile(resolve(directory, "new-shell", "aih-policy-workbench.html"), newShellJourneyHtml, "utf8"),
-  writeFile(resolve(directory, "new-shell", "journeys-compact.html"), newShellJourneyHtml, "utf8"),
-]);
+await writeFile(resolve(directory, "golden-downloads.html"), policyStudioHtml(tinyEnterpriseStudioModel()), "utf8");
 
 for (const size of [10, 1000, 10000]) {
   await writeFile(resolve(directory, `synthetic-${size}.html`), policyStudioHtml(syntheticWorkbenchModel(size)), "utf8");
-  // S3: the sources screen specs run these on the new shell.
-  await writeFile(resolve(directory, "new-shell", `synthetic-${size}.html`), policyStudioHtml({ ...syntheticWorkbenchModel(size), shell: "new" }), "utf8");
 }
 
 await writeFile(resolve(directory, "synthetic-evidence.html"), policyStudioHtml(syntheticEvidenceWorkbenchModel()), "utf8");
@@ -48,7 +38,6 @@ for (const missing of ["workbenchBundle", "workbenchBindings", "both"]) {
     Reflect.deleteProperty(broken, "workbenchBindings");
   } else Reflect.deleteProperty(broken, missing);
   await writeFile(resolve(directory, "invalid-" + missing + ".html"), policyStudioHtml(broken), "utf8");
-  await writeFile(resolve(directory, "new-shell", "invalid-" + missing + ".html"), policyStudioHtml({ ...broken, shell: "new" }), "utf8");
 }
 
 const malformedPolicy = syntheticWorkbenchModel(10);
@@ -58,7 +47,6 @@ Object.assign(malformedPolicy.initialPolicy, {
   security: { strix: { ...{ enabled: false, required: false, targetKind: "local-fixture", mode: "quick", maxBudgetCents: 1, maxTurns: 1, timeoutMs: 1, telemetry: "off", imageDigest: "sha256:" + "a".repeat(64), allowLiveTargets: false, allowMounts: false }, maxTurns: 999 } },
 });
 await writeFile(resolve(directory, "invalid-policy.html"), policyStudioHtml(malformedPolicy), "utf8");
-await writeFile(resolve(directory, "new-shell", "invalid-policy.html"), policyStudioHtml({ ...malformedPolicy, shell: "new" }), "utf8");
 
 // P5b/P5c user door: the packaged default policy stands in for the bound org
 // policy. It is written to a real file; the digest and initialPolicy both come

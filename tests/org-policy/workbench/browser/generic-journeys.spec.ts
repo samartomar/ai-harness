@@ -6,8 +6,6 @@ import { expect, test } from "./fixture.js";
 test.use({ artifact: "synthetic-10.html" });
 
 test.describe("new shell", () => {
-  test.use({ shell: "new" });
-
   // NEW-SHELL-PLAN.md S7: the approval form and artifact intake moved to the
   // additions screen; the legacy view tabs became the nav rail. Assertions unchanged.
   test("keeps requests and local draft bytes separate from controls and effective permission", async ({
@@ -256,11 +254,7 @@ test.describe("new shell", () => {
       if (size !== 10) {
         await page.goto(
           pathToFileURL(
-            resolve(
-              process.env.AIH_WORKBENCH_FIXTURE_DIR!,
-              "new-shell",
-              "synthetic-" + size + ".html",
-            ),
+            resolve(process.env.AIH_WORKBENCH_FIXTURE_DIR!, "synthetic-" + size + ".html"),
           ).href,
         );
       }
@@ -474,11 +468,7 @@ test.describe("new shell", () => {
     for (const missing of ["workbenchBundle", "workbenchBindings", "both"]) {
       await page.goto(
         pathToFileURL(
-          resolve(
-            process.env.AIH_WORKBENCH_FIXTURE_DIR!,
-            "new-shell",
-            "invalid-" + missing + ".html",
-          ),
+          resolve(process.env.AIH_WORKBENCH_FIXTURE_DIR!, "invalid-" + missing + ".html"),
         ).href,
       );
       await expect(page.locator("#framework-rows .error")).toContainText(
@@ -500,9 +490,7 @@ test.describe("new shell", () => {
       expect(await page.locator("#config-preview").inputValue()).toBe(before);
     }
     await page.goto(
-      pathToFileURL(
-        resolve(process.env.AIH_WORKBENCH_FIXTURE_DIR!, "new-shell", "invalid-policy.html"),
-      ).href,
+      pathToFileURL(resolve(process.env.AIH_WORKBENCH_FIXTURE_DIR!, "invalid-policy.html")).href,
     );
     const invalidInitial = await page.locator("#config-preview").inputValue();
     expect(JSON.parse(invalidInitial).schemaVersion).toBe(3);

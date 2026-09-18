@@ -1,9 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { readVendorBaselineLock } from "../../src/baseline-evidence/vendor.js";
 import { policyAuthoringCatalog } from "../../src/org-policy/catalog.js";
-import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
 import type { EvidenceSummaryV1 } from "../../src/org-policy/workbench/contracts.js";
 import { tinyStudioModel } from "./studio-test-fixture.js";
+import { closeStudios, studio } from "./workbench/shell-parity-harness.js";
+
+afterEach(closeStudios);
 
 function allAssets() {
   return policyAuthoringCatalog().frameworks.flatMap((framework) => framework.assets);
@@ -89,11 +91,27 @@ describe("vet verdicts on the authoring surface", () => {
       findings: ["trust.permission-risk: Fixture blocked finding"],
     };
     model.workbenchBundle.evidence[finding.id] = finding;
-    const html = policyStudioHtml(model);
+    const { window } = studio(model);
+    const document = window.document;
+    const tone = (assetId: string) =>
+      document
+        .querySelector(
+          `article[data-workbench-asset-id="${assetId}"] [data-workbench-evidence-tone]`,
+        )
+        ?.getAttribute("data-workbench-evidence-tone");
     // A governance decision needs the verdict, the analyzer that reached it and
-    // the finding behind it — a bare word is not a reviewable disclosure.
-    expect(html).toContain('data-vet="blocked"');
-    expect(html).toContain('data-vet="pass"');
-    expect(html).toContain("trust.permission-risk");
+    // the finding behind it — a bare word is not a reviewable disclosure. The
+    // new shell marks the card's evidence tone and shows the finding in the
+    // inspector (id-contract.md, slice B).
+    expect(tone(asset.id)).toBe("warning");
+    expect(tone("fixture:control")).toBe("neutral");
+    document
+      .querySelector(
+        `article[data-workbench-asset-id="${asset.id}"] button[data-workbench-expand-id]`,
+      )
+      ?.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    expect(document.getElementById("wb-inspector-panel")?.textContent).toContain(
+      "trust.permission-risk",
+    );
   });
 });

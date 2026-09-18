@@ -110,22 +110,19 @@ exports[`legacy Workbench policy grammar characterization > pins the import outc
 exports[`legacy Workbench policy grammar characterization > pins the validate outcome for the initial policy in both postures 1`] = `
 [
   {
-    "classes": "btn icon-btn p-1.5 rounded bg-surface-container-low hover:bg-surface-container border border-outline-variant text-on-surface-variant hover:text-on-surface transition-colors shrink-0",
+    "checkState": [],
     "message": "Schema and policy-grammar validation passed. Authority, scans, projection, and effective state require the AIH engine in a target repository.",
     "readiness": "No Core controls selected. Choose controls after setting the hosts and posture you intend to use.",
-    "title": "Validate",
   },
   {
-    "classes": "btn icon-btn p-1.5 rounded bg-surface-container-low hover:bg-surface-container border border-outline-variant text-on-surface-variant hover:text-on-surface transition-colors shrink-0",
+    "checkState": [],
     "message": "Schema and policy-grammar validation passed. Authority, scans, projection, and effective state require the AIH engine in a target repository.",
     "readiness": "No Core controls selected. Choose controls after setting the hosts and posture you intend to use.",
-    "title": "Validate",
   },
   {
-    "classes": "btn icon-btn p-1.5 rounded bg-surface-container-low hover:bg-surface-container border border-outline-variant text-on-surface-variant hover:text-on-surface transition-colors shrink-0",
+    "checkState": [],
     "message": "Schema and policy-grammar validation passed. Authority, scans, projection, and effective state require the AIH engine in a target repository.",
     "readiness": "No Core controls selected. Choose controls after setting the hosts and posture you intend to use.",
-    "title": "Validate",
   },
 ]
 `;

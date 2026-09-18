@@ -17,7 +17,7 @@ const CANDIDATE = {
 function studioWithCustomCandidate(): Window {
   const window = new Window({ url: "http://localhost/" });
   // NEW-SHELL-PLAN.md S7: pending custom MCP moved to the new shell's additions screen.
-  const html = policyStudioHtml({ ...model, shell: "new" });
+  const html = policyStudioHtml(model);
   window.document.write(html);
   Object.defineProperty(window, "crypto", { configurable: true, value: globalThis.crypto });
   Object.defineProperty(window, "TextEncoder", { configurable: true, value: TextEncoder });

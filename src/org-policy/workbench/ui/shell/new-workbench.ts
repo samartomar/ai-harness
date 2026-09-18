@@ -66,8 +66,26 @@ function shellHost(): HTMLElement {
   return host;
 }
 
+/**
+ * The catalog and baseline evidence provenance lines (plan §2, sub-header
+ * strip): the page's inert, server-escaped `<template id="wb-provenance">`
+ * cloned as-is; absent when the model has no provenance.
+ */
+function mountProvenance(root: HTMLElement): void {
+  const template = document.getElementById("wb-provenance");
+  if (!(template instanceof HTMLTemplateElement)) return;
+  const strip = el(
+    "div",
+    "flex flex-col gap-0.5 px-3 py-1 text-[11px] text-on-surface-variant border-0 border-b border-solid border-outline-variant bg-surface-container-lowest shrink-0 break-all [&_p]:m-0",
+  );
+  strip.dataset.wbProvenance = "";
+  strip.append(template.content.cloneNode(true));
+  root.querySelector("#announcement")?.before(strip);
+}
+
 export function mountNewWorkbench(options: NewWorkbenchOptions): NewWorkbench {
   const shell = mountAdminShell(shellHost());
+  mountProvenance(shell.root);
   const changes = mountChangesScreen(shell.screenBody("changes"), {
     baseline: serializePolicy(options.model.initialPolicy),
     announce: shell.announce,

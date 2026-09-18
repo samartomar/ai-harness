@@ -126,6 +126,20 @@ function newShellEvidenceDelivery(model: PolicyStudioModel): string {
 }
 
 /**
+ * The catalog and baseline evidence provenance lines, escaped here exactly as
+ * the legacy page did, as inert markup the shell clones into its provenance
+ * strip. Absent when the model has neither.
+ */
+function newShellProvenance(model: PolicyStudioModel): string {
+  const lines = `${catalogProvenanceLine(model)}${baselineEvidenceProvenanceLine(model)}`;
+  return lines === ""
+    ? ""
+    : `
+<template id="wb-provenance">${lines}
+</template>`;
+}
+
+/**
  * The new admin shell (NEW-SHELL-PLAN.md S1). Head, one root and the model:
  * the browser bundle builds every element, writing model strings as text.
  */
@@ -144,7 +158,7 @@ function newShellHtml(model: PolicyStudioModel): string {
 <body>
 <div id="wb-root" data-wb-shell="new"></div>
 <template id="wb-protected-policy">${protectedPolicyWorkbenchMarkup()}</template>
-<template id="wb-custom-mcp">${customMcpFormsMarkup()}</template>
+<template id="wb-custom-mcp">${customMcpFormsMarkup()}</template>${newShellProvenance(model)}
 <script>window.__aihWorkbenchModel=__AIH_DATA__;</script>${newShellEvidenceDelivery(model)}
 <script>${workbenchBrowserScript}</script>
 </body>
@@ -153,7 +167,14 @@ function newShellHtml(model: PolicyStudioModel): string {
 
 export function policyStudioHtml(model: PolicyStudioModel): string {
   if (model.door === "user") return userDoorHtml(model);
-  if (model.shell === "new") return newShellHtml(model);
+  return newShellHtml(model);
+}
+
+/**
+ * The legacy admin page, kept only until NEW-SHELL-PLAN.md S11 deletes it;
+ * no product route renders it.
+ */
+export function legacyPolicyStudioHtml(model: PolicyStudioModel): string {
   const catalogProvenance = catalogProvenanceLine(model);
   const baselineEvidenceProvenance = baselineEvidenceProvenanceLine(model);
   const workbenchBrowserScript = loadWorkbenchBrowserScript();

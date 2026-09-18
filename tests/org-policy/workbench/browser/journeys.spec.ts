@@ -6,7 +6,7 @@ import { expect, test } from "./fixture.js";
 // NEW-SHELL-PLAN.md S6/S7: these journeys run on the new shell. The legacy
 // view tabs became the nav rail (Compose: sources and organization; Authoring:
 // additions); every assertion is unchanged.
-test.use({ artifact: "journeys-compact.html", shell: "new" });
+test.use({ artifact: "journeys-compact.html" });
 
 test("opens offline and keeps exact prepared evidence separate from permission across expiry", async ({
   page,

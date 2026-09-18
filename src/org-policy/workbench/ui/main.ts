@@ -31,11 +31,9 @@ import {
   type DeveloperToolSelectionUi,
   mountDeveloperToolSelection,
 } from "./developer-tool-selection.js";
-import { mountLegacyWorkbench } from "./legacy-runtime.js";
 import { reprojectSchema3Policy, type Schema3ReprojectionSteps } from "./schema3-reprojection.js";
 import { el, withId } from "./shell/dom.js";
 import { mountNewWorkbench } from "./shell/new-workbench.js";
-import { resolveWorkbenchShell } from "./shell/screens.js";
 import { mountChooserNote, mountUserDoor, mountUserDoorTheme } from "./user-door.js";
 
 interface WorkbenchSession {
@@ -123,8 +121,6 @@ function browserCommandArgumentErrors(policy: unknown): string[] {
 }
 
 interface CatalogControllerHooks {
-  /** Which admin shell hosts the catalog (S3 adds the prototype markup in "new"). */
-  shell: "legacy" | "new";
   prepareApproval(asset: AuthoringAssetV1): void;
   /** Runs on every outside policy change before the catalog re-projects it. */
   beforeRestore?(snapshot: unknown): void;
@@ -147,7 +143,7 @@ function mountCatalogController(
   hooks: CatalogControllerHooks,
 ): MountedWorkbench {
   const mounted = mountWorkbench(root, {
-    shell: hooks.shell,
+    shell: "new",
     bundle,
     referenceReports,
     adoptionBindings: bindings,
@@ -418,11 +414,6 @@ if (userDoor) {
   mountUserDoorTheme(document.getElementById("theme-toggle"));
   mountUserDoor(userRoot, model);
 }
-// NEW-SHELL-PLAN.md S1: the new admin shell renders only when the model
-// (AIH_WORKBENCH_SHELL, fixtures) or ?shell=new (local runs) asks for it.
-const newShell = !userDoor && resolveWorkbenchShell(model.shell, window.location.search) === "new";
-if (model.door === "chooser" && !newShell)
-  mountChooserNote(document.getElementById("announcement"));
 const sourceInputs = browserModel.workbenchSourceInputs;
 const bundleResult = AuthoringCatalogBundleV1Schema.safeParse(browserModel.workbenchBundle);
 const bindings = object(browserModel.workbenchBindings) as WorkbenchPolicyBindingsV1 | undefined;
@@ -454,12 +445,8 @@ if (preparedCatalogValid) {
     return { accepted: imported.accepted, diagnostics: imported.diagnostics };
   };
 }
-if (!userDoor && !newShell) {
-  mountLegacyWorkbench(browserModel);
-  mountArtifactIntakeWorkbench();
-}
-
-if (newShell) {
+// The admin page is the new shell (NEW-SHELL-PLAN.md S10).
+if (!userDoor) {
   const { session, shell, org, acme } = mountNewWorkbench({
     model: model as unknown as Parameters<typeof mountNewWorkbench>[0]["model"],
     catalogValid: preparedCatalogValid,
@@ -506,7 +493,6 @@ if (newShell) {
       (assetId, trigger) => catalog?.inspectAssetDetails(assetId, trigger),
     );
     catalog = mountCatalogController(root, session, bundle, bindings, guard, {
-      shell: "new",
       inspectorHost: shell.inspectorPanel,
       revealInspector: () => shell.revealInspector(),
       prepareApproval(asset) {
@@ -521,76 +507,5 @@ if (newShell) {
       },
       beforeRestore: (snapshot) => developerTools.restore(snapshot),
     });
-  }
-}
-
-if (!userDoor && !newShell && preparedCatalogValid) {
-  const root = document.getElementById("framework-rows");
-  const session = window.__aihPolicyWorkbenchSession;
-  if (root === null || session === undefined)
-    throw new Error("Policy Workbench selection controller is unavailable.");
-  const guard = { applying: false };
-  const developerToolRows = document.getElementById("developer-tool-rows");
-  const developerToolStatus = document.getElementById("developer-tool-selection-status");
-  const developerToolSummary = document.getElementById("developer-tool-selection-summary");
-  let inspectDeveloperToolDetails:
-    | ((assetId: string, trigger: HTMLButtonElement) => void)
-    | undefined;
-  const developerTools =
-    developerToolRows instanceof HTMLElement && developerToolStatus instanceof HTMLElement
-      ? mountDeveloperTools(
-          session,
-          bundle,
-          bindings,
-          guard,
-          {
-            root: developerToolRows,
-            status: developerToolStatus,
-            ...(developerToolSummary instanceof HTMLElement
-              ? { summary: developerToolSummary }
-              : {}),
-          },
-          (assetId, trigger) => inspectDeveloperToolDetails?.(assetId, trigger),
-        )
-      : undefined;
-  const mounted = mountCatalogController(root, session, bundle, bindings, guard, {
-    shell: "legacy",
-    prepareApproval(asset) {
-      window.__aihSetWorkbenchView?.("author");
-      const form = document.getElementById("protected-form");
-      const subject = document.getElementById("protected-subject-id") as HTMLInputElement | null;
-      const kind = document.getElementById("protected-kind") as HTMLSelectElement | null;
-      const section = form?.closest<HTMLElement>("[data-groupcard]");
-      if (section !== null && section !== undefined) {
-        section.dataset.open = "1";
-        section.querySelector<HTMLElement>("[data-group]")?.setAttribute("aria-expanded", "true");
-      }
-      if (subject !== null) subject.value = asset.id;
-      if (kind !== null && [...kind.options].some((option) => option.value === asset.kind))
-        kind.value = asset.kind;
-      form?.scrollIntoView({ block: "start" });
-      subject?.focus({ preventScroll: true });
-      document.dispatchEvent(
-        new CustomEvent("aih-workbench-prepare-approval", {
-          detail: { assetId: asset.id },
-        }),
-      );
-    },
-    beforeRestore: (snapshot) => developerTools?.restore(snapshot),
-  });
-  inspectDeveloperToolDetails = (assetId, trigger) => mounted.inspectAssetDetails(assetId, trigger);
-}
-if (!userDoor && !newShell && !preparedCatalogValid) {
-  const root = document.getElementById("framework-rows");
-  if (root !== null) {
-    const message = document.createElement("p");
-    message.className = "help error";
-    message.textContent =
-      "Prepared catalog is invalid. Catalog selection and policy download are disabled.";
-    root.replaceChildren(message);
-  }
-  for (const id of ["validate", "download"]) {
-    const button = document.getElementById(id);
-    if (button instanceof HTMLButtonElement) button.disabled = true;
   }
 }

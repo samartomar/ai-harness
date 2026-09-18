@@ -4,7 +4,6 @@ import { pathToFileURL } from "node:url";
 import { expect, test } from "./fixture.js";
 
 // NEW-SHELL-PLAN.md S1: the new admin shell frame and screen router.
-test.use({ shell: "new" });
 
 const STRICT_CSP = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'">`;
 
@@ -97,25 +96,6 @@ test("fits a 375 px viewport without horizontal scroll", async ({ page, workbenc
   await expect(page.locator("#nav-rail")).toBeVisible();
 });
 
-test("renders the same frame from a legacy page opened with ?shell=new", async ({
-  page,
-  workbench,
-}) => {
-  const directory = process.env.AIH_WORKBENCH_FIXTURE_DIR;
-  if (!directory) throw new Error("Workbench fixtures were not prepared");
-  const legacyPath = workbench.path.replace(/\.html$/u, ".legacy.html");
-  await writeFile(legacyPath, await readFile(resolve(directory, "aih-policy-workbench.html")));
-  await reopenUnderStrictCsp(page, legacyPath, "?shell=new");
-  await expect(page.locator("html")).toHaveAttribute("data-wb-shell", "new");
-  await expect(page.locator("#wb-root")).toHaveAttribute("data-wb-screen", "sources");
-  await expect(page.locator("#wb-root")).toHaveCount(1);
-  // S3: the legacy markup is gone and #framework-rows is the sources screen's catalog.
-  await expect(page.locator("[data-view-tab]")).toHaveCount(0);
-  await expect(page.locator('[data-wb-screen-panel="sources"] #framework-rows')).toHaveCount(1);
-  await expect(page.locator("[data-kind-ledger-tile]")).toHaveCount(5);
-  expect(await violations(page)).toEqual([]);
-});
-
 // NEW-SHELL-PLAN.md S2: policy session and file transfer in a real browser.
 test("imports, checks and publishes the policy with the preview bytes", async ({
   page,
@@ -174,7 +154,7 @@ test("keeps Check Policy and Publish disabled for an invalid prepared catalog", 
   const directory = process.env.AIH_WORKBENCH_FIXTURE_DIR;
   if (!directory) throw new Error("Workbench fixtures were not prepared");
   for (const missing of ["workbenchBundle", "workbenchBindings", "both"]) {
-    await page.goto(pathToFileURL(resolve(directory, "new-shell", `invalid-${missing}.html`)).href);
+    await page.goto(pathToFileURL(resolve(directory, `invalid-${missing}.html`)).href);
     await expect(page.getByRole("alert")).toContainText("Prepared catalog is invalid");
     await expect(page.locator("#validate")).toBeDisabled();
     await expect(page.locator("#download")).toBeDisabled();
@@ -187,7 +167,7 @@ test("keeps Check Policy and Publish disabled for an invalid prepared catalog", 
     await expect(page.locator("#announcement")).toContainText("Prepared catalog is invalid");
     expect(await page.locator("#config-preview").inputValue()).toBe(before);
   }
-  await page.goto(pathToFileURL(resolve(directory, "new-shell", "invalid-policy.html")).href);
+  await page.goto(pathToFileURL(resolve(directory, "invalid-policy.html")).href);
   const invalidInitial = await page.locator("#config-preview").inputValue();
   const downloads: string[] = [];
   page.on("download", (download) => downloads.push(download.suggestedFilename()));

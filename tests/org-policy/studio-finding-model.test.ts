@@ -7,9 +7,9 @@ import {
 import { policyStudioHtml } from "../../src/org-policy/studio-template.js";
 import { tinyStudioModel } from "./studio-test-fixture.js";
 
-function studio(shell: "legacy" | "new" = "legacy") {
+function studio() {
   const window = new Window({ url: "http://localhost/" });
-  const html = policyStudioHtml({ ...tinyStudioModel(), shell });
+  const html = policyStudioHtml(tinyStudioModel());
   window.document.write(html);
   (window as unknown as { structuredClone: typeof structuredClone }).structuredClone =
     structuredClone;
@@ -32,14 +32,15 @@ describe("policy studio finding model", () => {
   });
 
   it("stops claiming a dispositionable finding cannot be waived", () => {
-    const html = policyStudioHtml(tinyStudioModel());
-    expect(html).not.toContain("14 non-waivable blockers");
-    expect(html).toContain("8 administrator-dispositionable, 6 hard blockers");
+    // Read from the rendered page (the new shell builds the copy in the browser).
+    const text = studio().document.body.textContent ?? "";
+    expect(text).not.toContain("14 non-waivable blockers");
+    expect(text).toContain("8 administrator-dispositionable, 6 hard blockers");
   });
 
   // NEW-SHELL-PLAN.md: the finding model moved to the new shell's scan screen, assertion unchanged.
   it("renders each finding partition into its matching list", () => {
-    const window = studio("new");
+    const window = studio();
     expect(window.document.getElementById("dispositionable-findings")?.textContent).toBe(
       DISPOSITIONABLE_POLICY_FINDING_CODES.join(" | "),
     );
@@ -49,7 +50,7 @@ describe("policy studio finding model", () => {
   });
 
   it("states the partition counts on the new shell's scan screen", () => {
-    const window = studio("new");
+    const window = studio();
     const summary = window.document.querySelector("[data-wb-scan-finding-model] > summary");
     expect(summary?.textContent).toBe(
       `Finding model: ${DISPOSITIONABLE_POLICY_FINDING_CODES.length} administrator-dispositionable, ${FENCED_POLICY_PREREQUISITE_CODES.length} hard blockers`,

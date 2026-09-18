@@ -11,7 +11,7 @@ import { closeStudios, preview, studio } from "./shell-parity-harness.js";
 afterEach(closeStudios);
 
 function newShell(model: PolicyStudioModel = tinyStudioModel()) {
-  return studio({ ...model, shell: "new" }).window;
+  return studio(model).window;
 }
 
 function click(node: { dispatchEvent(event: unknown): boolean } | null, window: Window): void {

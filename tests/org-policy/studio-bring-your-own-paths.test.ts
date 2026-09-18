@@ -10,7 +10,7 @@ function studio(): Window {
   openWindows.push(window);
   // NEW-SHELL-PLAN.md S7: artifact intake, curation, custom MCP, the ECC MCP
   // approval panel and the custom-hook note live on the additions screen.
-  const html = policyStudioHtml({ ...tinyStudioModel(), shell: "new" });
+  const html = policyStudioHtml(tinyStudioModel());
   window.document.write(html);
   (window as unknown as { structuredClone: typeof structuredClone }).structuredClone =
     structuredClone;

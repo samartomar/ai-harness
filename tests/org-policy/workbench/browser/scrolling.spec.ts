@@ -90,8 +90,6 @@ async function expectNoDesktopPaneScroll(target: Locator, label: string): Promis
 
 // NEW-SHELL-PLAN.md S4: inspector-rail journeys moved to the new shell, assertions unchanged.
 test.describe("new shell", () => {
-  test.use({ shell: "new" });
-
   test("keeps the mobile Workbench inspector as its own scrollable drawer", async ({
     page,
     workbench,

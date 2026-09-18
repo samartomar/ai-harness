@@ -203,18 +203,6 @@ async function boundedJsonBody(
 }
 
 /**
- * The admin shell a fixture asks for (NEW-SHELL-PLAN.md §3). Test fixtures set
- * `AIH_WORKBENCH_SHELL`, like `AIH_WORKBENCH_DATA`; unset or empty keeps the
- * legacy default. Any other value is refused rather than guessed.
- */
-function workbenchShellFromEnvironment(env: NodeJS.ProcessEnv): "legacy" | "new" | undefined {
-  const value = env.AIH_WORKBENCH_SHELL;
-  if (value === undefined || value === "") return undefined;
-  if (value === "legacy" || value === "new") return value;
-  throw new Error('AIH_WORKBENCH_SHELL must be "legacy" or "new"');
-}
-
-/**
  * Serve the in-package, portable Workbench without resolving a repository or
  * writing an artifact into the current directory. The ephemeral server binds
  * only to IPv4 loopback and exposes one immutable HTML route.
@@ -230,12 +218,10 @@ export async function startPolicyWorkbenchUi(
     boundPolicy === undefined
       ? policyStudioModel()
       : policyStudioModel(undefined, undefined, { initialPolicy: boundPolicy });
-  const shell = workbenchShellFromEnvironment(process.env);
   let html = policyStudioHtml({
     ...initialModel,
     door,
     policySource,
-    ...(shell === undefined ? {} : { shell }),
   });
   let htmlLength = Buffer.byteLength(html);
   const requestToken = randomBytes(32).toString("hex");
@@ -322,7 +308,6 @@ export async function startPolicyWorkbenchUi(
         nextModel.initialPolicy = parseOrgPolicy(bridge.policy);
         nextModel.door = door;
         nextModel.policySource = policySource;
-        if (shell !== undefined) nextModel.shell = shell;
         const expected = nextModel.workbenchBundle.assets[bridge.root.assetId];
         if (
           expected === undefined ||

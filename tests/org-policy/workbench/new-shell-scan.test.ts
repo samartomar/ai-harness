@@ -11,7 +11,7 @@ import { closeStudios, importFile, preview, sha, studio } from "./shell-parity-h
 afterEach(closeStudios);
 
 function newShell() {
-  return studio({ ...tinyStudioModel(), shell: "new" }).window;
+  return studio(tinyStudioModel()).window;
 }
 
 const evidence = {

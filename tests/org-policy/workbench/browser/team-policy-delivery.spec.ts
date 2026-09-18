@@ -6,10 +6,8 @@ import { expect, test } from "@playwright/test";
 
 /**
  * NEW-SHELL-PLAN.md S6: allowed CLIs and posture moved to the new shell's
- * organization screen. Generated pages open with `?shell=new` (the local
- * shell switch); the Compose tab became the nav rail. Assertions unchanged.
+ * organization screen; the Compose tab became the nav rail. Assertions unchanged.
  */
-const NEW_SHELL = "?shell=new";
 
 test("authors independent required practices in the browser and reopens exact exports through the public CLI", async ({
   page,
@@ -66,7 +64,7 @@ test("authors independent required practices in the browser and reopens exact ex
   ];
   const exports: Record<string, string> = {};
   for (const adopter of cases) {
-    await page.goto(pathToFileURL(resolve(directory, "author.html")).href + NEW_SHELL);
+    await page.goto(pathToFileURL(resolve(directory, "author.html")).href);
     // This journey authors independent practices from a deliberate empty policy.
     await page.locator("#policy-file").setInputFiles({
       name: "practice-only.json",
@@ -174,14 +172,12 @@ test("authors independent required practices in the browser and reopens exact ex
       "--apply",
       "--json",
     ]);
-    await page.goto(
-      pathToFileURL(resolve(directory, `${adopter.name}-reopened.html`)).href + NEW_SHELL,
-    );
+    await page.goto(pathToFileURL(resolve(directory, `${adopter.name}-reopened.html`)).href);
     expect(JSON.parse(await page.locator("#config-preview").inputValue())).toEqual(policy);
     await page.reload();
     expect(JSON.parse(await page.locator("#config-preview").inputValue())).toEqual(policy);
     // Importing into another fresh artifact uses the supported browser input too.
-    await page.goto(pathToFileURL(resolve(directory, "author.html")).href + NEW_SHELL);
+    await page.goto(pathToFileURL(resolve(directory, "author.html")).href);
     await page.locator("#policy-file").setInputFiles(exportedPath);
     await expect
       .poll(async () => JSON.parse(await page.locator("#config-preview").inputValue()))

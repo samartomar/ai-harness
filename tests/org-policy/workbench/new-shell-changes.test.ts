@@ -27,7 +27,7 @@ const { mountChangesScreen } = (await import(changesScreenModule)) as {
 afterEach(closeStudios);
 
 function newShell() {
-  return studio({ ...tinyStudioModel(), shell: "new" }).window;
+  return studio(tinyStudioModel()).window;
 }
 
 type Window = ReturnType<typeof newShell>;

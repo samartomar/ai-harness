@@ -63,8 +63,11 @@ describe("legacy Workbench policy grammar characterization", () => {
     expect(
       [vibe, enterprise, enterpriseCleared].map(({ window }) => ({
         message: announcement(window),
-        classes: window.document.getElementById("validate")?.className ?? "",
-        title: window.document.getElementById("validate")?.getAttribute("title") ?? "",
+        // The check state classes are the behaviour; the button's styling and
+        // its "Validate" → "Check Policy" label are cosmetic (id-contract.md S2).
+        checkState: ["check-failed", "check-attention"].filter((name) =>
+          window.document.getElementById("validate")?.classList.contains(name),
+        ),
         readiness: window.document.getElementById("deployment-readiness")?.textContent ?? "",
       })),
     ).toMatchSnapshot();

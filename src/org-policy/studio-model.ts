@@ -362,13 +362,6 @@ export interface PolicyStudioModel {
    */
   door?: WorkbenchDoorV1;
   policySource?: WorkbenchPolicySourceV1;
-  /**
-   * Which admin shell the page renders during the new-shell migration
-   * (NEW-SHELL-PLAN.md §3). Absent means the legacy shell, the default. Only
-   * `startPolicyWorkbenchUi` sets it, from the fixture-only
-   * `AIH_WORKBENCH_SHELL`; a local run can also pass `?shell=new`.
-   */
-  shell?: "legacy" | "new";
 }
 
 function invalidBaselineEvidenceWorkbenchProvenance(): never {

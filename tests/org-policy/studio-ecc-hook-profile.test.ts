@@ -31,7 +31,7 @@ function eccHookControls(): EccHookControls {
 function studio(): Window {
   const window = new Window({ url: "http://localhost/" });
   // NEW-SHELL-PLAN.md S6: ECC hook controls moved to the new shell's organization screen.
-  const html = policyStudioHtml({ ...model, shell: "new" });
+  const html = policyStudioHtml(model);
   window.document.write(html);
   (window as unknown as { structuredClone: typeof structuredClone }).structuredClone =
     structuredClone;

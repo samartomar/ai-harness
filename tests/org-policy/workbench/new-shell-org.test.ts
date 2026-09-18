@@ -28,7 +28,7 @@ function withHosts(model: PolicyStudioModel = tinyStudioModel()): PolicyStudioMo
 }
 
 function newShell(model: PolicyStudioModel = withHosts()) {
-  return studio({ ...model, shell: "new" }).window;
+  return studio(model).window;
 }
 
 function policy(window: ReturnType<typeof newShell>): Record<string, unknown> {

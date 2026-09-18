@@ -42,10 +42,7 @@ afterEach(async () => {
 function studio(enterprise = false): Window {
   const window = new Window({ url: "http://localhost/" });
   // NEW-SHELL-PLAN.md S7: the protected policy form moved to the new shell's additions screen.
-  const html = policyStudioHtml({
-    ...(enterprise ? tinyEnterpriseStudioModel() : tinyStudioModel()),
-    shell: "new",
-  });
+  const html = policyStudioHtml(enterprise ? tinyEnterpriseStudioModel() : tinyStudioModel());
   window.document.write(html);
   Object.defineProperty(window, "crypto", {
     configurable: true,
