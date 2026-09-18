@@ -7,284 +7,31 @@
  * `goldens/` were captured from the legacy runtime before any extraction and
  * are the byte-compatibility gate for the new shell (S2, S7, S8).
  */
-import { TextEncoder } from "node:util";
-import { Window } from "happy-dom";
 import { afterEach, describe, expect, it } from "vitest";
-import type { PolicyStudioModel } from "../../../src/org-policy/studio-model.js";
-import { policyStudioHtml } from "../../../src/org-policy/studio-template.js";
 import {
   buildProjectPolicyV1,
   type TrimUseV1,
   userDoorViewModelV1,
 } from "../../../src/org-policy/workbench/ui/user-door-model.js";
-import { tinyEnterpriseStudioModel, tinyStudioModel } from "../studio-test-fixture.js";
+import { tinyEnterpriseStudioModel } from "../studio-test-fixture.js";
+import {
+  announcement,
+  basePolicy,
+  click,
+  closeStudios,
+  drained,
+  governance,
+  hookControl,
+  importCases,
+  importFile,
+  importMigrationCases,
+  preview,
+  setValue,
+  sha,
+  studio,
+} from "./shell-parity-harness.js";
 
-const windows = new Set<Window>();
-const sha = (character: string) => `sha256:${character.repeat(64)}`;
-
-afterEach(async () => {
-  await Promise.all([...windows].map((window) => window.happyDOM.close()));
-  windows.clear();
-});
-
-interface Download {
-  name: string;
-  text: string;
-}
-
-interface Studio {
-  window: Window;
-  downloads: Download[];
-}
-
-function studio(model: PolicyStudioModel = tinyStudioModel()): Studio {
-  const window = new Window({ url: "http://localhost/" });
-  windows.add(window);
-  const html = policyStudioHtml(model);
-  window.document.write(html);
-  Object.defineProperty(window, "crypto", { configurable: true, value: globalThis.crypto });
-  Object.defineProperty(window, "TextEncoder", { configurable: true, value: TextEncoder });
-  (window as unknown as { structuredClone: typeof structuredClone }).structuredClone =
-    structuredClone;
-  const downloads: Download[] = [];
-  const blobs = new Map<string, Blob>();
-  let next = 0;
-  const url = window.URL as unknown as {
-    createObjectURL(blob: Blob): string;
-    revokeObjectURL(value: string): void;
-  };
-  url.createObjectURL = (blob: Blob) => {
-    next += 1;
-    const key = `blob:characterization-${next}`;
-    blobs.set(key, blob);
-    return key;
-  };
-  url.revokeObjectURL = () => undefined;
-  const anchorPrototype = Object.getPrototypeOf(window.document.createElement("a")) as {
-    click: () => void;
-  };
-  anchorPrototype.click = function (this: { download: string; href: string }): void {
-    const blob = blobs.get(this.href);
-    if (blob === undefined) return;
-    const entry: Download = { name: this.download, text: "" };
-    downloads.push(entry);
-    pendingReads.push(
-      blob.text().then((text) => {
-        entry.text = text;
-      }),
-    );
-  };
-  const pendingReads: Promise<void>[] = [];
-  (window as unknown as { __characterizationReads: Promise<void>[] }).__characterizationReads =
-    pendingReads;
-  const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/gi)].map((match) => match[1]);
-  if (scripts.length === 0) throw new Error("expected generated workbench script");
-  window.eval(scripts.join("\n"));
-  return { window, downloads };
-}
-
-async function drained(studio: Studio): Promise<Download[]> {
-  const reads = (studio.window as unknown as { __characterizationReads: Promise<void>[] })
-    .__characterizationReads;
-  await Promise.all(reads);
-  return studio.downloads;
-}
-
-function announcement(window: Window): string {
-  return window.document.getElementById("announcement")?.textContent ?? "";
-}
-
-function click(window: Window, id: string): void {
-  const node = window.document.getElementById(id);
-  if (node === null) throw new Error(`expected #${id}`);
-  node.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
-}
-
-function setValue(window: Window, id: string, entry: string): void {
-  const node = window.document.getElementById(id) as unknown as {
-    value: string;
-    dispatchEvent(event: unknown): boolean;
-  } | null;
-  if (node === null) throw new Error(`expected #${id}`);
-  node.value = entry;
-  node.dispatchEvent(new window.Event("input", { bubbles: true }));
-  node.dispatchEvent(new window.Event("change", { bubbles: true }));
-}
-
-function preview(window: Window): string {
-  const node = window.document.getElementById("config-preview") as unknown as {
-    value: string;
-  } | null;
-  if (node === null) throw new Error("expected #config-preview");
-  return node.value;
-}
-
-async function settle(window: Window, done: () => boolean, budgetMs = 2000): Promise<void> {
-  const deadline = Date.now() + budgetMs;
-  while (Date.now() < deadline) {
-    if (done()) return;
-    await new Promise((resolve) => window.setTimeout(resolve, 10));
-  }
-  throw new Error("timed out waiting for the Workbench announcement");
-}
-
-async function importFile(window: Window, inputId: string, text: string): Promise<string> {
-  const input = window.document.getElementById(inputId);
-  if (input === null) throw new Error(`expected #${inputId}`);
-  const live = window.document.getElementById("announcement");
-  if (live !== null) live.textContent = "";
-  Object.defineProperty(input, "files", {
-    configurable: true,
-    value: [new window.File([text], "import.json", { type: "application/json" })],
-  });
-  input.dispatchEvent(new window.Event("change", { bubbles: true }));
-  await settle(window, () => announcement(window) !== "");
-  return announcement(window);
-}
-
-function basePolicy(): Record<string, unknown> {
-  return structuredClone(tinyStudioModel().initialPolicy) as Record<string, unknown>;
-}
-
-function governance(policy: Record<string, unknown>): Record<string, unknown> {
-  return policy.governance as Record<string, unknown>;
-}
-
-const hookControl = {
-  id: "usage-metering",
-  kind: "hook",
-  description: "Fixture governed hook control",
-  capabilities: [],
-  risks: [],
-  source: {
-    type: "hook",
-    handler: "usage-metering",
-    scriptDigest: "sha256:0d6da4f993901e57da5fadb281ec54ae6b9516797c014c974b65125e8114ae37",
-  },
-  targets: ["claude", "codex"],
-  projector: "usage-hook",
-  lifecycle: "supported",
-  evidence: { record: "aih-usage-metering" },
-  findings: [],
-  autoExecute: false,
-};
-
-/** Policy mutations whose import outcome is pinned verbatim. */
-const importCases: ReadonlyArray<readonly [string, () => unknown]> = [
-  ["unchanged initial policy", () => basePolicy()],
-  [
-    "enterprise posture without supported CLIs",
-    () => ({ ...basePolicy(), minimumPosture: "enterprise" }),
-  ],
-  [
-    "duplicate supported CLI entries",
-    () => {
-      const policy = basePolicy();
-      governance(policy).supportedClis = ["codex", "codex"];
-      return policy;
-    },
-  ],
-  [
-    "hidden Unicode in the governance policy version",
-    () => {
-      const policy = basePolicy();
-      governance(policy).policyVersion = " 1";
-      return policy;
-    },
-  ],
-  [
-    "activation of an unknown candidate",
-    () => {
-      const policy = basePolicy();
-      governance(policy).activations = [
-        { candidate: "missing-control", state: "active", targets: ["claude"] },
-      ];
-      return policy;
-    },
-  ],
-  [
-    "reviewed hook control with a narrowed target list",
-    () => {
-      const policy = basePolicy();
-      governance(policy).catalog = {
-        reviewed: [{ ...hookControl, targets: ["claude"] }],
-        custom: [],
-      };
-      return policy;
-    },
-  ],
-  [
-    "active reviewed hook control",
-    () => {
-      const policy = basePolicy();
-      governance(policy).catalog = { reviewed: [hookControl], custom: [] };
-      governance(policy).activations = [
-        { candidate: "usage-metering", state: "active", targets: ["claude", "codex"] },
-      ];
-      return policy;
-    },
-  ],
-  [
-    "active reviewed hook control outside the sanctioned CLI set",
-    () => {
-      const policy = basePolicy();
-      governance(policy).supportedClis = ["gemini"];
-      governance(policy).catalog = { reviewed: [hookControl], custom: [] };
-      governance(policy).activations = [
-        { candidate: "usage-metering", state: "active", targets: ["claude", "codex"] },
-      ];
-      return policy;
-    },
-  ],
-  [
-    "custom remote MCP projected to Kiro",
-    () => {
-      const policy = basePolicy();
-      governance(policy).catalog = {
-        reviewed: [],
-        custom: [
-          {
-            id: "acme-remote",
-            kind: "mcp",
-            description: "Acme remote MCP",
-            capabilities: [],
-            risks: [],
-            source: { type: "remote", url: "https://mcp.acme.example/" },
-            targets: ["kiro"],
-            projector: "mcp-server",
-            lifecycle: "supported",
-            evidence: { record: "acme-remote" },
-            findings: [],
-            autoExecute: false,
-          },
-        ],
-      };
-      return policy;
-    },
-  ],
-  [
-    "unsafe baseline override bundle path",
-    () => ({
-      ...basePolicy(),
-      trust: {
-        baselineOverrides: [{ bundle: "../escape.json", approvedAt: "yesterday" }],
-      },
-    }),
-  ],
-  [
-    "duplicate external curation framework records",
-    () => {
-      const policy = basePolicy();
-      governance(policy).externalCuration = [
-        { framework: "ecc", items: [] },
-        { framework: "ecc", items: [] },
-      ];
-      return policy;
-    },
-  ],
-  ["policy without governance", () => ({ schemaVersion: 2, minimumPosture: "vibe" })],
-  ["schema version 1 policy", () => ({ ...basePolicy(), schemaVersion: 1 })],
-];
+afterEach(closeStudios);
 
 describe("legacy Workbench policy grammar characterization", () => {
   it.each(importCases)("pins the import outcome for %s", async (_label, build) => {
@@ -321,6 +68,19 @@ describe("legacy Workbench policy grammar characterization", () => {
         readiness: window.document.getElementById("deployment-readiness")?.textContent ?? "",
       })),
     ).toMatchSnapshot();
+  });
+});
+
+describe("legacy Workbench import migration previews", () => {
+  it("pins the migration message and preview bytes for each schema-2 migration", async () => {
+    const messages: Record<string, string> = {};
+    for (const [name, makeModel, build] of importMigrationCases) {
+      const { window } = studio(makeModel());
+      messages[name] = await importFile(window, "policy-file", JSON.stringify(build()));
+      await expect(preview(window)).toMatchFileSnapshot(`goldens/import-migration.${name}.json`);
+    }
+    await expect(`${JSON.stringify(messages, null, 2)}
+`).toMatchFileSnapshot("goldens/import-migration-messages.json");
   });
 });
 

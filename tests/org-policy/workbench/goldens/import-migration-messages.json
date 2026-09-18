@@ -1,0 +1,5 @@
+{
+  "narrowed-activation-targets": "Legacy Workbench policy migrated: activation targets narrowed to the sanctioned projector intersection for usage-metering. Catalog support metadata and imported authority records were preserved; review and download the migrated policy.",
+  "managed-mcp-non-projectable-removed": "Legacy Workbench policy migrated: managed MCP projection restored with no projectable MCP authority; non-projectable MCP authority removed: github. Review and download this migrated policy.",
+  "managed-mcp-projectable-schema-rejected": "Policy import rejected: : must match exactly one schema variant"
+}

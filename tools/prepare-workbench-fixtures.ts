@@ -50,6 +50,7 @@ Object.assign(malformedPolicy.initialPolicy, {
   security: { strix: { ...{ enabled: false, required: false, targetKind: "local-fixture", mode: "quick", maxBudgetCents: 1, maxTurns: 1, timeoutMs: 1, telemetry: "off", imageDigest: "sha256:" + "a".repeat(64), allowLiveTargets: false, allowMounts: false }, maxTurns: 999 } },
 });
 await writeFile(resolve(directory, "invalid-policy.html"), policyStudioHtml(malformedPolicy), "utf8");
+await writeFile(resolve(directory, "new-shell", "invalid-policy.html"), policyStudioHtml({ ...malformedPolicy, shell: "new" }), "utf8");
 
 // P5b/P5c user door: the packaged default policy stands in for the bound org
 // policy. It is written to a real file; the digest and initialPolicy both come

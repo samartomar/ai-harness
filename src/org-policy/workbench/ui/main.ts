@@ -152,15 +152,50 @@ if (!userDoor && !newShell) {
 }
 
 if (newShell) {
-  mountNewWorkbench({
+  const { session } = mountNewWorkbench({
+    model: model as unknown as Parameters<typeof mountNewWorkbench>[0]["model"],
+    catalogValid: preparedCatalogValid,
     ledgerAssets: bundle === undefined ? [] : Object.values(workbenchBrowseBundle(bundle).assets),
-    selectedAssetIds() {
+    selectedAssetIds(policy) {
       if (!preparedCatalogValid) return [];
-      const imported = importedState(browserModel.initialPolicy, bundle, bindings, sourceInputs);
-      return resolveWorkbenchSelection(bundle, imported.state).assetIds;
+      return resolveWorkbenchSelection(
+        bundle,
+        importedState(policy, bundle, bindings, sourceInputs).state,
+      ).assetIds;
     },
+    selectionValidator: () => window.__aihWorkbenchValidatePolicy,
   });
+  window.__aihPolicyWorkbenchSession = session;
   if (model.door === "chooser") mountChooserNote(document.getElementById("announcement"));
+  // The legacy listener below re-projects an imported schema-3 policy through
+  // the prepared catalog; the new shell keeps that exact step (S2 byte parity).
+  let applyingNewShellProjection = false;
+  window.addEventListener("aih-workbench-policy-change", () => {
+    if (applyingNewShellProjection || !preparedCatalogValid) return;
+    const snapshot = session.snapshotPolicy();
+    const imported = importedState(snapshot, bundle, bindings, sourceInputs);
+    const basePolicy = object(snapshot);
+    if (!imported.accepted || basePolicy === undefined || basePolicy.schemaVersion !== 3) return;
+    const projected = projectWorkbenchPolicy(
+      basePolicy,
+      imported.state,
+      bundle,
+      bindings,
+      "author",
+      sourceInputs,
+    );
+    if (!projected.accepted) return;
+    try {
+      applyingNewShellProjection = true;
+      window.__aihWorkbenchApplyingProjection = true;
+      session.restorePolicy(projected.policy);
+    } catch {
+      // The legacy listener reports this only through the catalog panel (S3).
+    } finally {
+      window.__aihWorkbenchApplyingProjection = false;
+      applyingNewShellProjection = false;
+    }
+  });
 }
 
 if (!userDoor && !newShell && preparedCatalogValid) {

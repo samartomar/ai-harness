@@ -55,7 +55,7 @@ export const test = base.extend<BrowserFixtures>({
     },
     { auto: true },
   ],
-  workbench: async ({ page, context, preparedArtifact, shell }, use, testInfo) => {
+  workbench: async ({ page, context, preparedArtifact }, use, testInfo) => {
     const path = testInfo.outputPath("aih-policy-workbench.html");
     await mkdir(dirname(path), { recursive: true });
     await copyFile(preparedArtifact, path);
@@ -69,9 +69,7 @@ export const test = base.extend<BrowserFixtures>({
     await page.coverage.startJSCoverage({ reportAnonymousScripts: true });
     await page.goto(pathToFileURL(path).href);
     expect(pageErrors, "portable Workbench startup failed").toEqual([]);
-    await expect(
-      page.locator(shell === "new" ? "#wb-root[data-wb-screen]" : "#config-preview"),
-    ).toBeAttached();
+    await expect(page.locator("#config-preview")).toBeAttached();
     await use({ path, networkRequests });
     const coverage = (await page.coverage.stopJSCoverage()).filter((entry) =>
       entry.source?.startsWith("/* aih-workbench-ui/v1 */"),

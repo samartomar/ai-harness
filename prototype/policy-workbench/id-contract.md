@@ -208,3 +208,8 @@ A new-shell-only hook has no legacy row; its test is named instead.
 | `[data-kind-ledger-tile="<kind>"]` | same, inside `[data-wb-ledger]` | S1 | y (per-kind selected/total) | new-shell-frame.test.ts |
 | — | `#nav-rail`, `#toggle-nav-btn`, `#inspector-rail[data-wb-inspector]`, `#btn-toggle-inspector`, `[data-wb-inspector-tab]`, `[data-close-inspector]` | S1 | n/a (new hook) | new-shell-frame.test.ts; browser/new-shell.spec.ts |
 | visual baselines `shell-header-*`, `shell-kind-ledger-*` (legacy) | `new-shell-frame-{light,dark}`, `new-shell-frame-375-light` | S1 (both shells snapshotted) | legacy baselines unchanged | browser/visual-shell.spec.ts |
+| `#validate` (`check-failed` / `check-attention`, title) | same, header "Check Policy" | S2 | y | new-shell-download-compat.test.ts; browser/new-shell.spec.ts |
+| `#download`, `#policy-download-name`, `#policy-file-help`, `#policy-file-command` | same; `#download` is header "Publish", the filename lives in the `#wb-file-menu` group | S2 | y (goldens byte-equal) | new-shell-download-compat.test.ts; browser/new-shell.spec.ts |
+| `#policy-file`, `#evidence-file`, `#decision-file`, `#import-policy`, `#import-evidence`, `#import-decision`, `#download-decision`, `#export`, `#clear-policy` | same, in `#wb-file-menu` | S2 | y (messages equal the legacy shell's) | new-shell-download-compat.test.ts |
+| `#config-preview`, `#report-preview` | same, in the changes screen `#json-editor` | S2 | y | new-shell-download-compat.test.ts; browser/new-shell.spec.ts |
+| `window.__aihPolicyWorkbenchSession` | same (policy-session.ts) | S2 | y | new-shell-download-compat.test.ts |

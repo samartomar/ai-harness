@@ -238,7 +238,9 @@ describe("managed MCP semantics (legacy Ke/N/oe/ze/Ye/Qe)", () => {
     (policy.governance as { supportedClis: string[] }).supportedClis = ["codex"];
     const narrowed = narrowLegacyActivationTargets(policy, model());
     expect(narrowed?.policy.governance.activations[0].targets).toEqual(["codex"]);
-    expect(narrowed?.message).toContain("activation targets narrowed");
+    expect(narrowed?.message).toBe(
+      "Legacy Workbench policy migrated: activation targets narrowed to the sanctioned projector intersection for github. Catalog support metadata and imported authority records were preserved; review and download the migrated policy.",
+    );
   });
 
   it("imports a legacy managed policy through both migrations and the selection gate", () => {

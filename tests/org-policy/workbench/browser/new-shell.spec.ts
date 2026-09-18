@@ -113,3 +113,89 @@ test("renders the same frame from a legacy page opened with ?shell=new", async (
   await expect(page.locator("[data-kind-ledger-tile]")).toHaveCount(5);
   expect(await violations(page)).toEqual([]);
 });
+
+// NEW-SHELL-PLAN.md S2: policy session and file transfer in a real browser.
+test("imports, checks and publishes the policy with the preview bytes", async ({
+  page,
+  workbench,
+}, testInfo) => {
+  await reopenUnderStrictCsp(page, workbench.path);
+  const bytes = await page.locator("#config-preview").inputValue();
+  expect(JSON.parse(bytes).schemaVersion).toBeGreaterThanOrEqual(2);
+
+  await page.locator("#policy-file").setInputFiles({
+    name: "round-trip.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(bytes),
+  });
+  await expect(page.locator("#announcement")).toContainText("Policy imported");
+  await expect(page.locator("#config-preview")).toHaveValue(bytes);
+
+  await page.locator("#policy-file").setInputFiles({
+    name: "invalid.json",
+    mimeType: "application/json",
+    buffer: Buffer.from("[]"),
+  });
+  await expect(page.locator("#announcement")).toHaveText(
+    "Policy import rejected: file import JSON root must be an object",
+  );
+  await expect(page.locator("#config-preview")).toHaveValue(bytes);
+
+  await page.locator("#validate").click();
+  await expect(page.locator("#announcement")).toContainText(
+    "Schema and policy-grammar validation passed",
+  );
+
+  await page.getByRole("button", { name: "Policy files" }).click();
+  await expect(page.locator("#wb-file-menu")).toBeVisible();
+  await page.locator("#export").click();
+  await expect(page.locator("#wb-root")).toHaveAttribute("data-wb-screen", "changes");
+  await expect(page.locator("#config-preview")).toBeVisible();
+
+  const pending = page.waitForEvent("download");
+  await page.locator("#download").click();
+  const download = await pending;
+  expect(download.suggestedFilename()).toBe("aih-org-policy.json");
+  const path = testInfo.outputPath("downloaded-policy.json");
+  await download.saveAs(path);
+  expect(await readFile(path, "utf8")).toBe(bytes);
+  await expect(page.locator("#announcement")).toHaveText(
+    "Policy download started. Validate this file with: aih policy validate <target-root> --policy aih-org-policy.json",
+  );
+  expect(await violations(page)).toEqual([]);
+});
+
+test("keeps Check Policy and Publish disabled for an invalid prepared catalog", async ({
+  page,
+  workbench,
+}) => {
+  const directory = process.env.AIH_WORKBENCH_FIXTURE_DIR;
+  if (!directory) throw new Error("Workbench fixtures were not prepared");
+  for (const missing of ["workbenchBundle", "workbenchBindings", "both"]) {
+    await page.goto(pathToFileURL(resolve(directory, "new-shell", `invalid-${missing}.html`)).href);
+    await expect(page.getByRole("alert")).toContainText("Prepared catalog is invalid");
+    await expect(page.locator("#validate")).toBeDisabled();
+    await expect(page.locator("#download")).toBeDisabled();
+    const before = await page.locator("#config-preview").inputValue();
+    await page.locator("#policy-file").setInputFiles({
+      name: "rejected.json",
+      mimeType: "application/json",
+      buffer: Buffer.from(before),
+    });
+    await expect(page.locator("#announcement")).toContainText("Prepared catalog is invalid");
+    expect(await page.locator("#config-preview").inputValue()).toBe(before);
+  }
+  await page.goto(pathToFileURL(resolve(directory, "new-shell", "invalid-policy.html")).href);
+  const invalidInitial = await page.locator("#config-preview").inputValue();
+  const downloads: string[] = [];
+  page.on("download", (download) => downloads.push(download.suggestedFilename()));
+  await page.locator("#validate").click();
+  await expect(page.locator("#announcement")).toContainText(/maxTurns|schema variant/u);
+  await expect(page.locator("#validate")).toHaveClass(/check-failed/u);
+  expect(await page.locator("#validate").getAttribute("title")).toMatch(/^Policy check failed: /u);
+  await page.locator("#download").click();
+  await expect(page.locator("#announcement")).toContainText(/maxTurns|schema variant/u);
+  expect(downloads).toEqual([]);
+  expect(await page.locator("#config-preview").inputValue()).toBe(invalidInitial);
+  void workbench;
+});
