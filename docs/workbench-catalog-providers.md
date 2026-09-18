@@ -165,8 +165,8 @@ The default `npx @aihq/core --ui` flow consumes package-owned prepared data. It
 also reads the launch folder, read-only, to choose which page to serve: the
 admin page when an org policy resolves at that folder through the existing
 lookup order, the user (project) page when the folder holds a project bound to
-an org policy (`.aih-config.json`) or an `aih-project-policy.json` file, or a
-chooser when neither is present. For a bound project, the bound org policy is
+an org policy (`.aih-config.json`), or the admin page with a chooser note when
+neither is present. For a bound project, the bound org policy is
 read with the binding's own custody checks — active, same canonical root, a
 safe single-link regular file, size, and digest — and shown on the user page.
 This folder read never writes anything and does not require the user to run

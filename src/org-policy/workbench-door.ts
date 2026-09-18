@@ -115,7 +115,16 @@ export function classifyWorkbenchDoorV1(
   }
 
   if (existsSync(join(root, AIH_PROJECT_POLICY_FILE))) {
-    return { door: "user", policySource: noneSource() };
+    // A selection file without a binding has no org policy to narrow, so the
+    // project page fails closed: it explains the gap and keeps Save disabled.
+    return {
+      door: "user",
+      policySource: {
+        kind: "none",
+        valid: false,
+        error: `${AIH_PROJECT_POLICY_FILE} is present but this project has no org policy binding in ${AIH_CONFIG_FILE}.`,
+      },
+    };
   }
 
   return { door: "chooser", policySource: noneSource() };

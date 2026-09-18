@@ -187,7 +187,8 @@ html[data-theme] {
   --rule-soft: var(--wb-color-surface-container);
   --fill: var(--wb-color-surface-container);
   --fill-2: var(--wb-color-surface-container-high);
-  --fill-hover: var(--wb-color-surface-container-highest);
+  /* One step below highest so faint text keeps >= 4.5:1 on hover (both themes). */
+  --fill-hover: var(--wb-color-surface-container-high);
   --ink: var(--wb-color-on-surface);
   --ink-2: var(--wb-color-on-surface-variant);
   --ink-3: var(--wb-color-outline);
@@ -220,6 +221,15 @@ html[data-theme="dark"] .btn.primary:hover {
  * the status colour (vet results, ok badges, positive evidence). Accent text
  * uses primary-bright: >= 5.8:1 on every light surface and >= 6.4:1 on dark.
  */
+/*
+ * Light theme: the outline token is 4.27:1 on --paper and 3.35:1 on --fill-2,
+ * so faint legacy text (--ink-3) uses on-surface-variant (>= 4.71:1 on every
+ * light surface it sits on). Dark keeps outline (>= 4.53:1).
+ */
+html[data-theme="light"] {
+  --ink-3: var(--wb-color-on-surface-variant);
+}
+
 html[data-theme] {
   --wb-accent: var(--wb-color-primary-bright);
 }

@@ -114,7 +114,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Read the launch folder, read-only, when `npx @aihq/core --ui` starts, to choose
   between the existing admin page, a new user (project) page, or a chooser, based
   on whether an org policy resolves at that folder or a project there is bound to
-  one (`.aih-config.json`) or holds `aih-project-policy.json`.
+  one (`.aih-config.json`).
 - Add a user (project) page listing the items the bound org policy's authoring
   selections allow as Required / Optional / Skip, with a browser-download Save of
   `aih-project-policy.json` (nothing is written to disk by the Workbench). Save is

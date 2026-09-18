@@ -37,6 +37,9 @@ vi.mock("../../src/org-policy/workbench/core/bounded-github-skill-resolver.js", 
   resolveConnectedGithubSkillV1: resolveGithubSkillMock,
 }));
 
+// Product behaviour runs against a fixture root, never this checkout.
+const emptyLaunchFolder = mkdtempSync(join(tmpdir(), "aih-ui-empty-"));
+
 describe("Policy Workbench UI server", () => {
   let running: PolicyWorkbenchUi | undefined;
 
@@ -49,6 +52,7 @@ describe("Policy Workbench UI server", () => {
   it("serves the packaged portable Workbench on an available loopback port", async () => {
     const opened: string[] = [];
     running = await startPolicyWorkbenchUi({
+      cwd: emptyLaunchFolder,
       openBrowser: async (url) => {
         opened.push(url);
       },
@@ -71,7 +75,7 @@ describe("Policy Workbench UI server", () => {
   });
 
   it("keeps the one-route server explicit for redirects, HEAD, and unsupported methods", async () => {
-    running = await startPolicyWorkbenchUi({ openBrowser: async () => {} });
+    running = await startPolicyWorkbenchUi({ cwd: emptyLaunchFolder, openBrowser: async () => {} });
 
     const root = await fetch(new URL("/", running.url), { redirect: "manual" });
     expect(root.status).toBe(302);
@@ -100,7 +104,7 @@ describe("Policy Workbench UI server", () => {
         path: "skills/frontend-design/SKILL.md" as const,
       },
     });
-    running = await startPolicyWorkbenchUi({ openBrowser: async () => {} });
+    running = await startPolicyWorkbenchUi({ cwd: emptyLaunchFolder, openBrowser: async () => {} });
     const launcher = new URL(running.url);
     const endpoint = new URL("/api/artifact-intake/github-skill/resolve", running.url);
     const headers = {
@@ -172,7 +176,7 @@ describe("Policy Workbench UI server", () => {
   });
 
   it("rejects API requests that lack the loopback origin or launcher token", async () => {
-    running = await startPolicyWorkbenchUi({ openBrowser: async () => {} });
+    running = await startPolicyWorkbenchUi({ cwd: emptyLaunchFolder, openBrowser: async () => {} });
     const launcher = new URL(running.url);
     const endpoint = new URL("/api/artifact-intake/github-skill/resolve", running.url);
 
@@ -239,7 +243,7 @@ describe("Policy Workbench UI server", () => {
       },
     };
     resolveGithubSkillMock.mockResolvedValue(resolved);
-    running = await startPolicyWorkbenchUi({ openBrowser: async () => {} });
+    running = await startPolicyWorkbenchUi({ cwd: emptyLaunchFolder, openBrowser: async () => {} });
     const launcher = new URL(running.url);
     const headers = {
       Origin: launcher.origin,
@@ -302,6 +306,7 @@ describe("Policy Workbench UI server", () => {
   it("keeps serving and reports a browser-launch failure with the usable URL", async () => {
     const messages: string[] = [];
     running = await startPolicyWorkbenchUi({
+      cwd: emptyLaunchFolder,
       openBrowser: async () => {
         throw new Error("browser unavailable");
       },
@@ -317,7 +322,7 @@ describe("Policy Workbench UI server", () => {
     const child = Object.assign(new EventEmitter(), { unref: vi.fn() });
     spawnMock.mockReturnValueOnce(child);
 
-    const starting = startPolicyWorkbenchUi();
+    const starting = startPolicyWorkbenchUi({ cwd: emptyLaunchFolder });
     await vi.waitFor(() => expect(spawnMock).toHaveBeenCalledOnce());
     child.emit("spawn");
     running = await starting;

@@ -227,14 +227,15 @@ describe("classifyWorkbenchDoorV1", () => {
     expect(result.policySource.error).toBeTruthy();
   });
 
-  it("classifies a root carrying only aih-project-policy.json as user", () => {
+  it("fails closed for a root carrying only aih-project-policy.json", () => {
     const root = fixtureRoot();
     writeFileSync(join(root, "aih-project-policy.json"), "{}");
 
     const result = classifyWorkbenchDoorV1(root, {});
 
     expect(result.door).toBe("user");
-    expect(result.policySource).toEqual({ kind: "none", valid: true });
+    expect(result.policySource).toMatchObject({ kind: "none", valid: false });
+    expect(result.policySource.error).toContain("no org policy binding");
   });
 
   it("never writes into the classified root", () => {

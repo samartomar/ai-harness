@@ -1,3 +1,6 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { defaultStudioPolicy } from "../../src/org-policy/studio-model.js";
 import { type PolicyWorkbenchUi, startPolicyWorkbenchUi } from "../../src/org-policy/ui-server.js";
@@ -34,6 +37,9 @@ vi.mock("../../src/org-policy/workbench/core/catalog-qualification-data.js", () 
   }),
 }));
 
+// Product behaviour runs against a fixture root, never this checkout.
+const emptyLaunchFolder = mkdtempSync(join(tmpdir(), "aih-ui-empty-"));
+
 describe("connected Policy Workbench preparation", () => {
   let running: PolicyWorkbenchUi | undefined;
   afterEach(async () => {
@@ -55,7 +61,7 @@ describe("connected Policy Workbench preparation", () => {
       },
     };
     resolveGithubSkillMock.mockResolvedValue(resolved);
-    running = await startPolicyWorkbenchUi({ openBrowser: async () => {} });
+    running = await startPolicyWorkbenchUi({ cwd: emptyLaunchFolder, openBrowser: async () => {} });
     const launcher = new URL(running.url);
     const headers = {
       Origin: launcher.origin,
