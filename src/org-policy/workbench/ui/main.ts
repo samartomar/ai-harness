@@ -14,14 +14,17 @@ import { importWorkbenchPolicySelections, serializeWorkbenchRepairV1 } from "../
 import { WorkbenchReferenceReportsV1Schema } from "../reference-reports.js";
 import {
   reduceWorkbenchAction,
+  resolveWorkbenchSelection,
   type WorkbenchReductionV1,
   workbenchStatesEqualV1,
 } from "../selection-engine.js";
 import { mountArtifactIntakeWorkbench } from "./artifact-intake-runtime.js";
-import { mountWorkbench } from "./catalog-inventory.js";
+import { mountWorkbench, workbenchBrowseBundle } from "./catalog-inventory.js";
 import { availableDeveloperToolCatalogDetails } from "./developer-tool-catalog.js";
 import { mountDeveloperToolSelection } from "./developer-tool-selection.js";
 import { mountLegacyWorkbench } from "./legacy-runtime.js";
+import { mountNewWorkbench } from "./shell/new-workbench.js";
+import { resolveWorkbenchShell } from "./shell/screens.js";
 import { mountChooserNote, mountUserDoor, mountUserDoorTheme } from "./user-door.js";
 
 interface WorkbenchSession {
@@ -107,7 +110,11 @@ if (userDoor) {
   mountUserDoorTheme(document.getElementById("theme-toggle"));
   mountUserDoor(userRoot, model);
 }
-if (model.door === "chooser") mountChooserNote(document.getElementById("announcement"));
+// NEW-SHELL-PLAN.md S1: the new admin shell renders only when the model
+// (AIH_WORKBENCH_SHELL, fixtures) or ?shell=new (local runs) asks for it.
+const newShell = !userDoor && resolveWorkbenchShell(model.shell, window.location.search) === "new";
+if (model.door === "chooser" && !newShell)
+  mountChooserNote(document.getElementById("announcement"));
 const sourceInputs = browserModel.workbenchSourceInputs;
 const bundleResult = AuthoringCatalogBundleV1Schema.safeParse(browserModel.workbenchBundle);
 const bindings = object(browserModel.workbenchBindings) as WorkbenchPolicyBindingsV1 | undefined;
@@ -139,12 +146,24 @@ if (preparedCatalogValid) {
     return { accepted: imported.accepted, diagnostics: imported.diagnostics };
   };
 }
-if (!userDoor) {
+if (!userDoor && !newShell) {
   mountLegacyWorkbench(browserModel);
   mountArtifactIntakeWorkbench();
 }
 
-if (!userDoor && preparedCatalogValid) {
+if (newShell) {
+  mountNewWorkbench({
+    ledgerAssets: bundle === undefined ? [] : Object.values(workbenchBrowseBundle(bundle).assets),
+    selectedAssetIds() {
+      if (!preparedCatalogValid) return [];
+      const imported = importedState(browserModel.initialPolicy, bundle, bindings, sourceInputs);
+      return resolveWorkbenchSelection(bundle, imported.state).assetIds;
+    },
+  });
+  if (model.door === "chooser") mountChooserNote(document.getElementById("announcement"));
+}
+
+if (!userDoor && !newShell && preparedCatalogValid) {
   const root = document.getElementById("framework-rows");
   const session = window.__aihPolicyWorkbenchSession;
   if (root === null || session === undefined)
@@ -438,7 +457,7 @@ if (!userDoor && preparedCatalogValid) {
     }
   });
 }
-if (!userDoor && !preparedCatalogValid) {
+if (!userDoor && !newShell && !preparedCatalogValid) {
   const root = document.getElementById("framework-rows");
   if (root !== null) {
     const message = document.createElement("p");

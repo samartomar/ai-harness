@@ -64,3 +64,34 @@ for (const theme of ["light", "dark"] as const) {
     void workbench;
   });
 }
+
+// NEW-SHELL-PLAN.md §3: the new shell's frame is snapshotted beside the legacy
+// header until the flip slice.
+test.describe("new shell", () => {
+  test.use({ shell: "new" });
+
+  for (const theme of ["light", "dark"] as const) {
+    test(`new shell frame matches the ${theme} baseline`, async ({ page, workbench }) => {
+      await disableTransitions(page);
+      if (theme === "dark") await toggleTheme(page);
+      await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+      await expect(page.locator("#wb-root")).toHaveAttribute("data-wb-screen", "sources");
+      await expect(page).toHaveScreenshot(`new-shell-frame-${theme}.png`, {
+        maxDiffPixelRatio: 0.01,
+        mask: [page.locator("#status")],
+      });
+      void workbench;
+    });
+  }
+
+  test("new shell frame matches the 375 px baseline", async ({ page, workbench }) => {
+    await page.setViewportSize({ width: 375, height: 812 });
+    await disableTransitions(page);
+    await expect(page.locator("#wb-root")).toHaveAttribute("data-wb-screen", "sources");
+    await expect(page).toHaveScreenshot("new-shell-frame-375-light.png", {
+      maxDiffPixelRatio: 0.01,
+      mask: [page.locator("#status")],
+    });
+    void workbench;
+  });
+});

@@ -955,3 +955,59 @@ html[data-theme] #panel-author textarea[readonly] {
   background: var(--wb-theme-code-bg);
   color: var(--wb-color-on-surface);
 }
+
+/*
+ * New shell base (NEW-SHELL-PLAN.md S1). Scoped to html[data-wb-shell="new"],
+ * which only the new shell sets, so nothing here reaches the legacy page.
+ * Tailwind preflight stays off; this is the minimum reset the frame needs.
+ */
+html[data-wb-shell="new"] { color-scheme: light; }
+html[data-wb-shell="new"][data-theme="dark"] { color-scheme: dark; }
+html[data-wb-shell="new"] *,
+html[data-wb-shell="new"] *::before,
+html[data-wb-shell="new"] *::after { box-sizing: border-box; }
+html[data-wb-shell="new"] body {
+  margin: 0;
+  background: var(--wb-color-background);
+  color: var(--wb-color-on-surface);
+  font: var(--wb-fw-regular) 13px/1.5 var(--wb-font);
+  -webkit-font-smoothing: antialiased;
+}
+/* Zero specificity, so every Tailwind utility on the element still wins. */
+:where(html[data-wb-shell="new"]) :where(button, input, select, textarea) {
+  font: inherit;
+  color: inherit;
+}
+:where(html[data-wb-shell="new"]) :where(button) {
+  margin: 0;
+  padding: 0;
+  border: 0 solid transparent;
+  background: transparent;
+  cursor: pointer;
+}
+html[data-wb-shell="new"] [hidden] { display: none !important; }
+html[data-wb-shell="new"] :focus-visible {
+  outline: 2px solid var(--wb-color-primary);
+  outline-offset: 1px;
+}
+html[data-wb-shell="new"] .wb-rail { display: flex; }
+html[data-wb-shell="new"] .wb-rail[data-wb-rail-state="closed"] { display: none; }
+@media (max-width: 767px) {
+  html[data-wb-shell="new"] #nav-rail[data-wb-rail-state="auto"] { display: none; }
+}
+@media (max-width: 1023px) {
+  html[data-wb-shell="new"] #inspector-rail[data-wb-rail-state="auto"] { display: none; }
+}
+html[data-wb-shell="new"] .wb-nav-link[aria-current="page"] {
+  background: var(--wb-color-surface-container);
+  color: var(--wb-color-primary);
+  font-weight: var(--wb-fw-medium);
+}
+html[data-wb-shell="new"] .wb-inspector-tab[aria-selected="true"] {
+  color: var(--wb-color-primary);
+  box-shadow: inset 0 -2px 0 var(--wb-color-primary);
+}
+html[data-wb-shell="new"] .wb-theme-icon-light { display: none; }
+html[data-wb-shell="new"][data-theme="dark"] .wb-theme-icon-light { display: inline-flex; }
+html[data-wb-shell="new"][data-theme="dark"] .wb-theme-icon-dark { display: none; }
+html[data-wb-shell="new"] .wb-announcement[data-wb-tone="error"] { color: var(--wb-color-error); }

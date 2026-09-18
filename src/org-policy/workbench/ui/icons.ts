@@ -41,6 +41,9 @@ export const workbenchIcons: Record<string, string> = {
   domain: svg(
     '<rect x="4" y="3" width="10" height="18"/><rect x="14" y="9" width="6" height="12"/><path d="M7 7h1M10 7h1M7 11h1M10 11h1M7 15h1M10 15h1"/>',
   ),
+  download: svg(
+    '<path d="M12 4v11M7.5 10.5L12 15l4.5-4.5"/><path d="M5 15v3.5A2.5 2.5 0 0 0 7.5 21h9a2.5 2.5 0 0 0 2.5-2.5V15"/>',
+  ),
   done_all: svg('<path d="M2 12l4 4L14 8M8 12l4 4L22 6"/>'),
   edit_document: svg('<path d="M6 3h9l4 4v14H6z"/><path d="M9 15l6-6 2 2-6 6H9v-2z"/>'),
   expand_more: svg('<path d="M6 9l6 6 6-6"/>'),
@@ -61,6 +64,9 @@ export const workbenchIcons: Record<string, string> = {
     '<rect x="3" y="7" width="18" height="13" rx="1.5"/><path d="M3 7l2-4h14l2 4M10 12h4"/>',
   ),
   key: svg('<circle cx="8" cy="14" r="3.5"/><path d="M10.5 11.5L20 2M17 5l2 2M14 8l2 2"/>'),
+  left_panel: svg(
+    '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M13 9l3 3-3 3"/>',
+  ),
   light_mode: svg(
     '<circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M4 12H1M23 12h-3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/>',
   ),
@@ -74,6 +80,7 @@ export const workbenchIcons: Record<string, string> = {
     '<rect x="5" y="11" width="14" height="9" rx="1.5"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
   ),
   mail: svg('<rect x="3" y="5" width="18" height="14" rx="1.5"/><path d="M3 6l9 7 9-7"/>'),
+  more_vert: svg('<path d="M12 5h.01M12 12h.01M12 19h.01"/>'),
   person: svg('<circle cx="12" cy="8" r="3.5"/><path d="M5 20c1.5-4 4.5-6 7-6s5.5 2 7 6"/>'),
   policy: svg(
     '<path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z"/><path d="M9 12l2 2 4-4"/>',
@@ -83,6 +90,9 @@ export const workbenchIcons: Record<string, string> = {
   ),
   radar: svg(
     '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><path d="M12 12L18 6"/>',
+  ),
+  right_panel: svg(
+    '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18M11 9l-3 3 3 3"/>',
   ),
   save: svg('<path d="M5 3h11l3 3v15H5z"/><path d="M8 3v6h8V3M8 21v-7h8v7"/>'),
   search: svg('<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>'),

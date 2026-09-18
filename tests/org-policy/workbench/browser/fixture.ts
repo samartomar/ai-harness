@@ -6,6 +6,8 @@ import { preparePackedWorkbench } from "../../../../tools/prepare-packed-workben
 
 type BrowserFixtures = {
   artifact: string;
+  /** NEW-SHELL-PLAN.md §3: migrated specs run on "new", unmigrated ones on "legacy". */
+  shell: "legacy" | "new";
   preparedArtifact: string;
   workbench: { path: string; networkRequests: string[] };
 };
@@ -14,12 +16,18 @@ const packedArtifacts = new Map<string, Promise<void>>();
 
 export const test = base.extend<BrowserFixtures>({
   artifact: ["aih-policy-workbench.html", { option: true }],
+  shell: ["legacy", { option: true }],
   // Automatic fixtures finish before page/context setup. Only the packed journey
   // pays for the cold package consumer; global teardown still owns its cleanup.
   preparedArtifact: [
-    async ({ artifact }, use) => {
+    async ({ artifact, shell }, use) => {
       const directory = process.env.AIH_WORKBENCH_FIXTURE_DIR;
       if (!directory) throw new Error("Workbench fixtures were not prepared");
+      if (shell === "new") {
+        // The new-shell copies are rendered from the same models at setup.
+        await use(resolve(directory, "new-shell", artifact));
+        return;
+      }
       if (artifact === "packed-policy-workbench.html") {
         let preparation = packedArtifacts.get(directory);
         if (!preparation) {
@@ -47,7 +55,7 @@ export const test = base.extend<BrowserFixtures>({
     },
     { auto: true },
   ],
-  workbench: async ({ page, context, preparedArtifact }, use, testInfo) => {
+  workbench: async ({ page, context, preparedArtifact, shell }, use, testInfo) => {
     const path = testInfo.outputPath("aih-policy-workbench.html");
     await mkdir(dirname(path), { recursive: true });
     await copyFile(preparedArtifact, path);
@@ -61,7 +69,9 @@ export const test = base.extend<BrowserFixtures>({
     await page.coverage.startJSCoverage({ reportAnonymousScripts: true });
     await page.goto(pathToFileURL(path).href);
     expect(pageErrors, "portable Workbench startup failed").toEqual([]);
-    await expect(page.locator("#config-preview")).toBeAttached();
+    await expect(
+      page.locator(shell === "new" ? "#wb-root[data-wb-screen]" : "#config-preview"),
+    ).toBeAttached();
     await use({ path, networkRequests });
     const coverage = (await page.coverage.stopJSCoverage()).filter((entry) =>
       entry.source?.startsWith("/* aih-workbench-ui/v1 */"),

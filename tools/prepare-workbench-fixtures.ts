@@ -20,6 +20,15 @@ await Promise.all([
 ]);
 console.log("Prepared compact offline Workbench fixture: " + Buffer.byteLength(journeyHtml) + " bytes");
 
+// NEW-SHELL-PLAN.md §3: the same models rendered by the new admin shell, for
+// specs that run with the fixture option `shell: "new"`.
+await mkdir(resolve(directory, "new-shell"), { recursive: true });
+const newShellJourneyHtml = policyStudioHtml({ ...compactJourneyWorkbenchModel(), shell: "new" });
+await Promise.all([
+  writeFile(resolve(directory, "new-shell", "aih-policy-workbench.html"), newShellJourneyHtml, "utf8"),
+  writeFile(resolve(directory, "new-shell", "journeys-compact.html"), newShellJourneyHtml, "utf8"),
+]);
+
 for (const size of [10, 1000, 10000]) await writeFile(resolve(directory, `synthetic-${size}.html`), policyStudioHtml(syntheticWorkbenchModel(size)), "utf8");
 
 await writeFile(resolve(directory, "synthetic-evidence.html"), policyStudioHtml(syntheticEvidenceWorkbenchModel()), "utf8");
@@ -31,6 +40,7 @@ for (const missing of ["workbenchBundle", "workbenchBindings", "both"]) {
     Reflect.deleteProperty(broken, "workbenchBindings");
   } else Reflect.deleteProperty(broken, missing);
   await writeFile(resolve(directory, "invalid-" + missing + ".html"), policyStudioHtml(broken), "utf8");
+  await writeFile(resolve(directory, "new-shell", "invalid-" + missing + ".html"), policyStudioHtml({ ...broken, shell: "new" }), "utf8");
 }
 
 const malformedPolicy = syntheticWorkbenchModel(10);

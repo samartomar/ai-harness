@@ -268,6 +268,32 @@ function pageItems<T>(items: readonly T[], page: number): readonly T[] {
 }
 
 /**
+ * The catalog the admin browses: the complete bundle minus what the catalog
+ * UI no longer offers. Ponytail is no longer offered, and GitHub is not part
+ * of the Core baseline. This browse projection carries no authority; saved
+ * policies still round-trip through the complete bundle.
+ */
+export function workbenchBrowseBundle(bundle: AuthoringCatalogBundleV1): AuthoringCatalogBundleV1 {
+  const browseInventory: CatalogBrowseInventory = projectDeveloperToolCatalogInventory({
+    sources: Object.fromEntries(
+      Object.entries(bundle.sources).filter(([id]) => id !== "source:ponytail"),
+    ),
+    assets: Object.fromEntries(
+      Object.entries(bundle.assets).filter(
+        ([, asset]) =>
+          asset.sourceId !== "source:ponytail" &&
+          !(asset.sourceId === "source:aih-core" && asset.id === "aih/github"),
+      ),
+    ),
+  });
+  return {
+    ...bundle,
+    sources: browseInventory.sources,
+    assets: browseInventory.assets,
+  };
+}
+
+/**
  * Generic, source-neutral Workbench inventory. Detail chunks are intentionally
  * absent: callers mount them only after their Core-prepared chunk is opened.
  */
@@ -276,25 +302,10 @@ export function mountWorkbench(
   options: WorkbenchMountOptions,
 ): MountedWorkbench {
   let state = options.initialState;
-  // Retain the complete bundle for saved-policy round trips. Ponytail is no
-  // longer offered by the catalog UI, and GitHub is not part of the Core
-  // baseline. This browse projection carries no authority.
-  const browseInventory: CatalogBrowseInventory = projectDeveloperToolCatalogInventory({
-    sources: Object.fromEntries(
-      Object.entries(options.bundle.sources).filter(([id]) => id !== "source:ponytail"),
-    ),
-    assets: Object.fromEntries(
-      Object.entries(options.bundle.assets).filter(
-        ([, asset]) =>
-          asset.sourceId !== "source:ponytail" &&
-          !(asset.sourceId === "source:aih-core" && asset.id === "aih/github"),
-      ),
-    ),
-  });
-  const browseBundle: AuthoringCatalogBundleV1 = {
-    ...options.bundle,
-    sources: browseInventory.sources,
-    assets: browseInventory.assets,
+  const browseBundle = workbenchBrowseBundle(options.bundle);
+  const browseInventory: CatalogBrowseInventory = {
+    sources: browseBundle.sources,
+    assets: browseBundle.assets,
   };
   const groups = sourceGroups(browseBundle);
   const teardown = new AbortController();

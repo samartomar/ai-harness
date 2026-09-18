@@ -193,3 +193,18 @@ Scanned: `tests/org-policy/studio-*.test.ts`, `tests/org-policy/workbench/**/*.t
 - `.workbench-source-review` literal phrases "Reports included", "Needs review", "0 currently verified" — `tests/org-policy/workbench/browser/journeys.spec.ts:81,116,164`, `generic-journeys.spec.ts:51,52`.
 - `.workbench-draft-counts` literal words "Controls"/"Requests" ahead of counts — `tests/org-policy/studio-aih-mcp-requests.test.ts:66`, `tests/org-policy/studio-fulfillment-affordance.test.ts:54`, `tests/org-policy/workbench/browser/journeys.spec.ts:136`, `generic-journeys.spec.ts:188`.
 - disclosure summary regex wording "all default tools selected" / "N selected" / "N excluded" — `tests/org-policy/workbench/browser/compact-setup.spec.ts:376,487,488`, `developer-tools.spec.ts:70,139,155,187,200`.
+
+## New shell migration ledger (NEW-SHELL-PLAN.md §3)
+
+Rows added per slice. Columns follow the plan: the hook, its new-shell hook,
+the slice that migrated it, and whether the behavioural assertion is unchanged.
+A new-shell-only hook has no legacy row; its test is named instead.
+
+| Hook | New hook | Migrated in slice | Assertion unchanged | Test |
+|---|---|---|---|---|
+| `[data-view-tab]`, `body.dataset.view` | `#wb-root[data-wb-screen]`, `[data-wb-nav]`, `[data-wb-screen-panel]` | S1 (new shell only; legacy tests keep `data-view-tab` until S3–S8) | n/a (new hook) | new-shell-frame.test.ts; browser/new-shell.spec.ts |
+| role `button` "Switch to dark theme" / "Switch to light theme" + `html[data-theme]` | same (`#theme-toggle`) | S1 | y | new-shell-frame.test.ts; browser/new-shell.spec.ts |
+| `#status`, `#announcement` (`aria-live="polite"`) | same | S1 | y | new-shell-frame.test.ts |
+| `[data-kind-ledger-tile="<kind>"]` | same, inside `[data-wb-ledger]` | S1 | y (per-kind selected/total) | new-shell-frame.test.ts |
+| — | `#nav-rail`, `#toggle-nav-btn`, `#inspector-rail[data-wb-inspector]`, `#btn-toggle-inspector`, `[data-wb-inspector-tab]`, `[data-close-inspector]` | S1 | n/a (new hook) | new-shell-frame.test.ts; browser/new-shell.spec.ts |
+| visual baselines `shell-header-*`, `shell-kind-ledger-*` (legacy) | `new-shell-frame-{light,dark}`, `new-shell-frame-375-light` | S1 (both shells snapshotted) | legacy baselines unchanged | browser/visual-shell.spec.ts |

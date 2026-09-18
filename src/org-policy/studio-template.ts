@@ -163,8 +163,33 @@ button{cursor:pointer;border:0;background:none;color:inherit}
 </html>`.replace("__AIH_DATA__", () => safeScriptJson(model));
 }
 
+/**
+ * The new admin shell (NEW-SHELL-PLAN.md S1). Head, one root and the model:
+ * the browser bundle builds every element, writing model strings as text.
+ */
+function newShellHtml(model: PolicyStudioModel): string {
+  const workbenchBrowserScript = loadWorkbenchBrowserScript();
+  const workbenchCss = loadWorkbenchCss();
+  return String.raw`<!doctype html>
+<html lang="en" data-theme="light" data-wb-shell="new">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AIH Policy Workbench</title>
+<link rel="icon" href="data:,">
+<style id="wb-styles">${workbenchCss}</style>
+</head>
+<body>
+<div id="wb-root" data-wb-shell="new"></div>
+<script>window.__aihWorkbenchModel=__AIH_DATA__;</script>
+<script>${workbenchBrowserScript}</script>
+</body>
+</html>`.replace("__AIH_DATA__", () => safeScriptJson(model));
+}
+
 export function policyStudioHtml(model: PolicyStudioModel): string {
   if (model.door === "user") return userDoorHtml(model);
+  if (model.shell === "new") return newShellHtml(model);
   const catalogProvenance = catalogProvenanceLine(model);
   const baselineEvidenceProvenance = baselineEvidenceProvenanceLine(model);
   const workbenchBrowserScript = loadWorkbenchBrowserScript();
@@ -173,7 +198,7 @@ export function policyStudioHtml(model: PolicyStudioModel): string {
   const protectedPolicyMarkup = protectedPolicyWorkbenchMarkup();
   const evidenceDelivery = evidenceDeliveryLine(model);
   return String.raw`<!doctype html>
-<html lang="en" data-theme="light">
+<html lang="en" data-theme="light" data-wb-shell="legacy">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
