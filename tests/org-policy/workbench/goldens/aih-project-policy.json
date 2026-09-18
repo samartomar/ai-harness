@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "kind": "aih-project-policy",
+  "cutFrom": {
+    "schemaVersion": 3,
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "for": {
+    "type": "project",
+    "name": "Payments API"
+  },
+  "aiTools": [
+    "claude",
+    "codex"
+  ],
+  "items": [
+    {
+      "assetId": "ecc/pack",
+      "origin": {
+        "kind": "administrator"
+      },
+      "use": "required"
+    },
+    {
+      "assetId": "ecc/skill-a",
+      "origin": {
+        "kind": "administrator"
+      },
+      "use": "optional"
+    }
+  ]
+}

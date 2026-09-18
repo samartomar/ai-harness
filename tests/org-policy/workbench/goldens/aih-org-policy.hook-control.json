@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 2,
+  "minimumPosture": "vibe",
+  "references": {
+    "repoContract": "ai-coding/project.json"
+  },
+  "governance": {
+    "policyVersion": "1",
+    "catalog": {
+      "reviewed": [
+        {
+          "id": "usage-metering",
+          "kind": "hook",
+          "description": "Fixture governed hook control",
+          "capabilities": [],
+          "risks": [],
+          "source": {
+            "type": "hook",
+            "handler": "usage-metering",
+            "scriptDigest": "sha256:0d6da4f993901e57da5fadb281ec54ae6b9516797c014c974b65125e8114ae37"
+          },
+          "targets": [
+            "claude",
+            "codex"
+          ],
+          "projector": "usage-hook",
+          "lifecycle": "supported",
+          "evidence": {
+            "record": "aih-usage-metering"
+          },
+          "findings": [],
+          "autoExecute": false
+        }
+      ],
+      "custom": []
+    },
+    "activations": [
+      {
+        "candidate": "usage-metering",
+        "state": "active",
+        "targets": [
+          "claude",
+          "codex"
+        ]
+      }
+    ],
+    "authority": {
+      "approvals": [],
+      "decisions": []
+    },
+    "externalCuration": [],
+    "externalSelections": [],
+    "eccMcpApprovals": [],
+    "hookRegistrations": []
+  }
+}

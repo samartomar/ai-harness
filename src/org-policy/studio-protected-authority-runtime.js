@@ -1,4 +1,6 @@
 /** Browser-only protected policy authoring. It receives its form shell explicitly. */
+import * as protectedDigestModel from "./workbench/ui/shell/protected-digest.js";
+
 export function mountProtectedPolicyWorkbench(runtime) {
   const { model, byId, announce, schemaErrors, fieldError, state } = runtime;
   const visible = function (value) {
@@ -87,9 +89,7 @@ export function mountProtectedPolicyWorkbench(runtime) {
       Number.isFinite(Date.parse(value))
     );
   };
-  const protectedCanonicalTimestamp = function (value) {
-    return new Date(Date.parse(value)).toISOString();
-  };
+  const protectedCanonicalTimestamp = protectedDigestModel.protectedCanonicalTimestamp;
   const protectedSemver =
     /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-(?:(?:0|[1-9]\d*)|(?:\d*[A-Za-z-][0-9A-Za-z-]*))(?:\.(?:(?:0|[1-9]\d*)|(?:\d*[A-Za-z-][0-9A-Za-z-]*)))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
   const protectedHttpsBase = function (value) {
@@ -279,40 +279,7 @@ export function mountProtectedPolicyWorkbench(runtime) {
       }
     });
   };
-  const protectedStrictStrings = function (value, label) {
-    if (typeof value === "string") {
-      for (let index = 0; index < value.length; index += 1) {
-        const current = value.charCodeAt(index);
-        if (current >= 0xd800 && current <= 0xdbff) {
-          const next = value.charCodeAt(index + 1);
-          if (!(next >= 0xdc00 && next <= 0xdfff)) {
-            throw new Error(label + " contains malformed Unicode");
-          }
-          index += 1;
-          continue;
-        }
-        if (current >= 0xdc00 && current <= 0xdfff) {
-          throw new Error(label + " contains malformed Unicode");
-        }
-      }
-      if (value.normalize("NFC") !== value) {
-        throw new Error(label + " must already be NFC");
-      }
-      return;
-    }
-    if (Array.isArray(value)) {
-      value.forEach(function (child, index) {
-        protectedStrictStrings(child, label + "[" + String(index) + "]");
-      });
-      return;
-    }
-    if (value !== null && typeof value === "object") {
-      Object.keys(value).forEach(function (key) {
-        protectedStrictStrings(key, label + " key");
-        protectedStrictStrings(value[key], label + "." + key);
-      });
-    }
-  };
+  const protectedStrictStrings = protectedDigestModel.protectedStrictStrings;
   const protectedPath = function (value) {
     return (
       typeof value === "string" &&
@@ -327,24 +294,7 @@ export function mountProtectedPolicyWorkbench(runtime) {
       !/[\p{C}]/u.test(value)
     );
   };
-  const protectedStableJson = function (value) {
-    if (Array.isArray(value)) {
-      return "[" + value.map(protectedStableJson).join(",") + "]";
-    }
-    if (value !== null && typeof value === "object") {
-      return (
-        "{" +
-        Object.keys(value)
-          .sort()
-          .map(function (key) {
-            return JSON.stringify(key) + ":" + protectedStableJson(value[key]);
-          })
-          .join(",") +
-        "}"
-      );
-    }
-    return JSON.stringify(value);
-  };
+  const protectedStableJson = protectedDigestModel.protectedStableJson;
   const protectedSha256 = async function (value) {
     if (!(window.crypto && window.crypto.subtle && window.TextEncoder)) {
       throw new Error(
@@ -363,46 +313,18 @@ export function mountProtectedPolicyWorkbench(runtime) {
     );
   };
   const protectedSourceDigest = function (source) {
-    return protectedSha256(
-      "aih-governance-decision-source/v2" +
-        String.fromCharCode(0) +
-        protectedStableJson(source),
-    );
+    return protectedSha256(protectedDigestModel.protectedDigestPreimage("source", source));
   };
   const protectedSubjectDigest = function (subject) {
-    return protectedSha256(
-      "aih-governance-decision-subject/v2" +
-        String.fromCharCode(0) +
-        protectedStableJson(subject),
-    );
+    return protectedSha256(protectedDigestModel.protectedDigestPreimage("subject", subject));
   };
   const protectedDecisionDigest = function (decision) {
-    return protectedSha256(
-      "aih-governance-decision/v2" +
-        String.fromCharCode(0) +
-        protectedStableJson(decision),
-    );
+    return protectedSha256(protectedDigestModel.protectedDigestPreimage("decision", decision));
   };
   const protectedEvidenceDigest = function (envelope) {
-    return protectedSha256(
-      "aih-organization-evidence/v1" +
-        String.fromCharCode(0) +
-        protectedStableJson(envelope),
-    );
+    return protectedSha256(protectedDigestModel.protectedDigestPreimage("evidence", envelope));
   };
-  const protectedEvidenceId = function (record) {
-    const item =
-      String(record.itemId || "artifact")
-        .toLowerCase()
-        .replace(/[^a-z0-9-]+/g, "-")
-        .replace(/^-+|-+$/g, "") || "artifact";
-    return (
-      "scan-" +
-      item.slice(0, 42) +
-      "-" +
-      record.sourceDigest.slice(7, 19)
-    ).slice(0, 64);
-  };
+  const protectedEvidenceId = protectedDigestModel.protectedEvidenceId;
   const protectedPreflightMatches = function (source, pending) {
     if (!pending || !pending.record || !pending.item) {
       return false;

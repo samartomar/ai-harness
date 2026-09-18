@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 2,
+  "minimumPosture": "vibe",
+  "references": {
+    "repoContract": "ai-coding/project.json"
+  },
+  "governance": {
+    "policyVersion": "1",
+    "catalog": {
+      "reviewed": [],
+      "custom": []
+    },
+    "activations": [],
+    "authority": {
+      "approvals": [],
+      "decisions": []
+    },
+    "externalCuration": [],
+    "externalSelections": [],
+    "eccMcpApprovals": [],
+    "hookRegistrations": []
+  }
+}

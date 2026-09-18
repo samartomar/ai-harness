@@ -1,0 +1,43 @@
+{
+  "format": "aih-artifact-intake",
+  "version": 2,
+  "authority": {
+    "state": "not-authority"
+  },
+  "defaults": {
+    "accountableOwner": "platform@acme.example"
+  },
+  "items": [
+    {
+      "id": "firecrawl-mcp",
+      "kind": "mcp",
+      "source": {
+        "type": "npm",
+        "registry": "https://registry.npmjs.org",
+        "package": "firecrawl-mcp",
+        "version": "3.24.0"
+      }
+    },
+    {
+      "id": "acme-skill",
+      "kind": "skill",
+      "accountableOwner": "skills@acme.example",
+      "clarification": "Pinned review skill",
+      "source": {
+        "type": "github",
+        "repository": "acme/skills",
+        "commit": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "path": "skills/review"
+      }
+    },
+    {
+      "id": "pulse-directory",
+      "kind": "mcp",
+      "source": {
+        "type": "directory",
+        "provider": "pulsemcp",
+        "url": "https://www.pulsemcp.com/servers/acme"
+      }
+    }
+  ]
+}

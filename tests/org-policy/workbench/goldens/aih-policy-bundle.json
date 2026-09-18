@@ -1,0 +1,104 @@
+{
+  "schemaVersion": 2,
+  "bundleVersion": "acme-policy-1",
+  "issuer": "acme-security",
+  "issuedAt": "2026-08-26T12:00:00.000Z",
+  "policy": {
+    "schemaVersion": 2,
+    "minimumPosture": "enterprise",
+    "references": {
+      "repoContract": "ai-coding/project.json"
+    },
+    "governance": {
+      "policyVersion": "1",
+      "catalog": {
+        "reviewed": [],
+        "custom": []
+      },
+      "activations": [],
+      "authority": {
+        "approvals": [],
+        "decisions": []
+      },
+      "externalCuration": [],
+      "externalSelections": [],
+      "eccMcpApprovals": [],
+      "hookRegistrations": [],
+      "supportedClis": [
+        "codex"
+      ]
+    }
+  },
+  "authorityReceipt": {
+    "format": "aih-policy-authority-receipt",
+    "version": 3,
+    "issuerRepository": "acme/aih-policy",
+    "issuedAt": "2026-08-26T12:00:00.000Z",
+    "expiresAt": "2026-09-25T12:00:00.000Z",
+    "trustedIssuers": [
+      {
+        "id": "acme-security",
+        "githubRepository": "acme/aih-policy"
+      }
+    ],
+    "targets": [
+      "codex"
+    ],
+    "decisions": [
+      {
+        "format": "aih-governance-decision",
+        "version": 2,
+        "id": "decision-acme-linter-1",
+        "qualificationBasis": {
+          "kind": "organization-qualified",
+          "evidenceDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "attestor": "acme-scanner"
+        },
+        "subject": {
+          "kind": "tool",
+          "id": "acme-linter",
+          "source": {
+            "type": "github",
+            "repository": "acme/linter",
+            "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "path": "packages/cli"
+          },
+          "sourceDigest": "sha256:e1d55e33885079af2daddfc907991857d66701b9ab437ef87755e08087deabd2",
+          "subjectDigest": "sha256:eee2bc1e89f32e21ac37e42c6e6702459cba8a031c2c735604d2ea53ecf81a89"
+        },
+        "targets": [
+          "codex"
+        ],
+        "allowedEffects": [
+          "observe",
+          "use"
+        ],
+        "policy": {
+          "id": "enterprise-policy",
+          "version": "1",
+          "digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        "control": {
+          "id": "tool-admission",
+          "digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+        },
+        "evidence": {
+          "id": "acme-scan-001",
+          "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "attestor": "acme-scanner"
+        },
+        "issuer": "acme-security",
+        "actor": "ruchi.admin@acme.example",
+        "reason": "Approved after attributable scanner evidence review",
+        "issuedAt": "2026-08-26T12:00:00.000Z",
+        "notBefore": "2026-08-26T12:00:00.000Z",
+        "expiresAt": "2026-09-25T12:00:00.000Z",
+        "disposition": "approved",
+        "acceptedFindings": [],
+        "acceptedGaps": [],
+        "conditions": []
+      }
+    ],
+    "decisionRevocations": []
+  }
+}

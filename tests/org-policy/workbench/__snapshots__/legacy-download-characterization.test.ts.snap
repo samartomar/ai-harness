@@ -1,0 +1,124 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`legacy Workbench download golden files > downloads the organization policy after an imported transformation 1`] = `
+{
+  "files": [
+    "aih-org-policy.json",
+  ],
+  "message": "Policy download started. Validate this file with: aih policy validate <target-root> --policy aih-org-policy.json",
+}
+`;
+
+exports[`legacy Workbench policy grammar characterization > pins the import outcome for activation of an unknown candidate 1`] = `
+{
+  "changed": false,
+  "message": "Policy import rejected: policy.governance.activations[0]: references an unknown candidate",
+}
+`;
+
+exports[`legacy Workbench policy grammar characterization > pins the import outcome for active reviewed hook control 1`] = `
+{
+  "changed": true,
+  "message": "Policy imported without transformation after prepared Workbench catalog.",
+}
+`;
+
+exports[`legacy Workbench policy grammar characterization > pins the import outcome for active reviewed hook control outside the sanctioned CLI set 1`] = `
+{
+  "changed": false,
+  "message": "Policy import rejected: policy.governance.activations[0].targets: usage-metering has no projector for the organization-sanctioned CLI set gemini; control projector targets: claude, codex",
+}
+`;
+
+exports[`legacy Workbench policy grammar characterization > pins the import outcome for custom remote MCP projected to Kiro 1`] = `
+{
+  "changed": false,
+  "message": "Policy import rejected: : must match exactly one schema variant; policy.governance.catalog.custom[0].targets: Kiro MCP projection supports stdio catalog entries only",
+}
+`;
+
+exports[`legacy Workbench policy grammar characterization > pins the import outcome for duplicate external curation framework records 1`] = `
+{
+  "changed": false,
+  "message": "Policy import rejected: policy.governance.externalCuration: framework records must be unique",
+}
+`;
+
+exports[`legacy Workbench policy grammar characterization > pins the import outcome for duplicate supported CLI entries 1`] = `
+{
+  "changed": false,
+  "message": "Policy import rejected: policy.governance.supportedClis: supported CLI entries must be unique",
+}
+`;
+
+exports[`legacy Workbench policy grammar characterization > pins the import outcome for enterprise posture without supported CLIs 1`] = `
+{
+  "changed": false,
+  "message": "Policy import rejected: policy.governance.supportedClis: enterprise posture requires a non-empty explicit allow-list; current registry ids: . Paste every id to sanction all supported CLIs; wildcard sentinels are not supported",
+}
+`;
+
+exports[`legacy Workbench policy grammar characterization > pins the import outcome for hidden Unicode in the governance policy version 1`] = `
+{
+  "changed": false,
+  "message": "Policy import rejected: policy.governance.policyVersion: must be visible single-line text without hidden Unicode or surrounding whitespace",
+}
+`;
+
+exports[`legacy Workbench policy grammar characterization > pins the import outcome for policy without governance 1`] = `
+{
+  "changed": false,
+  "message": "Policy import rejected: : must match exactly one schema variant",
+}
+`;
+
+exports[`legacy Workbench policy grammar characterization > pins the import outcome for reviewed hook control with a narrowed target list 1`] = `
+{
+  "changed": false,
+  "message": "Policy import rejected: policy.governance.catalog.reviewed[0].targets: reviewed control targets must exactly match AIH's shipped projector targets: claude, codex",
+}
+`;
+
+exports[`legacy Workbench policy grammar characterization > pins the import outcome for schema version 1 policy 1`] = `
+{
+  "changed": false,
+  "message": "Policy import rejected: : must match exactly one schema variant",
+}
+`;
+
+exports[`legacy Workbench policy grammar characterization > pins the import outcome for unchanged initial policy 1`] = `
+{
+  "changed": false,
+  "message": "Policy imported without transformation after prepared Workbench catalog.",
+}
+`;
+
+exports[`legacy Workbench policy grammar characterization > pins the import outcome for unsafe baseline override bundle path 1`] = `
+{
+  "changed": false,
+  "message": "Policy import rejected: : must match exactly one schema variant; policy.trust.baselineOverrides[0].bundle: must be a safe repo-relative POSIX path; policy.trust.baselineOverrides[0].approvedAt: must be an ISO-8601 timestamp",
+}
+`;
+
+exports[`legacy Workbench policy grammar characterization > pins the validate outcome for the initial policy in both postures 1`] = `
+[
+  {
+    "classes": "btn icon-btn p-1.5 rounded bg-surface-container-low hover:bg-surface-container border border-outline-variant text-on-surface-variant hover:text-on-surface transition-colors shrink-0",
+    "message": "Schema and policy-grammar validation passed. Authority, scans, projection, and effective state require the AIH engine in a target repository.",
+    "readiness": "No Core controls selected. Choose controls after setting the hosts and posture you intend to use.",
+    "title": "Validate",
+  },
+  {
+    "classes": "btn icon-btn p-1.5 rounded bg-surface-container-low hover:bg-surface-container border border-outline-variant text-on-surface-variant hover:text-on-surface transition-colors shrink-0",
+    "message": "Schema and policy-grammar validation passed. Authority, scans, projection, and effective state require the AIH engine in a target repository.",
+    "readiness": "No Core controls selected. Choose controls after setting the hosts and posture you intend to use.",
+    "title": "Validate",
+  },
+  {
+    "classes": "btn icon-btn p-1.5 rounded bg-surface-container-low hover:bg-surface-container border border-outline-variant text-on-surface-variant hover:text-on-surface transition-colors shrink-0",
+    "message": "Schema and policy-grammar validation passed. Authority, scans, projection, and effective state require the AIH engine in a target repository.",
+    "readiness": "No Core controls selected. Choose controls after setting the hosts and posture you intend to use.",
+    "title": "Validate",
+  },
+]
+`;
