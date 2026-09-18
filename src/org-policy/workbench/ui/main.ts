@@ -398,6 +398,14 @@ function mountDeveloperTools(
   });
 }
 
+/** S7: the legacy view tabs, as new-shell screens. */
+const NEW_SHELL_VIEW_SCREENS: Record<string, string> = {
+  compose: "sources",
+  artifacts: "acme",
+  author: "acme",
+  imports: "scan",
+};
+
 const model = object(window.__aihWorkbenchModel);
 if (model === undefined) throw new Error("Policy Workbench model is unavailable.");
 const browserModel = model as unknown as BrowserModel;
@@ -452,7 +460,7 @@ if (!userDoor && !newShell) {
 }
 
 if (newShell) {
-  const { session, shell, org } = mountNewWorkbench({
+  const { session, shell, org, acme } = mountNewWorkbench({
     model: model as unknown as Parameters<typeof mountNewWorkbench>[0]["model"],
     catalogValid: preparedCatalogValid,
     ledgerAssets: bundle === undefined ? [] : Object.values(workbenchBrowseBundle(bundle).assets),
@@ -469,6 +477,18 @@ if (newShell) {
   let catalog: MountedWorkbench | undefined;
   window.__aihPolicyWorkbenchSession = session;
   if (model.door === "chooser") mountChooserNote(document.getElementById("announcement"));
+  // S7: the legacy view names route to the new shell's screens; the artifact
+  // intake runtime calls the global `setWorkbenchView` when it opens.
+  const setView = (view: string) => {
+    shell.router.setScreen(NEW_SHELL_VIEW_SCREENS[view] ?? view);
+  };
+  window.__aihSetWorkbenchView = setView;
+  (window as unknown as { setWorkbenchView: (view: string) => void }).setWorkbenchView = setView;
+  mountArtifactIntakeWorkbench();
+  document.getElementById("panel-artifacts")?.removeAttribute("role");
+  // The new shell styles the intake card from its compiled CSS (wb-tokens.css).
+  for (const style of document.head.querySelectorAll("style:not([id])"))
+    if (style.textContent?.startsWith("#artifact-intake-review{")) style.remove();
   // S3: the sources screen hosts the shared catalog controller; it re-projects
   // an imported schema-3 policy and reports diagnostics in the catalog.
   if (preparedCatalogValid) {
@@ -490,8 +510,9 @@ if (newShell) {
       inspectorHost: shell.inspectorPanel,
       revealInspector: () => shell.revealInspector(),
       prepareApproval(asset) {
-        // The protected approval form moves to the acme screen in S7.
+        // S7: the protected approval form lives on the additions screen.
         shell.router.setScreen("acme");
+        acme.prepareApproval(asset);
         document.dispatchEvent(
           new CustomEvent("aih-workbench-prepare-approval", {
             detail: { assetId: asset.id },

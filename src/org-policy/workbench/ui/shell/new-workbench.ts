@@ -1,4 +1,5 @@
 import { buildKindLedgerViewModel } from "../kind-ledger.js";
+import { type AcmeScreen, mountAcmeScreen } from "./acme-screen.js";
 import { type AdminShell, mountAdminShell } from "./admin-shell.js";
 import { type ChangesScreen, mountChangesScreen } from "./changes-screen.js";
 import { el, withId } from "./dom.js";
@@ -47,6 +48,8 @@ export interface NewWorkbench {
   readonly changes: ChangesScreen;
   /** S6: the organization screen (deployment setup, developer tools, ECC hooks). */
   readonly org: OrgScreen;
+  /** S7: the additions screen (artifact intake, curation, custom MCP, protected file). */
+  readonly acme: AcmeScreen;
   /** Remove the file transfer controls and their document listener. */
   destroy(): void;
 }
@@ -96,6 +99,11 @@ export function mountNewWorkbench(options: NewWorkbenchOptions): NewWorkbench {
     announce: shell.announce,
     render: () => render(),
   });
+  const acme = mountAcmeScreen(shell.screenBody("acme"), {
+    model: options.model,
+    session: () => session,
+    announce: shell.announce,
+  });
   const renderPreview = () => {
     if (session !== undefined) changes.render(session.snapshotPolicy(), session.serialize());
   };
@@ -104,6 +112,7 @@ export function mountNewWorkbench(options: NewWorkbenchOptions): NewWorkbench {
     renderPreview();
     scan.render(session.receipt(), session.decision());
     org.render();
+    acme.render();
     shell.renderLedger(
       buildKindLedgerViewModel(
         options.ledgerAssets,
@@ -125,5 +134,6 @@ export function mountNewWorkbench(options: NewWorkbenchOptions): NewWorkbench {
     renderPreview,
   });
   render();
-  return { shell, session, changes, org, destroy: () => transfer.destroy() };
+  acme.mountProtected(options.model);
+  return { shell, session, changes, org, acme, destroy: () => transfer.destroy() };
 }

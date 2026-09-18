@@ -6,7 +6,10 @@ import { pathToFileURL } from "node:url";
 import type { Page } from "@playwright/test";
 import { expect, test } from "./fixture.js";
 
-test.use({ artifact: "packed-policy-workbench.html" });
+// NEW-SHELL-PLAN.md S7: the installed package's page runs on the new shell (the
+// fixture sets the model's shell field, as AIH_WORKBENCH_SHELL does). Journeys
+// navigate to the screen that holds each control; assertions unchanged.
+test.use({ artifact: "packed-policy-workbench.html", shell: "new" });
 
 const emptyImportedPolicy = {
   schemaVersion: 2,
@@ -220,7 +223,7 @@ test("one installed Core version refreshes a source and preserves old browser po
   expectAsyncSuccess(historicalResult);
   const ui = JSON.parse(expectAsyncSuccess(uiResult));
   expect(ui.catalogSourceRevisions["source:mattpocock"]).toBe("f".repeat(40));
-  await page.goto(pathToFileURL(currentHtml).href);
+  await page.goto(`${pathToFileURL(currentHtml).href}?shell=new`);
   await importEmptyPolicy(page);
   await page.locator('[data-workbench-source-tab="source:mattpocock"]').click();
   await page
@@ -282,7 +285,7 @@ test("one installed Core version refreshes a source and preserves old browser po
     });
   }
   expectAsyncSuccess(consumptionResult, "verify both exported policies");
-  await page.goto(pathToFileURL(historicalHtml).href);
+  await page.goto(`${pathToFileURL(historicalHtml).href}?shell=new`);
   const restored = JSON.parse(await page.locator("#config-preview").inputValue());
   expect(restored.authoringSelections).toEqual(JSON.parse(oldPolicy).authoringSelections);
   expect(restored.authoringSelections.roots[0].sourceRevisionId).toBe(sourceBefore);
@@ -637,6 +640,10 @@ test("starts the Core catalog with its baseline selected and no GitHub choice", 
     "data-workbench-evidence-tone",
     "neutral",
   );
+  await page
+    .getByRole("navigation", { name: "Workbench screens" })
+    .getByRole("button", { name: "Organization", exact: true })
+    .click();
   await page.locator('[data-sanctioned-cli="codex"]').click();
   await page.locator("#posture").selectOption("enterprise");
   await page.locator("#managed-mcp-projection").check();

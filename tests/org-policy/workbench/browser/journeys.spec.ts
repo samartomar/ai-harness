@@ -3,7 +3,10 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { expect, test } from "./fixture.js";
 
-test.use({ artifact: "journeys-compact.html" });
+// NEW-SHELL-PLAN.md S6/S7: these journeys run on the new shell. The legacy
+// view tabs became the nav rail (Compose: sources and organization; Authoring:
+// additions); every assertion is unchanged.
+test.use({ artifact: "journeys-compact.html", shell: "new" });
 
 test("opens offline and keeps exact prepared evidence separate from permission across expiry", async ({
   page,
@@ -47,6 +50,10 @@ test("opens offline and keeps exact prepared evidence separate from permission a
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await page.getByRole("button", { name: "Switch to light theme", exact: true }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await page
+    .getByRole("navigation", { name: "Workbench screens" })
+    .getByRole("button", { name: "Organization", exact: true })
+    .click();
   const guide = page.locator("#adoption-recipe-panel");
   const guideToggle = page.locator("#adoption-recipe-toggle");
   await expect(guide).toBeHidden();
@@ -62,8 +69,11 @@ test("opens offline and keeps exact prepared evidence separate from permission a
   await guideToggle.click();
   await page.mouse.move(1, 880);
   await expect(guide).toBeHidden();
-  for (const view of ["Compose", "Authoring"]) {
-    await page.getByRole("button", { name: view, exact: true }).click();
+  for (const view of ["Organization", "Additions & Approvals"]) {
+    await page
+      .getByRole("navigation", { name: "Workbench screens" })
+      .getByRole("button", { name: view, exact: true })
+      .click();
     const headings = page.locator("[data-group]:visible");
     for (let index = 0; index < (await headings.count()); index++) {
       const heading = headings.nth(index);
@@ -85,7 +95,10 @@ test("opens offline and keeps exact prepared evidence separate from permission a
   await expect(editor).toHaveAttribute("open", "");
   await editor.locator("summary").click();
   await expect(editor).not.toHaveAttribute("open", "");
-  await page.getByRole("button", { name: "Compose", exact: true }).click();
+  await page
+    .getByRole("navigation", { name: "Workbench screens" })
+    .getByRole("button", { name: "Sources & Catalogs", exact: true })
+    .click();
   const beforeReport = await page.locator("#config-preview").inputValue();
   await page.locator('[data-workbench-source-tab="source:ecc"]').click();
   const inspector = page.locator("#workbench-detail-panel[data-workbench-detail]");
@@ -460,7 +473,10 @@ test("imports legacy policy, rolls back invalid input, and downloads exact bytes
   expect(
     mixedPolicy.authoringSelections.roots.map((root: { sourceId: string }) => root.sourceId).sort(),
   ).toEqual(compatibleAssets.map((asset) => asset.sourceId));
-  await page.locator('[data-view-tab="compose"]').click();
+  await page
+    .getByRole("navigation", { name: "Workbench screens" })
+    .getByRole("button", { name: "Organization", exact: true })
+    .click();
   await page.locator('[data-sanctioned-cli="codex"]').click();
   const editedMixed = await page.locator("#config-preview").inputValue();
   expect(JSON.parse(editedMixed).authoringSelections.roots).toEqual(
@@ -539,13 +555,19 @@ test("imports legacy policy, rolls back invalid input, and downloads exact bytes
 
 test("authors a protected decision through ordinary fields", async ({ page, workbench }) => {
   expect(workbench.networkRequests).toEqual([]);
-  await page.locator('[data-view-tab="compose"]').click();
+  await page
+    .getByRole("navigation", { name: "Workbench screens" })
+    .getByRole("button", { name: "Organization", exact: true })
+    .click();
   await page.locator('[data-sanctioned-cli="codex"]').click();
   await page.locator("#posture").selectOption("enterprise");
   expect(JSON.parse(await page.locator("#config-preview").inputValue()).minimumPosture).toBe(
     "enterprise",
   );
-  await page.locator('[data-view-tab="author"]').click();
+  await page
+    .getByRole("navigation", { name: "Workbench screens" })
+    .getByRole("button", { name: "Additions & Approvals", exact: true })
+    .click();
   const fields: Record<string, string> = {
     "protected-bundle-version": "acme-policy-1",
     "protected-issuer-repository": "acme/aih-policy",

@@ -6,6 +6,7 @@ import { compactJourneyWorkbenchModel } from "./workbench-journey-fixture.js";
 import { parseOrgPolicyContents } from "../src/org-policy/schema.js";
 import { defaultStudioPolicy, policyStudioModel } from "../src/org-policy/studio-model.js";
 import { policyStudioHtml } from "../src/org-policy/studio-template.js";
+import { tinyEnterpriseStudioModel } from "../tests/org-policy/studio-test-fixture.js";
 
 const directory = process.argv[2];
 if (!directory) throw new Error("Workbench fixture output directory is required");
@@ -23,6 +24,9 @@ console.log("Prepared compact offline Workbench fixture: " + Buffer.byteLength(j
 // NEW-SHELL-PLAN.md §3: the same models rendered by the new admin shell, for
 // specs that run with the fixture option `shell: "new"`.
 await mkdir(resolve(directory, "new-shell"), { recursive: true });
+// S7 byte gate: the S0 characterization model, so the protected bundle and
+// artifact intake downloads can be compared with the S0 goldens in a browser.
+await writeFile(resolve(directory, "new-shell", "golden-downloads.html"), policyStudioHtml({ ...tinyEnterpriseStudioModel(), shell: "new" }), "utf8");
 const newShellJourneyHtml = policyStudioHtml({ ...compactJourneyWorkbenchModel(), shell: "new" });
 await Promise.all([
   writeFile(resolve(directory, "new-shell", "aih-policy-workbench.html"), newShellJourneyHtml, "utf8"),

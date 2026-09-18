@@ -283,3 +283,123 @@ test("inspects imported evidence and a decision on the scan screen offline", asy
   expect(await violations(page)).toEqual([]);
   expect(workbench.networkRequests).toEqual([]);
 });
+
+// S7 byte gate (NEW-SHELL-PLAN.md §5): the protected bundle and the artifact
+// intake come out of the new shell's real controls, in a browser, and match the
+// S0 goldens byte for byte. The page is the S0 characterization model.
+test.describe("additions screen downloads", () => {
+  test.use({ artifact: "golden-downloads.html" });
+
+  const golden = (name: string) =>
+    readFile(resolve("tests/org-policy/workbench/goldens", name), "utf8");
+  const digest = (character: string) => `sha256:${character.repeat(64)}`;
+
+  test("builds and downloads the protected bundle and the artifact intake byte for byte", async ({
+    page,
+    workbench,
+  }) => {
+    await reopenUnderStrictCsp(page, workbench.path);
+    await page
+      .getByRole("navigation", { name: "Workbench screens" })
+      .getByRole("button", { name: "Additions & Approvals" })
+      .click();
+    const screen = page.locator('[data-wb-screen-panel="acme"]');
+    await expect(screen.locator("#protected-form")).toBeVisible();
+    const fields: Record<string, string> = {
+      "protected-bundle-version": "acme-policy-1",
+      "protected-issuer-repository": "acme/aih-policy",
+      "protected-issuer": "acme-security",
+      "protected-issued-at": "2026-08-26T12:00:00Z",
+      "protected-expires-at": "2026-09-25T12:00:00Z",
+      "protected-decision-id": "decision-acme-linter-1",
+      "protected-subject-id": "acme-linter",
+      "protected-source-repository": "acme/linter",
+      "protected-source-commit": "a".repeat(40),
+      "protected-source-path": "packages/cli",
+      "protected-targets": "codex",
+      "protected-effects": "observe,use",
+      "protected-evidence-id": "acme-scan-001",
+      "protected-evidence-digest": digest("b"),
+      "protected-attestor": "acme-scanner",
+      "protected-policy-id": "enterprise-policy",
+      "protected-policy-version": "1",
+      "protected-policy-digest": digest("c"),
+      "protected-control-id": "tool-admission",
+      "protected-control-digest": digest("d"),
+      "protected-actor": "ruchi.admin@acme.example",
+      "protected-reason": "Approved after attributable scanner evidence review",
+    };
+    await screen.locator("#protected-kind").selectOption("tool");
+    for (const [id, entry] of Object.entries(fields)) await screen.locator(`#${id}`).fill(entry);
+    await screen.locator("#protected-form button[type=submit]").click();
+    const downloadBundle = screen.locator("#download-protected-bundle");
+    await expect(downloadBundle).toBeEnabled();
+    const bundleDownload = page.waitForEvent("download");
+    await downloadBundle.click();
+    const bundle = await bundleDownload;
+    expect(bundle.suggestedFilename()).toBe("aih-policy-bundle.json");
+    const bundlePath = test.info().outputPath("aih-policy-bundle.json");
+    await bundle.saveAs(bundlePath);
+    expect(await readFile(bundlePath, "utf8")).toBe(await golden("aih-policy-bundle.json"));
+    // Pinned as the legacy runtime behaves (evidenceEnvelope is always null).
+    await expect(screen.locator("#download-protected-evidence")).toBeDisabled();
+    await expect(screen.locator("#protected-evidence-preview")).toHaveValue("");
+
+    const intake = {
+      format: "aih-artifact-intake",
+      version: 2,
+      authority: { state: "not-authority" },
+      defaults: { accountableOwner: "platform@acme.example" },
+      items: [
+        {
+          id: "firecrawl-mcp",
+          kind: "mcp",
+          source: {
+            type: "npm",
+            registry: "https://registry.npmjs.org",
+            package: "firecrawl-mcp",
+            version: "3.24.0",
+          },
+        },
+        {
+          id: "acme-skill",
+          kind: "skill",
+          accountableOwner: "skills@acme.example",
+          clarification: "Pinned review skill",
+          source: {
+            type: "github",
+            repository: "acme/skills",
+            commit: "b".repeat(40),
+            path: "skills/review",
+          },
+        },
+        {
+          id: "pulse-directory",
+          kind: "mcp",
+          source: {
+            type: "directory",
+            provider: "pulsemcp",
+            url: "https://www.pulsemcp.com/servers/acme",
+          },
+        },
+      ],
+    };
+    const chooser = page.waitForEvent("filechooser");
+    await screen.locator("#import-artifact-intake").click();
+    await (await chooser).setFiles({
+      name: "intake.json",
+      mimeType: "application/json",
+      buffer: Buffer.from(JSON.stringify(intake)),
+    });
+    await expect(screen.locator("#artifact-intake-items")).toContainText("pulse-directory");
+    const intakeDownload = page.waitForEvent("download");
+    await screen.locator("#download-artifact-intake").click();
+    const intakeFile = await intakeDownload;
+    expect(intakeFile.suggestedFilename()).toBe("aih-artifact-intake.json");
+    const intakePath = test.info().outputPath("aih-artifact-intake.json");
+    await intakeFile.saveAs(intakePath);
+    expect(await readFile(intakePath, "utf8")).toBe(await golden("aih-artifact-intake.json"));
+    expect(await violations(page)).toEqual([]);
+    expect(workbench.networkRequests).toEqual([]);
+  });
+});

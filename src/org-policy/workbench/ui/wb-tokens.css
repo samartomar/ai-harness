@@ -1088,3 +1088,78 @@ html[data-wb-shell="new"] #developer-tool-selection-status.error { color: var(--
   html[data-wb-shell="new"] .developer-tool-actions { justify-content: flex-start; width: 100%; }
   html[data-wb-shell="new"] .developer-tool-actions .btn { flex: 1 1 132px; }
 }
+/*
+ * S7: the additions screen hosts constant legacy markup (the protected policy
+ * form, the pending custom MCP forms) and the artifact intake runtime's card.
+ * Their class names are the legacy ones, styled here for the new shell only.
+ */
+html[data-wb-shell="new"] [data-wb-acme] .gcard { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid var(--wb-color-outline-variant); border-radius: var(--wb-r); background: var(--wb-color-surface-container-lowest); min-width: 0; }
+html[data-wb-shell="new"] [data-wb-acme] .grp { padding: 0; gap: 0; }
+html[data-wb-shell="new"] [data-wb-acme] .grphead { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 12px; text-align: left; background: var(--wb-color-surface-container-low); }
+html[data-wb-shell="new"] [data-wb-acme] .grphead h2 { margin: 0; font: var(--wb-fw-strong) 13px/1.3 var(--wb-font); color: var(--wb-color-on-surface); }
+html[data-wb-shell="new"] [data-wb-acme] .grphead .tw { font-size: 9px; color: var(--wb-color-on-surface-variant); }
+html[data-wb-shell="new"] [data-wb-acme] .grphead .own,
+html[data-wb-shell="new"] [data-wb-acme] .grphead .ct { font: var(--wb-fw-medium) 10px/1 var(--wb-mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--wb-color-on-surface-variant); }
+html[data-wb-shell="new"] [data-wb-acme] .grphead .ct { margin-left: auto; }
+html[data-wb-shell="new"] [data-wb-acme] .grp[data-open="1"] .grphead .tw { transform: rotate(90deg); }
+html[data-wb-shell="new"] [data-wb-acme] .grp[data-open="0"] > :not(.grphead) { display: none; }
+html[data-wb-shell="new"] [data-wb-acme] .grpbody { display: grid; gap: 8px; padding: 8px 12px 12px; min-width: 0; }
+html[data-wb-shell="new"] [data-wb-acme] .dform { display: grid; gap: 6px; min-width: 0; }
+html[data-wb-shell="new"] [data-wb-acme] .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; min-width: 0; }
+@media (max-width: 767px) { html[data-wb-shell="new"] [data-wb-acme] .form-grid { grid-template-columns: minmax(0, 1fr); } }
+html[data-wb-shell="new"] [data-wb-acme] .form-grid label,
+html[data-wb-shell="new"] [data-wb-acme] .dform label { display: grid; gap: 3px; min-width: 0; color: var(--wb-color-on-surface-variant); font-size: 11px; }
+html[data-wb-shell="new"] [data-wb-acme] .form-grid input,
+html[data-wb-shell="new"] [data-wb-acme] .form-grid select,
+html[data-wb-shell="new"] [data-wb-acme] .dform input,
+html[data-wb-shell="new"] [data-wb-acme] .dform select { width: 100%; min-width: 0; height: 30px; padding: 0 9px; border: 1px solid var(--wb-color-outline-variant); border-radius: var(--wb-r); background: var(--wb-color-surface-container-lowest); color: var(--wb-color-on-surface); font: var(--wb-fw-regular) 12px/1.4 var(--wb-font); }
+html[data-wb-shell="new"] [data-wb-acme] textarea { width: 100%; min-height: 8rem; resize: vertical; padding: 8px 10px; border: 1px solid var(--wb-color-outline-variant); border-radius: var(--wb-r); background: var(--wb-color-surface-container-low); color: var(--wb-color-on-surface); font: var(--wb-fw-regular) 11px/1.5 var(--wb-mono); }
+html[data-wb-shell="new"] [data-wb-acme] fieldset { margin: 0; padding: 10px; min-width: 0; border: 1px solid var(--wb-color-outline-variant); border-radius: var(--wb-r); }
+html[data-wb-shell="new"] [data-wb-acme] legend { padding: 0 5px; color: var(--wb-color-on-surface-variant); font-size: 11px; }
+html[data-wb-shell="new"] [data-wb-acme] .help { margin: 0; max-width: 72ch; color: var(--wb-color-on-surface-variant); font-size: 12px; line-height: 1.5; }
+html[data-wb-shell="new"] [data-wb-acme] .note { margin: 0; padding-left: 9px; border-left: 2px solid var(--wb-color-on-surface); color: var(--wb-color-on-surface-variant); font-size: 12px; line-height: 1.55; }
+html[data-wb-shell="new"] [data-wb-acme] .mono { font-family: var(--wb-mono); font-size: 11px; overflow-wrap: anywhere; }
+html[data-wb-shell="new"] [data-wb-acme] .governance-info { display: grid; gap: 8px; min-width: 0; }
+html[data-wb-shell="new"] [data-wb-acme] .governance-info h3 { margin: 0; font: var(--wb-fw-strong) 12px/1.4 var(--wb-font); }
+html[data-wb-shell="new"] [data-wb-acme] .brow { display: flex; flex-wrap: wrap; gap: 6px; }
+html[data-wb-shell="new"] [data-wb-acme] .btn { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; max-width: 100%; padding: 0 10px; border: 1px solid var(--wb-color-outline-variant); border-radius: var(--wb-r); background: var(--wb-color-surface-container-low); color: var(--wb-color-on-surface); font-size: 11px; font-weight: var(--wb-fw-strong); text-decoration: none; white-space: normal; }
+html[data-wb-shell="new"] [data-wb-acme] .btn:hover { background: var(--wb-color-surface-container); }
+html[data-wb-shell="new"] [data-wb-acme] .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+html[data-wb-shell="new"] [data-wb-acme] details > summary { cursor: pointer; font-size: 12px; font-weight: var(--wb-fw-medium); color: var(--wb-color-on-surface); }
+html[data-wb-shell="new"] [data-wb-acme] .field-error { display: block; color: var(--wb-color-error); font-size: 11px; line-height: 1.3; }
+/*
+ * S7: the artifact intake card. The runtime injects these rules into the
+ * legacy page; the new shell drops that <style> and takes them from here.
+ */
+html[data-wb-shell="new"] #artifact-intake-review { display: grid; gap: 16px; }
+html[data-wb-shell="new"] #artifact-intake-review h2 { margin: 0; font: var(--wb-fw-strong) 14px/1.3 var(--wb-font); text-wrap: balance; }
+html[data-wb-shell="new"] #artifact-intake-review .artifact-form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 14px; }
+html[data-wb-shell="new"] #artifact-intake-review .artifact-form-grid label { display: grid; gap: 4px; min-width: 0; color: var(--wb-color-on-surface-variant); font-size: 11px; text-wrap: pretty; }
+html[data-wb-shell="new"] #artifact-intake-review .artifact-form-grid input,
+html[data-wb-shell="new"] #artifact-intake-review .artifact-form-grid select { width: 100%; min-width: 0; height: 30px; padding: 0 9px; border: 1px solid var(--wb-color-outline-variant); border-radius: var(--wb-r); background: var(--wb-color-surface-container-lowest); color: var(--wb-color-on-surface); }
+html[data-wb-shell="new"] #artifact-intake-review .artifact-capacity { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+html[data-wb-shell="new"] #artifact-intake-review .artifact-capacity > div { display: grid; gap: 2px; padding: 12px; border: 1px solid var(--wb-color-outline-variant); border-radius: 8px; background: var(--wb-color-surface-container); }
+html[data-wb-shell="new"] #artifact-intake-review .artifact-capacity strong { font-size: 16px; font-variant-numeric: tabular-nums; }
+html[data-wb-shell="new"] #artifact-intake-review .artifact-stage { display: grid; gap: 10px; padding-top: 4px; }
+html[data-wb-shell="new"] #artifact-intake-review .artifact-stage-title { margin: 0; font-size: 13px; text-wrap: balance; }
+html[data-wb-shell="new"] #artifact-intake-review .artifact-queue-tools { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: end; }
+html[data-wb-shell="new"] #artifact-intake-review .artifact-queue-tools label { display: grid; gap: 4px; color: var(--wb-color-on-surface-variant); font-size: 11px; }
+html[data-wb-shell="new"] #artifact-intake-items { max-height: 520px; overflow: auto; border: 1px solid var(--wb-color-outline-variant); border-radius: 8px; }
+html[data-wb-shell="new"] #artifact-intake-items:empty { display: none; }
+html[data-wb-shell="new"] #artifact-intake-items .artifact-intake-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; padding: 12px; }
+html[data-wb-shell="new"] #artifact-intake-items .artifact-row-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; }
+html[data-wb-shell="new"] #artifact-intake-review .btn { min-height: 40px; }
+html[data-wb-shell="new"] #artifact-batch-command { margin: 0; padding: 12px; white-space: pre-wrap; overflow-wrap: anywhere; background: var(--wb-color-surface-container); border: 1px solid var(--wb-color-outline-variant); border-radius: 8px; }
+html[data-wb-shell="new"] .artifact-protected-groups { display: grid !important; grid-template-columns: 1fr !important; gap: 12px !important; }
+html[data-wb-shell="new"] .artifact-protected-group { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--wb-color-outline-variant); border-radius: 8px; }
+html[data-wb-shell="new"] .artifact-protected-group h3 { margin: 0; text-wrap: balance; }
+html[data-wb-shell="new"] .artifact-protected-group-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 14px; }
+html[data-wb-shell="new"] .artifact-protected-group-grid label { min-width: 0; }
+@media (max-width: 900px) {
+  html[data-wb-shell="new"] #artifact-intake-review .artifact-form-grid,
+  html[data-wb-shell="new"] #artifact-intake-review .artifact-capacity,
+  html[data-wb-shell="new"] #artifact-intake-review .artifact-queue-tools,
+  html[data-wb-shell="new"] .artifact-protected-group-grid { grid-template-columns: 1fr; }
+  html[data-wb-shell="new"] #artifact-intake-items .artifact-intake-row { grid-template-columns: 1fr; }
+  html[data-wb-shell="new"] #artifact-intake-items .artifact-row-actions { justify-content: flex-start; }
+}

@@ -5,10 +5,13 @@ import { tinyStudioModel } from "./studio-test-fixture.js";
 
 const openWindows: Window[] = [];
 
-function studio(): Window {
+function studio(shell: "legacy" | "new" = "new"): Window {
   const window = new Window({ url: "http://localhost/" });
   openWindows.push(window);
-  const html = policyStudioHtml(tinyStudioModel());
+  // NEW-SHELL-PLAN.md S7: artifact intake, curation and custom MCP moved to the
+  // new shell's additions screen. The left-navigation test stays on the legacy
+  // shell until the ECC MCP approval drawer and custom-hook note move.
+  const html = policyStudioHtml({ ...tinyStudioModel(), shell });
   window.document.write(html);
   (window as unknown as { structuredClone: typeof structuredClone }).structuredClone =
     structuredClone;
@@ -42,7 +45,7 @@ function inputValue(window: Window, id: string, value: string): void {
 
 describe("policy studio Bring Your Own paths", () => {
   it("separates organization-owned intake from framework curation in the left navigation", () => {
-    const window = studio();
+    const window = studio("legacy");
     const actions = window.document.getElementById("byo-actions");
 
     expect(actions?.querySelectorAll(".pop-row")).toHaveLength(2);

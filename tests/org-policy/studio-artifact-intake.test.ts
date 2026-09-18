@@ -64,7 +64,8 @@ function studio(
   url = "http://localhost/",
 ): Window {
   const window = new Window({ url });
-  const html = policyStudioHtml(studioModel);
+  // NEW-SHELL-PLAN.md S7: artifact intake moved to the new shell's additions screen.
+  const html = policyStudioHtml({ ...studioModel, shell: "new" });
   window.document.write(html);
   Object.defineProperty(window, "crypto", { configurable: true, value: globalThis.crypto });
   Object.defineProperty(window, "TextEncoder", { configurable: true, value: TextEncoder });

@@ -613,6 +613,7 @@ describe("policy generate", () => {
   });
 
   it("preserves valid optional governance absence and rejects root trust refinements in browser import", async () => {
+    // NEW-SHELL-PLAN.md S6/S7: runs on the new shell, assertions unchanged.
     const noGovernance = policyWithoutGovernance();
     expect(parseStudioPolicyImport(JSON.stringify(noGovernance))).toEqual(noGovernance);
     const invalidPolicies = [
@@ -631,7 +632,7 @@ describe("policy generate", () => {
       expect(() => parseStudioPolicyImport(JSON.stringify(policy))).toThrow();
     }
     const window = workbenchWindow();
-    const html = policyStudioHtml(tinyStudioModel());
+    const html = policyStudioHtml({ ...tinyStudioModel(), shell: "new" });
     window.document.write(html);
     loadStudio(window, html);
     const policyFile = window.document.getElementById("policy-file");
@@ -689,8 +690,9 @@ describe("policy generate", () => {
   });
 
   it("rejects an imported governed MCP selection whose managed gate is absent", async () => {
+    // NEW-SHELL-PLAN.md S6/S7: runs on the new shell, assertions unchanged.
     const window = workbenchWindow();
-    const html = policyStudioHtml(policyStudioModel());
+    const html = policyStudioHtml({ ...policyStudioModel(), shell: "new" });
     window.document.write(html);
     loadStudio(window, html);
     const valid = managedMcpPolicy();
@@ -727,8 +729,9 @@ describe("policy generate", () => {
   });
 
   it("rejects stale managed MCP authority even when its synchronized gate is present", async () => {
+    // NEW-SHELL-PLAN.md S6/S7: runs on the new shell, assertions unchanged.
     const window = workbenchWindow();
-    const html = policyStudioHtml(policyStudioModel());
+    const html = policyStudioHtml({ ...policyStudioModel(), shell: "new" });
     window.document.write(html);
     loadStudio(window, html);
     const preview = window.document.getElementById("config-preview") as unknown as {
@@ -786,8 +789,9 @@ describe("policy generate", () => {
   });
 
   it("migrates the exact legacy enterprise Workbench MCP footprint without retaining unavailable authority", async () => {
+    // NEW-SHELL-PLAN.md S6/S7: runs on the new shell, assertions unchanged.
     const window = workbenchWindow();
-    const html = policyStudioHtml(policyStudioModel());
+    const html = policyStudioHtml({ ...policyStudioModel(), shell: "new" });
     window.document.write(html);
     loadStudio(window, html);
     const preview = window.document.getElementById("config-preview") as unknown as {
@@ -930,8 +934,9 @@ describe("policy generate", () => {
   });
 
   it("keeps V3 pins exact when legacy V2 MCP migration predicates are present", async () => {
+    // NEW-SHELL-PLAN.md S6/S7: runs on the new shell, assertions unchanged.
     const window = workbenchWindow();
-    const html = policyStudioHtml(policyStudioModel());
+    const html = policyStudioHtml({ ...policyStudioModel(), shell: "new" });
     window.document.write(html);
     loadStudio(window, html);
     const document = window.document;
@@ -1083,9 +1088,10 @@ describe("policy generate", () => {
   });
 
   it("resets generic Workbench state before the next catalog selection", async () => {
+    // NEW-SHELL-PLAN.md S6/S7: runs on the new shell, assertions unchanged.
     const window = workbenchWindow();
     const initialModel = tinyStudioModel();
-    const html = policyStudioHtml(initialModel);
+    const html = policyStudioHtml({ ...initialModel, shell: "new" });
     window.document.write(html);
     loadStudio(window, html);
     const document = window.document;
@@ -1134,6 +1140,7 @@ describe("policy generate", () => {
     expect(preview.value).toContain(request.id);
   });
   it("round-trips administrator-managed remote status without inventing legacy drift fields", async () => {
+    // NEW-SHELL-PLAN.md S6/S7: these controls moved to the new shell, assertions unchanged.
     const imported = fullAuthoringPolicy();
     const governance = imported.governance as {
       catalog: { custom: Array<Record<string, unknown>> };
@@ -1162,7 +1169,7 @@ describe("policy generate", () => {
     });
 
     const window = workbenchWindow();
-    const html = policyStudioHtml(tinyStudioModel());
+    const html = policyStudioHtml({ ...tinyStudioModel(), shell: "new" });
     window.document.write(html);
     loadStudio(window, html);
     const document = window.document;
@@ -1353,8 +1360,9 @@ describe("policy generate", () => {
   });
 
   it("rejects invalid browser imports and invalid authored custom text before it can become downloadable policy", async () => {
+    // NEW-SHELL-PLAN.md S6/S7: these controls moved to the new shell, assertions unchanged.
     const window = workbenchWindow();
-    const html = policyStudioHtml(tinyStudioModel());
+    const html = policyStudioHtml({ ...tinyStudioModel(), shell: "new" });
     window.document.write(html);
     loadStudio(window, html);
     const document = window.document;
@@ -1464,6 +1472,7 @@ describe("policy generate", () => {
   });
 
   it("provides field recovery and safe edit/remove disclosures for pending and report-only rows", async () => {
+    // NEW-SHELL-PLAN.md S6/S7: these controls moved to the new shell, assertions unchanged.
     const window = workbenchWindow();
     const model = tinyStudioModel();
     model.catalog.frameworks.push({
@@ -1471,7 +1480,7 @@ describe("policy generate", () => {
       repository: "fixture/superpowers",
       commit: "b".repeat(40),
     });
-    const html = policyStudioHtml(model);
+    const html = policyStudioHtml({ ...model, shell: "new" });
     window.document.write(html);
     loadStudio(window, html);
     const document = window.document;
@@ -1630,8 +1639,9 @@ describe("policy generate", () => {
   }, 15_000);
 
   it("keeps curation and preserved evidence detail in compact accessible disclosures", async () => {
+    // NEW-SHELL-PLAN.md S6/S7: these controls moved to the new shell, assertions unchanged.
     const window = workbenchWindow();
-    const html = policyStudioHtml(tinyStudioModel());
+    const html = policyStudioHtml({ ...tinyStudioModel(), shell: "new" });
     window.document.write(html);
     loadStudio(window, html);
     const document = window.document;
@@ -1731,6 +1741,7 @@ describe("policy generate", () => {
   });
 
   it("matches runtime rejection for each org-policy custom refinement layer", async () => {
+    // NEW-SHELL-PLAN.md S6/S7: runs on the new shell, assertions unchanged.
     const cases: Array<{
       name: string;
       mutate: (policy: Record<string, unknown>) => void;
@@ -1857,7 +1868,7 @@ describe("policy generate", () => {
         },
       },
     ];
-    const html = policyStudioHtml(tinyStudioModel());
+    const html = policyStudioHtml({ ...tinyStudioModel(), shell: "new" });
     for (const fixture of cases) {
       const policy = fullAuthoringPolicy();
       fixture.mutate(policy);
@@ -1890,6 +1901,7 @@ describe("policy generate", () => {
   }, 30_000);
 
   it("keeps browser import, validate, and download parity with command registry/index argument grammar", async () => {
+    // NEW-SHELL-PLAN.md S6/S7: these controls moved to the new shell, assertions unchanged.
     const cases = [
       { argument: "--registry=https://registry.npmjs.org", accepted: true },
       { argument: "--index-url=https://pypi.org", accepted: true },
@@ -1907,7 +1919,7 @@ describe("policy generate", () => {
         accepted: false,
       },
     ];
-    const html = policyStudioHtml(tinyStudioModel());
+    const html = policyStudioHtml({ ...tinyStudioModel(), shell: "new" });
     for (const fixture of cases) {
       const policy = policyWithCommandArgument(fixture.argument, fixture.sourceRegistry);
       if (fixture.accepted) {

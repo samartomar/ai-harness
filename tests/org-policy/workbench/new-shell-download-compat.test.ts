@@ -45,6 +45,74 @@ afterEach(closeStudios);
 
 const golden = (name: string) => readFileSync(new URL(`goldens/${name}`, import.meta.url), "utf8");
 
+/** The S0 characterization's protected form values (legacy-download-characterization.test.ts). */
+const PROTECTED_GOLDEN_FIELDS: Record<string, string> = {
+  "protected-bundle-version": "acme-policy-1",
+  "protected-issuer-repository": "acme/aih-policy",
+  "protected-issuer": "acme-security",
+  "protected-issued-at": "2026-08-26T12:00:00Z",
+  "protected-expires-at": "2026-09-25T12:00:00Z",
+  "protected-decision-id": "decision-acme-linter-1",
+  "protected-kind": "tool",
+  "protected-subject-id": "acme-linter",
+  "protected-source-repository": "acme/linter",
+  "protected-source-commit": "a".repeat(40),
+  "protected-source-path": "packages/cli",
+  "protected-targets": "codex",
+  "protected-effects": "observe,use",
+  "protected-evidence-id": "acme-scan-001",
+  "protected-evidence-digest": sha("b"),
+  "protected-attestor": "acme-scanner",
+  "protected-policy-id": "enterprise-policy",
+  "protected-policy-version": "1",
+  "protected-policy-digest": sha("c"),
+  "protected-control-id": "tool-admission",
+  "protected-control-digest": sha("d"),
+  "protected-actor": "ruchi.admin@acme.example",
+  "protected-reason": "Approved after attributable scanner evidence review",
+};
+
+/** The S0 characterization's artifact intake (legacy-download-characterization.test.ts). */
+const ARTIFACT_INTAKE_GOLDEN_INPUT = {
+  format: "aih-artifact-intake",
+  version: 2,
+  authority: { state: "not-authority" },
+  defaults: { accountableOwner: "platform@acme.example" },
+  items: [
+    {
+      id: "firecrawl-mcp",
+      kind: "mcp",
+      source: {
+        type: "npm",
+        registry: "https://registry.npmjs.org",
+        package: "firecrawl-mcp",
+        version: "3.24.0",
+      },
+    },
+    {
+      id: "acme-skill",
+      kind: "skill",
+      accountableOwner: "skills@acme.example",
+      clarification: "Pinned review skill",
+      source: {
+        type: "github",
+        repository: "acme/skills",
+        commit: "b".repeat(40),
+        path: "skills/review",
+      },
+    },
+    {
+      id: "pulse-directory",
+      kind: "mcp",
+      source: {
+        type: "directory",
+        provider: "pulsemcp",
+        url: "https://www.pulsemcp.com/servers/acme",
+      },
+    },
+  ],
+};
+
 function newShell(model: PolicyStudioModel = tinyStudioModel()) {
   return studio({ ...model, shell: "new" });
 }
@@ -267,62 +335,83 @@ describe("S0 golden files through the new shell's download path", () => {
     );
   });
 
-  // The protected form (S7) and artifact intake (S7) have no screen in the new
-  // shell yet; their bytes come from the same serializer file-transfer hands
-  // to downloadBlob, fed the legacy runtime's values.
-  it("serializes the protected policy bundle byte-for-byte (aih-policy-bundle.json)", () => {
-    const bytes = golden("aih-policy-bundle.json");
-    expect(PROTECTED_BUNDLE_FILENAME).toBe("aih-policy-bundle.json");
-    expect(jsonFileText(JSON.parse(bytes))).toBe(bytes);
+  // S7 byte gate: the protected form and artifact intake run on the new shell's
+  // additions screen. Both files come out of their real controls end to end:
+  // the protected form's submit button builds the bundle, the intake's import
+  // control reads the file, and the download buttons write the bytes.
+  it("downloads the protected policy bundle byte-for-byte (aih-policy-bundle.json)", async () => {
+    const current = newShell(tinyEnterpriseStudioModel());
+    const document = current.window.document;
+    expect(document.querySelector('[data-wb-screen-panel="acme"] #protected-form')).not.toBeNull();
+    setValue(current.window, "posture", "enterprise");
+    for (const [id, entry] of Object.entries(PROTECTED_GOLDEN_FIELDS))
+      setValue(current.window, id, entry);
+    const pending = current.window as unknown as { __aihPolicyWorkbenchPending?: Promise<void> };
+    const submit = document.querySelector("#protected-form button[type=submit]");
+    if (submit === null) throw new Error("expected the protected form's submit button");
+    submit.dispatchEvent(
+      new current.window.MouseEvent("click", { bubbles: true, cancelable: true }),
+    );
+    await pending.__aihPolicyWorkbenchPending;
+    pending.__aihPolicyWorkbenchPending = undefined;
+    click(current.window, "download-protected-bundle");
+    await pending.__aihPolicyWorkbenchPending;
+    click(current.window, "download-protected-evidence");
+    const files = await drained(current);
+    expect(files.map((file) => file.name)).toEqual([PROTECTED_BUNDLE_FILENAME]);
+    expect(files[0]?.text).toBe(golden("aih-policy-bundle.json"));
+    // Pinned as the legacy runtime behaves (evidenceEnvelope is always null,
+    // pending an owner decision): no evidence envelope, nothing downloads.
+    const evidenceButton = document.getElementById("download-protected-evidence") as unknown as {
+      disabled: boolean;
+    } | null;
+    expect(evidenceButton?.disabled).toBe(true);
+    expect(
+      (document.getElementById("protected-evidence-preview") as unknown as { value: string } | null)
+        ?.value,
+    ).toBe("");
   });
 
-  it("serializes the artifact intake byte-for-byte (aih-artifact-intake.json)", () => {
-    const intake = validateIntake(
-      strictJson(
-        JSON.stringify({
-          format: "aih-artifact-intake",
-          version: 2,
-          authority: { state: "not-authority" },
-          defaults: { accountableOwner: "platform@acme.example" },
-          items: [
-            {
-              id: "firecrawl-mcp",
-              kind: "mcp",
-              source: {
-                type: "npm",
-                registry: "https://registry.npmjs.org",
-                package: "firecrawl-mcp",
-                version: "3.24.0",
-              },
-            },
-            {
-              id: "acme-skill",
-              kind: "skill",
-              accountableOwner: "skills@acme.example",
-              clarification: "Pinned review skill",
-              source: {
-                type: "github",
-                repository: "acme/skills",
-                commit: "b".repeat(40),
-                path: "skills/review",
-              },
-            },
-            {
-              id: "pulse-directory",
-              kind: "mcp",
-              source: {
-                type: "directory",
-                provider: "pulsemcp",
-                url: "https://www.pulsemcp.com/servers/acme",
-              },
-            },
-          ],
+  it("downloads the artifact intake byte-for-byte (aih-artifact-intake.json)", async () => {
+    const current = newShell();
+    const document = current.window.document;
+    expect(
+      document.querySelector('[data-wb-screen-panel="acme"] #artifact-intake-review'),
+    ).not.toBeNull();
+    const input = document.getElementById("artifact-intake-file");
+    if (input === null) throw new Error("expected the artifact intake file input");
+    Object.defineProperty(input, "files", {
+      configurable: true,
+      value: [
+        new current.window.File([JSON.stringify(ARTIFACT_INTAKE_GOLDEN_INPUT)], "intake.json", {
+          type: "application/json",
         }),
-        "artifact intake",
+      ],
+    });
+    input.dispatchEvent(new current.window.Event("change", { bubbles: true }));
+    const intake = current.window as unknown as {
+      __aihArtifactIntake: { snapshot(): { intake: unknown } };
+    };
+    for (
+      let attempt = 0;
+      attempt < 200 && intake.__aihArtifactIntake.snapshot().intake === null;
+      attempt++
+    )
+      await new Promise((resolve) => current.window.setTimeout(resolve, 10));
+    click(current.window, "download-artifact-intake");
+    const [file] = await drained(current);
+    expect(file?.name).toBe(ARTIFACT_INTAKE_FILENAME);
+    expect(file?.text).toBe(golden("aih-artifact-intake.json"));
+    // The same bytes the S0 serializer produces from the validated intake.
+    expect(
+      jsonFileText(
+        structuredClone(
+          validateIntake(
+            strictJson(JSON.stringify(ARTIFACT_INTAKE_GOLDEN_INPUT), "artifact intake"),
+          ),
+        ),
       ),
-    );
-    expect(ARTIFACT_INTAKE_FILENAME).toBe("aih-artifact-intake.json");
-    expect(jsonFileText(structuredClone(intake))).toBe(golden("aih-artifact-intake.json"));
+    ).toBe(file?.text);
   });
 
   it("serializes the project policy byte-for-byte (aih-project-policy.json)", () => {

@@ -116,10 +116,15 @@ function compactCliControlsModel(): PolicyStudioModel {
 }
 
 const model = compactCliControlsModel();
-const workbenchHtml = policyStudioHtml(model);
-const workbenchScripts = [...workbenchHtml.matchAll(/<script>([\s\S]*?)<\/script>/gi)].map(
-  (match) => match[1],
-);
+// NEW-SHELL-PLAN.md S6: deployment setup moved to the new shell's organization
+// screen. The layout check of "requires explicit managed MCP opt-in…" still
+// reads the legacy panels (the ECC MCP approval drawer has not moved yet).
+const pages = {
+  new: policyStudioHtml({ ...model, shell: "new" }),
+  legacy: policyStudioHtml(model),
+};
+const pageScripts = (html: string) =>
+  [...html.matchAll(/<script>([\s\S]*?)<\/script>/gi)].map((match) => match[1]);
 const WORKBENCH_TEST_TIMEOUT_MS = 45_000;
 const WORKBENCH_IMPORT_TIMEOUT_MS = 15_000;
 const controls = ["sequential-thinking", "usage-metering"].map((candidateId) => {
@@ -173,12 +178,13 @@ function policyFor(
   };
 }
 
-function studio(): Window {
+function studio(shell: "legacy" | "new" = "new"): Window {
   const window = new Window({ url: "http://localhost/" });
   openWindows.add(window);
-  window.document.write(workbenchHtml);
+  window.document.write(pages[shell]);
   (window as unknown as { structuredClone: typeof structuredClone }).structuredClone =
     structuredClone;
+  const workbenchScripts = pageScripts(pages[shell]);
   if (workbenchScripts.length === 0) throw new Error("expected generated workbench script");
   window.eval(workbenchScripts.join("\n"));
   return window;
@@ -463,7 +469,7 @@ describe("organization-selected CLI activation scope", () => {
   it(
     "requires explicit managed MCP opt-in and every selected control host before export",
     async () => {
-      const window = studio();
+      const window = studio("legacy");
       expect(window.document.body.dataset.view).toBe("compose");
       const settings = window.document.getElementById("policy-settings");
       expect(settings?.closest("#workbench")).not.toBeNull();

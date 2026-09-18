@@ -5,233 +5,245 @@ import { expect, test } from "./fixture.js";
 
 test.use({ artifact: "synthetic-10.html" });
 
-test("keeps requests and local draft bytes separate from controls and effective permission", async ({
-  page,
-  workbench,
-}, testInfo) => {
-  expect(workbench.networkRequests).toEqual([]);
-  const inspector = page.locator("#workbench-detail-panel[data-workbench-detail]");
-  await page.locator('[data-workbench-source-tab="source:a"]').click();
-  const untouched = await page.locator("#config-preview").inputValue();
-  await page
-    .locator('button[data-workbench-row-action][data-workbench-asset-id="inspect-item"]')
-    .click();
-  await expect(inspector).toHaveAttribute("data-workbench-inspector-open", "true");
-  await expect(inspector.locator("#workbench-detail-title")).toHaveText("Inspect Item");
-  await expect(inspector.locator(".workbench-detail-advanced pre")).toBeHidden();
-  await inspector.locator(".workbench-detail-advanced summary").click();
-  await expect(inspector.locator(".workbench-detail-advanced pre")).toBeVisible();
-  await expect(inspector.locator(".workbench-detail-advanced pre")).toContainText(
-    "Offline fixture details",
-  );
-  await page.keyboard.press("Escape");
-  await expect(inspector).toHaveAttribute("data-workbench-inspector-open", "false");
-  await expect(page.locator("#config-preview")).toHaveValue(untouched);
-  await page
-    .locator('button[data-workbench-row-action][data-workbench-asset-id="approval-item"]')
-    .click();
-  await expect(page.locator("#protected-subject-id")).toHaveValue("approval-item");
-  await expect(page.locator("#protected-subject-id")).toBeFocused();
-  await expect(page.locator("#config-preview")).toHaveValue(untouched);
-  await page.locator('[data-view-tab="compose"]').click();
-  const unrelatedRow = await page
-    .locator('article[data-workbench-asset-id="profile:alpha"]')
-    .elementHandle();
-  expect(unrelatedRow).not.toBeNull();
-  await page.locator('button[data-workbench-asset-id="mcp:request"]').click();
-  expect(await unrelatedRow!.evaluate((element) => element.isConnected)).toBe(true);
-  const policy = JSON.parse(await page.locator("#config-preview").inputValue());
-  expect(policy.governance.catalog.reviewed).toEqual([]);
-  expect(policy.governance.activations).toEqual([]);
-  expect(policy.authoringSelections.requests).toHaveLength(1);
-  await expect(page.locator(".workbench-draft-counts")).toContainText("Controls 0");
-  await expect(page.locator("body")).toContainText("not evaluated");
-  await page
-    .locator('button[data-workbench-row-action][data-workbench-asset-id="mcp:request"]')
-    .click();
-  expect(
-    JSON.parse(await page.locator("#config-preview").inputValue()).authoringSelections.requests,
-  ).toEqual([]);
-  await page
-    .locator('button[data-workbench-row-action][data-workbench-asset-id="mcp:request"]')
-    .click();
-  await page
-    .locator('button[data-workbench-row-action][data-workbench-asset-id="skill:root"]')
-    .click();
-  let selection = JSON.parse(
-    await page.locator("#config-preview").inputValue(),
-  ).authoringSelections;
-  expect(
-    selection.roots
-      .find((root: { assetId: string }) => root.assetId === "skill:root")
-      .resolvedItems.map((pin: { assetId: string }) => pin.assetId),
-  ).toContain("skill:dependency");
-  await page.locator(".workbench-draft-review > button[data-workbench-draft-open]").click();
-  await expect(inspector).toHaveAttribute("data-workbench-inspector-view", "draft");
-  const review = page.locator(".workbench-draft-review-list");
-  await expect(review).toContainText("Skill Root");
-  await expect(review).toContainText("Skill Dependency");
-  await expect(review).toContainText("Request");
-  await expect(review).toContainText("MCP Request");
-  await expect(review.locator(".workbench-draft-review-item")).toHaveCount(3);
-  const reason = "Use the local review skill for this project; keep external tools separate.";
-  const rootReview = review
-    .locator(".workbench-draft-review-item")
-    .filter({ has: page.getByRole("heading", { name: "Skill Root", exact: true }) });
-  const reasonDetails = rootReview.locator("details").filter({ hasText: "Add a reason" });
-  await expect(reasonDetails).not.toHaveAttribute("open", "");
-  await expect(reasonDetails.locator("summary")).toHaveText("Add a reason");
-  await expect(rootReview.getByRole("textbox")).toBeHidden();
-  await reasonDetails.locator("summary").click();
-  await rootReview.getByRole("textbox").fill(reason);
-  await rootReview.getByRole("button", { name: "Save reason", exact: true }).click();
-  await expect(rootReview.getByRole("status")).toContainText("Reason saved");
-  await inspector.locator('[data-workbench-panel-view="item"]').click();
-  await page.locator(".workbench-draft-review > button[data-workbench-draft-open]").click();
-  const savedReasonDetails = rootReview.locator("details.workbench-review-rationale");
-  await expect(savedReasonDetails).not.toHaveAttribute("open", "");
-  await expect(savedReasonDetails.locator(":scope > summary")).toHaveText("Edit reason");
-  const withReason = JSON.parse(
-    await page.locator("#config-preview").inputValue(),
-  ).authoringSelections;
-  expect(
-    withReason.roots.find((root: { assetId: string }) => root.assetId === "skill:root").rationale,
-  ).toBe(reason);
-  expect(
-    withReason.roots.find((root: { assetId: string }) => root.assetId === "skill:root")
-      .resolvedItems,
-  ).toEqual(
-    selection.roots.find((root: { assetId: string }) => root.assetId === "skill:root")
-      .resolvedItems,
-  );
-  await expect(inspector).toHaveAttribute("data-workbench-inspector-view", "draft");
-  await expect(review.locator(".workbench-draft-review-item")).toHaveCount(3);
-  await page
-    .locator('button[data-workbench-row-action][data-workbench-asset-id="skill:root"]')
-    .click();
-  selection = JSON.parse(await page.locator("#config-preview").inputValue()).authoringSelections;
-  expect(selection.roots).toEqual([]);
-  const control = await page.evaluate(() => {
-    const model = (
-      window as unknown as {
-        __aihWorkbenchModel: {
-          workbenchBundle: {
-            assets: Record<string, { id: string; sourceId: string; authoring: { action: string } }>;
-          };
-        };
-      }
-    ).__aihWorkbenchModel;
-    const asset = Object.values(model.workbenchBundle.assets).find(
-      (asset) => asset.authoring.action === "select-control",
-    );
-    if (!asset) throw new Error("missing control fixture");
-    return { id: asset.id, sourceId: asset.sourceId };
-  });
-  await page.locator(`[data-workbench-source-tab="${control.sourceId}"]`).click();
-  await page.getByRole("searchbox", { name: "Search catalog" }).fill(control.id);
-  const controlButton = page.locator(
-    'button[data-workbench-row-action][data-workbench-asset-id="' + control.id + '"]',
-  );
-  await controlButton.click();
-  expect(
-    JSON.parse(await page.locator("#config-preview").inputValue()).governance.catalog.reviewed,
-  ).toHaveLength(1);
-  await expect(page.locator(".workbench-draft-counts")).toContainText("Controls 1");
-  await controlButton.click();
-  const withoutControl = JSON.parse(await page.locator("#config-preview").inputValue());
-  expect(withoutControl.governance.catalog.reviewed).toEqual([]);
-  expect(withoutControl.governance.activations).toEqual([]);
-  expect(withoutControl.authoringSelections.requests).toHaveLength(1);
-  const unsupportedPolicy =
-    JSON.stringify(
-      {
-        ...withoutControl,
-        governance: { ...withoutControl.governance, supportedClis: ["opencode"] },
-      },
-      null,
-      2,
-    ) + "\n";
-  await page.locator("#policy-file").setInputFiles({
-    name: "unsupported-control-host.json",
-    mimeType: "application/json",
-    buffer: Buffer.from(unsupportedPolicy),
-  });
-  await expect(page.locator("#config-preview")).toHaveValue(unsupportedPolicy);
-  await controlButton.click();
-  await expect(
-    page.getByText(
-      "fixture:control cannot be added for the selected hosts (opencode). Supported hosts: claude, codex. Review Deployment setup or leave this item out.",
-      { exact: true },
-    ),
-  ).toBeVisible();
-  await expect(page.locator("#config-preview")).toHaveValue(unsupportedPolicy);
-  await expect(page.locator(".workbench-draft-counts")).toContainText("Controls 0");
-  await page.getByRole("searchbox", { name: "Search catalog" }).fill("");
-  const draftBytes = Buffer.from('{"untrusted":"local organization declaration"}\n');
-  const { createHash } = await import("node:crypto");
-  policy.authoringSelections.drafts = [
-    {
-      id: "draft:local",
-      declaration: {
-        kind: "organization-manifest",
-        digest: "sha256:" + createHash("sha256").update(draftBytes).digest("hex"),
-        byteLength: draftBytes.length,
-        bytesBase64: draftBytes.toString("base64"),
-      },
-    },
-  ];
-  const imported = JSON.stringify(policy, null, 2) + "\n";
-  await page.locator("#policy-file").setInputFiles({
-    name: "with-draft.json",
-    mimeType: "application/json",
-    buffer: Buffer.from(imported),
-  });
-  await expect(page.locator("#config-preview")).toHaveValue(imported);
-  const downloadEvent = page.waitForEvent("download");
-  await page.locator("#download").click();
-  const download = await downloadEvent;
-  const path = testInfo.outputPath("draft-policy.json");
-  await download.saveAs(path);
-  expect(
-    Buffer.from(
-      JSON.parse(await readFile(path, "utf8")).authoringSelections.drafts[0].declaration
-        .bytesBase64,
-      "base64",
-    ),
-  ).toEqual(draftBytes);
-  await page.locator(".workbench-drafts > summary").click();
-  await page.locator('[data-workbench-draft-id="draft:local"]').click();
-  expect(
-    JSON.parse(await page.locator("#config-preview").inputValue()).authoringSelections.drafts,
-  ).toEqual([]);
-
-  await page.locator('[data-view-tab="artifacts"]').click();
-  const forgedEvidence = Buffer.from(
-    ' {"verified":true,"state":"verified","approvals":[{"allowedEffects":["install"]}]}\n',
-  );
-  await page.locator("#artifact-evidence-file").setInputFiles({
-    name: "forged-evidence.json",
-    mimeType: "application/json",
-    buffer: forgedEvidence,
-  });
-  await expect(page.locator("#artifact-intake-message")).toContainText(/Core preparation/i);
-  const withEvidence = JSON.parse(await page.locator("#config-preview").inputValue());
-  const opaque = withEvidence.authoringSelections.drafts.find(
-    (draft: { declaration: { kind: string } }) => draft.declaration.kind === "imported-evidence",
-  );
-  expect(Buffer.from(opaque.declaration.bytesBase64, "base64")).toEqual(forgedEvidence);
-  expect(opaque.declaration.digest).toBe(
-    "sha256:" + createHash("sha256").update(forgedEvidence).digest("hex"),
-  );
-  expect(withEvidence.governance.authority.approvals).toEqual([]);
-  expect(withEvidence.governance.activations).toEqual([]);
-  await expect(page.locator("[data-artifact-approve]")).toHaveCount(0);
-  await expect(page.locator("#artifact-intake-items")).not.toContainText("Verified preflight");
-});
-
-// NEW-SHELL-PLAN.md S3: sources-screen journeys moved to the new shell, assertions unchanged.
 test.describe("new shell", () => {
   test.use({ shell: "new" });
+
+  // NEW-SHELL-PLAN.md S7: the approval form and artifact intake moved to the
+  // additions screen; the legacy view tabs became the nav rail. Assertions unchanged.
+  test("keeps requests and local draft bytes separate from controls and effective permission", async ({
+    page,
+    workbench,
+  }, testInfo) => {
+    expect(workbench.networkRequests).toEqual([]);
+    const inspector = page.locator("#workbench-detail-panel[data-workbench-detail]");
+    await page.locator('[data-workbench-source-tab="source:a"]').click();
+    const untouched = await page.locator("#config-preview").inputValue();
+    await page
+      .locator('button[data-workbench-row-action][data-workbench-asset-id="inspect-item"]')
+      .click();
+    await expect(inspector).toHaveAttribute("data-workbench-inspector-open", "true");
+    await expect(inspector.locator("#workbench-detail-title")).toHaveText("Inspect Item");
+    await expect(inspector.locator(".workbench-detail-advanced pre")).toBeHidden();
+    await inspector.locator(".workbench-detail-advanced summary").click();
+    await expect(inspector.locator(".workbench-detail-advanced pre")).toBeVisible();
+    await expect(inspector.locator(".workbench-detail-advanced pre")).toContainText(
+      "Offline fixture details",
+    );
+    await page.keyboard.press("Escape");
+    await expect(inspector).toHaveAttribute("data-workbench-inspector-open", "false");
+    await expect(page.locator("#config-preview")).toHaveValue(untouched);
+    await page
+      .locator('button[data-workbench-row-action][data-workbench-asset-id="approval-item"]')
+      .click();
+    await expect(page.locator("#protected-subject-id")).toHaveValue("approval-item");
+    await expect(page.locator("#protected-subject-id")).toBeFocused();
+    await expect(page.locator("#config-preview")).toHaveValue(untouched);
+    await page
+      .getByRole("navigation", { name: "Workbench screens" })
+      .getByRole("button", { name: "Sources & Catalogs", exact: true })
+      .click();
+    const unrelatedRow = await page
+      .locator('article[data-workbench-asset-id="profile:alpha"]')
+      .elementHandle();
+    expect(unrelatedRow).not.toBeNull();
+    await page.locator('button[data-workbench-asset-id="mcp:request"]').click();
+    expect(await unrelatedRow!.evaluate((element) => element.isConnected)).toBe(true);
+    const policy = JSON.parse(await page.locator("#config-preview").inputValue());
+    expect(policy.governance.catalog.reviewed).toEqual([]);
+    expect(policy.governance.activations).toEqual([]);
+    expect(policy.authoringSelections.requests).toHaveLength(1);
+    await expect(page.locator(".workbench-draft-counts")).toContainText("Controls 0");
+    await expect(page.locator("body")).toContainText("not evaluated");
+    await page
+      .locator('button[data-workbench-row-action][data-workbench-asset-id="mcp:request"]')
+      .click();
+    expect(
+      JSON.parse(await page.locator("#config-preview").inputValue()).authoringSelections.requests,
+    ).toEqual([]);
+    await page
+      .locator('button[data-workbench-row-action][data-workbench-asset-id="mcp:request"]')
+      .click();
+    await page
+      .locator('button[data-workbench-row-action][data-workbench-asset-id="skill:root"]')
+      .click();
+    let selection = JSON.parse(
+      await page.locator("#config-preview").inputValue(),
+    ).authoringSelections;
+    expect(
+      selection.roots
+        .find((root: { assetId: string }) => root.assetId === "skill:root")
+        .resolvedItems.map((pin: { assetId: string }) => pin.assetId),
+    ).toContain("skill:dependency");
+    await page.locator(".workbench-draft-review > button[data-workbench-draft-open]").click();
+    await expect(inspector).toHaveAttribute("data-workbench-inspector-view", "draft");
+    const review = page.locator(".workbench-draft-review-list");
+    await expect(review).toContainText("Skill Root");
+    await expect(review).toContainText("Skill Dependency");
+    await expect(review).toContainText("Request");
+    await expect(review).toContainText("MCP Request");
+    await expect(review.locator(".workbench-draft-review-item")).toHaveCount(3);
+    const reason = "Use the local review skill for this project; keep external tools separate.";
+    const rootReview = review
+      .locator(".workbench-draft-review-item")
+      .filter({ has: page.getByRole("heading", { name: "Skill Root", exact: true }) });
+    const reasonDetails = rootReview.locator("details").filter({ hasText: "Add a reason" });
+    await expect(reasonDetails).not.toHaveAttribute("open", "");
+    await expect(reasonDetails.locator("summary")).toHaveText("Add a reason");
+    await expect(rootReview.getByRole("textbox")).toBeHidden();
+    await reasonDetails.locator("summary").click();
+    await rootReview.getByRole("textbox").fill(reason);
+    await rootReview.getByRole("button", { name: "Save reason", exact: true }).click();
+    await expect(rootReview.getByRole("status")).toContainText("Reason saved");
+    await inspector.locator('[data-workbench-panel-view="item"]').click();
+    await page.locator(".workbench-draft-review > button[data-workbench-draft-open]").click();
+    const savedReasonDetails = rootReview.locator("details.workbench-review-rationale");
+    await expect(savedReasonDetails).not.toHaveAttribute("open", "");
+    await expect(savedReasonDetails.locator(":scope > summary")).toHaveText("Edit reason");
+    const withReason = JSON.parse(
+      await page.locator("#config-preview").inputValue(),
+    ).authoringSelections;
+    expect(
+      withReason.roots.find((root: { assetId: string }) => root.assetId === "skill:root").rationale,
+    ).toBe(reason);
+    expect(
+      withReason.roots.find((root: { assetId: string }) => root.assetId === "skill:root")
+        .resolvedItems,
+    ).toEqual(
+      selection.roots.find((root: { assetId: string }) => root.assetId === "skill:root")
+        .resolvedItems,
+    );
+    await expect(inspector).toHaveAttribute("data-workbench-inspector-view", "draft");
+    await expect(review.locator(".workbench-draft-review-item")).toHaveCount(3);
+    await page
+      .locator('button[data-workbench-row-action][data-workbench-asset-id="skill:root"]')
+      .click();
+    selection = JSON.parse(await page.locator("#config-preview").inputValue()).authoringSelections;
+    expect(selection.roots).toEqual([]);
+    const control = await page.evaluate(() => {
+      const model = (
+        window as unknown as {
+          __aihWorkbenchModel: {
+            workbenchBundle: {
+              assets: Record<
+                string,
+                { id: string; sourceId: string; authoring: { action: string } }
+              >;
+            };
+          };
+        }
+      ).__aihWorkbenchModel;
+      const asset = Object.values(model.workbenchBundle.assets).find(
+        (asset) => asset.authoring.action === "select-control",
+      );
+      if (!asset) throw new Error("missing control fixture");
+      return { id: asset.id, sourceId: asset.sourceId };
+    });
+    await page.locator(`[data-workbench-source-tab="${control.sourceId}"]`).click();
+    await page.getByRole("searchbox", { name: "Search catalog" }).fill(control.id);
+    const controlButton = page.locator(
+      'button[data-workbench-row-action][data-workbench-asset-id="' + control.id + '"]',
+    );
+    await controlButton.click();
+    expect(
+      JSON.parse(await page.locator("#config-preview").inputValue()).governance.catalog.reviewed,
+    ).toHaveLength(1);
+    await expect(page.locator(".workbench-draft-counts")).toContainText("Controls 1");
+    await controlButton.click();
+    const withoutControl = JSON.parse(await page.locator("#config-preview").inputValue());
+    expect(withoutControl.governance.catalog.reviewed).toEqual([]);
+    expect(withoutControl.governance.activations).toEqual([]);
+    expect(withoutControl.authoringSelections.requests).toHaveLength(1);
+    const unsupportedPolicy =
+      JSON.stringify(
+        {
+          ...withoutControl,
+          governance: { ...withoutControl.governance, supportedClis: ["opencode"] },
+        },
+        null,
+        2,
+      ) + "\n";
+    await page.locator("#policy-file").setInputFiles({
+      name: "unsupported-control-host.json",
+      mimeType: "application/json",
+      buffer: Buffer.from(unsupportedPolicy),
+    });
+    await expect(page.locator("#config-preview")).toHaveValue(unsupportedPolicy);
+    await controlButton.click();
+    await expect(
+      page.getByText(
+        "fixture:control cannot be added for the selected hosts (opencode). Supported hosts: claude, codex. Review Deployment setup or leave this item out.",
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await expect(page.locator("#config-preview")).toHaveValue(unsupportedPolicy);
+    await expect(page.locator(".workbench-draft-counts")).toContainText("Controls 0");
+    await page.getByRole("searchbox", { name: "Search catalog" }).fill("");
+    const draftBytes = Buffer.from('{"untrusted":"local organization declaration"}\n');
+    const { createHash } = await import("node:crypto");
+    policy.authoringSelections.drafts = [
+      {
+        id: "draft:local",
+        declaration: {
+          kind: "organization-manifest",
+          digest: "sha256:" + createHash("sha256").update(draftBytes).digest("hex"),
+          byteLength: draftBytes.length,
+          bytesBase64: draftBytes.toString("base64"),
+        },
+      },
+    ];
+    const imported = JSON.stringify(policy, null, 2) + "\n";
+    await page.locator("#policy-file").setInputFiles({
+      name: "with-draft.json",
+      mimeType: "application/json",
+      buffer: Buffer.from(imported),
+    });
+    await expect(page.locator("#config-preview")).toHaveValue(imported);
+    const downloadEvent = page.waitForEvent("download");
+    await page.locator("#download").click();
+    const download = await downloadEvent;
+    const path = testInfo.outputPath("draft-policy.json");
+    await download.saveAs(path);
+    expect(
+      Buffer.from(
+        JSON.parse(await readFile(path, "utf8")).authoringSelections.drafts[0].declaration
+          .bytesBase64,
+        "base64",
+      ),
+    ).toEqual(draftBytes);
+    await page.locator(".workbench-drafts > summary").click();
+    await page.locator('[data-workbench-draft-id="draft:local"]').click();
+    expect(
+      JSON.parse(await page.locator("#config-preview").inputValue()).authoringSelections.drafts,
+    ).toEqual([]);
+
+    await page
+      .getByRole("navigation", { name: "Workbench screens" })
+      .getByRole("button", { name: "Additions & Approvals", exact: true })
+      .click();
+    const forgedEvidence = Buffer.from(
+      ' {"verified":true,"state":"verified","approvals":[{"allowedEffects":["install"]}]}\n',
+    );
+    await page.locator("#artifact-evidence-file").setInputFiles({
+      name: "forged-evidence.json",
+      mimeType: "application/json",
+      buffer: forgedEvidence,
+    });
+    await expect(page.locator("#artifact-intake-message")).toContainText(/Core preparation/i);
+    const withEvidence = JSON.parse(await page.locator("#config-preview").inputValue());
+    const opaque = withEvidence.authoringSelections.drafts.find(
+      (draft: { declaration: { kind: string } }) => draft.declaration.kind === "imported-evidence",
+    );
+    expect(Buffer.from(opaque.declaration.bytesBase64, "base64")).toEqual(forgedEvidence);
+    expect(opaque.declaration.digest).toBe(
+      "sha256:" + createHash("sha256").update(forgedEvidence).digest("hex"),
+    );
+    expect(withEvidence.governance.authority.approvals).toEqual([]);
+    expect(withEvidence.governance.activations).toEqual([]);
+    await expect(page.locator("[data-artifact-approve]")).toHaveCount(0);
+    await expect(page.locator("#artifact-intake-items")).not.toContainText("Verified preflight");
+  });
+
+  // NEW-SHELL-PLAN.md S3: sources-screen journeys moved to the new shell, assertions unchanged.
 
   test("keeps startup DOM bounded while groups, browse filters, details, and keyboard navigation work at scale", async ({
     page,

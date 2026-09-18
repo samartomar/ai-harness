@@ -14,6 +14,21 @@ type BrowserFixtures = {
 
 const packedArtifacts = new Map<string, Promise<void>>();
 
+const MODEL_MARKER = "window.__aihWorkbenchModel={";
+
+async function packedNewShellCopy(directory: string, artifact: string): Promise<string> {
+  const target = resolve(directory, "new-shell", artifact);
+  const html = await readFile(resolve(directory, artifact), "utf8");
+  const at = html.indexOf(MODEL_MARKER);
+  if (at < 0 || html.indexOf(MODEL_MARKER, at + 1) >= 0)
+    throw new Error("Packed Workbench page has no single embedded model");
+  const marked = MODEL_MARKER.length;
+  const copy = `${html.slice(0, at + marked)}"shell":"new",${html.slice(at + marked)}`;
+  await mkdir(dirname(target), { recursive: true });
+  await writeFile(target, copy);
+  return target;
+}
+
 export const test = base.extend<BrowserFixtures>({
   artifact: ["aih-policy-workbench.html", { option: true }],
   shell: ["legacy", { option: true }],
@@ -23,7 +38,7 @@ export const test = base.extend<BrowserFixtures>({
     async ({ artifact, shell }, use) => {
       const directory = process.env.AIH_WORKBENCH_FIXTURE_DIR;
       if (!directory) throw new Error("Workbench fixtures were not prepared");
-      if (shell === "new") {
+      if (shell === "new" && artifact !== "packed-policy-workbench.html") {
         // The new-shell copies are rendered from the same models at setup.
         await use(resolve(directory, "new-shell", artifact));
         return;
@@ -50,6 +65,13 @@ export const test = base.extend<BrowserFixtures>({
           packedArtifacts.set(directory, preparation);
         }
         await preparation;
+        if (shell === "new") {
+          // S7: the installed package's own page, told to render the new shell
+          // through the model field AIH_WORKBENCH_SHELL sets; bundle and markup
+          // stay the packed bytes.
+          await use(await packedNewShellCopy(directory, artifact));
+          return;
+        }
       }
       await use(resolve(directory, artifact));
     },
