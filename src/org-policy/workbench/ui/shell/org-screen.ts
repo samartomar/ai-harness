@@ -1,6 +1,7 @@
-import { button, el, withId } from "./dom.js";
+import { button, el, icon, withId } from "./dom.js";
 import { activeManagedMcpServers, governanceOrDefault } from "./policy-grammar.js";
 import type { PolicySession } from "./policy-session.js";
+import { asideNote, asideRows, asideSection, jsonLines, mountScreenFrame } from "./screen-frame.js";
 import { SCREEN_CHANGE_EVENT } from "./screens.js";
 
 /**
@@ -51,18 +52,34 @@ export interface OrgScreen {
   };
 }
 
+/*
+ * Class strings from prototype/policy-workbench/screens/admin-org.html (the
+ * form card, mono uppercase labels, `bg-[#141822]` fields, the rail's divide
+ * lists). Literal dark hexes map to theme tokens (`bg-wb-card` = #141822,
+ * `bg-wb-cards` = #0d111a, `border-hairline`); preflight is off, so borders
+ * and buttons name their style.
+ */
 const CARD =
-  "flex flex-col gap-2 p-3 rounded border border-solid border-outline-variant bg-surface-container-lowest min-w-0";
-const HEADING = "m-0 text-[13px] font-semibold text-on-surface";
-const LABEL =
-  "text-[10px] font-mono uppercase tracking-wider font-semibold text-on-surface-variant";
-const HELP = "help m-0 text-[12px] text-on-surface-variant";
+  "flex flex-col gap-2 px-3.5 py-3 rounded border border-solid border-hairline bg-surface-container-lowest shadow-[var(--wb-shadow-xs)] min-w-0";
+const HEADING = "m-0 font-bold text-wb-heading text-[13.5px]";
+const LABEL = "font-mono text-[10.5px] uppercase tracking-wider text-outline font-semibold";
+const HELP = "help m-0 text-[10.5px] leading-snug text-outline";
+const PILL =
+  "px-1 rounded bg-surface-container-highest text-secondary font-mono text-[9px] whitespace-nowrap";
 const TOOL_BUTTON =
-  "inline-flex items-center gap-1 h-7 px-2.5 rounded border border-solid border-outline-variant bg-surface-container-low hover:bg-surface-container text-on-surface text-[11px] font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
+  "inline-flex items-center gap-1 px-2.5 py-1 rounded border-0 bg-surface-container hover:bg-surface-container-high text-on-surface text-[11px] font-medium cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
 const INFO_BUTTON =
-  "instrument-info w-5 h-5 grid place-items-center rounded-full text-[12px] leading-none text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low";
+  "instrument-info w-4 h-4 grid place-items-center rounded-full border-0 bg-transparent p-0 cursor-pointer text-[12px] leading-none text-outline hover:text-primary";
 const OVERLAY =
-  "absolute right-0 top-full mt-1 z-50 w-[min(420px,calc(100vw-32px))] max-h-[70vh] overflow-auto flex flex-col gap-2 p-3 rounded border border-solid border-outline-variant bg-surface-container-lowest text-on-surface shadow-lg";
+  "absolute right-0 top-full mt-1 z-50 w-[min(420px,calc(100vw-32px))] max-h-[70vh] overflow-auto flex flex-col gap-2 p-3 rounded border border-solid border-hairline bg-wb-inspector text-on-surface text-[11.5px] shadow-[var(--wb-shadow-sm)]";
+/** admin-org.html's field (`bg-[#141822]`, hairline border, primary focus), as a select. */
+export const SELECT =
+  "appearance-none h-[26px] pl-2.5 pr-6 rounded bg-wb-card border border-solid border-hairline text-on-surface text-[12px] font-medium cursor-pointer focus:border-primary focus:outline-none";
+/** The prototype's card toggle switch, drawn on a real checkbox. */
+const SWITCH =
+  "relative shrink-0 m-0 w-7 h-4 rounded-full appearance-none cursor-pointer bg-surface-container-highest checked:bg-primary transition-colors before:content-[''] before:absolute before:top-0.5 before:left-0.5 before:w-3 before:h-3 before:rounded-full before:bg-white before:transition-transform checked:before:[transform:translateX(12px)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary";
+const RADIO =
+  "shrink-0 m-0 w-3 h-3 rounded-full appearance-none cursor-pointer border border-solid border-outline bg-transparent checked:border-[3.5px] checked:border-primary";
 
 const ECC_DISABLE_EXPLAINED_GROUP = new Set([
   "pre:bash:block-no-verify",
@@ -279,7 +296,7 @@ function adoptionRecipe(model: OrgScreenModel, root: HTMLElement): HTMLElement {
   panel.setAttribute("aria-labelledby", "adoption-guide-title");
   const head = el("div", "flex items-center justify-between gap-2");
   const close = button(
-    "w-6 h-6 grid place-items-center rounded hover:bg-surface-container text-on-surface-variant",
+    "w-6 h-6 grid place-items-center rounded border-0 bg-transparent cursor-pointer hover:bg-surface-container text-on-surface-variant",
     "✕",
     "adoption-recipe-close",
   );
@@ -293,7 +310,7 @@ function adoptionRecipe(model: OrgScreenModel, root: HTMLElement): HTMLElement {
         : "none captured";
     const article = el(
       "article",
-      "adoption-role flex flex-col gap-1 p-2 rounded bg-surface-container-low text-[12px]",
+      "adoption-role flex flex-col gap-1 px-2.5 py-2 rounded bg-surface-container-low border border-solid border-hairline text-[11.5px] leading-relaxed",
     );
     article.dataset.adoptionRole = role.id;
     const line = (label: string, value: string) => {
@@ -414,7 +431,7 @@ function evidenceDelivery(root: HTMLElement): HTMLElement | undefined {
   const details = withId(el("details", "reference-evidence relative"), "evidence-delivery");
   const summary = el(
     "summary",
-    "list-none inline-flex items-center h-7 px-2.5 rounded border border-solid border-outline-variant bg-surface-container-low hover:bg-surface-container text-on-surface text-[11px] font-medium cursor-pointer",
+    "list-none inline-flex items-center px-2.5 py-1 rounded bg-surface-container hover:bg-surface-container-high text-on-surface text-[11px] font-medium cursor-pointer transition-colors",
     "Evidence & versions",
   );
   const panel = el("div", `reference-evidence-panel ${OVERLAY}`);
@@ -456,28 +473,23 @@ function evidenceDelivery(root: HTMLElement): HTMLElement | undefined {
 export function mountOrgScreen(body: HTMLElement, options: OrgScreenOptions): OrgScreen {
   const model = options.model;
   const catalog = model.catalog as Loose;
-  const screen = el("div", "flex flex-col gap-3 min-w-0");
+  const shellRoot = body.closest<HTMLElement>("#wb-root") ?? body;
+  // admin-org.html: kicker and title over the cards. The prototype's lede, the
+  // organization name / short id / repo / people fields and the signing cards
+  // have no product data (NEW-SHELL-PLAN.md §2 Omit).
+  const frame = mountScreenFrame(body, {
+    kicker: "Organization · policy settings",
+    glyph: "domain",
+  });
+  const screen = el("div", "flex flex-col gap-3 min-w-0 max-w-3xl");
   screen.dataset.wbOrg = "";
   mountTooltips();
-  const shellRoot = body.closest<HTMLElement>("#wb-root") ?? body;
 
-  // Deployment setup.
-  const setup = withId(
-    el(
-      "section",
-      "compact-instrument flex flex-col gap-1.5 px-3 py-2.5 rounded border border-solid border-outline-variant bg-surface-container-lowest min-w-0",
-    ),
-    "policy-settings",
-  );
+  // Deployment setup, in the prototype's form card.
+  const setup = withId(el("section", `compact-instrument ${CARD}`), "policy-settings");
   setup.setAttribute("aria-labelledby", "policy-settings-title");
   const postureLabel = el("label", "flex items-center gap-1.5");
-  const posture = withId(
-    el(
-      "select",
-      "h-7 px-1.5 rounded border border-solid border-outline-variant bg-surface-container-lowest text-[12px] text-on-surface",
-    ),
-    "posture",
-  );
+  const posture = withId(el("select", SELECT), "posture");
   for (const [value, text] of [
     ["vibe", "Vibe"],
     ["enterprise", "Enterprise"],
@@ -486,7 +498,12 @@ export function mountOrgScreen(body: HTMLElement, options: OrgScreenOptions): Or
     option.value = value;
     posture.append(option);
   }
-  postureLabel.append(el("span", LABEL, "Posture"), posture);
+  const postureField = el("span", "relative inline-flex items-center");
+  postureField.append(
+    posture,
+    icon("expand_more", "absolute right-1.5 w-3.5 h-3.5 text-outline pointer-events-none"),
+  );
+  postureLabel.append(el("span", LABEL, "Posture"), postureField);
   const setupHead = el("div", "flex flex-wrap items-center gap-2 min-w-0");
   const title = el("div", "flex items-center gap-1.5 min-w-0 mr-auto");
   title.append(
@@ -509,14 +526,18 @@ export function mountOrgScreen(body: HTMLElement, options: OrgScreenOptions): Or
   const strip = el("div", "flex flex-col gap-1.5 min-w-0");
 
   const cliHead = el("div", "flex items-center gap-1.5 whitespace-nowrap mr-auto");
-  const cliCount = withId(el("span", "text-[11px] text-on-surface-variant"), "supported-cli-count");
+  const cliCount = withId(el("span", PILL), "supported-cli-count");
   const cliTip = infoTip("supported-cli-info", "supported-cli-note", "About allowed CLIs", "");
   cliHead.append(el("span", LABEL, "Allowed CLI"), cliCount, cliTip);
   const cliNote = cliTip.querySelector<HTMLElement>("#supported-cli-note") as HTMLElement;
-  const hosts = withId(el("div", "chips flex flex-wrap gap-1 min-w-0"), "supported-cli-hosts");
+  const hosts = withId(el("div", "chips flex flex-wrap gap-1.5 min-w-0"), "supported-cli-hosts");
 
-  const managedLabel = el("label", "instrument-toggle flex items-center gap-1.5 text-[12px]");
-  const managed = withId(el("input", ""), "managed-mcp-projection");
+  const managedLabel = el(
+    "label",
+    "instrument-toggle flex items-center gap-1.5 text-[11.5px] cursor-pointer",
+  );
+  // The prototype's toggle switch, over a real checkbox.
+  const managed = withId(el("input", SWITCH), "managed-mcp-projection");
   managed.type = "checkbox";
   managed.setAttribute("aria-describedby", "managed-mcp-help");
   managedLabel.append(
@@ -533,31 +554,40 @@ export function mountOrgScreen(body: HTMLElement, options: OrgScreenOptions): Or
   stripHead.append(cliHead, managedLabel);
   strip.append(stripHead, hosts);
 
-  const readiness = withId(el("p", `${HELP} instrument-readiness`), "deployment-readiness");
+  const readiness = withId(
+    el("p", "instrument-readiness m-0 text-[11px] leading-snug text-on-surface-variant"),
+    "deployment-readiness",
+  );
   readiness.setAttribute("role", "status");
   readiness.setAttribute("aria-live", "polite");
 
   const tools = withId(
     el(
       "details",
-      "developer-tools-disclosure min-w-0 border-0 border-t border-solid border-outline-variant",
+      "developer-tools-disclosure group min-w-0 border-0 border-t border-solid border-hairline",
     ),
     "developer-tool-selection",
   );
   const toolsSummary = el(
     "summary",
-    "flex items-center min-h-[30px] py-1 cursor-pointer text-[12px] font-semibold text-on-surface-variant hover:text-on-surface",
+    "flex items-center gap-1.5 min-h-[28px] pt-1.5 cursor-pointer text-[11.5px] font-semibold text-on-surface hover:text-primary transition-colors",
   );
   const toolsSummaryText = withId(
     el("span", "", "Developer tool setup — Loading selection…"),
     "developer-tool-selection-summary",
   );
   toolsSummaryText.setAttribute("aria-live", "polite");
-  toolsSummary.append(toolsSummaryText);
+  toolsSummary.append(
+    icon(
+      "chevron_right",
+      "w-3.5 h-3.5 text-outline transition-transform group-open:[transform:rotate(90deg)]",
+    ),
+    toolsSummaryText,
+  );
   const toolsBody = el("div", "developer-tool-selection-body flex flex-col gap-1.5 pt-1.5 min-w-0");
   const toolsHead = el("div", "flex items-center gap-1.5");
   toolsHead.append(
-    withId(el("h3", HEADING, "Developer tool setup"), "developer-tool-selection-title"),
+    withId(el("h3", `m-0 ${LABEL}`, "Developer tool setup"), "developer-tool-selection-title"),
     infoTip(
       "developer-tool-info",
       "developer-tool-help",
@@ -577,19 +607,19 @@ export function mountOrgScreen(body: HTMLElement, options: OrgScreenOptions): Or
   const ecc = withId(el("section", CARD), "surface-ecc-hooks");
   ecc.dataset.open = "0";
   const eccToggle = button(
-    "grphead flex items-center gap-2 w-full text-left text-on-surface",
+    "grphead flex items-center gap-2 w-full p-0 border-0 bg-transparent cursor-pointer text-left text-on-surface",
     "",
     "surface-ecc-hooks-toggle",
   );
   eccToggle.dataset.group = "";
   eccToggle.setAttribute("aria-expanded", "false");
   eccToggle.setAttribute("aria-controls", "surface-ecc-hooks-body");
+  const eccChevron = icon("chevron_right", "w-3.5 h-3.5 text-outline transition-transform");
   eccToggle.append(
-    el("span", "text-[10px] text-on-surface-variant", "▶"),
+    eccChevron,
     el("h3", HEADING, "ECC hook controls"),
-    el("span", `${LABEL} ml-auto`, "ECC"),
+    el("span", `${PILL} ml-auto`, "ECC"),
   );
-  eccToggle.firstElementChild?.setAttribute("aria-hidden", "true");
   const eccBody = withId(el("div", "flex flex-col gap-2 min-w-0"), "surface-ecc-hooks-body");
   eccBody.hidden = true;
   const eccControls = withId(el("div", "flex flex-col gap-2 min-w-0"), "ecc-hook-controls");
@@ -605,12 +635,60 @@ export function mountOrgScreen(body: HTMLElement, options: OrgScreenOptions): Or
     const open = ecc.dataset.open !== "1";
     ecc.dataset.open = open ? "1" : "0";
     eccToggle.setAttribute("aria-expanded", String(open));
+    eccChevron.classList.toggle("[transform:rotate(90deg)]", open);
     eccBody.hidden = !open;
   });
   ecc.append(eccToggle, eccBody);
 
   screen.append(setup, ecc);
   body.replaceChildren(screen);
+
+  // The prototype's "Where this shows up" rail, read from the current policy.
+  const shown = el("div", "flex flex-col");
+  const record = el(
+    "pre",
+    "m-0 p-2.5 rounded bg-surface-container-lowest border border-solid border-hairline font-mono text-[10.5px] leading-relaxed text-on-surface overflow-x-auto whitespace-pre",
+  );
+  frame.aside.append(
+    asideSection("In this policy", shown),
+    asideSection("In the organization policy file", record),
+    asideSection(
+      "On a user’s machine",
+      el(
+        "p",
+        "m-0 text-on-surface-variant leading-relaxed",
+        "These settings record intent. AIH does not install, start or contact anything from this page; Core evaluates them against a target repository.",
+      ),
+    ),
+    asideNote(
+      "info",
+      "The policy has no organization name, repository or accountable people yet, so this screen does not show them.",
+    ),
+  );
+  const renderAside = (policy: Loose, managedOn: boolean) => {
+    const recorded = governanceOrDefault(policy.governance);
+    const clis: string[] = Array.isArray(recorded.supportedClis) ? recorded.supportedClis : [];
+    const hooks = recorded.eccHookControls || {};
+    shown.replaceChildren(
+      asideRows([
+        ["Posture", policy.minimumPosture === "enterprise" ? "Enterprise" : "Vibe"],
+        ["Allowed CLI", clis.length ? clis.join(", ") : "none selected"],
+        ["Managed MCP projection", managedOn ? "allowed" : "off"],
+        [
+          "ECC hook profile",
+          hooks.profile
+            ? `${hooks.profile}${Array.isArray(hooks.disabledIds) && hooks.disabledIds.length ? ` · ${hooks.disabledIds.length} disabled` : ""}`
+            : "not set",
+        ],
+      ]),
+    );
+    const excerpt: Loose = { minimumPosture: policy.minimumPosture || "vibe" };
+    const governanceExcerpt: Loose = {};
+    if (clis.length) governanceExcerpt.supportedClis = clis;
+    if (recorded.eccHookControls) governanceExcerpt.eccHookControls = recorded.eccHookControls;
+    if (Object.keys(governanceExcerpt).length) excerpt.governance = governanceExcerpt;
+    record.replaceChildren(...jsonLines(excerpt));
+  };
 
   const session = () => options.session();
   const governance = (): Loose =>
@@ -756,7 +834,7 @@ export function mountOrgScreen(body: HTMLElement, options: OrgScreenOptions): Or
     hosts.replaceChildren(
       ...known.map((host) => {
         const chip = button(
-          "chip h-6 px-1.5 rounded border border-solid border-outline-variant bg-surface-container-low hover:bg-surface-container text-[11px] font-mono text-on-surface-variant aria-pressed:border-primary aria-pressed:text-primary",
+          "chip inline-flex items-center gap-1 px-2.5 py-1 rounded border border-solid border-hairline bg-wb-card hover:border-primary text-[11.5px] font-mono text-on-surface-variant cursor-pointer transition-colors aria-pressed:bg-surface-container aria-pressed:border-primary aria-pressed:text-primary aria-pressed:font-semibold",
           host.id,
         );
         chip.dataset.host = host.id;
@@ -815,12 +893,15 @@ export function mountOrgScreen(body: HTMLElement, options: OrgScreenOptions): Or
     );
     const profiles = el(
       "fieldset",
-      "flex flex-wrap items-center gap-3 m-0 p-2 rounded border border-solid border-outline-variant",
+      "flex flex-wrap items-center gap-0.5 m-0 p-0.5 self-start rounded border border-solid border-hairline bg-surface-container-lowest text-[11px]",
     );
-    profiles.append(el("legend", LABEL, "Profile"));
+    profiles.append(el("legend", `${LABEL} float-left mr-2 px-1.5 py-1`, "Profile"));
     for (const candidate of controls.profiles) {
-      const label = el("label", "flex items-center gap-1 text-[12px] text-on-surface");
-      const input = el("input", "");
+      const label = el(
+        "label",
+        "flex items-center gap-1.5 px-2.5 py-1 rounded cursor-pointer text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors has-[:checked]:bg-surface-container has-[:checked]:text-primary has-[:checked]:font-semibold",
+      );
+      const input = el("input", RADIO);
       input.type = "radio";
       input.name = "ecc-hook-profile";
       input.value = candidate.id;
@@ -833,11 +914,14 @@ export function mountOrgScreen(body: HTMLElement, options: OrgScreenOptions): Or
       const eligible = !!profile && hook.profiles.indexOf(profile) !== -1;
       const container = el(
         "div",
-        "hookreg flex flex-col gap-1 p-2 rounded bg-surface-container-low",
+        "hookreg flex flex-col gap-1 px-2.5 py-2 rounded bg-surface-container-low border border-solid border-hairline",
       );
       container.dataset.eccHookId = hook.id;
-      const name = el("p", "m-0 text-[12px] text-on-surface");
-      name.append(el("b", "font-mono", hook.id), document.createTextNode(` — ${hook.event}`));
+      const name = el("p", "m-0 text-[11.5px] text-on-surface-variant");
+      name.append(
+        el("b", "font-mono font-semibold text-on-surface", hook.id),
+        document.createTextNode(` — ${hook.event}`),
+      );
       container.append(
         name,
         el(
@@ -853,7 +937,7 @@ export function mountOrgScreen(body: HTMLElement, options: OrgScreenOptions): Or
         );
         action.dataset.eccHookDisable = hook.id;
         action.disabled = !eligible;
-        const actions = el("div", "flex");
+        const actions = el("div", "flex pt-0.5");
         actions.append(action);
         container.append(actions);
       } else
@@ -868,18 +952,26 @@ export function mountOrgScreen(body: HTMLElement, options: OrgScreenOptions): Or
             .filter(Boolean)
         : controls.hooks.filter(group.select);
       total += members.length;
-      const details = el("details", "ecc-hook-group flex flex-col gap-1.5 min-w-0");
+      const details = el("details", "ecc-hook-group group flex flex-col gap-1.5 min-w-0");
       details.dataset.eccHookGroup = group.id;
       details.open = rendered ? open.has(group.id) : index < 2;
       const summary = el(
         "summary",
-        "flex items-center gap-2 cursor-pointer text-[12px] font-medium text-on-surface",
+        "flex items-center gap-1.5 cursor-pointer font-mono text-[10.5px] uppercase tracking-wider font-semibold text-outline hover:text-on-surface transition-colors",
       );
       const label = el("span", "", group.label);
       label.dataset.eccHookGroupLabel = "";
-      const count = el("b", "font-mono text-on-surface-variant", String(members.length));
+      const count = el(
+        "b",
+        "px-1 rounded bg-surface-container-highest text-on-surface-variant font-mono text-[9.5px]",
+        String(members.length),
+      );
       count.dataset.eccHookGroupCount = "";
-      summary.append(label, count);
+      summary.append(
+        icon("chevron_right", "w-3 h-3 transition-transform group-open:[transform:rotate(90deg)]"),
+        label,
+        count,
+      );
       details.append(summary, el("p", HELP, group.description), ...members.map(row));
       return details;
     });
@@ -890,7 +982,7 @@ export function mountOrgScreen(body: HTMLElement, options: OrgScreenOptions): Or
       document.createTextNode(
         "ECC executes hooks; AIH configures the supported profile and disabled-hook list through receipt-owned Claude ",
       ),
-      el("code", "font-mono", "settings.json"),
+      el("code", "font-mono text-on-surface-variant", "settings.json"),
       document.createTextNode(
         " environment keys. Disabling affects ECC execution after process spawn; it is not AIH enforcement.",
       ),
@@ -914,6 +1006,7 @@ export function mountOrgScreen(body: HTMLElement, options: OrgScreenOptions): Or
       renderHosts();
       renderReadiness(current);
       renderEccHooks();
+      renderAside(policy, managed.checked);
     },
   };
 }
