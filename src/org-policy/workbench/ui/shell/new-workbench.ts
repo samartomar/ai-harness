@@ -11,7 +11,7 @@ import {
   type PolicySession,
   type PolicySessionModel,
 } from "./policy-session.js";
-import { mountScanScreen } from "./scan-screen.js";
+import { mountScanScreen, type ScanGlance } from "./scan-screen.js";
 
 /**
  * Mounts the admin shell (NEW-SHELL-PLAN.md S1, S2) on the page's `#wb-root`.
@@ -35,6 +35,8 @@ export interface NewWorkbenchOptions {
   selectionValidator(): unknown;
   /** S5: opens the catalog inspector's draft or exposure view from the changes screen. */
   openInspectorView?(view: "draft" | "exposure"): void;
+  /** The scan screen's catalog report totals; absent when the catalog is invalid. */
+  scanGlance?(): ScanGlance;
 }
 
 export interface NewWorkbench {
@@ -101,6 +103,7 @@ export function mountNewWorkbench(options: NewWorkbenchOptions): NewWorkbench {
   const scan = mountScanScreen(shell.screenBody("scan"), {
     findings: options.model.findings,
     announce: shell.announce,
+    ...(options.scanGlance === undefined ? {} : { glance: options.scanGlance }),
   });
   let session: PolicySession | undefined;
   const org = mountOrgScreen(shell.screenBody("org"), {

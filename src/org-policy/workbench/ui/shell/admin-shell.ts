@@ -277,7 +277,7 @@ function navRail(): { rail: HTMLElement; scopes: HTMLElement; scopesHost: HTMLEl
 }
 
 /** Screens that draw the prototype's full-bleed layout under a kicker title. */
-const FULL_BLEED: ReadonlySet<WorkbenchScreen> = new Set(["sources", "changes"]);
+const FULL_BLEED: ReadonlySet<WorkbenchScreen> = new Set(["sources", "changes", "scan"]);
 
 function screenPanel(definition: ScreenDefinition): { panel: HTMLElement; body: HTMLElement } {
   // Ported screens are full-bleed like admin-sources.html: the title is a
