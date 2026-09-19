@@ -48,15 +48,31 @@ export const WORKBENCH_CONTRACT_TEST_PATTERNS = [
   "tests/org-policy/catalog-providers.test.ts",
 ] as const;
 
-/** New typed root tests are pure by default unless they are a retained contract risk. */
+/**
+ * Typed root tests that render the admin page in a happy-dom window. They run
+ * with the other happy-dom Workbench tests in the retained project, so the
+ * pure state lane stays within its time budget.
+ */
+export const WORKBENCH_DOM_TEST_PATTERNS = [
+  `${typedTestPrefix}new-shell-*.test.ts`,
+  `${typedTestPrefix}catalog-card-icon.test.ts`,
+  `${typedTestPrefix}header-restyle.test.ts`,
+  `${typedTestPrefix}legacy-download-characterization.test.ts`,
+] as const;
+
+/** New typed root tests are pure by default unless they are a retained contract or DOM risk. */
 export const WORKBENCH_PURE_TEST_PATTERNS = [`${typedTestPrefix}**/*.test.ts`] as const;
-export const WORKBENCH_PURE_TEST_EXCLUDE_PATTERNS = WORKBENCH_CONTRACT_TEST_PATTERNS;
+export const WORKBENCH_PURE_TEST_EXCLUDE_PATTERNS = [
+  ...WORKBENCH_CONTRACT_TEST_PATTERNS,
+  ...WORKBENCH_DOM_TEST_PATTERNS,
+] as const;
 
 /** PR retained coverage: legacy/browser-adjacent behavior plus Core contract risks. */
 export const WORKBENCH_RETAINED_TEST_PATTERNS = [
   ...WORKBENCH_EXPLICIT_TEST_PATHS,
   `${legacyTestPrefix}*.test.ts`,
   ...WORKBENCH_CONTRACT_TEST_PATTERNS,
+  ...WORKBENCH_DOM_TEST_PATTERNS,
 ] as const;
 
 /** Complete ownership remains for standalone Workbench and CI-selected lanes. */

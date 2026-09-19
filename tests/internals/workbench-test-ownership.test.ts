@@ -3,6 +3,7 @@ import { classifyCiImpact } from "../../src/internals/ci-impact.js";
 import {
   isWorkbenchTestPath,
   WORKBENCH_CONTRACT_TEST_PATTERNS,
+  WORKBENCH_DOM_TEST_PATTERNS,
   WORKBENCH_PURE_TEST_EXCLUDE_PATTERNS,
   WORKBENCH_PURE_TEST_PATTERNS,
   WORKBENCH_RETAINED_TEST_PATTERNS,
@@ -68,7 +69,11 @@ describe("Workbench lane ownership", () => {
     const newPureTest = "tests/org-policy/workbench/new-source.test.ts";
     expect(isWorkbenchTestPath(newPureTest)).toBe(true);
     expect(WORKBENCH_PURE_TEST_PATTERNS).toContain("tests/org-policy/workbench/**/*.test.ts");
-    expect(WORKBENCH_PURE_TEST_EXCLUDE_PATTERNS).toEqual(WORKBENCH_CONTRACT_TEST_PATTERNS);
+    expect(WORKBENCH_PURE_TEST_EXCLUDE_PATTERNS).toEqual([
+      ...WORKBENCH_CONTRACT_TEST_PATTERNS,
+      ...WORKBENCH_DOM_TEST_PATTERNS,
+    ]);
+    expect(WORKBENCH_DOM_TEST_PATTERNS).not.toContain(newPureTest);
     expect(WORKBENCH_CONTRACT_TEST_PATTERNS).not.toContain(newPureTest);
     expect(WORKBENCH_CONTRACT_TEST_PATTERNS).toContain(
       "tests/org-policy/workbench/providers/**/*.test.ts",
@@ -79,6 +84,17 @@ describe("Workbench lane ownership", () => {
     expect(WORKBENCH_RETAINED_TEST_PATTERNS).not.toContain(
       "tests/org-policy/workbench/**/*.test.ts",
     );
+  });
+  it("runs happy-dom admin-page tests in the retained project, not the pure lane", () => {
+    for (const pattern of [
+      "tests/org-policy/workbench/new-shell-*.test.ts",
+      "tests/org-policy/workbench/catalog-card-icon.test.ts",
+      "tests/org-policy/workbench/header-restyle.test.ts",
+      "tests/org-policy/workbench/legacy-download-characterization.test.ts",
+    ]) {
+      expect(WORKBENCH_PURE_TEST_EXCLUDE_PATTERNS).toContain(pattern);
+      expect(WORKBENCH_RETAINED_TEST_PATTERNS).toContain(pattern);
+    }
   });
   it("runs the complete discovered lane for a typed browser change", () => {
     const receipt = classifyCiImpact({
