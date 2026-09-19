@@ -239,3 +239,9 @@ Recorded with evidence, cost and reopen bar in `ADOPTION-PLAN.md` §3. Owners: D
 - S0 characterization: runs on the new shell; every golden under `goldens/` and every snapshot unchanged (no file written).
 - Gate: build:workbench 722,211 B (−295 vs B; −61,763 under the plan's 683,974 + 120 KB stop, 38,237 over 683,974); `npx vitest run tests/org-policy` 171 files, 4016 passed / 1 skipped; typecheck clean; biome clean; `npm run test:workbench:ui` 40 passed (1.4m), zero CSP violations (strict-CSP specs green); `npm run build` exit 0; docs:lint exit 0.
 - `npm run test:workbench:pr`: stops at the "pure" 10 s budget (29.3 s). Pre-existing on this branch: the same stage takes 27.1 s at S7 (`0535c1ce`, measured in a temporary worktree) and 8.5 s on `main`; the branch's happy-dom new-shell tests live under `tests/org-policy/workbench/`, which the pure lane includes. Its acceptance stage run directly (`node tools/run-workbench-acceptance-projects.mjs`): 25 failed | 2551 passed, the 25 are the known machine-local receipt failures ("Workbench local verification receipt unavailable or invalid", same count as `main`), and the Playwright project 40 passed.
+
+## D — S9 visual baselines: organization and additions
+
+- `visual-shell.spec.ts` "new shell screens": org and acme at 1440×900 light and dark and at 375 light, opened from the nav rail, `#status` masked, `maxDiffPixelRatio` 0.01, win32 only (as the other baselines). Six PNGs written with `--update-snapshots=missing` (existing baselines untouched), then two clean runs: 10 passed each.
+- Not yet baselined (plan S9): sources beyond the frame, item, changes, scan screens; linux/darwin baselines.
+- Gate: build:workbench 722,211 B (unchanged); `npx vitest run tests/org-policy` 171 files, 4016 passed / 1 skipped; typecheck clean; biome clean; `npm run test:workbench:ui` 46 passed (1.6m); docs:lint exit 0.

@@ -65,3 +65,37 @@ test.describe("new shell", () => {
     void workbench;
   });
 });
+
+// NEW-SHELL-PLAN.md S9: the organization and additions screens, 1440 light and
+// dark, and 375 light. Each opens from the nav rail; the frame around it is
+// already pinned by the new-shell-frame baselines.
+test.describe("new shell screens", () => {
+  for (const screen of ["org", "acme"] as const) {
+    for (const theme of ["light", "dark"] as const) {
+      test(`${screen} screen matches the ${theme} baseline`, async ({ page, workbench }) => {
+        await disableTransitions(page);
+        if (theme === "dark") await toggleTheme(page);
+        await page.locator(`#nav-rail [data-wb-nav="${screen}"]`).click();
+        await expect(page.locator("#wb-root")).toHaveAttribute("data-wb-screen", screen);
+        await expect(page).toHaveScreenshot(`new-shell-${screen}-${theme}.png`, {
+          maxDiffPixelRatio: 0.01,
+          mask: [page.locator("#status")],
+        });
+        void workbench;
+      });
+    }
+
+    test(`${screen} screen matches the 375 px baseline`, async ({ page, workbench }) => {
+      await page.setViewportSize({ width: 375, height: 812 });
+      await disableTransitions(page);
+      await page.getByRole("button", { name: "Toggle navigation" }).click();
+      await page.locator(`#nav-rail [data-wb-nav="${screen}"]`).click();
+      await expect(page.locator("#wb-root")).toHaveAttribute("data-wb-screen", screen);
+      await expect(page).toHaveScreenshot(`new-shell-${screen}-375-light.png`, {
+        maxDiffPixelRatio: 0.01,
+        mask: [page.locator("#status")],
+      });
+      void workbench;
+    });
+  }
+});
