@@ -46,6 +46,11 @@ describe("new shell sources screen", () => {
     expect(
       document.querySelector("[data-workbench-source-rail] [data-workbench-source-tab]"),
     ).not.toBeNull();
+    // admin-sources.html: the sources are the nav rail's "Catalog scopes".
+    const scopes = document.querySelector("#nav-rail [data-wb-catalog-scopes]");
+    expect(scopes?.hasAttribute("hidden")).toBe(false);
+    expect(scopes?.querySelector("[data-workbench-source-rail]")).not.toBeNull();
+    expect(root?.querySelector("[data-workbench-source-rail]")).toBeNull();
     expect(document.querySelector("input[aria-label='Search catalog']")).not.toBeNull();
     expect(document.body.textContent).toContain("effective: not evaluated");
   });
@@ -60,8 +65,12 @@ describe("new shell sources screen", () => {
       dataset: { workbenchAssetId?: string };
     };
     const assetId = action.dataset.workbenchAssetId;
+    const badge = document.querySelector("[data-wb-header] [data-wb-review-count]");
+    expect(badge?.hasAttribute("hidden")).toBe(true);
     click(action, window);
     expect(preview(window)).not.toBe(before);
+    expect(badge?.hasAttribute("hidden")).toBe(false);
+    expect(badge?.textContent).toBe("1");
     expect(JSON.parse(preview(window)).schemaVersion).toBe(3);
     expect(document.querySelector("[data-wb-ledger]")?.textContent).not.toBe(ledgerBefore);
     expect(
@@ -87,9 +96,15 @@ describe("new shell sources screen", () => {
     search.value = id;
     search.dispatchEvent(new window.Event("input", { bubbles: true }));
     expect(document.querySelector(`article[data-workbench-asset-id="${id}"]`)).not.toBeNull();
+    click(document.querySelector('#nav-rail [data-wb-nav="org"]'), window);
+    expect(document.getElementById("wb-root")?.getAttribute("data-wb-screen")).toBe("org");
     const tab = document.querySelector("[data-workbench-source-tab]");
     click(tab, window);
-    expect(tab?.getAttribute("aria-pressed")).toBe("true");
+    expect(
+      document.querySelector("[data-workbench-source-tab]")?.getAttribute("aria-pressed"),
+    ).toBe("true");
+    // A catalog scope opens the sources screen from any screen.
+    expect(document.getElementById("wb-root")?.getAttribute("data-wb-screen")).toBe("sources");
   });
 
   it("writes hostile catalog text as text, never as markup", () => {

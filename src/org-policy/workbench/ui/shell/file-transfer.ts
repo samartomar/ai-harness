@@ -94,25 +94,28 @@ export function mountFileTransfer(options: FileTransferOptions): FileTransfer {
   const teardown = new AbortController();
 
   const validate = button(
-    "flex items-center gap-1.5 h-7 px-2.5 rounded bg-surface-container hover:bg-surface-container-high border border-solid border-outline-variant text-on-surface text-[12px] font-medium transition-colors shrink-0",
+    "flex items-center gap-1.5 px-2.5 py-1 rounded bg-surface-container hover:bg-surface-container-high text-on-surface text-[12px] font-medium transition-colors shrink-0",
     "",
     "validate",
   );
   validate.title = "Check Policy";
   validate.setAttribute("aria-label", "Check Policy");
-  validate.append(icon("verified_user"), el("span", "max-sm:hidden", "Check Policy"));
+  validate.append(icon("verified_user", "sm:hidden"), el("span", "max-sm:hidden", "Check Policy"));
 
   const download = button(
-    "flex items-center gap-1.5 h-7 px-3 rounded bg-primary-container hover:bg-primary-bright text-on-primary text-[12px] font-medium transition-colors shrink-0",
+    "flex items-center gap-1 px-3 py-1 rounded bg-primary-container hover:bg-primary-bright text-on-primary text-[12px] font-medium transition-colors shadow-xs shrink-0",
     "",
     "download",
   );
   download.title = "Publish: download the policy file";
   download.setAttribute("aria-label", "Publish (download the policy file)");
-  download.append(el("span", "max-sm:hidden", "Publish"), icon("download"));
+  download.append(
+    el("span", "max-sm:hidden", "Publish"),
+    icon("arrow_forward", "w-[13px] h-[13px]"),
+  );
 
   const menuToggle = button(
-    "w-7 h-7 grid place-items-center rounded bg-surface-container-low hover:bg-surface-container border border-solid border-outline-variant text-on-surface-variant hover:text-on-surface transition-colors shrink-0",
+    "p-1 rounded bg-surface-container-low hover:bg-surface-container border border-solid border-surface-container-high text-on-surface-variant hover:text-on-surface transition-colors flex items-center justify-center shadow-xs shrink-0",
     "",
     "wb-file-menu-toggle",
   );
@@ -120,7 +123,7 @@ export function mountFileTransfer(options: FileTransferOptions): FileTransfer {
   menuToggle.title = "Policy files";
   menuToggle.setAttribute("aria-expanded", "false");
   menuToggle.setAttribute("aria-controls", "wb-file-menu");
-  menuToggle.append(icon("more_vert"));
+  menuToggle.append(icon("more_vert", "w-[15px] h-[15px]"));
 
   const menu = withId(
     el(
@@ -205,7 +208,7 @@ export function mountFileTransfer(options: FileTransferOptions): FileTransfer {
     github,
     clear,
   );
-  const anchor = el("div", "relative flex items-center gap-1.5 shrink-0");
+  const anchor = el("div", "relative flex items-center gap-2 shrink-0");
   anchor.append(validate, download, menuToggle, menu, policyFile, evidenceFile, decisionFile);
   shell.headerActions.append(anchor);
 

@@ -45,6 +45,7 @@ import {
   mcpRuntimeOverlapPresentation,
   selectionComparisonPresentation,
 } from "./selection-comparison.js";
+import { icon as glyph } from "./shell/dom.js";
 
 /*
  * S3 (NEW-SHELL-PLAN.md): the sources screen follows
@@ -58,8 +59,6 @@ const BTN_PRIMARY = `${BTN} border-0 bg-primary-container hover:bg-primary-brigh
 const BTN_SECONDARY = `${BTN} border border-solid border-outline-variant bg-surface-container-low hover:bg-surface-container text-on-surface`;
 const REPAIR_ROW =
   "m-0 flex flex-wrap items-center gap-2 px-3 py-2 rounded border border-solid border-outline-variant bg-surface-container-low";
-const CHIP =
-  "px-1.5 py-0.5 rounded border border-solid border-outline-variant bg-surface-container-low font-mono text-[9px] uppercase tracking-wide text-on-surface-variant";
 
 export interface WorkbenchMountOptions {
   bundle: AuthoringCatalogBundleV1;
@@ -77,6 +76,10 @@ export interface WorkbenchMountOptions {
   inspectorHost?: HTMLElement;
   /** Show the inspector rail when the user closed it and an inspector view opens. */
   revealInspector?(): void;
+  /** Place the source list (the nav rail's "Catalog scopes" section in the new shell). */
+  mountSourceRail?(rail: HTMLElement): void;
+  /** Report the draft's entry count (the header's Review Changes badge). */
+  onDraftCount?(count: number): void;
 }
 
 export interface MountedWorkbench {
@@ -116,6 +119,14 @@ function sourceGroups(bundle: AuthoringCatalogBundleV1): SourceGroup[] {
       ),
     }))
     .sort((left, right) => compareText(left.label, right.label));
+}
+
+/** The prototype's status dot. */
+function dot(color: string): HTMLSpanElement {
+  const node = document.createElement("span");
+  node.className = `w-1.5 h-1.5 rounded-full shrink-0 ${color}`;
+  node.setAttribute("aria-hidden", "true");
+  return node;
 }
 
 function assetLabel(asset: AuthoringAssetV1): string {
@@ -402,22 +413,46 @@ export function mountWorkbench(
 
   root.replaceChildren();
   root.classList.add("workbench-inventory");
-  tw(root, "flex flex-col gap-3 min-w-0");
+  tw(root, "flex flex-col flex-1 min-w-0");
+  /*
+   * The draft summary has no prototype home. Its heading and intro name the
+   * region for assistive technology; the counts and the draft / exposure
+   * controls sit at the right of the filter bar, styled as the prototype's
+   * "need review" and "send data out" pills.
+   */
   draftSummary.className = "workbench-draft-summary";
   draftSummary.dataset.workbenchDraftSummary = "true";
+  tw(draftSummary, "flex flex-wrap items-center gap-2 font-mono text-[10.5px] shrink-0 min-w-0");
   draftSummaryHeading.textContent = "Build your policy";
   draftSummaryIntro.textContent = "Choose items. Review their declarations and evidence.";
+  tw(draftSummaryHeading, "sr-only");
+  tw(draftSummaryIntro, "sr-only");
   counts.className = "workbench-draft-counts";
+  // Where the prototype masthead has its "Source policy" segmented control.
+  tw(
+    counts,
+    "m-0 flex items-center p-0.5 rounded border border-solid border-hairline bg-surface-container-lowest font-mono text-[11px] text-on-surface-variant whitespace-nowrap [&>span]:px-2.5 [&>span]:py-1 [&>span]:rounded",
+  );
   counts.setAttribute("aria-live", "polite");
   exposureButton.type = "button";
-  exposureButton.className = "btn sm secondary workbench-exposure-open";
+  exposureButton.className = "workbench-exposure-open";
+  tw(
+    exposureButton,
+    "px-2.5 py-1 rounded bg-surface-container border border-solid border-hairline text-on-surface-variant hover:text-on-surface flex items-center gap-1.5 shrink-0 transition-colors aria-expanded:text-primary",
+  );
   exposureButton.dataset.workbenchExposureOpen = "true";
   exposureButton.setAttribute("aria-controls", details.id);
   exposureButton.setAttribute("aria-expanded", "false");
   exposureButton.textContent = "Policy exposure";
+  exposureButton.prepend(glyph("arrow_outward", "w-3 h-3 text-tertiary"));
   draftReview.className = "workbench-draft-review";
+  tw(draftReview, "flex shrink-0");
   draftReviewSummary.type = "button";
-  draftReviewSummary.className = "btn sm primary";
+  draftReviewSummary.className = "workbench-draft-open";
+  tw(
+    draftReviewSummary,
+    "px-2.5 py-1 rounded bg-wb-review-bg border border-solid border-wb-badge-border text-tertiary flex items-center gap-1.5 shrink-0 hover:border-tertiary transition-colors",
+  );
   draftReviewSummary.dataset.workbenchDraftOpen = "true";
   draftReviewSummary.setAttribute("aria-controls", details.id);
   draftReviewSummary.textContent = "Review draft";
@@ -437,26 +472,25 @@ export function mountWorkbench(
     button.setAttribute("aria-controls", details.id);
     inspectorNavigation.append(button);
   }
-  draftSummary.append(draftSummaryHeading, draftSummaryIntro, counts, exposureButton, draftReview);
+  draftSummary.append(draftSummaryHeading, draftSummaryIntro, draftReview, exposureButton);
   catalogLayout.className = "workbench-catalog-layout";
   catalogLayout.dataset.workbenchCatalogLayout = "true";
-  tw(
-    catalogLayout,
-    "flex flex-col gap-4 min-w-0 md:grid md:grid-cols-[14rem_minmax(0,1fr)] md:items-start",
-  );
+  tw(catalogLayout, "flex flex-1 min-w-0");
+  /*
+   * The source list is the nav rail's "Catalog scopes" section
+   * (admin-sources.html): each source is a scope card. Without a host (no
+   * shell) it stays beside the register.
+   */
   sourceRail.className = "workbench-source-rail";
   sourceRail.dataset.workbenchSourceRail = "true";
-  tw(sourceRail, "shrink-0 flex flex-col gap-2 min-w-0");
+  tw(sourceRail, "flex flex-col gap-0.5 min-w-0");
   sourceRail.setAttribute("aria-labelledby", "workbench-source-rail-title");
   sourceRailHeading.id = "workbench-source-rail-title";
   sourceRailHeading.textContent = "Sources";
-  tw(
-    sourceRailHeading,
-    "m-0 px-2 text-[10px] font-mono uppercase tracking-wider font-semibold text-on-surface-variant",
-  );
+  tw(sourceRailHeading, "sr-only");
   catalogRegister.className = "workbench-catalog-register";
   catalogRegister.dataset.workbenchCatalogRegister = "true";
-  tw(catalogRegister, "flex-1 flex flex-col gap-3 min-w-0");
+  tw(catalogRegister, "flex-1 flex flex-col gap-3 p-4 bg-wb-cards min-w-0");
   catalogRegister.setAttribute("aria-label", "Catalog register");
   inspectorScrim.className = "workbench-inspector-scrim";
   inspectorScrim.dataset.workbenchInspectorScrim = "true";
@@ -465,16 +499,24 @@ export function mountWorkbench(
   templateSummary.textContent = "Starting points";
   templateList.className = "workbench-template-list";
   templates.className = "workbench-starting-points";
-  tw(templateSummary, "cursor-pointer text-[12px] font-medium text-on-surface");
-  tw(templateList, "grid grid-cols-1 md:grid-cols-2 gap-2 pt-2");
+  tw(
+    templateSummary,
+    "cursor-pointer text-[10px] font-mono uppercase tracking-wider font-semibold text-outline",
+  );
+  tw(templateList, "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 pt-2");
   tw(
     templates,
-    "rounded border border-solid border-outline-variant bg-surface-container-lowest px-3 py-2",
+    "rounded border border-solid border-hairline bg-wb-card px-3 py-2 text-[11px] text-on-surface-variant",
   );
   templates.append(templateSummary, templateList);
   draftSummaryControl.textContent = "Prepared local drafts";
   draftList.className = "workbench-draft-list";
   drafts.className = "workbench-drafts";
+  tw(
+    draftSummaryControl,
+    "cursor-pointer text-[10px] font-mono uppercase tracking-wider font-semibold text-outline",
+  );
+  tw(drafts, "rounded border border-solid border-hairline bg-wb-card px-3 py-2 text-[11px]");
   drafts.append(draftSummaryControl, draftList);
   sourceTabs.className = "workbench-source-tabs";
   tw(sourceTabs, "flex flex-col gap-0.5 max-md:hidden");
@@ -482,8 +524,11 @@ export function mountWorkbench(
   filters.className = "workbench-catalog-filters";
   const sourceLabel = document.createElement("label");
   sourceLabel.className = "workbench-source-picker";
-  tw(filters, "md:hidden");
-  tw(sourceLabel, "flex flex-col gap-1 text-[11px] font-medium text-on-surface-variant");
+  tw(filters, "md:hidden pt-2");
+  tw(
+    sourceLabel,
+    "flex flex-col gap-1 text-[10px] font-mono uppercase tracking-wider font-semibold text-outline",
+  );
   sourceLabel.textContent = "Choose source";
   sourceLabel.htmlFor = "workbench-source-filter";
   sourceLabel.append(sourceFilter);
@@ -494,16 +539,26 @@ export function mountWorkbench(
   typeTabs.className = "workbench-type-tabs";
   tw(
     sourceFilter,
-    "h-8 px-2 rounded border border-solid border-outline-variant bg-surface-container-lowest text-on-surface text-[12px]",
+    "h-8 px-2 rounded border border-solid border-hairline bg-wb-card text-on-surface text-[12px] font-body normal-case tracking-normal font-normal",
   );
   tw(sourceReview, "flex flex-col gap-2 min-w-0");
   tw(
     browseTools,
-    "flex flex-wrap items-center gap-2 pb-2 border-0 border-b border-solid border-outline-variant",
+    "px-5 py-2 border-0 border-b border-solid border-hairline bg-wb-subhead flex flex-wrap items-center justify-between gap-2 shrink-0 text-[11.5px]",
   );
-  tw(typeTabs, "flex items-center gap-1.5 overflow-x-auto min-w-0");
+  tw(typeTabs, "flex items-center gap-2 overflow-x-auto min-w-0");
   typeTabs.setAttribute("aria-label", "Catalog item types");
-  browseTools.append(search, typeTabs);
+  // The prototype's search button, as the product's working search field.
+  const searchBox = document.createElement("label");
+  tw(searchBox, "relative flex items-center shrink-0 max-sm:w-full");
+  searchBox.append(
+    glyph("search", "absolute left-2.5 w-[15px] h-[15px] text-outline pointer-events-none"),
+    search,
+  );
+  const browseStart = document.createElement("div");
+  tw(browseStart, "flex items-center gap-2 flex-1 min-w-0 max-sm:flex-wrap");
+  browseStart.append(searchBox, typeTabs);
+  browseTools.append(browseStart, draftSummary);
   sourceFilter.id = "workbench-source-filter";
   sourceFilter.name = "workbench-source-filter";
   search.type = "search";
@@ -513,31 +568,48 @@ export function mountWorkbench(
   search.setAttribute("aria-label", "Search catalog");
   tw(
     search,
-    "h-8 w-full sm:w-64 px-2.5 rounded border border-solid border-outline-variant bg-surface-container-lowest text-on-surface text-[12px]",
+    "h-8 max-sm:w-full sm:w-8 sm:focus:w-56 sm:[&:not(:placeholder-shown)]:w-56 pl-8 pr-1 rounded border border-solid border-hairline bg-wb-card hover:bg-surface-container text-on-surface text-[11.5px] font-mono placeholder:text-outline transition-all",
   );
   inventory.setAttribute("aria-label", "Catalog inventory");
+  tw(inventory, "flex flex-col gap-3 min-w-0");
   browseResults.setAttribute("aria-label", "Catalog browse results");
+  tw(browseResults, "flex flex-col gap-3 min-w-0");
   templates.setAttribute("aria-label", "Selection templates");
   repairs.setAttribute("aria-label", "Saved selections needing review");
   tw(repairs, "flex flex-col gap-1.5 text-[12px] text-on-surface-variant");
   drafts.setAttribute("aria-label", "Prepared local drafts");
   diagnostics.className = "help error";
-  tw(diagnostics, "m-0 text-[12px] text-error empty:hidden");
-  // The prototype masthead: the source's name and its review cells.
+  tw(diagnostics, "m-0 px-5 py-1.5 text-[11.5px] text-error empty:hidden");
+  // The prototype masthead: kicker (the screen title), the source's name and
+  // its meta line.
   const masthead = document.createElement("header");
   masthead.dataset.wbSourcesMasthead = "";
   tw(
     masthead,
-    "flex flex-col gap-2 pb-3 border-0 border-b border-solid border-outline-variant min-w-0",
+    "px-5 pb-3 border-0 border-b border-solid border-hairline bg-wb-subhead flex flex-col gap-2 shrink-0 min-w-0",
   );
-  masthead.append(sourceReview);
-  sourceRail.append(sourceRailHeading, sourceTabs, filters);
-  catalogRegister.append(masthead, browseTools, diagnostics, templates, repairs, drafts, inventory);
-  if (options.inspectorHost !== undefined) {
-    catalogLayout.append(sourceRail, catalogRegister);
+  const draftCounts = document.createElement("div");
+  tw(draftCounts, "flex items-center gap-2 shrink-0");
+  const draftLabel = document.createElement("span");
+  tw(
+    draftLabel,
+    "text-[10.5px] font-mono text-outline uppercase tracking-wider hidden sm:inline-block",
+  );
+  draftLabel.textContent = "Draft:";
+  draftLabel.setAttribute("aria-hidden", "true");
+  draftCounts.append(draftLabel, counts);
+  // renderSourceSummary places the counts on the source's title line.
+  sourceReview.append(draftCounts);
+  masthead.append(sourceReview, filters);
+  sourceRail.append(sourceRailHeading, sourceTabs);
+  catalogRegister.append(inventory, templates, repairs, drafts);
+  catalogLayout.append(catalogRegister);
+  if (options.inspectorHost !== undefined)
     options.inspectorHost.replaceChildren(details, inspectorScrim);
-  } else catalogLayout.append(sourceRail, catalogRegister, details, inspectorScrim);
-  root.append(draftSummary, catalogLayout);
+  else catalogLayout.append(details, inspectorScrim);
+  if (options.mountSourceRail !== undefined) options.mountSourceRail(sourceRail);
+  else catalogLayout.prepend(sourceRail);
+  root.append(masthead, browseTools, diagnostics, catalogLayout);
 
   /*
    * S4: in the new shell the inspector lives in the inspector rail, outside
@@ -655,12 +727,32 @@ export function mountWorkbench(
     const controls = document.createElement("span");
     const selections = document.createElement("span");
     const requests = document.createElement("span");
-    controls.textContent = "Controls " + value.selectedControlCount;
-    controls.title = "Controls selected directly in this portable draft.";
-    selections.textContent = "Selections " + value.rootCount;
-    selections.title = "Choices saved in this portable draft, including grouping context.";
-    requests.textContent = "Requests " + value.requestCount;
-    requests.title = "Items awaiting later Core review, not active controls.";
+    // Mono label + figure, like the prototype's "SORT: NAME (A-Z)" line.
+    const count = (node: HTMLElement, label: string, figure: number, help: string): void => {
+      const strong = document.createElement("strong");
+      tw(strong, "text-on-surface font-semibold");
+      strong.textContent = String(figure);
+      node.append(label + " ", strong);
+      node.title = help;
+    };
+    count(
+      controls,
+      "Controls",
+      value.selectedControlCount,
+      "Controls selected directly in this portable draft.",
+    );
+    count(
+      selections,
+      "Selections",
+      value.rootCount,
+      "Choices saved in this portable draft, including grouping context.",
+    );
+    count(
+      requests,
+      "Requests",
+      value.requestCount,
+      "Items awaiting later Core review, not active controls.",
+    );
     counts.replaceChildren(controls, selections, requests);
     renderSourceSummary();
   };
@@ -680,7 +772,7 @@ export function mountWorkbench(
     if (total <= PAGE_SIZE && placement === "after") return;
     const controls = document.createElement("div");
     controls.className = "workbench-page-controls";
-    tw(controls, "flex flex-wrap items-center gap-2 text-[11px] font-mono text-on-surface-variant");
+    tw(controls, "flex flex-wrap items-center gap-2 text-[11px] font-mono text-outline pb-1");
     controls.setAttribute("role", "group");
     controls.setAttribute("aria-label", "Result pages");
     const previous = document.createElement("button");
@@ -706,9 +798,11 @@ export function mountWorkbench(
     next.dataset.workbenchPageControl = "next";
     previous.textContent = "Previous 50";
     next.textContent = "Next 50";
-    previous.className = next.className = "btn sm secondary";
-    tw(previous, BTN_SECONDARY);
-    tw(next, BTN_SECONDARY);
+    previous.className = next.className = "workbench-page-control";
+    const PAGE_BUTTON =
+      "px-2 py-0.5 rounded font-mono text-[10.5px] text-on-surface-variant hover:bg-surface-container hover:text-on-surface border border-solid border-hairline transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
+    tw(previous, PAGE_BUTTON);
+    tw(next, PAGE_BUTTON);
     previous.disabled = page === 0;
     next.disabled = (page + 1) * PAGE_SIZE >= total;
     previous.addEventListener("click", () => changePage("previous", page - 1), {
@@ -719,7 +813,11 @@ export function mountWorkbench(
     });
     const range = document.createElement("span");
     range.setAttribute("role", "status");
-    range.textContent = `Showing ${page * PAGE_SIZE + 1}–${Math.min((page + 1) * PAGE_SIZE, total)} of ${total} items`;
+    // admin-sources.html results line: "<strong>21</strong> of 278 skills".
+    const shown = document.createElement("strong");
+    tw(shown, "text-wb-heading font-bold");
+    shown.textContent = `${page * PAGE_SIZE + 1}–${Math.min((page + 1) * PAGE_SIZE, total)}`;
+    range.append("Showing ", shown, ` of ${total} items`);
     controls.append(range);
     if (total > PAGE_SIZE) {
       const pageLabel = document.createElement("span");
@@ -1667,7 +1765,8 @@ export function mountWorkbench(
     const rows = document.createElement("div");
     rows.className = "workbench-inventory-rows";
     rows.dataset.wbSourcesCards = "";
-    tw(rows, "grid grid-cols-[repeat(auto-fill,minmax(min(260px,100%),1fr))] gap-3");
+    rows.id = "cards-grid";
+    tw(rows, "grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3");
     for (const assetId of alreadyPaged ? assetIds : pageItems(assetIds, page)) {
       const asset = options.bundle.assets[assetId];
       if (asset === undefined) continue;
@@ -1688,16 +1787,18 @@ export function mountWorkbench(
       const evidence = document.createElement("p");
       const methodology = document.createElement("span");
       const detail = document.createElement("p");
+      // admin-sources.html #cards-grid card: icon + mono title + category chip,
+      // three-line summary, footer with the status pill and the card controls.
       row.className = "workbench-asset";
       tw(
         row,
-        "relative rounded border border-solid border-outline-variant bg-surface-card p-3 flex flex-col gap-2 min-w-0 hover:border-primary transition-colors",
+        "group relative rounded border border-solid border-hairline bg-wb-card hover:bg-wb-card-hover p-3 flex flex-col justify-between min-w-0 hover:border-primary transition-all shadow-xs",
       );
       row.dataset.workbenchAssetId = asset.id;
       title.className = "workbench-row-title";
       tw(
         title,
-        "min-w-0 flex-1 p-0 border-0 bg-transparent text-left font-mono font-bold text-[13px] tracking-tight text-on-surface truncate cursor-pointer hover:underline",
+        "min-w-0 p-0 border-0 bg-transparent text-left font-mono font-bold text-wb-heading text-[13px] tracking-tight truncate cursor-pointer",
       );
       title.type = "button";
       title.dataset.workbenchExpandId = asset.id;
@@ -1707,27 +1808,33 @@ export function mountWorkbench(
       const kindIcon = catalogKindIcon(asset.kind);
       const icon = document.createElement("span");
       icon.className = "workbench-row-icon";
-      tw(icon, "inline-flex w-4 h-4 shrink-0 [&>svg]:w-full [&>svg]:h-full");
+      tw(icon, "inline-flex w-[15px] h-[15px] shrink-0 [&>svg]:w-full [&>svg]:h-full");
       if (kindIcon.colorClass !== undefined) icon.classList.add(kindIcon.colorClass);
       icon.setAttribute("aria-hidden", "true");
       // Static glyph markup from the package-owned icon table; no catalog text.
       icon.innerHTML = workbenchIcon(kindIcon.name);
       const decision = assetDecisionPresentation(asset, options.bundle);
       purpose.className = "workbench-row-purpose";
-      tw(purpose, "m-0 text-[11px] leading-relaxed text-on-surface-variant line-clamp-3");
+      tw(purpose, "m-0 mt-2 text-[11px] leading-relaxed text-on-surface-variant line-clamp-3");
       purpose.textContent = decision.purpose;
       kind.className = "workbench-row-kind";
-      tw(kind, `shrink-0 ${CHIP}`);
+      tw(
+        kind,
+        "px-1.5 py-0.5 rounded bg-surface-container-low border border-solid border-hairline text-[8.5px] font-mono uppercase text-outline whitespace-nowrap",
+      );
       kind.textContent = catalogKindLabel(asset.kind);
+      // Declared access and the status line have no place on the prototype
+      // card: they stay in the card's text for assistive technology and in
+      // the inspector, which shows both in full.
       decisionFacts.className = "workbench-row-decision";
-      tw(decisionFacts, "flex flex-col gap-1 text-[11px] text-on-surface-variant min-w-0");
-      tw(access, "m-0 truncate");
+      tw(decisionFacts, "flex items-center gap-2 min-w-0");
+      tw(access, "sr-only");
       access.textContent = "Access: " + decision.access;
       access.title = decision.access;
       evidence.className = "workbench-row-evidence";
       tw(
         evidence,
-        "m-0 self-start px-1.5 py-0.5 rounded bg-surface-container font-mono text-[10px] text-on-surface",
+        "m-0 px-1.5 py-0.5 rounded font-mono font-medium truncate min-w-0 before:content-[''] before:inline-block before:align-middle before:mr-1 before:w-1 before:h-1 before:rounded-full before:bg-current bg-surface-container-low text-on-surface-variant data-[workbench-evidence-tone=positive]:bg-wb-pass-bg data-[workbench-evidence-tone=positive]:text-wb-pass data-[workbench-evidence-tone=warning]:bg-wb-review-bg data-[workbench-evidence-tone=warning]:text-wb-review",
       );
       evidence.dataset.workbenchRowEvidence = "true";
       evidence.textContent = decision.evidenceLabel;
@@ -1735,21 +1842,27 @@ export function mountWorkbench(
       evidence.dataset.workbenchNeedsInformation = String(decision.needsInformation);
       decisionFacts.append(access, evidence);
       methodology.className = "workbench-methodology-badge";
-      tw(methodology, "font-mono text-[10.5px] text-tertiary");
+      tw(
+        methodology,
+        "block mt-2 px-1.5 py-0.5 rounded border border-solid border-wb-badge-border bg-wb-badge-bg font-mono text-[10px] text-wb-badge",
+      );
       methodology.textContent = "Optional: choose up to one methodology.";
       methodology.hidden = asset.exclusiveSlot !== "methodology";
       detail.className = "workbench-row-summary";
-      tw(detail, "m-0 font-mono text-[10.5px] text-on-surface-variant");
+      tw(detail, "sr-only");
       detail.dataset.workbenchRowDetail = "true";
       actions.className = "workbench-row-actions";
       tw(
         actions,
-        "mt-auto pt-2.5 border-0 border-t border-solid border-outline-variant flex flex-wrap items-center justify-end gap-1.5",
+        "pt-2.5 mt-2.5 border-0 border-t border-solid border-hairline flex items-center justify-between gap-2 text-[10px] min-w-0",
       );
       expandButton.type = "button";
       expandButton.tabIndex = -1;
-      expandButton.className = "btn sm secondary workbench-row-expand";
-      tw(expandButton, BTN_SECONDARY);
+      expandButton.className = "workbench-row-expand";
+      tw(
+        expandButton,
+        "p-1 rounded text-outline hover:bg-surface-container hover:text-on-surface aria-expanded:text-primary transition-colors",
+      );
       expandButton.dataset.workbenchExpandId = asset.id;
       expandButton.setAttribute(
         "aria-expanded",
@@ -1758,10 +1871,16 @@ export function mountWorkbench(
       expandButton.setAttribute("aria-controls", details.id);
       expandButton.setAttribute("aria-describedby", title.id);
       expandButton.setAttribute("aria-label", "Inspect " + humanizedAssetLabel(asset));
-      expandButton.textContent = "Inspect";
+      expandButton.title = "Inspect";
+      expandButton.append(glyph("info", "w-[13px] h-[13px]"));
+      // The prototype's toggle switch: blue while the item is in the draft
+      // (the next action removes it), outlined while it can be added.
       action.type = "button";
-      action.className = "btn sm primary";
-      tw(action, BTN_PRIMARY);
+      action.className = "workbench-row-toggle";
+      tw(
+        action,
+        "px-2 py-0.5 rounded font-mono text-[10px] font-medium whitespace-nowrap bg-primary-container text-on-primary hover:bg-primary-bright transition-colors disabled:opacity-50 disabled:cursor-not-allowed data-[workbench-removal=true]:bg-surface-container-highest data-[workbench-removal=true]:text-on-surface",
+      );
       action.dataset.workbenchAssetId = asset.id;
       action.dataset.workbenchRowAction = "true";
       action.setAttribute("aria-describedby", title.id);
@@ -1794,11 +1913,20 @@ export function mountWorkbench(
         ) === undefined
           ? "Read details"
           : "Read previous report";
-      actions.append(action, expandButton);
+      const controls = document.createElement("div");
+      tw(controls, "flex items-center gap-1.5 shrink-0");
+      controls.append(expandButton, action);
+      actions.append(decisionFacts, controls);
       const heading = document.createElement("div");
-      tw(heading, "flex items-start gap-1.5 min-w-0");
-      heading.append(icon, title, kind);
-      row.append(heading, purpose, decisionFacts, methodology, detail, actions);
+      tw(heading, "flex items-start justify-between gap-2 min-w-0");
+      const name = document.createElement("div");
+      tw(name, "flex items-center gap-1.5 min-w-0");
+      name.append(icon, title);
+      heading.append(name, kind);
+      const body = document.createElement("div");
+      tw(body, "min-w-0");
+      body.append(heading, purpose, methodology, detail);
+      row.append(body, actions);
       updateRow(row, asset);
       if (expandedAssetId === asset.id && openDetailKey === undefined) {
         const inspectorHeader = document.createElement("header");
@@ -2034,6 +2162,8 @@ export function mountWorkbench(
         const expandedActions = document.createElement("div");
         expandedActions.className = "workbench-expanded-actions";
         const panelAction = action.cloneNode(true) as HTMLButtonElement;
+        // The inspector keeps the full-size primary button.
+        panelAction.className = `btn sm primary ${BTN_PRIMARY}`;
         delete panelAction.dataset.workbenchRowAction;
         panelAction.dataset.workbenchInspectorAction = "true";
         const consequence = document.createElement("p");
@@ -2166,31 +2296,79 @@ export function mountWorkbench(
 
   const renderSourceSummary = (): void => {
     const sourceId = filtersState.sourceId;
-    sourceReview.replaceChildren();
+    sourceReview.replaceChildren(draftCounts);
     if (sourceId !== undefined) {
       const summary = sourceEvidenceSummary(browseBundle, sourceId, state);
       const choicesInDraft = sourceEvidenceSummary(options.bundle, sourceId, state).choicesInDraft;
+      const source = options.bundle.sources[sourceId];
+      // admin-sources.html masthead: "ECC Manifest — ecc@ecc v2.0.0".
       const heading = document.createElement("h3");
-      heading.textContent = catalogSourceDisplayName(options.bundle, sourceId);
-      tw(heading, "m-0 text-[20px] font-bold tracking-tight font-mono text-on-surface break-words");
+      tw(
+        heading,
+        "m-0 text-[22px] font-bold text-wb-heading tracking-tight flex flex-wrap items-center gap-x-2 font-mono min-w-0 break-all",
+      );
+      const name = document.createElement("span");
+      name.textContent = catalogSourceDisplayName(options.bundle, sourceId);
+      heading.append(name);
+      if (source !== undefined) {
+        const dash = document.createElement("span");
+        tw(dash, "text-outline font-light");
+        dash.setAttribute("aria-hidden", "true");
+        dash.textContent = "—";
+        const revision = document.createElement("span");
+        tw(revision, "text-tertiary");
+        revision.textContent = source.revision.id;
+        heading.append(dash, revision);
+      }
+      // The meta line: the source's own facts, then its review cells.
+      const meta = document.createElement("div");
+      tw(
+        meta,
+        "flex flex-wrap items-center gap-2 text-[11px] font-mono text-outline pt-0.5 min-w-0",
+      );
+      const separator = (): HTMLSpanElement => {
+        const node = document.createElement("span");
+        tw(node, "text-outline");
+        node.setAttribute("aria-hidden", "true");
+        node.textContent = "·";
+        return node;
+      };
+      if (source !== undefined) {
+        const kindPill = document.createElement("span");
+        tw(
+          kindPill,
+          "px-2 py-0.5 rounded bg-wb-pass-bg text-wb-pass font-semibold flex items-center gap-1.5 text-[10.5px] uppercase",
+        );
+        kindPill.append(dot("bg-current"), source.distributor.kind);
+        const locator = document.createElement("span");
+        tw(locator, "text-primary break-all min-w-0");
+        locator.textContent = source.upstreamOrigin.locator;
+        const compiler = document.createElement("span");
+        tw(compiler, "text-secondary break-all min-w-0");
+        compiler.textContent = `${source.compiler.id} @ ${source.compiler.version}`;
+        meta.append(kindPill, separator(), locator, separator(), compiler);
+      }
       const cells = document.createElement("div");
       cells.className = "workbench-source-review-cells";
-      tw(cells, "flex flex-wrap items-center gap-2 font-mono text-[11px]");
+      tw(cells, "flex flex-wrap items-center gap-2 text-[11px] font-mono text-outline min-w-0");
       const addCell = (label: string, value: number, help: string): void => {
         const cell = document.createElement("p");
         const count = document.createElement("strong");
         const caption = document.createElement("span");
         tw(
           cell,
-          "m-0 flex items-center gap-1.5 px-2 py-0.5 rounded border border-solid border-outline-variant bg-surface-container-low text-on-surface-variant data-[workbench-evidence-tone=warning]:text-tertiary",
+          "m-0 inline-flex items-center gap-1 min-w-0 data-[workbench-evidence-tone=warning]:text-tertiary",
         );
         tw(count, "font-semibold text-on-surface");
         count.textContent = String(value);
         caption.textContent = label;
         cell.title = help;
-        if (label.startsWith("Needs review"))
+        if (label.startsWith("Needs review")) {
           cell.dataset.workbenchEvidenceTone = value > 0 ? "warning" : "neutral";
+          if (value > 0) tw(count, "text-tertiary");
+        }
         cell.append(count, caption);
+        if (cells.childElementCount > 0) cells.append(separator());
         cells.append(cell);
       };
       addCell(
@@ -2208,7 +2386,10 @@ export function mountWorkbench(
         choicesInDraft,
         "Current source choices and requests. Choices from other sources stay in the shared draft.",
       );
-      sourceReview.append(heading, cells);
+      const titleRow = document.createElement("div");
+      tw(titleRow, "flex items-center justify-between flex-wrap gap-2 min-w-0");
+      titleRow.append(heading, draftCounts);
+      sourceReview.replaceChildren(titleRow, meta, cells);
     }
   };
   const renderSourceControls = (browse: ReturnType<typeof catalogBrowse>): void => {
@@ -2232,7 +2413,7 @@ export function mountWorkbench(
       tab.className = "workbench-type-tab";
       tw(
         tab,
-        "shrink-0 px-2.5 py-1 rounded border-0 bg-transparent font-mono text-[10.5px] text-on-surface-variant cursor-pointer hover:bg-surface-container aria-pressed:bg-surface-container-highest aria-pressed:text-on-surface aria-pressed:font-semibold",
+        "shrink-0 px-2.5 py-1 rounded font-mono text-[10.5px] text-on-surface-variant hover:bg-surface-container transition-colors aria-pressed:bg-surface-container-highest aria-pressed:text-on-surface aria-pressed:font-semibold",
       );
       tab.dataset.workbenchType = id ?? "";
       tab.setAttribute("aria-pressed", String(filtersState.kind === id));
@@ -2242,22 +2423,45 @@ export function mountWorkbench(
     addType(undefined, "All", totalByType);
     for (const item of browse.typeOptions) addType(item.id, item.label, item.count);
     sourceTabs.replaceChildren();
+    // admin-sources.html "Catalog scopes": the open scope is the highlighted
+    // card (folder_open, primary name, green count); the others are quiet cards.
     for (const item of browse.sourceOptions) {
+      const active = item.id === filtersState.sourceId;
       const tab = document.createElement("button");
       tab.type = "button";
       tab.className = "workbench-source-tab";
       tw(
         tab,
-        "flex items-center justify-between gap-2 w-full px-2 py-1 rounded border-0 bg-transparent text-left text-[11px] text-on-surface-variant cursor-pointer hover:bg-surface-container-low hover:text-on-surface aria-pressed:bg-surface-container aria-pressed:text-primary aria-pressed:font-medium",
+        active
+          ? "flex items-center justify-between gap-1 w-full px-2.5 py-2 rounded border border-solid border-hairline bg-surface-container-low text-left font-medium"
+          : "flex items-center justify-between gap-1 w-full px-2.5 py-2 rounded border border-solid border-hairline hover:bg-surface-container-low text-left font-medium transition-colors",
       );
       tab.dataset.workbenchSourceTab = item.id;
-      tab.setAttribute("aria-pressed", String(item.id === filtersState.sourceId));
-      tab.textContent = item.label + " ";
+      tab.setAttribute("aria-pressed", String(active));
+      const name = document.createElement("span");
+      tw(name, "flex items-center gap-1.5 min-w-0 flex-1");
+      const label = document.createElement("span");
+      tw(
+        label,
+        active
+          ? "text-primary truncate font-semibold text-[11.5px]"
+          : "text-on-surface truncate font-semibold text-[11.5px]",
+      );
+      label.textContent = item.label + " ";
+      name.append(
+        glyph(active ? "folder_open" : "folder", active ? "text-primary" : "text-outline"),
+        label,
+      );
       const count = document.createElement("span");
       count.textContent = String(item.count);
-      tw(count, "font-mono text-[10px] px-1 rounded bg-surface-container-highest text-secondary");
+      tw(
+        count,
+        active
+          ? "font-mono text-[10px] px-1 rounded bg-surface-container-highest text-secondary font-bold shrink-0"
+          : "font-mono text-[10.5px] px-1 text-outline shrink-0",
+      );
       count.setAttribute("aria-hidden", "true");
-      tab.append(count);
+      tab.append(name, count);
       sourceTabs.append(tab);
     }
   };
@@ -3132,7 +3336,10 @@ export function mountWorkbench(
       });
     }
     draftReviewSummary.textContent = "Review draft (" + entries.length + " entries)";
+    draftReviewSummary.prepend(dot("bg-tertiary"));
+    draftReviewSummary.append(glyph("arrow_forward", "w-3 h-3"));
     draftEntryCount = entries.length;
+    options.onDraftCount?.(entries.length);
     draftReviewList.replaceChildren();
     syncInspectorPresentation();
     if (inspectorMode !== "draft") return;

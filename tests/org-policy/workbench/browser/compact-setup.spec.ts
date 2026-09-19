@@ -309,7 +309,11 @@ test.describe("new shell organization screen", () => {
       expect(railBox.width).toBeGreaterThanOrEqual(width >= 1700 ? 195 : 180);
       expect(registerBox.width).toBeGreaterThanOrEqual(480);
       expect(inspectorBox.width).toBeGreaterThanOrEqual(width >= 1700 ? 360 : 320);
-      expect(railBox.x).toBeGreaterThanOrEqual(layoutBox.x - 1);
+      // The source list is the nav rail's "Catalog scopes" section
+      // (admin-sources.html), left of the main panel that holds the register.
+      await expect(page.locator("#nav-rail [data-workbench-source-rail]")).toHaveCount(1);
+      expect(railBox.x + railBox.width).toBeLessThanOrEqual(mainBox.x + 1);
+      expect(registerBox.x).toBeGreaterThanOrEqual(layoutBox.x - 1);
       expect(registerBox.x).toBeGreaterThanOrEqual(railBox.x + railBox.width - 1);
       expect(inspectorBox.x).toBeGreaterThanOrEqual(registerBox.x + registerBox.width - 1);
       expect(inspectorBox.x + inspectorBox.width).toBeLessThanOrEqual(width + 1);

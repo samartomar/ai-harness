@@ -127,6 +127,9 @@ interface CatalogControllerHooks {
   /** S4: the new shell's inspector rail panel and its reveal action. */
   inspectorHost?: HTMLElement;
   revealInspector?(): void;
+  /** The nav rail's "Catalog scopes" section and the header's Review Changes badge. */
+  mountSourceRail?(rail: HTMLElement): void;
+  onDraftCount?(count: number): void;
 }
 
 /**
@@ -159,6 +162,8 @@ function mountCatalogController(
     prepareApproval: hooks.prepareApproval,
     ...(hooks.inspectorHost === undefined ? {} : { inspectorHost: hooks.inspectorHost }),
     ...(hooks.revealInspector === undefined ? {} : { revealInspector: hooks.revealInspector }),
+    ...(hooks.mountSourceRail === undefined ? {} : { mountSourceRail: hooks.mountSourceRail }),
+    ...(hooks.onDraftCount === undefined ? {} : { onDraftCount: hooks.onDraftCount }),
     dispatch(action, expectedState) {
       const imported = importedState(session.snapshotPolicy(), bundle, bindings, sourceInputs);
       const current = imported.state;
@@ -494,6 +499,8 @@ if (!userDoor) {
     catalog = mountCatalogController(root, session, bundle, bindings, guard, {
       inspectorHost: shell.inspectorPanel,
       revealInspector: () => shell.revealInspector(),
+      mountSourceRail: (rail) => shell.mountCatalogScopes(rail),
+      onDraftCount: (count) => shell.setReviewCount(count),
       prepareApproval(asset) {
         // S7: the protected approval form lives on the additions screen.
         shell.router.setScreen("acme");

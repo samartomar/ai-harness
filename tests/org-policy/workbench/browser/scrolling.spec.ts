@@ -152,7 +152,18 @@ test.describe("new shell", () => {
       inspector.locator(`[data-workbench-exposure-item-id="${selectedAssetId}"]`),
     ).toBeVisible();
 
-    await expectWheelToMoveScroller(page, main, sourceRail, "source rail");
+    // The source rail is the nav rail's "Catalog scopes" section, beside
+    // #wb-main as in admin-sources.html: a wheel over it scrolls neither
+    // itself nor the document; the catalog below still moves #wb-main.
+    await expect(page.locator("#nav-rail [data-workbench-source-rail]")).toHaveCount(1);
+    const railPoint = await pointInViewport(page, sourceRail, "source rail");
+    await page.mouse.move(railPoint.x, railPoint.y);
+    await page.mouse.wheel(0, 720);
+    expect((await scrollMetrics(sourceRail)).scrollTop, "source rail must not scroll").toBe(0);
+    expect(
+      await page.evaluate(() => window.scrollY),
+      "source rail must not scroll the document",
+    ).toBe(0);
     await expectWheelToMoveScroller(page, main, catalog, "catalog");
     await expectWheelToMoveScroller(page, inspectorPanel, inspector, "inspector");
     await expectNoDesktopPaneScroll(sourceRail, "source rail");

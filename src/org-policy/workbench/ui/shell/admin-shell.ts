@@ -35,12 +35,19 @@ const INSPECTOR_TABS = [
   ["json", "Policy JSON"],
 ] as const;
 
+/*
+ * Class strings copied from prototype/policy-workbench/screens/admin-sources.html
+ * (header, sub-header, nav rail). Literal dark hexes map to theme tokens
+ * (tools/workbench-tailwind.config.cjs); `border-hairline` is the prototype's
+ * harmonised border colour. The header carries no opacity modifiers.
+ */
 const HEADER_BUTTON =
-  "flex items-center gap-1.5 h-7 px-2 rounded bg-surface-container-low hover:bg-surface-container border border-solid border-outline-variant text-on-surface-variant hover:text-on-surface text-[12px] font-medium transition-colors shrink-0";
+  "flex items-center gap-1.5 px-2 py-1 rounded bg-surface-container-low hover:bg-surface-container text-on-surface-variant hover:text-on-surface text-[12px] transition-colors shrink-0";
 const ICON_BUTTON =
-  "w-7 h-7 grid place-items-center rounded bg-surface-container-low hover:bg-surface-container border border-solid border-outline-variant text-on-surface-variant hover:text-on-surface transition-colors shrink-0";
+  "p-1 rounded bg-surface-container-low hover:bg-surface-container border border-solid border-surface-container-high text-on-surface-variant hover:text-on-surface transition-colors flex items-center justify-center shadow-xs shrink-0";
 const RAIL_LABEL =
-  "px-2 py-0.5 text-[10px] font-mono tracking-wider text-on-surface-variant uppercase font-semibold";
+  "px-2 py-0.5 text-[10px] font-mono tracking-wider text-outline uppercase font-semibold flex items-center justify-between";
+const DIVIDER = "h-3.5 w-px bg-surface-container-high mx-0.5 shrink-0";
 
 export interface AdminShell {
   readonly root: HTMLElement;
@@ -56,6 +63,10 @@ export interface AdminShell {
   readonly inspectorPanel: HTMLElement;
   /** S4: reopen the inspector rail when the user closed it. */
   revealInspector(): void;
+  /** The catalog's source list, shown in the nav rail's "Catalog scopes" section. */
+  mountCatalogScopes(node: HTMLElement): void;
+  /** The draft's entry count on the header's Review Changes badge (hidden at 0). */
+  setReviewCount(count: number): void;
 }
 
 /**
@@ -84,18 +95,22 @@ function revealInspectorSection(panel: HTMLElement, key: string): void {
   section.scrollIntoView?.({ block: "start" });
 }
 
-function header(): { element: HTMLElement; actions: HTMLElement } {
+function header(): { element: HTMLElement; actions: HTMLElement; reviewCount: HTMLElement } {
   const element = el(
     "header",
-    "h-11 w-full bg-surface-container-lowest border-0 border-b border-solid border-outline-variant px-3 flex items-center gap-2 shrink-0 min-w-0",
+    "h-11 w-full bg-surface-container-lowest border-0 border-b border-solid border-surface-container-high px-3 flex items-center justify-between gap-2 z-50 shrink-0 min-w-0",
   );
   element.dataset.wbHeader = "";
   element.setAttribute("aria-label", "Policy workbench toolbar");
 
-  const identity = el("div", "flex items-center gap-2 min-w-0 shrink-0");
+  // App identity. The prototype's org switcher, Vibe/Enterprise toggle,
+  // AI-tools pill, user-page link and avatar have no product data here
+  // (NEW-SHELL-PLAN.md §2 Omit).
+  const left = el("div", "flex items-center gap-2.5 shrink-0 min-w-0");
+  const identity = el("div", "flex items-center gap-2 pr-1 min-w-0");
   const mark = el(
     "span",
-    "w-5 h-5 rounded bg-primary text-on-primary grid place-items-center shrink-0",
+    "w-5 h-5 rounded bg-primary text-on-primary flex items-center justify-center shadow-sm shrink-0",
   );
   mark.append(icon("shield_with_house", "w-3.5 h-3.5"));
   identity.append(
@@ -111,22 +126,40 @@ function header(): { element: HTMLElement; actions: HTMLElement } {
       "Admin",
     ),
   );
+  left.append(identity);
 
-  const actions = el("div", "flex items-center gap-1.5 min-w-0 shrink-0");
+  const right = el("div", "flex items-center gap-2 shrink-0 min-w-0");
+  const actions = el("div", "flex items-center gap-2 min-w-0 shrink-0");
   actions.dataset.wbHeaderActions = "";
 
   const review = button(HEADER_BUTTON, "");
   review.dataset.wbNav = "changes";
   review.title = "Review changes";
   review.setAttribute("aria-label", "Review changes");
-  review.append(icon("edit_document"), el("span", "max-sm:hidden", "Review Changes"));
+  // The draft's entry count, in the prototype's Review Changes badge.
+  const reviewCount = el(
+    "span",
+    "text-[10px] font-mono px-1 rounded bg-tertiary-container text-on-tertiary font-bold",
+  );
+  reviewCount.dataset.wbReviewCount = "";
+  reviewCount.setAttribute("aria-hidden", "true");
+  reviewCount.hidden = true;
+  review.append(
+    icon("edit_document", "sm:hidden"),
+    el("span", "max-sm:hidden", "Review Changes"),
+    reviewCount,
+  );
 
   const theme = button(ICON_BUTTON, "", "theme-toggle");
-  theme.append(icon("dark_mode", "wb-theme-icon-dark"), icon("light_mode", "wb-theme-icon-light"));
+  theme.append(
+    icon("dark_mode", "wb-theme-icon-dark w-[15px] h-[15px] text-primary"),
+    icon("light_mode", "wb-theme-icon-light w-[15px] h-[15px] text-tertiary"),
+  );
 
-  element.append(identity, el("span", "flex-1 min-w-0"), review, actions, theme);
+  right.append(review, actions, el("div", DIVIDER), theme);
+  element.append(left, right);
   mountUserDoorTheme(theme);
-  return { element, actions };
+  return { element, actions, reviewCount };
 }
 
 function panelToggle(
@@ -136,7 +169,7 @@ function panelToggle(
   controls: string,
 ): HTMLButtonElement {
   const toggle = button(
-    "w-6 h-6 grid place-items-center rounded hover:bg-surface-container text-primary transition-colors",
+    "p-1 rounded hover:bg-surface-container transition-colors flex items-center justify-center text-primary",
     "",
     id,
   );
@@ -150,74 +183,118 @@ function panelToggle(
 function subHeader(): { element: HTMLElement; status: HTMLElement } {
   const element = el(
     "div",
-    "h-8 bg-surface-container-lowest border-0 border-b border-solid border-outline-variant px-3 flex items-center justify-between gap-2 text-[11px] shrink-0 min-w-0",
+    "h-8 bg-surface-container-lowest border-0 border-b border-solid border-hairline px-3 flex items-center justify-between gap-2 text-[11px] shrink-0 min-w-0",
   );
   element.dataset.wbSubheader = "";
+  const left = el("div", "flex items-center gap-2 min-w-0");
+  const line = el(
+    "div",
+    "flex items-center gap-2 font-mono text-[11px] text-on-surface-variant min-w-0",
+  );
   const status = el(
     "span",
-    "font-mono text-[11px] text-on-surface-variant truncate min-w-0",
+    "text-on-surface font-medium truncate min-w-0",
     "Ready - no repository is required.",
   );
   withId(status, "status");
+  line.append(icon("account_tree", "text-primary"), status);
+  // The legacy ledger's statement: effective state needs a target repository.
+  const effective = el(
+    "span",
+    "px-1.5 py-0.5 rounded bg-surface-container text-outline font-mono text-[10px] truncate min-w-0 max-sm:hidden",
+    "effective: not evaluated — needs a target repository",
+  );
+  effective.dataset.wbEffective = "";
+  left.append(line, effective);
   const toggles = el(
     "div",
-    "flex items-center rounded bg-surface-container-low border border-solid border-outline-variant p-0.5 gap-0.5 shrink-0",
+    "flex items-center rounded bg-surface-container-low border border-solid border-hairline p-0.5 gap-0.5 shrink-0",
   );
   toggles.append(
     panelToggle("toggle-nav-btn", "Toggle navigation", "left_panel", "nav-rail"),
     panelToggle("btn-toggle-inspector", "Toggle inspector", "right_panel", "inspector-rail"),
   );
-  // The legacy ledger's statement: effective state needs a target repository.
-  const effective = el(
-    "span",
-    "ml-auto font-mono text-[10.5px] text-on-surface-variant truncate min-w-0 max-sm:hidden",
-    "effective: not evaluated — needs a target repository",
-  );
-  effective.dataset.wbEffective = "";
-  element.append(status, effective, toggles);
+  element.append(left, toggles);
   return { element, status };
 }
 
-function navRail(): HTMLElement {
+function railSection(label: string, glyph: string): HTMLElement {
+  const heading = el("div", RAIL_LABEL);
+  heading.append(el("span", "", label), icon(glyph, "w-3 h-3 text-outline"));
+  return heading;
+}
+
+function navRail(): { rail: HTMLElement; scopes: HTMLElement; scopesHost: HTMLElement } {
   const rail = el(
     "aside",
-    "wb-rail shrink-0 w-60 bg-surface-container-lowest border-0 border-r border-solid border-outline-variant flex-col overflow-y-auto max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:z-40",
+    "wb-rail shrink-0 w-60 bg-wb-nav border-0 border-r border-solid border-hairline flex-col justify-between overflow-hidden max-md:absolute max-md:inset-y-0 max-md:left-0 max-md:z-40",
   );
   withId(rail, "nav-rail");
   rail.dataset.wbRailState = "auto";
   rail.setAttribute("aria-label", "Workbench navigation");
-  const group = el("div", "p-2 flex flex-col gap-1");
+  const scroll = el("div", "flex flex-col h-full justify-between overflow-y-auto");
+  const sections = el("div", "p-2 flex flex-col gap-3");
+  const group = el("div", "flex flex-col gap-1");
   const nav = el("nav", "flex flex-col gap-0.5 text-[11px]");
   nav.setAttribute("aria-label", "Workbench screens");
   for (const definition of SCREENS) {
     if (!definition.nav) continue;
     const link = button(
-      "wb-nav-link flex items-center gap-1.5 w-full px-2 py-1 rounded text-left text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors",
+      "wb-nav-link group flex items-center justify-between w-full px-2 py-1 rounded text-left text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-colors",
       "",
     );
     link.dataset.wbNav = definition.screen;
-    link.append(icon(definition.icon), el("span", "truncate", definition.title));
+    const name = el("span", "flex items-center gap-1.5 min-w-0");
+    name.append(
+      icon(definition.icon, "text-outline group-aria-[current=page]:text-primary"),
+      el("span", "truncate", definition.title),
+    );
+    link.append(name);
     nav.append(link);
   }
-  group.append(el("div", RAIL_LABEL, "Workbench"), nav);
-  rail.append(group);
-  return rail;
+  group.append(railSection("Workbench", "tune"), nav);
+  // "Catalog scopes": the catalog's sources, which the catalog controller fills.
+  const scopes = el(
+    "div",
+    "flex flex-col gap-1 pt-1 border-0 border-t border-solid border-hairline",
+  );
+  scopes.dataset.wbCatalogScopes = "";
+  scopes.hidden = true;
+  const scopesHost = el("div", "flex flex-col min-w-0");
+  scopes.append(railSection("Catalog scopes", "account_tree"), scopesHost);
+  sections.append(group, scopes);
+  scroll.append(sections);
+  rail.append(scroll);
+  return { rail, scopes, scopesHost };
 }
 
 function screenPanel(definition: ScreenDefinition): { panel: HTMLElement; body: HTMLElement } {
-  const panel = el("section", "flex flex-col gap-3 px-5 py-4 min-w-0");
+  // Sources is full-bleed like admin-sources.html: its title is the masthead's
+  // kicker line, and the catalog draws the masthead, filter bar and card grid.
+  const sources = definition.screen === "sources";
+  const panel = el(
+    "section",
+    sources
+      ? "flex flex-col min-w-0 min-h-full bg-wb-center"
+      : "flex flex-col gap-3 px-5 py-4 min-w-0",
+  );
   panel.dataset.wbScreenPanel = definition.screen;
   const titleId = `wb-screen-title-${definition.screen}`;
   panel.setAttribute("aria-labelledby", titleId);
   const title = el(
     "h2",
-    "m-0 text-[18px] font-bold tracking-tight font-mono text-on-surface flex items-center gap-2",
+    sources
+      ? "m-0 px-5 pt-4 pb-0.5 bg-wb-subhead text-[10px] font-mono tracking-wider uppercase text-outline font-semibold flex items-center gap-1.5"
+      : "m-0 text-[18px] font-bold tracking-tight font-mono text-on-surface flex items-center gap-2",
   );
   title.id = titleId;
   // Focus lands here after a file-menu action moves to this screen.
   title.tabIndex = -1;
-  title.append(icon(definition.icon, "w-4 h-4 text-primary"), el("span", "", definition.title));
-  const body = el("div", "flex flex-col gap-3 min-w-0");
+  title.append(
+    icon(definition.icon, sources ? "w-3 h-3" : "w-4 h-4 text-primary"),
+    el("span", "", definition.title),
+  );
+  const body = el("div", sources ? "flex flex-col flex-1 min-w-0" : "flex flex-col gap-3 min-w-0");
   body.dataset.wbScreenBody = definition.screen;
   body.append(
     el(
@@ -234,7 +311,7 @@ function screenPanel(definition: ScreenDefinition): { panel: HTMLElement; body: 
 function inspectorRail(): HTMLElement {
   const rail = el(
     "aside",
-    "wb-rail shrink-0 w-[390px] bg-surface-container-lowest border-0 border-l border-solid border-outline-variant flex-col min-h-0 max-lg:absolute max-lg:inset-y-0 max-lg:right-0 max-lg:z-40",
+    "wb-rail shrink-0 w-[390px] bg-wb-inspector border-0 border-l border-solid border-hairline flex-col min-h-0 shadow-2xl z-20 max-lg:absolute max-lg:inset-y-0 max-lg:right-0 max-lg:z-40",
   );
   withId(rail, "inspector-rail");
   rail.dataset.wbInspector = "";
@@ -242,9 +319,12 @@ function inspectorRail(): HTMLElement {
   rail.setAttribute("aria-label", "Inspector");
   const head = el(
     "div",
-    "flex items-center gap-1 px-2 h-9 border-0 border-b border-solid border-outline-variant shrink-0",
+    "p-2.5 bg-surface-container-lowest border-0 border-b border-solid border-hairline flex items-center gap-2 shrink-0",
   );
-  const tabs = el("div", "flex items-center gap-0.5 flex-1 min-w-0");
+  const tabs = el(
+    "div",
+    "flex items-center flex-1 min-w-0 p-0.5 rounded bg-surface-container-low border border-solid border-hairline text-[11px] gap-0.5",
+  );
   tabs.setAttribute("role", "tablist");
   tabs.setAttribute("aria-label", "Inspector views");
   const panel = el("div", "flex-1 overflow-y-auto p-3 text-[12px] text-on-surface-variant");
@@ -254,7 +334,7 @@ function inspectorRail(): HTMLElement {
   panel.dataset.wbInspectorPanel = "details";
   for (const [key, label] of INSPECTOR_TABS) {
     const tab = button(
-      "wb-inspector-tab px-2 py-1 rounded text-[11px] font-medium text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low transition-colors",
+      "wb-inspector-tab flex-1 py-1 px-1 rounded text-center text-on-surface-variant hover:text-on-surface transition-colors",
       label,
     );
     tab.id = `wb-inspector-tab-${key}`;
@@ -265,11 +345,14 @@ function inspectorRail(): HTMLElement {
     tabs.append(tab);
   }
   panel.setAttribute("aria-labelledby", "wb-inspector-tab-details");
-  const close = button(ICON_BUTTON, "");
+  const close = button(
+    "p-1 rounded hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface transition-colors shrink-0",
+    "",
+  );
   close.dataset.closeInspector = "";
   close.setAttribute("aria-label", "Close inspector");
   close.title = "Close inspector";
-  close.append(icon("close"));
+  close.append(icon("chevron_right", "w-4 h-4"));
   head.append(tabs, close);
   rail.append(head, panel);
   tabs.addEventListener("click", (event) => {
@@ -303,7 +386,7 @@ function wireRailToggle(toggle: HTMLButtonElement, rail: HTMLElement): () => voi
 function ledgerTile(entry: KindLedgerViewModel["entries"][number]): HTMLElement {
   const percent = entry.total === 0 ? 0 : Math.round((entry.selected / entry.total) * 100);
   const kindIcon = catalogKindIcon(entry.kind);
-  const tile = el("div", "px-4 py-2.5 flex flex-col gap-1.5 min-w-0");
+  const tile = el("div", "px-4 pt-3 pb-3 flex flex-col gap-2 text-left min-w-0");
   tile.dataset.kindLedgerTile = entry.kind;
   const top = el("div", "flex items-center justify-between gap-2 min-w-0");
   const name = el("span", "flex items-center gap-1.5 min-w-0");
@@ -311,27 +394,27 @@ function ledgerTile(entry: KindLedgerViewModel["entries"][number]): HTMLElement 
     icon(kindIcon.name, kindIcon.colorClass ?? ""),
     el(
       "span",
-      "text-[10px] uppercase font-semibold tracking-[0.08em] truncate text-on-surface-variant",
+      "text-[10px] uppercase font-semibold tracking-[0.08em] truncate text-outline",
       entry.label,
     ),
   );
   top.append(
     name,
-    el(
-      "span",
-      "text-[10px] font-mono tabular-nums shrink-0 text-on-surface-variant",
-      `${percent}%`,
-    ),
+    el("span", "text-[10px] font-mono tabular-nums shrink-0 text-outline", `${percent}%`),
   );
-  const count = el("div", "flex items-baseline gap-1");
-  count.append(
+  const count = el("div", "flex items-baseline justify-between gap-2");
+  const figures = el("span", "flex items-baseline gap-1");
+  figures.append(
     el(
       "span",
-      "text-[20px] leading-none font-semibold font-mono tabular-nums tracking-tight text-on-surface",
+      "text-[22px] leading-none font-semibold font-mono tabular-nums tracking-tight text-wb-heading",
       String(entry.selected),
     ),
-    el("span", "text-[11px] font-mono tabular-nums text-on-surface-variant", `/${entry.total}`),
-    el("span", "text-[10px] font-mono text-on-surface-variant ml-auto", "selected"),
+    el("span", "text-[11px] font-mono tabular-nums text-outline", `/${entry.total}`),
+  );
+  count.append(
+    figures,
+    el("span", "text-[10px] font-mono tabular-nums whitespace-nowrap text-outline", "selected"),
   );
   const track = el("div", "h-[3px] rounded-full bg-surface-container-highest overflow-hidden");
   const bar = el("div", `h-full rounded-full ${kindIcon.colorClass ?? ""}`.trim());
@@ -350,7 +433,7 @@ export function mountAdminShell(
   document.documentElement.dataset.wbShell = "new";
   const root = host;
   root.className =
-    "wb-shell flex flex-col h-screen min-h-0 overflow-hidden bg-background text-on-surface";
+    "wb-shell flex flex-col h-screen min-h-0 overflow-hidden bg-background text-on-surface text-[13px] leading-normal antialiased";
   withId(root, "wb-root");
   root.dataset.wbShell = "new";
 
@@ -358,23 +441,26 @@ export function mountAdminShell(
   const sub = subHeader();
   const announcement = el(
     "p",
-    "wb-announcement m-0 px-3 py-1 text-[12px] text-on-surface empty:hidden",
+    "wb-announcement m-0 px-3 py-1 font-mono text-[11px] text-on-surface-variant bg-surface-container-low border-0 border-b border-solid border-hairline empty:hidden",
   );
   withId(announcement, "announcement");
   announcement.setAttribute("aria-live", "polite");
 
-  const frame = el("div", "relative flex flex-1 min-h-0 min-w-0");
-  const rail = navRail();
-  const column = el("div", "flex flex-col flex-1 min-w-0 min-h-0");
+  const frame = el("div", "relative flex flex-1 min-h-0 min-w-0 w-full overflow-hidden");
+  const nav = navRail();
+  const rail = nav.rail;
+  const column = el("div", "flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden");
+  // The prototype's six-tile strip; the Token Budget tile has no product data
+  // (D6), so the five kind tiles share its width.
   const ledger = el(
     "div",
-    "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 border-0 border-b border-solid border-outline-variant bg-surface-container-lowest shrink-0 select-none w-full",
+    "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 divide-x divide-y-0 divide-solid divide-hairline border-0 border-b border-solid border-hairline bg-wb-manifest shrink-0 select-none w-full",
   );
   ledger.dataset.wbLedger = "";
   ledger.setAttribute("role", "group");
   ledger.setAttribute("aria-label", "Catalog kinds");
-  const work = el("div", "flex flex-1 min-h-0 min-w-0");
-  const main = el("main", "flex-1 min-w-0 overflow-y-auto bg-surface");
+  const work = el("div", "flex flex-1 min-h-0 min-w-0 w-full overflow-hidden relative");
+  const main = el("main", "flex-1 min-w-0 overflow-y-auto bg-wb-center");
   withId(main, "wb-main");
   main.dataset.wbMain = "";
   main.tabIndex = -1;
@@ -389,7 +475,6 @@ export function mountAdminShell(
   column.append(ledger, work);
   frame.append(rail, column);
   root.replaceChildren(top.element, sub.element, announcement, frame);
-
   const syncNav = wireRailToggle(
     sub.element.querySelector<HTMLButtonElement>("#toggle-nav-btn") as HTMLButtonElement,
     rail,
@@ -414,6 +499,12 @@ export function mountAdminShell(
   syncInspector();
 
   const router = mountScreenRouter(root, initial);
+  // A catalog scope opens its catalog, whichever screen is showing.
+  nav.scopesHost.addEventListener("click", (event) => {
+    const target = event.target;
+    if (target instanceof Element && target.closest("[data-workbench-source-tab]") !== null)
+      router.setScreen("sources");
+  });
   return {
     root,
     router,
@@ -436,6 +527,14 @@ export function mountAdminShell(
       if (inspector.dataset.wbRailState !== "closed") return;
       inspector.dataset.wbRailState = "auto";
       syncInspector();
+    },
+    mountCatalogScopes(node) {
+      nav.scopesHost.replaceChildren(node);
+      nav.scopes.hidden = false;
+    },
+    setReviewCount(count) {
+      top.reviewCount.textContent = String(count);
+      top.reviewCount.hidden = count === 0;
     },
   };
 }
