@@ -70,7 +70,7 @@ function userDoorHtml(model: PolicyStudioModel): string {
   const workbenchBrowserScript = loadWorkbenchBrowserScript();
   const workbenchCss = loadWorkbenchCss();
   return String.raw`<!doctype html>
-<html lang="en" data-theme="light">
+<html lang="en" data-theme="light" data-wb-door="user">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -89,15 +89,18 @@ button{cursor:pointer;border:0;background:none;color:inherit}
 </style>
 <style id="wb-styles">${workbenchCss}</style>
 </head>
-<body class="bg-background text-on-surface flex flex-col">
-<header class="wb-header flex flex-wrap items-center gap-2.5 min-h-14 px-3 py-2 border-0 border-b border-solid border-outline-variant bg-surface-container-lowest text-on-surface" aria-label="Project selection toolbar">
-  <span class="flex items-center gap-2 min-w-0">
-    <span class="w-6 h-6 rounded bg-primary text-on-primary grid place-items-center shrink-0 [&>svg]:w-4 [&>svg]:h-4" aria-hidden="true">${workbenchIcon("shield_with_house")}</span>
-    <h1 class="font-semibold text-[13px] tracking-tight text-on-surface">Project selection</h1>
+<body class="bg-background text-on-surface text-[13px] leading-normal antialiased flex flex-col min-h-screen md:h-screen md:overflow-hidden">
+<header class="wb-header h-11 w-full bg-surface-container-lowest border-0 border-b border-solid border-surface-container-high px-3 flex items-center justify-between gap-2 shrink-0 min-w-0 text-on-surface" aria-label="Project selection toolbar">
+  <span class="flex items-center gap-2 pr-1 min-w-0">
+    <span class="w-5 h-5 rounded bg-primary text-on-primary flex items-center justify-center shadow-sm shrink-0 [&>svg]:w-3.5 [&>svg]:h-3.5" aria-hidden="true">${workbenchIcon("shield_with_house")}</span>
+    <h1 class="font-semibold text-[13px] tracking-tight text-on-surface whitespace-nowrap">aih Policy</h1>
     <span class="text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-surface-container-highest text-on-surface-variant font-medium">User</span>
   </span>
-  <span class="flex-1"></span>
-  <button type="button" class="p-1.5 rounded bg-surface-container-low hover:bg-surface-container border border-solid border-outline-variant text-on-surface-variant hover:text-on-surface transition-colors shrink-0 w-8 h-8 grid place-items-center [&>svg]:w-4 [&>svg]:h-4" id="theme-toggle" aria-label="Switch to dark theme" title="Switch to dark theme">${workbenchIcon("dark_mode")}</button>
+  <span class="flex items-center gap-2 shrink-0">
+    <button type="button" data-user-header-save class="flex items-center gap-1 px-3 py-1 rounded bg-primary hover:bg-primary-bright text-on-primary text-[12px] font-medium transition-colors shadow-xs disabled:cursor-not-allowed disabled:bg-surface-container-highest disabled:text-on-surface-variant [&>svg]:w-[13px] [&>svg]:h-[13px]" aria-label="Save aih-project-policy.json"><span>Save</span>${workbenchIcon("save")}</button>
+    <span class="h-3.5 w-px bg-surface-container-high mx-0.5 shrink-0"></span>
+    <button type="button" class="p-1 rounded bg-surface-container-low hover:bg-surface-container border border-solid border-surface-container-high text-on-surface-variant hover:text-on-surface transition-colors flex items-center justify-center shadow-xs shrink-0 [&>span>svg]:w-[15px] [&>span>svg]:h-[15px]" id="theme-toggle" aria-label="Switch to dark theme" title="Switch to dark theme"><span class="wb-theme-icon-dark inline-flex text-primary">${workbenchIcon("dark_mode")}</span><span class="wb-theme-icon-light inline-flex text-tertiary">${workbenchIcon("light_mode")}</span></button>
+  </span>
 </header>
 <main id="user-door" class="user-door flex-1" tabindex="-1"></main>
 <script>window.__aihWorkbenchModel=__AIH_DATA__;</script>
