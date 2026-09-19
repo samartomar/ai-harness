@@ -276,10 +276,13 @@ function navRail(): { rail: HTMLElement; scopes: HTMLElement; scopesHost: HTMLEl
   return { rail, scopes, scopesHost };
 }
 
+/** Screens that draw the prototype's full-bleed layout under a kicker title. */
+const FULL_BLEED: ReadonlySet<WorkbenchScreen> = new Set(["sources", "changes"]);
+
 function screenPanel(definition: ScreenDefinition): { panel: HTMLElement; body: HTMLElement } {
-  // Sources is full-bleed like admin-sources.html: its title is the masthead's
-  // kicker line, and the catalog draws the masthead, filter bar and card grid.
-  const sources = definition.screen === "sources";
+  // Ported screens are full-bleed like admin-sources.html: the title is a
+  // kicker line and the screen draws its own masthead, bars and footer.
+  const sources = FULL_BLEED.has(definition.screen);
   const panel = el(
     "section",
     sources
