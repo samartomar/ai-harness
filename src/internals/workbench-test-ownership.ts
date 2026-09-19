@@ -58,6 +58,9 @@ export const WORKBENCH_DOM_TEST_PATTERNS = [
   `${typedTestPrefix}catalog-card-icon.test.ts`,
   `${typedTestPrefix}header-restyle.test.ts`,
   `${typedTestPrefix}legacy-download-characterization.test.ts`,
+  // These render the admin page from the built bundle (policyStudioHtml).
+  `${typedTestPrefix}design-foundation.test.ts`,
+  `${typedTestPrefix}user-door.test.ts`,
 ] as const;
 
 /** New typed root tests are pure by default unless they are a retained contract or DOM risk. */

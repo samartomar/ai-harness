@@ -91,6 +91,8 @@ describe("Workbench lane ownership", () => {
       "tests/org-policy/workbench/catalog-card-icon.test.ts",
       "tests/org-policy/workbench/header-restyle.test.ts",
       "tests/org-policy/workbench/legacy-download-characterization.test.ts",
+      "tests/org-policy/workbench/design-foundation.test.ts",
+      "tests/org-policy/workbench/user-door.test.ts",
     ]) {
       expect(WORKBENCH_PURE_TEST_EXCLUDE_PATTERNS).toContain(pattern);
       expect(WORKBENCH_RETAINED_TEST_PATTERNS).toContain(pattern);
