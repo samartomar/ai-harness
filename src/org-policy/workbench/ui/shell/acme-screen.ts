@@ -1,9 +1,10 @@
 import { mountProtectedPolicyWorkbench } from "../../../studio-protected-authority-runtime.js";
 import { policySchemaErrors } from "../../schema-validation.js";
-import { button, el, withId } from "./dom.js";
+import { button, el, icon, withId } from "./dom.js";
 import { infoTip } from "./org-screen.js";
 import { governanceOrDefault } from "./policy-grammar.js";
 import type { PolicySession } from "./policy-session.js";
+import { asideNote, asideRows, asideSection, mountScreenFrame } from "./screen-frame.js";
 
 /**
  * The additions screen (NEW-SHELL-PLAN.md S7, prototype
@@ -38,19 +39,42 @@ export interface AcmeScreen {
   resetCurationEdit(): void;
 }
 
+/*
+ * Class strings from prototype/policy-workbench/screens/admin-acme.html: the
+ * step card (`bg-[#141822]` = `bg-wb-card`), its numbered badge and bold
+ * title, mono uppercase field labels over `surface-container-lowest` fields,
+ * the Copy / "See how findings read" buttons. Preflight is off, so borders
+ * and buttons name their style.
+ */
 const CARD =
-  "flex flex-col gap-2 p-3 rounded border border-solid border-outline-variant bg-surface-container-lowest min-w-0";
-const HEADING = "m-0 text-[13px] font-semibold text-on-surface";
-const HELP = "help m-0 text-[12px] text-on-surface-variant";
+  "flex flex-col gap-2.5 p-3.5 rounded border border-solid border-hairline bg-wb-card shadow-[var(--wb-shadow-xs)] min-w-0";
+const HEADING = "m-0 font-bold text-wb-heading text-[13.5px]";
+const HELP = "help m-0 text-[10.5px] leading-snug text-outline";
 const TOOL_BUTTON =
-  "btn sm inline-flex items-center gap-1 h-7 px-2.5 rounded border border-solid border-outline-variant bg-surface-container-low hover:bg-surface-container text-on-surface text-[11px] font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
+  "btn sm inline-flex items-center gap-1 px-2.5 py-1 rounded border-0 bg-surface-container hover:bg-surface-container-high text-on-surface text-[11px] font-medium cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
 const PRIMARY_BUTTON =
-  "btn sm primary inline-flex items-center h-7 px-2.5 rounded bg-primary-container text-white text-[11px] font-medium";
+  "btn sm primary inline-flex items-center gap-1.5 px-4 py-1.5 rounded border-0 bg-primary hover:bg-primary-bright text-white text-[12px] font-medium cursor-pointer transition-colors";
 const FIELD =
-  "h-7 w-full min-w-0 px-1.5 rounded border border-solid border-outline-variant bg-surface-container-lowest text-[12px] text-on-surface";
+  "w-full min-w-0 px-2.5 py-1.5 rounded border border-solid border-hairline bg-surface-container-lowest font-mono text-on-surface text-[11.5px] placeholder:text-outline focus:border-primary focus:outline-none";
 
 const POP_ROW =
-  "pop-row flex items-center w-full min-h-8 px-2 rounded text-left text-[12px] font-medium text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors";
+  "pop-row flex items-center gap-1.5 w-full px-2.5 py-1.5 rounded border border-dashed border-surface-container-high hover:border-primary bg-transparent text-left text-[11.5px] font-medium text-primary cursor-pointer transition-colors";
+
+/** The prototype's step head: a numbered (or icon) badge and a bold title. */
+function stepHead(mark: string, title: HTMLElement, numbered: boolean): HTMLElement {
+  const head = el("div", "flex items-center gap-2 min-w-0");
+  const badge = el(
+    "span",
+    numbered
+      ? "w-5 h-5 shrink-0 rounded bg-tertiary-container text-on-tertiary font-mono text-[11px] font-bold flex items-center justify-center"
+      : "w-5 h-5 shrink-0 rounded bg-surface-container text-primary flex items-center justify-center",
+  );
+  badge.setAttribute("aria-hidden", "true");
+  if (numbered) badge.textContent = mark;
+  else badge.append(icon(mark, "w-3.5 h-3.5"));
+  head.append(badge, title);
+  return head;
+}
 
 /** The legacy `iy`: why custom hooks are not authorable here. */
 const HOOK_INFO_NOTE =
@@ -152,11 +176,11 @@ function authoredRow(
 ): HTMLElement {
   const row = el(
     "div",
-    "row flex flex-wrap items-center gap-2 px-3 py-2 rounded border border-solid border-outline-variant bg-surface-container-low text-[12px] min-w-0",
+    "row flex flex-wrap items-center gap-2 px-2.5 py-2 rounded border border-solid border-hairline bg-surface-container-lowest text-[11.5px] min-w-0",
   );
   row.dataset.state = tone;
   row.dataset.row = label;
-  const name = el("strong", "font-mono text-on-surface break-all");
+  const name = el("strong", "font-mono font-semibold text-[11px] text-on-surface break-all");
   const colon = label.indexOf(":");
   if (colon === -1) name.textContent = label;
   else name.append(el("u", "", label.slice(0, colon + 1)), label.slice(colon + 1));
@@ -165,7 +189,7 @@ function authoredRow(
   if (["Selected", "Selectable", "Disabled", "Available"].indexOf(state) === -1) {
     const chip = el(
       "span",
-      "row-state px-1.5 py-0.5 rounded bg-surface-container-highest font-mono text-[10px] uppercase text-on-surface-variant",
+      "row-state px-1 rounded bg-surface-container-highest font-mono text-[9.5px] uppercase text-on-surface-variant",
       state,
     );
     chip.title = badge;
@@ -174,13 +198,19 @@ function authoredRow(
   row.append(
     el(
       "span",
-      `badge ${tone} px-1.5 py-0.5 rounded border border-solid border-outline-variant font-mono text-[10px] text-on-surface`,
+      `badge ${tone} px-1 rounded font-mono text-[9.5px] ${tone === "blocked" ? "bg-wb-review-bg text-wb-review font-bold" : tone === "requested" ? "bg-wb-pass-bg text-wb-pass" : "bg-surface-container text-outline"}`,
       badge,
     ),
   );
   if (visibleDetail)
-    row.append(el("p", "mono m-0 basis-full text-[11px] font-mono", visibleDetail));
-  row.append(el("span", "basis-full text-[11px] text-on-surface-variant", detail));
+    row.append(
+      el(
+        "p",
+        "mono m-0 basis-full p-2 rounded bg-wb-card border border-solid border-hairline text-[10.5px] font-mono text-on-surface-variant break-all",
+        visibleDetail,
+      ),
+    );
+  row.append(el("span", "basis-full text-[10.5px] text-outline", detail));
   const controls = el("span", "row-actions flex gap-1.5");
   for (const entry of actions) {
     const control = button(TOOL_BUTTON, entry.label);
@@ -197,8 +227,12 @@ function authoredRow(
 }
 
 function labelled(text: string, field: HTMLElement, labelId?: string): HTMLLabelElement {
-  const label = el("label", "flex flex-col gap-1 min-w-0 text-[11px] text-on-surface-variant");
-  const caption = el("span", "", text);
+  const label = el("label", "flex flex-col gap-1 min-w-0");
+  const caption = el(
+    "span",
+    "block font-mono text-[10px] uppercase tracking-wider text-outline font-semibold",
+    text,
+  );
   if (labelId !== undefined) caption.id = labelId;
   label.append(caption, document.createTextNode(" "), field);
   return label;
@@ -211,7 +245,7 @@ function input(id: string, attributes: Record<string, string> = {}): HTMLInputEl
 }
 
 function select(id: string, options: readonly (readonly [string, string])[]): HTMLSelectElement {
-  const field = withId(el("select", FIELD), id);
+  const field = withId(el("select", `${FIELD} cursor-pointer`), id);
   for (const [entry, text] of options) {
     const option = el("option", "", text);
     option.value = entry;
@@ -255,6 +289,11 @@ export function mountAcmeScreen(body: HTMLElement, options: AcmeScreenOptions): 
   const session = () => options.session();
   const governance = (): Loose =>
     governanceOrDefault((session()?.snapshotPolicy() as Loose)?.governance);
+  // admin-acme.html: kicker, title and lede over the step cards.
+  const frame = mountScreenFrame(body, {
+    kicker: "Additions · your own sources and approvals",
+    lede: "The one place you add what aih does not ship, record approvals and build the protected policy file. Nothing here installs or runs anything.",
+  });
   const screen = el("div", "flex flex-col gap-3 min-w-0");
   screen.dataset.wbAcme = "";
 
@@ -306,7 +345,11 @@ export function mountAcmeScreen(body: HTMLElement, options: AcmeScreenOptions): 
   openHookInfo.setAttribute("aria-controls", "wb-acme-hook-info");
   openHookInfo.setAttribute("aria-expanded", "false");
   byo.append(
-    withId(el("h3", HEADING, "Bring Your Own"), "wb-acme-byo-title"),
+    stepHead(
+      "upload_file",
+      withId(el("h3", HEADING, "Bring Your Own"), "wb-acme-byo-title"),
+      false,
+    ),
     byoActions,
     hookInfo,
   );
@@ -380,7 +423,11 @@ export function mountAcmeScreen(body: HTMLElement, options: AcmeScreenOptions): 
   openEcc.setAttribute("aria-controls", "ecc-mcp-sidebar");
   openEcc.setAttribute("aria-expanded", "false");
   ecc.append(
-    withId(el("h3", HEADING, "ECC MCP approval"), "wb-acme-ecc-mcp-title"),
+    stepHead(
+      "verified_user",
+      withId(el("h3", HEADING, "ECC MCP approval"), "wb-acme-ecc-mcp-title"),
+      false,
+    ),
     eccActions,
     eccPanel,
   );
@@ -389,7 +436,11 @@ export function mountAcmeScreen(body: HTMLElement, options: AcmeScreenOptions): 
   const artifacts = el("section", CARD);
   artifacts.setAttribute("aria-labelledby", "wb-acme-artifacts-title");
   artifacts.append(
-    withId(el("h3", HEADING, "Organization artifacts"), "wb-acme-artifacts-title"),
+    stepHead(
+      "1",
+      withId(el("h3", HEADING, "Organization artifacts"), "wb-acme-artifacts-title"),
+      true,
+    ),
     el(
       "p",
       HELP,
@@ -468,7 +519,11 @@ export function mountAcmeScreen(body: HTMLElement, options: AcmeScreenOptions): 
   );
   const curationRows = withId(el("div", "flex flex-col gap-1.5 min-w-0"), "curation-rows");
   curation.append(
-    withId(el("h3", HEADING, "ECC / Superpowers curation"), "wb-acme-curation-title"),
+    stepHead(
+      "extension",
+      withId(el("h3", HEADING, "ECC / Superpowers curation"), "wb-acme-curation-title"),
+      false,
+    ),
     editor,
     curationRows,
     el(
@@ -483,7 +538,7 @@ export function mountAcmeScreen(body: HTMLElement, options: AcmeScreenOptions): 
   custom.setAttribute("aria-labelledby", "wb-acme-custom-title");
   const customRows = withId(el("div", "flex flex-col gap-1.5 min-w-0"), "custom-rows");
   custom.append(
-    withId(el("h3", HEADING, "Your sources"), "wb-acme-custom-title"),
+    stepHead("dns", withId(el("h3", HEADING, "Your sources"), "wb-acme-custom-title"), false),
     cloneTemplate("wb-custom-mcp"),
     customRows,
     el(
@@ -508,9 +563,58 @@ export function mountAcmeScreen(body: HTMLElement, options: AcmeScreenOptions): 
   const protectedHost = el("div", "flex flex-col gap-3 min-w-0");
   protectedHost.dataset.wbAcmeProtected = "";
   protectedHost.append(cloneTemplate("wb-protected-policy"));
+  // Step 2 of admin-acme.html ("Read the result and decide"): the numbered badge
+  // before the protected file's own disclosure title.
+  const protectedTitle = protectedHost.querySelector<HTMLElement>(".grphead h2");
+  if (protectedTitle !== null) {
+    const badge = el(
+      "span",
+      "w-5 h-5 shrink-0 rounded bg-tertiary-container text-on-tertiary font-mono text-[11px] font-bold flex items-center justify-center",
+      "2",
+    );
+    badge.setAttribute("aria-hidden", "true");
+    protectedTitle.before(badge);
+  }
 
   screen.append(byo, artifacts, protectedHost, curation, custom, ecc);
   body.replaceChildren(screen);
+
+  // The prototype's rail: what this policy holds, and the states an addition can be in.
+  const counts = el("div", "flex flex-col");
+  frame.aside.append(
+    asideSection("In this policy", counts),
+    asideSection(
+      "States an addition can be in",
+      asideRows([
+        ["Blocked", "evidence owed at this pin", "text-tertiary"],
+        ["Requested intent", "runtime evaluation required", "text-secondary"],
+        ["Disabled", "no activation", "text-on-surface-variant"],
+        ["External guidance", "report-only, not enforced by AIH", "text-on-surface-variant"],
+      ]),
+    ),
+    asideNote(
+      "sync",
+      "A custom MCP is recorded as a fully pinned candidate and stays blocked until a completed scan binds to that exact pin.",
+    ),
+  );
+  const renderAside = () => {
+    const recorded = governance();
+    const custom: Loose[] = recorded.catalog.custom;
+    const remote = custom.filter((entry) => entry.source && entry.source.type === "remote").length;
+    const curated = recorded.externalCuration.reduce(
+      (total: number, group: Loose) => total + group.items.length,
+      0,
+    );
+    const approvals = Array.isArray(recorded.eccMcpApprovals) ? recorded.eccMcpApprovals.length : 0;
+    counts.replaceChildren(
+      asideRows([
+        ["Custom MCP", String(custom.length - remote)],
+        ["Remote MCP", String(remote)],
+        ["Framework curation", String(curated)],
+        ["ECC MCP approvals", String(approvals)],
+      ]),
+    );
+  };
   wireGroupCards(screen);
 
   /** The legacy `Ds`/`Nr` for the custom-hook note, and `Rf`/`dn` for ECC MCP. */
@@ -1071,6 +1175,7 @@ export function mountAcmeScreen(body: HTMLElement, options: AcmeScreenOptions): 
       renderFrameworks();
       renderRows();
       renderEcc();
+      renderAside();
     },
     mountProtected(model) {
       if (protectedMounted || document.getElementById("protected-form") === null) return;
