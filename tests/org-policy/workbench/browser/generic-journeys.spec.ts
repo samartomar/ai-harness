@@ -243,6 +243,33 @@ test.describe("new shell", () => {
 
   // NEW-SHELL-PLAN.md S3: sources-screen journeys moved to the new shell, assertions unchanged.
 
+  test("closes an open item inspector when another screen takes the rail", async ({
+    page,
+    workbench,
+  }) => {
+    expect(workbench.networkRequests).toEqual([]);
+    const inspector = page.locator("#workbench-detail-panel[data-workbench-detail]");
+    const row = page.locator('button.workbench-row-title[data-workbench-expand-id="mcp:request"]');
+    await page.locator('[data-workbench-source-tab="source:a"]').click();
+    for (const screen of ["org", "acme", "scan", "changes"]) {
+      await row.click();
+      await inspector.locator(".workbench-item-technical > summary").click();
+      await inspector.locator('button[data-workbench-detail-id="mcp:request"]').click();
+      await expect(inspector).toHaveAttribute("data-workbench-inspector-open", "true");
+      await page.locator(`#nav-rail [data-wb-nav="${screen}"]`).click();
+      await expect(page.locator("#wb-root")).toHaveAttribute("data-wb-screen", screen);
+      await expect(inspector).toHaveAttribute("data-workbench-inspector-open", "false");
+      if (screen === "org" || screen === "acme") {
+        await expect(page.locator(`[data-wb-screen-aside="${screen}"]`)).toBeVisible();
+        await expect(inspector).toBeHidden();
+      } else {
+        await expect(inspector.locator("#workbench-detail-title")).not.toHaveText("MCP Request");
+      }
+      await page.locator('#nav-rail [data-wb-nav="sources"]').click();
+      await expect(row).toHaveAttribute("aria-expanded", "false");
+    }
+  });
+
   test("keeps startup DOM bounded while groups, browse filters, details, and keyboard navigation work at scale", async ({
     page,
     workbench,

@@ -2,7 +2,7 @@ import { catalogKindIcon, type KindLedgerViewModel } from "../kind-ledger.js";
 import { mountUserDoorTheme } from "../user-door.js";
 import { button, el, icon, withId } from "./dom.js";
 import { mountScreenRouter, type ScreenRouter } from "./screen-router.js";
-import type { WorkbenchScreen } from "./screens.js";
+import { SCREEN_CHANGE_EVENT, type WorkbenchScreen } from "./screens.js";
 
 /**
  * The new admin shell frame (NEW-SHELL-PLAN.md §1, slice S1): the 44 px
@@ -452,7 +452,8 @@ export function mountAdminShell(
   const sub = subHeader();
   const announcement = el(
     "p",
-    "wb-announcement m-0 px-3 py-1 font-mono text-[11px] text-on-surface-variant bg-surface-container-low border-0 border-b border-solid border-hairline empty:hidden",
+    // The status line shows the message; this polite live region only speaks it.
+    "wb-announcement sr-only",
   );
   withId(announcement, "announcement");
   announcement.setAttribute("aria-live", "polite");
@@ -510,6 +511,17 @@ export function mountAdminShell(
   syncInspector();
 
   const router = mountScreenRouter(root, initial);
+  // Another screen's rail content replaces an open catalog item, as in the
+  // prototype: close it through the catalog's own close path.
+  root.addEventListener(SCREEN_CHANGE_EVENT, (event) => {
+    const screen = (event as CustomEvent<{ screen: WorkbenchScreen }>).detail.screen;
+    if (screen === "sources" || screen === "item") return;
+    inspectorPanel
+      .querySelector<HTMLButtonElement>(
+        "[data-workbench-inspector-open='true'] [data-workbench-details-close]",
+      )
+      ?.click();
+  });
   // A catalog scope opens its catalog, whichever screen is showing.
   nav.scopesHost.addEventListener("click", (event) => {
     const target = event.target;
@@ -529,6 +541,7 @@ export function mountAdminShell(
       announcement.textContent = message;
       announcement.dataset.wbTone = error ? "error" : "info";
       sub.status.textContent = message;
+      sub.status.dataset.wbTone = error ? "error" : "info";
     },
     renderLedger(view) {
       ledger.replaceChildren(...view.entries.map(ledgerTile));

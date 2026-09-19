@@ -489,7 +489,7 @@ html[data-wb-shell="new"] .btn {
 }
 html[data-wb-shell="new"] .btn:hover { background: var(--wb-color-surface-container); }
 html[data-wb-shell="new"] .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-html[data-wb-shell="new"] .wb-announcement[data-wb-tone="error"] { color: var(--wb-color-error); }
+html[data-wb-shell="new"] #status[data-wb-tone="error"] { color: var(--wb-color-error); }
 /*
  * S6: the organization screen. Developer tool rows come from the shared
  * `developer-tool-selection.ts` renderer (legacy class names), so the new

@@ -147,6 +147,19 @@ test("imports, checks and publishes the policy with the preview bytes", async ({
   expect(await violations(page)).toEqual([]);
 });
 
+test("shows a check result once, in the status line with its tone", async ({ page, workbench }) => {
+  await page.goto(pathToFileURL(workbench.path).href);
+  await page.locator("#validate").click();
+  const status = page.locator("#status");
+  const announcement = page.locator("#announcement");
+  await expect(status).toContainText("Schema and policy-grammar validation passed");
+  await expect(announcement).toHaveText((await status.textContent()) ?? "");
+  await expect(announcement).toHaveAttribute("aria-live", "polite");
+  await expect(status).toHaveAttribute("data-wb-tone", /^(info|error)$/u);
+  const box = await announcement.boundingBox();
+  expect(box === null || (box.width <= 1 && box.height <= 1)).toBe(true);
+});
+
 test("keeps Check Policy and Publish disabled for an invalid prepared catalog", async ({
   page,
   workbench,
