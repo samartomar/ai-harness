@@ -608,3 +608,16 @@ html[data-wb-shell="new"] .artifact-protected-group-grid label { min-width: 0; }
 
 /* Every disclosure summary is clickable (the legacy page's global summary rule). */
 html[data-wb-shell="new"] summary { cursor: pointer; }
+
+/*
+ * admin-org.html / admin-acme.html: a screen's own inspector content
+ * (`shell/screen-frame.ts`) takes the inspector rail while that screen shows.
+ */
+html[data-wb-shell="new"] [data-wb-screen-aside] { display: none; }
+html[data-wb-shell="new"] #wb-root[data-wb-screen="org"] [data-wb-screen-aside="org"],
+html[data-wb-shell="new"] #wb-root[data-wb-screen="acme"] [data-wb-screen-aside="acme"] { display: flex; }
+html[data-wb-shell="new"] #wb-root:is([data-wb-screen="org"], [data-wb-screen="acme"]) #inspector-rail:not(:has([data-workbench-inspector-open="true"])) > :not([data-wb-screen-aside]) { display: none; }
+/* An item opened from the screen (a developer tool's details) takes the rail back. */
+html[data-wb-shell="new"] #wb-root #inspector-rail:has([data-workbench-inspector-open="true"]) > [data-wb-screen-aside] { display: none; }
+html[data-wb-shell="new"] [data-wb-org] #developer-tool-selection-status { margin: 0; font-size: 10.5px; line-height: 1.35; color: var(--wb-color-outline); }
+html[data-wb-shell="new"] [data-wb-org] #developer-tool-selection-status.error { color: var(--wb-color-error); }
