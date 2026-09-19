@@ -31,7 +31,7 @@ const SCREENS: readonly ScreenDefinition[] = [
 
 const INSPECTOR_TABS = [
   ["details", "Details"],
-  ["security", "Security"],
+  ["security", "Security Scan"],
   ["json", "Policy JSON"],
 ] as const;
 
@@ -67,15 +67,23 @@ export interface AdminShell {
   mountCatalogScopes(node: HTMLElement): void;
   /** The draft's entry count on the header's Review Changes badge (hidden at 0). */
   setReviewCount(count: number): void;
+  /**
+   * Hand the inspector's tabs and collapse chevron to the catalog's item
+   * inspector, which shows them in its own head under the item's name
+   * (admin-item.html). The rail's own head is hidden from then on.
+   */
+  adoptInspectorChrome(): { tabs: HTMLElement; close: HTMLElement };
 }
 
 /**
- * S4: the rail's Details / Security / Policy JSON tabs move within the item
- * inspector to its evidence sheet and its advanced JSON record.
+ * The rail's Details / Security Scan / Policy JSON tabs (admin-item.html).
+ * Details shows the whole item; Security Scan and Policy JSON narrow the item
+ * inspector to its evidence sheet or its technical JSON record
+ * (`[data-wb-inspector-panel]` in wb-tokens.css), opening that record.
  */
 const INSPECTOR_SECTIONS: Record<string, string> = {
   security: ".workbench-evidence-sheet",
-  json: ".workbench-detail-advanced",
+  json: ".workbench-detail-advanced, .workbench-item-technical",
 };
 
 function revealInspectorSection(panel: HTMLElement, key: string): void {
@@ -84,6 +92,7 @@ function revealInspectorSection(panel: HTMLElement, key: string): void {
     panel.scrollTop = 0;
     return;
   }
+  panel.scrollTop = 0;
   const section = panel.querySelector<HTMLElement>(selector);
   if (section === null) return;
   for (
@@ -92,7 +101,6 @@ function revealInspectorSection(panel: HTMLElement, key: string): void {
     node = node.parentElement
   )
     if (node instanceof HTMLDetailsElement) node.open = true;
-  section.scrollIntoView?.({ block: "start" });
 }
 
 function header(): { element: HTMLElement; actions: HTMLElement; reviewCount: HTMLElement } {
@@ -535,6 +543,14 @@ export function mountAdminShell(
     setReviewCount(count) {
       top.reviewCount.textContent = String(count);
       top.reviewCount.hidden = count === 0;
+    },
+    adoptInspectorChrome() {
+      const head = inspectorPanel.previousElementSibling as HTMLElement;
+      const tabs = head.querySelector<HTMLElement>("[role='tablist']") as HTMLElement;
+      const close = head.querySelector<HTMLElement>("[data-close-inspector]") as HTMLElement;
+      head.hidden = true;
+      inspectorPanel.classList.remove("p-3");
+      return { tabs, close };
     },
   };
 }

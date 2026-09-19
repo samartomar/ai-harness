@@ -55,8 +55,16 @@ import { icon as glyph } from "./shell/dom.js";
  */
 const BTN =
   "inline-flex items-center justify-center gap-1 h-7 px-2.5 rounded text-[11px] font-medium cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
-const BTN_PRIMARY = `${BTN} border-0 bg-primary-container hover:bg-primary-bright text-on-primary`;
 const BTN_SECONDARY = `${BTN} border border-solid border-outline-variant bg-surface-container-low hover:bg-surface-container text-on-surface`;
+/** The full record's facts: the prototype's mono key / value box, stacked. */
+const WB_FACTS =
+  "m-0 p-2 rounded bg-surface-container-lowest border border-solid border-hairline text-[11px] flex flex-col gap-0.5 min-w-0 [&>dt]:font-mono [&>dt]:text-[10px] [&>dt]:uppercase [&>dt]:tracking-wider [&>dt]:text-outline [&>dt]:font-semibold [&>dt:not(:first-child)]:pt-1.5 [&>dd]:m-0 [&>dd]:text-on-surface [&>dd]:leading-snug";
+/** The prototype's text field: the search box's border, surface and mono type. */
+const WB_TEXTAREA =
+  "w-full min-w-0 px-2 py-1.5 rounded border border-solid border-hairline bg-wb-card text-on-surface text-[11.5px] font-body leading-snug placeholder:text-outline focus:border-primary focus:outline-none resize-y";
+/** admin-sources.html inspector footer "Apply". */
+const INSPECTOR_PRIMARY =
+  "flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded border-0 bg-primary hover:bg-primary-bright text-on-primary text-[12px] font-medium cursor-pointer transition-colors shadow-xs disabled:opacity-50 disabled:cursor-not-allowed";
 const REPAIR_ROW =
   "m-0 flex flex-wrap items-center gap-2 px-3 py-2 rounded border border-solid border-outline-variant bg-surface-container-low";
 
@@ -80,6 +88,11 @@ export interface WorkbenchMountOptions {
   mountSourceRail?(rail: HTMLElement): void;
   /** Report the draft's entry count (the header's Review Changes badge). */
   onDraftCount?(count: number): void;
+  /**
+   * The new shell's inspector tabs and collapse chevron, placed in the
+   * inspector's own head (admin-item.html) under the item's name.
+   */
+  inspectorChrome?: { tabs: HTMLElement; close: HTMLElement };
 }
 
 export interface MountedWorkbench {
@@ -339,7 +352,7 @@ export function mountWorkbench(
   let state = options.initialState;
   /** Add the prototype's utility classes. */
   const tw = (node: Element, classes: string): void => {
-    node.classList.add(...classes.split(" "));
+    node.classList.add(...classes.split(" ").filter((token) => token !== ""));
   };
   const browseBundle = workbenchBrowseBundle(options.bundle);
   const browseInventory: CatalogBrowseInventory = {
@@ -385,7 +398,7 @@ export function mountWorkbench(
   details.dataset.workbenchDetail = "true";
   details.dataset.workbenchInspectorOpen = "false";
   // S4: the item inspector lives in the new shell's inspector rail.
-  tw(details, "wb-item-inspector flex flex-col gap-3 min-w-0");
+  tw(details, "wb-item-inspector flex flex-col min-h-full min-w-0");
   let filtersState: CatalogBrowseFilters = { sourceId: groups[0]?.id };
   let openDetailKey: string | undefined;
   let openCatalogDetail: { assetId: string; mode: "catalog" | "developer-tool-setup" } | undefined;
@@ -410,6 +423,203 @@ export function mountWorkbench(
       }
     | undefined;
   let draftEntryCount = 0;
+
+  /*
+   * The item inspector (admin-item.html, and admin-sources.html's
+   * #inspector-rail Details pane): a head with the item's name, its kind /
+   * source / status line and the rail's Details / Security / Policy JSON tabs;
+   * a scrolling body of mono-labelled sections; a footer with the close and
+   * the primary action. In the new shell the rail's tabs and collapse chevron
+   * are adopted into this head (`inspectorChrome`).
+   */
+  const INSPECTOR_LABEL =
+    "m-0 block text-[10px] font-mono uppercase tracking-wider text-outline font-semibold";
+  const TONE_DOT = { warning: "bg-tertiary", positive: "bg-secondary", neutral: "bg-outline" };
+  const inspectorNode = <K extends keyof HTMLElementTagNameMap>(
+    tag: K,
+    classes: string,
+    text?: string,
+  ): HTMLElementTagNameMap[K] => {
+    const node = document.createElement(tag);
+    tw(node, classes);
+    if (text !== undefined) node.textContent = text;
+    return node;
+  };
+  const inspectorHead = (identity?: {
+    heading: HTMLHeadingElement;
+    tone: keyof typeof TONE_DOT;
+    version?: string;
+    kind?: string;
+    meta: readonly string[];
+    flags?: string;
+  }): HTMLElement => {
+    const head = inspectorNode(
+      "div",
+      "sticky top-0 z-10 p-2.5 bg-surface-container-lowest border-0 border-b border-solid border-hairline flex flex-col gap-2 shrink-0 min-w-0",
+    );
+    head.dataset.wbInspectorHead = "";
+    const chrome = options.inspectorChrome;
+    if (identity === undefined) {
+      const row = inspectorNode("div", "flex items-center gap-2 min-w-0");
+      if (chrome !== undefined) row.append(chrome.tabs, chrome.close);
+      head.append(row);
+      return head;
+    }
+    const titleRow = inspectorNode("div", "flex items-center justify-between gap-2 min-w-0");
+    const name = inspectorNode("div", "flex items-center gap-1.5 min-w-0");
+    tw(
+      identity.heading,
+      "m-0 font-semibold text-on-surface text-[13px] truncate font-mono min-w-0",
+    );
+    const status = inspectorNode(
+      "span",
+      `w-2 h-2 rounded-full shrink-0 ${TONE_DOT[identity.tone]}`,
+    );
+    status.setAttribute("aria-hidden", "true");
+    name.append(status, identity.heading);
+    if (identity.version !== undefined)
+      name.append(
+        inspectorNode(
+          "span",
+          "text-[10px] font-mono px-1 rounded bg-surface-container-highest text-secondary shrink-0 max-w-[40%] truncate",
+          identity.version,
+        ),
+      );
+    titleRow.append(name);
+    if (chrome !== undefined) titleRow.append(chrome.close);
+    const subtitle = inspectorNode(
+      "div",
+      "flex items-center justify-between gap-2 text-[11px] min-w-0",
+    );
+    const where = inspectorNode("span", "text-outline inline-flex items-center gap-1 min-w-0");
+    if (identity.kind !== undefined) {
+      const kindIcon = catalogKindIcon(identity.kind);
+      where.append(
+        glyph(kindIcon.name, `w-[13px] h-[13px] ${kindIcon.colorClass ?? ""}`),
+        inspectorNode(
+          "span",
+          "font-medium text-on-surface shrink-0",
+          catalogKindLabel(identity.kind as AuthoringAssetV1["kind"]),
+        ),
+      );
+    }
+    where.append(
+      inspectorNode(
+        "span",
+        "truncate min-w-0",
+        (identity.kind === undefined ? "" : " · ") + identity.meta.join(" · "),
+      ),
+    );
+    subtitle.append(where);
+    if (identity.flags !== undefined)
+      subtitle.append(
+        inspectorNode("span", "font-mono text-tertiary font-semibold shrink-0", identity.flags),
+      );
+    head.append(titleRow, subtitle);
+    if (chrome !== undefined) head.append(chrome.tabs);
+    return head;
+  };
+  const inspectorBody = (...children: Node[]): HTMLElement => {
+    const body = inspectorNode(
+      "div",
+      "flex-1 flex flex-col gap-3 p-3 text-[12px] text-on-surface-variant min-w-0",
+    );
+    body.dataset.wbInspectorBody = "";
+    body.append(...children);
+    return body;
+  };
+  /** The item's sections, which the rail's Security / JSON tabs narrow. */
+  const sectionsOf = (...children: Node[]): HTMLElement => {
+    const sections = inspectorNode("div", "flex flex-col gap-3 min-w-0");
+    sections.dataset.wbInspectorSections = "";
+    sections.append(...children);
+    return sections;
+  };
+  const inspectorFooter = (...children: Node[]): HTMLElement => {
+    const footer = inspectorNode(
+      "div",
+      "sticky bottom-0 z-10 p-2 bg-surface-container-lowest border-0 border-t border-solid border-hairline flex items-center gap-2 shrink-0",
+    );
+    footer.dataset.wbInspectorFooter = "";
+    footer.append(...children);
+    return footer;
+  };
+  /** The footer's quiet text button (the prototype's "Reset Item"). */
+  const FOOTER_BUTTON =
+    "px-2.5 py-1.5 rounded border-0 bg-transparent hover:bg-surface-container text-on-surface-variant hover:text-on-surface text-[11px] cursor-pointer transition-colors shrink-0";
+  /** "Back to catalog" shows only where the inspector is a drawer. */
+  const BACK_BUTTON = `${FOOTER_BUTTON} min-[1101px]:hidden`;
+  const inspectorSection = (label: string, ...children: Node[]): HTMLElement => {
+    const section = inspectorNode("div", "flex flex-col gap-1.5 min-w-0");
+    section.append(inspectorNode("span", INSPECTOR_LABEL, label), ...children);
+    return section;
+  };
+  /** The prototype's "Upstream Provenance" key / value box. */
+  const keyValueBox = (rows: readonly (readonly [string, string | Node])[]): HTMLElement => {
+    const box = inspectorNode(
+      "div",
+      "p-2 rounded bg-surface-container-low border border-solid border-hairline font-mono text-[10px] flex flex-col gap-1 text-on-surface-variant min-w-0",
+    );
+    for (const [label, value] of rows) {
+      const row = inspectorNode("div", "flex justify-between gap-3 min-w-0");
+      const valueNode = inspectorNode("span", "text-on-surface text-right break-all min-w-0");
+      valueNode.append(value);
+      row.append(inspectorNode("span", "shrink-0", label), valueNode);
+      box.append(row);
+    }
+    return box;
+  };
+  /** A "Declared Capabilities" row: icon and label, then the declared value. */
+  const capabilityRow = (
+    name: string,
+    iconClass: string,
+    label: string,
+    value: string,
+    valueClass = "text-on-surface-variant",
+  ): HTMLElement => {
+    const row = inspectorNode(
+      "div",
+      "p-2 rounded bg-surface-container-low border border-solid border-hairline flex flex-col gap-1 min-w-0",
+    );
+    const top = inspectorNode("div", "flex items-center gap-1.5 text-on-surface");
+    top.append(glyph(name, `w-[14px] h-[14px] ${iconClass}`), inspectorNode("span", "", label));
+    row.append(top, inspectorNode("p", `m-0 text-[11px] leading-snug ${valueClass}`, value));
+    return row;
+  };
+  /** The tone of the prototype's security callout. */
+  const CALLOUT_TONE = {
+    warning: "bg-wb-review-bg border-wb-badge-border",
+    positive: "bg-wb-pass-bg border-hairline",
+    neutral: "bg-surface-container-low border-hairline",
+  };
+  const CALLOUT_TEXT = {
+    warning: "text-tertiary",
+    positive: "text-wb-pass",
+    neutral: "text-on-surface",
+  };
+  /** The item's version as the head's chip: the source revision it was pinned at. */
+  const assetVersion = (asset: AuthoringAssetV1): string =>
+    options.bundle.sources[asset.sourceId]?.revision.id ?? asset.sourceRevisionId;
+  /** The Security tab's scanner grid, from the analyzers the report names. */
+  const analyzerGrid = (analyzers: readonly { name: string; version: string }[]): HTMLElement => {
+    const grid = inspectorNode("div", "grid grid-cols-2 gap-1.5 text-[11px]");
+    for (const analyzer of analyzers) {
+      const cell = inspectorNode(
+        "div",
+        "p-2 rounded bg-surface-container-low border border-solid border-hairline flex items-center justify-between gap-2 min-w-0",
+      );
+      cell.append(
+        inspectorNode("span", "text-on-surface font-medium truncate min-w-0", analyzer.name),
+        inspectorNode(
+          "span",
+          "font-mono text-secondary text-[10px] font-semibold shrink-0",
+          analyzer.version,
+        ),
+      );
+      grid.append(cell);
+    }
+    return grid;
+  };
 
   root.replaceChildren();
   root.classList.add("workbench-inventory");
@@ -470,8 +680,19 @@ export function mountWorkbench(
     button.dataset.workbenchPanelView = view;
     button.textContent = label;
     button.setAttribute("aria-controls", details.id);
+    tw(
+      button,
+      "px-1.5 py-0.5 rounded border-0 bg-transparent text-outline hover:text-on-surface cursor-pointer transition-colors aria-pressed:bg-surface-container aria-pressed:text-primary aria-pressed:font-semibold",
+    );
     inspectorNavigation.append(button);
   }
+  // The inspector's view switch: a quiet mono row under the rail's tabs.
+  tw(inspectorNavigation, "flex items-center gap-1 text-[10.5px] font-mono min-w-0");
+  const inspectorNavigationLabel = document.createElement("span");
+  tw(inspectorNavigationLabel, "text-outline uppercase tracking-wider text-[10px] mr-1");
+  inspectorNavigationLabel.textContent = "View";
+  inspectorNavigationLabel.setAttribute("aria-hidden", "true");
+  inspectorNavigation.prepend(inspectorNavigationLabel);
   draftSummary.append(draftSummaryHeading, draftSummaryIntro, draftReview, exposureButton);
   catalogLayout.className = "workbench-catalog-layout";
   catalogLayout.dataset.workbenchCatalogLayout = "true";
@@ -648,7 +869,9 @@ export function mountWorkbench(
     }
   };
   const syncInspectorPresentation = (): void => {
-    details.prepend(inspectorNavigation);
+    const head = details.querySelector<HTMLElement>(":scope > [data-wb-inspector-head]");
+    if (head !== null) head.append(inspectorNavigation);
+    else details.prepend(inspectorNavigation);
     for (const button of inspectorNavigation.querySelectorAll<HTMLButtonElement>("button")) {
       button.setAttribute(
         "aria-pressed",
@@ -705,15 +928,52 @@ export function mountWorkbench(
     details.dataset.workbenchInspectorView = "item";
     details.removeAttribute("data-workbench-inspector-asset-id");
     details.setAttribute("aria-labelledby", heading.id);
-    details.replaceChildren(heading, hint);
-    if (inspectorOpen) {
-      const back = document.createElement("button");
-      back.type = "button";
-      back.className = "btn sm secondary workbench-exposure-back";
-      back.dataset.workbenchDetailsClose = "true";
-      back.textContent = "Back to catalog";
-      details.prepend(back);
+    // Empty state: what to do, what the draft holds, what each tab shows.
+    const empty = inspectorNode(
+      "div",
+      "p-3 rounded border border-dashed border-hairline bg-surface-container-low flex items-start gap-2.5",
+    );
+    tw(hint, "m-0 text-[11.5px] leading-relaxed text-on-surface");
+    empty.append(glyph("info", "w-4 h-4 text-primary mt-0.5"), hint);
+    const counts = workbenchSelectionCounts(options.bundle, state);
+    const draft = inspectorSection(
+      "In this draft",
+      keyValueBox([
+        ["Controls", String(counts.selectedControlCount)],
+        ["Selections", String(counts.rootCount)],
+        ["Requests", String(counts.requestCount)],
+        ["Catalog items", String(Object.keys(options.bundle.assets).length)],
+      ]),
+    );
+    const guide = inspectorNode("div", "flex flex-col gap-1 text-[11px]");
+    for (const [name, iconName, text] of [
+      ["Details", "info", "The publisher's purpose, declared access and provenance."],
+      ["Security", "radar", "The attached scan report, its analyzers and findings."],
+      ["Policy JSON", "code", "The prepared record behind the item, as JSON."],
+    ] as const) {
+      const row = inspectorNode(
+        "div",
+        "p-2 rounded bg-surface-container-low border border-solid border-hairline flex items-start gap-1.5 min-w-0",
+      );
+      const copy = inspectorNode("span", "min-w-0");
+      copy.append(
+        inspectorNode("span", "font-medium text-on-surface", name),
+        inspectorNode("span", "text-outline", " · " + text),
+      );
+      row.append(glyph(iconName, "w-[14px] h-[14px] text-primary mt-px"), copy);
+      guide.append(row);
     }
+    const back = document.createElement("button");
+    back.type = "button";
+    back.className = "workbench-exposure-back";
+    tw(back, BACK_BUTTON);
+    back.dataset.workbenchDetailsClose = "true";
+    back.textContent = "Back to catalog";
+    details.replaceChildren(
+      inspectorHead({ heading, tone: "neutral", meta: ["No item selected"] }),
+      inspectorBody(empty, draft, inspectorSection("What each tab shows", guide)),
+      ...(inspectorOpen ? [inspectorFooter(back)] : []),
+    );
     syncInspectorPresentation();
   };
   const renderIdleInspector = (): void => {
@@ -903,23 +1163,32 @@ export function mountWorkbench(
     const requestHeading = document.createElement("h4");
     const requestIntro = document.createElement("p");
     const requestList = document.createElement("div");
+    // The inspector's exposure view, in admin-item.html's language: a titled
+    // head, mono-labelled sections, tiles and bordered declaration cards.
     overview.className = "workbench-exposure-overview";
+    tw(overview, "flex flex-col gap-3 min-w-0");
     overview.dataset.workbenchExposureOverview = "true";
     header.className = "workbench-exposure-header";
+    tw(header, "flex flex-col gap-1 min-w-0");
     heading.id = "workbench-detail-title";
     heading.tabIndex = -1;
     heading.textContent = "A policy is a shape of exposure";
+    tw(heading, "m-0 font-semibold text-on-surface text-[13px] font-mono");
     close.type = "button";
-    close.className = "btn sm secondary workbench-inspector-close";
+    close.className = "workbench-inspector-close";
+    tw(close, FOOTER_BUTTON);
     close.dataset.workbenchDetailsClose = "true";
     close.textContent = "Close details";
-    header.append(heading, close);
+    header.append(inspectorNode("span", INSPECTOR_LABEL, "Policy exposure"), heading);
     intro.className = "workbench-exposure-intro";
+    tw(intro, "m-0 text-[11px] text-on-surface-variant leading-snug");
     intro.textContent =
       "Access declared by your catalog choices. Setup and host permissions determine actual access.";
     scope.className = "workbench-exposure-scope";
+    tw(scope, "m-0 text-[11px] text-outline leading-snug");
     scope.textContent = "Developer tools: see Deployment setup.";
     exposureCounts.className = "workbench-exposure-counts";
+    tw(exposureCounts, "grid grid-cols-2 gap-1.5 min-w-0");
     exposureCounts.setAttribute("aria-label", "Catalog exposure counts");
     const appendCount = (
       kind: "selected" | "requests" | "unresolved" | "verified",
@@ -931,10 +1200,19 @@ export function mountWorkbench(
       const number = document.createElement("strong");
       const caption = document.createElement("span");
       count.className = "workbench-exposure-count";
+      tw(
+        count,
+        "m-0 p-2.5 rounded bg-surface-container-low border border-solid border-hairline flex flex-col gap-1 min-w-0",
+      );
       count.dataset.workbenchExposureCount = kind;
       count.title = title;
       number.textContent = String(value);
+      tw(
+        number,
+        "text-[22px] leading-none font-semibold font-mono tabular-nums tracking-tight text-wb-heading",
+      );
       caption.textContent = label;
+      tw(caption, "text-[10px] font-mono uppercase tracking-wider text-outline font-semibold");
       count.append(number, caption);
       exposureCounts.append(count);
     };
@@ -963,16 +1241,27 @@ export function mountWorkbench(
       "Selected items with Core-verified evidence for the current version. This is not organization approval.",
     );
     limits.className = "workbench-exposure-limits";
+    tw(
+      limits,
+      "m-0 p-2.5 rounded border border-solid border-wb-badge-border bg-wb-review-bg text-[11px] text-on-surface-variant leading-snug",
+    );
     limits.textContent =
       "Destinations, file access and credential scope may be unspecified. Review each item’s declaration and checks.";
     selectedGroup.className = "workbench-exposure-group";
+    tw(selectedGroup, "flex flex-col gap-1.5 min-w-0");
     selectedHeading.textContent = "Selected item declarations";
+    tw(selectedHeading, INSPECTOR_LABEL);
     selectedList.className = "workbench-exposure-list";
+    tw(selectedList, "flex flex-col gap-1.5 min-w-0");
     selectedList.dataset.workbenchExposureList = "true";
     requestGroup.className = "workbench-exposure-group";
+    tw(requestGroup, "flex flex-col gap-1.5 min-w-0");
     requestHeading.textContent = "Pending requests";
+    tw(requestHeading, INSPECTOR_LABEL);
     requestIntro.textContent = "Saved for follow-up. Requests do not select or activate items.";
+    tw(requestIntro, "m-0 text-[11px] text-outline leading-snug");
     requestList.className = "workbench-exposure-list";
+    tw(requestList, "flex flex-col gap-1.5 min-w-0");
     requestList.dataset.workbenchExposureRequests = "true";
 
     const appendAsset = (
@@ -989,22 +1278,36 @@ export function mountWorkbench(
       const declaration = assetDecisionPresentation(asset, options.bundle);
       const checks = assetEvidencePresentation(asset, options.bundle);
       item.className = "workbench-exposure-item";
+      tw(
+        item,
+        "p-2.5 rounded bg-surface-container-low border border-solid border-hairline flex flex-col gap-1 min-w-0",
+      );
       if (requestOrigin === undefined) item.dataset.workbenchExposureItemId = asset.id;
       else item.dataset.workbenchExposureRequestId = asset.id;
       inspect.type = "button";
       inspect.className = "workbench-exposure-inspect";
+      tw(
+        inspect,
+        "self-start p-0 border-0 bg-transparent text-left font-mono font-bold text-[12px] text-primary hover:underline cursor-pointer",
+      );
       inspect.dataset.workbenchExposureInspectId = asset.id;
       inspect.setAttribute("aria-controls", details.id);
       inspect.setAttribute("aria-label", "Inspect declaration and checks for " + label);
       inspect.textContent = label;
       meta.className = "workbench-exposure-meta";
+      tw(meta, "m-0 font-mono text-[10px] text-outline");
       meta.textContent =
         catalogSourceDisplayName(options.bundle, asset.sourceId) +
         (requestOrigin === undefined ? "" : " · " + originLabel(requestOrigin));
       access.className = "workbench-exposure-access";
+      tw(access, "m-0 text-[11px] text-on-surface-variant leading-snug");
       access.dataset.workbenchExposureAccess = "true";
       access.textContent = "Declared access: " + declaration.access;
       evidence.className = "workbench-exposure-evidence";
+      tw(
+        evidence,
+        "m-0 self-start px-1.5 py-0.5 rounded font-mono text-[10px] font-medium bg-surface-container text-on-surface-variant data-[workbench-evidence-tone=positive]:bg-wb-pass-bg data-[workbench-evidence-tone=positive]:text-wb-pass data-[workbench-evidence-tone=warning]:bg-wb-review-bg data-[workbench-evidence-tone=warning]:text-wb-review",
+      );
       evidence.dataset.workbenchExposureEvidence = "true";
       evidence.dataset.workbenchEvidenceTone = checks.tone;
       evidence.textContent = "Checks: " + checks.statusLabel;
@@ -1024,6 +1327,7 @@ export function mountWorkbench(
       const status = document.createElement("span");
       const next = document.createElement("button");
       pages.className = "workbench-exposure-pages";
+      tw(pages, "flex items-center gap-2 text-[10.5px] font-mono text-outline");
       pages.setAttribute("role", "group");
       pages.setAttribute(
         "aria-label",
@@ -1095,7 +1399,7 @@ export function mountWorkbench(
     details.dataset.workbenchInspectorView = "exposure";
     inspectorMode = "exposure";
     details.setAttribute("aria-labelledby", heading.id);
-    details.replaceChildren(overview);
+    details.replaceChildren(inspectorHead(), inspectorBody(overview), inspectorFooter(close));
     syncInspectorPresentation();
     if (focusHeading) heading.focus();
   };
@@ -1197,16 +1501,19 @@ export function mountWorkbench(
     heading.textContent = presentation.title;
     details.setAttribute("aria-labelledby", heading.id);
     back.type = "button";
-    back.className = "btn sm secondary workbench-exposure-back";
+    back.className = "workbench-exposure-back";
+    tw(back, BACK_BUTTON);
     back.dataset.workbenchDetailsClose = "true";
     back.textContent = "Back to catalog";
     close.type = "button";
-    close.className = "btn sm secondary";
+    tw(close, FOOTER_BUTTON);
     close.dataset.workbenchDetailsClose = "true";
     close.textContent = "Close details";
     summary.className = "workbench-detail-summary";
+    tw(summary, "m-0 text-on-surface leading-relaxed text-[11px]");
     summary.textContent = presentation.summary;
     facts.className = "workbench-detail-facts";
+    tw(facts, WB_FACTS);
     for (const fact of presentation.facts) {
       const term = document.createElement("dt");
       const definition = document.createElement("dd");
@@ -1239,41 +1546,83 @@ export function mountWorkbench(
       const checksNextStep = document.createElement("p");
       const checksLimitation = document.createElement("p");
       declaration.className = "workbench-expanded-why";
+      tw(declaration, "flex flex-col gap-1.5 min-w-0");
       declaration.dataset.workbenchDeclaration = "true";
       declarationHeading.textContent = "Source declaration";
+      tw(declarationHeading, INSPECTOR_LABEL);
       purpose.textContent = decision.purpose;
+      tw(purpose, "sr-only");
       access.textContent = "Declared access: " + decision.access;
-      declaration.append(declarationHeading, purpose, access);
+      tw(access, "sr-only");
+      declaration.append(
+        declarationHeading,
+        purpose,
+        access,
+        capabilityRow("wifi", "text-primary", "What it can access", decision.access),
+      );
       checks.className = "workbench-evidence-sheet";
+      tw(checks, "flex flex-col gap-1.5 min-w-0 scroll-mt-32");
       checks.dataset.workbenchChecks = "true";
       checks.dataset.workbenchEvidenceState = evidence.state;
       checks.dataset.workbenchEvidenceTone = evidence.tone;
       checksHeading.textContent = "Checks";
+      tw(checksHeading, INSPECTOR_LABEL);
       checksStatus.textContent = evidence.statusLabel;
+      tw(checksStatus, `m-0 font-semibold text-[11px] ${CALLOUT_TEXT[evidence.tone]}`);
       checksBinding.textContent = evidence.binding;
       checksNextStep.textContent =
         (evidence.state === "unverified" ? "Verification: " : "Next step: ") + evidence.nextStep;
       checksLimitation.textContent = evidence.limitation;
-      checks.append(checksHeading, checksStatus, checksBinding, checksNextStep, checksLimitation);
+      for (const line of [checksBinding, checksNextStep, checksLimitation])
+        tw(line, "m-0 text-[11px] text-on-surface-variant leading-snug");
+      const checksCallout = inspectorNode(
+        "div",
+        `p-2.5 rounded border border-solid flex flex-col gap-1 min-w-0 ${CALLOUT_TONE[evidence.tone]}`,
+      );
+      checksCallout.append(checksStatus, checksBinding, checksNextStep, checksLimitation);
+      checks.append(checksHeading, checksCallout);
       if (evidence.sourceItemReports !== undefined)
         checks.append(sourceItemReportsElement(evidence.sourceItemReports));
       catalogContext.push(declaration, checks);
     }
     advanced.className = "workbench-detail-advanced";
+    tw(
+      advanced,
+      "rounded border border-solid border-hairline bg-surface-container-low min-w-0 scroll-mt-32",
+    );
     advanced.open = advancedWasOpen;
     advancedSummary.textContent = "More technical details";
+    tw(advancedSummary, `${INSPECTOR_LABEL} px-2 py-1.5 cursor-pointer`);
     raw.textContent = presentation.advancedJson;
     advanced.append(advancedSummary, facts, raw);
     inspectorMode = "item";
     details.dataset.workbenchInspectorView = "details";
+    const detailAsset = catalogAsset ?? referenceAsset;
+    const detailEvidence =
+      detailAsset === undefined
+        ? undefined
+        : assetEvidencePresentation(detailAsset, options.bundle);
     details.replaceChildren(
-      heading,
-      back,
-      close,
-      summary,
-      ...(previousReportSection === undefined ? [] : [previousReportSection]),
-      ...catalogContext,
-      advanced,
+      inspectorHead({
+        heading,
+        tone: detailEvidence?.tone ?? "neutral",
+        ...(detailAsset === undefined
+          ? { meta: ["Full record"] }
+          : {
+              version: assetVersion(detailAsset),
+              kind: detailAsset.kind,
+              meta: [catalogSourceDisplayName(options.bundle, detailAsset.sourceId), "Full record"],
+            }),
+      }),
+      inspectorBody(
+        sectionsOf(
+          inspectorSection("Publisher overview", summary),
+          ...(previousReportSection === undefined ? [] : [previousReportSection]),
+          ...catalogContext,
+          advanced,
+        ),
+      ),
+      inspectorFooter(back, close),
     );
     syncInspectorPresentation();
     if (focusHeading) heading.focus();
@@ -1929,9 +2278,7 @@ export function mountWorkbench(
       row.append(body, actions);
       updateRow(row, asset);
       if (expandedAssetId === asset.id && openDetailKey === undefined) {
-        const inspectorHeader = document.createElement("header");
         const inspectorHeading = document.createElement("h3");
-        const inspectorMeta = document.createElement("p");
         const back = document.createElement("button");
         const close = document.createElement("button");
         const selection = document.createElement("section");
@@ -1986,35 +2333,72 @@ export function mountWorkbench(
           definition.textContent = value;
           selectionFacts.append(term, definition);
         };
-        inspectorHeader.className = "workbench-inspector-header";
         inspectorHeading.id = "workbench-detail-title";
         inspectorHeading.tabIndex = -1;
         inspectorHeading.textContent = humanizedAssetLabel(asset);
-        inspectorMeta.className = "workbench-inspector-meta";
-        inspectorMeta.textContent =
-          catalogSourceDisplayName(options.bundle, asset.sourceId) +
-          " · " +
-          catalogKindLabel(asset.kind);
+        const sourceName = catalogSourceDisplayName(options.bundle, asset.sourceId);
+        const inspectorHeader = inspectorHead({
+          heading: inspectorHeading,
+          tone: evidence.tone,
+          version: assetVersion(asset),
+          kind: asset.kind,
+          meta: [sourceName, inspectorStatus.status],
+          ...(evidence.findings.length === 0
+            ? {}
+            : {
+                flags: `${evidence.findings.length} finding${evidence.findings.length === 1 ? "" : "s"}`,
+              }),
+        });
+        inspectorHeader.classList.add("workbench-inspector-header");
         back.type = "button";
-        back.className = "btn sm secondary workbench-exposure-back";
+        back.className = "workbench-exposure-back";
+        tw(back, BACK_BUTTON);
         back.dataset.workbenchDetailsClose = "true";
         back.textContent = "Back to catalog";
         close.type = "button";
-        close.className = "btn sm secondary workbench-inspector-close";
+        close.className = "workbench-inspector-close";
+        tw(close, FOOTER_BUTTON);
         close.dataset.workbenchDetailsClose = "true";
         close.textContent = "Close details";
-        inspectorHeader.append(back, inspectorHeading, inspectorMeta, close);
+        // Upstream provenance: where the item comes from, at which version.
+        const source = options.bundle.sources[asset.sourceId];
+        const provenanceRows: (readonly [string, string | Node])[] = [["Source", sourceName]];
+        if (source !== undefined) {
+          const origin = inspectorNode("span", "text-primary", source.upstreamOrigin.locator);
+          provenanceRows.push(["Origin", origin], ["Revision", source.revision.id]);
+        }
+        provenanceRows.push(["Digest", asset.contentDigest]);
         if (evidence.component !== undefined) {
           const component = document.createElement("p");
+          tw(component, "m-0 text-right");
           component.dataset.workbenchCoreComponent = "true";
           component.textContent =
             `${evidence.component.label} · ${evidence.component.package}. ` +
             `Bundled ${asset.kind === "hook" ? "control" : "path"}: ${evidence.component.path}.`;
-          inspectorHeader.append(component);
+          provenanceRows.push(["Component", component]);
         }
+        const provenance = inspectorSection("Upstream provenance", keyValueBox(provenanceRows));
+        // The prototype's "Held back by the rule ..." line: the item's draft state.
+        const stateLine = inspectorNode("div", "flex items-start gap-2 text-[11.5px] min-w-0");
+        stateLine.dataset.wbInspectorState = "";
+        const stateCopy = inspectorNode("p", "m-0 min-w-0 leading-snug");
+        stateCopy.append(
+          inspectorNode("span", "font-semibold text-on-surface", inspectorStatus.status),
+          inspectorNode("span", "text-outline", " " + inspectorStatus.explanation),
+        );
+        stateLine.append(
+          inspectorNode(
+            "span",
+            `mt-1 w-2 h-2 rounded-full shrink-0 ${selected.has(asset.id) ? "bg-primary" : "bg-outline"}`,
+          ),
+          stateCopy,
+        );
         selection.className = "workbench-inspector-selection";
         selection.dataset.workbenchSelection = "true";
         selectionFacts.className = "workbench-detail-facts";
+        tw(selectionFacts, WB_FACTS);
+        tw(selection, "flex flex-col gap-1.5");
+        tw(selectionHeading, INSPECTOR_LABEL);
         selectionHeading.textContent = "Draft status";
         appendSelectionFact("State", inspectorStatus.status);
         appendSelectionFact("Meaning", inspectorStatus.explanation);
@@ -2050,10 +2434,37 @@ export function mountWorkbench(
         expanded.className = "workbench-expanded-item";
         expanded.id = "workbench-expanded-" + asset.id;
         why.className = "workbench-expanded-why";
+        tw(why, "flex flex-col gap-3 min-w-0");
         why.dataset.workbenchDeclaration = "true";
         whyHeading.textContent = "Claims";
+        tw(whyHeading, "sr-only");
+        const overview = inspectorNode(
+          "p",
+          "m-0 text-on-surface leading-relaxed text-[11px]",
+          decision.purpose,
+        );
         whyAccess.textContent = "What it can access: " + decision.access;
-        why.append(whyHeading, purpose.cloneNode(true), whyAccess);
+        tw(whyAccess, "sr-only");
+        const targets = asset.authoring.supportedTargets;
+        why.append(
+          whyHeading,
+          inspectorSection("Publisher overview", overview),
+          inspectorSection(
+            "Declared capabilities",
+            capabilityRow("wifi", "text-primary", "What it can access", decision.access),
+            capabilityRow(
+              "terminal",
+              "text-secondary",
+              "Policy targets",
+              targets.length === 0
+                ? "No managed policy target is declared for this item."
+                : targets.join(", "),
+              "font-mono text-secondary text-[10.5px]",
+            ),
+            capabilityRow("vpn_key", "text-tertiary", "If you add this", decision.consequence),
+          ),
+          whyAccess,
+        );
         evidenceSheet.className = "workbench-evidence-sheet";
         evidenceSheet.dataset.workbenchChecks = "true";
         evidenceSheet.dataset.workbenchEvidenceState = evidence.state;
@@ -2085,11 +2496,17 @@ export function mountWorkbench(
         evidenceFindings.append(findingsHeading);
         if (evidence.findings.length === 0) {
           const emptyFindings = document.createElement("p");
+          tw(emptyFindings, "m-0 text-[11px] text-outline leading-snug");
           emptyFindings.textContent =
             "The report lists no findings. Check its coverage before drawing a conclusion.";
           evidenceFindings.append(emptyFindings);
         } else {
           const findingsList = document.createElement("ul");
+          // The prototype's evidence box: mono lines on the code surface.
+          tw(
+            findingsList,
+            "wb-evidence-box m-0 p-2 list-none rounded bg-surface-container-lowest border border-solid border-hairline font-mono text-[10.5px] leading-relaxed flex flex-col gap-0.5 text-on-surface-variant min-w-0 break-words",
+          );
           for (const finding of evidence.findings) {
             const item = document.createElement("li");
             const explanation = findingExplanation(finding);
@@ -2112,20 +2529,69 @@ export function mountWorkbench(
         evidenceNextStep.textContent =
           (evidence.state === "unverified" ? "Verification: " : "Next step: ") + evidence.nextStep;
         evidenceCaveat.textContent = evidence.limitation;
-        const evidenceFacts: HTMLElement[] = [evidenceHeading, evidenceStatus];
+        // admin-item.html Security: the tinted finding callout, the scanner
+        // grid, the evidence box, then the report's own caveats.
+        tw(evidenceSheet, "flex flex-col gap-1.5 min-w-0 scroll-mt-32");
+        tw(evidenceHeading, INSPECTOR_LABEL);
+        const callout = inspectorNode(
+          "div",
+          `p-2.5 rounded border border-solid flex flex-col gap-1 min-w-0 ${CALLOUT_TONE[evidence.tone]}`,
+        );
+        const calloutTop = inspectorNode("div", "flex items-center justify-between gap-2 min-w-0");
+        const calloutTitle = inspectorNode(
+          "div",
+          `flex items-center gap-1.5 font-semibold text-[11px] min-w-0 ${CALLOUT_TEXT[evidence.tone]}`,
+        );
+        tw(evidenceStatus, "m-0 min-w-0");
+        calloutTitle.append(glyph("radar", "w-[15px] h-[15px]"), evidenceStatus);
+        calloutTop.append(calloutTitle);
+        if (evidence.findings.length > 0)
+          calloutTop.append(
+            inspectorNode(
+              "span",
+              "px-1.5 py-0.5 rounded bg-surface-container-highest text-tertiary font-mono text-[9.5px] font-bold shrink-0",
+              `${evidence.findings.length} listed`,
+            ),
+          );
+        callout.append(calloutTop);
+        for (const line of [evidenceResult, evidenceCoverage, evidenceBinding])
+          tw(line, "m-0 text-[11px] text-on-surface-variant leading-snug");
+        const evidenceFacts: HTMLElement[] = [evidenceHeading, callout];
         if (
           evidence.state === "verified" ||
           evidence.state === "unverified" ||
           evidence.state === "stale"
         ) {
-          evidenceFacts.push(evidenceResult, evidenceCoverage);
+          callout.append(evidenceResult, evidenceCoverage);
+          if (evidence.analyzers.length > 0) {
+            const scanned = inspectorNode(
+              "div",
+              "flex items-center justify-between text-[10px] font-mono uppercase tracking-wider text-outline font-semibold pt-1",
+            );
+            scanned.append(
+              inspectorNode("span", "", "Scanned by"),
+              inspectorNode(
+                "span",
+                "text-secondary normal-case",
+                `${evidence.analyzers.length} analyzer${evidence.analyzers.length === 1 ? "" : "s"} named`,
+              ),
+            );
+            evidenceFacts.push(scanned, analyzerGrid(evidence.analyzers));
+          }
+          tw(evidenceFindings, "flex flex-col gap-1 min-w-0 pt-1");
+          tw(
+            findingsHeading,
+            "m-0 text-[10px] font-mono uppercase tracking-wider text-outline font-semibold",
+          );
           evidenceFacts.push(evidenceFindings);
           if (evidence.state === "verified" || evidence.state === "stale")
             evidenceFacts.push(evidenceFreshness);
           if (evidence.showQualification) evidenceFacts.push(evidenceQualification);
         } else {
-          evidenceFacts.push(evidenceBinding);
+          callout.append(evidenceBinding);
         }
+        for (const line of [evidenceFreshness, evidenceQualification])
+          tw(line, "m-0 text-[11px] text-on-surface-variant leading-snug");
         if (evidence.sourceItemReports !== undefined)
           evidenceFacts.push(sourceItemReportsElement(evidence.sourceItemReports));
         evidenceSheet.append(...evidenceFacts);
@@ -2133,6 +2599,11 @@ export function mountWorkbench(
         const technicalSummary = document.createElement("summary");
         const metadata = document.createElement("pre");
         technical.className = "workbench-item-technical";
+        tw(
+          technical,
+          "rounded border border-solid border-hairline bg-surface-container-low min-w-0 scroll-mt-32",
+        );
+        tw(technicalSummary, `${INSPECTOR_LABEL} px-2 py-1.5 cursor-pointer`);
         technicalSummary.textContent = "More technical details";
         metadata.textContent = assetDetailsPresentation(asset, options.bundle).advancedJson;
         const raw = document.createElement("details");
@@ -2162,14 +2633,13 @@ export function mountWorkbench(
         const expandedActions = document.createElement("div");
         expandedActions.className = "workbench-expanded-actions";
         const panelAction = action.cloneNode(true) as HTMLButtonElement;
-        // The inspector keeps the full-size primary button.
-        panelAction.className = `btn sm primary ${BTN_PRIMARY}`;
+        // The footer's primary button (the prototype's "Apply").
+        panelAction.className = INSPECTOR_PRIMARY;
         delete panelAction.dataset.workbenchRowAction;
         panelAction.dataset.workbenchInspectorAction = "true";
-        const consequence = document.createElement("p");
-        consequence.textContent = decision.consequence;
-        expandedActions.append(panelAction, consequence);
-        expanded.append(why, evidenceSheet, expandedActions, technical);
+        tw(expanded, "flex flex-col gap-3 min-w-0");
+        expanded.dataset.wbInspectorSections = "";
+        expanded.append(stateLine, why, provenance, evidenceSheet, technical);
         if (comparisonPreview?.assetId === asset.id) {
           const comparison = selectionComparisonPresentation(asset, options.bundle, state);
           const preview = document.createElement("section");
@@ -2179,6 +2649,11 @@ export function mountWorkbench(
           const confirm = document.createElement("button");
           const cancel = document.createElement("button");
           preview.className = "workbench-selection-comparison";
+          tw(
+            preview,
+            "p-2.5 rounded border border-solid border-wb-badge-border bg-wb-review-bg flex flex-col gap-1.5 text-[11px] min-w-0",
+          );
+          tw(previewHeading, "m-0 text-tertiary font-semibold text-[11px]");
           previewHeading.textContent = "Review replacement";
           previewHeading.tabIndex = -1;
           previewHeading.dataset.workbenchComparisonHeading = "true";
@@ -2267,7 +2742,7 @@ export function mountWorkbench(
             confirm,
             cancel,
           );
-          expanded.append(preview);
+          expanded.insertBefore(preview, technical);
         }
         details.dataset.workbenchInspectorAssetId = asset.id;
         details.dataset.workbenchInspectorView = "item";
@@ -2275,7 +2750,13 @@ export function mountWorkbench(
         inspectorMode = "item";
         lastInspectedAssetId = asset.id;
         lastFullDetail = undefined;
-        details.replaceChildren(inspectorHeader, expanded);
+        expandedActions.append(back, close, panelAction);
+        tw(expandedActions, "flex items-center gap-2 flex-1 min-w-0");
+        details.replaceChildren(
+          inspectorHeader,
+          inspectorBody(expanded),
+          inspectorFooter(expandedActions),
+        );
         syncInspectorPresentation();
       }
       rows.append(row);
@@ -2583,7 +3064,9 @@ export function mountWorkbench(
       trigger,
     );
     if (!inspectorOpen) return;
-    const close = details.querySelector<HTMLButtonElement>("[data-workbench-details-close]");
+    const close = details.querySelector<HTMLButtonElement>(
+      "[data-workbench-details-close]:not(.workbench-exposure-back)",
+    );
     if (close !== null) close.textContent = "Cancel preview";
     const preview = document.createElement("section");
     preview.className = "workbench-template-preview";
@@ -2660,7 +3143,12 @@ export function mountWorkbench(
       confirm.textContent = "Add to draft";
       preview.append(confirm);
     }
-    details.append(preview);
+    tw(
+      preview,
+      "p-2.5 rounded border border-solid border-wb-badge-border bg-wb-review-bg flex flex-col gap-1.5 text-[11px] min-w-0",
+    );
+    tw(heading, "m-0 text-tertiary font-semibold text-[11px]");
+    (details.querySelector<HTMLElement>("[data-wb-inspector-body]") ?? details).append(preview);
   };
   const renderTemplates = (): void => {
     templateList.replaceChildren();
@@ -3349,19 +3837,33 @@ export function mountWorkbench(
     heading.id = "workbench-detail-title";
     heading.tabIndex = -1;
     heading.textContent = "Review draft";
+    tw(heading, "m-0 font-semibold text-on-surface text-[13px] font-mono");
     intro.textContent = `${entries.length} saved entries. Changes here update your policy draft.`;
     intro.className = "help";
+    tw(intro, "m-0 text-[11px] text-outline font-mono");
     back.type = "button";
-    back.className = "btn sm secondary workbench-exposure-back";
+    back.className = "workbench-exposure-back";
+    tw(back, FOOTER_BUTTON);
     back.dataset.workbenchDetailsClose = "true";
     back.textContent = "Back to catalog";
+    tw(draftReviewList, "flex flex-col gap-1.5 min-w-0");
+    const draftHeader = inspectorNode("div", "flex flex-col gap-1 min-w-0");
+    draftHeader.append(inspectorNode("span", INSPECTOR_LABEL, "Draft review"), heading, intro);
     details.dataset.workbenchInspectorView = "draft";
     details.removeAttribute("data-workbench-inspector-asset-id");
     details.setAttribute("aria-labelledby", heading.id);
-    details.replaceChildren(back, heading, intro, draftReviewList);
+    details.replaceChildren(
+      inspectorHead(),
+      inspectorBody(draftHeader, draftReviewList),
+      inspectorFooter(back),
+    );
     syncInspectorPresentation();
     if (entries.length === 0) {
       const empty = document.createElement("p");
+      tw(
+        empty,
+        "m-0 p-3 rounded border border-dashed border-hairline bg-surface-container-low text-[11.5px] text-on-surface-variant",
+      );
       empty.textContent = "This draft has no saved choices, requests, dependencies, or exclusions.";
       draftReviewList.append(empty);
       return;
@@ -3373,6 +3875,10 @@ export function mountWorkbench(
     if (adoption !== undefined && !adoption.accepted) {
       const problem = document.createElement("p");
       problem.className = "workbench-overlap-notice";
+      tw(
+        problem,
+        "m-0 p-2.5 rounded border border-solid border-wb-badge-border bg-wb-review-bg text-[11px] text-on-surface leading-snug",
+      );
       problem.setAttribute("role", "status");
       problem.textContent =
         "This draft needs repair before adoption commands are available. " +
@@ -3388,8 +3894,18 @@ export function mountWorkbench(
       const detailsButton = document.createElement("button");
       const asset = options.bundle.assets[entry.assetId];
       row.className = "workbench-draft-review-item";
+      tw(
+        row,
+        "p-2.5 rounded bg-surface-container-low border border-solid border-hairline flex flex-col gap-1.5 min-w-0",
+      );
       category.className = "workbench-draft-review-category";
+      tw(
+        category,
+        `m-0 self-start px-1.5 py-0.5 rounded border border-solid font-mono text-[9.5px] uppercase tracking-wider font-semibold ${entry.needsReview === true ? "bg-wb-review-bg border-wb-badge-border text-wb-review" : "bg-surface-container border-hairline text-outline"}`,
+      );
       category.textContent = entry.category;
+      tw(title, "m-0 font-mono font-bold text-[12px] text-on-surface break-words");
+      tw(origin, "m-0 font-mono text-[10px] text-outline");
       title.textContent =
         entry.needsReview || asset === undefined
           ? "Saved item: " + entry.assetId
@@ -3426,6 +3942,7 @@ export function mountWorkbench(
             "Removes its saved choices, requests, and exclusions together. Other origins are kept.";
           const removal = document.createElement("div");
           removal.className = "workbench-template-removal";
+          tw(removal, "flex flex-col items-start gap-1");
           removal.append(help, remove);
           row.append(removal);
         }
@@ -3470,6 +3987,7 @@ export function mountWorkbench(
         const evidence = assetEvidencePresentation(asset, options.bundle);
         const context = document.createElement("section");
         context.className = "workbench-review-context";
+        tw(context, "flex flex-col gap-1 min-w-0");
         const purpose = document.createElement("p");
         purpose.textContent = decision.purpose;
         const consequence = document.createElement("p");
@@ -3478,6 +3996,10 @@ export function mountWorkbench(
             ? "This is an administrator exclusion. It does not erase other saved requests."
             : decision.consequence;
         const report = document.createElement("p");
+        tw(
+          report,
+          "m-0 self-start px-1.5 py-0.5 rounded font-mono text-[10px] font-medium bg-surface-container text-on-surface-variant data-[workbench-evidence-tone=positive]:bg-wb-pass-bg data-[workbench-evidence-tone=positive]:text-wb-pass data-[workbench-evidence-tone=warning]:bg-wb-review-bg data-[workbench-evidence-tone=warning]:text-wb-review",
+        );
         report.dataset.workbenchEvidenceTone = evidence.tone;
         report.textContent =
           evidence.statusLabel +
@@ -3497,6 +4019,10 @@ export function mountWorkbench(
             adoptionDetails.append(next);
             if (adoption?.accepted && handoff.command !== undefined) {
               const command = document.createElement("code");
+              tw(
+                command,
+                "block mt-1 p-2 rounded bg-surface-container-lowest border border-solid border-hairline font-mono text-[10.5px] text-on-surface break-all",
+              );
               command.textContent = handoff.command;
               adoptionDetails.append(command);
             }
@@ -3512,8 +4038,11 @@ export function mountWorkbench(
           reasonDisclosure.className = "workbench-review-rationale";
           reasonSummary.textContent = savedEntry.rationale ? "Edit reason" : "Add a reason";
           reasonPanel.className = "workbench-review-reason";
+          tw(reasonPanel, "flex flex-col gap-1.5 pt-1.5");
           const label = document.createElement("label");
+          tw(label, "text-[10px] font-mono uppercase tracking-wider text-outline font-semibold");
           const reason = document.createElement("textarea");
+          tw(reason, WB_TEXTAREA);
           reason.id = "workbench-reason-" + draftReviewList.children.length;
           reason.name = "selection-rationale";
           reason.maxLength = 1000;
@@ -3527,8 +4056,10 @@ export function mountWorkbench(
           const save = document.createElement("button");
           save.type = "button";
           save.className = "btn sm secondary";
+          tw(save, "self-start");
           save.textContent = "Save reason";
           const feedback = document.createElement("span");
+          tw(feedback, "text-[10.5px] font-mono text-outline empty:hidden");
           feedback.setAttribute("role", "status");
           save.addEventListener("click", () => {
             const rationale = reason.value.trim().normalize("NFC");
@@ -3563,6 +4094,7 @@ export function mountWorkbench(
         detailsButton.dataset.workbenchDetailId = asset.id;
         detailsButton.setAttribute("aria-controls", details.id);
         detailsButton.setAttribute("aria-label", "Read details for " + humanizedAssetLabel(asset));
+        tw(detailsButton, "self-start");
         detailsButton.textContent =
           previousCatalogReportPresentation(
             asset,

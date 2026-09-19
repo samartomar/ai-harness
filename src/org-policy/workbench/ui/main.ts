@@ -130,6 +130,7 @@ interface CatalogControllerHooks {
   /** The nav rail's "Catalog scopes" section and the header's Review Changes badge. */
   mountSourceRail?(rail: HTMLElement): void;
   onDraftCount?(count: number): void;
+  inspectorChrome?: { tabs: HTMLElement; close: HTMLElement };
 }
 
 /**
@@ -164,6 +165,7 @@ function mountCatalogController(
     ...(hooks.revealInspector === undefined ? {} : { revealInspector: hooks.revealInspector }),
     ...(hooks.mountSourceRail === undefined ? {} : { mountSourceRail: hooks.mountSourceRail }),
     ...(hooks.onDraftCount === undefined ? {} : { onDraftCount: hooks.onDraftCount }),
+    ...(hooks.inspectorChrome === undefined ? {} : { inspectorChrome: hooks.inspectorChrome }),
     dispatch(action, expectedState) {
       const imported = importedState(session.snapshotPolicy(), bundle, bindings, sourceInputs);
       const current = imported.state;
@@ -500,6 +502,7 @@ if (!userDoor) {
       inspectorHost: shell.inspectorPanel,
       revealInspector: () => shell.revealInspector(),
       mountSourceRail: (rail) => shell.mountCatalogScopes(rail),
+      inspectorChrome: shell.adoptInspectorChrome(),
       onDraftCount: (count) => shell.setReviewCount(count),
       prepareApproval(asset) {
         // S7: the protected approval form lives on the additions screen.
