@@ -150,6 +150,7 @@ function newShellHtml(model: PolicyStudioModel): string {
 <style id="wb-styles">${workbenchCss}</style>
 </head>
 <body>
+<a class="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[999] focus:p-2 focus:rounded focus:border focus:border-solid focus:border-outline-variant focus:bg-surface-container-lowest focus:text-on-surface" href="#wb-main">Skip to policy workbench</a>
 <div id="wb-root" data-wb-shell="new"></div>
 <template id="wb-protected-policy">${protectedPolicyWorkbenchMarkup()}</template>
 <template id="wb-custom-mcp">${customMcpFormsMarkup()}</template>${newShellProvenance(model)}

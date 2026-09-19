@@ -134,6 +134,7 @@ export function mountNewWorkbench(options: NewWorkbenchOptions): NewWorkbench {
     announce: shell.announce,
     render,
     changed: () => window.dispatchEvent(new Event(POLICY_CHANGE_EVENT)),
+    resetEditing: () => acme.resetCurationEdit(),
     selectionValidator: options.selectionValidator,
   });
   const transfer = mountFileTransfer({

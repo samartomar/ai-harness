@@ -214,6 +214,8 @@ function screenPanel(definition: ScreenDefinition): { panel: HTMLElement; body: 
     "m-0 text-[18px] font-bold tracking-tight font-mono text-on-surface flex items-center gap-2",
   );
   title.id = titleId;
+  // Focus lands here after a file-menu action moves to this screen.
+  title.tabIndex = -1;
   title.append(icon(definition.icon, "w-4 h-4 text-primary"), el("span", "", definition.title));
   const body = el("div", "flex flex-col gap-3 min-w-0");
   body.dataset.wbScreenBody = definition.screen;
@@ -398,6 +400,13 @@ export function mountAdminShell(
     inspector,
   );
   inspector.querySelector("[data-close-inspector]")?.addEventListener("click", () => {
+    // Close an open catalog item through its own close path first, so its
+    // open state, panel attributes and row aria-expanded are reset.
+    inspectorPanel
+      .querySelector<HTMLButtonElement>(
+        "[data-workbench-inspector-open='true'] [data-workbench-details-close]",
+      )
+      ?.click();
     inspector.dataset.wbRailState = "closed";
     syncInspector();
   });

@@ -1,6 +1,7 @@
 import { mountProtectedPolicyWorkbench } from "../../../studio-protected-authority-runtime.js";
 import { policySchemaErrors } from "../../schema-validation.js";
 import { button, el, withId } from "./dom.js";
+import { infoTip } from "./org-screen.js";
 import { governanceOrDefault } from "./policy-grammar.js";
 import type { PolicySession } from "./policy-session.js";
 
@@ -33,6 +34,8 @@ export interface AcmeScreen {
   mountProtected(model: unknown): void;
   /** The catalog's "Prepare approval": fill the protected form for an asset. */
   prepareApproval(asset: { readonly id: string; readonly kind: string }): void;
+  /** Leave curation edit mode (Clear policy and a restored policy, as the legacy `r.editing = null`). */
+  resetCurationEdit(): void;
 }
 
 const CARD =
@@ -453,7 +456,16 @@ export function mountAcmeScreen(body: HTMLElement, options: AcmeScreenOptions): 
   curationActions.append(addCuration, cancelCuration);
   const form = el("div", "dform flex flex-col gap-2 mt-2");
   form.append(purpose, grid, curationActions);
-  editor.append(editorSummary, form);
+  editor.append(
+    editorSummary,
+    infoTip(
+      "curation-editor-info",
+      "curation-editor-help",
+      "About external curation",
+      "AIH preserves audited curation intent for agents, skills and commands with a pin and an audit record. It never installs, projects or enforces them - ECC and Superpowers do.",
+    ),
+    form,
+  );
   const curationRows = withId(el("div", "flex flex-col gap-1.5 min-w-0"), "curation-rows");
   curation.append(
     withId(el("h3", HEADING, "ECC / Superpowers curation"), "wb-acme-curation-title"),
@@ -480,6 +492,17 @@ export function mountAcmeScreen(body: HTMLElement, options: AcmeScreenOptions): 
       "Custom MCP can only be authored as a fully pinned pending candidate. It has no activation affordance until supported scanning, evidence and projection exist.",
     ),
   );
+
+  custom
+    .querySelector("#custom-editor > summary")
+    ?.after(
+      infoTip(
+        "custom-editor-info",
+        "custom-editor-help",
+        "About custom sources",
+        "A custom MCP is recorded immediately as a fully pinned candidate and stays blocked until a completed scan binds to that exact pin.",
+      ),
+    );
 
   // Protected Enterprise policy file (constant legacy markup; its runtime mounts below).
   const protectedHost = el("div", "flex flex-col gap-3 min-w-0");
@@ -517,13 +540,14 @@ export function mountAcmeScreen(body: HTMLElement, options: AcmeScreenOptions): 
     showEcc(false);
     openEcc.focus({ preventScroll: true });
   });
-  for (const [panel, close] of [
-    [hookInfo, () => showHookInfo(false)],
-    [eccPanel, () => showEcc(false)],
-  ] as const)
-    panel.addEventListener("keydown", (event) => {
-      if (event.key === "Escape") close();
-    });
+  /** The legacy drawer Escape (`workspace-interactions.ts`): from anywhere while open, back to the opener. */
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    const open = !eccPanel.hidden ? closeEcc : !hookInfo.hidden ? closeHookInfo : null;
+    if (open === null) return;
+    event.preventDefault();
+    open.click();
+  });
   /** The legacy `Py`: an adoption route's `[data-ecc-mcp-approval]` preselects a pinned entry. */
   document.addEventListener("click", (event) => {
     const target = event.target instanceof Element ? event.target : null;
@@ -624,12 +648,13 @@ export function mountAcmeScreen(body: HTMLElement, options: AcmeScreenOptions): 
       if (value("curation-id").trim() && value("curation-owner").trim())
         fieldError("curation-id", "");
     });
-  cancelCuration.addEventListener("click", () => {
+  const leaveCurationEdit = () => {
     editing = null;
     frameworkField.disabled = false;
     cancelCuration.hidden = true;
     resetCurationEditor();
-  });
+  };
+  cancelCuration.addEventListener("click", leaveCurationEdit);
 
   addCuration.addEventListener("click", () => {
     const current = session();
@@ -1041,6 +1066,7 @@ export function mountAcmeScreen(body: HTMLElement, options: AcmeScreenOptions): 
 
   let protectedMounted = false;
   return {
+    resetCurationEdit: leaveCurationEdit,
     render() {
       renderFrameworks();
       renderRows();

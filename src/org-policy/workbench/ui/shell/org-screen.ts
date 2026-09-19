@@ -169,7 +169,12 @@ function writableGovernance(policy: Loose): Loose {
  * the legacy `.tip-wrap`: hover, focus, click and Enter open it; Escape,
  * pointer leave and a click elsewhere close it.
  */
-function infoTip(buttonId: string, helpId: string, label: string, text: string): HTMLElement {
+export function infoTip(
+  buttonId: string,
+  helpId: string,
+  label: string,
+  text: string,
+): HTMLElement {
   const wrap = el("span", "tip-wrap relative inline-flex");
   const trigger = button(INFO_BUTTON, "ⓘ", buttonId);
   trigger.setAttribute("aria-label", label);

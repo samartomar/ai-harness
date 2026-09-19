@@ -362,6 +362,7 @@ export function mountFileTransfer(options: FileTransferOptions): FileTransfer {
   exportPolicy.addEventListener("click", () => {
     setMenu(false);
     shell.router.setScreen("changes");
+    document.getElementById("wb-screen-title-changes")?.focus({ preventScroll: true });
     const blocked = session.validate().concat(session.readinessBlockers());
     if (blocked.length) {
       announce(`Export blocked: ${blocked.slice(0, 3).join("; ")}`, true);
@@ -394,6 +395,7 @@ export function mountFileTransfer(options: FileTransferOptions): FileTransfer {
   clear.addEventListener("click", () => {
     setMenu(false);
     session.clear();
+    menuToggle.focus({ preventScroll: true });
   });
 
   if (!options.catalogValid) {

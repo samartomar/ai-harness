@@ -105,3 +105,26 @@ describe("new shell inspector rail", () => {
     expect(inspector?.textContent).toContain(hostile);
   });
 });
+
+describe("new shell inspector rail close", () => {
+  it("closes an open item through the catalog's close path when the rail X is used", () => {
+    const window = newShell();
+    const document = window.document;
+    const title = document.querySelector("button.workbench-row-title[data-workbench-expand-id]");
+    click(title, window);
+    const inspector = document.getElementById("workbench-detail-panel");
+    expect(inspector?.getAttribute("data-workbench-inspector-open")).toBe("true");
+    const expandedRows = () =>
+      document.querySelectorAll(".workbench-row-expand[aria-expanded='true']").length;
+    expect(expandedRows()).toBe(1);
+    click(document.querySelector("[data-close-inspector]"), window);
+    expect(document.getElementById("inspector-rail")?.getAttribute("data-wb-rail-state")).toBe(
+      "closed",
+    );
+    expect(inspector?.getAttribute("data-workbench-inspector-open")).toBe("false");
+    expect(expandedRows()).toBe(0);
+    const before = document.activeElement;
+    inspector?.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(document.activeElement).toBe(before);
+  });
+});

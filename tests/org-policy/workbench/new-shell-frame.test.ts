@@ -189,3 +189,26 @@ describe("new admin shell frame", () => {
     expect([...document.querySelectorAll("style")].map((style) => style.id)).toEqual(["wb-styles"]);
   });
 });
+
+describe("admin page: skip link and file-menu focus", () => {
+  it("places the skip link first in the body, pointing at the main area", () => {
+    const window = open(newShellModel());
+    const first = window.document.body.firstElementChild;
+    expect(first?.tagName).toBe("A");
+    expect(first?.textContent).toBe("Skip to policy workbench");
+    expect(first?.getAttribute("href")).toBe("#wb-main");
+    expect(window.document.getElementById("wb-main")).not.toBeNull();
+  });
+
+  it("moves focus to the Policies & Publish heading after Policy JSON", () => {
+    const window = open(newShellModel());
+    click(window, "#export");
+    expect(window.document.activeElement?.id).toBe("wb-screen-title-changes");
+  });
+
+  it("returns focus to the file-menu toggle after Clear policy", () => {
+    const window = open(newShellModel());
+    click(window, "#clear-policy");
+    expect(window.document.activeElement?.id).toBe("wb-file-menu-toggle");
+  });
+});

@@ -31,6 +31,8 @@ export interface PolicySessionHooks {
   render(): void;
   /** Tell listeners the policy changed (`aih-workbench-policy-change`). */
   changed(): void;
+  /** Leave any in-progress edit mode when the whole policy is replaced (the legacy `r.editing = null`). */
+  resetEditing(): void;
   /** The selection validator the grammar consults (`window.__aihWorkbenchValidatePolicy`). */
   selectionValidator(): unknown;
 }
@@ -122,6 +124,7 @@ export function createPolicySession(
       state.managedMcpOptIn = state.managedMcpOptIn || managedOnly(prepared.policy);
       state.policy = prepared.policy;
       reconcile();
+      hooks.resetEditing();
       hooks.render();
       hooks.changed();
       return prepared.message;
@@ -161,6 +164,7 @@ export function createPolicySession(
     clear() {
       state.policy = structuredClone(model.initialPolicy);
       state.managedMcpOptIn = managedOnly(state.policy);
+      hooks.resetEditing();
       hooks.announce(
         "Policy cleared. All selections, requests and curation records were removed from this draft. You can start again with any source.",
       );
