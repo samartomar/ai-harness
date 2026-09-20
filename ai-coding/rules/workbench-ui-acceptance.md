@@ -126,3 +126,41 @@ apply on top of it.
 
 A picture of a hand-built page is never a design reference. The other
 screenshots in that folder record the earlier pages and are history only.
+
+## 7. Editors to port
+
+The hand-built page's editors and controls that the component UI does not have
+yet, in porting order, smallest and most independent first. This is an
+inventory read from the source: confirm each row against its source and tests
+when its turn comes, and mark it `ported` with the component test that pins it.
+`ui/` stands for `src/org-policy/workbench/ui/`. All are offline except 18.
+
+| # | Editor | Hand-built source | Pinned today by | Status |
+|---|---|---|---|---|
+| 1 | Changes view: diff against the starting policy, whole file, copy | `ui/shell/changes-screen.ts`, pure `ui/shell/policy-diff.ts` | `wb-tests/new-shell-changes.test.ts` | open |
+| 2 | Clear policy | `ui/shell/file-transfer.ts`, `policy-session.ts` `clear()` | `new-shell-download-compat.test.ts`, `new-shell-frame.test.ts` | open |
+| 3 | File name rules and the validate command hint | `ui/shell/file-transfer.ts` `updateFilenameHelp` | `new-shell-download-compat.test.ts` | open |
+| 4 | User page: set all, reset | `ui/user-door.ts`, pure `ui/user-door-model.ts` | `wb-tests/user-door.test.ts`, `browser/user-door.spec.ts` | open |
+| 5 | Import evidence receipt | `ui/shell/file-transfer.ts`, `policy-session.ts` `setReceipt` | `new-shell-download-compat.test.ts` | open |
+| 6 | Governance decision: import, inspect, download | `ui/shell/file-transfer.ts`, `scan-screen.ts`, pure `ui/decision-json.ts` | `new-shell-download-compat.test.ts`, `legacy-download-characterization.test.ts` | open |
+| 7 | Kind ledger, rail collapse, inspector tabs | `ui/shell/admin-shell.ts`, pure `ui/kind-ledger.ts` | `new-shell-frame.test.ts`, `kind-ledger.test.ts` | open |
+| 8 | Provenance strip | `ui/shell/new-workbench.ts` `mountProvenance` | `design-foundation.test.ts` | open |
+| 9 | Readiness line, adoption recipe, evidence and version drawers | `ui/shell/org-screen.ts` | `new-shell-org.test.ts`, `browser/compact-setup.spec.ts` | open |
+| 10 | Scan view: glance tiles, finding groups, receipt rows | `ui/shell/scan-screen.ts` | `new-shell-scan.test.ts` | open |
+| 11 | Catalog search, type tabs, source select | `ui/catalog-inventory.ts`, pure `ui/catalog-presentation.ts` | `catalog-browse.test.ts`, `new-shell-sources.test.ts` | open |
+| 12 | Item inspector: details, security scan, policy JSON | `ui/catalog-inventory.ts`, `admin-shell.ts` | `new-shell-inspector.test.ts`, `evidence-display.test.ts` | open |
+| 13 | Developer tool setup | `ui/shell/org-screen.ts`, `ui/developer-tool-selection.ts` | `developer-tool-catalog.test.ts`, `browser/developer-tools.spec.ts` | open |
+| 14 | ECC hook controls | `ui/shell/org-screen.ts`, pure `src/org-policy/ecc-hook-controls.ts` | `new-shell-org.test.ts` | open |
+| 15 | ECC MCP approval | `ui/shell/acme-screen.ts`, `src/org-policy/ecc-mcp-approval.ts` | `new-shell-acme.test.ts` | open |
+| 16 | Framework curation: add, edit, remove | `ui/shell/acme-screen.ts` | `new-shell-acme.test.ts`, `shell-extracted-semantics.test.ts` | open |
+| 17 | Custom MCP and remote MCP forms | `ui/shell/acme-screen.ts`, `src/org-policy/studio-custom-mcp.ts` | `shell-extracted-semantics.test.ts` | open |
+| 18 | GitHub skill intake, needs the local server | `ui/artifact-intake-runtime.js`, `src/org-policy/ui-server.ts` | `browser/artifact.spec.ts` | open |
+| 19 | Draft review, policy exposure, review badge | `ui/catalog-inventory.ts`, pure `ui/selection-comparison.ts` | `new-shell-changes.test.ts`, `browser/generic-journeys.spec.ts` | open |
+| 20 | Templates, exclusions, repairs, comparison confirm | `ui/catalog-inventory.ts`, pure `src/org-policy/workbench/selection-engine.ts` | `browser/generic-journeys.spec.ts`, `policy-import.test.ts` | open |
+| 21 | Import migration message and preview for version 2 policies | `policy-session.ts` `importPolicy`, `ui/schema3-reprojection.ts` | `legacy-download-characterization.test.ts` and the `import-migration.*` goldens | open |
+| 22 | Artifact intake workspace | `ui/shell/acme-screen.ts`, `ui/artifact-intake-runtime.js`, pure `ui/shell/artifact-intake-model.ts` | `new-shell-download-compat.test.ts`, `browser/new-shell.spec.ts` | open |
+| 23 | Protected bundle authoring: decisions, revocations, digests | `ui/shell/acme-screen.ts`, `src/org-policy/studio-protected-authority.ts` and its runtime | `new-shell-download-compat.test.ts`, `browser/journeys.spec.ts` | open |
+
+The hand-built page has no editor for organization source data, signature
+checks, or the prototype's organization name and accountable people, so the
+component UI ports none.
