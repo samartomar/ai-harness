@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "kind": "aih-project-policy",
+  "cutFrom": {
+    "schemaVersion": 3,
+    "sha256": "5087919590a79f8d8dfe98873ad9f280775697ed2e21a3e1b2c86e7b429a8603"
+  },
+  "for": {
+    "type": "project",
+    "name": "Payments API"
+  },
+  "aiTools": [
+    "claude"
+  ],
+  "items": [
+    {
+      "assetId": "fixture:control",
+      "origin": {
+        "kind": "administrator"
+      },
+      "use": "required"
+    }
+  ]
+}

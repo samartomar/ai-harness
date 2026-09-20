@@ -1,0 +1,87 @@
+{
+  "schemaVersion": 3,
+  "minimumPosture": "enterprise",
+  "references": {
+    "repoContract": "ai-coding/project.json"
+  },
+  "governance": {
+    "policyVersion": "1",
+    "catalog": {
+      "reviewed": [
+        {
+          "id": "usage-metering",
+          "kind": "hook",
+          "description": "Fixture governed hook control",
+          "capabilities": [],
+          "risks": [],
+          "source": {
+            "type": "hook",
+            "handler": "usage-metering",
+            "scriptDigest": "sha256:0d6da4f993901e57da5fadb281ec54ae6b9516797c014c974b65125e8114ae37"
+          },
+          "targets": [
+            "claude",
+            "codex"
+          ],
+          "projector": "usage-hook",
+          "lifecycle": "supported",
+          "evidence": {
+            "record": "aih-usage-metering"
+          },
+          "findings": [],
+          "autoExecute": false
+        }
+      ],
+      "custom": []
+    },
+    "activations": [
+      {
+        "candidate": "usage-metering",
+        "state": "active",
+        "targets": [
+          "claude"
+        ],
+        "clarification": "Requested by: administrator"
+      }
+    ],
+    "authority": {
+      "approvals": [],
+      "decisions": []
+    },
+    "externalCuration": [],
+    "externalSelections": [],
+    "eccMcpApprovals": [],
+    "hookRegistrations": [],
+    "supportedClis": [
+      "claude"
+    ]
+  },
+  "minimumCoreVersion": "0.6.0",
+  "authoringSelections": {
+    "selectionVersion": "workbench-selection/v1",
+    "roots": [
+      {
+        "assetId": "fixture:control",
+        "mode": "select",
+        "includeOptionalMembers": false,
+        "origin": {
+          "kind": "administrator"
+        },
+        "sourceId": "source:fixture-core",
+        "sourceRevisionId": "revision:fixture",
+        "contentDigest": "sha256:365cac42067bab0afb9ea79196a9f800788a7310ec46d8d6e6bbcbf19675392f",
+        "resolvedItems": [
+          {
+            "assetId": "fixture:control",
+            "sourceId": "source:fixture-core",
+            "sourceRevisionId": "revision:fixture",
+            "contentDigest": "sha256:365cac42067bab0afb9ea79196a9f800788a7310ec46d8d6e6bbcbf19675392f"
+          }
+        ]
+      }
+    ],
+    "exclusions": [],
+    "requests": [],
+    "drafts": []
+  }
+}
