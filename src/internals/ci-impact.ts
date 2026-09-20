@@ -7,7 +7,7 @@ import {
 } from "./workbench-provider-ownership.js";
 import { isWorkbenchTestPath } from "./workbench-test-ownership.js";
 
-export const CI_SELECTOR_VERSION = "1.5.5";
+export const CI_SELECTOR_VERSION = "1.5.6";
 
 export type CiRiskClass = "docs" | "focused" | "cross-platform" | "full";
 export type CiTestLane = "docs" | "core" | "workbench" | "both" | "full";
@@ -201,16 +201,17 @@ function isWorkbenchBrowserInput(path: string): boolean {
   return (
     (path.startsWith("tests/org-policy/workbench/browser/") && path.endsWith(".spec.ts")) ||
     path === "tests/org-policy/workbench/browser/setup.ts" ||
-    path === "tests/org-policy/workbench/browser/fixture.ts"
+    path === "tests/org-policy/workbench/browser/fixture.ts" ||
+    path === "tests/org-policy/workbench/browser/component-hosts-fixture.ts"
   );
 }
 
 /**
  * The component UI folder. Its typecheck, lint and component tests are
  * unconditional static checks (`CI_STATIC_SCRIPTS`), so no selection can drop
- * them and the folder selects no Vitest file here. No host serves the
- * component page yet; when one does, this folder must also require the
- * browser journeys.
+ * them and the folder never selects a Vitest file for that reason. Both
+ * production hosts now serve the component page, so a change here also owns
+ * the Workbench Vitest tests and the browser journeys that drive those hosts.
  */
 function isComponentUiInput(path: string): boolean {
   return path.startsWith("workbench-ui/");
@@ -242,7 +243,12 @@ function scopedTestLane(
       workbench = true;
       continue;
     }
-    if (isWorkbenchSource(path) || isWorkbenchTest(path) || isWorkbenchBrowserInput(path)) {
+    if (
+      isWorkbenchSource(path) ||
+      isWorkbenchTest(path) ||
+      isWorkbenchBrowserInput(path) ||
+      isComponentUiInput(path)
+    ) {
       workbench = true;
     } else if (path.startsWith("src/org-policy/")) {
       // Conservatively treat every non-Workbench org-policy source as shared:
@@ -329,6 +335,9 @@ export function classifyCiImpact(
     docsOnly = false;
     if (isComponentUiInput(path)) {
       matchedRules.push("workbench-ui");
+      selectedDomains.add("org-policy");
+      for (const test of testFiles.filter(isWorkbenchTest)) selectedTests.add(test);
+      requiresGenericBrowserJourneys = true;
       continue;
     }
     const providerId = providerForWorkbenchPath(path);

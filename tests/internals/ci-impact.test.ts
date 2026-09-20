@@ -34,6 +34,7 @@ describe("CI impact classifier", () => {
     "tests/org-policy/workbench/browser/nested/new.spec.ts",
     "tests/org-policy/workbench/browser/setup.ts",
     "tests/org-policy/workbench/browser/fixture.ts",
+    "tests/org-policy/workbench/browser/component-hosts-fixture.ts",
   ])("keeps browser-owned input %s in the complete packed Workbench lane", (path) => {
     const receipt = classifyCiImpact({ baseSha, headSha, changedPaths: [path], testFiles });
     expect(receipt).toMatchObject({
@@ -236,7 +237,9 @@ describe("CI impact classifier", () => {
     expect(receipt.selectedTests).not.toContain("tests/org-policy/catalog.test.ts");
   });
 
-  it("routes the component UI folder to its unconditional static checks without the full suite", () => {
+  it("routes the component UI folder to the Workbench lane and the browser journeys", () => {
+    // Both production hosts serve this page now, so a UI-only change owns the
+    // Workbench tests and the journeys that drive those hosts.
     const receipt = classifyCiImpact({
       baseSha,
       headSha,
@@ -248,9 +251,10 @@ describe("CI impact classifier", () => {
       fullSuite: false,
       fallbackReasons: [],
       matchedRules: ["workbench-ui"],
-      riskClass: "focused",
-      selectedTests: [],
-      requiresGenericBrowserJourneys: false,
+      testLane: "workbench",
+      selectedTests: testFiles.filter(isWorkbenchTestPath),
+      requiresGenericBrowserJourneys: true,
+      requiresPackedArtifact: true,
     });
     expect(validateCiImpactReceipt(receipt)).toEqual(receipt);
   });

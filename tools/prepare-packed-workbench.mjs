@@ -268,6 +268,72 @@ try {
 `;
 }
 
+/**
+ * Start the INSTALLED CLI's `--ui` and leave it running for a browser to
+ * drive. Same mechanism as the smoke above — the same preload intercepts the
+ * browser launch and reports the URL — but the caller decides the working
+ * folder, may add environment variables, and stops the server itself. The
+ * source checkout is never the working folder of this process.
+ */
+export async function startInstalledWorkbenchUi({ cli, cwd, preloadPath, env = {} }) {
+  if (typeof cli !== "string" || typeof cwd !== "string" || typeof preloadPath !== "string")
+    throw new Error("Installed Workbench UI needs the CLI, a working folder, and a preload path");
+  writeFileSync(preloadPath, packedUiBrowserPreload());
+  const child = spawn(
+    process.execPath,
+    ["--import", pathToFileURL(preloadPath).href, cli, "--ui"],
+    {
+      cwd,
+      env: { ...process.env, ...env },
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+    },
+  );
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  let stdout = "";
+  let stderr = "";
+  const urlPattern =
+    /AIH Policy Workbench: (http:\/\/127\.0\.0\.1:\d+\/aih-policy-workbench\.html#[a-f0-9]{64})/u;
+  const url = await new Promise((resolveUrl, rejectUrl) => {
+    const timeout = setTimeout(
+      () => rejectUrl(new Error("Installed CLI UI did not start: " + (stderr || stdout))),
+      30_000,
+    );
+    function check() {
+      const match = urlPattern.exec(stdout);
+      if (match) {
+        clearTimeout(timeout);
+        resolveUrl(match[1]);
+      }
+    }
+    child.stdout.on("data", (value) => {
+      stdout += value;
+      check();
+    });
+    child.stderr.on("data", (value) => {
+      stderr += value;
+    });
+    child.once("error", (error) => {
+      clearTimeout(timeout);
+      rejectUrl(error);
+    });
+    child.once("close", (code) => {
+      clearTimeout(timeout);
+      rejectUrl(new Error("Installed CLI UI exited with " + String(code) + ": " + (stderr || stdout)));
+    });
+  });
+  async function stop() {
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    const closed = new Promise((resolveClose) => child.once("close", resolveClose));
+    child.kill("SIGTERM");
+    const forced = setTimeout(() => child.kill("SIGKILL"), 5_000);
+    await closed;
+    clearTimeout(forced);
+  }
+  return { url, stop, stderr: () => stderr };
+}
+
 function defaultBrowserExpectation() {
   if (process.platform === "win32") return { command: "rundll32.exe", prefix: "url.dll,FileProtocolHandler" };
   if (process.platform === "darwin") return { command: "open", prefix: undefined };

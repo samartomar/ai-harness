@@ -25,6 +25,12 @@ export function packedConsumerInstallFiles(entry: PackedCoreEntry): {
   manifest: Record<string, unknown>;
   lock: Record<string, unknown>;
 };
+export function startInstalledWorkbenchUi(options: {
+  cli: string;
+  cwd: string;
+  preloadPath: string;
+  env?: Record<string, string>;
+}): Promise<{ url: string; stop: () => Promise<void>; stderr: () => string }>;
 export function preparePackedWorkbench(directory: string): Promise<{
   output: string;
   packageIntegrity: string;
