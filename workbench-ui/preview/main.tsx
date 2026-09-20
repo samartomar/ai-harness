@@ -21,7 +21,9 @@ const previewHost: WorkbenchHost = {
 async function start(): Promise<void> {
   const root = document.getElementById("root");
   if (root === null) throw new Error("The preview page has no root element.");
-  const response = await fetch("/preview-fixture.json");
+  // The packaged catalog by default; `?fixture` loads the tiny test fixture.
+  const fixture = new URLSearchParams(location.search).has("fixture");
+  const response = await fetch(fixture ? "/preview-fixture.json" : "/preview-real.json");
   const model: unknown = response.ok ? await response.json() : undefined;
   createRoot(root).render(
     <StrictMode>

@@ -2,6 +2,8 @@ import type { Plugin } from "vite";
 
 const FIXTURE_ROUTE = "/preview-fixture.json";
 const FIXTURE_MODULE = "/../tests/org-policy/studio-test-fixture.ts";
+const REAL_ROUTE = "/preview-real.json";
+const REAL_MODULE = "/../src/org-policy/studio-model.ts";
 
 /** The hosts the tiny fixture omits; the AI tools editor needs some to offer. */
 const PREVIEW_HOSTS = [
@@ -33,6 +35,23 @@ export function previewFixture(): Plugin {
           .catch((error: unknown) => {
             response.statusCode = 500;
             response.end(error instanceof Error ? error.message : "The preview fixture failed.");
+          });
+      });
+      // The packaged catalog, as the hosted build embeds it
+      // (`tools/build-workbench-ui.mjs` `runPackageOnlyModel`).
+      server.middlewares.use(REAL_ROUTE, (_request, response) => {
+        server
+          .ssrLoadModule(REAL_MODULE)
+          .then((loaded) => {
+            const model = (
+              loaded as { packageOnlyPolicyStudioModelV1(): unknown }
+            ).packageOnlyPolicyStudioModelV1();
+            response.setHeader("Content-Type", "application/json");
+            response.end(JSON.stringify(model));
+          })
+          .catch((error: unknown) => {
+            response.statusCode = 500;
+            response.end(error instanceof Error ? error.message : "The packaged model failed.");
           });
       });
     },
