@@ -3,6 +3,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
+import { transform } from "esbuild";
 import { build } from "vite";
 
 /**
@@ -151,10 +152,22 @@ export async function buildOfflineFile(root = repositoryRoot) {
     throw new Error("The offline file lost its input placeholder");
   }
 
-  let html = shell.replace("<!--script-->", `<script type="module">\n${script}\n</script>`);
+  // Function replacements only: a string replacement expands `$&`, `` $` `` and
+  // `$'`, which minified code contains, and would splice the page into itself.
+  const scriptElement = `<script type="module">\n${script}\n</script>`;
+  const styleElement = `<style>\n${css}\n</style>`;
+  let html = shell.replace("<!--script-->", () => scriptElement);
   html = html.includes("<!--style-->")
-    ? html.replace("<!--style-->", `<style>\n${css}\n</style>`)
-    : html.replace("</head>", `<style>\n${css}\n</style></head>`);
+    ? html.replace("<!--style-->", () => styleElement)
+    : html.replace("</head>", () => `${styleElement}</head>`);
+
+  // The assembled page must carry the bundle byte for byte, and that bundle
+  // must parse, or the served page mounts nothing.
+  const inlined = /<script type="module">\n([\s\S]*?)\n<\/script>/u.exec(html)?.[1];
+  if (inlined !== script) {
+    throw new Error("The offline file does not carry the built bundle byte for byte");
+  }
+  await transform(script, { loader: "js", format: "esm" });
 
   const generated = `module.exports = ${JSON.stringify(html)};\n`;
   const target = resolve(root, componentPagePath);
