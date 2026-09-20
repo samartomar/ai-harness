@@ -34,7 +34,7 @@ Uncommitted owner edit present at baseline time (untouched, not stashed):
 ### 5. `npm run test:workbench:ui` (Playwright: `npm run build && playwright test --config playwright.workbench.config.ts`)
 - First attempt: exit 1 — all 27 tests failed immediately (~3-10ms each) with:
   `Error: browserType.launch: Executable doesn't exist at
-  C:\Users\Administrator\AppData\Local\ms-playwright\chromium_headless_shell-1243\chrome-headless-shell-win64\chrome-headless-shell.exe`
+  %LOCALAPPDATA%\ms-playwright\chromium_headless_shell-1243\chrome-headless-shell-win64\chrome-headless-shell.exe`
   The failure output itself instructed running `npx playwright install`; ran that
   (repo/Playwright's own remediation, not an AIH command) to fetch Chromium +
   chrome-headless-shell (~310 MiB).
