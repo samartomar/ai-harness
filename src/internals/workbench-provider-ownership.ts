@@ -139,6 +139,9 @@ const approvedJsonSourceRoots = new Set([
 
 /** Provider import authority is narrower than the CI trigger scope above. */
 const NEUTRAL_PROVIDER_IMPORT_PATHS = [
+  // The shared pure SHA-256 of the policy grammar. It has no imports at all, so
+  // it carries no authority and no host module into a provider.
+  "src/contract/sha256-pure.ts",
   "src/contract/strict-json-v1.ts",
   // Workbench contracts share the canonical MCP target vocabulary. This registry
   // has only its schema dependency; it does not acquire or project target state.
