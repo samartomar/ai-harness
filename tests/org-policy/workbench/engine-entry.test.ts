@@ -10,6 +10,7 @@ import {
   createAdminEngine,
   createUserEngine,
   DEFAULT_POLICY_FILENAME,
+  type DiffLine,
   MAX_IMPORT_BYTES,
   PROJECT_POLICY_FILENAME,
   type TrimUseV1,
@@ -151,6 +152,36 @@ describe("workbench engine entry", () => {
     expect(admin().state().policyText).toBe(golden("aih-org-policy.vibe.json"));
     const file = admin().download();
     expect(file.ok && file.value.text).toBe(golden("aih-org-policy.vibe.json"));
+  });
+
+  describe("changes against the starting policy", () => {
+    it("reports no changes for an untouched policy", () => {
+      expect(admin().changes()).toEqual([]);
+    });
+
+    it("returns hunks that carry the added lines of a selection", () => {
+      const engine = admin();
+      expect(engine.setItemSelected("fixture:control", true).ok).toBe(true);
+      const hunks = engine.changes();
+      const added = hunks.filter((entry): entry is DiffLine => entry.kind === "+");
+      expect(added.length).toBeGreaterThan(0);
+      const text = engine.state().policyText;
+      for (const line of added) expect(text).toContain(line.text);
+      // Context lines and folded gaps, exactly as `changeHunks` produces them.
+      expect(hunks.some((entry) => entry.kind === " " || entry.kind === "gap")).toBe(true);
+    });
+
+    it("keeps the page's starting policy as the baseline after an import", () => {
+      const engine = admin();
+      const imported = JSON.parse(golden("aih-org-policy.vibe.json")) as Record<string, unknown>;
+      (imported.governance as Record<string, unknown>).policyVersion = "7";
+      expect(engine.importPolicyText(JSON.stringify(imported)).ok).toBe(true);
+      // The baseline is `serializePolicy(model.initialPolicy)`, fixed when the
+      // page opened (`ui/shell/new-workbench.ts` line 84), so the import itself
+      // shows as a change.
+      const added = engine.changes().filter((entry): entry is DiffLine => entry.kind === "+");
+      expect(added.map((entry) => entry.text)).toContain('    "policyVersion": "7",');
+    });
   });
 
   it("refuses an import that is not strict JSON and keeps the policy (failure case 1)", () => {

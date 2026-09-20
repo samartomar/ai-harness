@@ -4,7 +4,7 @@ import { parseWorkbenchInput } from "../../../src/org-policy/workbench/engine/in
 import { App } from "../../src/App.js";
 import type { WorkbenchHost } from "../../src/host.js";
 import { fragmentNavigation } from "../../src/navigation.js";
-import { save, sha256Hex, showInputFailure } from "../shared.js";
+import { copyText, save, sha256Hex, showInputFailure } from "../shared.js";
 import "../../src/styles.css";
 
 /**
@@ -17,6 +17,7 @@ const hostedHost: WorkbenchHost = {
   navigation: fragmentNavigation(),
   sha256Hex,
   save,
+  copyText,
 };
 
 async function start(): Promise<void> {

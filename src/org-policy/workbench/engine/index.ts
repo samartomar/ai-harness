@@ -19,6 +19,11 @@ export {
   PROJECT_POLICY_FILENAME,
 } from "../ui/shell/download-format.js";
 export type {
+  DiffHunkGap,
+  DiffLine,
+  DiffLineKind,
+} from "../ui/shell/policy-diff.js";
+export type {
   TrimUseV1,
   UserDoorSaveInputV1,
   UserDoorSaveResultV1,

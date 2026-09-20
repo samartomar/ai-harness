@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { App } from "../../src/App.js";
 import type { WorkbenchHost } from "../../src/host.js";
 import { queryNavigation } from "../../src/navigation.js";
-import { readEmbeddedInput, save, sha256Hex } from "../shared.js";
+import { copyText, readEmbeddedInput, save, sha256Hex } from "../shared.js";
 import "../../src/styles.css";
 
 /**
@@ -45,6 +45,7 @@ function start(): void {
     navigation: queryNavigation(),
     sha256Hex,
     save,
+    copyText,
   };
   if (new URLSearchParams(location.search).get("page") === null) {
     host.navigation.go(input.door === "user" ? "user" : "admin");

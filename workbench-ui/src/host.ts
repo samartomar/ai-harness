@@ -35,4 +35,9 @@ export interface WorkbenchHost {
   sha256Hex(bytes: ArrayBuffer): Promise<string>;
   /** Hand a finished file to the person. */
   save(file: WorkbenchFile): void;
+  /**
+   * Put text on the clipboard. False on any failure or absence: the page then
+   * reports the failure and never claims a copy.
+   */
+  copyText(text: string): Promise<boolean>;
 }

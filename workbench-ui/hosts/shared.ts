@@ -21,6 +21,20 @@ export function save(file: { readonly name: string; readonly text: string }): vo
   URL.revokeObjectURL(url);
 }
 
+/**
+ * Put text on the clipboard. The clipboard is a host capability: it can be
+ * absent, or refused. Either way this answers false and the page says so.
+ */
+export async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard === undefined) return false;
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** The engine's message, rendered as text. Never as markup, whatever it says. */
 export function showInputFailure(target: Document, message: string): undefined {
   const root = target.getElementById("root");

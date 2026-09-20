@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { save, sha256Hex } from "../hosts/shared.js";
+import { copyText, save, sha256Hex } from "../hosts/shared.js";
 import { App } from "../src/App.js";
 import type { WorkbenchHost } from "../src/host.js";
 import { fragmentNavigation } from "../src/navigation.js";
@@ -15,6 +15,7 @@ const previewHost: WorkbenchHost = {
   navigation: fragmentNavigation(),
   sha256Hex,
   save,
+  copyText,
 };
 
 async function start(): Promise<void> {

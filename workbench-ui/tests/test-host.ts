@@ -12,10 +12,11 @@ import { fragmentNavigation } from "../src/navigation.js";
 
 export interface TestHost extends WorkbenchHost {
   readonly save: Mock<(file: WorkbenchFile) => void>;
+  readonly copyText: Mock<(text: string) => Promise<boolean>>;
 }
 
 export function createTestHost(
-  capabilities: { boundPolicy?: boolean; githubIntake?: boolean } = {},
+  capabilities: { boundPolicy?: boolean; githubIntake?: boolean; clipboard?: boolean } = {},
 ): TestHost {
   return {
     capabilities: {
@@ -27,6 +28,10 @@ export function createTestHost(
       return createHash("sha256").update(new Uint8Array(bytes)).digest("hex");
     },
     save: vi.fn<(file: WorkbenchFile) => void>(),
+    // The clipboard is a host capability: a test host can refuse it.
+    copyText: vi
+      .fn<(text: string) => Promise<boolean>>()
+      .mockResolvedValue(capabilities.clipboard ?? true),
   };
 }
 

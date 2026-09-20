@@ -5,6 +5,8 @@ import {
   type AdminState,
   createAdminEngine,
   DEFAULT_POLICY_FILENAME,
+  type DiffHunkGap,
+  type DiffLine,
   type EngineOutcome,
 } from "../../src/org-policy/workbench/engine/index.js";
 import {
@@ -43,6 +45,14 @@ import { readImportedFile } from "./import-file.js";
 const MANAGED_MCP_LABEL = "Allow AIH to configure selected MCP tools";
 
 const GITHUB_INTAKE_REASON = "Available on the local page opened by npx @aihq/core --ui";
+
+/** The changes screen's three exact sentences (`ui/shell/changes-screen.ts` lines 294-321). */
+const COPIED_MESSAGE = "Policy JSON copied to the clipboard.";
+const COPY_FAILED_MESSAGE = "Copy failed: the clipboard is unavailable here.";
+const NO_CHANGES_SENTENCE = "No changes from the starting policy.";
+const CHANGES_REGION_LABEL = "Changes from the starting policy";
+
+type ChangesView = "changes" | "whole";
 
 export interface ModeControl {
   readonly label: string;
@@ -89,6 +99,8 @@ function AdminWorkspace({
   const [fileName, setFileName] = useState(DEFAULT_POLICY_FILENAME);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
+  // The hand-built screen opens on the whole file (`changes-screen.ts` line 325).
+  const [changesView, setChangesView] = useState<ChangesView>("whole");
   const importId = useId();
   const policyTextId = useId();
   const fileNameId = useId();
@@ -113,6 +125,14 @@ function AdminWorkspace({
     },
     [engine, host],
   );
+
+  /** Copy the whole policy text. A refused clipboard never claims a copy. */
+  const copy = useCallback(async () => {
+    const copied = await host.copyText(engine.state().policyText);
+    setOutcome(
+      copied ? { ok: true, message: COPIED_MESSAGE } : { ok: false, message: COPY_FAILED_MESSAGE },
+    );
+  }, [engine, host]);
 
   const check = useCallback(() => {
     const result = engine.check();
@@ -229,10 +249,13 @@ function AdminWorkspace({
           >
             <ReviewBody
               blocked={blocked}
+              changesView={changesView}
               engine={engine}
               fileName={fileName}
               fileNameId={fileNameId}
               managedMcpOptIn={state.managedMcpOptIn}
+              onChangesView={setChangesView}
+              onCopy={() => void copy()}
               onDownload={() => save(fileName)}
               onFileName={setFileName}
               onManagedMcp={(next) => run(() => engine.setManagedMcpOptIn(next))}
@@ -417,6 +440,103 @@ function CatalogCard({
   );
 }
 
+/** The prototype's JSON paint: keys in primary, string values in secondary. */
+function PaintedJson({ text }: { readonly text: string }) {
+  const pieces: { key: string; className?: string; text: string }[] = [];
+  const pattern = /("(?:[^"\\]|\\.)*")(\s*:)?/gu;
+  let last = 0;
+  for (const match of text.matchAll(pattern)) {
+    const index = match.index ?? 0;
+    if (index > last) pieces.push({ key: `t${last}`, text: text.slice(last, index) });
+    pieces.push({
+      className: match[2] === undefined ? "text-secondary" : "text-primary",
+      key: `s${index}`,
+      text: match[1] ?? "",
+    });
+    if (match[2] !== undefined) pieces.push({ key: `c${index}`, text: match[2] });
+    last = index + match[0].length;
+  }
+  if (last < text.length) pieces.push({ key: `t${last}`, text: text.slice(last) });
+  return (
+    <>
+      {pieces.map((piece) => (
+        <span className={piece.className} key={piece.key}>
+          {piece.text}
+        </span>
+      ))}
+    </>
+  );
+}
+
+const DIFF_LINE_CLASS: Record<DiffLine["kind"], string> = {
+  " ": "px-3",
+  "+": "px-3 bg-secondary-container/20 border-l-2 border-secondary",
+  "-": "px-3 bg-tertiary-container/20 border-l-2 border-tertiary",
+};
+
+/**
+ * One diff row. Added and removed lines are told apart by more than colour: a
+ * visible "+" or "-" marker, and the row's own accessible label
+ * (`changes-screen.ts` lines 105-124).
+ */
+function DiffRow({ entry }: { readonly entry: DiffLine }) {
+  const added = entry.kind === "+";
+  return (
+    <li
+      aria-label={entry.kind === " " ? undefined : `${added ? "Added" : "Removed"}: ${entry.text}`}
+      className={`flex whitespace-pre-wrap break-all ${DIFF_LINE_CLASS[entry.kind]}`}
+    >
+      <span
+        aria-hidden="true"
+        className="inline-block w-8 shrink-0 text-outline select-none tabular-nums"
+      >
+        {entry.line === undefined ? "" : String(entry.line)}
+      </span>
+      <span
+        aria-hidden="true"
+        className={`inline-block w-3 shrink-0 select-none ${added ? "text-secondary" : "text-tertiary"}`}
+      >
+        {entry.kind === " " ? "" : entry.kind}
+      </span>
+      <span className="min-w-0">
+        <PaintedJson text={entry.text} />
+      </span>
+    </li>
+  );
+}
+
+/** The "Changes" view: hunks with context, the folded gaps between them. */
+function ChangesPanel({ hunks }: { readonly hunks: readonly (DiffLine | DiffHunkGap)[] }) {
+  return (
+    <section
+      aria-label={CHANGES_REGION_LABEL}
+      className="py-2 rounded bg-[#141822] border border-surface-container-high/60 font-mono text-[10.5px] leading-relaxed text-on-surface overflow-x-auto"
+    >
+      {hunks.length === 0 ? (
+        <p className="m-0 px-3 py-1 text-outline">{NO_CHANGES_SENTENCE}</p>
+      ) : (
+        <ol className="list-none m-0 p-0">
+          {hunks.map((entry, index) =>
+            entry.kind === "gap" ? (
+              <li
+                className="px-3 py-0.5 text-[10px] text-outline bg-surface-container-low select-none"
+                // The hunks are a positional list; nothing else identifies a row.
+                // biome-ignore lint/suspicious/noArrayIndexKey: positional by nature
+                key={`gap-${index}`}
+              >
+                {`⋯ ${entry.skipped} unchanged ${entry.skipped === 1 ? "line" : "lines"}`}
+              </li>
+            ) : (
+              // biome-ignore lint/suspicious/noArrayIndexKey: positional by nature
+              <DiffRow entry={entry} key={`line-${index}`} />
+            ),
+          )}
+        </ol>
+      )}
+    </section>
+  );
+}
+
 function ReviewBody({
   engine,
   policyText,
@@ -429,6 +549,9 @@ function ReviewBody({
   outcome,
   managedMcpOptIn,
   onManagedMcp,
+  changesView,
+  onChangesView,
+  onCopy,
 }: {
   readonly engine: AdminEngine;
   readonly policyText: string;
@@ -441,8 +564,13 @@ function ReviewBody({
   readonly outcome: EngineOutcome | undefined;
   readonly managedMcpOptIn: boolean;
   readonly onManagedMcp: (next: boolean) => void;
+  readonly changesView: ChangesView;
+  readonly onChangesView: (view: ChangesView) => void;
+  readonly onCopy: () => void;
 }) {
   const result = engine.check();
+  // The diff is computed only when the Changes view asks for it.
+  const hunks = changesView === "changes" ? engine.changes() : [];
   const refused = outcome !== undefined && !outcome.ok ? outcome.message : "";
   const accepted = outcome?.ok === true ? outcome.message : "";
   const helpId = useId();
@@ -472,15 +600,44 @@ function ReviewBody({
           Needed when the policy selects Core MCP controls. No server is contacted from this page.
         </p>
       </div>
-      <label className="flex flex-col gap-1 text-[10px] font-mono uppercase tracking-wider text-outline font-semibold">
-        Organization policy file
-        <textarea
-          className="h-56 w-full p-2 rounded bg-[#141822] border border-surface-container-high/60 font-mono text-[11px] text-on-surface normal-case tracking-normal"
-          id={policyTextId}
-          readOnly
-          value={policyText}
+      {/* The changes screen's head: "Staged policy delta", the tool row and the
+       * Changes / Whole file segmented control (`screens/admin-changes.html`). */}
+      <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+        <span className="text-[10px] font-mono uppercase tracking-wider text-outline font-semibold">
+          Staged policy delta
+        </span>
+        <button
+          className="px-2 py-1 rounded bg-surface-container hover:bg-surface-container-high text-primary transition-colors font-mono text-[10.5px]"
+          onClick={onCopy}
+          type="button"
+        >
+          Copy JSON
+        </button>
+        <span className="flex-1" />
+        <Segmented
+          label="Show"
+          onChange={onChangesView}
+          options={[
+            { value: "changes", label: "Changes" },
+            { value: "whole", label: "Whole file" },
+          ]}
+          size="sm"
+          value={changesView}
         />
-      </label>
+      </div>
+      {changesView === "changes" ? (
+        <ChangesPanel hunks={hunks} />
+      ) : (
+        <label className="flex flex-col gap-1 text-[10px] font-mono uppercase tracking-wider text-outline font-semibold">
+          Organization policy file
+          <textarea
+            className="h-56 w-full p-2 rounded bg-[#141822] border border-surface-container-high/60 font-mono text-[11px] text-on-surface normal-case tracking-normal"
+            id={policyTextId}
+            readOnly
+            value={policyText}
+          />
+        </label>
+      )}
       <label className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-wider text-outline font-semibold">
         File name
         <input

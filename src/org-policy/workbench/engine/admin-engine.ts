@@ -18,7 +18,17 @@ import {
   MAX_IMPORT_BYTES,
   POLICY_FILENAME_PATTERN,
 } from "../ui/shell/download-format.js";
-import { activeManagedMcpServers, governanceOrDefault } from "../ui/shell/policy-grammar.js";
+import {
+  changeHunks,
+  type DiffHunkGap,
+  type DiffLine,
+  policyLineDiff,
+} from "../ui/shell/policy-diff.js";
+import {
+  activeManagedMcpServers,
+  governanceOrDefault,
+  serializePolicy,
+} from "../ui/shell/policy-grammar.js";
 import {
   createPolicySession,
   type PolicySession,
@@ -104,6 +114,15 @@ export interface AdminCheckResult {
 export interface AdminEngine {
   /** A fresh, immutable snapshot each call. */
   state(): AdminState;
+  /**
+   * The draft's line changes against the STARTING policy, as hunks with
+   * context and folded gaps (`changes-screen.ts` lines 289-302, whose baseline
+   * is `serializePolicy(model.initialPolicy)`, fixed at mount:
+   * `ui/shell/new-workbench.ts` line 84). An empty array means no changes. It
+   * is a method, not part of `state()`, so the diff is computed only when the
+   * view asks for it.
+   */
+  changes(): readonly (DiffLine | DiffHunkGap)[];
   setPosture(value: string): EngineOutcome;
   toggleAiTool(id: string): EngineOutcome;
   setItemSelected(assetId: string, selected: boolean): EngineOutcome;
@@ -294,6 +313,11 @@ function buildAdminEngine(modelValue: unknown): EngineResult<AdminEngine> {
   });
   const active = session;
 
+  // The diff baseline: the policy text the page opened with, captured once.
+  // An import therefore shows as changes, and `clear()`, which restores the
+  // initial policy, brings the diff back to none.
+  const baseline = serializePolicy(model.initialPolicy);
+
   const outcome = (fallback: string): EngineOutcome =>
     last.message === "" ? { ok: true, message: fallback } : last;
 
@@ -441,6 +465,12 @@ function buildAdminEngine(modelValue: unknown): EngineResult<AdminEngine> {
         schemaVersion: typeof version === "number" ? version : Number.NaN,
         policyText: active.serialize(),
       };
+    },
+
+    // Both functions are total over strings: there is no failure to report,
+    // and a swallowed one would read as "no changes".
+    changes() {
+      return changeHunks(policyLineDiff(baseline, active.serialize()));
     },
 
     // org-screen.ts lines 701-722.
