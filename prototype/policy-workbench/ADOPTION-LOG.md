@@ -1,5 +1,9 @@
 # Adoption log
 
+> The `fidelity-*-product-*` screenshots this log names were removed. They showed
+> the hand-built page, which did not match the prototype, so they are not a
+> design reference. The `fidelity-*-proto-*` screenshots of the prototype remain.
+
 ## P0 baseline (2026-09-18)
 
 Uncommitted owner edit present at baseline time (untouched, not stashed):

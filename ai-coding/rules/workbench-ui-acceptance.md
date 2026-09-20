@@ -109,3 +109,15 @@ diff, then freeze them:
   first file's bytes.
 
 J1 and J2 must then produce exactly these two files on both hosts.
+
+## 6. Design source
+
+The existing design is the owner's prototype: the screens under
+`prototype/policy-workbench/screens/`, the tokens and measures in
+`prototype/policy-workbench/DESIGN.md`, and the prototype screenshots under
+`prototype/policy-workbench/screenshots/` (`fidelity-*-proto-*` and
+`*-prototype-*`). The owner's described changes and his one visual reference
+apply on top of it.
+
+A picture of a hand-built page is never a design reference. The other
+screenshots in that folder record the earlier pages and are history only.
