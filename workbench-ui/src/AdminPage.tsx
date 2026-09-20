@@ -24,6 +24,8 @@ import {
   COPIED_MESSAGE,
   COPY_FAILED_MESSAGE,
 } from "./editors/ChangesView.js";
+// LANE B (row 19): the review badge.
+import { ReviewBadge } from "./editors/DraftReview.js";
 import { policyDownloadStartedMessage } from "./editors/FileName.js";
 import { PostureSwitch } from "./editors/PostureSwitch.js";
 // LANE C (organization screen): the provenance strip shows on every screen.
@@ -219,6 +221,8 @@ function AdminWorkspace({
               engine={engine}
               fileName={fileName}
               fileNameId={fileNameId}
+              // LANE B: what its panels need beyond the engine.
+              importInto={importInto}
               managedMcpOptIn={state.managedMcpOptIn}
               onChangesMode={setChangesMode}
               onCopy={() => void copy()}
@@ -228,8 +232,14 @@ function AdminWorkspace({
               outcome={outcome}
               policyText={state.policyText}
               policyTextId={policyTextId}
+              run={run}
+              state={state}
             />
           </Flyout>
+          {/* LANE B (row 19): the review badge, the draft's entry count. It is
+           * its own status beside the trigger, so the button keeps the exact
+           * accessible name "Review Changes" and the count is still announced. */}
+          <ReviewBadge count={engine.draftReview().entryCount} />
           {/* The prototype reaches the scan screen from the shell's own screen
            * nav (`screens/admin-scan.html`). This page has no screen nav yet,
            * so the scan opens as a flyout, in the "Review changes" pattern. */}

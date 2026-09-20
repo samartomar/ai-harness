@@ -45,6 +45,20 @@ export {
 export type { ChangesFeature } from "./features/changes.js";
 export type { ClearPolicyFeature } from "./features/clear-policy.js";
 export type { AdminEngineContext } from "./features/context.js";
+// Lane B (drafts and repairs, inventory rows 19-21).
+export type {
+  AdminComparisonChangeV1,
+  AdminComparisonV1,
+  AdminDraftCountV1,
+  AdminDraftEntryV1,
+  AdminDraftReviewV1,
+  AdminExposureItemV1,
+  AdminPolicyExposureV1,
+  AdminRepairV1,
+  AdminTemplateOptionV1,
+  AdminTemplatePreviewV1,
+  DraftsFeature,
+} from "./features/drafts.js";
 // LANE C (organization screen).
 export type {
   AdoptionRoleV1,
