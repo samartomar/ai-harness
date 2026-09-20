@@ -37,6 +37,7 @@ export {
   type AdminCheckResult,
   type AdminEngine,
   type AdminFramework,
+  type AdminScanV1,
   type AdminState,
   createAdminEngine,
   isPolicyFileName,
@@ -48,6 +49,10 @@ export {
   type WorkbenchInputDoor,
   type WorkbenchInputV1,
 } from "./input-contract.js";
+export type {
+  ScanGlance,
+  ScanReceiptRowV1,
+} from "./scan-presentation.js";
 export type { EngineFile, EngineOutcome, EngineResult } from "./shared.js";
 export {
   createUserEngine,

@@ -36,6 +36,7 @@ import {
 } from "./chrome.js";
 import type { WorkbenchHost } from "./host.js";
 import { readImportedFile } from "./import-file.js";
+import { ScanBody } from "./ScanView.js";
 
 /**
  * The organization page (journey J1), in the prototype's `admin-sources.html`
@@ -112,7 +113,10 @@ function AdminWorkspace({
   const [reviewOpen, setReviewOpen] = useState(false);
   // The hand-built screen opens on the whole file (`changes-screen.ts` line 325).
   const [changesView, setChangesView] = useState<ChangesView>("whole");
+  const [scanOpen, setScanOpen] = useState(false);
   const importId = useId();
+  const evidenceId = useId();
+  const decisionId = useId();
   const policyTextId = useId();
   const fileNameId = useId();
 
@@ -175,6 +179,35 @@ function AdminWorkspace({
     },
     [engine, run],
   );
+
+  /** Evidence and decision imports: the host reads the file, the engine judges it. */
+  const importInto = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>, call: (text: string) => EngineOutcome) => {
+      const file = event.target.files?.[0];
+      event.target.value = "";
+      if (file === undefined) return;
+      const read = await readImportedFile(file);
+      if (!read.ok) {
+        setOutcome({ ok: false, message: read.message });
+        return;
+      }
+      run(() => call(read.text));
+    },
+    [run],
+  );
+
+  const saveDecision = useCallback(() => {
+    const file = engine.downloadDecision();
+    if (!file.ok) {
+      setOutcome({ ok: false, message: file.errors.join("; ") });
+      return;
+    }
+    host.save(file.value);
+    setOutcome({
+      ok: true,
+      message: "Canonical decision download started; it remains unverified and not effective.",
+    });
+  }, [engine, host]);
 
   const catalogReason = useMemo(() => {
     if (state.catalogValid) return undefined;
@@ -278,6 +311,30 @@ function AdminWorkspace({
               outcome={outcome}
               policyText={state.policyText}
               policyTextId={policyTextId}
+            />
+          </Flyout>
+          {/* The prototype reaches the scan screen from the shell's own screen
+           * nav (`screens/admin-scan.html`). This page has no screen nav yet,
+           * so the scan opens as a flyout, in the "Review changes" pattern. */}
+          <Flyout
+            description="Imported evidence and governance decisions, and what the prepared catalog's reports say. Nothing here is verified or effective."
+            onOpenChange={setScanOpen}
+            open={scanOpen}
+            title="Scan review"
+            trigger={
+              <button className={SECONDARY_BUTTON} type="button">
+                Scan Review
+              </button>
+            }
+          >
+            <ScanBody
+              decisionInputId={decisionId}
+              evidenceInputId={evidenceId}
+              onDecision={(event) => void importInto(event, engine.importDecisionText)}
+              onDownloadDecision={saveDecision}
+              onEvidence={(event) => void importInto(event, engine.importEvidenceText)}
+              outcome={outcome}
+              scan={engine.scan()}
             />
           </Flyout>
           <button className={SECONDARY_BUTTON} disabled={blocked} onClick={check} type="button">

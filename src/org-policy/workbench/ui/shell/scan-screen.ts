@@ -1,4 +1,9 @@
-import { stableDecisionJson } from "../decision-json.js";
+import {
+  type ScanGlance,
+  scanDecisionExportV1,
+  scanDecisionLinesV1,
+  scanReceiptRowsV1,
+} from "../../engine/scan-presentation.js";
 import { button, el, icon, withId } from "./dom.js";
 
 /**
@@ -22,18 +27,7 @@ import { button, el, icon, withId } from "./dom.js";
  */
 
 /** Report totals across the prepared catalog (sourceEvidenceSummary per source). */
-export interface ScanGlance {
-  /** Catalog items. */
-  readonly total: number;
-  /** A current verified passing report with complete coverage and no findings. */
-  readonly passed: number;
-  /** A report is attached, but it is stale, unverified, partial or lists findings. */
-  readonly review: number;
-  /** No report is attached. */
-  readonly notScanned: number;
-  readonly reportsIncluded: number;
-  readonly currentlyVerified: number;
-}
+export type { ScanGlance };
 
 export interface ScanScreenOptions {
   readonly findings: {
@@ -72,14 +66,6 @@ function object(value: unknown): Loose | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Loose)
     : undefined;
-}
-
-function text(value: unknown, fallback: string): string {
-  return typeof value === "string" && value !== "" ? value : fallback;
-}
-
-function list(value: unknown): string {
-  return Array.isArray(value) ? value.join(",") : String(value);
 }
 
 function dot(color: string): HTMLElement {
@@ -121,52 +107,7 @@ function receiptRow(id: string, note: string): HTMLElement {
 }
 
 function receiptRows(receipt: unknown): HTMLElement[] {
-  const record = object(receipt);
-  const rows: HTMLElement[] = [];
-  if (record === undefined) return rows;
-  if (Array.isArray(record.approvals))
-    for (const approval of record.approvals) {
-      const entry = object(approval) ?? {};
-      rows.push(
-        receiptRow(
-          text(entry.id, "approval"),
-          `${text(entry.issuer, "unknown issuer")} — preserved/preflight-only`,
-        ),
-      );
-    }
-  if (Array.isArray(record.evidence))
-    for (const evidence of record.evidence) {
-      const entry = object(evidence) ?? {};
-      rows.push(
-        receiptRow(
-          text(entry.id, "evidence"),
-          `${text(entry.state, "unknown")} evidence — preserved/preflight-only`,
-        ),
-      );
-    }
-  return rows;
-}
-
-function decisionLines(decision: Loose): string {
-  return [
-    `id: ${decision.id}`,
-    `candidate: ${decision.candidate}`,
-    `kind: ${decision.kind}`,
-    `disposition: ${decision.disposition}`,
-    `targets: ${list(decision.targets)}`,
-    `effects: ${list(decision.effects)}`,
-    `issuer: ${decision.issuer}`,
-    `actor: ${decision.actor}`,
-    `policyVersion: ${decision.policyVersion}`,
-    `issuedAt: ${decision.issuedAt}`,
-    `notBefore: ${decision.notBefore}`,
-    `expiresAt: ${decision.expiresAt}`,
-    `reviewBy: ${decision.reviewBy || "none"}`,
-    `acceptedFindings: ${list(decision.acceptedFindings)}`,
-    `acceptedGaps: ${list(decision.acceptedGaps)}`,
-    `conditions: ${Array.isArray(decision.conditions) ? decision.conditions.join(" | ") : String(decision.conditions)}`,
-    `reason: ${decision.reason}`,
-  ].join("\n");
+  return scanReceiptRowsV1(receipt).map((row) => receiptRow(row.id, row.note));
 }
 
 /** One "The scan at a glance" tile: the figure, its pill and its caption. */
@@ -522,8 +463,8 @@ export function mountScanScreen(body: HTMLElement, options: ScanScreenOptions): 
       }
       decisionState.textContent =
         "Decision imported for inspection only: unverified and not effective. It does not change policy, receipt, or authority state.";
-      decisionRows.textContent = decisionLines(record);
-      decisionExport.textContent = stableDecisionJson(record);
+      decisionRows.textContent = scanDecisionLinesV1(record);
+      decisionExport.textContent = scanDecisionExportV1(record);
     },
   };
 }

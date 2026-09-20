@@ -12,6 +12,7 @@ import {
   WorkbenchActionV1Schema,
   type WorkbenchSourceInputsV1,
 } from "../contracts.js";
+import { scanGlanceV1 } from "../engine/scan-presentation.js";
 import { importWorkbenchPolicySelections, serializeWorkbenchRepairV1 } from "../policy-import.js";
 import { WorkbenchReferenceReportsV1Schema } from "../reference-reports.js";
 import {
@@ -26,7 +27,6 @@ import {
   mountWorkbench,
   workbenchBrowseBundle,
 } from "./catalog-inventory.js";
-import { sourceEvidenceSummary } from "./catalog-presentation.js";
 import { availableDeveloperToolCatalogDetails } from "./developer-tool-catalog.js";
 import {
   type DeveloperToolSelectionUi,
@@ -35,7 +35,6 @@ import {
 import { reprojectSchema3Policy, type Schema3ReprojectionSteps } from "./schema3-reprojection.js";
 import { el, withId } from "./shell/dom.js";
 import { mountNewWorkbench } from "./shell/new-workbench.js";
-import type { ScanGlance } from "./shell/scan-screen.js";
 import { mountChooserNote, mountUserDoor, mountUserDoorTheme } from "./user-door.js";
 
 interface WorkbenchSession {
@@ -429,34 +428,6 @@ const referenceReports = WorkbenchReferenceReportsV1Schema.parse(
   browserModel.workbenchReferenceReports ?? {},
 );
 
-/**
- * The scan screen's "scan at a glance" (admin-scan.html): the catalog's report
- * totals, summed over its sources. Passed has a current, clean report; Not
- * scanned has none; Review is every other item that needs review.
- */
-function scanGlance(catalog: AuthoringCatalogBundleV1): ScanGlance {
-  const empty = { roots: [], exclusions: [], requests: [], drafts: [] };
-  const totals = {
-    total: 0,
-    passed: 0,
-    review: 0,
-    notScanned: 0,
-    reportsIncluded: 0,
-    currentlyVerified: 0,
-  };
-  for (const sourceId of Object.keys(catalog.sources)) {
-    const summary = sourceEvidenceSummary(catalog, sourceId, empty);
-    const unscanned = summary.totalAssets - summary.includedReports;
-    totals.total += summary.totalAssets;
-    totals.passed += summary.totalAssets - summary.needsReview;
-    totals.notScanned += unscanned;
-    totals.review += Math.max(0, summary.needsReview - unscanned);
-    totals.reportsIncluded += summary.includedReports;
-    totals.currentlyVerified += summary.currentReports;
-  }
-  return totals;
-}
-
 // Legacy forms continue to own their grammar; generic inventory owns all catalog selection.
 const bundle = bundleResult.success ? bundleResult.data : undefined;
 const preparedCatalogValid = bundle !== undefined && bindings !== undefined;
@@ -496,9 +467,7 @@ if (!userDoor) {
     },
     selectionValidator: () => window.__aihWorkbenchValidatePolicy,
     openInspectorView: (view) => catalog?.showInspectorView(view),
-    ...(bundle === undefined
-      ? {}
-      : { scanGlance: () => scanGlance(workbenchBrowseBundle(bundle)) }),
+    ...(bundle === undefined ? {} : { scanGlance: () => scanGlanceV1(bundle) }),
   });
   let catalog: MountedWorkbench | undefined;
   window.__aihPolicyWorkbenchSession = session;

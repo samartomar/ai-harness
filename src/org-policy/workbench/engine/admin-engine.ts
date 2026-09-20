@@ -11,10 +11,14 @@ import {
   type WorkbenchStateV1,
 } from "../contracts.js";
 import { importWorkbenchPolicySelections, serializeWorkbenchRepairV1 } from "../policy-import.js";
+import { policySchemaErrors } from "../schema-validation.js";
 import { reduceWorkbenchAction, resolveWorkbenchSelection } from "../selection-engine.js";
+import { decisionProblems } from "../ui/decision-json.js";
 import { reprojectSchema3Policy } from "../ui/schema3-reprojection.js";
 import {
+  DECISION_FILENAME,
   DEFAULT_POLICY_FILENAME,
+  decisionFileText,
   MAX_IMPORT_BYTES,
   POLICY_FILENAME_PATTERN,
 } from "../ui/shell/download-format.js";
@@ -35,6 +39,14 @@ import {
   type PolicySessionModel,
 } from "../ui/shell/policy-session.js";
 import { canonicalPolicyErrors } from "./canonical-validation.js";
+import {
+  type ScanGlance,
+  type ScanReceiptRowV1,
+  scanDecisionExportV1,
+  scanDecisionLinesV1,
+  scanGlanceV1,
+  scanReceiptRowsV1,
+} from "./scan-presentation.js";
 import {
   type EngineFile,
   type EngineOutcome,
@@ -105,6 +117,30 @@ export interface AdminState {
   policyText: string;
 }
 
+/**
+ * Everything the scan view renders, already in the words the hand-built scan
+ * screen uses (`ui/shell/scan-screen.ts` lines 454-527). The view formats
+ * nothing: it places these strings as text.
+ */
+export interface AdminScanV1 {
+  /** The catalog's report totals; absent when the prepared catalog is invalid. */
+  readonly glance?: ScanGlance;
+  /** The sentence the masthead shows in place of the totals. */
+  readonly glanceUnavailable?: string;
+  readonly findings: {
+    readonly dispositionable: readonly string[];
+    readonly fenced: readonly string[];
+  };
+  readonly receiptRows: readonly ScanReceiptRowV1[];
+  /** The receipt card's state sentence, imported or not. */
+  readonly receiptState: string;
+  /** The preserved receipt, pretty-printed; absent when nothing was imported. */
+  readonly receiptText?: string;
+  readonly decisionState: string;
+  /** The imported decision, field by field, and its canonical export text. */
+  readonly decision?: { readonly lines: string; readonly exportText: string };
+}
+
 export interface AdminCheckResult {
   ok: boolean;
   errors: readonly string[];
@@ -140,6 +176,21 @@ export interface AdminEngine {
    * (`ui/shell/file-transfer.ts` lines 398-402).
    */
   clearPolicy(): EngineOutcome;
+  /**
+   * Preserve an imported authority/audit receipt for preflight inspection
+   * (`ui/shell/file-transfer.ts` lines 266-281). Nothing is verified and no
+   * approval becomes effective.
+   */
+  importEvidenceText(text: string): EngineOutcome;
+  /**
+   * Import a governance decision for inspection only (`file-transfer.ts`
+   * lines 288-329). A rejected import keeps the PRIOR decision.
+   */
+  importDecisionText(text: string): EngineOutcome;
+  /** The canonical decision file; refused while no decision is imported. */
+  downloadDecision(): EngineResult<EngineFile>;
+  /** Everything the scan view shows; a fresh read each call. */
+  scan(): AdminScanV1;
   check(): AdminCheckResult;
   /** An unsafe file name is refused and nothing is produced. */
   download(filename?: string): EngineResult<EngineFile>;
@@ -151,6 +202,12 @@ interface WorkbenchImportValidation {
 }
 
 const ADMINISTRATOR_ORIGIN = { kind: "administrator" } as const;
+
+/** `file-transfer.ts` lines 274-276 and 317, verbatim. */
+const EVIDENCE_PRESERVED_MESSAGE =
+  "Authority/audit data preserved for preflight only; it is not verified and does not create effective approval.";
+const DECISION_IMPORTED_MESSAGE =
+  "Decision imported for inspection only: unverified and not effective.";
 
 /** `policy-session.ts` lines 167-170, verbatim: the session's own sentence. */
 const POLICY_CLEARED_MESSAGE =
@@ -415,6 +472,15 @@ function buildAdminEngine(modelValue: unknown): EngineResult<AdminEngine> {
       ok: false,
       message: compiled.diagnostics.join(" ") || "Selection rejected.",
     };
+  };
+
+  /** `new-workbench.ts` line 104: the scan screen's two finding groups, from the model. */
+  const findingKinds = (group: "dispositionable" | "fenced"): string[] => {
+    const findings = record(model.findings);
+    const value = findings?.[group];
+    return Array.isArray(value)
+      ? value.filter((item): item is string => typeof item === "string")
+      : [];
   };
 
   const frameworks = (): AdminFramework[] => {
@@ -699,6 +765,85 @@ function buildAdminEngine(modelValue: unknown): EngineResult<AdminEngine> {
       } catch (error) {
         return { ok: false, message: errorMessage(error, "The policy was not cleared.") };
       }
+    },
+
+    // file-transfer.ts lines 266-281, with the byte gate `readImportFile`
+    // applies (lines 43-46). Host file reading stays with the host.
+    importEvidenceText(text) {
+      try {
+        if (typeof text !== "string" || utf8ByteLength(text) > MAX_IMPORT_BYTES)
+          return { ok: false, message: "Import rejected: file exceeds the 1 MiB limit." };
+        const parsed = parseNativeStrictJsonObjectV1(text, "file import");
+        active.setReceipt(parsed);
+        return { ok: true, message: EVIDENCE_PRESERVED_MESSAGE };
+      } catch {
+        return { ok: false, message: "Evidence import failed: valid JSON object required." };
+      }
+    },
+
+    // file-transfer.ts lines 288-329: the size gate, the decision problems,
+    // and a rejection that restores the decision that was there before.
+    importDecisionText(text) {
+      const prior = active.decision() === null ? null : structuredClone(active.decision());
+      try {
+        if (typeof text !== "string" || utf8ByteLength(text) > MAX_IMPORT_BYTES)
+          return { ok: false, message: "Decision import rejected: file exceeds the 1 MiB limit." };
+        const parsed = parseNativeStrictJsonObjectV1(text, "decision import");
+        const problems = decisionProblems(parsed, model.decisionSchema, policySchemaErrors);
+        if (problems.length) throw new Error(problems.slice(0, 3).join("; "));
+        active.setDecision(structuredClone(parsed));
+        return { ok: true, message: DECISION_IMPORTED_MESSAGE };
+      } catch (error) {
+        active.setDecision(prior);
+        return {
+          ok: false,
+          message: `Decision import rejected: ${errorMessage(error, "strict decision JSON required")}`,
+        };
+      }
+    },
+
+    // file-transfer.ts lines 330-335. The hand-built control is disabled
+    // while no decision exists; the engine refuses it as well.
+    downloadDecision() {
+      const decision = active.decision();
+      if (decision === null || decision === undefined)
+        return { ok: false, errors: ["No decision is imported."] };
+      return { ok: true, value: { name: DECISION_FILENAME, text: decisionFileText(decision) } };
+    },
+
+    scan() {
+      const receipt = active.receipt();
+      const decision = record(active.decision());
+      const totals = bundle === undefined ? undefined : scanGlanceV1(bundle);
+      return {
+        ...(totals === undefined
+          ? { glanceUnavailable: "Prepared catalog unavailable: no report totals." }
+          : { glance: totals }),
+        findings: {
+          dispositionable: findingKinds("dispositionable"),
+          fenced: findingKinds("fenced"),
+        },
+        receiptRows: scanReceiptRowsV1(receipt),
+        receiptState:
+          receipt === null || receipt === undefined
+            ? "No authority receipt imported."
+            : "Receipt preserved for preflight only; this browser does not verify it or create effective approval.",
+        ...(receipt === null || receipt === undefined
+          ? {}
+          : { receiptText: JSON.stringify(receipt, null, 2) }),
+        decisionState:
+          decision === undefined
+            ? "No standalone decision imported."
+            : "Decision imported for inspection only: unverified and not effective. It does not change policy, receipt, or authority state.",
+        ...(decision === undefined
+          ? {}
+          : {
+              decision: {
+                lines: scanDecisionLinesV1(decision),
+                exportText: scanDecisionExportV1(decision),
+              },
+            }),
+      };
     },
 
     check() {

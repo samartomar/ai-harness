@@ -240,6 +240,157 @@ describe("workbench engine entry", () => {
     });
   });
 
+  describe("evidence, decision and the scan view", () => {
+    const sha = (letter: string) => `sha256:${letter.repeat(64)}`;
+    const DECISION = {
+      format: "aih-governance-decision",
+      version: 1,
+      id: "decision-workbench",
+      disposition: "accepted-with-conditions",
+      candidate: "code-review-graph",
+      kind: "mcp",
+      targets: ["claude"],
+      effects: ["managed-settings"],
+      policyVersion: "2026.08",
+      sourceDigest: sha("a"),
+      evidenceDigest: sha("b"),
+      reviewedControlDigest: sha("c"),
+      issuer: "platform-security",
+      actor: "security-admin",
+      reason: "Decision reason",
+      issuedAt: "2026-08-01T00:00:00+00:00",
+      notBefore: "2026-08-01T00:00:00+00:00",
+      expiresAt: "2026-08-10T00:00:00+00:00",
+      reviewBy: "2026-08-05T00:00:00+00:00",
+      acceptedFindings: ["prompt-injection"],
+      acceptedGaps: [],
+      conditions: ["Review before expiry"],
+    };
+
+    it("starts with no receipt and no decision, and cannot download one", () => {
+      const engine = admin();
+      const scan = engine.scan();
+      expect(scan.receiptRows).toEqual([]);
+      expect(scan.receiptState).toBe("No authority receipt imported.");
+      expect(scan.decisionState).toBe("No standalone decision imported.");
+      expect(scan.decision).toBeUndefined();
+      expect(engine.downloadDecision().ok).toBe(false);
+    });
+
+    it("preserves an imported receipt for preflight only, and lists its subjects", () => {
+      const engine = admin();
+      const outcome = engine.importEvidenceText(
+        JSON.stringify({
+          approvals: [{ id: "approval-1", issuer: "platform-security" }],
+          evidence: [{ id: "evidence-1", state: "current" }],
+        }),
+      );
+      expect(outcome).toEqual({
+        ok: true,
+        message:
+          "Authority/audit data preserved for preflight only; it is not verified and does not create effective approval.",
+      });
+      const scan = engine.scan();
+      expect(scan.receiptRows).toEqual([
+        { id: "approval-1", note: "platform-security — preserved/preflight-only" },
+        { id: "evidence-1", note: "current evidence — preserved/preflight-only" },
+      ]);
+      expect(scan.receiptState).toBe(
+        "Receipt preserved for preflight only; this browser does not verify it or create effective approval.",
+      );
+      expect(scan.receiptText).toContain("approval-1");
+      // Nothing about the policy changed: preflight only.
+      expect(engine.state().policyText).toBe(admin().state().policyText);
+    });
+
+    it("refuses evidence that is not a JSON object, and an oversized file", () => {
+      const engine = admin();
+      for (const text of ["[]", "{", '{"a":1,"a":2}', "12"]) {
+        expect(engine.importEvidenceText(text)).toEqual({
+          ok: false,
+          message: "Evidence import failed: valid JSON object required.",
+        });
+        expect(engine.scan().receiptRows).toEqual([]);
+      }
+      expect(engine.importEvidenceText("x".repeat(MAX_IMPORT_BYTES + 1))).toEqual({
+        ok: false,
+        message: "Import rejected: file exceeds the 1 MiB limit.",
+      });
+    });
+
+    it("imports a decision for inspection only and downloads it byte-for-byte", () => {
+      const engine = admin();
+      expect(engine.importDecisionText(JSON.stringify(DECISION))).toEqual({
+        ok: true,
+        message: "Decision imported for inspection only: unverified and not effective.",
+      });
+      const scan = engine.scan();
+      expect(scan.decisionState).toBe(
+        "Decision imported for inspection only: unverified and not effective. It does not change policy, receipt, or authority state.",
+      );
+      expect(scan.decision?.lines).toContain("id: decision-workbench");
+      expect(scan.decision?.lines).toContain("disposition: accepted-with-conditions");
+
+      const file = engine.downloadDecision();
+      expect(file.ok).toBe(true);
+      if (!file.ok) return;
+      expect(file.value.name).toBe("aih-governance-decision.json");
+      expect(file.value.text).toBe(golden("aih-governance-decision.json"));
+    });
+
+    it("keeps the prior decision when a later import is rejected", () => {
+      const engine = admin();
+      expect(engine.importDecisionText(JSON.stringify(DECISION)).ok).toBe(true);
+      const kept = engine.scan().decision?.exportText;
+
+      const rejected = engine.importDecisionText(
+        JSON.stringify({ ...DECISION, id: "not-a-decision-id" }),
+      );
+      expect(rejected.ok).toBe(false);
+      expect(rejected.message.startsWith("Decision import rejected: ")).toBe(true);
+      expect(engine.scan().decision?.exportText).toBe(kept);
+
+      expect(engine.importDecisionText("{").ok).toBe(false);
+      expect(engine.scan().decision?.exportText).toBe(kept);
+      expect(engine.importDecisionText("x".repeat(MAX_IMPORT_BYTES + 1))).toEqual({
+        ok: false,
+        message: "Decision import rejected: file exceeds the 1 MiB limit.",
+      });
+      expect(engine.scan().decision?.exportText).toBe(kept);
+    });
+
+    it("clearing the policy leaves the receipt and the decision as they are", () => {
+      const engine = admin();
+      expect(engine.importEvidenceText(JSON.stringify({ approvals: [{ id: "a-1" }] })).ok).toBe(
+        true,
+      );
+      expect(engine.importDecisionText(JSON.stringify(DECISION)).ok).toBe(true);
+      expect(engine.clearPolicy().ok).toBe(true);
+      // `policy-session.ts` `clear()` resets the policy only; the receipt and
+      // the decision are preflight state and survive it.
+      expect(engine.scan().receiptRows).toHaveLength(1);
+      expect(engine.scan().decision?.lines).toContain("id: decision-workbench");
+    });
+
+    it("reports the catalog's totals, and says so when the catalog is invalid", () => {
+      const scan = admin().scan();
+      expect(scan.glance).toBeDefined();
+      if (scan.glance === undefined) return;
+      expect(scan.glance.total).toBeGreaterThan(0);
+      expect(scan.glance.passed + scan.glance.review + scan.glance.notScanned).toBe(
+        scan.glance.total,
+      );
+      expect(scan.findings.dispositionable.length + scan.findings.fenced.length).toBeGreaterThan(0);
+
+      const model = withHosts() as unknown as Record<string, unknown>;
+      delete model.workbenchBindings;
+      delete model.workbenchBundle;
+      const invalid = admin(model).scan();
+      expect(invalid.glance).toBeUndefined();
+      expect(invalid.glanceUnavailable).toBe("Prepared catalog unavailable: no report totals.");
+    });
+  });
+
   describe("policy file names", () => {
     it("accepts exactly the names the download gate accepts", () => {
       const engine = admin();

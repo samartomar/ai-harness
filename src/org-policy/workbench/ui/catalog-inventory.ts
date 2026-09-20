@@ -14,6 +14,7 @@ import type {
   WorkbenchStateV1,
 } from "../contracts.js";
 import { planWorkbenchAdoptionV1 } from "../core/adoption-plan-v1.js";
+import { workbenchBrowseBundleV1 } from "../engine/scan-presentation.js";
 import type { WorkbenchReferenceReportsV1 } from "../reference-reports.js";
 import {
   reduceWorkbenchAction,
@@ -35,10 +36,7 @@ import {
   sourceEvidenceSummary,
   templateDetailsPresentation,
 } from "./catalog-presentation.js";
-import {
-  isDeveloperToolCatalogAssetId,
-  projectDeveloperToolCatalogInventory,
-} from "./developer-tool-catalog.js";
+import { isDeveloperToolCatalogAssetId } from "./developer-tool-catalog.js";
 import { workbenchIcon } from "./icons.js";
 import { catalogKindIcon, mountKindLedger } from "./kind-ledger.js";
 import {
@@ -322,23 +320,7 @@ function pageItems<T>(items: readonly T[], page: number): readonly T[] {
  * policies still round-trip through the complete bundle.
  */
 export function workbenchBrowseBundle(bundle: AuthoringCatalogBundleV1): AuthoringCatalogBundleV1 {
-  const browseInventory: CatalogBrowseInventory = projectDeveloperToolCatalogInventory({
-    sources: Object.fromEntries(
-      Object.entries(bundle.sources).filter(([id]) => id !== "source:ponytail"),
-    ),
-    assets: Object.fromEntries(
-      Object.entries(bundle.assets).filter(
-        ([, asset]) =>
-          asset.sourceId !== "source:ponytail" &&
-          !(asset.sourceId === "source:aih-core" && asset.id === "aih/github"),
-      ),
-    ),
-  });
-  return {
-    ...bundle,
-    sources: browseInventory.sources,
-    assets: browseInventory.assets,
-  };
+  return workbenchBrowseBundleV1(bundle);
 }
 
 /**

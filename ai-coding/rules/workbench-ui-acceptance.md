@@ -141,12 +141,12 @@ when its turn comes, and mark it `ported` with the component test that pins it.
 | 2 | Clear policy | `ui/shell/file-transfer.ts`, `policy-session.ts` `clear()` | `new-shell-download-compat.test.ts`, `new-shell-frame.test.ts` | ported: `workbench-ui/tests/clear-policy.test.tsx` |
 | 3 | File name rules and the validate command hint | `ui/shell/file-transfer.ts` `updateFilenameHelp` | `new-shell-download-compat.test.ts` | ported: `workbench-ui/tests/file-name.test.tsx` |
 | 4 | User page: set all, reset | `ui/user-door.ts`, pure `ui/user-door-model.ts` | `wb-tests/user-door.test.ts`, `browser/user-door.spec.ts` | ported: `workbench-ui/tests/user-set-all.test.tsx` |
-| 5 | Import evidence receipt | `ui/shell/file-transfer.ts`, `policy-session.ts` `setReceipt` | `new-shell-download-compat.test.ts` | open |
-| 6 | Governance decision: import, inspect, download | `ui/shell/file-transfer.ts`, `scan-screen.ts`, pure `ui/decision-json.ts` | `new-shell-download-compat.test.ts`, `legacy-download-characterization.test.ts` | open |
+| 5 | Import evidence receipt | `ui/shell/file-transfer.ts`, `policy-session.ts` `setReceipt` | `new-shell-download-compat.test.ts` | ported: `workbench-ui/tests/scan-view.test.tsx` |
+| 6 | Governance decision: import, inspect, download | `ui/shell/file-transfer.ts`, `scan-screen.ts`, pure `ui/decision-json.ts` | `new-shell-download-compat.test.ts`, `legacy-download-characterization.test.ts` | ported: `workbench-ui/tests/scan-view.test.tsx` |
 | 7 | Kind ledger, rail collapse, inspector tabs | `ui/shell/admin-shell.ts`, pure `ui/kind-ledger.ts` | `new-shell-frame.test.ts`, `kind-ledger.test.ts` | open |
 | 8 | Provenance strip | `ui/shell/new-workbench.ts` `mountProvenance` | `design-foundation.test.ts` | open |
 | 9 | Readiness line, adoption recipe, evidence and version drawers | `ui/shell/org-screen.ts` | `new-shell-org.test.ts`, `browser/compact-setup.spec.ts` | open |
-| 10 | Scan view: glance tiles, finding groups, receipt rows | `ui/shell/scan-screen.ts` | `new-shell-scan.test.ts` | open |
+| 10 | Scan view: glance tiles, finding groups, receipt rows | `ui/shell/scan-screen.ts` | `new-shell-scan.test.ts` | ported: `workbench-ui/tests/scan-view.test.tsx` |
 | 11 | Catalog search, type tabs, source select | `ui/catalog-inventory.ts`, pure `ui/catalog-presentation.ts` | `catalog-browse.test.ts`, `new-shell-sources.test.ts` | open |
 | 12 | Item inspector: details, security scan, policy JSON | `ui/catalog-inventory.ts`, `admin-shell.ts` | `new-shell-inspector.test.ts`, `evidence-display.test.ts` | open |
 | 13 | Developer tool setup | `ui/shell/org-screen.ts`, `ui/developer-tool-selection.ts` | `developer-tool-catalog.test.ts`, `browser/developer-tools.spec.ts` | open |
