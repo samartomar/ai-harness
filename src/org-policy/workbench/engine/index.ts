@@ -8,6 +8,11 @@
  * gives an error result; nothing thrown crosses this entry.
  */
 
+// First, before any schema is built: the engine never evaluates a string as
+// code, not even as a capability probe, so it runs under `script-src` without
+// `unsafe-eval`.
+import "../ui/browser-validation.js";
+
 export {
   DEFAULT_POLICY_FILENAME,
   MAX_IMPORT_BYTES,

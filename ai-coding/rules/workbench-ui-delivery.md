@@ -204,7 +204,7 @@ joins the routine gate `npm run verify:local -- --base <ref> --head <ref>`.
 - Every downloaded file is valid against the canonical schema, and the byte
   anchors hold.
 - The production offline file passes the exact offline policy with zero
-  requests and zero violations.
+  requests and zero violations. The policy text is in the acceptance rule, J3.
 - The page loads from an installed package.
 - The admin and user journeys pass on both production hosts.
 - Every control has a behavior or artifact assertion.

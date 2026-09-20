@@ -57,7 +57,12 @@ Names and serialization are owned by
   bytes, `cutFrom.schemaVersion` is 3, and the narrowing check passes.
 - **J3, two hosts.** J1 and J2 pass on the hosted production build and on the
   CLI host loaded from an installed candidate package. The offline file runs
-  under the exact offline policy with zero requests and zero violations.
+  under the exact offline policy with zero requests and zero violations. That
+  policy is the hand-built page's offline policy plus exactly `font-src data:`,
+  because the offline file embeds its three fonts (owner decision):
+  `default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline';
+  img-src data:; font-src data:; base-uri 'none'`. It is a test policy carried
+  by the file under test. The local server's response headers do not change.
 - **J4, keyboard.** Every flyout opens from the keyboard, moves focus inside,
   keeps tab order inside while open, closes on Escape, and returns focus to the
   control that opened it.

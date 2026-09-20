@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import {
   allowAiTool,
   bindProjectToPolicy,
@@ -10,6 +11,7 @@ import {
   goToUserPage,
   importOrgPolicy,
   policyEvidence,
+  recordPolicyViolations,
   refuseEnterpriseWithoutAiTool,
   saveProjectPolicy,
   selectFirstSelectableItem,
@@ -18,12 +20,13 @@ import {
   sha256Of,
   startCliHost,
   test,
+  writeOfflineFileUnderPolicy,
 } from "./component-hosts-fixture.js";
 
 /**
  * J1 and J2 on both PRODUCTION hosts (acceptance §3): the static hosted build
- * and the CLI host loaded from an installed candidate package. Nothing here
- * asserts a content-security policy in either direction.
+ * and the CLI host loaded from an installed candidate package, and the offline
+ * file under its offline policy.
  */
 
 const GOLDENS = resolve("tests/org-policy/workbench/goldens");
@@ -325,6 +328,57 @@ test.describe("the CLI host from the installed candidate package", () => {
     } finally {
       await host.stop();
     }
+  });
+
+  test("the offline file runs J1 under the offline policy with zero requests, zero violations and its fonts loaded", async ({
+    page,
+    probe,
+  }, testInfo) => {
+    const root = testInfo.outputPath("cli-offline");
+    await mkdir(root, { recursive: true });
+    const host = await startCliHost({
+      cwd: root,
+      preloadPath: testInfo.outputPath("cli-offline-preload.mjs"),
+    });
+    const file = testInfo.outputPath("component-page.html");
+    let fragment = "";
+    try {
+      fragment = new URL(host.url).hash;
+      const response = await fetch(host.url);
+      expect(response.status).toBe(200);
+      await writeOfflineFileUnderPolicy(await response.text(), file);
+    } finally {
+      await host.stop();
+    }
+
+    // The host is gone and no origin is allowed: the file has only itself.
+    const violations = await recordPolicyViolations(page);
+    await page.goto(`${pathToFileURL(file).href}${fragment}`);
+    await expect(page.getByRole("button", { name: "Review Changes" })).toBeVisible();
+
+    await refuseEnterpriseWithoutAiTool(page);
+    await allowAiTool(page);
+    await setEnterprisePosture(page);
+    const assetId = await selectFirstSelectableItem(page);
+    await downloadOrgPolicy(page, testInfo.outputPath("offline-org-policy.json"));
+    const org = await policyEvidence(testInfo.outputPath("offline-org-policy.json"));
+    expect(org.schemaVersion).toBe(3);
+    expect(org.authoringSelections).toContain(assetId);
+
+    const fonts = await page.evaluate(async () => {
+      const faces = [...document.fonts];
+      await Promise.allSettled(faces.map((face) => face.load()));
+      return faces.map((face) => `${face.family.replaceAll('"', "")}: ${face.status}`).sort();
+    });
+    expect(fonts).toEqual([
+      "Inter: loaded",
+      "JetBrains Mono: loaded",
+      "Material Symbols Outlined: loaded",
+    ]);
+    expect(await violations()).toEqual([]);
+    expect(probe.foreign, "the offline file made a network request").toEqual([]);
+    expect(probe.subresources).toEqual([]);
+    expect(probe.documents).toEqual([]);
   });
 
   test("without the environment switch the installed package still serves the hand-built page", async ({

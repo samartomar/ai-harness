@@ -3,8 +3,10 @@
  * for the browser with no Node built-ins, transitively. Checked on the real
  * bundle graph, not on import text.
  */
+import { createContext, runInContext } from "node:vm";
 import { build, type Metafile } from "esbuild";
 import { beforeAll, describe, expect, it } from "vitest";
+import { tinyStudioModel } from "../studio-test-fixture.js";
 
 const ENGINE_ENTRY = "src/org-policy/workbench/engine/index.ts";
 
@@ -65,5 +67,46 @@ describe("engine entry browser bundle", () => {
         .map((path) => (path.split("node_modules/").at(-1) ?? "").split("/")[0]),
     );
     expect([...packages]).toEqual(["zod"]);
+  });
+
+  /**
+   * The offline file runs under `script-src` without `unsafe-eval`. A caught
+   * capability probe still raises a policy violation there, so the engine must
+   * never construct code from a string at all.
+   */
+  it("never constructs code from a string, not even as a capability probe", async () => {
+    const result = await build({
+      entryPoints: [ENGINE_ENTRY],
+      bundle: true,
+      platform: "browser",
+      format: "iife",
+      globalName: "aihEngine",
+      target: "es2022",
+      write: false,
+      logLevel: "silent",
+    });
+    // The platform globals the engine declares, and nothing else.
+    const context = createContext({
+      model: tinyStudioModel(),
+      structuredClone,
+      TextEncoder,
+      URL,
+    });
+    const constructed = runInContext(
+      [
+        "const constructed = [];",
+        "globalThis.Function = new Proxy(Function, {",
+        "  construct(target, args) { constructed.push(args.join(',')); return Reflect.construct(target, args); },",
+        "  apply(target, self, args) { constructed.push(args.join(',')); return Reflect.apply(target, self, args); },",
+        "});",
+        result.outputFiles[0]?.text ?? "",
+        "const created = aihEngine.createAdminEngine(model);",
+        "if (!created.ok) throw new Error(created.errors.join('; '));",
+        "created.value.check();",
+        "constructed;",
+      ].join("\n"),
+      context,
+    ) as string[];
+    expect([...constructed]).toEqual([]);
   });
 });

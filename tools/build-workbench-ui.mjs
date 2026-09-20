@@ -21,13 +21,11 @@ const hostedOutDir = resolve(uiRoot, "dist/hosted");
 const componentPagePath = "src/org-policy/workbench/component-page.generated.cjs";
 
 /**
- * FONT EMBEDDING IN THE OFFLINE FILE — the owner has not decided this yet.
- * The offline content-security policy the existing tests use has no
- * `font-src`, so a `data:` font would violate it. Until the owner decides,
- * the offline file ships without the three `@font-face` rules and carries no
- * font bytes. The hosted site always ships the fonts as separate assets.
+ * The offline file embeds the prototype's three fonts as `data:` URLs (owner
+ * decision), so the offline policy it is tested under carries `font-src data:`.
+ * The hosted site ships the same fonts as separate assets.
  */
-const EMBED_FONTS_IN_OFFLINE_FILE = false;
+const EMBEDDED_FONT_COUNT = 3;
 
 function viteConfig(hostFolder, extraBuild = {}) {
   return {
@@ -83,40 +81,14 @@ function assetText(output) {
     : Buffer.from(output.source).toString("utf8");
 }
 
-/** Strip the `@font-face{…}` blocks, and nothing else, from the offline CSS. */
-function withoutFontFaces(css) {
-  let result = "";
-  let index = 0;
-  for (;;) {
-    const start = css.indexOf("@font-face", index);
-    if (start === -1) {
-      result += css.slice(index);
-      return result;
-    }
-    const open = css.indexOf("{", start);
-    if (open === -1) {
-      result += css.slice(index);
-      return result;
-    }
-    let depth = 1;
-    let cursor = open + 1;
-    while (cursor < css.length && depth > 0) {
-      if (css[cursor] === "{") depth += 1;
-      else if (css[cursor] === "}") depth -= 1;
-      cursor += 1;
-    }
-    result += css.slice(index, start);
-    index = cursor;
-  }
-}
-
 /** The one self-contained file: no `<link>`, no `src=`, nothing to fetch. */
 export async function buildOfflineFile(root = repositoryRoot) {
   const result = await build(
     viteConfig("cli", {
       write: false,
       cssCodeSplit: false,
-      assetsInlineLimit: EMBED_FONTS_IN_OFFLINE_FILE ? 100_000_000 : 0,
+      // Every asset is inlined: the file may fetch nothing.
+      assetsInlineLimit: 100_000_000,
       rollupOptions: { output: { inlineDynamicImports: true } },
     }),
   );
@@ -127,11 +99,10 @@ export async function buildOfflineFile(root = repositoryRoot) {
   }
   const page = outputs.find((output) => output.fileName === "index.html");
   if (page === undefined) throw new Error("The offline build produced no index.html");
-  const styles = outputs
+  const css = outputs
     .filter((output) => output.type === "asset" && output.fileName.endsWith(".css"))
     .map((output) => assetText(output))
     .join("\n");
-  const css = EMBED_FONTS_IN_OFFLINE_FILE ? styles : withoutFontFaces(styles);
   const script = chunks[0].code.replaceAll("</script", "<\\/script");
 
   // The shell is the page without its two payloads, so these guards read the
@@ -145,8 +116,17 @@ export async function buildOfflineFile(root = repositoryRoot) {
   if (shell.includes("/assets/") || css.includes("/assets/")) {
     throw new Error("The offline file still references a built asset path");
   }
-  if (!EMBED_FONTS_IN_OFFLINE_FILE && /data:font|woff2/u.test(css)) {
-    throw new Error("The offline file carries font bytes while fonts are not embedded");
+  // Every `url(` in the styles is an embedded `data:` URL, and the three fonts
+  // are among them; anything else would be a fetch.
+  const urls = css.match(/url\(\s*(?!["']?data:)[^)]*\)/gu) ?? [];
+  if (urls.length > 0) {
+    throw new Error(`The offline styles reference something to fetch: ${urls[0].slice(0, 80)}`);
+  }
+  const fonts = css.match(/url\(\s*["']?data:font\/woff2/gu) ?? [];
+  if (fonts.length !== EMBEDDED_FONT_COUNT) {
+    throw new Error(
+      `The offline file must embed ${EMBEDDED_FONT_COUNT} fonts, found ${fonts.length}`,
+    );
   }
   if (!shell.includes("__AIH_WORKBENCH_INPUT__")) {
     throw new Error("The offline file lost its input placeholder");

@@ -18,10 +18,38 @@ import {
  * served over loopback, so this fixture allows exactly ONE origin — the host
  * under test — and fails on any other request.
  *
- * It asserts nothing about a content-security policy (owner decision pending
- * on fonts), and it does not require the `aih-workbench-ui/v1` coverage banner
- * that the hand-built page carries.
+ * It does not require the `aih-workbench-ui/v1` coverage banner that the
+ * hand-built page carries.
  */
+
+/**
+ * The offline policy for the component page: the offline policy the hand-built
+ * page is tested under, plus exactly `font-src data:`, because the offline file
+ * embeds the prototype's three fonts (owner decision).
+ */
+export const COMPONENT_OFFLINE_POLICY =
+  "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'";
+
+/** The served page as a local file that carries the offline policy itself. */
+export async function writeOfflineFileUnderPolicy(served: string, path: string): Promise<void> {
+  const policy = `<meta http-equiv="Content-Security-Policy" content="${COMPONENT_OFFLINE_POLICY}">`;
+  const html = served.replace("<head>", () => `<head>${policy}`);
+  if (html === served) throw new Error("The component page has no <head> to carry the policy");
+  await writeFile(path, html);
+}
+
+/** Records every policy violation the page raises. Call before `goto`. */
+export async function recordPolicyViolations(page: Page): Promise<() => Promise<string[]>> {
+  await page.addInitScript(() => {
+    const violations: string[] = [];
+    Object.defineProperty(window, "__aihCspViolations", { value: violations });
+    document.addEventListener("securitypolicyviolation", (event) => {
+      violations.push(`${event.effectiveDirective}:${event.blockedURI}`);
+    });
+  });
+  return () =>
+    page.evaluate(() => (window as unknown as { __aihCspViolations: string[] }).__aihCspViolations);
+}
 
 export interface HostProbe {
   /** The one origin this page may talk to. Everything else is a failure. */
