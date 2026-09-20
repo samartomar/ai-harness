@@ -153,6 +153,37 @@ describe("user door view-model (P5b)", () => {
     expect(view.aiToolsFromPolicy).toBe(false);
     expect(view.aiTools).toContain("claude");
   });
+
+  it("a policy that lists no items cannot be saved, and says why", () => {
+    const policy = orgPolicy();
+    policy.authoringSelections.roots = [];
+    policy.authoringSelections.requests = [];
+    const view = userDoorViewModelV1(userModel({ initialPolicy: policy }));
+    expect(view.items).toEqual([]);
+    expect(view.saveBlocked).toBe("The org policy lists no items. Saving is disabled.");
+  });
+
+  it("shows the org's posture only once the digest proves the policy is the bound one", () => {
+    const initialPolicy = orgPolicy({ minimumPosture: "enterprise" });
+    expect(userDoorViewModelV1(userModel({ initialPolicy })).posture).toBe("enterprise");
+    const unproven = userModel({
+      initialPolicy,
+      policySource: { kind: "binding", path: "/p/.aih-config.json", valid: true },
+    });
+    expect(userDoorViewModelV1(unproven).posture).toBeUndefined();
+    const unknown = userModel({ initialPolicy: orgPolicy({ minimumPosture: "strict" }) });
+    expect(userDoorViewModelV1(unknown).posture).toBeUndefined();
+  });
+
+  it("carries the launch folder's name and the core version from the model", () => {
+    const view = userDoorViewModelV1(
+      userModel({ folderName: "payments-api", shell: { evidence: { coreVersion: "9.9.9" } } }),
+    );
+    expect(view).toMatchObject({ folderName: "payments-api", coreVersion: "9.9.9" });
+    const bare = userDoorViewModelV1(userModel());
+    expect(bare.folderName).toBeUndefined();
+    expect(bare.coreVersion).toBeUndefined();
+  });
 });
 
 describe("door routing in the page markup (P5b)", () => {

@@ -47,6 +47,16 @@ export interface UserDoorViewModelV1 {
   readonly missing: readonly string[];
   /** Why saving is disabled; undefined when saving is possible. */
   readonly saveBlocked: string | undefined;
+  /**
+   * The organization's posture floor (`minimumPosture`) from the bound policy.
+   * Read only when that policy is the one the digest was taken from, so the
+   * packaged default policy can never be shown as the organization's choice.
+   */
+  readonly posture: "vibe" | "enterprise" | undefined;
+  /** Basename of the folder the Workbench server was launched in. */
+  readonly folderName: string | undefined;
+  /** The `@aihq/core` version the page was rendered by. */
+  readonly coreVersion: string | undefined;
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -141,18 +151,32 @@ function allowedItems(
   return { items, ambiguous };
 }
 
+/** `minimumPosture`, but only "vibe" or "enterprise"; anything else is unknown. */
+function posture(policy: Record<string, unknown> | undefined): "vibe" | "enterprise" | undefined {
+  const value = policy?.minimumPosture;
+  return value === "vibe" || value === "enterprise" ? value : undefined;
+}
+
 export function userDoorViewModelV1(modelValue: unknown): UserDoorViewModelV1 {
   const model = record(modelValue) ?? {};
   const source = sourceChip(model);
   const policy = record(model.initialPolicy);
   const version = policy?.schemaVersion;
   const schemaVersion: 2 | 3 | undefined = version === 2 || version === 3 ? version : undefined;
+  const server = {
+    folderName: text(model.folderName),
+    coreVersion: text(record(record(model.shell)?.evidence)?.coreVersion),
+  };
   const empty = {
     items: [],
     ambiguous: [],
     aiTools: [],
     aiToolsFromPolicy: false,
     schemaVersion,
+    // Until the digest proves `initialPolicy` is the bound policy, its posture
+    // may be the packaged default's and must not be shown as the org's.
+    posture: undefined,
+    ...server,
   };
   if (source === undefined)
     return {
@@ -201,7 +225,12 @@ export function userDoorViewModelV1(modelValue: unknown): UserDoorViewModelV1 {
     aiToolsFromPolicy: listed !== undefined,
     schemaVersion,
     missing: [],
-    saveBlocked: undefined,
+    // A resolvable, fully-digested policy can still authorize nothing: there is
+    // nothing to keep, so saving would only ever produce an empty file.
+    saveBlocked:
+      items.length === 0 ? "The org policy lists no items. Saving is disabled." : undefined,
+    posture: posture(policy),
+    ...server,
   };
 }
 

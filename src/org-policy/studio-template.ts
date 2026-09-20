@@ -1,4 +1,5 @@
 import { EVIDENCE_DELIVERY_NOTE, evidenceDeliveryRows } from "./evidence-delivery-rows.js";
+import { baselineEvidenceProvenanceTextV1, catalogProvenanceTextV1 } from "./provenance-lines.js";
 import { customMcpFormsMarkup } from "./studio-custom-mcp.js";
 import type { PolicyStudioModel } from "./studio-model.js";
 import { protectedPolicyWorkbenchMarkup } from "./studio-protected-authority.js";
@@ -38,27 +39,16 @@ function safeHtmlAttribute(value: string): string {
  * model carries none of them.
  */
 function catalogProvenanceLine(model: PolicyStudioModel): string {
-  const provenance = model.catalogProvenance;
-  if (provenance === undefined) return "";
-  const age =
-    provenance.ageSeconds === null
-      ? "packaged fallback (no download age)"
-      : `${String(provenance.ageSeconds)}s since download`;
-  const detail = [
-    `Supported catalog · verified ${provenance.tier}`,
-    `source ${provenance.sourceId} (${provenance.channel})`,
-    `resolved ${provenance.resolvedAt}`,
-    age,
-    `bootstrap ${provenance.bootstrapProvenance}`,
-  ].join(" · ");
-  return `\n  <p class="help" id="catalog-provenance">${safeHtmlAttribute(detail)}</p>`;
+  const detail = catalogProvenanceTextV1(model);
+  return detail === undefined
+    ? ""
+    : `\n  <p class="help" id="catalog-provenance">${safeHtmlAttribute(detail)}</p>`;
 }
 function baselineEvidenceProvenanceLine(model: PolicyStudioModel): string {
-  const provenance = model.baselineEvidenceProvenance;
-  if (provenance === undefined) return "";
-  const age =
-    provenance.ageSeconds === null ? "packaged fallback" : `${String(provenance.ageSeconds)}s`;
-  return `\n  <p class="help" id="baseline-evidence-provenance">${safeHtmlAttribute([`Baseline evidence · ${provenance.tier}`, `sources ${provenance.sourceIds.join(",")}`, `schema ${String(provenance.schemaVersion)}`, `digest ${provenance.digest}`, `age ${age}`, `resolved ${provenance.resolvedAt}`].join(" · "))}</p>`;
+  const detail = baselineEvidenceProvenanceTextV1(model);
+  return detail === undefined
+    ? ""
+    : `\n  <p class="help" id="baseline-evidence-provenance">${safeHtmlAttribute(detail)}</p>`;
 }
 
 /** Portable, dependency-free policy authoring surface. */
