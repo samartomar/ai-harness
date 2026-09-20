@@ -3,38 +3,37 @@ import {
   createUserEngine,
   type TrimUseV1,
   type UserDoorSaveInputV1,
-  type UserDoorTrimItemV1,
   type UserEngine,
   userModelFromImportedPolicy,
 } from "../../src/org-policy/workbench/engine/index.js";
 import type { ModeControl } from "./AdminPage.js";
 import {
-  CARD,
-  CARD_FOOTER,
-  CARD_GRID,
-  CARD_TITLE,
   Divider,
-  FACT_ROW,
-  FACTS,
   GHOST_BUTTON,
   HEADER,
   Identity,
-  KIND_CHIP,
   MessageStrip,
   ModeToggle,
-  PANEL_HEADING,
-  PRIMARY_BUTTON,
-  SECONDARY_BUTTON,
-  Segmented,
   SUB_HEADER,
-  TEXT_INPUT,
 } from "./chrome.js";
+import { ImportOrgPolicy } from "./editors/ImportOrgPolicy.js";
+import { ProjectFacts } from "./editors/ProjectFacts.js";
+import { type ForType, ProjectFor } from "./editors/ProjectFor.js";
+import { ResetChoices } from "./editors/ResetChoices.js";
+import {
+  CHECK_PASSED_MESSAGE,
+  CheckSelection,
+  SaveProjectPolicy,
+} from "./editors/SaveProjectPolicy.js";
+import { SetAll } from "./editors/SetAll.js";
+import { AmbiguousItems, DEFAULT_USE, TrimList } from "./editors/TrimList.js";
 import type { WorkbenchHost } from "./host.js";
 import { readImportedFile } from "./import-file.js";
 
 /**
  * The project page (journey J2), in the prototype's `user-trim.html` design.
- * The file it produces, and every refusal, come from the engine entry.
+ * This file composes only: page-level state, the layout, and one line per
+ * editor. Every editor, and its exact texts, lives in `src/editors/`.
  */
 
 export interface UserPageProps {
@@ -42,14 +41,6 @@ export interface UserPageProps {
   readonly model: unknown;
   readonly mode: ModeControl;
 }
-
-type ForType = "project" | "persona" | "agent";
-
-const USE_OPTIONS: readonly { value: TrimUseV1; label: string }[] = [
-  { value: "required", label: "Required" },
-  { value: "optional", label: "Optional" },
-  { value: "skip", label: "Skip" },
-];
 
 function bundleOf(model: unknown): unknown {
   return model !== null && typeof model === "object" && !Array.isArray(model)
@@ -121,7 +112,7 @@ export function UserPage({ host, model, mode }: UserPageProps) {
       }
       setAlerts([]);
       if (!thenSave) {
-        setOutcome({ ok: true, message: "The selection narrows the organization policy." });
+        setOutcome({ ok: true, message: CHECK_PASSED_MESSAGE });
         return;
       }
       host.save(result.file);
@@ -132,12 +123,11 @@ export function UserPage({ host, model, mode }: UserPageProps) {
 
   const counts = useMemo(() => {
     const total = { required: 0, optional: 0, skip: 0 };
-    for (const item of view?.items ?? []) {
-      total[choices.get(item.assetId) ?? "optional"] += 1;
-    }
+    for (const item of view?.items ?? []) total[choices.get(item.assetId) ?? DEFAULT_USE] += 1;
     return total;
   }, [view, choices]);
 
+  const items = view?.items ?? [];
   const blocked = view?.saveBlocked;
   const saveDisabled = engine === undefined || blocked !== undefined;
 
@@ -166,22 +156,8 @@ export function UserPage({ host, model, mode }: UserPageProps) {
           >
             Admin page
           </a>
-          <button
-            className={SECONDARY_BUTTON}
-            disabled={saveDisabled}
-            onClick={() => check(false)}
-            type="button"
-          >
-            Check Selection
-          </button>
-          <button
-            className={PRIMARY_BUTTON}
-            disabled={saveDisabled}
-            onClick={() => check(true)}
-            type="button"
-          >
-            Save
-          </button>
+          <CheckSelection disabled={saveDisabled} onCheck={() => check(false)} />
+          <SaveProjectPolicy disabled={saveDisabled} onSave={() => check(true)} />
           <Divider />
           <ModeToggle label={mode.label} onToggle={mode.toggle} />
         </div>
@@ -191,73 +167,28 @@ export function UserPage({ host, model, mode }: UserPageProps) {
         <MessageStrip outcome={outcome} />
       </div>
 
-      <div className="px-3 py-2 border-b border-surface-container-high/40 flex flex-wrap items-center gap-2.5 text-[11px] shrink-0">
-        <span className="font-mono uppercase tracking-wider text-[10px] text-outline font-semibold">
-          For
-        </span>
-        <Segmented
-          label="For"
-          onChange={setForType}
-          options={[
-            { value: "project", label: "Project" },
-            { value: "persona", label: "Persona" },
-            { value: "agent", label: "Agent" },
-          ]}
-          value={forType}
-        />
-        <label className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider text-outline font-semibold">
-          Name
-          <input
-            className={`${TEXT_INPUT} w-40 normal-case tracking-normal`}
-            id={nameId}
-            onChange={(event) => setForName(event.target.value)}
-            type="text"
-            value={forName}
-          />
-        </label>
-        <fieldset className="flex items-center gap-2 border-0 p-0 m-0">
-          <legend className="sr-only">AI tools</legend>
-          <span className="font-mono uppercase tracking-wider text-[10px] text-outline font-semibold">
-            AI tools
-          </span>
-          {(view?.aiTools ?? []).map((tool) => (
-            <label className="flex items-center gap-1 text-[11px] text-on-surface" key={tool}>
-              <input
-                checked={tools.has(tool)}
-                onChange={(event) =>
-                  setTools((current) => {
-                    const next = new Set(current);
-                    if (event.target.checked) next.add(tool);
-                    else next.delete(tool);
-                    return next;
-                  })
-                }
-                type="checkbox"
-              />
-              {tool}
-            </label>
-          ))}
-        </fieldset>
-      </div>
+      <ProjectFor
+        aiTools={view?.aiTools ?? []}
+        chosenTools={tools}
+        forName={forName}
+        forType={forType}
+        nameFieldId={nameId}
+        onForName={setForName}
+        onForType={setForType}
+        onToolChange={(tool, chosen) =>
+          setTools((current) => {
+            const next = new Set(current);
+            if (chosen) next.add(tool);
+            else next.delete(tool);
+            return next;
+          })
+        }
+      />
 
       <div className="flex flex-1 overflow-hidden">
         <div className="flex-1 overflow-y-auto p-4 bg-[#0d111a] flex flex-col gap-4">
           {bound ? null : (
-            <div className="flex flex-wrap items-center gap-2 text-[11.5px]">
-              <p className="text-on-surface-variant">
-                This page has no bound policy. Import your organization's policy file.
-              </p>
-              <label className={`${SECONDARY_BUTTON} cursor-pointer`} htmlFor={importId}>
-                Import organization policy
-              </label>
-              <input
-                accept="application/json"
-                className="sr-only"
-                id={importId}
-                onChange={(event) => void importPolicy(event)}
-                type="file"
-              />
-            </div>
+            <ImportOrgPolicy inputId={importId} onImport={(event) => void importPolicy(event)} />
           )}
 
           {blocked === undefined ? null : <p className="text-[11.5px] text-tertiary">{blocked}</p>}
@@ -276,152 +207,27 @@ export function UserPage({ host, model, mode }: UserPageProps) {
             </div>
           )}
 
-          {/* The list head's "Set all N" and its group, from `ui/user-door.ts`
-           * lines 429-464: one press sets every listed item the same way, and
-           * a press is pressed only while they all already agree. */}
-          {(view?.items ?? []).length === 0 ? null : (
-            <fieldset className="flex items-center gap-2 border-0 p-0 m-0">
-              {/* The group's name, and the head label the hand-built page shows. */}
-              <legend className="sr-only">Set every item</legend>
-              <span className="text-[10.5px] font-mono text-outline uppercase tracking-wider">
-                {`Set all ${view?.items.length ?? 0}`}
-              </span>
-              <div className="flex items-center bg-surface-container-lowest p-0.5 rounded border border-surface-container-high/60">
-                {USE_OPTIONS.map((option) => {
-                  const all =
-                    view?.items.every(
-                      (item) => (choices.get(item.assetId) ?? "optional") === option.value,
-                    ) === true;
-                  return (
-                    <button
-                      aria-pressed={all}
-                      className={`px-2 py-0.5 text-[10.5px] rounded transition-colors ${
-                        all
-                          ? "bg-surface-container text-primary font-semibold shadow-xs"
-                          : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container"
-                      }`}
-                      key={option.value}
-                      onClick={() =>
-                        setChoices(
-                          new Map(
-                            (view?.items ?? []).map(
-                              (item) => [item.assetId, option.value] as const,
-                            ),
-                          ),
-                        )
-                      }
-                      type="button"
-                    >
-                      {option.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </fieldset>
-          )}
+          <SetAll
+            choices={choices}
+            items={items}
+            onSetAll={(use) => setChoices(new Map(items.map((item) => [item.assetId, use])))}
+          />
 
-          <div className={CARD_GRID}>
-            {(view?.items ?? []).map((item) => (
-              <TrimCard
-                item={item}
-                key={item.assetId}
-                onChange={(use) => setChoices((current) => new Map(current).set(item.assetId, use))}
-                use={choices.get(item.assetId) ?? "optional"}
-              />
-            ))}
-          </div>
+          <TrimList
+            choices={choices}
+            items={items}
+            onChoose={(assetId, use) => setChoices((current) => new Map(current).set(assetId, use))}
+          />
 
-          {(view?.ambiguous ?? []).length === 0 ? null : (
-            <section className="space-y-1">
-              <h2 className="font-bold text-white text-[13px] tracking-tight">
-                Not offered: listed under more than one origin
-              </h2>
-              <ul className="text-[11px] font-mono text-outline list-disc pl-5">
-                {view?.ambiguous.map((assetId) => (
-                  <li key={assetId}>{assetId}</li>
-                ))}
-              </ul>
-            </section>
-          )}
+          <AmbiguousItems assetIds={view?.ambiguous ?? []} />
         </div>
 
-        <aside className="w-72 shrink-0 border-l border-surface-container-high/60 bg-surface-container-lowest p-3 space-y-2 overflow-y-auto">
-          <h2 className={PANEL_HEADING}>What your AI carries</h2>
-          <div className={FACTS}>
-            <div className={FACT_ROW}>
-              <span>For</span>
-              <span className="text-on-surface text-right">
-                {forType} · {forName === "" ? "—" : forName}
-              </span>
-            </div>
-            <div className={FACT_ROW}>
-              <span>On</span>
-              <span className="text-on-surface text-right">
-                {tools.size === 0 ? "no AI tool" : [...tools].join(", ")}
-              </span>
-            </div>
-            <div className={FACT_ROW}>
-              <span>Required</span>
-              <span className="text-secondary font-mono">{counts.required}</span>
-            </div>
-            <div className={FACT_ROW}>
-              <span>Optional</span>
-              <span className="text-primary font-mono">{counts.optional}</span>
-            </div>
-            <div className={FACT_ROW}>
-              <span>Skipped</span>
-              <span className="font-mono">{counts.skip}</span>
-            </div>
-          </div>
-          {/* The footer of `ui/user-door.ts` lines 785-806: Reset beside Save.
-           * Reset drops the choices, so every item goes back to the view's own
-           * default; it is refused exactly when Save is. */}
+        <ProjectFacts counts={counts} forName={forName} forType={forType} tools={[...tools]}>
           <div className="flex items-center gap-2">
-            <button
-              className={GHOST_BUTTON}
-              disabled={saveDisabled}
-              onClick={() => setChoices(new Map())}
-              type="button"
-            >
-              Reset
-            </button>
-            <button
-              className={`${PRIMARY_BUTTON} flex-1 justify-center`}
-              disabled={saveDisabled}
-              onClick={() => check(true)}
-              type="button"
-            >
-              Save aih-project-policy.json
-            </button>
+            <ResetChoices disabled={saveDisabled} onReset={() => setChoices(new Map())} />
+            <SaveProjectPolicy disabled={saveDisabled} onSave={() => check(true)} withFileName />
           </div>
-        </aside>
-      </div>
-    </div>
-  );
-}
-
-function TrimCard({
-  item,
-  use,
-  onChange,
-}: {
-  readonly item: UserDoorTrimItemV1;
-  readonly use: TrimUseV1;
-  readonly onChange: (use: TrimUseV1) => void;
-}) {
-  const title = item.label ?? item.assetId;
-  return (
-    <div className={CARD} data-card-id={item.assetId}>
-      <div>
-        <div className="flex items-start justify-between gap-2">
-          <span className={CARD_TITLE}>{title}</span>
-          <span className={KIND_CHIP}>{item.kind ?? "item"}</span>
-        </div>
-        <p className="text-[11px] text-on-surface-variant mt-2 leading-relaxed">{item.assetId}</p>
-      </div>
-      <div className={CARD_FOOTER}>
-        <span className="font-mono text-outline">{item.origin.kind}</span>
-        <Segmented label={title} onChange={onChange} options={USE_OPTIONS} size="sm" value={use} />
+        </ProjectFacts>
       </div>
     </div>
   );

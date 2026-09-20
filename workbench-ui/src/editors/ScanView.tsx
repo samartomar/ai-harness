@@ -1,6 +1,6 @@
 import type { ChangeEvent } from "react";
-import type { AdminScanV1, EngineOutcome } from "../../src/org-policy/workbench/engine/index.js";
-import { SECONDARY_BUTTON } from "./chrome.js";
+import type { AdminScanV1, EngineOutcome } from "../../../src/org-policy/workbench/engine/index.js";
+import { SECONDARY_BUTTON } from "../chrome.js";
 
 /**
  * The scan view (editors 5, 6 and 10 of the acceptance rule), in the shape of
@@ -11,6 +11,10 @@ import { SECONDARY_BUTTON } from "./chrome.js";
  * Every sentence comes from the engine; this file places them as React text,
  * never as markup, whatever an imported file says.
  */
+
+export const SCAN_TITLE = "Scan review";
+export const SCAN_DESCRIPTION =
+  "Imported evidence and governance decisions, and what the prepared catalog's reports say. Nothing here is verified or effective.";
 
 /** One "scan at a glance" tile: the figure, its named pill, its caption. */
 function GlanceTile({

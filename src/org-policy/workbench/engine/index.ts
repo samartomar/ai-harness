@@ -37,11 +37,15 @@ export {
   type AdminCheckResult,
   type AdminEngine,
   type AdminFramework,
-  type AdminScanV1,
   type AdminState,
   createAdminEngine,
   isPolicyFileName,
 } from "./admin-engine.js";
+// ADDING A FEATURE: one more export line here, for its public types.
+export type { ChangesFeature } from "./features/changes.js";
+export type { ClearPolicyFeature } from "./features/clear-policy.js";
+export type { AdminEngineContext } from "./features/context.js";
+export type { AdminScanV1, ScanFeature } from "./features/scan.js";
 export {
   parseWorkbenchInput,
   WORKBENCH_INPUT_FORMAT,
