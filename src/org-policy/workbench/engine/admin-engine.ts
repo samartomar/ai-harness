@@ -38,6 +38,11 @@ import { type ClearPolicyFeature, clearPolicyFeature } from "./features/clear-po
 import type { AdminEngineContext } from "./features/context.js";
 // Lane B (drafts and repairs, inventory rows 19-21).
 import { type DraftsFeature, draftsFeature } from "./features/drafts.js";
+// Lane E (rows 22, 18, 23): intake and protected authoring.
+import {
+  type IntakeAuthorityFeature,
+  intakeAuthorityFeature,
+} from "./features/intake-authority.js";
 // LANE C (organization screen).
 import { type OrgFeature, orgFeature } from "./features/org.js";
 import { type ScanFeature, scanFeature } from "./features/scan.js";
@@ -155,7 +160,9 @@ export type AdminEngine = CoreAdminEngine &
   // LANE A (Sources screen).
   SourcesFeature &
   // Lane D (Additions screen: rows 15, 16, 17).
-  AdditionsFeature;
+  AdditionsFeature &
+  // Lane E (rows 22, 18, 23).
+  IntakeAuthorityFeature;
 
 interface WorkbenchImportValidation {
   accepted: boolean;
@@ -818,6 +825,8 @@ function buildAdminEngine(modelValue: unknown): EngineResult<AdminEngine> {
     ...sourcesFeature(ctx),
     // Lane D (Additions screen: rows 15, 16, 17).
     ...additionsFeature(ctx),
+    // Lane E (rows 22, 18, 23).
+    ...intakeAuthorityFeature(ctx),
   };
   return { ok: true, value: engine };
 }

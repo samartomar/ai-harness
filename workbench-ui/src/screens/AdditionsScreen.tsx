@@ -1,6 +1,7 @@
 import { CustomMcp } from "../editors/CustomMcp.js";
 import { EccMcpApproval } from "../editors/EccMcpApproval.js";
 import { FrameworkCuration } from "../editors/FrameworkCuration.js";
+import { IntakeSection } from "./IntakeSection.js";
 import type { AdminScreenProps } from "./types.js";
 
 /**
@@ -13,7 +14,8 @@ export const ADDITIONS_SCREEN_TITLE = "Additions";
 const LEDE =
   "The one place you add what aih does not ship, record approvals and build the protected policy file. Nothing here installs or runs anything.";
 
-export function AdditionsScreen({ engine, run }: AdminScreenProps) {
+export function AdditionsScreen(props: AdminScreenProps) {
+  const { engine, run } = props;
   const counts = engine.additions().counts;
   return (
     <main aria-label={ADDITIONS_SCREEN_TITLE} className="flex-1 overflow-y-auto p-5 space-y-4">
@@ -32,8 +34,7 @@ export function AdditionsScreen({ engine, run }: AdminScreenProps) {
       <CustomMcp engine={engine} run={run} />
       <EccMcpApproval engine={engine} run={run} />
 
-      {/* LANE E SLOT: artifact intake (row 22) and protected bundle authoring
-       * (row 23) mount here. Lane D builds neither. */}
+      <IntakeSection {...props} />
     </main>
   );
 }

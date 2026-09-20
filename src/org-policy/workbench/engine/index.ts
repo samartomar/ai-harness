@@ -75,6 +75,19 @@ export type {
   AdminTemplatePreviewV1,
   DraftsFeature,
 } from "./features/drafts.js";
+// Lane E (rows 22, 18, 23): intake and protected authoring.
+export type { SkillDiscoveryV1 } from "./features/github-skill-discovery.js";
+export {
+  type AdminIntakeV1,
+  type AdminProtectedV1,
+  INTAKE_DOWNLOAD_STARTED_MESSAGE,
+  type IntakeAuthorityFeature,
+  type IntakeDraftV1,
+  type IntakeRowV1,
+  PROTECTED_DOWNLOAD_STARTED_MESSAGE,
+  type ProtectedDecisionRowV1,
+  type ProtectedOutcomeV1,
+} from "./features/intake-authority.js";
 // LANE C (organization screen).
 export type {
   AdoptionRoleV1,
@@ -90,6 +103,10 @@ export type {
   OrgViewV1,
   ProvenanceLinesV1,
 } from "./features/org.js";
+export type {
+  ProtectedDigestFn,
+  ProtectedFieldsV1,
+} from "./features/protected-authority-model.js";
 export type { AdminScanV1, ScanFeature } from "./features/scan.js";
 // LANE A (Sources screen: rows 7, 11, 12).
 export type {

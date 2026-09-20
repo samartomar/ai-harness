@@ -28,8 +28,34 @@ export interface WorkbenchFile {
   readonly text: string;
 }
 
+/**
+ * Lane E (row 18): the one connected operation of this delivery. The CLI host
+ * implements it against the local server's existing routes, with its request
+ * token; no other host has it. A result is UNTRUSTED data: the engine judges
+ * it (`checkConnectedSkillPin`) before anything is pinned.
+ */
+export interface WorkbenchGithubSkillHost {
+  /** Ask the local server to pin one Skill's exact commit and SKILL.md path. */
+  resolve(request: { readonly repository: string; readonly skill: string }): Promise<unknown>;
+  /**
+   * Ask the local server to prepare the pending Skill against the current
+   * draft policy. It answers by re-rendering the page, so nothing returns.
+   */
+  prepare(request: {
+    readonly policy: unknown;
+    readonly source: {
+      readonly repository: string;
+      readonly skill: string;
+      readonly commit: string;
+      readonly path: string;
+    };
+  }): Promise<unknown>;
+}
+
 export interface WorkbenchHost {
   readonly capabilities: WorkbenchHostCapabilities;
+  /** Present exactly when `capabilities.githubIntake` is true. */
+  readonly githubSkill?: WorkbenchGithubSkillHost;
   readonly navigation: WorkbenchNavigation;
   /** SHA-256, lower-case hex, of exactly these bytes. Never of re-serialized JSON. */
   sha256Hex(bytes: ArrayBuffer): Promise<string>;
