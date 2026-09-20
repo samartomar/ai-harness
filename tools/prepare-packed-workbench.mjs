@@ -322,6 +322,10 @@ export async function preparePackedWorkbench(directory) {
     delete environment.AIH_ORG_POLICY;
     delete environment.AIH_POLICY_AUTHORITY_REPOSITORY;
     delete environment.AIH_POLICY_AUTHORITY_WORKFLOW;
+    // npm exports the developer's own `allow-scripts` setting to child scripts, and
+    // npm 11 rejects it as a flag in a project install. Every install here ignores scripts.
+    for (const name of Object.keys(environment))
+      if (name.toLowerCase() === "npm_config_allow_scripts") delete environment[name];
     return new Promise((resolve, reject) => {
       const child = spawn(process.execPath, args, {
         cwd,
