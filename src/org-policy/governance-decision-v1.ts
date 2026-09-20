@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
 import { z } from "zod";
+import { sha256HexOfUtf8 } from "../contract/sha256-pure.js";
 
 const ID = /^[a-z][a-z0-9-]{0,63}$/;
 const SHA256 = /^sha256:[0-9a-f]{64}$/;
@@ -215,7 +215,7 @@ export function canonicalGovernanceDecisionV1(value: GovernanceDecisionV1): stri
 }
 
 export function governanceDecisionDigestV1(value: GovernanceDecisionV1): string {
-  return `sha256:${createHash("sha256").update(canonicalGovernanceDecisionV1(value), "utf8").digest("hex")}`;
+  return `sha256:${sha256HexOfUtf8(canonicalGovernanceDecisionV1(value))}`;
 }
 
 export function canonicalGovernanceDecisionRevocationV1(
@@ -227,5 +227,5 @@ export function canonicalGovernanceDecisionRevocationV1(
 export function governanceDecisionRevocationDigestV1(
   value: GovernanceDecisionRevocationV1,
 ): string {
-  return `sha256:${createHash("sha256").update(canonicalGovernanceDecisionRevocationV1(value), "utf8").digest("hex")}`;
+  return `sha256:${sha256HexOfUtf8(canonicalGovernanceDecisionRevocationV1(value))}`;
 }

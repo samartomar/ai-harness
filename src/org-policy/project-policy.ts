@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { AihError } from "../errors.js";
 import { type ProjectPolicyV1, ProjectPolicyV1Schema } from "./project-policy-schema.js";
-import type { OrgPolicy } from "./schema.js";
+import type { OrgPolicy } from "./schema-core.js";
 import type { WorkbenchOriginV1 } from "./workbench/contracts.js";
 
 export {

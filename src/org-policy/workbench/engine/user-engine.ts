@@ -1,6 +1,6 @@
 import { parseNativeStrictJsonObjectV1 } from "../../../contract/native-strict-json-object-v1.js";
 import { checkProjectPolicyNarrowsV1 } from "../../project-policy.js";
-import type { OrgPolicy } from "../../schema.js";
+import type { OrgPolicy } from "../../schema-core.js";
 import {
   jsonFileText,
   MAX_IMPORT_BYTES,

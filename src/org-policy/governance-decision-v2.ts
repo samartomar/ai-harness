@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
 import { z } from "zod";
+import { sha256HexOfUtf8 } from "../contract/sha256-pure.js";
 import { POLICY_APPROVER_EMAIL_PATTERN } from "./ecc-mcp-approval.js";
 import { GovernanceDecisionTimestampSchema } from "./governance-decision-v1.js";
 
@@ -116,12 +116,31 @@ function sortedUnique(values: readonly string[]): boolean {
   );
 }
 
+const BASE64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+/**
+ * Canonical base64 of exactly 64 bytes, decided without a decoder so the
+ * grammar stays host-free.
+ *
+ * This used to be `Buffer.from(encoded, "base64")` followed by a re-encode
+ * round-trip. With the character set already fixed by the regex, that round
+ * trip accepts a string for exactly two reasons: it is 86 data characters plus
+ * `==` (the only shape whose lenient decode is 64 bytes AND re-encodes to the
+ * same length), and its final data character carries no bits past byte 64, so
+ * its low four bits are zero. Anything else — no padding, one `=`, any other
+ * length — decodes to a different byte count or re-encodes differently, and was
+ * refused before exactly as it is refused here.
+ * `tests/org-policy/schema-core-boundary.test.ts` pins the two decisions
+ * against the `Buffer` round-trip, through `GovernanceDecisionSourceV2Schema`'s
+ * npm branch — the one refinement that uses this predicate.
+ */
 function validSha512Sri(value: string): boolean {
   const match = /^sha512-([A-Za-z0-9+/]+={0,2})$/.exec(value);
   if (match?.[1] === undefined) return false;
   const encoded = match[1];
-  const decoded = Buffer.from(encoded, "base64");
-  return decoded.length === 64 && decoded.toString("base64") === encoded;
+  if (encoded.length !== 88 || !encoded.endsWith("==")) return false;
+  const lastValue = BASE64_ALPHABET.indexOf(encoded.charAt(85));
+  return lastValue >= 0 && (lastValue & 0x0f) === 0;
 }
 
 const exactSet = z
@@ -382,9 +401,7 @@ export function canonicalGovernanceDecisionSourceV2(value: GovernanceDecisionSou
 }
 
 export function governanceDecisionSourceDigestV2(value: GovernanceDecisionSourceV2): string {
-  return `sha256:${createHash("sha256")
-    .update(canonicalGovernanceDecisionSourceV2(value), "utf8")
-    .digest("hex")}`;
+  return `sha256:${sha256HexOfUtf8(canonicalGovernanceDecisionSourceV2(value))}`;
 }
 
 export function canonicalGovernanceDecisionSubjectV2(
@@ -396,9 +413,7 @@ export function canonicalGovernanceDecisionSubjectV2(
 export function governanceDecisionSubjectDigestV2(
   value: Pick<GovernanceDecisionV2["subject"], "kind" | "id" | "sourceDigest">,
 ): string {
-  return `sha256:${createHash("sha256")
-    .update(canonicalGovernanceDecisionSubjectV2(value), "utf8")
-    .digest("hex")}`;
+  return `sha256:${sha256HexOfUtf8(canonicalGovernanceDecisionSubjectV2(value))}`;
 }
 
 /** Canonical bytes are domain-separated so V1 and V2 digests cannot collide. */
@@ -407,9 +422,7 @@ export function canonicalGovernanceDecisionV2(value: GovernanceDecisionV2): stri
 }
 
 export function governanceDecisionDigestV2(value: GovernanceDecisionV2): string {
-  return `sha256:${createHash("sha256")
-    .update(canonicalGovernanceDecisionV2(value), "utf8")
-    .digest("hex")}`;
+  return `sha256:${sha256HexOfUtf8(canonicalGovernanceDecisionV2(value))}`;
 }
 
 export function canonicalGovernanceDecisionRevocationV2(
@@ -421,7 +434,5 @@ export function canonicalGovernanceDecisionRevocationV2(
 export function governanceDecisionRevocationDigestV2(
   value: GovernanceDecisionRevocationV2,
 ): string {
-  return `sha256:${createHash("sha256")
-    .update(canonicalGovernanceDecisionRevocationV2(value), "utf8")
-    .digest("hex")}`;
+  return `sha256:${sha256HexOfUtf8(canonicalGovernanceDecisionRevocationV2(value))}`;
 }

@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { sha256HexOfUtf8 } from "../contract/sha256-pure.js";
 import snapshot from "./ecc-mcp-catalog.snapshot.json";
 
 /** Exact public upstream source whose bytes are committed beside this module. */
@@ -440,7 +440,7 @@ function fail(message: string): never {
 }
 
 function sha256(value: string): string {
-  return createHash("sha256").update(value, "utf8").digest("hex");
+  return sha256HexOfUtf8(value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
