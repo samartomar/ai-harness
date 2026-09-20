@@ -31,6 +31,31 @@ export {
 export * from "./org-policy/bundle.js";
 export * from "./org-policy/governance-decision-v2.js";
 export {
+  type ConsumeGovernanceInputV1Input,
+  type ConsumeGovernanceInputV1Result,
+  canonicalGovernanceInputV1,
+  consumeGovernanceInputV1,
+  DEFAULT_GOVERNANCE_EVIDENCE_PATH_V1,
+  GOVERNANCE_INPUT_V1_FORMAT,
+  type GovernanceInputArtifactV1,
+  type GovernanceInputDiagnosticV1,
+  type GovernanceInputRefusalV1,
+  type GovernanceInputStatusV1,
+  type GovernanceInputV1,
+  GovernanceInputV1Schema,
+  governanceInputDigestV1,
+  MAX_GOVERNANCE_INPUT_BYTES_V1,
+  type PrepareGovernanceInputV1Input,
+  type PrepareGovernanceInputV1Result,
+  parseGovernanceInputV1Bytes,
+  prepareGovernanceInputV1,
+  type ScanVerificationAdapterV1,
+  type ScanVerificationRequestV1,
+  type SubjectContentBindingRefusalV1,
+  type SubjectContentBindingV1,
+  verifySubjectContentBindingV1,
+} from "./org-policy/governance-input-v1.js";
+export {
   canonicalOrganizationEvidenceEnvelopeV1,
   MAX_ORGANIZATION_EVIDENCE_ENVELOPE_BYTES_V1,
   type OrganizationEvidenceEnvelopeV1,
