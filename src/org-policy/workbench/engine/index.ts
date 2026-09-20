@@ -42,6 +42,22 @@ export {
   isPolicyFileName,
 } from "./admin-engine.js";
 // ADDING A FEATURE: one more export line here, for its public types.
+// Lane D (Additions screen: rows 15, 16, 17).
+export type {
+  AdditionFieldProblemV1,
+  AdditionFieldV1,
+  AdditionsFeature,
+  AdditionsOutcomeV1,
+  AdditionsViewV1,
+  CurationInputV1,
+  CurationRowV1,
+  CurationTargetV1,
+  CustomMcpInputV1,
+  CustomRowV1,
+  EccMcpApprovalRowV1,
+  EccMcpOptionV1,
+  RemoteMcpInputV1,
+} from "./features/additions.js";
 export type { ChangesFeature } from "./features/changes.js";
 export type { ClearPolicyFeature } from "./features/clear-policy.js";
 export type { AdminEngineContext } from "./features/context.js";

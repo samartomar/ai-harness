@@ -31,6 +31,8 @@ import {
 } from "../ui/shell/policy-session.js";
 import { canonicalPolicyErrors } from "./canonical-validation.js";
 // ADDING A FEATURE: one more import here.
+// Lane D (Additions screen: rows 15, 16, 17).
+import { type AdditionsFeature, additionsFeature } from "./features/additions.js";
 import { type ChangesFeature, changesFeature } from "./features/changes.js";
 import { type ClearPolicyFeature, clearPolicyFeature } from "./features/clear-policy.js";
 import type { AdminEngineContext } from "./features/context.js";
@@ -151,7 +153,9 @@ export type AdminEngine = CoreAdminEngine &
   // Lane B (drafts and repairs).
   DraftsFeature &
   // LANE A (Sources screen).
-  SourcesFeature;
+  SourcesFeature &
+  // Lane D (Additions screen: rows 15, 16, 17).
+  AdditionsFeature;
 
 interface WorkbenchImportValidation {
   accepted: boolean;
@@ -812,6 +816,8 @@ function buildAdminEngine(modelValue: unknown): EngineResult<AdminEngine> {
     ...orgFeature(ctx),
     // LANE A (Sources screen).
     ...sourcesFeature(ctx),
+    // Lane D (Additions screen: rows 15, 16, 17).
+    ...additionsFeature(ctx),
   };
   return { ok: true, value: engine };
 }
