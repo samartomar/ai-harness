@@ -10,6 +10,7 @@ import {
   fixtureStudioModel,
   goToUserPage,
   importOrgPolicy,
+  installedComponentPage,
   policyEvidence,
   recordPolicyViolations,
   refuseEnterpriseWithoutAiTool,
@@ -378,6 +379,52 @@ test.describe("the CLI host from the installed candidate package", () => {
     expect(await violations()).toEqual([]);
     expect(probe.foreign, "the offline file made a network request").toEqual([]);
     expect(probe.subresources).toEqual([]);
+    expect(probe.documents).toEqual([]);
+  });
+
+  test("the installed package's page reproduces both byte anchors from the fixture input, under the offline policy", async ({
+    page,
+    probe,
+  }, testInfo) => {
+    // The server always embeds the real catalog; the anchors are defined over
+    // the fixture model, so the installed package renders its page for it.
+    const served = await installedComponentPage(
+      {
+        format: "aih-workbench-input",
+        version: 1,
+        door: "admin",
+        model: await fixtureStudioModel(),
+      },
+      testInfo.outputPath("fixture-input.json"),
+    );
+    const file = testInfo.outputPath("component-page-fixture.html");
+    await writeOfflineFileUnderPolicy(served, file);
+
+    const violations = await recordPolicyViolations(page);
+    await page.goto(pathToFileURL(file).href);
+    await expect(page.getByRole("button", { name: "Review Changes" })).toBeVisible();
+
+    await refuseEnterpriseWithoutAiTool(page);
+    await allowAiTool(page, "Claude Code");
+    await setEnterprisePosture(page);
+    await selectFirstSelectableItem(page, "fixture:control");
+    const orgPolicy = await downloadOrgPolicy(page, testInfo.outputPath("aih-org-policy.json"));
+    expect(orgPolicy.name).toBe("aih-org-policy.json");
+    expect(orgPolicy.text).toBe(await golden("aih-org-policy.v3-selection.json"));
+
+    await goToUserPage(page);
+    await importOrgPolicy(page, orgPolicy.text, testInfo.outputPath("import.json"));
+    const projectPolicy = await saveProjectPolicy(page, {
+      item: "fixture:control",
+      projectName: "Payments API",
+      aiTool: "claude",
+      outputPath: testInfo.outputPath("aih-project-policy.json"),
+    });
+    expect(projectPolicy.name).toBe("aih-project-policy.json");
+    expect(projectPolicy.text).toBe(await golden("aih-project-policy.v3-selection.json"));
+
+    expect(await violations()).toEqual([]);
+    expect(probe.foreign, "the offline file made a network request").toEqual([]);
     expect(probe.documents).toEqual([]);
   });
 

@@ -219,6 +219,45 @@ export function installedCli(): Promise<string> {
   return started;
 }
 
+/**
+ * The page the INSTALLED package ships, carrying a given input. The server
+ * always embeds the real catalog, and the published `dist` is bundled, so the
+ * byte anchors, defined over the fixture model, are demanded this way: the
+ * installed page file must equal the built one byte for byte, and the server's
+ * own `componentWorkbenchHtml` then embeds the input into that same file.
+ */
+export async function installedComponentPage(
+  input: Record<string, unknown>,
+  inputPath: string,
+): Promise<string> {
+  const cli = await installedCli();
+  await writeFile(inputPath, JSON.stringify(input));
+  const source = [
+    'import { readFileSync } from "node:fs";',
+    'import { componentWorkbenchHtml } from "./src/org-policy/workbench/component-page.ts";',
+    'const installed = readFileSync(process.env.AIH_INSTALLED_COMPONENT_PAGE, "utf8");',
+    'const built = readFileSync("src/org-policy/workbench/component-page.generated.cjs", "utf8");',
+    'if (installed !== built) throw new Error("The installed component page is not the built page");',
+    'const input = JSON.parse(readFileSync(process.env.AIH_COMPONENT_PAGE_INPUT, "utf8"));',
+    "process.stdout.write(componentWorkbenchHtml(input));",
+  ].join("\n");
+  const { stdout } = await promisify(execFile)(
+    process.execPath,
+    ["--import", "tsx", "--input-type=module", "-e", source],
+    {
+      cwd: resolve("."),
+      env: {
+        ...process.env,
+        AIH_INSTALLED_COMPONENT_PAGE: resolve(cli, "../component-page.generated.cjs"),
+        AIH_COMPONENT_PAGE_INPUT: inputPath,
+      },
+      windowsHide: true,
+      maxBuffer: 64 * 1024 * 1024,
+    },
+  );
+  return stdout;
+}
+
 export interface RunningCliHost {
   readonly url: string;
   readonly origin: string;
