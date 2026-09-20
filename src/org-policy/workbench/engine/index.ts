@@ -30,6 +30,13 @@ export {
   type AdminState,
   createAdminEngine,
 } from "./admin-engine.js";
+export {
+  parseWorkbenchInput,
+  WORKBENCH_INPUT_FORMAT,
+  WORKBENCH_INPUT_VERSION,
+  type WorkbenchInputDoor,
+  type WorkbenchInputV1,
+} from "./input-contract.js";
 export type { EngineFile, EngineOutcome, EngineResult } from "./shared.js";
 export {
   createUserEngine,

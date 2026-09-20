@@ -398,7 +398,9 @@ function buildAdminEngine(modelValue: unknown): EngineResult<AdminEngine> {
     }
     return [...byFramework.entries()].map(([sourceId, groups]) => ({
       sourceId,
-      label: bundle.sources[sourceId]?.distributor.locator ?? sourceId,
+      // Core distributes every packaged source, so the distributor cannot tell
+      // them apart. The upstream origin is the name a person recognizes.
+      label: bundle.sources[sourceId]?.upstreamOrigin.locator ?? sourceId,
       groups,
     }));
   };

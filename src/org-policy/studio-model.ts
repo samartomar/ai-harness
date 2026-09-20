@@ -1050,6 +1050,23 @@ function fallbackDefaultStudioPackageBaseV1(): DefaultStudioPackageBaseV1 {
   return structuredClone(fallbackDefaultStudioPackageBasePrototypeV1);
 }
 
+/**
+ * The package-only model, for a host that has no launch folder to read: the
+ * same package base as the no-options `policyStudioModel()`, assembled without
+ * the live source-data overlay. No clock, no local read, no expiry — two calls
+ * on any machine at any time produce the same model.
+ */
+export function packageOnlyPolicyStudioModelV1(): PolicyStudioModel {
+  const base = packagedDefaultStudioPreassemblyV1() ?? fallbackDefaultStudioPackageBaseV1();
+  return modelFromDefaultStudioPackageBaseV1(
+    base,
+    structuredClone(base.prepared),
+    base.shell.defaultPolicy,
+    undefined,
+    undefined,
+  );
+}
+
 /** Serializable payload embedded in every portable workbench artifact. */
 export function policyStudioModel(
   catalogProvenance?: AdminCatalogProvenanceV1,
