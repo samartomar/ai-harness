@@ -100,7 +100,9 @@ describe("admin journey", () => {
     const scope = screen.getByRole("button", { name: /@aihq\/fixture/u });
     await user.click(scope);
     expect(scope.getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByRole("heading", { name: "Fixture catalog" })).toBeDefined();
+    // LANE A: the browse results are flat and paged, as the hand-built catalog
+    // lists them; the open source's name is the masthead heading.
+    expect(screen.getByRole("heading", { name: "@aihq/fixture" })).toBeDefined();
 
     await user.click(screen.getByRole("button", { name: "Switch to light mode" }));
     expect(document.documentElement.dataset.mode).toBe("light");

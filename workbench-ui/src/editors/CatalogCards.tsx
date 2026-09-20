@@ -16,10 +16,13 @@ export function CatalogCards({
   engine,
   framework,
   run,
+  onOpen,
 }: {
   readonly engine: AdminEngine;
   readonly framework: AdminFramework | undefined;
   readonly run: RunEngineCall;
+  /** LANE A: open this item in the inspector (row 12). */
+  readonly onOpen?: (assetId: string) => void;
 }) {
   return (
     <div className="flex-1 overflow-y-auto p-4 bg-[#0d111a] flex flex-col gap-4">
@@ -31,6 +34,7 @@ export function CatalogCards({
               <CatalogCard
                 item={item}
                 key={item.assetId}
+                onOpen={onOpen}
                 onToggle={(next) => run(() => engine.setItemSelected(item.assetId, next))}
               />
             ))}
@@ -41,12 +45,14 @@ export function CatalogCards({
   );
 }
 
-function CatalogCard({
+export function CatalogCard({
   item,
   onToggle,
+  onOpen,
 }: {
   readonly item: AdminCatalogItem;
   readonly onToggle: (selected: boolean) => void;
+  readonly onOpen?: (assetId: string) => void;
 }) {
   const reasonId = useId();
   return (
@@ -54,7 +60,17 @@ function CatalogCard({
       <div>
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-center gap-1.5 min-w-0">
-            <span className={CARD_TITLE}>{item.label}</span>
+            {onOpen === undefined ? (
+              <span className={CARD_TITLE}>{item.label}</span>
+            ) : (
+              <button
+                className={`${CARD_TITLE} text-left hover:text-primary`}
+                onClick={() => onOpen(item.assetId)}
+                type="button"
+              >
+                {item.label}
+              </button>
+            )}
           </div>
           <span className={KIND_CHIP}>{item.kind}</span>
         </div>

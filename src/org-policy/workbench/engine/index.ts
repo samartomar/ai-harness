@@ -75,6 +75,17 @@ export type {
   ProvenanceLinesV1,
 } from "./features/org.js";
 export type { AdminScanV1, ScanFeature } from "./features/scan.js";
+// LANE A (Sources screen: rows 7, 11, 12).
+export type {
+  CatalogBrowseViewV1,
+  CatalogFiltersV1,
+  CatalogOptionV1,
+  ItemFactV1,
+  ItemInspectionV1,
+  ItemSecurityV1,
+  KindLedgerEntryV1,
+  SourcesFeature,
+} from "./features/sources.js";
 export {
   parseWorkbenchInput,
   WORKBENCH_INPUT_FORMAT,

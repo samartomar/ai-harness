@@ -1,5 +1,6 @@
 import { parseNativeStrictJsonObjectV1 } from "../../../contract/native-strict-json-object-v1.js";
 import { resolveDeveloperToolSelectionForOrgPolicyV1 } from "../../developer-tool-policy.js";
+import { catalogSourceDisplayName } from "../catalog-browse.js";
 import { safePolicyCommandArgument } from "../command-arguments.js";
 import { projectWorkbenchPolicy, type WorkbenchPolicyBindingsV1 } from "../compile-policy.js";
 import {
@@ -38,6 +39,9 @@ import { type DraftsFeature, draftsFeature } from "./features/drafts.js";
 // LANE C (organization screen).
 import { type OrgFeature, orgFeature } from "./features/org.js";
 import { type ScanFeature, scanFeature } from "./features/scan.js";
+// LANE A (Sources screen: rows 7, 11, 12).
+import { type SourcesFeature, sourcesFeature } from "./features/sources.js";
+import { workbenchBrowseBundleV1 } from "./scan-presentation.js";
 import {
   type EngineFile,
   type EngineOutcome,
@@ -145,7 +149,9 @@ export type AdminEngine = CoreAdminEngine &
   // LANE C (organization screen).
   OrgFeature &
   // Lane B (drafts and repairs).
-  DraftsFeature;
+  DraftsFeature &
+  // LANE A (Sources screen).
+  SourcesFeature;
 
 interface WorkbenchImportValidation {
   accepted: boolean;
@@ -271,6 +277,8 @@ function buildAdminEngine(modelValue: unknown): EngineResult<AdminEngine> {
     : undefined;
   const bindings = record(model.workbenchBindings) as WorkbenchPolicyBindingsV1 | undefined;
   const catalogValid = bundle !== undefined && bindings !== undefined;
+  // What the catalog VIEWS list. Authority stays with `bundle`.
+  const browseBundle = bundle === undefined ? undefined : workbenchBrowseBundleV1(bundle);
 
   const imported = (policy: unknown) => {
     if (bundle === undefined || bindings === undefined)
@@ -426,21 +434,22 @@ function buildAdminEngine(modelValue: unknown): EngineResult<AdminEngine> {
       : [];
   };
 
-  const frameworks = (): AdminFramework[] => {
+  /**
+   * One catalog item per id, with ONE selection read shared by all of them.
+   * The ids come from the browse projection; the asset records are the
+   * complete bundle's, so what is browsed and what is selectable agree.
+   */
+  const catalogItems = (assetIds: readonly string[]): AdminCatalogItem[] => {
     if (bundle === undefined) return [];
     const chosen = new Set(selectedIds());
     const state = currentState();
-    const byFramework = new Map<string, AdminCatalogGroup[]>();
-    for (const group of Object.values(bundle.groups)) {
-      const items: AdminCatalogItem[] = [];
-      let sourceId: string | undefined;
-      for (const assetId of group.assetIds) {
-        const asset = bundle.assets[assetId];
-        if (asset === undefined) continue;
-        sourceId ??= asset.sourceId;
-        const action = state === undefined ? undefined : actionFor(asset, state);
-        const selectable = catalogValid && action !== undefined;
-        items.push({
+    return assetIds.flatMap((assetId) => {
+      const asset = bundle.assets[assetId];
+      if (asset === undefined) return [];
+      const action = state === undefined ? undefined : actionFor(asset, state);
+      const selectable = catalogValid && action !== undefined;
+      return [
+        {
           assetId,
           label: asset.label,
           kind: asset.kind,
@@ -453,18 +462,49 @@ function buildAdminEngine(modelValue: unknown): EngineResult<AdminEngine> {
                   ? `This item is not selectable: ${asset.authoring.action}.`
                   : INVALID_CATALOG_DIAGNOSTIC,
               }),
-        });
-      }
-      const framework = sourceId ?? "";
-      const groups = byFramework.get(framework) ?? [];
-      groups.push({ id: group.id, label: group.label, items });
-      byFramework.set(framework, groups);
+        },
+      ];
+    });
+  };
+
+  /**
+   * The catalog the administrator browses is the BROWSE projection, exactly
+   * what the hand-built catalog offers (`workbenchBrowseBundleV1`): no
+   * Ponytail source, no `aih/github` Core item, developer-tool projection
+   * applied. Selection, import and download keep using `bundle`.
+   */
+  const frameworks = (): AdminFramework[] => {
+    if (browseBundle === undefined) return [];
+    const byFramework = new Map<string, AdminCatalogGroup[]>();
+    const listed = new Map<string, readonly string[]>();
+    for (const group of Object.values(browseBundle.groups)) {
+      const assetIds = group.assetIds.filter((id) => browseBundle.assets[id] !== undefined);
+      if (assetIds.length === 0) continue;
+      listed.set(group.id, assetIds);
+    }
+    const items = new Map(
+      catalogItems([...listed.values()].flat()).map((item) => [item.assetId, item]),
+    );
+    for (const group of Object.values(browseBundle.groups)) {
+      const assetIds = listed.get(group.id);
+      if (assetIds === undefined) continue;
+      const sourceId = browseBundle.assets[assetIds[0] ?? ""]?.sourceId ?? "";
+      const groups = byFramework.get(sourceId) ?? [];
+      groups.push({
+        id: group.id,
+        label: group.label,
+        items: assetIds.flatMap((id) => {
+          const item = items.get(id);
+          return item === undefined ? [] : [item];
+        }),
+      });
+      byFramework.set(sourceId, groups);
     }
     return [...byFramework.entries()].map(([sourceId, groups]) => ({
       sourceId,
-      // Core distributes every packaged source, so the distributor cannot tell
-      // them apart. The upstream origin is the name a person recognizes.
-      label: bundle.sources[sourceId]?.upstreamOrigin.locator ?? sourceId,
+      // The name a person recognizes, not a raw URL: the same display name the
+      // hand-built source rail and masthead show.
+      label: catalogSourceDisplayName(browseBundle, sourceId),
       groups,
     }));
   };
@@ -473,11 +513,14 @@ function buildAdminEngine(modelValue: unknown): EngineResult<AdminEngine> {
     model,
     active,
     bundle,
+    browseBundle,
     bindings,
     catalogValid,
     sourceInputs,
     baseline,
     currentState,
+    selectedAssetIds: selectedIds,
+    catalogItems,
     dispatch,
     resetOutcome: () => {
       last = { ok: true, message: "" };
@@ -767,6 +810,8 @@ function buildAdminEngine(modelValue: unknown): EngineResult<AdminEngine> {
     ...scanFeature(ctx),
     // LANE C (organization screen).
     ...orgFeature(ctx),
+    // LANE A (Sources screen).
+    ...sourcesFeature(ctx),
   };
   return { ok: true, value: engine };
 }

@@ -6,6 +6,7 @@ import type {
   WorkbenchStateV1,
 } from "../../contracts.js";
 import type { PolicySession } from "../../ui/shell/policy-session.js";
+import type { AdminCatalogItem } from "../admin-engine.js";
 import type { EngineOutcome } from "../shared.js";
 
 /**
@@ -22,6 +23,13 @@ export interface AdminEngineContext {
   readonly active: PolicySession;
   /** The prepared catalog; absent when it is invalid or unavailable. */
   readonly bundle: AuthoringCatalogBundleV1 | undefined;
+  /**
+   * LANE A (Sources screen): the catalog the administrator BROWSES —
+   * `workbenchBrowseBundleV1(bundle)`, the same projection the hand-built
+   * catalog offers. Everything a view lists reads this; selection, import and
+   * download keep reading `bundle`, so saved policies still round-trip.
+   */
+  readonly browseBundle: AuthoringCatalogBundleV1 | undefined;
   readonly bindings: WorkbenchPolicyBindingsV1 | undefined;
   readonly catalogValid: boolean;
   readonly sourceInputs: WorkbenchSourceInputsV1;
@@ -29,6 +37,14 @@ export interface AdminEngineContext {
   readonly baseline: string;
   /** The current policy read as a selection state; absent when it cannot be. */
   currentState(): WorkbenchStateV1 | undefined;
+  /** LANE A: the resolved selection of the current policy, from the complete bundle. */
+  selectedAssetIds(): readonly string[];
+  /**
+   * LANE A: these catalog ids as view items, with one selection read shared by
+   * all of them. The ids come from a browse result; the asset records are the
+   * complete bundle's, so a browsed item and a selectable item are one thing.
+   */
+  catalogItems(assetIds: readonly string[]): readonly AdminCatalogItem[];
   /** Reduce, compile, persist, and fall back to a repair (`main.ts` 171-281). */
   dispatch(action: WorkbenchActionV1): EngineOutcome;
   /** Forget the session's last announcement before an operation that will announce. */
