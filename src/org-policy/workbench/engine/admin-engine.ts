@@ -24,6 +24,7 @@ import {
   type PolicySession,
   type PolicySessionModel,
 } from "../ui/shell/policy-session.js";
+import { canonicalPolicyErrors } from "./canonical-validation.js";
 import {
   type EngineFile,
   type EngineOutcome,
@@ -534,6 +535,28 @@ function buildAdminEngine(modelValue: unknown): EngineResult<AdminEngine> {
             message: `Policy import rejected: ${errorMessage(error, "valid policy JSON required")}`,
           };
         }
+        // The grammar decides first, exactly as before. The canonical schema
+        // then judges the migrated policy BEFORE anything is committed, so a
+        // refusal here changes no session state at all.
+        try {
+          const prepared = active.validatePolicy(parsed);
+          const objections = canonicalPolicyErrors(prepared.policy);
+          if (objections.length > 0)
+            return {
+              ok: false,
+              message: `Policy import rejected: ${objections.slice(0, 3).join("; ")}`,
+            };
+        } catch (error) {
+          return {
+            ok: false,
+            message: `Policy import rejected: ${errorMessage(error, "valid policy JSON required")}`,
+          };
+        }
+        // Backstop: the canonical schema is applied again to what the session
+        // actually committed, AFTER re-projection, because that, not the input
+        // text, is what a download would write.
+        const prior = active.snapshotPolicy();
+        const priorManagedMcpOptIn = active.managedMcpOptIn();
         last = { ok: true, message: "" };
         try {
           active.importPolicy(parsed);
@@ -541,6 +564,30 @@ function buildAdminEngine(modelValue: unknown): EngineResult<AdminEngine> {
           return {
             ok: false,
             message: `Policy import rejected: ${errorMessage(error, "valid policy JSON required")}`,
+          };
+        }
+        const canonical = canonicalPolicyErrors(active.snapshotPolicy());
+        if (canonical.length > 0) {
+          // Put the previous policy back under the same guard the dispatcher
+          // uses, so restoring it cannot fire another re-projection. An import
+          // also sets the managed MCP opt-in, which a restore only widens, so
+          // that flag is put back as well.
+          try {
+            guard.applying = true;
+            active.restorePolicy(prior);
+            if (active.managedMcpOptIn() !== priorManagedMcpOptIn)
+              active.setManagedMcpOptIn(priorManagedMcpOptIn, "");
+          } catch (error) {
+            return {
+              ok: false,
+              message: `Policy import rejected: ${errorMessage(error, "valid policy JSON required")}`,
+            };
+          } finally {
+            guard.applying = false;
+          }
+          return {
+            ok: false,
+            message: `Policy import rejected: ${canonical.slice(0, 3).join("; ")}`,
           };
         }
         return outcome("Policy imported.");
@@ -554,7 +601,13 @@ function buildAdminEngine(modelValue: unknown): EngineResult<AdminEngine> {
 
     check() {
       try {
-        const errors = active.validate();
+        const grammar = active.validate();
+        // Canonical objections follow the grammar's, and only the ones the
+        // grammar did not already say.
+        const canonical = canonicalPolicyErrors(active.snapshotPolicy()).filter(
+          (message) => !grammar.includes(message),
+        );
+        const errors = [...grammar, ...canonical];
         const blockers = active.readinessBlockers();
         return { ok: catalogValid && errors.length === 0, errors, blockers };
       } catch (error) {
@@ -569,7 +622,13 @@ function buildAdminEngine(modelValue: unknown): EngineResult<AdminEngine> {
     download(filename) {
       try {
         if (!catalogValid) return { ok: false, errors: [INVALID_CATALOG_DIAGNOSTIC] };
-        const blocked = active.validate().concat(active.readinessBlockers());
+        const grammar = active.validate();
+        const canonical = canonicalPolicyErrors(active.snapshotPolicy()).filter(
+          (message) => !grammar.includes(message),
+        );
+        // Canonical objections go last so an existing grammar or readiness
+        // message keeps the exact position it had in "Download blocked: …".
+        const blocked = [...grammar, ...active.readinessBlockers(), ...canonical];
         if (blocked.length)
           return { ok: false, errors: [`Download blocked: ${blocked.slice(0, 3).join("; ")}`] };
         const name = (filename ?? DEFAULT_POLICY_FILENAME).trim();
