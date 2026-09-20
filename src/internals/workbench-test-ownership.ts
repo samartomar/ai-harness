@@ -63,11 +63,25 @@ export const WORKBENCH_DOM_TEST_PATTERNS = [
   `${typedTestPrefix}user-door.test.ts`,
 ] as const;
 
+/**
+ * The component UI's editor behaviour at the engine entry: one file per engine
+ * feature. They run with the hand-built editors' tests in the retained
+ * project, so the pure state lane stays within its time budget.
+ */
+export const WORKBENCH_ENGINE_FEATURE_TEST_PATTERNS = [
+  `${typedTestPrefix}engine-additions.test.ts`,
+  `${typedTestPrefix}engine-drafts.test.ts`,
+  `${typedTestPrefix}engine-intake-authority.test.ts`,
+  `${typedTestPrefix}engine-org.test.ts`,
+  `${typedTestPrefix}engine-sources.test.ts`,
+] as const;
+
 /** New typed root tests are pure by default unless they are a retained contract or DOM risk. */
 export const WORKBENCH_PURE_TEST_PATTERNS = [`${typedTestPrefix}**/*.test.ts`] as const;
 export const WORKBENCH_PURE_TEST_EXCLUDE_PATTERNS = [
   ...WORKBENCH_CONTRACT_TEST_PATTERNS,
   ...WORKBENCH_DOM_TEST_PATTERNS,
+  ...WORKBENCH_ENGINE_FEATURE_TEST_PATTERNS,
 ] as const;
 
 /** PR retained coverage: legacy/browser-adjacent behavior plus Core contract risks. */
@@ -76,6 +90,7 @@ export const WORKBENCH_RETAINED_TEST_PATTERNS = [
   `${legacyTestPrefix}*.test.ts`,
   ...WORKBENCH_CONTRACT_TEST_PATTERNS,
   ...WORKBENCH_DOM_TEST_PATTERNS,
+  ...WORKBENCH_ENGINE_FEATURE_TEST_PATTERNS,
 ] as const;
 
 /** Complete ownership remains for standalone Workbench and CI-selected lanes. */

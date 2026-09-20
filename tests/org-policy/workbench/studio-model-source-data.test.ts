@@ -13,6 +13,7 @@ import {
   policyStudioModel,
 } from "../../../src/org-policy/studio-model.js";
 import { createAdminEngine } from "../../../src/org-policy/workbench/engine/index.js";
+import { workbenchBrowseBundleV1 } from "../../../src/org-policy/workbench/engine/scan-presentation.js";
 
 beforeEach(() => apply.mockClear());
 it("authenticates current source data for each model built from the prepared package base", () => {
@@ -120,4 +121,31 @@ it("refuses to switch managed MCP projection off while selected Core MCP control
       "Managed MCP projection remains enabled because selected Core MCP controls need it. Remove those controls before disabling this setting.",
   });
   expect(engine.state().managedMcpOptIn).toBe(true);
+});
+
+/**
+ * The catalog views browse the hand-built page's projection of the packaged
+ * catalog, not the complete bundle. It lives here, with the other tests that
+ * load the packaged model, to keep the pure lane inside its time budget.
+ */
+it("lists what the hand-built page browses, not the complete bundle", () => {
+  const model = packageOnlyPolicyStudioModelV1();
+  const created = createAdminEngine(model);
+  if (!created.ok) throw new Error(created.errors.join("; "));
+  const engine = created.value;
+  const complete = model.workbenchBundle;
+  const browse = workbenchBrowseBundleV1(complete);
+  const listed = new Set(
+    engine
+      .state()
+      .frameworks.flatMap((framework) =>
+        framework.groups.flatMap((group) => group.items.map((item) => item.assetId)),
+      ),
+  );
+  expect(listed.size).toBeGreaterThan(0);
+  for (const assetId of listed) expect(browse.assets[assetId]).toBeDefined();
+  // Whatever the projection drops is dropped from every catalog view.
+  for (const assetId of Object.keys(complete.assets))
+    if (browse.assets[assetId] === undefined) expect(listed.has(assetId)).toBe(false);
+  expect(engine.inspectItem("aih/github")).toBeUndefined();
 });

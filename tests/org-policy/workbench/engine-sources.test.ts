@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PolicyStudioModel } from "../../../src/org-policy/studio-model.js";
-import { packageOnlyPolicyStudioModelV1 } from "../../../src/org-policy/studio-model.js";
 import { createAdminEngine } from "../../../src/org-policy/workbench/engine/index.js";
-import { workbenchBrowseBundleV1 } from "../../../src/org-policy/workbench/engine/scan-presentation.js";
 import { tinyStudioModel } from "../studio-test-fixture.js";
 
 /**
@@ -114,26 +112,6 @@ describe("item inspector (row 12)", () => {
 });
 
 describe("the browse projection is display only", () => {
-  it("lists what the hand-built page browses, not the complete bundle", () => {
-    const model = packageOnlyPolicyStudioModelV1();
-    const engine = admin(model);
-    const complete = model.workbenchBundle;
-    const browse = workbenchBrowseBundleV1(complete);
-    const listed = new Set(
-      engine
-        .state()
-        .frameworks.flatMap((framework) =>
-          framework.groups.flatMap((group) => group.items.map((item) => item.assetId)),
-        ),
-    );
-    expect(listed.size).toBeGreaterThan(0);
-    for (const assetId of listed) expect(browse.assets[assetId]).toBeDefined();
-    // Whatever the projection drops is dropped from every catalog view.
-    for (const assetId of Object.keys(complete.assets))
-      if (browse.assets[assetId] === undefined) expect(listed.has(assetId)).toBe(false);
-    expect(engine.inspectItem("aih/github")).toBeUndefined();
-  });
-
   it("keeps the complete bundle for selection and download", () => {
     const engine = admin();
     const before = engine.state().policyText;

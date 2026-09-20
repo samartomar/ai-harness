@@ -171,9 +171,7 @@ describe("engine organization feature", () => {
       ok: false,
       message: "Unknown developer tool: not-a-tool",
     });
-    expect(
-      engine.setDeveloperTool("serena", "launch" as unknown as "include").ok,
-    ).toBe(false);
+    expect(engine.setDeveloperTool("serena", "launch" as unknown as "include").ok).toBe(false);
   });
 
   it("records an ECC hook profile and drops ids the profile does not allow", () => {
@@ -209,8 +207,7 @@ describe("engine organization feature", () => {
     );
     expect(engine.toggleEccHookDisabled("pre:bash:dispatcher")).toEqual({
       ok: false,
-      message:
-        "pre:bash:dispatcher is a required wrapper; it has no individual disabled setting.",
+      message: "pre:bash:dispatcher is a required wrapper; it has no individual disabled setting.",
     });
     expect(engine.toggleEccHookDisabled("stop:cost-tracker")).toEqual({
       ok: false,
