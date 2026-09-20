@@ -106,4 +106,89 @@ describe("connected Policy Workbench preparation", () => {
     expect(refreshed).toContain(resolved.source.commit);
     expect(refreshed).not.toContain('"approvals":[{"');
   });
+
+  it("keeps the admin's draft in the re-served component page after preparation", async () => {
+    const resolved = {
+      version: "aih-connected-github-skill/v1" as const,
+      state: "resolved-not-scanned" as const,
+      skill: "frontend-design",
+      source: {
+        type: "github" as const,
+        repository: "anthropics/skills",
+        commit: "41bbe19d1a1a7eaab5e7bb9050a417e5c6cffc8f",
+        path: "skills/frontend-design/SKILL.md",
+      },
+    };
+    resolveGithubSkillMock.mockResolvedValue(resolved);
+    vi.stubEnv("AIH_WORKBENCH_COMPONENT_UI", "1");
+    try {
+      running = await startPolicyWorkbenchUi({
+        cwd: emptyLaunchFolder,
+        openBrowser: async () => {},
+      });
+      const launcher = new URL(running.url);
+      const headers = {
+        Origin: launcher.origin,
+        "Sec-Fetch-Site": "same-origin",
+        "Content-Type": "application/json",
+      };
+      const embeddedPolicy = async () => {
+        const page = await (await fetch(launcher)).text();
+        const match =
+          /<script id="aih-workbench-input" type="application\/json">([\s\S]*?)<\/script>/u.exec(
+            page,
+          );
+        if (match?.[1] === undefined) throw new Error("expected the embedded Workbench input");
+        const input = JSON.parse(match[1]) as {
+          version: number;
+          model: { initialPolicy: { governance?: { supportedClis?: string[] } } };
+        };
+        expect(input.version).toBe(1);
+        return input.model.initialPolicy;
+      };
+      expect((await embeddedPolicy()).governance?.supportedClis).toBeUndefined();
+
+      // The draft differs from the packaged default: one AI tool is sanctioned.
+      const base = defaultStudioPolicy();
+      const draft = {
+        ...base,
+        governance: { ...base.governance, supportedClis: ["claude"] },
+      };
+      const token = launcher.hash.slice(1);
+      const resolve = await fetch(new URL("/api/artifact-intake/github-skill/resolve", launcher), {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          token,
+          repository: resolved.source.repository,
+          skill: resolved.skill,
+        }),
+      });
+      expect(resolve.status).toBe(200);
+      const prepared = await fetch(new URL("/api/artifact-intake/github-skill/prepare", launcher), {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          token,
+          policy: draft,
+          source: {
+            repository: resolved.source.repository,
+            skill: resolved.skill,
+            commit: resolved.source.commit,
+            path: resolved.source.path,
+          },
+        }),
+      });
+      await expect(prepared.json()).resolves.toMatchObject({
+        state: "prepared-pending-evidence",
+        reload: true,
+      });
+
+      const survived = await embeddedPolicy();
+      expect(survived.governance?.supportedClis).toEqual(["claude"]);
+      expect(JSON.stringify(survived)).toContain(resolved.source.commit);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
 });
