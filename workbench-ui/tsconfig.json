@@ -1,0 +1,18 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "..",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    // Known gap, closed by the engine boundary outcome: the engine's type-only
+    // import of src/org-policy/schema.ts brings Node-bound modules into this
+    // type program, so Node types are visible here. tests/import-boundary.test.ts
+    // keeps UI source from using Node modules or globals until then.
+    "types": ["node"],
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "declaration": false,
+    "sourceMap": false
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "preview/main.tsx"],
+  "exclude": []
+}

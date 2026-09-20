@@ -1,0 +1,66 @@
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { screen } from "@testing-library/react";
+import { type Mock, vi } from "vitest";
+import { tinyStudioModel } from "../../tests/org-policy/studio-test-fixture.js";
+import type { WorkbenchFile, WorkbenchHost } from "../src/host.js";
+
+/** Shared fixtures for the component tests: one host, one model, the goldens. */
+
+export interface TestHost extends WorkbenchHost {
+  readonly save: Mock<(file: WorkbenchFile) => void>;
+}
+
+export function createTestHost(
+  capabilities: { boundPolicy?: boolean; githubIntake?: boolean } = {},
+): TestHost {
+  return {
+    capabilities: {
+      boundPolicy: capabilities.boundPolicy ?? false,
+      githubIntake: capabilities.githubIntake ?? false,
+    },
+    async sha256Hex(bytes) {
+      return createHash("sha256").update(new Uint8Array(bytes)).digest("hex");
+    },
+    save: vi.fn<(file: WorkbenchFile) => void>(),
+  };
+}
+
+/** `tinyStudioModel()` with the two hosts the tiny fixture omits. */
+export function fixtureModel(): Record<string, unknown> {
+  const model = tinyStudioModel() as unknown as Record<string, unknown>;
+  (model.catalog as { hosts: unknown[] }).hosts = [
+    { id: "claude", label: "Claude Code", policyTarget: true, mcpSupport: "managed" },
+    { id: "codex", label: "Codex", policyTarget: true, mcpSupport: "managed" },
+  ];
+  return model;
+}
+
+export function golden(name: string): string {
+  return readFileSync(join(process.cwd(), "tests/org-policy/workbench/goldens", name), "utf8");
+}
+
+export function sha256Of(text: string): string {
+  return createHash("sha256").update(text, "utf8").digest("hex");
+}
+
+export function jsonFile(name: string, text: string): File {
+  return new File([text], name, { type: "application/json" });
+}
+
+/** The text of every live alert region, joined. */
+export function alertText(): string {
+  return screen
+    .queryAllByRole("alert")
+    .map((node) => node.textContent ?? "")
+    .join(" ");
+}
+
+/** The text of every live status region, joined. */
+export function statusText(): string {
+  return screen
+    .queryAllByRole("status")
+    .map((node) => node.textContent ?? "")
+    .join(" ");
+}

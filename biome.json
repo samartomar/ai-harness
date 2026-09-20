@@ -10,6 +10,8 @@
     "includes": [
       "src/**/*.ts",
       "tests/**/*.ts",
+      "workbench-ui/**/*.ts",
+      "workbench-ui/**/*.tsx",
       "*.config.ts",
       "!src/report/fonts.ts",
       "!src/report/v4-template.ts",

@@ -55,3 +55,6 @@ ai-coding/skills/
 /src/org-policy/workbench/bundle.generated.cjs
 /src/org-policy/workbench/default-catalog-preassembly.generated.cjs
 /src/org-policy/workbench/css.generated.cjs
+
+# Component UI build output is never committed.
+/workbench-ui/dist/
