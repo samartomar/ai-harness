@@ -7,6 +7,7 @@ export const CI_STATIC_SCRIPTS = [
   "check:self-hosting-canon",
   "typecheck",
   "lint:ci",
+  "test:workbench-ui",
   "docs:lint",
   "check:packed-doc-links",
   "build",

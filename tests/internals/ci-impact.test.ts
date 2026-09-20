@@ -236,6 +236,67 @@ describe("CI impact classifier", () => {
     expect(receipt.selectedTests).not.toContain("tests/org-policy/catalog.test.ts");
   });
 
+  it("routes the component UI folder to its unconditional static checks without the full suite", () => {
+    const receipt = classifyCiImpact({
+      baseSha,
+      headSha,
+      changedPaths: ["workbench-ui/src/AdminPage.tsx", "workbench-ui/tests/admin-journey.test.tsx"],
+      testFiles,
+    });
+
+    expect(receipt).toMatchObject({
+      fullSuite: false,
+      fallbackReasons: [],
+      matchedRules: ["workbench-ui"],
+      riskClass: "focused",
+      selectedTests: [],
+      requiresGenericBrowserJourneys: false,
+    });
+    expect(validateCiImpactReceipt(receipt)).toEqual(receipt);
+  });
+
+  it("does not under-select a mixed component UI and engine change", () => {
+    const engineOnly = classifyCiImpact({
+      baseSha,
+      headSha,
+      changedPaths: ["src/org-policy/workbench/engine/admin-engine.ts"],
+      testFiles,
+    });
+    const mixed = classifyCiImpact({
+      baseSha,
+      headSha,
+      changedPaths: [
+        "src/org-policy/workbench/engine/admin-engine.ts",
+        "workbench-ui/src/AdminPage.tsx",
+      ],
+      testFiles,
+    });
+
+    expect(mixed.fullSuite).toBe(false);
+    expect(mixed.selectedTests).toEqual(engineOnly.selectedTests);
+    expect(mixed.selectedTests).toEqual(
+      testFiles.filter((path) => path.startsWith("tests/org-policy/")),
+    );
+    expect(mixed).toMatchObject({
+      testLane: "both",
+      riskClass: "cross-platform",
+      requiresGenericBrowserJourneys: true,
+      requiresPackedArtifact: true,
+    });
+    expect(mixed.matchedRules).toEqual(["source-domain:org-policy", "workbench-ui"]);
+  });
+
+  it("treats the component UI test configuration as a global input", () => {
+    const receipt = classifyCiImpact({
+      baseSha,
+      headSha,
+      changedPaths: ["vitest.workbench-ui.config.ts"],
+      testFiles,
+    });
+    expect(receipt.fullSuite).toBe(true);
+    expect(receipt.fallbackReasons).toEqual(["global-input:vitest.workbench-ui.config.ts"]);
+  });
+
   it("keeps a provider-local change out of generic browser journeys while requiring its exact tests and packed artifact", () => {
     const providerTests = providerTestsFor(["ecc"]);
     const receipt = classifyCiImpact({

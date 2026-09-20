@@ -7,7 +7,7 @@ import {
 } from "./workbench-provider-ownership.js";
 import { isWorkbenchTestPath } from "./workbench-test-ownership.js";
 
-export const CI_SELECTOR_VERSION = "1.5.4";
+export const CI_SELECTOR_VERSION = "1.5.5";
 
 export type CiRiskClass = "docs" | "focused" | "cross-platform" | "full";
 export type CiTestLane = "docs" | "core" | "workbench" | "both" | "full";
@@ -81,9 +81,11 @@ const GLOBAL_FILES = new Set([
   "vitest.workbench.config.ts",
   "vitest.workbench-pure.config.ts",
   "vitest.workbench-contracts.config.ts",
+  "vitest.workbench-ui.config.ts",
   "playwright.workbench.config.ts",
   "tsconfig.workbench.json",
   "tsconfig.workbench-browser-tests.json",
+  "tsconfig.workbench-engine.json",
 ]);
 
 const GLOBAL_PREFIXES = [".github/workflows/", "schemas/", "tests/fixtures/", "tools/"];
@@ -203,6 +205,17 @@ function isWorkbenchBrowserInput(path: string): boolean {
   );
 }
 
+/**
+ * The component UI folder. Its typecheck, lint and component tests are
+ * unconditional static checks (`CI_STATIC_SCRIPTS`), so no selection can drop
+ * them and the folder selects no Vitest file here. No host serves the
+ * component page yet; when one does, this folder must also require the
+ * browser journeys.
+ */
+function isComponentUiInput(path: string): boolean {
+  return path.startsWith("workbench-ui/");
+}
+
 function isWorkbenchSource(path: string): boolean {
   return (
     WORKBENCH_SOURCE_PATHS.has(path) ||
@@ -314,6 +327,10 @@ export function classifyCiImpact(
       continue;
     }
     docsOnly = false;
+    if (isComponentUiInput(path)) {
+      matchedRules.push("workbench-ui");
+      continue;
+    }
     const providerId = providerForWorkbenchPath(path);
     if (providerId !== undefined) {
       matchedRules.push(`provider:${providerId}`);

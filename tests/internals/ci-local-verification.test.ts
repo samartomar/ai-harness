@@ -85,7 +85,7 @@ describe("local CI verification", () => {
       .filter((step) => step.run && step.run !== "npm ci --ignore-scripts")
       .map((step) => {
         expect(step.if).toBeUndefined();
-        return step.run === "npx biome ci src tests" ? "npm run lint:ci" : step.run;
+        return step.run;
       });
     expect(CI_STATIC_SCRIPTS.map((script) => `npm run ${script}`)).toEqual(checks);
   });
