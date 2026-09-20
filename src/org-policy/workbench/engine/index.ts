@@ -45,6 +45,21 @@ export {
 export type { ChangesFeature } from "./features/changes.js";
 export type { ClearPolicyFeature } from "./features/clear-policy.js";
 export type { AdminEngineContext } from "./features/context.js";
+// LANE C (organization screen).
+export type {
+  AdoptionRoleV1,
+  DeveloperToolActionV1,
+  DeveloperToolRowV1,
+  DeveloperToolStateV1,
+  DeveloperToolsV1,
+  EccHookControlsV1,
+  EccHookGroupV1,
+  EccHookRowV1,
+  EvidenceDeliveryV1,
+  OrgFeature,
+  OrgViewV1,
+  ProvenanceLinesV1,
+} from "./features/org.js";
 export type { AdminScanV1, ScanFeature } from "./features/scan.js";
 export {
   parseWorkbenchInput,

@@ -26,6 +26,8 @@ import {
 } from "./editors/ChangesView.js";
 import { policyDownloadStartedMessage } from "./editors/FileName.js";
 import { PostureSwitch } from "./editors/PostureSwitch.js";
+// LANE C (organization screen): the provenance strip shows on every screen.
+import { ProvenanceStrip } from "./editors/ProvenanceStrip.js";
 import {
   CHECK_FAILED_MESSAGE,
   CHECK_PASSED_MESSAGE,
@@ -262,6 +264,9 @@ function AdminWorkspace({
       <div className={SUB_HEADER}>
         <MessageStrip outcome={outcome} />
       </div>
+
+      {/* LANE C (organization screen): inventory row 8. */}
+      <ProvenanceStrip provenance={engine.org().provenance} />
 
       {/* ADDING A SCREEN: one more line here, and one entry in `editors/ScreenNav.tsx`. */}
       {screen === "sources" ? <SourcesScreen {...screenProps} /> : null}

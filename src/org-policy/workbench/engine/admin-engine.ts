@@ -33,6 +33,8 @@ import { canonicalPolicyErrors } from "./canonical-validation.js";
 import { type ChangesFeature, changesFeature } from "./features/changes.js";
 import { type ClearPolicyFeature, clearPolicyFeature } from "./features/clear-policy.js";
 import type { AdminEngineContext } from "./features/context.js";
+// LANE C (organization screen).
+import { type OrgFeature, orgFeature } from "./features/org.js";
 import { type ScanFeature, scanFeature } from "./features/scan.js";
 import {
   type EngineFile,
@@ -134,7 +136,12 @@ export interface CoreAdminEngine {
  * import its factory, add `& XFeature` here, and spread `xFeature(ctx)` into
  * the engine object below (plus one export line in `index.ts`).
  */
-export type AdminEngine = CoreAdminEngine & ChangesFeature & ClearPolicyFeature & ScanFeature;
+export type AdminEngine = CoreAdminEngine &
+  ChangesFeature &
+  ClearPolicyFeature &
+  ScanFeature &
+  // LANE C (organization screen).
+  OrgFeature;
 
 interface WorkbenchImportValidation {
   accepted: boolean;
@@ -342,6 +349,19 @@ function buildAdminEngine(modelValue: unknown): EngineResult<AdminEngine> {
     return [...resolveWorkbenchSelection(bundle, state).assetIds];
   };
 
+  /** Persist a compiled policy under the re-projection guard (main.ts 171-281). */
+  const persist = (policy: unknown): string | undefined => {
+    try {
+      guard.applying = true;
+      active.restorePolicy(policy);
+      return undefined;
+    } catch (error) {
+      return errorMessage(error, "Policy update was rejected.");
+    } finally {
+      guard.applying = false;
+    }
+  };
+
   // main.ts lines 171-281: reduce, compile, persist, and fall back to a repair.
   const dispatch = (action: WorkbenchActionV1): EngineOutcome => {
     if (bundle === undefined || bindings === undefined)
@@ -361,17 +381,6 @@ function buildAdminEngine(modelValue: unknown): EngineResult<AdminEngine> {
     const basePolicy = record(active.snapshotPolicy());
     if (basePolicy === undefined)
       return { ok: false, message: "Policy session returned an invalid policy." };
-    const persist = (policy: unknown): string | undefined => {
-      try {
-        guard.applying = true;
-        active.restorePolicy(policy);
-        return undefined;
-      } catch (error) {
-        return errorMessage(error, "Policy update was rejected.");
-      } finally {
-        guard.applying = false;
-      }
-    };
     const compiled = projectWorkbenchPolicy(
       basePolicy,
       reduced.state,
@@ -471,6 +480,8 @@ function buildAdminEngine(modelValue: unknown): EngineResult<AdminEngine> {
     },
     outcome,
     findingKinds,
+    // LANE C (organization screen).
+    restore: persist,
   };
 
   const core: CoreAdminEngine = {
@@ -748,6 +759,8 @@ function buildAdminEngine(modelValue: unknown): EngineResult<AdminEngine> {
     ...changesFeature(ctx),
     ...clearPolicyFeature(ctx),
     ...scanFeature(ctx),
+    // LANE C (organization screen).
+    ...orgFeature(ctx),
   };
   return { ok: true, value: engine };
 }

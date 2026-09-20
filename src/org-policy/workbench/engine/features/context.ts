@@ -37,4 +37,11 @@ export interface AdminEngineContext {
   outcome(fallback: string): EngineOutcome;
   /** The model's finding kinds for one of the scan screen's two groups. */
   findingKinds(group: "dispositionable" | "fenced"): string[];
+  /* LANE C (organization screen). */
+  /**
+   * Persist a policy a feature compiled itself, under the same re-projection
+   * guard `dispatch` uses (`main.ts` 171-281). The message of a refused
+   * restore, or undefined when it was kept.
+   */
+  restore(policy: unknown): string | undefined;
 }
