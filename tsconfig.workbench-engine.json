@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": [
+      "ES2023"
+    ],
+    "types": [],
+    "noEmit": true
+  },
+  "include": [
+    "src/org-policy/workbench/engine/**/*.ts",
+    "tools/workbench-engine-platform.d.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "coverage"
+  ]
+}

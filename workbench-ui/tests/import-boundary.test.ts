@@ -29,8 +29,8 @@ function specifiers(text: string): string[] {
 
 /**
  * Source-level half of the boundary: the UI reaches policy behavior only
- * through the engine entry. The check on the real bundle arrives with the
- * engine boundary outcome.
+ * through the engine entry. `bundle-boundary.test.ts` checks the same rule on
+ * the real module graph.
  */
 describe("workbench-ui import boundary", () => {
   const files = [...sourceFiles(join(uiRoot, "src")), join(uiRoot, "preview", "main.tsx")];
@@ -53,18 +53,6 @@ describe("workbench-ui import boundary", () => {
         return target.replace(/\.(js|ts)$/u, "") !== ENGINE_ENTRY;
       });
       expect(offenders).toEqual([]);
-    },
-  );
-
-  // Node types are visible to the UI type program until the engine boundary
-  // outcome removes them, so Node globals are refused here instead.
-  it.each(files.map((file) => [relative(repositoryRoot, file).replaceAll("\\", "/"), file]))(
-    "%s uses no Node globals",
-    (_label, file) => {
-      const found = readFileSync(file, "utf8").match(
-        /\b(?:process\.|Buffer\b|require\(|__dirname\b|__filename\b|globalThis\.process\b)/gu,
-      );
-      expect(found ?? []).toEqual([]);
     },
   );
 });
