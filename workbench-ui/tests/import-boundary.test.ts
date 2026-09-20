@@ -33,7 +33,11 @@ function specifiers(text: string): string[] {
  * the real module graph.
  */
 describe("workbench-ui import boundary", () => {
-  const files = [...sourceFiles(join(uiRoot, "src")), join(uiRoot, "preview", "main.tsx")];
+  const files = [
+    ...sourceFiles(join(uiRoot, "src")),
+    ...sourceFiles(join(uiRoot, "hosts")),
+    join(uiRoot, "preview", "main.tsx"),
+  ];
 
   it("finds the UI source", () => {
     expect(files.length).toBeGreaterThan(0);

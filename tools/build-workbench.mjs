@@ -10,6 +10,7 @@ const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const generatedPath = "src/org-policy/workbench/bundle.generated.cjs";
 const preassemblyPath = "src/org-policy/workbench/default-catalog-preassembly.generated.cjs";
 const cssGeneratedPath = "src/org-policy/workbench/css.generated.cjs";
+const componentPagePath = "src/org-policy/workbench/component-page.generated.cjs";
 const tokensSourcePath = "src/org-policy/workbench/ui/wb-tokens.css";
 const tailwindEntryPath = "src/org-policy/workbench/ui/tailwind-entry.css";
 const tailwindConfigPath = "tools/workbench-tailwind.config.cjs";
@@ -101,6 +102,10 @@ export async function copyWorkbenchToDist(root = repositoryRoot) {
     resolve(root, "dist/default-catalog-preassembly.generated.cjs"),
   );
   await copyFile(resolve(root, cssGeneratedPath), resolve(root, "dist/css.generated.cjs"));
+  await copyFile(
+    resolve(root, componentPagePath),
+    resolve(root, "dist/component-page.generated.cjs"),
+  );
   for (const source of [
     "src/org-policy/workbench/core/packaged-source-data-data.json",
     "src/org-policy/workbench/core/catalog-qualification-data.json",

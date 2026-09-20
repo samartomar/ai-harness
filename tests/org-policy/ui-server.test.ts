@@ -506,6 +506,63 @@ describe("Policy Workbench UI server", () => {
     }
   });
 
+  /**
+   * The component page is behind one environment switch (Policy Workbench UI
+   * delivery, "Real hosts"). The route, the headers and the token never change
+   * with it: only the body does, and only for the exact value `1`.
+   */
+  describe("the component page switch", () => {
+    async function serve(value?: string): Promise<{ html: string; headers: [string, string][] }> {
+      if (value !== undefined) vi.stubEnv("AIH_WORKBENCH_COMPONENT_UI", value);
+      try {
+        running = await startPolicyWorkbenchUi({
+          cwd: emptyLaunchFolder,
+          openBrowser: async () => {},
+        });
+        const response = await fetch(running.url);
+        const headers = [...response.headers.entries()].filter(
+          ([name]) => name !== "content-length" && name !== "date",
+        );
+        return { html: await response.text(), headers: headers.sort() };
+      } finally {
+        vi.unstubAllEnvs();
+        await running?.close();
+        running = undefined;
+      }
+    }
+
+    it("serves the hand-built page by default and with any other value", async () => {
+      const base = await serve();
+      expect(base.html).toContain('<div id="wb-root" data-wb-shell="new"></div>');
+      for (const other of ["true", "0", "", "1 "]) {
+        const served = await serve(other);
+        expect(served.html).toBe(base.html);
+      }
+    });
+
+    it("serves the component page for the exact value 1, with the same headers", async () => {
+      const base = await serve();
+      const component = await serve("1");
+
+      expect(component.headers).toEqual(base.headers);
+      expect(component.html).toContain('id="aih-workbench-input"');
+      expect(component.html).not.toContain('<div id="wb-root"');
+      expect(/<script\b[^>]*\bsrc=/u.test(component.html)).toBe(false);
+      expect(/<link\b/u.test(component.html)).toBe(false);
+
+      const match =
+        /<script id="aih-workbench-input" type="application\/json">(.*?)<\/script>/s.exec(
+          component.html,
+        );
+      if (match === null) throw new Error("the embedded input was not found");
+      const input = JSON.parse(match[1] as string) as Record<string, unknown>;
+      expect(input.format).toBe("aih-workbench-input");
+      expect(input.version).toBe(1);
+      expect(input.door).toBe("chooser");
+      expect((input.model as Record<string, unknown>).door).toBe("chooser");
+    });
+  });
+
   it("classifies an empty cwd as the chooser door", async () => {
     const root = mkdtempSync(join(tmpdir(), "aih-workbench-ui-server-empty-"));
     try {

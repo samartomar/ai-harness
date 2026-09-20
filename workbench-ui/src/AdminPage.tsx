@@ -203,7 +203,14 @@ function AdminWorkspace({
           </Flyout>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <a className={GHOST_BUTTON} href="#/user">
+          <a
+            className={GHOST_BUTTON}
+            href={host.navigation.href("user")}
+            onClick={(event) => {
+              event.preventDefault();
+              host.navigation.go("user");
+            }}
+          >
             User page
           </a>
           <Flyout

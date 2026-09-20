@@ -156,7 +156,14 @@ export function UserPage({ host, model, mode }: UserPageProps) {
           </span>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <a className={GHOST_BUTTON} href="#/admin">
+          <a
+            className={GHOST_BUTTON}
+            href={host.navigation.href("admin")}
+            onClick={(event) => {
+              event.preventDefault();
+              host.navigation.go("admin");
+            }}
+          >
             Admin page
           </a>
           <button

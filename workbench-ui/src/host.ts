@@ -10,6 +10,19 @@ export interface WorkbenchHostCapabilities {
   readonly githubIntake: boolean;
 }
 
+export type WorkbenchRoute = "admin" | "user";
+
+/**
+ * Where the route lives is the host's decision: the CLI host keeps its request
+ * token in the fragment, so it routes in the query instead.
+ */
+export interface WorkbenchNavigation {
+  current(): WorkbenchRoute;
+  go(route: WorkbenchRoute): void;
+  subscribe(listener: () => void): () => void;
+  href(route: WorkbenchRoute): string;
+}
+
 export interface WorkbenchFile {
   readonly name: string;
   readonly text: string;
@@ -17,6 +30,7 @@ export interface WorkbenchFile {
 
 export interface WorkbenchHost {
   readonly capabilities: WorkbenchHostCapabilities;
+  readonly navigation: WorkbenchNavigation;
   /** SHA-256, lower-case hex, of exactly these bytes. Never of re-serialized JSON. */
   sha256Hex(bytes: ArrayBuffer): Promise<string>;
   /** Hand a finished file to the person. */

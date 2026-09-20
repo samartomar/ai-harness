@@ -5,6 +5,7 @@ import { screen } from "@testing-library/react";
 import { type Mock, vi } from "vitest";
 import { tinyStudioModel } from "../../tests/org-policy/studio-test-fixture.js";
 import type { WorkbenchFile, WorkbenchHost } from "../src/host.js";
+import { fragmentNavigation } from "../src/navigation.js";
 
 /** Shared fixtures for the component tests: one host, one model, the goldens. */
 
@@ -20,6 +21,7 @@ export function createTestHost(
       boundPolicy: capabilities.boundPolicy ?? false,
       githubIntake: capabilities.githubIntake ?? false,
     },
+    navigation: fragmentNavigation(),
     async sha256Hex(bytes) {
       return createHash("sha256").update(new Uint8Array(bytes)).digest("hex");
     },

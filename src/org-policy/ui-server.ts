@@ -3,11 +3,13 @@ import { randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { parseOrgPolicy } from "./schema.js";
-import { policyStudioModel } from "./studio-model.js";
+import { type PolicyStudioModel, policyStudioModel } from "./studio-model.js";
 import { policyStudioHtml } from "./studio-template.js";
+import { componentWorkbenchHtml } from "./workbench/component-page.js";
 import { resolveConnectedGithubSkillV1 } from "./workbench/core/bounded-github-skill-resolver.js";
 import { bridgeConnectedGithubSkillV1 } from "./workbench/core/connected-github-skill-bridge.js";
-import { classifyWorkbenchDoorV1 } from "./workbench-door.js";
+import { WORKBENCH_INPUT_FORMAT } from "./workbench/engine/input-contract.js";
+import { classifyWorkbenchDoorV1, type WorkbenchDoorV1 } from "./workbench-door.js";
 
 const LOOPBACK_HOST = "127.0.0.1";
 const WORKBENCH_PATH = "/aih-policy-workbench.html";
@@ -65,6 +67,24 @@ function closeServer(server: Server): Promise<void> {
       if (error !== undefined) reject(error);
       else resolve();
     });
+  });
+}
+
+/**
+ * The page this server serves at its one immutable route. The component page
+ * is an opt-in of the exact environment value `1`; every other value, and no
+ * value, keeps the hand-built page. Same route, same headers, same token.
+ */
+function workbenchPageHtml(
+  model: PolicyStudioModel & { door?: WorkbenchDoorV1 },
+  env: NodeJS.ProcessEnv,
+): string {
+  if (env.AIH_WORKBENCH_COMPONENT_UI !== "1") return policyStudioHtml(model);
+  return componentWorkbenchHtml({
+    format: WORKBENCH_INPUT_FORMAT,
+    version: 1,
+    door: model.door ?? "chooser",
+    model,
   });
 }
 
@@ -218,11 +238,7 @@ export async function startPolicyWorkbenchUi(
     boundPolicy === undefined
       ? policyStudioModel()
       : policyStudioModel(undefined, undefined, { initialPolicy: boundPolicy });
-  let html = policyStudioHtml({
-    ...initialModel,
-    door,
-    policySource,
-  });
+  let html = workbenchPageHtml({ ...initialModel, door, policySource }, process.env);
   let htmlLength = Buffer.byteLength(html);
   const requestToken = randomBytes(32).toString("hex");
   let resolvedSkill: Awaited<ReturnType<typeof resolveConnectedGithubSkillV1>> | undefined;
@@ -317,7 +333,7 @@ export async function startPolicyWorkbenchUi(
         ) {
           throw new TypeError("Core-rendered Workbench did not retain the pending Skill pin");
         }
-        html = policyStudioHtml(nextModel);
+        html = workbenchPageHtml(nextModel, process.env);
         htmlLength = Buffer.byteLength(html);
         json(response, 200, {
           version: bridge.version,

@@ -9,6 +9,15 @@
     "declaration": false,
     "sourceMap": false
   },
-  "include": ["tests/**/*.ts", "tests/**/*.tsx", "vite.config.ts", "preview/fixture-plugin.ts"],
+  "include": [
+    "tests/**/*.ts",
+    "tests/**/*.tsx",
+    "hosts/**/*.ts",
+    "hosts/**/*.tsx",
+    // The hosts import the stylesheet; its ambient declaration lives in src/.
+    "src/env.d.ts",
+    "vite.config.ts",
+    "preview/fixture-plugin.ts"
+  ],
   "exclude": []
 }

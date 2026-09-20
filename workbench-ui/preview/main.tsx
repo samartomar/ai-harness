@@ -1,7 +1,9 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { save, sha256Hex } from "../hosts/shared.js";
 import { App } from "../src/App.js";
 import type { WorkbenchHost } from "../src/host.js";
+import { fragmentNavigation } from "../src/navigation.js";
 import "../src/styles.css";
 
 /**
@@ -10,18 +12,9 @@ import "../src/styles.css";
  */
 const previewHost: WorkbenchHost = {
   capabilities: { boundPolicy: false, githubIntake: false },
-  async sha256Hex(bytes) {
-    const digest = await crypto.subtle.digest("SHA-256", bytes);
-    return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-  },
-  save(file) {
-    const url = URL.createObjectURL(new Blob([file.text], { type: "application/json" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = file.name;
-    link.click();
-    URL.revokeObjectURL(url);
-  },
+  navigation: fragmentNavigation(),
+  sha256Hex,
+  save,
 };
 
 async function start(): Promise<void> {
