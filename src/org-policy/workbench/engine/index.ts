@@ -39,6 +39,7 @@ export {
   type AdminFramework,
   type AdminState,
   createAdminEngine,
+  isPolicyFileName,
 } from "./admin-engine.js";
 export {
   parseWorkbenchInput,

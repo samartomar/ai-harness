@@ -138,9 +138,9 @@ when its turn comes, and mark it `ported` with the component test that pins it.
 | # | Editor | Hand-built source | Pinned today by | Status |
 |---|---|---|---|---|
 | 1 | Changes view: diff against the starting policy, whole file, copy | `ui/shell/changes-screen.ts`, pure `ui/shell/policy-diff.ts` | `wb-tests/new-shell-changes.test.ts` | ported: `workbench-ui/tests/changes-view.test.tsx` |
-| 2 | Clear policy | `ui/shell/file-transfer.ts`, `policy-session.ts` `clear()` | `new-shell-download-compat.test.ts`, `new-shell-frame.test.ts` | open |
-| 3 | File name rules and the validate command hint | `ui/shell/file-transfer.ts` `updateFilenameHelp` | `new-shell-download-compat.test.ts` | open |
-| 4 | User page: set all, reset | `ui/user-door.ts`, pure `ui/user-door-model.ts` | `wb-tests/user-door.test.ts`, `browser/user-door.spec.ts` | open |
+| 2 | Clear policy | `ui/shell/file-transfer.ts`, `policy-session.ts` `clear()` | `new-shell-download-compat.test.ts`, `new-shell-frame.test.ts` | ported: `workbench-ui/tests/clear-policy.test.tsx` |
+| 3 | File name rules and the validate command hint | `ui/shell/file-transfer.ts` `updateFilenameHelp` | `new-shell-download-compat.test.ts` | ported: `workbench-ui/tests/file-name.test.tsx` |
+| 4 | User page: set all, reset | `ui/user-door.ts`, pure `ui/user-door-model.ts` | `wb-tests/user-door.test.ts`, `browser/user-door.spec.ts` | ported: `workbench-ui/tests/user-set-all.test.tsx` |
 | 5 | Import evidence receipt | `ui/shell/file-transfer.ts`, `policy-session.ts` `setReceipt` | `new-shell-download-compat.test.ts` | open |
 | 6 | Governance decision: import, inspect, download | `ui/shell/file-transfer.ts`, `scan-screen.ts`, pure `ui/decision-json.ts` | `new-shell-download-compat.test.ts`, `legacy-download-characterization.test.ts` | open |
 | 7 | Kind ledger, rail collapse, inspector tabs | `ui/shell/admin-shell.ts`, pure `ui/kind-ledger.ts` | `new-shell-frame.test.ts`, `kind-ledger.test.ts` | open |

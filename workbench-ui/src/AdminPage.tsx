@@ -8,6 +8,7 @@ import {
   type DiffHunkGap,
   type DiffLine,
   type EngineOutcome,
+  isPolicyFileName,
 } from "../../src/org-policy/workbench/engine/index.js";
 import {
   CARD,
@@ -53,6 +54,16 @@ const NO_CHANGES_SENTENCE = "No changes from the starting policy.";
 const CHANGES_REGION_LABEL = "Changes from the starting policy";
 
 type ChangesView = "changes" | "whole";
+
+/** `ui/shell/file-transfer.ts` line 190: the file menu's own words. */
+const CLEAR_POLICY_LABEL = "Clear policy (resets your work)";
+
+/** `file-transfer.ts` `FILENAME_HELP` (line 59) and `updateFilenameHelp` (lines 235-245). */
+const FILENAME_HELP =
+  "Use one safe JSON filename per project or team. The browser chooses the download folder; move the file into an administrator-controlled policy folder when required.";
+const FILENAME_REFUSED_HELP = "Use a JSON filename without folders, spaces, or hidden characters.";
+const VALIDATE_HINT_PLACEHOLDER =
+  "aih policy validate <target-root> --policy <safe-policy-file.json>";
 
 export interface ModeControl {
   readonly label: string;
@@ -121,7 +132,12 @@ function AdminWorkspace({
         return;
       }
       host.save(file.value);
-      setOutcome({ ok: true, message: `Policy download started: ${file.value.name}` });
+      // `file-transfer.ts` line 393-395, verbatim: the download says what to
+      // run on the file it just wrote.
+      setOutcome({
+        ok: true,
+        message: `Policy download started. Validate this file with: aih policy validate <target-root> --policy ${file.value.name}`,
+      });
     },
     [engine, host],
   );
@@ -340,6 +356,17 @@ function AdminWorkspace({
                 onChange={(event) => void importPolicy(event)}
                 type="file"
               />
+              {/* The hand-built file menu's item, beside its Import policy
+               * (`ui/shell/file-transfer.ts` lines 190-192). It runs at once:
+               * that page has no confirmation step, and this one adds none. */}
+              <button
+                className={`${GHOST_BUTTON} text-error`}
+                onClick={() => run(() => engine.clearPolicy())}
+                title={CLEAR_POLICY_LABEL}
+                type="button"
+              >
+                {CLEAR_POLICY_LABEL}
+              </button>
               {host.capabilities.githubIntake ? null : (
                 <UnavailableControl
                   label="Import skills from GitHub"
@@ -571,6 +598,9 @@ function ReviewBody({
   const result = engine.check();
   // The diff is computed only when the Changes view asks for it.
   const hunks = changesView === "changes" ? engine.changes() : [];
+  const fileNameValid = isPolicyFileName(fileName);
+  const fileNameHelpId = useId();
+  const fileNameHintId = useId();
   const refused = outcome !== undefined && !outcome.ok ? outcome.message : "";
   const accepted = outcome?.ok === true ? outcome.message : "";
   const helpId = useId();
@@ -638,16 +668,34 @@ function ReviewBody({
           />
         </label>
       )}
-      <label className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-wider text-outline font-semibold">
-        File name
-        <input
-          className={`${TEXT_INPUT} w-64 normal-case tracking-normal`}
-          id={fileNameId}
-          onChange={(event) => onFileName(event.target.value)}
-          type="text"
-          value={fileName}
-        />
-      </label>
+      {/* The file name rules and the validate hint of `file-transfer.ts`
+       * `updateFilenameHelp`: the help names what a safe name is, the field
+       * says it is invalid, and the hint is the command to run on the file. */}
+      <div className="space-y-1">
+        <label className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-wider text-outline font-semibold">
+          File name
+          <input
+            aria-describedby={`${fileNameHelpId} ${fileNameHintId}`}
+            aria-invalid={fileNameValid ? undefined : true}
+            className={`${TEXT_INPUT} w-64 normal-case tracking-normal`}
+            id={fileNameId}
+            onChange={(event) => onFileName(event.target.value)}
+            type="text"
+            value={fileName}
+          />
+        </label>
+        <p
+          className={`text-[10.5px] ${fileNameValid ? "text-outline" : "text-tertiary"}`}
+          id={fileNameHelpId}
+        >
+          {fileNameValid ? FILENAME_HELP : FILENAME_REFUSED_HELP}
+        </p>
+        <code className="block font-mono text-[10.5px] text-on-surface-variant" id={fileNameHintId}>
+          {fileNameValid
+            ? `aih policy validate <target-root> --policy ${fileName.trim()}`
+            : VALIDATE_HINT_PLACEHOLDER}
+        </code>
+      </div>
       <button className={PRIMARY_BUTTON} disabled={blocked} onClick={onDownload} type="button">
         Download
       </button>

@@ -11,6 +11,7 @@ import {
   createUserEngine,
   DEFAULT_POLICY_FILENAME,
   type DiffLine,
+  isPolicyFileName,
   MAX_IMPORT_BYTES,
   PROJECT_POLICY_FILENAME,
   type TrimUseV1,
@@ -148,6 +149,31 @@ describe("workbench engine entry", () => {
     });
   });
 
+  it("set all then reset cuts exactly what the untouched page cuts (editor 4)", () => {
+    const orgText = journeyOneEngine().download();
+    expect(orgText.ok).toBe(true);
+    if (!orgText.ok) return;
+    const user = createUserEngine(userModelForJourneyTwo(orgText.value.text));
+    const items = user.view().items.map((item) => item.assetId);
+    const setAll = (use: TrimUseV1) => choices(items.map((assetId) => [assetId, use] as const));
+
+    // Reset drops the choices, so the page is back to the view's own default.
+    const starting = user.check({ ...JOURNEY_TWO_INPUT, choices: choices([]) });
+    const skipped = user.check({ ...JOURNEY_TWO_INPUT, choices: setAll("skip") });
+    const afterReset = user.check({ ...JOURNEY_TWO_INPUT, choices: choices([]) });
+    expect(starting.ok).toBe(true);
+    expect(afterReset.ok).toBe(true);
+    if (!starting.ok || !afterReset.ok || !skipped.ok) return;
+    expect(skipped.file.text).not.toBe(starting.file.text);
+    expect(afterReset.file.text).toBe(starting.file.text);
+
+    // And J2's own choice still reproduces the frozen anchor, byte for byte.
+    const anchor = user.check({ ...JOURNEY_TWO_INPUT, choices: setAll("required") });
+    expect(anchor.ok === true && anchor.file.text).toBe(
+      golden("aih-project-policy.v3-selection.json"),
+    );
+  });
+
   it("serializes an untouched policy as it is, never compiled (byte rule 1)", () => {
     expect(admin().state().policyText).toBe(golden("aih-org-policy.vibe.json"));
     const file = admin().download();
@@ -181,6 +207,53 @@ describe("workbench engine entry", () => {
       // shows as a change.
       const added = engine.changes().filter((entry): entry is DiffLine => entry.kind === "+");
       expect(added.map((entry) => entry.text)).toContain('    "policyVersion": "7",');
+    });
+  });
+
+  describe("clear policy", () => {
+    it("resets a selection to the starting policy, with the session's message", () => {
+      const engine = admin();
+      const starting = engine.state().policyText;
+      expect(engine.setItemSelected("fixture:control", true).ok).toBe(true);
+      expect(engine.state().policyText).not.toBe(starting);
+
+      expect(engine.clearPolicy()).toEqual({
+        ok: true,
+        message:
+          "Policy cleared. All selections, requests and curation records were removed from this draft. You can start again with any source.",
+      });
+      expect(engine.state().policyText).toBe(starting);
+      expect(engine.changes()).toEqual([]);
+    });
+
+    it("resets an imported policy to the starting policy", () => {
+      const engine = admin();
+      const starting = engine.state().policyText;
+      const imported = JSON.parse(golden("aih-org-policy.vibe.json")) as Record<string, unknown>;
+      (imported.governance as Record<string, unknown>).policyVersion = "9";
+      expect(engine.importPolicyText(JSON.stringify(imported)).ok).toBe(true);
+      expect(engine.state().policyText).not.toBe(starting);
+
+      expect(engine.clearPolicy().ok).toBe(true);
+      expect(engine.state().policyText).toBe(starting);
+      expect(engine.changes()).toEqual([]);
+    });
+  });
+
+  describe("policy file names", () => {
+    it("accepts exactly the names the download gate accepts", () => {
+      const engine = admin();
+      for (const name of [DEFAULT_POLICY_FILENAME, "payments-team-policy.json", "a.json"]) {
+        expect(isPolicyFileName(name)).toBe(true);
+        expect(engine.download(name).ok).toBe(true);
+      }
+      for (const unsafe of ["../evil.json", "policy", "a b.json", ".hidden.json", "p .json"]) {
+        expect(isPolicyFileName(unsafe)).toBe(false);
+        expect(engine.download(unsafe).ok).toBe(false);
+      }
+      // The gate trims, so the answer must trim too.
+      expect(isPolicyFileName("  team.json  ")).toBe(true);
+      expect(isPolicyFileName("")).toBe(false);
     });
   });
 

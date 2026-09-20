@@ -133,6 +133,13 @@ export interface AdminEngine {
   setManagedMcpOptIn(optIn: boolean): EngineOutcome;
   /** Strict JSON only; a rejected import keeps the current policy. */
   importPolicyText(text: string): EngineOutcome;
+  /**
+   * Reset the draft to the policy the page opened with, through the session's
+   * own `clear()` (`ui/shell/policy-session.ts` lines 164-173). The hand-built
+   * file menu runs it with no confirmation step
+   * (`ui/shell/file-transfer.ts` lines 398-402).
+   */
+  clearPolicy(): EngineOutcome;
   check(): AdminCheckResult;
   /** An unsafe file name is refused and nothing is produced. */
   download(filename?: string): EngineResult<EngineFile>;
@@ -144,6 +151,10 @@ interface WorkbenchImportValidation {
 }
 
 const ADMINISTRATOR_ORIGIN = { kind: "administrator" } as const;
+
+/** `policy-session.ts` lines 167-170, verbatim: the session's own sentence. */
+const POLICY_CLEARED_MESSAGE =
+  "Policy cleared. All selections, requests and curation records were removed from this draft. You can start again with any source.";
 
 const INVALID_CATALOG_DIAGNOSTIC =
   "Prepared catalog is invalid or unavailable. Regenerate this artifact with Core.";
@@ -225,6 +236,17 @@ function hostList(model: Record<string, unknown>): { id: string; label: string }
     if (typeof id !== "string") return [];
     return [{ id, label: typeof host?.label === "string" ? host.label : id }];
   });
+}
+
+/**
+ * Whether the download gate accepts this policy file name: the same
+ * `POLICY_FILENAME_PATTERN` over the trimmed value that `download()` applies,
+ * and that `updateFilenameHelp` consults (`ui/shell/file-transfer.ts` lines
+ * 235-245). The view asks this to write its help and hint; it never has to
+ * know the pattern.
+ */
+export function isPolicyFileName(name: string): boolean {
+  return typeof name === "string" && POLICY_FILENAME_PATTERN.test(name.trim());
 }
 
 export function createAdminEngine(modelValue: unknown): EngineResult<AdminEngine> {
@@ -664,6 +686,18 @@ function buildAdminEngine(modelValue: unknown): EngineResult<AdminEngine> {
           ok: false,
           message: `Policy import rejected: ${errorMessage(error, "valid policy JSON required")}`,
         };
+      }
+    },
+
+    // file-transfer.ts lines 398-402: the menu item runs the session's clear,
+    // with no confirmation step. The message is the session's own.
+    clearPolicy() {
+      try {
+        last = { ok: true, message: "" };
+        active.clear();
+        return outcome(POLICY_CLEARED_MESSAGE);
+      } catch (error) {
+        return { ok: false, message: errorMessage(error, "The policy was not cleared.") };
       }
     },
 

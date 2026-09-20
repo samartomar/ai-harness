@@ -276,6 +276,50 @@ export function UserPage({ host, model, mode }: UserPageProps) {
             </div>
           )}
 
+          {/* The list head's "Set all N" and its group, from `ui/user-door.ts`
+           * lines 429-464: one press sets every listed item the same way, and
+           * a press is pressed only while they all already agree. */}
+          {(view?.items ?? []).length === 0 ? null : (
+            <fieldset className="flex items-center gap-2 border-0 p-0 m-0">
+              {/* The group's name, and the head label the hand-built page shows. */}
+              <legend className="sr-only">Set every item</legend>
+              <span className="text-[10.5px] font-mono text-outline uppercase tracking-wider">
+                {`Set all ${view?.items.length ?? 0}`}
+              </span>
+              <div className="flex items-center bg-surface-container-lowest p-0.5 rounded border border-surface-container-high/60">
+                {USE_OPTIONS.map((option) => {
+                  const all =
+                    view?.items.every(
+                      (item) => (choices.get(item.assetId) ?? "optional") === option.value,
+                    ) === true;
+                  return (
+                    <button
+                      aria-pressed={all}
+                      className={`px-2 py-0.5 text-[10.5px] rounded transition-colors ${
+                        all
+                          ? "bg-surface-container text-primary font-semibold shadow-xs"
+                          : "text-on-surface-variant hover:text-on-surface hover:bg-surface-container"
+                      }`}
+                      key={option.value}
+                      onClick={() =>
+                        setChoices(
+                          new Map(
+                            (view?.items ?? []).map(
+                              (item) => [item.assetId, option.value] as const,
+                            ),
+                          ),
+                        )
+                      }
+                      type="button"
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </fieldset>
+          )}
+
           <div className={CARD_GRID}>
             {(view?.items ?? []).map((item) => (
               <TrimCard
@@ -329,14 +373,27 @@ export function UserPage({ host, model, mode }: UserPageProps) {
               <span className="font-mono">{counts.skip}</span>
             </div>
           </div>
-          <button
-            className={`${PRIMARY_BUTTON} w-full justify-center`}
-            disabled={saveDisabled}
-            onClick={() => check(true)}
-            type="button"
-          >
-            Save aih-project-policy.json
-          </button>
+          {/* The footer of `ui/user-door.ts` lines 785-806: Reset beside Save.
+           * Reset drops the choices, so every item goes back to the view's own
+           * default; it is refused exactly when Save is. */}
+          <div className="flex items-center gap-2">
+            <button
+              className={GHOST_BUTTON}
+              disabled={saveDisabled}
+              onClick={() => setChoices(new Map())}
+              type="button"
+            >
+              Reset
+            </button>
+            <button
+              className={`${PRIMARY_BUTTON} flex-1 justify-center`}
+              disabled={saveDisabled}
+              onClick={() => check(true)}
+              type="button"
+            >
+              Save aih-project-policy.json
+            </button>
+          </div>
         </aside>
       </div>
     </div>
