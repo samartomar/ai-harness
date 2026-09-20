@@ -859,6 +859,21 @@ aih usage --rollup ../repo-a,../repo-b
 - **Support** — [SUPPORT.md](https://github.com/samartomar/ai-harness/blob/main/SUPPORT.md) · **Security** — [SECURITY.md](https://github.com/samartomar/ai-harness/blob/main/SECURITY.md)
   (private reporting) · **Contributing** — [CONTRIBUTING.md](https://github.com/samartomar/ai-harness/blob/main/CONTRIBUTING.md).
 
+## Organization evidence library API
+
+Node consumers can import `parseOrganizationEvidenceEnvelopeV1Bytes`,
+`canonicalOrganizationEvidenceEnvelopeV1`, `organizationEvidenceEnvelopeDigestV1`,
+`OrganizationEvidenceEnvelopeV1Schema`, and
+`MAX_ORGANIZATION_EVIDENCE_ENVELOPE_BYTES_V1` from `@aihq/core`.
+The corresponding `OrganizationEvidenceEnvelopeV1` type is also exported.
+
+Read an imported envelope as bytes and parse it before computing its digest.
+The parser returns `undefined` for invalid or noncanonical transport, including
+pretty-printed JSON and trailing newlines. The binding digest is domain-separated;
+it is not the raw file SHA-256. Parsing and hashing do not verify a Scan signature,
+establish organization authority, approve an item, or authorize an effect. Core's
+evidence and authority checks still apply when the policy is consumed.
+
 ## Development
 
 ```bash

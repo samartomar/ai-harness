@@ -27,6 +27,14 @@ export * from "./internals/verify.js";
 export * from "./org-policy/bundle.js";
 export * from "./org-policy/governance-decision-v2.js";
 export {
+  canonicalOrganizationEvidenceEnvelopeV1,
+  MAX_ORGANIZATION_EVIDENCE_ENVELOPE_BYTES_V1,
+  type OrganizationEvidenceEnvelopeV1,
+  OrganizationEvidenceEnvelopeV1Schema,
+  organizationEvidenceEnvelopeDigestV1,
+  parseOrganizationEvidenceEnvelopeV1Bytes,
+} from "./org-policy/qualification-v1.js";
+export {
   AIH_SUPPORTED_QUALIFICATION_RECEIPT_PATH,
   type AihSupportedQualificationArtifactVerificationV2,
   type AihSupportedQualificationReceiptV2,
