@@ -26,6 +26,9 @@
   },
   "linter": {
     "enabled": true,
+    "domains": {
+      "react": "none"
+    },
     "rules": {
       "preset": "recommended",
       "suspicious": {
@@ -49,6 +52,14 @@
     }
   },
   "overrides": [
+    {
+      "includes": ["workbench-ui/**"],
+      "linter": {
+        "domains": {
+          "react": "recommended"
+        }
+      }
+    },
     {
       "includes": ["src/kiro/content.ts"],
       "linter": {
