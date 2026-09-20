@@ -18,8 +18,9 @@ import {
 // ---------------------------------------------------------------------------
 // Fixtures.
 //
-// The subject identity and the matched content digest are the real published
-// @aihq/catalog values for agent.aih.governance-quality. The seal records and
+// The subject identity and the matched content digest are the Catalog-provided
+// published @aihq/catalog values for agent.aih.governance-quality. The index
+// carries no signature, so these are provided data, not authenticated facts. The seal records and
 // the signature transport are synthetic unit-test evidence: Scan does not
 // publicly export its candidate builders, so these tests exercise Core's own
 // obligations (recomputation, binding, reprojection, refusals) through a
