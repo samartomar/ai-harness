@@ -24,6 +24,10 @@ export * from "./internals/plan.js";
 export * from "./internals/proc.js";
 export * from "./internals/render.js";
 export * from "./internals/verify.js";
+export {
+  type PolicyAuthorityReceiptV3,
+  PolicyAuthorityReceiptV3Schema,
+} from "./org-policy/authority-v3.js";
 export * from "./org-policy/bundle.js";
 export * from "./org-policy/governance-decision-v2.js";
 export {
