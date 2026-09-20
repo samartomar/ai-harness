@@ -18,7 +18,7 @@ import {
   MAX_IMPORT_BYTES,
   POLICY_FILENAME_PATTERN,
 } from "../ui/shell/download-format.js";
-import { governanceOrDefault } from "../ui/shell/policy-grammar.js";
+import { activeManagedMcpServers, governanceOrDefault } from "../ui/shell/policy-grammar.js";
 import {
   createPolicySession,
   type PolicySession,
@@ -86,6 +86,10 @@ export interface AdminState {
   aiTools: readonly AdminAiTool[];
   frameworks: readonly AdminFramework[];
   selectedAssetIds: readonly string[];
+  /** Whether AIH may configure the selected Core MCP controls. */
+  managedMcpOptIn: boolean;
+  /** The active managed MCP servers of the current policy, sorted. */
+  managedMcpServers: readonly string[];
   schemaVersion: number;
   /** Exactly the bytes a download would write. */
   policyText: string;
@@ -103,6 +107,11 @@ export interface AdminEngine {
   setPosture(value: string): EngineOutcome;
   toggleAiTool(id: string): EngineOutcome;
   setItemSelected(assetId: string, selected: boolean): EngineOutcome;
+  /**
+   * The managed MCP projection opt-in. It cannot be switched off while the
+   * policy still selects Core MCP controls that need it.
+   */
+  setManagedMcpOptIn(optIn: boolean): EngineOutcome;
   /** Strict JSON only; a rejected import keeps the current policy. */
   importPolicyText(text: string): EngineOutcome;
   check(): AdminCheckResult;
@@ -427,6 +436,8 @@ function buildAdminEngine(modelValue: unknown): EngineResult<AdminEngine> {
         })),
         frameworks: frameworks(),
         selectedAssetIds: selectedIds(),
+        managedMcpOptIn: active.managedMcpOptIn(),
+        managedMcpServers: activeManagedMcpServers(policy),
         schemaVersion: typeof version === "number" ? version : Number.NaN,
         policyText: active.serialize(),
       };
@@ -456,6 +467,31 @@ function buildAdminEngine(modelValue: unknown): EngineResult<AdminEngine> {
         return outcome("Posture changed without modifying selections.");
       } catch (error) {
         return { ok: false, message: errorMessage(error, "Posture change was rejected.") };
+      }
+    },
+
+    // org-screen.ts lines 724-742: the same refusal, the same two messages.
+    setManagedMcpOptIn(optIn) {
+      try {
+        if (typeof optIn !== "boolean")
+          return { ok: false, message: `Unsupported managed MCP projection setting: ${optIn}` };
+        if (!optIn && activeManagedMcpServers(active.snapshotPolicy()).length > 0)
+          return {
+            ok: false,
+            message:
+              "Managed MCP projection remains enabled because selected Core MCP controls need it. Remove those controls before disabling this setting.",
+          };
+        const message = optIn
+          ? "Managed MCP projection enabled for selected Core MCP controls. It is saved only when those controls are present."
+          : "Managed MCP projection disabled. No server was contacted or changed.";
+        last = { ok: true, message: "" };
+        active.setManagedMcpOptIn(optIn, message);
+        return outcome(message);
+      } catch (error) {
+        return {
+          ok: false,
+          message: errorMessage(error, "Managed MCP projection change was rejected."),
+        };
       }
     },
 

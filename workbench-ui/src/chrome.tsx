@@ -118,6 +118,43 @@ export function Segmented<T extends string>({
   );
 }
 
+/** The prototype's toggle switch of the catalog cards, as a labelled control. */
+export function ToggleSwitch({
+  label,
+  checked,
+  onToggle,
+  describedBy,
+}: {
+  readonly label: string;
+  readonly checked: boolean;
+  readonly onToggle: (next: boolean) => void;
+  readonly describedBy?: string;
+}) {
+  return (
+    <span className="flex items-center gap-2">
+      <button
+        aria-checked={checked}
+        aria-describedby={describedBy}
+        aria-label={label}
+        className={`toggle-switch w-6 h-3.5 rounded-full p-0.5 flex items-center transition-colors shrink-0 ${
+          checked ? "bg-primary" : "bg-surface-container-highest"
+        }`}
+        data-active={checked}
+        onClick={() => onToggle(!checked)}
+        role="switch"
+        type="button"
+      >
+        <span
+          className={`w-2.5 h-2.5 rounded-full bg-white transition-transform ${
+            checked ? "translate-x-2.5" : ""
+          }`}
+        />
+      </button>
+      <span className="text-on-surface">{label}</span>
+    </span>
+  );
+}
+
 /**
  * A flyout: a Radix modal dialog, so it opens from the keyboard, holds focus,
  * closes on Escape and returns focus to its trigger.

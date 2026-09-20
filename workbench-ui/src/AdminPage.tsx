@@ -28,6 +28,7 @@ import {
   Segmented,
   SUB_HEADER,
   TEXT_INPUT,
+  ToggleSwitch,
   UnavailableControl,
 } from "./chrome.js";
 import type { WorkbenchHost } from "./host.js";
@@ -38,6 +39,8 @@ import { readImportedFile } from "./import-file.js";
  * design. Every policy decision belongs to the engine entry: this file holds
  * presentation and draft text only.
  */
+
+const MANAGED_MCP_LABEL = "Allow AIH to configure selected MCP tools";
 
 const GITHUB_INTAKE_REASON = "Available on the local page opened by npx @aihq/core --ui";
 
@@ -229,8 +232,10 @@ function AdminWorkspace({
               engine={engine}
               fileName={fileName}
               fileNameId={fileNameId}
+              managedMcpOptIn={state.managedMcpOptIn}
               onDownload={() => save(fileName)}
               onFileName={setFileName}
+              onManagedMcp={(next) => run(() => engine.setManagedMcpOptIn(next))}
               outcome={outcome}
               policyText={state.policyText}
               policyTextId={policyTextId}
@@ -422,6 +427,8 @@ function ReviewBody({
   onDownload,
   blocked,
   outcome,
+  managedMcpOptIn,
+  onManagedMcp,
 }: {
   readonly engine: AdminEngine;
   readonly policyText: string;
@@ -432,9 +439,13 @@ function ReviewBody({
   readonly onDownload: () => void;
   readonly blocked: boolean;
   readonly outcome: EngineOutcome | undefined;
+  readonly managedMcpOptIn: boolean;
+  readonly onManagedMcp: (next: boolean) => void;
 }) {
   const result = engine.check();
   const refused = outcome !== undefined && !outcome.ok ? outcome.message : "";
+  const accepted = outcome?.ok === true ? outcome.message : "";
+  const helpId = useId();
   return (
     <div className="space-y-2">
       <div className="space-y-1 text-tertiary empty:hidden" role="alert">
@@ -442,6 +453,24 @@ function ReviewBody({
         {[...result.errors, ...result.blockers].map((line) => (
           <p key={line}>{line}</p>
         ))}
+      </div>
+      {/* The status strip lives behind this dialog, so every outcome is also
+       * readable here, as text. */}
+      <p className="text-secondary empty:hidden" role="status">
+        {accepted}
+      </p>
+      {/* The prototype has no place for this setting; it belongs with the
+       * checks that gate the download, in the prototype's own vocabulary. */}
+      <div className="space-y-1 rounded bg-surface-container-low border border-surface-container-high/40 p-2">
+        <ToggleSwitch
+          checked={managedMcpOptIn}
+          describedBy={helpId}
+          label={MANAGED_MCP_LABEL}
+          onToggle={onManagedMcp}
+        />
+        <p className="text-[10.5px] text-outline" id={helpId}>
+          Needed when the policy selects Core MCP controls. No server is contacted from this page.
+        </p>
       </div>
       <label className="flex flex-col gap-1 text-[10px] font-mono uppercase tracking-wider text-outline font-semibold">
         Organization policy file

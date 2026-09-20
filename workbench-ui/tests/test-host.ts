@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { screen } from "@testing-library/react";
 import { type Mock, vi } from "vitest";
+import { packageOnlyPolicyStudioModelV1 } from "../../src/org-policy/studio-model.js";
 import { tinyStudioModel } from "../../tests/org-policy/studio-test-fixture.js";
 import type { WorkbenchFile, WorkbenchHost } from "../src/host.js";
 import { fragmentNavigation } from "../src/navigation.js";
@@ -37,6 +38,15 @@ export function fixtureModel(): Record<string, unknown> {
     { id: "codex", label: "Codex", policyTarget: true, mcpSupport: "managed" },
   ];
   return model;
+}
+
+/**
+ * The package-only model: the real catalog, whose selections pull in a managed
+ * MCP server, so the managed MCP projection opt-in is reachable. The tiny
+ * fixture's own schema rejects a policy with an active MCP control.
+ */
+export function managedMcpModel(): Record<string, unknown> {
+  return packageOnlyPolicyStudioModelV1() as unknown as Record<string, unknown>;
 }
 
 export function golden(name: string): string {
