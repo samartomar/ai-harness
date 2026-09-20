@@ -61,3 +61,63 @@ it("is accepted by the admin engine with a valid catalog", () => {
   if (!engine.ok) return;
   expect(engine.value.state().catalogValid).toBe(true);
 });
+
+/**
+ * The real catalog pulls a managed MCP server in for a selection of any kind,
+ * which the tiny fixture cannot reproduce. These run here, not in the pure
+ * engine tests, because loading the packaged model is too slow for that lane.
+ */
+function engineNeedingManagedMcp() {
+  const created = createAdminEngine(packageOnlyPolicyStudioModelV1());
+  if (!created.ok) throw new Error(created.errors.join("; "));
+  const engine = created.value;
+  const tool = engine.state().aiTools[0];
+  if (tool === undefined) throw new Error("the package catalog lists no AI tool");
+  engine.toggleAiTool(tool.id);
+  engine.setPosture("enterprise");
+  const item = engine
+    .state()
+    .frameworks.flatMap((framework) => framework.groups.flatMap((group) => group.items))
+    .find((candidate) => candidate.selectable);
+  if (item === undefined) throw new Error("the package catalog offers no selectable item");
+  engine.setItemSelected(item.assetId, true);
+  return engine;
+}
+
+it("blocks the download until managed MCP projection is enabled, then writes the allow-list", () => {
+  const engine = engineNeedingManagedMcp();
+  expect(engine.state().managedMcpOptIn).toBe(false);
+  expect(engine.state().managedMcpServers.length).toBeGreaterThan(0);
+  expect(engine.check().blockers).toContain("enable managed MCP projection");
+  const blocked = engine.download();
+  expect(blocked.ok).toBe(false);
+  if (!blocked.ok) expect(blocked.errors.join(" ")).toContain("enable managed MCP projection");
+
+  expect(engine.setManagedMcpOptIn(true)).toEqual({
+    ok: true,
+    message:
+      "Managed MCP projection enabled for selected Core MCP controls. It is saved only when those controls are present.",
+  });
+  expect(engine.state().managedMcpOptIn).toBe(true);
+  expect(engine.check().blockers).toEqual([]);
+
+  const file = engine.download();
+  expect(file.ok).toBe(true);
+  if (!file.ok) return;
+  const written = JSON.parse(file.value.text) as {
+    mcp?: { allowManagedOnly?: boolean; allowedServers?: string[] };
+  };
+  expect(written.mcp?.allowManagedOnly).toBe(true);
+  expect(written.mcp?.allowedServers).toEqual([...engine.state().managedMcpServers]);
+});
+
+it("refuses to switch managed MCP projection off while selected Core MCP controls need it", () => {
+  const engine = engineNeedingManagedMcp();
+  engine.setManagedMcpOptIn(true);
+  expect(engine.setManagedMcpOptIn(false)).toEqual({
+    ok: false,
+    message:
+      "Managed MCP projection remains enabled because selected Core MCP controls need it. Remove those controls before disabling this setting.",
+  });
+  expect(engine.state().managedMcpOptIn).toBe(true);
+});

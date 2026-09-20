@@ -34,12 +34,7 @@ import {
   validatePolicy,
 } from "../../../src/org-policy/workbench/ui/shell/policy-grammar.js";
 import { tinyEnterpriseStudioModel, tinyStudioModel } from "../studio-test-fixture.js";
-import {
-  basePolicy,
-  governance,
-  hookControl,
-  importMigrationCases,
-} from "./shell-parity-harness.js";
+import { basePolicy, governance, hookControl, importMigrationCases } from "./policy-fixtures.js";
 
 const GOLDENS = join(process.cwd(), "tests/org-policy/workbench/goldens");
 const golden = (name: string): string => readFileSync(join(GOLDENS, name), "utf8");
@@ -233,7 +228,7 @@ const CORPUS: readonly Case[] = [
     expect: "must be visible single-line text",
     build: () => {
       const policy = V3_BASE();
-      policy.governance.activations[0].clarification = "Requested by: administrator";
+      policy.governance.activations[0].clarification = "Requested by:\u0007 administrator";
       return policy;
     },
   },
