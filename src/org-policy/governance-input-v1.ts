@@ -260,6 +260,19 @@ export function parseGovernanceInputV1Bytes(bytes: Uint8Array): GovernanceInputV
 // Subject-to-content binding
 // --------------------------------------------------------------------------
 
+/**
+ * The evidence kind Scan's projection emits. An envelope carrying this kind
+ * claims verified scanner evidence, so consumption must verify the attestation
+ * before it may treat that evidence as verified — whatever route the saved
+ * document describes.
+ */
+export const SCAN_ATTESTATION_EVIDENCE_KIND_V1 = "scan-attestation-v2";
+
+/** True when the envelope claims verified scanner evidence. */
+export function claimsScanEvidenceV1(envelope: { evidence: { kind: string } }): boolean {
+  return envelope.evidence.kind === SCAN_ATTESTATION_EVIDENCE_KIND_V1;
+}
+
 export type SubjectContentBindingRefusalV1 = Extract<
   GovernanceInputRefusalV1,
   | "seal-digest-recomputation-mismatch"
@@ -640,6 +653,12 @@ export interface ConsumeGovernanceInputV1Result {
   readonly subjectDigest?: string;
   readonly decisionDigest?: string;
   readonly evidenceDigest?: string;
+  /**
+   * What the evidence envelope claimed to be. `scan-attestation-v2` is reported
+   * only once the attestation actually verified; an organization assertion is
+   * never reported as verified scanner evidence.
+   */
+  readonly evidenceClaim?: "scan-attestation-v2" | "organization-assertion";
   readonly matchedPath?: string;
   readonly authorityTransport?: "github-attestation" | "policy-file";
   readonly diagnostics: readonly GovernanceInputDiagnosticV1[];
@@ -739,21 +758,64 @@ export async function consumeGovernanceInputV1(
   const subjectDigest = document.subject.subjectDigest;
   const base = { structure: "valid" as const, ...notEvaluated };
 
+  // --- evidence custody, then reprojection from the same verified result ----
+  const custody = custodyOrganizationEvidenceV1(input.root, document.evidence.path);
+  if ("problem" in custody) {
+    return refuse({ ...base, evidence: "unverified", reason: custody.problem }, [
+      diagnostic(custody.problem, "evidence.path", "evidence file custody failed"),
+    ]);
+  }
+  const envelope = parseOrganizationEvidenceEnvelopeV1Bytes(custody.evidence.bytes);
+  if (envelope === undefined) {
+    return refuse({ ...base, evidence: "unverified", reason: "malformed-bytes" }, [
+      diagnostic("malformed-bytes", "evidence", "evidence file is not a canonical V1 envelope"),
+    ]);
+  }
+  const evidenceDigest = organizationEvidenceEnvelopeDigestV1(envelope);
+  if (evidenceDigest !== document.evidence.digest) {
+    return refuse({ ...base, evidence: "unverified", reason: "evidence-digest-mismatch" }, [
+      diagnostic(
+        "evidence-digest-mismatch",
+        "evidence.digest",
+        "evidence bytes are not the saved bytes",
+      ),
+    ]);
+  }
+  if (envelope.subjectDigest !== subjectDigest) {
+    return refuse({ ...base, evidence: "unverified", reason: "evidence-subject-mismatch" }, [
+      diagnostic(
+        "evidence-subject-mismatch",
+        "evidence.subjectDigest",
+        "evidence does not describe the selected subject",
+      ),
+    ]);
+  }
+
   // --- binding, from freshly verified scan facts only -----------------------
+  //
+  // What must be verified follows the evidence being claimed, never the saved
+  // route label. `provenance.route` is descriptive metadata: relabelling
+  // organization scan evidence as a catalog selection removes nothing, because
+  // the requirement is read from the evidence envelope itself.
   let binding: SubjectContentBindingV1 | undefined;
   let verified: unknown;
-  if (document.provenance.route === "organization") {
+  if (claimsScanEvidenceV1(envelope)) {
     if (input.scan === undefined) {
       return refuse(
-        { ...base, binding: "unbound", reason: "scan-verification-unavailable" },
+        {
+          ...base,
+          binding: "unbound",
+          evidence: "unverified",
+          reason: "scan-verification-unavailable",
+        },
         [
           diagnostic(
             "scan-verification-unavailable",
-            "scan",
-            "organization route requires a configured scan verification adapter and trust inputs",
+            "evidence.kind",
+            "evidence claims verified scanner evidence, which requires a configured scan verification adapter and trust inputs",
           ),
         ],
-        { subjectDigest },
+        { subjectDigest, evidenceDigest },
       );
     }
     try {
@@ -834,39 +896,6 @@ export async function consumeGovernanceInputV1(
       );
     }
   }
-
-  // --- evidence custody, then reprojection from the same verified result ----
-  const custody = custodyOrganizationEvidenceV1(input.root, document.evidence.path);
-  if ("problem" in custody) {
-    return refuse({ ...base, evidence: "unverified", reason: custody.problem }, [
-      diagnostic(custody.problem, "evidence.path", "evidence file custody failed"),
-    ]);
-  }
-  const envelope = parseOrganizationEvidenceEnvelopeV1Bytes(custody.evidence.bytes);
-  if (envelope === undefined) {
-    return refuse({ ...base, evidence: "unverified", reason: "malformed-bytes" }, [
-      diagnostic("malformed-bytes", "evidence", "evidence file is not a canonical V1 envelope"),
-    ]);
-  }
-  const evidenceDigest = organizationEvidenceEnvelopeDigestV1(envelope);
-  if (evidenceDigest !== document.evidence.digest) {
-    return refuse({ ...base, evidence: "unverified", reason: "evidence-digest-mismatch" }, [
-      diagnostic(
-        "evidence-digest-mismatch",
-        "evidence.digest",
-        "evidence bytes are not the saved bytes",
-      ),
-    ]);
-  }
-  if (envelope.subjectDigest !== subjectDigest) {
-    return refuse({ ...base, evidence: "unverified", reason: "evidence-subject-mismatch" }, [
-      diagnostic(
-        "evidence-subject-mismatch",
-        "evidence.subjectDigest",
-        "evidence does not describe the selected subject",
-      ),
-    ]);
-  }
   if (verified !== undefined && input.scan !== undefined) {
     let reprojected: Uint8Array | undefined;
     try {
@@ -916,6 +945,9 @@ export async function consumeGovernanceInputV1(
   const found = {
     subjectDigest,
     evidenceDigest,
+    evidenceClaim: claimsScanEvidenceV1(envelope)
+      ? ("scan-attestation-v2" as const)
+      : ("organization-assertion" as const),
     ...(binding?.status === "bound" ? { matchedPath: binding.matchedPath } : {}),
   };
 

@@ -20,12 +20,13 @@ import {
 //
 // The subject identity and the matched content digest are the Catalog-provided
 // published @aihq/catalog values for agent.aih.governance-quality. The index
-// carries no signature, so these are provided data, not authenticated facts. The seal records and
-// the signature transport are synthetic unit-test evidence: Scan does not
-// publicly export its candidate builders, so these tests exercise Core's own
-// obligations (recomputation, binding, reprojection, refusals) through a
-// contract-faithful adapter. Real verifyScanAttestationV2 integration is
-// proven in acceptance against installed tarballs.
+// carries no signature, so these are provided data, not authenticated facts.
+//
+// The seals and the verified results here are contract-faithful stubs, so these
+// tests can exercise Core's own obligations - recomputation, binding,
+// reprojection and every refusal - without a signing ceremony. The real
+// @aihq/scan signature verification, subject binding and evidence reprojection
+// are proven separately against installed tarballs in acceptance.
 // ---------------------------------------------------------------------------
 
 const PROFILE_SHA256 = "32ce6e9dea74ba84fe56b71ba6516e032f18aa4132e6ef7ebca507512d8735f7";
@@ -432,6 +433,111 @@ describe("independent consumption", () => {
     });
     expect(consumed.status.reason).toBe("binding-claim-contradicted");
     expect(consumed.status.binding).toBe("mismatched");
+  });
+
+  it("keeps every scan check when only the route label is changed to catalog", async () => {
+    const result = prepared();
+    const artifacts = result.artifacts;
+    if (artifacts === undefined) throw new Error("prepare failed");
+    const original = Buffer.from(artifacts.input.bytes).toString("utf8");
+    const relabelled = Buffer.from(
+      original.replace('"route":"organization"', '"route":"catalog"'),
+      "utf8",
+    );
+    // The relabel must be the only difference, and must still be canonical.
+    expect(relabelled.toString("utf8")).not.toBe(original);
+    expect(parseGovernanceInputV1Bytes(relabelled)?.provenance.route).toBe("catalog");
+
+    // Without a configured verifier the relabelled document must still refuse.
+    const bare = disposableRoot(artifacts.evidence.bytes, artifacts.evidence.path);
+    const withoutVerifier = await consumeGovernanceInputV1({
+      bytes: relabelled,
+      root: bare,
+      env: {},
+      now: "2026-09-20T00:30:00.000Z",
+    });
+    expect(withoutVerifier.status.reason).toBe("scan-verification-unavailable");
+    expect(withoutVerifier.status.evidence).not.toBe("verified");
+
+    // And with a verifier that rejects, it must still refuse rather than pass.
+    const rejecting = disposableRoot(artifacts.evidence.bytes, artifacts.evidence.path);
+    const refused = await consumeGovernanceInputV1({
+      bytes: relabelled,
+      root: rejecting,
+      env: {},
+      now: "2026-09-20T00:30:00.000Z",
+      scan: {
+        adapter: adapter({
+          verify: () => {
+            throw new TypeError("invalid ScanAttestationV2: untrusted signer");
+          },
+        }),
+        request: TRUST_INPUTS,
+      },
+    });
+    expect(refused.status.reason).toBe("scan-attestation-unverified");
+    expect(refused.status.evidence).not.toBe("verified");
+
+    // A relabelled document that does verify reaches exactly the same place as
+    // the organization-labelled one: the route never changed what was required.
+    const honest = disposableRoot(artifacts.evidence.bytes, artifacts.evidence.path);
+    const verified = await consumeGovernanceInputV1({
+      bytes: relabelled,
+      root: honest,
+      env: {},
+      now: "2026-09-20T00:30:00.000Z",
+      scan: {
+        adapter: adapter({ verify: () => verifiedResult(boundSeal) }),
+        request: TRUST_INPUTS,
+      },
+    });
+    const organizationLabelled = await consume(boundSeal);
+    expect(verified.status).toEqual(organizationLabelled.status);
+    expect(verified.status.binding).toBe("bound");
+    expect(verified.evidenceClaim).toBe("scan-attestation-v2");
+  });
+
+  it("never reports an organization assertion as verified scanner evidence", async () => {
+    const assertion = {
+      format: "aih-organization-evidence" as const,
+      version: 1 as const,
+      subjectDigest,
+      evidence: {
+        kind: "operator-assertion",
+        id: "validation-example",
+        summary: "Validation example only; operator-provided evidence, not scanner evidence.",
+        payloadDigest: `sha256:${"b".repeat(64)}`,
+        artifactDigests: [`sha256:${"c".repeat(64)}`],
+      },
+      attestor: "test-operator",
+      issuedAt: "2026-09-20T00:00:00.000Z",
+      notBefore: "2026-09-20T00:00:00.000Z",
+      expiresAt: "2026-09-27T00:00:00.000Z",
+    };
+    const result = prepareGovernanceInputV1({
+      route: "catalog",
+      subject: { kind: "agent", id: "governance-quality", source },
+      request: { target: "claude", effect: "observe" },
+      decisionReference: {
+        id: "decision-observe-governance-quality",
+        digest: `sha256:${"1".repeat(64)}`,
+      },
+      evidenceBytes: Buffer.from(canonicalOrganizationEvidenceEnvelopeV1(assertion), "utf8"),
+    });
+    const artifacts = result.artifacts;
+    if (artifacts === undefined) throw new Error("prepare failed");
+    const root = disposableRoot(artifacts.evidence.bytes, artifacts.evidence.path);
+    const consumed = await consumeGovernanceInputV1({
+      bytes: artifacts.input.bytes,
+      root,
+      env: {},
+      now: "2026-09-20T00:30:00.000Z",
+    });
+    // No scan claim, so no scan verification is required - but the result says
+    // plainly that this is an assertion, never verified scanner evidence.
+    expect(consumed.evidenceClaim).toBe("organization-assertion");
+    expect(consumed.status.binding).toBe("not-evaluated");
+    expect(consumed.status.reason).toBe("authority-unverified");
   });
 
   it("refuses when the organization route has no configured scan verification", async () => {
