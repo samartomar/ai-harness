@@ -24,9 +24,12 @@ import {
 //
 // The seals and the verified results here are contract-faithful stubs, so these
 // tests can exercise Core's own obligations - recomputation, binding,
-// reprojection and every refusal - without a signing ceremony. The real
-// @aihq/scan signature verification, subject binding and evidence reprojection
-// are proven separately against installed tarballs in acceptance.
+// reprojection and every refusal - without a signing ceremony. Real @aihq/scan
+// signature verification runs in governance-input-configured-trust.test.ts and
+// against installed tarballs in acceptance.
+//
+// Nothing here is a measured detector result: no detector executes in any of
+// these tests, and a verified signature would not establish that one had.
 // ---------------------------------------------------------------------------
 
 const PROFILE_SHA256 = "32ce6e9dea74ba84fe56b71ba6516e032f18aa4132e6ef7ebca507512d8735f7";
