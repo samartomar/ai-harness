@@ -16,6 +16,7 @@ export * from "./config/settings.js";
 export * from "./context/index.js";
 export * from "./errors.js";
 export * from "./init/v3.js";
+export { type Cli, SUPPORTED_CLIS } from "./internals/clis.js";
 export * from "./internals/envfile.js";
 export * from "./internals/execute.js";
 export * from "./internals/fsxn.js";
