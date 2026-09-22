@@ -86,6 +86,61 @@ artifact and by the accepted digest sets each package publishes — never by
 version-number equality and never by a frozen trio. A recorded hash answers *what did we
 test*; it never answers *what may you install*.
 
+## Compatibility evidence for sibling promotion
+
+Core produces one artifact that the promotion readers of `@aihq/scan` and `@aihq/catalog`
+consume: `format: "core-sibling-compatibility"`, `version: 2`, written by the summary job
+of `.github/workflows/sibling-compatibility.yml` as
+`compatibility/core-sibling-compatibility.json` in the run artifact
+`core-sibling-compatibility`. The producer is `tools/sibling-compatibility-checks.mjs`
+(`buildCompatibilityArtifact`). Readers refuse version 1, which recorded one promotable
+leg per package resolved from `next` in a single all-`next` trio, by name as an unknown
+format or version.
+
+Each run resolves the npm dist-tags once. The *current Core* is what `@aihq/core`
+`latest` names at that moment: one supported Core, a test snapshot, never a dependency
+pin. Each combination installs one trio into its own disposable consumer:
+
+| Combination | `@aihq/core` | `@aihq/scan` | `@aihq/catalog` | Promotable for |
+| --- | --- | --- | --- | --- |
+| `baseline` | latest | latest | latest | nothing |
+| `scan-candidate` | latest | next | latest | `@aihq/scan` |
+| `catalog-candidate` | latest | latest | next | `@aihq/catalog` |
+| `core-candidate` | next | latest | latest | `@aihq/core` (recorded; no reader gate yet) |
+| `all-next` | next, or latest without one | next, or latest without one | next, or latest without one | nothing |
+| `branch` | packed checkout | packed checkout | packed checkout | nothing |
+
+The artifact carries `runId`, `runAttempt`, the Core repository and commit, `resolvedAt`,
+the resolved `baseline` (each package's `latest` and `next` with version, tarball sha256
+and registry integrity, or `null`), `candidates`, every raw leg report under
+`observations`, and a `limitation`. A `candidates` entry exists only for a
+`scan-candidate`, `catalog-candidate` or `core-candidate` combination that was tested,
+at most one each, and never from `baseline`, `all-next` or `branch`. It names its
+`combination`; the `candidate` package at `distTag: "next"` with version, sha256 and
+integrity; a `baseline` array naming the other two packages once each at
+`distTag: "latest"`; the `environment` (`os`, `node`, and `npm` when known); the
+consumer's own `lockfileSha256`; and `contractChecks` as `{id, status}` for every check,
+in the producer's order, with status `passed`, `failed` or `unavailable`.
+
+Producer checks, in order: `catalog-readers`, `catalog-subject-digests`, `scan-organization-evidence-schema-lock`, `scan-decision-schema-lock`, `catalog-decision-schema-lock`, `catalog-qualification-receipt-schema-lock`, `supported-clis-shape`, `refusal-input-unknown-version`, `refusal-evidence-unknown-version`, `refusal-scan-core-contract-unknown`, `refusal-catalog-index-unknown-version`, `scan-custody-negative`.
+
+Check results are recorded, not gating: a combination job fails only when its trio could
+not be obtained or installed or its checks could not run. Each reader requires, in its
+own candidate combination, every check in its list present exactly once and `passed`;
+`unavailable` is never read as passed. A reader's list names only its own package's
+checks and Core's, so one sibling's promotion never waits on the other sibling's state:
+
+| Reader | Combination | Required checks |
+| --- | --- | --- |
+| `@aihq/scan` | `scan-candidate` | `scan-organization-evidence-schema-lock`, `scan-decision-schema-lock`, `scan-custody-negative`, `supported-clis-shape`, `refusal-input-unknown-version`, `refusal-evidence-unknown-version`, `refusal-scan-core-contract-unknown` |
+| `@aihq/catalog` | `catalog-candidate` | `catalog-readers`, `catalog-subject-digests`, `catalog-decision-schema-lock`, `catalog-qualification-receipt-schema-lock`, `supported-clis-shape`, `refusal-input-unknown-version`, `refusal-catalog-index-unknown-version` |
+
+At promotion time a reader also re-observes each `baseline` entry on the registry and
+refuses when that package's `latest` moved or its bytes differ: the run must be repeated
+against the Core and sibling that are current then. These lists are pinned to the
+producer's exported `READER_REQUIRED_CHECKS` by the inventory test; each reader enforces
+its own list in its own repository.
+
 ## Changing a contract here
 
 A new accepted digest, a new refusal code or an additive export is `semver:minor`
