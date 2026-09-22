@@ -10,13 +10,25 @@
  * `passed`, `failed` or `unavailable` and a reason; nothing is ever inferred as
  * passing because an export was absent.
  *
- * `summarize` merges the leg reports into `core-sibling-compatibility.json`, the
- * exact shape the sibling promotion gates read:
- * `{format:"core-sibling-compatibility", version:1, runId, runAttempt,
- *   legs:[{package, version, tarballSha256, tarballIntegrity, contractChecks:[{status}]}]}`.
- * Only packages resolved from the npm `next` tag become `legs`: those are the only
- * bytes a promotion from `next` to `latest` can be about. Branch-built and `latest`
- * results are recorded under `observations` and never as a promotable leg.
+ * `resolve` reads the npm dist-tags ONCE per run and writes `baseline.json`: the
+ * `latest` and `next` version and registry integrity of each package, and the
+ * combinations those tags make runnable. "Current Core" is whatever `@aihq/core`
+ * `latest` names at that moment: a test snapshot, never a dependency pin.
+ *
+ * `leg --kind registry --combination <id>` installs exactly the trio that
+ * `baseline.json` names for that combination; it never re-resolves a tag:
+ *
+ *   baseline           core@latest + scan@latest + catalog@latest
+ *   scan-candidate     core@latest + scan@next   + catalog@latest  (promotable for scan)
+ *   catalog-candidate  core@latest + scan@latest + catalog@next    (promotable for catalog)
+ *   core-candidate     core@next   + scan@latest + catalog@latest  (recorded for core)
+ *   all-next           each at next, or latest without next; integration evidence only
+ *   branch             packed checkouts (`leg --kind branch`); never promotable
+ *
+ * `summarize` merges the leg reports into `core-sibling-compatibility.json`
+ * version 2. Only a `<package>-candidate` report becomes a `candidates` entry, and it
+ * names the one package at `next` and the other two at `latest`. Check results are
+ * recorded, not gating: the Scan and Catalog promotion readers gate on them.
  *
  * A recorded hash answers what was tested. It never answers what a consumer may
  * install, and it is not authorization to promote anything.
@@ -24,6 +36,7 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+  appendFileSync,
   copyFileSync,
   existsSync,
   mkdirSync,
@@ -38,13 +51,74 @@ import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 export const COMPATIBILITY_FORMAT = "core-sibling-compatibility";
-export const COMPATIBILITY_VERSION = 1;
+export const COMPATIBILITY_VERSION = 2;
+export const BASELINE_FORMAT = "core-sibling-compatibility-baseline";
+export const BASELINE_VERSION = 1;
 export const PACKAGES = ["@aihq/core", "@aihq/scan", "@aihq/catalog"];
+
+/** Every combination id, in the order the artifact and the run summary list them. */
+export const COMBINATIONS = [
+  "baseline",
+  "scan-candidate",
+  "catalog-candidate",
+  "core-candidate",
+  "all-next",
+  "branch",
+];
+/** The candidate combinations and the one package each may promote. */
+const CANDIDATE_PACKAGE = {
+  "scan-candidate": "@aihq/scan",
+  "catalog-candidate": "@aihq/catalog",
+  "core-candidate": "@aihq/core",
+};
+
+/** Every check `runContractChecks` emits, in the order it emits them. */
+export const CONTRACT_CHECK_IDS = [
+  "catalog-readers",
+  "catalog-subject-digests",
+  "scan-organization-evidence-schema-lock",
+  "scan-decision-schema-lock",
+  "catalog-decision-schema-lock",
+  "catalog-qualification-receipt-schema-lock",
+  "supported-clis-shape",
+  "refusal-input-unknown-version",
+  "refusal-evidence-unknown-version",
+  "refusal-scan-core-contract-unknown",
+  "refusal-catalog-index-unknown-version",
+  "scan-custody-negative",
+];
+
+/**
+ * The checks each sibling's promotion reader requires, all `passed`, in its own
+ * candidate combination: its own package's checks plus Core's. Recorded here so the
+ * run summary and CONTRACTS.md name the same lists; the readers own the gate.
+ */
+export const READER_REQUIRED_CHECKS = {
+  "@aihq/scan": [
+    "scan-organization-evidence-schema-lock",
+    "scan-decision-schema-lock",
+    "scan-custody-negative",
+    "supported-clis-shape",
+    "refusal-input-unknown-version",
+    "refusal-evidence-unknown-version",
+    "refusal-scan-core-contract-unknown",
+  ],
+  "@aihq/catalog": [
+    "catalog-readers",
+    "catalog-subject-digests",
+    "catalog-decision-schema-lock",
+    "catalog-qualification-receipt-schema-lock",
+    "supported-clis-shape",
+    "refusal-input-unknown-version",
+    "refusal-catalog-index-unknown-version",
+  ],
+};
 
 const HEX64 = /^[0-9a-f]{64}$/u;
 const INTEGRITY = /^sha512-[A-Za-z0-9+/]+={0,2}$/u;
 const VERSION = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?$/u;
 const CHECK_STATUS = new Set(["passed", "failed", "unavailable"]);
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
@@ -323,68 +397,309 @@ async function refusalMatrix(core, catalog, readSubpath) {
   ];
 }
 
+const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+const nonEmpty = (value) => typeof value === "string" && value.length > 0 && value.length <= 64;
+
+/** One `latest` / `next` entry of `baseline.json`: absent is `null`, never a guess. */
+function validateTagEntry(entry, where) {
+  if (entry === null) return;
+  if (!isObject(entry)) fail(`${where}: not an object`);
+  if (!VERSION.test(entry.version ?? "")) fail(`${where}: version`);
+  if (!INTEGRITY.test(entry.tarballIntegrity ?? "")) fail(`${where}: tarballIntegrity`);
+}
+
+/**
+ * The combinations a set of dist-tags makes runnable. A candidate needs its package
+ * at `next` and the other two at `latest`; `all-next` needs at least two packages at
+ * `next` and a `latest` for any package without one. `branch` is never registry-run.
+ */
+export function planCombinations(packages) {
+  const has = (name, tag) => isObject(packages?.[name]?.[tag]);
+  const withNext = PACKAGES.filter((name) => has(name, "next"));
+  const ids = [];
+  if (PACKAGES.every((name) => has(name, "latest"))) ids.push("baseline");
+  for (const [id, candidate] of Object.entries(CANDIDATE_PACKAGE))
+    if (
+      has(candidate, "next") &&
+      PACKAGES.every((name) => name === candidate || has(name, "latest"))
+    )
+      ids.push(id);
+  if (withNext.length >= 2 && PACKAGES.every((name) => has(name, "next") || has(name, "latest")))
+    ids.push("all-next");
+  return ids;
+}
+
+/** Validates `baseline.json` as `resolve` writes it; its combinations must follow from its tags. */
+export function validateBaseline(baseline) {
+  if (!isObject(baseline)) fail("baseline.json is not an object");
+  if (baseline.format !== BASELINE_FORMAT || baseline.version !== BASELINE_VERSION)
+    fail("baseline.json declares an unknown format or version");
+  if (!ISO_INSTANT.test(baseline.resolvedAt ?? "")) fail("baseline.json: resolvedAt");
+  if (!isObject(baseline.packages)) fail("baseline.json: packages");
+  if (Object.keys(baseline.packages).sort().join() !== [...PACKAGES].sort().join())
+    fail("baseline.json must name exactly @aihq/core, @aihq/scan and @aihq/catalog");
+  for (const name of PACKAGES) {
+    const tags = baseline.packages[name];
+    if (!isObject(tags) || Object.keys(tags).sort().join() !== "latest,next")
+      fail(`baseline.json: ${name} must record latest and next`);
+    validateTagEntry(tags.latest, `${name}@latest`);
+    validateTagEntry(tags.next, `${name}@next`);
+  }
+  if (
+    !Array.isArray(baseline.combinations) ||
+    baseline.combinations.join() !== planCombinations(baseline.packages).join()
+  )
+    fail("baseline.json: combinations do not follow from its dist-tags");
+  return baseline;
+}
+
+/**
+ * The trio one registry combination installs, in package order, from `baseline.json`
+ * alone: `{package, version, distTag, role, tarballIntegrity}`.
+ */
+export function selectTrio(baseline, combination) {
+  validateBaseline(baseline);
+  if (combination === "branch" || !COMBINATIONS.includes(combination))
+    fail(`${combination} is not a registry combination`);
+  if (!baseline.combinations.includes(combination))
+    fail(`${combination} is not runnable in this baseline`);
+  const candidate = CANDIDATE_PACKAGE[combination];
+  return PACKAGES.map((name) => {
+    const tags = baseline.packages[name];
+    let distTag = "latest";
+    let role = "baseline";
+    if (combination === "all-next") {
+      distTag = tags.next === null ? "latest" : "next";
+      role = "all-next";
+    } else if (name === candidate) {
+      distTag = "next";
+      role = "candidate";
+    }
+    const { version, tarballIntegrity } = tags[distTag];
+    return { package: name, version, distTag, role, tarballIntegrity };
+  });
+}
+
+/** The role and dist-tag each package must carry in a report of this combination. */
+function validateRoles(report) {
+  const { combination, packages } = report;
+  if (combination === "branch") {
+    for (const entry of packages)
+      if (entry.role !== "branch" || entry.distTag !== undefined)
+        fail(`${entry.package}: a branch report carries role branch and no dist-tag`);
+    return;
+  }
+  if (combination === "all-next") {
+    for (const entry of packages)
+      if (entry.role !== "all-next" || !["latest", "next"].includes(entry.distTag))
+        fail(`${entry.package}: an all-next report carries role all-next`);
+    if (packages.filter((entry) => entry.distTag === "next").length < 2)
+      fail("an all-next report needs at least two packages at next");
+    return;
+  }
+  const candidate = CANDIDATE_PACKAGE[combination];
+  for (const entry of packages) {
+    if (entry.package === candidate) {
+      if (entry.role !== "candidate" || entry.distTag !== "next")
+        fail(`${entry.package}: the candidate of ${combination} must be at next`);
+    } else if (entry.role !== "baseline" || entry.distTag !== "latest")
+      fail(`${entry.package}: every baseline package of ${combination} must be at latest`);
+  }
+}
+
 /** Validates one leg report before it can reach the artifact. */
 export function validateLegReport(report) {
-  if (report === null || typeof report !== "object") fail("leg report is not an object");
-  if (!["branch", "registry-latest", "registry-next"].includes(report.leg))
-    fail(`unknown leg ${report.leg}`);
-  if (!["tested", "tag-absent"].includes(report.status)) fail(`unknown status ${report.status}`);
-  if (!Array.isArray(report.packages)) fail("packages must be an array");
+  if (!isObject(report)) fail("leg report is not an object");
+  if (!["branch", "registry"].includes(report.leg)) fail(`unknown leg ${report.leg}`);
+  if (!COMBINATIONS.includes(report.combination)) fail(`unknown combination ${report.combination}`);
+  if ((report.leg === "branch") !== (report.combination === "branch"))
+    fail(`a ${report.leg} leg cannot report combination ${report.combination}`);
+  if (report.status !== "tested") fail(`unknown status ${report.status}`);
+  if (!nonEmpty(report.os) || !nonEmpty(report.node)) fail("a leg must record its os and node");
+  if (report.npm !== undefined && !VERSION.test(report.npm)) fail("npm version");
+  if (!Array.isArray(report.packages) || report.packages.length !== PACKAGES.length)
+    fail("a leg must record exactly three packages");
   for (const entry of report.packages) {
-    if (!PACKAGES.includes(entry.package)) fail(`unknown package ${entry.package}`);
-    if (entry.status === "tag-absent") continue;
+    if (!isObject(entry) || !PACKAGES.includes(entry.package))
+      fail(`unknown package ${entry?.package}`);
     if (!VERSION.test(entry.version ?? "")) fail(`${entry.package}: version`);
     if (!HEX64.test(entry.tarballSha256 ?? "")) fail(`${entry.package}: tarballSha256`);
     if (!INTEGRITY.test(entry.tarballIntegrity ?? "")) fail(`${entry.package}: tarballIntegrity`);
   }
-  if (report.status === "tested") {
-    if (!HEX64.test(report.lockfileSha256 ?? "")) fail("lockfileSha256");
-    if (!Array.isArray(report.contractChecks) || report.contractChecks.length === 0)
-      fail("a tested leg must record its contract checks");
-    for (const result of report.contractChecks)
-      if (typeof result?.id !== "string" || !CHECK_STATUS.has(result.status))
-        fail("malformed contract check");
-  }
+  if (new Set(report.packages.map((entry) => entry.package)).size !== PACKAGES.length)
+    fail("a leg must name each package once");
+  validateRoles(report);
+  if (!HEX64.test(report.lockfileSha256 ?? "")) fail("lockfileSha256");
+  if (
+    !Array.isArray(report.contractChecks) ||
+    report.contractChecks.map((result) => result?.id).join() !== CONTRACT_CHECK_IDS.join()
+  )
+    fail("a tested leg must record every contract check, in the producer's order");
+  for (const result of report.contractChecks)
+    if (!CHECK_STATUS.has(result.status)) fail(`malformed contract check ${result.id}`);
   return report;
 }
 
+const bytesOf = ({ version, tarballSha256, tarballIntegrity }) => ({
+  version,
+  tarballSha256,
+  tarballIntegrity,
+});
+
 /**
- * Builds the artifact. Only a `registry-next` leg that was tested contributes
- * promotable `legs`, one per package whose version came from `next`; a package
- * the leg filled from `latest` because it has no `next` is never promotable.
+ * Builds the version-2 artifact. Only a tested `<package>-candidate` report becomes a
+ * `candidates` entry; `baseline`, `all-next` and `branch` reports are observations
+ * only. Every registry report must have installed exactly the bytes `baseline.json`
+ * names, and each combination is reported at most once (branch: once per OS and Node).
  */
-export function buildCompatibilityArtifact({ runId, runAttempt, core, reports }) {
+export function buildCompatibilityArtifact({ runId, runAttempt, core, baseline, reports }) {
   if (!/^[1-9]\d{0,19}$/u.test(String(runId))) fail("runId");
   if (!/^[1-9]\d{0,3}$/u.test(String(runAttempt))) fail("runAttempt");
+  validateBaseline(baseline);
   const validated = reports.map(validateLegReport);
-  const next = validated.filter((report) => report.leg === "registry-next");
-  if (next.length > 1) fail("more than one registry-next report");
-  const legs = [];
-  if (next[0]?.status === "tested") {
-    for (const entry of next[0].packages) {
-      if (entry.distTag !== "next") continue;
-      legs.push({
-        package: entry.package,
-        version: entry.version,
-        distTag: "next",
-        tarballSha256: entry.tarballSha256,
-        tarballIntegrity: entry.tarballIntegrity,
-        lockfileSha256: next[0].lockfileSha256,
-        contractChecks: next[0].contractChecks.map(({ id, status }) => ({ id, status })),
-      });
+  const seen = new Set();
+  const packedBytes = new Map();
+  for (const report of validated) {
+    const key =
+      report.combination === "branch"
+        ? `branch (${report.os}, node ${report.node})`
+        : report.combination;
+    if (seen.has(key)) fail(`more than one report for ${key}`);
+    seen.add(key);
+    if (report.leg !== "registry") continue;
+    const expected = selectTrio(baseline, report.combination);
+    for (const [index, entry] of report.packages.entries()) {
+      const want = expected[index];
+      if (
+        entry.package !== want.package ||
+        entry.version !== want.version ||
+        entry.distTag !== want.distTag ||
+        entry.tarballIntegrity !== want.tarballIntegrity
+      )
+        fail(`${report.combination}: ${entry.package} is not the bytes baseline.json names`);
+      const tagged = `${entry.package}@${entry.distTag}`;
+      if (packedBytes.has(tagged) && packedBytes.get(tagged) !== entry.tarballSha256)
+        fail(`${tagged}: two combinations packed different bytes`);
+      packedBytes.set(tagged, entry.tarballSha256);
     }
   }
+  const candidates = [];
+  for (const [combination, name] of Object.entries(CANDIDATE_PACKAGE)) {
+    const report = validated.find((item) => item.combination === combination);
+    if (report === undefined) continue;
+    const candidate = report.packages.find((entry) => entry.package === name);
+    candidates.push({
+      combination,
+      candidate: {
+        package: name,
+        version: candidate.version,
+        distTag: "next",
+        tarballSha256: candidate.tarballSha256,
+        tarballIntegrity: candidate.tarballIntegrity,
+      },
+      baseline: report.packages
+        .filter((entry) => entry.package !== name)
+        .map((entry) => ({ package: entry.package, distTag: "latest", ...bytesOf(entry) })),
+      environment: {
+        os: report.os,
+        node: report.node,
+        ...(report.npm === undefined ? {} : { npm: report.npm }),
+      },
+      lockfileSha256: report.lockfileSha256,
+      contractChecks: report.contractChecks.map(({ id, status }) => ({ id, status })),
+    });
+  }
+  const resolved = Object.fromEntries(
+    PACKAGES.map((name) => [
+      name,
+      Object.fromEntries(
+        ["latest", "next"].map((tag) => {
+          const entry = baseline.packages[name][tag];
+          return [
+            tag,
+            entry === null
+              ? null
+              : {
+                  version: entry.version,
+                  // null only when no combination in this run packed these bytes.
+                  tarballSha256: packedBytes.get(`${name}@${tag}`) ?? null,
+                  tarballIntegrity: entry.tarballIntegrity,
+                },
+          ];
+        }),
+      ),
+    ]),
+  );
   return {
     format: COMPATIBILITY_FORMAT,
     version: COMPATIBILITY_VERSION,
     runId: String(runId),
     runAttempt: String(runAttempt),
     core,
-    legs,
+    resolvedAt: baseline.resolvedAt,
+    baseline: resolved,
+    candidates,
     observations: validated,
     limitation:
-      "Evidence of what was tested, not authorization and not a dependency pin. A leg is promotable only for the exact bytes it names.",
+      "Evidence of what was tested, not authorization and not a dependency pin. A candidate is promotable only for the exact bytes it names, against the exact baseline it names.",
   };
+}
+
+/** The markdown the summary job appends to `$GITHUB_STEP_SUMMARY`. */
+export function renderStepSummary(artifact, baseline) {
+  const cell = (entry) => {
+    if (entry === undefined) return "-";
+    const where = entry.distTag ?? `git ${String(entry.source?.commit ?? "").slice(0, 12)}`;
+    return `${entry.version} (${where})`;
+  };
+  const notPassed = (report) => {
+    const list = report.contractChecks.filter((check) => check.status !== "passed");
+    return list.length === 0
+      ? "none"
+      : list.map((check) => `\`${check.id}\` (${check.status})`).join(", ");
+  };
+  const row = (label, report) => {
+    const byName = (name) => report.packages.find((entry) => entry.package === name);
+    const trio = PACKAGES.map((name) => cell(byName(name))).join(" | ");
+    return `| ${label} | tested | ${trio} | ${notPassed(report)} |`;
+  };
+  const currentCore = baseline.packages["@aihq/core"].latest;
+  const promotable = artifact.candidates.map(
+    (entry) => `\`${entry.candidate.package}@${entry.candidate.version}\``,
+  );
+  const lines = [
+    `## Core sibling compatibility, run ${artifact.runId} attempt ${artifact.runAttempt}`,
+    "",
+    `Resolved ${artifact.resolvedAt}; current Core: ${
+      currentCore === null
+        ? "none (`@aihq/core` has no `latest`)"
+        : `\`@aihq/core@${currentCore.version}\``
+    }.`,
+    "Check results are recorded here, not gating: the Scan and Catalog promotion readers gate on their own candidate combination.",
+    "",
+  ];
+  if (baseline.combinations.length === 0)
+    lines.push("No registry combination was runnable from the resolved dist-tags.", "");
+  lines.push(
+    "| Combination | Result | @aihq/core | @aihq/scan | @aihq/catalog | Checks not passed |",
+    "| --- | --- | --- | --- | --- | --- |",
+  );
+  for (const combination of baseline.combinations) {
+    const report = artifact.observations.find((item) => item.combination === combination);
+    lines.push(
+      report === undefined
+        ? `| ${combination} | no report: its job could not obtain, install or run the trio | - | - | - | - |`
+        : row(combination, report),
+    );
+  }
+  for (const report of artifact.observations.filter((item) => item.combination === "branch"))
+    lines.push(row(`branch (${report.os}, node ${report.node})`, report));
+  lines.push(
+    "",
+    `Candidate combinations recorded in this artifact: ${promotable.length === 0 ? "none" : promotable.join(", ")}.`,
+    "",
+  );
+  return `${lines.join("\n")}\n`;
 }
 
 /** npm through its own CLI entry, with an EMPTY userconfig: no ambient .npmrc applies. */
@@ -430,64 +745,110 @@ function packed(npm, args, cwd, destination, expectedName) {
   };
 }
 
+/** A throwaway work directory with an empty userconfig, and npm bound to it. */
+function workspace(prefix) {
+  const work = mkdtempSync(join(tmpdir(), prefix));
+  const userconfig = join(work, "empty-npmrc");
+  writeFileSync(userconfig, "");
+  return { work, npm: npmRunner(userconfig) };
+}
+
+const viewJson = (npm, work, args) => JSON.parse(npm(["view", ...args, "--json"], work));
+
+/**
+ * Reads each package's `latest` and `next` from the registry ONCE, with their
+ * registry integrity, and writes `baseline.json`. Read-only: `npm view` only.
+ */
+export function resolveBaseline({ out }) {
+  const { work, npm } = workspace("aih-sibling-resolve-");
+  try {
+    const resolvedAt = new Date().toISOString();
+    const packages = {};
+    for (const name of PACKAGES) {
+      const tags = viewJson(npm, work, [name, "dist-tags"]);
+      if (!isObject(tags)) fail(`${name}: the registry returned no dist-tags`);
+      packages[name] = {};
+      for (const tag of ["latest", "next"]) {
+        const version = tags[tag];
+        if (version === undefined) {
+          packages[name][tag] = null;
+          continue;
+        }
+        if (!VERSION.test(String(version))) fail(`${name}@${tag}: version ${version}`);
+        const tarballIntegrity = viewJson(npm, work, [`${name}@${version}`, "dist.integrity"]);
+        packages[name][tag] = { version, tarballIntegrity };
+      }
+    }
+    const baseline = validateBaseline({
+      format: BASELINE_FORMAT,
+      version: BASELINE_VERSION,
+      resolvedAt,
+      packages,
+      combinations: planCombinations(packages),
+    });
+    mkdirSync(dirname(out), { recursive: true });
+    writeFileSync(out, `${JSON.stringify(baseline, null, 2)}\n`, { flag: "wx" });
+    return baseline;
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
+}
+
 /**
  * One leg: obtain the three tarballs, install them into a fresh consumer with an
  * empty userconfig and scripts disabled, run the checks there, and record the
- * exact bytes. `branch` packs already-built checkouts; `registry` resolves a tag.
+ * exact bytes. `branch` packs already-built checkouts; `registry` packs exactly the
+ * trio `baseline.json` names for its combination and never re-resolves a tag.
+ * It throws only when the trio could not be obtained or installed or the checks
+ * did not run; check outcomes are recorded in the report, never thrown.
  */
-export function runLeg({ kind, tag, checkouts, out, os, node }) {
-  const work = mkdtempSync(join(tmpdir(), "aih-sibling-leg-"));
+export function runLeg({ kind, combination, baselinePath, checkouts, out, os, node }) {
+  if (!["branch", "registry"].includes(kind)) fail(`unknown leg kind ${kind}`);
+  const { work, npm } = workspace("aih-sibling-leg-");
   try {
-    const userconfig = join(work, "empty-npmrc");
-    writeFileSync(userconfig, "");
-    const npm = npmRunner(userconfig);
     const tarballs = join(work, "tarballs");
     mkdirSync(tarballs);
-    const leg = kind === "branch" ? "branch" : `registry-${tag}`;
     const packages = [];
     if (kind === "branch") {
       for (const name of PACKAGES) {
         const directory = resolve(checkouts[name] ?? fail(`no checkout for ${name}`));
+        const {
+          package: packageName,
+          version,
+          tarball,
+          tarballSha256,
+          tarballIntegrity,
+        } = packed(npm, [], directory, tarballs, name);
         packages.push({
-          ...packed(npm, [], directory, tarballs, name),
+          package: packageName,
+          version,
+          role: "branch",
+          tarballSha256,
+          tarballIntegrity,
           source: { kind: "git", commit: gitCommit(directory) },
+          tarball,
         });
       }
     } else {
-      if (!["latest", "next"].includes(tag)) fail(`unknown tag ${tag}`);
-      const resolved = PACKAGES.map((name) => {
-        const tags = JSON.parse(npm(["view", name, "dist-tags", "--json"], work));
-        return { name, version: tags?.[tag], latest: tags?.latest };
-      });
-      const absent = resolved.filter((entry) => entry.version === undefined);
-      // A tag no package carries is recorded as absent, never as a failure.
-      if (absent.length === resolved.length || (tag === "latest" && absent.length > 0)) {
-        const report = validateLegReport({
-          leg,
-          status: "tag-absent",
-          os,
-          node,
-          packages: resolved.map((entry) => ({
-            package: entry.name,
-            ...(entry.version === undefined ? { status: "tag-absent" } : { version: entry.version }),
-            distTag: tag,
-          })),
+      const baseline = validateBaseline(JSON.parse(readFileSync(baselinePath, "utf8")));
+      for (const entry of selectTrio(baseline, combination)) {
+        const spec = `${entry.package}@${entry.version}`;
+        const result = packed(npm, [spec], work, tarballs, entry.package);
+        if (result.version !== entry.version) fail(`${spec}: npm packed ${result.version}`);
+        if (result.tarballIntegrity !== entry.tarballIntegrity)
+          fail(`${spec}: packed bytes differ from the integrity baseline.json recorded`);
+        if (viewJson(npm, work, [spec, "dist.integrity"]) !== result.tarballIntegrity)
+          fail(`${spec}: packed bytes differ from the registry integrity`);
+        packages.push({
+          package: entry.package,
+          version: entry.version,
+          distTag: entry.distTag,
+          role: entry.role,
+          tarballSha256: result.tarballSha256,
+          tarballIntegrity: result.tarballIntegrity,
+          source: { kind: "registry", tag: entry.distTag },
+          tarball: result.tarball,
         });
-        writeFileSync(out, `${JSON.stringify(report, null, 2)}\n`, { flag: "wx" });
-        return report;
-      }
-      for (const entry of resolved) {
-        // A package without the tag is tested at `latest` so the trio exists. It is
-        // recorded as `latest` and can never become a promotable `next` leg.
-        const distTag = entry.version === undefined ? "latest" : tag;
-        const version = entry.version ?? entry.latest ?? fail(`${entry.name} has no latest`);
-        const result = packed(npm, [`${entry.name}@${version}`], work, tarballs, entry.name);
-        const registryIntegrity = JSON.parse(
-          npm(["view", `${entry.name}@${version}`, "dist.integrity", "--json"], work),
-        );
-        if (registryIntegrity !== result.tarballIntegrity)
-          fail(`${entry.name}@${version}: packed bytes differ from the registry integrity`);
-        packages.push({ ...result, distTag, source: { kind: "registry", tag: distTag } });
       }
     }
     const consumer = join(work, "consumer");
@@ -518,10 +879,12 @@ export function runLeg({ kind, tag, checkouts, out, os, node }) {
     process.stderr.write(run.stderr ?? "");
     if (run.status !== 0 || !existsSync(checksFile)) fail("the consumer checks did not run");
     const report = validateLegReport({
-      leg,
+      leg: kind,
+      combination: kind === "branch" ? "branch" : combination,
       status: "tested",
       os,
       node,
+      npm: npm(["--version"], work).trim(),
       packages: packages.map(({ tarball, ...entry }) => entry),
       lockfileSha256: sha256(readFileSync(join(consumer, "package-lock.json"))),
       contractChecks: JSON.parse(readFileSync(checksFile, "utf8")),
@@ -566,11 +929,18 @@ async function main(argv) {
       process.stdout.write(`${result.status}: ${result.id}${result.detail ? ` - ${result.detail}` : ""}\n`);
     return;
   }
+  if (mode === "resolve") {
+    const baseline = resolveBaseline({ out: resolve(option("--out")) });
+    // stdout carries exactly the matrix: one line of JSON, the runnable combination ids.
+    process.stdout.write(`${JSON.stringify(baseline.combinations)}\n`);
+    return;
+  }
   if (mode === "leg") {
     const kind = option("--kind");
     const report = runLeg({
       kind,
-      tag: kind === "registry" ? option("--tag") : undefined,
+      combination: kind === "registry" ? option("--combination") : "branch",
+      baselinePath: kind === "registry" ? resolve(option("--baseline")) : undefined,
       checkouts:
         kind === "branch"
           ? {
@@ -583,31 +953,39 @@ async function main(argv) {
       os: option("--os"),
       node: option("--node"),
     });
-    const failed = (report.contractChecks ?? []).filter((result) => result.status !== "passed");
-    process.stdout.write(`${report.leg}: ${report.status}; ${failed.length} check(s) not passed\n`);
-    // Every check is recorded in the report either way; a failed one still turns the job red.
-    if (failed.length > 0) process.exitCode = 1;
+    const notPassed = report.contractChecks.filter((result) => result.status !== "passed");
+    // Recorded, not gating: the readers gate. This leg exits 0 because the checks ran.
+    process.stdout.write(
+      `${report.combination}: ${report.status}; ${notPassed.length} check(s) not passed (recorded)\n`,
+    );
     return;
   }
   if (mode === "summarize") {
     const legsDir = option("--legs");
-    const reports = readdirSync(legsDir, { recursive: true })
-      .filter((name) => String(name).endsWith(".leg.json"))
-      .sort()
-      .map((name) => JSON.parse(readFileSync(join(legsDir, String(name)), "utf8")));
+    const baseline = validateBaseline(JSON.parse(readFileSync(option("--baseline"), "utf8")));
+    // No leg directory means no job uploaded a report; the summary still says so.
+    const reports = existsSync(legsDir)
+      ? readdirSync(legsDir, { recursive: true })
+          .filter((name) => String(name).endsWith(".leg.json"))
+          .sort()
+          .map((name) => JSON.parse(readFileSync(join(legsDir, String(name)), "utf8")))
+      : [];
     const artifact = buildCompatibilityArtifact({
       runId: option("--run-id"),
       runAttempt: option("--run-attempt"),
       core: { repository: option("--core-repository"), commit: option("--core-commit") },
+      baseline,
       reports,
     });
+    const summary = renderStepSummary(artifact, baseline);
     writeFileSync(option("--out"), `${JSON.stringify(artifact, null, 2)}\n`, { flag: "wx" });
-    process.stdout.write(
-      `${artifact.legs.length} promotable leg(s); ${artifact.observations.length} observation(s)\n`,
-    );
+    if (rest.includes("--step-summary")) appendFileSync(option("--step-summary"), summary);
+    process.stdout.write(summary);
     return;
   }
-  fail("usage: sibling-compatibility-checks.mjs checks | leg | summarize (see the workflow)");
+  fail(
+    "usage: sibling-compatibility-checks.mjs checks | resolve | leg | summarize (see the workflow)",
+  );
 }
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {

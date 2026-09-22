@@ -5,19 +5,39 @@ name: sibling-compatibility
 # tarballs, through each package's published names and subpaths only
 # (tools/sibling-compatibility-checks.mjs). Nothing here runs `aih` against a checkout.
 #
-# Legs, reported separately:
-#   branch          builds Core at this ref and Scan/Catalog at the named refs, packs them,
-#                   installs the trio and runs the contract checks. Never promotable: these
-#                   bytes are not published.
-#   registry-latest the trio npm `latest` resolves to.
-#   registry-next   each package's npm `next` (a package with no `next` is tested at its
-#                   `latest` and recorded as such); `tag-absent` when no package has `next`.
+# The `resolve` job reads the npm dist-tags ONCE per run and writes baseline.json. The
+# current Core is whatever `@aihq/core` `latest` names at that moment: exactly one
+# supported Core, a test snapshot and never a dependency pin. Every combination job
+# installs exactly the versions baseline.json names and checks the packed bytes against
+# the registry integrity; no combination job re-resolves a tag.
 #
-# The summary job writes core-sibling-compatibility.json in exactly the shape the sibling
-# promotion gates read: {format:"core-sibling-compatibility", version:1, runId, runAttempt,
-# legs:[{package, version, tarballSha256, tarballIntegrity, contractChecks:[{status}]}]}.
-# Only packages resolved from `next` become `legs`. A recorded hash answers what was
-# tested; it is not a dependency pin and not authorization to promote anything.
+# Combinations, one job each, run only when the dist-tags make them runnable:
+#   combination        @aihq/core  @aihq/scan  @aihq/catalog  promotable for
+#   baseline           latest      latest      latest         nothing (supported trio health)
+#   scan-candidate     latest      next        latest         @aihq/scan
+#   catalog-candidate  latest      latest      next           @aihq/catalog
+#   core-candidate     next        latest      latest         @aihq/core (recorded; no reader gate yet)
+#   all-next           next or latest for each, when two or more have next: nothing
+#   branch             packed checkouts (Core at this ref, Scan/Catalog at the named refs),
+#                      OS x Node matrix: nothing; these bytes are not published
+#
+# The summary job writes core-sibling-compatibility.json version 2: `candidates` holds only
+# the scan-, catalog- and core-candidate combinations actually tested, each naming its one
+# package at `next` and the other two at `latest`, with the environment, lockfile hash and
+# every check. all-next and branch never produce a candidate, whatever passed in them.
+#
+# Check results are recorded, not gating: a combination job is red only when its trio could
+# not be obtained or installed or its checks could not run. The Scan and Catalog promotion
+# readers gate, each on its own candidate combination and its own required checks. The
+# step summary lists every combination and every check not passed, so a broken baseline is
+# visible on the run page.
+#
+# Initial cutover: the published Core, Scan and Catalog predate these checks, so today's
+# baseline records failed or unavailable checks; that is expected. The order the gates
+# allow is Core first (Core has no reader gate here; core-candidate is recorded for the
+# owner), then Scan and Catalog in either order, each READY against the new Core `latest`
+# and the old other sibling. No step treats all-next evidence as independent compatibility.
+# A recorded hash answers what was tested; it is not authorization to promote anything.
 on:
   schedule:
     - cron: "17 5 * * *"
@@ -42,6 +62,85 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  resolve:
+    name: resolve the registry dist-tags once
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      combinations: ${{ steps.plan.outputs.combinations }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: core
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - name: Resolve latest and next for each package and plan the runnable combinations
+        id: plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          combinations=$(node core/tools/sibling-compatibility-checks.mjs resolve --out baseline/baseline.json)
+          echo "combinations=$combinations" >> "$GITHUB_OUTPUT"
+          echo "runnable combinations: $combinations"
+      - name: Upload baseline.json
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sibling-baseline
+          path: baseline/baseline.json
+          if-no-files-found: error
+          retention-days: 90
+
+  combinations:
+    name: registry ${{ matrix.combination }} (node-22)
+    needs: [resolve]
+    # An empty matrix is an error on GitHub; with nothing runnable, the summary reports it.
+    if: ${{ needs.resolve.outputs.combinations != '[]' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        combination: ${{ fromJSON(needs.resolve.outputs.combinations) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: core
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: sibling-baseline
+          path: baseline
+      - name: Pack the trio baseline.json names, install it and run the contract checks
+        shell: bash
+        env:
+          COMBINATION: ${{ matrix.combination }}
+        run: |
+          set -euo pipefail
+          mkdir -p legs
+          node core/tools/sibling-compatibility-checks.mjs leg --kind registry --combination "$COMBINATION" \
+            --baseline baseline/baseline.json \
+            --os ubuntu-latest --node 22 \
+            --out "legs/registry-$COMBINATION.leg.json"
+      - name: Upload the leg report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sibling-leg-registry-${{ matrix.combination }}
+          path: legs/
+          if-no-files-found: error
+          retention-days: 90
+
   branch-tarballs:
     name: branch tarballs (${{ matrix.os }}, node-${{ matrix.node }})
     strategy:
@@ -102,48 +201,8 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-  registry-tags:
-    name: registry ${{ matrix.tag }} (node-22)
-    strategy:
-      fail-fast: false
-      matrix:
-        tag: [latest, next]
-    # No `next` tag exists for these packages today: report it, do not fail the run.
-    continue-on-error: ${{ matrix.tag == 'next' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          path: core
-          persist-credentials: false
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: "22"
-          package-manager-cache: false
-      - name: Resolve the tag, pack the published bytes and run the contract checks
-        shell: bash
-        env:
-          DIST_TAG: ${{ matrix.tag }}
-        run: |
-          set -euo pipefail
-          mkdir -p legs
-          node core/tools/sibling-compatibility-checks.mjs leg --kind registry --tag "$DIST_TAG" \
-            --os ubuntu-latest --node 22 \
-            --out "legs/registry-$DIST_TAG.leg.json"
-      - name: Upload the leg report
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: sibling-leg-registry-${{ matrix.tag }}
-          path: legs/
-          if-no-files-found: error
-          retention-days: 90
-
   summary:
-    needs: [branch-tarballs, registry-tags]
+    needs: [resolve, combinations, branch-tarballs]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -159,9 +218,13 @@ jobs:
           package-manager-cache: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
+          name: sibling-baseline
+          path: baseline
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
           pattern: sibling-leg-*
           path: legs
-      - name: Write core-sibling-compatibility.json
+      - name: Write core-sibling-compatibility.json and the run summary
         shell: bash
         env:
           RUN_ID: ${{ github.run_id }}
@@ -171,10 +234,11 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p compatibility
-          node tools/sibling-compatibility-checks.mjs summarize --legs legs \
+          node tools/sibling-compatibility-checks.mjs summarize --baseline baseline/baseline.json --legs legs \
             --run-id "$RUN_ID" --run-attempt "$RUN_ATTEMPT" \
             --core-repository "$CORE_REPOSITORY" --core-commit "$CORE_COMMIT" \
-            --out compatibility/core-sibling-compatibility.json
+            --out compatibility/core-sibling-compatibility.json \
+            --step-summary "$GITHUB_STEP_SUMMARY"
       - name: Upload core-sibling-compatibility
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
