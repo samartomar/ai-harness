@@ -698,9 +698,10 @@ export interface ScanVerificationAdapterV1 {
  * and Core treats an unrecognized result, a throw and a refusal alike: the
  * detector is unavailable, with the adapter's own reason text, never a pass.
  *
- * Core narrows the result at this seam to exactly three fields: `outcome`, the
- * SARIF text of a `succeeded` run (`sarif`), and the human reason of anything
- * else (`reason` or `detail`).
+ * Core narrows the result at this seam and nowhere else: `outcome`, the SARIF
+ * text of a `succeeded` run (`sarif`), and, for anything else, the first
+ * readable reason among `detail`, `reason`, `failure.detail` and
+ * `failure.stage`.
  */
 export interface ScanExecutionAdapterV1 {
   readonly listDetectorCapabilitiesV1: () => readonly unknown[];
