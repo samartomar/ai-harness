@@ -1,0 +1,184 @@
+name: sibling-compatibility
+
+# Scheduled compatibility evidence between @aihq/core and its siblings @aihq/scan and
+# @aihq/catalog. Every product check runs inside a disposable consumer against INSTALLED
+# tarballs, through each package's published names and subpaths only
+# (tools/sibling-compatibility-checks.mjs). Nothing here runs `aih` against a checkout.
+#
+# Legs, reported separately:
+#   branch          builds Core at this ref and Scan/Catalog at the named refs, packs them,
+#                   installs the trio and runs the contract checks. Never promotable: these
+#                   bytes are not published.
+#   registry-latest the trio npm `latest` resolves to.
+#   registry-next   each package's npm `next` (a package with no `next` is tested at its
+#                   `latest` and recorded as such); `tag-absent` when no package has `next`.
+#
+# The summary job writes core-sibling-compatibility.json in exactly the shape the sibling
+# promotion gates read: {format:"core-sibling-compatibility", version:1, runId, runAttempt,
+# legs:[{package, version, tarballSha256, tarballIntegrity, contractChecks:[{status}]}]}.
+# Only packages resolved from `next` become `legs`. A recorded hash answers what was
+# tested; it is not a dependency pin and not authorization to promote anything.
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+    inputs:
+      scan_ref:
+        description: aih-scan git ref for the branch leg
+        required: false
+        default: main
+        type: string
+      catalog_ref:
+        description: aih-catalog git ref for the branch leg
+        required: false
+        default: main
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sibling-compatibility-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  branch-tarballs:
+    name: branch tarballs (${{ matrix.os }}, node-${{ matrix.node }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: ["20", "22", "24"]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: core
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: samartomar/aih-scan
+          ref: ${{ inputs.scan_ref || 'main' }}
+          path: scan
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: samartomar/aih-catalog
+          ref: ${{ inputs.catalog_ref || 'main' }}
+          path: catalog
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node }}
+          package-manager-cache: false
+      - name: Build each package from its own checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          for dir in core scan catalog; do
+            (cd "$dir" && npm ci --ignore-scripts --no-audit --no-fund && npm run build)
+          done
+      - name: Pack, install into a disposable consumer and run the contract checks
+        shell: bash
+        env:
+          MATRIX_OS: ${{ matrix.os }}
+          MATRIX_NODE: ${{ matrix.node }}
+        run: |
+          set -euo pipefail
+          mkdir -p legs
+          node core/tools/sibling-compatibility-checks.mjs leg --kind branch \
+            --core core --scan scan --catalog catalog \
+            --os "$MATRIX_OS" --node "$MATRIX_NODE" \
+            --out "legs/branch-$MATRIX_OS-node-$MATRIX_NODE.leg.json"
+      - name: Upload the leg report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sibling-leg-branch-${{ matrix.os }}-node-${{ matrix.node }}
+          path: legs/
+          if-no-files-found: error
+          retention-days: 90
+
+  registry-tags:
+    name: registry ${{ matrix.tag }} (node-22)
+    strategy:
+      fail-fast: false
+      matrix:
+        tag: [latest, next]
+    # No `next` tag exists for these packages today: report it, do not fail the run.
+    continue-on-error: ${{ matrix.tag == 'next' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: core
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - name: Resolve the tag, pack the published bytes and run the contract checks
+        shell: bash
+        env:
+          DIST_TAG: ${{ matrix.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p legs
+          node core/tools/sibling-compatibility-checks.mjs leg --kind registry --tag "$DIST_TAG" \
+            --os ubuntu-latest --node 22 \
+            --out "legs/registry-$DIST_TAG.leg.json"
+      - name: Upload the leg report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: sibling-leg-registry-${{ matrix.tag }}
+          path: legs/
+          if-no-files-found: error
+          retention-days: 90
+
+  summary:
+    needs: [branch-tarballs, registry-tags]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          package-manager-cache: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: sibling-leg-*
+          path: legs
+      - name: Write core-sibling-compatibility.json
+        shell: bash
+        env:
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          CORE_REPOSITORY: ${{ github.repository }}
+          CORE_COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p compatibility
+          node tools/sibling-compatibility-checks.mjs summarize --legs legs \
+            --run-id "$RUN_ID" --run-attempt "$RUN_ATTEMPT" \
+            --core-repository "$CORE_REPOSITORY" --core-commit "$CORE_COMMIT" \
+            --out compatibility/core-sibling-compatibility.json
+      - name: Upload core-sibling-compatibility
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: core-sibling-compatibility
+          path: compatibility/core-sibling-compatibility.json
+          if-no-files-found: error
+          retention-days: 90
