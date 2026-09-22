@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { parseStrictJsonObjectV1 } from "../../../contract/strict-json-v1.js";
 import { evidenceExpiryV1 } from "../../../evidence-freshness.js";
+import type { CatalogQualificationPublisherV1 } from "../../catalog-qualification-attestation-v1.js";
 import { parseAihSupportedQualificationReceiptV2Bytes } from "../../supported-qualification-receipt-v2.js";
 import { CatalogQualificationSummariesV1Schema } from "../contracts.js";
 import { expandCatalogQualificationPackageInputV2 } from "./catalog-qualification-compact.js";
@@ -15,14 +16,7 @@ import {
   compilerQualificationBindingDigestV1,
 } from "./catalog-qualification-v1.js";
 
-export interface CatalogQualificationPublisherV1 {
-  readonly repository: string;
-  readonly workflow: string;
-  readonly ref: string;
-  readonly issuer: string;
-  readonly commit: string;
-  readonly subjectName: string;
-}
+export type { CatalogQualificationPublisherV1 };
 
 /**
  * Package-owned qualification artifacts, admitted only after operational verification.
