@@ -41,6 +41,7 @@ export {
 export * from "./org-policy/bundle.js";
 export * from "./org-policy/governance-decision-v2.js";
 export {
+  type AssessmentMaterialResolverV1,
   type ConsumeGovernanceInputV1Input,
   type ConsumeGovernanceInputV1Result,
   canonicalGovernanceInputV1,

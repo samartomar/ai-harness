@@ -20,6 +20,10 @@ import { type Cli, SUPPORTED_CLIS } from "../internals/clis.js";
 import type { PlanContext } from "../internals/plan.js";
 import { defaultRunner } from "../internals/proc.js";
 import { makeHostAdapter } from "../platform/detect.js";
+import {
+  type AssessmentMaterialBindingBoundV1,
+  verifyAssessmentMaterialBindingV1,
+} from "./assessment-material-binding-v1.js";
 import { verifyPolicyAuthorityReceipt } from "./authority.js";
 import { custodyOrganizationEvidenceV1 } from "./evidence-custody-v1.js";
 import {
@@ -101,6 +105,14 @@ export type GovernanceInputRefusalV1 =
   | "missing-distribution-file-record"
   | "missing-manifest-document-record"
   | "binding-claim-contradicted"
+  // binding through a published assessment rather than the scanned files
+  | "assessment-unavailable"
+  | "assessment-bytes-do-not-match-identity"
+  | "assessment-declaration-unreadable"
+  | "declared-material-root-not-unique"
+  | "sealed-path-not-declared"
+  | "declared-digest-mismatch"
+  | "seal-selection-inconsistent"
   // authority
   | "authority-unverified"
   | "authority-version"
@@ -637,6 +649,24 @@ export interface ScanVerificationRequestV1 {
   readonly seenReplayIdentities?: unknown;
 }
 
+/**
+ * How the application loads the published assessment artifact for a subject.
+ * Supplying one selects the assessment-material route for an `aih` identity:
+ * Core hashes whatever the resolver returns against the identity in the saved
+ * subject, so the resolver is never trusted and can never widen a verdict.
+ */
+export interface AssessmentMaterialResolverV1 {
+  /**
+   * Returns the published assessment artifact bytes named by `identityDigest`
+   * (the saved subject's `source.revision`), or undefined when unavailable.
+   * Core hashes what it returns; the resolver is never trusted.
+   */
+  readonly readAssessment: (request: {
+    readonly identityDigest: string;
+    readonly subject: GovernanceInputV1["subject"];
+  }) => Uint8Array | undefined | Promise<Uint8Array | undefined>;
+}
+
 export interface ConsumeGovernanceInputV1Input {
   readonly bytes: Uint8Array;
   readonly root: string;
@@ -646,6 +676,7 @@ export interface ConsumeGovernanceInputV1Input {
     readonly adapter: ScanVerificationAdapterV1;
     readonly request: ScanVerificationRequestV1;
   };
+  readonly assessment?: AssessmentMaterialResolverV1;
 }
 
 export interface ConsumeGovernanceInputV1Result {
@@ -660,6 +691,13 @@ export interface ConsumeGovernanceInputV1Result {
    */
   readonly evidenceClaim?: "scan-attestation-v2" | "organization-assertion";
   readonly matchedPath?: string;
+  /**
+   * Which proof the binding stage ran, chosen up front from the saved subject
+   * and the supplied inputs. There is no fallback in either direction, and a
+   * refusal keeps the route it was refused on.
+   */
+  readonly bindingRoute?: "subject-content" | "assessment-material";
+  readonly assessmentBinding?: AssessmentMaterialBindingBoundV1;
   readonly authorityTransport?: "github-attestation" | "policy-file";
   readonly diagnostics: readonly GovernanceInputDiagnosticV1[];
 }
@@ -798,6 +836,8 @@ export async function consumeGovernanceInputV1(
   // organization scan evidence as a catalog selection removes nothing, because
   // the requirement is read from the evidence envelope itself.
   let binding: SubjectContentBindingV1 | undefined;
+  let assessmentBinding: AssessmentMaterialBindingBoundV1 | undefined;
+  let bindingRoute: "subject-content" | "assessment-material" | undefined;
   let verified: unknown;
   if (claimsScanEvidenceV1(envelope)) {
     if (input.scan === undefined) {
@@ -856,44 +896,111 @@ export async function consumeGovernanceInputV1(
         { subjectDigest },
       );
     }
-    binding = verifySubjectContentBindingV1({
-      source: document.subject.source,
-      seal: facts.seal,
-      expected: {
-        sourceTreeSha256: facts.subjectSha256,
-        selectedClosureSha256: facts.coverageSha256,
-      },
-    });
-    if (binding.status !== "bound") {
-      return refuse(
-        { ...base, binding: binding.status, reason: binding.reason },
-        [
-          diagnostic(
-            binding.reason,
-            "subject.source",
-            "the selected subject's source identity is not proven present in the scanned closure",
-          ),
-        ],
-        { subjectDigest },
-      );
-    }
-    if (
-      document.bindingClaim !== undefined &&
-      (document.bindingClaim.matchedPath !== binding.matchedPath ||
-        document.bindingClaim.selectedClosureSha256 !== binding.selectedClosureSha256 ||
-        document.bindingClaim.sourceTreeSha256 !== binding.sourceTreeSha256)
-    ) {
-      return refuse(
-        { ...base, binding: "mismatched", reason: "binding-claim-contradicted" },
-        [
-          diagnostic(
-            "binding-claim-contradicted",
-            "bindingClaim",
-            "the saved claim disagrees with the independently recomputed binding",
-          ),
-        ],
-        { subjectDigest },
-      );
+    const expected = {
+      sourceTreeSha256: facts.subjectSha256,
+      selectedClosureSha256: facts.coverageSha256,
+    };
+    // The route is chosen here, from the saved subject and the supplied inputs,
+    // never from `provenance.route` and never after a failure: the resolver runs
+    // only once verification produced a consistent seal, and neither route falls
+    // back to the other.
+    if (document.subject.source.type === "aih" && input.assessment !== undefined) {
+      bindingRoute = "assessment-material";
+      const routed = { subjectDigest, bindingRoute } as const;
+      const identityDigest = document.subject.source.revision;
+      let assessmentBytes: unknown;
+      try {
+        assessmentBytes = await input.assessment.readAssessment({
+          identityDigest,
+          subject: document.subject,
+        });
+      } catch {
+        assessmentBytes = undefined;
+      }
+      if (assessmentBytes === undefined) {
+        return refuse(
+          { ...base, binding: "unbound", reason: "assessment-unavailable" },
+          [
+            diagnostic(
+              "assessment-unavailable",
+              "assessment",
+              "the configured resolver did not return the published assessment artifact",
+            ),
+          ],
+          routed,
+        );
+      }
+      const material = verifyAssessmentMaterialBindingV1({
+        assessment: { bytes: assessmentBytes, identityDigest },
+        seal: facts.seal,
+        expected,
+      });
+      if (material.status !== "bound") {
+        return refuse(
+          { ...base, binding: material.status, reason: material.reason },
+          [
+            diagnostic(
+              material.reason,
+              "subject.source",
+              "the selected subject's published assessment is not proven to declare the scanned material",
+            ),
+          ],
+          routed,
+        );
+      }
+      if (document.bindingClaim !== undefined) {
+        return refuse(
+          { ...base, binding: "mismatched", reason: "binding-claim-contradicted" },
+          [
+            diagnostic(
+              "binding-claim-contradicted",
+              "bindingClaim",
+              "the saved claim asserts a selected-file match that this binding did not establish",
+            ),
+          ],
+          routed,
+        );
+      }
+      assessmentBinding = material;
+    } else {
+      bindingRoute = "subject-content";
+      const routed = { subjectDigest, bindingRoute } as const;
+      binding = verifySubjectContentBindingV1({
+        source: document.subject.source,
+        seal: facts.seal,
+        expected,
+      });
+      if (binding.status !== "bound") {
+        return refuse(
+          { ...base, binding: binding.status, reason: binding.reason },
+          [
+            diagnostic(
+              binding.reason,
+              "subject.source",
+              "the selected subject's source identity is not proven present in the scanned closure",
+            ),
+          ],
+          routed,
+        );
+      }
+      if (
+        document.bindingClaim !== undefined &&
+        (document.bindingClaim.matchedPath !== binding.matchedPath ||
+          document.bindingClaim.selectedClosureSha256 !== binding.selectedClosureSha256 ||
+          document.bindingClaim.sourceTreeSha256 !== binding.sourceTreeSha256)
+      ) {
+        return refuse(
+          { ...base, binding: "mismatched", reason: "binding-claim-contradicted" },
+          [
+            diagnostic(
+              "binding-claim-contradicted",
+              "bindingClaim",
+              "the saved claim disagrees with the independently recomputed binding",
+            ),
+          ],
+          routed,
+        );
+      }
     }
   }
   if (verified !== undefined && input.scan !== undefined) {
@@ -930,15 +1037,17 @@ export async function consumeGovernanceInputV1(
           subjectDigest,
           evidenceDigest,
           ...(binding?.status === "bound" ? { matchedPath: binding.matchedPath } : {}),
+          ...(bindingRoute === undefined ? {} : { bindingRoute }),
         },
       );
     }
   }
 
+  const bound = binding?.status === "bound" || assessmentBinding !== undefined;
   const evidenceBase = {
     structure: "valid" as const,
     evidence: "verified" as const,
-    binding: binding?.status === "bound" ? ("bound" as const) : ("not-evaluated" as const),
+    binding: bound ? ("bound" as const) : ("not-evaluated" as const),
     authority: "not-evaluated" as const,
     plan: "not-evaluated" as const,
   };
@@ -949,6 +1058,8 @@ export async function consumeGovernanceInputV1(
       ? ("scan-attestation-v2" as const)
       : ("organization-assertion" as const),
     ...(binding?.status === "bound" ? { matchedPath: binding.matchedPath } : {}),
+    ...(bindingRoute === undefined ? {} : { bindingRoute }),
+    ...(assessmentBinding === undefined ? {} : { assessmentBinding }),
   };
 
   // --- authority ------------------------------------------------------------
