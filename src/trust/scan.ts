@@ -17,6 +17,7 @@ import { defaultRunner, type Runner } from "../internals/proc.js";
 import type { Check } from "../internals/verify.js";
 import { evaluateMcpPolicy, mcpPolicyOptionsFromConfig } from "../mcp/policy.js";
 import type { McpServer } from "../mcp/servers.js";
+import type { ScanExecutionAdapterV1 } from "../org-policy/governance-input-v1.js";
 import { candidateIdentityDigest, stableJson } from "../org-policy/policy-identity.js";
 import { type OrgPolicy, OrgPolicyError, readOrgPolicy } from "../org-policy/schema.js";
 import type { Platform } from "../platform/base.js";
@@ -151,6 +152,13 @@ export interface ScanTrustTreeOptions {
   skillspectorImageApprovals?: readonly SkillSpectorImageApproval[];
   progress?: (message: string) => void;
   inventoryFactory?: (root: string, options?: TrustInventoryBuildOptions) => TrustFileInventory;
+  /**
+   * Scan's own detector execution, injected by the consumer exactly as the
+   * governance path injects Scan's verification. Only the detectors the
+   * adapter's capability list names are delegated; the rest keep Core's own
+   * execution, and with no adapter this scan behaves exactly as it does today.
+   */
+  scanExecution?: ScanExecutionAdapterV1;
 }
 
 export interface TrustScanResult {
@@ -541,6 +549,7 @@ function normalizeScanOptions(options: ScanTrustTreeOptions = {}): {
   skillspectorImageApprovals: readonly SkillSpectorImageApproval[];
   progress?: (message: string) => void;
   inventoryFactory: NonNullable<ScanTrustTreeOptions["inventoryFactory"]>;
+  scanExecution?: ScanExecutionAdapterV1;
 } {
   return {
     env: options.env,
@@ -556,6 +565,7 @@ function normalizeScanOptions(options: ScanTrustTreeOptions = {}): {
     skillspectorImageApprovals: options.skillspectorImageApprovals ?? [],
     progress: options.progress,
     inventoryFactory: options.inventoryFactory ?? buildTrustFileInventory,
+    scanExecution: options.scanExecution,
   };
 }
 
@@ -986,6 +996,7 @@ export async function scanTrustTreeWithAnalyzers(
     skillspectorImageApprovals,
     progress,
     inventoryFactory,
+    scanExecution,
   } = normalizeScanOptions(options);
   progress?.("trust scan: inventory started");
   const inventory = inventoryFactory(safeRoot, {
@@ -1039,6 +1050,7 @@ export async function scanTrustTreeWithAnalyzers(
         inventory,
         corroboratedChecks: checks,
         progress,
+        scanExecution,
       })
     : {
         checks: missingDetectorRuntimeChecks(requiredDetectors ?? [], posture),
@@ -1059,6 +1071,7 @@ export async function scanTrustTreeWithAnalyzers(
           inventory,
           corroboratedChecks: checks,
           progress,
+          scanExecution,
         })
       : { checks: [], analyzersRun: [], rawOccurrences: [] };
   const effectiveSandboxSmokeShape =

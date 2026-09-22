@@ -15,6 +15,7 @@ import type { Posture } from "../config/posture.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
 import type { Runner, RunResult } from "../internals/proc.js";
 import type { Check, CheckCode } from "../internals/verify.js";
+import type { ScanExecutionAdapterV1 } from "../org-policy/governance-input-v1.js";
 import type { Platform } from "../platform/base.js";
 import { MCP_CONFIG_FILES } from "../secrets/scan.js";
 import { execArgv } from "../tools/install.js";
@@ -106,6 +107,12 @@ export interface TrustDetectorOptions {
   detectors?: readonly TrustDetectorName[];
   /** Exact, coordinator-validated SARIF that replaces local execution for the named detector. */
   precomputedSarif?: Readonly<Partial<Record<TrustDetectorName, string>>>;
+  /**
+   * Scan's own detector execution, injected by the consumer. Only detectors the
+   * adapter's capability list names are delegated; every other detector keeps
+   * Core's execution, and with no adapter nothing about this module changes.
+   */
+  scanExecution?: ScanExecutionAdapterV1;
   /** Native AIH findings that can corroborate an elevated third-party rule on the same line. */
   corroboratedChecks?: readonly Check[];
   progress?: (message: string) => void;
@@ -2085,7 +2092,20 @@ function sarifChecks(
   return { checks, rawOccurrences };
 }
 
-function analyzerPassCheck(detector: TrustDetector, analyzersRun: readonly string[]): Check {
+function analyzerPassCheck(
+  detector: TrustDetector,
+  analyzersRun: readonly string[],
+  delegated = false,
+): Check {
+  // Never describe a mechanism Core did not use: a delegated run was executed
+  // by the injected adapter, whose profile Core cannot state on its behalf.
+  if (delegated) {
+    return {
+      name: `trust detector ${detector.name}`,
+      verdict: "pass",
+      detail: `${detector.analyzerLabel} static scan completed through the injected scan execution adapter; Core did not execute it. No findings != safe. Analyzers run: ${analyzersRun.join(", ")}`,
+    };
+  }
   if (detector.name === "skillspector") {
     return {
       name: "trust detector skillspector",
@@ -2126,6 +2146,104 @@ function isRequired(
   requiredDetectors: readonly TrustDetectorName[],
 ): boolean {
   return requiredDetectors.includes(detector);
+}
+
+// --------------------------------------------------------------------------
+// Delegated execution: only the detectors an injected adapter names
+// --------------------------------------------------------------------------
+
+type DelegatedDetectorResultV1 = { readonly sarif: string } | { readonly unavailable: string };
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+/** Adapter text reaches a report, so bound it and keep control characters out. */
+function adapterReason(value: string): string {
+  const visible = value.replace(/[\p{C}]/gu, " ").trim();
+  return visible.length > 300 ? `${visible.slice(0, 297)}...` : visible;
+}
+
+/**
+ * Whether the adapter claims this detector. Scan names its capabilities
+ * `detector.<name>`; a bare name is accepted for the same detector. A
+ * capability list Core cannot read names nothing, so nothing is delegated.
+ */
+function adapterNamesDetector(
+  adapter: ScanExecutionAdapterV1,
+  detector: TrustDetectorName,
+): boolean {
+  let capabilities: readonly unknown[];
+  try {
+    capabilities = adapter.listDetectorCapabilitiesV1();
+  } catch {
+    return false;
+  }
+  if (!Array.isArray(capabilities)) return false;
+  return capabilities.some((capability) => {
+    const id = asRecord(capability)?.detectorId;
+    return typeof id === "string" && (id === detector || id === `detector.${detector}`);
+  });
+}
+
+/**
+ * Core narrows the adapter's `unknown` result here and nowhere else. A refusal,
+ * a failure, a throw and an unrecognized shape are all the same verdict — the
+ * detector did not run — and each carries its own reason into the existing
+ * degraded-coverage path. None of them is ever a pass.
+ */
+function delegatedDetectorResult(result: unknown): DelegatedDetectorResultV1 {
+  const record = asRecord(result);
+  if (record === undefined) return { unavailable: "scan execution adapter returned no result" };
+  if (record.outcome === "succeeded") {
+    const sarif = record.sarif;
+    return typeof sarif === "string" && sarif.trim().length > 0
+      ? { sarif }
+      : { unavailable: "scan execution adapter reported success without SARIF" };
+  }
+  const failure = asRecord(record.failure);
+  const text = [record.detail, record.reason, failure?.detail, failure?.stage].find(
+    (value): value is string => typeof value === "string" && value.trim().length > 0,
+  );
+  if (record.outcome === "refused" || record.outcome === "failed") {
+    return {
+      unavailable:
+        text === undefined
+          ? `scan execution adapter ${record.outcome} without a reason`
+          : adapterReason(text),
+    };
+  }
+  return { unavailable: "scan execution adapter returned an unrecognized result" };
+}
+
+async function runDelegatedDetector(
+  adapter: ScanExecutionAdapterV1,
+  detector: TrustDetectorName,
+  root: string,
+  inventory: TrustFileInventory | undefined,
+): Promise<DelegatedDetectorResultV1> {
+  // Core states what it enumerated, never a narrowing it did not apply.
+  const selectedClosurePaths = inventory?.files.map((entry) => entry.relativePath);
+  try {
+    return delegatedDetectorResult(
+      await adapter.runDetectorV1({
+        detectorId: `detector.${detector}`,
+        subject: {
+          kind: "source-tree",
+          sourceRoot: root,
+          ...(selectedClosurePaths === undefined ? {} : { selectedClosurePaths }),
+        },
+      }),
+    );
+  } catch (error) {
+    return {
+      unavailable: adapterReason(
+        `scan execution adapter failed: ${(error as Error)?.message ?? "unknown error"}`,
+      ),
+    };
+  }
 }
 
 const SKILL_TRUST_DETECTORS: TrustDetector[] = [
@@ -2256,6 +2374,28 @@ async function runDetectorList(
   for (const detector of detectors) {
     options.progress?.(`trust scan: detector ${detector.name} started`);
     let sarifText = options.precomputedSarif?.[detector.name];
+    const adapter =
+      options.scanExecution !== undefined &&
+      adapterNamesDetector(options.scanExecution, detector.name)
+        ? options.scanExecution
+        : undefined;
+    let delegatedExecution = false;
+    if (sarifText === undefined && adapter !== undefined) {
+      const delegated = await runDelegatedDetector(adapter, detector.name, root, options.inventory);
+      if ("unavailable" in delegated) {
+        checks.push(
+          unavailableCheck(
+            detector.name,
+            delegated.unavailable,
+            options.posture,
+            isRequired(detector.name, required),
+          ),
+        );
+        continue;
+      }
+      sarifText = delegated.sarif;
+      delegatedExecution = true;
+    }
     if (sarifText === undefined) {
       const unavailable = await detector.checkAvailable(
         options.run,
@@ -2318,7 +2458,10 @@ async function runDetectorList(
     analyzersRun.push(detector.analyzerLabel);
     rawOccurrences.push(...mapped.rawOccurrences);
     const completedAnalyzers = ["aih-native", ...analyzersRun];
-    checks.push(analyzerPassCheck(detector, completedAnalyzers), ...mapped.checks);
+    checks.push(
+      analyzerPassCheck(detector, completedAnalyzers, delegatedExecution),
+      ...mapped.checks,
+    );
     options.progress?.(`trust scan: detector ${detector.name} complete`);
   }
 

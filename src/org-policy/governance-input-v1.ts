@@ -689,6 +689,25 @@ export interface ScanVerificationAdapterV1 {
 }
 
 /**
+ * Scan's public detector execution, injected by the consumer on the same terms:
+ * Core never imports Scan, and it states only that it passes `unknown`.
+ *
+ * `listDetectorCapabilitiesV1` names which detectors this adapter owns; only
+ * those are delegated, and every other detector keeps Core's own execution.
+ * `runDetectorV1` returns its refusals and failures as VALUES, never as throws,
+ * and Core treats an unrecognized result, a throw and a refusal alike: the
+ * detector is unavailable, with the adapter's own reason text, never a pass.
+ *
+ * Core narrows the result at this seam to exactly three fields: `outcome`, the
+ * SARIF text of a `succeeded` run (`sarif`), and the human reason of anything
+ * else (`reason` or `detail`).
+ */
+export interface ScanExecutionAdapterV1 {
+  readonly listDetectorCapabilitiesV1: () => readonly unknown[];
+  readonly runDetectorV1: (request: unknown) => Promise<unknown>;
+}
+
+/**
  * The original attestation, its required supporting artifacts, and explicitly
  * configured trust and verification inputs. Trust never comes from the imported
  * file alone: `roots` and `expected` are supplied by the consumer's own

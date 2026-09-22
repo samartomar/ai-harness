@@ -65,6 +65,7 @@ export {
   type QualificationAttestationVerifierV1,
   type QualificationMaterialResolverV1,
   SCAN_ATTESTATION_EVIDENCE_KIND_V1,
+  type ScanExecutionAdapterV1,
   type ScanVerificationAdapterV1,
   type ScanVerificationRequestV1,
   type SubjectContentBindingRefusalV1,
