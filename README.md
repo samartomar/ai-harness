@@ -874,6 +874,41 @@ it is not the raw file SHA-256. Parsing and hashing do not verify a Scan signatu
 establish organization authority, approve an item, or authorize an effect. Core's
 evidence and authority checks still apply when the policy is consumed.
 
+The formats Core reads and writes across a package boundary, and the exact refusal each
+produces for a version it does not know, are listed in
+[CONTRACTS.md](https://github.com/samartomar/ai-harness/blob/main/CONTRACTS.md).
+
+## Node-only interfaces
+
+Every JavaScript entry of `@aihq/core` is Node-only. The package root is a single
+bundle, so importing any export, even a pure digest function, loads code that reaches
+`node:child_process`, `node:http`, `node:fs` and `node:crypto`. There is no browser build
+and none is planned. The only runtime-neutral subpaths are data: the JSON schemas under
+`@aihq/core/schemas/*.json` and `@aihq/core/package.json`.
+
+Consuming the public types requires `@types/node` in the consumer: Core's declarations
+name `Buffer`, `NodeJS.ProcessEnv` and `node:fs` types. It is a documented prerequisite,
+not a declared dependency.
+
+A user interface that needs Core runs it in a Node process and talks to that process;
+the page itself never imports `@aihq/core`.
+
+Two runnable scripts show both governance input routes using only the package name:
+[examples/catalog-route.mjs](https://github.com/samartomar/ai-harness/blob/main/examples/catalog-route.mjs)
+selects a catalog item, prepares a governance input, saves its bytes and consumes them in
+a fresh process;
+[examples/organization-route.mjs](https://github.com/samartomar/ai-harness/blob/main/examples/organization-route.mjs)
+does the same from operator-supplied subject, evidence and authority. Without your own
+inputs they use a fictional organization and fail closed at `authority-unverified`; a
+fictional organization's authority is never production approval. They are not part of
+the published package: run them from a clone after `npm run build`, or copy them into a
+project that has `@aihq/core` installed.
+
+```bash
+node examples/organization-route.mjs --out ./route-example
+node examples/catalog-route.mjs --out ./catalog-example --index path/to/catalog-index.json
+```
+
 ## Development
 
 ```bash
