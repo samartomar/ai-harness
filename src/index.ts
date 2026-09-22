@@ -39,6 +39,7 @@ export {
   PolicyAuthorityReceiptV3Schema,
 } from "./org-policy/authority-v3.js";
 export * from "./org-policy/bundle.js";
+export type { CatalogQualificationPublisherV1 } from "./org-policy/catalog-qualification-attestation-v1.js";
 export * from "./org-policy/governance-decision-v2.js";
 export {
   type AssessmentMaterialResolverV1,
@@ -61,6 +62,8 @@ export {
   type PrepareGovernanceInputV1Result,
   parseGovernanceInputV1Bytes,
   prepareGovernanceInputV1,
+  type QualificationAttestationVerifierV1,
+  type QualificationMaterialResolverV1,
   SCAN_ATTESTATION_EVIDENCE_KIND_V1,
   type ScanVerificationAdapterV1,
   type ScanVerificationRequestV1,
@@ -79,13 +82,17 @@ export {
 export {
   AIH_SUPPORTED_QUALIFICATION_RECEIPT_PATH,
   type AihSupportedQualificationArtifactVerificationV2,
+  type AihSupportedQualificationReceiptBytesRefusalV2,
+  type AihSupportedQualificationReceiptBytesVerificationV2,
   type AihSupportedQualificationReceiptV2,
   AihSupportedQualificationReceiptV2Schema,
   canonicalAihSupportedQualificationReceiptV2,
   MAX_AIH_SUPPORTED_QUALIFICATION_RECEIPT_BYTES_V2,
   parseAihSupportedQualificationReceiptV2Bytes,
   type VerifyAihSupportedQualificationArtifactV2Input,
+  type VerifyAihSupportedQualificationReceiptBytesV2Input,
   verifyAihSupportedQualificationArtifactV2,
+  verifyAihSupportedQualificationReceiptBytesV2,
 } from "./org-policy/supported-qualification-receipt-v2.js";
 export {
   canonicalUpstreamArtifactManifestV1,

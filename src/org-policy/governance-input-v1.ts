@@ -29,6 +29,10 @@ import {
   verifiedPolicyAuthoritySourceCustodyV1,
   verifyPolicyAuthorityReceipt,
 } from "./authority.js";
+import {
+  type CatalogQualificationPublisherV1,
+  catalogQualificationAttestationMatchesV1,
+} from "./catalog-qualification-attestation-v1.js";
 import { custodyOrganizationEvidenceV1 } from "./evidence-custody-v1.js";
 import {
   type GovernanceDecisionSourceV2,
@@ -39,10 +43,17 @@ import {
   governanceDecisionSubjectDigestV2,
 } from "./governance-decision-v2.js";
 import {
+  matchesAihSupportedQualificationBindingV1,
+  mintAihSupportedQualificationV1,
   organizationEvidenceEnvelopeDigestV1,
   parseOrganizationEvidenceEnvelopeV1Bytes,
+  type VerifiedQualificationV1,
   verifyOrganizationQualificationV1,
 } from "./qualification-v1.js";
+import {
+  type AihSupportedQualificationReceiptBytesRefusalV2,
+  verifyAihSupportedQualificationReceiptBytesV2,
+} from "./supported-qualification-receipt-v2.js";
 import {
   MAX_UPSTREAM_ARTIFACT_MANIFEST_BYTES_V1,
   parseUpstreamArtifactManifestV1Bytes,
@@ -144,6 +155,13 @@ export type GovernanceInputRefusalV1 =
   | "decision-not-current"
   | "decision-scope-mismatch"
   | "qualification-unverified"
+  // authority: the publisher receipt route, distinct from the organization's own
+  | "qualification-route-mismatch"
+  | "qualification-receipt-unavailable"
+  | "qualification-receipt-malformed"
+  | "qualification-receipt-subject-mismatch"
+  | "qualification-receipt-not-current"
+  | "qualification-attestation-unverified"
   | "observation-missing"
   // observation: the sealed closure installed at exact paths, read and nothing more
   | "observation-manifest-unavailable"
@@ -703,6 +721,43 @@ export interface AssessmentMaterialResolverV1 {
   }) => Uint8Array | undefined | Promise<Uint8Array | undefined>;
 }
 
+/**
+ * How the application loads the publisher's qualification receipt for a
+ * subject. It returns receipt BYTES and nothing else: Core parses them with its
+ * own canonical parser, requires them to describe the saved subject, and never
+ * accepts a verdict, a statement or a basis from the resolver.
+ */
+export interface QualificationMaterialResolverV1 {
+  readonly readQualification: (request: {
+    /** The saved `provenance.catalogEntryId`, when the document carries one. */
+    readonly entryId?: string;
+    readonly subject: GovernanceInputV1["subject"];
+  }) => Uint8Array | undefined | Promise<Uint8Array | undefined>;
+}
+
+/**
+ * Who performs the cryptographic verification of the outer attestation over the
+ * exact receipt bytes, injected exactly as Scan's verification functions are.
+ * Core never runs `gh`, never fetches and never reads an environment variable
+ * for this: the application verifies (in a backend, with `gh attestation
+ * verify`, a Sigstore library, or its own transparency-log client) and returns
+ * the VERIFIED statement, as JSON text or as the decoded value.
+ *
+ * Only what this function returns is matched. A statement handed to Core by any
+ * other route — a resolver, the saved document, the receipt itself — is never
+ * accepted, so injecting a verifier that ignores its input and returns a
+ * statement it did not verify lowers that application's own trust, not Core's
+ * matching.
+ */
+export interface QualificationAttestationVerifierV1 {
+  readonly verifyReceiptAttestation: (request: {
+    readonly receiptBytes: Uint8Array;
+    /** Bare lowercase hex sha-256 of `receiptBytes`, as the attestation names them. */
+    readonly receiptSha256: string;
+    readonly publisher: CatalogQualificationPublisherV1;
+  }) => unknown | Promise<unknown>;
+}
+
 export interface ConsumeGovernanceInputV1Input {
   readonly bytes: Uint8Array;
   readonly root: string;
@@ -713,6 +768,21 @@ export interface ConsumeGovernanceInputV1Input {
     readonly request: ScanVerificationRequestV1;
   };
   readonly assessment?: AssessmentMaterialResolverV1;
+  /**
+   * How this application reaches an `aih-supported` qualification: the receipt
+   * bytes, the verifier that proves the outer attestation over exactly those
+   * bytes, and the operator's own publisher pin. `publisher` is trust
+   * configuration an organization decides for itself; there is no default, and
+   * absence of this input means the aih-supported route is simply not selected.
+   *
+   * A publisher receipt is never organization admission on its own: the
+   * organization's authorized decision stays mandatory on this route.
+   */
+  readonly qualification?: {
+    readonly resolver: QualificationMaterialResolverV1;
+    readonly attestation: QualificationAttestationVerifierV1;
+    readonly publisher: CatalogQualificationPublisherV1;
+  };
   /**
    * Observe that the scanned closure is installed at exact paths under one
    * explicitly named root. Supplying it reads the named manifest and the files
@@ -745,6 +815,14 @@ export interface ConsumeGovernanceInputV1Result {
    * refusal keeps the route it was refused on.
    */
   readonly bindingRoute?: "subject-content" | "assessment-material";
+  /**
+   * Which qualification the plan stage required, chosen up front from the
+   * authorized decision's own basis. The two are never collapsed:
+   * `organization-qualified` reads the organization's evidence envelope,
+   * `aih-supported` a publisher receipt whose outer attestation the
+   * application's injected verifier proved.
+   */
+  readonly qualificationRoute?: "organization-qualified" | "aih-supported";
   readonly assessmentBinding?: AssessmentMaterialBindingBoundV1;
   readonly authorityTransport?: "github-attestation" | "policy-file";
   /**
@@ -817,6 +895,146 @@ function planContext(root: string, env: NodeJS.ProcessEnv): PlanContext {
     env,
     options: {},
   };
+}
+
+// --------------------------------------------------------------------------
+// Qualification: the publisher receipt route
+// --------------------------------------------------------------------------
+
+type QualificationStageResultV1 =
+  | { readonly qualification: VerifiedQualificationV1 }
+  | { readonly refused: GovernanceInputRefusalV1; readonly detail: string };
+
+const RECEIPT_BYTES_REFUSAL_V1 = {
+  "receipt-malformed": "qualification-receipt-malformed",
+  "receipt-subject-mismatch": "qualification-receipt-subject-mismatch",
+  "receipt-not-current": "qualification-receipt-not-current",
+} as const satisfies Record<
+  AihSupportedQualificationReceiptBytesRefusalV2,
+  GovernanceInputRefusalV1
+>;
+
+const RECEIPT_BYTES_DETAIL_V1 = {
+  "receipt-malformed": "the resolved bytes are not one canonical V2 qualification receipt",
+  "receipt-subject-mismatch": "the resolved receipt describes a different subject",
+  "receipt-not-current": "the resolved receipt is outside its own validity window",
+} as const satisfies Record<AihSupportedQualificationReceiptBytesRefusalV2, string>;
+
+/** The injected verifier may return the statement as JSON text or as a value. */
+function attestationStatementTextV1(statement: unknown): string | undefined {
+  if (typeof statement === "string") return statement;
+  if (statement === undefined || statement === null) return undefined;
+  try {
+    const text = JSON.stringify(statement);
+    return typeof text === "string" ? text : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Receipt bytes, the injected verifier's statement, and the organization's own
+ * decision — in that order, with no fallback and no step skipped. Core matches
+ * only the statement the verifier returned, and the mint still requires the
+ * authorized decision to carry this receipt's subject and basis verbatim.
+ */
+async function consumeAihSupportedQualificationV1(input: {
+  readonly authority: VerifiedPolicyAuthority;
+  readonly decision: GovernanceDecisionV2;
+  readonly document: GovernanceInputV1;
+  readonly now: string;
+  readonly qualification: NonNullable<ConsumeGovernanceInputV1Input["qualification"]>;
+}): Promise<QualificationStageResultV1> {
+  const entryId = input.document.provenance.catalogEntryId;
+  let material: unknown;
+  try {
+    material = await input.qualification.resolver.readQualification({
+      ...(entryId === undefined ? {} : { entryId }),
+      subject: input.document.subject,
+    });
+  } catch {
+    material = undefined;
+  }
+  if (material === undefined) {
+    return {
+      refused: "qualification-receipt-unavailable",
+      detail: "the configured resolver did not return the published qualification receipt",
+    };
+  }
+  if (!(material instanceof Uint8Array)) {
+    return {
+      refused: "qualification-receipt-malformed",
+      detail: "the configured resolver returned something other than receipt bytes",
+    };
+  }
+  const receipt = verifyAihSupportedQualificationReceiptBytesV2({
+    bytes: material,
+    now: input.now,
+    subjectDigest: input.document.subject.subjectDigest,
+  });
+  if (receipt.state !== "verified") {
+    return {
+      refused: RECEIPT_BYTES_REFUSAL_V1[receipt.reason],
+      detail: RECEIPT_BYTES_DETAIL_V1[receipt.reason],
+    };
+  }
+  let statement: unknown;
+  try {
+    statement = await input.qualification.attestation.verifyReceiptAttestation({
+      receiptBytes: material,
+      receiptSha256: receipt.receiptSha256,
+      publisher: input.qualification.publisher,
+    });
+  } catch {
+    statement = undefined;
+  }
+  const output = attestationStatementTextV1(statement);
+  if (
+    output === undefined ||
+    catalogQualificationAttestationMatchesV1(
+      output,
+      input.qualification.publisher,
+      material,
+      Date.parse(input.now),
+    ) === undefined
+  ) {
+    return {
+      refused: "qualification-attestation-unverified",
+      detail:
+        "the injected verifier returned no statement naming the configured publisher and these exact receipt bytes",
+    };
+  }
+  if (
+    !matchesAihSupportedQualificationBindingV1({
+      decision: input.decision,
+      now: input.now,
+      receipt: receipt.receipt,
+    })
+  ) {
+    return {
+      refused: "qualification-unverified",
+      detail: "the authorized decision does not carry this receipt's subject and basis",
+    };
+  }
+  const qualification = mintAihSupportedQualificationV1({
+    authority: input.authority,
+    decisionReference: {
+      id: input.document.decisionReference.id,
+      digest: input.document.decisionReference.digest,
+    },
+    effect: input.document.request.effect,
+    now: input.now,
+    receipt: receipt.receipt,
+    subject: input.document.subject,
+    supportedTargets: SUPPORTED_CLIS,
+    target: input.document.request.target,
+  });
+  return qualification === undefined
+    ? {
+        refused: "qualification-unverified",
+        detail: "receipt and decision did not mint a current qualification",
+      }
+    : { qualification };
 }
 
 // --------------------------------------------------------------------------
@@ -1508,19 +1726,70 @@ export async function consumeGovernanceInputV1(
   }
 
   const now = input.now ?? new Date().toISOString();
-  const qualification = verifyOrganizationQualificationV1({
-    authority: authority.authority,
-    bytes: custody.evidence.bytes,
-    decisionReference: {
-      id: document.decisionReference.id,
-      digest: document.decisionReference.digest,
-    },
-    effect: document.request.effect,
-    now,
-    subject: decision.subject,
-    supportedTargets: SUPPORTED_CLIS,
-    target: document.request.target,
-  });
+  // The qualification route is chosen here, from the basis the organization
+  // itself authorized — never from the caller's inputs and never from the saved
+  // document. A decision of one kind offered the other kind's inputs is refused
+  // rather than routed, and neither route falls back to the other.
+  const qualificationRoute =
+    decision.qualificationBasis.kind === "aih-supported"
+      ? ("aih-supported" as const)
+      : ("organization-qualified" as const);
+  const routed = { ...withAuthority, qualificationRoute };
+  if ((qualificationRoute === "aih-supported") !== (input.qualification !== undefined)) {
+    return refuse(
+      {
+        ...evidenceBase,
+        authority: "verified",
+        plan: "refused",
+        reason: "qualification-route-mismatch",
+      },
+      [
+        diagnostic(
+          "qualification-route-mismatch",
+          "qualification",
+          "the authorized decision's qualification basis and the supplied qualification inputs name different routes",
+        ),
+      ],
+      routed,
+    );
+  }
+  let qualification: VerifiedQualificationV1 | undefined;
+  if (input.qualification !== undefined) {
+    const supported = await consumeAihSupportedQualificationV1({
+      authority: authority.authority,
+      decision,
+      document,
+      now,
+      qualification: input.qualification,
+    });
+    if ("refused" in supported) {
+      return refuse(
+        {
+          ...evidenceBase,
+          authority: "verified",
+          plan: "refused",
+          reason: supported.refused,
+        },
+        [diagnostic(supported.refused, "qualification", supported.detail)],
+        routed,
+      );
+    }
+    qualification = supported.qualification;
+  } else {
+    qualification = verifyOrganizationQualificationV1({
+      authority: authority.authority,
+      bytes: custody.evidence.bytes,
+      decisionReference: {
+        id: document.decisionReference.id,
+        digest: document.decisionReference.digest,
+      },
+      effect: document.request.effect,
+      now,
+      subject: decision.subject,
+      supportedTargets: SUPPORTED_CLIS,
+      target: document.request.target,
+    });
+  }
   if (qualification === undefined) {
     return refuse(
       {
@@ -1536,7 +1805,7 @@ export async function consumeGovernanceInputV1(
           "evidence and decision did not mint a current qualification",
         ),
       ],
-      withAuthority,
+      routed,
     );
   }
 
@@ -1572,7 +1841,7 @@ export async function consumeGovernanceInputV1(
     return refuse(
       { ...evidenceBase, authority: "verified", plan: "refused", reason },
       [diagnostic(reason, "plan", "effect resolution refused")],
-      withAuthority,
+      routed,
     );
   }
 
@@ -1592,7 +1861,7 @@ export async function consumeGovernanceInputV1(
         reason: "observation-missing",
       },
       diagnostics: [],
-      ...withAuthority,
+      ...routed,
     };
   }
 
@@ -1619,13 +1888,13 @@ export async function consumeGovernanceInputV1(
         reason: observation.refused,
       },
       diagnostics: [diagnostic(observation.refused, "observation", observation.detail)],
-      ...withAuthority,
+      ...routed,
     };
   }
   return {
     status: { ...prepared, execution: "observed", outcome: "observed" },
     diagnostics: [],
-    ...withAuthority,
+    ...routed,
     observation: observation.observed,
   };
 }
