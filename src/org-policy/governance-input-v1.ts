@@ -608,7 +608,13 @@ export function prepareGovernanceInputV1(
   const envelope = parseOrganizationEvidenceEnvelopeV1Bytes(input.evidenceBytes);
   if (envelope === undefined) {
     diagnostics.push(
-      diagnostic("malformed-bytes", "evidenceBytes", "evidence is not a canonical V1 envelope"),
+      declaresContractV1(input.evidenceBytes, ORGANIZATION_EVIDENCE_ENVELOPE_V1_FORMAT, 1) === false
+        ? diagnostic(
+            "unknown-contract-version",
+            "evidenceBytes",
+            "evidence declares an organization evidence format or version other than v1",
+          )
+        : diagnostic("malformed-bytes", "evidenceBytes", "evidence is not a canonical V1 envelope"),
     );
     return invalidPrepare(diagnostics);
   }

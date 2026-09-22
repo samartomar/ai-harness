@@ -688,6 +688,22 @@ describe("contract versions Core refuses by name", () => {
     }
   });
 
+  it("refuses to prepare from an evidence envelope of another version", () => {
+    const canonical = Buffer.from(evidenceBytes).toString("utf8");
+    const prepare = (text: string) =>
+      prepareGovernanceInputV1({
+        route: "organization",
+        subject: { kind: "agent", id: "governance-quality", source },
+        request: { target: "claude", effect: "observe" },
+        decisionReference: { id: "decision-x", digest: `sha256:${"1".repeat(64)}` },
+        evidenceBytes: Buffer.from(text, "utf8"),
+      });
+    const unknown = prepare(canonical.replace('"version":1', '"version":2'));
+    expect(unknown.status.reason).toBe("unknown-contract-version");
+    expect(unknown.artifacts).toBeUndefined();
+    expect(prepare("{").status.reason).toBe("malformed-bytes");
+  });
+
   it("keeps malformed evidence bytes that declare v1 as malformed", async () => {
     const canonical = Buffer.from(evidenceBytes).toString("utf8");
     for (const text of [
