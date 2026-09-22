@@ -619,12 +619,20 @@ describe("consume-level observation", () => {
         }),
       ]);
     }
-    // A manifest that declares v1 but breaks it keeps its existing code.
-    const broken = await consume({ manifestBytes: Buffer.from("{", "utf8") });
-    expect(broken.status.reason).toBe("observation-manifest-mismatch");
-    expect(broken.diagnostics).toEqual([
-      expect.objectContaining({ code: "observation-manifest-mismatch", field: "observation" }),
-    ]);
+    // Deliberately, decoded JSON that declares no manifest contract is another contract.
+    for (const text of ["{}", "[]", "null"]) {
+      const other = await consume({ manifestBytes: Buffer.from(text, "utf8") });
+      expect(other.status.reason, text).toBe("unknown-contract-version");
+    }
+    // Bytes that are not JSON, and a v1 manifest that breaks v1, keep the existing code.
+    const noncanonical = JSON.stringify(JSON.parse(canonical), null, 2);
+    for (const text of ["{", noncanonical]) {
+      const broken = await consume({ manifestBytes: Buffer.from(text, "utf8") });
+      expect(broken.status.reason).toBe("observation-manifest-mismatch");
+      expect(broken.diagnostics).toEqual([
+        expect.objectContaining({ code: "observation-manifest-mismatch", field: "observation" }),
+      ]);
+    }
   });
 
   it("refuses a manifest issued for another decision", async () => {

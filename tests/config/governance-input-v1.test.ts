@@ -704,14 +704,18 @@ describe("contract versions Core refuses by name", () => {
     expect(prepare("{").status.reason).toBe("malformed-bytes");
   });
 
-  it("keeps malformed evidence bytes that declare v1 as malformed", async () => {
+  it("treats JSON that declares no organization evidence contract as an unknown contract", async () => {
+    // Deliberate, and the same two-step the saved document uses: decoded JSON that
+    // does not declare this format and version is another contract, not a broken v1.
+    for (const text of ["{}", "[]", "null", '"aih-organization-evidence"']) {
+      const result = await consumeWithEvidence(Buffer.from(text, "utf8"));
+      expect(result.status.reason, text).toBe("unknown-contract-version");
+    }
+  });
+
+  it("keeps bytes that are not JSON, and v1 bytes that break v1, as malformed", async () => {
     const canonical = Buffer.from(evidenceBytes).toString("utf8");
-    for (const text of [
-      "{",
-      `${canonical}
-`,
-      JSON.stringify(JSON.parse(canonical), null, 2),
-    ]) {
+    for (const text of ["{", `${canonical}\n`, JSON.stringify(JSON.parse(canonical), null, 2)]) {
       const result = await consumeWithEvidence(Buffer.from(text, "utf8"));
       expect(result.status.reason).toBe("malformed-bytes");
     }
