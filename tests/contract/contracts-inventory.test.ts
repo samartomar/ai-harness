@@ -16,6 +16,13 @@ import {
   UPSTREAM_ARTIFACT_MANIFEST_V1_FORMAT,
   UPSTREAM_OBSERVATION_RECEIPT_V1_FORMAT,
 } from "../../src/index.js";
+import {
+  COMBINATIONS,
+  COMPATIBILITY_FORMAT,
+  COMPATIBILITY_VERSION,
+  CONTRACT_CHECK_IDS,
+  READER_REQUIRED_CHECKS,
+} from "../../tools/sibling-compatibility-checks.mjs";
 
 /**
  * CONTRACTS.md is prose, and prose drifts. Every `file:line` it cites is pinned
@@ -258,10 +265,40 @@ describe("CONTRACTS.md inventory", () => {
     const named = new Set(
       [...contracts.matchAll(/`([a-z]+(?:-[a-z0-9]+)+)`/gu)]
         .map((match) => match[1] as string)
-        .filter((token) => union.has(token) || /(?:unknown|malformed|unverified)/u.test(token)),
+        .filter((token) => union.has(token) || /(?:unknown|malformed|unverified)/u.test(token))
+        // Compatibility check ids name what a check probes; they are not refusal codes.
+        .filter((token) => !(CONTRACT_CHECK_IDS as readonly string[]).includes(token)),
     );
     expect(named.size).toBeGreaterThan(10);
     for (const code of named) expect(union, code).toContain(code);
+  });
+
+  it("records the sibling compatibility artifact and each reader's required checks", () => {
+    const section = contracts.slice(
+      contracts.indexOf("## Compatibility evidence for sibling promotion"),
+      contracts.indexOf("## Changing a contract here"),
+    );
+    expect(section.length).toBeGreaterThan(0);
+    expect(COMPATIBILITY_FORMAT).toBe("core-sibling-compatibility");
+    expect(COMPATIBILITY_VERSION).toBe(2);
+    expect(section).toContain('`format: "core-sibling-compatibility"`, `version: 2`');
+    expect(section).toContain("`compatibility/core-sibling-compatibility.json`");
+    for (const id of COMBINATIONS) expect(section, id).toContain(`\`${id}\``);
+    // The producer's checks, every id, in the producer's order.
+    const produced = /Producer checks, in order: (.+)\./u.exec(section)?.[1] ?? "";
+    expect([...produced.matchAll(/`([a-z0-9-]+)`/gu)].map((match) => match[1])).toEqual([
+      ...CONTRACT_CHECK_IDS,
+    ]);
+    // One row per reader: its package, its combination, and exactly its required list.
+    for (const [name, required] of Object.entries(READER_REQUIRED_CHECKS)) {
+      const row = section.split("\n").find((line) => line.startsWith(`| \`${name}\` |`));
+      expect(row, name).toBeDefined();
+      const cells = (row ?? "").split("|").map((cell) => cell.trim());
+      expect(cells[2]).toBe(`\`${name.replace("@aihq/", "")}-candidate\``);
+      expect([...(cells[3] ?? "").matchAll(/`([a-z0-9-]+)`/gu)].map((match) => match[1])).toEqual([
+        ...required,
+      ]);
+    }
   });
 
   it("keeps every refusal code produced somewhere, except the one never wired", () => {
