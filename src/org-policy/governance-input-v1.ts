@@ -24,7 +24,11 @@ import {
   type AssessmentMaterialBindingBoundV1,
   verifyAssessmentMaterialBindingV1,
 } from "./assessment-material-binding-v1.js";
-import { verifyPolicyAuthorityReceipt } from "./authority.js";
+import {
+  type VerifiedPolicyAuthority,
+  verifiedPolicyAuthoritySourceCustodyV1,
+  verifyPolicyAuthorityReceipt,
+} from "./authority.js";
 import { custodyOrganizationEvidenceV1 } from "./evidence-custody-v1.js";
 import {
   type GovernanceDecisionSourceV2,
@@ -39,7 +43,24 @@ import {
   parseOrganizationEvidenceEnvelopeV1Bytes,
   verifyOrganizationQualificationV1,
 } from "./qualification-v1.js";
+import {
+  MAX_UPSTREAM_ARTIFACT_MANIFEST_BYTES_V1,
+  parseUpstreamArtifactManifestV1Bytes,
+  type UpstreamArtifactManifestV1,
+} from "./upstream-artifact-manifest-v1.js";
 import { resolveObservedEffect } from "./upstream-observation-receipt-v1.js";
+import {
+  type CustodiedObservedFileV1,
+  custodyObservedFileV1,
+  isBoundedObservationInstallRootV1,
+  isCanonicalUpstreamArtifactRequestPathV1,
+  MAX_OBSERVED_FILE_BYTES_V1,
+  MAX_OBSERVED_TOTAL_BYTES_V1,
+  mintUpstreamObservationReceiptV1,
+  observedPathSetMatchesV1,
+  requiredObservedPathsV1,
+  UPSTREAM_ARTIFACT_OBSERVER_V1,
+} from "./upstream-observed-files-v1.js";
 
 export const GOVERNANCE_INPUT_V1_FORMAT = "aih-governance-input";
 /** Bound the portable document before decoding hostile input. */
@@ -123,7 +144,19 @@ export type GovernanceInputRefusalV1 =
   | "decision-not-current"
   | "decision-scope-mismatch"
   | "qualification-unverified"
-  | "observation-missing";
+  | "observation-missing"
+  // observation: the sealed closure installed at exact paths, read and nothing more
+  | "observation-manifest-unavailable"
+  | "observation-manifest-unsafe"
+  | "observation-manifest-mismatch"
+  | "observation-mapping-invalid"
+  | "observation-path-mismatch"
+  | "observation-outside-sealed-closure"
+  | "observed-file-unavailable"
+  | "observed-file-unsafe"
+  | "observed-file-mismatch"
+  | "observed-file-changed"
+  | "observation-not-effective";
 
 /**
  * Five independent axes. `structure`, `evidence`, `binding`, `authority`, `plan`
@@ -137,9 +170,12 @@ export interface GovernanceInputStatusV1 {
   readonly binding: "bound" | "claimed" | "mismatched" | "unbound" | "not-evaluated";
   readonly authority: "verified" | "unverified" | "not-evaluated";
   readonly plan: "prepared" | "refused" | "not-evaluated";
-  /** v1 never executes an effect. */
-  readonly execution: "not-attempted";
-  readonly outcome: "prepared" | "partial" | "refused";
+  /**
+   * v1 never executes an effect. `observed` states only that exact sealed bytes
+   * were read at exact paths: never that anything was installed, applied or run.
+   */
+  readonly execution: "not-attempted" | "observed" | "refused";
+  readonly outcome: "prepared" | "partial" | "refused" | "observed";
   readonly reason?: GovernanceInputRefusalV1;
 }
 
@@ -677,6 +713,18 @@ export interface ConsumeGovernanceInputV1Input {
     readonly request: ScanVerificationRequestV1;
   };
   readonly assessment?: AssessmentMaterialResolverV1;
+  /**
+   * Observe that the scanned closure is installed at exact paths under one
+   * explicitly named root. Supplying it reads the named manifest and the files
+   * that manifest declares, and nothing else: consumption never installs,
+   * applies or executes anything, and never writes anywhere.
+   */
+  readonly observation?: {
+    /** Root-relative bounded path of an aih-upstream-artifact-manifest v1 file. */
+    readonly manifestPath: string;
+    /** Root-relative bounded DIRECTORY: every sealed path p must be at `${installRoot}/${p}`. */
+    readonly installRoot: string;
+  };
 }
 
 export interface ConsumeGovernanceInputV1Result {
@@ -699,6 +747,25 @@ export interface ConsumeGovernanceInputV1Result {
   readonly bindingRoute?: "subject-content" | "assessment-material";
   readonly assessmentBinding?: AssessmentMaterialBindingBoundV1;
   readonly authorityTransport?: "github-attestation" | "policy-file";
+  /**
+   * What was read, where. Present only for an effective observation, and never
+   * a claim that anything was installed, applied or executed: item coverage
+   * stays the separate verdict `assessmentBinding.itemCoverage` reports.
+   */
+  readonly observation?: {
+    /** `upstreamObservationReceiptDigestV1` of the receipt this observation minted. */
+    readonly observationDigest: string;
+    readonly observedAt: string;
+    readonly validUntil: string;
+    readonly installRoot: string;
+    readonly files: readonly {
+      readonly sealedPath: string;
+      readonly observedPath: string;
+      /** The sealed record's bare digest, matched byte for byte on disk. */
+      readonly sha256: string;
+      readonly byteLength: number;
+    }[];
+  };
   readonly diagnostics: readonly GovernanceInputDiagnosticV1[];
 }
 
@@ -749,6 +816,300 @@ function planContext(root: string, env: NodeJS.ProcessEnv): PlanContext {
     host: makeHostAdapter({ run, env }),
     env,
     options: {},
+  };
+}
+
+// --------------------------------------------------------------------------
+// Observation: the sealed closure, installed at exact paths
+// --------------------------------------------------------------------------
+
+type SealedClosureV1 = z.infer<typeof sealSchema>;
+
+type ObservationStageResultV1 =
+  | { readonly observed: NonNullable<ConsumeGovernanceInputV1Result["observation"]> }
+  | { readonly refused: GovernanceInputRefusalV1; readonly detail: string };
+
+function refusedObservation(
+  refused: GovernanceInputRefusalV1,
+  detail: string,
+): ObservationStageResultV1 {
+  return { refused, detail };
+}
+
+/** An installation mapping may never swallow the manifest or the evidence file. */
+function mappingIsSeparate(installRoot: string, reserved: readonly string[]): boolean {
+  const root = installRoot.toLowerCase();
+  return reserved.every((value) => {
+    const path = value.toLowerCase();
+    return path !== root && !path.startsWith(`${root}/`) && !root.startsWith(`${path}/`);
+  });
+}
+
+/** The manifest must name the saved decision, subject, target and effect exactly. */
+function manifestDeclaresDecisionV1(
+  manifest: UpstreamArtifactManifestV1,
+  document: GovernanceInputV1,
+  decision: GovernanceDecisionV2,
+): boolean {
+  return (
+    manifest.decisionId === document.decisionReference.id &&
+    manifest.subject.kind === document.subject.kind &&
+    manifest.subject.id === document.subject.id &&
+    manifest.subject.sourceDigest === document.subject.sourceDigest &&
+    manifest.subject.subjectDigest === document.subject.subjectDigest &&
+    manifest.subject.kind === decision.subject.kind &&
+    manifest.subject.id === decision.subject.id &&
+    manifest.subject.sourceDigest === decision.subject.sourceDigest &&
+    manifest.subject.subjectDigest === decision.subject.subjectDigest &&
+    manifest.target === document.request.target &&
+    manifest.effect === document.request.effect &&
+    decision.targets.includes(document.request.target) &&
+    decision.allowedEffects.includes(manifest.effect)
+  );
+}
+
+interface ObservationStageInputV1 {
+  readonly ctx: PlanContext;
+  readonly request: NonNullable<ConsumeGovernanceInputV1Input["observation"]>;
+  readonly document: GovernanceInputV1;
+  /** The same opaque verified authority the plan stage used. */
+  readonly authority: VerifiedPolicyAuthority;
+  readonly authorityExpiresAt: string;
+  readonly decision: GovernanceDecisionV2;
+  readonly evidenceExpiresAt: string;
+  readonly evidenceUnchanged: () => boolean;
+  readonly qualification: unknown;
+  readonly seal: SealedClosureV1 | undefined;
+  readonly now: string;
+}
+
+/**
+ * Observes that every file the freshly verified seal selected is installed,
+ * byte for byte, at exactly one path under the administrator's explicitly
+ * named installation root.
+ *
+ * The mapping is the whole basis of the match: sealed bytes found under
+ * another name are a path mismatch, never a match, and the manifest may
+ * neither add a path the seal did not select nor omit one it did. Nothing is
+ * written, nothing is executed, and a successful result is an observation of
+ * exact bytes at exact paths — never installation or application.
+ */
+function observeSealedClosureV1(input: ObservationStageInputV1): ObservationStageResultV1 {
+  const { document, request } = input;
+
+  // 1. The mapping, before anything is read.
+  if (!isBoundedObservationInstallRootV1(request.installRoot)) {
+    return refusedObservation(
+      "observation-mapping-invalid",
+      "the installation root is not a bounded root-relative directory",
+    );
+  }
+  if (!isCanonicalUpstreamArtifactRequestPathV1(request.manifestPath)) {
+    return refusedObservation(
+      "observation-manifest-unsafe",
+      "the manifest path is not a bounded root-relative path",
+    );
+  }
+  if (!mappingIsSeparate(request.installRoot, [request.manifestPath, document.evidence.path])) {
+    return refusedObservation(
+      "observation-mapping-invalid",
+      "the installation root is not separate from the manifest and the evidence",
+    );
+  }
+
+  // 2. Manifest custody, then the exact decision it must declare.
+  const manifestFile = custodyObservedFileV1(
+    input.ctx.root,
+    request.manifestPath,
+    MAX_UPSTREAM_ARTIFACT_MANIFEST_BYTES_V1,
+    "assert upstream artifact manifest remains exact",
+  );
+  if (manifestFile === "unavailable") {
+    return refusedObservation("observation-manifest-unavailable", "the manifest is unavailable");
+  }
+  if (manifestFile === "unsafe" || manifestFile.identity.nlink !== 1n) {
+    return refusedObservation("observation-manifest-unsafe", "manifest custody failed");
+  }
+  const manifest = parseUpstreamArtifactManifestV1Bytes(manifestFile.bytes);
+  if (manifest === undefined) {
+    return refusedObservation(
+      "observation-manifest-mismatch",
+      "the named file is not a canonical v1 upstream artifact manifest",
+    );
+  }
+  if (!manifestDeclaresDecisionV1(manifest, document, input.decision)) {
+    return refusedObservation(
+      "observation-manifest-mismatch",
+      "the manifest does not declare the saved decision, subject, target and effect",
+    );
+  }
+
+  // 3. Only a freshly verified sealed closure can say what must be installed.
+  const seal = input.seal;
+  if (seal === undefined) {
+    return refusedObservation(
+      "observation-outside-sealed-closure",
+      "the verified evidence seals no scanned closure to observe",
+    );
+  }
+  const selectedPaths = seal.selectedFiles.map((file) => file.path).sort(ordinalCompare);
+  const claimedPaths = [...seal.selectedClosurePaths].sort(ordinalCompare);
+  if (
+    claimedPaths.length !== selectedPaths.length ||
+    claimedPaths.some((path, index) => path !== selectedPaths[index])
+  ) {
+    return refusedObservation(
+      "observation-outside-sealed-closure",
+      "the sealed closure does not list exactly the sealed files",
+    );
+  }
+
+  // 4. One-to-one exact paths, then the sealed digest for each of them.
+  const required = requiredObservedPathsV1({
+    installRoot: request.installRoot,
+    sealedFiles: seal.selectedFiles,
+  });
+  if (required === undefined) {
+    return refusedObservation(
+      "observation-path-mismatch",
+      "the sealed selection does not map one-to-one under the installation root",
+    );
+  }
+  if (
+    !observedPathSetMatchesV1(
+      required,
+      manifest.files.map((file) => file.path),
+    )
+  ) {
+    return refusedObservation(
+      "observation-path-mismatch",
+      "the manifest declares other paths than exactly the sealed paths under the installation root",
+    );
+  }
+  const reserved = [request.manifestPath.toLowerCase(), document.evidence.path.toLowerCase()];
+  if (required.some((file) => reserved.includes(file.observedPath.toLowerCase()))) {
+    return refusedObservation(
+      "observation-path-mismatch",
+      "an observed path is the manifest or the evidence file",
+    );
+  }
+  const declared = new Map(manifest.files.map((file) => [file.path, file.sha256]));
+  if (required.some((file) => declared.get(file.observedPath) !== `sha256:${file.sha256}`)) {
+    return refusedObservation(
+      "observation-outside-sealed-closure",
+      "a declared digest is not the sealed digest for that exact path",
+    );
+  }
+
+  // 5. Custody every declared file at its exact observed path.
+  const observedFiles: CustodiedObservedFileV1[] = [];
+  let totalBytes = 0;
+  for (const file of required) {
+    const observed = custodyObservedFileV1(
+      input.ctx.root,
+      file.observedPath,
+      MAX_OBSERVED_FILE_BYTES_V1,
+      "assert observed upstream artifact file remains exact",
+    );
+    if (observed === "unavailable") {
+      return refusedObservation(
+        "observed-file-unavailable",
+        "a declared file is absent from its exact path",
+      );
+    }
+    if (observed === "unsafe") {
+      return refusedObservation("observed-file-unsafe", "observed file custody failed");
+    }
+    totalBytes += observed.size;
+    if (
+      totalBytes > MAX_OBSERVED_TOTAL_BYTES_V1 ||
+      observed.rawDigest !== `sha256:${file.sha256}` ||
+      observed.size !== file.byteLength
+    ) {
+      return refusedObservation(
+        "observed-file-mismatch",
+        "the bytes at that exact path are not the sealed bytes",
+      );
+    }
+    observedFiles.push(observed);
+  }
+  const identities = new Set(
+    observedFiles.map((file) => `${file.identity.dev}:${file.identity.ino}`),
+  );
+  if (
+    observedFiles.some((file) => file.identity.nlink !== 1n) ||
+    identities.size !== observedFiles.length
+  ) {
+    return refusedObservation(
+      "observed-file-unsafe",
+      "observed paths do not name distinct single-linked files",
+    );
+  }
+
+  // 6. Nothing may have changed under us while we read.
+  const authorityFile = verifiedPolicyAuthoritySourceCustodyV1(input.ctx, input.authority);
+  if (authorityFile === undefined || !authorityFile.unchanged()) {
+    return refusedObservation("authority-unverified", "authority custody did not hold");
+  }
+  if (!input.evidenceUnchanged()) {
+    return refusedObservation("evidence-changed", "evidence bytes changed during observation");
+  }
+  if (!manifestFile.unchanged()) {
+    return refusedObservation("observation-manifest-unsafe", "the manifest changed while reading");
+  }
+  if (!observedFiles.every((file) => file.unchanged())) {
+    return refusedObservation("observed-file-changed", "an observed file changed while reading");
+  }
+
+  // 7. Mint the receipt, then resolve it exactly as the artifact observer does.
+  const minted = mintUpstreamObservationReceiptV1({
+    authorityExpiresAt: input.authorityExpiresAt,
+    decision: input.decision,
+    decisionReference: {
+      id: document.decisionReference.id,
+      digest: document.decisionReference.digest,
+    },
+    evidenceExpiresAt: input.evidenceExpiresAt,
+    manifest,
+    observedAt: input.now,
+    target: document.request.target,
+  });
+  const effective = resolveObservedEffect({
+    authority: input.authority,
+    decisionReference: {
+      id: document.decisionReference.id,
+      digest: document.decisionReference.digest,
+    },
+    qualification: input.qualification,
+    observation: minted.observation,
+    subject: input.decision.subject,
+    target: document.request.target,
+    effect: document.request.effect,
+    supportedTargets: SUPPORTED_CLIS,
+    expectedVerifier: UPSTREAM_ARTIFACT_OBSERVER_V1,
+    expectedInstalled: minted.installed,
+    expectedIntegration: minted.integration,
+    now: input.now,
+  });
+  if (effective.state !== "observed-effective") {
+    return refusedObservation(
+      "observation-not-effective",
+      "the minted observation did not resolve to an effective observed state",
+    );
+  }
+  return {
+    observed: {
+      observationDigest: minted.digest,
+      observedAt: minted.receipt.observedAt,
+      validUntil: minted.receipt.validUntil,
+      installRoot: request.installRoot,
+      files: required.map((file) => ({
+        sealedPath: file.sealedPath,
+        observedPath: file.observedPath,
+        sha256: file.sha256,
+        byteLength: file.byteLength,
+      })),
+    },
   };
 }
 
@@ -839,6 +1200,9 @@ export async function consumeGovernanceInputV1(
   let assessmentBinding: AssessmentMaterialBindingBoundV1 | undefined;
   let bindingRoute: "subject-content" | "assessment-material" | undefined;
   let verified: unknown;
+  // The one sealed closure the binding stage proved, kept for an observation
+  // that may only ever be asked about exactly these files.
+  let sealedClosure: SealedClosureV1 | undefined;
   if (claimsScanEvidenceV1(envelope)) {
     if (input.scan === undefined) {
       return refuse(
@@ -900,6 +1264,8 @@ export async function consumeGovernanceInputV1(
       sourceTreeSha256: facts.subjectSha256,
       selectedClosureSha256: facts.coverageSha256,
     };
+    const records = sealSchema.safeParse(facts.seal);
+    sealedClosure = records.success ? records.data : undefined;
     // The route is chosen here, from the saved subject and the supplied inputs,
     // never from `provenance.route` and never after a failure: the resolver runs
     // only once verification produced a consistent seal, and neither route falls
@@ -1210,18 +1576,56 @@ export async function consumeGovernanceInputV1(
     );
   }
 
+  const prepared = {
+    structure: "valid" as const,
+    evidence: "verified" as const,
+    binding: evidenceBase.binding,
+    authority: "verified" as const,
+    plan: "prepared" as const,
+  };
+  if (input.observation === undefined) {
+    return {
+      status: {
+        ...prepared,
+        execution: "not-attempted",
+        outcome: "partial",
+        reason: "observation-missing",
+      },
+      diagnostics: [],
+      ...withAuthority,
+    };
+  }
+
+  // --- observation: exact sealed bytes at exact paths, and nothing else -----
+  const observation = observeSealedClosureV1({
+    ctx,
+    request: input.observation,
+    document,
+    authority: authority.authority,
+    authorityExpiresAt: authority.authority.receipt.expiresAt,
+    decision,
+    evidenceExpiresAt: envelope.expiresAt,
+    evidenceUnchanged: () => custody.evidence.unchanged(),
+    qualification,
+    seal: sealedClosure,
+    now,
+  });
+  if ("refused" in observation) {
+    return {
+      status: {
+        ...prepared,
+        execution: "refused",
+        outcome: "refused",
+        reason: observation.refused,
+      },
+      diagnostics: [diagnostic(observation.refused, "observation", observation.detail)],
+      ...withAuthority,
+    };
+  }
   return {
-    status: {
-      structure: "valid",
-      evidence: "verified",
-      binding: evidenceBase.binding,
-      authority: "verified",
-      plan: "prepared",
-      execution: "not-attempted",
-      outcome: "partial",
-      reason: "observation-missing",
-    },
+    status: { ...prepared, execution: "observed", outcome: "observed" },
     diagnostics: [],
     ...withAuthority,
+    observation: observation.observed,
   };
 }
