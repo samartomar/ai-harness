@@ -26,6 +26,15 @@ export * from "./internals/proc.js";
 export * from "./internals/render.js";
 export * from "./internals/verify.js";
 export {
+  ASSESSMENT_MATERIAL_FORMAT_V1,
+  type AssessmentMaterialBindingBoundV1,
+  type AssessmentMaterialBindingRefusalV1,
+  type AssessmentMaterialBindingV1,
+  MAX_ASSESSMENT_BYTES_V1,
+  type VerifyAssessmentMaterialBindingV1Input,
+  verifyAssessmentMaterialBindingV1,
+} from "./org-policy/assessment-material-binding-v1.js";
+export {
   type PolicyAuthorityReceiptV3,
   PolicyAuthorityReceiptV3Schema,
 } from "./org-policy/authority-v3.js";
