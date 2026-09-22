@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import {
+  ACCEPTED_DECISION_SCHEMA_DIGESTS_V2,
   canonicalGovernanceInputV1,
   canonicalOrganizationEvidenceEnvelopeV1,
   consumeGovernanceInputV1,
@@ -697,6 +698,76 @@ describe("contract versions Core refuses by name", () => {
     ]) {
       const result = await consumeWithEvidence(Buffer.from(text, "utf8"));
       expect(result.status.reason).toBe("malformed-bytes");
+    }
+  });
+});
+
+describe("the Core contract a verified scan declares", () => {
+  function declaring(coreContract: unknown) {
+    const result = verifiedResult(boundSeal);
+    return { facts: { ...result.facts, coreContract } };
+  }
+
+  it("accepts the current decision schema's digest as the newest member of a range", () => {
+    const current = createHash("sha256")
+      .update(
+        readFileSync(
+          new URL("../../schemas/aih-governance-decision-v2.schema.json", import.meta.url),
+        ),
+      )
+      .digest("hex");
+    expect(ACCEPTED_DECISION_SCHEMA_DIGESTS_V2.at(-1)).toBe(current);
+    // A range, not a pin: the older additive revision stays readable.
+    expect(ACCEPTED_DECISION_SCHEMA_DIGESTS_V2).toContain(
+      "27295aee8d8be333abe2c73adc72884b534b1c9980a9b7a39d12be8d34c5caff",
+    );
+    expect(new Set(ACCEPTED_DECISION_SCHEMA_DIGESTS_V2).size).toBe(
+      ACCEPTED_DECISION_SCHEMA_DIGESTS_V2.length,
+    );
+    expect(Object.isFrozen(ACCEPTED_DECISION_SCHEMA_DIGESTS_V2)).toBe(true);
+  });
+
+  it("refuses a declared decision-schema digest outside the accepted set", async () => {
+    const result = await consume(boundSeal, {
+      verify: () => declaring({ commit: "0".repeat(40), decisionSchemaSha256: "f".repeat(64) }),
+    });
+    expect(result.status.reason).toBe("scan-core-contract-unknown");
+    expect(result.status.binding).toBe("unbound");
+    expect(result.status.authority).toBe("not-evaluated");
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({
+        code: "scan-core-contract-unknown",
+        field: "scan.verified.facts.coreContract",
+      }),
+    ]);
+  });
+
+  it("refuses a declaration Core cannot read rather than ignoring it", async () => {
+    for (const coreContract of [
+      null,
+      "7fdf101568cd7caa28516d0be37704c0dfd51198bc54d41d65829abbe77547cc",
+      { commit: "0".repeat(40) },
+      {
+        commit: "not-a-commit",
+        decisionSchemaSha256: ACCEPTED_DECISION_SCHEMA_DIGESTS_V2.at(-1),
+      },
+      { decisionSchemaSha256: `sha256:${ACCEPTED_DECISION_SCHEMA_DIGESTS_V2.at(-1)}` },
+    ]) {
+      const result = await consume(boundSeal, { verify: () => declaring(coreContract) });
+      expect(result.status.reason, JSON.stringify(coreContract)).toBe("scan-core-contract-unknown");
+    }
+  });
+
+  it("leaves the verdict unchanged for every accepted digest and for no declaration", async () => {
+    const undeclared = await consume(boundSeal);
+    expect(undeclared.status.reason).toBe("authority-unverified");
+    for (const decisionSchemaSha256 of ACCEPTED_DECISION_SCHEMA_DIGESTS_V2) {
+      // The commit is read, never pinned: any git commit is accepted with an accepted digest.
+      const declared = await consume(boundSeal, {
+        verify: () => declaring({ commit: "a".repeat(40), decisionSchemaSha256 }),
+      });
+      expect(declared.status).toEqual(undeclared.status);
+      expect(declared.diagnostics).toEqual(undeclared.diagnostics);
     }
   });
 });

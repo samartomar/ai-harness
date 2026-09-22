@@ -8,6 +8,19 @@ const SHA256 = /^sha256:[0-9a-f]{64}$/;
 const GIT_COMMIT = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 const MAX_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
 
+/**
+ * Bare sha-256 digests of `schemas/aih-governance-decision-v2.schema.json`
+ * that Core recognises when a verified scan declares which Core contract it was
+ * built against. A RANGE, not a pin: the schema changed additively between
+ * these revisions and evidence built against any of them stays readable. A
+ * digest outside the set is refused rather than ignored. Accepting a digest is
+ * not approving a release. Oldest first; the current schema's digest is last.
+ */
+export const ACCEPTED_DECISION_SCHEMA_DIGESTS_V2: readonly string[] = Object.freeze([
+  "27295aee8d8be333abe2c73adc72884b534b1c9980a9b7a39d12be8d34c5caff",
+  "7fdf101568cd7caa28516d0be37704c0dfd51198bc54d41d65829abbe77547cc",
+]);
+
 const stableId = z.string().regex(ID, "must be a bounded stable identifier");
 const accountableActor = z.union([
   stableId,

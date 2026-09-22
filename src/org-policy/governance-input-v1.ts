@@ -35,6 +35,7 @@ import {
 } from "./catalog-qualification-attestation-v1.js";
 import { custodyOrganizationEvidenceV1 } from "./evidence-custody-v1.js";
 import {
+  ACCEPTED_DECISION_SCHEMA_DIGESTS_V2,
   type GovernanceDecisionSourceV2,
   GovernanceDecisionSourceV2Schema,
   type GovernanceDecisionV2,
@@ -154,6 +155,7 @@ export type GovernanceInputRefusalV1 =
   // binding
   | "scan-verification-unavailable"
   | "scan-attestation-unverified"
+  | "scan-core-contract-unknown"
   | "seal-digest-recomputation-mismatch"
   | "seal-toctou-mismatch"
   | "subject-digest-absent-from-sealed-closure"
@@ -914,6 +916,32 @@ interface VerifiedScanFacts {
   readonly seal: unknown;
 }
 
+/**
+ * Whether the Core contract a verified scan DECLARES is one Core recognises.
+ * No declaration changes nothing. A declaration's decision-schema digest must
+ * be in `ACCEPTED_DECISION_SCHEMA_DIGESTS_V2` — a range, not a pin — and a
+ * declaration Core cannot read (a missing digest, or a commit that is not a
+ * git commit) is refused rather than ignored. The commit is read, never pinned.
+ */
+function declaredCoreContractAcceptedV1(verified: unknown): boolean {
+  if (typeof verified !== "object" || verified === null) return true;
+  const facts = (verified as { facts?: unknown }).facts;
+  if (typeof facts !== "object" || facts === null) return true;
+  const declared = (facts as { coreContract?: unknown }).coreContract;
+  if (declared === undefined) return true;
+  if (typeof declared !== "object" || declared === null) return false;
+  const { commit, decisionSchemaSha256 } = declared as {
+    commit?: unknown;
+    decisionSchemaSha256?: unknown;
+  };
+  return (
+    (commit === undefined ||
+      (typeof commit === "string" && /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/.test(commit))) &&
+    typeof decisionSchemaSha256 === "string" &&
+    ACCEPTED_DECISION_SCHEMA_DIGESTS_V2.includes(decisionSchemaSha256)
+  );
+}
+
 function verifiedScanFacts(verified: unknown): VerifiedScanFacts | undefined {
   if (typeof verified !== "object" || verified === null) return undefined;
   const facts = (verified as { facts?: unknown }).facts;
@@ -1529,6 +1557,21 @@ export async function consumeGovernanceInputV1(
             "scan-attestation-unverified",
             "scan.request",
             "attestation did not verify against the configured trust and verification inputs",
+          ),
+        ],
+        { subjectDigest },
+      );
+    }
+    // The Core contract the attestation declares gates how its facts are read:
+    // an unrecognised contract is refused before any seal is interpreted.
+    if (!declaredCoreContractAcceptedV1(verified)) {
+      return refuse(
+        { ...base, binding: "unbound", reason: "scan-core-contract-unknown" },
+        [
+          diagnostic(
+            "scan-core-contract-unknown",
+            "scan.verified.facts.coreContract",
+            "the verified attestation declares a Core contract this Core does not recognise",
           ),
         ],
         { subjectDigest },
