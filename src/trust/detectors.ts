@@ -2166,74 +2166,162 @@ function adapterReason(value: string): string {
   return visible.length > 300 ? `${visible.slice(0, 297)}...` : visible;
 }
 
+/** The SARIF media type Scan's analyzer observation declares for SARIF bytes. */
+const DELEGATED_SARIF_MEDIA_TYPE = "application/sarif+json";
+
+function stringMember(
+  record: Record<string, unknown> | undefined,
+  key: string,
+): string | undefined {
+  const value = record?.[key];
+  return typeof value === "string" && value.trim().length > 0 ? value : undefined;
+}
+
 /**
- * Whether the adapter claims this detector. Scan names its capabilities
- * `detector.<name>`; a bare name is accepted for the same detector. A
- * capability list Core cannot read names nothing, so nothing is delegated.
+ * The capability the adapter publishes for this detector, or undefined when it
+ * publishes none. Scan names its capabilities `detector.<name>`; a bare name is
+ * accepted for the same detector. A capability list Core cannot read names
+ * nothing, so nothing is delegated.
  */
-function adapterNamesDetector(
+function adapterCapabilityFor(
   adapter: ScanExecutionAdapterV1,
   detector: TrustDetectorName,
-): boolean {
+): Record<string, unknown> | undefined {
   let capabilities: readonly unknown[];
   try {
     capabilities = adapter.listDetectorCapabilitiesV1();
   } catch {
-    return false;
+    return undefined;
   }
-  if (!Array.isArray(capabilities)) return false;
-  return capabilities.some((capability) => {
-    const id = asRecord(capability)?.detectorId;
-    return typeof id === "string" && (id === detector || id === `detector.${detector}`);
-  });
+  if (!Array.isArray(capabilities)) return undefined;
+  for (const capability of capabilities) {
+    const record = asRecord(capability);
+    const id = record?.detectorId;
+    if (typeof id === "string" && (id === detector || id === `detector.${detector}`)) return record;
+  }
+  return undefined;
 }
 
 /**
- * Core narrows the adapter's `unknown` result here and nowhere else. A refusal,
- * a failure, a throw and an unrecognized shape are all the same verdict — the
- * detector did not run — and each carries its own reason into the existing
- * degraded-coverage path. None of them is ever a pass.
+ * The subject kind Core can state truthfully about the tree it is scanning.
+ *
+ * A trust tree is a source tree, so that is the default. Scan's `detector.cisco`
+ * takes only a `skill-directory`, and Core may say so only when the scanned root
+ * really is one — a top-level `SKILL.md` that is inside the declared selection.
+ * Core never relabels a tree to satisfy a detector: when neither statement is
+ * true of the capability's own list, Core sends `source-tree` and lets the
+ * adapter refuse with its own reason.
+ */
+function delegatedSubjectKind(
+  capability: Record<string, unknown> | undefined,
+  selectedClosurePaths: readonly string[],
+): string {
+  const kinds = capability?.subjectKinds;
+  const declared = Array.isArray(kinds) ? kinds.filter((kind) => typeof kind === "string") : [];
+  if (declared.includes("source-tree") || declared.length === 0) return "source-tree";
+  if (declared.includes("skill-directory") && selectedClosurePaths.includes("SKILL.md"))
+    return "skill-directory";
+  return "source-tree";
+}
+
+/**
+ * Core narrows the adapter's `unknown` result here and nowhere else, against
+ * Scan's own `RunDetectorV1Result`. A refusal, a failure, a throw, an evidence
+ * shape Core's SARIF normalization cannot read and an unrecognized result are
+ * all the same verdict — the detector did not run — and each carries its own
+ * reason into the existing degraded-coverage path. None of them is ever a pass.
  */
 function delegatedDetectorResult(result: unknown): DelegatedDetectorResultV1 {
   const record = asRecord(result);
   if (record === undefined) return { unavailable: "scan execution adapter returned no result" };
-  if (record.outcome === "succeeded") {
-    const sarif = record.sarif;
-    return typeof sarif === "string" && sarif.trim().length > 0
-      ? { sarif }
-      : { unavailable: "scan execution adapter reported success without SARIF" };
-  }
-  const failure = asRecord(record.failure);
-  const text = [record.detail, record.reason, failure?.detail, failure?.stage].find(
-    (value): value is string => typeof value === "string" && value.trim().length > 0,
-  );
-  if (record.outcome === "refused" || record.outcome === "failed") {
+  if (record.outcome === "refused") {
+    const reason = stringMember(record, "reason");
+    const detail = stringMember(record, "detail");
+    const text =
+      detail === undefined ? reason : reason === undefined ? detail : `${reason}: ${detail}`;
     return {
-      unavailable:
-        text === undefined
-          ? `scan execution adapter ${record.outcome} without a reason`
-          : adapterReason(text),
+      unavailable: adapterReason(text ?? "scan execution adapter refused without a reason"),
     };
   }
-  return { unavailable: "scan execution adapter returned an unrecognized result" };
+  if (record.outcome === "failed") {
+    const failure = asRecord(record.failure);
+    const stage = stringMember(failure, "stage");
+    const detail = stringMember(failure, "detail");
+    const text =
+      detail === undefined ? stage : stage === undefined ? detail : `${stage}: ${detail}`;
+    return { unavailable: adapterReason(text ?? "scan execution adapter failed without a reason") };
+  }
+  if (record.outcome !== "succeeded")
+    return { unavailable: "scan execution adapter returned an unrecognized result" };
+  const evidence = asRecord(record.evidence);
+  if (evidence?.kind !== "baseline-analyzer-observation-v1") {
+    return {
+      unavailable: `scan execution adapter returned ${
+        typeof evidence?.kind === "string"
+          ? adapterReason(`${evidence.kind} evidence`)
+          : "no analyzer observation"
+      }, which carries no SARIF for this scan`,
+    };
+  }
+  const observation = asRecord(evidence.observation);
+  const mediaType = stringMember(observation, "mediaType");
+  if (mediaType !== DELEGATED_SARIF_MEDIA_TYPE) {
+    return {
+      unavailable: `scan execution adapter returned ${
+        mediaType === undefined ? "analyzer bytes with no media type" : adapterReason(mediaType)
+      }, and this scan normalizes ${DELEGATED_SARIF_MEDIA_TYPE}`,
+    };
+  }
+  const bytes = observation?.bytes;
+  if (!(bytes instanceof Uint8Array) || bytes.byteLength === 0)
+    return { unavailable: "scan execution adapter returned an analyzer observation without bytes" };
+  // The adapter is never trusted: the observation's own annex digest is the
+  // claim, and Core checks the bytes it was handed against it before reading.
+  const annex = asRecord(observation?.annex);
+  const sha256 = stringMember(annex, "sha256");
+  const byteLength = annex?.byteLength;
+  if (
+    sha256 !== createHash("sha256").update(bytes).digest("hex") ||
+    (typeof byteLength === "number" && byteLength !== bytes.byteLength)
+  ) {
+    return {
+      unavailable:
+        "scan execution adapter returned analyzer bytes that its own annex does not name",
+    };
+  }
+  let sarif: string;
+  try {
+    sarif = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return { unavailable: "scan execution adapter returned analyzer bytes that are not UTF-8" };
+  }
+  return sarif.trim().length > 0
+    ? { sarif }
+    : { unavailable: "scan execution adapter returned empty analyzer bytes" };
 }
 
 async function runDelegatedDetector(
   adapter: ScanExecutionAdapterV1,
+  capability: Record<string, unknown> | undefined,
   detector: TrustDetectorName,
   root: string,
   inventory: TrustFileInventory | undefined,
 ): Promise<DelegatedDetectorResultV1> {
-  // Core states what it enumerated, never a narrowing it did not apply.
-  const selectedClosurePaths = inventory?.files.map((entry) => entry.relativePath);
+  // Scan requires the selection as a field, so Core delegates only what it has
+  // actually enumerated: it never declares a closure it did not read.
+  if (inventory === undefined)
+    return {
+      unavailable: "no file inventory is available to declare as this detector's selected closure",
+    };
+  const selectedClosurePaths = inventory.files.map((entry) => entry.relativePath);
   try {
     return delegatedDetectorResult(
       await adapter.runDetectorV1({
         detectorId: `detector.${detector}`,
         subject: {
-          kind: "source-tree",
+          kind: delegatedSubjectKind(capability, selectedClosurePaths),
           sourceRoot: root,
-          ...(selectedClosurePaths === undefined ? {} : { selectedClosurePaths }),
+          selectedClosurePaths,
         },
       }),
     );
@@ -2374,14 +2462,20 @@ async function runDetectorList(
   for (const detector of detectors) {
     options.progress?.(`trust scan: detector ${detector.name} started`);
     let sarifText = options.precomputedSarif?.[detector.name];
-    const adapter =
-      options.scanExecution !== undefined &&
-      adapterNamesDetector(options.scanExecution, detector.name)
-        ? options.scanExecution
-        : undefined;
+    const capability =
+      options.scanExecution === undefined
+        ? undefined
+        : adapterCapabilityFor(options.scanExecution, detector.name);
+    const adapter = capability === undefined ? undefined : options.scanExecution;
     let delegatedExecution = false;
     if (sarifText === undefined && adapter !== undefined) {
-      const delegated = await runDelegatedDetector(adapter, detector.name, root, options.inventory);
+      const delegated = await runDelegatedDetector(
+        adapter,
+        capability,
+        detector.name,
+        root,
+        options.inventory,
+      );
       if ("unavailable" in delegated) {
         checks.push(
           unavailableCheck(

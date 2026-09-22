@@ -698,10 +698,13 @@ export interface ScanVerificationAdapterV1 {
  * and Core treats an unrecognized result, a throw and a refusal alike: the
  * detector is unavailable, with the adapter's own reason text, never a pass.
  *
- * Core narrows the result at this seam and nowhere else: `outcome`, the SARIF
- * text of a `succeeded` run (`sarif`), and, for anything else, the first
- * readable reason among `detail`, `reason`, `failure.detail` and
- * `failure.stage`.
+ * Core narrows the result at this seam and nowhere else, against Scan's own
+ * `RunDetectorV1Result`: `outcome`, a refusal's `reason` and `detail`, a
+ * failure's `failure.stage` and `failure.detail`, and, for a success, the
+ * analyzer bytes at `evidence.observation.bytes` when
+ * `evidence.kind === "baseline-analyzer-observation-v1"` and
+ * `evidence.observation.mediaType` is `application/sarif+json`. Core checks
+ * those bytes against the observation's own `annex.sha256` before reading them.
  */
 export interface ScanExecutionAdapterV1 {
   readonly listDetectorCapabilitiesV1: () => readonly unknown[];

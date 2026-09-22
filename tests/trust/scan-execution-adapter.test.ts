@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -5,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeRunner } from "../../src/internals/proc.js";
 import type { Check } from "../../src/internals/verify.js";
 import type { ScanExecutionAdapterV1 } from "../../src/org-policy/governance-input-v1.js";
-import { CISCO_SKILL_SCANNER_ANALYZER } from "../../src/trust/detectors.js";
+import { CISCO_SKILL_SCANNER_ANALYZER, runTrustDetectors } from "../../src/trust/detectors.js";
 import { scanTrustTreeWithAnalyzers } from "../../src/trust/scan.js";
 
 // ---------------------------------------------------------------------------
@@ -42,6 +43,32 @@ const CISCO_SARIF = JSON.stringify({
   runs: [{ tool: { driver: { name: "skill-scanner" } }, results: [] }],
 });
 
+/** One rule the existing cisco map normalizes, so the SARIF reaches findings. */
+const CISCO_FINDING_SARIF = JSON.stringify({
+  version: "2.1.0",
+  $schema: "https://json.schemastore.org/sarif-2.1.0.json",
+  runs: [
+    {
+      tool: { driver: { name: "skill-scanner" } },
+      results: [
+        {
+          ruleId: "PROMPT_INJECTION_IGNORE_INSTRUCTIONS",
+          level: "warning",
+          message: { text: "instruction-override shape in skill content" },
+          locations: [
+            {
+              physicalLocation: {
+                artifactLocation: { uri: "SKILL.md" },
+                region: { startLine: 1 },
+              },
+            },
+          ],
+        },
+      ],
+    },
+  ],
+});
+
 /** Every detector probe fails, so Core's own path is visibly unavailable. */
 function recordingRunner() {
   const argvs: string[][] = [];
@@ -52,18 +79,80 @@ function recordingRunner() {
   return { argvs, run };
 }
 
-function capability(detectorId: string) {
-  return { protocol: "DetectorCapabilityV1", detectorId, analyzerVersion: "0.0.0-test" };
+/**
+ * Shaped after Scan's own `DetectorCapabilityV1`
+ * (`aih-scan@a405b9d0 src/capability/detector-capability-v1.ts:122-140`).
+ * `detector.cisco` declares `skill-directory` there; the others `source-tree`.
+ */
+function capability(detectorId: string, subjectKinds: readonly string[] = ["source-tree"]) {
+  return {
+    protocol: "DetectorCapabilityV1",
+    detectorId,
+    analyzerIdentity: null,
+    analyzerVersion: "0.0.0-test",
+    subjectKinds,
+    outputs: ["sarif-2.1.0"],
+  };
+}
+
+/**
+ * Shaped after Scan's own succeeded `RunDetectorV1Result`
+ * (`aih-scan@a405b9d0 src/runner/run-detector-v1.ts:167-187`): the analyzer
+ * bytes live in the `baseline-analyzer-observation-v1` evidence member, under
+ * an annex digest taken over exactly those bytes.
+ */
+function succeededWithSarif(sarif: string) {
+  const bytes = Buffer.from(sarif, "utf8");
+  return {
+    outcome: "succeeded",
+    capability: capability("detector.cisco", ["skill-directory"]),
+    executionProfile: {
+      id: "linux-namespace-uv-v1",
+      isolation: "linux-namespace",
+      network: "none",
+    },
+    prerequisites: [],
+    seams: { runner: "scan-owned-default", prerequisiteProbe: "scan-owned-default" },
+    evidence: {
+      kind: "baseline-analyzer-observation-v1",
+      observation: {
+        protocol: "BaselineAnalyzerObservationV1",
+        analyzer: "cisco",
+        analyzerVersion: "2.0.14",
+        mediaType: "application/sarif+json",
+        annex: {
+          path: "annex/cisco-raw.json",
+          sha256: createHash("sha256").update(bytes).digest("hex"),
+          byteLength: bytes.byteLength,
+        },
+        bytes,
+      },
+    },
+    findings: { protocol: "ScanFindingsV1", findings: [], gaps: [] },
+    coverage: {
+      kind: "selected-closure",
+      sha256: "0".repeat(64),
+      complete: true,
+      coveredPaths: ["SKILL.md"],
+      excludedPaths: [],
+      uncoveredPaths: [],
+    },
+    sourceSeal: { before: {}, after: {} },
+  };
 }
 
 function stubAdapter(
   detectorIds: readonly string[],
   runDetectorV1: ScanExecutionAdapterV1["runDetectorV1"],
+  subjectKinds?: readonly string[],
 ): ScanExecutionAdapterV1 & { readonly requests: unknown[] } {
   const requests: unknown[] = [];
   return {
     requests,
-    listDetectorCapabilitiesV1: () => detectorIds.map(capability),
+    listDetectorCapabilitiesV1: () =>
+      detectorIds.map((id) =>
+        subjectKinds === undefined ? capability(id) : capability(id, subjectKinds),
+      ),
     runDetectorV1: (request) => {
       requests.push(request);
       return runDetectorV1(request);
@@ -75,8 +164,15 @@ function detectorCheck(checks: readonly Check[], detector: string): Check | unde
   return checks.find((check) => check.name === `trust detector ${detector}`);
 }
 
-async function scan(options: { readonly scanExecution?: ScanExecutionAdapterV1 } = {}) {
+async function scan(
+  options: {
+    readonly scanExecution?: ScanExecutionAdapterV1;
+    /** Makes the scanned root a skill directory in its own right. */
+    readonly topLevelSkill?: boolean;
+  } = {},
+) {
   write("skills/clean/SKILL.md", "# Clean\n\nNothing alarming here.\n");
+  if (options.topLevelSkill === true) write("SKILL.md", "# Root skill\n\nDeclared at the root.\n");
   const { argvs, run } = recordingRunner();
   const result = await scanTrustTreeWithAnalyzers(dir, {
     env: {},
@@ -114,21 +210,25 @@ describe("scan execution adapter", () => {
     );
   });
 
-  it("delegates a named detector and spawns nothing for it", async () => {
-    const adapter = stubAdapter(["detector.cisco"], () =>
-      Promise.resolve({ outcome: "succeeded", sarif: CISCO_SARIF }),
+  it("delegates a named detector, spawns nothing for it, and normalizes its findings", async () => {
+    const adapter = stubAdapter(
+      ["detector.cisco"],
+      () => Promise.resolve(succeededWithSarif(CISCO_FINDING_SARIF)),
+      ["skill-directory"],
     );
-    const { argvs, result } = await scan({ scanExecution: adapter });
+    const { argvs, result } = await scan({ scanExecution: adapter, topLevelSkill: true });
 
+    // The request is a valid Scan RunDetectorV1Request, and its subject kind is
+    // the one Core can state truthfully: this root really is a skill directory.
     expect(adapter.requests).toHaveLength(1);
     expect(adapter.requests[0]).toMatchObject({
       detectorId: "detector.cisco",
-      subject: { kind: "source-tree", sourceRoot: expect.any(String) },
+      subject: { kind: "skill-directory", sourceRoot: expect.any(String) },
     });
-    expect(
-      (adapter.requests[0] as { subject: { selectedClosurePaths: string[] } }).subject
-        .selectedClosurePaths,
-    ).toContain("skills/clean/SKILL.md");
+    const selected = (adapter.requests[0] as { subject: { selectedClosurePaths: string[] } })
+      .subject.selectedClosurePaths;
+    expect(selected).toContain("SKILL.md");
+    expect(selected).toContain("skills/clean/SKILL.md");
 
     // The delegated detector ran, and Core says who ran it rather than
     // describing a mechanism it did not use.
@@ -139,6 +239,21 @@ describe("scan execution adapter", () => {
     );
     expect(detectorCheck(result.checks, "cisco")?.detail).not.toContain("uv lock");
 
+    // The analyzer bytes reached the existing normalization unchanged.
+    expect(
+      result.rawOccurrences?.filter((row) => row.analyzer === CISCO_SKILL_SCANNER_ANALYZER),
+    ).toHaveLength(1);
+    expect(
+      result.rawOccurrences?.find((row) => row.analyzer === CISCO_SKILL_SCANNER_ANALYZER),
+    ).toMatchObject({ ruleId: "PROMPT_INJECTION_IGNORE_INSTRUCTIONS" });
+    const finding = result.normalizedFindings?.find(
+      (row) => row.location?.uri === "SKILL.md" && row.code === "trust.detector-finding",
+    );
+    expect(finding?.detail).toContain(
+      "Cisco AI Defense skill-scanner: instruction-override shape in skill content",
+    );
+    expect(finding?.rawOccurrenceFingerprints).toHaveLength(1);
+
     // Nothing was spawned for it, while the other detectors kept their path.
     expect(argvs.filter((argv) => argv.join(" ").includes("skill-scanner"))).toEqual([]);
     expect(argvs.some((argv) => argv.join(" ").includes("semgrep"))).toBe(true);
@@ -148,26 +263,49 @@ describe("scan execution adapter", () => {
   });
 
   it("accepts a bare detector id in the capability list", async () => {
-    const adapter = stubAdapter(["cisco"], () =>
-      Promise.resolve({ outcome: "succeeded", sarif: CISCO_SARIF }),
-    );
+    const adapter = stubAdapter(["cisco"], () => Promise.resolve(succeededWithSarif(CISCO_SARIF)));
     const { result } = await scan({ scanExecution: adapter });
     expect(adapter.requests).toHaveLength(1);
     expect(result.analyzersRun).toContain(CISCO_SKILL_SCANNER_ANALYZER);
   });
 
-  it("carries a refusal's own text into the degraded-coverage reason", async () => {
+  it("never relabels the scanned tree to satisfy a detector's subject kind", async () => {
+    // Scan's detector.cisco takes only a skill-directory. This root is not one,
+    // so Core states source-tree and lets the adapter refuse on its own terms.
+    const adapter = stubAdapter(
+      ["detector.cisco"],
+      () =>
+        Promise.resolve({
+          outcome: "refused",
+          reason: "unsupported-subject-kind",
+          detail: "detector.cisco accepts skill-directory subjects only",
+          host: { os: "linux", architecture: "x64" },
+        }),
+      ["skill-directory"],
+    );
+    const { result } = await scan({ scanExecution: adapter });
+    expect(adapter.requests[0]).toMatchObject({ subject: { kind: "source-tree" } });
+    expect(detectorCheck(result.checks, "cisco")?.detail).toContain(
+      "unsupported-subject-kind: detector.cisco accepts skill-directory subjects only",
+    );
+  });
+
+  it("carries a refusal's reason and detail into the degraded-coverage text", async () => {
+    // Shaped exactly like Scan's refused RunDetectorV1Result.
     const adapter = stubAdapter(["detector.cisco"], () =>
       Promise.resolve({
         outcome: "refused",
         reason: "unsupported-platform",
-        detail: "hardened execution is linux/amd64 only; this host is win32",
+        detail:
+          "detector.cisco runs on linux/amd64 only; this host is win32/x64. Run it on a linux amd64 machine or in a linux container.",
+        capability: capability("detector.cisco", ["skill-directory"]),
+        host: { os: "win32", architecture: "x64" },
       }),
     );
     const { argvs, result } = await scan({ scanExecution: adapter });
 
     expect(detectorCheck(result.checks, "cisco")?.detail).toBe(
-      "DEGRADED-COVERAGE: deep scan SKIPPED — cisco not available (hardened execution is linux/amd64 only; this host is win32); coverage is GREEN-tier only. Analyzers run: aih-native.",
+      "DEGRADED-COVERAGE: deep scan SKIPPED — cisco not available (unsupported-platform: detector.cisco runs on linux/amd64 only; this host is win32/x64. Run it on a linux amd64 machine or in a linux container.); coverage is GREEN-tier only. Analyzers run: aih-native.",
     );
     expect(result.analyzersRun).not.toContain(CISCO_SKILL_SCANNER_ANALYZER);
     expect(argvs.filter((argv) => argv.join(" ").includes("skill-scanner"))).toEqual([]);
@@ -178,10 +316,64 @@ describe("scan execution adapter", () => {
       Promise.resolve({
         outcome: "failed",
         failure: { stage: "execution", detail: "container exited 137" },
+        capability: capability("detector.cisco", ["skill-directory"]),
+        coverage: { kind: "selected-closure", complete: false },
       }),
     );
     const { result } = await scan({ scanExecution: adapter });
-    expect(detectorCheck(result.checks, "cisco")?.detail).toContain("container exited 137");
+    expect(detectorCheck(result.checks, "cisco")?.detail).toContain(
+      "execution: container exited 137",
+    );
+  });
+
+  it("refuses analyzer bytes the observation's own annex does not name", async () => {
+    const tampered = succeededWithSarif(CISCO_SARIF);
+    const adapter = stubAdapter(["detector.cisco"], () =>
+      Promise.resolve({
+        ...tampered,
+        evidence: {
+          ...tampered.evidence,
+          observation: {
+            ...tampered.evidence.observation,
+            bytes: Buffer.from(`${CISCO_SARIF} `, "utf8"),
+          },
+        },
+      }),
+    );
+    const { result } = await scan({ scanExecution: adapter });
+    expect(detectorCheck(result.checks, "cisco")?.detail).toContain(
+      "analyzer bytes that its own annex does not name",
+    );
+  });
+
+  it("refuses an evidence member that carries no SARIF for this scan", async () => {
+    const native = succeededWithSarif(CISCO_SARIF);
+    const nativeMedia = await scan({
+      scanExecution: stubAdapter(["detector.cisco"], () =>
+        Promise.resolve({
+          ...native,
+          evidence: {
+            ...native.evidence,
+            observation: {
+              ...native.evidence.observation,
+              mediaType: "application/vnd.aih.baseline-native+json",
+            },
+          },
+        }),
+      ),
+    });
+    expect(detectorCheck(nativeMedia.result.checks, "cisco")?.detail).toContain(
+      "application/vnd.aih.baseline-native+json, and this scan normalizes application/sarif+json",
+    );
+
+    const capture = await scan({
+      scanExecution: stubAdapter(["detector.cisco"], () =>
+        Promise.resolve({ ...native, evidence: { kind: "scan-candidate-v2", capture: {} } }),
+      ),
+    });
+    expect(detectorCheck(capture.result.checks, "cisco")?.detail).toContain(
+      "scan-candidate-v2 evidence, which carries no SARIF for this scan",
+    );
   });
 
   it("treats a throwing adapter as unavailable, never as a crash or a pass", async () => {
@@ -219,14 +411,14 @@ describe("scan execution adapter", () => {
     );
   });
 
-  it("refuses success without SARIF and any shape it cannot read", async () => {
+  it("refuses success without analyzer bytes and any shape it cannot read", async () => {
     const empty = await scan({
       scanExecution: stubAdapter(["detector.cisco"], () =>
         Promise.resolve({ outcome: "succeeded" }),
       ),
     });
     expect(detectorCheck(empty.result.checks, "cisco")?.detail).toContain(
-      "scan execution adapter reported success without SARIF",
+      "no analyzer observation, which carries no SARIF for this scan",
     );
 
     const unknown = await scan({
@@ -245,7 +437,7 @@ describe("scan execution adapter", () => {
 
     const notSarif = await scan({
       scanExecution: stubAdapter(["detector.cisco"], () =>
-        Promise.resolve({ outcome: "succeeded", sarif: "not a sarif log" }),
+        Promise.resolve(succeededWithSarif("not a sarif log")),
       ),
     });
     expect(detectorCheck(notSarif.result.checks, "cisco")?.detail).toContain(
@@ -253,13 +445,34 @@ describe("scan execution adapter", () => {
     );
   });
 
-  it("bounds and de-controls whatever text the adapter returns", async () => {
+  it("delegates only what Core actually enumerated", async () => {
+    // Scan requires the selected closure as a field; with no inventory Core has
+    // nothing truthful to declare, so it refuses rather than inventing one.
     const adapter = stubAdapter(["detector.cisco"], () =>
-      Promise.resolve({ outcome: "refused", detail: `a b${"x".repeat(1_000)}` }),
+      Promise.resolve(succeededWithSarif(CISCO_SARIF)),
+    );
+    write("skills/clean/SKILL.md", "# Clean" + String.fromCharCode(10));
+    const result = await runTrustDetectors(dir, {
+      env: {},
+      platform: "linux",
+      posture: "vibe",
+      run: recordingRunner().run,
+      scanExecution: adapter,
+    });
+    expect(adapter.requests).toEqual([]);
+    expect(detectorCheck(result.checks, "cisco")?.detail).toContain(
+      "no file inventory is available to declare as this detector's selected closure",
+    );
+  });
+
+  it("bounds and de-controls whatever text the adapter returns", async () => {
+    const control = String.fromCharCode(0);
+    const adapter = stubAdapter(["detector.cisco"], () =>
+      Promise.resolve({ outcome: "refused", detail: `a${control}b${"x".repeat(1_000)}` }),
     );
     const { result } = await scan({ scanExecution: adapter });
     const detail = detectorCheck(result.checks, "cisco")?.detail ?? "";
-    expect(detail).not.toContain(" ");
+    expect(detail).not.toContain(control);
     expect(detail).toContain("a b");
     expect(detail).toContain("...");
     expect(detail.length).toBeLessThan(500);
