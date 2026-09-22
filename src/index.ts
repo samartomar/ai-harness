@@ -75,6 +75,7 @@ export {
 export {
   canonicalOrganizationEvidenceEnvelopeV1,
   MAX_ORGANIZATION_EVIDENCE_ENVELOPE_BYTES_V1,
+  ORGANIZATION_EVIDENCE_ENVELOPE_V1_FORMAT,
   type OrganizationEvidenceEnvelopeV1,
   OrganizationEvidenceEnvelopeV1Schema,
   organizationEvidenceEnvelopeDigestV1,
@@ -100,6 +101,7 @@ export {
   MAX_UPSTREAM_ARTIFACT_FILES_V1,
   MAX_UPSTREAM_ARTIFACT_MANIFEST_BYTES_V1,
   parseUpstreamArtifactManifestV1Bytes,
+  UPSTREAM_ARTIFACT_MANIFEST_V1_FORMAT,
   type UpstreamArtifactManifestV1,
   UpstreamArtifactManifestV1Schema,
   upstreamArtifactManifestDigestV1,
@@ -108,6 +110,7 @@ export {
   canonicalUpstreamObservationReceiptV1,
   MAX_UPSTREAM_OBSERVATION_WINDOW_MS,
   parseUpstreamObservationReceiptV1,
+  UPSTREAM_OBSERVATION_RECEIPT_V1_FORMAT,
   type UpstreamObservationReceiptV1,
   UpstreamObservationReceiptV1Schema,
   upstreamObservationReceiptDigestV1,

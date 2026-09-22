@@ -9,6 +9,7 @@ import {
   consumeGovernanceInputV1,
   governanceDecisionSourceDigestV2,
   governanceDecisionSubjectDigestV2,
+  ORGANIZATION_EVIDENCE_ENVELOPE_V1_FORMAT,
   parseGovernanceInputV1Bytes,
   prepareGovernanceInputV1,
   type ScanVerificationAdapterV1,
@@ -645,5 +646,57 @@ describe("independent consumption", () => {
     expect(result.status.execution).toBe("not-attempted");
     expect(result.matchedPath).toBe("artifacts/profile.json");
     expect(result.subjectDigest).toBe(subjectDigest);
+  });
+});
+
+describe("contract versions Core refuses by name", () => {
+  /** Consumes the prepared input with the evidence file replaced by `evidence`. */
+  async function consumeWithEvidence(evidence: Uint8Array) {
+    const artifacts = prepared().artifacts;
+    if (artifacts === undefined) throw new Error("prepare failed");
+    const root = disposableRoot(evidence, artifacts.evidence.path);
+    return consumeGovernanceInputV1({
+      bytes: artifacts.input.bytes,
+      root,
+      env: {},
+      now: "2026-09-20T00:30:00.000Z",
+      scan: {
+        adapter: adapter({ verify: () => verifiedResult(boundSeal) }),
+        request: TRUST_INPUTS,
+      },
+    });
+  }
+
+  it("refuses an evidence envelope of another version as an unknown contract version", async () => {
+    const canonical = Buffer.from(evidenceBytes).toString("utf8");
+    expect(canonical).toContain('"version":1');
+    for (const declared of [
+      canonical.replace('"version":1', '"version":2'),
+      canonical.replace(
+        `"format":"${ORGANIZATION_EVIDENCE_ENVELOPE_V1_FORMAT}"`,
+        '"format":"aih-organization-evidence-v2"',
+      ),
+    ]) {
+      expect(declared).not.toBe(canonical);
+      const result = await consumeWithEvidence(Buffer.from(declared, "utf8"));
+      expect(result.status.reason).toBe("unknown-contract-version");
+      expect(result.status.evidence).toBe("unverified");
+      expect(result.diagnostics).toEqual([
+        expect.objectContaining({ code: "unknown-contract-version", field: "evidence" }),
+      ]);
+    }
+  });
+
+  it("keeps malformed evidence bytes that declare v1 as malformed", async () => {
+    const canonical = Buffer.from(evidenceBytes).toString("utf8");
+    for (const text of [
+      "{",
+      `${canonical}
+`,
+      JSON.stringify(JSON.parse(canonical), null, 2),
+    ]) {
+      const result = await consumeWithEvidence(Buffer.from(text, "utf8"));
+      expect(result.status.reason).toBe("malformed-bytes");
+    }
   });
 });

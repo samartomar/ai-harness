@@ -594,6 +594,39 @@ describe("consume-level observation", () => {
     expect(result.status.reason).toBe("observed-file-unsafe");
   });
 
+  it("refuses a manifest of another version as an unknown contract version", async () => {
+    const canonical = canonicalUpstreamArtifactManifestV1(
+      manifestFor({ installRoot: INSTALL_ROOT }),
+    );
+    expect(canonical).toContain('"version":1');
+    for (const declared of [
+      canonical.replace('"version":1', '"version":2'),
+      canonical.replace(
+        '"format":"aih-upstream-artifact-manifest"',
+        '"format":"aih-upstream-artifact-manifest-v2"',
+      ),
+    ]) {
+      expect(declared).not.toBe(canonical);
+      const result = await consume({ manifestBytes: Buffer.from(declared, "utf8") });
+      // The shared code is told apart from the saved document's own version
+      // refusal by the field: the manifest path, never the saved bytes.
+      expect(result.status.reason).toBe("unknown-contract-version");
+      expect(result.status.execution).toBe("refused");
+      expect(result.diagnostics).toEqual([
+        expect.objectContaining({
+          code: "unknown-contract-version",
+          field: "observation.manifestPath",
+        }),
+      ]);
+    }
+    // A manifest that declares v1 but breaks it keeps its existing code.
+    const broken = await consume({ manifestBytes: Buffer.from("{", "utf8") });
+    expect(broken.status.reason).toBe("observation-manifest-mismatch");
+    expect(broken.diagnostics).toEqual([
+      expect.objectContaining({ code: "observation-manifest-mismatch", field: "observation" }),
+    ]);
+  });
+
   it("refuses a manifest issued for another decision", async () => {
     const result = await consume({ manifestDecisionId: assertionDecision.id });
     expect(result.status.reason).toBe("observation-manifest-mismatch");

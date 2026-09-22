@@ -45,6 +45,7 @@ import {
 import {
   matchesAihSupportedQualificationBindingV1,
   mintAihSupportedQualificationV1,
+  ORGANIZATION_EVIDENCE_ENVELOPE_V1_FORMAT,
   organizationEvidenceEnvelopeDigestV1,
   parseOrganizationEvidenceEnvelopeV1Bytes,
   type VerifiedQualificationV1,
@@ -57,6 +58,7 @@ import {
 import {
   MAX_UPSTREAM_ARTIFACT_MANIFEST_BYTES_V1,
   parseUpstreamArtifactManifestV1Bytes,
+  UPSTREAM_ARTIFACT_MANIFEST_V1_FORMAT,
   type UpstreamArtifactManifestV1,
 } from "./upstream-artifact-manifest-v1.js";
 import { resolveObservedEffect } from "./upstream-observation-receipt-v1.js";
@@ -100,6 +102,30 @@ function stableJson(value: unknown): string {
 
 function sha256Hex(text: string): string {
   return createHash("sha256").update(text, "utf8").digest("hex");
+}
+
+/**
+ * Whether raw bytes that failed their parser still DECLARE this exact contract:
+ * the two-step every Core reader uses to keep an unknown contract version
+ * visible rather than folded into malformation. `false` means the decoded JSON
+ * names another format or version (`unknown-contract-version`); `true` means
+ * it declares this contract but breaks it; `undefined` means the bytes are not
+ * UTF-8 JSON at all.
+ */
+function declaresContractV1(
+  bytes: Uint8Array,
+  format: string,
+  version: number,
+): boolean | undefined {
+  try {
+    const raw = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as {
+      format?: unknown;
+      version?: unknown;
+    } | null;
+    return raw?.format === format && raw?.version === version;
+  } catch {
+    return undefined;
+  }
 }
 
 // --------------------------------------------------------------------------
@@ -1068,13 +1094,18 @@ type SealedClosureV1 = z.infer<typeof sealSchema>;
 
 type ObservationStageResultV1 =
   | { readonly observed: NonNullable<ConsumeGovernanceInputV1Result["observation"]> }
-  | { readonly refused: GovernanceInputRefusalV1; readonly detail: string };
+  | {
+      readonly refused: GovernanceInputRefusalV1;
+      readonly detail: string;
+      readonly field?: string;
+    };
 
 function refusedObservation(
   refused: GovernanceInputRefusalV1,
   detail: string,
+  field?: string,
 ): ObservationStageResultV1 {
-  return { refused, detail };
+  return field === undefined ? { refused, detail } : { refused, detail, field };
 }
 
 /** An installation mapping may never swallow the manifest or the evidence file. */
@@ -1173,6 +1204,16 @@ function observeSealedClosureV1(input: ObservationStageInputV1): ObservationStag
   }
   const manifest = parseUpstreamArtifactManifestV1Bytes(manifestFile.bytes);
   if (manifest === undefined) {
+    // An unknown manifest version reuses the shared `unknown-contract-version`
+    // code; the diagnostic field names the manifest, so it is never confused
+    // with the saved document's own version refusal.
+    if (declaresContractV1(manifestFile.bytes, UPSTREAM_ARTIFACT_MANIFEST_V1_FORMAT, 1) === false) {
+      return refusedObservation(
+        "unknown-contract-version",
+        "the named file declares an upstream artifact manifest format or version other than v1",
+        "observation.manifestPath",
+      );
+    }
     return refusedObservation(
       "observation-manifest-mismatch",
       "the named file is not a canonical v1 upstream artifact manifest",
@@ -1378,17 +1419,9 @@ export async function consumeGovernanceInputV1(
     let reason: GovernanceInputRefusalV1 = "malformed-bytes";
     if (input.bytes.byteLength > MAX_GOVERNANCE_INPUT_BYTES_V1) reason = "oversize-bytes";
     else {
-      try {
-        const raw = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(input.bytes)) as {
-          format?: unknown;
-          version?: unknown;
-        };
-        if (raw?.format !== GOVERNANCE_INPUT_V1_FORMAT || raw?.version !== 1)
-          reason = "unknown-contract-version";
-        else reason = "non-canonical-bytes";
-      } catch {
-        reason = "malformed-bytes";
-      }
+      const declares = declaresContractV1(input.bytes, GOVERNANCE_INPUT_V1_FORMAT, 1);
+      if (declares === false) reason = "unknown-contract-version";
+      else if (declares === true) reason = "non-canonical-bytes";
     }
     return refuse({ structure: "invalid", ...notEvaluated, reason }, [
       diagnostic(reason, "bytes", "saved document did not survive its own contract"),
@@ -1407,6 +1440,20 @@ export async function consumeGovernanceInputV1(
   }
   const envelope = parseOrganizationEvidenceEnvelopeV1Bytes(custody.evidence.bytes);
   if (envelope === undefined) {
+    // The same two-step as the saved document: a different contract version is
+    // refused by name, and only everything else is malformation.
+    if (
+      declaresContractV1(custody.evidence.bytes, ORGANIZATION_EVIDENCE_ENVELOPE_V1_FORMAT, 1) ===
+      false
+    ) {
+      return refuse({ ...base, evidence: "unverified", reason: "unknown-contract-version" }, [
+        diagnostic(
+          "unknown-contract-version",
+          "evidence",
+          "evidence file declares an organization evidence format or version other than v1",
+        ),
+      ]);
+    }
     return refuse({ ...base, evidence: "unverified", reason: "malformed-bytes" }, [
       diagnostic("malformed-bytes", "evidence", "evidence file is not a canonical V1 envelope"),
     ]);
@@ -1910,7 +1957,9 @@ export async function consumeGovernanceInputV1(
         outcome: "refused",
         reason: observation.refused,
       },
-      diagnostics: [diagnostic(observation.refused, "observation", observation.detail)],
+      diagnostics: [
+        diagnostic(observation.refused, observation.field ?? "observation", observation.detail),
+      ],
       ...routed,
     };
   }
