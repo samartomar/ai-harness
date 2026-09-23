@@ -50,7 +50,9 @@ import { resolveInternalScopes, scanTrustDependencyNames } from "./depnames.js";
 import {
   runMcpConfigDetectors,
   runTrustDetectors,
+  type ScanObservationV1,
   scanNativeMaliciousCode,
+  type TrustDetectorExecutionV1,
   type TrustDetectorName,
   trustRuntimeAdvisory,
 } from "./detectors.js";
@@ -153,10 +155,10 @@ export interface ScanTrustTreeOptions {
   progress?: (message: string) => void;
   inventoryFactory?: (root: string, options?: TrustInventoryBuildOptions) => TrustFileInventory;
   /**
-   * Scan's own detector execution, injected by the consumer exactly as the
-   * governance path injects Scan's verification. Only the detectors the
-   * adapter's capability list names are delegated; the rest keep Core's own
-   * execution, and with no adapter this scan behaves exactly as it does today.
+   * Scan's detector execution. Omitted means the installed `@aihq/scan`, loaded
+   * on first need; an injected adapter replaces it. Which detectors go to Scan
+   * is decided per detector in `runTrustDetectors`; the rest run in Core and
+   * are recorded as `core-legacy`.
    */
   scanExecution?: ScanExecutionAdapterV1;
 }
@@ -170,6 +172,10 @@ export interface TrustScanResult {
   normalizedFindings?: NormalizedTrustFinding[];
   /** Policy level for each normalized finding; never an install/profile verdict. */
   policyDispositions?: TrustPolicyDisposition[];
+  /** Per detector: which package executed it, and Scan's execution profile when Scan did. */
+  detectorExecutions?: TrustDetectorExecutionV1[];
+  /** Observations the installed @aihq/scan recorded beside Core's detectors (no findings). */
+  scanObservations?: ScanObservationV1[];
 }
 
 interface IncomingMcpServerMap {
@@ -1056,6 +1062,8 @@ export async function scanTrustTreeWithAnalyzers(
         checks: missingDetectorRuntimeChecks(requiredDetectors ?? [], posture),
         analyzersRun: [],
         rawOccurrences: [],
+        executions: [],
+        observations: [],
       };
   const mcpDetectorResult =
     mcpConfigFiles.length > 0 && hasDetectorRuntime
@@ -1073,7 +1081,7 @@ export async function scanTrustTreeWithAnalyzers(
           progress,
           scanExecution,
         })
-      : { checks: [], analyzersRun: [], rawOccurrences: [] };
+      : { checks: [], analyzersRun: [], rawOccurrences: [], executions: [], observations: [] };
   const effectiveSandboxSmokeShape =
     sandboxSmokeShape ?? sandboxSmokeShapeForTrustScan(safeRoot, inventory);
   const sandboxSmokeChecks = [
@@ -1101,6 +1109,8 @@ export async function scanTrustTreeWithAnalyzers(
     rawOccurrences,
     normalizedFindings,
     policyDispositions: normalizedFindings.map(dispositionForTrustFinding),
+    detectorExecutions: [...detectorResult.executions, ...mcpDetectorResult.executions],
+    scanObservations: [...detectorResult.observations, ...mcpDetectorResult.observations],
   };
 }
 
@@ -1287,7 +1297,13 @@ async function trustScanPlanForSourceInternal(
     );
     actions.push(
       ...probesForStaticChecks(acknowledgeChecks(scan.checks, ctx)),
-      digest("trust runtime advisory", trustRuntimeAdvisory(scan.analyzersRun)),
+      digest(
+        "trust runtime advisory",
+        trustRuntimeAdvisory(scan.analyzersRun, {
+          executions: scan.detectorExecutions,
+          observations: scan.scanObservations,
+        }),
+      ),
     );
   } else {
     let remoteScan: Promise<TrustScanResult> | undefined;
@@ -1430,7 +1446,10 @@ async function trustScanPlanForSourceInternal(
         try {
           if (!digestCtx.apply) return trustRuntimeAdvisory(["aih-native"]);
           const scan = await scanRemoteSource(digestCtx);
-          return trustRuntimeAdvisory(scan.analyzersRun);
+          return trustRuntimeAdvisory(scan.analyzersRun, {
+            executions: scan.detectorExecutions,
+            observations: scan.scanObservations,
+          });
         } catch {
           return trustRuntimeAdvisory(["aih-native"]);
         } finally {
