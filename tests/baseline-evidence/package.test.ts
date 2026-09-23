@@ -68,8 +68,28 @@ describe("baseline evidence release payload", () => {
     expect(manifest.peerDependencies?.["@aihq/scan"]).toBe(">=0.4.0 <1.0.0");
     expect(manifest.peerDependenciesMeta?.["@aihq/scan"]).toEqual({ optional: true });
     const tsup = readFileSync(join(repo, "tsup.config.ts"), "utf8");
-    expect(tsup).toMatch(/external:\s*\["@aihq\/scan"\]/u);
+    expect(tsup).toMatch(/external:\s*\[[^\]]*"@aihq\/scan"[^\]]*\]/u);
     expect(tsup).not.toMatch(/noExternal:[^\]]*@aihq\/scan/u);
+  });
+
+  it("declares @aihq/catalog as an external optional peer, never a bundled runtime dependency", () => {
+    const manifest = JSON.parse(readFileSync(join(repo, "package.json"), "utf8")) as {
+      dependencies: Record<string, string>;
+      devDependencies: Record<string, string>;
+      peerDependencies?: Record<string, string>;
+      peerDependenciesMeta?: Record<string, { optional?: boolean }>;
+    };
+    expect(manifest.dependencies["@aihq/catalog"]).toBeUndefined();
+    expect(manifest.peerDependencies?.["@aihq/catalog"]).toBe(">=0.2.0 <1.0.0");
+    expect(manifest.peerDependenciesMeta?.["@aihq/catalog"]).toEqual({ optional: true });
+    // The registry's 0.2.0 lacks the runtime-descriptors subpath, so Core's own
+    // tests use the exact Catalog tarball committed beside them.
+    expect(manifest.devDependencies["@aihq/catalog"]).toBe(
+      "file:tests/fixtures/packages/aihq-catalog-0.2.0-517e43d.tgz",
+    );
+    const tsup = readFileSync(join(repo, "tsup.config.ts"), "utf8");
+    expect(tsup).toMatch(/external:\s*\[[^\]]*"@aihq\/catalog"[^\]]*\]/u);
+    expect(tsup).not.toMatch(/noExternal:[^\]]*@aihq\/catalog/u);
   });
 
   it("does not retain a second baseline refresh executor inside Core", () => {

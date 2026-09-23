@@ -35,7 +35,10 @@ export default defineConfig({
   // loaded only through src/scan-package/load-scan-package.ts. Never bundle it:
   // a bundled copy would freeze one Scan build inside Core and defeat updating
   // Scan independently. It must never appear in `noExternal`.
-  external: ["@aihq/scan"],
+  // @aihq/catalog is the same arrangement, loaded only through
+  // src/catalog-package/load-catalog-package.ts; Core pins the descriptor bytes
+  // it accepts from it, so a bundled copy would add nothing but a stale Catalog.
+  external: ["@aihq/scan", "@aihq/catalog"],
   // YAML's bundled CommonJS distribution requires Node's built-in process module.
   // Keep that built-in resolution available in each standalone ESM chunk.
   banner: {
