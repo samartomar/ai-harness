@@ -1,3 +1,5 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   assertHistoricalEccAdapterCompatibilityV1,
@@ -10,7 +12,7 @@ import { packagedEccRuntimeDescriptorsV1 } from "../../src/org-policy/workbench/
 const INITIAL_ECC_COMMIT = "5064474d4d762dc9640234a41617cccb79185cec";
 
 describe("packaged historical ECC runtime delivery", () => {
-  it("resolves unchanged historical routes while retaining their exact sealed destinations", () => {
+  it("resolves unchanged historical routes while retaining their exact sealed destinations", async () => {
     const descriptor = packagedEccRuntimeDescriptorsV1().find(
       (candidate) => candidate.source.commit === INITIAL_ECC_COMMIT,
     );
@@ -34,7 +36,8 @@ describe("packaged historical ECC runtime delivery", () => {
         }),
       ]),
     );
-    const resolved = resolveHistoricalEccRuntimeDescriptorV1(
+    // With the Catalog this checkout installs, the same sealed bytes arrive through it.
+    const resolved = await resolveHistoricalEccRuntimeDescriptorV1(
       {
         governance: {
           externalSelections: [
@@ -52,8 +55,9 @@ describe("packaged historical ECC runtime delivery", () => {
           ],
         },
       },
-      { now: "2026-09-13T19:45:00.000Z" },
+      { now: "2026-09-13T19:45:00.000Z", dataRoot: join(tmpdir(), "aih-absent-workbench-data-v1") },
     );
+    expect(resolved.descriptorSource).toBe("installed-catalog");
     expect(resolved.source).toMatchObject({
       repository: "affaan-m/ECC",
       commit: INITIAL_ECC_COMMIT,

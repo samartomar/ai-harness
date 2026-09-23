@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
+import type { CatalogPackageAccessV1 } from "../../src/catalog-package/load-catalog-package.js";
 import { canonicalStrictJsonBytesV1 } from "../../src/contract/strict-json-v1.js";
 import {
   currentEccRuntimeAdapterCompatibilityV1,
@@ -131,14 +132,42 @@ const policy = {
 };
 const now = "2026-09-09T03:30:00.000Z";
 
+// These cases pin the local-receipt and embedded package-literal stages, so the
+// installed Catalog stage reports "not installed" (the only state that reaches
+// the embedded copy). Catalog-carried descriptors: runtime-descriptor-catalog-resolution.test.ts.
+const catalogImports = { count: 0 };
+const catalog: CatalogPackageAccessV1 = {
+  importPackage: () => {
+    catalogImports.count += 1;
+    return Promise.reject(
+      Object.assign(new Error("Cannot find package '@aihq/catalog' imported from /fixture"), {
+        code: "ERR_MODULE_NOT_FOUND",
+      }),
+    );
+  },
+  resolve: () => {
+    throw new Error("unreachable");
+  },
+  readFile: () => {
+    throw new Error("unreachable");
+  },
+};
+
 describe("historical ECC runtime descriptor resolution", () => {
-  it("uses the first matching local receipt ahead of package data and preserves rider optionality", () => {
+  it("uses the first matching local receipt ahead of package data and preserves rider optionality", async () => {
     const packageDescriptor = descriptor();
     const localDescriptor = descriptor({ riderOnly: true });
     candidates.packaged = [packageDescriptor];
     candidates.local = [localDescriptor, packageDescriptor];
+    catalogImports.count = 0;
 
-    const resolved = resolveHistoricalEccRuntimeDescriptorV1(policy, { now });
+    const resolved = await resolveHistoricalEccRuntimeDescriptorV1(policy, { now, catalog });
+    // A matching local receipt is stage 1: no package carrier is consulted at all.
+    expect(resolved.descriptorSource).toBe("local-source-data");
+    expect(resolved.descriptorResolution).toEqual([
+      { stage: "local-source-data", outcome: "selected" },
+    ]);
+    expect(catalogImports.count).toBe(0);
     expect(resolved.descriptorSha256).toBe(
       `sha256:${createHash("sha256").update(canonicalStrictJsonBytesV1(localDescriptor)).digest("hex")}`,
     );
@@ -146,23 +175,24 @@ describe("historical ECC runtime descriptor resolution", () => {
     expect(resolved.relations.declarationRidersById.get("skill:control")).toEqual(["skill:helper"]);
   });
 
-  it("keeps an overlap already removed from rider relations mandatory", () => {
+  it("keeps an overlap already removed from rider relations mandatory", async () => {
     const localDescriptor = descriptor();
     candidates.packaged = [];
     candidates.local = [localDescriptor];
 
-    const resolved = resolveHistoricalEccRuntimeDescriptorV1(policy, { now });
+    const resolved = await resolveHistoricalEccRuntimeDescriptorV1(policy, { now, catalog });
     expect(resolved.relations.mandatoryRequirementsById.get("skill:control")).toEqual([
       "skill:helper",
     ]);
     expect(resolved.relations.declarationRidersById.get("skill:control")).toBeUndefined();
   });
 
-  it("retains archived custody after its original window but rejects future original facts", () => {
+  it("retains archived custody after its original window but rejects future original facts", async () => {
     const packageDescriptor = descriptor();
     candidates.local = [];
     candidates.packaged = [packageDescriptor];
-    const resolved = resolveHistoricalEccRuntimeDescriptorV1(policy, { now });
+    const resolved = await resolveHistoricalEccRuntimeDescriptorV1(policy, { now, catalog });
+    expect(resolved.descriptorSource).toBe("core-embedded");
     expect(resolved.evidence.custodyPublications[0]).toMatchObject({
       reportVerificationExpiresAt: "2026-07-03T00:45:00.000Z",
       attestedAt: "2026-07-03T00:15:00.000Z",
@@ -173,22 +203,30 @@ describe("historical ECC runtime descriptor resolution", () => {
     future.evidence.custodyPublications[0]!.reportVerificationExpiresAt =
       "2026-09-10T00:45:00.000Z";
     candidates.packaged = [future];
-    expect(() => resolveHistoricalEccRuntimeDescriptorV1(policy, { now })).toThrow();
+    await expect(
+      resolveHistoricalEccRuntimeDescriptorV1(policy, { now, catalog }),
+    ).rejects.toThrow();
   });
 
-  it("deduplicates identical package literals but rejects divergent package or incompatible local facts", () => {
+  it("deduplicates identical package literals but rejects divergent package or incompatible local facts", async () => {
     const packageDescriptor = descriptor();
     candidates.local = [];
     candidates.packaged = [packageDescriptor, structuredClone(packageDescriptor)];
-    expect(resolveHistoricalEccRuntimeDescriptorV1(policy, { now }).source.commit).toBe(commit);
+    expect(
+      (await resolveHistoricalEccRuntimeDescriptorV1(policy, { now, catalog })).source.commit,
+    ).toBe(commit);
 
     const divergent = descriptor();
     divergent.evidence.validUntil = "2026-10-02T00:00:00.000Z";
     candidates.packaged = [packageDescriptor, divergent];
-    expect(() => resolveHistoricalEccRuntimeDescriptorV1(policy, { now })).toThrow();
+    await expect(
+      resolveHistoricalEccRuntimeDescriptorV1(policy, { now, catalog }),
+    ).rejects.toThrow();
 
     candidates.packaged = [packageDescriptor];
     candidates.local = [descriptor({ incompatibleAdapter: true })];
-    expect(() => resolveHistoricalEccRuntimeDescriptorV1(policy, { now })).toThrow();
+    await expect(
+      resolveHistoricalEccRuntimeDescriptorV1(policy, { now, catalog }),
+    ).rejects.toThrow();
   });
 });

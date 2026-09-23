@@ -123,10 +123,10 @@ function requestedCatalog(ctx: PlanContext): BaselineCatalog {
   return baselineCatalogById("ecc", requestedPin || undefined);
 }
 
-function resolveHistoricalRuntimeContext(
+async function resolveHistoricalRuntimeContext(
   ctx: PlanContext,
   policy: OrgPolicy,
-): HistoricalEccRuntimeDescriptorContextV1 | undefined {
+): Promise<HistoricalEccRuntimeDescriptorContextV1 | undefined> {
   if ((policy as { schemaVersion?: unknown }).schemaVersion !== 3) return undefined;
   const requestedPin = (ctx.env.AIH_ECC_REF ?? "").trim();
   if (requestedPin.length > 0 && !FULL_SHA.test(requestedPin)) {
@@ -159,7 +159,10 @@ function resolveHistoricalRuntimeContext(
     }
     return undefined;
   }
-  const historical = resolveHistoricalEccRuntimeDescriptorV1(policy);
+  const historical = await resolveHistoricalEccRuntimeDescriptorV1(policy);
+  // Operator-visible provenance: which carrier supplied the authenticated
+  // descriptor, and the order that selected it (never the bytes themselves).
+  ctx.progress?.(historicalDescriptorProvenance(historical));
   if (requestedPin.length > 0 && requestedPin !== historical.source.commit) {
     throw new AihError(
       `AIH_ECC_REF ${requestedPin} does not match the policy-selected authenticated ECC source ${historical.source.commit}`,
@@ -167,6 +170,19 @@ function resolveHistoricalRuntimeContext(
     );
   }
   return historical;
+}
+function historicalDescriptorProvenance(
+  historical: HistoricalEccRuntimeDescriptorContextV1,
+): string {
+  const carrier = historical.descriptorCarrier;
+  const from =
+    carrier === undefined
+      ? historical.descriptorSource
+      : `${historical.descriptorSource} (${carrier.package}${carrier.version === undefined ? "" : ` ${carrier.version}`}, ${carrier.runtimeDescriptorsFormat} v${carrier.runtimeDescriptorsVersion} ${carrier.runtimeDescriptorsDigest})`;
+  const order = historical.descriptorResolution
+    .map((step) => `${step.stage}=${step.outcome}`)
+    .join(", ");
+  return `historical ECC runtime descriptor ${historical.source.repository}@${historical.source.commit} ${historical.descriptorSha256} from ${from}; resolution: ${order}`;
 }
 function earlierCommitDeadline(existing: string | undefined, evidenceExpiresAt: string): string {
   const evidenceEpoch = Date.parse(evidenceExpiresAt);
@@ -414,7 +430,7 @@ export async function executeEccCommand(
       // the profile installer here rather than wrapping it: AIH-direct
       // materialization is what makes per-component governed control possible,
       // and the framework's own installer projects surfaces governance owns.
-      const historical = resolveHistoricalRuntimeContext(targetCtx, policy);
+      const historical = await resolveHistoricalRuntimeContext(targetCtx, policy);
       // V3 historical sources are only admitted through the sealed resolver;
       // a caller-supplied catalog cannot substitute a different authority.
       const catalog = historical?.catalog ?? deps.catalog ?? requestedCatalog(targetCtx);
