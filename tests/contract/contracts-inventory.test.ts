@@ -72,12 +72,12 @@ const PINS: ReadonlyArray<readonly [file: string, line: number, text: string]> =
   ],
   [
     "src/trust/detectors.ts",
-    2233,
+    2247,
     "export const SCAN_DELEGATED_TRUST_DETECTORS: ReadonlySet<TrustDetectorName> = new Set();",
   ],
   [
     "src/trust/detectors.ts",
-    2241,
+    2255,
     'export const SCAN_NATIVE_OBSERVATION_DETECTOR_ID = "detector.aih-native";',
   ],
   [
