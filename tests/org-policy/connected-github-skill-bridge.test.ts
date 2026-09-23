@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultStudioPolicy } from "../../src/org-policy/studio-model.js";
+import { parseOrgPolicy } from "../../src/org-policy/schema.js";
 import type { ResolvedGithubSkillV1 } from "../../src/org-policy/workbench/core/bounded-github-skill-resolver.js";
 import { bridgeConnectedGithubSkillV1 } from "../../src/org-policy/workbench/core/connected-github-skill-bridge.js";
 
@@ -15,9 +15,25 @@ const first: ResolvedGithubSkillV1 = {
   },
 };
 
+function basePolicy() {
+  return parseOrgPolicy({
+    schemaVersion: 2,
+    minimumPosture: "vibe",
+    references: { repoContract: "ai-coding/project.json" },
+    governance: {
+      policyVersion: "1",
+      catalog: { reviewed: [], custom: [] },
+      activations: [],
+      authority: { approvals: [] },
+      externalCuration: [],
+      externalSelections: [],
+    },
+  });
+}
+
 describe("connected GitHub Skill bridge", () => {
   it("adds a Core-prepared declaration-only Skill selection without evidence or approval", () => {
-    const bridge = bridgeConnectedGithubSkillV1(defaultStudioPolicy(), first);
+    const bridge = bridgeConnectedGithubSkillV1(basePolicy(), first);
     const policy = bridge.policy as {
       authoringSelections: { roots: Array<Record<string, unknown>> };
       authoringSources: Array<{ bytesBase64: string }>;
@@ -48,12 +64,11 @@ describe("connected GitHub Skill bridge", () => {
   });
 
   it("keeps an identical existing root and its user rationale on repeat", () => {
-    const initial = bridgeConnectedGithubSkillV1(defaultStudioPolicy(), first);
+    const initial = bridgeConnectedGithubSkillV1(basePolicy(), first);
     const policy = structuredClone(initial.policy) as {
       authoringSelections: { roots: Array<Record<string, unknown>> };
     };
-    // The default policy ships Core baseline roots first; the bridged Skill
-    // root is identified by its assetId, not its position.
+    // Identify the bridged Skill by assetId, never by root position.
     const existingRoot = policy.authoringSelections.roots.find(
       (root) => root.assetId === initial.root.assetId,
     );
@@ -83,18 +98,14 @@ describe("connected GitHub Skill bridge", () => {
         commit: "a".repeat(40),
       },
     } satisfies ResolvedGithubSkillV1;
-    // The default policy already carries the Core baseline roots; the two
-    // bridged pins must land as two additional, distinct source identities.
-    const baselineRoots = (
-      defaultStudioPolicy() as unknown as { authoringSelections: { roots: unknown[] } }
-    ).authoringSelections.roots.length;
-    const one = bridgeConnectedGithubSkillV1(defaultStudioPolicy(), first);
+    // Both bridged pins must land as distinct source identities.
+    const one = bridgeConnectedGithubSkillV1(basePolicy(), first);
     const two = bridgeConnectedGithubSkillV1(one.policy, another);
 
     expect(two.manifestBytes).toHaveLength(2);
     expect(two.policy).toMatchObject({ authoringSelections: { roots: expect.any(Array) } });
     const roots = (two.policy.authoringSelections as { roots: unknown[] }).roots;
-    expect(roots).toHaveLength(baselineRoots + 2);
+    expect(roots).toHaveLength(2);
     const bridgedSourceIds = new Set(
       roots
         .map((root) => (root as { sourceId?: string }).sourceId)

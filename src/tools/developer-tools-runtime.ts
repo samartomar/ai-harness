@@ -453,7 +453,8 @@ export function createDeveloperToolReconciler(
     }
     const id = input.id;
     const operation =
-      deps.operations?.[id] ?? defaultOperations[id] ?? defaultUnavailableOperation(id);
+      deps.operations?.[id] ??
+      (id === "headroom" ? defaultUnavailableOperation(id) : defaultOperations[id]);
 
     // Token Optimizer owns its independent receipt and removal contract.
     if (id === "token-optimizer") {

@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import type { CatalogPackageAccessV1 } from "../../src/catalog-package/load-catalog-package.js";
+import {
+  type CatalogPackageAccessV1,
+  CatalogPackageRefusalError,
+} from "../../src/catalog-package/load-catalog-package.js";
 import { canonicalStrictJsonBytesV1 } from "../../src/contract/strict-json-v1.js";
 import {
   currentEccRuntimeAdapterCompatibilityV1,
@@ -132,9 +135,11 @@ const policy = {
 };
 const now = "2026-09-09T03:30:00.000Z";
 
-// These cases pin the local-receipt and embedded package-literal stages, so the
-// installed Catalog stage reports "not installed" (the only state that reaches
-// the embedded copy). Catalog-carried descriptors: runtime-descriptor-catalog-resolution.test.ts.
+// These cases pin the local-receipt stage: a matching local receipt is selected
+// without the installed Catalog ever being imported or probed. The installed
+// Catalog mock reports it as not installed, so with no matching local receipt
+// the resolver refuses rather than falling back to package literals.
+// Catalog-carried descriptors: runtime-descriptor-catalog-resolution.test.ts.
 const catalogImports = { count: 0 };
 const catalog: CatalogPackageAccessV1 = {
   importPackage: () => {
@@ -153,6 +158,15 @@ const catalog: CatalogPackageAccessV1 = {
   },
 };
 
+async function refusalOf(promise: Promise<unknown>): Promise<unknown> {
+  try {
+    await promise;
+  } catch (error) {
+    return error;
+  }
+  throw new Error("expected a refusal");
+}
+
 describe("historical ECC runtime descriptor resolution", () => {
   it("uses the first matching local receipt ahead of package data and preserves rider optionality", async () => {
     const packageDescriptor = descriptor();
@@ -162,7 +176,7 @@ describe("historical ECC runtime descriptor resolution", () => {
     catalogImports.count = 0;
 
     const resolved = await resolveHistoricalEccRuntimeDescriptorV1(policy, { now, catalog });
-    // A matching local receipt is stage 1: no package carrier is consulted at all.
+    // A matching local receipt is stage 1: the Catalog is never imported or probed.
     expect(resolved.descriptorSource).toBe("local-source-data");
     expect(resolved.descriptorResolution).toEqual([
       { stage: "local-source-data", outcome: "selected" },
@@ -188,11 +202,11 @@ describe("historical ECC runtime descriptor resolution", () => {
   });
 
   it("retains archived custody after its original window but rejects future original facts", async () => {
-    const packageDescriptor = descriptor();
-    candidates.local = [];
-    candidates.packaged = [packageDescriptor];
+    const localDescriptor = descriptor();
+    candidates.packaged = [];
+    candidates.local = [localDescriptor];
     const resolved = await resolveHistoricalEccRuntimeDescriptorV1(policy, { now, catalog });
-    expect(resolved.descriptorSource).toBe("core-embedded");
+    expect(resolved.descriptorSource).toBe("local-source-data");
     expect(resolved.evidence.custodyPublications[0]).toMatchObject({
       reportVerificationExpiresAt: "2026-07-03T00:45:00.000Z",
       attestedAt: "2026-07-03T00:15:00.000Z",
@@ -202,26 +216,23 @@ describe("historical ECC runtime descriptor resolution", () => {
     future.evidence.custodyPublications[0]!.attestedAt = "2026-09-10T00:00:00.000Z";
     future.evidence.custodyPublications[0]!.reportVerificationExpiresAt =
       "2026-09-10T00:45:00.000Z";
-    candidates.packaged = [future];
+    candidates.local = [future];
     await expect(
       resolveHistoricalEccRuntimeDescriptorV1(policy, { now, catalog }),
     ).rejects.toThrow();
   });
 
-  it("deduplicates identical package literals but rejects divergent package or incompatible local facts", async () => {
+  it("refuses when only embedded package literals exist, and still rejects incompatible local facts", async () => {
     const packageDescriptor = descriptor();
     candidates.local = [];
     candidates.packaged = [packageDescriptor, structuredClone(packageDescriptor)];
-    expect(
-      (await resolveHistoricalEccRuntimeDescriptorV1(policy, { now, catalog })).source.commit,
-    ).toBe(commit);
-
-    const divergent = descriptor();
-    divergent.evidence.validUntil = "2026-10-02T00:00:00.000Z";
-    candidates.packaged = [packageDescriptor, divergent];
-    await expect(
+    const error = await refusalOf(
       resolveHistoricalEccRuntimeDescriptorV1(policy, { now, catalog }),
-    ).rejects.toThrow();
+    );
+    expect(error).toBeInstanceOf(CatalogPackageRefusalError);
+    expect((error as InstanceType<typeof CatalogPackageRefusalError>).refusal.reason).toBe(
+      "catalog-package-unavailable",
+    );
 
     candidates.packaged = [packageDescriptor];
     candidates.local = [descriptor({ incompatibleAdapter: true })];

@@ -17,3 +17,5 @@ Child timeout45minutes leaves sealing time within60minute job. VM loss or forced
 Focused checks from repository root:
 node --import tsx .github/public-policy-acceptance/check-preparation.mjs
 npx vitest run tests/release/hosted-policy-acceptance.test.ts
+
+The preparation check validates producer dispositions, pinned Core 0.6.1 arguments, and inert refusal gates. It does not prove compatibility with the installed historical browser form; only the hosted pinned-package acceptance run can do that.

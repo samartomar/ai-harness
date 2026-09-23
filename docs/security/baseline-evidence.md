@@ -92,36 +92,33 @@ and requires separate authorization for the exact SHA.
 
 ### Administrator fetch and cache boundary
 
-`aih policy generate <admin-root> --apply` resolves baseline evidence before it
-renders the administrator Workbench. Enterprise accepts only the fixed
-OS/admin-managed bootstrap root; Vibe accepts only the canonical bootstrap
-under the supplied administrator root. That strict canonical record owns the
+The retained internal baseline-evidence operations accept a fixed
+OS/admin-managed bootstrap root for Enterprise or a canonical bootstrap under
+the supplied administrator root for Vibe; there is no public `policy generate`
+or Workbench render route. The strict canonical bootstrap record owns the
 credential-free HTTPS artifact and attestation locators, exact publisher
 repository/workflow/issuer/ref/environment identity, the two supported source
 pins, schema range, and cache-age policy. Repository-local policy cannot choose
 or widen this channel.
 
-The route attempts a complete fresh artifact first, then a reverified
+The internal resolver attempts a complete fresh artifact first, then a reverified
 last-downloaded record, then the packaged lock. Only the exact unavailable
 sentinel advances to another tier: it is emitted only when the first artifact
 request receives HTTP 404 or 410. DNS, TLS, connection, request, or timeout
 failures, every redirect, and every non-200 status other than 404 or 410 are
 terminal; they cannot force a downgrade to cached or packaged evidence. The
-applied administrator route therefore requires the baseline origin to answer
-before its downstream catalog stage can run. Partial, malformed, oversized,
+fresh resolution therefore requires the baseline origin to answer before
+downstream catalog preparation can run. Partial, malformed, oversized,
 stale, wrong-source, wrong-pin, wrong-schema, untrusted, or cache-commit
 outcomes also stop the run.
 Fresh and cached artifacts repeat the complete local artifact check and exact
 GitHub attestation verification; a prior verification result is never cache
 authority. Fresh bytes enter one bootstrap-derived, contained owner-only cache
-slot only after verification and before the Workbench uses them.
-
-Omitting `<admin-root>` preserves portable generation without acquisition or
-cache authority. Supplying it without `--apply` fails before HTTPS, process,
-cache, or Workbench effects. The rendered administrator artifact receives only
-bounded tier, source ids, schema version, digest, download age, and resolution
-time. Locators, local paths, credentials, signatures, attestation bytes, signer
-roots, and machine details are not representable in that provenance.
+slot only after verification. These internal cache contracts do not create an
+organization approval, public fetch command, or authoring route. Their bounded
+provenance contains tier, source ids, schema version, digest, download age, and
+resolution time, not locators, local paths, credentials, signatures, attestation
+bytes, signer roots, or machine details.
 
 ### Enterprise org-evidence boundary
 

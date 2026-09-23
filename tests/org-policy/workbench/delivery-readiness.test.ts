@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { inspectWorkbenchEvidenceCoverageV1 } from "../../../src/org-policy/workbench/delivery-readiness.js";
 import { prepareWorkbenchEvidenceCompositionsForReleaseV1 } from "../../../src/org-policy/workbench/providers/evidence-compositions.js";
-import { tinyStudioModel } from "../studio-test-fixture.js";
+import { tinyBackendCatalogFixture } from "../backend-catalog-fixture.js";
 
 describe("Workbench release evidence coverage", () => {
   it("requires an exact current report for every bundled asset, including new providers", () => {
-    const bundle = structuredClone(tinyStudioModel().workbenchBundle);
+    const bundle = structuredClone(tinyBackendCatalogFixture().workbenchBundle);
     bundle.evidence = {};
     const now = "2026-09-07T00:00:00Z";
     const initial = inspectWorkbenchEvidenceCoverageV1(bundle, now);
@@ -127,7 +127,7 @@ function currentVerifiedReport(asset: {
 }
 
 function fullyReportedCompositionFixture() {
-  const bundle = structuredClone(tinyStudioModel().workbenchBundle);
+  const bundle = structuredClone(tinyBackendCatalogFixture().workbenchBundle);
   const asset = Object.values(bundle.assets)[0];
   const source = Object.values(bundle.sources)[0];
   if (!asset || !source) throw new Error("Missing composition fixture seed");

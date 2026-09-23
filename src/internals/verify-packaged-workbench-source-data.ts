@@ -7,7 +7,14 @@ import {
   canonicalStrictJsonBytesV1,
   canonicalStrictJsonSha256V1,
 } from "../contract/strict-json-v1.js";
-import { inspectEccRuntimeDescriptorSealV1 } from "../ecc/runtime-descriptor.js";
+import {
+  assertHistoricalEccAdapterCompatibilityV1,
+  currentEccRuntimeAdapterCompatibilityV1,
+} from "../ecc/runtime-adapter-compatibility.js";
+import {
+  type EccRuntimeDescriptorSealV1,
+  inspectEccRuntimeDescriptorSealV1,
+} from "../ecc/runtime-descriptor.js";
 import { packagedWorkbenchSourceDataRecordsV1 } from "../org-policy/workbench/core/packaged-source-data.js";
 import { readSourceDataProofBlobV1 } from "../org-policy/workbench/core/source-data-proof-blobs.js";
 import {
@@ -64,6 +71,36 @@ async function download(url: string, maximum: number): Promise<Buffer> {
     await reader.cancel();
   }
   return Buffer.concat(chunks);
+}
+
+/** Replay only this Core's exact current or already-supported historical adapter projection. */
+export function assertPackagedEccRuntimeDescriptorReplayV1(
+  packaged: EccRuntimeDescriptorSealV1,
+  freshlyPrepared: EccRuntimeDescriptorSealV1 | undefined,
+): void {
+  if (freshlyPrepared === undefined)
+    throw new TypeError("Packaged runtime descriptor differs from original verified reports");
+  const original = inspectEccRuntimeDescriptorSealV1(packaged);
+  const fresh = inspectEccRuntimeDescriptorSealV1(freshlyPrepared);
+  const current = currentEccRuntimeAdapterCompatibilityV1(fresh.components);
+  if (
+    !canonicalStrictJsonBytesV1(fresh.adapterCompatibility).equals(
+      canonicalStrictJsonBytesV1(current),
+    )
+  )
+    throw new TypeError("Fresh runtime adapter differs from current verified components");
+  assertHistoricalEccAdapterCompatibilityV1(original.adapterCompatibility, fresh.components);
+  // The adapter is independently rederived above. Every other descriptor field
+  // must still be byte-identical to the original sealed publication.
+  const replayed = canonicalStrictJsonBytesV1({
+    ...fresh,
+    adapterCompatibility: original.adapterCompatibility,
+  });
+  if (
+    replayed.toString("base64") !== packaged.bytesBase64 ||
+    `sha256:${createHash("sha256").update(replayed).digest("hex")}` !== packaged.sha256
+  )
+    throw new TypeError("Packaged runtime descriptor differs from original verified reports");
 }
 
 /** Connected release gate; the offline package loader never calls this function. */
@@ -150,12 +187,7 @@ export async function verifyPackagedWorkbenchSourceDataV1(
           preparedRuntime?.descriptor === undefined
             ? undefined
             : sealPreparedEccRuntimeDescriptorV1(preparedRuntime.descriptor);
-        if (
-          sealed === undefined ||
-          sealed.sha256 !== record.runtimeDescriptor.sha256 ||
-          sealed.bytesBase64 !== record.runtimeDescriptor.bytesBase64
-        )
-          throw new TypeError("Packaged runtime descriptor differs from original verified reports");
+        assertPackagedEccRuntimeDescriptorReplayV1(record.runtimeDescriptor, sealed);
       }
       if (Object.keys(record.sourceBundle.qualifications ?? {}).length)
         throw new TypeError(

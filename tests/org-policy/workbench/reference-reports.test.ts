@@ -4,8 +4,8 @@ import {
   packagedScannerCollectionEvidenceV1,
   projectScannerCollectionEvidenceV1,
 } from "../../../src/org-policy/packaged-collection-evidence-v1.js";
-import { policyStudioModel } from "../../../src/org-policy/studio-model.js";
 import { packagedWorkbenchReferenceReportsV1 } from "../../../src/org-policy/workbench/core/packaged-reference-reports.js";
+import { defaultPreparedWorkbenchCatalog } from "../../../src/org-policy/workbench/prepared-catalog.js";
 import { WorkbenchReferenceReportsV1Schema } from "../../../src/org-policy/workbench/reference-reports.js";
 
 const matchingIds = [
@@ -19,17 +19,14 @@ const matchingIds = [
 
 describe("previous catalog reports", () => {
   it("shows exact historical subjects without adding current evidence or changing policy", () => {
-    const model = policyStudioModel();
-    const before = JSON.stringify({ bundle: model.workbenchBundle, policy: model.initialPolicy });
-    const reports = packagedWorkbenchReferenceReportsV1(model.workbenchBundle);
+    const bundle = defaultPreparedWorkbenchCatalog().bundle;
+    const before = JSON.stringify(bundle);
+    const reports = packagedWorkbenchReferenceReportsV1(bundle);
     expect(Object.keys(reports).sort()).toEqual(matchingIds);
-    expect(model.workbenchReferenceReports).toEqual(reports);
     expect(WorkbenchReferenceReportsV1Schema.parse(reports)).toEqual(reports);
-    expect(JSON.stringify({ bundle: model.workbenchBundle, policy: model.initialPolicy })).toBe(
-      before,
-    );
+    expect(JSON.stringify(bundle)).toBe(before);
     const record = packagedScannerCollectionEvidenceV1().find((item) => item.catalog.id === "aih")!;
-    expect(projectScannerCollectionEvidenceV1(model.workbenchBundle, [record])).toEqual({});
+    expect(projectScannerCollectionEvidenceV1(bundle, [record])).toEqual({});
     for (const [id, report] of Object.entries(reports)) {
       const component = record.coverage.components.find((item) => item.subject.assetId === id)!;
       const observation = record.observations.find(
@@ -43,14 +40,14 @@ describe("previous catalog reports", () => {
       expect(report.previousSourceContentDigest).toBe(record.catalog.source.contentDigest);
       expect(report.currentSourceContentDigest).not.toBe(report.previousSourceContentDigest);
       expect(report.publicationDigest).toBe(`sha256:${observation.publicationSha256}`);
-      expect(model.workbenchBundle.evidence[`evidence:${id}`]).toBeUndefined();
+      expect(bundle.evidence[`evidence:${id}`]).toBeUndefined();
     }
   });
 
   it.each(["contentDigest", "sourceRevisionId", "sourceId", "derivation"])(
     "does not associate a previous report with a changed %s",
     (field) => {
-      const bundle = structuredClone(policyStudioModel().workbenchBundle);
+      const bundle = structuredClone(defaultPreparedWorkbenchCatalog().bundle);
       Object.assign(bundle.assets["aih/github"]!, {
         [field]: field === "contentDigest" ? `sha256:${"0".repeat(64)}` : "different",
       });
@@ -59,7 +56,7 @@ describe("previous catalog reports", () => {
   );
 
   it("requires the original source identity and does not duplicate current reports", () => {
-    const bundle = structuredClone(policyStudioModel().workbenchBundle);
+    const bundle = structuredClone(defaultPreparedWorkbenchCatalog().bundle);
     const record = packagedScannerCollectionEvidenceV1().find((item) => item.catalog.id === "aih")!;
     const source = bundle.sources[record.catalog.source.id]!;
     source.upstreamOrigin.locator = "different";
@@ -74,7 +71,7 @@ describe("previous catalog reports", () => {
 
   it("rejects foreign publication links and cross-item display records", () => {
     const reports = structuredClone(
-      packagedWorkbenchReferenceReportsV1(policyStudioModel().workbenchBundle),
+      packagedWorkbenchReferenceReportsV1(defaultPreparedWorkbenchCatalog().bundle),
     );
     const report = reports["aih/github"]!;
     report.publicationUrl = "https://example.com/publication.json";
@@ -90,7 +87,7 @@ describe("previous catalog reports", () => {
   });
 
   it("defers to an independently attached current report", () => {
-    const bundle = structuredClone(policyStudioModel().workbenchBundle);
+    const bundle = structuredClone(defaultPreparedWorkbenchCatalog().bundle);
     const record = packagedScannerCollectionEvidenceV1().find((item) => item.catalog.id === "aih")!;
     const originalSourceDigest = bundle.sources[record.catalog.source.id]!.revision.contentDigest;
     bundle.sources[record.catalog.source.id]!.revision.contentDigest =
@@ -102,7 +99,7 @@ describe("previous catalog reports", () => {
   });
 
   it("rejects cross-wired first-party component identities even in a schema-valid sealed record", () => {
-    const bundle = policyStudioModel().workbenchBundle;
+    const bundle = defaultPreparedWorkbenchCatalog().bundle;
     const record = structuredClone(
       packagedScannerCollectionEvidenceV1().find((item) => item.catalog.id === "aih")!,
     );
@@ -132,7 +129,7 @@ describe("previous catalog reports", () => {
   });
 
   it("keeps historical reports readable when current evidence is only a missing placeholder", () => {
-    const bundle = structuredClone(policyStudioModel().workbenchBundle);
+    const bundle = structuredClone(defaultPreparedWorkbenchCatalog().bundle);
     const asset = bundle.assets["aih/github"]!;
     bundle.evidence["placeholder"] = {
       id: "placeholder",

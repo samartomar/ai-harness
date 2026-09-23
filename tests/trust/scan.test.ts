@@ -3586,6 +3586,21 @@ describe("scanTrustTree", () => {
               message: { text: "finding outside the tree" },
               locations: [location(join(dirname(dir), "elsewhere.txt"), 1)],
             },
+            {
+              ruleId: "semgrep.future-rule",
+              message: { text: "finding with a remote file URL authority" },
+              locations: [location("file://remote-host/share/target.txt", 2)],
+            },
+            {
+              ruleId: "semgrep.future-rule",
+              message: { text: "finding with an uppercase file URL scheme" },
+              locations: [location("FILE://remote-host/share/target.txt", 3)],
+            },
+            {
+              ruleId: "semgrep.future-rule",
+              message: { text: "finding with a localhost file URL authority" },
+              locations: [location("file://localhost/share/target.txt", 4)],
+            },
           ],
         },
       ],
@@ -3612,6 +3627,18 @@ describe("scanTrustTree", () => {
         expect.objectContaining({
           detail: expect.stringContaining("finding outside the tree"),
           location: expect.objectContaining({ uri: "semgrep.sarif", startLine: 1 }),
+        }),
+        expect.objectContaining({
+          detail: expect.stringContaining("finding with a remote file URL authority"),
+          location: expect.objectContaining({ uri: "semgrep.sarif", startLine: 2 }),
+        }),
+        expect.objectContaining({
+          detail: expect.stringContaining("finding with an uppercase file URL scheme"),
+          location: expect.objectContaining({ uri: "semgrep.sarif", startLine: 3 }),
+        }),
+        expect.objectContaining({
+          detail: expect.stringContaining("finding with a localhost file URL authority"),
+          location: expect.objectContaining({ uri: "semgrep.sarif", startLine: 4 }),
         }),
       ]),
     );

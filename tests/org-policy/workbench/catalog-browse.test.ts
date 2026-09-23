@@ -7,7 +7,7 @@ import type {
   AuthoringAssetV1,
   AuthoringCatalogBundleV1,
 } from "../../../src/org-policy/workbench/contracts.js";
-import { tinyStudioModel } from "../studio-test-fixture.js";
+import { tinyBackendCatalogFixture } from "../backend-catalog-fixture.js";
 
 const digest = `sha256:${"c".repeat(64)}`;
 
@@ -28,7 +28,7 @@ function asset(id: string, sourceId: string, kind: string, label = id): Authorin
 }
 
 function fixtureBundle(): AuthoringCatalogBundleV1 {
-  const bundle = structuredClone(tinyStudioModel().workbenchBundle);
+  const bundle = structuredClone(tinyBackendCatalogFixture().workbenchBundle);
   for (const id of ["source:a", "source:b"]) {
     bundle.sources[id] = {
       id,

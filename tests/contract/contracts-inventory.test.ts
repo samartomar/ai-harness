@@ -72,27 +72,27 @@ const PINS: ReadonlyArray<readonly [file: string, line: number, text: string]> =
   ],
   [
     "src/trust/detectors.ts",
-    2247,
+    2249,
     "export const SCAN_DELEGATED_TRUST_DETECTORS: ReadonlySet<TrustDetectorName> = new Set();",
   ],
   [
     "src/trust/detectors.ts",
-    2255,
+    2257,
     'export const SCAN_NATIVE_OBSERVATION_DETECTOR_ID = "detector.aih-native";',
   ],
   [
     "src/catalog-package/load-catalog-package.ts",
-    29,
+    31,
     'export const CATALOG_PACKAGE_PEER_RANGE = ">=0.2.0 <1.0.0";',
   ],
   [
     "src/catalog-package/load-catalog-package.ts",
-    34,
+    36,
     "export type CatalogPackageRefusalReasonV1 =",
   ],
   [
     "src/catalog-package/load-catalog-package.ts",
-    152,
+    154,
     "export async function loadCatalogPackageV1<",
   ],
   [
@@ -102,11 +102,11 @@ const PINS: ReadonlyArray<readonly [file: string, line: number, text: string]> =
   ],
   [
     DESCRIPTOR_RESOLVER,
-    148,
+    147,
     "export const ACCEPTED_CATALOG_ECC_RUNTIME_DESCRIPTORS_V1 = Object.freeze([",
   ],
-  [DESCRIPTOR_RESOLVER, 158, "export type HistoricalEccRuntimeDescriptorRefusalReasonV1 ="],
-  [DESCRIPTOR_RESOLVER, 460, "export async function resolveHistoricalEccRuntimeDescriptorV1("],
+  [DESCRIPTOR_RESOLVER, 157, "export type HistoricalEccRuntimeDescriptorRefusalReasonV1 ="],
+  [DESCRIPTOR_RESOLVER, 455, "export async function resolveHistoricalEccRuntimeDescriptorV1("],
   [GOVERNANCE_INPUT, 769, "export interface AssessmentMaterialResolverV1 {"],
   [GOVERNANCE_INPUT, 787, "export interface QualificationMaterialResolverV1 {"],
   [GOVERNANCE_INPUT, 809, "export interface QualificationAttestationVerifierV1 {"],

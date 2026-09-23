@@ -3,6 +3,7 @@ import { join } from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 import { describe, expect, it } from "vitest";
 import { generatedConfigSchemas } from "../../src/config/json-schema.js";
+import { parseOrgPolicy } from "../../src/org-policy/schema.js";
 
 const root = process.cwd();
 
@@ -80,6 +81,19 @@ describe("committed JSON Schemas", () => {
       ...policy,
       developerTools: { selected: [] },
     });
+    for (const developerTools of [{ selected: ["headroom"] }, { excluded: ["headroom"] }]) {
+      const headroomPolicy = {
+        ...policy,
+        minimumCoreVersion: "0.7.0",
+        developerTools,
+      };
+      validateCommittedSchema("schemas/aih-org-policy.schema.json", headroomPolicy);
+      expect(parseOrgPolicy(headroomPolicy).schemaVersion).toBe(3);
+      // The editor schema is structural; the runtime parser enforces this cross-field floor.
+      expect(() => parseOrgPolicy({ ...headroomPolicy, minimumCoreVersion: "0.6.0" })).toThrow(
+        /0\.7\.0/,
+      );
+    }
     for (const invalid of [
       { ...policy, developerTools: { selected: ["unknown"] } },
       { ...policy, developerTools: { selected: "serena" } },

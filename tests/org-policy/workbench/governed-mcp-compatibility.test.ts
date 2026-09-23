@@ -8,7 +8,6 @@ import {
   reviewedControlDigest,
 } from "../../../src/org-policy/effective.js";
 import { parseOrgPolicy } from "../../../src/org-policy/schema.js";
-import { policyStudioModel } from "../../../src/org-policy/studio-model.js";
 import { compilePolicy } from "../../../src/org-policy/workbench/policy-compiler.js";
 import { consumeWorkbenchPolicy } from "../../../src/org-policy/workbench/policy-consumption.js";
 import { importWorkbenchPolicySelections } from "../../../src/org-policy/workbench/policy-import.js";
@@ -89,22 +88,21 @@ describe("saved Workbench MCP target compatibility", () => {
     approval.github.subjectDigest = approvalAttestationDigest(approval);
     governance.authority.approvals = [approval];
     const before = structuredClone(input);
-    const model = policyStudioModel(undefined, undefined, { initialPolicy: input });
     const imported = importWorkbenchPolicySelections(
-      model.initialPolicy,
-      model.workbenchBundle,
-      model.workbenchBindings,
-      model.workbenchSourceInputs,
+      input,
+      legacy.bundle,
+      legacy.bindings,
+      legacy.sourceInputs,
     );
     expect(imported.accepted).toBe(true);
     expect(imported.diagnostics).toEqual([]);
     const edited = compilePolicy(
-      { ...model.initialPolicy, references: { repoContract: "ai-coding/reopened.json" } },
+      { ...input, references: { repoContract: "ai-coding/reopened.json" } },
       imported.state,
-      model.workbenchBundle,
-      model.workbenchBindings,
+      legacy.bundle,
+      legacy.bindings,
       "author",
-      model.workbenchSourceInputs,
+      legacy.sourceInputs,
     );
     expect(edited.accepted, edited.diagnostics.join("; ")).toBe(true);
     expect(edited.policy.governance).toEqual(before.governance);
@@ -151,19 +149,15 @@ describe("saved Workbench MCP target compatibility", () => {
     expect(consumed.accepted, consumed.diagnostics.join("; ")).toBe(true);
     expect(consumed.policy?.governance?.activations[0]?.targets).toEqual(["codex"]);
     expect(consumed.policy?.governance?.catalog.reviewed[0]?.targets).toContain("codex");
-    const model = policyStudioModel(undefined, undefined, {
-      initialPolicy: parseOrgPolicy(saved.policy),
-    });
+    const input = parseOrgPolicy(saved.policy);
     const imported = importWorkbenchPolicySelections(
-      model.initialPolicy,
-      model.workbenchBundle,
-      model.workbenchBindings,
-      model.workbenchSourceInputs,
+      input,
+      current.bundle,
+      current.bindings,
+      current.sourceInputs,
     );
     expect(imported.diagnostics).toEqual([]);
-    expect(model.workbenchBindings["aih/sequential-thinking"]?.candidate?.targets).toContain(
-      "codex",
-    );
+    expect(current.bindings["aih/sequential-thinking"]?.candidate?.targets).toContain("codex");
   });
 
   it("keeps genuine pin and source changes visible when reopening a saved policy", () => {
@@ -183,17 +177,14 @@ describe("saved Workbench MCP target compatibility", () => {
         candidate.source.subject = `mcp-server-sha256:${"f".repeat(64)}`;
       }
       const before = structuredClone(input);
-      const model = policyStudioModel(undefined, undefined, { initialPolicy: input });
       const imported = importWorkbenchPolicySelections(
-        model.initialPolicy,
-        model.workbenchBundle,
-        model.workbenchBindings,
-        model.workbenchSourceInputs,
+        input,
+        current.bundle,
+        current.bindings,
+        current.sourceInputs,
       );
       expect(imported.diagnostics).toContain("Stale saved asset: aih/sequential-thinking");
-      expect(model.workbenchBindings["aih/sequential-thinking"]?.candidate?.targets).toContain(
-        "codex",
-      );
+      expect(current.bindings["aih/sequential-thinking"]?.candidate?.targets).toContain("codex");
       expect(input).toEqual(before);
     }
   });

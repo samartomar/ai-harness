@@ -14,7 +14,7 @@ import {
   packagedScannerCollectionOverlayV1,
   ScannerEvidenceProjectionRecordV1Schema,
 } from "../../../src/org-policy/packaged-collection-evidence-v1.js";
-import { tinyStudioModel } from "../studio-test-fixture.js";
+import { tinyBackendCatalogFixture } from "../backend-catalog-fixture.js";
 
 const sha = (letter: string) => letter.repeat(64);
 const commit = "a".repeat(40);
@@ -131,7 +131,7 @@ beforeEach(() => records.splice(0));
 
 describe("packaged collection evidence", () => {
   it("leaves external publisher authorization to raw-proof verification while keeping package admission pinned", () => {
-    const record = sealedFixture(tinyStudioModel().workbenchBundle);
+    const record = sealedFixture(tinyBackendCatalogFixture().workbenchBundle);
     for (const publication of record.publications) {
       publication.sourceCommit = "9".repeat(40);
       publication.publicationLocator = `https://github.com/${publication.repository}/releases/download/baseline-v1-${publication.sourceCommit}-${publication.requestSha256}/publication.json`;
@@ -147,7 +147,7 @@ describe("packaged collection evidence", () => {
   it.each(["paths", "report-digest", "coverage-digest"])(
     "rejects external source projection %s drift before verified display",
     (field) => {
-      const original = sealedFixture(tinyStudioModel().workbenchBundle);
+      const original = sealedFixture(tinyBackendCatalogFixture().workbenchBundle);
       const record = {
         ...original,
         catalog: { ...original.catalog, id: "external-compatible" },
@@ -168,7 +168,7 @@ describe("packaged collection evidence", () => {
   );
 
   it("accepts distinct Scanner and Core legal-material trees with a bound report", () => {
-    const record = sealedFixture(tinyStudioModel().workbenchBundle);
+    const record = sealedFixture(tinyBackendCatalogFixture().workbenchBundle);
     record.report.components[0]!.treeSha256 = sha("9");
     record.observations[0]!.reportComponentDigest =
       `sha256:${canonicalStrictJsonSha256V1({ version: "packaged-report-component/v1", component: record.report.components[0] })}`;
@@ -176,7 +176,7 @@ describe("packaged collection evidence", () => {
   });
 
   it("requires each original publication inside its own retained custody window", () => {
-    const record = sealedFixture(tinyStudioModel().workbenchBundle);
+    const record = sealedFixture(tinyBackendCatalogFixture().workbenchBundle);
     record.publications[0]!.publishedAt = record.observations[0]!.reportVerificationExpiresAt;
     expect(() => ScannerEvidenceProjectionRecordV1Schema.parse(record)).toThrow(
       /publication outside report verification window/,
@@ -186,7 +186,7 @@ describe("packaged collection evidence", () => {
   it.each(["coverage", "paths", "tree", "verdict", "findings"])(
     "rejects partial %s substitution even when the outer seal is recomputed",
     (field) => {
-      const record = sealedFixture(tinyStudioModel().workbenchBundle);
+      const record = sealedFixture(tinyBackendCatalogFixture().workbenchBundle);
       if (field === "coverage")
         record.coverage.components[0]!.subject.contentDigest = `sha256:${sha("9")}`;
       if (field === "paths") {
@@ -206,7 +206,7 @@ describe("packaged collection evidence", () => {
     },
   );
   it("projects an exact current report and retains an expired report's historical outcome", () => {
-    const bundle = tinyStudioModel().workbenchBundle;
+    const bundle = tinyBackendCatalogFixture().workbenchBundle;
     records.push(encodePackagedScannerCollectionEvidenceRecordV1(sealedFixture(bundle)));
 
     const overlay = packagedScannerCollectionOverlayV1(bundle);
@@ -229,7 +229,7 @@ describe("packaged collection evidence", () => {
   });
 
   it("does not project when the assembled source identity differs", () => {
-    const bundle = tinyStudioModel().workbenchBundle;
+    const bundle = tinyBackendCatalogFixture().workbenchBundle;
     records.push(encodePackagedScannerCollectionEvidenceRecordV1(sealedFixture(bundle)));
     bundle.sources["source:fixture-core"]!.revision.id = "revision:changed";
 
@@ -237,7 +237,7 @@ describe("packaged collection evidence", () => {
   });
 
   it("rejects incomplete or duplicate component provenance", () => {
-    const bundle = tinyStudioModel().workbenchBundle;
+    const bundle = tinyBackendCatalogFixture().workbenchBundle;
     const record = sealedFixture(bundle);
     expect(() =>
       encodePackagedScannerCollectionEvidenceRecordV1({
@@ -259,7 +259,7 @@ describe("packaged collection evidence", () => {
   });
 
   it("returns detached immutable records and revalidates changed package input", () => {
-    const bundle = tinyStudioModel().workbenchBundle;
+    const bundle = tinyBackendCatalogFixture().workbenchBundle;
     records.push(encodePackagedScannerCollectionEvidenceRecordV1(sealedFixture(bundle)));
 
     const first = packagedScannerCollectionEvidenceV1();

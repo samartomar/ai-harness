@@ -11,6 +11,28 @@ const origin = { kind: "administrator" } as const;
 import { fixture } from "./authoring-fixture.js";
 
 describe("pure policy compilation", () => {
+  it("emits the Headroom floor only for a persisted Headroom choice", () => {
+    const { bundle, bindings, policy } = fixture();
+    const state = createWorkbenchState();
+    const oldChoice = projectWorkbenchPolicy(
+      { ...policy, developerTools: { selected: ["serena"] } },
+      state,
+      bundle,
+      bindings,
+    );
+    expect(oldChoice).toMatchObject({
+      accepted: true,
+      policy: { minimumCoreVersion: "0.6.0" },
+    });
+    for (const developerTools of [{ selected: ["headroom"] }, { excluded: ["headroom"] }]) {
+      const result = projectWorkbenchPolicy({ ...policy, developerTools }, state, bundle, bindings);
+      expect(result).toMatchObject({
+        accepted: true,
+        policy: { minimumCoreVersion: "0.7.0", developerTools },
+      });
+    }
+  });
+
   it("rejects an exported policy over the Core byte limit without replacing the input", () => {
     const { bundle, bindings, policy } = fixture();
     const oversized = {

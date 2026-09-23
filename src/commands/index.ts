@@ -47,7 +47,6 @@ import {
   policyRebindCommand,
   policyRevokeCommand,
 } from "../org-policy/binding.js";
-import { policyGenerateCommand, runPolicyGenerate } from "../org-policy/generate.js";
 import { policyInitCommand } from "../org-policy/init.js";
 import { npmPackageLifecycleCommand } from "../org-policy/npm-package-lifecycle-v1.js";
 import { npmPackageObserveCommand } from "../org-policy/npm-package-observer-v1.js";
@@ -244,7 +243,6 @@ export const GROUPED_COMMAND_SPECS = {
   ],
   marketplace: [marketplaceBuildCommand, marketplaceValidateCommand, marketplacePublishCommand],
   policy: [
-    policyGenerateCommand,
     policyBindCommand,
     policyRebindCommand,
     policyRevokeCommand,
@@ -911,34 +909,11 @@ export function registerCommands(
     });
   }
 
-  // `policy generate` is deliberately rootless: it writes only an operator-named
-  // portable authoring artifact and does not inspect a target repo. The remaining
-  // policy subcommands are repo-scoped and keep the conventional optional root.
   const policy = program
     .command("policy")
     .description(
-      "Generate, seed, resolve, evaluate, project, validate + verify the org policy and its generated settings",
+      "Seed, resolve, evaluate, project, validate + verify the org policy and its generated settings",
     );
-  // The optional `[admin-root]` positional is the ONLY switch that turns on
-  // administrator catalog consumption; omitting it keeps the rootless portable
-  // artifact, which performs no acquisition, process, or cache work.
-  const policyGenerate = policy
-    .command(policyGenerateCommand.name)
-    .description(policyGenerateCommand.summary)
-    .argument(
-      "[admin-root]",
-      "administrator root that consumes the signed supported catalog (omit for the portable artifact)",
-    );
-  addFlagsForSpec(policyGenerate, policyGenerateCommand);
-  addOptionsForSpec(policyGenerate, policyGenerateCommand);
-  policyGenerate.action(
-    async (adminRoot: string | undefined, _options: Record<string, unknown>, command: Command) => {
-      process.exitCode = await runPolicyGenerate(
-        command,
-        adminRoot === undefined ? {} : { adminRoot },
-      );
-    },
-  );
   registerWorkbenchDataCommandsV1(policy);
   for (const spec of [
     policyBindCommand,

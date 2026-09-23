@@ -9,11 +9,16 @@ import { afterAll, describe, expect, it } from "vitest";
 // tsup config and declaration emit, packed, and installed with --ignore-scripts
 // into disposable consumers outside the repository, once alone and once beside
 // Scan and the Catalog tarball this checkout installs. The tool asserts the
-// optional-peer manifest, a single dynamic import and no bundled Catalog, the
-// TypeScript declarations with skipLibCheck false with and without Catalog, and
-// that the historical ECC route takes its runtime descriptor from the INSTALLED
-// Catalog (resolve trace and provenance line), from Core's embedded copy only
-// when Catalog is absent, and refuses by name when the installed bytes change.
+// optional-peer manifest, a single dynamic import and no bundled Catalog, that a
+// Core-only consumer still starts up and loads (index `runSessionGuardrails`,
+// `aih --version`, `aih --help`) with TypeScript compiling under skipLibCheck
+// false, and that its historical ECC route now refuses by the exact name
+// `catalog-package-unavailable` with no provenance and no stack instead of
+// falling back to Core's embedded copy. Beside the installed Catalog the same
+// route resolves the descriptor from it (resolve trace and provenance line) and
+// refuses by name when the installed bytes change. The fixture is refused by the
+// later Workbench consumption check even when the descriptor resolves, so no
+// full ECC lifecycle success is asserted.
 // ---------------------------------------------------------------------------
 
 const repoRoot = process.cwd();
@@ -86,6 +91,9 @@ describe("packed Core and the optional @aihq/catalog peer", () => {
     const summary = (last.startsWith("{") ? JSON.parse(last) : {}) as {
       ok?: boolean;
       failed?: string[];
+      coreOnlyEccExit?: number;
+      coreOnlyProvenance?: string;
+      coreOnlyRefusal?: string;
     };
     expect(
       { status: verified.status, failed: summary.failed },
@@ -93,6 +101,24 @@ describe("packed Core and the optional @aihq/catalog peer", () => {
     ).toEqual({ status: 0, failed: [] });
     expect(summary.ok).toBe(true);
     expect(lines.filter((line) => line.startsWith("FAIL "))).toEqual([]);
-    expect(lines.filter((line) => line.startsWith("PASS ")).length).toBeGreaterThanOrEqual(15);
+    const passed = lines.filter((line) => line.startsWith("PASS "));
+    expect(passed.length).toBeGreaterThanOrEqual(18);
+    // The Core-only leg is not deleted and never falls back: it stops by name.
+    expect(typeof summary.coreOnlyEccExit, verified.stdout).toBe("number");
+    expect(summary.coreOnlyEccExit).toBe(1);
+    expect(typeof summary.coreOnlyProvenance, verified.stdout).toBe("string");
+    expect(summary.coreOnlyProvenance).toBe("");
+    expect(typeof summary.coreOnlyRefusal, verified.stdout).toBe("string");
+    expect(summary.coreOnlyRefusal).toContain("catalog-package-unavailable");
+    // Core-only startup/load checks still run beside the refusal.
+    const passNames = passed.map((line) => line.slice("PASS ".length).split(" -- ")[0] ?? "");
+    expect(passNames).toContain(
+      "Core-only: @aihq/core index.js loads and exports runSessionGuardrails",
+    );
+    expect(passNames).toContain("Core-only: aih --version");
+    expect(passNames).toContain("Core-only: aih --help");
+    expect(passNames).toContain(
+      "Core-only: the ECC route refuses by name because Catalog is not installed",
+    );
   }, 900_000);
 });

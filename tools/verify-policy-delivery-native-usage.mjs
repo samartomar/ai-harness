@@ -22,12 +22,13 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { authorProtectedPolicyViaPackedWorkbench } from "./lib/author-protected-policy-via-workbench.mjs";
+import { buildProtectedPolicyFixture } from "./lib/build-protected-policy-fixture.mjs";
 
 const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const npmCli = join(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js");
 const packetArg = process.argv.indexOf("--output");
 const packet = packetArg >= 0 ? resolve(process.argv[packetArg + 1] ?? "") : "";
+let childEnvironment;
 if (!isAbsolute(packet)) throw new Error("--output must be absolute");
 if (existsSync(packet)) throw new Error("output packet already exists");
 mkdirSync(packet, { recursive: true });
@@ -46,7 +47,7 @@ const command = (file, args, cwd, env = {}, timeout = 180_000) => {
   const result = spawnSync(file, args, {
     cwd,
     encoding: "utf8",
-    env: { ...process.env, ...env },
+    env: { ...childEnvironment, ...env },
     windowsHide: true,
     timeout,
     maxBuffer: 32 * 1024 * 1024,
@@ -186,6 +187,25 @@ async function main() {
   const temp = realpathSync(mkdtempSync(join(tempBase, "aih-native-usage-")));
   const captured = { schemaVersion: 1, status: "failed", targets: ["claude", "codex"], simulation: "deterministic loopback providers; native clients execute one harmless tool call", noRealBillingClaim: true, projectConfigurationEdited: false, commands: [], native: {} };
   try {
+    const home = join(temp, "home");
+    childEnvironment = {
+      ...process.env,
+      HOME: home,
+      USERPROFILE: home,
+      APPDATA: join(home, "AppData", "Roaming"),
+      LOCALAPPDATA: join(home, "AppData", "Local"),
+      XDG_CONFIG_HOME: join(home, ".config"),
+      XDG_CACHE_HOME: join(home, ".cache"),
+      XDG_DATA_HOME: join(home, ".local", "share"),
+      XDG_STATE_HOME: join(home, ".local", "state"),
+      XDG_RUNTIME_DIR: join(home, ".runtime"),
+    };
+    if (process.platform === "win32") {
+      childEnvironment.HOMEDRIVE = home.slice(0, 2);
+      childEnvironment.HOMEPATH = home.slice(2);
+    }
+    for (const key of Object.keys(childEnvironment))
+      if (/^AIH_/iu.test(key)) delete childEnvironment[key];
     if (!existsSync(npmCli)) fail("npm CLI unavailable");
     const packed = requireSuccess(command(process.execPath, [npmCli, "pack", "--json", "--pack-destination", temp], sourceRoot), "npm pack");
     const manifest = JSON.parse(packed.stdout);
@@ -201,8 +221,6 @@ async function main() {
     writeJson(join(claudeRoot, ".claude", "settings.json"), { hooks: { SessionStart: [{ hooks: [{ type: "command", command: "node -e \\\"process.stdout.write('third-party-claude')\\\"" }] }] } });
     writeJson(join(codexRoot, ".codex", "hooks.json"), { hooks: { SessionStart: [{ command: "Write-Output third-party-codex" }] } });
     for (const root of [claudeRoot, codexRoot]) { runGit(root, ["add", "."]); runGit(root, ["commit", "-qm", "seed unrelated third-party hook"]); }
-    const generated = invoke(admin, cli, ["policy", "generate", "--apply", "--out", join(admin, "aih-policy-workbench.html")]);
-    captured.commands.push({ action: "policy generate", exitCode: generated.status, stdout: generated.stdout, stderr: generated.stderr });
     const described = invoke(consumer, cli, ["policy", "managed", "usage-metering", "describe", "--json"]);
     const descriptor = JSON.parse(described.stdout).digests?.[0]?.data;
     if (descriptor?.adapter?.id !== "aih-usage-metering" || JSON.stringify(descriptor.targets) !== '["claude","codex"]') fail("narrow target descriptor");
@@ -212,9 +230,18 @@ async function main() {
     const evidenceText = stableJson(evidence), evidencePath = join(admin, "organization-evidence.json"); write(evidencePath, evidenceText);
     const decision = { acceptedFindings: [], acceptedGaps: [], actor: "native-admin@example.invalid", allowedEffects: ["configure"], conditions: [], control: { digest: `sha256:${"b".repeat(64)}`, id: "native-usage-control" }, disposition: "approved", evidence: { attestor: evidence.attestor, digest: `sha256:${sha256(`aih-organization-evidence/v1\0${evidenceText}`)}`, id: evidence.evidence.id }, expiresAt, format: "aih-governance-decision", id: "decision-native-usage", issuedAt, issuer: "native-platform-security", notBefore: issuedAt, policy: { digest: `sha256:${"a".repeat(64)}`, id: "native-platform-policy", version: "2026.09" }, qualificationBasis: { attestor: evidence.attestor, evidenceDigest: `sha256:${sha256(`aih-organization-evidence/v1\0${evidenceText}`)}`, kind: "organization-qualified" }, reason: "Disposable proof authorizes the fixed AIH usage adapter.", subject: descriptor.subject, targets: ["claude", "codex"], version: 2 };
     const decisionDigest = core.governanceDecisionDigestV2(decision), policyPath = join(admin, "policy-bundle.json");
-    const workbenchDecision = { "protected-actor": decision.actor, "protected-attestor": decision.evidence.attestor, "protected-control-digest": decision.control.digest, "protected-control-id": decision.control.id, "protected-decision-id": decision.id, "protected-effects": "configure", "protected-evidence-digest": decision.evidence.digest, "protected-evidence-id": decision.evidence.id, "protected-kind": decision.subject.kind, "protected-policy-digest": decision.policy.digest, "protected-policy-id": decision.policy.id, "protected-policy-version": decision.policy.version, "protected-reason": decision.reason, "protected-source-release": decision.subject.source.release, "protected-source-revision": decision.subject.source.revision, "protected-source-type": "aih", "protected-subject-id": decision.subject.id, "protected-targets": "claude,codex" };
-    const writePolicy = (bundleVersion, revoked = false) => authorProtectedPolicyViaPackedWorkbench({ authorityFields: { "protected-bundle-version": bundleVersion, "protected-expires-at": expiresAt, "protected-issued-at": issuedAt, "protected-issuer": decision.issuer, "protected-issuer-repository": "example.invalid/native-admin" }, decisions: [workbenchDecision], htmlPath: join(admin, "aih-policy-workbench.html"), outputPath: policyPath, revokeDecisionIndexes: revoked ? [0] : [] });
-    await writePolicy("2026.09.1");
+    const basePolicy = { schemaVersion: 2, minimumPosture: "enterprise", references: { repoContract: "ai-coding/project.json" }, governance: { policyVersion: "2026.09", catalog: { reviewed: [], custom: [] }, supportedClis: ["claude", "codex"] } };
+    const writePolicy = (bundleVersion, revoked = false) => buildProtectedPolicyFixture({
+      core, basePolicy, outputPath: policyPath, bundleVersion, issuer: decision.issuer,
+      authorityReceipt: {
+        format: "aih-policy-authority-receipt", version: 3,
+        issuerRepository: "example.invalid/native-admin", issuedAt, expiresAt,
+        trustedIssuers: [{ id: decision.issuer, githubRepository: "example.invalid/native-admin" }],
+        targets: ["claude", "codex"], decisions: [decision],
+        decisionRevocations: revoked ? [{ format: "aih-governance-decision-revocation", version: 2, decisionDigest, issuer: decision.issuer, revokedAt: issuedAt, reason: "Disposable fixture withdraws exact usage authority." }] : [],
+      },
+    });
+    writePolicy("2026.09.1");
     const authorityEnv = { AIH_ORG_POLICY: policyPath };
     const targetInfo = [{ name: "claude", root: claudeRoot }, { name: "codex", root: codexRoot }];
     for (const target of targetInfo) {
@@ -248,7 +275,7 @@ async function main() {
       captured.native.codex.blocker = "Codex 0.153.1 exec completed its native tool call, but the enabled project PostToolUse hook did not invoke .aih/usage-record.mjs; the exact generated command succeeds when run directly in the same root.";
     }
     const beforeClaudeOther = readFileSync(join(claudeRoot, ".claude", "settings.json"), "utf8"), beforeCodexOther = readFileSync(join(codexRoot, ".codex", "hooks.json"), "utf8");
-    await writePolicy("2026.09.2", true);
+    writePolicy("2026.09.2", true);
     for (const target of targetInfo) {
       const args = ["policy", "managed", "usage-metering", "reconcile", target.root, "--decision", decision.id, "--decision-digest", decisionDigest, "--target", target.name, "--apply", "--json"];
       const run = invoke(target.root, cli, args, authorityEnv); captured.commands.push({ action: "usage revoke", target: target.name, exitCode: run.status, stdout: run.stdout, stderr: run.stderr });

@@ -1,9 +1,9 @@
-import { policyStudioModel } from "../org-policy/studio-model.js";
 import { inspectWorkbenchEvidenceCoverageV1 } from "../org-policy/workbench/delivery-readiness.js";
+import { defaultPreparedWorkbenchCatalog } from "../org-policy/workbench/prepared-catalog.js";
 import { prepareWorkbenchEvidenceCompositionsForReleaseV1 } from "../org-policy/workbench/providers/evidence-compositions.js";
 
 // Repository-owned release inspection: no target, scanner, network, or trust promotion.
-const bundle = policyStudioModel().workbenchBundle;
+const bundle = defaultPreparedWorkbenchCatalog().bundle;
 const result = inspectWorkbenchEvidenceCoverageV1(
   bundle,
   new Date().toISOString(),

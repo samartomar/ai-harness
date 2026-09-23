@@ -14,6 +14,23 @@ import {
 import { fixture } from "./authoring-fixture.js";
 
 describe("portable selection import", () => {
+  it("accepts a Headroom decision only under its compatible floor", () => {
+    const { bundle, bindings, policy } = fixture();
+    const state = createWorkbenchState();
+    const input = {
+      ...policy,
+      schemaVersion: 3,
+      authoringSelections: { selectionVersion: "workbench-selection/v1", ...state },
+      developerTools: { selected: ["headroom"] },
+    };
+    expect(
+      importWorkbenchPolicySelections({ ...input, minimumCoreVersion: "0.6.0" }, bundle, bindings),
+    ).toMatchObject({ accepted: false });
+    expect(
+      importWorkbenchPolicySelections({ ...input, minimumCoreVersion: "0.7.0" }, bundle, bindings),
+    ).toMatchObject({ accepted: true, state });
+  });
+
   it("compares omitted V2 candidate defaults without coercing explicit invalid values", () => {
     const { bundle, bindings, policy } = fixture();
     const expected = { ...bindings.tool!.candidate!, findings: [], autoExecute: false };

@@ -22,33 +22,16 @@ universal practice mandate from a stack or from its own repository.
 
 ## Author and review
 
-From an administrator working directory, prepare the portable Workbench:
-
-```sh
-aih policy generate --out workbench.html --apply
-```
-
-Open the generated HTML in a browser. Select the intended clients, posture and
-reviewed controls. In the ECC inventory, inspect each source identity before
-adding a required practice. Exclude optional content explicitly. Required
-dependency closure cannot be removed by an optional exclusion; the Workbench
-refuses the conflict without partially changing the draft.
-
-For a governed MCP selection, enable **managed MCP projection** before downloading
-the policy. Select its complete approved client set. The download is blocked
-until this explicit projection choice is present.
-
-Download a separate policy for each project context. Retain the complete JSON,
-including exact source revisions, selected roots, dependency closure, target
-scope and exclusions. To reopen it with its recognized historical catalog:
-
-```sh
-aih policy generate --policy-input harbor-policy.json --out harbor-review.html --apply
-aih policy generate --policy-input cedar-policy.json --out cedar-review.html --apply
-```
-
-Workbench selection is requested intent. It is not an authority receipt and does
-not grant an unsupported effect. Skills provide instruction guidance; installed
+Prepare and review a schema-valid policy for each project context through the
+administrator's own controlled process. Core no longer provides a browser
+Workbench, the former policy generator, or a replacement authoring command. Record
+the intended clients, posture, exact source revisions, selected roots,
+dependency closure, target scope, and optional exclusions in the reviewed JSON.
+Required dependencies cannot be removed by optional exclusions. Explicitly
+review the complete approved client set before requesting governed MCP
+projection. Validate each policy with `aih policy validate` before binding it;
+validation is not an authority receipt and does not grant an unsupported
+effect. Skills provide instruction guidance; installed
 or discoverable skills do not establish TDD compliance or another enforced
 practice. Review the effect and target limitations before applying the policy.
 
@@ -58,14 +41,14 @@ Use the existing [policy authority](../docs/commands.md#aih-policy) and
 [baseline evidence](https://github.com/samartomar/ai-harness/blob/main/docs/security/baseline-evidence.md) contracts. At Enterprise
 posture, ECC requires the organization's exact baseline override and attested
 evidence even when packaged publisher evidence passes. A source pin, policy
-boolean, downloaded Workbench file or ownership receipt is not that approval.
+boolean, policy file or ownership receipt is not that approval.
 
 For a project-policy source, the administrator records admission in
 `trust.baselineOverrides`: the catalog, owner/repository, exact `pinnedSha`,
 attested `bundle` path, `signingRepository`, reviewer, approval time and reason.
-Keep the Workbench's `authoringSelections` and `externalSelections` unchanged
-while attaching this separately reviewed authority. Validate and reopen the
-approved policy before binding it. AIH verifies the bundle contents and their
+Preserve reviewed `authoringSelections` and `externalSelections` while
+attaching this separately reviewed authority. Validate the resulting policy
+before binding it. AIH verifies the bundle contents and their
 attestation; filling in these fields alone cannot authorize delivery.
 
 A protected PolicyBundle stays outside the consumer project on the
@@ -177,7 +160,7 @@ establish the ordinary client's permission enforcement.
 
 ## Update, remove and revoke
 
-Review a new policy version in the Workbench, including optional choices and
+Review a new policy version through the administrator's controlled process, including optional choices and
 new client approvals. Replace the selected policy source through its normal
 distribution mechanism, then acknowledge the reviewed bytes and exact targets:
 
@@ -280,8 +263,8 @@ contracts. In this build the separate profile uses
 governed catalog uses `affaan-m/ECC@5caf398a91599029a176ca6d806409b00d1052c4`.
 Saved historical selections can name another qualified revision. Inspect the
 selected source in the actual preview; these identities are not interchangeable.
-Use the Workbench's compiled schema-v3 policy to retain a historical source's
-verified selection. Changing a commit field in a legacy schema-v2 policy does
+Use a validated schema-v3 policy with verified source bindings to retain a historical source's
+selection. Changing a commit field in a legacy schema-v2 policy does
 not establish that authority. After binding the compiled policy, run
 `aih policy project --apply --ecc-path <exact-checkout>` for selected delivery,
 then ordinary initialization. A sealed older Codex Markdown agent destination
@@ -362,7 +345,7 @@ unless explicitly hidden.
 Downstream content selection uses the effective policy's exact framework items
 and dependency closure as the required set. Schema-v3 authoring exclusions trim
 optional inventory only. Explicit roots and legacy selection provenance remain
-reviewable; generic Workbench requests with no supported materializer stay
+reviewable; generic policy requests with no supported materializer stay
 requested intent. A disabled control is not silently replaced by a same-named
 skill, and a skill is not an enforced control.
 

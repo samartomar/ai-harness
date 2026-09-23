@@ -3,7 +3,7 @@
  * Packed-consumer proof of the Core/Catalog package boundary (WO Step 3A).
  *
  * `@aihq/catalog` is an optional peer of `@aihq/core`, and the historical ECC
- * runtime descriptor now arrives through the INSTALLED Catalog's
+ * runtime descriptor now arrives only through the INSTALLED Catalog's
  * `./catalog-runtime-descriptors.json`, accepted only against Core's pinned
  * sha256. This installs a packed Core tarball into disposable consumers OUTSIDE
  * every repository, always with `--ignore-scripts`, an empty npm user config and
@@ -13,10 +13,13 @@
  *     only dynamically, from one module; the manifest declares it an optional
  *     peer only.
  *   Core-only consumer (neither Scan nor Catalog installed):
- *     - a TypeScript file importing `@aihq/core` compiles with skipLibCheck false;
+ *     - the package still starts up unaffected: the index loads
+ *       `runSessionGuardrails`, `aih --version` and `aih --help` answer, and a
+ *       TypeScript file importing `@aihq/core` compiles with skipLibCheck false;
  *     - `aih ecc --lifecycle install` on a temporary fixture whose schema-v3
- *       policy selects the historical ECC source resolves the descriptor from
- *       `core-embedded`, after `installed-catalog=catalog-package-unavailable`.
+ *       policy selects the historical ECC source now exits non-zero with the
+ *       exact named refusal `catalog-package-unavailable`: no provenance line,
+ *       no fallback to Core's embedded copy and no stack trace.
  *   Core + Scan + Catalog consumer (the given tarballs beside Core):
  *     - the same TypeScript file plus Catalog's public runtime-descriptor reader
  *       compiles with skipLibCheck false;
@@ -27,7 +30,8 @@
  *
  * The fixture policy is hand-written: it reaches the descriptor resolution (the
  * proof's subject) and is then refused by the later Workbench consumption check,
- * which this tool records but does not assert on.
+ * even when the descriptor comes from `installed-catalog`, so this tool records
+ * that refusal and never asserts a full ECC lifecycle success.
  *
  * usage:
  *   node tools/verify-packed-catalog-boundary.mjs --scan <aihq-scan.tgz> --catalog <aihq-catalog.tgz> (--core <aihq-core.tgz> | --stage-from <core-repo>) [--work <dir>] [--keep]
@@ -195,8 +199,8 @@ try {
       run(process.execPath, [join(repo, "node_modules/typescript/bin/tsc"), "-p", "tsconfig.dts.json", "--outDir", join(stage, "dist")], repo),
       "declaration emit",
     );
-    // The committed package data the build copies beside the chunks (tools/build-workbench.mjs
-    // --copy-to-dist); the generated Workbench companions are not needed by this route.
+    // The committed package data the build copies beside the chunks
+    // (tools/copy-policy-data.mjs); browser companions are not part of this route.
     for (const source of [
       "src/org-policy/workbench/core/packaged-source-data-data.json",
       "src/org-policy/workbench/core/catalog-qualification-data.json",
@@ -247,7 +251,7 @@ try {
     JSON.stringify({ peer: manifest.peerDependencies, meta: manifest.peerDependenciesMeta }),
   );
   check(
-    "packed Core still embeds its own descriptor copy (nothing deleted)",
+    "packed Core retains shared Workbench descriptor data (data extraction deferred)",
     packedFiles.has("package/dist/packaged-source-data-data.json"),
   );
 
@@ -355,19 +359,36 @@ try {
     "Core-only consumer has neither @aihq/scan nor @aihq/catalog installed",
     !existsSync(join(coreOnly, "node_modules", "@aihq", "catalog")) && !existsSync(join(coreOnly, "node_modules", "@aihq", "scan")),
   );
+  // Startup and index load must be unaffected by the Catalog cutover.
+  const coreOnlyLibrary = run(
+    process.execPath,
+    ["--input-type=module", "-e", "const m = await import('@aihq/core'); if (typeof m.runSessionGuardrails !== 'function') process.exit(3);"],
+    coreOnly,
+  );
+  check("Core-only: @aihq/core index.js loads and exports runSessionGuardrails", coreOnlyLibrary.status === 0, coreOnlyLibrary.stderr.trim().slice(0, 300));
+  const coreOnlyVersion = run(process.execPath, [cli(coreOnly), "--version"], coreOnly);
+  check("Core-only: aih --version", coreOnlyVersion.status === 0, coreOnlyVersion.stdout.trim());
+  const coreOnlyHelp = run(process.execPath, [cli(coreOnly), "--help"], coreOnly);
+  check("Core-only: aih --help", coreOnlyHelp.status === 0 && coreOnlyHelp.stdout.includes("trust"), `exit ${coreOnlyHelp.status}`);
   writeFileSync(join(coreOnly, "consumer.ts"), coreTs);
   writeFileSync(join(coreOnly, "tsconfig.json"), tsconfig(["consumer.ts"]));
   const coreOnlyTypes = run(process.execPath, [tsc, "-p", "tsconfig.json"], coreOnly);
   check("Core-only: TypeScript consumer compiles with skipLibCheck false", coreOnlyTypes.status === 0, (coreOnlyTypes.stdout + coreOnlyTypes.stderr).trim().slice(0, 1500));
+  // The historical ECC descriptor is Catalog-only now: the route must stop by
+  // name instead of quietly reading Core's embedded copy.
   const coreOnlyRoute = eccRoute(coreOnly);
   const coreOnlyProvenance = provenanceOf(coreOnlyRoute);
+  const coreOnlyOutput = output(coreOnlyRoute);
+  const coreOnlyRefusal = refusalLine(coreOnlyRoute);
   check(
-    "Core-only: the ECC route resolved the descriptor from core-embedded because Catalog is not installed",
-    coreOnlyProvenance ===
-      `${PROVENANCE}core-embedded; resolution: local-source-data=no-match, installed-catalog=catalog-package-unavailable, core-embedded=selected`,
-    coreOnlyProvenance || "<no provenance line>",
+    "Core-only: the ECC route refuses by name because Catalog is not installed",
+    coreOnlyRoute.status === 1 &&
+      coreOnlyRefusal.includes("catalog-package-unavailable") &&
+      coreOnlyProvenance === "" &&
+      !coreOnlyOutput.includes("from core-embedded"),
+    `exit ${coreOnlyRoute.status}; refusal: ${coreOnlyRefusal.slice(0, 300)}; provenance: ${coreOnlyProvenance || "<none>"}`,
   );
-  check("Core-only: ECC route output carries no stack trace", noStack(coreOnlyRoute), `exit ${coreOnlyRoute.status}; refusal: ${refusalLine(coreOnlyRoute).slice(0, 300)}`);
+  check("Core-only: ECC route output carries no stack trace", noStack(coreOnlyRoute), `exit ${coreOnlyRoute.status}; refusal: ${coreOnlyRefusal.slice(0, 300)}`);
 
   // ---- Core + Scan + Catalog consumer --------------------------------------
   const full = join(work, "consumer-core-scan-catalog");
@@ -463,7 +484,7 @@ try {
       catalogVersion: catalogManifest.version,
       coreOnlyEccExit: coreOnlyRoute.status,
       coreOnlyProvenance,
-      coreOnlyRefusal: refusalLine(coreOnlyRoute).slice(0, 400),
+      coreOnlyRefusal: coreOnlyRefusal.slice(0, 400),
       fullEccExit: fullRoute.status,
       fullProvenance,
       fullRefusal: refusalLine(fullRoute).slice(0, 400),

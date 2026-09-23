@@ -137,13 +137,16 @@ describe("sibling-compatibility workflow file", () => {
     expect(raw).toContain("RUN_ATTEMPT: ${{ github.run_attempt }}");
   });
 
-  it("states the combinations, current Core, recorded-not-gating results and Core-first cutover", () => {
+  it("states the combinations, recorded results, owner bootstrap and reader-gated upgrades", () => {
     const header = raw.slice(0, raw.indexOf("\non:"));
     for (const id of COMBINATIONS) expect(header).toContain(id);
     expect(header).toContain("current Core");
     expect(header).toMatch(/recorded/u);
     expect(header).toMatch(/readers gate/u);
-    expect(header).toMatch(/Core first/u);
+    expect(header).toContain("owner-approved bootstrap in the order Catalog, then Core, then Scan");
+    expect(header).toContain(
+      "After the bootstrap each sibling promotes on its own through its reader",
+    );
     expect(header).not.toContain("version:1");
   });
 });

@@ -9,8 +9,7 @@ import { SCANNER_BASELINE_ANALYZER_VERSIONS } from "../../../src/baseline-eviden
 import type { ConsumedScannerBaselinePublicationsV1 } from "../../../src/baseline-evidence/scanner-publication.js";
 import { SCANNER_BASELINE_PUBLICATION_PUBLISHER_V1 } from "../../../src/baseline-evidence/scanner-publication-policy.js";
 import { projectContainedScannerEvidenceV1 } from "../../../src/org-policy/workbench/core/source-data-contained-projection.js";
-import { evidenceDisplayFor } from "../../../src/org-policy/workbench/ui/evidence-display.js";
-import { tinyStudioModel } from "../studio-test-fixture.js";
+import { tinyBackendCatalogFixture } from "../backend-catalog-fixture.js";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -73,7 +72,7 @@ function fixture(blocked = false) {
       reportVerificationExpiresAt: "2026-09-09T00:45:00.000Z",
     })),
   };
-  const bundle = tinyStudioModel().workbenchBundle;
+  const bundle = tinyBackendCatalogFixture().workbenchBundle;
   const assets = [bundle.assets["fixture:control"]!, bundle.assets["fixture:external"]!];
   assets[0]!.originalPath = "shared/one.md";
   assets[1]!.originalPath = "shared/two.md";
@@ -228,13 +227,6 @@ describe("source-level report projection after independent consumption", () => {
       });
       expect(summary.findings).toHaveLength(50);
       expect(summary.findings[0]).toContain("[runtime:shared]");
-      expect(
-        evidenceDisplayFor(
-          input.bundle.assets[summary.subjects[0]!.assetId]!,
-          [summary],
-          Date.parse(input.preparedAt),
-        ).text,
-      ).toContain("shared source-file coverage");
     }
     expect(JSON.stringify(input.consumed)).toBe(original);
   });

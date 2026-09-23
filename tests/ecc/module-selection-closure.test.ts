@@ -16,7 +16,6 @@ import {
   eccSelectionSourcePaths,
 } from "../../src/ecc/selection-closure.js";
 import { type OrgPolicy, OrgPolicySchema, parseOrgPolicy } from "../../src/org-policy/schema.js";
-import { defaultStudioPolicy } from "../../src/org-policy/studio-model.js";
 import { verifyAuthoringCatalogBundleIntegrityV1 } from "../../src/org-policy/workbench/catalog-integrity.js";
 import { parseAuthoringCatalogBundleV1 } from "../../src/org-policy/workbench/contracts.js";
 import { packagedWorkbenchSourceDataRecordsV1 } from "../../src/org-policy/workbench/core/packaged-source-data.js";
@@ -26,13 +25,13 @@ import {
   createWorkbenchState,
   reduceWorkbenchAction,
 } from "../../src/org-policy/workbench/selection-engine.js";
-import { tinyStudioModel } from "../org-policy/studio-test-fixture.js";
+import { tinyBackendCatalogFixture } from "../org-policy/backend-catalog-fixture.js";
 
 const catalog = baselineCatalogById("ecc");
 const repository = `${catalog.owner}/${catalog.repo}`;
 
 function tinyEccPreparedCatalog() {
-  const model = tinyStudioModel();
+  const model = tinyBackendCatalogFixture();
   const bundle = structuredClone(model.workbenchBundle);
   const component = catalog.components.find((entry) => entry.id === "module:rules-core");
   const path = component?.paths[0];
@@ -102,7 +101,7 @@ beforeAll(() => {
   admittedHistoricalEcc = tinyEccPreparedCatalog();
 });
 
-function selectedPolicyIds(policy: ReturnType<typeof defaultStudioPolicy>): string[] {
+function selectedPolicyIds(policy: OrgPolicy): string[] {
   return [
     ...new Set(
       (policy.governance?.externalSelections ?? []).flatMap((group) =>
@@ -113,10 +112,9 @@ function selectedPolicyIds(policy: ReturnType<typeof defaultStudioPolicy>): stri
 }
 
 // These ECC guard tests exercise synthetic catalogs; the Core baseline that
-// defaultStudioPolicy() now ships belongs to the real packaged catalog and
-// would only add unrelated selections here. Use the empty starting policy the
-// studio uses when no baseline applies.
-function emptyBasePolicy(): ReturnType<typeof defaultStudioPolicy> {
+// packaged Core baseline belongs to the real catalog and would only add
+// unrelated selections here. Use an empty backend policy for this fixture.
+function emptyBasePolicy(): OrgPolicy {
   return parseOrgPolicy({
     schemaVersion: 2,
     minimumPosture: "vibe",

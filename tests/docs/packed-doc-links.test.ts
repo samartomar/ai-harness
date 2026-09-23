@@ -159,8 +159,11 @@ describe("packed Markdown link inspection", () => {
     expect(pkg.scripts?.["verify:packed-admin-docs"]).toBe(
       "tsx tools/verify-packed-administrator-docs.mjs",
     );
+    expect(pkg.scripts?.["verify:packed-core-policy"]).toBe(
+      "node tools/verify-packed-core-policy.mjs",
+    );
     expect(pkg.scripts?.verify).toContain(
-      "npm run build && npm run check:published-bin && npm run check:published-library && npm run verify:packed-admin-docs",
+      "npm run build && npm run verify:packed-core-policy && npm run check:published-bin && npm run check:published-library && npm run verify:packed-admin-docs",
     );
 
     const proof = readFileSync("tools/verify-packed-administrator-docs.mjs", "utf8");

@@ -4,9 +4,6 @@
   "arguments": [],
   "options": [
     {
-      "flags": "--ui"
-    },
-    {
       "flags": "-V, --version"
     }
   ],
@@ -2717,79 +2714,6 @@
             },
             {
               "flags": "--support-out <dir>"
-            }
-          ],
-          "commands": []
-        },
-        {
-          "name": "generate",
-          "hasDescription": true,
-          "arguments": [
-            {
-              "name": "admin-root",
-              "required": false
-            }
-          ],
-          "options": [
-            {
-              "flags": "--all-tools"
-            },
-            {
-              "flags": "--apply"
-            },
-            {
-              "flags": "--cli <list>"
-            },
-            {
-              "flags": "--context-dir <dir>",
-              "defaultValue": "ai-coding"
-            },
-            {
-              "flags": "--detect"
-            },
-            {
-              "flags": "--force"
-            },
-            {
-              "flags": "--fresh-artifact-intake <path>"
-            },
-            {
-              "flags": "--fresh-organization-manifest <path>"
-            },
-            {
-              "flags": "--json"
-            },
-            {
-              "flags": "--no-log"
-            },
-            {
-              "flags": "--organization-manifest <path>"
-            },
-            {
-              "flags": "--out <path>",
-              "defaultValue": "aih-policy-workbench.html"
-            },
-            {
-              "flags": "--policy <file>"
-            },
-            {
-              "flags": "--policy-input <path>"
-            },
-            {
-              "flags": "--posture <posture>",
-              "defaultValue": "vibe"
-            },
-            {
-              "flags": "--root <dir>"
-            },
-            {
-              "flags": "--support-out <dir>"
-            },
-            {
-              "flags": "--verify"
-            },
-            {
-              "flags": "--yes"
             }
           ],
           "commands": []

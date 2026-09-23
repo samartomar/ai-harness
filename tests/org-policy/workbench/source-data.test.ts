@@ -15,7 +15,6 @@ import {
   canonicalStrictJsonSha256V1,
 } from "../../../src/contract/strict-json-v1.js";
 import { packagedScannerCollectionOverlayV1 } from "../../../src/org-policy/packaged-collection-evidence-v1.js";
-import { policyStudioModel } from "../../../src/org-policy/studio-model.js";
 import {
   applyWorkbenchSourceDataV1,
   extractWorkbenchSourceDataV1,
@@ -29,9 +28,7 @@ import {
   createWorkbenchState,
   reduceWorkbenchAction,
 } from "../../../src/org-policy/workbench/selection-engine.js";
-import { evidenceDisplayFor } from "../../../src/org-policy/workbench/ui/evidence-display.js";
-import { VERSION } from "../../../src/version.js";
-import { tinyStudioModel } from "../studio-test-fixture.js";
+import { tinyBackendCatalogFixture } from "../backend-catalog-fixture.js";
 import {
   fixtureAssetId,
   fixtureSourceId,
@@ -68,13 +65,13 @@ vi.mock("../../../src/org-policy/packaged-collection-evidence-data.js", async (i
 vi.mock("../../../src/org-policy/workbench/prepared-catalog.js", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("../../../src/org-policy/workbench/prepared-catalog.js")>();
-  const [sourceDataFixture, studioFixture] = await Promise.all([
+  const [sourceDataFixture, backendFixture] = await Promise.all([
     import("./source-data-test-fixture.js"),
-    import("../studio-test-fixture.js"),
+    import("../backend-catalog-fixture.js"),
   ]);
   tinyPreparation.createBase = () => ({
     ...sourceDataFixture.tinySourceDataPreparedCatalogV1(),
-    catalog: studioFixture.tinyStudioModel().catalog,
+    catalog: backendFixture.tinyBackendCatalogFixture().catalog,
   });
   const tiny = () => {
     const create = tinyPreparation.createBase;
@@ -207,17 +204,15 @@ describe("authenticated versioned Workbench source data", () => {
     expect(summary.verification.validUntil).toBe(payload.expiresAt);
     expect(summary.scan).toEqual(payload.sourceBundle.evidence[summary.id]!.scan);
     expect(summary.findings).toEqual(payload.sourceBundle.evidence[summary.id]!.findings);
-    expect(evidenceDisplayFor(asset, [summary], Date.parse("2026-09-11T00:00:00.000Z")).state).toBe(
-      "stale",
-    );
+    expect(asset.sourceRevisionId).toBe(payload.sourceBundle.assets[asset.id]?.sourceRevisionId);
   });
   it(
-    "uses the same default UI preparation and consumption path after a source pin update",
+    "preserves exact saved pins when authenticated source data is updated",
     () => {
       tinyPreparation.useTiny = true;
       const studioPrepared = (): ReturnType<typeof tinySourceDataPreparedCatalogV1> => ({
         ...tinySourceDataPreparedCatalogV1(),
-        catalog: tinyStudioModel().catalog as unknown as ReturnType<
+        catalog: tinyBackendCatalogFixture().catalog as unknown as ReturnType<
           typeof tinySourceDataPreparedCatalogV1
         >["catalog"],
       });
@@ -298,11 +293,8 @@ describe("authenticated versioned Workbench source data", () => {
         next.sourceBundle.evidence = {};
         next.sourceBundle.provenance.bundleDigest = `sha256:${canonicalStrictJsonSha256V1({ ...next.sourceBundle, provenance: {} })}`;
         importWorkbenchSourceDataV1(root, signedFixture(next), now);
-        const updated = policyStudioModel();
-        expect(updated.evidenceDelivery?.coreVersion).toBe(VERSION);
-        expect(updated.workbenchBundle.sources[fixtureSourceId]!.revision.id).toBe(
-          source.revision.id,
-        );
+        const updated = applyWorkbenchSourceDataV1(tinyBase, { root, now });
+        expect(updated.bundle.sources[fixtureSourceId]!.revision.id).toBe(source.revision.id);
         const oldConsumed = consumeWorkbenchPolicy(
           JSON.parse(savedBytes),
           createWorkbenchState(),
@@ -311,11 +303,8 @@ describe("authenticated versioned Workbench source data", () => {
         expect(oldConsumed.accepted, oldConsumed.diagnostics.join("; ")).toBe(true);
         expect(oldConsumed.requestedIntent).toEqual([fixtureAssetId]);
         expect(JSON.stringify(oldPolicy.policy)).toBe(savedBytes);
-        const historicalWorkbench = policyStudioModel(undefined, undefined, {
-          initialPolicy: JSON.parse(savedBytes),
-        });
-        expect(historicalWorkbench.initialPolicy).toEqual(JSON.parse(savedBytes));
-        expect(historicalWorkbench.workbenchBundle.assets[fixtureAssetId]!.sourceRevisionId).toBe(
+        expect(JSON.parse(savedBytes)).toEqual(oldPolicy.policy);
+        expect(tinyBase.bundle.assets[fixtureAssetId]!.sourceRevisionId).toBe(
           tinyBase.bundle.sources[fixtureSourceId]!.revision.id,
         );
       } finally {

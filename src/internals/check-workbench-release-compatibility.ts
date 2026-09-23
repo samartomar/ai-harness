@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { WORKBENCH_MINIMUM_CORE_VERSION } from "../org-policy/workbench/contracts.js";
+import { HEADROOM_MINIMUM_CORE_VERSION } from "../org-policy/workbench/contracts.js";
 
 type Version = {
   readonly major: number;
@@ -27,7 +27,7 @@ function parseVersion(value: string): Version | undefined {
 /** Necessary version-floor gate; packed CLI consumption is verified separately. */
 export function workbenchReleaseCompatibleV1(
   candidateVersion: string,
-  minimumCoreVersion = WORKBENCH_MINIMUM_CORE_VERSION,
+  minimumCoreVersion: string = HEADROOM_MINIMUM_CORE_VERSION,
 ): boolean {
   const candidate = parseVersion(candidateVersion);
   const minimum = parseVersion(minimumCoreVersion);
@@ -40,7 +40,7 @@ export function workbenchReleaseCompatibleV1(
 
 export function assertWorkbenchReleaseCompatibleV1(
   candidateVersion: string,
-  minimumCoreVersion = WORKBENCH_MINIMUM_CORE_VERSION,
+  minimumCoreVersion: string = HEADROOM_MINIMUM_CORE_VERSION,
 ): void {
   if (!workbenchReleaseCompatibleV1(candidateVersion, minimumCoreVersion))
     throw new Error(
@@ -64,6 +64,6 @@ if (process.argv[1]?.endsWith("check-workbench-release-compatibility.ts")) {
   const candidateVersion = candidateVersionFromPackage(join(process.cwd(), "package.json"));
   assertWorkbenchReleaseCompatibleV1(candidateVersion);
   console.log(
-    `Release candidate Core ${candidateVersion} meets the Workbench ${WORKBENCH_MINIMUM_CORE_VERSION} version floor. Packed CLI consumption must also pass.`,
+    `Release candidate Core ${candidateVersion} meets the Workbench ${HEADROOM_MINIMUM_CORE_VERSION} maximum emitted version floor. Packed CLI consumption must also pass.`,
   );
 }

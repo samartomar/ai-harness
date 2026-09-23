@@ -5629,7 +5629,10 @@
         },
         "minimumCoreVersion": {
           "type": "string",
-          "const": "0.6.0"
+          "enum": [
+            "0.6.0",
+            "0.7.0"
+          ]
         },
         "authoringSelections": {
           "type": "object",
@@ -6127,7 +6130,7 @@
           "type": "object",
           "properties": {
             "selected": {
-              "maxItems": 7,
+              "maxItems": 8,
               "type": "array",
               "items": {
                 "type": "string",
@@ -6138,12 +6141,13 @@
                   "token-optimizer",
                   "context7",
                   "markitdown",
-                  "playwright"
+                  "playwright",
+                  "headroom"
                 ]
               }
             },
             "excluded": {
-              "maxItems": 7,
+              "maxItems": 8,
               "type": "array",
               "items": {
                 "type": "string",
@@ -6154,7 +6158,8 @@
                   "token-optimizer",
                   "context7",
                   "markitdown",
-                  "playwright"
+                  "playwright",
+                  "headroom"
                 ]
               }
             }

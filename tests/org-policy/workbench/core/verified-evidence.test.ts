@@ -6,11 +6,11 @@ import { describe, expect, it, vi } from "vitest";
 import { canonicalStrictJsonBytesV1 } from "../../../../src/contract/strict-json-v1.js";
 import { defaultRunner, type Runner } from "../../../../src/internals/proc.js";
 import { verifyWorkbenchPublicPublicationV1 } from "../../../../src/internals/verify-workbench-publication.js";
+import { projectBaselineDisplayEvidenceV1 } from "../../../../src/org-policy/baseline-display-projection-v1.js";
 import {
   inspectPackagedPublicBaselineBytesV1,
   packagedPublicBaselineOverlayV1,
 } from "../../../../src/org-policy/packaged-public-baseline-v1.js";
-import { evidenceDisplayFor } from "../../../../src/org-policy/workbench/ui/evidence-display.js";
 
 // Interpose the process implementation in this test module only. The product
 // API exposes no witness/factory; runtime-injected verifiers remain untrusted.
@@ -63,8 +63,6 @@ import {
   verifyGithubBaselineEvidenceAttestationLiveV1,
   workbenchEvidenceFromVerifiedBaselineV1,
 } from "../../../../src/org-policy/admin-baseline-evidence-operations-v1.js";
-import { policyStudioModel } from "../../../../src/org-policy/studio-model.js";
-import { verifyAuthoringCatalogBundleIntegrityV1 } from "../../../../src/org-policy/workbench/catalog-bundle.js";
 import { defaultPreparedWorkbenchCatalog } from "../../../../src/org-policy/workbench/prepared-catalog.js";
 
 const now = "2026-09-04T12:00:00Z";
@@ -300,8 +298,19 @@ describe("Core verified baseline evidence projection", () => {
         Object.values(overlay).every((report) => report.qualification.state === "unknown"),
       ).toBe(true);
       const first = Object.values(overlay)[0]!;
+      const expired = projectBaselineDisplayEvidenceV1(
+        {
+          lock,
+          evidenceDigest: parsed.lockDigest.slice(7),
+          contextDigest: parsed.contextDigest,
+          verifiedAt: parsed.verifiedAt,
+          validUntil: parsed.validUntil,
+        },
+        bundle,
+        parsed.validUntil,
+      );
+      expect(expired[first.id]?.verification.state).toBe("stale");
       const asset = bundle.assets[first.subjects[0]!.assetId]!;
-      expect(evidenceDisplayFor(asset, [first], Date.parse(parsed.validUntil)).state).toBe("stale");
       asset.contentDigest = `sha256:${"0".repeat(64)}`;
       expect(packagedPublicBaselineOverlayV1(bundle)[first.id]).toBeUndefined();
       bundle.sources[first.subjects[0]!.sourceId]!.revision.id = "wrong-pin";
@@ -373,12 +382,6 @@ describe("Core verified baseline evidence projection", () => {
       });
       expect(summary.qualification).toEqual({ state: "unknown" });
     }
-    const model = policyStudioModel(undefined, resolved.provenance, {
-      verifiedBaseline: { resolved, now },
-    });
-    expect(model.workbenchBundle.evidence).toMatchObject(summaries);
-    expect(model.initialPolicy.governance?.authority?.approvals).toEqual([]);
-    expect(() => verifyAuthoringCatalogBundleIntegrityV1(model.workbenchBundle)).not.toThrow();
     expect(
       Object.values(defaultPreparedWorkbenchCatalog().bundle.evidence).every(
         (value) => value.verification.state !== "verified",

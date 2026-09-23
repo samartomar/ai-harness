@@ -4,7 +4,10 @@ import {
   type ResolvedDefaultToolSelection,
   resolveDefaultToolSelection,
 } from "../tools/default-tool-selection.js";
-import { WORKBENCH_MINIMUM_CORE_VERSION } from "./workbench/contracts.js";
+import {
+  HEADROOM_MINIMUM_CORE_VERSION,
+  WORKBENCH_MINIMUM_CORE_VERSION,
+} from "./workbench/contracts.js";
 
 /**
  * Browser-safe representation of a deliberate V3 tool decision. Full policy
@@ -13,6 +16,32 @@ import { WORKBENCH_MINIMUM_CORE_VERSION } from "./workbench/contracts.js";
 export interface DeveloperToolSelectionV1 {
   readonly selected?: readonly DeveloperToolId[];
   readonly excluded?: readonly DeveloperToolId[];
+}
+
+/** A persisted Headroom choice is not consumable by the earlier 0.6.x Core reader. */
+export function minimumCoreVersionForDeveloperToolSelectionV1(
+  selection: unknown,
+): typeof WORKBENCH_MINIMUM_CORE_VERSION | typeof HEADROOM_MINIMUM_CORE_VERSION {
+  const tools = object(selection);
+  return (Array.isArray(tools?.selected) && tools.selected.includes("headroom")) ||
+    (Array.isArray(tools?.excluded) && tools.excluded.includes("headroom"))
+    ? HEADROOM_MINIMUM_CORE_VERSION
+    : WORKBENCH_MINIMUM_CORE_VERSION;
+}
+
+export function isSupportedDeveloperToolPolicyFloorV1(
+  minimumCoreVersion: unknown,
+  selection: unknown,
+): boolean {
+  if (
+    minimumCoreVersion !== WORKBENCH_MINIMUM_CORE_VERSION &&
+    minimumCoreVersion !== HEADROOM_MINIMUM_CORE_VERSION
+  )
+    return false;
+  return (
+    minimumCoreVersion === HEADROOM_MINIMUM_CORE_VERSION ||
+    minimumCoreVersionForDeveloperToolSelectionV1(selection) === WORKBENCH_MINIMUM_CORE_VERSION
+  );
 }
 
 function object(value: unknown): Record<string, unknown> | undefined {
@@ -37,7 +66,7 @@ function isSupportedV3Envelope(root: Record<string, unknown>): boolean {
   const authoringSelections = object(root.authoringSelections);
   return (
     root.schemaVersion === 3 &&
-    root.minimumCoreVersion === WORKBENCH_MINIMUM_CORE_VERSION &&
+    isSupportedDeveloperToolPolicyFloorV1(root.minimumCoreVersion, root.developerTools) &&
     (root.minimumPosture === "vibe" || root.minimumPosture === "enterprise") &&
     references !== undefined &&
     typeof references.repoContract === "string" &&

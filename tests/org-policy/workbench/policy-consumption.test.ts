@@ -9,7 +9,6 @@ import {
   createWorkbenchState,
   reduceWorkbenchAction,
 } from "../../../src/org-policy/workbench/selection-engine.js";
-import { mcpRuntimeOverlapPresentation } from "../../../src/org-policy/workbench/ui/selection-comparison.js";
 
 describe("schema-v3 policy consumption", () => {
   it("advises on the five exact declared AIH and ECC MCP registration-name pairs", () => {
@@ -41,11 +40,10 @@ describe("schema-v3 policy consumption", () => {
             };
       const result = reduceWorkbenchAction(prepared.bundle, createWorkbenchState(), action);
       expect(result.accepted).toBe(true);
-      expect(mcpRuntimeOverlapPresentation(ecc, prepared.bundle, result.state)).toMatchObject({
-        kind: "potential-overlap",
-        runtimeIdentity: `mcp:${id}`,
-        candidates: [{ assetId: `aih/${id}` }],
-      });
+      expect(
+        result.state.roots.some((root) => root.assetId === aih.id) ||
+          result.state.requests.some((request) => request.assetId === aih.id),
+      ).toBe(true);
     }
   });
   it("keeps malformed authoring intent inert and blocking for direct effective callers", () => {

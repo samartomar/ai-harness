@@ -1987,9 +1987,11 @@ function legalTextResultMessage(message: string, code: CheckCode): string {
 function normalizeSarifUri(raw: unknown, detector: TrustDetector, root: string): string {
   const fallback = `${detector.name}.sarif`;
   if (typeof raw !== "string" || raw.length === 0) return fallback;
-  const unprefixed = raw.startsWith("file://")
-    ? decodeFileUrlPath(raw.slice("file://".length))
-    : raw;
+  // Refuse nonempty file URL authorities (including localhost/UNC); only the
+  // authority-free file:/// form can be resolved against this scan root.
+  const isFileUrl = /^file:\/\//i.test(raw);
+  if (isFileUrl && !/^file:\/\/\//i.test(raw)) return fallback;
+  const unprefixed = isFileUrl ? decodeFileUrlPath(raw.slice("file://".length)) : raw;
   const stripped = toPosix(unprefixed.replace(/^\/scan\/?/, "").replace(/^scan\/?/, ""));
   if (isSafeRelativeSarifUri(stripped)) return stripped;
   // Semgrep echoes targets as given, so the absolute tree Core passes yields absolute
@@ -2536,6 +2538,7 @@ async function runDelegatedDetector(
   detector: TrustDetectorName,
   root: string,
   inventory: TrustFileInventory | undefined,
+  platform: Platform,
 ): Promise<DelegatedDetectorResultV1> {
   // Scan requires the selection as a field, so Core delegates only what it has
   // actually enumerated: it never declares a closure it did not read.
@@ -2544,11 +2547,41 @@ async function runDelegatedDetector(
       unavailable: "no file inventory is available to declare as this detector's selected closure",
       outcome: "refused",
     };
+  // Semgrep's host-process profile is opt-in and is not yet declared for
+  // Windows or macOS by the installed Scan package. Never fall back to Scan's
+  // default profile when Core's selected host profile is absent or unsupported.
+  let executionProfileId: string | undefined;
+  if (detector === "semgrep") {
+    executionProfileId = platform === "linux" ? "linux-namespace-uv-v1" : "host-process-uv-v1";
+    const architecture = process.arch === "x64" ? "amd64" : process.arch;
+    const profiles = capability?.executionProfiles;
+    const declared = Array.isArray(profiles)
+      ? profiles.some((entry) => {
+          const profile = asRecord(entry);
+          if (
+            profile === undefined ||
+            profile.id !== executionProfileId ||
+            !Array.isArray(profile.supportedPlatforms)
+          )
+            return false;
+          return profile.supportedPlatforms.some((host) => {
+            const supported = asRecord(host);
+            return supported?.os === platform && supported.architecture === architecture;
+          });
+        })
+      : false;
+    if (!declared)
+      return {
+        unavailable: `detector.semgrep does not declare ${executionProfileId} for ${platform}/${architecture}`,
+        outcome: "refused",
+      };
+  }
   const selectedClosurePaths = inventory.files.map((entry) => entry.relativePath);
   try {
-    return delegatedDetectorResult(
+    const result = delegatedDetectorResult(
       await adapter.runDetectorV1({
         detectorId: `detector.${detector}`,
+        ...(executionProfileId === undefined ? {} : { executionProfileId }),
         subject: {
           kind: delegatedSubjectKind(capability, selectedClosurePaths),
           sourceRoot: root,
@@ -2556,6 +2589,16 @@ async function runDelegatedDetector(
         },
       }),
     );
+    if (
+      executionProfileId !== undefined &&
+      "sarif" in result &&
+      result.executionProfileId !== executionProfileId
+    )
+      return {
+        unavailable: `detector.semgrep returned execution profile ${result.executionProfileId ?? "unstated"} instead of requested ${executionProfileId}`,
+        outcome: "failed",
+      };
+    return result;
   } catch (error) {
     return {
       unavailable: adapterReason(
@@ -2739,6 +2782,7 @@ async function runDetectorList(
           detector.name,
           root,
           options.inventory,
+          options.platform,
         );
         execution = {
           executedBy: "scan",

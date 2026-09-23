@@ -11,6 +11,7 @@ export const DEFAULT_DEVELOPER_TOOL_IDS = [
   "context7",
   "markitdown",
   "playwright",
+  "headroom",
 ] as const;
 
 export type DeveloperToolId = (typeof DEFAULT_DEVELOPER_TOOL_IDS)[number];

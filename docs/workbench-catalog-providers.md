@@ -1,24 +1,19 @@
-# Policy Workbench catalog providers
+# Backend catalog providers
 
 > Status: unreleased architecture on the current branch. It is not a statement
 > about the current npm package.
 
-The Policy Workbench starts with one offline `authoring-catalog-bundle/v1` from a
+Core prepares one offline `authoring-catalog-bundle/v1` from a
 fixed registry of build-time providers. The packaged registry currently enrolls `ecc`,
 `superpowers`, `aih`, `organization`, `mattpocock`, and `ponytail`. A provider prepares explicit
 typed inputs for a registered compiler.
 The registry is fixed in the package; it does not load arbitrary executable plugins.
 
-The existing root entry remains the user-facing UI route:
-
-```sh
-npx @aihq/core --ui
-```
-
-That route builds and serves the same portable Workbench artifact. It does not
-discover executable providers from the network or from an arbitrary local directory.
-It also reads explicitly imported, authenticated source-data snapshots without
-replacing the installed Core version. This data path is separate from executable
+The browser Workbench and `--ui` route have been removed. This registry is
+backend package data, not a user-facing authoring interface. It does not discover
+executable providers from the network or an arbitrary local directory. Explicitly
+imported, authenticated source-data snapshots can update compatible data without
+replacing the installed Core version; that path is separate from executable
 provider registration.
 
 ## Inputs and boundaries
@@ -60,8 +55,8 @@ the MIT license. The skill-only compiler checks exact bytes and content hashes;
 source pinning and the curated inventory belong to the provider. Development
 files and unpublished skills are excluded.
 
-In the Workbench, choose source **mattpocock/skills** and type
-**Skills**, then select the skills to request. Exported schema-v3 policy preserves their exact source and
+An administrator may record reviewed **mattpocock/skills** selections in a
+schema-v3 policy; Core has no replacement browser or authoring command. The policy preserves their exact source and
 content pins; Core validates those pins again when consuming the policy. Matt
 skills are additive and do not occupy the optional methodology slot. Selection
 records requested intent: it does not install a skill, run its instructions,
@@ -96,7 +91,7 @@ Provider validation and assembly reject an empty provider result, unsupported as
 duplicate sources, declarations, detail chunks, groups, templates, or ambiguous
 relations. It also rejects declarations whose immutable source or registered
 compiler does not match. A rejected included provider therefore prevents the
-combined artifact from being produced; the Workbench does not publish a partial
+combined backend artifact from being produced; Core does not publish a partial
 catalog.
 
 The selection engine permits zero or one distinct methodology key. Methodology
@@ -105,7 +100,7 @@ but selections with different keys are rejected.
 
 ## Testing ownership
 
-The source-preparation contract has a focused, non-browser check:
+The source-preparation contract has a focused check:
 
 ```sh
 npm exec -- vitest run tests/org-policy/catalog-providers.test.ts
@@ -113,22 +108,19 @@ npm exec -- vitest run tests/org-policy/catalog-providers.test.ts
 
 It covers explicit source inputs, façade parity, source identity and pin
 rejection, curation and verdict projection, and Superpowers import isolation.
-Provider fixtures and combined assembly have their own Workbench contract
-tests. Packed-artifact and browser journeys remain shared Workbench coverage;
-`npm run test:workbench:ui` is the broad browser command. They are not
-source-specific journeys and are not a replacement for the focused provider
-test.
+Provider fixtures and combined backend assembly have their own contract tests.
+The installed Core policy and retired-UI-absence check is a separate package
+boundary; there is no browser journey or `test:workbench:ui` command.
 
-CI emits a versioned receipt with the affected provider IDs, exact contract tests,
-and separate packed-artifact and generic-browser requirements. A change to a
-registered provider entry runs its provider and consumer tests, one whole-package
-build, and the shared packed smoke. A shared UI or contract change uses the full
-Workbench lane. Mixed changes use that broader lane once; the required-check
-gate rejects a skipped mandatory lane.
+CI emits a versioned receipt with affected provider IDs and exact contract tests.
+A registered provider change runs its provider and consumer tests plus static
+quality and the installed Core policy/package boundary. Shared backend inputs
+broaden the selected suite; unknown or selector-control changes use the full
+suite. Required contexts fail closed if a mandatory lane is skipped.
 
 Provider ownership covers reviewed entry modules and explicitly enrolled data
 snapshots. Matt snapshot changes run Matt provider and consumer checks; the
-shared skill compiler retains broader Workbench coverage.
+shared skill compiler retains broader backend coverage.
 ECC metadata and skill-catalog snapshots still feed legacy aggregate consumers,
 so their changes retain broader checks. Baseline inventory providers used by
 installers retain a full-suite fallback. Unknown provider paths and selector or
@@ -138,7 +130,7 @@ ownership is proven; TypeScript builds, packaging, and release remain shared.
 ## Public evidence delivery
 
 Bundled source content requires exact current verified report coverage before a
-Workbench release is ready. `npm run check:workbench-evidence` reports coverage
+Core source-data release is ready. `npm run check:workbench-evidence` reports coverage
 gaps separately from recorded security outcomes. A verified report containing
 findings remains a report; a failing scan is never relabeled as passing to make
 the delivery check green. Derived Core methodology declarations require their
@@ -161,9 +153,9 @@ analyzer policy is an expected preparation input, not an observed Scanner run
 identity. Release verification independently checks the actual protected
 publication attestation; the offline coverage check is not a signature verifier.
 
-The default `npx @aihq/core --ui` flow consumes only package-owned prepared data.
-It does not require the user to run Scanner or install GitHub CLI. The browser
-does not fetch or verify evidence. Original verification expiry is preserved;
+The installed Core reader consumes only authenticated package-owned or explicitly
+imported source data; it does not fetch or verify evidence through a browser.
+Original verification expiry is preserved;
 historical findings remain visible after the current verification interval ends.
 Public report freshness defaults to 90 days from the authenticated Scanner
 envelope's original signing date. The original envelope verification window
@@ -212,9 +204,8 @@ remain visible as history. Qualification does not grant organization approval.
 
 Changed source revisions or content digests cannot inherit old reports or
 qualifications. Upstream availability can be checked during connected release
-preparation; the offline Workbench cannot discover new upstream versions.
-There is no background refresh, automatic version switch, or browser network
-requirement.
+preparation; the offline backend does not discover new upstream versions.
+There is no background refresh or automatic version switch.
 
 AIH uses the same collection command with `--catalog aih` and an exact Core
 checkout. Its preparer materializes the three delivered packs, generated usage
@@ -328,8 +319,8 @@ Unsupported compiler formats and executable behavior require a Core change.
 The initial Core package can include prepared source records and their verified
 report summaries. Release preparation reconstructs the exact compiler input from
 the pinned upstream archive and replays the original published proofs before the
-package can ship. Opening that package's Workbench does not download source files,
-run scanners, call GitHub, or require the user to manage verification keys.
+package can ship. Installed Core does not download source files, run scanners,
+or call GitHub to create missing release evidence.
 Later compatible source updates use the separate import workflow above.
 The initial package source identities remain pinned across compatible Core
 releases; the checked identity fixture guards against replacing or removing them.
@@ -393,7 +384,7 @@ Saved policies retain their exact source revisions and content pins. A new
 revision does not silently move a saved selection. Back up the signed snapshots,
 referenced proof files, exact source material, and public trust configuration.
 For independently added updates, another PC must import the required snapshot chain using its own
-local verifier key. Copying the browser artifact or public cache does not
+local verifier key. Copying a public cache does not
 establish verification on that PC. See [the command reference](commands.md) for
 import paths and requirements.
 
@@ -405,8 +396,8 @@ declaration from commit `974d940a1c5344210874150b98ff0d2c861fab6a` (v4.9.0). Its
 files. A literal reviewed digest binds the complete snapshot, including component
 metadata and file references. Snapshot validation happens on first preparation.
 
-Ponytail is omitted from the Workbench source picker, catalog browsing, and
-starting points. Its packaged records remain available to preserve existing saved
+Ponytail has no user-facing source picker; the browser was removed. Its packaged
+records remain available to preserve existing saved
 policy pins and Core consumption. The main Ponytail skill and optional
 methodology profile share one methodology key; the five auxiliary skills are
 additive. Existing methodology selections retain their pinned skill closure.
@@ -433,4 +424,4 @@ The neutral `pinned-component-collection/v1` format stores shared files once and
 expresses primary paths, component metadata, relations, profiles, and templates
 as data. It uses a tiny synthetic fixture for automatic contracts. Source-local
 Ponytail changes use the provider lane and existing packed smoke; changes to the
-shared format use broader Workbench coverage.
+shared format use broader backend coverage.

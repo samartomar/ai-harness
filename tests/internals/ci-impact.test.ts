@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -21,9 +21,8 @@ const headSha = "b".repeat(40);
 const testFiles = [
   "tests/docs/readme-assets.test.ts",
   "tests/org-policy/catalog.test.ts",
-  "tests/org-policy/generate.test.ts",
-  "tests/org-policy/studio-model.test.ts",
-  "tests/org-policy/studio-surface-invariants.test.ts",
+  "tests/org-policy/workbench/data-command.test.ts",
+  "tests/org-policy/workbench/prepared-catalog.test.ts",
   "tests/release-readiness.test.ts",
   "tests/workspace/manifest.test.ts",
 ];
@@ -31,31 +30,7 @@ const testFiles = [
 describe("CI impact classifier", () => {
   it.each([
     "tests/org-policy/workbench/browser/artifact.spec.ts",
-    "tests/org-policy/workbench/browser/nested/new.spec.ts",
     "tests/org-policy/workbench/browser/setup.ts",
-    "tests/org-policy/workbench/browser/fixture.ts",
-  ])("keeps browser-owned input %s in the complete packed Workbench lane", (path) => {
-    const receipt = classifyCiImpact({ baseSha, headSha, changedPaths: [path], testFiles });
-    expect(receipt).toMatchObject({
-      fullSuite: false,
-      testLane: "workbench",
-      requiresGenericBrowserJourneys: true,
-      requiresPackedArtifact: true,
-      fallbackReasons: [],
-    });
-    expect(receipt.selectedTests).toEqual(testFiles.filter(isWorkbenchTestPath));
-    expect(receipt.selectedTests).not.toContain(path);
-    expect(validateCiImpactReceipt(receipt)).toEqual(receipt);
-    expect(() =>
-      validateCiImpactReceipt({
-        ...receipt,
-        selectedTests: [],
-        requiresGenericBrowserJourneys: false,
-      }),
-    ).toThrow("generic browser requirement");
-  });
-
-  it.each([
     "tests/other/browser/unknown.spec.ts",
     "tests/org-policy/workbench/browser/unknown.ts",
     "tests/org-policy/workbench/browser/config.json",
@@ -140,9 +115,8 @@ describe("CI impact classifier", () => {
       operatingSystems: ["ubuntu-latest", "macos-latest", "windows-latest"],
       selectedTests: [
         "tests/org-policy/catalog.test.ts",
-        "tests/org-policy/generate.test.ts",
-        "tests/org-policy/studio-model.test.ts",
-        "tests/org-policy/studio-surface-invariants.test.ts",
+        "tests/org-policy/workbench/data-command.test.ts",
+        "tests/org-policy/workbench/prepared-catalog.test.ts",
       ],
     });
     expect(receipt.matchedRules).toContain("source-domain:org-policy");
@@ -187,13 +161,8 @@ describe("CI impact classifier", () => {
       expect(receipt).toMatchObject({
         fullSuite: false,
         testLane: "both",
-        requiresGenericBrowserJourneys: true,
-        requiresPackedArtifact: true,
       });
       expect(validateCiImpactReceipt(receipt)).toEqual(receipt);
-      expect(() =>
-        validateCiImpactReceipt({ ...receipt, requiresGenericBrowserJourneys: false }),
-      ).toThrow("generic browser requirement");
       expect(() => validateCiImpactReceipt({ ...receipt, testLane: "core" })).toThrow(
         "CI test lane",
       );
@@ -215,28 +184,27 @@ describe("CI impact classifier", () => {
     expect(receipt.selectedTests).toEqual(["tests/docs/readme-assets.test.ts"]);
   });
 
-  it("selects only the complete owned Workbench test lane for Workbench source", () => {
+  it("selects Core and retained backend policy tests for a prepared catalog change", () => {
     const receipt = classifyCiImpact({
       baseSha,
       headSha,
-      changedPaths: ["src/org-policy/studio-template.ts"],
+      changedPaths: ["src/org-policy/workbench/prepared-catalog.ts"],
       testFiles,
     });
 
     expect(receipt).toMatchObject({
       riskClass: "cross-platform",
-      testLane: "workbench",
+      testLane: "both",
       fullSuite: false,
       selectedTests: [
-        "tests/org-policy/generate.test.ts",
-        "tests/org-policy/studio-model.test.ts",
-        "tests/org-policy/studio-surface-invariants.test.ts",
+        "tests/org-policy/catalog.test.ts",
+        "tests/org-policy/workbench/data-command.test.ts",
+        "tests/org-policy/workbench/prepared-catalog.test.ts",
       ],
     });
-    expect(receipt.selectedTests).not.toContain("tests/org-policy/catalog.test.ts");
   });
 
-  it("keeps a provider-local change out of generic browser journeys while requiring its exact tests and packed artifact", () => {
+  it("keeps a provider-local change in its exact backend test lane", () => {
     const providerTests = providerTestsFor(["ecc"]);
     const receipt = classifyCiImpact({
       baseSha,
@@ -249,12 +217,10 @@ describe("CI impact classifier", () => {
       testLane: "workbench",
       affectedProviders: ["ecc"],
       providerTests,
-      requiresPackedArtifact: true,
-      requiresGenericBrowserJourneys: false,
     });
   });
 
-  it("routes Matt source and snapshot changes to its exact provider lane without generic browser journeys", () => {
+  it("routes Matt source and snapshot changes to exact provider tests", () => {
     const providerTests = providerTestsFor(["mattpocock"] as never);
     for (const changedPath of [
       "src/org-policy/workbench/providers/mattpocock.ts",
@@ -270,8 +236,6 @@ describe("CI impact classifier", () => {
         affectedProviders: ["mattpocock"],
         providerTests,
         testLane: "workbench",
-        requiresPackedArtifact: true,
-        requiresGenericBrowserJourneys: false,
       });
     }
   });
@@ -293,12 +257,8 @@ describe("CI impact classifier", () => {
           affectedProviders: [id],
           providerTests,
           selectedTests: providerTests,
-          requiresPackedArtifact: true,
-          requiresGenericBrowserJourneys: false,
         });
-        expect(() =>
-          validateCiImpactReceipt({ ...receipt, requiresGenericBrowserJourneys: true }),
-        ).toThrow("generic browser requirement");
+        expect(validateCiImpactReceipt(receipt)).toEqual(receipt);
       }
     },
   );
@@ -318,12 +278,8 @@ describe("CI impact classifier", () => {
     });
     expect(receipt).toMatchObject({
       fullSuite,
-      requiresPackedArtifact: true,
-      requiresGenericBrowserJourneys: true,
     });
-    expect(() =>
-      validateCiImpactReceipt({ ...receipt, requiresGenericBrowserJourneys: false }),
-    ).toThrow("generic browser requirement");
+    expect(validateCiImpactReceipt(receipt)).toEqual(receipt);
     if (fullSuite) {
       expect(receipt.operatingSystems).toEqual(["ubuntu-latest", "macos-latest", "windows-latest"]);
       expect(receipt.fallbackReasons.length).toBeGreaterThan(0);
@@ -342,12 +298,10 @@ describe("CI impact classifier", () => {
       affectedProviders: [],
       riskClass: "cross-platform",
       testLane: "both",
-      requiresPackedArtifact: true,
-      requiresGenericBrowserJourneys: true,
     });
   });
 
-  it("routes Ponytail source and snapshot changes to its exact provider lane without generic browser journeys", () => {
+  it("routes Ponytail source and snapshot changes to exact provider tests", () => {
     const providerTests = providerTestsFor(["ponytail"] as never);
     for (const changedPath of [
       "src/org-policy/workbench/providers/ponytail.ts",
@@ -364,8 +318,6 @@ describe("CI impact classifier", () => {
         affectedProviders: ["ponytail"],
         providerTests,
         testLane: "workbench",
-        requiresPackedArtifact: true,
-        requiresGenericBrowserJourneys: false,
       });
     }
   });
@@ -382,8 +334,6 @@ describe("CI impact classifier", () => {
       affectedProviders: [],
       riskClass: "cross-platform",
       testLane: "both",
-      requiresPackedArtifact: true,
-      requiresGenericBrowserJourneys: true,
     });
   });
   it("falls back for baseline extractors until their cross-domain consumer union is explicit", () => {
@@ -411,29 +361,32 @@ describe("CI impact classifier", () => {
     expect(receipt).toMatchObject({
       testLane: "both",
       affectedProviders: [],
-      requiresPackedArtifact: true,
-      requiresGenericBrowserJourneys: true,
     });
   });
 
-  it("keeps selector ownership identical to the discovered Workbench project", () => {
+  it("keeps selector ownership of every discovered backend policy test", () => {
     const repositoryTests = execFileSync("git", ["ls-files", "--", "tests"], {
       encoding: "utf8",
     })
       .split(/\r?\n/u)
-      .filter((path) => path.endsWith(".test.ts"));
+      .filter((path) => path.endsWith(".test.ts") && existsSync(path));
     const expectedWorkbenchTests = repositoryTests
       .filter(isWorkbenchTestPath)
       .sort((left, right) => left.localeCompare(right));
     const receipt = classifyCiImpact({
       baseSha,
       headSha,
-      changedPaths: ["src/org-policy/studio-template.ts"],
+      changedPaths: ["src/org-policy/workbench/prepared-catalog.ts"],
       testFiles: repositoryTests,
     });
 
     expect(expectedWorkbenchTests.length).toBeGreaterThan(0);
-    expect(receipt.selectedTests).toEqual(expectedWorkbenchTests);
+    expect(receipt.selectedTests).toEqual(expect.arrayContaining(expectedWorkbenchTests));
+    expect(
+      receipt.selectedTests.some(
+        (test) => test.startsWith("tests/org-policy/") && !isWorkbenchTestPath(test),
+      ),
+    ).toBe(true);
   });
 
   it.each([
@@ -446,7 +399,7 @@ describe("CI impact classifier", () => {
     ["empty change set", [], "empty-change-set"],
     ["lockfile", ["package-lock.json"], "global-input:package-lock.json"],
     ["workflow", [".github/workflows/ci.yml"], "global-input:.github/workflows/ci.yml"],
-    ["lane config", ["vitest.workbench.config.ts"], "global-input:vitest.workbench.config.ts"],
+    ["lane config", ["vitest.config.ts"], "global-input:vitest.config.ts"],
     ["schema", ["schemas/report.schema.json"], "global-input:schemas/report.schema.json"],
     [
       "fixture",
@@ -480,16 +433,16 @@ describe("CI impact classifier", () => {
   });
 
   it.each([
-    ["Workbench source", ["src/org-policy/studio-template.ts"], "workbench"],
-    ["future Workbench source", ["src/org-policy/studio-new-surface.ts"], "workbench"],
-    ["Workbench entry point", ["src/org-policy/generate.ts"], "workbench"],
-    ["Workbench test", ["tests/org-policy/studio-surface-invariants.test.ts"], "workbench"],
+    ["backend policy source", ["src/org-policy/workbench/prepared-catalog.ts"], "both"],
+    ["future backend policy source", ["src/org-policy/workbench/future.ts"], "both"],
+    ["policy data command", ["src/org-policy/workbench/data-command.ts"], "both"],
+    ["backend policy test", ["tests/org-policy/workbench/prepared-catalog.test.ts"], "workbench"],
     ["Core source", ["src/workspace/manifest.ts"], "core"],
     ["Core test", ["tests/workspace/manifest.test.ts"], "core"],
     ["shared policy source", ["src/org-policy/schema.ts"], "both"],
     [
-      "mixed Core and Workbench change",
-      ["src/workspace/manifest.ts", "src/org-policy/studio-template.ts"],
+      "mixed Core and backend policy change",
+      ["src/workspace/manifest.ts", "src/org-policy/workbench/prepared-catalog.ts"],
       "both",
     ],
   ])("assigns the %s change to the %s test lane", (_name, changedPaths, testLane) => {

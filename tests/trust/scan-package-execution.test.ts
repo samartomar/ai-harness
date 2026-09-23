@@ -65,6 +65,9 @@ const UNAVAILABLE = {
   },
 } as const;
 
+const HOST_ARCH = process.arch === "x64" ? "amd64" : process.arch;
+const OTHER_ARCH = HOST_ARCH === "amd64" ? "arm64" : "amd64";
+
 function capability(detectorId: string, profile = "linux-namespace-uv-v1") {
   return {
     protocol: "DetectorCapabilityV1",
@@ -73,6 +76,9 @@ function capability(detectorId: string, profile = "linux-namespace-uv-v1") {
     analyzerVersion: "0.0.0-test",
     subjectKinds: ["source-tree"],
     executionProfile: { id: profile },
+    executionProfiles: [
+      { id: profile, supportedPlatforms: [{ os: "linux", architecture: HOST_ARCH }] },
+    ],
     outputs: ["sarif-2.1.0"],
   };
 }
@@ -173,13 +179,17 @@ async function scan() {
 /** The Step 2 rule, exercised by naming the delegated set explicitly. */
 async function delegatedRun(
   delegated: readonly TrustDetectorName[],
-  options: { posture?: "vibe" | "enterprise"; required?: TrustDetectorName[] } = {},
+  options: {
+    posture?: "vibe" | "enterprise";
+    required?: TrustDetectorName[];
+    platform?: "linux" | "windows" | "darwin";
+  } = {},
 ) {
   write("SKILL.md", "# Root skill\n\nNothing alarming here.\n");
   const { argvs, run } = recordingRunner();
   const result = await runTrustDetectors(dir, {
     env: {},
-    platform: "linux",
+    platform: options.platform ?? "linux",
     posture: options.posture ?? "vibe",
     run,
     inventory: buildTrustFileInventory(dir),
@@ -425,17 +435,24 @@ describe("a delegated detector (the rule Step 2 flips per detector)", () => {
   });
 
   it("records the profile a failed Scan run used", async () => {
+    const scanPackage = installedScan(["detector.semgrep"], () =>
+      Promise.resolve({
+        outcome: "failed",
+        failure: { stage: "execution", detail: "analyzer exited 2" },
+        executionProfile: { id: "linux-namespace-uv-v1" },
+      }),
+    );
     loader.load.mockResolvedValue({
       ok: true,
-      adapter: installedScan(["detector.semgrep"], () =>
-        Promise.resolve({
-          outcome: "failed",
-          failure: { stage: "execution", detail: "analyzer exited 2" },
-          executionProfile: { id: "linux-namespace-uv-v1" },
-        }),
-      ),
+      adapter: scanPackage,
     });
     const { result } = await delegatedRun(["semgrep"]);
+    expect(scanPackage.requests).toContainEqual(
+      expect.objectContaining({
+        detectorId: "detector.semgrep",
+        executionProfileId: "linux-namespace-uv-v1",
+      }),
+    );
     expect(detectorCheck(result.checks, "semgrep")?.detail).toContain(
       "(installed @aihq/scan: execution: analyzer exited 2)",
     );
@@ -447,6 +464,142 @@ describe("a delegated detector (the rule Step 2 flips per detector)", () => {
       outcome: "failed",
     });
   });
+
+  it.each(["windows", "darwin"] as const)(
+    "requests the declared host-process Semgrep profile on %s",
+    async (platform) => {
+      const hostCapability = {
+        ...capability("detector.semgrep"),
+        executionProfiles: [
+          {
+            id: "host-process-uv-v1",
+            supportedPlatforms: [{ os: platform, architecture: HOST_ARCH }],
+          },
+        ],
+      };
+      const requests: unknown[] = [];
+      const scanPackage: ScanExecutionAdapterV1 & { requests: unknown[] } = {
+        requests,
+        listDetectorCapabilitiesV1: () => [hostCapability],
+        runDetectorV1(request) {
+          requests.push(request);
+          return Promise.resolve(succeeded("detector.semgrep", "host-process-uv-v1"));
+        },
+      };
+      loader.load.mockResolvedValue({ ok: true, adapter: scanPackage });
+      const { argvs, result } = await delegatedRun(["semgrep"], { platform });
+
+      expect(scanPackage.requests).toContainEqual(
+        expect.objectContaining({
+          detectorId: "detector.semgrep",
+          executionProfileId: "host-process-uv-v1",
+        }),
+      );
+      expect(result.executions).toContainEqual({
+        detector: "semgrep",
+        executedBy: "scan",
+        scanSource: "installed-package",
+        executionProfileId: "host-process-uv-v1",
+        outcome: "completed",
+      });
+      expect(spawnedFor(argvs, "semgrep")).toEqual([]);
+    },
+  );
+
+  it("refuses Semgrep when Scan omits the executionProfiles declaration", async () => {
+    const requests: unknown[] = [];
+    const scanPackage: ScanExecutionAdapterV1 = {
+      listDetectorCapabilitiesV1: () => [
+        { detectorId: "detector.semgrep", subjectKinds: ["source-tree"] },
+      ],
+      runDetectorV1(request) {
+        requests.push(request);
+        return Promise.reject(new Error("undeclared profile must not be run"));
+      },
+    };
+    loader.load.mockResolvedValue({ ok: true, adapter: scanPackage });
+    const { argvs, result } = await delegatedRun(["semgrep"]);
+
+    expect(requests).toEqual([]);
+    expect(detectorCheck(result.checks, "semgrep")?.detail).toContain(
+      `installed @aihq/scan: detector.semgrep does not declare linux-namespace-uv-v1 for linux/${HOST_ARCH}`,
+    );
+    expect(spawnedFor(argvs, "semgrep")).toEqual([]);
+  });
+
+  it("refuses a Semgrep profile declared only for another architecture", async () => {
+    const requests: unknown[] = [];
+    const scanPackage: ScanExecutionAdapterV1 = {
+      listDetectorCapabilitiesV1: () => [
+        {
+          ...capability("detector.semgrep"),
+          executionProfiles: [
+            {
+              id: "linux-namespace-uv-v1",
+              supportedPlatforms: [{ os: "linux", architecture: OTHER_ARCH }],
+            },
+          ],
+        },
+      ],
+      runDetectorV1(request) {
+        requests.push(request);
+        return Promise.reject(new Error("wrong-architecture profile must not be run"));
+      },
+    };
+    loader.load.mockResolvedValue({ ok: true, adapter: scanPackage });
+    const { argvs, result } = await delegatedRun(["semgrep"]);
+
+    expect(requests).toEqual([]);
+    expect(detectorCheck(result.checks, "semgrep")?.detail).toContain(
+      `installed @aihq/scan: detector.semgrep does not declare linux-namespace-uv-v1 for linux/${HOST_ARCH}`,
+    );
+    expect(spawnedFor(argvs, "semgrep")).toEqual([]);
+  });
+
+  it("rejects a successful Scan run under a profile different from the requested one", async () => {
+    const scanPackage = installedScan(["detector.semgrep"], () =>
+      Promise.resolve(succeeded("detector.semgrep", "host-process-uv-v1")),
+    );
+    loader.load.mockResolvedValue({ ok: true, adapter: scanPackage });
+    const { argvs, result } = await delegatedRun(["semgrep"]);
+
+    expect(scanPackage.requests).toContainEqual(
+      expect.objectContaining({ executionProfileId: "linux-namespace-uv-v1" }),
+    );
+    expect(detectorCheck(result.checks, "semgrep")?.detail).toContain(
+      "installed @aihq/scan: detector.semgrep returned execution profile host-process-uv-v1 instead of requested linux-namespace-uv-v1",
+    );
+    expect(result.executions).toContainEqual({
+      detector: "semgrep",
+      executedBy: "scan",
+      scanSource: "installed-package",
+      outcome: "failed",
+    });
+    expect(spawnedFor(argvs, "semgrep")).toEqual([]);
+  });
+
+  it.each(["windows", "darwin"] as const)(
+    "refuses %s Semgrep when Scan does not declare the host profile for that host",
+    async (platform) => {
+      const scanPackage = installedScan(["detector.semgrep"], () =>
+        Promise.reject(new Error("unsupported profile must not be run")),
+      );
+      loader.load.mockResolvedValue({ ok: true, adapter: scanPackage });
+      const { argvs, result } = await delegatedRun(["semgrep"], { platform });
+
+      expect(scanPackage.requests).toEqual([]);
+      expect(detectorCheck(result.checks, "semgrep")?.detail).toContain(
+        `installed @aihq/scan: detector.semgrep does not declare host-process-uv-v1 for ${platform}/${HOST_ARCH}`,
+      );
+      expect(result.executions).toContainEqual({
+        detector: "semgrep",
+        executedBy: "scan",
+        scanSource: "installed-package",
+        outcome: "refused",
+      });
+      expect(spawnedFor(argvs, "semgrep")).toEqual([]);
+    },
+  );
 
   it("refuses a delegated detector the installed package does not declare", async () => {
     loader.load.mockResolvedValue({

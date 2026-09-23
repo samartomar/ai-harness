@@ -7,7 +7,7 @@ import {
 } from "./workbench-provider-ownership.js";
 import { isWorkbenchTestPath } from "./workbench-test-ownership.js";
 
-export const CI_SELECTOR_VERSION = "1.5.4";
+export const CI_SELECTOR_VERSION = "1.5.5";
 
 export type CiRiskClass = "docs" | "focused" | "cross-platform" | "full";
 export type CiTestLane = "docs" | "core" | "workbench" | "both" | "full";
@@ -41,8 +41,6 @@ export interface CiImpactReceipt {
   fallbackReasons: string[];
   affectedProviders: WorkbenchProviderId[];
   providerTests: string[];
-  requiresPackedArtifact: boolean;
-  requiresGenericBrowserJourneys: boolean;
 }
 
 const SHA = /^[0-9a-f]{40}$/u;
@@ -77,13 +75,6 @@ const GLOBAL_FILES = new Set([
   "tsconfig.json",
   "tsup.config.ts",
   "vitest.config.ts",
-  "vitest.core.config.ts",
-  "vitest.workbench.config.ts",
-  "vitest.workbench-pure.config.ts",
-  "vitest.workbench-contracts.config.ts",
-  "playwright.workbench.config.ts",
-  "tsconfig.workbench.json",
-  "tsconfig.workbench-browser-tests.json",
 ]);
 
 const GLOBAL_PREFIXES = [".github/workflows/", "schemas/", "tests/fixtures/", "tools/"];
@@ -111,16 +102,6 @@ const SELECTOR_PATHS = new Set([
 const RELEASE_PREPARATION_SIGNAL_PATHS = new Set([
   "release/enterprise-change.json",
   "src/version.ts",
-]);
-
-const WORKBENCH_SOURCE_PATHS = new Set([
-  "src/org-policy/adoption-recipe.ts",
-  "src/org-policy/generate.ts",
-  "src/org-policy/studio-artifact-intake.ts",
-  "src/org-policy/studio-model.ts",
-  "src/org-policy/studio-protected-authority.ts",
-  "src/org-policy/studio-template.ts",
-  "src/org-policy/ui-server.ts",
 ]);
 
 const CROSS_PLATFORM_DOMAINS = new Set([
@@ -194,24 +175,6 @@ function isWorkbenchTest(path: string): boolean {
   return isWorkbenchTestPath(path);
 }
 
-/** Playwright owns these inputs; they must never enter the Vitest inventory. */
-function isWorkbenchBrowserInput(path: string): boolean {
-  return (
-    (path.startsWith("tests/org-policy/workbench/browser/") && path.endsWith(".spec.ts")) ||
-    path === "tests/org-policy/workbench/browser/setup.ts" ||
-    path === "tests/org-policy/workbench/browser/fixture.ts"
-  );
-}
-
-function isWorkbenchSource(path: string): boolean {
-  return (
-    WORKBENCH_SOURCE_PATHS.has(path) ||
-    path.startsWith("src/org-policy/workbench/ui/") ||
-    path === "src/org-policy/workbench/template.ts" ||
-    (path.startsWith("src/org-policy/studio-") && path.endsWith(".ts"))
-  );
-}
-
 function scopedTestLane(
   changedPaths: readonly string[],
   selectedTests: readonly string[],
@@ -229,11 +192,11 @@ function scopedTestLane(
       workbench = true;
       continue;
     }
-    if (isWorkbenchSource(path) || isWorkbenchTest(path) || isWorkbenchBrowserInput(path)) {
+    if (isWorkbenchTest(path)) {
       workbench = true;
     } else if (path.startsWith("src/org-policy/")) {
-      // Conservatively treat every non-Workbench org-policy source as shared:
-      // the Workbench model consumes policy schemas, catalogs, and decisions.
+      // Shared policy schemas, catalogs, and decisions feed the retained
+      // backend policy/data contracts as well as Core consumers.
       core = true;
       workbench = true;
     } else {
@@ -266,8 +229,6 @@ function fullReceipt(
     fallbackReasons: sortedUnique(fallbackReasons),
     affectedProviders: [],
     providerTests: [],
-    requiresPackedArtifact: true,
-    requiresGenericBrowserJourneys: true,
   };
 }
 
@@ -284,7 +245,6 @@ export function classifyCiImpact(
   let docsOnly = changedPaths.length > 0;
   let crossPlatform = false;
   const affectedProviders = new Set<WorkbenchProviderId>();
-  let requiresGenericBrowserJourneys = false;
 
   if (changedPaths.length === 0) fallbackReasons.push("empty-change-set");
 
@@ -341,19 +301,13 @@ export function classifyCiImpact(
       }
       for (const test of testFiles.filter(isWorkbenchTest)) selectedTests.add(test);
       crossPlatform = true;
-      requiresGenericBrowserJourneys = true;
       continue;
     }
-    if (isWorkbenchSource(path) || path.startsWith("src/org-policy/"))
-      requiresGenericBrowserJourneys = true;
-
     const sourceDomain = domainOf(path, "src");
     if (sourceDomain !== undefined) {
       matchedRules.push(`source-domain:${sourceDomain}`);
       selectedDomains.add(sourceDomain);
-      const ownedTests = isWorkbenchSource(path)
-        ? testFiles.filter(isWorkbenchTest)
-        : testsForDomain(sourceDomain, testFiles);
+      const ownedTests = testsForDomain(sourceDomain, testFiles);
       for (const test of ownedTests) selectedTests.add(test);
       // Both ECC entry points consume this renderer across domain boundaries.
       // Domain-only selection missed their literal-setting compatibility.
@@ -364,25 +318,15 @@ export function classifyCiImpact(
         }
       }
       // Shared policy code can affect source contracts owned outside org-policy.
-      if (sourceDomain === "org-policy" && !isWorkbenchSource(path)) {
+      if (sourceDomain === "org-policy") {
         for (const test of testFiles.filter(isWorkbenchTest)) selectedTests.add(test);
       }
       if (CROSS_PLATFORM_DOMAINS.has(sourceDomain)) crossPlatform = true;
       continue;
     }
 
-    if (isWorkbenchBrowserInput(path)) {
-      matchedRules.push("workbench-browser-input");
-      selectedDomains.add("org-policy");
-      for (const test of testFiles.filter(isWorkbenchTest)) selectedTests.add(test);
-      requiresGenericBrowserJourneys = true;
-      crossPlatform = true;
-      continue;
-    }
-
     const testDomain = domainOf(path, "tests");
     if (testDomain !== undefined && path.endsWith(".test.ts")) {
-      if (isWorkbenchTest(path)) requiresGenericBrowserJourneys = true;
       matchedRules.push(`test-domain:${testDomain}`);
       selectedDomains.add(testDomain);
       if (testFiles.includes(path)) selectedTests.add(path);
@@ -416,12 +360,6 @@ export function classifyCiImpact(
     );
   }
   for (const test of providerTests) selectedTests.add(test);
-  // Domain and release rules can select Workbench tests indirectly. Every such
-  // test needs its owning lane, unless the exact provider lane already owns it.
-  if ([...selectedTests].some((test) => isWorkbenchTest(test) && !providerTests.includes(test))) {
-    requiresGenericBrowserJourneys = true;
-  }
-
   if (fallbackReasons.length > 0) {
     return validateCiImpactReceipt(
       fullReceipt(input, changedPaths, testFiles, matchedRules, fallbackReasons),
@@ -454,8 +392,6 @@ export function classifyCiImpact(
     fallbackReasons: [],
     affectedProviders: providerIds,
     providerTests,
-    requiresPackedArtifact: providerIds.length > 0 || requiresGenericBrowserJourneys,
-    requiresGenericBrowserJourneys,
   };
   return validateCiImpactReceipt(receipt, options);
 }
@@ -478,8 +414,6 @@ export function validateCiImpactReceipt(
     "operatingSystems",
     "providerTests",
     "releasePreparation",
-    "requiresGenericBrowserJourneys",
-    "requiresPackedArtifact",
     "riskClass",
     "schemaVersion",
     "selectedTests",
@@ -537,29 +471,6 @@ export function validateCiImpactReceipt(
     JSON.stringify(value.providerTests) !== JSON.stringify(expectedProviderTests)
   ) {
     throw new Error("provider tests do not match provider ownership");
-  }
-  const expectedGenericBrowserJourneys =
-    value.fullSuite ||
-    value.selectedTests.some(
-      (test) => isWorkbenchTest(test) && !expectedProviderTests.includes(test),
-    ) ||
-    value.changedPaths.some(
-      (path) =>
-        isWorkbenchCatalogSharedInputPath(path) ||
-        (providerForWorkbenchPath(path) === undefined &&
-          (isWorkbenchSource(path) ||
-            isWorkbenchTest(path) ||
-            isWorkbenchBrowserInput(path) ||
-            path.startsWith("src/org-policy/"))),
-    );
-  if (value.requiresGenericBrowserJourneys !== expectedGenericBrowserJourneys) {
-    throw new Error("generic browser requirement does not match changed paths");
-  }
-  if (
-    value.requiresPackedArtifact !==
-    (value.fullSuite || value.affectedProviders.length > 0 || expectedGenericBrowserJourneys)
-  ) {
-    throw new Error("packed artifact requirement does not match changed paths");
   }
   for (const [name, values] of [
     ["matched rules", value.matchedRules],

@@ -7,7 +7,6 @@ import {
   parseStrictJsonObjectV1,
 } from "../../contract/strict-json-v1.js";
 import { type CommandSpec, digest, plan } from "../../internals/plan.js";
-import { policyStudioModel } from "../studio-model.js";
 import {
   extractWorkbenchSourceDataV1,
   importWorkbenchSourceDataWithProofsV1,
@@ -16,6 +15,7 @@ import {
   WorkbenchSourceDataPayloadV1Schema,
   workbenchSourceDataRootV1,
 } from "./core/source-data.js";
+import { defaultPreparedWorkbenchCatalog } from "./prepared-catalog.js";
 
 export const WORKBENCH_DATA_COMMAND_SPECS_V1: readonly CommandSpec[] = [
   {
@@ -70,7 +70,7 @@ function read(path: string) {
 function write(path: string, value: unknown) {
   writeFileSync(resolve(path), canonicalStrictJsonBytesV1(value), { flag: "wx", mode: 0o600 });
 }
-/** Explicit operator workflow; normal --ui only reads previously accepted data. */
+/** Explicit operator workflow for signed policy-data preparation and import. */
 export function registerWorkbenchDataCommandsV1(policy: Command): void {
   const data = policy
     .command("data")
@@ -114,7 +114,7 @@ export function registerWorkbenchDataCommandsV1(policy: Command): void {
         const now = new Date();
         const sourceBundle = options.sourceBundle
           ? read(options.sourceBundle)
-          : extractWorkbenchSourceDataV1(policyStudioModel().workbenchBundle, options.source);
+          : extractWorkbenchSourceDataV1(defaultPreparedWorkbenchCatalog().bundle, options.source);
         const payload = WorkbenchSourceDataPayloadV1Schema.parse({
           version: "workbench-source-data/v1",
           compatibility: "core-workbench-data/v1",

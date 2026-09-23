@@ -85,7 +85,9 @@ function previewTools(selection: ResolvedDefaultToolSelection): DeveloperToolLif
     id,
     state: selected.has(id) ? "selected-pending" : "policy-excluded",
     detail: selected.has(id)
-      ? "selected for ordinary setup; run with --apply to reconcile and verify"
+      ? id === "headroom"
+        ? "selected intent only; Headroom activation unavailable in this Core release"
+        : "selected for ordinary setup; run with --apply to reconcile and verify"
       : "not selected by the effective developer-tool policy",
     changed: false,
   }));
@@ -127,7 +129,9 @@ function lifecycleReport(tools: readonly DeveloperToolLifecycleResult[]): Verifi
   const report = new VerificationReport();
   for (const tool of tools) {
     if (tool.state === "policy-excluded") continue;
-    if (tool.state === "verified") report.pass(`${tool.id} developer tool`, tool.detail);
+    if (tool.id === "headroom" && tool.state === "selected-pending")
+      report.skip("headroom developer tool", tool.detail);
+    else if (tool.state === "verified") report.pass(`${tool.id} developer tool`, tool.detail);
     else
       report.add({
         name: `${tool.id} developer tool`,
@@ -150,6 +154,17 @@ async function reconcileSelected(
   const acceptTokenOptimizerLicense = ctx.options.acceptTokenOptimizerLicense === true;
   const tools: DeveloperToolLifecycleResult[] = [];
   for (const id of DEFAULT_DEVELOPER_TOOL_IDS) {
+    if (id === "headroom") {
+      tools.push({
+        id,
+        state: selected.has(id) ? "selected-pending" : "policy-excluded",
+        detail: selected.has(id)
+          ? "selected intent only; Headroom activation unavailable in this Core release"
+          : "not selected by the effective developer-tool policy",
+        changed: false,
+      });
+      continue;
+    }
     try {
       const result = await reconcile({
         id,

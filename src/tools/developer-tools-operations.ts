@@ -1107,7 +1107,7 @@ function tokenOptimizerOperation(
 export function createDefaultDeveloperToolRuntimeOperations(
   ctx: PlanContext,
   deps: DeveloperToolProductionDeps = {},
-): Record<DeveloperToolId, DeveloperToolRuntimeOperation> {
+): Record<Exclude<DeveloperToolId, "headroom">, DeveloperToolRuntimeOperation> {
   const run = deps.run ?? ctx.run;
   return {
     "code-review-graph": graphOperation(ctx, run),

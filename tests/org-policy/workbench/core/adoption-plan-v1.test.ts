@@ -5,10 +5,10 @@ import {
   createWorkbenchState,
   reduceWorkbenchAction,
 } from "../../../../src/org-policy/workbench/selection-engine.js";
-import { tinyStudioModel } from "../../studio-test-fixture.js";
+import { tinyBackendCatalogFixture } from "../../backend-catalog-fixture.js";
 
 function selected(assetId: string) {
-  const model = tinyStudioModel();
+  const model = tinyBackendCatalogFixture();
   const reduced = reduceWorkbenchAction(model.workbenchBundle, createWorkbenchState(), {
     type: assetId === "fixture:request" ? "record-request" : "select-root",
     assetId,
@@ -112,7 +112,7 @@ describe("Workbench adoption handoff", () => {
   });
 
   it("does not turn malformed state or Core controls into an install action", () => {
-    const model = tinyStudioModel();
+    const model = tinyBackendCatalogFixture();
     expect(
       planWorkbenchAdoptionV1(model.workbenchBundle, { roots: [] }, model.workbenchBindings),
     ).toMatchObject({ accepted: false, items: [] });
@@ -127,7 +127,7 @@ describe("Workbench adoption handoff", () => {
   });
 
   it("withholds a custom Skill command when the saved pin has drifted", () => {
-    const model = tinyStudioModel();
+    const model = tinyBackendCatalogFixture();
     const source = model.workbenchBundle.sources["source:fixture-core"]!;
     source.upstreamOrigin = { kind: "git", locator: "acme/review-skills" };
     source.revision.id = "a".repeat(40);
@@ -163,7 +163,7 @@ describe("Workbench adoption handoff", () => {
   });
 
   it("suppresses every action command when one selected item is stale", () => {
-    const model = tinyStudioModel();
+    const model = tinyBackendCatalogFixture();
     model.workbenchBindings["fixture:external"] = {
       kind: "package-root",
       packageRoot: {

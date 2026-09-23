@@ -12,6 +12,7 @@ import { STRIX_INVOCATION_LIMITS } from "../security/detectors/types.js";
 import { DEFAULT_DEVELOPER_TOOL_IDS } from "../tools/default-tool-selection.js";
 import { PolicyAuthorityReceiptV3Schema } from "./authority-v3.js";
 import { AIH_ORG_POLICY_FILE } from "./constants.js";
+import { isSupportedDeveloperToolPolicyFloorV1 } from "./developer-tool-policy.js";
 import {
   canonicalEccDisabledHookIds,
   ECC_DISABLE_ELIGIBLE_HOOK_IDS,
@@ -25,6 +26,7 @@ import { AIH_OWNED_ECC_MCP_EXCLUSIONS, ECC_MCP_CATALOG_PROVENANCE } from "./ecc-
 import { GovernanceDecisionIdSchema } from "./governance-decision-v1.js";
 import { safePolicyCommandArgument as safeBrowserPolicyCommandArgument } from "./workbench/command-arguments.js";
 import {
+  HEADROOM_MINIMUM_CORE_VERSION,
   WORKBENCH_MAX_POLICY_BYTES,
   WORKBENCH_MINIMUM_CORE_VERSION,
   WorkbenchAuthoringSourcesV1Schema,
@@ -1658,6 +1660,21 @@ const OrgPolicyBaseSchema = z
 const refineOrgPolicy = (rawPolicy: unknown, ctx: z.RefinementCtx) => {
   const policy = rawPolicy as z.infer<typeof OrgPolicyBaseSchema>;
   if (
+    (rawPolicy as { schemaVersion?: unknown }).schemaVersion === 3 &&
+    !isSupportedDeveloperToolPolicyFloorV1(
+      (rawPolicy as { minimumCoreVersion?: unknown }).minimumCoreVersion,
+      (rawPolicy as { developerTools?: unknown }).developerTools,
+    )
+  )
+    ctx.addIssue({
+      code: "custom",
+      path: ["minimumCoreVersion"],
+      message:
+        "A Headroom developer-tool decision requires minimumCoreVersion " +
+        HEADROOM_MINIMUM_CORE_VERSION +
+        ".",
+    });
+  if (
     policy.schemaVersion === 2 &&
     policy.governance !== undefined &&
     "externalSelections" in policy.governance
@@ -1697,7 +1714,7 @@ export const AuthoringSelectionsV1Schema = WorkbenchStateV1Schema.extend({
 });
 const OrgPolicyV3Schema = OrgPolicyBaseSchema.extend({
   schemaVersion: z.literal(3),
-  minimumCoreVersion: z.literal(WORKBENCH_MINIMUM_CORE_VERSION),
+  minimumCoreVersion: z.enum([WORKBENCH_MINIMUM_CORE_VERSION, HEADROOM_MINIMUM_CORE_VERSION]),
   authoringSelections: AuthoringSelectionsV1Schema,
   authoringSources: WorkbenchAuthoringSourcesV1Schema.optional(),
   developerTools: DeveloperToolSelectionV1Schema.optional(),

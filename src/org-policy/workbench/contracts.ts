@@ -2,6 +2,8 @@ import { z } from "zod";
 import { GOVERNED_MCP_TARGETS, type GovernedMcpTarget } from "../../internals/cli-registry.js";
 
 export const WORKBENCH_MINIMUM_CORE_VERSION = "0.6.0" as const;
+/** First Core candidate that understands a persisted Headroom developer-tool decision. */
+export const HEADROOM_MINIMUM_CORE_VERSION = "0.7.0" as const;
 export const WORKBENCH_MAX_POLICY_BYTES = 1_000_000;
 const MAX_STATE_BYTES = 900_000;
 const MAX_AGGREGATE_PINS = 5_000;

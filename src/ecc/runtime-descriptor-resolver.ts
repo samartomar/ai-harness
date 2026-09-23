@@ -9,7 +9,6 @@ import {
 } from "../catalog-package/load-catalog-package.js";
 import { canonicalStrictJsonSha256V1 } from "../contract/strict-json-v1.js";
 import { AihError } from "../errors.js";
-import { packagedEccRuntimeDescriptorsV1 } from "../org-policy/workbench/core/packaged-source-data.js";
 import {
   historicalEccRuntimeDescriptorsFromSourceDataV1,
   workbenchSourceDataRootV1,
@@ -119,16 +118,16 @@ export interface HistoricalEccRuntimeDescriptorContextV1 {
  *    Core pin is the custody. A Catalog that is installed but incompatible,
  *    refuses its sidecar or index, lacks the selected source, reports the bytes
  *    unverified, or carries bytes Core has not pinned is a named refusal.
- * 3. `core-embedded` — the copy sealed inside this Core package, ONLY when
- *    `@aihq/catalog` is not installed at all (`catalog-package-unavailable`).
+ *    An absent `@aihq/catalog` is itself a named refusal
+ *    (`catalog-package-unavailable`); the copy this Core embeds for other
+ *    Workbench consumers is not a resolution fallback.
  *
- * Every descriptor, whatever its source, then passes the unchanged seal,
- * schema, source-identity, expiry, custody and adapter-compatibility checks.
+ * Every descriptor then passes the unchanged seal, schema, source-identity,
+ * expiry, custody and adapter-compatibility checks.
  */
 export const HISTORICAL_ECC_RUNTIME_DESCRIPTOR_RESOLUTION_ORDER_V1 = Object.freeze([
   "local-source-data",
   "installed-catalog",
-  "core-embedded",
 ] as const);
 
 export type HistoricalEccRuntimeDescriptorSourceV1 =
@@ -351,17 +350,16 @@ function refuse(refusal: HistoricalEccRuntimeDescriptorRefusalV1): never {
   });
 }
 
-type InstalledCatalogDescriptorV1 =
-  | { readonly state: "unavailable" }
-  | {
-      readonly state: "selected";
-      readonly descriptor: EccRuntimeDescriptorV1;
-      readonly carrier: NonNullable<HistoricalEccRuntimeDescriptorContextV1["descriptorCarrier"]>;
-    };
+type InstalledCatalogDescriptorV1 = {
+  readonly descriptor: EccRuntimeDescriptorV1;
+  readonly carrier: NonNullable<HistoricalEccRuntimeDescriptorContextV1["descriptorCarrier"]>;
+};
 
 /**
- * Stage 2: the installed Catalog's runtime-descriptors sidecar, custodied by
- * Core's pin. Returns `unavailable` only when the package is not installed.
+ * Stage 2 (final): the installed Catalog's runtime-descriptors sidecar,
+ * custodied by Core's pin. An absent or unloadable package throws the loader's
+ * named `CatalogPackageRefusalError`; index, sidecar and pinned-byte refusals
+ * keep their named historical refusal type. Neither falls back to embedded bytes.
  */
 async function installedCatalogDescriptor(
   selected: { repository: string; commit: string },
@@ -372,10 +370,7 @@ async function installedCatalogDescriptor(
     ["./catalog-index.json", "./catalog-runtime-descriptors.json"],
     access,
   );
-  if (!loaded.ok) {
-    if (loaded.refusal.reason === "catalog-package-unavailable") return { state: "unavailable" };
-    throw new CatalogPackageRefusalError(loaded.refusal);
-  }
+  if (!loaded.ok) throw new CatalogPackageRefusalError(loaded.refusal);
   const { readCatalogContentV1Result, readCatalogRuntimeDescriptorsV1Result } = loaded.exports;
   const carrier = `the installed ${CATALOG_PACKAGE_NAME}${loaded.version === undefined ? "" : ` ${loaded.version}`}`;
   const index = readCatalogContentV1Result({ bytes: loaded.files["./catalog-index.json"].bytes });
@@ -437,7 +432,6 @@ async function installedCatalogDescriptor(
     sha256: `sha256:${sha256}`,
   });
   return {
-    state: "selected",
     descriptor,
     carrier: Object.freeze({
       package: CATALOG_PACKAGE_NAME,
@@ -452,9 +446,10 @@ async function installedCatalogDescriptor(
 
 /**
  * Reconstructs a historical verifier input from a machine-local receipt that
- * rebinds the same source-data envelope and trust, else from the installed
- * Catalog's Core-pinned descriptor bytes, else — only when Catalog is not
- * installed — from sealed package data. The order is
+ * rebinds the same source-data envelope and trust, or else from the installed
+ * Catalog's Core-pinned descriptor bytes. A missing or unloadable package has
+ * a loader refusal; rejected Catalog data has a historical descriptor refusal.
+ * The order is
  * HISTORICAL_ECC_RUNTIME_DESCRIPTOR_RESOLUTION_ORDER_V1 and the result records it.
  */
 export async function resolveHistoricalEccRuntimeDescriptorV1(
@@ -485,38 +480,16 @@ export async function resolveHistoricalEccRuntimeDescriptorV1(
     resolution.push({ stage: "local-source-data", outcome: "selected" });
   } else {
     resolution.push({ stage: "local-source-data", outcome: "no-match" });
-    // Stage 2. The installed Catalog, or a named refusal.
+    // Stage 2 (final). The installed Catalog, or a named package/data refusal.
+    // An absent @aihq/catalog is catalog-package-unavailable; nothing falls
+    // back to the embedded copy.
     const installed = await installedCatalogDescriptor(selected, options.catalog);
-    if (installed.state === "selected") {
-      descriptor = installed.descriptor;
-      carrier = installed.carrier;
-      source = "installed-catalog";
-      resolution.push({ stage: "installed-catalog", outcome: "selected" });
-    } else {
-      // Stage 3. Only when @aihq/catalog is not installed at all.
-      resolution.push({ stage: "installed-catalog", outcome: "catalog-package-unavailable" });
-      const packageCandidates = packagedEccRuntimeDescriptorsV1().filter(matches);
-      // Package literals have no active/history order. Exact duplicates are
-      // one fact; divergent canonical bytes for the same selected tuple are
-      // ambiguous and fail closed.
-      const unique = new Map(
-        packageCandidates.map((candidate) => [
-          `sha256:${canonicalStrictJsonSha256V1(candidate)}`,
-          candidate,
-        ]),
-      );
-      if (unique.size !== 1) fail();
-      descriptor = unique.values().next().value;
-      source = "core-embedded";
-      resolution.push({ stage: "core-embedded", outcome: "selected" });
-    }
+    descriptor = installed.descriptor;
+    carrier = installed.carrier;
+    source = "installed-catalog";
+    resolution.push({ stage: "installed-catalog", outcome: "selected" });
   }
-  if (
-    descriptor === undefined ||
-    !matches(descriptor) ||
-    Date.parse(descriptor.evidence.validUntil) <= Date.parse(now)
-  )
-    fail();
+  if (!matches(descriptor) || Date.parse(descriptor.evidence.validUntil) <= Date.parse(now)) fail();
   assertEccRuntimeDescriptorCustodyV1(descriptor, now);
   return Object.freeze({
     ...contextForDescriptor(descriptor),

@@ -93,19 +93,11 @@ describe("local CI verification", () => {
   it.each([
     ["docs", ["README.md"], ["ci:run-selected"]],
     ["Core", ["src/workspace/manifest.ts"], ["ci:run-selected"]],
-    ["provider", [providerTest], ["ci:run-selected", "test:workbench:providers"]],
-    [
-      "browser",
-      ["tests/org-policy/workbench/browser/artifact.spec.ts"],
-      ["ci:run-selected", "test:workbench:pr"],
-    ],
-    [
-      "shared",
-      [providerTest, "src/org-policy/schema.ts"],
-      ["ci:run-selected", "test:workbench:pr"],
-    ],
-    ["unknown", ["unknown/input.json"], ["test:cov", "test:workbench:pr"]],
-    ["selector", ["src/internals/ci-local-verification.ts"], ["test:cov", "test:workbench:pr"]],
+    ["provider", [providerTest], ["ci:run-selected"]],
+    ["removed browser path", ["tests/org-policy/workbench/browser/artifact.spec.ts"], ["test:cov"]],
+    ["shared", [providerTest, "src/org-policy/schema.ts"], ["ci:run-selected"]],
+    ["unknown", ["unknown/input.json"], ["test:cov"]],
+    ["selector", ["src/internals/ci-local-verification.ts"], ["test:cov"]],
   ])("dispatches the %s selection to its existing lanes", (_name, paths, expected) => {
     const steps = localVerificationSteps(impact(paths));
     expect(steps.slice(CI_STATIC_SCRIPTS.length).map((step) => step.script)).toEqual(expected);
@@ -114,25 +106,16 @@ describe("local CI verification", () => {
     }
   });
 
-  it("executes static and provider lanes sequentially with the complete ownership receipt", async () => {
+  it("executes static checks and every selected backend test in one lane", async () => {
     const h = harness({ changed: [providerTest] });
     const receipt = await runLocalVerification(args, h.options);
     const commands = h.calls.filter(({ argv }) => argv[0] !== "git");
-    expect(commands.map(({ argv }) => argv[3])).toEqual([
-      ...CI_STATIC_SCRIPTS,
-      "ci:run-selected",
-      "test:workbench:providers",
-    ]);
+    expect(commands.map(({ argv }) => argv[3])).toEqual([...CI_STATIC_SCRIPTS, "ci:run-selected"]);
     expect(commands.every(({ argv }) => argv[0] === process.execPath)).toBe(true);
     expect(commands.at(-1)?.options?.env).toMatchObject({
-      AFFECTED_PROVIDERS_JSON: '["ecc"]',
-      PROVIDER_TESTS_JSON: JSON.stringify(providerTests),
-    });
-    expect(commands.at(-2)?.options?.env).toMatchObject({
       SELECTED_TESTS_JSON: JSON.stringify(receipt.selectedTests),
       TEST_LANE: "workbench",
       FULL_SUITE: "false",
-      REQUIRES_GENERIC_BROWSER_JOURNEYS: "false",
     });
     expect(h.output.join("")).toContain("provider:ecc");
     expect(h.output.join("")).toContain("Hosted gap:");

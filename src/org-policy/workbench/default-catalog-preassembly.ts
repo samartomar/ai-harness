@@ -266,7 +266,7 @@ export function admitDefaultCatalogPreassemblyV1(
 }
 
 export function packagedDefaultCatalogPreassemblyCompanionV1():
-  | Readonly<{ catalog: PreassemblyInput; studio: PreassemblyInput }>
+  | Readonly<{ catalog: PreassemblyInput }>
   | undefined {
   let path: string;
   try {
@@ -283,21 +283,13 @@ export function packagedDefaultCatalogPreassemblyCompanionV1():
     Object.keys(value).every((key) => key === "bytes" || key === "sha256")
   )
     return undefined;
-  exactKeys(value, ["catalog", "studio"], "generated companion");
+  exactKeys(value, ["catalog"], "generated companion");
   const catalog = object(value.catalog, "generated catalog companion");
   exactKeys(catalog, ["bytes", "sha256"], "generated catalog companion");
-  const studio = object(value.studio, "generated Studio companion");
-  exactKeys(studio, ["bytes", "sha256"], "generated Studio companion");
-  if (
-    typeof catalog.bytes !== "string" ||
-    typeof catalog.sha256 !== "string" ||
-    typeof studio.bytes !== "string" ||
-    typeof studio.sha256 !== "string"
-  )
+  if (typeof catalog.bytes !== "string" || typeof catalog.sha256 !== "string")
     throw new TypeError("Default catalog preassembly generated companion is malformed");
   return Object.freeze({
     catalog: Object.freeze({ bytes: catalog.bytes, sha256: catalog.sha256 }),
-    studio: Object.freeze({ bytes: studio.bytes, sha256: studio.sha256 }),
   });
 }
 

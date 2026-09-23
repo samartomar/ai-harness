@@ -22,12 +22,12 @@ import {
  * fixture only supplies its inert assembly and a sealed, non-production baseline.
  */
 vi.mock("../../../src/org-policy/workbench/prepared-catalog.js", async () => {
-  const { tinyStudioModel } = await import("../studio-test-fixture.js");
+  const { tinyBackendCatalogFixture } = await import("../backend-catalog-fixture.js");
   const { compileOrganizationManifestV1 } = await import(
     "../../../src/org-policy/workbench/compilers/organization-manifest.js"
   );
   const baseline = () => {
-    const model = tinyStudioModel();
+    const model = tinyBackendCatalogFixture();
     return {
       catalog: {},
       bundle: model.workbenchBundle,
@@ -44,7 +44,7 @@ vi.mock("../../../src/org-policy/workbench/prepared-catalog.js", async () => {
     if (manifests.length !== 1) throw new TypeError("fixture accepts one organization manifest");
     const manifest = manifests[0];
     if (manifest === undefined) throw new TypeError("fixture manifest is unavailable");
-    const model = tinyStudioModel();
+    const model = tinyBackendCatalogFixture();
     const compiled = compileOrganizationManifestV1(manifest);
     const assets = Object.fromEntries(
       compiled.declarations.map(({ declaration }) => [

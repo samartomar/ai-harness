@@ -76,7 +76,7 @@ aih verify-release "$CORE_VERSION"
    ```
 
    Treat the trusted policy channel as either the committed `aih-org-policy.json`
-   reviewed in the repo or the Workbench-generated PolicyBundle V2 distributed at
+    reviewed in the repo or an administrator-reviewed PolicyBundle V2 distributed at
    an administrator-controlled read-only path outside the governed target. The
    administrator/MDM launcher should provide that path to each fresh terminal and
    client process; use an explicit absolute `--policy` path for a one-off invocation.

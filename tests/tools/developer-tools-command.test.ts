@@ -58,7 +58,7 @@ function v3Policy(developerTools?: unknown): unknown {
 }
 
 describe("developer-tools command", () => {
-  it("returns the seven no-policy defaults as selected-pending without side effects", async () => {
+  it("returns eight no-policy defaults as selected-pending without side effects", async () => {
     const reconcileTool = vi.fn();
 
     const result = await executeDeveloperToolsCommand(context(), {
@@ -81,6 +81,7 @@ describe("developer-tools command", () => {
           "context7",
           "markitdown",
           "playwright",
+          "headroom",
         ],
         excluded: [],
       },
@@ -92,9 +93,35 @@ describe("developer-tools command", () => {
         { id: "context7", state: "selected-pending" },
         { id: "markitdown", state: "selected-pending" },
         { id: "playwright", state: "selected-pending" },
+        { id: "headroom", state: "selected-pending" },
       ],
       changed: false,
     });
+  });
+
+  it("keeps selected Headroom inert on apply and reports activation unavailable as skipped", async () => {
+    const visited: string[] = [];
+    const reconcileTool = vi.fn(async ({ id }): Promise<DeveloperToolLifecycleResult> => {
+      visited.push(id);
+      return { id, state: "verified", detail: "fixture verified", changed: false };
+    });
+    const result = await executeDeveloperToolsCommand(context({ apply: true }), {
+      reconcileTool,
+      projectMcp: false,
+    });
+    expect(visited).not.toContain("headroom");
+    expect(result.tools.find((tool) => tool.id === "headroom")).toMatchObject({
+      state: "selected-pending",
+      changed: false,
+      detail: expect.stringMatching(/activation unavailable/i),
+    });
+    expect(
+      result.report?.checks.find((check) => check.name === "headroom developer tool"),
+    ).toMatchObject({
+      verdict: "skip",
+      detail: expect.stringMatching(/activation unavailable/i),
+    });
+    expect(result.report?.ok).toBe(true);
   });
 
   it("preserves an explicit empty selection as policy-excluded", async () => {

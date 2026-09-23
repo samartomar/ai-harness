@@ -173,6 +173,7 @@ describe("release readiness metadata", () => {
     const qualitySteps = JSON.stringify(ci.jobs?.quality?.steps);
     expect(qualitySteps).toContain("npm run docs:lint");
     expect(qualitySteps).toContain("npm run check:packed-doc-links");
+    expect(qualitySteps).toContain("npm run verify:packed-core-policy");
     expect(qualitySteps).toContain("npm run baseline:check");
     const qualityCheckout = ci.jobs?.quality?.steps?.find((step) =>
       step.uses?.startsWith("actions/checkout@"),
@@ -192,8 +193,6 @@ describe("release readiness metadata", () => {
       "selected_tests",
       "full_verify",
       "windows_full_tests",
-      "workbench_browser",
-      "workbench_provider",
     ]);
     const requiredSteps = JSON.stringify(ci.jobs?.required_verify?.steps);
     expect(requiredSteps).toContain("node .github/scripts/require-ci-lane.mjs");
@@ -203,10 +202,6 @@ describe("release readiness metadata", () => {
       "SELECTED_RESULT",
       "FULL_RESULT",
       "WINDOWS_RESULT",
-      "WORKBENCH_RESULT",
-      "PROVIDER_RESULT",
-      "REQUIRES_PACKED_ARTIFACT",
-      "REQUIRES_GENERIC_BROWSER_JOURNEYS",
     ]) {
       expect(requiredSteps).toContain(result);
     }

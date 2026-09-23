@@ -1,4 +1,4 @@
-/** Inert ownership shared by Vitest configurations and the CI classifier. */
+/** Inert retained backend-policy ownership shared by Vitest and CI. */
 export const WORKBENCH_EXPLICIT_TEST_PATHS = [
   "tests/ecc/module-selection-closure.test.ts",
   "tests/org-policy/acceptance-hook-registrar.test.ts",
@@ -8,68 +8,14 @@ export const WORKBENCH_EXPLICIT_TEST_PATHS = [
   "tests/internals/check-workbench-release-compatibility.test.ts",
   "tests/internals/workbench-publication-roundtrip.test.ts",
   "tests/internals/workbench-publication-installed-source.test.ts",
-  "tests/org-policy/admin-baseline-evidence-cli-route.test.ts",
-  "tests/org-policy/admin-catalog-cli-route.test.ts",
-  "tests/org-policy/admin-catalog-fetch-v1.test.ts",
   "tests/org-policy/ecc-hook-controls.test.ts",
   "tests/org-policy/ecc-mcp-approval.test.ts",
-  "tests/org-policy/generate.test.ts",
-  "tests/org-policy/generate-organization.test.ts",
-  "tests/org-policy/packed-workbench-cleanup.test.ts",
-  "tests/org-policy/supported-cli-subsets.test.ts",
-  "tests/org-policy/ui-server.test.ts",
-  "tests/org-policy/ui-server-connected-policy.test.ts",
-  "tests/tools/prepare-packed-workbench.test.ts",
+  "tests/tools/packed-consumer.test.ts",
 ] as const;
 
-const legacyTestPrefix = "tests/org-policy/studio-";
 const typedTestPrefix = "tests/org-policy/workbench/";
 const explicitPaths = new Set<string>(WORKBENCH_EXPLICIT_TEST_PATHS);
 
-/** Core/compiler risks remain in the retained UI-coverage project. */
-export const WORKBENCH_CONTRACT_TEST_PATTERNS = [
-  "tests/org-policy/workbench/compilers/**/*.test.ts",
-  "tests/org-policy/workbench/catalog-bundle.test.ts",
-  "tests/org-policy/workbench/prepared-catalog.test.ts",
-  "tests/org-policy/workbench/default-catalog-preassembly.test.ts",
-  "tests/org-policy/workbench/default-studio-preassembly.test.ts",
-  "tests/org-policy/workbench/core-defaults.test.ts",
-  "tests/org-policy/workbench/first-party-presentation.test.ts",
-  "tests/org-policy/workbench/reference-reports.test.ts",
-  "tests/org-policy/workbench/core/**/*.test.ts",
-  // These exercise authenticated disk stores, operator commands, and the
-  // production assembly; they are not synthetic reducer/state assertions.
-  "tests/org-policy/workbench/source-data*.test.ts",
-  "tests/org-policy/workbench/data-command.test.ts",
-  "tests/org-policy/workbench/studio-model-source-data.test.ts",
-  "tests/org-policy/workbench/policy-consumption*.test.ts",
-  "tests/org-policy/workbench/governed-mcp-compatibility.test.ts",
-  "tests/org-policy/workbench/providers/**/*.test.ts",
-  "tests/org-policy/catalog-providers.test.ts",
-] as const;
-
-/** New typed root tests are pure by default unless they are a retained contract risk. */
-export const WORKBENCH_PURE_TEST_PATTERNS = [`${typedTestPrefix}**/*.test.ts`] as const;
-export const WORKBENCH_PURE_TEST_EXCLUDE_PATTERNS = WORKBENCH_CONTRACT_TEST_PATTERNS;
-
-/** PR retained coverage: legacy/browser-adjacent behavior plus Core contract risks. */
-export const WORKBENCH_RETAINED_TEST_PATTERNS = [
-  ...WORKBENCH_EXPLICIT_TEST_PATHS,
-  `${legacyTestPrefix}*.test.ts`,
-  ...WORKBENCH_CONTRACT_TEST_PATTERNS,
-] as const;
-
-/** Complete ownership remains for standalone Workbench and CI-selected lanes. */
-export const WORKBENCH_TEST_PATTERNS = [
-  ...WORKBENCH_EXPLICIT_TEST_PATHS,
-  `${legacyTestPrefix}*.test.ts`,
-  `${typedTestPrefix}**/*.test.ts`,
-] as const;
-
 export function isWorkbenchTestPath(path: string): boolean {
-  return (
-    explicitPaths.has(path) ||
-    ((path.startsWith(legacyTestPrefix) || path.startsWith(typedTestPrefix)) &&
-      path.endsWith(".test.ts"))
-  );
+  return explicitPaths.has(path) || (path.startsWith(typedTestPrefix) && path.endsWith(".test.ts"));
 }

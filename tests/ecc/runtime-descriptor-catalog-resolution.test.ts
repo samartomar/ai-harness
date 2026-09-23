@@ -10,12 +10,12 @@ import { canonicalStrictJsonSha256V1 } from "../../src/contract/strict-json-v1.j
 // ---------------------------------------------------------------------------
 // WO Step 3A: the historical ECC runtime descriptor is resolved in an explicit,
 // recorded order. After Core's own protected local receipts, the INSTALLED
-// @aihq/catalog carries the descriptor bytes and Core accepts them only when
-// their sha256 is one Core pins. Core's embedded copy is used only when Catalog
-// is not installed at all. An installed Catalog that refuses is a refusal,
-// never a fallback. These tests use the real Catalog reader (the exact Catalog
-// tarball this checkout installs as a devDependency) over fixture copies of its
-// published bytes.
+// @aihq/catalog is the only remaining source of the descriptor bytes, and Core
+// accepts them only when their sha256 is one Core pins. An absent or refusing
+// Catalog is a refusal, never a fallback to Core's embedded copy, which
+// survives only as the byte-equality fixture asserted below. These tests use
+// the real Catalog reader (the exact Catalog tarball this checkout installs as
+// a devDependency) over fixture copies of its published bytes.
 // ---------------------------------------------------------------------------
 
 const packaged = vi.hoisted(() => ({ calls: 0 }));
@@ -162,7 +162,6 @@ describe("historical ECC runtime descriptor resolution order", () => {
     expect(HISTORICAL_ECC_RUNTIME_DESCRIPTOR_RESOLUTION_ORDER_V1).toEqual([
       "local-source-data",
       "installed-catalog",
-      "core-embedded",
     ]);
   });
 
@@ -205,34 +204,24 @@ describe("historical ECC runtime descriptor resolution order", () => {
     });
     expect(resolved.descriptorSha256).toBe(`sha256:${PINNED_SHA256}`);
     expect(resolved.source).toMatchObject({ repository: "affaan-m/ECC", commit: ECC_COMMIT });
-    // The embedded copy was never consulted.
+    // Core's embedded copy is not a resolution stage, so nothing consults it.
     expect(packaged.calls).toBe(0);
   });
 
-  it("resolves the same context from the embedded copy only when Catalog is not installed", async () => {
-    const dataRoot = missingDataRoot();
-    const fromCatalog = await resolveHistoricalEccRuntimeDescriptorV1(policyFor(), {
-      now: NOW,
-      dataRoot,
-      catalog: catalogFixture().access,
+  it("refuses when no local record matches and Catalog is not installed, never consulting the embedded copy", async () => {
+    const error = await refusalOf(
+      resolveHistoricalEccRuntimeDescriptorV1(policyFor(), {
+        now: NOW,
+        dataRoot: missingDataRoot(),
+        catalog: unavailable,
+      }),
+    );
+    expect(error).toBeInstanceOf(CatalogPackageRefusalError);
+    expect((error as InstanceType<typeof CatalogPackageRefusalError>).refusal).toMatchObject({
+      reason: "catalog-package-unavailable",
     });
-    const embedded = await resolveHistoricalEccRuntimeDescriptorV1(policyFor(), {
-      now: NOW,
-      dataRoot,
-      catalog: unavailable,
-    });
-    expect(embedded.descriptorSource).toBe("core-embedded");
-    expect(embedded.descriptorResolution).toEqual([
-      { stage: "local-source-data", outcome: "no-match" },
-      { stage: "installed-catalog", outcome: "catalog-package-unavailable" },
-      { stage: "core-embedded", outcome: "selected" },
-    ]);
-    expect(embedded.descriptorCarrier).toBeUndefined();
-    expect(packaged.calls).toBe(1);
-    // Same bytes, same digest, same derived context: the carrier changed, nothing else.
-    expect(embedded.descriptorSha256).toBe(fromCatalog.descriptorSha256);
-    expect(embedded.evidence.rawReportDigest).toBe(fromCatalog.evidence.rawReportDigest);
-    expect([...embedded.componentPathsById]).toEqual([...fromCatalog.componentPathsById]);
+    // Core's embedded copy is not a resolution stage: it is never even read.
+    expect(packaged.calls).toBe(0);
   });
 
   it("refuses when one descriptor byte differs from what the Catalog sidecar declares", async () => {
@@ -355,7 +344,7 @@ describe("historical ECC runtime descriptor resolution order", () => {
     expect(packaged.calls).toBe(0);
   });
 
-  it("refuses an installed but incompatible Catalog; it never falls back to the embedded copy", async () => {
+  it("refuses an installed but incompatible Catalog instead of substituting another source", async () => {
     const { access } = catalogFixture();
     for (const importPackage of [
       () => Promise.resolve({ readCatalogContentV1Result: () => ({}) }),

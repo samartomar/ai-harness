@@ -9,8 +9,8 @@ import { AihError } from "../errors.js";
  *
  * `@aihq/catalog` is an OPTIONAL PEER of `@aihq/core`: Node resolves it from the
  * consumer's own install beside Core, so a compatible Catalog can be updated
- * without rebuilding or reinstalling Core, and a Core-only install is a
- * supported arrangement. Nothing in Core imports Catalog's values statically;
+ * without rebuilding or reinstalling Core. A Core-only install supports
+ * operations that do not need Catalog. Nothing in Core imports Catalog's values statically;
  * every caller reaches its functions and its public data subpaths through this
  * module, at run time, and checks only what it actually uses.
  *
@@ -18,10 +18,12 @@ import { AihError } from "../errors.js";
  * from the bytes this module hands back (for example by a Core-pinned digest).
  *
  * `catalog-package-unavailable` means exactly one thing: the package is not
- * installed next to Core. A caller may treat that as "use Core's own copy". An
- * installed Catalog that cannot be loaded, lacks a needed export or does not
- * publish a needed subpath is `catalog-package-incompatible`, which a caller
- * must surface as a refusal and never answer with a substitute.
+ * installed next to Core. Historical ECC descriptor resolution surfaces that
+ * absence as a named refusal when no matching verified local source-data
+ * receipt exists; it does not use Core's embedded Workbench data as fallback.
+ * An installed Catalog that cannot be loaded, lacks a needed export or does
+ * not publish a needed subpath is `catalog-package-incompatible`, which a
+ * caller must surface as a refusal and never answer with a substitute.
  */
 
 export const CATALOG_PACKAGE_NAME = "@aihq/catalog";

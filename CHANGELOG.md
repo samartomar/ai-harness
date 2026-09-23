@@ -6,41 +6,61 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Removed
+
+- Remove the pre-release Policy Workbench browser/HTML/server bundle and its
+  `aih --ui` and `aih policy generate` command registrations. They have no
+  compatibility stubs or `aih-ui` replacement. Core retains policy validation,
+  protected authority consumption, policy-data commands, and backend catalog
+  records needed by current consumers. Earlier Workbench work in this changelog
+  remains development history, not a current browser feature.
+
 ### Changed
 
 - `@aihq/catalog` is now an optional peer dependency (`>=0.2.0 <1.0.0`), loaded at run
   time through one module and never bundled. The historical ECC runtime descriptor used by
   `aih ecc --lifecycle install` and `aih policy project` is resolved in a recorded order: a
-  local source-data receipt, then the installed Catalog's
-  `./catalog-runtime-descriptors.json` accepted only against the sha256 Core pins, then
-  Core's embedded copy only when Catalog is not installed. The same bytes are accepted as
-  before (`sha256 158f63e2…` for `affaan-m/ECC@5064474d…`). An installed Catalog that
-  cannot supply them is a named refusal (`catalog-package-incompatible`,
+  matching verified local source-data receipt, then the installed Catalog's
+  `./catalog-runtime-descriptors.json` accepted only against the sha256 Core pins. A missing
+  Catalog is `catalog-package-unavailable`; an installed Catalog that cannot supply the
+  descriptor is a named refusal (`catalog-package-incompatible`,
   `catalog-index-refused`, `catalog-runtime-descriptors-refused`,
   `catalog-descriptor-absent`, `catalog-descriptor-unverified`,
-  `catalog-descriptor-not-accepted`), never a fallback; this includes the registry's
-  `@aihq/catalog` 0.2.0, which does not publish that subpath. The source used is printed on
-  stderr. The embedded descriptor data is unchanged and still shipped.
+  `catalog-descriptor-not-accepted`), never an embedded fallback; this includes the
+  registry's `@aihq/catalog` 0.2.0, which does not publish that subpath. The same bytes
+  are accepted as before (`sha256 158f63e2…` for `affaan-m/ECC@5064474d…`), and the
+  source used is printed on stderr. Shared policy/catalog descriptor data still
+  ships for other backend consumers, not this historical resolver.
 - `@aihq/scan` is now an optional peer dependency (`>=0.4.0 <1.0.0`) and is no longer
   bundled into `@aihq/core`: Core loads the installed Scan at run time through one module
   and checks each function it calls. Install both with `npm install -g @aihq/core @aihq/scan`
-  and update Scan independently. A Core-only installation loads and runs every command;
-  what needs Scan reports `scan-package-unavailable` or `scan-package-incompatible` with the
-  install command, and never falls back to a bundled copy.
+  and update Scan independently. A Core-only installation supports operations that do not
+  require a sibling package; what needs Scan reports `scan-package-unavailable` or
+  `scan-package-incompatible` with the install command, and never falls back to a bundled copy.
 - `aih trust scan` and `aih skill vet` load the installed Scan by default. Every detector
   still runs in Core; the runtime advisory now names each detector's executor and records
   Scan's `detector.aih-native` identity observation (execution profile, analyzer, annex
   digest) or the package refusal. The trust scan result gains `detectorExecutions` and
   `scanObservations`. The detectors delegated to Scan are a per-detector set, empty until
   Scan's capabilities are equivalents; a delegated detector will never fall back to Core.
-- The native-detector identity is regenerated for these `src/trust` changes.
+- SARIF locations with a nonempty `file://` authority are refused as repository paths;
+  local `file:///` locations remain supported.
+- Independent Serena and Token Optimizer selections can be inspected with
+  read-only `aih developer-tools <root>` without requiring ECC selection.
+  Applying Token Optimizer still requires explicit license acceptance and a Codex
+  target; its usage is not reported as MCP usage.
+- The native-detector identity is regenerated for these `src/trust` changes. Earlier
+  native-detector reports are unchanged and need a new scan to carry the current identity.
 
 ### Added
 
+- Add Headroom as default-selected developer-tool intent in CLI previews. Applying
+  it reports activation unavailable as a skipped, pending outcome; it
+  does not install or run Headroom, configure MCP/proxy, or create a Headroom receipt.
+  Explicit Headroom choices require a V3 policy floor of Core 0.7.0; existing explicit
+  selections and 0.6.0 policies without Headroom remain accepted. Activation is future work.
 - Add Playwright to default developer-tool setup for every project, with a headless isolated
   browser check and persistent policy opt-outs. Existing explicit tool selections stay unchanged.
-- Group default tool choices inside the compact Workbench Deployment setup. Keep catalog details
-  accessible there and remove duplicate default-tool rows from catalog browsing.
 - Add MarkItDown CLI to default developer-tool setup, with a pinned local-document runtime,
   conversion verification and persistent policy opt-outs. Its MCP adapter is separately optional.
 - Refresh Playwright MCP to 0.0.81 and the optional self-hosted GitHub MCP image to v1.12.1
@@ -65,7 +85,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   readiness and HTML results, keeping installed guidance separate from native
   loading and enforced behavior. Document independent adopter delivery and the
   required/optional content ownership contract.
-- Project authored organization command rules into Claude's native project
+- Project policy-supplied organization command rules into Claude's native project
   permissions with entry ownership, preserving custom rules and hooks during
   updates and withdrawal. Keep other clients advisory and native refusal
   verification separate from generated configuration.
@@ -81,16 +101,6 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- Select the five Core baseline choices in new Workbench drafts and remove
-  GitHub from the Core browse list, preserving imported choices. Identify bundled
-  first-party skills, agents, and hooks separately from scan and qualification
-  status, with their package paths visible in the inspector.
-- Explain missing Workbench reports with an owner and next step. Show matching
-  reports from previous AIH catalog snapshots for reading, preserving findings
-  and dates without treating them as current evidence. Generated methodology
-  profiles link to separate source-item reports without claiming profile coverage.
-- Use one page scroll for the Workbench catalog and Policy exposure panel, so moving
-  the mouse between columns does not switch scrollbars. Mobile detail drawers scroll separately.
 - Prune ECC files only through recorded ownership and matching content digests, preserving
   unreceipted or modified files and removing the automatic upstream-uninstaller fallback.
 
@@ -103,9 +113,6 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   receipt ownership, custom hooks and policy exclusions.
 - Pin Commander to the maintained Node 20-compatible 14.0.3 release so Core's
   runtime dependency agrees with its advertised Node floor and existing test matrix.
-- Restore effective ECC selections when importing an exactly qualified source
-  into Workbench. Bind components to the verified local descriptor and preserve
-  explicit organization overrides and historical destination authority.
 - Keep one governed Codex skill projection in `.agents/skills/` during normal
   setup. Reconcile unchanged receipt-owned duplicate projections while preserving
   edited/custom content and unrelated client settings. Route generated governed
