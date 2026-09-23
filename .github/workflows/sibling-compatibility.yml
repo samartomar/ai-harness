@@ -33,10 +33,15 @@ name: sibling-compatibility
 # visible on the run page.
 #
 # Initial cutover: the published Core, Scan and Catalog predate these checks, so today's
-# baseline records failed or unavailable checks; that is expected. The order the gates
-# allow is Core first (Core has no reader gate here; core-candidate is recorded for the
-# owner), then Scan and Catalog in either order, each READY against the new Core `latest`
-# and the old other sibling. No step treats all-next evidence as independent compatibility.
+# baseline records failed or unavailable checks; that is expected. No reader gate can
+# approve the FIRST new sibling (each needs a passing Core `latest`), so the first cutover
+# is an owner-approved bootstrap in the order Catalog, then Core, then Scan (Core from
+# 6e1cf126 refuses its historical ECC route on an installed Catalog without the
+# runtime-descriptor subpath, so the new Catalog must be available and installed before a
+# new Core reaches an existing installation; core-candidate is recorded for the owner).
+# After the bootstrap each sibling promotes on its own through its reader, READY against
+# the current Core `latest` and the old other sibling. No step treats all-next evidence
+# as independent compatibility.
 # A recorded hash answers what was tested; it is not authorization to promote anything.
 on:
   schedule:
