@@ -136,6 +136,14 @@
     "yaml": "2.9.1",
     "zod": "4.4.3"
   },
+  "peerDependencies": {
+    "@aihq/scan": ">=0.4.0 <1.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@aihq/scan": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@aihq/scan": "0.4.0",
     "@babel/parser": "7.29.7",

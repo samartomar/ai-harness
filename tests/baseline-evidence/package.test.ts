@@ -58,6 +58,20 @@ describe("baseline evidence release payload", () => {
     expect(scripts.verify).toContain("check:baseline-analyzers");
   });
 
+  it("declares @aihq/scan as an external optional peer, never a bundled runtime dependency", () => {
+    const manifest = JSON.parse(readFileSync(join(repo, "package.json"), "utf8")) as {
+      dependencies: Record<string, string>;
+      peerDependencies?: Record<string, string>;
+      peerDependenciesMeta?: Record<string, { optional?: boolean }>;
+    };
+    expect(manifest.dependencies["@aihq/scan"]).toBeUndefined();
+    expect(manifest.peerDependencies?.["@aihq/scan"]).toBe(">=0.4.0 <1.0.0");
+    expect(manifest.peerDependenciesMeta?.["@aihq/scan"]).toEqual({ optional: true });
+    const tsup = readFileSync(join(repo, "tsup.config.ts"), "utf8");
+    expect(tsup).toMatch(/external:\s*\["@aihq\/scan"\]/u);
+    expect(tsup).not.toMatch(/noExternal:[^\]]*@aihq\/scan/u);
+  });
+
   it("does not retain a second baseline refresh executor inside Core", () => {
     expect(existsSync(join(repo, "src", "baseline-evidence", "generate.ts"))).toBe(false);
     expect(existsSync(join(repo, "src", "baseline-evidence", "shard.ts"))).toBe(false);

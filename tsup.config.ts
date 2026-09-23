@@ -31,6 +31,11 @@ export default defineConfig({
   // external because nothing in that entry's graph reaches them, and
   // tests/ecc-profile/projected-runtime.test.ts fails if one ever does.
   noExternal: ["zod", "yaml"],
+  // @aihq/scan is an optional peer resolved from the consumer's own install and
+  // loaded only through src/scan-package/load-scan-package.ts. Never bundle it:
+  // a bundled copy would freeze one Scan build inside Core and defeat updating
+  // Scan independently. It must never appear in `noExternal`.
+  external: ["@aihq/scan"],
   // YAML's bundled CommonJS distribution requires Node's built-in process module.
   // Keep that built-in resolution available in each standalone ESM chunk.
   banner: {
