@@ -22,7 +22,6 @@ import {
   materializeAihScanSubjectsV1,
   removeMaterializedAihScanSubjectsV1,
 } from "./aih-scan-material.js";
-import { createCoreBaselineVetRequests } from "./scanner-consumer.js";
 import {
   consumeScannerBaselinePublicationsV1,
   type ScannerBaselinePublicationProvenanceV1,
@@ -299,6 +298,8 @@ export async function prepareAihScannerPublicationsV1(
     compiled: input.compiled,
   });
   try {
+    // Loaded on use: importing the consumer loads @aihq/scan (see scanner-consumer.ts).
+    const { createCoreBaselineVetRequests } = await import("./scanner-consumer.js");
     const requests = createCoreBaselineVetRequests(materialized.sourceRoot, materialized.catalog);
     if (requests.length !== input.batches.length) fail("publication batch count");
     const discovery = parseStrictJsonObjectV1(

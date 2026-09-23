@@ -2,8 +2,12 @@ import type {
   BaselineVetBatchResultV1,
   BaselineVetRequestV1,
   BaselineVetTrustRootV1,
+  VerifiedBaselineVetAttestationV1,
 } from "@aihq/scan";
-import { createBaselineVetRequestV1, verifyBaselineVetAttestationV1 } from "@aihq/scan";
+import {
+  loadScanPackageExportsV1,
+  scanPackageExportsOrThrowV1,
+} from "../scan-package/load-scan-package.js";
 import type { TrustDetectorName } from "../trust/detectors.js";
 import { scanTrustTreeWithAnalyzers } from "../trust/scan.js";
 import {
@@ -61,6 +65,20 @@ export interface VerifiedScannerBaselineBatchInput {
 
 export const SCANNER_BASELINE_COMPONENT_BATCH_LIMIT = 100;
 
+/**
+ * `@aihq/scan`'s request authoring and attestation verification, loaded once
+ * when this module is first imported. `createCoreBaselineVetRequests` is
+ * synchronous for its existing callers, so the load is awaited here rather than
+ * per call. Nothing on `@aihq/core`'s entry points imports this module
+ * statically: the Scan-consuming routes reach it by dynamic import, so the
+ * package loads only when one of them runs. A missing or incompatible Scan is
+ * not an import failure: each call below throws the typed refusal instead.
+ */
+const scanBaseline = await loadScanPackageExportsV1([
+  "createBaselineVetRequestV1",
+  "verifyBaselineVetAttestationV1",
+]);
+
 function requestAnalyzers(skillContent: boolean): readonly ScannerBaselineAnalyzer[] {
   return skillContent
     ? SCANNER_ANALYZER_ORDER
@@ -73,6 +91,7 @@ function createRequest(
   components: BaselineCatalog["components"],
   source: ReturnType<typeof hashSourceTree>,
 ): BaselineVetRequestV1 {
+  const { createBaselineVetRequestV1 } = scanPackageExportsOrThrowV1(scanBaseline);
   return createBaselineVetRequestV1({
     protocol: "BaselineVetRequestV1",
     profile: "aih-baseline-v1",
@@ -273,8 +292,9 @@ export async function consumeVerifiedScannerBaselineBatchesWithClaims(
   input: VerifiedScannerBaselineBatchInput,
 ): Promise<{
   evidence: BaselineSourceEvidence;
-  claims: readonly ReturnType<typeof verifyBaselineVetAttestationV1>["facts"]["claims"][];
+  claims: readonly VerifiedBaselineVetAttestationV1["facts"]["claims"][];
 }> {
+  const { verifyBaselineVetAttestationV1 } = scanPackageExportsOrThrowV1(scanBaseline);
   const expectedRequests = createCoreBaselineVetRequests(input.sourceRoot, input.catalog);
   if (input.batches.length !== expectedRequests.length) {
     throw new Error(
@@ -283,7 +303,7 @@ export async function consumeVerifiedScannerBaselineBatchesWithClaims(
   }
   const versions: Record<string, string> = {};
   const precomputedDetectorSarif: Partial<Record<TrustDetectorName, string>> = {};
-  const claims: ReturnType<typeof verifyBaselineVetAttestationV1>["facts"]["claims"][] = [];
+  const claims: VerifiedBaselineVetAttestationV1["facts"]["claims"][] = [];
   for (const [index, batch] of input.batches.entries()) {
     assertExactRequest(expectedRequests[index], input.catalog, batch.request, index);
     const verified = verifyBaselineVetAttestationV1({

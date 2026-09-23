@@ -1,11 +1,14 @@
 import { execFileSync } from "node:child_process";
 import { type Dirent, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { canonicalBaselineVetRequestV1Bytes } from "@aihq/scan";
 import { z } from "zod";
 import { parseStrictJsonObjectV1 } from "../contract/strict-json-v1.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
 import { hermeticGitEnv } from "../internals/git-env.js";
+import {
+  loadScanPackageExportsV1,
+  scanPackageExportsOrThrowV1,
+} from "../scan-package/load-scan-package.js";
 import { generateAuthorizedEccInstallPreview } from "./ecc-preview-boundary.js";
 import { createCoreBaselineVetRequests } from "./scanner-consumer.js";
 import { prepareRegisteredScannerCatalogV1 } from "./scanner-provider-catalogs.js";
@@ -121,13 +124,16 @@ function newDirectory(path: string): string {
   return resolved;
 }
 
-function request(args: readonly string[]): void {
+async function request(args: readonly string[]): Promise<void> {
   const catalogId = flag(args, "--catalog");
   const sourceRoot = resolve(flag(args, "--source"));
   const output = newDirectory(flag(args, "--output"));
   const prepared = assertCheckout(sourceRoot, catalogId);
   const { catalog } = prepared;
   const authored = createCoreBaselineVetRequests(sourceRoot, catalog);
+  const { canonicalBaselineVetRequestV1Bytes } = scanPackageExportsOrThrowV1(
+    await loadScanPackageExportsV1(["canonicalBaselineVetRequestV1Bytes"]),
+  );
   for (const [index, batch] of authored.entries()) {
     const name = `batch-${String(index + 1).padStart(3, "0")}.request.json`;
     writeFileSync(join(output, name), canonicalBaselineVetRequestV1Bytes(batch), { flag: "wx" });
@@ -296,7 +302,7 @@ function assemble(args: readonly string[]): void {
 
 export async function runScannerBridge(argv: readonly string[]): Promise<void> {
   const [command, ...args] = argv;
-  if (command === "request") request(args);
+  if (command === "request") await request(args);
   else if (command === "consume-publication") await consumePublication(args);
   else if (command === "consume-publications") await consumePublications(args);
   else if (command === "assemble") assemble(args);
