@@ -1984,17 +1984,30 @@ function legalTextResultMessage(message: string, code: CheckCode): string {
   return `${message}; file class: non-executable legal text; severity: reviewable trust-origin because generic detector heuristics on LICENSE/COPYING/NOTICE require human review`;
 }
 
-function normalizeSarifUri(raw: unknown, detector: TrustDetector): string {
+function normalizeSarifUri(raw: unknown, detector: TrustDetector, root: string): string {
   const fallback = `${detector.name}.sarif`;
   if (typeof raw !== "string" || raw.length === 0) return fallback;
-  const stripped = toPosix(
-    raw
-      .replace(/^file:\/\//, "")
-      .replace(/^\/scan\/?/, "")
-      .replace(/^scan\/?/, ""),
-  );
-  if (!isSafeRelativeSarifUri(stripped)) return fallback;
-  return stripped;
+  const unprefixed = raw.startsWith("file://")
+    ? decodeFileUrlPath(raw.slice("file://".length))
+    : raw;
+  const stripped = toPosix(unprefixed.replace(/^\/scan\/?/, "").replace(/^scan\/?/, ""));
+  if (isSafeRelativeSarifUri(stripped)) return stripped;
+  // Semgrep echoes targets as given, so the absolute tree Core passes yields absolute
+  // URIs (`/tmp/x/a.md`; on Windows `D:\x\a.md` or `file:///D:/x/a.md`). A finding
+  // inside the scanned tree keeps its tree-relative path; a path outside the tree, or
+  // one that escapes it through `..` or a symlink, falls back to the detector's SARIF.
+  const candidate = toPosix(unprefixed).replace(/^\/(?=[A-Za-z]:\/)/, "");
+  if (!isAbsolute(candidate) && !/^[A-Za-z]:\//.test(candidate)) return fallback;
+  const relativeUri = toPosix(relative(realpathIfExists(root), realpathIfExists(candidate)));
+  return relativeUri.length > 0 && isSafeRelativeSarifUri(relativeUri) ? relativeUri : fallback;
+}
+
+function decodeFileUrlPath(path: string): string {
+  try {
+    return decodeURIComponent(path);
+  } catch {
+    return path;
+  }
 }
 
 function isSafeRelativeSarifUri(uri: string): boolean {
@@ -2010,10 +2023,11 @@ function sarifStartLine(result: SarifResult): number {
 function sarifLocation(
   result: SarifResult,
   detector: TrustDetector,
+  root: string,
 ): NonNullable<Check["location"]> {
   const physical = result.locations?.[0]?.physicalLocation;
   return {
-    uri: normalizeSarifUri(physical?.artifactLocation?.uri, detector),
+    uri: normalizeSarifUri(physical?.artifactLocation?.uri, detector, root),
     startLine: sarifStartLine(result),
   };
 }
@@ -2060,7 +2074,7 @@ function sarifChecks(
   const seen = new Set<string>();
   for (const run of parsed.runs) {
     for (const result of run.results ?? []) {
-      const location = sarifLocation(result, detector);
+      const location = sarifLocation(result, detector, root);
       const rawRuleId = resultRuleId(result) ?? "unknown-rule";
       const rawMessage = resultMessage(result, detector);
       const rawKey = JSON.stringify([
