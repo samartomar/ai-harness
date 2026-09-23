@@ -49,6 +49,36 @@ const PINS: ReadonlyArray<readonly [file: string, line: number, text: string]> =
   [GOVERNANCE_INPUT, 613, '"unknown-contract-version",'],
   [GOVERNANCE_INPUT, 719, "export interface ScanVerificationAdapterV1 {"],
   [GOVERNANCE_INPUT, 743, "export interface ScanExecutionAdapterV1 {"],
+  [
+    "src/scan-package/load-scan-package.ts",
+    22,
+    'export const SCAN_PACKAGE_PEER_RANGE = ">=0.4.0 <1.0.0";',
+  ],
+  [
+    "src/scan-package/load-scan-package.ts",
+    26,
+    'export type ScanPackageRefusalReasonV1 = "scan-package-unavailable" | "scan-package-incompatible";',
+  ],
+  [
+    "src/scan-package/load-scan-package.ts",
+    94,
+    "export async function loadScanPackageExportsV1<K extends ScanPackageExportNameV1>(",
+  ],
+  [
+    "src/scan-package/load-scan-package.ts",
+    123,
+    "export async function loadScanExecutionAdapterV1(",
+  ],
+  [
+    "src/trust/detectors.ts",
+    2233,
+    "export const SCAN_DELEGATED_TRUST_DETECTORS: ReadonlySet<TrustDetectorName> = new Set();",
+  ],
+  [
+    "src/trust/detectors.ts",
+    2241,
+    'export const SCAN_NATIVE_OBSERVATION_DETECTOR_ID = "detector.aih-native";',
+  ],
   [GOVERNANCE_INPUT, 769, "export interface AssessmentMaterialResolverV1 {"],
   [GOVERNANCE_INPUT, 787, "export interface QualificationMaterialResolverV1 {"],
   [GOVERNANCE_INPUT, 809, "export interface QualificationAttestationVerifierV1 {"],

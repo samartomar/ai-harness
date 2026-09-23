@@ -81,6 +81,28 @@ npm install -g "@aihq/core@$CORE_VERSION"
 aih verify-release "$CORE_VERSION"   # npm signatures, GitHub sums, and cosign evidence
 ```
 
+### Scanner beside Core (`@aihq/scan`)
+
+`@aihq/scan` is an optional peer dependency of `@aihq/core`, range `>=0.4.0 <1.0.0`.
+Core does not bundle it: Node loads the Scan installed beside Core, so a compatible
+Scan can be updated on its own without reinstalling Core. Install both together:
+
+```bash
+npm install -g @aihq/core @aihq/scan   # global
+npm install @aihq/core @aihq/scan      # in a project
+```
+
+A Core-only installation is supported. Every command still runs, and where Core needs
+Scan's public API it says so instead of substituting a copy: `scan-package-unavailable`
+when Scan is not installed, `scan-package-incompatible` when the installed Scan lacks a
+function Core calls, each naming the install command above. Consuming a Scanner
+baseline publication (for example Workbench source-data import with `--scanner-source`)
+needs Scan and refuses without it. `aih trust scan` and `aih skill vet` still execute
+every detector in Core and name the executor in the runtime advisory
+(`Detector executors: … core-legacy`); with Scan installed they also record Scan's
+`detector.aih-native` identity observation there, with its execution profile and annex
+digest. That observation is not a finding and does not change a verdict.
+
 ### macOS/Linux global-install permission errors
 
 If npm reports `EACCES` while installing globally, do not rerun the install with

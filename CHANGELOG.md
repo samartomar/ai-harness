@@ -6,6 +6,22 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- `@aihq/scan` is now an optional peer dependency (`>=0.4.0 <1.0.0`) and is no longer
+  bundled into `@aihq/core`: Core loads the installed Scan at run time through one module
+  and checks each function it calls. Install both with `npm install -g @aihq/core @aihq/scan`
+  and update Scan independently. A Core-only installation loads and runs every command;
+  what needs Scan reports `scan-package-unavailable` or `scan-package-incompatible` with the
+  install command, and never falls back to a bundled copy.
+- `aih trust scan` and `aih skill vet` load the installed Scan by default. Every detector
+  still runs in Core; the runtime advisory now names each detector's executor and records
+  Scan's `detector.aih-native` identity observation (execution profile, analyzer, annex
+  digest) or the package refusal. The trust scan result gains `detectorExecutions` and
+  `scanObservations`. The detectors delegated to Scan are a per-detector set, empty until
+  Scan's capabilities are equivalents; a delegated detector will never fall back to Core.
+- The native-detector identity is regenerated for these `src/trust` changes.
+
 ### Added
 
 - Add Playwright to default developer-tool setup for every project, with a headless isolated
