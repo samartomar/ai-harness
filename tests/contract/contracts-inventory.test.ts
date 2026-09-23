@@ -40,6 +40,7 @@ const sha256 = (path: string) =>
     .digest("hex");
 
 const GOVERNANCE_INPUT = "src/org-policy/governance-input-v1.ts";
+const DESCRIPTOR_RESOLVER = "src/ecc/runtime-descriptor-resolver.ts";
 
 /** Each cited source line and the text it must still contain. */
 const PINS: ReadonlyArray<readonly [file: string, line: number, text: string]> = [
@@ -79,6 +80,33 @@ const PINS: ReadonlyArray<readonly [file: string, line: number, text: string]> =
     2241,
     'export const SCAN_NATIVE_OBSERVATION_DETECTOR_ID = "detector.aih-native";',
   ],
+  [
+    "src/catalog-package/load-catalog-package.ts",
+    29,
+    'export const CATALOG_PACKAGE_PEER_RANGE = ">=0.2.0 <1.0.0";',
+  ],
+  [
+    "src/catalog-package/load-catalog-package.ts",
+    34,
+    "export type CatalogPackageRefusalReasonV1 =",
+  ],
+  [
+    "src/catalog-package/load-catalog-package.ts",
+    152,
+    "export async function loadCatalogPackageV1<",
+  ],
+  [
+    DESCRIPTOR_RESOLVER,
+    128,
+    "export const HISTORICAL_ECC_RUNTIME_DESCRIPTOR_RESOLUTION_ORDER_V1 = Object.freeze([",
+  ],
+  [
+    DESCRIPTOR_RESOLVER,
+    148,
+    "export const ACCEPTED_CATALOG_ECC_RUNTIME_DESCRIPTORS_V1 = Object.freeze([",
+  ],
+  [DESCRIPTOR_RESOLVER, 158, "export type HistoricalEccRuntimeDescriptorRefusalReasonV1 ="],
+  [DESCRIPTOR_RESOLVER, 460, "export async function resolveHistoricalEccRuntimeDescriptorV1("],
   [GOVERNANCE_INPUT, 769, "export interface AssessmentMaterialResolverV1 {"],
   [GOVERNANCE_INPUT, 787, "export interface QualificationMaterialResolverV1 {"],
   [GOVERNANCE_INPUT, 809, "export interface QualificationAttestationVerifierV1 {"],
@@ -156,6 +184,16 @@ const UNPRODUCED_REFUSALS = ["derived-digest-mismatch"];
 function refusalUnion(): string[] {
   const source = read(GOVERNANCE_INPUT);
   const start = source.indexOf("export type GovernanceInputRefusalV1 =");
+  const end = source.indexOf(";", start);
+  return [...source.slice(start, end).matchAll(/\|\s*"([a-z0-9-]+)"/gu)].map(
+    (match) => match[1] as string,
+  );
+}
+
+/** The historical ECC runtime descriptor's own named refusals, a separate union. */
+function descriptorRefusalUnion(): string[] {
+  const source = read(DESCRIPTOR_RESOLVER);
+  const start = source.indexOf("export type HistoricalEccRuntimeDescriptorRefusalReasonV1 =");
   const end = source.indexOf(";", start);
   return [...source.slice(start, end).matchAll(/\|\s*"([a-z0-9-]+)"/gu)].map(
     (match) => match[1] as string,
@@ -291,7 +329,7 @@ describe("CONTRACTS.md inventory", () => {
   });
 
   it("names only refusal codes that exist", () => {
-    const union = new Set(refusalUnion());
+    const union = new Set([...refusalUnion(), ...descriptorRefusalUnion()]);
     const named = new Set(
       [...contracts.matchAll(/`([a-z]+(?:-[a-z0-9]+)+)`/gu)]
         .map((match) => match[1] as string)

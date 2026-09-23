@@ -8,6 +8,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- `@aihq/catalog` is now an optional peer dependency (`>=0.2.0 <1.0.0`), loaded at run
+  time through one module and never bundled. The historical ECC runtime descriptor used by
+  `aih ecc --lifecycle install` and `aih policy project` is resolved in a recorded order: a
+  local source-data receipt, then the installed Catalog's
+  `./catalog-runtime-descriptors.json` accepted only against the sha256 Core pins, then
+  Core's embedded copy only when Catalog is not installed. The same bytes are accepted as
+  before (`sha256 158f63e2…` for `affaan-m/ECC@5064474d…`). An installed Catalog that
+  cannot supply them is a named refusal (`catalog-package-incompatible`,
+  `catalog-index-refused`, `catalog-runtime-descriptors-refused`,
+  `catalog-descriptor-absent`, `catalog-descriptor-unverified`,
+  `catalog-descriptor-not-accepted`), never a fallback; this includes the registry's
+  `@aihq/catalog` 0.2.0, which does not publish that subpath. The source used is printed on
+  stderr. The embedded descriptor data is unchanged and still shipped.
 - `@aihq/scan` is now an optional peer dependency (`>=0.4.0 <1.0.0`) and is no longer
   bundled into `@aihq/core`: Core loads the installed Scan at run time through one module
   and checks each function it calls. Install both with `npm install -g @aihq/core @aihq/scan`

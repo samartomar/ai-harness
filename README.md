@@ -103,6 +103,36 @@ every detector in Core and name the executor in the runtime advisory
 `detector.aih-native` identity observation there, with its execution profile and annex
 digest. That observation is not a finding and does not change a verdict.
 
+### Catalog beside Core (`@aihq/catalog`)
+
+`@aihq/catalog` is also an optional peer dependency of `@aihq/core`, range
+`>=0.2.0 <1.0.0`, loaded from the consumer's own install and never bundled. Install all
+three together:
+
+```bash
+npm install -g @aihq/core @aihq/scan @aihq/catalog   # global
+npm install @aihq/core @aihq/scan @aihq/catalog      # in a project
+```
+
+Today Core reads one thing from it: the ECC runtime descriptor that
+`aih ecc --lifecycle install` and `aih policy project` need when a schema-v3 policy
+selects a historical ECC source. Core resolves it in a fixed order and prints which
+source it used on stderr:
+
+1. a machine-local, trust-verified Workbench source-data receipt, as before;
+2. the installed Catalog's `@aihq/catalog/catalog-runtime-descriptors.json`, read with
+   Catalog's own reader and accepted only when the descriptor bytes have a sha256 that
+   Core pins (Catalog carries the bytes; Core's pin is the custody);
+3. the copy embedded in Core, only when `@aihq/catalog` is not installed at all.
+
+A Catalog that is installed but cannot supply acceptable bytes is a named refusal, never
+a silent switch to the embedded copy: `catalog-package-incompatible` (it cannot be loaded,
+lacks a reader, or does not publish the subpath, as with the registry's `@aihq/catalog`
+0.2.0), `catalog-index-refused`, `catalog-runtime-descriptors-refused`,
+`catalog-descriptor-absent`, `catalog-descriptor-unverified` or
+`catalog-descriptor-not-accepted`. A Core-only installation keeps working and uses the
+embedded descriptor.
+
 ### macOS/Linux global-install permission errors
 
 If npm reports `EACCES` while installing globally, do not rerun the install with
