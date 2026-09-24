@@ -627,7 +627,10 @@ a write on their own: the active source and, for rollback, the snapshot's source
 must equal an entry in the plugin's append-only installation trust record, or the command refuses
 with `framework-profile-recovery-unanchored` before planning any write. Recovery identities are versioned: version 2
 (recorded by current installs) also binds each file's merge strategy, and a version-1 identity from an earlier release
-recovers only when a version-2 anchor at the same pin authenticates its write semantics. Legacy selection flags such as `--profile`, `--with`, and `--cli`
+recovers only when a version-2 anchor at the same pin authenticates its write semantics. Uninstall, update and rollback
+never delete a merge destination such as `.codex/config.toml`: they remove only aih's managed blocks and keep the
+file, even when only whitespace remains, because nothing proves aih created the whole file; the plan names each file
+kept that way so you can remove it by hand if nothing uses it. Legacy selection flags such as `--profile`, `--with`, and `--cli`
 cannot be combined with `--lifecycle`.
 
 In a **governed** repository (an org policy carrying `governance`), `--lifecycle install` is not this

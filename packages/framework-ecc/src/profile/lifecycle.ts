@@ -856,27 +856,24 @@ function uninstallInstalledPlan(
   return plan("ecc-profile: uninstall", ...actions);
 }
 
+/**
+ * Strip the managed block and keep the destination. A merge destination may
+ * hold operator bytes aih never owned, and nothing independently authenticates
+ * that aih created the whole file: `previousHash` is per-installation receipt
+ * state outside every recovery anchor. So the file is never deleted, even when
+ * only whitespace remains, and the write says so.
+ */
 function planManagedBlockRemoval(
   entry: OwnershipFile,
   current: CurrentFile,
   verb: string,
 ): Action[] {
   const stripped = removeManagedBlock(current.contents, MANAGED_SCOPE);
-  return entry.previousHash === null && stripped.trim().length === 0
-    ? [
-        remove(entry.destination, `${verb} ECC profile ${entry.destination}`, {
-          expect: { sha256: current.sha256 },
-        }),
-      ]
-    : [
-        pinnedWrite(
-          entry.destination,
-          stripped,
-          entry.mode,
-          current,
-          `${verb} ECC profile block ${entry.destination}`,
-        ),
-      ];
+  const describe =
+    stripped.trim().length === 0
+      ? `${verb} ECC profile block ${entry.destination}; kept ${entry.destination}, now only whitespace, because aih cannot prove it created the whole file: remove it by hand if nothing uses it`
+      : `${verb} ECC profile block ${entry.destination}`;
+  return [pinnedWrite(entry.destination, stripped, entry.mode, current, describe)];
 }
 
 function rollbackPlan(

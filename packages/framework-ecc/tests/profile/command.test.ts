@@ -220,10 +220,15 @@ describe("ECC profile lifecycle command", () => {
         installedSourceTrust: originalSource ? [originalSource] : [],
       });
 
-      await executeEccProfileLifecycleCommand(realGitContext(target, "uninstall"), {
-        installedSourceTrust: originalSource ? [originalSource] : [],
-      });
-      expect(existsSync(codexConfig)).toBe(false);
+      const uninstalled = await executeEccProfileLifecycleCommand(
+        realGitContext(target, "uninstall"),
+        { installedSourceTrust: originalSource ? [originalSource] : [] },
+      );
+      // A merge destination is never deleted: nothing proves aih created the whole file.
+      expect(readFileSync(codexConfig, "utf8").trim()).toBe("");
+      expect(
+        uninstalled.writes.find((write) => write.path === ".codex/config.toml")?.describe,
+      ).toMatch(/kept \.codex\/config\.toml.*cannot prove/i);
       expect(existsSync(join(target, ECC_PROFILE_OWNERSHIP_PATH))).toBe(false);
       expect(existsSync(join(target, NATIVE_ECC_REGISTRATION_RECEIPT))).toBe(false);
     } finally {

@@ -19,7 +19,6 @@ import {
   planNativeEccRegistration,
   type RemoveAction,
   readTrustFetchMetadata,
-  remove,
   removeManagedBlock,
   resolveEccNativeStateRootV1,
   type TrustSource,
@@ -134,18 +133,15 @@ function composeOverlappingConfigMutation(
     if (typeof projection.contents !== "string") {
       throw new Error("ECC lifecycle uninstall has a non-text projection mutation");
     }
+    // The projection keeps its merge destination; stripping the native block
+    // never turns that into a deletion.
     const contents = removeManagedBlock(projection.contents, NATIVE_ECC_REGISTRATION_SCOPE);
     if (contents.trim().length > 0) return { ...projection, contents };
-    const expected =
-      projection.expect && "sha256" in projection.expect
-        ? { sha256: projection.expect.sha256 }
-        : undefined;
-    if (expected === undefined) {
-      throw new Error("ECC lifecycle uninstall overlap lacks an apply-time content pin");
-    }
-    return remove(projection.path, "uninstall composed ECC profile configuration", {
-      expect: expected,
-    });
+    return {
+      ...projection,
+      contents,
+      describe: `uninstall composed ECC profile configuration; kept ${projection.path}, now only whitespace, because aih cannot prove it created the whole file: remove it by hand if nothing uses it`,
+    };
   }
   if (
     projection.kind !== "write" ||

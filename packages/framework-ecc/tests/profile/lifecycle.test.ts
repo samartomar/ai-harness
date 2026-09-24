@@ -244,7 +244,7 @@ describe("AIH-owned ECC projection lifecycle", () => {
     expect(existsSync(join(root, ECC_PROFILE_OWNERSHIP_PATH))).toBe(false);
   });
 
-  it("preserves an AIH-created merge-file sentinel across update and uninstall", async () => {
+  it("carries an AIH-created merge-file sentinel across update and keeps the file on uninstall", async () => {
     await executePlan(planEccProfileLifecycle(root, projection(), "install"), ctx(true));
     const next = projection(
       COMMIT_B,
@@ -258,7 +258,7 @@ describe("AIH-owned ECC projection lifecycle", () => {
     );
     expect(configEntry?.previousHash).toBeNull();
     await executePlan(planEccProfileLifecycle(root, next, "uninstall"), ctx(true));
-    expect(existsSync(join(root, ".codex/config.toml"))).toBe(false);
+    expect(readFileSync(join(root, ".codex/config.toml"), "utf8")).toBe("\n");
   });
 
   it("binds uninstall to the exact authenticated projection", async () => {
@@ -403,7 +403,7 @@ describe("AIH-owned ECC projection lifecycle", () => {
     expect(() => readEccProfileOwnership(root)).toThrow(/foreign worktree/i);
   });
 
-  it("removes AIH-created merge files across update and rollback", async () => {
+  it("strips AIH-created merge files across update and restores them on rollback", async () => {
     await executePlan(planEccProfileLifecycle(root, projection(), "install"), ctx(true));
     const anchors = anchoredInstall();
     const withoutConfig = projection(COMMIT_B, "# example v2\n");
@@ -411,7 +411,7 @@ describe("AIH-owned ECC projection lifecycle", () => {
       (file) => file.destination !== ".codex/config.toml",
     );
     await executePlan(planEccProfileLifecycle(root, withoutConfig, "update"), ctx(true));
-    expect(existsSync(join(root, ".codex/config.toml"))).toBe(false);
+    expect(readFileSync(join(root, ".codex/config.toml"), "utf8")).toBe("\n");
 
     await executePlan(planEccProfileLifecycle(root, withoutConfig, "rollback", anchors), ctx(true));
     expect(readFileSync(join(root, ".codex/config.toml"), "utf8")).toContain(
@@ -951,5 +951,114 @@ describe("ECC profile recovery authentication", () => {
     );
     expect(refusal.reason).toBe("framework-profile-recovery-unanchored");
     expect(refusal.message).toMatch(/write semantics/i);
+  });
+
+  /** Rewrite every recorded entry for `destination` with a forged `previousHash`. */
+  function forgePreviousHash(destination: string, value: string | null): void {
+    const receipt = readReceipt();
+    const entries = [...receipt.files, ...(receipt.rollback?.files ?? [])].filter(
+      (file) => file.destination === destination,
+    );
+    if (entries.length === 0) throw new Error(`fixture receipt has no ${destination}`);
+    for (const entry of entries) entry.previousHash = value;
+    writeReceipt(receipt);
+    expect(readEccProfileOwnership(root)).toBeDefined();
+  }
+
+  function mergeAction(planned: { actions: readonly unknown[] }): {
+    kind: string;
+    describe: string;
+    contents?: string;
+  } {
+    const found = planned.actions.find(
+      (action) => (action as { path?: string }).path === ".codex/config.toml",
+    );
+    if (found === undefined) throw new Error("plan has no .codex/config.toml action");
+    return found as { kind: string; describe: string; contents?: string };
+  }
+
+  it("keeps a pre-existing whitespace-only merge file whose previousHash was forged to null", async () => {
+    put(".codex/config.toml", "  \n");
+    await executePlan(planEccProfileLifecycle(root, projection(), "install"), ctx(true));
+    const anchors = anchoredInstall();
+    forgePreviousHash(".codex/config.toml", null);
+
+    expect(mergeAction(planEccProfileLifecycle(root, projection(), "uninstall")).kind).toBe(
+      "write",
+    );
+    const planned = planInstalledEccProfileLifecycle(root, "uninstall", anchors);
+    const action = mergeAction(planned);
+    expect(action.kind).toBe("write");
+    expect(action.contents).toBe("  \n");
+    expect(action.describe).toMatch(/kept \.codex\/config\.toml/i);
+    expect(action.describe).toMatch(/cannot prove.*created the whole file/i);
+
+    const result = await executePlan(planned, ctx(true));
+    expect(readFileSync(join(root, ".codex/config.toml"), "utf8")).toBe("  \n");
+    expect(result.writes.find((write) => write.path === ".codex/config.toml")?.describe).toMatch(
+      /kept \.codex\/config\.toml/i,
+    );
+    expect(existsSync(join(root, ECC_PROFILE_OWNERSHIP_PATH))).toBe(false);
+  });
+
+  it("keeps an AIH-created merge file as its stripped bytes and says so", async () => {
+    await executePlan(planEccProfileLifecycle(root, projection(), "install"), ctx(true));
+    expect(readEccProfileOwnership(root)?.files[1]?.previousHash).toBeNull();
+    const planned = planInstalledEccProfileLifecycle(root, "uninstall", anchoredInstall());
+    const action = mergeAction(planned);
+    expect(action.kind).toBe("write");
+    expect(action.describe).toMatch(/kept \.codex\/config\.toml.*remove it by hand/i);
+
+    await executePlan(planned, ctx(true));
+    expect(readFileSync(join(root, ".codex/config.toml"), "utf8")).toBe("\n");
+    expect(existsSync(join(root, ".agents/skills/example/SKILL.md"))).toBe(false);
+  });
+
+  it("keeps the merge file when a rollback carried a forged previousHash into the restored receipt", async () => {
+    put(".codex/config.toml", "  \n");
+    const { original, active } = await installThenUpdate();
+    forgePreviousHash(".codex/config.toml", null);
+
+    await executePlan(
+      planInstalledEccProfileLifecycle(root, "rollback", [active, original]),
+      ctx(true),
+    );
+    const restored = readEccProfileOwnership(root);
+    expect(restored?.source).toEqual(original);
+    expect(
+      restored?.files.find((file) => file.destination === ".codex/config.toml")?.previousHash,
+    ).toBeNull();
+
+    await executePlan(planInstalledEccProfileLifecycle(root, "uninstall", [original]), ctx(true));
+    expect(readFileSync(join(root, ".codex/config.toml"), "utf8")).toBe("  \n");
+  });
+
+  it("keeps a merge file on rolling back its introduction and on a superseding update", async () => {
+    put(".codex/config.toml", "  \n");
+    const withoutConfig = projection();
+    withoutConfig.files = withoutConfig.files.filter(
+      (file) => file.destination !== ".codex/config.toml",
+    );
+    await executePlan(planEccProfileLifecycle(root, withoutConfig, "install"), ctx(true));
+    const original = readEccProfileOwnership(root)?.source;
+    if (original === undefined) throw new Error("fixture install recorded no receipt");
+    const next = projection(COMMIT_B, "# example v2\n");
+    await executePlan(planEccProfileLifecycle(root, next, "update"), ctx(true));
+    const active = readEccProfileOwnership(root)?.source;
+    if (active === undefined) throw new Error("fixture update recorded no receipt");
+    forgePreviousHash(".codex/config.toml", null);
+
+    const planned = planInstalledEccProfileLifecycle(root, "rollback", [active, original]);
+    expect(mergeAction(planned).kind).toBe("write");
+    await executePlan(planned, ctx(true));
+    expect(readFileSync(join(root, ".codex/config.toml"), "utf8")).toBe("  \n");
+
+    await executePlan(planEccProfileLifecycle(root, next, "update"), ctx(true));
+    forgePreviousHash(".codex/config.toml", null);
+    const superseding = projection(COMMIT_A, "# example v3\n");
+    superseding.files = superseding.files.filter(
+      (file) => file.destination !== ".codex/config.toml",
+    );
+    expect(mergeAction(planEccProfileLifecycle(root, superseding, "update")).kind).toBe("write");
   });
 });

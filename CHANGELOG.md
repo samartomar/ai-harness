@@ -81,6 +81,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   version-2 anchor at the same pin; a changed merge strategy refuses with
   `framework-profile-recovery-unanchored`. The installation trust record appends the version-2
   identity of ECC 0c1d7be9.
+- `aih ecc --lifecycle uninstall`, `update` and `rollback` no longer delete an ECC profile merge
+  destination (such as `.codex/config.toml`) when only whitespace remains after the managed blocks
+  are removed. They write the stripped bytes and name the kept file in the plan. The receipt's
+  `previousHash` sits outside every recovery anchor, so a forged value can no longer turn a
+  pre-existing empty or whitespace-only operator file into a deletion; an aih-created file is kept
+  the same way, for you to remove by hand if nothing uses it.
 - **Breaking:** Core now requires Node.js 20.6 or newer (`engines.node` `>=20.6.0`).
   The framework-plugin loader uses the synchronous `import.meta.resolve` of Node 20.6
   to prove that a plugin entry resolves inside its own install tree. `aih doctor` and
