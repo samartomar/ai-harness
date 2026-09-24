@@ -323,6 +323,74 @@ describe("definition-driven Scanner catalog resolution", () => {
     );
   });
 
+  it.each([
+    // `I` and `ı` lowercase to different keys yet name one directory on Windows.
+    [
+      "a dotless i beside a capital I",
+      ["I/SKILL.md", "ı/x"],
+      "ı/x",
+      "a character outside printable ASCII",
+    ],
+    ["a non-ASCII letter", ["docs/café.md"], "docs/café.md", "a character outside printable ASCII"],
+    ["a long s", ["ſkills/x.md"], "ſkills/x.md", "a character outside printable ASCII"],
+    ["a colon", ["a:b/x.md"], "a:b/x.md", "a Windows-reserved character"],
+    ...["<", ">", '"', "|", "?", "*"].map(
+      (character) =>
+        [
+          `the Windows-reserved character ${character}`,
+          [`a${character}b/x.md`],
+          `a${character}b/x.md`,
+          "a Windows-reserved character",
+        ] as const,
+    ),
+    ["a segment ending in a dot", ["docs./x.md"], "docs./x.md", "a trailing dot or space"],
+    ["a segment ending in a space", ["notes .md "], "notes .md ", "a trailing dot or space"],
+    ...["CON", "prn", "Aux", "nul.txt", "COM1.md", "lpt9", "com0.tar.gz", "NUL .md"].map(
+      (name) =>
+        [
+          `the Windows-reserved name ${name}`,
+          [`skills/${name}/SKILL.md`],
+          `skills/${name}/SKILL.md`,
+          "a Windows-reserved name",
+        ] as const,
+    ),
+    ["an 8.3 short-name shape", ["LONGNA~1.MD"], "LONGNA~1.MD", "an 8.3 short-name shape"],
+  ] as const)(
+    "refuses %s before reading the checkout, as the Catalog emitter does",
+    (_label, paths, path, reason) => {
+      for (const overlap of ["disjoint", "compiler-catalog"] as const)
+        expect(() =>
+          resolveScannerDefinitionV1(
+            {
+              sourceRoot: source,
+              catalogId: "ecc",
+              definitionPath: definitionFile(
+                eccDefinition({ components: [{ id: "runtime:x", paths: [...paths] }] }),
+              ),
+              head: PIN,
+              overlap,
+            },
+            notCarried,
+          ),
+        ).toThrow(`baseline definition: non-portable path ${JSON.stringify(path)}: ${reason}`);
+    },
+  );
+
+  it("accepts portable near misses of the refused spellings", () => {
+    const paths = [
+      "a b/x.md",
+      ".github/ci.yml",
+      "CONSOLE.md",
+      "con-fig/x.md",
+      "com10.md",
+      "x~y.md",
+    ];
+    for (const path of paths) write(path, "x\n");
+    expect(
+      resolveEcc(eccDefinition({ components: [{ id: "runtime:x", paths }] })).catalog.components,
+    ).toEqual([{ id: "runtime:x", paths }]);
+  });
+
   it("requires the exact file-system spelling of every path segment on every platform", () => {
     expect(() =>
       resolveEcc(
@@ -496,6 +564,16 @@ describe("definition-driven Scanner catalog resolution", () => {
       // A definition that declares a collection version is never re-read as an inventory.
       expect(() => resolvePonytail({ ...ponytail(), components: undefined })).toThrow(
         /ponytail collection is malformed/,
+      );
+    });
+
+    it("refuses a carried file outside the portable path set before reading the checkout", () => {
+      const files = [
+        ...ponytail().files,
+        { path: "NUL.md", bytesBase64: base64("x\n"), sha256: sha("x\n"), size: 2 },
+      ];
+      expect(() => resolvePonytail(ponytail({ files }))).toThrow(
+        'baseline definition: non-portable path "NUL.md": a Windows-reserved name',
       );
     });
 

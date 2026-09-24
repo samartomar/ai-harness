@@ -157,6 +157,7 @@ function collectionCatalog(value: Record<string, unknown>, id: DefinitionSourceI
       : parsed(componentCollectionSchema, value, `${id} collection`);
   const carried = new Set<string>();
   for (const file of collectionFilesV1(input) as readonly z.infer<typeof pinnedFileSchema>[]) {
+    assertPortablePath(file.path);
     if (carried.has(file.path)) fail(`${id} collection repeats file ${file.path}`);
     carried.add(file.path);
     const bytes = Buffer.from(file.bytesBase64, "base64");
@@ -235,6 +236,34 @@ function scannerDefinitionPathCaseKeyV1(path: string): string {
   return path.normalize("NFC").toLowerCase();
 }
 
+/** Win32 device names, reserved in any case and with any extension. */
+const WINDOWS_RESERVED_NAME = /^(?:CON|PRN|AUX|NUL|COM[0-9]|LPT[0-9])$/iu;
+
+/**
+ * Why a path segment falls outside the portable set, or undefined. The set is printable
+ * ASCII without the Windows-reserved characters, a trailing dot or space (Win32 strips
+ * them), a reserved device name, or an 8.3 short-name shape (`~` and a digit, which can name
+ * another file on NTFS). Outside it no case mapping is demonstrably the file systems' own
+ * (`I` and `ı`, for one), so the case checks below are exact only inside it. The Catalog
+ * inventory emitter applies the same rule.
+ */
+function nonPortableSegmentV1(segment: string): string | undefined {
+  if (!/^[\x20-\x7e]+$/u.test(segment)) return "a character outside printable ASCII";
+  if (/[<>:"\\|?*]/u.test(segment)) return "a Windows-reserved character";
+  if (/[. ]$/u.test(segment)) return "a trailing dot or space";
+  if (WINDOWS_RESERVED_NAME.test((segment.split(".")[0] as string).trimEnd()))
+    return "a Windows-reserved name";
+  if (/~[0-9]/u.test(segment)) return "an 8.3 short-name shape";
+  return undefined;
+}
+
+function assertPortablePath(path: string): void {
+  for (const segment of path.split("/")) {
+    const reason = nonPortableSegmentV1(segment);
+    if (reason !== undefined) fail(`non-portable path ${JSON.stringify(path)}: ${reason}`);
+  }
+}
+
 function assertNoCaseAliases(catalog: BaselineCatalog): void {
   const spellings = new Map<string, string>();
   for (const component of catalog.components)
@@ -251,7 +280,7 @@ function assertNoCaseAliases(catalog: BaselineCatalog): void {
 }
 
 /**
- * Reject case aliases, a missing path, a segment the file system spells differently, a
+ * Reject a non-portable path, case aliases, a missing path, a segment the file system spells differently, a
  * link at any segment, or overlapping paths (see the mode). The exact spelling is read from
  * each parent directory, so a case-insensitive `lstat` cannot accept another spelling.
  */
@@ -261,6 +290,8 @@ function assertComponentPaths(
   overlap: ScannerDefinitionOverlapModeV1,
 ): void {
   const root = resolve(sourceRoot);
+  for (const component of catalog.components)
+    for (const path of component.paths) assertPortablePath(path);
   assertNoCaseAliases(catalog);
   const listings = new Map<string, ReadonlySet<string>>();
   const entries = (directory: string) => {
