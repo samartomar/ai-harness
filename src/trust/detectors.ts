@@ -21,6 +21,7 @@ import {
   buildCiscoShardManifest,
   type CiscoShardManifest,
   type JoinedCiscoShardEvidence,
+  verifiedCiscoShardJobSarifV1,
 } from "./cisco-shards.js";
 import type { RawScannerOccurrence } from "./evidence.js";
 import { contentFindingFingerprint } from "./fingerprint.js";
@@ -32,15 +33,18 @@ import {
 } from "./images.js";
 import { buildTrustFileInventory, type TrustFileInventory } from "./inventory.js";
 import {
+  ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1,
   acceptedScanAnalyzerIdentityV1,
   declaredScanAnalyzerIdentityRefusalV1,
   executedScanAnalyzerIdentityRefusalV1,
+  observedScanAnalyzerVersionV1,
 } from "./scan-analyzer-identity.js";
 import {
   type CheckedScanSarifLogV1,
   type CheckedScanSarifV1,
   checkedScanSarifLogV1,
   checkedScanSarifTextV1,
+  SCAN_COMPLETION_PROPERTY_V1,
   scanCompletionRefusalV1,
 } from "./scan-sarif.js";
 import {
@@ -101,8 +105,12 @@ export interface TrustDetectorOptions {
   inventory: TrustFileInventory;
   /** Restrict execution to this detector set. Omitted means the complete set for the scan kind. */
   detectors?: readonly TrustDetectorName[];
-  /** Exact, coordinator-validated SARIF that replaces execution for the named detector. */
-  precomputedSarif?: Readonly<Partial<Record<TrustDetectorName, string>>>;
+  /**
+   * SARIF that replaces execution for the named detector. It counts complete
+   * only with completion evidence v1 for this tree (or as a verified Cisco
+   * shard join); without evidence it is `completion-evidence-absent`.
+   */
+  precomputedSarif?: Readonly<Partial<Record<TrustDetectorName, PrecomputedDetectorSarifV1>>>;
   /**
    * Scan's detector execution. Omitted means the INSTALLED `@aihq/scan`, loaded
    * on first need; an injected adapter replaces it (tests and embedders). Every
@@ -146,6 +154,8 @@ export interface TrustDetectorExecutionV1 {
   readonly outcome: "completed" | "refused" | "failed" | "unavailable";
   /** The package-level refusal that left the detector unexecuted. */
   readonly refusal?: ScanPackageRefusalReasonV1;
+  /** Precomputed SARIF with no completion evidence v1: never counted complete (decision D17). */
+  readonly reason?: "completion-evidence-absent";
 }
 
 /**
@@ -350,27 +360,52 @@ function sourcePathsIntersect(left: string, right: string): boolean {
   return left === right || left.startsWith(`${right}/`) || right.startsWith(`${left}/`);
 }
 
+/**
+ * Cisco SARIF joined from shard jobs whose completion evidence Core checked,
+ * job by job, against each job's own subject (`joinCiscoShardResults`). Its
+ * runs name different subjects, so it is exempt from the one-subject check
+ * precomputed SARIF otherwise meets, and only a value `joinedCiscoShardSarif`
+ * issued is: a look-alike is refused.
+ */
+export interface VerifiedCiscoShardSarifV1 {
+  readonly kind: "verified-cisco-shard-join-v1";
+  readonly sarif: string;
+}
+
+/** Precomputed SARIF: a Scanner annex's bytes, or a Cisco shard join Core verified. */
+export type PrecomputedDetectorSarifV1 = string | VerifiedCiscoShardSarifV1;
+
+const ISSUED_SHARD_JOINS = new WeakSet<VerifiedCiscoShardSarifV1>();
+
 export function joinedCiscoShardSarif(
   joined: JoinedCiscoShardEvidence,
   includedPaths?: readonly string[],
-): string {
+): VerifiedCiscoShardSarifV1 {
+  const jobs = verifiedCiscoShardJobSarifV1(joined);
+  if (jobs === undefined)
+    throw new Error("Cisco shard evidence was not joined by joinCiscoShardResults");
   const runs: CheckedScanSarifLogV1["runs"][number][] = [];
-  for (const output of joined.outputs) {
+  for (const job of jobs) {
     if (
       includedPaths !== undefined &&
-      !includedPaths.some((path) => sourcePathsIntersect(output.path, path))
+      !includedPaths.some((path) => sourcePathsIntersect(job.path, path))
     ) {
       continue;
     }
-    const checked = checkedScanSarifLogV1(output.evidence);
+    const checked = checkedScanSarifLogV1(JSON.parse(job.sarif));
     if ("refusal" in checked) {
       throw new Error(
-        `Cisco shard job ${output.path} did not retain valid SARIF evidence: it holds ${checked.refusal}`,
+        `Cisco shard job ${job.path} did not retain valid SARIF evidence: it holds ${checked.refusal}`,
       );
     }
     runs.push(...checked.log.runs);
   }
-  return JSON.stringify({ version: "2.1.0", runs });
+  const issued: VerifiedCiscoShardSarifV1 = Object.freeze({
+    kind: "verified-cisco-shard-join-v1",
+    sarif: JSON.stringify({ version: "2.1.0", runs }),
+  });
+  ISSUED_SHARD_JOINS.add(issued);
+  return issued;
 }
 
 // --------------------------------------------------------------------------
@@ -1383,6 +1418,75 @@ export function delegatedScanCompletionRefusalV1(
   });
 }
 
+/**
+ * Why precomputed SARIF (a Scanner annex's bytes) does not prove this tree was
+ * analyzed, or undefined when it does. With no run stating completion evidence
+ * v1 at all, it is `completion-evidence-absent` (every publication made before
+ * Scan wrote the evidence): never counted complete, never a crash. Otherwise
+ * every run's evidence must name this detector, the subject Core rebuilds from
+ * this tree for it, and an analyzer identity Core pins for the detector (under
+ * any of its profiles; for SkillSpector, also an image digest policy accepted).
+ */
+function precomputedScanCompletionRefusalV1(
+  log: CheckedScanSarifLogV1,
+  request: {
+    readonly detectorId: string;
+    readonly sourceRoot: string;
+    readonly selectedClosurePaths: readonly string[];
+    readonly mcpConfigPaths?: readonly string[];
+    readonly acceptedImageDigests: readonly string[];
+  },
+): { readonly absent: true } | string | undefined {
+  const firstEvidence = log.runs.map((run) => {
+    const invocations = (run as unknown as Record<string, unknown>).invocations;
+    const properties = asRecord(
+      Array.isArray(invocations) ? invocations[0] : undefined,
+    )?.properties;
+    return asRecord(properties)?.[SCAN_COMPLETION_PROPERTY_V1];
+  });
+  if (firstEvidence.every((evidence) => evidence === undefined)) return { absent: true };
+  const accepted = ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1.filter(
+    (identity) => identity.detectorId === request.detectorId,
+  ).flatMap((identity) => [
+    { version: observedScanAnalyzerVersionV1(identity), lockSha256: identity.lockSha256 },
+    ...(request.detectorId === "detector.skillspector"
+      ? request.acceptedImageDigests.map((digest) => ({
+          version: `${SKILLSPECTOR_SOURCE_REVISION}@${digest}`,
+          lockSha256: null,
+        }))
+      : []),
+  ]);
+  const stated = asRecord(
+    asRecord(firstEvidence.find((evidence) => evidence !== undefined))?.analyzer,
+  );
+  const analyzer =
+    accepted.find(
+      (candidate) =>
+        candidate.version === stated?.version && candidate.lockSha256 === stated?.lockSha256,
+    ) ?? accepted[0];
+  if (analyzer === undefined) return `Core accepts no analyzer identity for ${request.detectorId}`;
+  let subject: ReturnType<typeof scanSubjectDigestV1>;
+  try {
+    subject = scanSubjectDigestV1(
+      scanDetectorSubjectFilesV1(request.detectorId, request.sourceRoot, {
+        selectedClosurePaths: request.selectedClosurePaths,
+        ...(request.mcpConfigPaths === undefined ? {} : { mcpConfigPaths: request.mcpConfigPaths }),
+        sealed: () => sealedScanSubjectFilesV1(request.sourceRoot),
+      }),
+    );
+  } catch (error) {
+    return adapterReason(
+      `completion evidence Core cannot check, because it cannot rebuild this tree's subject: ${(error as Error)?.message ?? "unknown error"}`,
+    );
+  }
+  return scanCompletionRefusalV1(log, {
+    detectorId: request.detectorId,
+    subject,
+    emptyAllowed: SCAN_EMPTY_SOURCE_COMPLETES_V1.has(request.detectorId),
+    analyzer,
+  });
+}
+
 interface DelegatedRunOptionsV1 {
   readonly platform: Platform;
   readonly uvProfile?: UvExecutionProfileIdV1;
@@ -1696,12 +1800,27 @@ async function runDetectorList(
   for (const detector of detectors) {
     throwIfCancelled(options.signal, `before ${SCAN_DETECTOR_IDS[detector.name]} started`);
     options.progress?.(`trust scan: detector ${detector.name} started`);
-    let sarifText = options.precomputedSarif?.[detector.name];
+    const precomputed = options.precomputedSarif?.[detector.name];
+    let sarifText: string;
     let execution: Omit<TrustDetectorExecutionV1, "detector" | "outcome"> = {
       executedBy: "precomputed-sarif",
     };
     let delegatedPass: Parameters<typeof analyzerPassCheck>[2];
-    if (sarifText === undefined) {
+    // A verified shard join's jobs were each checked against their own subject.
+    let verifiedShardJoin = false;
+    if (typeof precomputed === "string") sarifText = precomputed;
+    else if (precomputed !== undefined) {
+      if (detector.name !== "cisco" || !ISSUED_SHARD_JOINS.has(precomputed)) {
+        unavailable(
+          detector,
+          `precomputed SARIF for ${SCAN_DETECTOR_IDS[detector.name]} is refused: a shard join Core did not verify for ${SCAN_DETECTOR_IDS[detector.name]}`,
+        );
+        executions.push({ detector: detector.name, ...execution, outcome: "failed" });
+        continue;
+      }
+      sarifText = precomputed.sarif;
+      verifiedShardJoin = true;
+    } else {
       const scan = await resolveScanExecution();
       const capability =
         "adapter" in scan ? adapterCapabilityFor(scan.adapter, detector.name) : undefined;
@@ -1777,6 +1896,40 @@ async function runDetectorList(
       );
       executions.push({ detector: detector.name, ...execution, outcome: "failed" });
       continue;
+    }
+    // Precomputed SARIF counts complete only when it proves this tree was
+    // analyzed, exactly as a delegated run must (decision D17).
+    if (execution.executedBy === "precomputed-sarif" && !verifiedShardJoin) {
+      const scanId = SCAN_DETECTOR_IDS[detector.name];
+      const completion = precomputedScanCompletionRefusalV1(checked.log, {
+        detectorId: scanId,
+        sourceRoot: root,
+        selectedClosurePaths: options.inventory.files.map((entry) => entry.relativePath),
+        ...(detector.name === "mcp-scanner"
+          ? { mcpConfigPaths: [...(options.mcpConfigPaths ?? [])] }
+          : {}),
+        acceptedImageDigests: acceptedSkillspectorImageDigestsV1(
+          options.skillspectorImageApprovals ?? [],
+        ),
+      });
+      if (typeof completion === "object") {
+        unavailable(
+          detector,
+          `precomputed SARIF for ${scanId} carries no completion evidence v1 (completion-evidence-absent); SARIF published before Scan wrote completion evidence is never counted complete, so it must be republished with evidence`,
+        );
+        executions.push({
+          detector: detector.name,
+          ...execution,
+          outcome: "unavailable",
+          reason: "completion-evidence-absent",
+        });
+        continue;
+      }
+      if (completion !== undefined) {
+        unavailable(detector, `precomputed SARIF for ${scanId} is refused: ${completion}`);
+        executions.push({ detector: detector.name, ...execution, outcome: "failed" });
+        continue;
+      }
     }
     // Without completed native facts the scan already fails; with them, none may be missing.
     const unstated =

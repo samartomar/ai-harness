@@ -144,6 +144,14 @@ detector fails at enterprise posture. A tree changed after Scan sealed it fails 
 because Core's recomputation no longer matches. The trust lint's and binding gate's evidence
 covers the declared selection only.
 
+Precomputed SARIF (a Scanner annex) meets the subject check too, against the tree being
+scanned, and its analyzer must be one Core pins for the detector under any of its profiles.
+SARIF with no completion evidence at all, which is every publication made before Scan wrote it,
+is never counted complete: it is `trust.detector-unavailable` with reason
+`completion-evidence-absent` and must be republished with evidence. A joined Cisco shard log
+is exempt only when `joinCiscoShardResults` verified it, because each job was already checked
+against its own subject.
+
 ## Analyzer execution profiles and their limits
 
 Every detector runs in the installed `@aihq/scan` under an execution profile aih names; no

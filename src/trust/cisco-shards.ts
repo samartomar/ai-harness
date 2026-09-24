@@ -408,7 +408,7 @@ export function joinCiscoShardResults(
       if (!outputs.has(job.id)) throw new Error(`missing Cisco job output: ${job.path}`);
     }
   }
-  return {
+  const joined: JoinedCiscoShardEvidence = {
     schemaVersion: 1,
     manifestSha256: manifest.manifestSha256,
     qualificationId: manifest.qualificationId,
@@ -419,4 +419,26 @@ export function joinCiscoShardResults(
       return output;
     }),
   };
+  VERIFIED_JOB_EVIDENCE.set(
+    joined,
+    joined.outputs.map((output) => ({ path: output.path, sarif: canonicalJson(output.evidence) })),
+  );
+  return joined;
+}
+
+/**
+ * The job evidence exactly as it stood when `joinCiscoShardResults` verified it,
+ * per job in manifest order, keyed by the joined object that call returned.
+ * A join built any other way, or evidence changed afterwards, is never read.
+ */
+const VERIFIED_JOB_EVIDENCE = new WeakMap<
+  JoinedCiscoShardEvidence,
+  readonly { readonly path: string; readonly sarif: string }[]
+>();
+
+/** The verified job SARIF of a join `joinCiscoShardResults` returned, or undefined for any other value. */
+export function verifiedCiscoShardJobSarifV1(
+  joined: JoinedCiscoShardEvidence,
+): readonly { readonly path: string; readonly sarif: string }[] | undefined {
+  return VERIFIED_JOB_EVIDENCE.get(joined);
 }

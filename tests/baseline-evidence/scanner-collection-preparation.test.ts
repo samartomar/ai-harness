@@ -110,6 +110,8 @@ import { encodePackagedScannerCollectionEvidenceRecordV1 } from "../../src/org-p
 import { pinnedSkillCollectionDigestV1 } from "../../src/org-policy/workbench/compilers/pinned-skill-collection.js";
 import { mattPocockPinnedSkillCollectionFixtureV1 } from "../../src/org-policy/workbench/providers/mattpocock.js";
 import { ponytailComponentCollectionFixtureV1 } from "../../src/org-policy/workbench/providers/ponytail.js";
+import { SCAN_DETECTOR_IDS, type TrustDetectorName } from "../../src/trust/detectors.js";
+import { selfDerivedPrecomputedCompletionForTests } from "../trust/fakes/fake-scan-adapter.js";
 
 const roots: string[] = [];
 
@@ -180,7 +182,9 @@ function materializeSource(id: ScannerCollectionCatalogIdV1): string {
   return root;
 }
 
+/** Annexes whose SARIF carries completion evidence SELF-DERIVED for `sourceRoot` (not a boundary test). */
 function annexes(
+  sourceRoot: string,
   request: BaselineVetRequestV1,
   blocked = false,
 ): BaselineVetBatchResultV1["annexArtifacts"] {
@@ -196,33 +200,37 @@ function annexes(
             sourceTreeSha256: request.source.treeSha256,
             files: [],
           }
-        : {
-            version: "2.1.0",
-            runs: [
-              {
-                tool: { driver: { name: analyzer } },
-                invocations: [{ executionSuccessful: true }],
-                results:
-                  blocked && analyzer === "semgrep" && blockedPath !== undefined
-                    ? [
-                        {
-                          level: "error",
-                          message: { text: "blocked fixture finding" },
-                          ruleId: "semgrep.malicious-code",
-                          locations: [
-                            {
-                              physicalLocation: {
-                                artifactLocation: { uri: blockedPath },
-                                region: { startLine: 1 },
+        : selfDerivedPrecomputedCompletionForTests(
+            {
+              version: "2.1.0",
+              runs: [
+                {
+                  tool: { driver: { name: analyzer } },
+                  invocations: [{ executionSuccessful: true }],
+                  results:
+                    blocked && analyzer === "semgrep" && blockedPath !== undefined
+                      ? [
+                          {
+                            level: "error",
+                            message: { text: "blocked fixture finding" },
+                            ruleId: "semgrep.malicious-code",
+                            locations: [
+                              {
+                                physicalLocation: {
+                                  artifactLocation: { uri: blockedPath },
+                                  region: { startLine: 1 },
+                                },
                               },
-                            },
-                          ],
-                        },
-                      ]
-                    : [],
-              },
-            ],
-          };
+                            ],
+                          },
+                        ]
+                      : [],
+                },
+              ],
+            },
+            SCAN_DETECTOR_IDS[analyzer as TrustDetectorName],
+            sourceRoot,
+          );
     return {
       path: `annex/${analyzer}.json`,
       bytes: canonicalStrictJsonBytesV1(value),
@@ -238,7 +246,7 @@ function signedPublication(
   const { catalog } = prepareRegisteredScannerCatalogV1(sourceRoot, catalogId);
   const request = createCoreBaselineVetRequests(sourceRoot, catalog)[0];
   if (request === undefined) throw new Error("fixture requires one Scanner batch");
-  const annexArtifacts = annexes(request, blocked);
+  const annexArtifacts = annexes(sourceRoot, request, blocked);
   const byAnalyzer = new Map(
     annexArtifacts.map((artifact) => [artifact.path.slice(6, -5), artifact]),
   );

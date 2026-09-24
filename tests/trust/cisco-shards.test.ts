@@ -367,7 +367,7 @@ describe("Cisco exact-source shard evidence", () => {
       ),
     );
     const joined = joinCiscoShardResults(plan, workerResults, root);
-    const sarif = JSON.parse(joinedCiscoShardSarif(joined)) as {
+    const sarif = JSON.parse(joinedCiscoShardSarif(joined).sarif) as {
       runs: Array<{
         results: Array<{
           message: { text: string };

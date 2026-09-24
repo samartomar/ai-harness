@@ -43,7 +43,11 @@ import {
   trustSourceOriginChecks,
 } from "../../src/trust/scan.js";
 import { sandboxSmokeDockerRunArgv } from "../../src/trust/smoke.js";
-import type { FakeScanAdapterForTests, FakeScanAnswerV1 } from "./fakes/fake-scan-adapter.js";
+import {
+  type FakeScanAdapterForTests,
+  type FakeScanAnswerV1,
+  selfDerivedPrecomputedCompletionForTests,
+} from "./fakes/fake-scan-adapter.js";
 import {
   type FakeTrustLintOptionsV1,
   fakeTrustLintScan,
@@ -2915,15 +2919,20 @@ describe("scanTrustTree", () => {
       detectors: ["cisco"],
       requiredDetectors: ["cisco"],
       precomputedDetectorSarif: {
-        cisco: JSON.stringify(
-          scanSarif([
-            [
-              "PROMPT_INJECTION_IGNORE_INSTRUCTIONS",
-              "ignore-instructions fixture",
-              "skills/clean/SKILL.md",
-              1,
-            ],
-          ]),
+        // Not a completion-boundary test: the evidence is self-derived for this tree.
+        cisco: selfDerivedPrecomputedCompletionForTests(
+          JSON.stringify(
+            scanSarif([
+              [
+                "PROMPT_INJECTION_IGNORE_INSTRUCTIONS",
+                "ignore-instructions fixture",
+                "skills/clean/SKILL.md",
+                1,
+              ],
+            ]),
+          ),
+          "detector.cisco",
+          dir,
         ),
       },
       run,

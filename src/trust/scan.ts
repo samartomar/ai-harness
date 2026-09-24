@@ -46,6 +46,7 @@ import {
   parseArtifactIntakeV1Text,
 } from "./artifact-intake.js";
 import {
+  type PrecomputedDetectorSarifV1,
   resolveScanTrustLintRouteV1,
   runMcpConfigDetectors,
   runScanTrustLintV1,
@@ -148,7 +149,9 @@ export interface ScanTrustTreeOptions {
   mcpPolicy?: OrgPolicy["mcp"];
   requiredDetectors?: readonly TrustDetectorName[];
   detectors?: readonly TrustDetectorName[];
-  precomputedDetectorSarif?: Readonly<Partial<Record<TrustDetectorName, string>>>;
+  precomputedDetectorSarif?: Readonly<
+    Partial<Record<TrustDetectorName, PrecomputedDetectorSarifV1>>
+  >;
   run?: Runner;
   sandboxSmokeShape?: SandboxSmokeShape;
   skillspectorImageApprovals?: readonly SkillSpectorImageApproval[];
@@ -539,7 +542,9 @@ function normalizeScanOptions(options: ScanTrustTreeOptions = {}): {
   posture: Posture;
   requiredDetectors: readonly TrustDetectorName[];
   detectors?: readonly TrustDetectorName[];
-  precomputedDetectorSarif?: Readonly<Partial<Record<TrustDetectorName, string>>>;
+  precomputedDetectorSarif?: Readonly<
+    Partial<Record<TrustDetectorName, PrecomputedDetectorSarifV1>>
+  >;
   run?: Runner;
   sandboxSmokeShape?: SandboxSmokeShape;
   skillspectorImageApprovals: readonly SkillSpectorImageApproval[];

@@ -98,6 +98,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   complete on an empty source. Anything else is `trust.detector-unavailable` (outcome `failed`).
   An `@aihq/scan` without completion evidence (before S2g) therefore fails every delegated
   detector, and a Snyk or mcp-scanner run whose SARIF names no tool driver fails too.
+- Precomputed SARIF (a Scanner annex) counts as completed only when every run carries
+  completion evidence v1 for the tree Core is scanning: the requested detector, the subject Core
+  recomputes for that detector, and an analyzer identity Core pins for it. SARIF with no
+  completion evidence at all, which is every publication made before Scan S2g, is never counted
+  complete: it is `trust.detector-unavailable` with reason `completion-evidence-absent`
+  (outcome `unavailable`), and must be republished with evidence. Evidence that is present but
+  wrong fails the detector. Joined Cisco shards stay exempt from the one-subject check because
+  each job was checked against its own subject; only a join `joinCiscoShardResults` verified
+  (`joinedCiscoShardSarif` now returns it as a `VerifiedCiscoShardSarifV1`) is exempt.
 - An org-policy `trust.internalScopes` entry must be an npm scope (`@acme`, optionally
   without the `@`, surrounding whitespace ignored); `aih policy validate` now rejects a
   malformed one such as `@my team` with its field path instead of ignoring it, and Scan

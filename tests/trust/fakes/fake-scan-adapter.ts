@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import type { ScanExecutionAdapterV1 } from "../../../src/org-policy/governance-input-v1.js";
+import { buildTrustFileInventory } from "../../../src/trust/inventory.js";
 import {
+  ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1,
   acceptedScanAnalyzerIdentityV1,
   observedScanAnalyzerVersionV1,
 } from "../../../src/trust/scan-analyzer-identity.js";
@@ -220,6 +222,60 @@ export function withFakeScanCompletion(
       first.properties = { ...properties, [SCAN_COMPLETION_PROPERTY_V1]: evidence };
   }
   return JSON.stringify(log);
+}
+
+/**
+ * SELF-DERIVED, NOT A BOUNDARY VECTOR. The SARIF log `log` (text or parsed)
+ * with completion evidence v1 added to every run's first invocation, derived
+ * with Core's OWN subject code over `sourceRoot` and Core's first pinned
+ * analyzer identity for the detector. Nothing else is repaired: a run with no
+ * invocation stays without one. Only for tests about something other than the
+ * completion boundary (custody, signatures, SARIF mapping) that need
+ * precomputed SARIF Core counts complete; boundary tests use the independent
+ * vectors in `scan-completion-vectors.test.ts`. Returns the same kind it got.
+ */
+export function selfDerivedPrecomputedCompletionForTests<T extends string | object>(
+  log: T,
+  detectorId: string,
+  sourceRoot: string,
+  options: {
+    readonly selectedClosurePaths?: readonly string[];
+    readonly mcpConfigPaths?: readonly string[];
+  } = {},
+): T {
+  const identity = ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1.find(
+    (entry) => entry.detectorId === detectorId,
+  );
+  if (identity === undefined) throw new Error(`Core pins no analyzer for ${detectorId}`);
+  const selected =
+    options.selectedClosurePaths ??
+    buildTrustFileInventory(sourceRoot).files.map((entry) => entry.relativePath);
+  const evidence = {
+    detectorId,
+    ...scanSubjectDigestV1(
+      scanDetectorSubjectFilesV1(detectorId, sourceRoot, {
+        selectedClosurePaths: selected,
+        ...(options.mcpConfigPaths === undefined ? {} : { mcpConfigPaths: options.mcpConfigPaths }),
+        sealed: () => sealedScanSubjectFilesV1(sourceRoot),
+      }),
+    ),
+    analyzer: {
+      version: observedScanAnalyzerVersionV1(identity),
+      lockSha256: identity.lockSha256,
+    },
+  };
+  const parsed: unknown = typeof log === "string" ? JSON.parse(log) : structuredClone(log);
+  const runs = asObject(parsed)?.runs;
+  for (const run of Array.isArray(runs) ? runs : []) {
+    const invocations = asObject(run)?.invocations;
+    const first = Array.isArray(invocations) ? asObject(invocations[0]) : undefined;
+    if (first === undefined) continue;
+    first.properties = {
+      ...(asObject(first.properties) ?? {}),
+      [SCAN_COMPLETION_PROPERTY_V1]: evidence,
+    };
+  }
+  return (typeof log === "string" ? JSON.stringify(parsed) : parsed) as T;
 }
 
 export interface FakeScanAdapterForTests extends ScanExecutionAdapterV1 {

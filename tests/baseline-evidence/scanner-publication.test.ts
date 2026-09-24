@@ -21,6 +21,8 @@ import {
   DEFAULT_EVIDENCE_MAX_AGE_SECONDS_V1,
   evidenceExpiryV1,
 } from "../../src/evidence-freshness.js";
+import { SCAN_DETECTOR_IDS, type TrustDetectorName } from "../../src/trust/detectors.js";
+import { selfDerivedPrecomputedCompletionForTests } from "../trust/fakes/fake-scan-adapter.js";
 
 // Native findings come from the installed @aihq/scan's trust lint; this test
 // reads a Scan that reports none, with neutral facts for every selected file.
@@ -63,17 +65,22 @@ function fixture(detail = "") {
     const bytes = canonicalStrictJsonBytesV1(
       analyzer === "aih-native"
         ? { protocol: "BaselineNativeObservationV1", files: [] }
-        : {
-            version: "2.1.0",
-            runs: [
-              {
-                tool: { driver: { name: analyzer } },
-                invocations: [{ executionSuccessful: true }],
-                results: [],
-                properties: { detail: analyzer === "skillspector" ? detail : "" },
-              },
-            ],
-          },
+        : // Self-derived completion evidence: this test is about publication, not the boundary.
+          selfDerivedPrecomputedCompletionForTests(
+            {
+              version: "2.1.0",
+              runs: [
+                {
+                  tool: { driver: { name: analyzer } },
+                  invocations: [{ executionSuccessful: true }],
+                  results: [],
+                  properties: { detail: analyzer === "skillspector" ? detail : "" },
+                },
+              ],
+            },
+            SCAN_DETECTOR_IDS[analyzer as TrustDetectorName],
+            sourceRoot,
+          ),
     );
     return { path: `annex/${analyzer}.json`, bytes };
   });

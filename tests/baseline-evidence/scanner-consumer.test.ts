@@ -25,6 +25,8 @@ import {
   SCANNER_TO_CORE_BASELINE_ANALYZER,
   type ScannerBaselineAnalyzer,
 } from "../../src/baseline-evidence/scanner-profile.js";
+import { SCAN_DETECTOR_IDS, type TrustDetectorName } from "../../src/trust/detectors.js";
+import { selfDerivedPrecomputedCompletionForTests } from "../trust/fakes/fake-scan-adapter.js";
 
 // Native findings come from the installed @aihq/scan's trust lint; this test
 // reads a Scan that reports none, with neutral facts for every selected file.
@@ -97,7 +99,13 @@ function largeSourceFixture(count = SCANNER_BASELINE_COMPONENT_BATCH_LIMIT + 1) 
   return { root, catalog };
 }
 
+/**
+ * A Scanner result for `request` over the fixture at `root`. Its SARIF annexes
+ * carry completion evidence v1 SELF-DERIVED for `root` (these tests are about
+ * custody and signatures, not the completion boundary), so Core counts them.
+ */
 function buildResult(
+  root: string,
   request: BaselineVetRequestV1,
   overrides: Partial<Record<ScannerBaselineAnalyzer, string>> = {},
   annexOverrides: Partial<Record<ScannerBaselineAnalyzer, unknown>> = {},
@@ -114,16 +122,20 @@ function buildResult(
               sourceTreeSha256: request.source.treeSha256,
               files: [],
             }
-          : (annexOverrides[analyzer] ?? {
-              version: "2.1.0",
-              runs: [
-                {
-                  tool: { driver: { name: analyzer } },
-                  invocations: [{ executionSuccessful: true }],
-                  results: [],
-                },
-              ],
-            }),
+          : selfDerivedPrecomputedCompletionForTests(
+              annexOverrides[analyzer] ?? {
+                version: "2.1.0",
+                runs: [
+                  {
+                    tool: { driver: { name: analyzer } },
+                    invocations: [{ executionSuccessful: true }],
+                    results: [],
+                  },
+                ],
+              },
+              SCAN_DETECTOR_IDS[analyzer as TrustDetectorName],
+              root,
+            ),
       ),
       "utf8",
     );
@@ -214,7 +226,7 @@ describe("Core Scanner baseline consumer", () => {
     const keyId = ed25519KeyIdV2(keys.publicKey);
     const signer = { identity: "fixture-linear-scanner", class: "test-ephemeral" as const, keyId };
     const batches = requests.map((request) => {
-      const result = buildResult(request);
+      const result = buildResult(root, request);
       const signed = signBaselineVetBundleV1({
         request,
         result,
@@ -264,7 +276,7 @@ describe("Core Scanner baseline consumer", () => {
     const signer = { identity: "fixture-batch-scanner", class: "test-ephemeral" as const, keyId };
     const expected = { now: "2026-08-31T05:30:00.000Z", signer };
     const batches = requests.map((request) => {
-      const result = buildResult(request);
+      const result = buildResult(root, request);
       const signed = signBaselineVetBundleV1({
         request,
         result,
@@ -314,6 +326,7 @@ describe("Core Scanner baseline consumer", () => {
       requests.map((request, index) => {
         const suffix = String(index + 1).repeat(32);
         const result = buildResult(
+          root,
           request,
           {},
           {
@@ -397,7 +410,7 @@ describe("Core Scanner baseline consumer", () => {
       ["aih-native", "skillspector", "semgrep"],
       ["aih-native", "skillspector", "semgrep", "cisco"],
     ]);
-    const result = buildResult(request);
+    const result = buildResult(root, request);
     const signed = signedFixture(request, result);
 
     const evidence = await consumeVerifiedScannerBaseline({
@@ -436,7 +449,7 @@ describe("Core Scanner baseline consumer", () => {
   it("rejects source drift, replay, and a signed but unpinned analyzer identity", async () => {
     const { root, catalog } = sourceFixture();
     const request = createCoreBaselineVetRequest(root, catalog);
-    const result = buildResult(request);
+    const result = buildResult(root, request);
     const signed = signedFixture(request, result);
     writeFileSync(join(root, "rules", "base.md"), "# Changed after request\n", "utf8");
     await expect(
@@ -453,7 +466,7 @@ describe("Core Scanner baseline consumer", () => {
 
     const fresh = sourceFixture();
     const freshRequest = createCoreBaselineVetRequest(fresh.root, fresh.catalog);
-    const freshResult = buildResult(freshRequest);
+    const freshResult = buildResult(fresh.root, freshRequest);
     const freshSigned = signedFixture(freshRequest, freshResult);
     await expect(
       consumeVerifiedScannerBaseline({
@@ -468,7 +481,7 @@ describe("Core Scanner baseline consumer", () => {
       }),
     ).rejects.toThrow(/replayed evidence/);
 
-    const wrongResult = buildResult(freshRequest, { semgrep: "1.173.0+uvlock.wrong" });
+    const wrongResult = buildResult(fresh.root, freshRequest, { semgrep: "1.173.0+uvlock.wrong" });
     const wrongSigned = signedFixture(freshRequest, wrongResult);
     await expect(
       consumeVerifiedScannerBaseline({

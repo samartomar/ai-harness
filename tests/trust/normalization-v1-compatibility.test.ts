@@ -7,6 +7,7 @@ import { baselineAnalyzerVersions } from "../../src/baseline-evidence/analyzer-p
 import {
   CISCO_SKILL_SCANNER_ANALYZER,
   runTrustDetectors,
+  SCAN_DETECTOR_IDS,
   SEMGREP_ANALYZER,
   SNYK_AGENT_SCAN_ANALYZER,
 } from "../../src/trust/detectors.js";
@@ -34,6 +35,7 @@ import {
   CURRENT_SUPPRESSED_RULE_COMPATIBILITY_CORPUS_V1,
 } from "../../src/trust/normalization-v1-compatibility.js";
 import { trustLintChecksFromSarifV1 } from "../../src/trust/trust-lint-sarif.js";
+import { selfDerivedPrecomputedCompletionForTests } from "./fakes/fake-scan-adapter.js";
 import { trustLintSarifForTests } from "./fakes/fake-trust-lint.js";
 
 const EXPECTED_SUPPRESSED_SELECTORS = [
@@ -478,16 +480,21 @@ async function currentLegacySemantics(expected: (typeof EXPECTED_LEGACY_SEMANTIC
     posture: "enterprise",
     detectors: [expected.detectorClass],
     precomputedSarif: {
-      [expected.detectorClass]: JSON.stringify({
-        version: "2.1.0",
-        runs: [
-          {
-            tool: { driver: { name: "fixture" } },
-            invocations: [{ executionSuccessful: true }],
-            results: [result, result],
-          },
-        ],
-      }),
+      // Not a completion-boundary test: the evidence is self-derived for this tree.
+      [expected.detectorClass]: selfDerivedPrecomputedCompletionForTests(
+        JSON.stringify({
+          version: "2.1.0",
+          runs: [
+            {
+              tool: { driver: { name: "fixture" } },
+              invocations: [{ executionSuccessful: true }],
+              results: [result, result],
+            },
+          ],
+        }),
+        SCAN_DETECTOR_IDS[expected.detectorClass],
+        root,
+      ),
     },
     corroboratedChecks: [],
     trustLintFacts: facts.facts,

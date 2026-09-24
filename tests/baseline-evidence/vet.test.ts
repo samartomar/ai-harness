@@ -349,8 +349,9 @@ describe("vetBaselineCatalog", () => {
     const scanTree = vi.fn(
       async (_projectionRoot: string, options?: Parameters<typeof defaultComponentScanner>[0]) => {
         const raw = options?.precomputedDetectorSarif?.cisco;
-        if (raw === undefined) throw new Error("expected precomputed Cisco SARIF");
-        const sarif = JSON.parse(raw) as {
+        if (raw === undefined || typeof raw === "string")
+          throw new Error("expected a verified Cisco shard join");
+        const sarif = JSON.parse(raw.sarif) as {
           runs: Array<{
             results: Array<{
               locations: Array<{

@@ -5,7 +5,11 @@ import type { Check } from "../../src/internals/verify.js";
 import type { TrustDetectorName } from "../../src/trust/detectors.js";
 import { buildTrustFileInventory } from "../../src/trust/inventory.js";
 import { scanTrustTreeWithAnalyzers } from "../../src/trust/scan.js";
-import { createFakeScanAdapterForTests, type FakeScanAnswerV1 } from "./fakes/fake-scan-adapter.js";
+import {
+  createFakeScanAdapterForTests,
+  type FakeScanAnswerV1,
+  selfDerivedPrecomputedCompletionForTests,
+} from "./fakes/fake-scan-adapter.js";
 import { fakeTrustLintScan, requestedPathsOf } from "./fakes/fake-trust-lint.js";
 import {
   comparableCheck,
@@ -278,7 +282,14 @@ describe("golden parity: each detector through the Scan execution seam", () => {
         platform: "linux",
         run: runner,
         detectors: ["semgrep"],
-        precomputedDetectorSarif: { semgrep: detectorSarifFromGolden(run, root, null) },
+        // Not a completion-boundary test: the evidence is self-derived for this tree.
+        precomputedDetectorSarif: {
+          semgrep: selfDerivedPrecomputedCompletionForTests(
+            detectorSarifFromGolden(run, root, null),
+            "detector.semgrep",
+            root,
+          ),
+        },
         scanExecution: createFakeScanAdapterForTests({
           "detector.aih-trust-lint": recordedTrustLint(entry),
         }),

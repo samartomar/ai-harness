@@ -16,6 +16,7 @@ import {
   FAKE_SCAN_PROFILES,
   type FakeScanAnswerV1,
   fakeScanCompletionEvidence,
+  selfDerivedPrecomputedCompletionForTests,
   withFakeScanCompletion,
 } from "./fakes/fake-scan-adapter.js";
 import {
@@ -592,7 +593,14 @@ describe("Scan's detector SARIF is checked at the boundary", () => {
       platform: "linux",
       run,
       detectors: ["snyk-agent-scan"],
-      precomputedDetectorSarif: { "snyk-agent-scan": rootFinding },
+      // Not a completion-boundary test: the evidence is self-derived for this tree.
+      precomputedDetectorSarif: {
+        "snyk-agent-scan": selfDerivedPrecomputedCompletionForTests(
+          rootFinding,
+          "detector.snyk-agent-scan",
+          root,
+        ),
+      },
       scanExecution: createFakeScanAdapterForTests({
         "detector.aih-trust-lint": goldenTrustLint("prompt-injection"),
       }),

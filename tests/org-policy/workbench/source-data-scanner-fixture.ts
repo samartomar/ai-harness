@@ -22,6 +22,8 @@ import {
 } from "../../../src/org-policy/workbench/compilers/pinned-skill-collection.js";
 import type { AuthoringCatalogBundleV1 } from "../../../src/org-policy/workbench/contracts.js";
 import { mattPocockPinnedSkillCollectionFixtureV1 } from "../../../src/org-policy/workbench/providers/mattpocock.js";
+import { SCAN_DETECTOR_IDS, type TrustDetectorName } from "../../../src/trust/detectors.js";
+import { selfDerivedPrecomputedCompletionForTests } from "../../trust/fakes/fake-scan-adapter.js";
 
 const signedAt = "2026-09-03T12:45:00.000Z";
 const verificationExpiresAt = "2026-09-03T13:30:00.000Z";
@@ -128,34 +130,39 @@ function signedPublication(
     const bytes = canonicalStrictJsonBytesV1(
       analyzer === "aih-native"
         ? { protocol: "BaselineNativeObservationV1", files: [] }
-        : {
-            version: "2.1.0",
-            runs: [
-              {
-                tool: { driver: { name: analyzer } },
-                invocations: [{ executionSuccessful: true }],
-                results:
-                  analyzer === "skillspector" && detail !== ""
-                    ? [
-                        {
-                          ruleId: "skillspector.prompt-injection",
-                          level: "warning",
-                          message: { text: detail },
-                          locations: [
-                            {
-                              physicalLocation: {
-                                artifactLocation: { uri: request.components[0]?.paths[0] },
-                                region: { startLine: 2 },
+        : // Completion evidence SELF-DERIVED for `root`: these tests are about custody.
+          selfDerivedPrecomputedCompletionForTests(
+            {
+              version: "2.1.0",
+              runs: [
+                {
+                  tool: { driver: { name: analyzer } },
+                  invocations: [{ executionSuccessful: true }],
+                  results:
+                    analyzer === "skillspector" && detail !== ""
+                      ? [
+                          {
+                            ruleId: "skillspector.prompt-injection",
+                            level: "warning",
+                            message: { text: detail },
+                            locations: [
+                              {
+                                physicalLocation: {
+                                  artifactLocation: { uri: request.components[0]?.paths[0] },
+                                  region: { startLine: 2 },
+                                },
                               },
-                            },
-                          ],
-                        },
-                      ]
-                    : [],
-                properties: { detail: analyzer === "skillspector" ? detail : "" },
-              },
-            ],
-          },
+                            ],
+                          },
+                        ]
+                      : [],
+                  properties: { detail: analyzer === "skillspector" ? detail : "" },
+                },
+              ],
+            },
+            SCAN_DETECTOR_IDS[analyzer as TrustDetectorName],
+            root,
+          ),
     );
     return { path: `annex/${analyzer}.json`, bytes };
   });

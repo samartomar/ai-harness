@@ -21,7 +21,11 @@ import {
   acceptedScanAnalyzerIdentityV1,
   observedScanAnalyzerVersionV1,
 } from "../../src/trust/scan-analyzer-identity.js";
-import { fakeScanCompletionEvidence, withFakeScanCompletion } from "./fakes/fake-scan-adapter.js";
+import {
+  fakeScanCompletionEvidence,
+  selfDerivedPrecomputedCompletionForTests,
+  withFakeScanCompletion,
+} from "./fakes/fake-scan-adapter.js";
 import { fakeTrustLintScan } from "./fakes/fake-trust-lint.js";
 
 // ---------------------------------------------------------------------------
@@ -400,7 +404,10 @@ describe("installed @aihq/scan: default loading, executor naming, recorded obser
       posture: "vibe",
       inventory: buildTrustFileInventory(dir),
       detectors: ["cisco"],
-      precomputedSarif: { cisco: EMPTY_SARIF },
+      // Not a completion-boundary test: the evidence is self-derived for this tree.
+      precomputedSarif: {
+        cisco: selfDerivedPrecomputedCompletionForTests(EMPTY_SARIF, "detector.cisco", dir),
+      },
     });
     expect(loader.load).not.toHaveBeenCalled();
     expect(result.executions).toEqual([
