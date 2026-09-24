@@ -337,7 +337,11 @@ describe("active external-pin ledger", () => {
     });
     expect(active.reason).toContain(`tree ${TOKEN_OPTIMIZER_PIN.tree}`);
     expect(active.reason).toContain(`manifest sha256:${TOKEN_OPTIMIZER_PIN.manifestSha256}`);
-    expect(active.reason).toMatch(/all 158.*canonical Git blobs/i);
+    expect(active.reason).toContain(`all ${TOKEN_OPTIMIZER_PIN.manifestRecords} manifest records`);
+    expect(active.reason).toMatch(/canonical Git blobs/i);
+    expect(active.reason).toMatch(
+      /PolyForm Noncommercial 1\.0\.0.*LICENSE-SMALL-BUSINESS\.md.*fewer than 5 people.*US\$20,000 per month.*internal/i,
+    );
     expect(active.reason).toMatch(/quiet and balanced.*receipt ownership.*policy exclusions/i);
     expect(toolingPlan().pins.tokenOptimizer).toMatchObject({
       tag: TOKEN_OPTIMIZER_PIN.tag,

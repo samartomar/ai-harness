@@ -191,7 +191,9 @@ After its normal phases complete, `aih init` also runs the ordinary developer-to
 preview reports the effective selection without reconciling a tool. With `--apply`, it reconciles all
 seven existing runtime tool IDs: selected tools are provisioned, while policy-excluded tools can remove only
 unchanged receipt-owned integration. During apply, Token Optimizer remains `blocked` until its
-license is explicitly accepted with `--accept-token-optimizer-license`; `--token-optimizer-profile
+license is explicitly accepted with `--accept-token-optimizer-license` (PolyForm Noncommercial 1.0.0;
+since v5.13.21 upstream also permits internal use by organizations with fewer than 5 people and under
+US$20,000 monthly revenue, which aih does not assess for you); `--token-optimizer-profile
 quiet|balanced` selects its setup profile. A blocked prerequisite is reported for that tool while
 independent selected tools continue. Headroom is also default-selected, but it stays
 `selected-pending` with a skipped check, with or without `--apply`, until it is explicitly activated.
