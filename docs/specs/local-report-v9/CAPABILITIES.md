@@ -20,7 +20,7 @@ along" and detect **dormant** skills (stack-relevant installed skills that were 
 known locations for the targeted CLIs — e.g. `.claude/agents/`, `.claude/skills/`,
 `.kiro/agents/`, `.kiro/skills/`, `.kiro/steering/`, rules dirs, and hooks declared in
 `.claude/settings.json` / Kiro settings. ECC installs these via its own installer
-(`src/ecc/index.ts` — "curated agents/skills/steering/hooks/scripts/settings"); the stack
+(`packages/framework-ecc/src/ecc/index.ts` — "curated agents/skills/steering/hooks/scripts/settings"); the stack
 packs come from `eccLanguages(stack)`.
 
 **Output digest** (`describe` "ECC harness"): `{ agents, skills, rules, hooks, packs: string[],

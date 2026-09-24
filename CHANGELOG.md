@@ -8,6 +8,23 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Removed
 
+- **Breaking:** the ECC implementation moved out of `@aihq/core` into
+  `@aihq/framework-ecc`, an optional peer (`npm install -g @aihq/core @aihq/framework-ecc`).
+  Without it, `aih ecc`, `aih ecc mcp add|remove`, governed delivery of a policy that
+  selects ECC content (`aih policy project`, `aih init` on a bound project), and ECC
+  uninstall/prune of ECC-owned state refuse with `framework-plugin-unavailable` and the
+  install command; nothing is skipped silently. `aih doctor`, `aih report` and
+  `aih policy evaluate` state that the ECC checks were not run, and the policy-delivery
+  report blocks while it needs ECC's knowledge and cannot get it.
+- **Breaking (library):** the library root no longer exports the ECC Package Graph
+  adapters (`projectEccCapabilityPackageAuthority`, `projectEccMaterializationAuthority`,
+  `projectEccMcpCapabilityPackageAuthority`, `projectEccMcpReceiptAuthority` and their
+  types).
+- The CLI capability lines in `aih report` and `aih mcp` no longer claim ECC install or
+  governed-ECC support per host; the ECC plugin reports that itself (the `aih ecc` preview
+  refuses an unsupported target by name, and the policy-delivery report lists unsupported
+  ECC targets).
+
 - **Breaking:** `governance.eccHookControls` is removed and replaced by the generic
   `governance.frameworkHookControls`, keyed by framework id (`ecc`, `superpowers`), each
   entry `{ "profile"?: string, "disabledHookIds": string[] }`. It requires schemaVersion 3

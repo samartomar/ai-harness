@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -16,6 +16,64 @@ const manifest = JSON.parse(readFileSync(join(repo, "package.json"), "utf8")) as
   peerDependenciesMeta: Record<string, { optional?: boolean }>;
   dependencies: Record<string, string>;
 };
+
+/**
+ * The ECC implementation modules phase 2 moved into @aihq/framework-ecc (or
+ * deleted as unreachable). Core's source tree and tarball carry none of them.
+ * The ECC modules still in Core are only those the W1 Catalog producers import
+ * (tests/framework-plugin/ecc-facade-boundary.test.ts pins that set).
+ */
+const ABSENT_ECC_IMPLEMENTATION_PATHS = [
+  "src/framework-plugin/ecc-facade.ts",
+  "src/ecc/codex.ts",
+  "src/ecc/effective-discovery.ts",
+  "src/ecc/governed-lifecycle.ts",
+  "src/ecc/index.ts",
+  "src/ecc/install.ts",
+  "src/ecc/materialization-plan.ts",
+  "src/ecc/materialization-target-claude.ts",
+  "src/ecc/materialization.ts",
+  "src/ecc/mcp-explicit-add.ts",
+  "src/ecc/mcp.ts",
+  "src/ecc/pipeline.ts",
+  "src/ecc/prune-reconcile.ts",
+  "src/ecc/reconcile-driver.ts",
+  "src/ecc/reconcile.ts",
+  "src/ecc/runtime-descriptor-resolver.ts",
+  "src/ecc/verified.ts",
+  "src/ecc-profile/command.ts",
+  "src/ecc-profile/governed-codex-roles.ts",
+  "src/ecc-profile/lifecycle.ts",
+  "src/ecc-profile/parity-receipt.ts",
+  "src/binding/frameworks/ecc.ts",
+  "src/internals/check-ecc-installer.ts",
+];
+
+/**
+ * Names of ECC implementation functions, one per moved area. Core's build keeps
+ * function names (tsup `keepNames`), so a bundled copy would carry the name.
+ */
+const ECC_IMPLEMENTATION_NAMES = [
+  "executeEccCommand",
+  "applyPreparedGovernedEccDelivery",
+  "eccPruneReconciliationActions",
+  "planGovernedCodexRoleRegistration",
+  "buildEccProfileParityReceipt",
+  "describeEccEffectiveDiscovery",
+  "planEccMaterialization",
+];
+
+function packedPaths(): string[] {
+  const output = execFileSync(
+    process.execPath,
+    [npmCli(), "pack", "--dry-run", "--json", "--ignore-scripts"],
+    { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
+  );
+  const packed = JSON.parse(output) as Array<{ files: Array<{ path: string }> }>;
+  return packed[0]?.files.map((file) => file.path.replace(/\\/g, "/")) ?? [];
+}
+
+const dist = join(repo, "dist");
 
 function npmCli(): string {
   const candidates = [
@@ -37,18 +95,30 @@ describe("Core tarball and framework plugins", () => {
     ).toEqual([]);
   });
 
-  it("packs no framework plugin file", () => {
-    const output = execFileSync(
-      process.execPath,
-      [npmCli(), "pack", "--dry-run", "--json", "--ignore-scripts"],
-      { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
-    );
-    const packed = JSON.parse(output) as Array<{ files: Array<{ path: string }> }>;
-    const paths = packed[0]?.files.map((file) => file.path.replace(/\\/g, "/")) ?? [];
+  it("packs no framework plugin file and none of the moved ECC implementation paths", () => {
+    const paths = packedPaths();
     expect(paths.length).toBeGreaterThan(0);
     expect(paths.filter((path) => path.startsWith("packages/"))).toEqual([]);
     expect(paths.filter((path) => /framework-(superpowers|ecc)/.test(path))).toEqual([]);
+    expect(paths.filter((path) => ABSENT_ECC_IMPLEMENTATION_PATHS.includes(path))).toEqual([]);
   }, 60_000);
+
+  it("lists the ECC implementation paths absent from Core's source tree", () => {
+    expect(ABSENT_ECC_IMPLEMENTATION_PATHS.filter((path) => existsSync(join(repo, path)))).toEqual(
+      [],
+    );
+  });
+
+  it.skipIf(!existsSync(join(dist, "cli.js")))(
+    "bundles no ECC implementation function into Core's built dist",
+    () => {
+      const bundled = readdirSync(dist)
+        .filter((name) => name.endsWith(".js"))
+        .map((name) => readFileSync(join(dist, name), "utf8"))
+        .join("\n");
+      expect(ECC_IMPLEMENTATION_NAMES.filter((name) => bundled.includes(name))).toEqual([]);
+    },
+  );
 
   it("declares both framework plugins as optional peers, never dependencies", () => {
     for (const name of ["@aihq/framework-ecc", "@aihq/framework-superpowers"]) {

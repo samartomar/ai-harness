@@ -40,7 +40,7 @@ const sha256 = (path: string) =>
     .digest("hex");
 
 const GOVERNANCE_INPUT = "src/org-policy/governance-input-v1.ts";
-const DESCRIPTOR_RESOLVER = "src/ecc/runtime-descriptor-resolver.ts";
+const DESCRIPTOR_RESOLVER = "packages/framework-ecc/src/ecc/runtime-descriptor-resolver.ts";
 
 /** Each cited source line and the text it must still contain. */
 const PINS: ReadonlyArray<readonly [file: string, line: number, text: string]> = [
@@ -98,12 +98,12 @@ const PINS: ReadonlyArray<readonly [file: string, line: number, text: string]> =
   ["src/framework-host/index.ts", 17, "export const FRAMEWORK_HOST_API_VERSION = 1;"],
   [
     "src/framework-plugin/contract-v1.ts",
-    23,
+    40,
     "export const FRAMEWORK_PLUGIN_CONTRACT_VERSION = 1;",
   ],
   [
     "src/framework-plugin/contract-v1.ts",
-    31,
+    48,
     "export const FRAMEWORK_PLUGIN_PACKAGE_NAMES = Object.freeze({",
   ],
   [
@@ -113,21 +113,21 @@ const PINS: ReadonlyArray<readonly [file: string, line: number, text: string]> =
   ],
   [
     "src/framework-plugin/load-framework-plugin.ts",
-    349,
+    351,
     "export async function loadFrameworkPluginV1(",
   ],
   [
     DESCRIPTOR_RESOLVER,
-    128,
+    127,
     "export const HISTORICAL_ECC_RUNTIME_DESCRIPTOR_RESOLUTION_ORDER_V1 = Object.freeze([",
   ],
   [
     DESCRIPTOR_RESOLVER,
-    147,
+    146,
     "export const ACCEPTED_CATALOG_ECC_RUNTIME_DESCRIPTORS_V1 = Object.freeze([",
   ],
-  [DESCRIPTOR_RESOLVER, 157, "export type HistoricalEccRuntimeDescriptorRefusalReasonV1 ="],
-  [DESCRIPTOR_RESOLVER, 455, "export async function resolveHistoricalEccRuntimeDescriptorV1("],
+  [DESCRIPTOR_RESOLVER, 156, "export type HistoricalEccRuntimeDescriptorRefusalReasonV1 ="],
+  [DESCRIPTOR_RESOLVER, 454, "export async function resolveHistoricalEccRuntimeDescriptorV1("],
   [GOVERNANCE_INPUT, 769, "export interface AssessmentMaterialResolverV1 {"],
   [GOVERNANCE_INPUT, 787, "export interface QualificationMaterialResolverV1 {"],
   [GOVERNANCE_INPUT, 809, "export interface QualificationAttestationVerifierV1 {"],
@@ -225,7 +225,7 @@ describe("CONTRACTS.md inventory", () => {
   it("cites only pinned lines, and every pinned line still holds its definition", () => {
     const pinned = new Set(PINS.map(([file, line]) => `${file}:${line}`));
     const cited = new Set(
-      [...contracts.matchAll(/`((?:src|tests)\/[^`\s]+\.ts):(\d+)`/gu)].map(
+      [...contracts.matchAll(/`((?:src|tests|packages)\/[^`\s]+\.ts):(\d+)`/gu)].map(
         (match) => `${match[1]}:${match[2]}`,
       ),
     );
