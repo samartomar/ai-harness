@@ -13,6 +13,11 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  evidence,
+  profile,
+  projectionRoots,
+} from "../../packages/framework-ecc/tests/profile/render-fixture.js";
 import { defineBaselineCatalog } from "../../src/baseline-evidence/catalog.js";
 import { hashComponentTree } from "../../src/baseline-evidence/hash.js";
 import { parseBaselineEvidenceLock } from "../../src/baseline-evidence/schema.js";
@@ -45,7 +50,6 @@ import { readOrgPolicy } from "../../src/org-policy/schema.js";
 import { policyProjectCommand } from "../../src/org-policy/validate.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { resolveTrustSource } from "../../src/trust/fetch.js";
-import { evidence, profile, projectionRoots } from "../ecc-profile/render-fixture.js";
 
 let targetRoot: string;
 let adminRoot: string;

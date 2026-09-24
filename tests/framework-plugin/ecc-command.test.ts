@@ -2,12 +2,15 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { ALL_COMMAND_SPEC_PATHS, ALL_COMMAND_SPECS } from "../../src/commands/index.js";
 import type {
   FrameworkCoreRuntimeV1,
   FrameworkOperationContextV1,
 } from "../../src/framework-plugin/contract-v1.js";
 import {
   command,
+  eccMcpAddCommand,
+  eccMcpRemoveCommand,
   executeEccCommand,
   executeEccMcpAddCommand,
 } from "../../src/framework-plugin/ecc-command.js";
@@ -70,6 +73,13 @@ describe("aih ecc — the Core command shell", () => {
     expect(command.name).toBe("ecc");
     expect(command.options?.map((option) => option.flags)).toContain("--profile <profile>");
     expect(() => command.plan(ctx())).toThrow(/runs through @aihq\/framework-ecc/);
+  });
+
+  it("publishes the nested mcp add/remove specs in the command registry metadata", () => {
+    expect(ALL_COMMAND_SPECS).toContain(eccMcpAddCommand);
+    expect(ALL_COMMAND_SPECS).toContain(eccMcpRemoveCommand);
+    expect(ALL_COMMAND_SPEC_PATHS).toContainEqual(["ecc", "mcp", "add"]);
+    expect(ALL_COMMAND_SPEC_PATHS).toContainEqual(["ecc", "mcp", "remove"]);
   });
 
   it("refuses by name and names the install command when the plugin is not installed", async () => {
