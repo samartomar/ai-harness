@@ -1,5 +1,15 @@
+import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { PassThrough, Readable } from "node:stream";
@@ -15,6 +25,7 @@ import {
   headroomMcpServer,
   headroomPlatform,
 } from "../../src/tools/headroom.js";
+import { runHeadroomMcpLauncher } from "../../src/tools/headroom-launcher.js";
 import { headroomReceiptFor, writeHeadroomReceipt } from "../../src/tools/headroom-receipt.js";
 
 const roots: string[] = [];
@@ -141,6 +152,43 @@ function launch(
   return { result, calls, output: () => output };
 }
 
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function until(condition: () => boolean, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() > deadline) return false;
+    await new Promise((settle) => setTimeout(settle, 50));
+  }
+  return true;
+}
+
+/** A uv stand-in whose server child, like uv + python, outlives stdin EOF. */
+function stubbornTree(scope: ReturnType<typeof fixture>) {
+  const pidFile = join(scope.layout.workspace, "grandchild.pid");
+  const grandchild = "setInterval(() => {}, 1000);";
+  const parent = [
+    'const { spawn } = require("node:child_process");',
+    'const { writeFileSync } = require("node:fs");',
+    `const child = spawn(process.execPath, ["-e", ${JSON.stringify(grandchild)}], { stdio: "ignore" });`,
+    `writeFileSync(${JSON.stringify(pidFile)}, String(child.pid));`,
+    "process.stdin.resume();",
+    "setInterval(() => {}, 1000);",
+  ].join("\n");
+  return {
+    pidFile,
+    spawnProcess: ((_command: string, _args: readonly string[], options: object) =>
+      spawn(process.execPath, ["-e", parent], { ...options, env: process.env })) as never,
+  };
+}
+
 describe("Headroom MCP launcher mode", () => {
   it.skipIf(supported === undefined)(
     "runs headroom mcp serve from the authenticated offline lock with the network switches off",
@@ -228,6 +276,30 @@ describe("Headroom MCP launcher mode", () => {
     args[args.indexOf("--state-root") + 1] = join(scope.layout.project, "headroom");
     await expect(launch(scope, args).result).rejects.toThrow(/outside and disjoint/u);
   });
+
+  it.skipIf(supported === undefined)(
+    "ends the whole server tree when its client closes stdin",
+    async () => {
+      const scope = fixture();
+      const tree = stubbornTree(scope);
+      const stdin = new PassThrough();
+      const result = runHeadroomMcpLauncher(scope.server.args.slice(2), {
+        stdin,
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
+        env: { ...scope.env, SystemRoot: process.env.SystemRoot },
+        spawnProcess: tree.spawnProcess,
+        exitGraceMs: 200,
+      });
+      expect(await until(() => existsSync(tree.pidFile), 10_000)).toBe(true);
+      const grandchild = Number(readFileSync(tree.pidFile, "utf8"));
+      expect(alive(grandchild)).toBe(true);
+      stdin.end();
+      await expect(result).resolves.toEqual(expect.any(Number));
+      expect(await until(() => !alive(grandchild), 5_000)).toBe(true);
+    },
+    20_000,
+  );
 
   it("keeps the generated launcher on the dependency lock it authenticates", () => {
     const scope = fixture();

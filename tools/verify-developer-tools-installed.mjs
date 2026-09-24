@@ -186,6 +186,46 @@ function sleep(milliseconds) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
 }
 
+/** Force-end a session's process tree (the launcher and everything it started). */
+function killTree(child) {
+  if (child.pid === undefined) return "no-pid";
+  if (process.platform === "win32") {
+    const result = spawnSync(join(process.env.SystemRoot, "System32", "taskkill.exe"), ["/PID", String(child.pid), "/T", "/F"], {
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    return `taskkill exit ${result.status}`;
+  }
+  try {
+    process.kill(-child.pid, "SIGKILL");
+    return "SIGKILL process group";
+  } catch (error) {
+    return `SIGKILL process group: ${error.code}`;
+  }
+}
+
+/**
+ * Close a session the way a client does (stdin EOF), await the launcher's own
+ * exit, and only then force-end the tree; the report says which happened.
+ */
+async function closeSession(child) {
+  const started = Date.now();
+  const exited = () => child.exitCode !== null || child.signalCode !== null;
+  const exit = new Promise((settle) => {
+    if (exited()) settle();
+    else child.once("exit", () => settle());
+  });
+  const within = (ms) =>
+    Promise.race([exit.then(() => true), new Promise((settle) => setTimeout(() => settle(false), ms))]);
+  child.stdin.end();
+  if (await within(20_000)) {
+    return { clean: true, exitCode: child.exitCode, waitedMs: Date.now() - started };
+  }
+  const forced = killTree(child);
+  const exitedAfterKill = await within(10_000);
+  return { clean: false, forced, exitedAfterKill, waitedMs: Date.now() - started };
+}
+
 /** Launch one host entry exactly as a client would and exchange MCP messages. */
 function mcpSession(label, server, calls, cwd) {
   return new Promise((done) => {
@@ -196,6 +236,7 @@ function mcpSession(label, server, calls, cwd) {
         cwd,
         env,
         stdio: ["pipe", "pipe", "pipe"],
+        detached: process.platform !== "win32",
         windowsHide: true,
       });
     } catch (error) {
@@ -234,11 +275,15 @@ function mcpSession(label, server, calls, cwd) {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      child.stdin.end();
-      setTimeout(() => {
-        if (child.exitCode === null) child.kill();
-      }, 10_000).unref();
-      done({ label, durationMs: Date.now() - started, stderrTail: redact(stderr.slice(-1500)), ...result });
+      closeSession(child).then((shutdown) =>
+        done({
+          label,
+          durationMs: Date.now() - started,
+          shutdown,
+          stderrTail: redact(stderr.slice(-1500)),
+          ...result,
+        }),
+      );
     };
     timer = setTimeout(() => finish({ ok: false, failure: "session timed out after 600s" }), 600_000);
     child.once("error", (error) => finish({ ok: false, failure: redact(error.message) }));
@@ -766,6 +811,15 @@ async function main() {
     userHomeHeadroomDirectory: existsSync(join(home, ".headroom")),
   });
   evidence.processesUsingTempAfterSessions = processesUsingTemp();
+  check(
+    "mcp-sessions-ended-on-stdin-eof",
+    [crg, cbm, hdr].every((session) => session.shutdown?.clean === true) &&
+      evidence.processesUsingTempAfterSessions?.length === 0,
+    {
+      shutdown: Object.fromEntries([crg, cbm, hdr].map((session) => [session.label, session.shutdown])),
+      processesUsingTempAfterSessions: evidence.processesUsingTempAfterSessions,
+    },
+  );
 
   // 6: deactivation removes only AIH-owned Headroom material.
   const deactivated = aih("deactivate-headroom", [

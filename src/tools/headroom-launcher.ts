@@ -11,6 +11,7 @@ import {
   isolatedHeadroomEnvironment,
 } from "./headroom.js";
 import { readHeadroomReceipt } from "./headroom-receipt.js";
+import { killProcessTreeSync, processTreeDetached, terminateProcessTree } from "./process-tree.js";
 
 const LAUNCHER_OPTIONS = [
   "--package",
@@ -19,6 +20,10 @@ const LAUNCHER_OPTIONS = [
   "--project",
   "--state-root",
 ] as const;
+
+/** How long the server may take to exit on its own after its client closes stdin. */
+const HEADROOM_EXIT_GRACE_MS = 3_000;
+const PARENT_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
 
 const REACTIVATE =
   "run `aih developer-tools <root> --activate-headroom --accept-headroom-egress --apply`";
@@ -29,6 +34,7 @@ export interface HeadroomLauncherIo {
   readonly stderr: NodeJS.WritableStream;
   readonly env: NodeJS.ProcessEnv;
   readonly spawnProcess?: typeof spawn;
+  readonly exitGraceMs?: number;
 }
 
 function contains(parent: string, child: string): boolean {
@@ -91,17 +97,61 @@ function activatedStateRoot(value: string, project: string): string {
   return destination;
 }
 
-function proxyTransparentMcp(
+/**
+ * Proxy stdio to `uv run … headroom mcp serve` and own its whole tree: uv
+ * waits on python, and neither is guaranteed to exit on stdin EOF, so when
+ * the client closes stdin (or this launcher is signalled or exits) the tree is
+ * ended rather than left holding the activated state open.
+ */
+async function proxyTransparentMcp(
   child: ChildProcessWithoutNullStreams,
   io: HeadroomLauncherIo,
 ): Promise<number> {
-  io.stdin.pipe(child.stdin);
-  child.stdout.on("data", (chunk) => io.stdout.write(chunk));
-  child.stderr.on("data", (chunk) => io.stderr.write(chunk));
-  return new Promise<number>((done, fail) => {
+  const exited = new Promise<number>((done, fail) => {
     child.once("error", fail);
     child.once("exit", (code, signal) => done(code ?? (signal === null ? 1 : 128)));
   });
+  let terminating: Promise<void> | undefined;
+  const terminate = () => {
+    terminating ??= terminateProcessTree(child, exited, io.env);
+    return terminating;
+  };
+  let grace: NodeJS.Timeout | undefined;
+  const onClientClosed = () => {
+    grace ??= setTimeout(() => {
+      terminate().catch(() => undefined);
+    }, io.exitGraceMs ?? HEADROOM_EXIT_GRACE_MS);
+  };
+  const onParentExit = () => {
+    if (child.pid !== undefined && child.exitCode === null && child.signalCode === null) {
+      killProcessTreeSync(child.pid, io.env);
+    }
+  };
+  const onParentSignal = (signal: NodeJS.Signals) => {
+    onParentExit();
+    process.exit(128 + (signal === "SIGINT" ? 2 : signal === "SIGHUP" ? 1 : 15));
+  };
+  process.once("exit", onParentExit);
+  for (const signal of PARENT_SIGNALS) process.once(signal, onParentSignal);
+  io.stdin.once("end", onClientClosed);
+  io.stdin.once("close", onClientClosed);
+  io.stdin.pipe(child.stdin);
+  // A write racing the server's exit is expected; the exit code reports the outcome.
+  child.stdin.on("error", () => undefined);
+  child.stdout.on("data", (chunk) => io.stdout.write(chunk));
+  child.stderr.on("data", (chunk) => io.stderr.write(chunk));
+  try {
+    const code = await exited;
+    if (terminating !== undefined) await terminating;
+    else if (processTreeDetached()) await terminate();
+    return code;
+  } finally {
+    if (grace !== undefined) clearTimeout(grace);
+    process.off("exit", onParentExit);
+    for (const signal of PARENT_SIGNALS) process.off(signal, onParentSignal);
+    io.stdin.off("end", onClientClosed);
+    io.stdin.off("close", onClientClosed);
+  }
 }
 
 /**
@@ -178,6 +228,7 @@ export async function runHeadroomMcpLauncher(
       cwd: workspace,
       stdio: ["pipe", "pipe", "pipe"],
       env: isolatedHeadroomEnvironment(io.env, layout, "runtime"),
+      detached: processTreeDetached(),
       windowsHide: true,
     },
   ) as ChildProcessWithoutNullStreams;
