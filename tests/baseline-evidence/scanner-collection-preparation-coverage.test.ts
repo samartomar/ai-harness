@@ -102,6 +102,86 @@ describe("collection preparation with definition-route coverage", () => {
     expect((refusal as Error).message).toMatch(/nests deeper than 32 levels$/);
   });
 
+  describe("reads caller input through descriptors, never invoking a getter", () => {
+    let invoked: string[];
+    beforeEach(() => {
+      invoked = [];
+    });
+    const trap = <T extends object>(target: T, key: string, enumerable = true): T =>
+      Object.defineProperty(target, key, {
+        enumerable,
+        configurable: true,
+        get() {
+          invoked.push(key);
+          throw new Error(`getter ${key} invoked`);
+        },
+      });
+    const refusal = async (
+      overrides: Record<string, unknown>,
+      trapped?: string,
+    ): Promise<unknown> => {
+      const input = {
+        sourceRoot: root,
+        catalogId: "mattpocock",
+        batches: [batch],
+        now: "2026-09-24T00:00:00.000Z",
+        run: head,
+        ...overrides,
+      };
+      try {
+        await prepareScannerCollectionPublicationsV1(
+          (trapped === undefined ? input : trap(input, trapped)) as never,
+        );
+      } catch (error) {
+        return error;
+      }
+      return undefined;
+    };
+    const expectTyped = (error: unknown, reason: RegExp) => {
+      expect(invoked).toEqual([]);
+      expect(error).toBeInstanceOf(TypeError);
+      expect((error as Error).message).toMatch(reason);
+    };
+
+    it("refuses a throwing index getter on batches typed", async () => {
+      expectTyped(
+        await refusal({ batches: trap([batch], "0") }),
+        /^Scanner collection preparation: batches field 0 must be an enumerable data property$/,
+      );
+    });
+
+    it("refuses a throwing coverage getter typed, on the input and on the supplied coverage", async () => {
+      expectTyped(
+        await refusal({ coverage: coverage() }, "coverage"),
+        /^Scanner collection preparation: input$/,
+      );
+      expectTyped(
+        await refusal({ coverage: trap(coverage(), "coverage") }),
+        /^Scanner collection preparation: coverage field coverage must be an enumerable data property$/,
+      );
+      expectTyped(
+        await refusal({ coverage: { ...coverage(), catalog: trap({}, "id", false) } }),
+        /^Scanner collection preparation: coverage field id must be an enumerable data property$/,
+      );
+    });
+
+    it("uses only the validated coverage: a Proxy's get trap never runs", async () => {
+      const supplied = coverage();
+      const proxy = new Proxy(supplied, {
+        get() {
+          invoked.push("get");
+          throw new Error("get trap invoked");
+        },
+      });
+      // One component means one Core request, so two batches fail only the batch count,
+      // after the copied coverage drove the requests.
+      expectTyped(
+        await refusal({ coverage: proxy, batches: [batch, batch] }),
+        /^Scanner collection preparation: publication batch count$/,
+      );
+    });
+  });
+
   it("refuses coverage prepared for another catalog", async () => {
     await expect(
       prepareScannerCollectionPublicationsV1({

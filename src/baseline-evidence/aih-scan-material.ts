@@ -23,7 +23,9 @@ import {
   assertSafeRelativePosixPathV1,
   canonicalStrictJsonBytesV1,
   canonicalStrictJsonSha256V1,
+  cloneJsonValueStructureV1,
   parseStrictJsonObjectV1,
+  STRICT_JSON_MAX_DEPTH_V1,
 } from "../contract/strict-json-v1.js";
 import {
   assertAcquiredGithubSourceMaterialPathsV1,
@@ -659,7 +661,11 @@ function mcpDeclarations(
   );
 }
 
-function assertInput(input: MaterializeAihScanSubjectsV1Input): void {
+/**
+ * A snapshot of the caller's input read only through descriptors: the catalog and compilation are
+ * copied from what was validated before any field of them is read, so no getter ever runs.
+ */
+function assertInput(input: MaterializeAihScanSubjectsV1Input): MaterializeAihScanSubjectsV1Input {
   exactRecord(
     input,
     ["packageRoot", "outputParent", "coreRevision", "catalog", "compiled"],
@@ -676,6 +682,21 @@ function assertInput(input: MaterializeAihScanSubjectsV1Input): void {
   exactRecord(revision, ["pinnedSha"], ["pinnedSha"], "core revision");
   const pinnedSha = ownData(revision, "pinnedSha", "core revision");
   if (typeof pinnedSha !== "string" || !CORE_REVISION.test(pinnedSha)) fail("core revision");
+  const snapshot = (key: "catalog" | "compiled") =>
+    cloneJsonValueStructureV1(
+      ownData(input, key, "input"),
+      `AIH scan material: ${key}`,
+      STRICT_JSON_MAX_DEPTH_V1,
+    );
+  return {
+    packageRoot: ownData(input, "packageRoot", "input") as string,
+    ...(Object.hasOwn(input, "outputParent")
+      ? { outputParent: ownData(input, "outputParent", "input") as string }
+      : {}),
+    coreRevision: { pinnedSha },
+    catalog: snapshot("catalog") as PolicyAuthoringCatalog,
+    compiled: snapshot("compiled") as CompiledBuiltInCatalogV1,
+  };
 }
 
 /**
@@ -684,9 +705,9 @@ function assertInput(input: MaterializeAihScanSubjectsV1Input): void {
  * accepts neither scanned evidence nor caller-provided coverage.
  */
 export function materializeAihScanSubjectsV1(
-  input: MaterializeAihScanSubjectsV1Input,
+  supplied: MaterializeAihScanSubjectsV1Input,
 ): MaterializedAihScanSubjectsV1 {
-  assertInput(input);
+  const input = assertInput(supplied);
   const packageRoot = realDirectory(input.packageRoot, "package root");
   const outputParent = realDirectory(input.outputParent ?? tmpdir(), "output parent");
   if (outputParent === packageRoot || contained(packageRoot, outputParent))

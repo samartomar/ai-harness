@@ -274,6 +274,41 @@ export function assertJsonValueStructureV1(value: unknown, label: string, maxDep
   }
 }
 
+/**
+ * A copy of a caller-supplied value built only from what `jsonOwnEntriesV1` read, under the same
+ * checks and depth bound as `assertJsonValueStructureV1`: each object and array is read once,
+ * through its descriptors, so a getter is never invoked and later reads of the copy see exactly
+ * the validated data. Shared references stay shared; primitives are kept as they are.
+ */
+export function cloneJsonValueStructureV1<T>(value: T, label: string, maxDepth: number): T {
+  if (!isObject(value)) return value;
+  const read = new Map<object, { copy: object; entries: [string, unknown][] }>();
+  let level = new Set<object>([value]);
+  for (let depth = 1; level.size > 0; depth += 1) {
+    if (depth > maxDepth) throw nestedTooDeep(label, maxDepth);
+    const next = new Set<object>();
+    for (const item of level) {
+      let node = read.get(item);
+      if (node === undefined) {
+        const entries = jsonOwnEntriesV1(item, label);
+        node = { copy: Array.isArray(item) ? [] : {}, entries };
+        read.set(item, node);
+      }
+      for (const [, child] of node.entries) if (isObject(child)) next.add(child);
+    }
+    level = next;
+  }
+  for (const { copy, entries } of read.values())
+    for (const [key, child] of entries)
+      Object.defineProperty(copy, key, {
+        value: isObject(child) ? read.get(child)?.copy : child,
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
+  return read.get(value)?.copy as T;
+}
+
 /** Freezes a value and everything it holds, at any depth: iteratively, never recursing. */
 export function deepFreezeStrictJsonV1<T>(value: T, seen = new WeakSet<object>()): T {
   const pending: unknown[] = [value];
