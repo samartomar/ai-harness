@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { spawnSync } from "node:child_process";
+import { type SpawnSyncReturns, spawnSync } from "node:child_process";
 import {
   existsSync,
   linkSync,
@@ -18,6 +18,7 @@ import { inflateRawSync } from "node:zlib";
 import { parse } from "smol-toml";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  ChromeDevtoolsOptOutRefusalRecord,
   codexAgentsBlockRemovalAction,
   codexChromeDevtoolsOptOutActions,
   codexChromeDevtoolsOptOutRefusals,
@@ -58,6 +59,7 @@ import type {
   WriteAction,
 } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
+import type { Check } from "../../src/internals/verify.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import type { RepoStack } from "../../src/profile/scan.js";
 
@@ -2220,7 +2222,11 @@ describe("Codex managed destination safety", () => {
     function runDirectApply(
       label: string,
       config: string,
-      options: { projectAfterPlan?: string; mergeHelper?: string } = {},
+      options: {
+        projectAfterPlan?: string;
+        mergeHelper?: string;
+        afterChild?: () => void;
+      } = {},
     ) {
       const home = join(tmp, `${label}-home`);
       const repo = join(tmp, "ecc");
@@ -2261,12 +2267,32 @@ describe("Codex managed destination safety", () => {
         mkdirSync(join(tmp, ".codex"), { recursive: true });
         writeFileSync(projectConfigPath(), options.projectAfterPlan, "utf8");
       }
-      const result = spawnSync(process.execPath, action.argv.slice(1), {
-        cwd: repo,
-        encoding: "utf8",
-      });
+      const record = action.sidecar;
+      if (!(record instanceof ChromeDevtoolsOptOutRefusalRecord))
+        throw new Error("missing Codex refusal record");
+      const failureCheck = action.failureCheck;
+      if (typeof failureCheck !== "function") throw new Error("missing Codex merge failure check");
+      // What the executor does around the exec: open the record, run, check, close.
+      record.open();
+      let result: SpawnSyncReturns<string>;
+      let check: Check | undefined;
+      try {
+        result = spawnSync(process.execPath, action.argv.slice(1), {
+          cwd: repo,
+          encoding: "utf8",
+        });
+        options.afterChild?.();
+        check =
+          result.status === 0
+            ? undefined
+            : failureCheck({ code: result.status, stdout: result.stdout, stderr: result.stderr });
+      } finally {
+        record.close();
+      }
       return {
         result,
+        check,
+        record,
         action,
         ctx,
         configPath,
@@ -2277,14 +2303,9 @@ describe("Codex managed destination safety", () => {
       };
     }
 
-    const failureCheckOf = (run: ReturnType<typeof runDirectApply>) => {
-      const check = run.action.failureCheck;
-      if (typeof check !== "function") throw new Error("missing Codex merge failure check");
-      return check({
-        code: run.result.status,
-        stdout: run.result.stdout,
-        stderr: run.result.stderr,
-      });
+    const failureCheckOf = (run: ReturnType<typeof runDirectApply>): Check => {
+      if (run.check === undefined) throw new Error("the Codex merge step did not fail");
+      return run.check;
     };
     const planTimeCheck = async (ctx: PlanContext, planned: string[]) => {
       const probeAction = codexChromeDevtoolsOptOutActions(ctx, planned).find(
@@ -2333,6 +2354,177 @@ describe("Codex managed destination safety", () => {
 
       expect(run.result.status).not.toBe(0);
       expect(failureCheckOf(run).code).toBeUndefined();
+    });
+
+    it("removes the refusal record after the step", () => {
+      const run = runDirectApply("opt-out-record-removed", "", {
+        projectAfterPlan: unsafeProject,
+      });
+
+      expect(run.result.status).toBe(78);
+      expect(failureCheckOf(run).code).toBe("mcp.telemetry-opt-out-missing");
+      expect(existsSync(run.record.path)).toBe(false);
+    });
+
+    it.each([
+      ["repaired", (path: string) => writeFileSync(path, compliantProject, "utf8")],
+      ["deleted", (path: string) => rmSync(path, { force: true })],
+      [
+        "replaced by another entry",
+        (path: string) =>
+          writeFileSync(
+            path,
+            '[mcp_servers.other]\ncommand = "npx"\nargs = ["chrome-devtools-mcp"]\n',
+            "utf8",
+          ),
+      ],
+    ])(
+      "reports what the step recorded when the project config is %s after it refused",
+      async (_label, change) => {
+        const run = runDirectApply(`opt-out-changed-${_label.replace(/\W+/g, "-")}`, "", {
+          projectAfterPlan: `${unsafeProject}[mcp_servers.browser.env]\n${NO_UPDATES} = "1"\n`,
+          afterChild: () => change(projectConfigPath()),
+        });
+
+        expect(run.result.status).toBe(78);
+        const check = failureCheckOf(run);
+        expect(check.code).toBe("mcp.telemetry-opt-out-missing");
+        expect(check.detail).toContain(
+          `project Codex config entry "browser" (${projectConfigPath()}) launches chrome-devtools-mcp without ${NO_STATS}="1".`,
+        );
+        expect(check.detail).not.toContain(`${NO_UPDATES}="1"`);
+        expect(check.detail).not.toContain('"other"');
+      },
+    );
+
+    describe("accepts the typed check only with this step's record and exit 78", () => {
+      function recordedStep() {
+        const base = makeCtx({ cli: "codex" });
+        const home = join(tmp, "record-home");
+        const ctx = { ...base, env: { ...base.env, HOME: home, USERPROFILE: home } };
+        const repo = join(tmp, "ecc");
+        const action = codexEccActions(
+          ctx,
+          { dir: repo, posix: repo.replace(/\\/g, "/"), explicit: true, hasCache: false },
+          "minimal",
+        ).find(
+          (candidate): candidate is ExecAction =>
+            candidate.kind === "exec" && candidate.describe.startsWith("Install ECC for Codex"),
+        );
+        const record = action?.sidecar;
+        const failureCheck = action?.failureCheck;
+        if (
+          !(record instanceof ChromeDevtoolsOptOutRefusalRecord) ||
+          typeof failureCheck !== "function"
+        )
+          throw new Error("missing Codex refusal record");
+        const userConfig = join(home, ".codex", "config.toml");
+        const refusal = {
+          scope: "user",
+          configPath: userConfig,
+          entry: "browser",
+          missing: [NO_STATS],
+        };
+        const valid = {
+          format: "aih-codex-opt-out-refusal",
+          version: 1,
+          nonce: record.nonce,
+          code: "mcp.telemetry-opt-out-missing",
+          refusals: [refusal],
+        };
+        const checkWith = (contents: string | undefined, code: number) => {
+          record.open();
+          try {
+            if (contents !== undefined) writeFileSync(record.path, contents, "utf8");
+            return failureCheck({ code, stdout: "", stderr: "" });
+          } finally {
+            record.close();
+          }
+        };
+        return { record, valid, refusal, userConfig, checkWith };
+      }
+
+      it("types a valid record with exit 78 exactly as recorded", () => {
+        const { valid, userConfig, checkWith, record } = recordedStep();
+
+        const check = checkWith(JSON.stringify(valid), 78);
+
+        expect(check.code).toBe("mcp.telemetry-opt-out-missing");
+        expect(check.detail).toContain(
+          `user Codex config entry "browser" (${userConfig}) launches chrome-devtools-mcp without ${NO_STATS}="1".`,
+        );
+        expect(existsSync(record.path)).toBe(false);
+      });
+
+      it.each<[string, (step: ReturnType<typeof recordedStep>) => [string | undefined, number]]>([
+        ["no record", () => [undefined, 78]],
+        ["an empty record", () => ["", 78]],
+        ["a malformed record", () => ["{not json", 78]],
+        [
+          "a record from another nonce",
+          ({ valid }) => [JSON.stringify({ ...valid, nonce: "f".repeat(32) }), 78],
+        ],
+        [
+          "a record with another format",
+          ({ valid }) => [JSON.stringify({ ...valid, format: "other" }), 78],
+        ],
+        [
+          "a record with another code",
+          ({ valid }) => [JSON.stringify({ ...valid, code: "mcp.config-invalid" }), 78],
+        ],
+        [
+          "a record with an extra field",
+          ({ valid }) => [JSON.stringify({ ...valid, extra: true }), 78],
+        ],
+        [
+          "a record with no refusals",
+          ({ valid }) => [JSON.stringify({ ...valid, refusals: [] }), 78],
+        ],
+        [
+          "a record naming another config path",
+          ({ valid, refusal }) => [
+            JSON.stringify({
+              ...valid,
+              refusals: [{ ...refusal, configPath: join(tmp, "elsewhere.toml") }],
+            }),
+            78,
+          ],
+        ],
+        [
+          "a record naming an unknown variable",
+          ({ valid, refusal }) => [
+            JSON.stringify({ ...valid, refusals: [{ ...refusal, missing: ["PATH"] }] }),
+            78,
+          ],
+        ],
+        [
+          "an oversized record",
+          ({ valid, refusal }) => [
+            JSON.stringify({ ...valid, refusals: [{ ...refusal, entry: "x".repeat(70 * 1024) }] }),
+            78,
+          ],
+        ],
+        ["a valid record without exit 78", ({ valid }) => [JSON.stringify(valid), 1]],
+      ])("keeps %s untyped", (_label, arrange) => {
+        const step = recordedStep();
+        const [contents, code] = arrange(step);
+
+        const check = step.checkWith(contents, code);
+
+        expect(check.code).toBeUndefined();
+        expect(check.detail).toContain(`exit ${code}`);
+        expect(existsSync(step.record.path)).toBe(false);
+      });
+
+      it("refuses to run over an existing record path", () => {
+        const { record } = recordedStep();
+        writeFileSync(record.path, "planted", "utf8");
+        try {
+          expect(() => record.open()).toThrow(/refusal record/);
+        } finally {
+          rmSync(record.path, { force: true });
+        }
+      });
     });
 
     describe("gives the same verdict at plan and apply time for every TOML spelling", () => {

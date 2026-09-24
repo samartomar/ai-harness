@@ -1,6 +1,7 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
+import { closeSync, fstatSync, lstatSync, openSync, readSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse as parseToml } from "smol-toml";
 import { AihError } from "../errors.js";
@@ -9,6 +10,7 @@ import { stripManagedBlock } from "../internals/markers.js";
 import {
   type Action,
   doc,
+  type ExecSidecar,
   exec,
   type PlanContext,
   probe,
@@ -1105,12 +1107,12 @@ export function codexTomlParserPath(): string {
 
 /** Exit status of the Codex merge script's apply-time opt-out refusal (sysexits EX_CONFIG). */
 export const CHROME_DEVTOOLS_OPT_OUT_REFUSAL_EXIT = 78;
-/** Prefix of the one stderr line that carries the apply-time refusals as JSON. */
-export const CHROME_DEVTOOLS_OPT_OUT_REFUSAL_MARKER = "aih-refusal mcp.telemetry-opt-out-missing ";
+/** Format of the refusal record the Codex merge script writes for aih to read back. */
+export const CHROME_DEVTOOLS_OPT_OUT_REFUSAL_RECORD_FORMAT = "aih-codex-opt-out-refusal";
+/** Upper bound on that record; the script writes none rather than a larger one. */
+export const CHROME_DEVTOOLS_OPT_OUT_REFUSAL_RECORD_MAX_BYTES = 64 * 1024;
 
 function chromeDevtoolsOptOutSummary(refusals: readonly ChromeDevtoolsOptOutRefusal[]): string {
-  if (refusals.length === 0)
-    return `the Codex config the install was about to write launches chrome-devtools-mcp without ${describeMissingOptOuts(CHROME_DEVTOOLS_MCP_OPT_OUTS)} (rerun the plan to name the entry)`;
   return refusals
     .map(
       (refusal) =>
@@ -1159,36 +1161,101 @@ function isOptOutRefusal(value: unknown): value is ChromeDevtoolsOptOutRefusal {
   );
 }
 
-/** Reads the merge script's refusal line; anything malformed is not a refusal. */
-function refusalsFromChildOutput(stderr: string): ChromeDevtoolsOptOutRefusal[] | undefined {
-  const line = stderr
-    .split(/\r?\n/)
-    .reverse()
-    .find((candidate) => candidate.startsWith(CHROME_DEVTOOLS_OPT_OUT_REFUSAL_MARKER));
-  if (line === undefined) return undefined;
-  let value: unknown;
-  try {
-    value = JSON.parse(line.slice(CHROME_DEVTOOLS_OPT_OUT_REFUSAL_MARKER.length));
-  } catch {
-    return undefined;
-  }
-  return Array.isArray(value) && value.length > 0 && value.every(isOptOutRefusal)
-    ? value
-    : undefined;
-}
+const REFUSAL_RECORD_KEYS = ["code", "format", "nonce", "refusals", "version"];
 
 /**
- * Maps the merge script's apply-time refusal back to the plan-time check. The
- * refusal line is used when the child output reaches aih; when the executor
- * scrubs it (bounded-stdin drivers), the same plan-time evaluation re-reads
- * the live configs. Any other failure is not this refusal.
+ * The apply-time refusal evidence of one Codex merge step. The executor scrubs a
+ * bounded-stdin child's output (the verified driver), so the refusal travels as a
+ * record file, not a stderr line: aih creates the file exclusively just before the
+ * step runs, the merge script writes one bounded record carrying this step's nonce,
+ * and aih reads it back, then removes it. Only exit 78 with a valid record for this
+ * step is the typed refusal; aih never reconstructs it from the live configs.
  */
-export function chromeDevtoolsOptOutFailureCheck(
-  result: RunResult,
-  recompute: () => ChromeDevtoolsOptOutRefusal[],
-): Check | undefined {
-  if (result.code !== CHROME_DEVTOOLS_OPT_OUT_REFUSAL_EXIT) return undefined;
-  return chromeDevtoolsOptOutCheck(refusalsFromChildOutput(result.stderr) ?? recompute());
+export class ChromeDevtoolsOptOutRefusalRecord implements ExecSidecar {
+  readonly path = join(
+    tmpdir(),
+    `aih-codex-opt-out-refusal-${randomBytes(16).toString("hex")}.json`,
+  );
+  readonly nonce = randomBytes(16).toString("hex");
+
+  constructor(
+    private readonly configPaths: Readonly<Record<ChromeDevtoolsOptOutRefusal["scope"], string>>,
+  ) {}
+
+  open(): void {
+    try {
+      closeSync(openSync(this.path, "wx", 0o600));
+    } catch (error) {
+      throw new AihError(
+        `refusing to run the ECC Codex install: cannot create its refusal record ${this.path}: ${(error as Error).message}`,
+        "AIH_TRUST",
+      );
+    }
+  }
+
+  close(): void {
+    rmSync(this.path, { force: true });
+  }
+
+  /** The typed check for this step's refusal; undefined for any other failure. */
+  check(result: RunResult): Check | undefined {
+    if (result.code !== CHROME_DEVTOOLS_OPT_OUT_REFUSAL_EXIT) return undefined;
+    const refusals = this.refusals();
+    return refusals === undefined ? undefined : chromeDevtoolsOptOutCheck(refusals);
+  }
+
+  private refusals(): ChromeDevtoolsOptOutRefusal[] | undefined {
+    const bytes = this.read();
+    if (bytes === undefined) return undefined;
+    let record: unknown;
+    try {
+      record = JSON.parse(bytes.toString("utf8"));
+    } catch {
+      return undefined;
+    }
+    if (record === null || typeof record !== "object" || Array.isArray(record)) return undefined;
+    const fields = record as Record<string, unknown>;
+    const refusals = fields.refusals;
+    const valid =
+      Object.keys(fields).sort().join("\n") === REFUSAL_RECORD_KEYS.join("\n") &&
+      fields.format === CHROME_DEVTOOLS_OPT_OUT_REFUSAL_RECORD_FORMAT &&
+      fields.version === 1 &&
+      fields.nonce === this.nonce &&
+      fields.code === "mcp.telemetry-opt-out-missing" &&
+      Array.isArray(refusals) &&
+      refusals.length > 0 &&
+      refusals.every(
+        (refusal) =>
+          isOptOutRefusal(refusal) && refusal.configPath === this.configPaths[refusal.scope],
+      );
+    return valid ? (refusals as ChromeDevtoolsOptOutRefusal[]) : undefined;
+  }
+
+  /** The record's bytes while it is still a regular file within the cap. */
+  private read(): Buffer | undefined {
+    try {
+      if (!lstatSync(this.path).isFile()) return undefined;
+    } catch {
+      return undefined;
+    }
+    const descriptor = openSync(this.path, "r");
+    try {
+      const stats = fstatSync(descriptor);
+      if (!stats.isFile() || stats.size > CHROME_DEVTOOLS_OPT_OUT_REFUSAL_RECORD_MAX_BYTES)
+        return undefined;
+      const buffer = Buffer.alloc(CHROME_DEVTOOLS_OPT_OUT_REFUSAL_RECORD_MAX_BYTES + 1);
+      let length = 0;
+      for (;;) {
+        const read = readSync(descriptor, buffer, length, buffer.length - length, null);
+        if (read === 0) break;
+        length += read;
+        if (length > CHROME_DEVTOOLS_OPT_OUT_REFUSAL_RECORD_MAX_BYTES) return undefined;
+      }
+      return buffer.subarray(0, length);
+    } finally {
+      closeSync(descriptor);
+    }
+  }
 }
 
 export function codexChromeDevtoolsOptOutActions(

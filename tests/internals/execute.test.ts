@@ -1499,6 +1499,49 @@ describe("executePlan", () => {
     expect(String(thrown)).not.toContain(payload);
   });
 
+  it("opens an exec sidecar just before the child and closes it after the failure check", async () => {
+    const events: string[] = [];
+    const sidecar = { open: () => events.push("open"), close: () => events.push("close") };
+    const action = exec("report through a sidecar", ["node", "child.mjs"], {
+      sidecar,
+      failureCheck: () => {
+        events.push("failureCheck");
+        return { name: "sidecar child", verdict: "fail" };
+      },
+    });
+    const run: PlanContext["run"] = async () => {
+      events.push("run");
+      return { code: 78, stdout: "", stderr: "" };
+    };
+
+    await executePlan(plan("t", action), ctx({ apply: false, run }));
+    expect(events).toEqual([]);
+
+    await executePlan(plan("t", action), ctx({ apply: true, run }));
+    expect(events).toEqual(["open", "run", "failureCheck", "close"]);
+
+    events.length = 0;
+    const throwing: PlanContext["run"] = async () => {
+      events.push("run");
+      throw new Error("runner exploded");
+    };
+    await expect(
+      executePlan(plan("t", action), ctx({ apply: true, run: throwing })),
+    ).rejects.toThrow("runner exploded");
+    expect(events).toEqual(["open", "run", "close"]);
+
+    events.length = 0;
+    const skipped = exec("skipped after a failure", ["node", "later.mjs"], {
+      sidecar,
+      requiresPriorExecSuccess: true,
+    });
+    await executePlan(
+      plan("t", exec("fails first", ["node", "first.mjs"]), skipped),
+      ctx({ apply: true, run: fakeRunner(() => ({ code: 1 })) }),
+    );
+    expect(events).toEqual([]);
+  });
+
   it("surfaces the child diagnostic when an exec action fails", async () => {
     const run = fakeRunner(() => ({
       code: 1,

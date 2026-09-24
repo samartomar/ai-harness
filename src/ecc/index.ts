@@ -26,12 +26,12 @@ import {
   assertChromeDevtoolsOptOuts,
   CHROME_DEVTOOLS_OPT_OUT_PREDICATE_SOURCE,
   CHROME_DEVTOOLS_OPT_OUT_REFUSAL_EXIT,
-  CHROME_DEVTOOLS_OPT_OUT_REFUSAL_MARKER,
+  CHROME_DEVTOOLS_OPT_OUT_REFUSAL_RECORD_FORMAT,
+  CHROME_DEVTOOLS_OPT_OUT_REFUSAL_RECORD_MAX_BYTES,
+  ChromeDevtoolsOptOutRefusalRecord,
   CODEX_AGENTS_BLOCK_MARKER,
   type CodexScopedMcpServers,
-  chromeDevtoolsOptOutFailureCheck,
   codexChromeDevtoolsOptOutActions,
-  codexChromeDevtoolsOptOutRefusals,
   codexHomeDir,
   codexInstallStateContents,
   codexInstallStatePath,
@@ -483,8 +483,8 @@ const CODEX_INSTALL_MERGE_SCRIPT_SOURCE = [
   'const fs = require("fs");',
   'const path = require("path");',
   ...ECC_UPSTREAM_HOOK_CONSENT_ADAPTER_SOURCE.trim().split("\n"),
-  "const [repoRoot, profileId, homeDir, mergeCodexConfig, configPath, sourceAgents, targetAgents, statePath, projectConfigPath, tomlParserPath, governanceFlag, specB64, mcpB64, stateB64] = process.argv.slice(1);",
-  'if (!repoRoot || !profileId || !homeDir || !mergeCodexConfig || !configPath || !sourceAgents || !targetAgents || !statePath || !projectConfigPath || !tomlParserPath || !stateB64) { console.error("usage: codex-install-merge <repo-root> <profile> <home-dir> <merge-config> <config> <source-agents> <target-agents> <state-path> <project-config> <toml-parser> <state-b64>"); process.exit(1); }',
+  "const [repoRoot, profileId, homeDir, mergeCodexConfig, configPath, sourceAgents, targetAgents, statePath, projectConfigPath, tomlParserPath, refusalRecordPath, refusalNonce, governanceFlag, specB64, mcpB64, stateB64] = process.argv.slice(1);",
+  'if (!repoRoot || !profileId || !homeDir || !mergeCodexConfig || !configPath || !sourceAgents || !targetAgents || !statePath || !projectConfigPath || !tomlParserPath || !refusalRecordPath || !/^[0-9a-f]{32}$/.test(refusalNonce || "") || !stateB64) { console.error("usage: codex-install-merge <repo-root> <profile> <home-dir> <merge-config> <config> <source-agents> <target-agents> <state-path> <project-config> <toml-parser> <refusal-record> <refusal-nonce> <state-b64>"); process.exit(1); }',
   // The same TOML parser and opt-out predicate the plan used (see ./codex.ts).
   "const parseToml = require(path.resolve(tomlParserPath)).parse;",
   'if (typeof parseToml !== "function") throw new Error("Codex merge TOML parser is unavailable: " + tomlParserPath);',
@@ -921,12 +921,21 @@ function legacyDescendantHeader(line) {
   return body !== undefined && /^[ \t]*(?:mcp_servers|"mcp_servers"|'mcp_servers')[ \t]*\.[ \t]*(?:chrome-devtools|"chrome-devtools"|'chrome-devtools')[ \t]*\./.test(body);
 }`,
   String.raw`// Refuses with the typed refusal plan time emits: one readable line per entry,
-// then one marker line carrying the refusals as JSON, then the refusal exit status.
+// one bounded refusal record (with the nonce aih gave this step) in the empty file aih
+// created for it, then the refusal exit status. aih types the failure only from that record.
 function refuseChromeOptOuts(configs) {
   const refusals = chromeDevtoolsOptOutRefusals(configs, parseToml, () => false);
   if (refusals.length === 0) return;
   for (const refusal of refusals) process.stderr.write("refusing " + refusal.scope + " Codex MCP entry \"" + refusal.entry + "\" (" + refusal.configPath + "): it launches chrome-devtools-mcp without " + refusal.missing.map((name) => name + "=\"1\"").join(" and ") + "; aih never rewrites a user-owned entry: remove it so aih manages chrome-devtools, or add both variables to its env table\n");
-  process.stderr.write(${JSON.stringify(CHROME_DEVTOOLS_OPT_OUT_REFUSAL_MARKER)} + JSON.stringify(refusals) + "\n");
+  const record = JSON.stringify({ format: ${JSON.stringify(CHROME_DEVTOOLS_OPT_OUT_REFUSAL_RECORD_FORMAT)}, version: 1, nonce: refusalNonce, code: "mcp.telemetry-opt-out-missing", refusals });
+  try {
+    if (Buffer.byteLength(record, "utf8") > ${CHROME_DEVTOOLS_OPT_OUT_REFUSAL_RECORD_MAX_BYTES}) throw new Error("it exceeds its byte limit");
+    const stats = fs.lstatSync(refusalRecordPath);
+    if (stats.isSymbolicLink() || !stats.isFile() || stats.size !== 0) throw new Error("it is not the empty file aih created");
+    fs.writeFileSync(refusalRecordPath, record, { encoding: "utf8", flag: "r+" });
+  } catch (error) {
+    process.stderr.write("could not write the refusal record: " + (error && error.message) + "\n");
+  }
   process.exit(${CHROME_DEVTOOLS_OPT_OUT_REFUSAL_EXIT});
 }`,
   "function renderScopedSection(name, server) {",
@@ -1002,6 +1011,10 @@ export function codexEccActions(
   const mergeCodexConfig = join(repo.dir, "scripts", "codex", "merge-codex-config.js");
   const sourceAgents = join(repo.dir, ".codex", "AGENTS.md");
   const statePath = codexInstallStatePath(ctx);
+  const refusalRecord = new ChromeDevtoolsOptOutRefusalRecord({
+    user: codexConfig,
+    project: codexProjectConfigPath(ctx),
+  });
   const plannedMcpServers = materialization ? [] : Object.keys(effectiveScopedMcps);
   const stateB64 = Buffer.from(
     codexInstallStateContents(ctx, plannedMcpServers, governed),
@@ -1042,6 +1055,8 @@ export function codexEccActions(
         statePath,
         codexProjectConfigPath(ctx),
         codexTomlParserPath(),
+        refusalRecord.path,
+        refusalRecord.nonce,
         governed ? "1" : "0",
         materializationB64 ?? "",
         mcpB64 ?? "",
@@ -1049,10 +1064,9 @@ export function codexEccActions(
       ],
       {
         cwd: repo.dir,
+        sidecar: refusalRecord,
         failureCheck: (result) =>
-          chromeDevtoolsOptOutFailureCheck(result, () =>
-            codexChromeDevtoolsOptOutRefusals(ctx, Object.keys(effectiveScopedMcps)),
-          ) ?? {
+          refusalRecord.check(result) ?? {
             name: "ECC Codex install",
             verdict: "fail",
             detail: `ECC Codex install failed (exit ${result.code ?? "signal"})`,

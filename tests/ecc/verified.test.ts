@@ -25,6 +25,7 @@ import {
 } from "../../src/ecc/registration.js";
 import { verifiedEccInstallPlan } from "../../src/ecc/verified.js";
 import { registeredExecStdinPayload } from "../../src/internals/exec-stdin.js";
+import { executePlan } from "../../src/internals/execute.js";
 import type {
   Action,
   DigestAction,
@@ -32,6 +33,7 @@ import type {
   PlanContext,
   WriteAction,
 } from "../../src/internals/plan.js";
+import { plan } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 
@@ -1533,6 +1535,7 @@ describe("verifiedEccInstallPlan", () => {
   describe("apply-time Chrome DevTools MCP opt-out revalidation", () => {
     const unsafeLaunch =
       '[mcp_servers.browser]\ncommand = "npx"\nargs = ["-y", "chrome-devtools-mcp@1.10.1"]\n';
+    const compliantLaunch = `${unsafeLaunch}[mcp_servers.browser.env]\nCHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS = "1"\nCHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS = "1"\n`;
 
     function runVerifiedCodexStep(
       label: string,
@@ -1585,10 +1588,19 @@ describe("verifiedEccInstallPlan", () => {
       expect(run.aihState).toBe(false);
     });
 
-    it("reports the apply-time refusal as the typed plan-time check through the driver", async () => {
-      const home = join(root, "typed-home");
-      const sourceRoot = join(root, "typed-source");
+    /**
+     * Applies the verified driver through the real executor. The runner stands in for
+     * the driver program: it runs the Codex merge step itself (or fails an earlier
+     * step), and the executor scrubs its output as it does for any bounded-stdin child.
+     */
+    async function applyVerifiedDriver(
+      label: string,
+      options: { project?: string; earlierStepStatus?: number; afterChild?: () => void },
+    ) {
+      const home = join(root, `${label}-home`);
+      const sourceRoot = join(root, `${label}-source`);
       mkdirSync(join(home, ".codex"), { recursive: true });
+      writeFileSync(join(home, ".codex", "config.toml"), "# operator-owned\n", "utf8");
       prepareVerifiedCodexSource(sourceRoot);
       const context = { ...ctx(), env: { HOME: home, USERPROFILE: home } };
       const selected = selection();
@@ -1598,38 +1610,127 @@ describe("verifiedEccInstallPlan", () => {
         { clis: ["codex"], profile: "core", packs: [], selection: selected },
         authorizationsForSelection("codex", selected),
       );
-      const driver = built.actions.find(
-        (action): action is Extract<Action, { kind: "exec" }> =>
-          action.kind === "exec" &&
-          action.describe.startsWith("Install from the evidence-verified"),
+      const driver = execs(built.actions).find((action) =>
+        action.describe.startsWith("Install from the evidence-verified"),
       );
-      if (driver === undefined || typeof driver.failureCheck !== "function")
-        throw new Error("missing verified driver failure check");
-      mkdirSync(join(root, ".codex"), { recursive: true });
-      writeFileSync(join(root, ".codex", "config.toml"), unsafeLaunch, "utf8");
+      if (driver === undefined) throw new Error("missing verified driver");
+      if (options.project !== undefined) {
+        mkdirSync(join(root, ".codex"), { recursive: true });
+        writeFileSync(join(root, ".codex", "config.toml"), options.project, "utf8");
+      }
       const planTime = await Promise.all(
         codexChromeDevtoolsOptOutActions(context, [])
           .filter((action): action is Extract<Action, { kind: "probe" }> => action.kind === "probe")
           .map((action) => action.run(context)),
       );
+      let recordPath: string | undefined;
+      let recordExistedDuringRun = false;
+      const run: PlanContext["run"] = async (_argv, opts) => {
+        const steps = JSON.parse(opts?.input ?? "[]") as Array<{
+          argv: string[];
+          cwd: string;
+          env?: Record<string, string>;
+        }>;
+        const codexStep = steps.find((step) =>
+          codexInstallProgram(step).includes("codex-install-merge"),
+        );
+        if (codexStep === undefined) throw new Error("missing Codex merge step");
+        recordPath = codexStep.argv.find((arg) =>
+          /aih-codex-opt-out-refusal-[0-9a-f]{32}\.json$/.test(arg),
+        );
+        recordExistedDuringRun = recordPath !== undefined && existsSync(recordPath);
+        if (options.earlierStepStatus !== undefined)
+          return { code: options.earlierStepStatus, stdout: "", stderr: "npm ci failed" };
+        const result = spawnSync(codexStep.argv[0] ?? "", codexStep.argv.slice(1), {
+          cwd: codexStep.cwd,
+          env: { ...process.env, ...codexStep.env, HOME: home, USERPROFILE: home },
+          encoding: "utf8",
+        });
+        options.afterChild?.();
+        return { code: result.status, stdout: result.stdout, stderr: result.stderr };
+      };
+      const applied = await executePlan(plan("verified driver", driver), { ...context, run });
+      return {
+        applied,
+        planTime,
+        checks: applied.report?.checks ?? [],
+        recordPath,
+        recordExistedDuringRun,
+      };
+    }
 
-      // The executor scrubs bounded-stdin child output, so only the exit code survives.
-      const check = driver.failureCheck({
+    it("reports the step's recorded refusal through the scrubbing executor as the plan-time check", async () => {
+      const run = await applyVerifiedDriver("typed", { project: unsafeLaunch });
+
+      expect(run.applied.execs[0]).toMatchObject({
         code: 78,
-        stdout: "",
         stderr: "bounded-stdin child failed",
       });
-
-      expect(planTime).toHaveLength(1);
-      expect(check).toEqual(planTime[0]);
-      expect(check.code).toBe("mcp.telemetry-opt-out-missing");
-      expect(check.detail).toContain(
+      expect(run.planTime).toHaveLength(1);
+      const typed = run.checks.filter((check) => check.code === "mcp.telemetry-opt-out-missing");
+      expect(typed).toEqual(run.planTime);
+      expect(typed[0]?.detail).toContain(
         `project Codex config entry "browser" (${join(root, ".codex", "config.toml")})`,
       );
-      expect(
-        driver.failureCheck({ code: 1, stdout: "", stderr: "bounded-stdin child failed" }).code,
-      ).toBeUndefined();
+      expect(run.recordExistedDuringRun).toBe(true);
+      expect(run.recordPath !== undefined && existsSync(run.recordPath)).toBe(false);
     });
+
+    it("keeps another step's exit 78 untyped when the configs are clean", async () => {
+      const run = await applyVerifiedDriver("other-step", { earlierStepStatus: 78 });
+
+      expect(run.applied.execs[0]).toMatchObject({ code: 78 });
+      expect(run.checks.some((check) => check.code === "mcp.telemetry-opt-out-missing")).toBe(
+        false,
+      );
+      expect(run.checks).toContainEqual(
+        expect.objectContaining({
+          name: "verified ECC install",
+          detail: "verified ECC install step failed (exit 78)",
+        }),
+      );
+      expect(run.recordPath !== undefined && existsSync(run.recordPath)).toBe(false);
+    });
+
+    it("keeps another step's exit 78 untyped even when a live config would be refused", async () => {
+      const run = await applyVerifiedDriver("other-step-unsafe", {
+        project: unsafeLaunch,
+        earlierStepStatus: 78,
+      });
+
+      expect(run.planTime).toHaveLength(1);
+      expect(run.checks.some((check) => check.code === "mcp.telemetry-opt-out-missing")).toBe(
+        false,
+      );
+    });
+
+    it.each([
+      ["repaired", (path: string) => writeFileSync(path, compliantLaunch, "utf8")],
+      ["deleted", (path: string) => rmSync(path, { force: true })],
+      [
+        "replaced by another entry",
+        (path: string) =>
+          writeFileSync(
+            path,
+            '[mcp_servers.other]\ncommand = "npx"\nargs = ["chrome-devtools-mcp"]\n',
+            "utf8",
+          ),
+      ],
+    ])(
+      "reports what the step recorded when the project config is %s after it refused",
+      async (label, change) => {
+        const project = join(root, ".codex", "config.toml");
+        const run = await applyVerifiedDriver(`changed-${label.replace(/\W+/g, "-")}`, {
+          project: unsafeLaunch,
+          afterChild: () => change(project),
+        });
+
+        const typed = run.checks.filter((check) => check.code === "mcp.telemetry-opt-out-missing");
+        expect(typed).toEqual(run.planTime);
+        expect(typed[0]?.detail).toContain(`project Codex config entry "browser" (${project})`);
+        expect(typed[0]?.detail).not.toContain('"other"');
+      },
+    );
 
     it("exits with the refusal status the driver maps to the typed check", () => {
       const run = runVerifiedCodexStep("status-project", { project: unsafeLaunch });
