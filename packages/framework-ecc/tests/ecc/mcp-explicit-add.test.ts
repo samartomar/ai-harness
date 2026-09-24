@@ -27,7 +27,7 @@ import {
 import {
   emptyExplicitAddReceipt,
   parseExplicitAddReceipt,
-} from "../../src/ecc/mcp-explicit-add-receipt.js";
+} from "../../../../src/ecc/mcp-explicit-add-receipt.js";
 
 const roots: string[] = [];
 

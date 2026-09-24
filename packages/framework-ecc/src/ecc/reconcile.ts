@@ -1,14 +1,16 @@
 import { lstatSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
-import { AihError, type Cli, z } from "@aihq/core/framework-host";
-import type { EccComponentId, EccComponentSelection, EccMcpComponentId } from "./components.js";
-import { type EccManifestOperation, eccManifestOperationAllowedByConsent } from "./materialize.js";
 import {
+  AihError,
+  type Cli,
   machineRegistrationUnion,
   parseRegistrationLedger,
   type RegistrationLedger,
   type RegistrationUnion,
-} from "./registration.js";
+  z,
+} from "@aihq/core/framework-host";
+import type { EccComponentId, EccComponentSelection, EccMcpComponentId } from "./components.js";
+import { type EccManifestOperation, eccManifestOperationAllowedByConsent } from "./materialize.js";
 
 export type EccProjectStatus = "live" | "missing";
 

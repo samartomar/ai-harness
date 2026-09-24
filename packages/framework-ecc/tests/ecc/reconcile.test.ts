@@ -15,7 +15,7 @@ import type {
   ProjectRegistration,
   RegistrationLedger,
   TargetRegistration,
-} from "../../src/ecc/registration.js";
+} from "../../../../src/ecc/registration.js";
 
 let home: string;
 let reactRoot: string;

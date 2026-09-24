@@ -9,7 +9,9 @@ import {
   digest,
   lines,
   type PlanContext,
+  readRegistrationLedgerSnapshot,
   readRegularFileWithStats,
+  serializeRegistrationLedger,
   stripManagedBlock,
   z,
 } from "@aihq/core/framework-host";
@@ -34,7 +36,6 @@ import {
   type EccReconcileTransactionPayload,
   eccReconcileTransactionAction,
 } from "./reconcile-driver.js";
-import { readRegistrationLedgerSnapshot, serializeRegistrationLedger } from "./registration.js";
 
 const StringArray = z.array(z.string());
 const CodexAihStateSchema = z

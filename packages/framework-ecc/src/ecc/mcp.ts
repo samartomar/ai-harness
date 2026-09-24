@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import type { ProjectRegistration } from "@aihq/core/framework-host";
 import {
   type Action,
   type Cli,
@@ -18,7 +19,6 @@ import {
   writeJson,
 } from "@aihq/core/framework-host";
 import type { EccComponentSelection, EccMcpComponentId } from "./components.js";
-import type { ProjectRegistration } from "./registration.js";
 
 const EMPTY_STACK: RepoStack = {
   languages: [],

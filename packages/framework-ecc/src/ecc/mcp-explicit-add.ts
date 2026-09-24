@@ -5,10 +5,15 @@ import {
   type Cli,
   digest,
   ECC_MCP_CATALOG_PROVENANCE,
+  ECC_MCP_EXPLICIT_ADD_RECEIPT_PATH,
   type EccMcpCatalogEntry,
+  type EccMcpExplicitAddReceipt,
+  type EccMcpExplicitAddRecord,
   eccExternalMcpCatalog,
+  emptyExplicitAddReceipt,
   cliRegistryEntry as entry,
   existingMcpTomlNames,
+  explicitAddDigest,
   type HttpServer,
   isExternalMcp,
   isPlainObject,
@@ -17,25 +22,18 @@ import {
   mcpEntryFor,
   mcpTomlBody,
   type Plan,
+  parseExplicitAddReceipt,
   parseJsoncText,
   parseOrgPolicy,
   plan,
   readRegularFile,
+  receiptJson,
   removeMcpTomlServers,
   resolveEccMcpApproval,
   type WriteAction,
   writeJson,
   writeText,
 } from "@aihq/core/framework-host";
-import {
-  ECC_MCP_EXPLICIT_ADD_RECEIPT_PATH,
-  type EccMcpExplicitAddReceipt,
-  type EccMcpExplicitAddRecord,
-  emptyExplicitAddReceipt,
-  explicitAddDigest,
-  parseExplicitAddReceipt,
-  receiptJson,
-} from "./mcp-explicit-add-receipt.js";
 
 const MAX_CLIENT_CONFIG_BYTES = 4 * 1024 * 1024;
 const MAX_EXPLICIT_ADD_RECEIPT_BYTES = 1024 * 1024;

@@ -32,7 +32,7 @@ import {
   emptyRegistrationLedger,
   readRegistrationLedger,
   registrationLedgerPath,
-} from "../../src/ecc/registration.js";
+} from "../../../../src/ecc/registration.js";
 import { verifiedEccInstallPlan } from "../../src/ecc/verified.js";
 
 let root: string;

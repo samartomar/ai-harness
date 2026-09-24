@@ -6,12 +6,16 @@ import { baselineCatalogById } from "../../../baseline-evidence/catalogs.js";
 import { vendorBaselineLockBytes } from "../../../baseline-evidence/vendor.js";
 import {
   ECC_MATERIALIZATION_RECEIPT_PATH,
+  readEccMaterializationReceipt,
+} from "../../../ecc/materialization-receipt.js";
+import {
   ECC_MCP_EXPLICIT_ADD_RECEIPT_PATH,
-  explicitEccMcpRenderPlan,
   parseExplicitAddReceipt,
+} from "../../../ecc/mcp-explicit-add-receipt.js";
+import {
+  explicitEccMcpRenderPlan,
   planEccComponentSubtraction,
   planExplicitEccMcpRemove,
-  readEccMaterializationReceipt,
   readExplicitEccMcpReceiptStates,
 } from "../../../framework-plugin/ecc-facade.js";
 import { resolveContents } from "../../../internals/execute.js";

@@ -14,8 +14,11 @@ import { z } from "zod";
 import type { BaselineAuthorization } from "../baseline-evidence/verify.js";
 import { type Cli, SUPPORTED_CLIS } from "../internals/clis.js";
 import { readRegularFileWithStats, retryTransient } from "../internals/fsxn.js";
-import type { EccComponentId, EccMcpComponentId } from "./components.js";
 import { AuthorizationSchema } from "./materialization-receipt.js";
+
+/** ECC component ids as the ledger records them (`<kind>:<name>`, MCPs `mcp:<name>`). */
+type EccComponentId = `${string}:${string}`;
+type EccMcpComponentId = `mcp:${string}`;
 
 const COMPONENT_ID = /^[a-z][a-z0-9-]*:[a-z0-9][a-z0-9._-]*$/;
 

@@ -240,6 +240,27 @@ export {
   serializeEccMaterializationReceipt,
 } from "../ecc/materialization-receipt.js";
 export {
+  ECC_MCP_EXPLICIT_ADD_RECEIPT_PATH,
+  type EccMcpExplicitAddReceipt,
+  type EccMcpExplicitAddRecord,
+  emptyExplicitAddReceipt,
+  explicitAddDigest,
+  parseExplicitAddReceipt,
+  receiptJson,
+} from "../ecc/mcp-explicit-add-receipt.js";
+export {
+  type InstalledComponentRegistration,
+  machineRegistrationUnion,
+  mergeRegistrationLedger,
+  type ProjectRegistration,
+  parseRegistrationLedger,
+  type RegistrationLedger,
+  type RegistrationUnion,
+  readRegistrationLedger,
+  readRegistrationLedgerSnapshot,
+  serializeRegistrationLedger,
+} from "../ecc/registration.js";
+export {
   assertEccRuntimeDescriptorCustodyV1,
   type EccRuntimeDescriptorV1,
   inspectEccRuntimeDescriptorSealV1,

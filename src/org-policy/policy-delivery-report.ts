@@ -1,18 +1,19 @@
 import { readAihConfig, readPolicyBinding } from "../config/marker.js";
+import { inspectDestination, materializationRoot } from "../ecc/materialization-fs.js";
+import {
+  type EccOwnedFile,
+  ownedFileSha256,
+  readEccMaterializationReceipt,
+} from "../ecc/materialization-receipt.js";
 import {
   describeEccEffectiveDiscovery,
   type EccEffectiveDiscoveryReport,
   type EccMaterializationTarget,
-  type EccOwnedFile,
   GOVERNED_MATERIALIZATION_TARGETS,
   type GovernedCodexRoleRegistrationInspection,
-  inspectDestination,
   inspectGovernedCodexRoleRegistration,
-  materializationRoot,
-  ownedFileSha256,
   ownedFragmentDigest,
   parseJsonObject,
-  readEccMaterializationReceipt,
 } from "../framework-plugin/ecc-facade.js";
 import type { Cli } from "../internals/clis.js";
 import type { PlanContext } from "../internals/plan.js";

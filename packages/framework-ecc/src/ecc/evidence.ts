@@ -1,8 +1,8 @@
+import type { InstalledComponentRegistration } from "@aihq/core/framework-host";
 import { AihError, type BaselineAuthorization, type Cli, z } from "@aihq/core/framework-host";
 import { eccDescriptorMemo, eccDescriptorSection } from "../invocation.js";
 import type { EccComponentId, EccComponentSelection } from "./components.js";
 import { eccComponentInstallDescriptor } from "./materialize.js";
-import type { InstalledComponentRegistration } from "./registration.js";
 import type { EccLanguagePack } from "./select.js";
 
 const ModulesSnapshotSchema = z

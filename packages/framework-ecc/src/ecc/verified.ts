@@ -11,9 +11,13 @@ import {
   exec,
   execArgv,
   lines,
+  mergeRegistrationLedger,
   type Plan,
   type PlanContext,
+  type ProjectRegistration,
   plan,
+  type RegistrationLedger,
+  serializeRegistrationLedger,
 } from "@aihq/core/framework-host";
 import {
   type CodexScopedMcpServers,
@@ -27,12 +31,6 @@ import { codexEccActions, type EccRepoCheckout, kiroEccActions } from "./index.j
 import { eccActionsForCli, eccToolsDoc, isAihDirectEccInstallTarget } from "./install.js";
 import { eccMaterializationSpec } from "./materialize.js";
 import { scopedEccMcpJsonActions, selectedEccMcpServers } from "./mcp.js";
-import {
-  mergeRegistrationLedger,
-  type ProjectRegistration,
-  type RegistrationLedger,
-  serializeRegistrationLedger,
-} from "./registration.js";
 import type { EccLanguagePack } from "./select.js";
 
 export interface VerifiedEccRequest {

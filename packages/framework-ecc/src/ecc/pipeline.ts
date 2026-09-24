@@ -13,17 +13,22 @@ import {
   doc,
   governanceOwnsAihSurfaces,
   inspectContainedRelativePath,
+  machineRegistrationUnion,
+  mergeRegistrationLedger,
   type OrgPolicy,
   type JsoncParseError as ParseError,
   type Plan,
   type PlanContext,
   type PlanResult,
+  type ProjectRegistration,
   parseJsonc as parse,
   plan,
   postureFromContext,
+  type RegistrationLedger,
   type RepoStack,
   type ResolveOrgBaselineEvidenceResult,
   readEccMaterializationReceipt,
+  readRegistrationLedger,
   type resolveOrgBaselineEvidence,
   scanRepo,
   type TrustSource,
@@ -66,13 +71,6 @@ import {
 } from "./install-preview.js";
 import { assertGovernedMaterializationTargets } from "./materialization-target.js";
 import { orgAllowedEccMcpComponents } from "./mcp.js";
-import {
-  machineRegistrationUnion,
-  mergeRegistrationLedger,
-  type ProjectRegistration,
-  type RegistrationLedger,
-  readRegistrationLedger,
-} from "./registration.js";
 import {
   type HistoricalEccRuntimeDescriptorContextV1,
   resolveHistoricalEccRuntimeDescriptorV1,

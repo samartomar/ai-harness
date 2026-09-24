@@ -6,9 +6,9 @@ import type {
   EccMaterializationOperation,
   EccMaterializationReceipt,
   EccMaterializedComponent,
+  InstalledComponentRegistration,
 } from "@aihq/core/framework-host";
 import type { EccComponentId } from "./components.js";
-import type { InstalledComponentRegistration } from "./registration.js";
 
 /**
  * The vocabulary of AIH-direct materialization: what a caller supplies, what a

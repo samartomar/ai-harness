@@ -17,7 +17,7 @@ import {
   readEccMaterializationReceipt,
   serializeEccMaterializationReceipt,
 } from "../../../../src/ecc/materialization-receipt.js";
-import { emptyRegistrationLedger, mergeRegistrationLedger } from "../../src/ecc/registration.js";
+import { emptyRegistrationLedger, mergeRegistrationLedger } from "../../../../src/ecc/registration.js";
 
 let root: string;
 

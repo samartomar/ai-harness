@@ -1,4 +1,3 @@
-import "../core-invocation.js";
 import {
   lstatSync,
   mkdirSync,
@@ -12,8 +11,10 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { BaselineAuthorization } from "../../../../src/baseline-evidence/verify.js";
-import type { EccComponentId } from "../../src/ecc/components.js";
+import type { BaselineAuthorization } from "../../src/baseline-evidence/verify.js";
+
+type EccComponentId = `${string}:${string}`;
+
 import {
   emptyRegistrationLedger,
   machineRegistrationUnion,

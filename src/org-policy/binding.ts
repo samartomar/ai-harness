@@ -8,8 +8,8 @@ import {
   readAihConfig,
   readPolicyBinding,
 } from "../config/marker.js";
+import { readEccMaterializationReceipt } from "../ecc/materialization-receipt.js";
 import { AihError, SettingsError } from "../errors.js";
-import { readEccMaterializationReceipt } from "../framework-plugin/ecc-facade.js";
 import type { Cli } from "../internals/clis.js";
 import { inspectContainedRelativePath } from "../internals/contained-path.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
