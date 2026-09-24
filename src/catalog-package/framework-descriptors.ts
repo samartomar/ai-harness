@@ -7,10 +7,18 @@ import type { CatalogPackageAccessV1, CatalogPackageRefusalV1 } from "./load-cat
  * Framework descriptor bytes (C1): `./catalog-framework-<id>.json`, format
  * `aih-catalog-framework-descriptor`, version 1, `frameworkId`, `sections`.
  *
- * PHASE-1 STUB (worker W3). C1 assigns the real implementation to W1, which
- * reads these bytes from the INSTALLED Catalog through the one Catalog loader.
- * Until that lands, this module serves the same signature over Core's embedded
- * data so the Superpowers framework plugin can run end to end. It carries:
+ * PHASE-1 STUB (worker W3) — NOT SHIPPABLE. The integration REPLACES this whole
+ * module with W1's Catalog-backed implementation; do not extend it. C1 assigns
+ * the real implementation to W1, which reads these bytes from the INSTALLED
+ * Catalog through the one Catalog loader and refuses when Catalog is missing
+ * (`catalog-package-unavailable`) or its descriptor is absent or malformed
+ * (`catalog-package-incompatible`). This stub ignores the installed Catalog and
+ * serves Core's embedded data instead — exactly the substitution C1 and shared
+ * rule 7 forbid in production (review finding P2). It exists only so the
+ * Superpowers framework plugin can run end to end before W1 lands; the test
+ * `tests/catalog-package/framework-descriptors.test.ts` fails once the installed
+ * Catalog publishes `./catalog-framework-superpowers.json` while this stub is
+ * still wired. It carries:
  *
  * - `vendorLock`: the `superpowers` source entry of Core's embedded vendor lock
  *   (the same section W1's Catalog generator emits);
@@ -19,7 +27,7 @@ import type { CatalogPackageAccessV1, CatalogPackageRefusalV1 } from "./load-cat
  *   yet; it must move to `catalog-framework-superpowers.json` with W1's
  *   implementation (shape: packages/framework-superpowers/README.md).
  *
- * `access` is accepted for signature compatibility and unused by the stub.
+ * `access` is accepted for signature compatibility and IGNORED by the stub.
  */
 
 export const FRAMEWORK_DESCRIPTOR_FORMAT_V1 = "aih-catalog-framework-descriptor";

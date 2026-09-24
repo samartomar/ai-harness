@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
 import { readVendorBaselineLock } from "../../src/baseline-evidence/vendor.js";
 import {
@@ -9,6 +10,32 @@ import {
 
 // Phase-1 stub over Core's embedded data, with the C1 signature W1 implements
 // against the installed Catalog.
+
+const MODULE_URL = new URL("../../src/catalog-package/framework-descriptors.ts", import.meta.url);
+
+/** Whether the Catalog Core would load publishes the Superpowers descriptor subpath. */
+function installedCatalogPublishesSuperpowersDescriptor(): boolean {
+  try {
+    createRequire(MODULE_URL).resolve("@aihq/catalog/catalog-framework-superpowers.json");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+describe("the phase-1 descriptor stub guard", () => {
+  it("fails once the installed Catalog publishes the descriptor while the stub is still wired", () => {
+    const source = readFileSync(MODULE_URL, "utf8");
+    if (installedCatalogPublishesSuperpowersDescriptor()) {
+      expect(
+        source,
+        "replace the phase-1 stub with W1's Catalog-backed loadFrameworkDescriptorBytesV1",
+      ).not.toContain("PHASE-1 STUB");
+    } else {
+      expect(source).toContain("PHASE-1 STUB");
+    }
+  });
+});
 
 describe("loadFrameworkDescriptorBytesV1 (phase-1 stub)", () => {
   it("serves canonical Superpowers descriptor bytes with their digest", async () => {
