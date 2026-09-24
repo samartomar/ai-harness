@@ -390,7 +390,7 @@ describe("ecc.plan — runs ECC's own installer (latest)", () => {
     if (chrome === undefined) throw new Error("missing Core-owned Chrome DevTools MCP server");
 
     expect(chrome.command).toBe("npx");
-    expect(chrome.args).toEqual(["-y", "chrome-devtools-mcp@1.10.1"]);
+    expect(chrome.args).toEqual(["-y", "chrome-devtools-mcp@1.10.1", "--no-performance-crux"]);
     expect(chrome.env).toEqual({
       CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS: "1",
       CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS: "1",
@@ -402,6 +402,8 @@ describe("ecc.plan — runs ECC's own installer (latest)", () => {
   it("always disables Chrome DevTools MCP usage statistics and update checks", () => {
     const chrome = coreOwnedEccCodexMcpServers()["chrome-devtools"];
     if (chrome?.type !== "stdio") throw new Error("missing Core-owned Chrome DevTools MCP server");
+    // Performance tools otherwise send page URLs to the Google CrUX API.
+    expect(chrome.args).toContain("--no-performance-crux");
     expect(chrome.env).toEqual({
       CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS: "1",
       CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS: "1",
@@ -440,7 +442,7 @@ describe("ecc.plan — runs ECC's own installer (latest)", () => {
     if (mcpB64 === undefined) throw new Error("missing default Codex MCP payload");
     const rendered = Buffer.from(mcpB64, "base64").toString("utf8");
 
-    expect(rendered).toContain("chrome-devtools-mcp@1.10.1");
+    expect(rendered).toContain('"chrome-devtools-mcp@1.10.1","--no-performance-crux"');
     expect(rendered).toContain('"CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS":"1"');
     expect(rendered).toContain('"CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS":"1"');
     expect(rendered).not.toContain("@latest");

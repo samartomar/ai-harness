@@ -28,7 +28,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - Chrome DevTools MCP 1.10.1. Everything aih emits for it now sets
     `CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS=1` and `CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS=1`,
     so its usage statistics, including the new MCP client name report, and its per-launch
-    registry update check never run. The Codex ECC install now also refuses, with
+    registry update check never run. It also passes `--no-performance-crux`, so the
+    performance tools never send page URLs to the Google CrUX API. The Codex ECC install now also refuses, with
     `mcp.telemetry-opt-out-missing`, when an entry in the user or project Codex config
     launches `chrome-devtools-mcp` without both variables set to `"1"`. The refusal names the
     entry and the missing variable. aih never rewrites that entry: remove it so aih manages

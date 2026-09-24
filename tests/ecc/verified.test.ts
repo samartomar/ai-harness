@@ -1021,7 +1021,7 @@ describe("verifiedEccInstallPlan", () => {
         "chrome-devtools": {
           type: "stdio",
           command: "npx",
-          args: ["-y", "chrome-devtools-mcp@1.10.1"],
+          args: ["-y", "chrome-devtools-mcp@1.10.1", "--no-performance-crux"],
           env: {
             CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS: "1",
             CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS: "1",
@@ -1102,7 +1102,7 @@ describe("verifiedEccInstallPlan", () => {
     if (mcpB64 === undefined) throw new Error("missing Codex MCP registration spec");
     const rendered = Buffer.from(mcpB64, "base64").toString("utf8");
 
-    expect(rendered).toContain("chrome-devtools-mcp@1.10.1");
+    expect(rendered).toContain('"chrome-devtools-mcp@1.10.1","--no-performance-crux"');
     expect(rendered).toContain('"CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS":"1"');
     expect(rendered).toContain('"CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS":"1"');
     expect(rendered).toContain('"startupTimeoutSec":30');
@@ -1489,7 +1489,9 @@ describe("verifiedEccInstallPlan", () => {
       readFileSync(join(home, ".codex", "skills", "coding-standards", "SKILL.md"), "utf8"),
     ).toBe("# Coding standards\n");
     const config = readFileSync(join(home, ".codex", "config.toml"), "utf8");
-    expect(config).toContain("chrome-devtools-mcp@1.10.1");
+    expect(config).toContain(
+      'args = ["-y", "chrome-devtools-mcp@1.10.1", "--no-performance-crux"]',
+    );
     expect(config).toContain('[mcp_servers."chrome-devtools".env]');
     expect(config).toContain('"CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS" = "1"');
     expect(config).toContain('"CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS" = "1"');

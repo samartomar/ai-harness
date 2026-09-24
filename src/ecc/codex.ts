@@ -45,13 +45,15 @@ export interface CodexMcpCollision {
  * external-pin ledger; optional ECC MCPs remain on their scoped policy path.
  * Both opt-outs are mandatory: usage statistics (which also report the MCP client's
  * name) default on, and every launch otherwise spawns a registry update check.
+ * `--no-performance-crux` stops the performance tools sending page URLs to the
+ * Google CrUX API, which they do by default.
  */
 export function coreOwnedEccCodexMcpServers(): CodexScopedMcpServers {
   return {
     "chrome-devtools": {
       type: "stdio",
       command: "npx",
-      args: ["-y", "chrome-devtools-mcp@1.10.1"],
+      args: ["-y", "chrome-devtools-mcp@1.10.1", "--no-performance-crux"],
       env: {
         CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS: "1",
         CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS: "1",

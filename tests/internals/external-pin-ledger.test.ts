@@ -224,6 +224,11 @@ describe("active external-pin ledger", () => {
     expect(entry("ecc-codex-chrome-devtools-mcp").version).toBe(
       versionFromSpec(chromeDevtools.args[1] ?? ""),
     );
+    expect(chromeDevtools.args).toContain("--no-performance-crux");
+    expect(entry("ecc-codex-chrome-devtools-mcp").reason).toMatch(
+      /emits --no-performance-crux.*performanceCrux.*CrUX/i,
+    );
+    expect(entry("ecc-codex-chrome-devtools-mcp").reason).not.toMatch(/does not add that flag/i);
     expect(entry("ecc-codex-chrome-devtools-mcp-candidate")).toMatchObject({
       version: "1.9.0",
       commit: "1cec9cd1a3bbf1895c98fa4b4e0e2da5a36e4075",
