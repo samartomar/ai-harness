@@ -2,7 +2,9 @@
  * The ambient invocation for this package's ECC module tests. The moved ECC
  * modules read descriptor data and reach Core's executors through the current
  * invocation; these tests call the modules directly, so the invocation holds
- * Catalog's fixture descriptor and Core's own functions, unbound. Core's bound
+ * the descriptor built from Catalog's sections at the pinned commit and Core's
+ * own functions, unbound. A module that reads a section Catalog has not yet
+ * produced at that commit refuses with `sections.<name> is missing`. Core's bound
  * runtime (root check, pins, revocation) is tested in
  * tests/framework-plugin/ecc-command.test.ts.
  */
@@ -25,7 +27,7 @@ import {
 import { consumeWorkbenchPolicy } from "../../../src/org-policy/workbench/policy-consumption.js";
 import { cleanupQuarantine, resolveTrustSource } from "../../../src/trust/fetch.js";
 import { eccDescriptorFor, setEccTestInvocation } from "../src/invocation.js";
-import { descriptorOf, fixtureDescriptorBytes } from "./context.js";
+import { pinnedDescriptor } from "./context.js";
 
 // Each member calls the imported binding at call time, so a test's vi.mock of
 // a Core module still applies.
@@ -51,6 +53,6 @@ const runtime: FrameworkCoreRuntimeV1 = {
 };
 
 setEccTestInvocation({
-  descriptor: eccDescriptorFor(descriptorOf(fixtureDescriptorBytes())),
+  descriptor: eccDescriptorFor(pinnedDescriptor()),
   runtime,
 });

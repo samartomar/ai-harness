@@ -61,7 +61,7 @@ describe("aihFrameworkPluginV1", () => {
     const description = aihFrameworkPluginV1.describe();
     expect(description.upstream).toEqual({
       repository: "affaan-m/ECC",
-      commit: "5caf398a91599029a176ca6d806409b00d1052c4",
+      commit: "5064474d4d762dc9640234a41617cccb79185cec",
     });
     expect(description.catalogSubpath).toBe("./catalog-framework-ecc.json");
     expect(description.descriptorSections).toEqual([

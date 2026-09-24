@@ -448,8 +448,8 @@ function resolveBase(
       ),
     ),
   );
-  if (baselinePaths.length !== 113)
-    throw new Error(`baseline skill accounting expected 113, received ${baselinePaths.length}`);
+  if (baselinePaths.length !== 117)
+    throw new Error(`baseline skill accounting expected 117, received ${baselinePaths.length}`);
   const availableSkillPaths = new Set(evidence.availableSkillPaths);
   if (
     evidence.availableSkillPaths.some(

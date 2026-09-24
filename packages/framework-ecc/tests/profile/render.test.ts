@@ -82,8 +82,8 @@ describe("native ECC profile projection", () => {
         expect(
           client.workflows.map(({ id, sourcePath, owner }) => ({ id, sourcePath, owner })),
         ).toEqual(resolved.workflows);
-        expect(client.skills).toHaveLength(136);
-        expect(client.roles).toHaveLength(67);
+        expect(client.skills).toHaveLength(140);
+        expect(client.roles).toHaveLength(68);
         expect(client.workflows).toHaveLength(94);
         expect(client.workflows.filter((entry) => entry.owner === "aih-adaptation")).toHaveLength(
           4,
@@ -119,7 +119,7 @@ describe("native ECC profile projection", () => {
         (file) => file.destination === ".codex/config.toml",
       );
       expect(codexConfig?.mergeStrategy).toBe("toml-merge");
-      expect(codexConfig?.content.match(/^\[agents\.[a-z0-9-]+\]$/gm)).toHaveLength(67);
+      expect(codexConfig?.content.match(/^\[agents\.[a-z0-9-]+\]$/gm)).toHaveLength(68);
       expect(codexConfig?.content).not.toMatch(/^model\s*=/m);
       expect(codexConfig?.content).not.toMatch(/^tools\s*=/m);
 

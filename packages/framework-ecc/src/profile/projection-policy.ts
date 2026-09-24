@@ -61,12 +61,14 @@ continuous-learning
 continuous-learning-v2
 contract-first
 council
+council-multi-model
 cpp-coding-standards
 cpp-testing
 csharp-testing
 dart-flutter-patterns
 delivery-gate
 design-system
+dev-team
 django-celery
 django-patterns
 django-tdd
@@ -110,6 +112,7 @@ laravel-patterns
 laravel-plugin-discovery
 laravel-tdd
 laravel-verification
+living-docs-governance
 loop-design-check
 make-interfaces-feel-better
 mcp-server-patterns
@@ -146,6 +149,7 @@ search-first
 security-bounty-hunter
 security-review
 security-scan
+skill-comply
 skill-scout
 skill-stocktake
 springboot-patterns
@@ -175,6 +179,7 @@ architecture-decision-records
 browser-qa
 codebase-onboarding
 council
+dev-team
 documentation-lookup
 dynamic-workflow-mode
 eval-harness
@@ -233,6 +238,12 @@ const SHARED_UNAVAILABLE_SKILLS: Record<string, { reason: string; fallback: stri
       "Continuous learning v2 requires inactive hooks, observers, and unmanaged client-global state.",
     fallback: "Evaluate the current material without retaining, observing, or self-promoting it.",
   },
+  "council-multi-model": {
+    reason:
+      "The external Codex critique sends council material to OpenAI through an unmanaged Codex CLI runtime and ambient Codex credentials that AIH does not pin or govern.",
+    fallback:
+      "Run the council workflow without the external critique and report the external review as absent.",
+  },
   "delivery-gate": {
     reason:
       "The delivery gate depends on hook registration that belongs to the later composite-hook slice.",
@@ -277,6 +288,12 @@ const SHARED_UNAVAILABLE_SKILLS: Record<string, { reason: string; fallback: stri
     reason:
       "The upstream security-scan skill assumes client-specific scripts and configuration not activated here.",
     fallback: "Run the repository-owned security checks directly and report their scope.",
+  },
+  "skill-comply": {
+    reason:
+      "skill-comply runs nested agents with pre-approved Bash and model-generated setup commands, including package installs, outside any AIH-controlled sandbox.",
+    fallback:
+      "Describe the skill's expected behavioural sequence for human review without running nested agents or setup commands.",
   },
   "skill-stocktake": {
     reason:
@@ -578,6 +595,7 @@ const REVIEWED_ROLE_IDS = [
   "pr-test-analyzer",
   "python-reviewer",
   "pytorch-build-resolver",
+  "rag-pipeline-reviewer",
   "react-build-resolver",
   "react-reviewer",
   "refactor-cleaner",

@@ -10,28 +10,16 @@ import {
   resolveEccProfile,
   serializeResolvedEccProfile,
 } from "../../src/profile/index.js";
-import { AIH_ECC_PROFILE_TEMPLATE } from "./pinned-profile-fixture.js";
+import {
+  AIH_ECC_PROFILE_TEMPLATE,
+  PINNED_SOURCE_EVIDENCE,
+  pinnedFixtureDirectory,
+} from "./pinned-profile-fixture.js";
 
-const fixturePath = join(
-  import.meta.dirname,
-  "../../../../tests/fixtures/ecc-profile/pinned-source-evidence.json",
-);
-const evidence = JSON.parse(await readFile(fixturePath, "utf8")) as unknown;
-const receiptPath = join(
-  import.meta.dirname,
-  "../../../../tests/fixtures/ecc-profile/review-receipt.json",
-);
-const receiptBytes = await readFile(receiptPath);
-const receipt = {
-  id: "pinned-source-evidence-v1",
-  evidencePath: "tests/fixtures/ecc-profile/review-receipt.json",
-  sourceCommit: "0c1d7be9a750627fb2a6534c78a998cc46d03f9c",
-  evidenceSha256: "b4bc069efc8c5eca51e6426feb9d59cc469f2b49b681118a6fd26f5c8fab461c",
-};
-const profile = {
-  ...AIH_ECC_PROFILE_TEMPLATE,
-  source: { ...AIH_ECC_PROFILE_TEMPLATE.source, reviewReceipt: receipt },
-};
+const evidence = PINNED_SOURCE_EVIDENCE;
+const receiptBytes = await readFile(join(pinnedFixtureDirectory, "review-receipt.json"));
+const receipt = AIH_ECC_PROFILE_TEMPLATE.source.reviewReceipt;
+const profile = AIH_ECC_PROFILE_TEMPLATE;
 
 function digest(paths: readonly string[]): string {
   return createHash("sha256").update(paths.join("\n")).digest("hex");
@@ -76,7 +64,7 @@ describe("manifest-derived AIH ECC profile resolution", () => {
   it("parses a caller-supplied durable receipt and names the release ancestor correctly", () => {
     expect(eccProfileSchema.parse(profile).source.reviewReceipt).toEqual(receipt);
     expect(createHash("sha256").update(receiptBytes).digest("hex")).toBe(receipt.evidenceSha256);
-    expect(profile.source.releaseAncestorCommit).toBe("4da6deac1888690e7fb8572d097ee23db630f7a0");
+    expect(profile.source.releaseAncestorCommit).toBe("5064474d4d762dc9640234a41617cccb79185cec");
     expect(profile.source).not.toHaveProperty("releaseCommit");
     expect(profile.state.lifecycle).toBe("active");
     expect(profile.mcpPolicy.activation).toBe("aih-owned-native-registration");
@@ -94,14 +82,14 @@ describe("manifest-derived AIH ECC profile resolution", () => {
       "skill-unified-memory",
       "workflow-quality",
     ]);
-    expect(resolved.skills).toHaveLength(136);
-    expect(resolved.roles).toHaveLength(67);
+    expect(resolved.skills).toHaveLength(140);
+    expect(resolved.roles).toHaveLength(68);
     expect(resolved.workflows).toHaveLength(94);
     expect(digest(resolved.skills.map((item) => item.sourcePath))).toBe(
-      "e3b38fd2ce0b7f50e47c87355ca3137fffb235b68d1a994a32a49ae7263689d3",
+      "c6c9b2efad96b919fce91f9e43be795b5aa64655a7bf40fb09f8d570f6556ec3",
     );
     expect(digest(resolved.roles.map((item) => item.sourcePath))).toBe(
-      "2411844ecf87e0a65322ce716a5172cf3e5ab3c121fde95865e2f119e4e1a4f0",
+      "0167d3b237716f86f9209f34da013bb66d26d25e11a886ab4ab3a533da7d4c88",
     );
     expect(digest(resolved.workflows.map((item) => item.sourcePath))).toBe(
       "9af2348d39002cbdf10ac5465676b02e6586ec3ab5f82e30b355423b32e6d1ca",

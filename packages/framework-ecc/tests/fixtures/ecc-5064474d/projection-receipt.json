@@ -1,0 +1,9 @@
+{
+  "receiptVersion": 1,
+  "sourceCommit": "5064474d4d762dc9640234a41617cccb79185cec",
+  "sourceClosureId": "ecc-projected-source-closure-v1",
+  "sourceClosureSha256": "17d2c510c63ce5566b48f96b3182e80f0e38b8262cdc191ae86e40dfa14f901b",
+  "projectedFileCount": 813,
+  "projectionSha256": "e6d3941ee5388fc49472051d5d88be4bf33b7b416ee7b557b10f1cff2d2d8053",
+  "parityReceiptSha256": "66de22deb77cc8c66cdb900da0d91c6b28ca2eaef05a220591aeb04ce64a1da4"
+}

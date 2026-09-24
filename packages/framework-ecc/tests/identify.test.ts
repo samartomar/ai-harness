@@ -3,7 +3,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { identifyComponents } from "../src/identify.js";
-import { fixtureDescriptorDocument, operationContext, PINNED_COMMIT } from "./context.js";
+import {
+  descriptorOf,
+  fixtureDescriptorBytes,
+  fixtureDescriptorDocument,
+  operationContext,
+  PINNED_COMMIT,
+} from "./context.js";
+
+/** Component identification reads the vendor lock's components: Catalog's full descriptor. */
+const catalogDescriptor = () => descriptorOf(fixtureDescriptorBytes());
 
 let root: string;
 
@@ -34,7 +43,11 @@ function vendorLockPaths(): Map<string, string[]> {
 describe("identifyComponents", () => {
   it("reports the stack's language packs and each host's components with pinned source paths", () => {
     const identified = identifyComponents(
-      operationContext({ root, targets: ["claude", "codex", "kiro", "windsurf"] }),
+      operationContext({
+        root,
+        targets: ["claude", "codex", "kiro", "windsurf"],
+        descriptor: catalogDescriptor(),
+      }),
     );
     expect(identified.upstream).toEqual({ repository: "affaan-m/ECC", commit: PINNED_COMMIT });
     expect(identified.languagePacks).toContain("typescript");
@@ -53,7 +66,9 @@ describe("identifyComponents", () => {
   });
 
   it("reports no components for a host with no ECC install route", () => {
-    const identified = identifyComponents(operationContext({ root, targets: ["windsurf"] }));
+    const identified = identifyComponents(
+      operationContext({ root, targets: ["windsurf"], descriptor: catalogDescriptor() }),
+    );
     expect(identified.components).toEqual([]);
   });
 });
