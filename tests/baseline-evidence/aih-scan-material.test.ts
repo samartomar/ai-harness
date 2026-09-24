@@ -347,7 +347,16 @@ function signedPublication(request: BaselineVetRequestV1) {
             sourceTreeSha256: request.source.treeSha256,
             files: [],
           }
-        : { version: "2.1.0", runs: [{ tool: { driver: { name: analyzer } }, results: [] }] };
+        : {
+            version: "2.1.0",
+            runs: [
+              {
+                tool: { driver: { name: analyzer } },
+                invocations: [{ executionSuccessful: true }],
+                results: [],
+              },
+            ],
+          };
     return {
       path: `annex/${analyzer}.json`,
       bytes: canonicalStrictJsonBytesV1(value),

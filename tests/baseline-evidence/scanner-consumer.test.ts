@@ -116,7 +116,13 @@ function buildResult(
             }
           : (annexOverrides[analyzer] ?? {
               version: "2.1.0",
-              runs: [{ tool: { driver: { name: analyzer } }, results: [] }],
+              runs: [
+                {
+                  tool: { driver: { name: analyzer } },
+                  invocations: [{ executionSuccessful: true }],
+                  results: [],
+                },
+              ],
             }),
       ),
       "utf8",
@@ -316,6 +322,7 @@ describe("Core Scanner baseline consumer", () => {
               runs: [
                 {
                   tool: { driver: { name: "skillspector" } },
+                  invocations: [{ executionSuccessful: true }],
                   results: [
                     {
                       ruleId: "skillspector.future-rule",

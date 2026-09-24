@@ -171,7 +171,7 @@ function skillspectorLog(
 function useSkillspectorImageScan(localImageDigest: string): FakeScanAdapterForTests {
   const scan = fakeTrustLintScan(
     {},
-    { "detector.skillspector": sarifAnswer({ version: "2.1.0", runs: [] }) },
+    { "detector.skillspector": sarifAnswer({ version: "2.1.0", runs: [{ results: [] }] }) },
   );
   const admitted: FakeScanAdapterForTests = {
     ...scan,
@@ -206,6 +206,9 @@ function scanSarif(
     version: "2.1.0",
     runs: [
       {
+        // A completed analyzer run (C2a §1.4); the fake Scan adds completion evidence.
+        tool: { driver: { name: "scan-sarif (test fixture)" } },
+        invocations: [{ executionSuccessful: true }],
         results: results.map(([ruleId, message, uri, startLine]) => ({
           ruleId,
           message: { text: message },
@@ -248,7 +251,7 @@ function orgPolicy(trust: Record<string, unknown>): void {
   );
 }
 
-const EMPTY_SARIF = { version: "2.1.0", runs: [] };
+const EMPTY_SARIF = { version: "2.1.0", runs: [{ results: [] }] };
 
 function successfulSkillspector(argv: string[]): Partial<Awaited<ReturnType<Runner>>> | undefined {
   if (argv[0] !== "docker") return undefined;
@@ -5020,7 +5023,10 @@ describe("trustScanCommand", () => {
       return undefined;
     });
     // Scan runs SkillSpector for the fetched tree and reports nothing.
-    useScan({}, { "detector.skillspector": sarifAnswer({ version: "2.1.0", runs: [] }) });
+    useScan(
+      {},
+      { "detector.skillspector": sarifAnswer({ version: "2.1.0", runs: [{ results: [] }] }) },
+    );
     const c = { ...ctx({ target: "advisory/repo" }, {}, "vibe", run), apply: true };
 
     const result = await executePlan(await trustScanCommand.plan(c), c);
@@ -5141,7 +5147,7 @@ describe("trustScanCommand", () => {
                 JSON.stringify({ ...metadata, pinnedSha: "b".repeat(40) }),
                 "utf8",
               );
-            return JSON.stringify({ version: "2.1.0", runs: [] });
+            return JSON.stringify({ version: "2.1.0", runs: [{ results: [] }] });
           },
         },
       },

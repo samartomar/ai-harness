@@ -21,6 +21,7 @@ import {
   acceptedScanAnalyzerIdentityV1,
   observedScanAnalyzerVersionV1,
 } from "../../src/trust/scan-analyzer-identity.js";
+import { fakeScanCompletionEvidence, withFakeScanCompletion } from "./fakes/fake-scan-adapter.js";
 import { fakeTrustLintScan } from "./fakes/fake-trust-lint.js";
 
 // ---------------------------------------------------------------------------
@@ -98,12 +99,31 @@ const sha256 = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex
 
 const EMPTY_SARIF = JSON.stringify({
   version: "2.1.0",
-  runs: [{ tool: { driver: { name: "stub" } }, results: [] }],
+  runs: [
+    {
+      tool: { driver: { name: "stub" } },
+      invocations: [{ executionSuccessful: true }],
+      results: [],
+    },
+  ],
 });
 
-function succeeded(detectorId: string, profile: string) {
-  const bytes = Buffer.from(EMPTY_SARIF, "utf8");
+/** A succeeded run; for `request`, its SARIF carries Scan's completion evidence for that subject. */
+function succeeded(detectorId: string, profile: string, request?: unknown) {
   const identity = acceptedScanAnalyzerIdentityV1(detectorId, profile);
+  const bytes = Buffer.from(
+    request === undefined || identity === undefined
+      ? EMPTY_SARIF
+      : withFakeScanCompletion(
+          EMPTY_SARIF,
+          detectorId,
+          fakeScanCompletionEvidence(detectorId, request as Record<string, unknown>, {
+            version: observedScanAnalyzerVersionV1(identity),
+            lockSha256: identity.lockSha256,
+          }),
+        ),
+    "utf8",
+  );
   return {
     outcome: "succeeded",
     capability: capability(detectorId, profile),
@@ -424,8 +444,8 @@ describe("every detector through the installed @aihq/scan, with no Core fallback
   });
 
   it("runs through the installed package and records the profile Scan ran under", async () => {
-    const scanPackage = installedScan(["detector.cisco"], () =>
-      Promise.resolve(succeeded("detector.cisco", "host-process-uv-v1")),
+    const scanPackage = installedScan(["detector.cisco"], (request) =>
+      Promise.resolve(succeeded("detector.cisco", "host-process-uv-v1", request)),
     );
     loader.load.mockResolvedValue({ ok: true, adapter: scanPackage });
     const result = await detectorRun(["cisco"]);
@@ -518,7 +538,7 @@ describe("every detector through the installed @aihq/scan, with no Core fallback
         listDetectorCapabilitiesV1: () => [hostCapability],
         runDetectorV1(request) {
           requests.push(request);
-          return Promise.resolve(succeeded("detector.semgrep", "host-process-uv-v1"));
+          return Promise.resolve(succeeded("detector.semgrep", "host-process-uv-v1", request));
         },
       };
       loader.load.mockResolvedValue({ ok: true, adapter: scanPackage });
@@ -643,8 +663,8 @@ describe("every detector through the installed @aihq/scan, with no Core fallback
   });
 
   it("asks Scan only for the detectors the scan selects", async () => {
-    const scanPackage = installedScan(["detector.cisco", "detector.semgrep"], () =>
-      Promise.resolve(succeeded("detector.semgrep", "host-process-uv-v1")),
+    const scanPackage = installedScan(["detector.cisco", "detector.semgrep"], (request) =>
+      Promise.resolve(succeeded("detector.semgrep", "host-process-uv-v1", request)),
     );
     loader.load.mockResolvedValue({ ok: true, adapter: scanPackage });
     const result = await detectorRun(["semgrep"]);

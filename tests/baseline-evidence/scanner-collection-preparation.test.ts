@@ -201,6 +201,7 @@ function annexes(
             runs: [
               {
                 tool: { driver: { name: analyzer } },
+                invocations: [{ executionSuccessful: true }],
                 results:
                   blocked && analyzer === "semgrep" && blockedPath !== undefined
                     ? [

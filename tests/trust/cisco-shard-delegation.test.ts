@@ -9,6 +9,7 @@ import {
   buildCiscoSourceShardManifest,
   TrustScanCancelledError,
 } from "../../src/trust/detectors.js";
+import { fakeCiscoJobSarif } from "./fakes/fake-cisco-job-sarif.js";
 
 // ---------------------------------------------------------------------------
 // Core builds the Cisco source manifest; the installed @aihq/scan runs a shard's
@@ -43,13 +44,15 @@ function manifestFor(root: string, lockSha256: string = LOCK) {
   });
 }
 
-function sarifBytes(path: string): Uint8Array {
-  return new TextEncoder().encode(
-    JSON.stringify({
-      version: "2.1.0",
-      runs: [{ tool: { driver: { name: "skill-scanner" } }, results: [], properties: { path } }],
-    }),
-  );
+/** One job's SARIF as Scan returns it: completed, with evidence for the job's files now. */
+function sarifBytes(request: FakeShardRequest, path: string): Uint8Array {
+  const log = fakeCiscoJobSarif(request.sourceRoot, path, [], {
+    version: request.expected.analyzerVersion,
+    lockSha256: request.expected.lockSha256,
+  });
+  const [run] = log.runs as Record<string, unknown>[];
+  if (run !== undefined) run.properties = { path };
+  return new TextEncoder().encode(JSON.stringify(log));
 }
 
 interface FakeShardRequest {
@@ -85,7 +88,7 @@ function fakeScan(
 
 function succeeded(request: FakeShardRequest, change?: (outputs: unknown[]) => unknown[]) {
   const outputs = request.jobs.map((job) => {
-    const sarif = sarifBytes(job.path);
+    const sarif = sarifBytes(request, job.path);
     return {
       jobId: job.id,
       path: job.path,
@@ -349,6 +352,60 @@ describe("runCiscoSourceShardThroughScanV1", () => {
         importer: scan.importer,
       }),
     ).rejects.toThrow("Cisco shard ran analyzer version 2.0.15 instead of the manifest's 2.0.14");
+  });
+
+  it("refuses a job whose SARIF does not prove it analyzed the job's files", async () => {
+    const root = sourceRoot();
+    const manifest = manifestFor(root);
+    const rebound = (bytes: Uint8Array, edit: (evidence: Record<string, unknown>) => void) => {
+      const log = JSON.parse(new TextDecoder().decode(bytes));
+      edit(log.runs[0].invocations[0].properties.aihScanCompletionV1);
+      return new TextEncoder().encode(JSON.stringify(log));
+    };
+    const cases: [string, (evidence: Record<string, unknown>) => void, string][] = [
+      [
+        "another subject",
+        (evidence) => {
+          evidence.subjectTreeSha256 = "0".repeat(64);
+        },
+        `; the subject Core submitted has 1 files with subject tree`,
+      ],
+      [
+        "another detector",
+        (evidence) => {
+          evidence.detectorId = "detector.semgrep";
+        },
+        `completion evidence for "detector.semgrep", not the requested detector.cisco`,
+      ],
+      [
+        "another analyzer lock",
+        (evidence) => {
+          evidence.analyzer = { version: "2.0.14", lockSha256: "a".repeat(64) };
+        },
+        `completion evidence for analyzer "2.0.14" with uv.lock ${"a".repeat(64)}; Core accepts 2.0.14 with uv.lock ${LOCK}`,
+      ],
+    ];
+    for (const [, edit, reason] of cases) {
+      const scan = fakeScan((request) =>
+        succeeded(request, (outputs) =>
+          outputs.map((output) => {
+            const record = output as { sarif: Uint8Array };
+            const sarif = rebound(record.sarif, edit);
+            return {
+              ...record,
+              sarif,
+              sha256: createHash("sha256").update(sarif).digest("hex"),
+            };
+          }),
+        ),
+      );
+      await expect(
+        runCiscoSourceShardThroughScanV1(root, manifest, manifest.shards[0]?.id ?? "", {
+          ...options,
+          importer: scan.importer,
+        }),
+      ).rejects.toThrow(reason);
+    }
   });
 
   it("rejects a source that changed while Scan ran", async () => {

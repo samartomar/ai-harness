@@ -28,11 +28,12 @@
     "src/trust/mcp-classify.ts",
     "src/trust/scan-analyzer-identity.ts",
     "src/trust/scan-sarif.ts",
+    "src/trust/scan-subject-files.ts",
     "src/trust/scan.ts",
     "src/trust/scanner-runtime-identity.ts",
     "src/trust/script-files.ts",
     "src/trust/smoke.ts",
     "src/trust/trust-lint-sarif.ts"
   ],
-  "digest": "1ce4fb3a2599"
+  "digest": "d70af970b769"
 }

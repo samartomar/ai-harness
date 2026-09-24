@@ -4,6 +4,12 @@ import {
   acceptedScanAnalyzerIdentityV1,
   observedScanAnalyzerVersionV1,
 } from "../../../src/trust/scan-analyzer-identity.js";
+import { SCAN_COMPLETION_PROPERTY_V1 } from "../../../src/trust/scan-sarif.js";
+import {
+  scanDetectorSubjectFilesV1,
+  scanSubjectDigestV1,
+  sealedScanSubjectFilesV1,
+} from "../../../src/trust/scan-subject-files.js";
 
 /**
  * TEST FAKE. An in-memory stand-in for the installed `@aihq/scan` public
@@ -14,6 +20,9 @@ import {
  * annex digest, under the execution profile the request named. Its analyzer
  * identities are the ones Core accepts (`ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1`)
  * unless a test overrides them; a profile Core pins none for gets a fake lock.
+ * Like Scan (C2a §1.6), it completes the SARIF a test supplies: every run gets
+ * a tool driver and a successful invocation when it has none, and completion
+ * evidence v1 for the subject the request names, unless the answer is `raw`.
  *
  * Shapes follow Scan's own `DetectorCapabilityV1` and `RunDetectorV1Result`
  * (`aih-scan src/capability/detector-capability-v1.ts`, `src/runner/run-detector-v1.ts`).
@@ -26,6 +35,8 @@ export type FakeScanAnswerV1 =
       readonly executionProfileId?: string;
       /** The analyzer version the observation states, instead of the accepted one. */
       readonly observedAnalyzerVersion?: string;
+      /** Return the SARIF bytes exactly as given: no driver, invocation or completion evidence added. */
+      readonly raw?: boolean;
     }
   /** SARIF computed from the request, e.g. for Core's selected paths. */
   | { readonly kind: "sarif-for"; readonly sarif: (request: Record<string, unknown>) => string }
@@ -143,6 +154,74 @@ function sha256(bytes: Uint8Array): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
+function asObject(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+/**
+ * Completion evidence v1 for this request, as Scan writes it: the subject
+ * files of `subject.sourceRoot` under the detector's rule, and the analyzer.
+ * Undefined when the subject cannot be read (Core then refuses the run).
+ */
+export function fakeScanCompletionEvidence(
+  detectorId: string,
+  request: Record<string, unknown>,
+  analyzer: { readonly version: string; readonly lockSha256: string | null },
+): Record<string, unknown> | undefined {
+  const subject = asObject(request.subject);
+  const sourceRoot = subject?.sourceRoot;
+  const selected = subject?.selectedClosurePaths;
+  if (typeof sourceRoot !== "string" || !Array.isArray(selected)) return undefined;
+  const mcpConfigPaths = asObject(request.detectorOptions)?.mcpConfigPaths;
+  try {
+    const digest = scanSubjectDigestV1(
+      scanDetectorSubjectFilesV1(detectorId, sourceRoot, {
+        selectedClosurePaths: selected as string[],
+        ...(Array.isArray(mcpConfigPaths) ? { mcpConfigPaths: mcpConfigPaths as string[] } : {}),
+        sealed: () => sealedScanSubjectFilesV1(sourceRoot),
+      }),
+    );
+    return { detectorId, ...digest, analyzer: { ...analyzer } };
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The SARIF text with every run completed as Scan completes it: a tool driver
+ * and a successful first invocation when the run has none, and `evidence` in
+ * `invocations[0].properties` unless the run already states some. Text that is
+ * not a SARIF log with runs comes back unchanged.
+ */
+export function withFakeScanCompletion(
+  text: string,
+  detectorId: string,
+  evidence: Record<string, unknown> | undefined,
+): string {
+  let log: unknown;
+  try {
+    log = JSON.parse(text);
+  } catch {
+    return text;
+  }
+  const runs = asObject(log)?.runs;
+  if (!Array.isArray(runs)) return text;
+  for (const run of runs) {
+    const record = asObject(run);
+    if (record === undefined) continue;
+    record.tool ??= { driver: { name: `${detectorId.replace(/^detector\./, "")} (test fake)` } };
+    record.invocations ??= [{ executionSuccessful: true }];
+    const first = Array.isArray(record.invocations) ? asObject(record.invocations[0]) : undefined;
+    if (first === undefined || evidence === undefined) continue;
+    const properties = asObject(first.properties) ?? {};
+    if (!Object.hasOwn(properties, SCAN_COMPLETION_PROPERTY_V1))
+      first.properties = { ...properties, [SCAN_COMPLETION_PROPERTY_V1]: evidence };
+  }
+  return JSON.stringify(log);
+}
+
 export interface FakeScanAdapterForTests extends ScanExecutionAdapterV1 {
   /** Every request, exactly as Core sent it. */
   readonly requests: Record<string, unknown>[];
@@ -213,13 +292,25 @@ export function createFakeScanAdapterForTests(
       if (answer.kind === "refused")
         return { outcome: "refused", reason: answer.reason, detail: answer.detail, capability };
       if (answer.kind === "failed") return failed(answer.stage, answer.detail);
-      const text = answer.kind === "sarif-for" ? answer.sarif(record) : answer.sarif;
-      const bytes = Buffer.from(text, "utf8");
+      const given = answer.kind === "sarif-for" ? answer.sarif(record) : answer.sarif;
       const ran = (answer.kind === "sarif" ? answer.executionProfileId : undefined) ?? profile.id;
       const accepted = acceptedScanAnalyzerIdentityV1(detectorId, ran);
       const analyzerVersion =
         (answer.kind === "sarif" ? answer.observedAnalyzerVersion : undefined) ??
         (accepted === undefined ? "fake" : observedScanAnalyzerVersionV1(accepted));
+      const lock = asObject((profile as Record<string, unknown>).analyzerLock)?.sha256;
+      const text =
+        answer.kind === "sarif" && answer.raw === true
+          ? given
+          : withFakeScanCompletion(
+              given,
+              detectorId,
+              fakeScanCompletionEvidence(detectorId, record, {
+                version: analyzerVersion,
+                lockSha256: typeof lock === "string" ? lock : null,
+              }),
+            );
+      const bytes = Buffer.from(text, "utf8");
       return {
         outcome: "succeeded",
         capability,

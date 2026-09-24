@@ -184,7 +184,7 @@ function detectorRunner(
   } = {},
 ): Runner {
   // The detectors run in the installed Scan, which reports source-relative SARIF.
-  const clean = JSON.stringify({ version: "2.1.0", runs: [] });
+  const clean = JSON.stringify({ version: "2.1.0", runs: [{ results: [] }] });
   setInstalledFakeScan(
     fakeTrustLintScan(fixtureTrustLint, {
       "detector.skillspector": {
@@ -244,7 +244,7 @@ function detectorRunner(
     if (argv.includes("semgrep")) {
       if (argv.includes("--version")) return { code: 0, stdout: "1.173.0\n" };
       if (argv.includes("scan")) {
-        return { code: 0, stdout: JSON.stringify({ version: "2.1.0", runs: [] }) };
+        return { code: 0, stdout: JSON.stringify({ version: "2.1.0", runs: [{ results: [] }] }) };
       }
     }
     if (argv[0] === "agentshield") {
@@ -252,7 +252,7 @@ function detectorRunner(
       if (argv.includes("scan")) {
         const out = argv[argv.indexOf("--output") + 1];
         if (out === undefined) return { code: 1, stderr: "missing --output" };
-        writeFileSync(out, JSON.stringify({ version: "2.1.0", runs: [] }), "utf8");
+        writeFileSync(out, JSON.stringify({ version: "2.1.0", runs: [{ results: [] }] }), "utf8");
         return { code: 0, stdout: `SARIF saved to ${out}\n` };
       }
     }

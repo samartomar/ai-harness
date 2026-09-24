@@ -133,6 +133,7 @@ function signedPublication(
             runs: [
               {
                 tool: { driver: { name: analyzer } },
+                invocations: [{ executionSuccessful: true }],
                 results:
                   analyzer === "skillspector" && detail !== ""
                     ? [

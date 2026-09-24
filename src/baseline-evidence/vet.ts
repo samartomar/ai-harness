@@ -359,7 +359,7 @@ async function prepareSourceWideCiscoEvidence(
       }),
     ];
   }
-  const joined = joinCiscoShardResults(manifest, results);
+  const joined = joinCiscoShardResults(manifest, results, sourceRoot);
   scanOptions.progress?.(
     `baseline vet: Cisco source evidence joined ${joined.outputs.length} exact jobs`,
   );

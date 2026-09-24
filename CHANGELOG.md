@@ -86,6 +86,18 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   table, never from Scan's declaration (the host-process Cisco lock, which differs from the
   committed receipts' lock, is an explicit table entry). Committed baseline evidence is still
   checked against the pinned identities.
+- A detector run counts as completed, zero findings included, only when its SARIF proves the
+  analysis completed. Every log Core reads from Scan (delegated, precomputed, or a Cisco shard
+  job) must have at least one run, each naming a tool driver and reporting non-empty
+  `invocations` that are all `executionSuccessful: true`, with well-formed notifications and
+  none at `error` level. A delegated run, the binding gate and every Cisco shard job (in the run
+  and again before the join) must also carry Scan's completion evidence v1
+  (`invocations[0].properties.aihScanCompletionV1`). Core recomputes the subject digest and file
+  count from the files it submitted, and requires the requested detector and the analyzer
+  identity it accepted. Zero analyzed files are accepted only for the five detectors that
+  complete on an empty source. Anything else is `trust.detector-unavailable` (outcome `failed`).
+  An `@aihq/scan` without completion evidence (before S2g) therefore fails every delegated
+  detector, and a Snyk or mcp-scanner run whose SARIF names no tool driver fails too.
 - An org-policy `trust.internalScopes` entry must be an npm scope (`@acme`, optionally
   without the `@`, surrounding whitespace ignored); `aih policy validate` now rejects a
   malformed one such as `@my team` with its field path instead of ignoring it, and Scan

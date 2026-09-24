@@ -31,6 +31,8 @@ import {
   createFakeScanAdapterForTests,
   FAKE_SCAN_PROFILES,
   type FakeScanAdapterForTests,
+  fakeScanCompletionEvidence,
+  withFakeScanCompletion,
 } from "../trust/fakes/fake-scan-adapter.js";
 import { bindingGateSarifForTests, fakeBindingGateScan } from "./fake-binding-gate.js";
 
@@ -464,13 +466,60 @@ describe("refusals: the gate never decides on an inspection Core cannot account 
     expect((refusal as Error).message).toContain("missing dimension mcp must state a reason");
   });
 
+  it("refuses an inspection whose SARIF does not prove the selection was analyzed", async () => {
+    const withoutEvidence = await refusalOf(
+      createFakeScanAdapterForTests({
+        [BINDING_GATE_DETECTOR_ID]: {
+          kind: "sarif",
+          raw: true,
+          sarif: JSON.stringify({
+            ...JSON.parse(bindingGateSarifForTests([])),
+            runs: JSON.parse(bindingGateSarifForTests([])).runs.map(
+              (run: Record<string, unknown>) => ({
+                ...run,
+                invocations: [{ executionSuccessful: true }],
+              }),
+            ),
+          }),
+        },
+      }),
+    );
+    expect(withoutEvidence).toBeInstanceOf(BindingGateScanError);
+    expect((withoutEvidence as Error).message).toBe(
+      "detector.aih-binding-gate returned SARIF whose run 0 carries no aihScanCompletionV1 completion evidence",
+    );
+    // Evidence for an empty selection, not the one Core sent.
+    const otherSelection = await refusalOf(
+      createFakeScanAdapterForTests({
+        [BINDING_GATE_DETECTOR_ID]: {
+          kind: "sarif-for",
+          sarif: (request) =>
+            withFakeScanCompletion(
+              bindingGateSarifForTests([]),
+              BINDING_GATE_DETECTOR_ID,
+              fakeScanCompletionEvidence(
+                BINDING_GATE_DETECTOR_ID,
+                {
+                  ...request,
+                  subject: { ...(request.subject as object), selectedClosurePaths: [] },
+                },
+                { version: "1.0.0", lockSha256: null },
+              ),
+            ),
+        },
+      }),
+    );
+    expect(otherSelection).toBeInstanceOf(BindingGateScanError);
+    expect((otherSelection as Error).message).toContain("completion evidence for 0 files");
+  });
+
   it("refuses a pin on a path Core did not send", async () => {
     const refusal = await refusalOf(
       fakeBindingGateScan([
         {
           dimension: "hidden-unicode",
           status: "produced",
-          findings: [pinned("trust.hidden-unicode", "../outside.md")],
+          findings: [pinned("trust.hidden-unicode", "not-sent.md")],
         },
       ]),
     );

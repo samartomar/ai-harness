@@ -615,7 +615,7 @@ describe("workspace add acquisition plans", () => {
       fakeTrustLintScan(fixtureTrustLint, {
         "detector.skillspector": {
           kind: "sarif",
-          sarif: JSON.stringify({ version: "2.1.0", runs: [] }),
+          sarif: JSON.stringify({ version: "2.1.0", runs: [{ results: [] }] }),
         },
       }),
     );

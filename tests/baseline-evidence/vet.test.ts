@@ -21,6 +21,7 @@ import {
   joinCiscoShardResults,
 } from "../../src/trust/cisco-shards.js";
 import { TRUST_POLICY_VERSION } from "../../src/trust/evidence.js";
+import { fakeCiscoJobSarif } from "../trust/fakes/fake-cisco-job-sarif.js";
 
 let root: string;
 
@@ -373,27 +374,27 @@ describe("vetBaselineCatalog", () => {
     );
     const dispatch = vi.fn(async (manifest: CiscoShardManifest) =>
       manifest.shards.map((shard) =>
-        buildCiscoShardResult(manifest, shard.id, (job) => ({
-          version: "2.1.0",
-          runs: [
-            {
-              results: [
-                {
-                  ruleId: "fixture",
-                  message: { text: job.path },
-                  locations: [
-                    {
-                      physicalLocation: {
-                        artifactLocation: { uri: `${job.path}/SKILL.md` },
-                        region: { startLine: 1 },
-                      },
+        buildCiscoShardResult(manifest, shard.id, (job) =>
+          fakeCiscoJobSarif(
+            root,
+            job.path,
+            [
+              {
+                ruleId: "fixture",
+                message: { text: job.path },
+                locations: [
+                  {
+                    physicalLocation: {
+                      artifactLocation: { uri: `${job.path}/SKILL.md` },
+                      region: { startLine: 1 },
                     },
-                  ],
-                },
-              ],
-            },
-          ],
-        })),
+                  },
+                ],
+              },
+            ],
+            manifest.analyzer,
+          ),
+        ),
       ),
     );
 
@@ -478,12 +479,15 @@ describe("vetBaselineCatalog", () => {
     });
     const shard = manifest.shards[0];
     if (shard === undefined) throw new Error("fixture shard missing");
-    const shared = joinCiscoShardResults(manifest, [
-      buildCiscoShardResult(manifest, shard.id, () => ({
-        version: "2.1.0",
-        runs: [],
-      })),
-    ]);
+    const shared = joinCiscoShardResults(
+      manifest,
+      [
+        buildCiscoShardResult(manifest, shard.id, (job) =>
+          fakeCiscoJobSarif(root, job.path, [], manifest.analyzer),
+        ),
+      ],
+      root,
+    );
     const scanTree = vi.fn(async () => ({
       analyzersRun: ["aih-native", "cisco@uvx"],
       checks: [pass("must not run")],

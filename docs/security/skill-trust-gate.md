@@ -112,6 +112,38 @@ candidate content. The skip remains visible in trust evidence. When the sandbox
 is available and an executed smoke run fails, `trust.sandbox-smoke-failed`
 remains a blocking content finding.
 
+## Completion evidence: zero findings must be proven
+
+Scan's "succeeded" is not proof that an analyzer looked at anything. Core counts a detector
+run as completed, and its zero findings as zero, only when the SARIF itself proves it
+(`src/trust/scan-sarif.ts`):
+
+- **Shape.** The log must have at least one run. Each run names a tool driver, has a results
+  array, and reports non-empty `invocations`. Every invocation is `executionSuccessful: true`,
+  its notification lists are well formed, and none is at `error` level. This applies to
+  delegated runs, precomputed SARIF (Scanner annexes, joined Cisco shards) and each Cisco shard
+  job.
+- **Subject.** A delegated run, the binding gate and each Cisco shard job must carry Scan's
+  completion evidence v1 in `invocations[0].properties.aihScanCompletionV1` (every run equal).
+  Core recomputes `subjectTreeSha256` and `analyzedFileCount` (subject-files-v1) from the files
+  it submitted, under each detector's rule (`src/trust/scan-subject-files.ts`):
+  - Semgrep and SkillSpector: the whole tree.
+  - Snyk: the tree without its top-level `.git`.
+  - Cisco: the files under each selected `SKILL.md` directory.
+  - mcp-scanner: the MCP config files Core named.
+  - Trust lint and binding gate: the selection Core sent.
+  - A shard job: every file under its job directory.
+
+  The detector must be the one requested, and the analyzer version and uv.lock digest must be
+  the identity Core accepted for the run (`null` for in-process and SkillSpector Docker
+  profiles). Zero files are accepted only for Semgrep, SkillSpector, Snyk, the trust lint and
+  the binding gate.
+
+A run that fails either check is `trust.detector-unavailable` with outcome `failed`; a required
+detector fails at enterprise posture. A tree changed after Scan sealed it fails the same way,
+because Core's recomputation no longer matches. The trust lint's and binding gate's evidence
+covers the declared selection only.
+
 ## Analyzer execution profiles and their limits
 
 Every detector runs in the installed `@aihq/scan` under an execution profile aih names; no

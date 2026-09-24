@@ -11,6 +11,7 @@ import {
 import { startTrackedScanCall } from "../scan-package/settlement.js";
 import {
   delegatedDetectorResult,
+  delegatedScanCompletionRefusalV1,
   resolveScanExecutionV1,
   TrustScanCancelledError,
 } from "../trust/detectors.js";
@@ -18,6 +19,7 @@ import {
   declaredScanAnalyzerIdentityRefusalV1,
   executedScanAnalyzerIdentityRefusalV1,
 } from "../trust/scan-analyzer-identity.js";
+import { checkedScanSarifTextV1 } from "../trust/scan-sarif.js";
 import type { DimensionReport, ScanCoverage, ScanFinding, ScanSeverity } from "./scan-gate.js";
 
 // The binding scan gate's FAST-tier inspection is Scan's `detector.aih-binding-gate`
@@ -361,6 +363,18 @@ export async function inspectTreeThroughScanV1(
     BINDING_GATE_EXECUTION_PROFILE,
   );
   if (executed !== undefined) throw new BindingGateScanError(executed);
+  // Zero findings count only when the SARIF proves the selection was analyzed.
+  const checked = checkedScanSarifTextV1(result.sarif);
+  if ("refusal" in checked)
+    throw new BindingGateScanError(`${BINDING_GATE_DETECTOR_ID} returned ${checked.refusal}`);
+  const completion = delegatedScanCompletionRefusalV1(raw, checked.log, {
+    detectorId: BINDING_GATE_DETECTOR_ID,
+    executionProfileId: BINDING_GATE_EXECUTION_PROFILE,
+    sourceRoot,
+    selectedClosurePaths: selectedPaths,
+  });
+  if (completion !== undefined)
+    throw new BindingGateScanError(`${BINDING_GATE_DETECTOR_ID} returned ${completion}`);
   const mapped = bindingGateReportsFromSarifV1(result.sarif, selectedPaths, sourceRoot);
   if ("refusal" in mapped) throw new BindingGateScanError(mapped.refusal);
   return mapped.reports;

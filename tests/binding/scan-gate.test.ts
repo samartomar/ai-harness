@@ -665,38 +665,48 @@ describe("fast scan disposition (D12 gate + posture-graded coverage)", () => {
       }
       try {
         const contentSha256 = createHash("sha256").update(outsideText, "utf8").digest("hex");
-        const disposition = await runFastScanGate(
-          scannableFromGit(resolved),
-          {
-            posture: "vibe",
-            allowIncompleteAtVibe: true,
-            acceptedFindings: [
-              {
-                repository: "test/fixture",
-                code: "trust.visible-unicode",
-                path,
-                fileSha256: contentSha256,
-              },
-            ],
-            deepDimensionReports: [
-              {
-                dimension: "deep-visible-unicode",
-                status: "produced",
-                findings: [
-                  {
-                    code: "trust.visible-unicode",
-                    severity: "medium",
-                    detail: "crafted external visible Unicode",
-                    coverage: "complete",
-                    path,
-                    contentSha256,
-                  },
-                ],
-              },
-            ],
-          },
-          gateDeps(),
-        );
+        const gate = () =>
+          runFastScanGate(
+            scannableFromGit(resolved),
+            {
+              posture: "vibe",
+              allowIncompleteAtVibe: true,
+              acceptedFindings: [
+                {
+                  repository: "test/fixture",
+                  code: "trust.visible-unicode",
+                  path,
+                  fileSha256: contentSha256,
+                },
+              ],
+              deepDimensionReports: [
+                {
+                  dimension: "deep-visible-unicode",
+                  status: "produced",
+                  findings: [
+                    {
+                      code: "trust.visible-unicode",
+                      severity: "medium",
+                      detail: "crafted external visible Unicode",
+                      coverage: "complete",
+                      path,
+                      contentSha256,
+                    },
+                  ],
+                },
+              ],
+            },
+            gateDeps(),
+          );
+        if (escapeKind === "symlink") {
+          // Scan's seal refuses a tree holding a link that leaves it, and Core cannot rebuild
+          // the subject either: the inspection fails closed before any report is read.
+          await expect(gate()).rejects.toThrow(
+            "symbolic link src/linked-outside.md leaves the source root",
+          );
+          return;
+        }
+        const disposition = await gate();
 
         expect(disposition.verdict).toBe("block");
         const finding = disposition.findings.find(

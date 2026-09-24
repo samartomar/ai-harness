@@ -68,6 +68,7 @@ function fixture(detail = "") {
             runs: [
               {
                 tool: { driver: { name: analyzer } },
+                invocations: [{ executionSuccessful: true }],
                 results: [],
                 properties: { detail: analyzer === "skillspector" ? detail : "" },
               },

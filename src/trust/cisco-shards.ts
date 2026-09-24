@@ -1,4 +1,7 @@
 import { createHash } from "node:crypto";
+import { hashComponentTree } from "../baseline-evidence/hash.js";
+import { checkedScanSarifLogV1, scanCompletionRefusalV1 } from "./scan-sarif.js";
+import { scanSubjectDigestV1 } from "./scan-subject-files.js";
 
 const SHA256 = /^[0-9a-f]{64}$/;
 const GIT_SHA = /^[0-9a-f]{40}$/;
@@ -317,9 +320,41 @@ function assertResultEnvelope(manifest: CiscoShardManifest, value: CiscoShardRes
   }
 }
 
+/**
+ * The one completion predicate for a Cisco shard job's SARIF (C2a §1.6), before
+ * any join: the checked shape, and completion evidence naming "detector.cisco",
+ * the job's files as Core rehashes them under `sourceRoot` (never zero), and
+ * the analyzer the manifest pins. Why it fails, or undefined.
+ */
+export function ciscoShardJobCompletionRefusalV1(
+  sarif: unknown,
+  sourceRoot: string,
+  jobPath: string,
+  analyzer: { readonly version: string; readonly lockSha256: string },
+): string | undefined {
+  const checked = checkedScanSarifLogV1(sarif);
+  if ("refusal" in checked) return checked.refusal;
+  let subject: ReturnType<typeof scanSubjectDigestV1>;
+  try {
+    subject = scanSubjectDigestV1(hashComponentTree(sourceRoot, [jobPath]).files);
+  } catch (error) {
+    return `completion evidence Core cannot check, because it cannot rehash job ${jobPath}: ${(error as Error)?.message ?? "unknown error"}`;
+  }
+  return scanCompletionRefusalV1(checked.log, {
+    detectorId: "detector.cisco",
+    subject,
+    emptyAllowed: false,
+    analyzer: {
+      version: analyzer.version.split("+", 1)[0] ?? analyzer.version,
+      lockSha256: analyzer.lockSha256,
+    },
+  });
+}
+
 export function joinCiscoShardResults(
   manifest: CiscoShardManifest,
   values: readonly CiscoShardResult[],
+  sourceRoot: string,
 ): JoinedCiscoShardEvidence {
   if (computedManifestSha256(manifest) !== manifest.manifestSha256) {
     throw new Error("Cisco shard manifest identity does not match its contents");
@@ -359,6 +394,14 @@ export function joinCiscoShardResults(
       if (sha256(canonicalJson(output.evidence)) !== output.evidenceSha256) {
         throw new Error(`Cisco job ${job.path} has a mismatched evidence digest`);
       }
+      const incomplete = ciscoShardJobCompletionRefusalV1(
+        output.evidence,
+        sourceRoot,
+        job.path,
+        manifest.analyzer,
+      );
+      if (incomplete !== undefined)
+        throw new Error(`Cisco job ${job.path} did not prove it completed: it holds ${incomplete}`);
       outputs.set(output.jobId, output);
     }
     for (const job of shard.jobs) {

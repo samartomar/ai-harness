@@ -15,6 +15,8 @@ import {
   createFakeScanAdapterForTests,
   FAKE_SCAN_PROFILES,
   type FakeScanAnswerV1,
+  fakeScanCompletionEvidence,
+  withFakeScanCompletion,
 } from "./fakes/fake-scan-adapter.js";
 import {
   loadParityCases,
@@ -62,8 +64,18 @@ function goldenTrustLint(id: string): FakeScanAnswerV1 {
   return { kind: "sarif", sarif: recordedScanTrustLintSarif(id) };
 }
 
+/** A completed analyzer run's SARIF; the fake Scan adds its completion evidence. */
 function sarif(results: readonly unknown[]): string {
-  return JSON.stringify({ version: "2.1.0", runs: [{ results }] });
+  return JSON.stringify({
+    version: "2.1.0",
+    runs: [
+      {
+        tool: { driver: { name: "fixture" } },
+        invocations: [{ executionSuccessful: true }],
+        results,
+      },
+    ],
+  });
 }
 
 /**
@@ -605,6 +617,160 @@ describe("Scan's detector SARIF is checked at the boundary", () => {
     const { scan: outcome } = await delegatedScan(root, ["cisco"], { scanExecution: scan });
     expect(detectorCheck(outcome.checks, "cisco")?.detail).toContain(
       "detector.cisco returned execution profile linux-namespace-uv-v1 instead of requested host-process-uv-v1",
+    );
+  });
+});
+
+describe("zero findings count only when Scan proves the subject Core submitted was analyzed", () => {
+  const SEMGREP = {
+    version: "1.173.0+uvlock.77f2bf3e7525",
+    lockSha256: "77f2bf3e7525ceedb0a0ffba9cddb238be809efe965e6de6f135593772571d08",
+  };
+  const run = (root: string, answer: FakeScanAnswerV1, detector: TrustDetectorName = "semgrep") =>
+    scanTrustTreeWithAnalyzers(root, {
+      posture: "enterprise",
+      env: {},
+      platform: "linux",
+      run: recordingRunner().run,
+      detectors: [detector],
+      requiredDetectors: [detector],
+      scanExecution: createFakeScanAdapterForTests({
+        "detector.aih-trust-lint": goldenTrustLint("prompt-injection"),
+        [`detector.${detector}`]: answer,
+      }),
+    });
+  const failedWith = (checks: readonly Check[], detector: string, reason: string) => {
+    const check = detectorCheck(checks, detector);
+    expect(check?.verdict).toBe("fail");
+    expect(check?.code).toBe("trust.detector-unavailable");
+    expect(check?.detail).toContain(reason);
+  };
+
+  it("keeps a required Snyk run strict: output without a driver or invocation fails at enterprise", async () => {
+    // The shape Scan S2f's snyk-agent-scan engine emits: results, and nothing proving completion.
+    const result = await run(
+      caseRoot("prompt-injection"),
+      {
+        kind: "sarif",
+        sarif: JSON.stringify({ version: "2.1.0", runs: [{ results: [] }] }),
+        raw: true,
+      },
+      "snyk-agent-scan",
+    );
+    failedWith(
+      result.checks,
+      "snyk-agent-scan",
+      "detector.snyk-agent-scan returned SARIF whose run 0 names no tool driver",
+    );
+    expect(result.analyzersRun).not.toContain("snyk-agent-scan");
+  });
+
+  it("refuses a completed-looking run that states no completion evidence", async () => {
+    const result = await run(caseRoot("prompt-injection"), {
+      kind: "sarif",
+      raw: true,
+      sarif: JSON.stringify({
+        version: "2.1.0",
+        runs: [
+          {
+            tool: { driver: { name: "semgrep" } },
+            invocations: [{ executionSuccessful: true }],
+            results: [],
+          },
+        ],
+      }),
+    });
+    failedWith(
+      result.checks,
+      "semgrep",
+      "detector.semgrep returned SARIF whose run 0 carries no aihScanCompletionV1 completion evidence",
+    );
+  });
+
+  it("refuses evidence for a subject other than the tree Core submitted", async () => {
+    const root = caseRoot("prompt-injection");
+    const other = caseRoot("clean");
+    const result = await run(root, {
+      kind: "sarif-for",
+      sarif: (request) =>
+        withFakeScanCompletion(
+          JSON.stringify({ version: "2.1.0", runs: [{ results: [] }] }),
+          "detector.semgrep",
+          fakeScanCompletionEvidence(
+            "detector.semgrep",
+            { ...request, subject: { ...(request.subject as object), sourceRoot: other } },
+            SEMGREP,
+          ),
+        ),
+    });
+    failedWith(result.checks, "semgrep", "; the subject Core submitted has ");
+  });
+
+  it("refuses a run whose tree changed after Scan sealed it", async () => {
+    const root = caseRoot("prompt-injection");
+    const result = await run(root, {
+      kind: "sarif-for",
+      sarif: (request) => {
+        const text = withFakeScanCompletion(
+          JSON.stringify({ version: "2.1.0", runs: [{ results: [] }] }),
+          "detector.semgrep",
+          fakeScanCompletionEvidence("detector.semgrep", request, SEMGREP),
+        );
+        writeFileSync(join(root, "added-after-the-seal.md"), "late\n", "utf8");
+        return text;
+      },
+    });
+    failedWith(result.checks, "semgrep", "; the subject Core submitted has ");
+  });
+
+  it("refuses evidence naming another analyzer than the one Core accepted", async () => {
+    const result = await run(caseRoot("prompt-injection"), {
+      kind: "sarif-for",
+      sarif: (request) =>
+        withFakeScanCompletion(
+          JSON.stringify({ version: "2.1.0", runs: [{ results: [] }] }),
+          "detector.semgrep",
+          fakeScanCompletionEvidence("detector.semgrep", request, {
+            ...SEMGREP,
+            lockSha256: "0".repeat(64),
+          }),
+        ),
+    });
+    failedWith(
+      result.checks,
+      "semgrep",
+      `completion evidence for analyzer "${SEMGREP.version}" with uv.lock ${"0".repeat(64)}; Core accepts ${SEMGREP.version} with uv.lock ${SEMGREP.lockSha256}`,
+    );
+  });
+
+  it("refuses precomputed SARIF that does not prove its analyzer completed", async () => {
+    const result = await scanTrustTreeWithAnalyzers(caseRoot("prompt-injection"), {
+      posture: "enterprise",
+      env: {},
+      platform: "linux",
+      run: recordingRunner().run,
+      detectors: ["cisco"],
+      requiredDetectors: ["cisco"],
+      precomputedDetectorSarif: {
+        cisco: JSON.stringify({
+          version: "2.1.0",
+          runs: [
+            {
+              tool: { driver: { name: "cisco" } },
+              invocations: [{ executionSuccessful: false }],
+              results: [],
+            },
+          ],
+        }),
+      },
+      scanExecution: createFakeScanAdapterForTests({
+        "detector.aih-trust-lint": goldenTrustLint("prompt-injection"),
+      }),
+    });
+    failedWith(
+      result.checks,
+      "cisco",
+      "precomputed SARIF for detector.cisco is refused: it holds SARIF whose run 0 invocation 0 is not executionSuccessful: true",
     );
   });
 });

@@ -344,7 +344,14 @@ export function detectorSarifFromGolden(
   }));
   return JSON.stringify({
     version: "2.1.0",
-    runs: [{ tool: { driver: { name: `${run.scanDetectorId} (test fake)` } }, results }],
+    // A completed analyzer run carries its successful invocation (C2a §1.4).
+    runs: [
+      {
+        tool: { driver: { name: `${run.scanDetectorId} (test fake)` } },
+        invocations: [{ executionSuccessful: true }],
+        results,
+      },
+    ],
   });
 }
 

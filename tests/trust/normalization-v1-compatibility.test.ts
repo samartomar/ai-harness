@@ -480,7 +480,13 @@ async function currentLegacySemantics(expected: (typeof EXPECTED_LEGACY_SEMANTIC
     precomputedSarif: {
       [expected.detectorClass]: JSON.stringify({
         version: "2.1.0",
-        runs: [{ results: [result, result] }],
+        runs: [
+          {
+            tool: { driver: { name: "fixture" } },
+            invocations: [{ executionSuccessful: true }],
+            results: [result, result],
+          },
+        ],
       }),
     },
     corroboratedChecks: [],

@@ -9,6 +9,7 @@ import { ScanPackageRefusalError } from "../../src/scan-package/load-scan-packag
 import { CISCO_SKILL_SCANNER_ANALYZER } from "../../src/trust/detectors.js";
 import { scanTrustTreeWithAnalyzers } from "../../src/trust/scan.js";
 import { acceptedScanAnalyzerIdentityV1 } from "../../src/trust/scan-analyzer-identity.js";
+import { fakeScanCompletionEvidence, withFakeScanCompletion } from "./fakes/fake-scan-adapter.js";
 import { fakeTrustLintScan } from "./fakes/fake-trust-lint.js";
 
 // ---------------------------------------------------------------------------
@@ -42,7 +43,13 @@ function write(rel: string, body: string): void {
 const CISCO_SARIF = JSON.stringify({
   version: "2.1.0",
   $schema: "https://json.schemastore.org/sarif-2.1.0.json",
-  runs: [{ tool: { driver: { name: "skill-scanner" } }, results: [] }],
+  runs: [
+    {
+      tool: { driver: { name: "skill-scanner" } },
+      invocations: [{ executionSuccessful: true }],
+      results: [],
+    },
+  ],
 });
 
 /** One rule the existing cisco map normalizes, so the SARIF reaches findings. */
@@ -52,6 +59,7 @@ const CISCO_FINDING_SARIF = JSON.stringify({
   runs: [
     {
       tool: { driver: { name: "skill-scanner" } },
+      invocations: [{ executionSuccessful: true }],
       results: [
         {
           ruleId: "PROMPT_INJECTION_IGNORE_INSTRUCTIONS",
@@ -120,10 +128,23 @@ function capability(detectorId: string, subjectKinds: readonly string[] = ["sour
  * Shaped after Scan's own succeeded `RunDetectorV1Result`
  * (`aih-scan@a405b9d0 src/runner/run-detector-v1.ts:167-187`): the analyzer
  * bytes live in the `baseline-analyzer-observation-v1` evidence member, under
- * an annex digest taken over exactly those bytes.
+ * an annex digest taken over exactly those bytes. For `request`, the SARIF
+ * carries Scan's completion evidence for that request's subject (C2a §1.6).
  */
-function succeededWithSarif(sarif: string) {
-  const bytes = Buffer.from(sarif, "utf8");
+function succeededWithSarif(sarif: string, request?: unknown) {
+  const bytes = Buffer.from(
+    request === undefined
+      ? sarif
+      : withFakeScanCompletion(
+          sarif,
+          "detector.cisco",
+          fakeScanCompletionEvidence("detector.cisco", request as Record<string, unknown>, {
+            version: "2.0.14+uvlock.108c4f78340d",
+            lockSha256: "108c4f78340db9488bd73a03967055b19cdd3e8ece16ed31289e03f89e27d58f",
+          }),
+        ),
+    "utf8",
+  );
   return {
     outcome: "succeeded",
     capability: capability("detector.cisco", ["skill-directory"]),
@@ -257,7 +278,7 @@ describe("scan execution adapter", () => {
   it("delegates a named detector and normalizes its findings", async () => {
     const adapter = stubAdapter(
       ["detector.cisco"],
-      () => Promise.resolve(succeededWithSarif(CISCO_FINDING_SARIF)),
+      (request) => Promise.resolve(succeededWithSarif(CISCO_FINDING_SARIF, request)),
       ["skill-directory"],
     );
     const { result } = await scan({ scanExecution: adapter, topLevelSkill: true });

@@ -11,13 +11,13 @@ import {
   buildCiscoShardResult,
   type CiscoShardManifest,
   type CiscoShardResult,
+  ciscoShardJobCompletionRefusalV1,
 } from "./cisco-shards.js";
 import { TrustScanCancelledError, type UvExecutionProfileIdV1 } from "./detectors.js";
 import {
   acceptedScanAnalyzerIdentityV1,
   declaredScanAnalyzerIdentityRefusalV1,
 } from "./scan-analyzer-identity.js";
-import { checkedScanSarifLogV1 } from "./scan-sarif.js";
 
 // Core builds the Cisco source-wide manifest and joins the shard results; the
 // installed @aihq/scan executes one shard's jobs (`runCiscoShardV1`, C2a §3.7).
@@ -75,6 +75,7 @@ function verifyShardSource(root: string, manifest: CiscoShardManifest): void {
 /** The succeeded result's per-job SARIF, parsed, keyed by job id; anything else throws. */
 function shardEvidence(
   result: unknown,
+  sourceRoot: string,
   jobs: readonly { readonly id: string; readonly path: string; readonly inputSha256: string }[],
   expected: {
     readonly executionProfileId: string;
@@ -136,11 +137,12 @@ function shardEvidence(
     } catch {
       throw new Error(`Cisco shard output for ${job.path} is not UTF-8 JSON`);
     }
-    const checked = checkedScanSarifLogV1(sarif);
-    if ("refusal" in checked)
-      throw new Error(
-        `Cisco shard output for ${job.path} is refused: Scan returned ${checked.refusal}`,
-      );
+    const refusal = ciscoShardJobCompletionRefusalV1(sarif, sourceRoot, job.path, {
+      version: expected.analyzerVersion,
+      lockSha256: expected.lockSha256,
+    });
+    if (refusal !== undefined)
+      throw new Error(`Cisco shard output for ${job.path} is refused: Scan returned ${refusal}`);
     evidence.set(job.id, sarif);
   }
   return evidence;
@@ -213,7 +215,7 @@ export async function runCiscoSourceShardThroughScanV1(
   );
   if (aborted(options.signal))
     throw new TrustScanCancelledError(`Cisco shard ${shardId} was running`);
-  const evidence = shardEvidence(result, jobs, {
+  const evidence = shardEvidence(result, safeRoot, jobs, {
     executionProfileId: options.executionProfileId,
     analyzerVersion,
     lockSha256: manifest.analyzer.lockSha256,
