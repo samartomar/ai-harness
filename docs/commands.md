@@ -360,7 +360,7 @@ readiness follows the primary: with Codebase Memory as primary it checks the exa
 registration and makes real MCP calls through it (`list_projects`, `index_status`, indexing an
 unindexed project locally once), and it never downloads the native payload.
 
-MarkItDown CLI converts local documents to Markdown. Setup installs version 0.1.7 with the PDF,
+MarkItDown CLI converts local documents to Markdown. Setup installs version 0.1.8 with the PDF,
 Word, PowerPoint, Excel and Outlook converters into an external runtime keyed by its dependency
 lock using an existing Python 3.10–3.13 interpreter, verifies an actual conversion, and reports the installed CLI command. It does not change
 global PATH or replace a user-installed CLI. Azure services, YouTube and audio-transcription extras
@@ -368,7 +368,7 @@ are not installed by default. Add `markitdown` to `developerTools.excluded` to o
 and worktree changes preserve the policy choice.
 
 MarkItDown MCP is a separate optional integration. Add `markitdown-mcp` to `mcp.allowedServers`
-to select the pinned official adapter (0.0.1a7 with converter 0.1.7); `mcp.disabledServers` overrides
+to select the pinned official adapter (0.0.1a7 with converter 0.1.8); `mcp.disabledServers` overrides
 that selection. This adapter can access user-selected files and URLs with the current user's
 permissions, and its first launch acquires its dependencies. Selecting the default CLI does not
 enable the MCP adapter. GitHub MCP also requires an explicit choice through `mcp.allowedServers`,
