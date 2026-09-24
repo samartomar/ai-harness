@@ -22,6 +22,7 @@ import { REGISTRY_IDS } from "./internals/cli-registry.js";
 import type { Cli } from "./internals/clis.js";
 import { readIfExists } from "./internals/fsxn.js";
 import { gitRead } from "./internals/git.js";
+import { NODE_RUNTIME_FLOOR_TEXT, nodeVersionMeetsFloor } from "./internals/node-runtime-floor.js";
 import {
   type Action,
   type CommandSpec,
@@ -117,14 +118,13 @@ export const command: CommandSpec = {
         ? { ...ctx, targets: declared as Cli[] }
         : ctx;
     const base: Action[] = [
-      probe("node runtime >= 20", () => {
-        const major = Number.parseInt(process.versions.node.split(".")[0] ?? "0", 10);
-        return major >= 20
+      probe(`node runtime >= ${NODE_RUNTIME_FLOOR_TEXT}`, () => {
+        return nodeVersionMeetsFloor(process.versions.node)
           ? { name: "node-version", verdict: "pass", detail: `node ${process.versions.node}` }
           : {
               name: "node-version",
               verdict: "fail",
-              detail: `node ${process.versions.node} < 20 — install Node 20+ (nvm/winget/brew) and re-run`,
+              detail: `node ${process.versions.node} < ${NODE_RUNTIME_FLOOR_TEXT} — install Node ${NODE_RUNTIME_FLOOR_TEXT}+ (nvm/winget/brew) and re-run`,
               code: "env.node-runtime",
             };
       }),

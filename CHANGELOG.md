@@ -38,17 +38,58 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `.claude/settings.json` `env` and delete that receipt, then project again. The new
   receipt is `.aih/org-policy-framework-hook-controls-receipt.json`. Hook ids and profiles
   are validated by the framework plugin against its own inventory, not by Core's schema.
-
+- Remove legacy MCP-target reconstruction during saved-policy consumption. Policies authored
+  against an older MCP target declaration now fail closed with `Stale selected content`; re-save
+  the policy with the currently installed Catalog's MCP targets before consuming it.
 - Remove the pre-release Policy Workbench browser/HTML/server bundle and its
   `aih --ui` and `aih policy generate` command registrations. They have no
   compatibility stubs or `aih-ui` replacement. Core retains policy validation,
   protected authority consumption, policy-data commands, and backend catalog
   records needed by current consumers. Earlier Workbench work in this changelog
   remains development history, not a current browser feature.
+- Remove Core's Catalog producer tools `tools/build-catalog-preassembly.ts`,
+  `tools/copy-policy-data.mjs` and `tools/update-ecc-content-metadata.mjs`. Catalog's build
+  regenerates that data.
 
 ### Changed
 
-- `@aihq/catalog` is now an optional peer dependency (`>=0.2.0 <1.0.0`), loaded at run
+- **Breaking:** Core now requires Node.js 20.6 or newer (`engines.node` `>=20.6.0`).
+  The framework-plugin loader uses the synchronous `import.meta.resolve` of Node 20.6
+  to prove that a plugin entry resolves inside its own install tree. `aih doctor` and
+  the readiness report now check the minor version too, so Node 20.0 to 20.5 fails the
+  runtime gate instead of passing it. Migration: upgrade Node to 20.6 or later (Node 22
+  LTS is recommended).
+- **Breaking:** Catalog-owned data no longer ships in Core. The ECC and Superpowers framework
+  descriptors (component definitions, module and profile graphs, install preview, MCP, skill and
+  hook inventories, vendor lock), the Policy Workbench authoring bundle and source inputs, the
+  public baseline, Core qualification material, scanner evidence and scanner-provider inputs
+  (including the Matt Pocock and Ponytail snapshots) are read only from the installed
+  `@aihq/catalog` 0.3.x. Operations that need them (ECC install preview and lifecycle, baseline
+  vetting and analysis, framework plug-ins, policy authoring and policy-data preparation or
+  import) report `catalog-package-unavailable` without Catalog and `catalog-package-incompatible`
+  for a Catalog that cannot supply them; Core-only operations keep working. There is no embedded
+  fallback. Migration: install `@aihq/catalog` 0.3.x next to Core.
+- **Breaking:** Core accepts each Catalog-carried authority input only when its SHA-256 matches
+  the digest this Core release pins, and refuses any other bytes with
+  `catalog-package-incompatible` naming the unaccepted SHA-256. A Catalog self-digest is an
+  integrity check, not authority. Policy bindings are derived by Core from the admitted authoring
+  bundle; bindings shipped by Catalog are ignored. Migration: use the Catalog release this Core
+  release accepts.
+- **Breaking:** Core no longer compiles Catalog-owned content. The `built-in/v1`,
+  `pinned-baseline/v1`, `pinned-skill-collection/v1` and `pinned-component-collection/v1`
+  producers, the Matt Pocock and Ponytail scanner providers and the embedded Workbench
+  preassembly moved to Catalog; Core keeps those format identities only to validate what Catalog
+  admits. Compiling a replacement Catalog-owned baseline is refused. Organization-authored
+  manifests and witnessed organization evidence still compile. Migration: regenerate
+  Catalog-owned content with Catalog's generators.
+- **Breaking:** Vetting an upstream pin that the installed Catalog does not carry is refused.
+  `aih baseline vet --pin <other>`, an `AIH_ECC_REF` other than the Catalog's pin, and baseline
+  analysis at another pin fail with `AIH_TRUST` naming both pins (`Catalog <framework> carries
+  pin <carried>; it does not carry requested pin <requested>`). Core no longer rebinds the
+  framework layout to an organization-vetted newer pin. Migration: install a Catalog that carries
+  the pin (Catalog's framework-descriptor generators produce one) and a Core release that accepts
+  that descriptor's SHA-256.
+- `@aihq/catalog` is now an optional peer dependency (`>=0.3.0 <0.4.0`), loaded at run
   time through one module and never bundled. The historical ECC runtime descriptor used by
   `aih ecc --lifecycle install` and `aih policy project` is resolved in a recorded order: a
   matching verified local source-data receipt, then the installed Catalog's
@@ -57,11 +98,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   descriptor is a named refusal (`catalog-package-incompatible`,
   `catalog-index-refused`, `catalog-runtime-descriptors-refused`,
   `catalog-descriptor-absent`, `catalog-descriptor-unverified`,
-  `catalog-descriptor-not-accepted`), never an embedded fallback; this includes the
-  registry's `@aihq/catalog` 0.2.0, which does not publish that subpath. The same bytes
+  `catalog-descriptor-not-accepted`), never an embedded fallback. The registry's
+  `@aihq/catalog` 0.2.0 is outside the peer range. The same bytes
   are accepted as before (`sha256 158f63e2…` for `affaan-m/ECC@5064474d…`), and the
-  source used is printed on stderr. Shared policy/catalog descriptor data still
-  ships for other backend consumers, not this historical resolver.
+  source used is printed on stderr.
 - `@aihq/scan` is now an optional peer dependency (`>=0.4.0 <1.0.0`) and is no longer
   bundled into `@aihq/core`: Core loads the installed Scan at run time through one module
   and checks each function it calls. Install both with `npm install -g @aihq/core @aihq/scan`
@@ -90,12 +130,30 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   profile applies only where enterprise policy sets none, and a conflicting one is
   refused. A malformed list fails closed. Framework plugin commands receive the merged
   request in their policy view, and `aih policy project` applies the plugin's plan.
-
-- Add Headroom as default-selected developer-tool intent in CLI previews. Applying
-  it reports activation unavailable as a skipped, pending outcome; it
-  does not install or run Headroom, configure MCP/proxy, or create a Headroom receipt.
-  Explicit Headroom choices require a V3 policy floor of Core 0.7.0; existing explicit
-  selections and 0.6.0 policies without Headroom remain accepted. Activation is future work.
+- Add Headroom (`headroom-ai[mcp]` 0.38.0, Apache-2.0) as a default-selected developer tool that
+  runs only after explicit activation. Selection alone, with or without `--apply`, leaves it
+  `selected-pending` with a skipped check. `aih developer-tools` and `aih init` gain
+  `--activate-headroom` (which requires `--accept-headroom-egress`) and `--deactivate-headroom`.
+  Activation installs the hash-locked closure in `src/tools/headroom-runtime/` into AIH-owned
+  state, pre-provisions two tokenizer vocabularies, records an activation receipt (consent flags
+  and UTC time, pins, lock digests, hosts, launcher digest), proves a real MCP handshake
+  (`initialize`, exactly `headroom_compress`/`headroom_retrieve`/`headroom_stats`, and a
+  `headroom_stats` call) and only then registers a `headroom` MCP server in the selected hosts.
+  Its launcher runs `headroom mcp serve` offline with `HEADROOM_BEACON=off`, `DO_NOT_TRACK=1`,
+  `HEADROOM_UPDATE_CHECK=off`, `HEADROOM_OFFLINE=1` and LiteLLM's network defaults switched off.
+  Deactivation and policy exclusion remove only unchanged AIH-owned host entries and all Headroom
+  state. Headroom's proxy, `wrap`, `deploy` and `learn --apply` modes are not used. A policy can
+  exclude Headroom but cannot activate it. Explicit Headroom choices require a V3 policy floor of
+  Core 0.7.0; existing explicit selections and 0.6.0 policies without Headroom remain accepted.
+- Add a primary code-graph choice. `developerTools.primaryCodeGraph` (`code-review-graph` or
+  `codebase-memory-mcp`, V3, Core 0.7.0 floor) binds when a policy sets it; otherwise
+  `--primary-code-graph <id>` on `aih developer-tools` and `aih init` records the user's choice in
+  the developer-tools receipt. Both tools stay available. The generated
+  `rules/agent-behavior-core.md` names the primary, and `aih doctor`'s large-repo graph readiness
+  checks Codebase Memory through its managed launcher when it is the primary.
+- Add `tools/verify-developer-tools-installed.mjs`, an installed proof that builds and packs Core,
+  installs it into a disposable consumer, and proves real Code Review Graph, Codebase Memory and
+  Headroom MCP setups against a disposable project with redirected home and state directories.
 - Add Playwright to default developer-tool setup for every project, with a headless isolated
   browser check and persistent policy opt-outs. Existing explicit tool selections stay unchanged.
 - Add MarkItDown CLI to default developer-tool setup, with a pinned local-document runtime,

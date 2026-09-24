@@ -9,7 +9,7 @@ import {
   type EccMcpCatalogEntry,
   type EccMcpExplicitAddReceipt,
   type EccMcpExplicitAddRecord,
-  eccExternalMcpCatalog,
+  eccExternalMcpCatalogV1,
   emptyExplicitAddReceipt,
   cliRegistryEntry as entry,
   existingMcpTomlNames,
@@ -78,7 +78,7 @@ function approvedHttpsEntry(policyInput: unknown, id: string, target: string): E
   if (approval.state !== "approved") {
     throw new Error(`ECC MCP ${id} is ${approval.state}; explicit Add is refused`);
   }
-  const catalog = eccExternalMcpCatalog.find((candidate) => candidate.id === id);
+  const catalog = eccExternalMcpCatalogV1().find((candidate) => candidate.id === id);
   if (catalog === undefined) throw new Error(`ECC MCP ${id} is not in the pinned external catalog`);
   if (catalog.addability !== "https-configurable") {
     throw new Error(`ECC MCP ${id} is not HTTPS-configurable; explicit Add is manual only`);
@@ -87,7 +87,7 @@ function approvedHttpsEntry(policyInput: unknown, id: string, target: string): E
 }
 
 function catalogHttpsEntry(id: string): EccMcpCatalogEntry {
-  const catalog = eccExternalMcpCatalog.find((candidate) => candidate.id === id);
+  const catalog = eccExternalMcpCatalogV1().find((candidate) => candidate.id === id);
   if (catalog === undefined) throw new Error(`ECC MCP ${id} is not in the pinned external catalog`);
   if (catalog.addability !== "https-configurable") {
     throw new Error(`ECC MCP ${id} is not HTTPS-configurable; explicit Add is manual only`);

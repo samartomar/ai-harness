@@ -1,4 +1,4 @@
-import snapshot from "./ecc-content-metadata.snapshot.json";
+import { loadFrameworkDescriptorSectionV1 } from "../catalog-package/framework-descriptors.js";
 
 export const ECC_CONTENT_METADATA_PROVENANCE = {
   repository: "affaan-m/ECC",
@@ -104,24 +104,38 @@ function entries(kind: "agents" | "skills", value: unknown): readonly EccContent
   return Object.freeze(parsed);
 }
 
-const source = snapshot as EccContentMetadataSnapshot;
-if (source.version !== 1) fail("unsupported version");
-if (
-  source.repository !== ECC_CONTENT_METADATA_PROVENANCE.repository ||
-  source.commit !== ECC_CONTENT_METADATA_PROVENANCE.commit
-) {
-  fail("provenance mismatch");
+let loaded:
+  | {
+      agentsById: Map<string, EccContentMetadataEntry>;
+      skillsById: Map<string, EccContentMetadataEntry>;
+    }
+  | undefined;
+function contentData() {
+  if (loaded !== undefined) return loaded;
+  const source = loadFrameworkDescriptorSectionV1<EccContentMetadataSnapshot>(
+    "ecc",
+    "contentMetadata",
+  );
+  if (source.version !== 1) fail("unsupported version");
+  if (
+    source.repository !== ECC_CONTENT_METADATA_PROVENANCE.repository ||
+    source.commit !== ECC_CONTENT_METADATA_PROVENANCE.commit
+  ) {
+    fail("provenance mismatch");
+  }
+  const agents = entries("agents", source.agents);
+  const skills = entries("skills", source.skills);
+  loaded = {
+    agentsById: new Map(agents.map((item) => [item.id, item])),
+    skillsById: new Map(skills.map((item) => [item.id, item])),
+  };
+  return loaded;
 }
-
-export const eccAgentContentMetadata = entries("agents", source.agents);
-export const eccSkillContentMetadata = entries("skills", source.skills);
-
-const agentsById = new Map(eccAgentContentMetadata.map((item) => [item.id, item]));
-const skillsById = new Map(eccSkillContentMetadata.map((item) => [item.id, item]));
 
 export function eccContentMetadata(
   kind: "agent" | "skill",
   id: string,
 ): EccContentMetadataEntry | undefined {
-  return (kind === "agent" ? agentsById : skillsById).get(id);
+  const data = contentData();
+  return (kind === "agent" ? data.agentsById : data.skillsById).get(id);
 }

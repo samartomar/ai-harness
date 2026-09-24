@@ -350,7 +350,7 @@ export { resolveEccMcpApproval } from "../org-policy/ecc-mcp-approval.js";
 export {
   ECC_MCP_CATALOG_PROVENANCE,
   type EccMcpCatalogEntry,
-  eccExternalMcpCatalog,
+  eccExternalMcpCatalogV1,
 } from "../org-policy/ecc-mcp-catalog.js";
 export {
   type EffectiveOrgPolicy,

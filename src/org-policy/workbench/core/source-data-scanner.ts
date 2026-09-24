@@ -6,8 +6,11 @@ import { z } from "zod";
 import { BaselineCatalogSchema } from "../../../baseline-evidence/catalog.js";
 import { hashComponentTree } from "../../../baseline-evidence/hash.js";
 import { componentIdentityPaths } from "../../../baseline-evidence/license.js";
+import {
+  type CollectionInput,
+  prepareCollectionScannerCoverageV1,
+} from "../../../baseline-evidence/scanner-catalog-consumer.js";
 import { createCoreBaselineVetRequests } from "../../../baseline-evidence/scanner-consumer.js";
-import { prepareCollectionScannerCoverageV1 } from "../../../baseline-evidence/scanner-provider-catalogs.js";
 import { consumeScannerBaselinePublicationsV1 } from "../../../baseline-evidence/scanner-publication.js";
 import {
   SCANNER_BASELINE_PUBLICATION_MAX_AGE_SECONDS_V1,
@@ -41,8 +44,6 @@ import {
   type ScannerEvidenceProjectionRecordV1,
   ScannerEvidenceProjectionRecordV1Schema,
 } from "../../packaged-collection-evidence-v1.js";
-import type { PinnedComponentCollectionInputV1 } from "../compilers/pinned-component-collection.js";
-import type { PinnedSkillCollectionInputV1 } from "../compilers/pinned-skill-collection.js";
 import type { AuthoringCatalogBundleV1 } from "../contracts.js";
 import { projectContainedScannerEvidenceV1 } from "./source-data-contained-projection.js";
 import { verifyScannerComponentContainmentV1 } from "./source-data-containment.js";
@@ -329,10 +330,7 @@ async function prepareSourceDataScannerEvidenceOperationalV1(
           "Scanner compiler input blob",
         )
       : proof.compilerInput
-  ) as
-    | PinnedSkillCollectionInputV1
-    | PinnedComponentCollectionInputV1
-    | z.infer<typeof SourceDataBaselineInputV1Schema>;
+  ) as CollectionInput | z.infer<typeof SourceDataBaselineInputV1Schema>;
   if (
     compilerInput?.version !== "pinned-skill-collection/v1" &&
     compilerInput?.version !== "pinned-component-collection/v1" &&

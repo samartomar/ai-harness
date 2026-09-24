@@ -4,7 +4,7 @@
  *
  * Builds @aihq/core, @aihq/framework-ecc and @aihq/framework-superpowers from
  * the given checkout into staging directories OUTSIDE the checkout, packs the
- * given Catalog candidate as it is, and installs the four tarballs into a
+ * given Catalog candidate (a checkout, or a tarball used as it is), and installs the four tarballs into a
  * disposable project AND a disposable global prefix (always `--ignore-scripts`,
  * an empty npm user config, never `npm link`). Against temp fixture roots only,
  * it then checks:
@@ -26,7 +26,7 @@
  *     completes the round trip.
  *
  * usage:
- *   node tools/verify-packed-framework-ecc.mjs --stage-from <core-repo> --catalog <catalog-repo>
+ *   node tools/verify-packed-framework-ecc.mjs --stage-from <core-repo> --catalog <catalog-repo | catalog.tgz>
  *     --ecc-source <ECC checkout at the Catalog pin> [--overlay-rev <rev>] [--core-version 0.7.0] [--work <dir>] [--reuse] [--keep] [--report <file>] [--transcript <file>]
  *
  * Prints one JSON summary line last; exits non-zero if any check fails.
@@ -146,7 +146,7 @@ const catalogRepo = option("--catalog");
 const eccSourceOption = option("--ecc-source");
 if (!stageFrom || !catalogRepo || !eccSourceOption) {
   process.stderr.write(
-    "usage: verify-packed-framework-ecc.mjs --stage-from <core-repo> --catalog <catalog-repo> --ecc-source <ecc-checkout> [--overlay-rev <rev>] [--core-version 0.7.0] [--work <dir>] [--reuse] [--keep] [--report <file>] [--transcript <file>]\n",
+    "usage: verify-packed-framework-ecc.mjs --stage-from <core-repo> --catalog <catalog-repo | catalog.tgz> --ecc-source <ecc-checkout> [--overlay-rev <rev>] [--core-version 0.7.0] [--work <dir>] [--reuse] [--keep] [--report <file>] [--transcript <file>]\n",
   );
   process.exit(2);
 }
@@ -268,7 +268,13 @@ function stageAndPack() {
     for (const file of ["package.json", "README.md", "LICENSE"]) cpSync(join(source, file), join(stage, file));
     plugins[name] = pack(stage, name);
   }
-  // ---- the Catalog candidate, packed as it is; record which tree that was ------------------
+  // ---- the Catalog candidate: a tarball used as it is, or a checkout packed as it is -------
+  if (resolve(catalogRepo).endsWith(".tgz")) {
+    const catalog = join(tarballs, resolve(catalogRepo).split(/[\\/]/).at(-1));
+    cpSync(resolve(catalogRepo), catalog);
+    summary.catalogCandidate = { tarball: resolve(catalogRepo) };
+    return { core, ecc: plugins[ECC], superpowers: plugins[SUPERPOWERS], catalog };
+  }
   const catalogHead = run("git", ["-C", resolve(catalogRepo), "rev-parse", "HEAD"], resolve(catalogRepo));
   const catalogStatus = run("git", ["-C", resolve(catalogRepo), "status", "--porcelain"], resolve(catalogRepo));
   summary.catalogCandidate = {

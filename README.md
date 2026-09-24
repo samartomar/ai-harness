@@ -106,7 +106,7 @@ digest. That observation is not a finding and does not change a verdict.
 ### Catalog beside Core (`@aihq/catalog`)
 
 `@aihq/catalog` is also an optional peer dependency of `@aihq/core`, range
-`>=0.2.0 <1.0.0`, loaded from the consumer's own install and never bundled. Install all
+`>=0.3.0 <0.4.0`, loaded from the consumer's own install and never bundled. Install all
 three together:
 
 ```bash
@@ -127,8 +127,8 @@ source it used on stderr:
 A missing Catalog is `catalog-package-unavailable`. An installed Catalog that cannot
 supply acceptable bytes is also a named refusal, never a switch to Core's embedded
 Workbench data: `catalog-package-incompatible` (it cannot be loaded,
-lacks a reader, or does not publish the subpath, as with the registry's `@aihq/catalog`
-0.2.0), `catalog-index-refused`, `catalog-runtime-descriptors-refused`,
+lacks a reader, is outside Core's compatible range, or does not publish the subpath),
+`catalog-index-refused`, `catalog-runtime-descriptors-refused`,
 `catalog-descriptor-absent`, `catalog-descriptor-unverified` or
 `catalog-descriptor-not-accepted`. Historical-source ECC resolution succeeds without
 Catalog only when a matching verified local source-data receipt is available; other

@@ -1,7 +1,6 @@
 import { z } from "zod";
-import eccModulesJson from "../baseline-evidence/ecc-modules.json";
-import eccProfilesJson from "../baseline-evidence/ecc-profiles.json";
 import type { BaselineAuthorization } from "../baseline-evidence/verify.js";
+import { loadFrameworkDescriptorSectionV1 } from "../catalog-package/framework-descriptors.js";
 import { AihError } from "../errors.js";
 import type { Cli } from "../internals/clis.js";
 import type { EccComponentId, EccComponentSelection } from "./components.js";
@@ -40,9 +39,27 @@ const ProfilesSnapshotSchema = z
   })
   .strict();
 
-const modules = ModulesSnapshotSchema.parse(eccModulesJson).modules;
-const profiles = ProfilesSnapshotSchema.parse(eccProfilesJson).profiles;
-const moduleById = new Map(modules.map((module) => [module.id, module]));
+type EccModuleData = {
+  modules: z.infer<typeof ModulesSnapshotSchema>["modules"];
+  profiles: z.infer<typeof ProfilesSnapshotSchema>["profiles"];
+  moduleById: Map<string, z.infer<typeof ModulesSnapshotSchema>["modules"][number]>;
+};
+let loadedData: EccModuleData | undefined;
+function moduleData(): EccModuleData {
+  if (loadedData !== undefined) return loadedData;
+  const modules = ModulesSnapshotSchema.parse(
+    loadFrameworkDescriptorSectionV1("ecc", "moduleGraph"),
+  ).modules;
+  const profiles = ProfilesSnapshotSchema.parse(
+    loadFrameworkDescriptorSectionV1("ecc", "profileGraph"),
+  ).profiles;
+  loadedData = {
+    modules,
+    profiles,
+    moduleById: new Map(modules.map((module) => [module.id, module])),
+  };
+  return loadedData;
+}
 
 const PACK_MODULES: Record<EccLanguagePack, readonly string[]> = {
   typescript: ["framework-language"],
@@ -58,11 +75,11 @@ const PACK_MODULES: Record<EccLanguagePack, readonly string[]> = {
   arkts: ["framework-language"],
 };
 
-function addWithDependencies(selected: Set<string>, id: string): void {
+function addWithDependencies(selected: Set<string>, id: string, data: EccModuleData): void {
   if (selected.has(id)) return;
-  const module = moduleById.get(id);
+  const module = data.moduleById.get(id);
   if (module === undefined) throw new Error(`pinned ECC module snapshot is missing ${id}`);
-  for (const dependency of module.dependencies) addWithDependencies(selected, dependency);
+  for (const dependency of module.dependencies) addWithDependencies(selected, dependency, data);
   selected.add(id);
 }
 
@@ -72,25 +89,27 @@ function addWithDependencies(selected: Set<string>, id: string): void {
  * administrator's root choice from the dependency closure it requires.
  */
 export function eccModuleDependencyIds(moduleId: string): string[] {
+  const data = moduleData();
   const selected = new Set<string>();
-  addWithDependencies(selected, moduleId);
+  addWithDependencies(selected, moduleId, data);
   selected.delete(moduleId);
-  return modules.filter((module) => selected.has(module.id)).map((module) => module.id);
+  return data.modules.filter((module) => selected.has(module.id)).map((module) => module.id);
 }
 
 export function eccProfileModuleIds(
   profileId: string,
   packs: readonly EccLanguagePack[] = [],
 ): string[] {
-  const profile = profiles[profileId];
+  const data = moduleData();
+  const profile = data.profiles[profileId];
   if (profile === undefined)
     throw new Error(`unknown ECC profile in pinned snapshot: ${profileId}`);
   const selected = new Set<string>();
-  for (const id of profile.modules) addWithDependencies(selected, id);
+  for (const id of profile.modules) addWithDependencies(selected, id, data);
   for (const pack of packs) {
-    for (const id of PACK_MODULES[pack]) addWithDependencies(selected, id);
+    for (const id of PACK_MODULES[pack]) addWithDependencies(selected, id, data);
   }
-  return modules.filter((module) => selected.has(module.id)).map((module) => module.id);
+  return data.modules.filter((module) => selected.has(module.id)).map((module) => module.id);
 }
 
 export function eccEvidenceComponentIds(
@@ -98,6 +117,7 @@ export function eccEvidenceComponentIds(
   target: Cli,
   packs: readonly EccLanguagePack[],
 ): string[] {
+  const { modules } = moduleData();
   const selected = new Set(eccProfileModuleIds(profileId, packs));
   return [
     "runtime:ecc-installer",
@@ -108,7 +128,7 @@ export function eccEvidenceComponentIds(
 }
 
 function moduleSupportsTarget(moduleId: string, target: Cli): boolean {
-  const module = moduleById.get(moduleId);
+  const module = moduleData().moduleById.get(moduleId);
   if (module === undefined) throw new Error(`pinned ECC module snapshot is missing ${moduleId}`);
   return module.targets.includes(target);
 }

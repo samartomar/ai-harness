@@ -99,7 +99,7 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     title: "required language runtime missing or unsupported",
     affectedArea: "local developer tooling",
     evidence:
-      "The required language runtime (Node.js 20 or newer) is missing or below the supported version on this machine.",
+      "The required language runtime (Node.js 20.6 or newer) is missing or below the supported version on this machine.",
     action:
       "Please provision the supported language runtime on this machine via the approved software catalog or installer, then have the developer reopen their shell.",
     acceptance: [

@@ -1,5 +1,5 @@
 import { isAbsolute, relative, resolve } from "node:path";
-import eccModules from "../baseline-evidence/ecc-modules.json";
+import { loadFrameworkDescriptorSectionV1 } from "../catalog-package/framework-descriptors.js";
 import {
   type EccComponentId,
   type EccComponentSelection,
@@ -47,9 +47,15 @@ export interface EccMaterializationSpec {
   excludeAihOwnedSurfaces?: boolean;
 }
 
-const MODULE_PATHS = new Map(
-  eccModules.modules.map((module) => [module.id, module.paths] as const),
-);
+let loadedModulePaths: Map<string, readonly string[]> | undefined;
+function modulePaths(): Map<string, readonly string[]> {
+  if (loadedModulePaths !== undefined) return loadedModulePaths;
+  const graph = loadFrameworkDescriptorSectionV1<{
+    readonly modules: readonly { readonly id: string; readonly paths: readonly string[] }[];
+  }>("ecc", "moduleGraph");
+  loadedModulePaths = new Map(graph.modules.map((module) => [module.id, module.paths] as const));
+  return loadedModulePaths;
+}
 
 const WHOLE_MODULE_COMPONENTS: Readonly<Record<string, string>> = {
   "baseline:rules": "rules-core",
@@ -164,21 +170,25 @@ const FRAMEWORK_RULES: Readonly<Record<string, readonly string[]>> = {
 
 function skillModules(): Readonly<Record<string, string>> {
   const result: Record<string, string> = {};
-  for (const module of eccModules.modules) {
-    for (const path of module.paths) {
+  for (const [moduleId, paths] of modulePaths()) {
+    for (const path of paths) {
       const skill = /^skills\/([a-z0-9][a-z0-9-]*)$/.exec(path)?.[1];
       if (skill === undefined) continue;
       const existing = result[skill];
-      if (existing !== undefined && existing !== module.id) {
-        throw new Error(`ECC skill ${skill} belongs to both ${existing} and ${module.id}`);
+      if (existing !== undefined && existing !== moduleId) {
+        throw new Error(`ECC skill ${skill} belongs to both ${existing} and ${moduleId}`);
       }
-      result[skill] = module.id;
+      result[skill] = moduleId;
     }
   }
   return Object.freeze(result);
 }
 
-const SKILL_MODULES = skillModules();
+let loadedSkillModules: Readonly<Record<string, string>> | undefined;
+function loadedSkillModulesV1(): Readonly<Record<string, string>> {
+  loadedSkillModules ??= skillModules();
+  return loadedSkillModules;
+}
 
 /** Skills that have a second, source-controlled `.agents/skills` copy at the v2.1.0 pin. */
 const AGENT_SKILL_COPIES = new Set([
@@ -233,7 +243,7 @@ export function eccComponentInstallDescriptor(
 ): EccComponentInstallDescriptor {
   const selectedModule = leafName(componentId, "module");
   if (selectedModule !== undefined) {
-    if (!MODULE_PATHS.has(selectedModule)) {
+    if (!modulePaths().has(selectedModule)) {
       throw new Error(`pinned ECC module snapshot is missing ${selectedModule}`);
     }
     return {
@@ -282,7 +292,7 @@ export function eccComponentInstallDescriptor(
   }
   const skill = leafName(componentId, "skill");
   if (skill !== undefined) {
-    const moduleId = SKILL_MODULES[skill];
+    const moduleId = loadedSkillModulesV1()[skill];
     if (moduleId === undefined) throw new Error(`no ECC install descriptor for ${componentId}`);
     return {
       evidenceComponentId: componentId,
@@ -347,7 +357,7 @@ export function eccModuleSelectableMemberIds(
   moduleId: string,
   componentIds: readonly string[],
 ): string[] {
-  if (!MODULE_PATHS.has(moduleId)) {
+  if (!modulePaths().has(moduleId)) {
     throw new Error(`pinned ECC module snapshot is missing ${moduleId}`);
   }
   return componentIds.filter((componentId) => {
@@ -478,10 +488,10 @@ export function eccComponentSourcePaths(componentId: EccComponentId | EccMcpComp
   const descriptor = eccComponentInstallDescriptor(componentId);
   const paths = new Set<string>(descriptor.sourceRoots ?? []);
   for (const moduleId of descriptor.wholeModules ?? []) {
-    const modulePaths = MODULE_PATHS.get(moduleId);
-    if (modulePaths === undefined)
+    const moduleSourcePaths = modulePaths().get(moduleId);
+    if (moduleSourcePaths === undefined)
       throw new Error(`pinned ECC module snapshot is missing ${moduleId}`);
-    for (const path of modulePaths) paths.add(path);
+    for (const path of moduleSourcePaths) paths.add(path);
   }
   for (const skill of descriptor.skills ?? []) {
     paths.add(`skills/${skill}`);

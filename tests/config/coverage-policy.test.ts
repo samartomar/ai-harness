@@ -142,7 +142,7 @@ describe("coverage policy", () => {
     expect(pkg.scripts?.verify).toContain(
       "npm run test:cov && npm run build && npm run verify:packed-core-policy && npm run check:published-bin && npm run check:published-library",
     );
-    expect(pkg.scripts?.["test:cov"]).toBe("npm run build:policy-data && vitest run --coverage");
+    expect(pkg.scripts?.["test:cov"]).toBe("vitest run --coverage");
     expect(pkg.scripts?.["test:workbench:cov"]).toBeUndefined();
   });
 

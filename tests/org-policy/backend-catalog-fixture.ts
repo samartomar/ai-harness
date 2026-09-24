@@ -2,17 +2,16 @@ import { createHash } from "node:crypto";
 import { canonicalStrictJsonSha256V1 } from "../../src/contract/strict-json-v1.js";
 import { ECC_HOOK_PROFILES } from "../../src/org-policy/ecc-hook-controls.js";
 import { parseOrgPolicy } from "../../src/org-policy/schema.js";
-import { assembleCompilerOutputsV1 } from "../../src/org-policy/workbench/assembly.js";
-import {
-  assembleAuthoringCatalogBundleFromCompilerOutputsV1,
-  compileOrganizationManifestAssemblyInputV1,
-} from "../../src/org-policy/workbench/catalog-bundle.js";
 import { verifyAuthoringCatalogBundleIntegrityV1 } from "../../src/org-policy/workbench/catalog-integrity.js";
 import type { WorkbenchPolicyBindingsV1 } from "../../src/org-policy/workbench/compile-policy.js";
 import {
   type AuthoringCatalogBundleV1,
   parseAuthoringCatalogBundleV1,
 } from "../../src/org-policy/workbench/contracts.js";
+import {
+  compileOrganizationManifestAssemblyInputV1,
+  extendCatalogBundleWithOrganizationInputsV1,
+} from "../../src/org-policy/workbench/core/organization-catalog.js";
 import {
   consumeFreshOrganizationPreparationV1,
   freshOrganizationPreparationSourceInputsV1,
@@ -227,42 +226,6 @@ function sourceInputsForOrganizationManifestV1(manifestBytes: string) {
   );
 }
 
-function mergeFixtureBundlesV1(
-  bundles: readonly AuthoringCatalogBundleV1[],
-): AuthoringCatalogBundleV1 {
-  const base = tinyBackendCatalogFixture().workbenchBundle;
-  const merge = <T extends Record<string, unknown>>(field: keyof AuthoringCatalogBundleV1) => {
-    const merged: Record<string, unknown> = {};
-    for (const bundle of [base, ...bundles]) {
-      const entries = bundle[field] as T;
-      for (const [key, value] of Object.entries(entries)) {
-        if (merged[key] !== undefined)
-          throw new TypeError(`duplicate fixture bundle ${field}:${key}`);
-        merged[key] = value;
-      }
-    }
-    return merged;
-  };
-  const bare = {
-    version: "authoring-catalog-bundle/v1" as const,
-    sources: merge("sources"),
-    assets: merge("assets"),
-    groups: merge("groups"),
-    relations: [base.relations, ...bundles.map((bundle) => bundle.relations)].flat(),
-    templates: merge("templates"),
-    evidence: merge("evidence"),
-    detailChunks: merge("detailChunks"),
-  };
-  const bundle = parseAuthoringCatalogBundleV1({
-    ...bare,
-    provenance: {
-      bundleDigest: `sha256:${canonicalStrictJsonSha256V1({ ...bare, provenance: {} })}`,
-    },
-  });
-  verifyAuthoringCatalogBundleIntegrityV1(bundle);
-  return bundle;
-}
-
 /**
  * Test-only generic baseline. Organization declaration and fresh witness
  * assemblies still pass through their production compilers and opaque custody.
@@ -280,17 +243,12 @@ export function prepareTinyWorkbenchCatalogV1(
     if (consumeFreshOrganizationPreparationV1(preparation) === undefined)
       throw new TypeError("fixture fresh preparation custody is unavailable");
   }
-  const compiledBundles = [
-    ...manifests.map((manifest) =>
-      assembleAuthoringCatalogBundleFromCompilerOutputsV1([
-        compileOrganizationManifestAssemblyInputV1(manifest),
-      ]),
-    ),
-    ...(fresh.length === 0 ? [] : [assembleCompilerOutputsV1([], [], fresh)]),
-  ];
   const model = tinyBackendCatalogFixture();
-  const bundle =
-    compiledBundles.length === 0 ? model.workbenchBundle : mergeFixtureBundlesV1(compiledBundles);
+  const bundle = extendCatalogBundleWithOrganizationInputsV1(
+    model.workbenchBundle,
+    manifests,
+    fresh,
+  );
   const sourceInputs = Object.assign(
     {},
     ...manifests.map(sourceInputsForOrganizationManifestV1),

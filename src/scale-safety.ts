@@ -9,6 +9,8 @@ import {
   defaultNativeMcpServers,
   managedCodeReviewGraphCliInvocation,
 } from "./mcp/default-native-runtime.js";
+import { codebaseMemoryAvailability } from "./tools/codebase-memory-readiness.js";
+import { effectivePrimaryCodeGraph } from "./tools/primary-code-graph.js";
 import { aihWorkspaceGraphRepo } from "./workspace/templates.js";
 
 export const LARGE_REPO_FILE_THRESHOLD = 1000;
@@ -326,6 +328,51 @@ async function codeReviewGraphAvailabilityFor(
   };
 }
 
+interface PrimaryGraphAvailability {
+  readonly available: boolean;
+  readonly detail: string;
+  readonly graph: "code-review-graph" | "codebase-memory-mcp";
+}
+
+/**
+ * The repository's own graph readiness follows its primary code graph; with no
+ * primary (or Code Review Graph as primary) it is the managed Graph check.
+ * Workspace children keep their per-child Code Review Graph servers.
+ */
+async function primaryGraphAvailabilityFor(
+  ctx: PlanContext,
+  repoRoot: string,
+  mcpRoot: string,
+): Promise<PrimaryGraphAvailability> {
+  if (resolve(mcpRoot) === resolve(repoRoot)) {
+    let primary: ReturnType<typeof effectivePrimaryCodeGraph>;
+    try {
+      primary = effectivePrimaryCodeGraph({ ...ctx, root: repoRoot });
+    } catch (error) {
+      return {
+        available: false,
+        graph: "code-review-graph",
+        detail: `primary code graph could not be resolved: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
+    if (primary?.id === "codebase-memory-mcp") {
+      const memory = await codebaseMemoryAvailability(
+        { ...ctx, root: repoRoot },
+        readMcpServers(mcpRoot)?.["codebase-memory-mcp"],
+      );
+      return {
+        ...memory,
+        graph: "codebase-memory-mcp",
+        detail: `primary code graph codebase-memory-mcp (${primary.source}): ${memory.detail}`,
+      };
+    }
+  }
+  return {
+    ...(await codeReviewGraphAvailabilityFor(ctx, repoRoot, mcpRoot)),
+    graph: "code-review-graph",
+  };
+}
+
 export interface ScaleSafetyCheckOptions {
   detailPrefix?: string;
   mcpRoot?: string;
@@ -363,7 +410,7 @@ async function evaluateScaleSafety(
       emitDigest: false,
     };
   }
-  const graph = await codeReviewGraphAvailabilityFor(ctx, repoRoot, options.mcpRoot ?? repoRoot);
+  const graph = await primaryGraphAvailabilityFor(ctx, repoRoot, options.mcpRoot ?? repoRoot);
   if (graph.available) {
     return {
       check: {
@@ -394,8 +441,10 @@ async function evaluateScaleSafety(
       code: "scale.code-review-graph-missing",
       detail:
         `${detailPrefix}${files} tracked files >= ${LARGE_REPO_FILE_THRESHOLD}; ${graph.detail}. ` +
-        "code-review-graph is advisory, not a gate: warn once and continue with bounded rg/fd reconnaissance. " +
-        "Restore graph context with `aih mcp --apply` and `aih tools --apply`; repair it only when helper repair is the assigned task.",
+        `${graph.graph} is advisory, not a gate: warn once and continue with bounded rg/fd reconnaissance. ` +
+        (graph.graph === "codebase-memory-mcp"
+          ? "Restore its index with `aih developer-tools --apply`; repair it only when helper repair is the assigned task."
+          : "Restore graph context with `aih mcp --apply` and `aih tools --apply`; repair it only when helper repair is the assigned task."),
     },
     emitDigest: true,
   };

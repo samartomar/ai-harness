@@ -46,6 +46,7 @@ import {
 } from "../org-policy/project.js";
 import { governanceOwnsAihSurfaces } from "../org-policy/schema.js";
 import { scanRepo } from "../profile/scan.js";
+import { effectivePrimaryCodeGraphFor } from "../tools/primary-code-graph.js";
 import {
   adapterNote,
   agentBehaviorCoreDoc,
@@ -252,7 +253,7 @@ export async function bootstrapAiPlan(
     ),
     writeText(
       posix.join(dir, "rules", "agent-behavior-core.md"),
-      agentBehaviorCoreDoc(dir),
+      agentBehaviorCoreDoc(dir, effectivePrimaryCodeGraphFor(ctx, policyTargets.policy)),
       "agent behavior core (the working discipline the router + bootloaders point to)",
     ),
     // Keep the harness's own backup/temp files out of git.

@@ -94,10 +94,24 @@ describe("committed JSON Schemas", () => {
         /0\.7\.0/,
       );
     }
+    for (const primaryCodeGraph of ["code-review-graph", "codebase-memory-mcp"]) {
+      const primaryPolicy = {
+        ...policy,
+        minimumCoreVersion: "0.7.0",
+        developerTools: { primaryCodeGraph },
+      };
+      validateCommittedSchema("schemas/aih-org-policy.schema.json", primaryPolicy);
+      expect(parseOrgPolicy(primaryPolicy).schemaVersion).toBe(3);
+      expect(() => parseOrgPolicy({ ...primaryPolicy, minimumCoreVersion: "0.6.0" })).toThrow(
+        /0\.7\.0/,
+      );
+    }
     for (const invalid of [
       { ...policy, developerTools: { selected: ["unknown"] } },
       { ...policy, developerTools: { selected: "serena" } },
       { ...policy, developerTools: { selected: [], unsupported: true } },
+      { ...policy, minimumCoreVersion: "0.7.0", developerTools: { primaryCodeGraph: "serena" } },
+      { ...policy, minimumCoreVersion: "0.7.0", developerTools: { activateHeadroom: true } },
     ])
       rejectCommittedSchema("schemas/aih-org-policy.schema.json", invalid);
   });

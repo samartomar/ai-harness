@@ -17,12 +17,12 @@ vi.mock("node:child_process", async (importOriginal) => {
 });
 
 import {
+  aihScannerCompilationFromCatalogV1,
   type MaterializedAihScanSubjectsV1,
   materializeAihScanSubjectsV1,
   removeMaterializedAihScanSubjectsV1,
 } from "../../src/baseline-evidence/aih-scan-material.js";
 import { policyAuthoringCatalog } from "../../src/org-policy/catalog.js";
-import { compileBuiltInCatalogV1 } from "../../src/org-policy/workbench/compilers/built-in.js";
 
 const roots: string[] = [];
 const materialized: MaterializedAihScanSubjectsV1[] = [];
@@ -52,7 +52,7 @@ function input(outputParent: string) {
     outputParent,
     coreRevision: { pinnedSha: currentRevision() },
     catalog,
-    compiled: compileBuiltInCatalogV1(catalog),
+    compiled: aihScannerCompilationFromCatalogV1(),
   };
 }
 

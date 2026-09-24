@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { isAbsolute, join, relative, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import {
   type AcceptanceDecision,
   CORRECTED_ACCEPTANCE_POLICY_VERSION,
@@ -27,6 +27,7 @@ import { parseBaselineEvidenceLock } from "../baseline-evidence/schema.js";
 import { readVendorBaselineLock } from "../baseline-evidence/vendor.js";
 import type { BaselineAuthorization } from "../baseline-evidence/verify.js";
 import type { Posture } from "../config/posture.js";
+import { readEccInstallPreview } from "../ecc/install-preview.js";
 import {
   type RegistrationLedger,
   readRegistrationLedger,
@@ -58,9 +59,7 @@ const INSTALLER_RUNTIME_COMPONENT_ID_BY_CATALOG: Partial<Record<BaselineCatalogI
  * actions with no destination plan to preview, so the escape check is explicitly skipped and named
  * as such in the report rather than vacuously passed.
  */
-const PREVIEW_ARTIFACT_BY_CATALOG: Partial<Record<BaselineCatalogId, string>> = {
-  ecc: "ecc-install-preview.json",
-};
+const PREVIEW_ARTIFACT_BY_CATALOG: Partial<Record<BaselineCatalogId, true>> = { ecc: true };
 
 export interface InstallablePostureResult {
   installed: number;
@@ -313,21 +312,13 @@ interface CatalogPreviewPlan {
  * fact, never a silent vacuous pass.
  */
 function previewPlanForCatalog(catalogId: BaselineCatalogId): CatalogPreviewPlan {
-  const fileName = PREVIEW_ARTIFACT_BY_CATALOG[catalogId];
-  if (fileName === undefined) {
+  if (PREVIEW_ARTIFACT_BY_CATALOG[catalogId] === undefined) {
     return {
       destinations: [],
       skippedReason: `catalog ${catalogId} ships no install-preview artifact by design; its installs are guidance-only doc() actions (see packages/framework-superpowers/src/guidance.ts) with no destination plan to preview`,
     };
   }
-  const previewPath = resolve(
-    dirname(fileURLToPath(import.meta.url)),
-    "../baseline-evidence",
-    fileName,
-  );
-  const preview = JSON.parse(readFileSync(previewPath, "utf8")) as {
-    operations: Array<{ destination?: string }>;
-  };
+  const preview = readEccInstallPreview();
   return {
     destinations: preview.operations
       .map((operation) => operation.destination)

@@ -10,8 +10,8 @@ import {
   scanPackageExportsOrThrowV1,
 } from "../scan-package/load-scan-package.js";
 import { generateAuthorizedEccInstallPreview } from "./ecc-preview-boundary.js";
+import { prepareRegisteredScannerCatalogV1 } from "./scanner-catalog-consumer.js";
 import { createCoreBaselineVetRequests } from "./scanner-consumer.js";
-import { prepareRegisteredScannerCatalogV1 } from "./scanner-provider-catalogs.js";
 import {
   consumeScannerBaselinePublicationsV1,
   consumeScannerBaselinePublicationV1,

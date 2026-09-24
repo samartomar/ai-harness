@@ -34,11 +34,18 @@
  * that refusal and never asserts a full ECC lifecycle success.
  *
  * usage:
- *   node tools/verify-packed-catalog-boundary.mjs --scan <aihq-scan.tgz> --catalog <aihq-catalog.tgz> (--core <aihq-core.tgz> | --stage-from <core-repo>) [--work <dir>] [--keep]
+ *   node tools/verify-packed-catalog-boundary.mjs --scan <aihq-scan.tgz> --catalog <aihq-catalog.tgz> [--incompatible-catalog <old.tgz>] (--core <aihq-core.tgz> --ecc-plugin <aihq-framework-ecc.tgz> | --stage-from <core-repo>) [--work <dir>] [--keep]
  *
  * `--stage-from` builds the given Core checkout's dist with its own tsup config
  * and declaration emit into a staging directory and packs that; it never writes
  * into the checkout. The work directory must not be inside a git repository.
+ * Every consumer also installs `@aihq/framework-ecc`: the ECC route is the
+ * plugin's, and the plugin reaches the Catalog only through Core. `--stage-from`
+ * builds and packs it from the checkout's `packages/framework-ecc`; with `--core`,
+ * pass its tarball as `--ecc-plugin`. The checkout's Core version can trail the
+ * plugin's `@aihq/core` peer range until the release bump, so installs that
+ * include the plugin pass `--legacy-peer-deps`.
+ *
  * Prints one JSON summary line last; exits non-zero if any check fails.
  */
 import { spawnSync } from "node:child_process";
@@ -150,11 +157,13 @@ function readPackedFiles(tarball) {
 
 const scanTarball = option("--scan");
 const catalogTarball = option("--catalog");
+const incompatibleCatalogTarball = option("--incompatible-catalog");
 const coreTarballArg = option("--core");
 const stageFrom = option("--stage-from");
-if (!scanTarball || !catalogTarball || (!coreTarballArg) === !stageFrom) {
+const eccPluginTarballArg = option("--ecc-plugin");
+if (!scanTarball || !catalogTarball || (!coreTarballArg) === !stageFrom || (coreTarballArg !== undefined && !eccPluginTarballArg)) {
   process.stderr.write(
-    "usage: verify-packed-catalog-boundary.mjs --scan <scan.tgz> --catalog <catalog.tgz> (--core <core.tgz> | --stage-from <core-repo>) [--work <dir>] [--keep]\n",
+    "usage: verify-packed-catalog-boundary.mjs --scan <scan.tgz> --catalog <catalog.tgz> [--incompatible-catalog <old.tgz>] (--core <core.tgz> --ecc-plugin <framework-ecc.tgz> | --stage-from <core-repo>) [--work <dir>] [--keep]\n",
   );
   process.exit(2);
 }
@@ -187,6 +196,7 @@ const npmRun = (args, cwd) =>
 try {
   // ---- Core tarball ------------------------------------------------------
   let coreTarball = coreTarballArg === undefined ? undefined : resolve(coreTarballArg);
+  let eccPluginTarball = eccPluginTarballArg === undefined ? undefined : resolve(eccPluginTarballArg);
   if (stageFrom !== undefined) {
     const repo = resolve(stageFrom);
     const stage = join(work, "stage");
@@ -199,25 +209,37 @@ try {
       run(process.execPath, [join(repo, "node_modules/typescript/bin/tsc"), "-p", "tsconfig.dts.json", "--outDir", join(stage, "dist")], repo),
       "declaration emit",
     );
-    // The committed package data the build copies beside the chunks
-    // (tools/copy-policy-data.mjs); browser companions are not part of this route.
-    for (const source of [
-      "src/org-policy/workbench/core/packaged-source-data-data.json",
-      "src/org-policy/workbench/core/catalog-qualification-data.json",
-      "src/org-policy/packaged-collection-evidence-data.json",
-    ]) {
-      cpSync(join(repo, source), join(stage, "dist", source.split("/").at(-1)));
-    }
     cpSync(join(repo, "package.json"), join(stage, "package.json"));
     cpSync(join(repo, "schemas"), join(stage, "schemas"), { recursive: true });
+    const packageManifest = JSON.parse(readFileSync(join(repo, "package.json"), "utf8"));
+    for (const entry of packageManifest.files ?? []) {
+      if (entry === "dist" || entry === "schemas" || entry.startsWith("!")) continue;
+      const source = join(repo, entry);
+      if (!existsSync(source)) continue;
+      cpSync(source, join(stage, entry), { recursive: true });
+    }
     const packed = JSON.parse(
       must(npmRun(["pack", "--json", "--ignore-scripts", "--pack-destination", work], stage), "npm pack"),
     );
     coreTarball = join(work, packed[0].filename);
+    // The ECC framework plugin, built the same way from its own package.
+    const pluginSource = join(repo, "packages", "framework-ecc");
+    const pluginStage = join(work, "stage-framework-ecc");
+    mkdirSync(pluginStage, { recursive: true });
+    must(
+      run(process.execPath, [join(repo, "node_modules/tsup/dist/cli-default.js"), "--out-dir", join(pluginStage, "dist")], pluginSource),
+      "framework-ecc tsup",
+    );
+    for (const file of ["package.json", "README.md", "LICENSE"]) cpSync(join(pluginSource, file), join(pluginStage, file));
+    const pluginPacked = JSON.parse(
+      must(npmRun(["pack", "--json", "--ignore-scripts", "--pack-destination", work], pluginStage), "framework-ecc npm pack"),
+    );
+    eccPluginTarball = join(work, pluginPacked[0].filename);
   }
   const coreSha256 = sha256(coreTarball);
   process.stdout.write(`core tarball ${coreTarball} sha256 ${coreSha256}\n`);
   process.stdout.write(`scan tarball ${resolve(scanTarball)} sha256 ${sha256(resolve(scanTarball))}\n`);
+  process.stdout.write(`framework-ecc tarball ${eccPluginTarball} sha256 ${sha256(eccPluginTarball)}\n`);
   process.stdout.write(`catalog tarball ${resolve(catalogTarball)} sha256 ${sha256(resolve(catalogTarball))}\n`);
 
   // ---- Packed dist: no Catalog implementation, one dynamic import --------
@@ -245,14 +267,16 @@ try {
   );
   check(
     "packed manifest declares @aihq/catalog as an optional peer only",
-    manifest.peerDependencies?.["@aihq/catalog"] === ">=0.2.0 <1.0.0" &&
+    manifest.peerDependencies?.["@aihq/catalog"] === ">=0.3.0 <0.4.0" &&
       manifest.peerDependenciesMeta?.["@aihq/catalog"]?.optional === true &&
       manifest.dependencies?.["@aihq/catalog"] === undefined,
     JSON.stringify({ peer: manifest.peerDependencies, meta: manifest.peerDependenciesMeta }),
   );
   check(
-    "packed Core retains shared Workbench descriptor data (data extraction deferred)",
-    packedFiles.has("package/dist/packaged-source-data-data.json"),
+    "packed Core carries no Catalog authoring or qualification data",
+    !packedFiles.has("package/dist/packaged-source-data-data.json") &&
+      !packedFiles.has("package/dist/catalog-qualification-data.json") &&
+      !packedFiles.has("package/dist/packaged-collection-evidence-data.json"),
   );
 
   // ---- Fixture and TypeScript sources ------------------------------------
@@ -295,6 +319,39 @@ try {
       null,
       2,
     )}\n`,
+  );
+  const policyFixture = join(work, "policy-fixture-root");
+  mkdirSync(join(policyFixture, "ai-coding"), { recursive: true });
+  writeFileSync(join(policyFixture, "ai-coding", "project.json"), "{}\n");
+  writeFileSync(
+    join(policyFixture, "aih-org-policy.json"),
+    `${JSON.stringify(
+      {
+        schemaVersion: 3,
+        minimumPosture: "vibe",
+        minimumCoreVersion: "0.6.0",
+        references: { repoContract: "ai-coding/project.json" },
+        authoringSelections: {
+          selectionVersion: "workbench-selection/v1",
+          roots: [],
+          exclusions: [],
+          requests: [],
+          drafts: [],
+        },
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  must(run("git", ["init", "--quiet"], policyFixture), "policy fixture git init");
+  must(run("git", ["add", "aih-org-policy.json", "ai-coding/project.json"], policyFixture), "policy fixture git add");
+  must(
+    run(
+      "git",
+      ["-c", "user.name=W1 boundary proof", "-c", "user.email=w1-boundary@example.invalid", "commit", "--quiet", "-m", "fixture"],
+      policyFixture,
+    ),
+    "policy fixture git commit",
   );
   // No machine-local source-data receipt may take precedence over the package carriers.
   const absentWorkbenchData = join(work, "absent-workbench-data");
@@ -342,6 +399,18 @@ try {
     if (result.error) throw new Error(`aih ecc: ${result.error.message}`);
     return result;
   };
+  const policyRoute = (consumer, args, root = policyFixture) => {
+    const result = spawnSync(process.execPath, [cli(consumer), ...args, "--root", root, "--no-log"], {
+      cwd: work,
+      encoding: "utf8",
+      windowsHide: true,
+      maxBuffer: 256 * 1024 * 1024,
+      timeout: 10 * 60 * 1000,
+      env: routeEnv,
+    });
+    if (result.error) throw new Error(`aih policy ${args.join(" ")}: ${result.error.message}`);
+    return result;
+  };
   const output = (result) => `${result.stdout}\n${result.stderr}`;
   const provenanceOf = (result) =>
     output(result).split(/\r?\n/).find((line) => line.startsWith("historical ECC runtime descriptor ")) ?? "";
@@ -354,10 +423,12 @@ try {
   const coreOnly = join(work, "consumer-core-only");
   mkdirSync(coreOnly, { recursive: true });
   writeFileSync(join(coreOnly, "package.json"), JSON.stringify({ name: "core-only-consumer", private: true, type: "module" }));
-  must(npmRun(["install", "--ignore-scripts", "--no-audit", "--no-fund", "--prefer-offline", coreTarball], coreOnly), "Core-only install");
+  must(npmRun(["install", "--ignore-scripts", "--no-audit", "--no-fund", "--prefer-offline", "--legacy-peer-deps", coreTarball, eccPluginTarball], coreOnly), "Core-only install");
   check(
-    "Core-only consumer has neither @aihq/scan nor @aihq/catalog installed",
-    !existsSync(join(coreOnly, "node_modules", "@aihq", "catalog")) && !existsSync(join(coreOnly, "node_modules", "@aihq", "scan")),
+    "Core-only consumer has neither @aihq/scan nor @aihq/catalog installed (the ECC plugin is)",
+    !existsSync(join(coreOnly, "node_modules", "@aihq", "catalog")) &&
+      !existsSync(join(coreOnly, "node_modules", "@aihq", "scan")) &&
+      existsSync(join(coreOnly, "node_modules", "@aihq", "framework-ecc", "package.json")),
   );
   // Startup and index load must be unaffected by the Catalog cutover.
   const coreOnlyLibrary = run(
@@ -389,13 +460,43 @@ try {
     `exit ${coreOnlyRoute.status}; refusal: ${coreOnlyRefusal.slice(0, 300)}; provenance: ${coreOnlyProvenance || "<none>"}`,
   );
   check("Core-only: ECC route output carries no stack trace", noStack(coreOnlyRoute), `exit ${coreOnlyRoute.status}; refusal: ${coreOnlyRefusal.slice(0, 300)}`);
+  const coreOnlyPolicy = policyRoute(coreOnly, ["policy", "evaluate"]);
+  check(
+    "Core-only: a Catalog-dependent policy command refuses as unavailable",
+    coreOnlyPolicy.status === 1 && output(coreOnlyPolicy).includes("catalog-package-unavailable"),
+    `exit ${coreOnlyPolicy.status}; ${output(coreOnlyPolicy).trim().slice(0, 400)}`,
+  );
+
+  // ---- Core + an explicitly incompatible older Catalog ------------------
+  let incompatibleRefusal = "<not requested>";
+  if (incompatibleCatalogTarball !== undefined) {
+    const old = join(work, "consumer-core-incompatible-catalog");
+    mkdirSync(old, { recursive: true });
+    writeFileSync(join(old, "package.json"), JSON.stringify({ name: "core-incompatible-catalog-consumer", private: true, type: "module" }));
+    must(
+      npmRun(["install", "--ignore-scripts", "--no-audit", "--no-fund", "--prefer-offline", "--legacy-peer-deps", coreTarball, eccPluginTarball, resolve(incompatibleCatalogTarball)], old),
+      "Core+incompatible-Catalog install",
+    );
+    const oldRoute = eccRoute(old);
+    incompatibleRefusal = refusalLine(oldRoute);
+    check(
+      "Core+incompatible-Catalog: the ECC route refuses the older package by name",
+      oldRoute.status === 1 &&
+        incompatibleRefusal.includes("catalog-package-incompatible") &&
+        incompatibleRefusal.includes("version 0.2.0") &&
+        provenanceOf(oldRoute) === "" &&
+        !output(oldRoute).includes("core-embedded"),
+      `exit ${oldRoute.status}; refusal: ${incompatibleRefusal.slice(0, 400)}`,
+    );
+    check("Core+incompatible-Catalog: refusal carries no stack trace", noStack(oldRoute));
+  }
 
   // ---- Core + Scan + Catalog consumer --------------------------------------
   const full = join(work, "consumer-core-scan-catalog");
   mkdirSync(full, { recursive: true });
   writeFileSync(join(full, "package.json"), JSON.stringify({ name: "core-scan-catalog-consumer", private: true, type: "module" }));
   must(
-    npmRun(["install", "--ignore-scripts", "--no-audit", "--no-fund", "--prefer-offline", coreTarball, resolve(scanTarball), resolve(catalogTarball)], full),
+    npmRun(["install", "--ignore-scripts", "--no-audit", "--no-fund", "--prefer-offline", "--legacy-peer-deps", coreTarball, eccPluginTarball, resolve(scanTarball), resolve(catalogTarball)], full),
     "Core+Scan+Catalog install",
   );
   const catalogManifest = JSON.parse(readFileSync(join(full, "node_modules", "@aihq", "catalog", "package.json"), "utf8"));
@@ -451,6 +552,75 @@ try {
   );
   check("Core+Scan+Catalog: ECC route output carries no stack trace", noStack(fullRoute), `exit ${fullRoute.status}; refusal: ${refusalLine(fullRoute).slice(0, 300)}`);
 
+  const policyCommands = ["validate", "evaluate", "project"];
+  const policyCommandResults = Object.fromEntries(
+    policyCommands.map((name) => [name, policyRoute(full, ["policy", name])]),
+  );
+  for (const name of policyCommands) {
+    const result = policyCommandResults[name];
+    check(
+      `Core+Scan+Catalog: aih policy ${name} succeeds on a schema-v3 policy`,
+      result.status === 0,
+      `exit ${result.status}; ${output(result).trim().slice(0, 500)}`,
+    );
+  }
+  const preparedSourceData = join(work, "prepared-ecc-source-data.json");
+  const prepareResult = spawnSync(process.execPath, [
+    cli(full),
+    "policy",
+    "data",
+    "prepare",
+    "--apply",
+    "--source",
+    "source:ecc",
+    "--sequence",
+    "1",
+    "--out",
+    preparedSourceData,
+  ], {
+    cwd: policyFixture,
+    encoding: "utf8",
+    windowsHide: true,
+    maxBuffer: 256 * 1024 * 1024,
+    timeout: 10 * 60 * 1000,
+    env: routeEnv,
+  });
+  let preparedFormat;
+  try {
+    preparedFormat = JSON.parse(readFileSync(preparedSourceData, "utf8")).version;
+  } catch {
+    preparedFormat = undefined;
+  }
+  check(
+    "Core+Scan+Catalog: aih policy data prepare delegates and writes a v1 payload",
+    prepareResult.status === 0 && preparedFormat === "workbench-source-data/v1",
+    `exit ${prepareResult.status}; format ${preparedFormat ?? "<absent>"}; ${output(prepareResult).trim().slice(0, 400)}`,
+  );
+
+  // ---- Temporary global-prefix install ----------------------------------
+  const globalPrefix = join(work, "global-prefix");
+  mkdirSync(globalPrefix, { recursive: true });
+  must(
+    npmRun(
+      ["install", "--global", "--ignore-scripts", "--no-audit", "--no-fund", "--prefer-offline", "--legacy-peer-deps", "--prefix", globalPrefix, coreTarball, eccPluginTarball, resolve(scanTarball), resolve(catalogTarball)],
+      work,
+    ),
+    "global-prefix install",
+  );
+  const globalCli = join(globalPrefix, "node_modules", "@aihq", "core", "dist", "cli.js");
+  const globalVersion = run(process.execPath, [globalCli, "--version"], work);
+  check("Global prefix: aih --version", globalVersion.status === 0, globalVersion.stdout.trim());
+  const globalValidate = spawnSync(
+    process.execPath,
+    [globalCli, "policy", "validate", "--root", policyFixture, "--no-log"],
+    { cwd: work, encoding: "utf8", windowsHide: true, maxBuffer: 256 * 1024 * 1024, timeout: 10 * 60 * 1000, env: routeEnv },
+  );
+  check(
+    "Global prefix: schema-v3 policy validate resolves the installed Catalog peer",
+    globalValidate.status === 0,
+    `exit ${globalValidate.status}; ${output(globalValidate).trim().slice(0, 500)}`,
+  );
+
   // ---- The installed Catalog is damaged: refusal, never the embedded copy --
   const bytes = readFileSync(installedDescriptor);
   const marker = Buffer.from('"compilerInputDigest":"sha256:');
@@ -471,8 +641,7 @@ try {
   check("Core+Scan+Catalog damaged: refusal carries no stack trace", noStack(damagedRoute));
 
   const failed = results.filter((entry) => !entry.ok);
-  process.stdout.write(
-    `${JSON.stringify({
+  const summary = {
       ok: failed.length === 0,
       work,
       coreTarball,
@@ -482,18 +651,34 @@ try {
       catalogTarball: resolve(catalogTarball),
       catalogSha256: sha256(resolve(catalogTarball)),
       catalogVersion: catalogManifest.version,
+      incompatibleCatalogTarball:
+        incompatibleCatalogTarball === undefined ? undefined : resolve(incompatibleCatalogTarball),
+      incompatibleRefusal: incompatibleRefusal.slice(0, 400),
       coreOnlyEccExit: coreOnlyRoute.status,
       coreOnlyProvenance,
       coreOnlyRefusal: coreOnlyRefusal.slice(0, 400),
       fullEccExit: fullRoute.status,
+      policyCommandExits: Object.fromEntries(
+        policyCommands.map((name) => [name, policyCommandResults[name].status]),
+      ),
+      policyDataPrepareExit: prepareResult.status,
+      preparedSourceDataFormat: preparedFormat,
+      globalPrefix,
+      globalVersionExit: globalVersion.status,
+      globalPolicyValidateExit: globalValidate.status,
       fullProvenance,
       fullRefusal: refusalLine(fullRoute).slice(0, 400),
       catalogModulesLoaded: loaded,
       damagedEccExit: damagedRoute.status,
       damagedRefusal: refusalLine(damagedRoute).slice(0, 400),
       failed: failed.map((entry) => entry.name),
-    })}\n`,
-  );
+    };
+  const jsonOutput = option("--json-output");
+  if (jsonOutput !== undefined) {
+    mkdirSync(dirname(resolve(jsonOutput)), { recursive: true });
+    writeFileSync(resolve(jsonOutput), `${JSON.stringify(summary, null, 2)}\n`);
+  }
+  process.stdout.write(`${JSON.stringify(summary)}\n`);
   process.exitCode = failed.length === 0 ? 0 : 1;
 } finally {
   if (!keep && option("--work") === undefined) rmSync(work, { recursive: true, force: true });

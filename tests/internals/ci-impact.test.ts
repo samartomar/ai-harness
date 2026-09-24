@@ -1,5 +1,4 @@
-import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -10,10 +9,6 @@ import {
 } from "../../src/internals/ci-impact.js";
 import { runCiImpactCommand } from "../../src/internals/ci-impact-command.js";
 import { fakeRunner } from "../../src/internals/proc.js";
-import {
-  providerTestsFor,
-  WORKBENCH_PROVIDER_OWNERSHIP,
-} from "../../src/internals/workbench-provider-ownership.js";
 import { isWorkbenchTestPath } from "../../src/internals/workbench-test-ownership.js";
 
 const baseSha = "a".repeat(40);
@@ -26,6 +21,13 @@ const testFiles = [
   "tests/release-readiness.test.ts",
   "tests/workspace/manifest.test.ts",
 ];
+
+function repositoryTests(root = "tests"): string[] {
+  return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
+    const path = `${root}/${entry.name}`;
+    return entry.isDirectory() ? repositoryTests(path) : path.endsWith(".test.ts") ? [path] : [];
+  });
+}
 
 describe("CI impact classifier", () => {
   it.each([
@@ -88,7 +90,7 @@ describe("CI impact classifier", () => {
       expect(JSON.parse(readFileSync(receiptPath, "utf8"))).toEqual(receipt);
       expect(stdout.join("")).toContain('"releasePreparation": true');
       expect(readFileSync(githubOutput, "utf8")).toContain("release_preparation=true\n");
-      expect(readFileSync(githubOutput, "utf8")).toContain("test_lane=both\n");
+      expect(readFileSync(githubOutput, "utf8")).toContain("test_lane=core\n");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -119,7 +121,7 @@ describe("CI impact classifier", () => {
         "tests/org-policy/workbench/prepared-catalog.test.ts",
       ],
     });
-    expect(receipt.matchedRules).toContain("source-domain:org-policy");
+    expect(receipt.matchedRules).toContain("workbench-shared-input");
     expect(validateCiImpactReceipt(receipt)).toEqual(receipt);
   });
 
@@ -160,10 +162,10 @@ describe("CI impact classifier", () => {
       expect(receipt.selectedTests).toContain(workbenchReleaseTest);
       expect(receipt).toMatchObject({
         fullSuite: false,
-        testLane: "both",
+        testLane: "core",
       });
       expect(validateCiImpactReceipt(receipt)).toEqual(receipt);
-      expect(() => validateCiImpactReceipt({ ...receipt, testLane: "core" })).toThrow(
+      expect(() => validateCiImpactReceipt({ ...receipt, testLane: "both" })).toThrow(
         "CI test lane",
       );
     },
@@ -204,157 +206,11 @@ describe("CI impact classifier", () => {
     });
   });
 
-  it("keeps a provider-local change in its exact backend test lane", () => {
-    const providerTests = providerTestsFor(["ecc"]);
+  it("keeps Catalog consumer boundary inputs in the conservative Workbench scope", () => {
     const receipt = classifyCiImpact({
       baseSha,
       headSha,
-      changedPaths: ["src/org-policy/catalog-providers/ecc.ts"],
-      testFiles: [...testFiles, ...providerTests],
-    });
-
-    expect(receipt).toMatchObject({
-      testLane: "workbench",
-      affectedProviders: ["ecc"],
-      providerTests,
-    });
-  });
-
-  it("routes Matt source and snapshot changes to exact provider tests", () => {
-    const providerTests = providerTestsFor(["mattpocock"] as never);
-    for (const changedPath of [
-      "src/org-policy/workbench/providers/mattpocock.ts",
-      "src/org-policy/workbench/providers/mattpocock.snapshot.json",
-    ]) {
-      const receipt = classifyCiImpact({
-        baseSha,
-        headSha,
-        changedPaths: [changedPath],
-        testFiles: [...testFiles, ...providerTests],
-      });
-      expect(receipt).toMatchObject({
-        affectedProviders: ["mattpocock"],
-        providerTests,
-        testLane: "workbench",
-      });
-    }
-  });
-
-  it.each(WORKBENCH_PROVIDER_OWNERSHIP)(
-    "routes $id provider test edits through their complete provider lane",
-    ({ id, testPath, sourceRoots }) => {
-      const providerTests = providerTestsFor([id]);
-      for (const changedPaths of [[testPath], ...sourceRoots.map((source) => [source, testPath])]) {
-        const receipt = classifyCiImpact({
-          baseSha,
-          headSha,
-          changedPaths,
-          testFiles: [...testFiles, ...providerTests],
-        });
-        expect(receipt).toMatchObject({
-          fullSuite: false,
-          testLane: "workbench",
-          affectedProviders: [id],
-          providerTests,
-          selectedTests: providerTests,
-        });
-        expect(validateCiImpactReceipt(receipt)).toEqual(receipt);
-      }
-    },
-  );
-
-  it.each([
-    ["shared source", "src/org-policy/workbench/contracts.ts", false],
-    ["shared consumer test", "tests/org-policy/workbench/contracts.test.ts", false],
-    ["unknown provider", "src/org-policy/workbench/providers/future.ts", true],
-    ["unknown path", "future-surface/input.json", true],
-  ])("broadens a provider test edit mixed with %s", (_name, otherPath, fullSuite) => {
-    const providerTests = providerTestsFor(["ecc"]);
-    const receipt = classifyCiImpact({
-      baseSha,
-      headSha,
-      changedPaths: ["tests/org-policy/workbench/providers/ecc.test.ts", otherPath],
-      testFiles: [...testFiles, ...providerTests],
-    });
-    expect(receipt).toMatchObject({
-      fullSuite,
-    });
-    expect(validateCiImpactReceipt(receipt)).toEqual(receipt);
-    if (fullSuite) {
-      expect(receipt.operatingSystems).toEqual(["ubuntu-latest", "macos-latest", "windows-latest"]);
-      expect(receipt.fallbackReasons.length).toBeGreaterThan(0);
-    }
-  });
-
-  it("broadens generic pinned-skill compiler changes to the shared Workbench lane", () => {
-    const receipt = classifyCiImpact({
-      baseSha,
-      headSha,
-      changedPaths: ["src/org-policy/workbench/compilers/pinned-skill-collection.ts"],
-      testFiles,
-    });
-
-    expect(receipt).toMatchObject({
-      affectedProviders: [],
-      riskClass: "cross-platform",
-      testLane: "both",
-    });
-  });
-
-  it("routes Ponytail source and snapshot changes to exact provider tests", () => {
-    const providerTests = providerTestsFor(["ponytail"] as never);
-    for (const changedPath of [
-      "src/org-policy/workbench/providers/ponytail.ts",
-      "src/org-policy/workbench/providers/ponytail.snapshot.json",
-    ]) {
-      const receipt = classifyCiImpact({
-        baseSha,
-        headSha,
-        changedPaths: [changedPath],
-        testFiles: [...testFiles, ...providerTests],
-      });
-
-      expect(receipt).toMatchObject({
-        affectedProviders: ["ponytail"],
-        providerTests,
-        testLane: "workbench",
-      });
-    }
-  });
-
-  it("broadens generic pinned-component compiler changes to the shared Workbench lane", () => {
-    const receipt = classifyCiImpact({
-      baseSha,
-      headSha,
-      changedPaths: ["src/org-policy/workbench/compilers/pinned-component-collection.ts"],
-      testFiles,
-    });
-
-    expect(receipt).toMatchObject({
-      affectedProviders: [],
-      riskClass: "cross-platform",
-      testLane: "both",
-    });
-  });
-  it("falls back for baseline extractors until their cross-domain consumer union is explicit", () => {
-    const receipt = classifyCiImpact({
-      baseSha,
-      headSha,
-      changedPaths: ["src/baseline-evidence/catalog-providers/ecc.ts"],
-      testFiles,
-    });
-
-    expect(receipt).toMatchObject({ fullSuite: true, testLane: "full" });
-    expect(receipt.fallbackReasons).toContain(
-      "baseline-provider-consumers:src/baseline-evidence/catalog-providers/ecc.ts",
-    );
-  });
-
-  it("keeps direct shared catalog inputs in the conservative Workbench scope", () => {
-    const receipt = classifyCiImpact({
-      baseSha,
-      headSha,
-      changedPaths: ["src/ecc/materialize.ts", "src/usage/capture.ts"],
+      changedPaths: ["src/catalog-package/framework-descriptors.ts", "src/org-policy/catalog.ts"],
       testFiles,
     });
 
@@ -365,19 +221,15 @@ describe("CI impact classifier", () => {
   });
 
   it("keeps selector ownership of every discovered backend policy test", () => {
-    const repositoryTests = execFileSync("git", ["ls-files", "--", "tests"], {
-      encoding: "utf8",
-    })
-      .split(/\r?\n/u)
-      .filter((path) => path.endsWith(".test.ts") && existsSync(path));
-    const expectedWorkbenchTests = repositoryTests
+    const discoveredTests = repositoryTests();
+    const expectedWorkbenchTests = discoveredTests
       .filter(isWorkbenchTestPath)
       .sort((left, right) => left.localeCompare(right));
     const receipt = classifyCiImpact({
       baseSha,
       headSha,
       changedPaths: ["src/org-policy/workbench/prepared-catalog.ts"],
-      testFiles: repositoryTests,
+      testFiles: discoveredTests,
     });
 
     expect(expectedWorkbenchTests.length).toBeGreaterThan(0);
@@ -391,11 +243,6 @@ describe("CI impact classifier", () => {
 
   it.each([
     ["unknown path", ["new-surface/thing.ts"], "unknown-path:new-surface/thing.ts"],
-    [
-      "unknown compiled provider",
-      ["src/org-policy/workbench/providers/future.ts"],
-      "unknown-provider-path:src/org-policy/workbench/providers/future.ts",
-    ],
     ["empty change set", [], "empty-change-set"],
     ["lockfile", ["package-lock.json"], "global-input:package-lock.json"],
     ["workflow", [".github/workflows/ci.yml"], "global-input:.github/workflows/ci.yml"],
@@ -460,8 +307,8 @@ describe("CI impact classifier", () => {
     });
 
     expect(() =>
-      validateCiImpactReceipt({ ...receipt, selectedTests: ["tests/workspace/manifest.test.ts"] }),
-    ).toThrow(/selected tests/u);
+      validateCiImpactReceipt({ ...receipt, providerTests: ["tests/fake.test.ts"] }),
+    ).toThrow(/provider tests/u);
     expect(() => validateCiImpactReceipt({ ...receipt, headSha: "main" })).toThrow(/SHA/u);
     expect(() => validateCiImpactReceipt({ ...receipt, releasePreparation: true })).toThrow(
       /release preparation/u,

@@ -20,7 +20,7 @@ vi.mock("node:child_process", () => ({ execFileSync: mocks.execFileSync }));
 vi.mock("@aihq/scan", () => ({
   canonicalBaselineVetRequestV1Bytes: mocks.canonicalRequest,
 }));
-vi.mock("../../src/baseline-evidence/scanner-provider-catalogs.js", () => ({
+vi.mock("../../src/baseline-evidence/scanner-catalog-consumer.js", () => ({
   prepareRegisteredScannerCatalogV1: mocks.prepareCatalog,
 }));
 vi.mock("../../src/baseline-evidence/ecc-preview-boundary.js", () => ({

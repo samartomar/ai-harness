@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineBaselineCatalog } from "../../../../src/baseline-evidence/catalog.js";
+import { baselineCatalogById } from "../../../../src/baseline-evidence/catalogs.js";
 import { hashComponentTree } from "../../../../src/baseline-evidence/hash.js";
 import { parseBaselineEvidenceLock } from "../../../../src/baseline-evidence/schema.js";
 import {
@@ -653,7 +654,7 @@ describe("ECC baseline evidence pipeline", () => {
   });
 
   it("uses AIH_ECC_REF as the live Enterprise pin before any vendor evidence work", async () => {
-    const livePin = "b".repeat(40);
+    const livePin = baselineCatalogById("ecc").pinnedSha;
     const stalePin = "a".repeat(40);
     writeFileSync(
       join(root, "aih-org-policy.json"),
@@ -706,6 +707,26 @@ describe("ECC baseline evidence pipeline", () => {
       }),
     ]);
     expect(result.report?.checks[0]?.detail).toContain(`declaredPinnedSha: ${stalePin}`);
+  });
+
+  it("refuses an AIH_ECC_REF pin the installed Catalog does not carry, naming both pins", async () => {
+    const carried = baselineCatalogById("ecc").pinnedSha;
+    const context = ctx();
+    context.env = { AIH_ECC_REF: "b".repeat(40) };
+    context.host = makeHostAdapter({ platform: "linux", run: context.run, env: context.env });
+    const buildInstallPlan = vi.fn(() => plan("must not build"));
+
+    await expect(
+      executeEccEvidencePipeline(context, request, {
+        source: resolveTrustSource(sourceRoot, { root }),
+        vendorLockSha256: "f".repeat(64),
+        buildInstallPlan,
+      }),
+    ).rejects.toMatchObject({
+      code: "AIH_TRUST",
+      message: `Catalog ecc carries pin ${carried}; it does not carry requested pin ${"b".repeat(40)}`,
+    });
+    expect(buildInstallPlan).not.toHaveBeenCalled();
   });
 
   it("keeps Vibe on the existing evidence fallback when no org override is configured", async () => {

@@ -11,6 +11,7 @@ import { LOADABILITY_SENTINEL } from "../internals/loadability-sentinel.js";
 import type { ManagedBlock } from "../internals/markers.js";
 import { frontmatter, lines } from "../internals/render.js";
 import type { RepoStack } from "../profile/scan.js";
+import type { PrimaryCodeGraphId } from "../tools/default-tool-selection.js";
 
 /** The marker id every canon bootloader shares (matches the eicp convention). */
 export const SHARED_MARKER = "ai-canonical:shared";
@@ -325,13 +326,32 @@ export function sharedCanonicalBlockBody(dir: string): string {
   );
 }
 
+/** The chosen primary code graph and who chose it (policy or the user's developer-tools run). */
+export interface CanonPrimaryCodeGraph {
+  readonly id: PrimaryCodeGraphId;
+  readonly source: "policy" | "user";
+}
+
+/** Both graph tools stay available; the primary is simply asked first. */
+function primaryCodeGraphLines(primary: CanonPrimaryCodeGraph): string[] {
+  const other = primary.id === "code-review-graph" ? "codebase-memory-mcp" : "code-review-graph";
+  const label = primary.source === "policy" ? "organization policy" : "developer-tools choice";
+  return [
+    "",
+    `Primary code graph: **${primary.id}** (${label}). When a code-graph question fits either`,
+    `tool, ask ${primary.id} first; **${other}** stays available for its specialty above.`,
+  ];
+}
+
 /**
  * The canonical agent behavior core (`rules/agent-behavior-core.md`) — the full
  * working discipline the shared block and router route to. Generalized from the
  * widely-used Think/Simplify/Surgical/Goal-driven core; tool- and domain-agnostic.
  * Every section is the long-form rendering of the single-source discipline above.
+ * A chosen primary code graph adds one routing note; without one the text is
+ * unchanged task-based routing.
  */
-export function agentBehaviorCoreDoc(dir: string): string {
+export function agentBehaviorCoreDoc(dir: string, primary?: CanonPrimaryCodeGraph): string {
   return lines(
     "# Agent behavior core",
     "",
@@ -354,6 +374,7 @@ export function agentBehaviorCoreDoc(dir: string): string {
     "  invent commands, paths, or APIs; verify a path exists before citing it.",
     "",
     disciplineSectionLines("canon-tools"),
+    ...(primary === undefined ? [] : primaryCodeGraphLines(primary)),
     "",
     reportingSectionLines("longForm"),
   );

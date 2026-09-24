@@ -36,12 +36,10 @@ const ECC_PROFILE_FRAMEWORK_MODULES = new Set([
  * entry must keep importing ECC framework code, so this list only shrinks as W1 lands.
  */
 const W1_CATALOG_PRODUCERS = new Set([
-  "src/baseline-evidence/catalog-providers/ecc.ts",
   "src/baseline-evidence/ecc-preview-boundary.ts",
   "src/ecc/install-preview-generate.ts",
   "src/ecc/install-preview-validate.ts",
-  "src/internals/verify-packaged-workbench-source-data.ts",
-  "src/org-policy/catalog-providers/ecc.ts",
+  "src/internals/check-baseline-installable.ts",
   "src/org-policy/workbench/core/source-data-scanner.ts",
 ]);
 

@@ -7,7 +7,7 @@ import {
 import {
   resolveWorkbenchEvidenceCompositionV1,
   type WorkbenchEvidenceCompositionsV1,
-} from "./providers/evidence-compositions.js";
+} from "./core/evidence-compositions.js";
 
 export type WorkbenchEvidenceCoverageProblemV1 =
   | "report-missing"
