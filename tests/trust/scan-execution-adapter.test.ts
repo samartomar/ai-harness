@@ -376,6 +376,30 @@ describe("scan execution adapter", () => {
     );
   });
 
+  it.each([
+    ["no byte length", undefined],
+    ["a byte length that is not a number", "16"],
+  ])("refuses an annex with %s: Core recomputes both annex facts", async (_label, byteLength) => {
+    const stated = succeededWithSarif(CISCO_SARIF);
+    const { byteLength: _drop, ...annex } = stated.evidence.observation.annex;
+    const adapter = stubAdapter(["detector.cisco"], () =>
+      Promise.resolve({
+        ...stated,
+        evidence: {
+          ...stated.evidence,
+          observation: {
+            ...stated.evidence.observation,
+            annex: byteLength === undefined ? annex : { ...annex, byteLength },
+          },
+        },
+      }),
+    );
+    const { result } = await scan({ scanExecution: adapter });
+    expect(detectorCheck(result.checks, "cisco")?.detail).toContain(
+      "analyzer bytes that its own annex does not name",
+    );
+  });
+
   it("refuses an evidence member that carries no SARIF for this scan", async () => {
     const native = succeededWithSarif(CISCO_SARIF);
     const nativeMedia = await scan({

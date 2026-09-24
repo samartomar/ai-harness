@@ -301,6 +301,31 @@ describe("installed @aihq/scan: default loading, executor naming, recorded obser
     ]);
   });
 
+  it("refuses an observation whose annex states no byte length", async () => {
+    const stated = nativeObservation();
+    const { byteLength: _drop, ...annex } = stated.evidence.observation.annex;
+    loader.load.mockResolvedValue({
+      ok: true,
+      adapter: installedScan(["detector.aih-native"], () =>
+        Promise.resolve({
+          ...stated,
+          evidence: {
+            ...stated.evidence,
+            observation: { ...stated.evidence.observation, annex },
+          },
+        }),
+      ),
+    });
+    const result = await scan();
+    expect(result.scanObservations).toEqual([
+      expect.objectContaining({
+        outcome: "failed",
+        detail:
+          "scan execution adapter returned observation bytes that its own annex does not name",
+      }),
+    ]);
+  });
+
   it("reports an incompatible installed Scan for the observation, not a crash", async () => {
     loader.load.mockResolvedValue({
       ok: false,

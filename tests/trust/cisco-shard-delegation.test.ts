@@ -291,6 +291,21 @@ describe("runCiscoSourceShardThroughScanV1", () => {
     ).rejects.toThrow(reason);
   });
 
+  it("rejects a shard run under an analyzer version other than the one Core asked for", async () => {
+    const root = sourceRoot();
+    const manifest = manifestFor(root);
+    const scan = fakeScan((request) => ({
+      ...succeeded(request),
+      analyzer: { version: "2.0.15", lockSha256: request.expected.lockSha256 },
+    }));
+    await expect(
+      runCiscoSourceShardThroughScanV1(root, manifest, manifest.shards[0]?.id ?? "", {
+        ...options,
+        importer: scan.importer,
+      }),
+    ).rejects.toThrow("Cisco shard ran analyzer version 2.0.15 instead of the manifest's 2.0.14");
+  });
+
   it("rejects a source that changed while Scan ran", async () => {
     const root = sourceRoot();
     const manifest = manifestFor(root);

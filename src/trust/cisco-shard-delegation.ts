@@ -94,7 +94,11 @@ function verifyShardSource(root: string, manifest: CiscoShardManifest): void {
 function shardEvidence(
   result: unknown,
   jobs: readonly { readonly id: string; readonly path: string; readonly inputSha256: string }[],
-  expected: { readonly executionProfileId: string; readonly lockSha256: string },
+  expected: {
+    readonly executionProfileId: string;
+    readonly analyzerVersion: string;
+    readonly lockSha256: string;
+  },
 ): Map<string, unknown> {
   const record = asRecord(result);
   if (record?.outcome === "refused")
@@ -114,7 +118,12 @@ function shardEvidence(
     throw new Error(
       `Cisco shard ran under execution profile ${shown(profileId)} instead of requested ${expected.executionProfileId}`,
     );
-  if (asRecord(record.analyzer)?.lockSha256 !== expected.lockSha256)
+  const analyzer = asRecord(record.analyzer);
+  if (analyzer?.version !== expected.analyzerVersion)
+    throw new Error(
+      `Cisco shard ran analyzer version ${shown(analyzer?.version)} instead of the manifest's ${expected.analyzerVersion}`,
+    );
+  if (analyzer.lockSha256 !== expected.lockSha256)
     throw new Error("Cisco shard ran under an analyzer lock other than the manifest's");
   const outputs = Array.isArray(record.outputs) ? record.outputs : undefined;
   if (outputs === undefined || outputs.length !== jobs.length)
@@ -190,13 +199,11 @@ export async function runCiscoSourceShardThroughScanV1(
   }));
   if (aborted(options.signal))
     throw new TrustScanCancelledError(`before Cisco shard ${shardId} started`);
+  const analyzerVersion = manifest.analyzer.version.split("+", 1)[0] ?? manifest.analyzer.version;
   const result = await runCiscoShardV1({
     sourceRoot: safeRoot,
     jobs,
-    expected: {
-      analyzerVersion: manifest.analyzer.version.split("+", 1)[0] ?? manifest.analyzer.version,
-      lockSha256: manifest.analyzer.lockSha256,
-    },
+    expected: { analyzerVersion, lockSha256: manifest.analyzer.lockSha256 },
     executionProfileId: options.executionProfileId,
     concurrency: options.concurrency,
     ...(options.signal === undefined ? {} : { signal: options.signal }),
@@ -205,6 +212,7 @@ export async function runCiscoSourceShardThroughScanV1(
     throw new TrustScanCancelledError(`Cisco shard ${shardId} was running`);
   const evidence = shardEvidence(result, jobs, {
     executionProfileId: options.executionProfileId,
+    analyzerVersion,
     lockSha256: manifest.analyzer.lockSha256,
   });
   verifyShardSource(safeRoot, manifest);

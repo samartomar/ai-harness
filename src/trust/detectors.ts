@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFileSync, realpathSync } from "node:fs";
+import { lstatSync, readFileSync, realpathSync } from "node:fs";
 import { basename, dirname, join, relative } from "node:path";
 import { hashComponentTree } from "../baseline-evidence/hash.js";
 import type { Posture } from "../config/posture.js";
@@ -707,6 +707,37 @@ function sarifFingerprint(
   });
 }
 
+function isSealedRegularFile(root: string, uri: string): boolean {
+  try {
+    return lstatSync(join(root, uri)).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Scan's trust lint states facts for every regular file in the sealed tree, skip
+ * directories included (C2a §2.6). A finding on such a file without facts is
+ * Scan's omission, never absent corroboration: the detector's SARIF cannot be
+ * classified, so it fails closed. A directory, the source root and the
+ * detector's own SARIF name no file and carry no facts.
+ */
+function unstatedFactsRefusal(
+  log: CheckedScanSarifLogV1,
+  detector: TrustDetector,
+  root: string,
+  facts: TrustLintFactsV1,
+): string | undefined {
+  for (const run of log.runs) {
+    for (const result of run.results) {
+      const { uri } = sarifLocation(result as SarifResult, detector);
+      if (facts.artifacts.has(uri) || !isSealedRegularFile(root, uri)) continue;
+      return `${SCAN_DETECTOR_IDS[detector.name]} reported ${adapterReason(uri)}, a sealed file ${SCAN_DETECTOR_IDS[SCAN_TRUST_LINT_DETECTOR]} stated no facts for`;
+    }
+  }
+  return undefined;
+}
+
 /**
  * `canonicalRuleId`, when given, names the rule Core classifies and fingerprints a
  * result under; the raw occurrence keeps the analyzer's own rule id as evidence.
@@ -1132,15 +1163,9 @@ function narrowedDelegatedResult(
   const bytes = observation?.bytes;
   if (!(bytes instanceof Uint8Array) || bytes.byteLength === 0)
     return { unavailable: "scan execution adapter returned an analyzer observation without bytes" };
-  // The adapter is never trusted: the observation's own annex digest is the
-  // claim, and Core checks the bytes it was handed against it before reading.
-  const annex = asRecord(observation?.annex);
-  const sha256 = stringMember(annex, "sha256");
-  const byteLength = annex?.byteLength;
-  if (
-    sha256 !== createHash("sha256").update(bytes).digest("hex") ||
-    (typeof byteLength === "number" && byteLength !== bytes.byteLength)
-  ) {
+  // The adapter is never trusted: the observation's own annex (digest and
+  // length) is the claim, and Core recomputes both over the bytes before reading.
+  if (!annexNamesBytes(observation?.annex, bytes)) {
     return {
       unavailable:
         "scan execution adapter returned analyzer bytes that its own annex does not name",
@@ -1155,6 +1180,15 @@ function narrowedDelegatedResult(
   return sarif.trim().length > 0
     ? { sarif }
     : { unavailable: "scan execution adapter returned empty analyzer bytes" };
+}
+
+/** Whether an observation's annex states exactly these bytes: both its sha256 and its byteLength. */
+function annexNamesBytes(annex: unknown, bytes: Uint8Array): boolean {
+  const record = asRecord(annex);
+  return (
+    stringMember(record, "sha256") === createHash("sha256").update(bytes).digest("hex") &&
+    record?.byteLength === bytes.byteLength
+  );
 }
 
 /** Scan's `producer` statement, when present and well-formed. */
@@ -1227,11 +1261,11 @@ async function recordScanNativeObservation(
   const annex = asRecord(observation?.annex);
   const annexSha256 = stringMember(annex, "sha256");
   const bytes = observation?.bytes;
-  // Scan is never trusted: the annex digest is its claim, checked against the bytes.
+  // Scan is never trusted: the annex is its claim, checked against the bytes.
   if (
     !(bytes instanceof Uint8Array) ||
     annexSha256 === undefined ||
-    annexSha256 !== createHash("sha256").update(bytes).digest("hex")
+    !annexNamesBytes(annex, bytes)
   ) {
     return {
       ...ran,
@@ -1638,6 +1672,16 @@ async function runDetectorList(
           ? `precomputed SARIF for ${SCAN_DETECTOR_IDS[detector.name]} is refused: it holds ${checked.refusal}`
           : `${SCAN_DETECTOR_IDS[detector.name]} returned ${checked.refusal}`,
       );
+      executions.push({ detector: detector.name, ...execution, outcome: "failed" });
+      continue;
+    }
+    // Without completed native facts the scan already fails; with them, none may be missing.
+    const unstated =
+      options.trustLintFacts === undefined
+        ? undefined
+        : unstatedFactsRefusal(checked.log, detector, root, options.trustLintFacts);
+    if (unstated !== undefined) {
+      unavailable(detector, unstated);
       executions.push({ detector: detector.name, ...execution, outcome: "failed" });
       continue;
     }
