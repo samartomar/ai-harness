@@ -27,8 +27,6 @@
   "files": [
     "dist",
     "schemas",
-    "src/baseline-evidence/vendor-lock.json",
-    "src/baseline-evidence/ecc-install-preview.json",
     "src/ecc-profile/serena-runtime",
     "src/ecc-profile/default-mcp-runtime",
     "src/ecc-profile/markitdown-runtime",
@@ -52,13 +50,13 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "npm run build:policy-data && tsup && node tools/copy-policy-data.mjs && tsc -p tsconfig.dts.json",
+    "build": "tsup && tsc -p tsconfig.dts.json",
     "dev": "tsx src/cli.ts",
     "repo:init": "node tools/repo-ai-tools.mjs setup-codex",
     "repo:doctor": "node tools/repo-ai-tools.mjs doctor-codex",
-    "test": "npm run build:policy-data && vitest run",
-    "test:watch": "npm run build:policy-data && vitest",
-    "test:cov": "npm run build:policy-data && vitest run --coverage",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:cov": "vitest run --coverage",
     "check:scan-acceptance": "tsx src/binding/scan-acceptance-check.ts",
     "regen:scan-acceptance": "tsx src/binding/scan-acceptance-regenerate.ts",
     "check:artifacts": "tsx src/internals/check-tracked-artifacts.ts",
@@ -75,8 +73,6 @@
     "check:baseline-pins": "tsx src/internals/check-baseline-pin-currency.ts",
     "baseline:native-identity": "tsx src/internals/check-native-identity.ts --write",
     "check:baseline-installable": "tsx src/internals/check-baseline-installable.ts",
-    "check:workbench-evidence": "tsx src/internals/check-workbench-evidence.ts",
-    "check:workbench-release-compatibility": "tsx src/internals/check-workbench-release-compatibility.ts",
     "check:packed-doc-links": "tsx src/internals/check-packed-doc-links.ts",
     "check:lock-migration": "tsx src/internals/assert-identity-only-lock-migration.ts",
     "baseline:request": "tsx src/baseline-evidence/scanner-cli.ts request",
@@ -93,7 +89,7 @@
     "verify:cold-aih-managed-usage": "npm run build && node tools/verify-cold-aih-managed-usage.mjs",
     "verify:cold-upstream-artifact-lifecycle": "npm run build && node tools/verify-cold-upstream-artifact-lifecycle.mjs",
     "verify:packed-admin-docs": "tsx tools/verify-packed-administrator-docs.mjs",
-    "verify:release-candidate": "npm run check:workbench-release-compatibility && npm run check:workbench-evidence && npm run check:workbench-publication && npm run check:baseline-analyzers && npm run check:native-identity && npm run check:baseline-pins && npm run check:baseline-installable && npm run check:ai-runtime && npm run check:bugbounty-report && npm run docs:lint && npm run check:packed-doc-links && npm run build && npm run verify:packed-core-policy && npm run check:published-bin && npm run check:published-library && npm run verify:packed-admin-docs && node tools/verify-cold-upstream-artifact-lifecycle.mjs",
+    "verify:release-candidate": "npm run check:baseline-analyzers && npm run check:native-identity && npm run check:baseline-pins && npm run check:baseline-installable && npm run check:ai-runtime && npm run check:bugbounty-report && npm run docs:lint && npm run check:packed-doc-links && npm run build && npm run verify:packed-core-policy && npm run check:published-bin && npm run check:published-library && npm run verify:packed-admin-docs && node tools/verify-cold-upstream-artifact-lifecycle.mjs",
     "docs:lint": "tsx src/internals/check-repo-docs.ts",
     "lint": "biome check src tests",
     "lint:fix": "biome check --write src tests",
@@ -101,11 +97,7 @@
     "format": "biome format --write src tests",
     "typecheck": "tsc --noEmit",
     "verify": "npm run check:artifacts && npm run check:self-hosting-canon && npm run check:ecc-installer && npm run check:baseline-analyzers && npm run check:native-identity && npm run check:baseline-pins && npm run check:baseline-installable && npm run check:ai-runtime && npm run check:bugbounty-report && npm run docs:lint && npm run check:packed-doc-links && npm run typecheck && npm run lint:ci && npm run test:cov && npm run build && npm run verify:packed-core-policy && npm run check:published-bin && npm run check:published-library && npm run verify:packed-admin-docs && node tools/verify-cold-upstream-artifact-lifecycle.mjs",
-    "build:policy-data": "node --import tsx tools/build-catalog-preassembly.ts",
-    "check:workbench-publication": "tsx src/internals/verify-workbench-publication-with-materials.ts",
-    "prepare:workbench-evidence": "tsx src/internals/prepare-workbench-public-evidence.ts",
-    "prepare:workbench-collection-evidence": "tsx src/internals/prepare-workbench-collection-evidence.ts",
-    "prepare:workbench-catalog-qualification": "tsx src/internals/prepare-workbench-catalog-qualification.ts"
+    "verify:packed-catalog-boundary": "node tools/verify-packed-catalog-boundary.mjs"
   },
   "keywords": [
     "ai",
@@ -128,7 +120,7 @@
     "zod": "4.4.3"
   },
   "peerDependencies": {
-    "@aihq/catalog": ">=0.2.0 <1.0.0",
+    "@aihq/catalog": ">=0.3.0 <0.4.0",
     "@aihq/scan": ">=0.4.0 <1.0.0"
   },
   "peerDependenciesMeta": {
@@ -140,7 +132,7 @@
     }
   },
   "devDependencies": {
-    "@aihq/catalog": "file:tests/fixtures/packages/aihq-catalog-0.2.0-517e43d.tgz",
+    "@aihq/catalog": "file:tests/fixtures/packages/aihq-catalog-0.3.0-f60735e.tgz",
     "@aihq/scan": "0.4.0",
     "@babel/parser": "7.29.7",
     "@biomejs/biome": "^2.5.1",
