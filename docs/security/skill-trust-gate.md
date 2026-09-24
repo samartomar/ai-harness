@@ -112,6 +112,37 @@ candidate content. The skip remains visible in trust evidence. When the sandbox
 is available and an executed smoke run fails, `trust.sandbox-smoke-failed`
 remains a blocking content finding.
 
+## Analyzer execution profiles and their limits
+
+Every detector runs in the installed `@aihq/scan` under an execution profile aih names; no
+profile falls back to another. The uv analyzers (Cisco skill-scanner, Semgrep, Cisco MCP
+scanner, Snyk Agent Scan) run under `host-process-uv-v1` on every OS by default: a host
+process with no isolation and unenforced network. The org policy field
+`trust.uvExecutionProfile: "linux-namespace-uv-v1"` selects Scan's hardened Linux profile,
+which runs the analyzer in a bubblewrap namespace. These limits are known and reported,
+never hidden:
+
+- **The namespace profile runs no source-tree Cisco scan.** Scan accepts a source-tree
+  `detector.cisco` subject only under `host-process-uv-v1`, so under
+  `linux-namespace-uv-v1` `aih trust scan` and `aih skill vet` report Cisco as
+  `trust.detector-unavailable` with Scan's reason (`unsupported-subject-kind`) and an
+  execution outcome of `refused`. That is a skip by default and a fail when Cisco is a
+  required detector at enterprise posture; aih does not rerun it under the host profile.
+  Next route: where Cisco coverage is required, keep the default host profile. Namespace
+  coverage for Cisco needs either Scan to accept a source-tree subject under that profile
+  or aih to route trust-scan Cisco through Scan's shard runner; neither exists yet.
+- **bubblewrap inside Docker needs a relaxed container.** Docker's default seccomp and
+  AppArmor profiles stop bubblewrap from creating namespaces ("No permissions to create
+  new namespace"), and Docker's read-only `/proc/sys` stops it next ("cannot open
+  /proc/sys/user/max_user_namespaces"). Running the namespace profile in a container
+  needs `--security-opt seccomp=unconfined --security-opt apparmor=unconfined
+  --security-opt systempaths=unconfined`. Under default Docker security each uv analyzer
+  is reported as typed `trust.detector-unavailable`, not skipped silently.
+- **Scan refuses analyzers under root.** On Linux, Scan will not execute a uv analyzer under
+  the root identity ("analyzer execution refuses root identity"), under either profile. A
+  root container or CI job gets typed `trust.detector-unavailable` for every uv analyzer;
+  run the scan as an unprivileged user.
+
 ## Recommended scanners
 
 Use a pluggable scanner interface. Do not hardcode only one vendor/tool.
