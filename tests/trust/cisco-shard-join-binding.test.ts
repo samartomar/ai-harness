@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -72,10 +73,22 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
+/** Each job's subject (subject-files-v1 digest and file count), by hand. */
+type HandSubjects = Readonly<Record<string, readonly [string, number]>>;
+
+const ONE_FILE_JOBS: HandSubjects = Object.fromEntries(
+  Object.entries(JOB_SUBJECTS).map(([path, sha]) => [path, [sha, 1] as const]),
+);
+
 /** One job's SARIF as Scan returns it, its completion evidence written out by hand. */
-function jobSarif(job: CiscoShardJob, results: readonly unknown[] = []): Record<string, unknown> {
-  const subjectTreeSha256 = JOB_SUBJECTS[job.path];
-  if (subjectTreeSha256 === undefined) throw new Error(`no vector for ${job.path}`);
+function jobSarif(
+  job: CiscoShardJob,
+  results: readonly unknown[] = [],
+  subjects: HandSubjects = ONE_FILE_JOBS,
+): Record<string, unknown> {
+  const subject = subjects[job.path];
+  if (subject === undefined) throw new Error(`no vector for ${job.path}`);
+  const [subjectTreeSha256, analyzedFileCount] = subject;
   return {
     version: "2.1.0",
     runs: [
@@ -88,7 +101,7 @@ function jobSarif(job: CiscoShardJob, results: readonly unknown[] = []): Record<
               aihScanCompletionV1: {
                 detectorId: "detector.cisco",
                 subjectTreeSha256,
-                analyzedFileCount: 1,
+                analyzedFileCount,
                 analyzer: { version: "2.0.14", lockSha256: CISCO_LOCK },
               },
             },
@@ -117,7 +130,7 @@ function finding(job: CiscoShardJob): Record<string, unknown> {
   };
 }
 
-function verifiedJoin(root: string, withFindings = false) {
+function verifiedJoin(root: string, withFindings = false, subjects: HandSubjects = ONE_FILE_JOBS) {
   const manifest = buildCiscoSourceShardManifest(root, {
     source: { id: "fixture", pinnedSha: "a".repeat(40) },
     analyzer: { version: "2.0.14", lockSha256: CISCO_LOCK },
@@ -126,7 +139,7 @@ function verifiedJoin(root: string, withFindings = false) {
   });
   const results = manifest.shards.map((shard) =>
     buildCiscoShardResult(manifest, shard.id, (job) =>
-      jobSarif(job, withFindings ? [finding(job)] : []),
+      jobSarif(job, withFindings ? [finding(job)] : [], subjects),
     ),
   );
   return joinCiscoShardResults(manifest, results, root);
@@ -254,17 +267,17 @@ describe("a verified shard join is rebound only to a projection Core makes itsel
   });
 
   it("refuses the projection's join presented anywhere but the projection", async () => {
-    const issued = await withCiscoShardJoinProjectionV1(
-      verifiedJoin(sourceA),
-      ["skills/alpha"],
-      async (projection) => projection.cisco,
-    );
     const alphaOnly = mkdtempSync(join(tmpdir(), "aih-shard-binding-alpha-"));
     roots.push(alphaOnly);
     cpSync(join(sourceA, "skills", "alpha"), join(alphaOnly, "skills", "alpha"), {
       recursive: true,
     });
-    const result = await scanCisco(alphaOnly, issued);
+    // While the projection still exists, so the root, not the revocation, refuses it.
+    const result = await withCiscoShardJoinProjectionV1(
+      verifiedJoin(sourceA),
+      ["skills/alpha"],
+      (projection) => scanCisco(alphaOnly, projection.cisco),
+    );
     expectRefused(
       result,
       /the shard join Core verified is bound to source root .+, not the root being scanned, .+aih-shard-binding-alpha-/,
@@ -283,6 +296,43 @@ describe("a verified shard join is rebound only to a projection Core makes itsel
     expectRefused(
       result,
       `job skills/alpha was verified with 1 files and subject tree ${JOB_SUBJECTS["skills/alpha"]}, and now has 1 files with subject tree ${ALPHA_CHANGED}`,
+    );
+  });
+
+  it("refuses the projection's join after the projection is gone, even at a recreated pathname", async () => {
+    const leaked = await withCiscoShardJoinProjectionV1(
+      verifiedJoin(sourceA),
+      ["skills/alpha"],
+      async (projection) => projection,
+    );
+    expect(existsSync(leaked.root)).toBe(false);
+    // Recreate the same pathname with the same job bytes and present the old join there.
+    roots.push(leaked.root);
+    mkdirSync(join(leaked.root, "skills", "alpha"), { recursive: true });
+    writeFileSync(join(leaked.root, "skills", "alpha", "SKILL.md"), "# alpha\n", "utf8");
+    const result = await scanCisco(leaked.root, leaked.cisco);
+    expectRefused(
+      result,
+      "the shard join's projection no longer exists: Core removed it when the projection's scan settled",
+    );
+  });
+
+  it("refuses the projection's join when the projection directory was replaced at the same pathname", async () => {
+    const result = await withCiscoShardJoinProjectionV1(
+      verifiedJoin(sourceA),
+      ["skills/alpha"],
+      async (projection) => {
+        const aside = `${projection.root}-aside`;
+        roots.push(aside);
+        renameSync(projection.root, aside);
+        mkdirSync(join(projection.root, "skills", "alpha"), { recursive: true });
+        writeFileSync(join(projection.root, "skills", "alpha", "SKILL.md"), "# alpha\n", "utf8");
+        return scanCisco(projection.root, projection.cisco);
+      },
+    );
+    expectRefused(
+      result,
+      /the shard join is bound to the projection directory Core created at .+aih-cisco-shard-projection-.+, and the directory there now is another one/,
     );
   });
 

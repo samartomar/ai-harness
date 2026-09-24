@@ -409,13 +409,46 @@ export type PrecomputedDetectorSarifV1 =
   | ScannerBaselineVetAnnexV1
   | VerifiedCiscoShardSarifV1;
 
-/** What an issued join is bound to: the canonical root it is presented for, and each job's verified subject. */
+/** A directory's identity on disk: the same pathname may later hold another directory. */
+interface DirectoryIdentityV1 {
+  readonly dev: bigint;
+  readonly ino: bigint;
+  readonly birthtimeNs: bigint;
+}
+
+/**
+ * What an issued join is bound to: the canonical root it is presented for,
+ * each job's verified subject, and for a projection Core made, that
+ * directory's identity when Core created it.
+ */
 interface IssuedShardJoinBindingV1 {
   readonly root: string;
   readonly jobs: readonly { readonly path: string; readonly subject: ScanSubjectDigestV1 }[];
+  readonly projection?: DirectoryIdentityV1;
 }
 
 const ISSUED_SHARD_JOINS = new WeakMap<VerifiedCiscoShardSarifV1, IssuedShardJoinBindingV1>();
+/** Projection joins whose projection Core has removed: refused from then on. */
+const REVOKED_PROJECTION_JOINS = new WeakSet<VerifiedCiscoShardSarifV1>();
+
+/** The identity of a real directory at `path` (never a link or junction), or undefined. */
+function directoryIdentityV1(path: string): DirectoryIdentityV1 | undefined {
+  const stat = lstatSync(path, { bigint: true, throwIfNoEntry: false });
+  if (stat === undefined || stat.isSymbolicLink() || !stat.isDirectory()) return undefined;
+  return Object.freeze({ dev: stat.dev, ino: stat.ino, birthtimeNs: stat.birthtimeNs });
+}
+
+function sameDirectoryV1(
+  left: DirectoryIdentityV1,
+  right: DirectoryIdentityV1 | undefined,
+): boolean {
+  return (
+    right !== undefined &&
+    left.dev === right.dev &&
+    left.ino === right.ino &&
+    left.birthtimeNs === right.birthtimeNs
+  );
+}
 
 /**
  * Issues the verified join's SARIF, optionally only for the jobs that meet
@@ -442,8 +475,9 @@ export interface CiscoShardJoinProjectionV1 {
  * creates beside the verified root, into which Core copies, from that root,
  * every job that meets `includedPaths` (symbolic links left out), with the
  * join's SARIF for those jobs bound to that directory. The caller may add
- * other files; the scan still rehashes every job it finds there. The
- * directory is removed once `scan` settles.
+ * other files; the scan still rehashes every job it finds there. The join
+ * holds only while that directory, by identity, is the one Core created: it
+ * is revoked, and the directory removed, once `scan` settles.
  */
 export async function withCiscoShardJoinProjectionV1<T>(
   joined: JoinedCiscoShardEvidence,
@@ -453,7 +487,11 @@ export async function withCiscoShardJoinProjectionV1<T>(
   const verified = verifiedJoinOrThrow(joined);
   const jobs = includedJobs(verified, includedPaths);
   const root = mkdtempSync(join(dirname(verified.root), ".aih-cisco-shard-projection-"));
+  let issued: VerifiedCiscoShardSarifV1 | undefined;
   try {
+    const identity = directoryIdentityV1(root);
+    if (identity === undefined)
+      throw new Error(`Cisco shard projection ${root} is not the directory Core created`);
     for (const job of jobs) {
       const target = join(root, ...job.path.split("/"));
       mkdirSync(dirname(target), { recursive: true });
@@ -466,10 +504,10 @@ export async function withCiscoShardJoinProjectionV1<T>(
         filter: (candidate) => !lstatSync(candidate).isSymbolicLink(),
       });
     }
-    return await scan(
-      Object.freeze({ root, cisco: issueShardJoin(jobs, realpathSync.native(root)) }),
-    );
+    issued = issueShardJoin(jobs, realpathSync.native(root), identity);
+    return await scan(Object.freeze({ root, cisco: issued }));
   } finally {
+    if (issued !== undefined) REVOKED_PROJECTION_JOINS.add(issued);
     rmSync(root, { recursive: true, force: true });
   }
 }
@@ -496,6 +534,7 @@ function includedJobs(
 function issueShardJoin(
   jobs: VerifiedCiscoShardJoinV1["jobs"],
   root: string,
+  projection?: DirectoryIdentityV1,
 ): VerifiedCiscoShardSarifV1 {
   const runs: CheckedScanSarifLogV1["runs"][number][] = [];
   const bound: IssuedShardJoinBindingV1["jobs"][number][] = [];
@@ -513,22 +552,33 @@ function issueShardJoin(
     kind: "verified-cisco-shard-join-v1",
     sarif: JSON.stringify({ version: "2.1.0", runs }),
   });
-  ISSUED_SHARD_JOINS.set(issued, Object.freeze({ root, jobs: Object.freeze(bound) }));
+  ISSUED_SHARD_JOINS.set(
+    issued,
+    Object.freeze({
+      root,
+      jobs: Object.freeze(bound),
+      ...(projection === undefined ? {} : { projection }),
+    }),
+  );
   return issued;
 }
 
 /**
  * Why an issued shard join does not describe the tree being scanned now, or
- * undefined when it does: the scanned root must be the one it is bound to,
- * the jobs Core derives from that tree (every directory holding a selected
+ * undefined when it does: a projection's join must not be revoked, the
+ * scanned root must be the one it is bound to (for a projection, the very
+ * directory Core created, by identity, before and after the rehash), the jobs Core derives from that tree (every directory holding a selected
  * `SKILL.md`) must be exactly its jobs, and each job's subject, rehashed now,
  * must equal the subject verified at the join.
  */
 function issuedShardJoinRefusalV1(
+  issued: VerifiedCiscoShardSarifV1,
   binding: IssuedShardJoinBindingV1,
   root: string,
   inventory: TrustFileInventory,
 ): string | undefined {
+  if (REVOKED_PROJECTION_JOINS.has(issued))
+    return "the shard join's projection no longer exists: Core removed it when the projection's scan settled";
   let scanned: string;
   try {
     scanned = realpathSync.native(root);
@@ -537,6 +587,10 @@ function issuedShardJoinRefusalV1(
   }
   if (scanned !== binding.root)
     return `the shard join Core verified is bound to source root ${binding.root}, not the root being scanned, ${scanned}`;
+  const projection = binding.projection;
+  const replaced = `the shard join is bound to the projection directory Core created at ${binding.root}, and the directory there now is another one`;
+  if (projection !== undefined && !sameDirectoryV1(projection, directoryIdentityV1(scanned)))
+    return replaced;
   const bound = binding.jobs.map((job) => job.path).sort();
   const derived = [
     ...new Set(
@@ -563,6 +617,8 @@ function issuedShardJoinRefusalV1(
     )
       return `the tree changed after Core verified the shard join: job ${job.path} was verified with ${job.subject.analyzedFileCount} files and subject tree ${job.subject.subjectTreeSha256}, and now has ${now.analyzedFileCount} files with subject tree ${now.subjectTreeSha256}`;
   }
+  if (projection !== undefined && !sameDirectoryV1(projection, directoryIdentityV1(scanned)))
+    return replaced;
   return undefined;
 }
 
@@ -2067,7 +2123,7 @@ async function runDetectorList(
         executions.push({ detector: detector.name, ...execution, outcome: "failed" });
         continue;
       }
-      const unbound = issuedShardJoinRefusalV1(binding, root, options.inventory);
+      const unbound = issuedShardJoinRefusalV1(precomputed, binding, root, options.inventory);
       if (unbound !== undefined) {
         unavailable(
           detector,

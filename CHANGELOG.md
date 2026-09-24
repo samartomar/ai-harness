@@ -125,7 +125,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   join fails the detector naming the difference. No caller can name the root a join is bound
   to: `joinedCiscoShardSarif` binds it to the verified root, and a baseline component scan gets
   its join through `withCiscoShardJoinProjectionV1`, which creates the projection directory,
-  copies the included jobs into it from the verified root, and binds the join to it.
+  copies the included jobs into it from the verified root, and binds the join to that directory
+  by identity (device, inode and birth time, a real directory and never a link or junction).
+  The join is revoked when the projection's scan settles: presented afterwards, even at a
+  recreated pathname with the same jobs, it fails with "the shard join's projection no longer
+  exists", and a directory replaced at the same pathname during the scan fails too.
 - The record `joinCiscoShardResults` verified is stored deep-frozen, and
   `verifiedCiscoShardJobSarifV1` returns a frozen copy of it (now with the verified root and each
   job's subject), so a caller can no longer replace a job's SARIF, add or remove a job, or edit a
