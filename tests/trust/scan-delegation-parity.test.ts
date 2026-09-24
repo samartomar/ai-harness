@@ -301,14 +301,16 @@ describe("golden parity: each detector through the Scan execution seam", () => {
 });
 
 /**
- * Where suffix matching changes a Semgrep code relative to the base commit's
- * goldens, pinned so the change is reviewed rather than silent: `[place, golden
- * name, delegated name]`. The base commit could not match any real Semgrep rule
- * id, so every real Semgrep finding was a warn-only generic finding. Matched by
- * suffix, `semgrep.prompt-injection` is corroborated by the native lint on the
- * same line and becomes a blocking `trust.prompt-injection`, including in a
- * LICENSE file and in skipped directories Semgrep still scans; an uncorroborated
- * `semgrep.malicious-code` stays a generic finding either way.
+ * Owner decision 2026-09-24: APPLY Core's Semgrep rule map to real Semgrep rule
+ * ids (matched exactly or by `.<id>` suffix). This is an enforcement change
+ * against the base commit's goldens, pinned here so it is reviewed rather than
+ * silent: `[place, golden name, delegated name]`, 7 findings in 5 cases. The base
+ * commit could not match any real Semgrep rule id, so every real Semgrep finding
+ * was a warn-only generic finding. Matched, `semgrep.prompt-injection` is
+ * corroborated by the native lint on the same line and becomes a blocking
+ * `trust.prompt-injection`, including in a LICENSE file and in skipped
+ * directories Semgrep still scans; an uncorroborated `semgrep.malicious-code`
+ * stays a generic finding either way.
  */
 const SEMGREP_CODE_CORRECTIONS: Readonly<Record<string, readonly (readonly string[])[]>> = {
   "prompt-injection": [["SKILL.md:7", "trust.detector-finding", "trust.prompt-injection"]],
@@ -335,6 +337,119 @@ function semgrepCorrections(
       : [[`${now.uri}:${now.startLine}`, before.name, now.name]];
   });
 }
+
+describe("Semgrep enforcement change (owner decision 2026-09-24: apply the rule map)", () => {
+  async function delegatedSemgrep(caseId: string, configDir: string) {
+    const entry = cases.find((candidate) => candidate.id === caseId);
+    if (entry === undefined) throw new Error(`corpus lost ${caseId}`);
+    const golden = loadGolden(caseId);
+    const native = nativeGolden(entry);
+    const semgrep = golden.detectors.semgrep;
+    if (semgrep === undefined) throw new Error(`no Semgrep golden for ${caseId}`);
+    const [, run] = oracle(semgrep.byEnvironment);
+    const root = materialize(entry);
+    const fake = createFakeScanAdapterForTests({
+      "detector.aih-trust-lint": { kind: "sarif", sarif: trustLintSarifFromGolden(native) },
+      "detector.semgrep": { kind: "sarif", sarif: detectorSarifFromGolden(run, root, configDir) },
+    });
+    const result = await scanTrustTreeWithAnalyzers(root, {
+      posture: "vibe",
+      internalScopes: golden.internalScopes,
+      env: {},
+      platform: "linux",
+      run: forbiddenRunner().run,
+      detectors: ["semgrep"],
+      scanExecution: fake,
+    });
+    const findings = detectorSlice(result.checks, nativeCount(native)).filter(
+      (check) => !isDetectorStatus(check),
+    );
+    return { findings, result, root, run };
+  }
+
+  it("makes exactly the pinned findings blocking, at every posture, where they were warn-only", async () => {
+    let blocking = 0;
+    for (const [caseId, corrections] of Object.entries(SEMGREP_CODE_CORRECTIONS)) {
+      const { findings, root, run } = await delegatedSemgrep(caseId, "aih.work");
+      const places = new Set(corrections.map(([place]) => place));
+      for (const check of findings) {
+        const now = comparableCheck(check, root);
+        const place = `${now.uri}:${now.startLine}`;
+        const before = run.checks.find((row) => `${row.uri}:${row.startLine}` === place);
+        if (places.has(place)) {
+          blocking++;
+          // Blocking: a failing danger check, never graded down by posture.
+          expect(now).toMatchObject({
+            name: "trust.prompt-injection",
+            verdict: "fail",
+            code: "trust.prompt-injection",
+          });
+          // The base commit's goldens held a warn-only generic finding at the same place.
+          expect(before).toMatchObject({ verdict: "pass", code: null });
+        } else {
+          expect(now.verdict).toBe("pass");
+        }
+      }
+    }
+    expect(blocking).toBe(7);
+  });
+
+  it("does not apply the legal-text reclassification to a mapped Semgrep rule", async () => {
+    // Core reclassifies a detector result in a non-executable LICENSE/COPYING/NOTICE
+    // file only when its rule id is UNMAPPED (ruleCode consults the rule map
+    // first), for every detector. Mapped, the LICENSE hit is corroborated by the
+    // native lint and blocks; it is not reviewable legal text.
+    const { findings, root, run } = await delegatedSemgrep("legal-text", "aih.work");
+    expect(findings.map((check) => comparableCheck(check, root))).toEqual([
+      expect.objectContaining({
+        uri: "LICENSE",
+        startLine: 4,
+        verdict: "fail",
+        code: "trust.prompt-injection",
+      }),
+    ]);
+    expect(findings[0]?.detail).not.toContain("non-executable legal text");
+    expect(run.checks.find((row) => row.uri === "LICENSE")?.name).toBe(
+      "trust.legal-text-detector-finding",
+    );
+  });
+
+  it("does not drop Semgrep findings inside Core's inventory skip directories", async () => {
+    // Semgrep scans the whole tree; Core's skip directories (node_modules, dist,
+    // ...) shape only Core's own inventory, never a third-party result.
+    const { findings, root } = await delegatedSemgrep("multi-skill-nested", "aih.work");
+    const blockingPlaces = findings
+      .map((check) => comparableCheck(check, root))
+      .filter((check) => check.verdict === "fail")
+      .map((check) => `${check.uri}:${check.startLine}`);
+    expect(blockingPlaces).toEqual([
+      "dist/bundle.js:1",
+      "node_modules/ignored-pkg/SKILL.md:4",
+      "skills/beta/SKILL.md:7",
+    ]);
+  });
+
+  it("fingerprints a finding the same way whatever config directory Semgrep ran from", async () => {
+    const first = await delegatedSemgrep("semgrep-positive", "aih.work");
+    const second = await delegatedSemgrep("semgrep-positive", "tmp.aih-scan-host-Xy12Ab.work");
+    const shape = (checks: readonly Check[], root: string) =>
+      checks.map((check) => comparableCheck(check, root));
+    expect(shape(second.findings, second.root)).toEqual(shape(first.findings, first.root));
+    // The raw occurrence keeps Semgrep's own, run-specific rule id as evidence.
+    const rawIds = (result: typeof first.result) =>
+      (result.rawOccurrences ?? [])
+        .filter((row) => row.analyzer.startsWith("semgrep"))
+        .map((row) => row.ruleId);
+    expect(rawIds(first.result)).toEqual([
+      "aih.work.semgrep.malicious-code",
+      "aih.work.semgrep.prompt-injection",
+    ]);
+    expect(rawIds(second.result)).toEqual([
+      "tmp.aih-scan-host-Xy12Ab.work.semgrep.malicious-code",
+      "tmp.aih-scan-host-Xy12Ab.work.semgrep.prompt-injection",
+    ]);
+  });
+});
 
 describe("golden parity: Snyk Agent Scan (recorded output, never executed here)", () => {
   it.each(loadRecordedSnykGoldens().map((entry) => [entry.id, entry] as const))(

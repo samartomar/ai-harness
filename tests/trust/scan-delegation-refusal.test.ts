@@ -314,6 +314,37 @@ describe("Scan's detector SARIF is checked at the boundary", () => {
     );
   });
 
+  it("accepts '.', the source root itself, exactly as Core's own mapping does", async () => {
+    // Snyk Agent Scan's JSON-to-SARIF conversion names "." for a finding with no
+    // file inside the tree; Core's legacy mapping keeps it as the root location.
+    const root = caseRoot("prompt-injection");
+    const rootFinding = sarif([result("E004", ".", 1)]);
+    const scan = createFakeScanAdapterForTests({
+      "detector.aih-trust-lint": goldenTrustLint("prompt-injection"),
+      "detector.snyk-agent-scan": { kind: "sarif", sarif: rootFinding },
+    });
+    const { scan: delegated } = await delegatedScan(root, ["snyk-agent-scan"], {
+      scanExecution: scan,
+    });
+    const { run } = recordingRunner();
+    const legacy = await scanTrustTreeWithAnalyzers(root, {
+      posture: "vibe",
+      env: {},
+      platform: "linux",
+      run,
+      detectors: ["snyk-agent-scan"],
+      precomputedDetectorSarif: { "snyk-agent-scan": rootFinding },
+      scanExecution: createFakeScanAdapterForTests({
+        "detector.aih-trust-lint": goldenTrustLint("prompt-injection"),
+      }),
+    });
+    const findingsOf = (checks: readonly Check[]) =>
+      checks.filter((check) => check.location?.uri === ".");
+    expect(findingsOf(legacy.checks)).toHaveLength(1);
+    expect(findingsOf(delegated.checks)).toEqual(findingsOf(legacy.checks));
+    expect(detectorCheck(delegated.checks, "snyk-agent-scan")?.verdict).toBe("pass");
+  });
+
   it("refuses a run Scan reports under a profile other than the one requested", async () => {
     const root = caseRoot("prompt-injection");
     const scan = createFakeScanAdapterForTests({

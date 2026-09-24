@@ -2695,7 +2695,12 @@ function delegatedSarifRefusal(detector: ScanRoutedDetectorV1, sarif: string): s
     for (const location of Array.isArray(locations) ? locations : []) {
       const physical = asRecord(asRecord(location)?.physicalLocation);
       const uri = asRecord(physical?.artifactLocation)?.uri;
-      if (uri !== undefined && (typeof uri !== "string" || !isSourceRelativeSarifUriV1(uri)))
+      // "." is the source root itself (a Snyk finding with no file), as Core has always read it.
+      if (
+        uri !== undefined &&
+        uri !== "." &&
+        (typeof uri !== "string" || !isSourceRelativeSarifUriV1(uri))
+      )
         return `${scanId} returned SARIF artifact URI ${adapterReason(JSON.stringify(uri) ?? "")}, which is not relative to the declared source root`;
     }
     if (detector === "semgrep") {
