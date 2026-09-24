@@ -9,7 +9,10 @@ import { SUPPORTED_CLIS } from "../internals/clis.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
 import type { PlanContext } from "../internals/plan.js";
 import { STRIX_INVOCATION_LIMITS } from "../security/detectors/types.js";
-import { DEFAULT_DEVELOPER_TOOL_IDS } from "../tools/default-tool-selection.js";
+import {
+  DEFAULT_DEVELOPER_TOOL_IDS,
+  PRIMARY_CODE_GRAPH_IDS,
+} from "../tools/default-tool-selection.js";
 import { PolicyAuthorityReceiptV3Schema } from "./authority-v3.js";
 import { AIH_ORG_POLICY_FILE } from "./constants.js";
 import { isSupportedDeveloperToolPolicyFloorV1 } from "./developer-tool-policy.js";
@@ -41,9 +44,22 @@ export const DeveloperToolSelectionV1Schema = z
   .object({
     selected: z.array(DeveloperToolIdSchema).max(DEFAULT_DEVELOPER_TOOL_IDS.length).optional(),
     excluded: z.array(DeveloperToolIdSchema).max(DEFAULT_DEVELOPER_TOOL_IDS.length).optional(),
+    /** Enterprise primary code graph. When set it binds; when omitted the user chooses. */
+    primaryCodeGraph: z.enum(PRIMARY_CODE_GRAPH_IDS).optional(),
   })
   .strict()
   .superRefine((selection, ctx) => {
+    if (
+      selection.primaryCodeGraph !== undefined &&
+      ((selection.excluded ?? []).includes(selection.primaryCodeGraph) ||
+        (selection.selected !== undefined &&
+          !selection.selected.includes(selection.primaryCodeGraph)))
+    )
+      ctx.addIssue({
+        code: "custom",
+        path: ["primaryCodeGraph"],
+        message: `developerTools.primaryCodeGraph names a tool the policy does not select: ${selection.primaryCodeGraph}`,
+      });
     for (const [field, values] of [
       ["selected", selection.selected],
       ["excluded", selection.excluded],
@@ -1653,7 +1669,7 @@ const refineOrgPolicy = (rawPolicy: unknown, ctx: z.RefinementCtx) => {
       code: "custom",
       path: ["minimumCoreVersion"],
       message:
-        "A Headroom developer-tool decision requires minimumCoreVersion " +
+        "A Headroom or primary code-graph developer-tool decision requires minimumCoreVersion " +
         HEADROOM_MINIMUM_CORE_VERSION +
         ".",
     });

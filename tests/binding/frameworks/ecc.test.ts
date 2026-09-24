@@ -330,8 +330,9 @@ describe("createEccAdapter — registers in AdapterRegistry (D6 upstream-local-i
   it("createBindingAdapterRegistry wires the supported adapters", () => {
     const registry = createBindingAdapterRegistry({ root, runner: spyRunner().runner });
     expect(registry.get("ecc")?.adapterType).toBe("upstream-local-installer");
-    expect(registry.get("superpowers")?.adapterType).toBe("host-plugin");
-    expect(registry.frameworks().sort()).toEqual(["ecc", "superpowers"]);
+    // Superpowers is the @aihq/framework-superpowers plugin, not a binding adapter.
+    expect(registry.get("superpowers")).toBeUndefined();
+    expect(registry.frameworks()).toEqual(["ecc"]);
   });
 });
 

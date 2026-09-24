@@ -2,22 +2,18 @@ import { readAihConfig, readPolicyBinding } from "../config/marker.js";
 import {
   describeEccEffectiveDiscovery,
   type EccEffectiveDiscoveryReport,
-} from "../ecc/effective-discovery.js";
-import { inspectDestination, materializationRoot } from "../ecc/materialization-fs.js";
-import { ownedFragmentDigest, parseJsonObject } from "../ecc/materialization-plan.js";
-import {
-  type EccOwnedFile,
-  ownedFileSha256,
-  readEccMaterializationReceipt,
-} from "../ecc/materialization-receipt.js";
-import {
   type EccMaterializationTarget,
+  type EccOwnedFile,
   GOVERNED_MATERIALIZATION_TARGETS,
-} from "../ecc/materialization-target.js";
-import {
   type GovernedCodexRoleRegistrationInspection,
+  inspectDestination,
   inspectGovernedCodexRoleRegistration,
-} from "../ecc-profile/governed-codex-roles.js";
+  materializationRoot,
+  ownedFileSha256,
+  ownedFragmentDigest,
+  parseJsonObject,
+  readEccMaterializationReceipt,
+} from "../framework-plugin/ecc-facade.js";
 import type { Cli } from "../internals/clis.js";
 import type { PlanContext } from "../internals/plan.js";
 import { applyPolicyBindingDefaults, assertPolicyBindingCurrent } from "./binding.js";

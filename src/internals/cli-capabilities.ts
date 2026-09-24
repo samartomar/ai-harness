@@ -1,5 +1,7 @@
-import { ECC_INSTALL_TARGETS } from "../ecc/install-targets.js";
-import { WIRED_MATERIALIZATION_TARGETS } from "../ecc/materialization-target.js";
+import {
+  ECC_INSTALL_TARGETS,
+  WIRED_MATERIALIZATION_TARGETS,
+} from "../framework-plugin/ecc-facade.js";
 import { entry, GOVERNED_MCP_TARGETS, GOVERNED_USAGE_TARGETS } from "./cli-registry.js";
 import type { Cli } from "./clis.js";
 

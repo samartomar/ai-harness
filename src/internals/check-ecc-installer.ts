@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { ECC_NPM_BINS, ECC_NPM_PACKAGE } from "../ecc/install.js";
+import { ECC_NPM_BINS, ECC_NPM_PACKAGE } from "../framework-plugin/ecc-facade.js";
 
 const argv = ["view", ECC_NPM_PACKAGE, "bin", "--json"];
 const command = process.platform === "win32" ? "cmd.exe" : "npm";

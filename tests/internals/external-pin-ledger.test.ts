@@ -19,6 +19,12 @@ import { CHECKOUT_ACTION_PIN } from "../../src/guardrails/sca.js";
 import { BASELINE_SOURCES } from "../../src/internals/baseline-sources.js";
 import { mcpServers, type StdioServer } from "../../src/mcp/servers.js";
 import type { RepoStack } from "../../src/profile/scan.js";
+import {
+  HEADROOM_DEPENDENCY_LOCK_SHA256,
+  HEADROOM_RUNTIME_PIN,
+  HEADROOM_RUNTIME_PYPROJECT_SHA256,
+  HEADROOM_RUNTIME_UV_LOCK_SHA256,
+} from "../../src/tools/headroom.js";
 import { TOKEN_OPTIMIZER_PIN } from "../../src/tools/token-optimizer-runtime.js";
 import { SKILLSPECTOR_IMAGE_DIGEST, SKILLSPECTOR_SOURCE_REVISION } from "../../src/trust/images.js";
 
@@ -291,6 +297,28 @@ describe("active external-pin ledger", () => {
     expect(memory.reason).toMatch(
       /guarded native default.*selected platform archive.*installed Linux Node 20.*A-B-A.*per-host.*macOS.*unverified/i,
     );
+  });
+
+  it("binds the explicitly activated Headroom MCP runtime to its hash-locked closure", () => {
+    const headroom = entry("headroom-mcp");
+    expect(headroom).toMatchObject({
+      identity: "headroom-ai",
+      version: HEADROOM_RUNTIME_PIN.version,
+      commit: HEADROOM_RUNTIME_PIN.sourceCommit,
+      integrity: `sha256:${HEADROOM_RUNTIME_UV_LOCK_SHA256}`,
+      disposition: "active",
+    });
+    expect(headroom.integrityCovers).toBeUndefined();
+    for (const digest of [HEADROOM_RUNTIME_PYPROJECT_SHA256, HEADROOM_DEPENDENCY_LOCK_SHA256]) {
+      expect(headroom.reason).toContain(`sha256:${digest}`);
+    }
+    for (const wheel of Object.values(HEADROOM_RUNTIME_PIN.wheels)) {
+      expect(headroom.reason).toContain(`${wheel.name} sha256:${wheel.sha256}`);
+    }
+    expect(headroom.reason).toMatch(/explicit activation.*--accept-headroom-egress/i);
+    expect(headroom.reason).toMatch(/HEADROOM_BEACON=off.*DO_NOT_TRACK=1.*HEADROOM_UPDATE_CHECK=off/);
+    expect(headroom.reason).toMatch(/proxy, wrap, deploy.*not used/i);
+    expect(headroom.reason).toMatch(/Intel macOS.*Windows arm64/i);
   });
 
   it("binds Core and its repository helper to one Token Optimizer source identity", () => {

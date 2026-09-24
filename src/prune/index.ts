@@ -1,13 +1,13 @@
 import { join } from "node:path";
 import { SHARED_MARKER, sharedCanonicalBlockBody } from "../bootstrap-ai/canon.js";
 import { AIH_CONFIG_FILE } from "../config/marker.js";
-import { codexPruneRemovalActions } from "../ecc/codex.js";
-import { isAihDirectEccInstallTarget } from "../ecc/install.js";
 import {
+  codexPruneRemovalActions,
   eccPruneReconciliationActions,
   hasEccRegisteredTarget,
   hasEccRegistrationLedger,
-} from "../ecc/prune-reconcile.js";
+  isAihDirectEccInstallTarget,
+} from "../framework-plugin/ecc-facade.js";
 import type { Cli } from "../internals/clis.js";
 import { readIfExists } from "../internals/fsxn.js";
 import { aihIgnoreWrite } from "../internals/gitignore.js";

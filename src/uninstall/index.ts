@@ -248,7 +248,8 @@ const OPERATOR_CONTEXT_ARTIFACT_CANDIDATES = [
   "cross-repo-architecture.md",
 ] as const;
 
-const FIXED_GENERATED_CLI_ARTIFACTS: Readonly<Record<string, readonly string[]>> = {
+/** Generated per-CLI files uninstall may remove once receipts prove them unchanged. */
+export const FIXED_GENERATED_CLI_ARTIFACTS: Readonly<Record<string, readonly string[]>> = {
   cursor: [
     ".cursor/rules/01-stack.mdc",
     ".cursor/rules/02-node.mdc",

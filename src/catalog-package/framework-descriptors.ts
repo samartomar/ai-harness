@@ -15,7 +15,7 @@ export const ACCEPTED_CATALOG_FRAMEWORK_DESCRIPTOR_SHA256_V1 = Object.freeze({
   superpowers: "2a5e0b8f6fca6b89640200052ab17cd78e8c943aa24fbaf5bb1195591b19f61c",
 } as const);
 
-export type FrameworkDescriptorBytesV1Result =
+export type FrameworkDescriptorLoadV1 =
   | {
       readonly ok: true;
       readonly frameworkId: CatalogFrameworkIdV1;
@@ -121,7 +121,7 @@ export function loadFrameworkDescriptorSectionV1<T>(
 export async function loadFrameworkDescriptorBytesV1(
   frameworkId: CatalogFrameworkIdV1,
   access?: CatalogPackageAccessV1,
-): Promise<FrameworkDescriptorBytesV1Result> {
+): Promise<FrameworkDescriptorLoadV1> {
   const subpath = `./catalog-framework-${frameworkId}.json` as const;
   const loaded = await loadCatalogPackageV1(
     ["readCatalogFrameworkDescriptorV1Result"],

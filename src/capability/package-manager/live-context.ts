@@ -4,8 +4,10 @@ import { isAbsolute, join } from "node:path";
 import { isProxy } from "node:util/types";
 import { baselineCatalogById } from "../../baseline-evidence/catalogs.js";
 import { vendorBaselineLockBytes } from "../../baseline-evidence/vendor.js";
-import { ECC_MATERIALIZATION_RECEIPT_PATH } from "../../ecc/materialization-receipt.js";
-import { ECC_MCP_EXPLICIT_ADD_RECEIPT_PATH } from "../../ecc/mcp-explicit-add-receipt.js";
+import {
+  ECC_MATERIALIZATION_RECEIPT_PATH,
+  ECC_MCP_EXPLICIT_ADD_RECEIPT_PATH,
+} from "../../framework-plugin/ecc-facade.js";
 import { inspectContainedRelativePath } from "../../internals/contained-path.js";
 import { readBoundedFileDescriptor } from "../../internals/fsxn.js";
 import { AIH_ORG_POLICY_FILE } from "../../org-policy/constants.js";

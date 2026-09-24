@@ -27,13 +27,13 @@ import { parseBaselineEvidenceLock } from "../baseline-evidence/schema.js";
 import { readVendorBaselineLock } from "../baseline-evidence/vendor.js";
 import type { BaselineAuthorization } from "../baseline-evidence/verify.js";
 import type { Posture } from "../config/posture.js";
-import { readEccInstallPreview } from "../ecc/install-preview.js";
 import {
   type RegistrationLedger,
+  readEccInstallPreview,
   readRegistrationLedger,
   registrationLedgerPath,
   writeRegistrationLedgerAtomic,
-} from "../ecc/registration.js";
+} from "../framework-plugin/ecc-facade.js";
 import { TRUST_POLICY_VERSION } from "../trust/evidence.js";
 
 const POSTURES: readonly Posture[] = ["vibe", "enterprise"];
@@ -45,7 +45,7 @@ const VENDOR_ISSUER = "@aihq/core release";
  * writes, keyed to that component's id. The installable gate demands this component be authorized
  * before it calls the catalog green — the installer-authorized requirement is scoped to catalogs
  * that carry an installer runtime (issue #438). Catalogs absent here (Superpowers today) install
- * only via human-run `doc()` guidance (see src/superpowers/install.ts): their runtime component is
+ * only via human-run `doc()` guidance (see packages/framework-superpowers/src/guidance.ts): their runtime component is
  * subject content being evaluated, not installing machinery, so nothing is demanded "authorized".
  */
 const INSTALLER_RUNTIME_COMPONENT_ID_BY_CATALOG: Partial<Record<BaselineCatalogId, string>> = {
@@ -315,7 +315,7 @@ function previewPlanForCatalog(catalogId: BaselineCatalogId): CatalogPreviewPlan
   if (PREVIEW_ARTIFACT_BY_CATALOG[catalogId] === undefined) {
     return {
       destinations: [],
-      skippedReason: `catalog ${catalogId} ships no install-preview artifact by design; its installs are guidance-only doc() actions (see src/superpowers/install.ts) with no destination plan to preview`,
+      skippedReason: `catalog ${catalogId} ships no install-preview artifact by design; its installs are guidance-only doc() actions (see packages/framework-superpowers/src/guidance.ts) with no destination plan to preview`,
     };
   }
   const preview = readEccInstallPreview();

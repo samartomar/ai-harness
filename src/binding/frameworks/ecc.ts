@@ -6,14 +6,14 @@ import {
   readAcceptanceDecisions,
 } from "../../baseline-evidence/acceptance.js";
 import { baselineCatalogById } from "../../baseline-evidence/catalogs.js";
-import type { EccMcpComponentId } from "../../ecc/components.js";
+import { AihError } from "../../errors.js";
 import {
   type EccInstallPreviewArtifact,
+  type EccMcpComponentId,
   parseEccInstallPreview,
   readEccInstallPreview,
-} from "../../ecc/install-preview.js";
-import { selectedEccMcpServers } from "../../ecc/mcp.js";
-import { AihError } from "../../errors.js";
+  selectedEccMcpServers,
+} from "../../framework-plugin/ecc-facade.js";
 import { executePlan, type PlanResult } from "../../internals/execute.js";
 import { readRegularFileWithStats } from "../../internals/fsxn.js";
 import { type Action, plan as planActions } from "../../internals/plan.js";
@@ -1934,11 +1934,8 @@ function reportEccFull(deps: EccLeanAdapterDeps, context: BindingContext): Bindi
 // -- factory ------------------------------------------------------------------
 
 /**
- * Widening note for `frameworks/registry.ts`: `BindingRegistryDeps` widens to also
- * carry ECC's construction deps ({@link EccLeanAdapterDeps}'s ECC-only optionals —
- * `installer`, `installPreview`, and the Full-only `excludedSurfaces`;
- * `locateCache`/`applyActions` are already shared with `SuperpowersAdapterDeps`).
- * `root`/`runner`/`env`/`cacheHome`/`timeoutMs` are shared with `SuperpowersAdapterDeps`.
+ * `frameworks/registry.ts` uses {@link EccLeanAdapterDeps} as `BindingRegistryDeps`:
+ * ECC is the only registered adapter.
  *
  * Mode routing (D10): `plan`/`provision` route on the declaration's mode
  * ({@link eccMode} — absent/`"lean"` -> Lean, `"full"` -> Full); `verify`/`remove`/

@@ -20,6 +20,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Breaking:** Core now requires Node.js 20.6 or newer (`engines.node` `>=20.6.0`).
+  The framework-plugin loader uses the synchronous `import.meta.resolve` of Node 20.6
+  to prove that a plugin entry resolves inside its own install tree. `aih doctor` and
+  the readiness report now check the minor version too, so Node 20.0 to 20.5 fails the
+  runtime gate instead of passing it. Migration: upgrade Node to 20.6 or later (Node 22
+  LTS is recommended).
 - `@aihq/catalog` is now an optional peer dependency (`>=0.2.0 <1.0.0`), loaded at run
   time through one module and never bundled. The historical ECC runtime descriptor used by
   `aih ecc --lifecycle install` and `aih policy project` is resolved in a recorded order: a
@@ -57,11 +63,30 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- Add Headroom as default-selected developer-tool intent in CLI previews. Applying
-  it reports activation unavailable as a skipped, pending outcome; it
-  does not install or run Headroom, configure MCP/proxy, or create a Headroom receipt.
-  Explicit Headroom choices require a V3 policy floor of Core 0.7.0; existing explicit
-  selections and 0.6.0 policies without Headroom remain accepted. Activation is future work.
+- Add Headroom (`headroom-ai[mcp]` 0.38.0, Apache-2.0) as a default-selected developer tool that
+  runs only after explicit activation. Selection alone, with or without `--apply`, leaves it
+  `selected-pending` with a skipped check. `aih developer-tools` and `aih init` gain
+  `--activate-headroom` (which requires `--accept-headroom-egress`) and `--deactivate-headroom`.
+  Activation installs the hash-locked closure in `src/tools/headroom-runtime/` into AIH-owned
+  state, pre-provisions two tokenizer vocabularies, records an activation receipt (consent flags
+  and UTC time, pins, lock digests, hosts, launcher digest), proves a real MCP handshake
+  (`initialize`, exactly `headroom_compress`/`headroom_retrieve`/`headroom_stats`, and a
+  `headroom_stats` call) and only then registers a `headroom` MCP server in the selected hosts.
+  Its launcher runs `headroom mcp serve` offline with `HEADROOM_BEACON=off`, `DO_NOT_TRACK=1`,
+  `HEADROOM_UPDATE_CHECK=off`, `HEADROOM_OFFLINE=1` and LiteLLM's network defaults switched off.
+  Deactivation and policy exclusion remove only unchanged AIH-owned host entries and all Headroom
+  state. Headroom's proxy, `wrap`, `deploy` and `learn --apply` modes are not used. A policy can
+  exclude Headroom but cannot activate it. Explicit Headroom choices require a V3 policy floor of
+  Core 0.7.0; existing explicit selections and 0.6.0 policies without Headroom remain accepted.
+- Add a primary code-graph choice. `developerTools.primaryCodeGraph` (`code-review-graph` or
+  `codebase-memory-mcp`, V3, Core 0.7.0 floor) binds when a policy sets it; otherwise
+  `--primary-code-graph <id>` on `aih developer-tools` and `aih init` records the user's choice in
+  the developer-tools receipt. Both tools stay available. The generated
+  `rules/agent-behavior-core.md` names the primary, and `aih doctor`'s large-repo graph readiness
+  checks Codebase Memory through its managed launcher when it is the primary.
+- Add `tools/verify-developer-tools-installed.mjs`, an installed proof that builds and packs Core,
+  installs it into a disposable consumer, and proves real Code Review Graph, Codebase Memory and
+  Headroom MCP setups against a disposable project with redirected home and state directories.
 - Add Playwright to default developer-tool setup for every project, with a headless isolated
   browser check and persistent policy opt-outs. Existing explicit tool selections stay unchanged.
 - Add MarkItDown CLI to default developer-tool setup, with a pinned local-document runtime,

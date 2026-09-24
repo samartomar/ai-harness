@@ -99,7 +99,7 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     title: "required language runtime missing or unsupported",
     affectedArea: "local developer tooling",
     evidence:
-      "The required language runtime (Node.js 20 or newer) is missing or below the supported version on this machine.",
+      "The required language runtime (Node.js 20.6 or newer) is missing or below the supported version on this machine.",
     action:
       "Please provision the supported language runtime on this machine via the approved software catalog or installer, then have the developer reopen their shell.",
     acceptance: [
@@ -1294,6 +1294,20 @@ const CODE_META: Record<CheckCode, CodeMeta> = {
     title: "ECC installed content has drifted from its installed source",
     action:
       "Advisory: aih recorded which files each ECC install created, with a content hash per file. A file still matching its recorded hash but installed from an older ECC source is STALE; a file whose hash changed is yours and is never auto-replaced; a file with no record is not claimed at all. Kiro's installer copies only absent destinations, so a rerun cannot update stale files - replace them deliberately, or leave them.",
+  },
+  "framework-plugin.unavailable": {
+    audience: "developer",
+    failSeverity: "degraded",
+    title: "a framework phase was refused because its framework plugin is not installed",
+    action:
+      "The framework plugin package named in the detail is not installed next to @aihq/core, so aih did not run that framework's phase. Install it with the command in the detail (the plugin and @aihq/core in the same place), or leave the framework out.",
+  },
+  "framework-plugin.incompatible": {
+    audience: "developer",
+    failSeverity: "blocking",
+    title: "an installed framework plugin cannot be used by this @aihq/core",
+    action:
+      "The installed framework plugin failed its contract, version, install-location or Catalog identity check, so aih refused to run it. Reinstall the plugin version that matches this @aihq/core with the command in the detail; aih never falls back to an embedded copy.",
   },
   "binding.mcp-inventory": {
     audience: "developer",
