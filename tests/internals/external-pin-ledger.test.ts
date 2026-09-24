@@ -237,12 +237,12 @@ describe("active external-pin ledger", () => {
     expect(githubImage).toBeDefined();
     expect(entry("github-mcp-container").integrity).toBe(githubImage?.split("@")[1]);
     expect(entry("github-mcp-container")).toMatchObject({
-      version: "v1.12.1",
-      commit: "7d13a7ad6f2a17f351a6d77ce280c85ae1821f4d",
+      version: "v1.12.2",
+      commit: "85598ba6e1256f7ebf4867b95d63b833c4549264",
       disposition: "active",
     });
     expect(entry("github-mcp-container").reason).toMatch(
-      /Optional self-host.*44 default tool names are identical.*Docker was unavailable/i,
+      /Optional self-host.*45 default tool names.*update_issue_comment.*container wrapper.*linux/amd64/i,
     );
 
     const plan = toolingPlan();

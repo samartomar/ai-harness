@@ -700,7 +700,7 @@ describe("aih mcp — --self-host (GitHub via local Docker + .env.example)", () 
     if (gh.type !== "stdio") throw new Error("expected stdio server");
     expect(gh.command).toBe("docker");
     expect(gh.args).toContain(
-      "ghcr.io/github/github-mcp-server@sha256:0ba840c46a237879c8300e7fddb0b6347f20e029ccb9cbe2ce4a943daa1ff560",
+      "ghcr.io/github/github-mcp-server@sha256:508a0857ec762b1ab1cece29193345b501fab1dd9d1228a7b617062954cecac6",
     );
     expect(gh.env?.GITHUB_PERSONAL_ACCESS_TOKEN).toMatch(/^\$\{GITHUB_PERSONAL_ACCESS_TOKEN\}$/);
     expect(gh.credentials).toBe("token");
