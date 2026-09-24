@@ -208,7 +208,7 @@ describe("policy project", () => {
         expect.stringMatching(/[\\/]dist[\\/]ecc-runtime\.js$/),
         "code-review-graph",
         "--package",
-        "code-review-graph==2.3.8",
+        "code-review-graph==2.3.9",
         "--dependency-lock-sha256",
         expect.stringMatching(/^[a-f0-9]{64}$/),
         "--lock-root",

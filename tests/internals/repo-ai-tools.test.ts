@@ -423,7 +423,7 @@ describe("ai-harness repo AI tooling", () => {
           license: "MIT",
           source: "https://github.com/tirth8205/code-review-graph",
         },
-        codebaseMemory: { package: "codebase-memory-mcp==0.10.5", license: "MIT" },
+        codebaseMemory: { package: "codebase-memory-mcp==0.11.0", license: "MIT" },
       },
       runtime: {
         serena: {
@@ -567,7 +567,7 @@ describe("ai-harness repo AI tooling", () => {
 
       writeFileSync(
         scriptA,
-        source.replace("codebase-memory-mcp==0.10.5", "codebase-memory-mcp==0.10.6"),
+        source.replace("codebase-memory-mcp==0.11.0", "codebase-memory-mcp==0.11.1"),
       );
       expect(memoryRuntime(scriptA)).not.toEqual(baseline);
       expect(memoryRuntime(scriptB)).not.toEqual(baseline);
@@ -683,7 +683,7 @@ describe("ai-harness repo AI tooling", () => {
     expect(childArguments).toEqual([
       ["config", "set", "auto_watch", "false"],
       ["config", "set", "auto_index", "false"],
-      ["cli", "list_projects"],
+      ["cli", "list_projects", "--format", "json", "--detail", "stats"],
     ]);
     expect(childEnvironments).toHaveLength(childArguments.length);
     for (const environment of childEnvironments) {

@@ -434,7 +434,7 @@ describe("aih mcp — generated mcpServers blueprint", () => {
       expect.arrayContaining([
         "code-review-graph",
         "--package",
-        "code-review-graph==2.3.8",
+        "code-review-graph==2.3.9",
         "--dependency-lock-sha256",
         "--project",
       ]),
@@ -455,7 +455,7 @@ describe("aih mcp — generated mcpServers blueprint", () => {
       expect.arrayContaining([
         "codebase-memory-mcp",
         "--package",
-        "codebase-memory-mcp==0.10.8",
+        "codebase-memory-mcp==0.11.0",
         "--dependency-lock-sha256",
         "--project",
         "--runtime-home",
@@ -2568,7 +2568,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     expect(managed).toBeDefined();
     expect(managed?.merge).toBe(true);
     expect(managed?.json).toMatchObject({ allowManagedMcpServersOnly: true });
-    expect(JSON.stringify(managed?.json)).toContain("code-review-graph==2.3.8");
+    expect(JSON.stringify(managed?.json)).toContain("code-review-graph==2.3.9");
   });
 
   it("emits a ready-to-merge allowedServers snippet for generated servers the policy leaves undeclared", async () => {
@@ -2842,7 +2842,7 @@ describe("aih mcp — enterprise posture (governance gate, opt-in)", () => {
     if (dotMcp === undefined) throw new Error("expected .mcp.json write");
     expect(Object.keys(serversOf(dotMcp))).not.toContain("sequential-thinking");
     const managedJson = JSON.stringify(managed?.json);
-    expect(managedJson).toContain("code-review-graph==2.3.8");
+    expect(managedJson).toContain("code-review-graph==2.3.9");
     expect(managedJson).not.toContain("server-sequential-thinking");
   });
 

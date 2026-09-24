@@ -2556,7 +2556,7 @@ describe("governed candidate projection", () => {
             expect.stringMatching(/[\\/]dist[\\/]ecc-runtime\.js$/),
             "code-review-graph",
             "--package",
-            "code-review-graph==2.3.8",
+            "code-review-graph==2.3.9",
           ]),
         }),
       ],
@@ -2584,7 +2584,7 @@ describe("governed candidate projection", () => {
         expect.stringMatching(/[\\/]dist[\\/]ecc-runtime\.js$/),
         "code-review-graph",
         "--package",
-        "code-review-graph==2.3.8",
+        "code-review-graph==2.3.9",
       ]),
     });
     const marker = JSON.parse(readFileSync(join(dir, ".aih-config.json"), "utf8"));

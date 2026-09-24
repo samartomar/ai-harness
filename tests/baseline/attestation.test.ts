@@ -271,7 +271,7 @@ describe("enterprise baseline attestation", () => {
     writePolicy(["code-review-graph", "context7"]);
     const graph = defaultNativeMcpServers(ctx())["code-review-graph"];
     if (graph?.type !== "stdio") throw new Error("expected native Code Review Graph stdio server");
-    expect(graph.args).toContain("code-review-graph==2.3.8");
+    expect(graph.args).toContain("code-review-graph==2.3.9");
     writeMcpConfig("opencode.json", {
       mcp: {
         "code-review-graph": {

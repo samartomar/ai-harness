@@ -89,7 +89,7 @@ authorization rules.
 | Codex projection | Ignored `.codex/config.toml` in each worktree, with launchers bound to that worktree. |
 | Native ECC plugin | Account-owned installation shared across worktrees; normal setup verifies the existing plugin, and marketplace refresh remains explicit. |
 
-Codebase-memory-mcp 0.10.5 uses `CBM_RUNTIME_DIR` for daemon rendezvous and
+Codebase-memory-mcp 0.11.0 uses `CBM_RUNTIME_DIR` for daemon rendezvous and
 requires runtime and cache roots to remain consistent across clients. The
 managed launcher supplies separate roots for the canonical repository and
 memory pin, while `AIH_REPO_AI_TOOLS_HOME` selects a custom managed home.
@@ -98,7 +98,7 @@ pin creates a new generation and does not migrate an existing graph database.
 Before manual indexing, managed preflight writes `auto_watch = false` and
 `auto_index = false` in the private cache configuration to avoid background
 work racing the bounded admission and index check.
-See the pinned [upstream configuration contract](https://github.com/DeusData/codebase-memory-mcp/blob/v0.10.5/docs/CONFIGURATION.md).
+See the pinned [upstream configuration contract](https://github.com/DeusData/codebase-memory-mcp/blob/v0.11.0/docs/CONFIGURATION.md).
 
 Setup checks memory admission and initializes its index after preparing pinned
 tools and before publishing client setup changes. If either stage fails,
@@ -122,17 +122,19 @@ run `node tools/repo-ai-tools.mjs token-optimizer-coach`. These are the same
 entry points for Claude and Codex and do not modify either client's global
 configuration.
 
-The adopter runtime uses authenticated Code Review Graph 2.3.8 and native
-Codebase Memory MCP 0.10.8 launchers. This checkout's separate repository helper
-remains on code-review-graph 2.3.7 and codebase-memory-mcp 0.10.5: its raw
-`uv tool` launchers do not enforce the 2.3.8 provider boundary or authenticate
-the separately downloaded 0.10.8 native payload. Do not treat those frozen
-helper identities as the active adopter runtime pins.
+The adopter runtime uses authenticated Code Review Graph 2.3.9 and native
+Codebase Memory MCP 0.11.0 launchers. This checkout's separate repository helper
+remains on code-review-graph 2.3.7 and uses codebase-memory-mcp 0.11.0: its raw
+`uv tool` launchers do not enforce the 2.3.9 provider boundary or authenticate
+the separately downloaded 0.11.0 native payload. Do not treat those raw
+helper launchers as the active adopter runtime, even where a version matches.
 
 Serena 1.7.0, Token Savior 4.21.0, code-review-graph 2.3.7, and
-codebase-memory-mcp 0.10.5 are MIT-licensed. Serena's installer applies the exact
+codebase-memory-mcp 0.11.0 are MIT-licensed. Serena's installer applies the exact
 patched transitive overrides recorded by `repo-ai-tools.mjs`; changing them
 requires a fresh dependency audit and health/start probe. Token Optimizer
-5.13.14 uses PolyForm Noncommercial 1.0.0; this repo installs an untracked local
+5.13.21 uses PolyForm Noncommercial 1.0.0, plus a `LICENSE-SMALL-BUSINESS.md`
+permission for internal use by organisations with fewer than 5 people and under
+US$20,000 per month in revenue; this repo installs an untracked local
 checkout and does not vendor or redistribute it. Commercial use requires an
 appropriate license from its author.

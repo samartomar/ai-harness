@@ -26,7 +26,12 @@ function fixture(behaviour: { indexed?: boolean; failed?: boolean; nodes?: numbe
   const state = realpathSync(mkdtempSync(join(tmpdir(), "aih-scale-memory-state-")));
   roots.push(root, state);
   let indexed = behaviour.indexed ?? true;
-  const calls: { argv: string[]; tool?: string; options?: RunOptions }[] = [];
+  const calls: {
+    argv: string[];
+    tool?: string;
+    args?: Record<string, unknown>;
+    options?: RunOptions;
+  }[] = [];
   const run = fakeRunner((argv, options) => {
     if (argv[0] === "git") return { code: 0, stdout: "sample.ts\n" };
     const requests = (options?.inputSequence ?? [])
@@ -43,7 +48,7 @@ function fixture(behaviour: { indexed?: boolean; failed?: boolean; nodes?: numbe
           },
       );
     const call = requests.find((request) => request.method === "tools/call");
-    calls.push({ argv, tool: call?.params?.name, options });
+    calls.push({ argv, tool: call?.params?.name, args: call?.params?.arguments, options });
     if (behaviour.failed) return { code: 1, stderr: "fixture memory runtime unavailable" };
     const name = call?.params?.name;
     let result: unknown;
@@ -115,6 +120,8 @@ describe("scale safety with Codebase Memory as the primary code graph", () => {
     expect(result.detail).toContain("codebase-memory-mcp");
     expect(result.detail).toContain("7 nodes");
     expect(calls.map((call) => call.tool)).toEqual(["list_projects", "index_status"]);
+    // Memory 0.11.0 answers both with compact text unless JSON is requested.
+    expect(calls.map((call) => call.args?.format)).toEqual(["json", "json"]);
     if (server?.type !== "stdio") throw new Error("fixture server is not stdio");
     expect(calls[0]?.argv).toEqual([server.command, ...server.args]);
   });

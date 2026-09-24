@@ -121,7 +121,7 @@ export function defaultNativeMcpServers(ctx: PlanContext): Record<string, McpSer
         layout.uvCache,
       ],
       description:
-        "AIH-owned Code Review Graph 2.3.8 launcher for this canonical worktree. It exposes five reviewed operations, strips cloud-provider settings, and refuses provider/model refresh arguments. This is an environment and protocol boundary, not an operating-system network sandbox.",
+        "AIH-owned Code Review Graph 2.3.9 launcher for this canonical worktree. It exposes five reviewed operations, strips cloud-provider settings, and refuses provider/model refresh arguments. This is an environment and protocol boundary, not an operating-system network sandbox.",
       classification: "local",
       egress: "local-only",
       credentials: "none",
@@ -150,7 +150,7 @@ export function defaultNativeMcpServers(ctx: PlanContext): Record<string, McpSer
         layout.uvCache,
       ],
       description:
-        "AIH-owned Codebase Memory MCP 0.10.8 launcher with a verified native payload cache, project-specific index, and a short authenticated coordination root. Setup downloads the exact release payload; steady-state launch is offline.",
+        "AIH-owned Codebase Memory MCP 0.11.0 launcher with a verified native payload cache, project-specific index, and a short authenticated coordination root. Setup downloads the exact release payload; steady-state launch is offline.",
       classification: "local",
       egress: "local-only",
       credentials: "none",

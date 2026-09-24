@@ -50,7 +50,7 @@ const pins = {
     source: "https://github.com/tirth8205/code-review-graph",
   },
   codebaseMemory: {
-    package: "codebase-memory-mcp==0.10.5",
+    package: "codebase-memory-mcp==0.11.0",
     license: "MIT",
     source: "https://github.com/DeusData/codebase-memory-mcp",
   },
@@ -479,7 +479,7 @@ function install() {
   mkdirSync(binRoot, { recursive: true });
   installUvTool(plan.pins.tokenSavior.package, "token-savior-recall v4.21.0");
   installUvTool(plan.pins.codeReviewGraph.package, "code-review-graph v2.3.7");
-  installUvTool(plan.pins.codebaseMemory.package, "codebase-memory-mcp v0.10.5");
+  installUvTool(plan.pins.codebaseMemory.package, "codebase-memory-mcp v0.11.0");
   writeFileSync(
     serenaOverridesPath,
     `${plan.pins.serena.securityOverrides.join("\n")}\n`,
@@ -547,7 +547,7 @@ function verify({ quiet = false } = {}) {
     "token-savior-recall v4.21.0",
     "serena-agent v1.7.0",
     "code-review-graph v2.3.7",
-    "codebase-memory-mcp v0.10.5",
+    "codebase-memory-mcp v0.11.0",
   ]) {
     if (!installed.includes(expected)) throw new Error(`missing repo-local tool: ${expected}`);
   }
@@ -955,11 +955,16 @@ function codebaseMemoryCompletion() {
 
 function codebaseMemoryInventory() {
   const inventory = parseJson(
-    runChecked(executable("codebase-memory-mcp"), ["cli", "list_projects"], {
-      capture: true,
-      env: codebaseMemoryEnv(),
-      timeout: 120_000,
-    }),
+    // 0.11.0 defaults to a compact identity-only table; request JSON with counts.
+    runChecked(
+      executable("codebase-memory-mcp"),
+      ["cli", "list_projects", "--format", "json", "--detail", "stats"],
+      {
+        capture: true,
+        env: codebaseMemoryEnv(),
+        timeout: 120_000,
+      },
+    ),
     "codebase-memory project inventory",
   );
   if (!inventory || typeof inventory !== "object" || !Array.isArray(inventory.projects)) {

@@ -54,7 +54,7 @@ const PROCESS_DIAGNOSTIC_LIMIT = 800;
 const PROCESS_DIAGNOSTIC_PREFIX = 240;
 const PROCESS_DIAGNOSTIC_OMISSION = " … [truncated] … ";
 const SHA256 = /^[a-f0-9]{64}$/u;
-const DEFAULT_MCP_EXCLUDE_NEWER = "2026-09-14T00:00:00Z";
+export const DEFAULT_MCP_EXCLUDE_NEWER = "2026-09-24T00:00:00Z";
 const SERENA_EXCLUDE_NEWER = "2026-08-10T00:00:00Z";
 const PLAYWRIGHT_SMOKE_MARKER = "AIH Playwright MCP verification";
 const SOURCE_EXTENSIONS = new Set([
@@ -847,7 +847,8 @@ function memoryOperation(
       ctx,
       run,
       "codebase-memory-mcp",
-      initializedMcpRequests({ name: "list_projects", arguments: {} }),
+      // Memory 0.11.0 answers with a compact table unless JSON is requested.
+      initializedMcpRequests({ name: "list_projects", arguments: { format: "json" } }),
       "Codebase Memory",
     );
     verifyToolsList(localMcpResponse(inventoryOutput, 2), ["list_projects"]);

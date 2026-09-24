@@ -217,7 +217,7 @@ export function coreLocalMcpServers(): Record<string, McpServer> {
         "serve",
       ],
       description:
-        "Legacy repository-agnostic Code Review Graph fallback. Root-aware project setup replaces this with AIH's authenticated 2.3.8 launcher and isolated worktree state.",
+        "Legacy repository-agnostic Code Review Graph fallback. Root-aware project setup replaces this with AIH's authenticated 2.3.9 launcher and isolated worktree state.",
       classification: "local",
       egress: "none",
       credentials: "none",
@@ -226,9 +226,9 @@ export function coreLocalMcpServers(): Record<string, McpServer> {
     "codebase-memory-mcp": {
       type: "stdio",
       command: "uvx",
-      args: ["--offline", "--no-python-downloads", "--no-env-file", "codebase-memory-mcp@0.10.5"],
+      args: ["--offline", "--no-python-downloads", "--no-env-file", "codebase-memory-mcp@0.11.0"],
       description:
-        "Legacy repository-agnostic Codebase Memory fallback. Root-aware project setup replaces this with AIH's authenticated 0.10.8 native payload and project-specific state. PROVISIONING EGRESS: this older wheel is a launcher shim and may fetch its payload; do not treat --offline as payload authentication.",
+        "Legacy repository-agnostic Codebase Memory fallback. Root-aware project setup replaces this with AIH's authenticated 0.11.0 native payload and project-specific state. PROVISIONING EGRESS: this wheel is a launcher shim and may fetch its payload; do not treat --offline as payload authentication.",
       classification: "local",
       // Not `none`: the server process itself dials github.com on first run (see the
       // description). `vendor-incumbent` names the actual destination — the ledger's

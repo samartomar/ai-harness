@@ -91,7 +91,8 @@ export async function codebaseMemoryAvailability(
     };
   }
   try {
-    const listed = await memoryCall(ctx, "list_projects", {});
+    // Memory 0.11.0 answers inventory and status with compact text unless JSON is requested.
+    const listed = await memoryCall(ctx, "list_projects", { format: "json" });
     const inventory = structuredToolResult(listed, "Codebase Memory list_projects");
     let name: string;
     let indexedNow = false;
@@ -109,7 +110,7 @@ export async function codebaseMemoryAvailability(
       name = memoryProjectName(listed, project);
     }
     const status = structuredToolResult(
-      await memoryCall(ctx, "index_status", { project: name }),
+      await memoryCall(ctx, "index_status", { project: name, format: "json" }),
       "Codebase Memory index_status",
     );
     const nodes = count(status.nodes);

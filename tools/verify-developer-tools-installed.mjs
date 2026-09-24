@@ -61,8 +61,8 @@ const HOSTS = ["claude", "codex", "cursor"];
 const PRIMARIES = ["code-review-graph", "codebase-memory-mcp"];
 const HEADROOM_TOOLS = ["headroom_compress", "headroom_retrieve", "headroom_stats"];
 const PINS = {
-  "code-review-graph": "code-review-graph==2.3.8",
-  "codebase-memory-mcp": "codebase-memory-mcp==0.10.8",
+  "code-review-graph": "code-review-graph==2.3.9",
+  "codebase-memory-mcp": "codebase-memory-mcp==0.11.0",
   headroom: "headroom-ai[mcp]==0.38.0",
 };
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
@@ -807,7 +807,7 @@ async function main() {
     "codebase-memory-mcp",
     hostEntries("codebase-memory-mcp").claude,
     [
-      { name: "list_projects", arguments: {} },
+      { name: "list_projects", arguments: { format: "json" } },
       {
         name: "search_graph",
         arguments: (results) => {

@@ -182,13 +182,13 @@ describe("active external-pin ledger", () => {
       versionFromSpec(stdioArg(servers, "code-review-graph", "code-review-graph@")),
     );
     expect(entry("code-review-graph").reason).toMatch(
-      /raw repository-agnostic fallback only.*2\.3\.8 raw candidate.*hold.*ambient.*CRG_OPENAI.*silent.*egress/i,
+      /raw repository-agnostic fallback only.*2\.3\.8 and 2\.3\.9 raw candidates.*hold.*ambient.*CRG_OPENAI.*silent.*egress/i,
     );
     expect(entry("codebase-memory-mcp").version).toBe(
       versionFromSpec(stdioArg(servers, "codebase-memory-mcp", "codebase-memory-mcp@")),
     );
     expect(entry("codebase-memory-mcp").reason).toMatch(
-      /raw repository-agnostic fallback only.*0\.10\.5.*native.*0\.10\.8.*separate/i,
+      /raw repository-agnostic fallback only.*0\.11\.0 uv route.*native 0\.11\.0 default.*separately/i,
     );
     expect(entry("sequential-thinking").version).toBe(
       versionFromSpec(
@@ -275,7 +275,7 @@ describe("active external-pin ledger", () => {
       expect(graph.reason).toContain(`sha256:${lock}`);
     }
     expect(graph.reason).toMatch(
-      /guarded native default.*installed Linux Node 20.*five guarded operations.*per-host.*macOS.*unverified/i,
+      /guarded native default.*installed-package proof on Windows x64.*five guarded operations.*Linux Node 20.*not re-run.*per-host.*macOS.*unverified/i,
     );
 
     const memory = entry("codebase-memory-mcp-native-default");
@@ -299,8 +299,9 @@ describe("active external-pin ledger", () => {
       expect(memory.reason).toContain(`${archive.name} sha256:${archive.sha256}`);
     }
     expect(memory.reason).toMatch(
-      /guarded native default.*selected platform archive.*installed Linux Node 20.*A-B-A.*per-host.*macOS.*unverified/i,
+      /guarded native default.*selected platform archive.*format json.*installed-package proof on Windows x64.*A-B-A.*not re-run.*per-host.*macOS.*unverified/i,
     );
+    expect(memory.reason).toMatch(/admission barrier did not refuse.*distinct per-worktree/i);
   });
 
   it("binds the explicitly activated Headroom MCP runtime to its hash-locked closure", () => {
