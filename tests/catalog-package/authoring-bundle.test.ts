@@ -2,7 +2,10 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
 import { loadCatalogAuthoringBundleV1 } from "../../src/catalog-package/authoring-bundle.js";
-import type { CatalogPackageAccessV1 } from "../../src/catalog-package/load-catalog-package.js";
+import {
+  type CatalogPackageAccessV1,
+  CatalogPackageRefusalError,
+} from "../../src/catalog-package/load-catalog-package.js";
 import { canonicalStrictJsonBytesV1 } from "../../src/contract/strict-json-v1.js";
 
 const requireFromTest = createRequire(import.meta.url);
@@ -72,5 +75,25 @@ describe("loadCatalogAuthoringBundleV1", () => {
         fixture({ format: "wrong", version: 1, prepared: {}, sourceRecords: [], production: {} }),
       ),
     ).toThrow(/catalog-package-incompatible/);
+  });
+
+  it("refuses JSON that strict canonicalization rejects with a typed refusal", () => {
+    const bytes = Buffer.from('{"version":1e400}\n');
+    const access: CatalogPackageAccessV1 = {
+      ...fixture({}),
+      readFile: (path) =>
+        path.endsWith("package.json") ? Buffer.from('{"version":"0.3.0"}') : bytes,
+    };
+    let thrown: unknown;
+    try {
+      loadCatalogAuthoringBundleV1(access);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(CatalogPackageRefusalError);
+    expect((thrown as CatalogPackageRefusalError).refusal).toMatchObject({
+      reason: "catalog-package-incompatible",
+      detail: expect.stringContaining("is not canonical strict JSON"),
+    });
   });
 });

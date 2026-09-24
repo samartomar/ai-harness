@@ -42,7 +42,12 @@ function parse(bytes: Uint8Array): LoadedCatalogAuthoringBundleV1["prepared"] & 
     return incompatible("is not JSON");
   }
   if (!object(value)) return incompatible("is not an object");
-  const canonical = Buffer.concat([canonicalStrictJsonBytesV1(value), Buffer.from("\n")]);
+  let canonical: Buffer;
+  try {
+    canonical = Buffer.concat([canonicalStrictJsonBytesV1(value), Buffer.from("\n")]);
+  } catch {
+    return incompatible("is not canonical strict JSON");
+  }
   if (!canonical.equals(Buffer.from(bytes))) return incompatible("is not canonical strict JSON");
   if (
     Object.keys(value).length !== 5 ||
