@@ -9,7 +9,7 @@ import {
 } from "../baseline-evidence/pipeline.js";
 import { AihError } from "../errors.js";
 import { executePlan, type PlanResult } from "../internals/execute.js";
-import type { Plan, PlanContext } from "../internals/plan.js";
+import type { DigestAction, DocAction, Plan, PlanContext } from "../internals/plan.js";
 import type { OrgPolicy } from "../org-policy/schema.js";
 import { sanitizeLabel } from "../plugins/registry.js";
 import { resolveTrustSource } from "../trust/fetch.js";
@@ -83,6 +83,50 @@ function evidenceCatalog(
   return catalog;
 }
 
+/**
+ * The evidence gate is the only route to effects. A plan a plugin executes
+ * directly may carry only static report actions: a `doc` with no file path and
+ * a `digest` with no late-bound callback. Everything else — writes, doc files,
+ * commands, profile blocks, removals, probe or digest callbacks — must be built
+ * by `buildInstallPlan` inside {@link FrameworkHostServicesV1.runEvidenceGatedInstall},
+ * after Core verified the exact source. Each field is read once into a fresh
+ * Core-owned plan, so the plugin cannot change what runs after this check.
+ */
+function reportOnlyPlan(frameworkId: FrameworkIdV1, plan: Plan): Plan {
+  const refuse = (detail: string) =>
+    new AihError(
+      `the ${frameworkId} framework plugin ${detail}; effects run only through runEvidenceGatedInstall`,
+      "AIH_FRAMEWORK_PLUGIN",
+    );
+  const source = plan as { capability?: unknown; actions?: unknown } | null;
+  const capability = source?.capability;
+  const actions = source?.actions;
+  if (typeof capability !== "string" || !Array.isArray(actions)) {
+    throw refuse("passed a malformed plan");
+  }
+  const copied: Array<DocAction | DigestAction> = [...actions].map((raw: unknown) => {
+    const action = { ...(raw as Record<string, unknown>) };
+    const { kind, describe, text } = action;
+    if (typeof describe !== "string") throw refuse("passed an action without a description");
+    if (kind === "doc" && action.path === undefined && typeof text === "string") {
+      return { kind, describe, text };
+    }
+    if (kind === "digest" && action.run === undefined) {
+      if (text !== undefined && typeof text !== "string") throw refuse("passed a malformed digest");
+      return {
+        kind,
+        describe,
+        ...(text === undefined ? {} : { text }),
+        ...(action.data === undefined ? {} : { data: action.data }),
+      };
+    }
+    throw refuse(
+      `asked Core to execute a "${sanitizeLabel(String(kind), 40)}" action outside its evidence gate`,
+    );
+  });
+  return { capability, actions: copied };
+}
+
 /** Effectful services bound to one framework invocation. */
 export function frameworkHostServicesV1(
   input: FrameworkHostServicesInputV1,
@@ -122,7 +166,9 @@ export function frameworkHostServicesV1(
       );
     },
     async executePlan(plan: Plan) {
-      return record(await executePlan({ ...plan, ...transactionPins }, ctx));
+      return record(
+        await executePlan({ ...reportOnlyPlan(frameworkId, plan), ...transactionPins }, ctx),
+      );
     },
     progress(message: string) {
       ctx.progress?.(sanitizeLabel(message, 240));

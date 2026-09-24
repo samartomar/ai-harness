@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -8,7 +8,19 @@ import {
   executeSuperpowersCommand,
   executeSuperpowersInitPhase,
 } from "../../src/framework-plugin/superpowers-command.js";
-import { type PlanContext, plan, writeText } from "../../src/internals/plan.js";
+import {
+  type Action,
+  digest,
+  doc,
+  dynamicDigest,
+  exec,
+  type Plan,
+  type PlanContext,
+  plan,
+  probe,
+  remove,
+  writeText,
+} from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { loadSuperpowersFromSource } from "./plugin-source.js";
@@ -52,7 +64,7 @@ function request(
 }
 
 describe("framework host services", () => {
-  it("executes a plugin plan through Core's executor and records the result as produced", async () => {
+  it("executes a report-only plugin plan and records the result as produced", async () => {
     const produced = new WeakSet<object>();
     const host = frameworkHostServicesV1({
       frameworkId: "superpowers",
@@ -62,23 +74,74 @@ describe("framework host services", () => {
       produced,
     });
     const result = await host.executePlan(
-      plan("plugin", writeText("notes/out.md", "hi\n", "write")),
+      plan("plugin", doc("nothing to install", "all components current"), digest("summary", "ok")),
     );
     expect(produced.has(result)).toBe(true);
-    expect(readFileSync(join(root, "notes", "out.md"), "utf8")).toBe("hi\n");
+    expect(result.docs.map((entry) => entry.describe)).toEqual(["nothing to install"]);
+    expect(readdirSync(root)).toEqual([]);
   });
 
-  it("carries Core's policy custody pins into every plugin transaction", async () => {
+  it.each([
+    ["a file write", writeText("bypass.md", "unverified\n", "write")],
+    ["a doc written to a file", doc("guidance", "unverified\n", "bypass.md")],
+    ["a local command", exec("touch", ["touch", "bypass.md"])],
+    [
+      "a shell profile block",
+      {
+        kind: "envblock",
+        path: "bypass.md",
+        scope: "x",
+        shell: "posix",
+        vars: [],
+        describe: "profile",
+      } satisfies Action,
+    ],
+    ["a removal", remove("bypass.md", "remove")],
+    ["a probe callback", probe("check", () => ({ name: "x", verdict: "pass" }) as never)],
+    ["a late-bound digest callback", dynamicDigest("late", () => "text")],
+  ])("refuses %s outside Core's evidence gate before any effect", async (_label, action) => {
     const host = frameworkHostServicesV1({
       frameworkId: "superpowers",
       ctx: ctx(),
       policy: undefined,
-      transactionPins: { commitNotAfter: "2000-01-01T00:00:00.000Z" },
+      transactionPins: {},
+      produced: new WeakSet(),
+    });
+    await expect(host.executePlan(plan("plugin", doc("ok", "ok"), action))).rejects.toMatchObject({
+      code: "AIH_FRAMEWORK_PLUGIN",
+      message: expect.stringContaining("runEvidenceGatedInstall"),
+    });
+    expect(existsSync(join(root, "bypass.md"))).toBe(false);
+    expect(readdirSync(root)).toEqual([]);
+  });
+
+  it("executes the report-only actions it checked, not ones the plugin adds afterwards", async () => {
+    const host = frameworkHostServicesV1({
+      frameworkId: "superpowers",
+      ctx: ctx(),
+      policy: undefined,
+      transactionPins: {},
+      produced: new WeakSet(),
+    });
+    const sneaky = plan("plugin", doc("ok", "ok"));
+    const pending = host.executePlan(sneaky);
+    sneaky.actions.push(writeText("bypass.md", "unverified\n", "late write"));
+    const result = await pending;
+    expect(result.writes).toEqual([]);
+    expect(existsSync(join(root, "bypass.md"))).toBe(false);
+  });
+
+  it("refuses a plan whose actions are not an array", async () => {
+    const host = frameworkHostServicesV1({
+      frameworkId: "superpowers",
+      ctx: ctx(),
+      policy: undefined,
+      transactionPins: {},
       produced: new WeakSet(),
     });
     await expect(
-      host.executePlan(plan("plugin", writeText("late.md", "x\n", "write"))),
-    ).rejects.toThrow();
+      host.executePlan({ capability: "plugin", actions: "nope" } as unknown as Plan),
+    ).rejects.toMatchObject({ code: "AIH_FRAMEWORK_PLUGIN" });
   });
 
   it.each([

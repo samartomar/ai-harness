@@ -245,7 +245,11 @@ export interface FrameworkEvidenceGatedInstallRequestV1 {
 /** Effectful services Core binds to one invocation. */
 export interface FrameworkHostServicesV1 {
   runEvidenceGatedInstall(request: FrameworkEvidenceGatedInstallRequestV1): Promise<PlanResult>;
-  /** Execute a plan through Core's transactional executor (dry-run, apply and verify per the invocation). */
+  /**
+   * Report without effects: Core executes only static `doc` actions without a
+   * file path and `digest` actions without a callback, and refuses any other
+   * action. Every effect runs through {@link runEvidenceGatedInstall}.
+   */
   executePlan(plan: Plan): Promise<PlanResult>;
   /** One bounded progress line on the command's diagnostic channel. */
   progress(message: string): void;

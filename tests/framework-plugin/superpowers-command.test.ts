@@ -7,6 +7,8 @@ import { hashComponentTree } from "../../src/baseline-evidence/hash.js";
 import { componentIdentityPaths } from "../../src/baseline-evidence/license.js";
 import { parseBaselineEvidenceLock } from "../../src/baseline-evidence/schema.js";
 import { readVendorBaselineLock } from "../../src/baseline-evidence/vendor.js";
+import type { FrameworkOperationContextV1 } from "../../src/framework-plugin/contract-v1.js";
+import { frameworkHostServicesV1 } from "../../src/framework-plugin/host-services.js";
 import {
   command,
   executeSuperpowersCommand,
@@ -14,7 +16,7 @@ import {
 } from "../../src/framework-plugin/superpowers-command.js";
 import { executeInitCommand } from "../../src/init/index.js";
 import type { PlanResult } from "../../src/internals/execute.js";
-import type { PlanContext } from "../../src/internals/plan.js";
+import { type PlanContext, plan, writeText } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { buildProgram } from "../../src/program.js";
@@ -169,6 +171,57 @@ describe("aih superpowers — the Core command shell", () => {
       executeSuperpowersCommand(ctx(), { loadPlugin: async () => forging }),
     ).rejects.toThrow(/did not produce/);
   });
+
+  it("refuses a copy of a result Core's evidence gate produced", async () => {
+    const loaded = await loadSuperpowersFromSource();
+    if (!loaded.ok) throw new Error(loaded.refusal.detail);
+    const real = loaded.plugin.commands.superpowers;
+    if (real === undefined) throw new Error("no superpowers command");
+    const copying = {
+      ...loaded,
+      plugin: {
+        ...loaded.plugin,
+        commands: {
+          superpowers: {
+            execute: async (context: FrameworkOperationContextV1) => ({
+              ...(await real.execute(context)),
+            }),
+          },
+        },
+      },
+    };
+    await expect(
+      executeSuperpowersCommand(ctx(), { loadPlugin: async () => copying }),
+    ).rejects.toThrow(/did not produce/);
+  });
+
+  it("refuses a plugin that writes through executePlan instead of the evidence gate", async () => {
+    const loaded = await loadSuperpowersFromSource();
+    if (!loaded.ok) throw new Error(loaded.refusal.detail);
+    const bypassing = {
+      ...loaded,
+      plugin: {
+        ...loaded.plugin,
+        commands: {
+          superpowers: {
+            execute: (context: FrameworkOperationContextV1) =>
+              context.host.executePlan(
+                plan("superpowers", writeText("CLAUDE.md", "unverified\n", "bypass")),
+              ),
+          },
+        },
+      },
+    };
+    await expect(
+      executeSuperpowersCommand(ctx({ apply: true, options: { cli: "claude" } }), {
+        loadPlugin: async () => bypassing,
+      }),
+    ).rejects.toMatchObject({
+      code: "AIH_FRAMEWORK_PLUGIN",
+      message: expect.stringContaining("runEvidenceGatedInstall"),
+    });
+    expect(existsSync(join(root, "CLAUDE.md"))).toBe(false);
+  });
 });
 
 /** A synthetic obra/Superpowers tree at the pinned component paths, plus exact vendor evidence for it. */
@@ -236,6 +289,38 @@ describe("aih superpowers — through Core's real evidence gate", () => {
     });
     expect(existsSync(join(root, ".kiro"))).toBe(false);
     expect(existsSync(join(root, "obra", "Superpowers", "LICENSE"))).toBe(true);
+  });
+
+  it.each([
+    ["writes after verification with no pins", {}, true],
+    [
+      "carries Core's policy custody pins into the gated transaction",
+      { commitNotAfter: "2000-01-01T00:00:00.000Z" },
+      false,
+    ],
+  ])("the gated install %s", async (_label, transactionPins, writes) => {
+    const { lock } = verifiedLocalSource();
+    const components = (lock.sources[0]?.components ?? []).map(({ id, paths }) => ({
+      id,
+      paths,
+    }));
+    const host = frameworkHostServicesV1({
+      frameworkId: "superpowers",
+      ctx: ctx({ apply: true, targets: ["claude"] }),
+      policy: undefined,
+      transactionPins,
+      produced: new WeakSet(),
+      pipelineDeps: { vendorLock: lock, vendorLockSha256: "e".repeat(64) },
+    });
+    const install = host.runEvidenceGatedInstall({
+      source: { owner: "obra", repo: "Superpowers", commit: PIN },
+      components,
+      componentIds: components.map((component) => component.id),
+      buildInstallPlan: () => plan("gated", writeText("gated.md", "verified\n", "write")),
+    });
+    if (writes) await install;
+    else await expect(install).rejects.toThrow();
+    expect(existsSync(join(root, "gated.md"))).toBe(writes);
   });
 });
 
