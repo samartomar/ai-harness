@@ -14,6 +14,12 @@
  *     dist, which imports Core only through `@aihq/core/framework-host`.
  *   `aih ecc <tmpRoot>` previews through the INSTALLED plugin, from the project
  *     install and from the global install.
+ *   Native ECC runtime: resolved from the installed plugin, framework-host's
+ *     `eccRuntimeScriptPath()` names the installed Core's `dist/ecc-runtime.js`;
+ *     the plugin dist ships no runtime script of its own.
+ *   Ordinary profile lifecycle: `aih ecc --lifecycle install` renders only from
+ *     the installed Catalog's `profileEvidence` section, and refuses with
+ *     `framework-profile-evidence-unavailable` (writing nothing) while it is absent.
  *   Governed delivery round trip: a file-authority policy selecting ECC content
  *     is projected with `--apply`, the owned files and receipt land, and
  *     `aih uninstall --apply` removes exactly the receipt-owned content.
@@ -345,6 +351,11 @@ try {
     eccImports.join(", "),
   );
 
+  check(
+    "ECC plugin dist ships no runtime script of its own and asks Core for it through framework-host",
+    !eccJs.includes('"ecc-runtime.js"') && eccJs.includes("eccRuntimeScriptPath"),
+  );
+
   // ---- installs: a project and a global prefix -------------------------------------------------
   const project = join(work, "project");
   const globalPrefix = join(work, "global");
@@ -420,6 +431,64 @@ try {
     "aih ecc <tmpRoot> previews through the installed plugin (global install)",
     previewGlobal.status === 0 && json(previewGlobal)?.capability === previewResult?.capability,
     `exit ${previewGlobal.status}; ${(json(previewGlobal)?.error?.message ?? previewGlobal.stderr).slice(0, 300)}`,
+  );
+
+  // ---- the native ECC runtime Core owns, as the installed plugin resolves it ----------------------
+  for (const [label, coreDir, modules] of [
+    ["project", projectCore, join(project, "node_modules")],
+    ["global", globalCore, globalModules],
+  ]) {
+    // Resolved from the installed plugin's own directory, the way its dist imports Core.
+    const located = run(
+      process.execPath,
+      ["--input-type=module", "-e", 'const m = await import("@aihq/core/framework-host"); process.stdout.write(m.eccRuntimeScriptPath());'],
+      join(modules, "@aihq", "framework-ecc"),
+    );
+    const scriptPath = located.status === 0 ? located.stdout.trim() : "";
+    check(
+      `the plugin's framework-host names Core's installed dist/ecc-runtime.js (${label} install)`,
+      scriptPath !== "" &&
+        existsSync(scriptPath) &&
+        realpathSync(scriptPath) === realpathSync(join(coreDir, "dist", "ecc-runtime.js")),
+      scriptPath || located.stderr.slice(0, 300),
+    );
+  }
+
+  const snapshot = (root) => {
+    const files = {};
+    const visit = (directory) => {
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        if (entry.name === ".git") continue;
+        const path = join(directory, entry.name);
+        if (entry.isDirectory()) visit(path);
+        else files[path.slice(root.length + 1).replaceAll("\\", "/")] = sha256(path);
+      }
+    };
+    visit(root);
+    return JSON.stringify(Object.entries(files).sort(([a], [b]) => (a < b ? -1 : 1)));
+  };
+
+  // ---- ordinary ECC profile lifecycle: evidence only from the installed Catalog ----------------
+  const lifecycleRoot = join(work, "fixture-lifecycle");
+  rmSync(lifecycleRoot, { recursive: true, force: true });
+  mkdirSync(lifecycleRoot, { recursive: true });
+  const lifecycleBefore = snapshot(lifecycleRoot);
+  const lifecycle = aih("ECC profile lifecycle install", ["ecc", "--lifecycle", "install", lifecycleRoot, "--json", "--no-log"]);
+  const catalogCarriesProfileEvidence =
+    JSON.parse(
+      readFileSync(join(project, "node_modules", "@aihq", "catalog", "defaults", "catalog-framework-ecc-v1.json"), "utf8"),
+    ).sections?.profileEvidence !== undefined;
+  summary.profileLifecycle = { exit: lifecycle.status, catalogCarriesProfileEvidence };
+  check(
+    catalogCarriesProfileEvidence
+      ? "aih ecc --lifecycle install renders from the installed Catalog's profile evidence"
+      : "aih ecc --lifecycle install refuses (framework-profile-evidence-unavailable) while the installed Catalog carries no profile evidence, and writes nothing",
+    catalogCarriesProfileEvidence
+      ? lifecycle.status === 0
+      : lifecycle.status !== 0 &&
+          /framework-profile-evidence-unavailable: .+ Next: install an @aihq\/catalog/.test(json(lifecycle)?.error?.message ?? lifecycle.stderr) &&
+          snapshot(lifecycleRoot) === lifecycleBefore,
+    (json(lifecycle)?.error?.message ?? lifecycle.stderr).slice(0, 300),
   );
 
   // ---- governed delivery: apply through the installed plugin --------------------------------------
@@ -642,19 +711,6 @@ try {
     );
   };
   const refusalDetail = (result) => `exit ${result.status}; ${(json(result)?.error?.message ?? result.stderr).slice(0, 240)}`;
-  const snapshot = (root) => {
-    const files = {};
-    const visit = (directory) => {
-      for (const entry of readdirSync(directory, { withFileTypes: true })) {
-        if (entry.name === ".git") continue;
-        const path = join(directory, entry.name);
-        if (entry.isDirectory()) visit(path);
-        else files[path.slice(root.length + 1).replaceAll("\\", "/")] = sha256(path);
-      }
-    };
-    visit(root);
-    return JSON.stringify(Object.entries(files).sort(([a], [b]) => (a < b ? -1 : 1)));
-  };
   summary.refusals = {};
   for (const [label, runner] of [
     ["project", aih],

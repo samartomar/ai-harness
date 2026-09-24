@@ -1,13 +1,13 @@
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import {
   type Action,
   AihError,
   assertTrustTreeSafe,
   beginMarker,
   buildNativeEccRegistration,
+  eccRuntimeScriptPath,
   endMarker,
   NATIVE_ECC_REGISTRATION_SCOPE,
   type NativeEccRegistration,
@@ -376,13 +376,23 @@ function stateRootFor(ctx: PlanContext): string {
   );
 }
 
-function defaultNativeRegistration(ctx: PlanContext): NativeEccRegistration {
-  return buildNativeEccRegistration({
+/**
+ * The native registration runs Core's own runtime script, located by Core
+ * through framework-host: the plugin build ships no runtime of its own.
+ */
+export function defaultNativeRegistrationInput(
+  ctx: PlanContext,
+): Parameters<typeof buildNativeEccRegistration>[0] {
+  return {
     root: ctx.root,
     stateRoot: stateRootFor(ctx),
     executable: process.execPath,
-    cliScript: resolve(dirname(fileURLToPath(import.meta.url)), "ecc-runtime.js"),
-  });
+    cliScript: eccRuntimeScriptPath(),
+  };
+}
+
+function defaultNativeRegistration(ctx: PlanContext): NativeEccRegistration {
+  return buildNativeEccRegistration(defaultNativeRegistrationInput(ctx));
 }
 
 export async function executeEccProfileLifecycleCommand(

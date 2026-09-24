@@ -131,6 +131,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- `@aihq/core/framework-host` exports `eccRuntimeScriptPath()`, the installed Core's own
+  `dist/ecc-runtime.js`. Native ECC registration from `@aihq/framework-ecc` runs that script;
+  the plugin ships no runtime of its own.
 - A user-level framework hook-control list, `frameworkHookControls` in the project's
   `.aih-config.json`, keyed by framework id with `{ disabledHookIds }` only. It may only add
   disables of disable-eligible rows; a profile or any other field is refused by name, since

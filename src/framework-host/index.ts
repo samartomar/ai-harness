@@ -331,6 +331,11 @@ export {
   beginMarker,
   endMarker,
 } from "../internals/render.js";
+/**
+ * Core's own native ECC runtime script (`dist/ecc-runtime.js` of the installed
+ * Core). Native ECC registration executes it; a plugin never ships a copy.
+ */
+export { defaultRuntimeScriptPath as eccRuntimeScriptPath } from "../mcp/default-native-runtime.js";
 export {
   existingMcpTomlNames,
   isExternalMcp,
