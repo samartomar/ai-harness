@@ -50,7 +50,7 @@ Sections the plugin does not read are ignored.
 
 - `vendorLock` (every operation): the vendor-lock source entry. The pin must be
   the upstream this plugin version supports
-  (`affaan-m/ECC@5caf398a91599029a176ca6d806409b00d1052c4`); its `components`
+  (`affaan-m/ECC@5064474d4d762dc9640234a41617cccb79185cec`, v2.2.1); its `components`
   give each evidence component's source paths.
 - `hookControlInventory` (hook operations): ECC hook rows, profiles and each
   row's disable eligibility, declarations (`host`, `sourcePath`, `event`,
