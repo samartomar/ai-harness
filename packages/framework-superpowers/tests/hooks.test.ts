@@ -3,16 +3,23 @@ import { describe, expect, it } from "vitest";
 import { hookInventory, planHookControls } from "../src/hooks.js";
 import {
   descriptorFromDocument,
-  fixtureDescriptorDocument,
   operationContext,
   PINNED_COMMIT,
+  pinnedDescriptorDocument,
 } from "./context.js";
 
 describe("hookInventory", () => {
-  it("exposes the SessionStart hook with every host declaration from the pinned tree", () => {
+  it("exposes the five hooks with every host declaration from the pinned tree", () => {
     const inventory = hookInventory(operationContext());
     expect(inventory.frameworkId).toBe("superpowers");
     expect(inventory.upstream).toEqual({ repository: "obra/Superpowers", commit: PINNED_COMMIT });
+    expect(inventory.hooks.map((hook) => hook.id)).toEqual([
+      "hook:session-start",
+      "hook:skills-path",
+      "hook:skill-registration",
+      "hook:session-context",
+      "hook:first-turn-context",
+    ]);
     const [hook] = inventory.hooks;
     expect(hook?.id).toBe("hook:session-start");
     expect(hook?.event).toBe("SessionStart");
@@ -36,9 +43,15 @@ describe("hookInventory", () => {
 describe("planHookControls", () => {
   it("keeps every hook enabled when policy disables nothing", () => {
     const planned = planHookControls(operationContext(), { disabled: [] });
-    expect(planned.decisions).toEqual([
-      { hookId: "hook:session-start", state: "enabled", hosts: [] },
-    ]);
+    expect(planned.decisions).toEqual(
+      [
+        "hook:session-start",
+        "hook:skills-path",
+        "hook:skill-registration",
+        "hook:session-context",
+        "hook:first-turn-context",
+      ].map((hookId) => ({ hookId, state: "enabled", hosts: [] })),
+    );
     expect(planned.actions).toEqual([]);
   });
 
@@ -90,10 +103,12 @@ describe("planHookControls", () => {
   });
 
   it("emits no label when the disabled hook runs on none of the targeted hosts", () => {
+    // hook:skills-path is declared for OpenCode only, and for no host aih does not control.
     const planned = planHookControls(operationContext({ targets: ["codex", "kiro"] }), {
-      disabled: [{ hookId: "hook:session-start", authority: "enterprise" }],
+      disabled: [{ hookId: "hook:skills-path", authority: "enterprise" }],
     });
-    expect(planned.decisions[0]?.state).toBe("disabled");
+    const decision = planned.decisions.find((item) => item.hookId === "hook:skills-path");
+    expect(decision?.state).toBe("disabled");
     expect(planned.actions).toEqual([]);
   });
 
@@ -135,6 +150,7 @@ describe("hosts aih does not control", () => {
     }>;
   }
 
+  /** Catalog's Muse declaration at the pinned commit. */
   const MUSE_DECLARATION = {
     host: "muse",
     sourcePath: ".muse-plugin/plugin.json",
@@ -143,14 +159,13 @@ describe("hosts aih does not control", () => {
     execution: "process",
   };
 
-  /** The pinned fixture plus Catalog's Muse declaration (and optionally a Muse-only hook). */
+  /** Catalog's inventory at the pinned commit, which declares Muse (optionally plus a Muse-only hook). */
   function museContext(targets: FrameworkOperationContextV1["targets"], museOnlyHook = false) {
-    const document = fixtureDescriptorDocument() as {
+    const document = pinnedDescriptorDocument() as unknown as {
       sections: { hookControlInventory: Inventory };
     };
     const inventory = document.sections.hookControlInventory;
-    inventory.provenance.sources.push({ path: ".muse-plugin/plugin.json", sha256: "8".repeat(64) });
-    inventory.hooks[0]?.declarations.push({ ...MUSE_DECLARATION });
+    expect(inventory.hooks[0]?.declarations).toContainEqual(MUSE_DECLARATION);
     if (museOnlyHook) {
       inventory.hooks.push({
         id: "hook:muse-only",
@@ -215,8 +230,37 @@ describe("hosts aih does not control", () => {
     ]);
   });
 
+  it("labels Catalog's Hermes-only hook unenforced and keeps it selectable", () => {
+    const ctx = operationContext({ targets: ["claude", "codex"] });
+    const hermes = hookInventory(ctx)
+      .hooks.find((hook) => hook.id === "hook:first-turn-context")
+      ?.declarations.find((declaration) => declaration.host === "hermes");
+    expect(hermes?.hostControl).toMatchObject({ kind: "none", enforcement: "unenforced" });
+    expect(hermes?.hostControl?.nextRoute).toMatch(/hermes's own/);
+    const planned = planHookControls(ctx, {
+      disabled: [{ hookId: "hook:first-turn-context", authority: "enterprise" }],
+    });
+    const decision = planned.decisions.find((item) => item.hookId === "hook:first-turn-context");
+    expect(decision).toMatchObject({ state: "disabled", authority: "enterprise" });
+    expect(decision?.hosts.map((host) => [host.host, host.enforcement])).toEqual([
+      ["claude", "not-applicable"],
+      ["codex", "not-applicable"],
+    ]);
+    const text = JSON.stringify(planned.actions);
+    expect(text).toMatch(/hook:first-turn-context[^"]*hermes: unenforced/);
+    expect(text).toMatch(/Next route: [^"]*hermes's own/);
+    expect(text.toLowerCase()).not.toMatch(/withheld|blocked|unsupported/);
+  });
+
+  it("has no Devin row: Devin's manifest declares no hook at the pinned commit", () => {
+    const hosts = hookInventory(operationContext()).hooks.flatMap((hook) =>
+      hook.declarations.map((declaration) => declaration.host),
+    );
+    expect(hosts).not.toContain("devin");
+  });
+
   it("still refuses a malformed host id", () => {
-    const document = fixtureDescriptorDocument() as {
+    const document = pinnedDescriptorDocument() as unknown as {
       sections: { hookControlInventory: Inventory };
     };
     document.sections.hookControlInventory.hooks[0]?.declarations.push({

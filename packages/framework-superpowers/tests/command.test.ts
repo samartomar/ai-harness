@@ -5,10 +5,11 @@ import { executeSuperpowers, identifyComponents } from "../src/command.js";
 import { methodologySteering } from "../src/kiro-steering.js";
 import {
   authorization,
+  catalogDescriptor,
   descriptorFromDocument,
-  fixtureDescriptorDocument,
   operationContext,
   PINNED_COMMIT,
+  pinnedDescriptorDocument,
 } from "./context.js";
 
 const golden = JSON.parse(
@@ -31,7 +32,9 @@ const ALL_CLIS = [
 
 describe("identifyComponents", () => {
   it("applies every pinned component to each targeted host with an upstream route", () => {
-    const identified = identifyComponents(operationContext({ targets: ["claude", "kiro"] }));
+    const identified = identifyComponents(
+      operationContext({ targets: ["claude", "kiro"], descriptor: catalogDescriptor() }),
+    );
     expect(identified.upstream).toEqual({ repository: "obra/Superpowers", commit: PINNED_COMMIT });
     expect(identified.components).toHaveLength(15);
     expect(identified.components.every((component) => component.hosts.join() === "claude")).toBe(
@@ -42,7 +45,7 @@ describe("identifyComponents", () => {
 
 describe("the superpowers command", () => {
   it("asks Core's evidence gate for the exact pinned source and every component", async () => {
-    const ctx = operationContext();
+    const ctx = operationContext({ descriptor: catalogDescriptor() });
     await executeSuperpowers(ctx);
     expect(ctx.host.requests).toHaveLength(1);
     const [request] = ctx.host.requests;
@@ -77,7 +80,7 @@ describe("the superpowers command", () => {
 
   it("refuses a malformed descriptor before any evidence request", async () => {
     const ctx = operationContext({
-      descriptor: descriptorFromDocument({ ...fixtureDescriptorDocument(), version: 9 }),
+      descriptor: descriptorFromDocument({ ...pinnedDescriptorDocument(), version: 9 }),
     });
     await expect(executeSuperpowers(ctx)).rejects.toMatchObject({
       code: "AIH_FRAMEWORK_DESCRIPTOR",
@@ -86,7 +89,7 @@ describe("the superpowers command", () => {
   });
 
   it("builds Core's exact verified guidance for every CLI once the source is verified", async () => {
-    const ctx = operationContext({ targets: [...ALL_CLIS] });
+    const ctx = operationContext({ targets: [...ALL_CLIS], descriptor: catalogDescriptor() });
     await executeSuperpowers(ctx);
     const request = ctx.host.requests[0];
     const authorizations = (request?.componentIds ?? []).map((id) => authorization(id));
@@ -143,14 +146,14 @@ describe("the superpowers command", () => {
   });
 
   it("does not need the hook inventory when policy disables no hook", async () => {
-    const document = fixtureDescriptorDocument();
+    const document = pinnedDescriptorDocument();
     delete (document.sections as Record<string, unknown>).hookControlInventory;
     const ctx = operationContext({ descriptor: descriptorFromDocument(document) });
     await expect(executeSuperpowers(ctx)).resolves.toBeDefined();
   });
 
   it("refuses a policy-disabled hook when the descriptor carries no hook inventory", async () => {
-    const document = fixtureDescriptorDocument();
+    const document = pinnedDescriptorDocument();
     delete (document.sections as Record<string, unknown>).hookControlInventory;
     const ctx = operationContext({
       descriptor: descriptorFromDocument(document),

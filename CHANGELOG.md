@@ -65,6 +65,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   agents with pre-approved Bash and model-generated setup commands) are projected as unavailable
   with a fallback. The new role `rag-pipeline-reviewer` is projected read-only. Profile
   installations rendered at `5064474d` are anchored for offline repair, rollback and uninstall.
+- `@aihq/framework-superpowers` supports obra/Superpowers v6.4.1 (`5bf4e780`) and requires a
+  Catalog that pins it. It reads the five hooks Catalog records at that commit, including
+  Hermes's `pre_llm_call` hook, and labels the Muse and Hermes declarations `unenforced` with
+  the host's own hook controls as the next route. Devin's manifest declares no hook.
 - **Breaking:** `aih ecc --lifecycle install|update` (the ordinary ECC profile lifecycle) now
   renders only from profile evidence in the installed Catalog's ECC framework descriptor
   (`sections.profileEvidence`), bound to the plugin's one upstream commit. `@aihq/framework-ecc`

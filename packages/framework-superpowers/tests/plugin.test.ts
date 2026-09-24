@@ -59,7 +59,7 @@ describe("aihFrameworkPluginV1", () => {
     const description = aihFrameworkPluginV1.describe();
     expect(description.upstream).toEqual({
       repository: "obra/Superpowers",
-      commit: "b36e0829c6d0140e93cfef2ca599b1b07d4a7797",
+      commit: "5bf4e78011075bcfc0dc295f0724994cd123ee71",
     });
     expect(description.catalogSubpath).toBe("./catalog-framework-superpowers.json");
     expect(description.descriptorSections).toEqual(["vendorLock", "hookControlInventory"]);
