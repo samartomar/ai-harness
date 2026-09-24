@@ -242,7 +242,7 @@ describe("active external-pin ledger", () => {
       disposition: "active",
     });
     expect(entry("github-mcp-container").reason).toMatch(
-      /Optional self-host.*45 default tool names.*update_issue_comment.*container wrapper.*linux/amd64/i,
+      /Optional self-host.*container wrapper.*linux\/amd64.*45 default tool names.*update_issue_comment/i,
     );
 
     const plan = toolingPlan();
