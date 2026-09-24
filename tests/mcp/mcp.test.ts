@@ -518,7 +518,7 @@ describe("aih mcp — generated mcpServers blueprint", () => {
     const servers = serversOf(w);
     const pw = pick(servers, "playwright");
     if (pw.type !== "stdio") throw new Error("expected stdio server");
-    expect(pw.args).toEqual(["-y", "@playwright/mcp@0.0.81", "--headless", "--isolated"]);
+    expect(pw.args).toEqual(["-y", "@playwright/mcp@0.0.82", "--headless", "--isolated"]);
     expect(pw.args.join(" ")).not.toContain("@latest");
   });
 
@@ -1644,8 +1644,8 @@ describe("aih mcp — MCP write hygiene", () => {
     const run = fakeRunner((argv) => {
       calls.push(argv);
       if (argv[0] === "uv") return { code: 0, stdout: "uv 0.5.0\n" };
-      if (argv.join(" ") === "cmd /c npm view @playwright/mcp@0.0.81 version") {
-        return { code: 0, stdout: "0.0.81\n" };
+      if (argv.join(" ") === "cmd /c npm view @playwright/mcp@0.0.82 version") {
+        return { code: 0, stdout: "0.0.82\n" };
       }
       if (
         argv.join(" ") ===

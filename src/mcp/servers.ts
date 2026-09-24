@@ -161,7 +161,7 @@ export function validateMcpSecretReferences(servers: Record<string, McpServer>):
 export const N24Q02M_HOST = "n24q02m.com";
 
 /** Exact Playwright MCP package identity shared by projection and runtime verification. */
-export const PLAYWRIGHT_MCP_PACKAGE_SPEC = "@playwright/mcp@0.0.81";
+export const PLAYWRIGHT_MCP_PACKAGE_SPEC = "@playwright/mcp@0.0.82";
 
 /**
  * The canonical Playwright MCP recipe. Headless isolated sessions avoid the

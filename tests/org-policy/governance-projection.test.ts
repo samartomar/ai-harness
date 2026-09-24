@@ -670,7 +670,7 @@ describe("governed candidate projection", () => {
     const playwright = runtime.catalog.playwright;
     expect(playwright?.type).toBe("stdio");
     if (playwright?.type !== "stdio") throw new Error("expected configured Playwright stdio MCP");
-    expect(playwright.args).toEqual(["-y", "@playwright/mcp@0.0.81", "--headless", "--isolated"]);
+    expect(playwright.args).toEqual(["-y", "@playwright/mcp@0.0.82", "--headless", "--isolated"]);
     expect(runtime.effective.candidates[0]).toMatchObject({
       id: "playwright",
       requested: true,

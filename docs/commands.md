@@ -375,7 +375,7 @@ enable the MCP adapter. GitHub MCP also requires an explicit choice through `mcp
 a configured policy GitHub host, `--github-auth token`, or `--self-host`; it is absent from an
 unconfigured project's default MCP set.
 
-Playwright MCP uses the pinned `@playwright/mcp@0.0.81` runtime. It is selected by default for
+Playwright MCP uses the pinned `@playwright/mcp@0.0.82` runtime. It is selected by default for
 all project types. Add `playwright` to `developerTools.excluded` to opt out; an explicit subset or
 empty selection also omits it. MCP policy restrictions still apply. Its browser can access websites
 with the current user's permissions; a local MCP process does not confine browser network access.

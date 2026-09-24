@@ -155,11 +155,11 @@
     {
       "surface": "playwright-mcp",
       "identity": "@playwright/mcp",
-      "version": "0.0.81",
-      "commit": "e73d72e01f162054a3d0a6b0fe8d4affffb095ee",
-      "integrity": "sha512-c4eVex1nS53IzLHlwAm0J9ZISDTvA7RndFX8oVcQOrmvIrKSkByazpq79lZHWJuWTB7Gpk0sLBQoRepyIgmneA==",
+      "version": "0.0.82",
+      "commit": "f1257a5a67aff872f947fae274759f7d54853862",
+      "integrity": "sha512-OCqftfb8H4dnqm/njbTBRk3seUvUPttOlJUxCtEzXGETYOlRH5Qt3bbXIjmZIuWAxD9RF+yg1ASrPeXvm0y5cA==",
       "disposition": "active",
-      "reason": "Exact npm package and isolated v3 lock were qualified on 2026-09-15. Official microsoft/playwright-mcp lightweight tag v0.0.81, npm gitHead, and verified npm SLSA provenance resolve to this signed commit; source and packed package.json bytes match (SHA-256 6c1f1d1aa60788dc8c916589127885cb78134e43d8bc2ae2dd6192cabc1a946e). The four-entry lock has SHA-256 e9497540b85e7652b6afd0dee8a27525fd533fbf090fc3fe6f80604914a98178. Initialize, tools/list (26 tools), and an isolated headless data-URL navigation succeeded; serverInfo reports Playwright 1.64.0-alpha-2026-09-14. The navigation used system Chrome 152.0.7977.84 because a separately downloaded Playwright Chromium was absent. The npm integrity authenticates the package tarball and the lock binds its JavaScript dependency closure; neither covers the separately supplied browser executable."
+      "reason": "Moved 0.0.81 -> 0.0.82 on 2026-09-24 (upstream changes: Docker publish workflow only). The npm registry re-observed exact version 0.0.82 with this sha512 integrity and gitHead f1257a5a67aff872f947fae274759f7d54853862 on 2026-09-24; official microsoft/playwright-mcp lightweight tag v0.0.82 resolves to the same commit, and npm audit signatures verified attestations for all three locked packages. Source and packed package.json bytes match (SHA-256 b871ab81b19a62869f9a3d01b9527d525b9173c7c4c179c4f73daf18f6c536a2). The isolated four-entry v3 lock (playwright and playwright-core 1.64.0-alpha-1789764292000) has SHA-256 d59125f331e51d3a429187778752787a19ebae03096f4b9bfe1d92b6c12774e3. With --headless --isolated on Windows x64, initialize, tools/list (25 tools; 0.0.81 listed 26), an isolated headless data-URL navigation and browser_close succeeded, and the server exited cleanly on stdin EOF; serverInfo reports Playwright 1.64.0-alpha-1789764292000. The navigation used the default browser channel with system Chrome 153.0.8010.53 installed. The npm integrity authenticates the package tarball and the lock binds its JavaScript dependency closure; neither covers the separately supplied browser executable."
     },
     {
       "surface": "github-mcp-container",

@@ -206,7 +206,7 @@ describe("active external-pin ledger", () => {
       versionFromSpec(stdioArg(servers, "playwright", "@playwright/mcp@")),
     );
     expect(entry("playwright-mcp").reason).toMatch(
-      /Initialize.*isolated headless.*serverInfo reports Playwright 1\.64\.0-alpha-2026-09-14/i,
+      /Initialize.*isolated headless.*serverInfo reports Playwright 1\.64\.0-alpha-1789764292000/i,
     );
     expect(entry("ecc-codex-chrome-devtools-mcp")).toMatchObject({
       identity: "chrome-devtools-mcp",

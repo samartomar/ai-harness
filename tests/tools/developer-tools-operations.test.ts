@@ -198,7 +198,7 @@ describe("concrete developer-tool operations", () => {
       "exec",
       "--yes",
       "--",
-      "@playwright/mcp@0.0.81",
+      "@playwright/mcp@0.0.82",
       "--headless",
       "--isolated",
     ]);
