@@ -9,6 +9,7 @@ import {
   readOrgPolicy,
 } from "../org-policy/schema.js";
 import { type RepoStack, scanRepo } from "../profile/scan.js";
+import { headroomMcpCandidates } from "../tools/headroom-projection.js";
 import { defaultNativeMcpServers } from "./default-native-runtime.js";
 import {
   type DefaultDeveloperMcpProjection,
@@ -158,6 +159,7 @@ export function policyAwareMcpCatalog(
       hostedGithub && !githubDisabled
         ? configuredGitHubHostForAuth(ctx, hostPolicyResult.policy, githubAuth)
         : undefined;
+    const headroom = headroomMcpCandidates(ctx);
     const rawServers = mcpServers(opts.scope, stack, {
       selfHost: opts.selfHost,
       githubAuth,
@@ -165,7 +167,10 @@ export function policyAwareMcpCatalog(
       githubIncumbent: hostedGithub
         ? githubIsIncumbent(hostPolicyResult.policy, githubHost)
         : undefined,
-      localRuntimeServers: defaultNativeMcpServers(ctx),
+      localRuntimeServers: {
+        ...defaultNativeMcpServers(ctx),
+        ...(headroom.active === undefined ? {} : { headroom: headroom.active }),
+      },
     });
     const optionalExcluded: Record<string, McpServer> = {};
     if (!githubSelected && rawServers.github !== undefined) {
@@ -179,7 +184,11 @@ export function policyAwareMcpCatalog(
     const enabledServers = includeDisabled
       ? rawServers
       : removeDisabledServers(rawServers, policyResult.policy);
-    const projected = projectDefaultDeveloperMcpSelection(enabledServers, policyResult.policy);
+    const projected = projectDefaultDeveloperMcpSelection(
+      enabledServers,
+      policyResult.policy,
+      headroom.retired,
+    );
     return {
       policy: policyResult.policy,
       servers: projected.servers,

@@ -33,6 +33,7 @@ import {
   KIRO_HOOK_RUNTIME_OPTION,
   kiroHookRuntime,
 } from "../kiro/runtime.js";
+import { command as mcpCommand } from "../mcp/index.js";
 import {
   assertPolicyBindingCurrent,
   policyBindingFileAssertion,
@@ -45,6 +46,7 @@ import { combineProjectResults, executePolicyProjectCommand } from "../org-polic
 import {
   type DeveloperToolsCommandDeps,
   executeDeveloperToolsCommand,
+  prepareDeveloperToolRequest,
 } from "../tools/developer-tools-command.js";
 import { sidecarInitActions } from "../truth/index.js";
 import { INIT_PHASES } from "./phases.js";
@@ -222,6 +224,18 @@ function retainInitCommitLock(
 async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
   const bindingAssertion = policyBindingFileAssertion(ctx.root);
   assertPolicyBindingCurrent(ctx.root, ctx.env, ctx.targets);
+  // Refuse contradictory developer-tool flags (Headroom consent, primary code
+  // graph) before any phase is planned or written.
+  const developerToolRequest = prepareDeveloperToolRequest(ctx);
+  if (
+    developerToolRequest.headroom.activate &&
+    String(ctx.options.mcpMode ?? "standard") === "none"
+  ) {
+    throw new AihError(
+      "--activate-headroom registers an MCP server, but --mcp-mode none projects no MCP servers",
+      "AIH_CONFIG",
+    );
+  }
   explicitKiroHookRuntime(ctx);
   // Brownfield guard FIRST: never bulldoze an existing hand-built canon — redirect
   // to `aih adopt` and emit nothing else, so a dry-run or `--apply` both stop here.
@@ -497,9 +511,21 @@ async function finishDeveloperToolSetup(
   deps: InitCommandDeps,
 ): Promise<PlanResult> {
   if (resultFailed(initialized)) return { ...initialized, capability: "init" };
+  // Init's own MCP phase ran before Headroom's activation receipt existed, so an
+  // activation needs one more projection pass with the same MCP mode.
+  const mcpMode = String(ctx.options.mcpMode ?? "standard");
   const developerTools = await executeDeveloperToolsCommand(ctx, {
     ...deps.developerTools,
-    projectMcp: false,
+    projectMcp:
+      ctx.options.activateHeadroom === true
+        ? async (projectionCtx) => {
+            const modeCtx = {
+              ...projectionCtx,
+              options: { ...projectionCtx.options, mode: mcpMode },
+            };
+            return executePlan(await mcpCommand.plan(modeCtx), modeCtx);
+          }
+        : false,
   });
   return {
     ...combineProjectResults(initialized, developerTools),
@@ -570,6 +596,26 @@ export const command: CommandSpec = {
       flags: "--token-optimizer-profile <profile>",
       description: "Token Optimizer setup profile: quiet | balanced",
       default: "quiet",
+    },
+    {
+      flags: "--activate-headroom",
+      description:
+        "install, register and verify the selected Headroom MCP server (requires --accept-headroom-egress)",
+    },
+    {
+      flags: "--accept-headroom-egress",
+      description:
+        "consent to Headroom activation egress: PyPI wheels and two tokenizer vocabularies (see docs/commands.md)",
+    },
+    {
+      flags: "--deactivate-headroom",
+      description:
+        "remove AIH-owned Headroom MCP entries, runtime state and its activation receipt",
+    },
+    {
+      flags: "--primary-code-graph <id>",
+      description:
+        "primary code graph: code-review-graph | codebase-memory-mcp (a policy value binds)",
     },
     CANON_OPTION,
     BASELINE_OPTION,

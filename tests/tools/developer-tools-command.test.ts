@@ -1,14 +1,26 @@
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { PlanContext } from "../../src/internals/plan.js";
+import { executePlan } from "../../src/internals/execute.js";
+import { digest, type PlanContext, plan } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
+import { defaultNativeRuntimeLayout } from "../../src/mcp/default-native-runtime.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import {
   type DeveloperToolLifecycleResult,
   executeDeveloperToolsCommand,
 } from "../../src/tools/developer-tools-command.js";
+import { HEADROOM_MCP_TOOL_NAMES, headroomLayout } from "../../src/tools/headroom.js";
 
 const roots: string[] = [];
 
@@ -40,10 +52,10 @@ function context(
   };
 }
 
-function v3Policy(developerTools?: unknown): unknown {
+function v3Policy(developerTools?: unknown, minimumCoreVersion = "0.6.0"): unknown {
   return {
     schemaVersion: 3,
-    minimumCoreVersion: "0.6.0",
+    minimumCoreVersion,
     minimumPosture: "vibe",
     references: { repoContract: "ai-coding/project.json" },
     authoringSelections: {
@@ -99,7 +111,7 @@ describe("developer-tools command", () => {
     });
   });
 
-  it("keeps selected Headroom inert on apply and reports activation unavailable as skipped", async () => {
+  it("keeps selected Headroom pending on apply until it is explicitly activated", async () => {
     const visited: string[] = [];
     const reconcileTool = vi.fn(async ({ id }): Promise<DeveloperToolLifecycleResult> => {
       visited.push(id);
@@ -113,13 +125,13 @@ describe("developer-tools command", () => {
     expect(result.tools.find((tool) => tool.id === "headroom")).toMatchObject({
       state: "selected-pending",
       changed: false,
-      detail: expect.stringMatching(/activation unavailable/i),
+      detail: expect.stringMatching(/--activate-headroom --accept-headroom-egress/u),
     });
     expect(
       result.report?.checks.find((check) => check.name === "headroom developer tool"),
     ).toMatchObject({
       verdict: "skip",
-      detail: expect.stringMatching(/activation unavailable/i),
+      detail: expect.stringMatching(/not activated/u),
     });
     expect(result.report?.ok).toBe(true);
   });
@@ -338,5 +350,269 @@ describe("developer-tools command", () => {
       ),
     ).rejects.toThrow("--token-optimizer-profile must be quiet or balanced");
     expect(reconcileTool).not.toHaveBeenCalled();
+  });
+});
+
+function headroomScope(
+  options: {
+    policy?: unknown;
+    commandOptions?: Record<string, unknown>;
+    launcherCode?: number;
+  } = {},
+) {
+  const ctx = context({
+    apply: true,
+    policy: options.policy,
+    commandOptions: options.commandOptions ?? {},
+  });
+  const tools = join(ctx.env.HOME as string, "host-tools");
+  mkdirSync(tools, { recursive: true });
+  const uv = join(tools, process.platform === "win32" ? "uv.exe" : "uv");
+  writeFileSync(uv, "fixture uv\n");
+  if (process.platform !== "win32") chmodSync(uv, 0o700);
+  ctx.env.PATH = tools;
+  const layout = headroomLayout(ctx);
+  const calls: string[][] = [];
+  let launcherCode = options.launcherCode ?? 0;
+  const run = fakeRunner((argv) => {
+    calls.push(argv);
+    if (argv.includes("sync")) {
+      mkdirSync(layout.environment, { recursive: true });
+      return { code: 0 };
+    }
+    if (argv.includes("-c")) return { code: 0, stdout: "aih-headroom-vocabularies-ready\n" };
+    if (argv[2] === "headroom")
+      return {
+        code: launcherCode,
+        stdout: [
+          { jsonrpc: "2.0", id: 1, result: { serverInfo: { name: "headroom" } } },
+          {
+            jsonrpc: "2.0",
+            id: 2,
+            result: { tools: HEADROOM_MCP_TOOL_NAMES.map((name) => ({ name })) },
+          },
+          {
+            jsonrpc: "2.0",
+            id: 3,
+            result: { content: [{ type: "text", text: JSON.stringify({ compressions: 0 }) }] },
+          },
+        ]
+          .map((line) => JSON.stringify(line))
+          .join("\n"),
+      };
+    return { code: 127, stderr: "unexpected" };
+  });
+  const receiptSeenByProjection: boolean[] = [];
+  const deps = {
+    reconcileTool: vi.fn(
+      async ({ id, selected }): Promise<DeveloperToolLifecycleResult> => ({
+        id,
+        state: selected ? "verified" : "policy-excluded",
+        detail: "fixture",
+        changed: false,
+      }),
+    ),
+    projectMcp: vi.fn(async (projectionCtx: PlanContext) => {
+      receiptSeenByProjection.push(existsSync(layout.receiptPath));
+      return executePlan(
+        plan(
+          "projection fixture",
+          digest("fixture", "fixture", { options: projectionCtx.options }),
+        ),
+        projectionCtx,
+      );
+    }),
+    headroom: {
+      run,
+      platform: "linux" as const,
+      arch: "x64",
+      now: () => new Date("2026-09-23T12:00:00.000Z"),
+      verifyVocabularies: () => undefined,
+    },
+  };
+  return {
+    ctx,
+    layout,
+    calls,
+    deps,
+    receiptSeenByProjection,
+    failLauncher: () => {
+      launcherCode = 1;
+    },
+  };
+}
+
+function headroomTool(result: { tools: DeveloperToolLifecycleResult[] }) {
+  return result.tools.find((tool) => tool.id === "headroom");
+}
+
+describe("developer-tools Headroom lifecycle", () => {
+  it.each([
+    [{ activateHeadroom: true }, /requires --accept-headroom-egress/u],
+    [{ acceptHeadroomEgress: true }, /only valid with --activate-headroom/u],
+    [
+      { activateHeadroom: true, acceptHeadroomEgress: true, deactivateHeadroom: true },
+      /cannot be combined/u,
+    ],
+  ])("refuses %o before any tool work", async (commandOptions, message) => {
+    for (const apply of [false, true]) {
+      const scope = headroomScope({ commandOptions });
+      await expect(
+        executeDeveloperToolsCommand({ ...scope.ctx, apply }, scope.deps),
+      ).rejects.toThrow(message);
+      expect(scope.deps.reconcileTool).not.toHaveBeenCalled();
+      expect(scope.calls).toHaveLength(0);
+      expect(existsSync(scope.layout.stateRoot)).toBe(false);
+    }
+  });
+
+  it.each([
+    ["excludes Headroom", v3Policy({ excluded: ["headroom"] }, "0.7.0"), /not selected|excluded/u],
+    [
+      "disables its MCP server",
+      {
+        ...(v3Policy(undefined, "0.7.0") as object),
+        mcp: { disabledServers: ["headroom"] },
+      },
+      /disabled/u,
+    ],
+  ])("refuses activation when the policy %s", async (_label, policy, message) => {
+    const scope = headroomScope({
+      policy,
+      commandOptions: { activateHeadroom: true, acceptHeadroomEgress: true },
+    });
+    await expect(executeDeveloperToolsCommand(scope.ctx, scope.deps)).rejects.toThrow(message);
+    expect(scope.calls).toHaveLength(0);
+    expect(existsSync(scope.layout.stateRoot)).toBe(false);
+  });
+
+  it("previews an activation request without installing anything", async () => {
+    const scope = headroomScope({
+      commandOptions: { activateHeadroom: true, acceptHeadroomEgress: true },
+    });
+    const result = await executeDeveloperToolsCommand({ ...scope.ctx, apply: false }, scope.deps);
+    expect(headroomTool(result)).toMatchObject({
+      state: "selected-pending",
+      detail: expect.stringMatching(/--apply/u),
+      changed: false,
+    });
+    expect(scope.calls).toHaveLength(0);
+    expect(existsSync(scope.layout.stateRoot)).toBe(false);
+  });
+
+  it("activates, registers after the receipt exists, re-verifies, then deactivates cleanly", async () => {
+    const scope = headroomScope({
+      commandOptions: { activateHeadroom: true, acceptHeadroomEgress: true },
+    });
+    const activated = await executeDeveloperToolsCommand(scope.ctx, scope.deps);
+    expect(headroomTool(activated)).toMatchObject({ state: "verified", changed: true });
+    expect(
+      activated.report?.checks.find((check) => check.name === "headroom developer tool"),
+    ).toMatchObject({ verdict: "pass" });
+    expect(scope.receiptSeenByProjection).toEqual([true]);
+    expect(existsSync(scope.layout.receiptPath)).toBe(true);
+
+    scope.calls.length = 0;
+    const ordinary = await executeDeveloperToolsCommand({ ...scope.ctx, options: {} }, scope.deps);
+    expect(headroomTool(ordinary)).toMatchObject({ state: "verified", changed: false });
+    expect(scope.calls.map((argv) => argv[2] === "headroom")).toEqual([true]);
+
+    const deactivated = await executeDeveloperToolsCommand(
+      { ...scope.ctx, options: { deactivateHeadroom: true } },
+      scope.deps,
+    );
+    expect(headroomTool(deactivated)).toMatchObject({
+      state: "selected-pending",
+      changed: true,
+      detail: expect.stringMatching(/removed/u),
+    });
+    // The projection ran while the receipt still named the entry to remove.
+    expect(scope.receiptSeenByProjection.at(-1)).toBe(true);
+    expect(existsSync(scope.layout.stateRoot)).toBe(false);
+  });
+
+  it("removes an active install when the policy later excludes Headroom", async () => {
+    const scope = headroomScope({
+      commandOptions: { activateHeadroom: true, acceptHeadroomEgress: true },
+    });
+    await executeDeveloperToolsCommand(scope.ctx, scope.deps);
+    writeFileSync(
+      join(scope.ctx.root, "aih-org-policy.json"),
+      `${JSON.stringify(v3Policy({ excluded: ["headroom"] }, "0.7.0"))}\n`,
+    );
+    const excluded = await executeDeveloperToolsCommand({ ...scope.ctx, options: {} }, scope.deps);
+    expect(headroomTool(excluded)).toMatchObject({ state: "policy-excluded", changed: true });
+    expect(existsSync(scope.layout.stateRoot)).toBe(false);
+  });
+
+  it("reports a failed health check as blocked without deactivating", async () => {
+    const scope = headroomScope({
+      commandOptions: { activateHeadroom: true, acceptHeadroomEgress: true },
+    });
+    await executeDeveloperToolsCommand(scope.ctx, scope.deps);
+    scope.failLauncher();
+    const result = await executeDeveloperToolsCommand({ ...scope.ctx, options: {} }, scope.deps);
+    expect(headroomTool(result)?.state).toBe("blocked");
+    expect(result.report?.ok).toBe(false);
+    expect(existsSync(scope.layout.receiptPath)).toBe(true);
+  });
+});
+
+describe("developer-tools primary code graph", () => {
+  it("records the user's choice on apply and only reports it in preview", async () => {
+    const preview = headroomScope({ commandOptions: { primaryCodeGraph: "codebase-memory-mcp" } });
+    const previewed = await executeDeveloperToolsCommand(
+      { ...preview.ctx, apply: false },
+      preview.deps,
+    );
+    expect(previewed.primaryCodeGraph).toEqual({ id: "codebase-memory-mcp", source: "user" });
+    expect(existsSync(defaultNativeRuntimeLayout(preview.ctx).runtimeReceiptPath)).toBe(false);
+
+    const scope = headroomScope({ commandOptions: { primaryCodeGraph: "codebase-memory-mcp" } });
+    const applied = await executeDeveloperToolsCommand(scope.ctx, scope.deps);
+    expect(applied.primaryCodeGraph).toEqual({ id: "codebase-memory-mcp", source: "user" });
+    expect(applied.changed).toBe(true);
+    const receipt = JSON.parse(
+      readFileSync(defaultNativeRuntimeLayout(scope.ctx).runtimeReceiptPath, "utf8"),
+    );
+    expect(receipt.primaryCodeGraph).toEqual({ id: "codebase-memory-mcp", source: "user" });
+
+    const switched = await executeDeveloperToolsCommand(
+      { ...scope.ctx, options: { primaryCodeGraph: "code-review-graph" } },
+      scope.deps,
+    );
+    expect(switched.primaryCodeGraph).toEqual({ id: "code-review-graph", source: "user" });
+    const kept = await executeDeveloperToolsCommand({ ...scope.ctx, options: {} }, scope.deps);
+    expect(kept.primaryCodeGraph).toEqual({ id: "code-review-graph", source: "user" });
+  });
+
+  it.each([
+    [
+      { primaryCodeGraph: "serena" },
+      undefined,
+      /must be code-review-graph or codebase-memory-mcp/u,
+    ],
+    [
+      { primaryCodeGraph: "codebase-memory-mcp" },
+      v3Policy({ excluded: ["codebase-memory-mcp"] }),
+      /excluded/u,
+    ],
+    [
+      { primaryCodeGraph: "code-review-graph" },
+      v3Policy({ primaryCodeGraph: "codebase-memory-mcp" }, "0.7.0"),
+      /policy sets developerTools\.primaryCodeGraph/u,
+    ],
+  ])("refuses %o under the given policy", async (commandOptions, policy, message) => {
+    const scope = headroomScope({ commandOptions, policy });
+    await expect(executeDeveloperToolsCommand(scope.ctx, scope.deps)).rejects.toThrow(message);
+    expect(scope.deps.reconcileTool).not.toHaveBeenCalled();
+  });
+
+  it("applies an enterprise primary without a flag", async () => {
+    const scope = headroomScope({
+      policy: v3Policy({ primaryCodeGraph: "codebase-memory-mcp" }, "0.7.0"),
+    });
+    const result = await executeDeveloperToolsCommand(scope.ctx, scope.deps);
+    expect(result.primaryCodeGraph).toEqual({ id: "codebase-memory-mcp", source: "policy" });
   });
 });
