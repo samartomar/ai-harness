@@ -417,6 +417,43 @@ describe("frameworkHookControlPlansV1 decision coverage", () => {
     );
   });
 
+  /** Turn the first enabled (unrequested) decision into a valid disabled one. */
+  function disableUnrequested(authority: string) {
+    let hookId = "";
+    const plugin = brokenPlan((plan) => {
+      const requested = plan.decisions.find((item) => item.hookId === "session:start");
+      const target = plan.decisions.find((item) => item.state === "enabled");
+      if (requested === undefined || target === undefined)
+        throw new Error("fixture has no requested and unrequested decisions");
+      hookId = target.hookId;
+      Object.assign(target, structuredClone(requested), { hookId, authority });
+    });
+    return { plugin, hookId: () => hookId };
+  }
+
+  it.each(["enterprise", "user"])(
+    "refuses a valid disabled decision for an unrequested hook under an invented %s authority",
+    async (authority) => {
+      const invented = disableUnrequested(authority);
+      const plugin = await invented.plugin;
+      await expect(frameworkHookControlPlansV1(ctx(), undefined, plugin)).rejects.toThrow(
+        incompatible,
+      );
+      expect(invented.hookId()).not.toBe("");
+      await expect(frameworkHookControlPlansV1(ctx(), undefined, plugin)).rejects.toThrow(
+        `${invented.hookId()} is disabled, but no authority requested its disable`,
+      );
+    },
+  );
+
+  it("keeps the enabled inventory decisions and labels only the requested disable", async () => {
+    const plans = await frameworkHookControlPlansV1(ctx(), undefined, await brokenPlan(() => {}));
+    const label = plans.actions[0];
+    const text = label?.kind === "doc" ? label.text : "";
+    expect(text).toMatch(/^session:start: disabled \(user\)\n/);
+    expect(text.match(/: disabled \(/g)).toHaveLength(1);
+  });
+
   it("refuses duplicated decisions for one hook", async () => {
     const plugin = await brokenPlan((plan) => {
       const decision = plan.decisions.find((item) => item.hookId === "session:start");
