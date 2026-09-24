@@ -15,7 +15,6 @@ import { FrameworkPluginRefusalError, loadFrameworkPluginV1 } from "./load-frame
 import {
   type FrameworkCommandDepsV1,
   type LoadedFrameworkPluginV1,
-  requireFrameworkPluginV1,
   selfContainedFrameworkContextV1,
   withFrameworkInvocationV1,
 } from "./run-framework-command.js";
@@ -80,15 +79,30 @@ const OutcomeSchema = z
   .strict();
 
 /**
- * Load the plugin for `aih uninstall` when the ECC materialization receipt
- * proves owned content, before any cleanup runs, and return the removal Core
- * calls under `--apply` once its own cleanup succeeded.
+ * `aih uninstall`'s ECC preflight, before any cleanup runs. With ANY aih ECC
+ * state ({@link eccStatePathsV1}) or receipt-proven materialization, the plugin
+ * must load: a missing or broken one refuses by name
+ * (`framework-plugin-unavailable` / `-incompatible`), naming the state found.
+ * Returns the removal Core calls under `--apply` once its own cleanup
+ * succeeded, only when `removeMaterialization` (the materialization receipt
+ * proves owned content); otherwise nothing ECC runs.
  */
-export async function prepareEccMaterializationRemovalV1(
+export async function prepareEccUninstallV1(
   ctx: PlanContext,
+  removeMaterialization: boolean,
   deps: FrameworkCommandDepsV1 = {},
-): Promise<() => Promise<FrameworkUninstallOutcomeV1>> {
-  const loaded = await requireFrameworkPluginV1("ecc", deps);
+): Promise<(() => Promise<FrameworkUninstallOutcomeV1>) | undefined> {
+  const state = eccStatePathsV1(ctx);
+  if (state.length === 0 && !removeMaterialization) return undefined;
+  const loaded = await (deps.loadPlugin ?? loadFrameworkPluginV1)("ecc");
+  if (!loaded.ok) {
+    const found = state.length === 0 ? "" : ` aih ECC state found: ${state.join(", ")}.`;
+    throw new FrameworkPluginRefusalError({
+      ...loaded.refusal,
+      detail: `${loaded.refusal.detail}${found}`.slice(0, 2000),
+    });
+  }
+  if (!removeMaterialization) return undefined;
   const hook = loaded.plugin.uninstall ?? incompatible(loaded, "uninstall", "removing ECC content");
   const context = await selfContainedFrameworkContextV1(
     loaded,

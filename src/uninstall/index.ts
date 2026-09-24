@@ -8,7 +8,7 @@ import {
   readAihConfig,
   readPolicyBinding,
 } from "../config/marker.js";
-import { prepareEccMaterializationRemovalV1 } from "../framework-plugin/ecc-lifecycle.js";
+import { prepareEccUninstallV1 } from "../framework-plugin/ecc-lifecycle.js";
 import type { FrameworkCommandDepsV1 } from "../framework-plugin/run-framework-command.js";
 import { bootloadersFor, entry, REGISTRY_IDS } from "../internals/cli-registry.js";
 import { inspectContainedRelativePath } from "../internals/contained-path.js";
@@ -989,13 +989,14 @@ export async function executeUninstallCommand(
 ): Promise<PlanResult> {
   const prepared = uninstallPlan(ctx);
   const set = prepared.actions.find((action) => action.kind === "digest")?.data as UninstallSet;
-  // Receipt-proven ECC content is removed by the ECC plugin: load it before any
-  // cleanup runs, so a missing plugin refuses (framework-plugin-unavailable)
-  // with nothing touched.
-  const removeEcc =
-    set.removeEccMaterialization === true && deps.removeMaterialization === undefined
-      ? await prepareEccMaterializationRemovalV1(ctx, deps.frameworks)
-      : undefined;
+  // Any aih ECC state needs the ECC plugin: preflight it before any cleanup
+  // runs, so a missing or broken plugin refuses by name, naming the state, with
+  // nothing touched. Receipt-proven ECC content is then removed by the plugin.
+  const removeEcc = await prepareEccUninstallV1(
+    ctx,
+    set.removeEccMaterialization === true && deps.removeMaterialization === undefined,
+    deps.frameworks,
+  );
   const result = await executePlan(prepared, ctx);
   if (!ctx.apply || !set.removeEccMaterialization || (result.report && !result.report.ok))
     return result;

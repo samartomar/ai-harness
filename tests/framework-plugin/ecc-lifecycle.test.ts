@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   eccPrunePlanV1,
   eccStatePathsV1,
-  prepareEccMaterializationRemovalV1,
+  prepareEccUninstallV1,
 } from "../../src/framework-plugin/ecc-lifecycle.js";
 import { eccDoctorChecksV1 } from "../../src/framework-plugin/ecc-read.js";
 import type { PlanContext } from "../../src/internals/plan.js";
@@ -84,7 +84,7 @@ describe("ECC uninstall and prune without the plugin", () => {
   });
 
   it("uninstall refuses the ECC removal by name before any cleanup", async () => {
-    await expect(prepareEccMaterializationRemovalV1(ctx())).rejects.toThrow(
+    await expect(prepareEccUninstallV1(ctx(), true)).rejects.toThrow(
       /framework-plugin-unavailable: .*npm install/,
     );
   });
@@ -100,7 +100,7 @@ describe("ECC uninstall and prune with the plugin", () => {
   });
 
   it("removes nothing when no receipt proves ownership", async () => {
-    const remove = await prepareEccMaterializationRemovalV1(ctx(), withPlugin);
-    await expect(remove()).resolves.toEqual({ removed: [], advisories: [] });
+    const remove = await prepareEccUninstallV1(ctx(), true, withPlugin);
+    await expect(remove?.()).resolves.toEqual({ removed: [], advisories: [] });
   });
 });
