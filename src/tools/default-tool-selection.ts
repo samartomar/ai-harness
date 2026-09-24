@@ -16,6 +16,15 @@ export const DEFAULT_DEVELOPER_TOOL_IDS = [
 
 export type DeveloperToolId = (typeof DEFAULT_DEVELOPER_TOOL_IDS)[number];
 
+/** The two code-graph tools; either may be named the primary while both stay available. */
+export const PRIMARY_CODE_GRAPH_IDS = ["code-review-graph", "codebase-memory-mcp"] as const;
+
+export type PrimaryCodeGraphId = (typeof PRIMARY_CODE_GRAPH_IDS)[number];
+
+export function isPrimaryCodeGraphId(value: unknown): value is PrimaryCodeGraphId {
+  return typeof value === "string" && (PRIMARY_CODE_GRAPH_IDS as readonly string[]).includes(value);
+}
+
 export type DeveloperToolPolicyBindingState =
   | "valid"
   | "invalid"
@@ -30,6 +39,8 @@ export interface DeveloperToolPolicySelection {
   /** Property presence is significant: omitted is legacy-unspecified; [] is explicit empty. */
   readonly selected?: readonly string[];
   readonly excluded?: readonly string[];
+  /** Enterprise primary code graph; it must name a selected code-graph tool. */
+  readonly primaryCodeGraph?: string;
 }
 
 export interface DefaultToolSelectionInput {
@@ -47,7 +58,9 @@ export type DefaultToolSelectionDiagnosticCode =
   | "unusable-binding"
   | "unknown-tool"
   | "duplicate-tool"
-  | "selection-conflict";
+  | "selection-conflict"
+  | "invalid-primary"
+  | "excluded-primary";
 
 export interface DefaultToolSelectionDiagnostic {
   readonly code: DefaultToolSelectionDiagnosticCode;
@@ -61,6 +74,8 @@ export interface ResolvedDefaultToolSelection {
   readonly selected: DeveloperToolId[];
   readonly excluded: DeveloperToolId[];
   readonly diagnostics: DefaultToolSelectionDiagnostic[];
+  /** Present only when the policy names one; absence leaves the choice to the user. */
+  readonly primaryCodeGraph?: PrimaryCodeGraphId;
 }
 
 const TOOL_IDS = new Set<string>(DEFAULT_DEVELOPER_TOOL_IDS);
@@ -186,11 +201,30 @@ export function resolveDefaultToolSelection(
       });
   }
   const selected = new Set([...selectedResult.ids].filter((id) => !excludedResult.ids.has(id)));
+  let primaryCodeGraph: PrimaryCodeGraphId | undefined;
+  if (Object.hasOwn(policy, "primaryCodeGraph")) {
+    const primary = (policy as { primaryCodeGraph?: unknown }).primaryCodeGraph;
+    if (!isPrimaryCodeGraphId(primary))
+      return failed({
+        code: "invalid-primary",
+        message:
+          "Developer tool primaryCodeGraph must be code-review-graph or codebase-memory-mcp.",
+        ...(typeof primary === "string" ? { toolId: primary } : {}),
+      });
+    if (!selected.has(primary))
+      return failed({
+        code: "excluded-primary",
+        message: "Developer tool primaryCodeGraph names a tool the policy does not select.",
+        toolId: primary,
+      });
+    primaryCodeGraph = primary;
+  }
   return {
     accepted: true,
     source: hasSelected ? "explicit" : "legacy-unspecified",
     selected: ordered(selected),
     excluded: ordered(excludedResult.ids),
     diagnostics: [],
+    ...(primaryCodeGraph === undefined ? {} : { primaryCodeGraph }),
   };
 }

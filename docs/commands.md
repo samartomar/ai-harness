@@ -193,9 +193,12 @@ seven existing runtime tool IDs: selected tools are provisioned, while policy-ex
 unchanged receipt-owned integration. During apply, Token Optimizer remains `blocked` until its
 license is explicitly accepted with `--accept-token-optimizer-license`; `--token-optimizer-profile
 quiet|balanced` selects its setup profile. A blocked prerequisite is reported for that tool while
-independent selected tools continue. Headroom is also default-selected as intent, but this release
-cannot activate it: apply leaves it `selected-pending` with a skipped check and does not install,
-download, start, configure MCP/proxy, or create a Headroom receipt.
+independent selected tools continue. Headroom is also default-selected, but it stays
+`selected-pending` with a skipped check, with or without `--apply`, until it is explicitly activated.
+`aih init` accepts the same `--activate-headroom --accept-headroom-egress`, `--deactivate-headroom`
+and `--primary-code-graph <id>` flags as `aih developer-tools` and validates them before any phase
+runs. An activation during init projects the Headroom MCP entry in one more MCP pass that uses the
+same `--mcp-mode`; `--mcp-mode none` refuses activation because it projects no MCP servers.
 
 The Superpowers phase (the `ecc` baseline, when governance does not own the aih surfaces) keeps its
 place in the preview but runs last, through `@aihq/framework-superpowers` and the same evidence gate
@@ -208,7 +211,8 @@ verifies it before emitting any guidance. Without the plugin, init reports the p
 Preview or reconcile the policy-selected default developer tools for one repository. Without an
 effective organization policy, the default selection is `code-review-graph`, `codebase-memory-mcp`,
 `serena`, `token-optimizer`, `context7`, `markitdown` (the CLI), `playwright`, and `headroom`.
-Headroom is a selection-only placeholder; no activation mode is chosen here. A valid policy can select a subset, explicitly exclude
+Selecting Headroom records intent only; it runs only after the explicit activation described in
+[Headroom activation](#headroom-activation-mcp-only). A valid policy can select a subset, explicitly exclude
 tools, or select none. A legacy valid policy that omits `selected` preserves the defaults, subject to
 its exclusions; `selected: []` is an explicit empty selection. A malformed selection or an invalid,
 missing, changed, revoked, or conflicting bound policy fails closed before the lifecycle runs, and
@@ -220,7 +224,7 @@ does not rewrite them or change their authority.
 An explicit selection saved before Playwright or Headroom became a default stays unchanged until edited.
 
 Run `aih developer-tools <root>` to inspect the selection. Add `--apply` to acquire, configure, and
-verify supported selected tools; Headroom remains pending and is not activated. Excluded tools are also reconciled only to remove unchanged receipt-owned
+verify supported selected tools; Headroom remains pending unless it is explicitly activated. Excluded tools are also reconciled only to remove unchanged receipt-owned
 integration. `aih init` already invokes this lifecycle after its ordinary setup, so the standalone
 command is useful for inspection or a later focused reconciliation. During apply, if Token Optimizer
 is selected, pass `--accept-token-optimizer-license`; otherwise its lifecycle result is `blocked`.
@@ -233,15 +237,128 @@ assume another client. When policy marks Token Optimizer unselected, its receipt
 runs and removes only unchanged owned integration when present.
 
 For standalone `aih developer-tools --json`, the normal plan result also includes top-level
-`accepted`, `selection` (`source`, `selected`, `excluded`, and `diagnostics`), `tools` (`id`,
-`state`, `detail`, and `changed`), and `changed`. With `aih init --json`, the same lifecycle data is
-in the digest whose `describe` value is `Developer tool lifecycle`; its `data` contains `accepted`,
-`selection`, and `tools`, while `report.checks` records selected-tool outcomes. Tool states are
-`selected-pending`, `installed`, `configured`, `verified`, `policy-excluded`, and `blocked`.
-On apply, a selected Headroom result remains `selected-pending`, and its verification check is
-`skip`, not `pass` or `fail`; this is not evidence of installation or readiness. A V3 policy that
-explicitly selects or excludes Headroom requires `minimumCoreVersion: "0.7.0"`. Existing V3
-policies with the `0.6.0` floor and no Headroom reference remain accepted.
+`accepted`, `selection` (`source`, `selected`, `excluded`, `diagnostics`, and `primaryCodeGraph`
+when the policy sets one), `tools` (`id`, `state`, `detail`, and `changed`), `primaryCodeGraph`
+(`id` and `source`, when a primary is chosen), and `changed`. With `aih init --json`, the same
+lifecycle data is in the digest whose `describe` value is `Developer tool lifecycle`; its `data`
+contains `accepted`, `selection`, `tools` and `primaryCodeGraph`, while `report.checks` records
+selected-tool outcomes. Tool states are `selected-pending`, `installed`, `configured`, `verified`,
+`policy-excluded`, and `blocked`. A selected Headroom that is not activated is `selected-pending`
+and its verification check is `skip`, not `pass` or `fail`; this is not evidence of installation or
+readiness. A V3 policy that explicitly selects or excludes Headroom, or sets
+`developerTools.primaryCodeGraph`, requires `minimumCoreVersion: "0.7.0"`. Existing V3 policies with
+the `0.6.0` floor and neither reference remain accepted.
+
+### Headroom activation (MCP-only)
+
+Headroom 0.38.0 (`headroom-ai[mcp]`, Apache-2.0, source tag `v0.38.0`) is integrated in one mode
+only: its MCP server, `headroom mcp serve` over stdio, exposing `headroom_compress`,
+`headroom_retrieve` and `headroom_stats`. Headroom's proxy, `wrap`, `deploy`, `mcp install` and
+`learn --apply` modes are out of scope: they route provider traffic, install Serena, or edit
+user-scope configuration, and AIH never runs them.
+
+Selection and activation are separate. Default or policy selection only records intent; no run ever
+installs, downloads, registers or starts Headroom without these explicit flags:
+
+- `--activate-headroom --accept-headroom-egress --apply` activates. `--activate-headroom` without
+  `--accept-headroom-egress` is refused before anything runs, and so is `--accept-headroom-egress`
+  on its own. Without `--apply` the request is only previewed.
+- Activation runs `uv sync --locked --no-build --compile-bytecode --no-config` for the committed,
+  hash-pinned lock in `src/tools/headroom-runtime/` into AIH-owned state, pre-provisions the two
+  tokenizer vocabularies (below), writes an activation receipt, and proves a real MCP handshake
+  through the generated launcher: `initialize`, a `tools/list` that is exactly the three tools, and
+  a `headroom_stats` call. If the handshake fails the receipt is rolled back, so no host entry is
+  written for an unverified runtime.
+- The generated `headroom` MCP entry is then projected into every selected host through the normal
+  MCP projection (`.mcp.json`, the AIH-managed block of `.codex/config.toml`, and the other native
+  hosts). Its launcher runs `node <core>/dist/ecc-runtime.js headroom ...`, which refuses to start
+  without a current activation receipt for this worktree.
+- The receipt (`activation.json` in the Headroom state root) records both consent flags and the UTC
+  consent time, the package, source commit and platform wheel hash, the pyproject, `uv.lock` and
+  aggregate dependency-lock digests, the vocabulary hashes, the network switches, the hosts, and
+  the exact generated launcher with its digest.
+- Later ordinary `--apply` runs re-verify the handshake offline and never download. A failed check
+  is `blocked`; the activation is kept.
+- `--deactivate-headroom --apply` removes the AIH-owned Headroom MCP entries from every host the
+  activation receipt recorded, even when this run's `--cli` names fewer hosts (only entries
+  byte-identical to the recorded launcher; a user-edited JSON entry is left alone as yours), then
+  the whole Headroom state root including the runtime, caches and receipt. User-authored
+  configuration is not touched.
+- If a recorded host cannot be cleaned (for example a `headroom` table you edited inside AIH's
+  managed block in `~/.codex/config.toml`), deactivation stops before deleting anything: Headroom is
+  reported `blocked`, the runtime and receipt are kept, and the receipt records which host and why.
+  Until you delete or restore that table (or move it outside the managed block) and rerun
+  `--deactivate-headroom`, no run re-registers Headroom or reports it active.
+- An organization policy may exclude Headroom (`developerTools.excluded`, or MCP controls such as
+  `mcp.disabledServers`); activation is then refused and an existing activation is removed on the
+  next `--apply` in the same way. A policy cannot activate Headroom: the policy schema has no
+  activation field. Activation is also refused when governance owns AIH MCP projection.
+
+Activation needs `uv` and an installed CPython 3.11–3.14 (`--no-python-downloads`). The locked
+closure has prebuilt wheels for Windows x64, Linux x64 and arm64 (glibc 2.28 or newer), and macOS
+arm64 only; on other platforms (including Intel macOS and Windows arm64) activation reports
+`blocked` without downloading anything. On Windows without long-path support, keep
+`LOCALAPPDATA` short: the deepest runtime path adds about 160 characters to the state root.
+
+### Headroom privacy and egress
+
+What leaves the machine, and when:
+
+- **Activation only, with consent:** the pinned wheels from `pypi.org` and `files.pythonhosted.org`
+  (every artifact is hash-checked against `uv.lock`), and the tiktoken `o200k_base` and
+  `cl100k_base` vocabularies from `openaipublic.blob.core.windows.net` (tiktoken checks their
+  published SHA-256 and AIH checks it again). Proxy and CA settings (`HTTPS_PROXY`,
+  `SSL_CERT_FILE`, and similar) are honoured for this step only.
+- **At run time, nothing by design.** The launcher starts Headroom offline (`uv run --offline
+  --frozen`) with a credential-free environment (no API keys, proxy variables or
+  `HEADROOM_PROXY_URL` are passed) and these switches: `HEADROOM_BEACON=off` and `DO_NOT_TRACK=1`
+  (upstream's anonymous usage beacon to Headroom Labs is on by default; upstream documents it as
+  compression counters, provider and model ids, OS and architecture), `HEADROOM_UPDATE_CHECK=off`
+  (daily PyPI version check), `HEADROOM_OFFLINE=1` (upstream's master switch, which also disables
+  its license/usage reporter and model downloads), `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1`,
+  `LITELLM_LOCAL_MODEL_COST_MAP=True` (LiteLLM otherwise downloads its model price map from GitHub
+  on import), and `LITELLM_MODE=PRODUCTION` (LiteLLM otherwise loads a `.env` file found above its
+  install directory). These are environment switches, not an operating-system network sandbox.
+- **Loopback only:** `headroom_retrieve` and `headroom_stats` also ask a local Headroom proxy at
+  `http://127.0.0.1:8787` (upstream default) for content it compressed. AIH does not install or start
+  that proxy; when nothing listens the tools report it as unreachable.
+
+What is cached locally: everything lives under one AIH-owned root, `<state>/aih/d/p/<project-key>/h`
+on Windows (`%LOCALAPPDATA%`) or `<state>/aih/developer-tools/projects/<project-key>/headroom`
+elsewhere (`$XDG_STATE_HOME`, default `~/.local/state`): the runtime environment (`e`), its uv
+cache (`u`), Headroom's workspace (`w`, `HEADROOM_WORKSPACE_DIR`: the compression store keeps the
+original, uncompressed content for retrieval, plus session statistics and savings events), the
+tokenizer cache (`t`), a Hugging Face home (`f`) and the receipt. Deactivation removes all of it.
+
+Model and ONNX downloads: the MCP extra does not install ONNX Runtime, Transformers or PyTorch, so
+upstream's ONNX Runtime download (`cdn.pyke.io`) and Hugging Face compression models are not used in
+this mode, and the offline switches above block Hugging Face access regardless. The only run-time
+assets are the two tokenizer vocabularies. To pre-provision them on a host that cannot reach
+`openaipublic.blob.core.windows.net`, create the `t` directory under the Headroom state root before
+activating and place the files there under tiktoken's cache names:
+`fb374d419588a4632f3f557e76b4b70aebbca790` (`o200k_base`, SHA-256
+`446a9538cb6c348e3516120d7c08b09f57c36495e2acfffe59a5bf8b0cfb1a2d`) and
+`9b5ad71b2ce5302211f9c61530b329a4922fc6a4` (`cl100k_base`, SHA-256
+`223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7`); activation then reuses them.
+PyPI access (directly or through a proxy) is still required to install the locked wheels.
+
+### Primary code graph
+
+Both code-graph tools stay available; the primary is the one agents ask first when a code-graph
+question fits either. The rule: a policy `developerTools.primaryCodeGraph`
+(`code-review-graph` or `codebase-memory-mcp`) binds, and a different `--primary-code-graph` is
+refused; a policy that omits the field leaves the choice to the user, whose
+`--primary-code-graph <id>` (on `aih developer-tools` or `aih init`) applies and is remembered. With
+no choice at all there is no primary and routing stays task-based. Naming a primary the effective
+policy excludes (or does not select) is an error.
+
+On `--apply`, the effective primary and its source (`policy` or `user`) are recorded in the
+developer-tools receipt. `aih bootstrap-ai` and `aih init` add one routing note naming the primary
+to `rules/agent-behavior-core.md`; the shared bootloader block is unchanged. In a shared repository,
+set the policy field so every user's generated guidance agrees. `aih doctor`'s large-repo graph
+readiness follows the primary: with Codebase Memory as primary it checks the exact generated
+registration and makes real MCP calls through it (`list_projects`, `index_status`, indexing an
+unindexed project locally once), and it never downloads the native payload.
 
 MarkItDown CLI converts local documents to Markdown. Setup installs version 0.1.7 with the PDF,
 Word, PowerPoint, Excel and Outlook converters into an external runtime keyed by its dependency
