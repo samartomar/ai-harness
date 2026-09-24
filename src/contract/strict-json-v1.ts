@@ -44,11 +44,18 @@ export function assertWellFormedNfcV1(value: string, label: string, requireNfc =
   }
 }
 
+/**
+ * Requires strict JSON data: well-formed NFC strings and keys, finite numbers other than negative
+ * zero, plain acyclic own-data objects and arrays, nested at most `STRICT_JSON_MAX_DEPTH_V1`
+ * levels (the root is level 1), so a deep caller-supplied value is refused before the walk
+ * recurses far.
+ */
 export function assertStrictJsonValueV1<T>(
   value: T,
   label: string,
   requireNfc = true,
   active = new WeakSet<object>(),
+  depth = 1,
 ): T {
   if (value === null || typeof value === "boolean") return value;
   if (typeof value === "string") {
@@ -62,6 +69,7 @@ export function assertStrictJsonValueV1<T>(
     return value;
   }
   if (!isObject(value)) throw new TypeError(`${label} does not support ${typeof value}`);
+  if (depth > STRICT_JSON_MAX_DEPTH_V1) throw nestedTooDeep(label, STRICT_JSON_MAX_DEPTH_V1);
   if (active.has(value)) throw new TypeError(`${label} must not contain a cycle`);
   active.add(value);
   if (Object.getOwnPropertySymbols(value).length > 0) {
@@ -86,7 +94,13 @@ export function assertStrictJsonValueV1<T>(
       if (descriptor === undefined || !("value" in descriptor)) {
         throw new TypeError(`${label} arrays must contain only data properties and no holes`);
       }
-      assertStrictJsonValueV1(descriptor.value, `${label}[${String(index)}]`, requireNfc, active);
+      assertStrictJsonValueV1(
+        descriptor.value,
+        `${label}[${String(index)}]`,
+        requireNfc,
+        active,
+        depth + 1,
+      );
     }
     active.delete(value);
     return value;
@@ -101,7 +115,7 @@ export function assertStrictJsonValueV1<T>(
     if (descriptor === undefined || !("value" in descriptor)) {
       throw new TypeError(`${label}.${key} must be an own data property`);
     }
-    assertStrictJsonValueV1(descriptor.value, `${label}.${key}`, requireNfc, active);
+    assertStrictJsonValueV1(descriptor.value, `${label}.${key}`, requireNfc, active, depth + 1);
   }
   active.delete(value);
   return value;
@@ -260,16 +274,20 @@ export function assertJsonValueStructureV1(value: unknown, label: string, maxDep
   }
 }
 
+/** Freezes a value and everything it holds, at any depth: iteratively, never recursing. */
 export function deepFreezeStrictJsonV1<T>(value: T, seen = new WeakSet<object>()): T {
-  if (!isObject(value) || seen.has(value)) return value;
-  seen.add(value);
-  for (const key of Object.keys(value)) {
-    const descriptor = Object.getOwnPropertyDescriptor(value, key);
-    if (descriptor !== undefined && "value" in descriptor) {
-      deepFreezeStrictJsonV1(descriptor.value, seen);
+  const pending: unknown[] = [value];
+  while (pending.length > 0) {
+    const item = pending.pop();
+    if (!isObject(item) || seen.has(item)) continue;
+    seen.add(item);
+    for (const key of Object.keys(item)) {
+      const descriptor = Object.getOwnPropertyDescriptor(item, key);
+      if (descriptor !== undefined && "value" in descriptor) pending.push(descriptor.value);
     }
+    Object.freeze(item);
   }
-  return Object.freeze(value);
+  return value;
 }
 
 function assertNoDuplicateKeys(node: JsonNode): void {

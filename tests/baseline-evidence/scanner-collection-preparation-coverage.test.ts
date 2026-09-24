@@ -82,6 +82,26 @@ describe("collection preparation with definition-route coverage", () => {
     expect((refusal as Error).message).toBe("publication discovery nests deeper than 32 levels");
   });
 
+  it("refuses deeply nested supplied coverage typed, before any recursive walk goes deep", async () => {
+    let deep: unknown = 0;
+    for (let level = 0; level < 100_000; level += 1) deep = [deep];
+    let refusal: unknown;
+    try {
+      await prepareScannerCollectionPublicationsV1({
+        sourceRoot: root,
+        catalogId: "mattpocock",
+        batches: [batch],
+        now: "2026-09-24T00:00:00.000Z",
+        run: head,
+        coverage: { ...coverage(), coverage: deep } as never,
+      });
+    } catch (error) {
+      refusal = error;
+    }
+    expect(refusal).toBeInstanceOf(TypeError);
+    expect((refusal as Error).message).toMatch(/nests deeper than 32 levels$/);
+  });
+
   it("refuses coverage prepared for another catalog", async () => {
     await expect(
       prepareScannerCollectionPublicationsV1({

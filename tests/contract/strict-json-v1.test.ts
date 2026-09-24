@@ -66,6 +66,32 @@ describe("strict JSON v1", () => {
     });
   });
 
+  it("bounds value nesting at 32 levels, typed, and freezes any depth without recursing", () => {
+    const nested = (levels: number): unknown => {
+      let value: unknown = 0;
+      for (let level = 0; level < levels; level += 1) value = [value];
+      return value;
+    };
+    for (const check of [assertStrictJsonValueV1, canonicalStrictJsonBytesV1]) {
+      for (const levels of [33, 100_000]) {
+        let refusal: unknown;
+        try {
+          check(nested(levels), "fixture");
+        } catch (error) {
+          refusal = error;
+        }
+        expect(refusal).toBeInstanceOf(TypeError);
+        expect((refusal as Error).message).toMatch(/nests deeper than 32 levels$/);
+      }
+      expect(() => check(nested(32), "fixture")).not.toThrow();
+    }
+    const deep = nested(100_000);
+    expect(deepFreezeStrictJsonV1(deep)).toBe(deep);
+    let innermost = deep as unknown[];
+    while (Array.isArray(innermost[0])) innermost = innermost[0] as unknown[];
+    expect(Object.isFrozen(innermost)).toBe(true);
+  });
+
   it("rejects malformed or non-NFC Unicode without normalization", () => {
     expect(() => parseStrictJsonObjectV1('{"value":"\\ud800"}', "fixture")).toThrow(
       /Unicode|surrogate/i,

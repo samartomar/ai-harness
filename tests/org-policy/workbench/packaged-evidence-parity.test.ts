@@ -7,6 +7,8 @@ import { canonicalJson } from "../../../src/capability/package-graph/canonical.j
 import {
   PackagedScannerCollectionEvidenceRecordV1Schema,
   PackagedScannerCollectionEvidenceStructureV1Schema,
+  packagedCoverageProjectionDigestV1,
+  packagedReportComponentDigestV1,
   readPackagedScannerCollectionEvidenceStructureV1,
 } from "../../../src/org-policy/packaged-collection-evidence-v1.js";
 
@@ -214,6 +216,21 @@ function unrepresentableInputs(item: { bytes: string; sha256: string }) {
 }
 
 describe("packaged collection evidence parity with Catalog", () => {
+  it("refuses a deep value given to the digest helpers, typed", () => {
+    let deep: unknown = 0;
+    for (let level = 0; level < 100_000; level += 1) deep = [deep];
+    for (const digest of [packagedCoverageProjectionDigestV1, packagedReportComponentDigestV1]) {
+      let refusal: unknown;
+      try {
+        digest(deep);
+      } catch (error) {
+        refusal = error;
+      }
+      expect(refusal).toBeInstanceOf(TypeError);
+      expect((refusal as Error).message).toMatch(TOO_DEEP);
+    }
+  });
+
   it("refuses reader inputs JSON cannot express, typed and without invoking a getter", () => {
     const [item] = sealedInput(
       fixtures.find((fixture) => fixture.fixture === "valid") as Fixture,
