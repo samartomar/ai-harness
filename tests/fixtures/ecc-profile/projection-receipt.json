@@ -3,8 +3,8 @@
   "sourceCommit": "0c1d7be9a750627fb2a6534c78a998cc46d03f9c",
   "sourceClosureId": "ecc-projected-source-closure-v1",
   "sourceClosureSha256": "8dadd2c412511d690555243773f8bc4a0ed1e7ba43fc0804bc1d955b3b7bca37",
-  "projectedFileCount": 759,
-  "projectionSha256": "8bfa1837b2f7d4239b69955540c20a76a795c4ef86dc3555390d5d18e30bc585",
-  "recoveryIdentityV2ProjectionSha256": "1d9367486f2075d4f90fea24d8d59ba5cb8b0ace087ec8a0382c53890ca7cbe2",
-  "parityReceiptSha256": "835e7f38383ce25bc6c5fe35ebef87d963549fc82cb1fc8a27bef029300e115c"
+  "projectedFileCount": 703,
+  "projectionSha256": "8661520aef940e3f20c95980aaa8e6e95782c73a91fdd5b022c03c0cb7bd2563",
+  "recoveryIdentityV2ProjectionSha256": "2d721b76c1986a020ababdc8c1a5bd87095ed97a127eab2e5c36d5bada922dab",
+  "parityReceiptSha256": "2d55c3bc09a19f749ad07db573568077604fc9e1b42b93dc82290cb1122cfc07"
 }

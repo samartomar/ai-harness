@@ -6,7 +6,7 @@ import { ECC_PROFILE_INSTALLATION_TRUST_V1 } from "../../src/framework-host/inde
 const fixtureDirectory = join(import.meta.dirname, "../fixtures/ecc-profile");
 
 describe("Core's append-only ECC profile installation trust record", () => {
-  it("keeps the 0c1d7be9 version-1 and version-2 anchors unchanged", () => {
+  it("keeps the 0c1d7be9 anchors unchanged and appends the stub-only render", () => {
     expect(ECC_PROFILE_INSTALLATION_TRUST_V1).toEqual([
       {
         repository: "affaan-m/ECC",
@@ -23,6 +23,14 @@ describe("Core's append-only ECC profile installation trust record", () => {
         sourceClosureSha256: "8dadd2c412511d690555243773f8bc4a0ed1e7ba43fc0804bc1d955b3b7bca37",
         projectionSha256: "1d9367486f2075d4f90fea24d8d59ba5cb8b0ace087ec8a0382c53890ca7cbe2",
       },
+      {
+        recoveryIdentityVersion: 2,
+        repository: "affaan-m/ECC",
+        commit: "0c1d7be9a750627fb2a6534c78a998cc46d03f9c",
+        sourceClosureId: "ecc-projected-source-closure-v1",
+        sourceClosureSha256: "8dadd2c412511d690555243773f8bc4a0ed1e7ba43fc0804bc1d955b3b7bca37",
+        projectionSha256: "2d721b76c1986a020ababdc8c1a5bd87095ed97a127eab2e5c36d5bada922dab",
+      },
     ]);
   });
 
@@ -32,7 +40,7 @@ describe("Core's append-only ECC profile installation trust record", () => {
       expect(Object.isFrozen(anchor)).toBe(true);
     const widened = ECC_PROFILE_INSTALLATION_TRUST_V1 as unknown as unknown[];
     expect(() => widened.push({ commit: "b".repeat(40) })).toThrow(TypeError);
-    expect(ECC_PROFILE_INSTALLATION_TRUST_V1).toHaveLength(2);
+    expect(ECC_PROFILE_INSTALLATION_TRUST_V1).toHaveLength(3);
   });
 
   it("anchors the write semantics of every version-1 identity with a version-2 companion", () => {
@@ -40,7 +48,6 @@ describe("Core's append-only ECC profile installation trust record", () => {
       readFileSync(join(fixtureDirectory, "projection-receipt.json"), "utf8"),
     ) as {
       sourceCommit: string;
-      projectionSha256: string;
       recoveryIdentityV2ProjectionSha256: string;
     };
     const trust = ECC_PROFILE_INSTALLATION_TRUST_V1 as unknown as readonly Record<
@@ -59,19 +66,13 @@ describe("Core's append-only ECC profile installation trust record", () => {
           );
         }),
         String(anchor.commit),
-      ).toHaveLength(1);
+      ).not.toHaveLength(0);
     }
     expect(trust).toContainEqual(
       expect.objectContaining({
         recoveryIdentityVersion: 2,
         commit: recorded.sourceCommit,
         projectionSha256: recorded.recoveryIdentityV2ProjectionSha256,
-      }),
-    );
-    expect(trust).toContainEqual(
-      expect.objectContaining({
-        commit: recorded.sourceCommit,
-        projectionSha256: recorded.projectionSha256,
       }),
     );
   });

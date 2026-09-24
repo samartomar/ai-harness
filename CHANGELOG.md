@@ -86,6 +86,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   version-2 anchor at the same pin; a changed merge strategy refuses with
   `framework-profile-recovery-unanchored`. The installation trust record appends the version-2
   identity of ECC 0c1d7be9.
+- The ECC profile projection writes only the unavailable stub for a skill a client cannot run.
+  Scripts, references and other files beside that skill's `SKILL.md` are no longer copied to that
+  client. Upstream provenance and accounting are unchanged: every pinned source is still consumed
+  and the skill stays in the client inventory. A stub for a skill with such files carries derived
+  provenance (`unavailable-skill-stub`) that lists them as inputs. For the 0c1d7be9 pin the
+  projection now has 703 files instead of 759. Core's installation trust record appends the new
+  version-2 anchor and keeps the earlier anchors, so installations made before this change still
+  recover.
 - `@aihq/framework-ecc` validates the ECC descriptor's module graph where it reads it: a
   dependency or profile member naming a module the graph lacks, a repeated module id, or a
   dependency cycle refuses with `AIH_FRAMEWORK_DESCRIPTOR` naming it. A structural dependency
