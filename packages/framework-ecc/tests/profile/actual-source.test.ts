@@ -156,6 +156,20 @@ describe.skipIf(!pinnedSourceRoot)("actual pinned ECC projection receipt", () =>
           id,
         ).toBe(transport);
       }
+      // Review D18: projected unavailable on both clients, so only the stub ships;
+      // their bundled scripts, prompts and fixtures stay unprojected.
+      for (const id of ["council-multi-model", "skill-comply"]) {
+        for (const client of [".claude", ".agents"]) {
+          expect(
+            projection.files
+              .filter((file) => file.destination.startsWith(`${client}/skills/${id}/`))
+              .map((file) => file.destination),
+            `${client} ${id}`,
+          ).toEqual([`${client}/skills/${id}/SKILL.md`]);
+        }
+        for (const client of [projection.clients.claude, projection.clients.codex])
+          expect(client.skills.find((skill) => skill.id === id)?.transport, id).toBe("unavailable");
+      }
       const codexRoles = projection.files.filter((file) =>
         file.destination.startsWith(".codex/agents/"),
       );

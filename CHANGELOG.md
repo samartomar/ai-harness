@@ -83,8 +83,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `dev-team` and `living-docs-governance` are projected, and `council-multi-model` (sends
   council material to OpenAI through an unmanaged Codex CLI) and `skill-comply` (runs nested
   agents with pre-approved Bash and model-generated setup commands) are projected as unavailable
-  with a fallback. The new role `rag-pipeline-reviewer` is projected read-only. Profile
-  installations rendered at `5064474d` are anchored for offline repair, rollback and uninstall.
+  with a fallback, so only their stub ships, never their bundled scripts. The new role
+  `rag-pipeline-reviewer` is projected read-only. Core's installation trust record appends a
+  version-2 anchor for profile installations rendered at `5064474d`, for offline repair,
+  rollback and uninstall.
 - `@aihq/framework-superpowers` supports obra/Superpowers v6.4.1 (`5bf4e780`) and requires a
   Catalog that pins it. It reads the five hooks Catalog records at that commit, including
   Hermes's `pre_llm_call` hook, and labels the Muse and Hermes declarations `unenforced` with
