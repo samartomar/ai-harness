@@ -3,6 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  eccNativeStateRootCandidatesV1,
+  resolveEccNativeStateRootV1,
+} from "../../src/framework-host/index.js";
+import {
   eccPrunePlanV1,
   eccStatePathsV1,
   prepareEccUninstallV1,
@@ -27,9 +31,12 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-function ctx(): PlanContext {
+function ctx(
+  extraEnv: Record<string, string> = {},
+  platform: "linux" | "windows" = "linux",
+): PlanContext {
   const run = fakeRunner(() => undefined);
-  const env = { HOME: home, USERPROFILE: home };
+  const env = { HOME: home, USERPROFILE: home, ...extraEnv };
   return {
     root,
     contextDir: "ai-coding",
@@ -38,7 +45,7 @@ function ctx(): PlanContext {
     verify: true,
     json: false,
     run,
-    host: makeHostAdapter({ platform: "linux", run, env }),
+    host: makeHostAdapter({ platform, run, env }),
     env,
     options: {},
   };
@@ -176,5 +183,80 @@ describe("ECC uninstall and prune with the plugin", () => {
   it("removes nothing when no receipt proves ownership", async () => {
     const remove = await prepareEccUninstallV1(ctx(), true, withPlugin);
     await expect(remove?.()).resolves.toEqual({ removed: [], advisories: [] });
+  });
+});
+
+describe("ECC native machine state root", () => {
+  const unavailable = /framework-plugin-unavailable: .*npm install/;
+
+  it("sees a lone AIH_ECC_STATE_ROOT and refuses uninstall and prune without the plugin", async () => {
+    const stateRoot = join(root, "machine-state");
+    mkdirSync(stateRoot);
+    const context = ctx({ AIH_ECC_STATE_ROOT: stateRoot });
+    expect(eccStatePathsV1(context)).toEqual([stateRoot]);
+    await expect(prepareEccUninstallV1(context, false)).rejects.toThrow(unavailable);
+    await expect(prepareEccUninstallV1(context, false)).rejects.toThrow(stateRoot);
+    await expect(eccPrunePlanV1(context, [])).rejects.toThrow(stateRoot);
+  });
+
+  it("sees the POSIX platform-default state root under XDG_STATE_HOME or HOME", () => {
+    const fromHome = join(home, ".local", "state", "aih", "ecc-profile");
+    mkdirSync(fromHome, { recursive: true });
+    expect(eccStatePathsV1(ctx())).toEqual([fromHome]);
+    const xdg = join(root, "xdg");
+    mkdirSync(join(xdg, "aih", "ecc-profile"), { recursive: true });
+    expect(eccStatePathsV1(ctx({ XDG_STATE_HOME: xdg }))).toEqual([
+      join(xdg, "aih", "ecc-profile"),
+    ]);
+  });
+
+  it("sees the Windows platform-default state root under LOCALAPPDATA", async () => {
+    const local = join(root, "local-app-data");
+    mkdirSync(join(local, "aih", "ecc-profile"), { recursive: true });
+    const context = ctx({ LOCALAPPDATA: local }, "windows");
+    expect(eccStatePathsV1(context)).toEqual([join(local, "aih", "ecc-profile")]);
+    await expect(prepareEccUninstallV1(context, false)).rejects.toThrow(unavailable);
+  });
+
+  it("inspects the platform default as well as an explicit state root", () => {
+    const explicit = join(root, "machine-state");
+    const fallback = join(home, ".local", "state", "aih", "ecc-profile");
+    mkdirSync(explicit);
+    mkdirSync(fallback, { recursive: true });
+    expect(eccStatePathsV1(ctx({ AIH_ECC_STATE_ROOT: explicit }))).toEqual([explicit, fallback]);
+  });
+
+  it("names a dangling symbolic link at the state root as state", async () => {
+    const stateRoot = join(root, "machine-state");
+    symlinkSync(join(root, "missing-state"), stateRoot, "dir");
+    const context = ctx({ AIH_ECC_STATE_ROOT: stateRoot });
+    expect(eccStatePathsV1(context)).toEqual([`${stateRoot} (dangling symbolic link)`]);
+    await expect(prepareEccUninstallV1(context, false)).rejects.toThrow(unavailable);
+  });
+
+  it("fails closed on a relative AIH_ECC_STATE_ROOT instead of treating machine state as absent", async () => {
+    const context = ctx({ AIH_ECC_STATE_ROOT: "relative/state" });
+    expect(eccStatePathsV1(context)).toEqual([
+      "AIH_ECC_STATE_ROOT=relative/state (not an absolute path)",
+    ]);
+    await expect(prepareEccUninstallV1(context, false)).rejects.toThrow(unavailable);
+  });
+
+  it("resolves the state root the native registration uses from one Core function", () => {
+    const explicit = join(root, "machine-state");
+    expect(resolveEccNativeStateRootV1({ AIH_ECC_STATE_ROOT: explicit }, "linux")).toBe(explicit);
+    expect(resolveEccNativeStateRootV1({ HOME: home }, "linux")).toBe(
+      join(home, ".local", "state", "aih", "ecc-profile"),
+    );
+    expect(resolveEccNativeStateRootV1({ USERPROFILE: home }, "windows")).toBe(
+      join(home, "aih", "ecc-profile"),
+    );
+    expect(
+      eccNativeStateRootCandidatesV1({ AIH_ECC_STATE_ROOT: explicit, HOME: home }, "linux"),
+    ).toHaveLength(2);
+    expect(() => resolveEccNativeStateRootV1({}, "linux")).toThrow(/AIH_ECC_STATE_ROOT/);
+    expect(() => resolveEccNativeStateRootV1({ AIH_ECC_STATE_ROOT: "rel" }, "linux")).toThrow(
+      "AIH_ECC_STATE_ROOT must be absolute",
+    );
   });
 });

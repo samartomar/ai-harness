@@ -3,7 +3,11 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
 import { ECC_MCP_EXPLICIT_ADD_RECEIPT_PATH } from "../ecc/mcp-explicit-add-receipt.js";
-import { NATIVE_ECC_REGISTRATION_RECEIPT } from "../ecc-profile/native-registration.js";
+import {
+  type EccNativeStateRootV1,
+  eccNativeStateRootCandidatesV1,
+  NATIVE_ECC_REGISTRATION_RECEIPT,
+} from "../ecc-profile/native-registration.js";
 import { AihError } from "../errors.js";
 import type { Cli } from "../internals/clis.js";
 import type { Action, PlanContext } from "../internals/plan.js";
@@ -77,8 +81,9 @@ function inspectStatePath(base: string, segments: readonly string[]): string | u
  * The state aih writes for ECC that Core can see without the plugin: the
  * project's `.aih/ecc/` receipts and explicit MCP receipt, the ECC profile
  * lifecycle state under `.aih/ecc-profile/` (its ownership and native
- * registration receipts), the machine registration ledger under `~/.aih/ecc/`,
- * and aih's Codex install state. Each path and its ancestors are inspected
+ * registration receipts), the native registration's machine state root (from
+ * Core's one resolver, {@link eccNativeStateRootCandidatesV1}), the machine
+ * registration ledger under `~/.aih/ecc/`, and aih's Codex install state. Each path and its ancestors are inspected
  * with `lstat`: anything but genuine absence is listed, a path that is not
  * plainly present carrying its condition in parentheses.
  */
@@ -106,7 +111,25 @@ export function eccStatePathsV1(ctx: PlanContext): string[] {
   const found = candidates
     .map(([base, parts]) => inspectStatePath(base, parts))
     .filter((path): path is string => path !== undefined);
-  return [...new Set(found)];
+  return [...new Set([...found, ...nativeStateRootPaths(ctx)])];
+}
+
+/**
+ * The native registration's machine state roots under this invocation. A
+ * relative `AIH_ECC_STATE_ROOT` leaves the root undeterminable, so it is named
+ * as state rather than treated as absent.
+ */
+function nativeStateRootPaths(ctx: PlanContext): string[] {
+  let roots: EccNativeStateRootV1[];
+  try {
+    roots = eccNativeStateRootCandidatesV1(ctx.env, ctx.host.platform);
+  } catch (error) {
+    if (!(error instanceof AihError)) throw error;
+    return [`AIH_ECC_STATE_ROOT=${ctx.env.AIH_ECC_STATE_ROOT?.trim()} (not an absolute path)`];
+  }
+  return roots
+    .map((root) => inspectStatePath(root.base, root.segments))
+    .filter((path): path is string => path !== undefined);
 }
 
 function incompatible(loaded: LoadedFrameworkPluginV1, hook: string, need: string): never {

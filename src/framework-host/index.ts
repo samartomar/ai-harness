@@ -282,11 +282,14 @@ export {
 export { deriveEccRuntimeDeclaredEvaluationV1 } from "../ecc/runtime-descriptor-evaluation.js";
 export {
   buildNativeEccRegistration,
+  type EccNativeStateRootV1,
+  eccNativeStateRootCandidatesV1,
   NATIVE_ECC_REGISTRATION_SCOPE,
   type NativeEccRegistration,
   nativeRegistrationFiles,
   planInstalledNativeEccRegistration,
   planNativeEccRegistration,
+  resolveEccNativeStateRootV1,
 } from "../ecc-profile/native-registration.js";
 export { SettingsError } from "../errors.js";
 export {

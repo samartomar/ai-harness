@@ -1,6 +1,6 @@
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import {
   type Action,
   AihError,
@@ -21,6 +21,7 @@ import {
   readTrustFetchMetadata,
   remove,
   removeManagedBlock,
+  resolveEccNativeStateRootV1,
   type TrustSource,
   trustFetchExec,
   upsertTextBlock,
@@ -362,29 +363,6 @@ async function acquireDescriptorProjection(
   }
 }
 
-function stateRootFor(ctx: PlanContext): string {
-  const explicit = ctx.env.AIH_ECC_STATE_ROOT?.trim();
-  if (explicit) {
-    if (!isAbsolute(explicit)) {
-      throw new AihError("AIH_ECC_STATE_ROOT must be absolute", "AIH_CONFIG");
-    }
-    return resolve(explicit);
-  }
-  if (ctx.host.platform === "windows") {
-    const base = ctx.env.LOCALAPPDATA?.trim() || ctx.env.USERPROFILE?.trim();
-    if (base) return resolve(base, "aih", "ecc-profile");
-  } else {
-    const base = ctx.env.XDG_STATE_HOME?.trim();
-    if (base) return resolve(base, "aih", "ecc-profile");
-    const home = ctx.env.HOME?.trim();
-    if (home) return resolve(home, ".local", "state", "aih", "ecc-profile");
-  }
-  throw new AihError(
-    "native ECC registration needs AIH_ECC_STATE_ROOT or a platform home/state directory",
-    "AIH_CONFIG",
-  );
-}
-
 /**
  * The native registration runs Core's own runtime script, located by Core
  * through framework-host: the plugin build ships no runtime of its own.
@@ -394,7 +372,7 @@ export function defaultNativeRegistrationInput(
 ): Parameters<typeof buildNativeEccRegistration>[0] {
   return {
     root: ctx.root,
-    stateRoot: stateRootFor(ctx),
+    stateRoot: resolveEccNativeStateRootV1(ctx.env, ctx.host.platform),
     executable: process.execPath,
     cliScript: eccRuntimeScriptPath(),
   };
