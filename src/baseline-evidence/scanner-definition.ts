@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { lstatSync } from "node:fs";
+import { lstatSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { z } from "zod";
 import { codeUnitCompare } from "../capability/package-graph/canonical.js";
@@ -224,29 +224,74 @@ function assertNoPathOverlap(
     }
 }
 
-/** Reject a missing path, a link at any segment, or overlapping paths (see the mode). */
+/**
+ * The case mapping two paths are compared under: Unicode NFC, then JavaScript's
+ * locale-independent `toLowerCase()` (Scan's win32 rule). Paths equal under it name one
+ * file on a case-insensitive (Windows, default macOS) file system, so a definition may
+ * spell each path, and each ancestor, only one way on every platform.
+ */
+function scannerDefinitionPathCaseKeyV1(path: string): string {
+  return path.normalize("NFC").toLowerCase();
+}
+
+function assertNoCaseAliases(catalog: BaselineCatalog): void {
+  const spellings = new Map<string, string>();
+  for (const component of catalog.components)
+    for (const path of component.paths) {
+      const segments = path.split("/");
+      for (let length = 1; length <= segments.length; length += 1) {
+        const prefix = segments.slice(0, length).join("/");
+        const key = scannerDefinitionPathCaseKeyV1(prefix);
+        const existing = spellings.get(key);
+        if (existing === undefined) spellings.set(key, prefix);
+        else if (existing !== prefix) fail(`paths differ only by case: ${existing}, ${prefix}`);
+      }
+    }
+}
+
+/**
+ * Reject case aliases, a missing path, a segment the file system spells differently, a
+ * link at any segment, or overlapping paths (see the mode). The exact spelling is read from
+ * each parent directory, so a case-insensitive `lstat` cannot accept another spelling.
+ */
 function assertComponentPaths(
   sourceRoot: string,
   catalog: BaselineCatalog,
   overlap: ScannerDefinitionOverlapModeV1,
 ): void {
   const root = resolve(sourceRoot);
-  assertNoPathOverlap(catalog, overlap);
+  assertNoCaseAliases(catalog);
+  const listings = new Map<string, ReadonlySet<string>>();
+  const entries = (directory: string) => {
+    let names = listings.get(directory);
+    if (names === undefined) {
+      names = new Set(readdirSync(directory));
+      listings.set(directory, names);
+    }
+    return names;
+  };
   for (const component of catalog.components) {
     for (const path of component.paths) {
       let current = root;
       for (const part of path.split("/")) {
-        current = resolve(current, part);
-        let stats: ReturnType<typeof lstatSync>;
+        let names: ReadonlySet<string>;
         try {
-          stats = lstatSync(current);
+          names = entries(current);
         } catch {
           fail(`path does not exist: ${path}`);
         }
-        if (stats.isSymbolicLink()) fail(`path traverses a link: ${path}`);
+        if (!names.has(part)) {
+          const key = scannerDefinitionPathCaseKeyV1(part);
+          if ([...names].some((name) => scannerDefinitionPathCaseKeyV1(name) === key))
+            fail(`path spelling differs from the file system: ${path}`);
+          fail(`path does not exist: ${path}`);
+        }
+        current = resolve(current, part);
+        if (lstatSync(current).isSymbolicLink()) fail(`path traverses a link: ${path}`);
       }
     }
   }
+  assertNoPathOverlap(catalog, overlap);
 }
 
 /** Order-insensitive identity: component and path order carry no meaning for a Scanner catalog. */

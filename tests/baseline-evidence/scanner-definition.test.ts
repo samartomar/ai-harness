@@ -283,6 +283,65 @@ describe("definition-driven Scanner catalog resolution", () => {
     ).toThrow("component runtime:ecc-installer paths overlap: scripts/lib, scripts/lib/install");
   });
 
+  it("refuses paths that differ only by case anywhere in the inventory, in every mode", () => {
+    // `skills/tdd` and `Skills/tdd` name one directory on a case-insensitive file system.
+    const aliases = eccDefinition({
+      components: [
+        { id: "skill:tdd", paths: ["skills/tdd"], skillContent: true },
+        { id: "skill:tdd-upper", paths: ["Skills/tdd"], skillContent: true },
+      ],
+    });
+    for (const overlap of ["disjoint", "compiler-catalog"] as const)
+      expect(() =>
+        resolveScannerDefinitionV1(
+          {
+            sourceRoot: source,
+            catalogId: "ecc",
+            definitionPath: definitionFile(aliases),
+            head: PIN,
+            overlap,
+          },
+          notCarried,
+        ),
+      ).toThrow("baseline definition: paths differ only by case: skills, Skills");
+    // An ancestor spelled two ways collides even when the leaves differ.
+    const ancestors = eccDefinition({
+      components: [
+        { id: "skill:tdd", paths: ["skills/tdd"], skillContent: true },
+        { id: "skill:other", paths: ["SKILLS/other"], skillContent: true },
+      ],
+    });
+    expect(() => resolveEcc(ancestors)).toThrow(
+      "baseline definition: paths differ only by case: skills, SKILLS",
+    );
+    // Inside one component, too.
+    const inner = eccDefinition({
+      components: [{ id: "runtime:ecc-installer", paths: ["package.json", "Package.json"] }],
+    });
+    expect(() => resolveEcc(inner)).toThrow(
+      "baseline definition: paths differ only by case: package.json, Package.json",
+    );
+  });
+
+  it("requires the exact file-system spelling of every path segment on every platform", () => {
+    expect(() =>
+      resolveEcc(
+        eccDefinition({
+          components: [{ id: "skill:tdd", paths: ["Skills/tdd"], skillContent: true }],
+        }),
+      ),
+    ).toThrow("baseline definition: path spelling differs from the file system: Skills/tdd");
+    expect(() =>
+      resolveEcc(
+        eccDefinition({
+          components: [{ id: "skill:tdd", paths: ["skills/tdd/skill.md"], skillContent: true }],
+        }),
+      ),
+    ).toThrow(
+      "baseline definition: path spelling differs from the file system: skills/tdd/skill.md",
+    );
+  });
+
   it("names the overlap modes a definition may be resolved in", () => {
     expect(SCANNER_DEFINITION_OVERLAP_MODES_V1).toEqual(["disjoint", "compiler-catalog"]);
   });
