@@ -12,6 +12,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 
+// Native findings come from the installed @aihq/scan's trust lint; this test
+// reads a Scan that reports none, with neutral facts for every selected file.
+vi.mock("../../../src/scan-package/load-scan-package.js", async (importOriginal) =>
+  (await import("../../trust/fakes/installed-fake-scan.js")).withInstalledFakeScan(
+    await importOriginal(),
+  ),
+);
+
 const transport = vi.hoisted(() => ({ verify: vi.fn() }));
 // GitHub is the external transport boundary. Scanner verification and local custody stay real.
 vi.mock(

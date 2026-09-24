@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
@@ -11,6 +11,13 @@ import { EVIDENCE_DIR, skillApproveCommand, skillCardCommand } from "../../src/s
 import { readSkillCard, type SkillCard } from "../../src/skill/card.js";
 import type { SkillsLock } from "../../src/skill/lockfile.js";
 import { type SkillVetEvidence, skillVetCommand } from "../../src/skill/vet.js";
+
+// Native findings come from the installed @aihq/scan's trust lint; this test
+// reads a Scan that reports only the fixture's planted injection and licence files.
+vi.mock("../../src/scan-package/load-scan-package.js", async (importOriginal) => {
+  const fake = await import("../trust/fakes/installed-fake-scan.js");
+  return fake.withInstalledFakeScan(await importOriginal(), fake.fixtureTrustLint);
+});
 
 const PIN = "a".repeat(40);
 const EVIDENCE_REL = `${EVIDENCE_DIR}/owner-repo-${PIN.slice(0, 8)}.json`;

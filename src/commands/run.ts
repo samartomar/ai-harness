@@ -189,6 +189,9 @@ export async function runCapability(
     return cleanupPromise;
   };
   let terminating = false;
+  // A signal cancels in-flight delegated work first (Scan kills the analyzer's
+  // process tree), then the deferred cleanups run and the signal is re-raised.
+  const cancellation = new AbortController();
   const removeSignalHandlers = (): void => {
     process.off("SIGINT", onSigint);
     process.off("SIGTERM", onSigterm);
@@ -196,6 +199,7 @@ export async function runCapability(
   const terminateAfterCleanup = (signal: NodeJS.Signals): void => {
     if (terminating) return;
     terminating = true;
+    cancellation.abort();
     void runDeferredCleanups().finally(() => {
       removeSignalHandlers();
       process.kill(process.pid, signal);
@@ -377,6 +381,7 @@ export async function runCapability(
       prompter,
       progress: (message) => writeError(`${message}\n`),
       deferCleanup: (cleanup) => deferredCleanups.push(cleanup),
+      signal: cancellation.signal,
       options: {
         ...extractOptions(spec, opts),
         ...(deps.optionOverrides ?? {}),

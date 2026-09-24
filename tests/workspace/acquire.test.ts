@@ -11,7 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import type { Command } from "commander";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { executePlan } from "../../src/internals/execute.js";
 import type { Action, PlanContext, ProbeAction } from "../../src/internals/plan.js";
 import { fakeRunner, type Runner } from "../../src/internals/proc.js";
@@ -26,11 +26,25 @@ import {
   workspaceAddPhase1Plan,
   workspaceAddPhase2Plan,
 } from "../../src/workspace/acquire.js";
+import { fakeTrustLintScan } from "../trust/fakes/fake-trust-lint.js";
+import {
+  fixtureTrustLint,
+  resetInstalledFakeScan,
+  setInstalledFakeScan,
+} from "../trust/fakes/installed-fake-scan.js";
+
+// Native findings come from the installed @aihq/scan's trust lint; this test
+// reads a Scan that reports only the fixture's planted injection and licence files.
+vi.mock("../../src/scan-package/load-scan-package.js", async (importOriginal) => {
+  const fake = await import("../trust/fakes/installed-fake-scan.js");
+  return fake.withInstalledFakeScan(await importOriginal(), fake.fixtureTrustLint);
+});
 
 let workspace: string;
 let sourceRoot: string;
 
 beforeEach(() => {
+  resetInstalledFakeScan();
   workspace = mkdtempSync(join(tmpdir(), "aih-ws-add-root-"));
   sourceRoot = mkdtempSync(join(tmpdir(), "aih-ws-add-source-"));
 });
@@ -596,6 +610,15 @@ describe("workspace add acquisition plans", () => {
       if (argv[1] === "run") return { code: 0, stdout: JSON.stringify({ runs: [] }) };
       return undefined;
     });
+    // SkillSpector is the one optional analyzer the installed Scan runs here.
+    setInstalledFakeScan(
+      fakeTrustLintScan(fixtureTrustLint, {
+        "detector.skillspector": {
+          kind: "sarif",
+          sarif: JSON.stringify({ version: "2.1.0", runs: [] }),
+        },
+      }),
+    );
     const c = ctx(sourceRoot, true, true, {}, {}, run);
     const phase1 = await executePlan(await workspaceAddPhase1Plan(c), c);
     expect(phase1.report?.ok).toBe(true);
@@ -843,6 +866,18 @@ describe("workspace add acquisition plans", () => {
       JSON.stringify({ scripts: { postinstall: "node setup.js" } }),
       "utf8",
     );
+    // Scan's trust lint reports the install hook.
+    setInstalledFakeScan(
+      fakeTrustLintScan({
+        results: [
+          {
+            ruleId: "trust.auto-exec-hook",
+            message: "package.json:1 — postinstall runs code on install",
+            uri: "package.json",
+          },
+        ],
+      }),
+    );
     const output: string[] = [];
 
     const code = await runWorkspaceAdd(fakeCommand(sourceRoot), {
@@ -870,6 +905,25 @@ describe("workspace add acquisition plans", () => {
       join(sourceRoot, "package-lock.json"),
       JSON.stringify({ lockfileVersion: 3, packages: {} }),
       "utf8",
+    );
+    // Scan's trust lint reports the tell only for the internal scopes Core sends it.
+    setInstalledFakeScan(
+      fakeTrustLintScan((_paths, request) => {
+        const scopes = (request.detectorOptions as { internalScopes?: string[] } | undefined)
+          ?.internalScopes;
+        return scopes?.some((scope) => scope.replace(/^@/, "") === "acme") === true
+          ? {
+              results: [
+                {
+                  ruleId: "trust.dependency-confusion",
+                  message:
+                    "package.json:1 — @acme/tool is an internal scope resolved from a public registry",
+                  uri: "package.json",
+                },
+              ],
+            }
+          : {};
+      }),
     );
     const withoutScope: string[] = [];
 

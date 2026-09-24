@@ -8,7 +8,7 @@ import {
   ed25519KeyIdV2,
   signBaselineVetBundleV1,
 } from "@aihq/scan";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { defineBaselineCatalog } from "../../src/baseline-evidence/catalog.js";
 import { createCoreBaselineVetRequest } from "../../src/baseline-evidence/scanner-consumer.js";
 import { SCANNER_BASELINE_ANALYZER_VERSIONS } from "../../src/baseline-evidence/scanner-profile.js";
@@ -21,6 +21,14 @@ import {
   DEFAULT_EVIDENCE_MAX_AGE_SECONDS_V1,
   evidenceExpiryV1,
 } from "../../src/evidence-freshness.js";
+
+// Native findings come from the installed @aihq/scan's trust lint; this test
+// reads a Scan that reports none, with neutral facts for every selected file.
+vi.mock("../../src/scan-package/load-scan-package.js", async (importOriginal) =>
+  (await import("../trust/fakes/installed-fake-scan.js")).withInstalledFakeScan(
+    await importOriginal(),
+  ),
+);
 
 const temporaryRoots: string[] = [];
 const publisher = {

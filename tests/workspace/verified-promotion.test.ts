@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { VerificationReport } from "../../src/internals/verify.js";
@@ -19,6 +19,13 @@ import {
   createVerifiedPromotionChannel,
   type VerifiedPromotionSnapshot,
 } from "../../src/workspace/verified-promotion.js";
+
+// Native findings come from the installed @aihq/scan's trust lint; this test
+// reads a Scan that reports only the fixture's planted injection and licence files.
+vi.mock("../../src/scan-package/load-scan-package.js", async (importOriginal) => {
+  const fake = await import("../trust/fakes/installed-fake-scan.js");
+  return fake.withInstalledFakeScan(await importOriginal(), fake.fixtureTrustLint);
+});
 
 describe("verified promotion channel", () => {
   const digest = (bytes: Buffer): string => createHash("sha256").update(bytes).digest("hex");

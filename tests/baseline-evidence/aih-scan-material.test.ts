@@ -31,6 +31,14 @@ import {
 } from "@aihq/scan";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+// Native findings come from the installed @aihq/scan's trust lint; this test
+// reads a Scan that reports none, with neutral facts for every selected file.
+vi.mock("../../src/scan-package/load-scan-package.js", async (importOriginal) =>
+  (await import("../trust/fakes/installed-fake-scan.js")).withInstalledFakeScan(
+    await importOriginal(),
+  ),
+);
+
 const mocks = vi.hoisted(() => ({ defaultRunner: vi.fn() }));
 
 vi.mock("../../src/internals/proc.js", async (importOriginal) => ({

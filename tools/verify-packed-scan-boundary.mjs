@@ -9,17 +9,19 @@
  *   Core-only consumer (Scan absent):
  *     - `@aihq/core`'s index.js and `aih --version` / `aih --help` load;
  *     - a TypeScript file importing `@aihq/core` compiles with skipLibCheck false;
- *     - `aih trust scan <temporary fixture>` keeps every Core detector in Core,
- *       names them `core-legacy`, and states `scan-package-unavailable` with the
- *       install command, without a stack trace.
+ *     - `aih trust scan <temporary fixture>` runs no detector: Core has none of
+ *       its own, so it refuses with `scan-package-unavailable` (`AIH_SCAN_PACKAGE`)
+ *       and the install command, exit 1, without a stack trace.
  *   Core + Scan consumer (the given Scan tarball beside Core):
  *     - the same TypeScript file plus Scan's public functions typed as Core's
  *       adapter seams compiles with skipLibCheck false;
  *     - `aih trust scan <temporary fixture>` loads the INSTALLED Scan (a module
- *       resolve trace names node_modules/@aihq/scan/dist files), records Scan's
- *       `detector.aih-native` identity observation under `in-process-native-v1`
- *       (or states `scan-package-incompatible` for a Scan without the runner),
- *       and still attributes no Core detector result to Scan;
+ *       resolve trace names node_modules/@aihq/scan/dist files). A Scan that
+ *       declares `detector.aih-trust-lint` runs it: the advisory names it as run
+ *       by the installed @aihq/scan and records Scan's `detector.aih-native`
+ *       identity observation under `in-process-native-v1`. A Scan without it
+ *       refuses with `scan-package-incompatible` naming the detector; Core never
+ *       runs a detector in its place;
  *   and the packed Core `dist/` holds no Scan implementation and imports
  *   `@aihq/scan` only dynamically, from one module.
  *
@@ -49,7 +51,6 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { gunzipSync } from "node:zlib";
 
 const toolRepo = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const SCAN_OWNED = ["skillspector", "cisco", "semgrep"];
 const INSTALL_COMMAND = "npm install -g @aihq/core @aihq/scan";
 /**
  * String literals that exist only inside Scan's implementation, never in Core's
@@ -228,7 +229,7 @@ try {
   );
   check(
     "packed manifest declares @aihq/scan as an optional peer only",
-    manifest.peerDependencies?.["@aihq/scan"] === ">=0.4.0 <1.0.0" &&
+    manifest.peerDependencies?.["@aihq/scan"] === ">=0.5.0 <0.6.0" &&
       manifest.peerDependenciesMeta?.["@aihq/scan"]?.optional === true &&
       manifest.dependencies?.["@aihq/scan"] === undefined,
     JSON.stringify({ peer: manifest.peerDependencies, meta: manifest.peerDependenciesMeta }),
@@ -277,23 +278,11 @@ try {
     }
     return { result, report };
   };
-  const detectorDetails = (report) => {
-    const details = {};
-    const visit = (value) => {
-      if (Array.isArray(value)) return value.forEach(visit);
-      if (value === null || typeof value !== "object") return;
-      if (typeof value.name === "string" && value.name.startsWith("trust detector ") && typeof value.detail === "string")
-        details[value.name.slice("trust detector ".length)] = { detail: value.detail, verdict: value.verdict };
-      Object.values(value).forEach(visit);
-    };
-    visit(report);
-    return details;
-  };
   const advisoryOf = (report) =>
     (report?.digests ?? []).find((digest) => digest?.describe === "trust runtime advisory")?.text ?? "";
   const noStack = (result) => !/\n\s+at .+\(.+:\d+:\d+\)/.test(`${result.stdout}\n${result.stderr}`);
-  // Step 1 delegates no detector to Scan: Core keeps executing all of them and says so.
-  const CORE_EXECUTORS = "Detector executors: skillspector=core-legacy, cisco=core-legacy, semgrep=core-legacy";
+  // Core runs no detector of its own: a refusal is the whole answer, never a partial scan.
+  const refusalOf = (scan) => (scan.report?.error?.code === "AIH_SCAN_PACKAGE" ? scan.report.error.message : "");
 
   // ---- Core-only consumer -------------------------------------------------
   const coreOnly = join(work, "consumer-core-only");
@@ -312,19 +301,18 @@ try {
   const coreOnlyTypes = run(process.execPath, [tsc, "-p", "tsconfig.json"], coreOnly);
   check("Core-only: TypeScript consumer compiles with skipLibCheck false", coreOnlyTypes.status === 0, (coreOnlyTypes.stdout + coreOnlyTypes.stderr).trim().slice(0, 1500));
   const coreOnlyScan = trustScan(coreOnly);
-  const coreOnlyAdvisory = advisoryOf(coreOnlyScan.report);
-  const coreOnlyObservation =
-    coreOnlyAdvisory.split("\n").find((line) => line.startsWith("@aihq/scan observation")) ?? "";
+  const coreOnlyRefusal = refusalOf(coreOnlyScan);
   check(
-    "Core-only: trust scan states scan-package-unavailable with the install command",
-    coreOnlyObservation.includes("scan-package-unavailable") &&
-      coreOnlyObservation.includes(INSTALL_COMMAND),
-    coreOnlyObservation || "<no observation line>",
+    "Core-only: trust scan refuses with scan-package-unavailable and the install command, exit 1",
+    coreOnlyScan.result.status === 1 &&
+      coreOnlyRefusal.startsWith("scan-package-unavailable") &&
+      coreOnlyRefusal.includes(INSTALL_COMMAND),
+    `exit ${coreOnlyScan.result.status}: ${coreOnlyRefusal || coreOnlyScan.result.stdout.slice(0, 300)}`,
   );
   check(
-    "Core-only: every Core detector keeps Core's execution and is named core-legacy",
-    coreOnlyAdvisory.includes(CORE_EXECUTORS),
-    coreOnlyAdvisory.split("\n").find((line) => line.startsWith("Detector executors")) ?? "<none>",
+    "Core-only: the refusal carries no scan result, so no detector ran",
+    coreOnlyScan.report !== undefined && Object.keys(coreOnlyScan.report).join(",") === "error",
+    Object.keys(coreOnlyScan.report ?? {}).join(",") || "<no JSON>",
   );
   check("Core-only: trust scan output carries no stack trace", noStack(coreOnlyScan.result), `exit ${coreOnlyScan.result.status}`);
 
@@ -390,33 +378,41 @@ try {
       (!runner || loaded.some((url) => url.toLowerCase().startsWith(`${installedRoot}/runner/run-detector-v1.js`))),
     loaded.filter((url) => /index\.js$|run-detector-v1\.js$/.test(url)).join(" "),
   );
-  const withScanAdvisory = advisoryOf(withScanScan.report);
-  const withScanObservation =
-    withScanAdvisory.split("\n").find((line) => line.startsWith("@aihq/scan observation")) ?? "";
-  check(
-    runner
-      ? "Core+Scan: the installed @aihq/scan recorded detector.aih-native under in-process-native-v1 with an annex digest"
-      : "Core+Scan: this Scan predates the runner, and the trust scan says scan-package-incompatible",
-    runner
-      ? withScanObservation.startsWith(
-          "@aihq/scan observation detector.aih-native recorded by the installed @aihq/scan",
-        ) &&
-          withScanObservation.includes("under execution profile in-process-native-v1") &&
-          /annex sha256 [0-9a-f]{64}/.test(withScanObservation)
-      : withScanObservation.includes("scan-package-incompatible"),
-    withScanObservation || "<no observation line>",
-  );
-  check(
-    "Core+Scan: every Core detector keeps Core's execution and is named core-legacy",
-    withScanAdvisory.includes(CORE_EXECUTORS),
-    withScanAdvisory.split("\n").find((line) => line.startsWith("Detector executors")) ?? "<none>",
-  );
-  const withScanDetails = detectorDetails(withScanScan.report);
-  check(
-    "Core+Scan: no Core detector result is attributed to Scan",
-    SCAN_OWNED.every((name) => !(withScanDetails[name]?.detail ?? "").includes("@aihq/scan")),
-    SCAN_OWNED.map((name) => `${name}: ${withScanDetails[name]?.verdict ?? "<missing>"}`).join(", "),
-  );
+  const trustLint = run(process.execPath, ["--input-type=module", "-e", "const m = await import('@aihq/scan'); const caps = typeof m.listDetectorCapabilitiesV1 === 'function' ? m.listDetectorCapabilitiesV1() : []; console.log(JSON.stringify({ trustLint: Array.isArray(caps) && caps.some((cap) => cap?.detectorId === 'detector.aih-trust-lint') }));"], withScan);
+  const delegates = JSON.parse(must(trustLint, "Scan trust-lint capability probe")).trustLint === true;
+  process.stdout.write(`installed @aihq/scan declares detector.aih-trust-lint: ${delegates}\n`);
+  if (delegates) {
+    const withScanAdvisory = advisoryOf(withScanScan.report);
+    const withScanObservation =
+      withScanAdvisory.split("\n").find((line) => line.startsWith("@aihq/scan observation")) ?? "";
+    const executors =
+      withScanAdvisory.split("\n").find((line) => line.startsWith("Detector executors")) ?? "";
+    check("Core+Scan: trust scan completed", withScanScan.report?.error === undefined && withScanAdvisory !== "", `exit ${withScanScan.result.status}`);
+    check(
+      "Core+Scan: the installed @aihq/scan ran the trust lint",
+      executors.includes("aih-trust-lint=installed @aihq/scan in-process-trust-lint-v1 (completed)") &&
+        !executors.includes("core-legacy"),
+      executors || "<no executors line>",
+    );
+    check(
+      "Core+Scan: the installed @aihq/scan recorded detector.aih-native under in-process-native-v1 with an annex digest",
+      withScanObservation.startsWith(
+        "@aihq/scan observation detector.aih-native recorded by the installed @aihq/scan",
+      ) &&
+        withScanObservation.includes("under execution profile in-process-native-v1") &&
+        /annex sha256 [0-9a-f]{64}/.test(withScanObservation),
+      withScanObservation || "<no observation line>",
+    );
+  } else {
+    const withScanRefusal = refusalOf(withScanScan);
+    check(
+      "Core+Scan: this Scan declares no trust lint, and the trust scan refuses with scan-package-incompatible, exit 1",
+      withScanScan.result.status === 1 &&
+        withScanRefusal.startsWith("scan-package-incompatible") &&
+        withScanRefusal.includes("detector.aih-trust-lint"),
+      `exit ${withScanScan.result.status}: ${withScanRefusal || withScanScan.result.stdout.slice(0, 300)}`,
+    );
+  }
   check("Core+Scan: trust scan output carries no stack trace", noStack(withScanScan.result), `exit ${withScanScan.result.status}`);
 
   const failed = results.filter((entry) => !entry.ok);
@@ -432,8 +428,8 @@ try {
       scanExportsRunner: runner,
       coreOnlyTrustScanExit: coreOnlyScan.result.status,
       coreScanTrustScanExit: withScanScan.result.status,
-      coreOnlyObservation,
-      coreScanObservation: withScanObservation,
+      coreOnlyRefusal,
+      scanDeclaresTrustLint: delegates,
       scanModulesLoaded: loaded.filter((url) => /index.js$|run-detector-v1.js$/.test(url)),
       failed: failed.map((entry) => entry.name),
     })}\n`,

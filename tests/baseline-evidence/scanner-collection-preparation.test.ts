@@ -11,6 +11,13 @@ import {
 } from "@aihq/scan";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+// Native findings come from the installed @aihq/scan's trust lint; this test
+// reads a Scan that reports only the fixture's planted injection and licence files.
+vi.mock("../../src/scan-package/load-scan-package.js", async (importOriginal) => {
+  const fake = await import("../trust/fakes/installed-fake-scan.js");
+  return fake.withInstalledFakeScan(await importOriginal(), fake.fixtureTrustLint);
+});
+
 const mocks = vi.hoisted(() => ({ defaultRunner: vi.fn() }));
 
 vi.mock("../../src/internals/proc.js", async (importOriginal) => ({

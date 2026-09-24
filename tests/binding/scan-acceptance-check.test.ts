@@ -14,7 +14,10 @@ import {
 } from "../../src/binding/scan-acceptance-check.js";
 import { type DimensionReport, inspectTree } from "../../src/binding/scan-gate.js";
 import { defaultRunner, type Runner } from "../../src/internals/proc.js";
+import { ScanPackageRefusalError } from "../../src/scan-package/load-scan-package.js";
 import { hermeticGitEnv } from "../git-fixture-env.js";
+import { createFakeScanAdapterForTests } from "../trust/fakes/fake-scan-adapter.js";
+import { fakeBindingGateScan } from "./fake-binding-gate.js";
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 });
 
@@ -66,8 +69,40 @@ const pinnedCheckoutRunner: Runner = async (argv, options) => {
     : result;
 };
 
-function fixtureDeps(acceptanceArtifact: unknown, inspect = inspectTree): ScanAcceptanceCheckDeps {
+type Inspect = NonNullable<ScanAcceptanceCheckDeps["inspectTree"]>;
+
+/** The production inspection (Core's inventory through Scan's binding gate) over a fake Scan. */
+function inspectThrough(reports: readonly DimensionReport[] = []): Inspect {
+  return (root) => inspectTree(root, { scanExecution: fakeBindingGateScan(reports) });
+}
+
+function fixtureDeps(
+  acceptanceArtifact: unknown,
+  inspect: Inspect = inspectThrough(),
+): ScanAcceptanceCheckDeps {
   return { acceptanceArtifact, inspectTree: inspect, runner: pinnedCheckoutRunner };
+}
+
+function sha256Lf(text: string): string {
+  return createHash("sha256").update(text.replace(/\r\n/g, "\n"), "utf8").digest("hex");
+}
+
+/** Scan's hidden-unicode findings for `files`, pinned to their LF-normalized bytes. */
+function hiddenUnicodeReports(files: Record<string, string>): DimensionReport[] {
+  return [
+    {
+      dimension: "hidden-unicode",
+      status: "produced",
+      findings: Object.entries(files).map(([path, text]) => ({
+        code: "trust.hidden-unicode",
+        severity: "high" as const,
+        detail: "hidden or bidirectional unicode",
+        coverage: "complete" as const,
+        path,
+        contentSha256: sha256Lf(text),
+      })),
+    },
+  ];
 }
 
 function pinnedContentFindings(reports: readonly DimensionReport[]) {
@@ -96,16 +131,18 @@ describe("checkSuperpowersScanAcceptance", () => {
 
     const report = await checkSuperpowersScanAcceptance(
       { checkoutPath: checkout },
-      fixtureDeps(shippedAcceptanceJson, () => []),
+      fixtureDeps(shippedAcceptanceJson, async () => []),
     );
 
     expect(report.accepted).toEqual([]);
     expect(report.missing).toEqual([]);
   });
 
-  it("uses real inspector pins with CRLF compatibility and repeatable byte-identical JSON", async () => {
-    initVendorCheckout({ "a.md": `a${ZWSP}\r\n`, "z.md": `z${ZWSP}\r\n` });
-    const inspected = pinnedContentFindings(inspectTree(checkout));
+  it("matches Scan's content pins through the production inspection and repeats byte-identical JSON", async () => {
+    const files = { "a.md": `a${ZWSP}\r\n`, "z.md": `z${ZWSP}\r\n` };
+    initVendorCheckout(files);
+    const inspect = inspectThrough(hiddenUnicodeReports(files));
+    const inspected = pinnedContentFindings(await inspect(checkout));
     const accepted = artifact(
       inspected.map((finding) => ({
         code: finding.code,
@@ -120,23 +157,25 @@ describe("checkSuperpowersScanAcceptance", () => {
 
     const first = await checkSuperpowersScanAcceptance(
       { checkoutPath: checkout },
-      fixtureDeps(accepted),
+      fixtureDeps(accepted, inspect),
     );
     const second = await checkSuperpowersScanAcceptance(
       { checkoutPath: checkout },
-      fixtureDeps(accepted),
+      fixtureDeps(accepted, inspect),
     );
 
     expect(JSON.stringify(first)).toBe(JSON.stringify(second));
     expect(JSON.stringify(first)).not.toContain(checkout);
     expect(first.new).toEqual([]);
+    expect(first.accepted).toHaveLength(2);
     expect(first.authorizes).toBe(false);
     expect(gitStatus(checkout)).toBe("");
   });
 
   it("reports stale, missing, new, and critical scanner findings without caller observations", async () => {
-    initVendorCheckout({ "SKILL.md": `unsafe${ZWSP}\n` });
-    const finding = pinnedContentFindings(inspectTree(checkout))[0];
+    const files = { "SKILL.md": `unsafe${ZWSP}\n` };
+    initVendorCheckout(files);
+    const finding = pinnedContentFindings(hiddenUnicodeReports(files))[0];
     if (finding?.path === undefined || finding.contentSha256 === undefined)
       throw new Error("fixture finding missing");
     const criticalReports: DimensionReport[] = [
@@ -171,7 +210,7 @@ describe("checkSuperpowersScanAcceptance", () => {
           { code: "trust.hidden-unicode", path: "missing.md", fileSha256: "b".repeat(64) },
           { code: "trust.malicious-code", path: "SKILL.md", fileSha256: finding.contentSha256 },
         ]),
-        () => criticalReports,
+        async () => criticalReports,
       ),
     );
 
@@ -206,7 +245,7 @@ describe("checkSuperpowersScanAcceptance", () => {
     await expect(
       checkSuperpowersScanAcceptance(
         { checkoutPath: join(checkout, "nested") },
-        fixtureDeps(artifact([]), () => {
+        fixtureDeps(artifact([]), async () => {
           inspections += 1;
           return [];
         }),
@@ -228,7 +267,7 @@ describe("checkSuperpowersScanAcceptance", () => {
       checkSuperpowersScanAcceptance(
         { checkoutPath: checkout },
         {
-          ...fixtureDeps(artifact([]), () => {
+          ...fixtureDeps(artifact([]), async () => {
             inspections += 1;
             return [];
           }),
@@ -248,7 +287,7 @@ describe("checkSuperpowersScanAcceptance", () => {
     await expect(
       checkSuperpowersScanAcceptance(
         { checkoutPath: checkout },
-        fixtureDeps(artifact([]), () => {
+        fixtureDeps(artifact([]), async () => {
           inspections += 1;
           return [];
         }),
@@ -289,7 +328,7 @@ describe("checkSuperpowersScanAcceptance", () => {
       await expect(
         checkSuperpowersScanAcceptance(
           { checkoutPath: checkout },
-          fixtureDeps(artifact([]), () => {
+          fixtureDeps(artifact([]), async () => {
             inspections += 1;
             return [];
           }),
@@ -308,7 +347,7 @@ describe("checkSuperpowersScanAcceptance", () => {
       await expect(
         checkSuperpowersScanAcceptance(
           { checkoutPath: checkout },
-          fixtureDeps(artifact([]), () => {
+          fixtureDeps(artifact([]), async () => {
             inspections += 1;
             return [];
           }),
@@ -329,7 +368,7 @@ describe("checkSuperpowersScanAcceptance", () => {
     await expect(
       checkSuperpowersScanAcceptance(
         { checkoutPath: checkout },
-        fixtureDeps(artifact([]), () => {
+        fixtureDeps(artifact([]), async () => {
           inspections += 1;
           return [];
         }),
@@ -351,7 +390,7 @@ describe("checkSuperpowersScanAcceptance", () => {
       checkSuperpowersScanAcceptance(
         { checkoutPath: checkout },
         {
-          ...fixtureDeps(artifact([]), () => {
+          ...fixtureDeps(artifact([]), async () => {
             inspections += 1;
             return [];
           }),
@@ -377,7 +416,7 @@ describe("checkSuperpowersScanAcceptance", () => {
     await expect(
       checkSuperpowersScanAcceptance(
         { checkoutPath: checkout },
-        fixtureDeps(artifact([]), () => {
+        fixtureDeps(artifact([]), async () => {
           inspections += 1;
           return [];
         }),
@@ -394,7 +433,7 @@ describe("checkSuperpowersScanAcceptance", () => {
     await expect(
       checkSuperpowersScanAcceptance(
         { checkoutPath: checkout },
-        fixtureDeps(artifact([]), () => {
+        fixtureDeps(artifact([]), async () => {
           inspections += 1;
           return [];
         }),
@@ -421,7 +460,7 @@ describe("checkSuperpowersScanAcceptance", () => {
       checkSuperpowersScanAcceptance(
         { checkoutPath: checkout },
         {
-          ...fixtureDeps(artifact([]), () => {
+          ...fixtureDeps(artifact([]), async () => {
             inspections += 1;
             return [];
           }),
@@ -455,7 +494,7 @@ describe("checkSuperpowersScanAcceptance", () => {
     await expect(
       checkSuperpowersScanAcceptance(
         { checkoutPath: checkout },
-        fixtureDeps(artifact([]), () => {
+        fixtureDeps(artifact([]), async () => {
           throw new Error("EACCES");
         }),
       ),
@@ -463,12 +502,25 @@ describe("checkSuperpowersScanAcceptance", () => {
     await expect(
       checkSuperpowersScanAcceptance(
         { checkoutPath: checkout },
-        fixtureDeps(artifact([]), (root) => {
+        fixtureDeps(artifact([]), async (root) => {
           writeFileSync(join(root, "SKILL.md"), "mutated\n", "utf8");
           return [];
         }),
       ),
     ).rejects.toBeInstanceOf(ScanAcceptanceCheckError);
+  });
+
+  it("lets a missing or incompatible Scan surface as its own typed refusal", async () => {
+    initVendorCheckout({ "SKILL.md": "safe\n" });
+    // A Scan without the binding-gate detector cannot inspect the checkout.
+    const noBindingGate = createFakeScanAdapterForTests({});
+    const refusal = await checkSuperpowersScanAcceptance(
+      { checkoutPath: checkout },
+      fixtureDeps(artifact([]), (root) => inspectTree(root, { scanExecution: noBindingGate })),
+    ).catch((error: unknown) => error);
+    expect(refusal).toBeInstanceOf(ScanPackageRefusalError);
+    expect((refusal as ScanPackageRefusalError).refusal.reason).toBe("scan-package-incompatible");
+    expect(refusal).not.toBeInstanceOf(ScanAcceptanceCheckError);
   });
 
   it("rejects the AI-Harness checkout and writes no report file", async () => {

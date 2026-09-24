@@ -47,7 +47,6 @@ import {
   runFastScanGate,
   type ScanDisposition,
   type ScannableSource,
-  W2_DEFAULT_INSPECTORS,
 } from "../../../src/binding/scan-gate.js";
 import {
   type BindingDeclaration,
@@ -57,11 +56,12 @@ import { readEccInstallPreview } from "../../../src/ecc/install-preview.js";
 import { selectedEccMcpServers } from "../../../src/ecc/mcp.js";
 import { defaultRunner, fakeRunner, type Runner } from "../../../src/internals/proc.js";
 import { hermeticGitEnv } from "../../git-fixture-env.js";
+import { fakeBindingGateScan } from "../fake-binding-gate.js";
 
 /**
  * W4b — the ECC Lean FrameworkAdapter (upstream-local-installer). Every
- * disposition here is REAL (minted by `runFastScanGate` with the actual
- * `W2_DEFAULT_INSPECTORS`); every install goes through an INJECTED fixture
+ * disposition here is REAL (minted by `runFastScanGate` over a clean fake Scan
+ * binding gate); every install goes through an INJECTED fixture
  * installer writing into an mkdtemp home — NO test here spawns a real ECC
  * installer or touches the real `~/.claude`/`~/.aih` (HARD RULE). The one real
  * installer path is documented as an `it.skip` acceptance procedure.
@@ -90,10 +90,10 @@ const ECC_FIXTURE_FILES: Record<string, string> = {
 };
 
 /** A REAL, non-forged brand-protected disposition minted by the actual W2 gate. */
-function scannedFixture(name: string): {
+async function scannedFixture(name: string): Promise<{
   resolved: ResolvedGitSource;
   disposition: ScanDisposition;
-} {
+}> {
   const dir = join(cacheHome, name);
   for (const [rel, contents] of Object.entries(ECC_FIXTURE_FILES)) {
     const full = join(dir, rel);
@@ -109,10 +109,10 @@ function scannedFixture(name: string): {
     treePath: dir,
     identityFiles: hashed.files.map((f) => f.path),
   };
-  const disposition = runFastScanGate(
+  const disposition = await runFastScanGate(
     source,
     { posture: "enterprise" },
-    { cacheHome, inspectors: W2_DEFAULT_INSPECTORS },
+    { cacheHome, scanExecution: fakeBindingGateScan() },
   );
   return {
     resolved: {
@@ -264,10 +264,10 @@ const ECC_FULL_MANIFEST_FILES: Record<string, string> = {
 const ECC_FULL_KEY = `${ECC_FULL_PLUGIN_NAME}@${ECC_FULL_MARKETPLACE_NAME}`;
 
 /** A REAL brand-protected disposition minted over an ECC plugin fixture (manifests + content). */
-function scannedFullFixture(
+async function scannedFullFixture(
   name: string,
   extra: Record<string, string> = {},
-): { resolved: ResolvedGitSource; disposition: ScanDisposition } {
+): Promise<{ resolved: ResolvedGitSource; disposition: ScanDisposition }> {
   const dir = join(cacheHome, name);
   for (const [rel, contents] of Object.entries({
     ...ECC_FIXTURE_FILES,
@@ -287,10 +287,10 @@ function scannedFullFixture(
     treePath: dir,
     identityFiles: hashed.files.map((f) => f.path),
   };
-  const disposition = runFastScanGate(
+  const disposition = await runFastScanGate(
     source,
     { posture: "enterprise" },
-    { cacheHome, inspectors: W2_DEFAULT_INSPECTORS },
+    { cacheHome, scanExecution: fakeBindingGateScan() },
   );
   return {
     resolved: {
@@ -468,7 +468,7 @@ describe("preview-diff allowlist gate — the pinned artifact + fail-closed case
   });
 
   it("provision fails closed on the extra-surface preview with ZERO install calls and no lock", async () => {
-    const { resolved, disposition } = scannedFixture("extra");
+    const { resolved, disposition } = await scannedFixture("extra");
     const spy = { calls: 0 };
     const artifact = previewArtifact([
       ...LEAN_ARTIFACT_OPS,
@@ -490,7 +490,7 @@ describe("preview-diff allowlist gate — the pinned artifact + fail-closed case
   });
 
   it("provision fails closed when the preview cannot deliver an allowlisted component (no install, no lock)", async () => {
-    const { resolved, disposition } = scannedFixture("missing");
+    const { resolved, disposition } = await scannedFixture("missing");
     const spy = { calls: 0 };
     const artifact = previewArtifact(
       LEAN_ARTIFACT_OPS.filter((op) => op.componentId !== "skill:tdd-workflow"),
@@ -511,7 +511,7 @@ describe("preview-diff allowlist gate — the pinned artifact + fail-closed case
   });
 
   it("the default installer fails closed (real ECC install is acceptance-phase only)", async () => {
-    const { resolved, disposition } = scannedFixture("noinstaller");
+    const { resolved, disposition } = await scannedFixture("noinstaller");
     const adapter = createEccAdapter({
       root,
       runner: spyRunner().runner,
@@ -558,7 +558,7 @@ describe("settings-file runtime surface — hook entries / enabledPlugins / env 
   });
 
   it("provision fails closed (no lock) when the installer writes a project-scope settings file", async () => {
-    const { resolved, disposition } = scannedFixture("rogue-settings");
+    const { resolved, disposition } = await scannedFixture("rogue-settings");
     const rogue: EccLeanInstaller = async ({ diff, home: h, root: r }) => {
       const { createHash } = await import("node:crypto");
       const digest = (text: string) => createHash("sha256").update(text, "utf8").digest("hex");
@@ -605,7 +605,7 @@ describe("settings-file runtime surface — hook entries / enabledPlugins / env 
 
 describe("provision — happy path on fixtures", () => {
   it("installs the vetted allowlist, writes a schema-valid lock, records ownership, attests runtime-surface absence", async () => {
-    const { resolved, disposition } = scannedFixture("happy");
+    const { resolved, disposition } = await scannedFixture("happy");
     const adapter = createEccAdapter({
       root,
       runner: spyRunner().runner,
@@ -650,7 +650,7 @@ describe("provision — happy path on fixtures", () => {
   });
 
   it("fails closed (no lock) when the installer writes a forbidden runtime surface", async () => {
-    const { resolved, disposition } = scannedFixture("rogue");
+    const { resolved, disposition } = await scannedFixture("rogue");
     const rogue = fixtureInstaller(undefined, () => ({
       rel: ".claude/hooks/hooks.json",
       content: "{}\n",
@@ -675,7 +675,7 @@ describe("provision — happy path on fixtures", () => {
 
 describe("provision — forged/mismatched disposition rejected before any install (D12)", () => {
   it("rejects a forged (unbranded) disposition and runs no installer", async () => {
-    const { resolved } = scannedFixture("forged");
+    const { resolved } = await scannedFixture("forged");
     const spy = { calls: 0 };
     const forged = {
       digest: resolved.treeDigest,
@@ -700,7 +700,7 @@ describe("provision — forged/mismatched disposition rejected before any instal
   });
 
   it("rejects a disposition whose digest does not match the resolved source", async () => {
-    const { resolved, disposition } = scannedFixture("mismatch");
+    const { resolved, disposition } = await scannedFixture("mismatch");
     const spy = { calls: 0 };
     const mismatched: ResolvedGitSource = { ...resolved, treeDigest: "f".repeat(64) };
     const adapter = createEccAdapter({
@@ -718,7 +718,7 @@ describe("provision — forged/mismatched disposition rejected before any instal
   });
 
   it("re-rejects a second framework (D8 layer 3) even with a valid allow disposition", async () => {
-    const { resolved, disposition } = scannedFixture("d8");
+    const { resolved, disposition } = await scannedFixture("d8");
     const spy = { calls: 0 };
     const adapter = createEccAdapter({
       root,
@@ -741,8 +741,8 @@ describe("provision — forged/mismatched disposition rejected before any instal
 // -- verify -------------------------------------------------------------------
 
 describe("verify — clean after bind, drift on edit / runtime-surface appearance / absent lock", () => {
-  function boundAdapter(name: string) {
-    const { resolved, disposition } = scannedFixture(name);
+  async function boundAdapter(name: string) {
+    const { resolved, disposition } = await scannedFixture(name);
     const adapter = createEccAdapter({
       root,
       runner: spyRunner().runner,
@@ -761,7 +761,7 @@ describe("verify — clean after bind, drift on edit / runtime-surface appearanc
   });
 
   it("reports ok:true with no drift right after a clean bind", async () => {
-    const { adapter, declaration, resolved, disposition } = boundAdapter("verify-clean");
+    const { adapter, declaration, resolved, disposition } = await boundAdapter("verify-clean");
     await adapter.provision({ context: { declaration }, resolved }, disposition);
     const result = adapter.verify({ declaration });
     expect(result.drift).toEqual([]);
@@ -769,7 +769,7 @@ describe("verify — clean after bind, drift on edit / runtime-surface appearanc
   });
 
   it("reports content drift when an installed file is edited after bind", async () => {
-    const { adapter, declaration, resolved, disposition } = boundAdapter("verify-edit");
+    const { adapter, declaration, resolved, disposition } = await boundAdapter("verify-edit");
     await adapter.provision({ context: { declaration }, resolved }, disposition);
     writeFileSync(join(home, ".claude", "agents", "planner.md"), "# tampered\n", "utf8");
     const result = adapter.verify({ declaration });
@@ -778,7 +778,7 @@ describe("verify — clean after bind, drift on edit / runtime-surface appearanc
   });
 
   it("reports drift when a runtime surface appears after a Lean bind", async () => {
-    const { adapter, declaration, resolved, disposition } = boundAdapter("verify-runtime");
+    const { adapter, declaration, resolved, disposition } = await boundAdapter("verify-runtime");
     await adapter.provision({ context: { declaration }, resolved }, disposition);
     mkdirSync(join(home, ".claude", "hooks"), { recursive: true });
     writeFileSync(join(home, ".claude", "hooks", "hooks.json"), "{}\n", "utf8");
@@ -803,7 +803,7 @@ describe("remove — plan/apply separation and missing-lock mode", () => {
   });
 
   it("partitions home-scoped install roots into the apply plan after a bind", async () => {
-    const { resolved, disposition } = scannedFixture("remove");
+    const { resolved, disposition } = await scannedFixture("remove");
     const adapter = createEccAdapter({
       root,
       runner: spyRunner().runner,
@@ -828,7 +828,7 @@ describe("remove — plan/apply separation and missing-lock mode", () => {
 
 describe("report — Framework Card input lines", () => {
   it("includes framework, mode, pin, allowlist, exclusions, absence attestation, and a labeled estimate", async () => {
-    const { resolved, disposition } = scannedFixture("report");
+    const { resolved, disposition } = await scannedFixture("report");
     const adapter = createEccAdapter({
       root,
       runner: spyRunner().runner,
@@ -977,7 +977,7 @@ describe("resolve — delegates to resolveGitSource with the declaration's sourc
 
 describe("Full — mutual exclusivity with Lean (D10 point 5, BOTH directions)", () => {
   async function bindLean(name: string): Promise<void> {
-    const { resolved, disposition } = scannedFixture(name);
+    const { resolved, disposition } = await scannedFixture(name);
     const adapter = createEccAdapter({
       root,
       runner: spyRunner().runner,
@@ -992,7 +992,7 @@ describe("Full — mutual exclusivity with Lean (D10 point 5, BOTH directions)",
   }
 
   async function bindFull(name: string): Promise<void> {
-    const { resolved, disposition } = scannedFullFixture(name);
+    const { resolved, disposition } = await scannedFullFixture(name);
     const adapter = createEccAdapter({
       root,
       runner: spyRunner().runner,
@@ -1019,7 +1019,7 @@ describe("Full — mutual exclusivity with Lean (D10 point 5, BOTH directions)",
 
   it("full provision fails closed over a lean lock (no CLI, lock stays lean)", async () => {
     await bindLean("mx2-lean");
-    const { resolved, disposition } = scannedFullFixture("mx2-full");
+    const { resolved, disposition } = await scannedFullFixture("mx2-full");
     const { runner, calls } = spyRunner();
     const adapter = createEccAdapter({
       root,
@@ -1053,7 +1053,7 @@ describe("Full — mutual exclusivity with Lean (D10 point 5, BOTH directions)",
 
   it("lean provision fails closed over a full lock (no installer, lock stays full)", async () => {
     await bindFull("mx4-full");
-    const { resolved, disposition } = scannedFixture("mx4-lean");
+    const { resolved, disposition } = await scannedFixture("mx4-lean");
     const spy = { calls: 0 };
     const adapter = createEccAdapter({
       root,
@@ -1151,7 +1151,7 @@ describe("Full — plan preview (connector count + env-root fields, D10 point 6)
 
 describe("Full — provision happy path (bindPlugin-driven)", () => {
   it("owns env roots + selected connectors, writes a schema-valid lock with D7 subtree identity", async () => {
-    const { resolved, disposition } = scannedFullFixture("full-happy");
+    const { resolved, disposition } = await scannedFullFixture("full-happy");
     const { runner, calls } = spyRunner();
     const adapter = createEccAdapter({
       root,
@@ -1212,7 +1212,7 @@ describe("Full — provision happy path (bindPlugin-driven)", () => {
   });
 
   it("no connectors selected -> zero .mcp.json writes (env roots still owned)", async () => {
-    const { resolved, disposition } = scannedFullFixture("full-nomcp");
+    const { resolved, disposition } = await scannedFullFixture("full-nomcp");
     const adapter = createEccAdapter({
       root,
       runner: spyRunner().runner,
@@ -1239,7 +1239,7 @@ describe("Full — provision happy path (bindPlugin-driven)", () => {
 
 describe("Full — forged/mismatched disposition rejected before any CLI (D12)", () => {
   it("rejects a forged (unbranded) disposition and runs no CLI", async () => {
-    const { resolved } = scannedFullFixture("full-forged");
+    const { resolved } = await scannedFullFixture("full-forged");
     const { runner, calls } = spyRunner();
     const forged = {
       digest: resolved.treeDigest,
@@ -1263,7 +1263,7 @@ describe("Full — forged/mismatched disposition rejected before any CLI (D12)",
   });
 
   it("rejects a disposition whose digest does not match the resolved source", async () => {
-    const { resolved, disposition } = scannedFullFixture("full-mismatch");
+    const { resolved, disposition } = await scannedFullFixture("full-mismatch");
     const { runner, calls } = spyRunner();
     const mismatched: ResolvedGitSource = { ...resolved, treeDigest: "f".repeat(64) };
     const adapter = createEccAdapter({
@@ -1365,7 +1365,7 @@ describe("Full — verify parity (clean / env-edit / cache-tamper / absent lock)
   });
 
   it("reports ok:true with no drift right after a clean full bind", async () => {
-    const { resolved, disposition } = scannedFullFixture("full-verify-clean");
+    const { resolved, disposition } = await scannedFullFixture("full-verify-clean");
     const adapter = createEccAdapter({
       root,
       runner: spyRunner().runner,
@@ -1381,7 +1381,7 @@ describe("Full — verify parity (clean / env-edit / cache-tamper / absent lock)
   });
 
   it("reports drift when an owned env-root field is edited by hand after bind", async () => {
-    const { resolved, disposition } = scannedFullFixture("full-verify-env");
+    const { resolved, disposition } = await scannedFullFixture("full-verify-env");
     const adapter = createEccAdapter({
       root,
       runner: spyRunner().runner,
@@ -1402,7 +1402,7 @@ describe("Full — verify parity (clean / env-edit / cache-tamper / absent lock)
   });
 
   it("reports drift when the loaded plugin cache tree is tampered after bind (D7 re-check)", async () => {
-    const { resolved, disposition } = scannedFullFixture("full-verify-cache");
+    const { resolved, disposition } = await scannedFullFixture("full-verify-cache");
     let located = resolved.treePath;
     const adapter = createEccAdapter({
       root,
@@ -1437,7 +1437,7 @@ describe("Full — remove parity (partition + plugin/marketplace / missing lock)
   });
 
   it("partitions home-scoped ownership and carries plugin/marketplace after a full bind", async () => {
-    const { resolved, disposition } = scannedFullFixture("full-remove");
+    const { resolved, disposition } = await scannedFullFixture("full-remove");
     const adapter = createEccAdapter({
       root,
       runner: spyRunner().runner,
@@ -1466,7 +1466,7 @@ describe("Full — remove parity (partition + plugin/marketplace / missing lock)
 
 describe("Full — report (Framework Card input lines)", () => {
   it("includes mode:full, pin, connectors, env roots, label decision, and a labeled estimate", async () => {
-    const { resolved, disposition } = scannedFullFixture("full-report");
+    const { resolved, disposition } = await scannedFullFixture("full-report");
     const adapter = createEccAdapter({
       root,
       runner: spyRunner().runner,

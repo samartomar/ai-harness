@@ -13,6 +13,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 
+// Native findings come from the installed @aihq/scan's trust lint; this test
+// reads a Scan that reports only the fixture's planted injection and licence files.
+vi.mock("../../src/scan-package/load-scan-package.js", async (importOriginal) => {
+  const fake = await import("../trust/fakes/installed-fake-scan.js");
+  return fake.withInstalledFakeScan(await importOriginal(), fake.fixtureTrustLint);
+});
+
 const transport = vi.hoisted(() => ({
   archive: vi.fn(),
   forget: vi.fn(),

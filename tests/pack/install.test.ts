@@ -10,7 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import type { Command } from "commander";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner, type Runner } from "../../src/internals/proc.js";
@@ -18,6 +18,13 @@ import { packPlanCommand, runPackInstall } from "../../src/pack/install.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { SKILLSPECTOR_IMAGE_DIGEST } from "../../src/trust/images.js";
 import { PlanResultEnvelopeSchema } from "../contract/envelope-schema.js";
+
+// Native findings come from the installed @aihq/scan's trust lint; this test
+// reads a Scan that reports only the fixture's planted injection and licence files.
+vi.mock("../../src/scan-package/load-scan-package.js", async (importOriginal) => {
+  const fake = await import("../trust/fakes/installed-fake-scan.js");
+  return fake.withInstalledFakeScan(await importOriginal(), fake.fixtureTrustLint);
+});
 
 const CONTEXT_DIR = "ai-coding";
 

@@ -30,6 +30,15 @@ import {
 } from "../../src/trust/evidence.js";
 import { resolveTrustSource } from "../../src/trust/fetch.js";
 import type { TrustScanResult } from "../../src/trust/scan.js";
+import { createFakeScanAdapterForTests } from "../trust/fakes/fake-scan-adapter.js";
+
+// The vet runs through the installed @aihq/scan; this fake declares the uv
+// detectors with their analyzer locks, which is all the plan reads before vetting.
+const fakeScan = createFakeScanAdapterForTests({
+  "detector.cisco": { kind: "refused", reason: "unused", detail: "unused" },
+  "detector.semgrep": { kind: "refused", reason: "unused", detail: "unused" },
+});
+const scanPackageImporter = () => Promise.resolve(fakeScan);
 
 const PIN = "a".repeat(40);
 const REPORT = `.aih/baseline-reports/ecc-${PIN.slice(0, 12)}.json`;
@@ -177,6 +186,7 @@ describe("baseline vet command qualification boundaries", () => {
     const result = await executePlan(
       await baselineVetPlanForSource(ctx, resolveTrustSource(sourceRoot, { root }), sourceCatalog, {
         vetCatalog: controlledVet(true, scan, sourceScan),
+        scanPackageImporter,
         profileId: ECC_UPSTREAM_FULL_PROFILE_ID,
       }),
       ctx,
@@ -256,6 +266,7 @@ describe("baseline vet command qualification boundaries", () => {
         executePlan(
           await baselineVetPlanForSource(ctx, resolveTrustSource(sourceRoot, { root }), catalog(), {
             vetCatalog: controlledVet(true, cleanScan, scan),
+            scanPackageImporter,
             profileId: ECC_UPSTREAM_FULL_PROFILE_ID,
           }),
           ctx,
@@ -275,6 +286,7 @@ describe("baseline vet command qualification boundaries", () => {
     const result = await executePlan(
       await baselineVetPlanForSource(ctx, resolveTrustSource(sourceRoot, { root }), catalog(), {
         vetCatalog: controlledVet(true),
+        scanPackageImporter,
         profileId: ECC_UPSTREAM_FULL_PROFILE_ID,
       }),
       ctx,
@@ -310,6 +322,7 @@ describe("baseline vet command qualification boundaries", () => {
       executePlan(
         await baselineVetPlanForSource(ctx, resolveTrustSource(sourceRoot, { root }), catalog(), {
           vetCatalog: controlledVet(false),
+          scanPackageImporter,
           profileId: ECC_UPSTREAM_FULL_PROFILE_ID,
         }),
         ctx,

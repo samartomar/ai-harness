@@ -10,7 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner, type Runner, type RunResult } from "../../src/internals/proc.js";
@@ -19,6 +19,19 @@ import type { SkillShape } from "../../src/skill/shape.js";
 import type { SkillVerdict } from "../../src/skill/verdict.js";
 import { type SkillVetEvidence, skillVetCommand } from "../../src/skill/vet.js";
 import { SKILLSPECTOR_IMAGE_DIGEST } from "../../src/trust/images.js";
+import { fakeTrustLintScan } from "../trust/fakes/fake-trust-lint.js";
+import {
+  fixtureTrustLint,
+  resetInstalledFakeScan,
+  setInstalledFakeScan,
+} from "../trust/fakes/installed-fake-scan.js";
+
+// Native findings come from the installed @aihq/scan's trust lint; this test
+// reads a Scan that reports only the fixture's planted injection and licence files.
+vi.mock("../../src/scan-package/load-scan-package.js", async (importOriginal) => {
+  const fake = await import("../trust/fakes/installed-fake-scan.js");
+  return fake.withInstalledFakeScan(await importOriginal(), fake.fixtureTrustLint);
+});
 
 interface VetDigestData {
   source: string;
@@ -34,6 +47,7 @@ let workspace: string;
 let sourceRoot: string;
 
 beforeEach(() => {
+  resetInstalledFakeScan();
   workspace = mkdtempSync(join(tmpdir(), "aih-skill-vet-root-"));
   sourceRoot = mkdtempSync(join(tmpdir(), "aih-skill-vet-source-"));
 });
@@ -82,9 +96,20 @@ function githubFetchRunner(
   pin: string,
   metadataMutation?: "remove" | "unreadable" | "corrupt" | "mismatch" | "changed-during-scan",
 ): Runner {
-  const detectors = detectorRunner();
   let metadataPath: string | undefined;
   let metadata: Record<string, string> | undefined;
+  // The fetched record changes while Scan is running SkillSpector over the tree.
+  const detectors = detectorRunner({
+    duringSkillspector: () => {
+      if (metadataMutation !== "changed-during-scan") return;
+      if (metadataPath === undefined || metadata === undefined) return;
+      writeFileSync(
+        metadataPath,
+        JSON.stringify({ ...metadata, pinnedSha: "b".repeat(40) }),
+        "utf8",
+      );
+    },
+  });
   return async (argv, opts) => {
     if (argv[0] === process.execPath && argv[1] === "-e") {
       const input = JSON.parse(argv[3] ?? "{}") as {
@@ -144,19 +169,6 @@ function githubFetchRunner(
       }
       return { code: 0, stdout: "", stderr: "" };
     }
-    if (
-      metadataMutation === "changed-during-scan" &&
-      argv[0] === "docker" &&
-      argv[1] === "run" &&
-      metadataPath !== undefined &&
-      metadata !== undefined
-    ) {
-      writeFileSync(
-        metadataPath,
-        JSON.stringify({ ...metadata, pinnedSha: "b".repeat(40) }),
-        "utf8",
-      );
-    }
     return detectors(argv, opts);
   };
 }
@@ -164,12 +176,32 @@ function githubFetchRunner(
 /** Stubs the full optional detector ladder so no detector-unavailable skip degrades the verdict. */
 function detectorRunner(
   options: {
+    duringSkillspector?: () => void;
     imageInspect?: Partial<RunResult>;
     seenSmoke?: string[][];
     skillspectorSarif?: unknown;
     smoke?: Partial<RunResult>;
   } = {},
 ): Runner {
+  // The detectors run in the installed Scan, which reports source-relative SARIF.
+  const clean = JSON.stringify({ version: "2.1.0", runs: [] });
+  setInstalledFakeScan(
+    fakeTrustLintScan(fixtureTrustLint, {
+      "detector.skillspector": {
+        kind: "sarif-for",
+        sarif: () => {
+          options.duringSkillspector?.();
+          return options.skillspectorSarif === undefined
+            ? clean
+            : JSON.stringify(options.skillspectorSarif);
+        },
+      },
+      "detector.cisco": { kind: "sarif", sarif: clean },
+      "detector.snyk-agent-scan": { kind: "sarif", sarif: clean },
+      "detector.semgrep": { kind: "sarif", sarif: clean },
+    }),
+  );
+  // The sandbox smoke check still runs in Core.
   return fakeRunner((argv) => {
     if (
       argv[0] === "docker" &&
@@ -269,7 +301,7 @@ describe("skillVetCommand", () => {
             locations: [
               {
                 physicalLocation: {
-                  artifactLocation: { uri: "/scan/LICENSE.txt" },
+                  artifactLocation: { uri: "LICENSE.txt" },
                   region: { startLine },
                 },
               },
