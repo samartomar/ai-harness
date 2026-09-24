@@ -4,7 +4,6 @@ import type { OrgPolicy } from "../org-policy/schema.js";
 import {
   FRAMEWORK_IDS_V1,
   type FrameworkHookEnvironmentPatchV1,
-  type FrameworkHostServicesV1,
   type FrameworkIdV1,
 } from "./contract-v1.js";
 import { frameworkHookControlEntriesV1 } from "./hook-controls.js";
@@ -16,24 +15,10 @@ import {
   type FrameworkCommandDepsV1,
   frameworkOperationContextV1,
   requireFrameworkPluginV1,
+  selfContainedFrameworkHostV1,
 } from "./run-framework-command.js";
 
 export type { FrameworkHookEnvironmentPlansV1 } from "./hook-environment.js";
-
-/** Hook planning is read-only: the operation gets no executor and no runtime. */
-function planningHost(ctx: PlanContext): FrameworkHostServicesV1 {
-  const refuseEffect = async (): Promise<never> => {
-    throw new AihError(
-      "a framework plugin requested an effect while planning hook controls",
-      "AIH_FRAMEWORK_PLUGIN",
-    );
-  };
-  return Object.freeze({
-    runEvidenceGatedInstall: refuseEffect,
-    executePlan: refuseEffect,
-    progress: (message: string) => ctx.progress?.(message),
-  });
-}
 
 /**
  * Ask each framework's plugin for the hook-control plan the two authorities
@@ -53,10 +38,11 @@ export async function frameworkHookEnvironmentPlansV1(
     const { enterprise, user } = frameworkHookControlEntriesV1(frameworkId, policy, ctx.root);
     if (enterprise === undefined && user === undefined) continue;
     const loaded = await requireFrameworkPluginV1(frameworkId, deps);
+    // Hook planning is read-only: the operation gets no executor and no runtime.
     const context = await frameworkOperationContextV1(
       loaded,
       { ...ctx, targets: ctx.targets ?? ["claude"] },
-      { policy, options: {}, host: planningHost(ctx) },
+      { policy, options: {}, host: selfContainedFrameworkHostV1(ctx, "planning hook controls") },
       deps,
     );
     const plan = loaded.plugin.planHookControls(context, context.policy.hookControls);

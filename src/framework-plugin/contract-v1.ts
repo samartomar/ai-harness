@@ -374,20 +374,37 @@ export interface FrameworkCommandV1 {
   execute(ctx: FrameworkOperationContextV1): Promise<PlanResult>;
 }
 
-/** Outcome of a framework's uninstall planning (Core call site: `aih uninstall`). */
-export type FrameworkUninstallResultV1 =
-  | { readonly state: "absent" }
-  | { readonly state: "planned"; readonly plan: Plan }
-  | { readonly state: "unprovable"; readonly detail: string };
-
-/** Framework-owned state removal for `aih uninstall`. */
-export interface FrameworkUninstallHookV1 {
-  plan(ctx: FrameworkOperationContextV1): Promise<FrameworkUninstallResultV1>;
+/** What a framework's receipt-proven removal did (Core call site: `aih uninstall --apply`). */
+export interface FrameworkUninstallOutcomeV1 {
+  /** POSIX paths relative to the target root, removed because the receipt proved aih wrote them. */
+  readonly removed: readonly string[];
+  /** Destinations kept because their ownership could not be proven, with the reason. */
+  readonly advisories: readonly {
+    readonly path: string;
+    readonly reason: string;
+    readonly detail: string;
+  }[];
 }
 
-/** Framework reconciliation for targets `aih prune` drops. */
+/**
+ * Framework-owned state removal for `aih uninstall`. Core reads the receipt
+ * and decides; it calls `remove` only under `--apply`, after its own cleanup
+ * succeeded, and the plugin removes exactly what the receipt proves.
+ */
+export interface FrameworkUninstallHookV1 {
+  remove(ctx: FrameworkOperationContextV1): Promise<FrameworkUninstallOutcomeV1>;
+}
+
+/** A framework's share of an `aih prune` plan. */
+export interface FrameworkPrunePlanV1 {
+  readonly actions: readonly Action[];
+  /** How many managed files the actions subtract framework content from. */
+  readonly subtracted: number;
+}
+
+/** Framework reconciliation for targets `aih prune` drops; Core executes the actions in its prune plan. */
 export interface FrameworkPruneHookV1 {
-  plan(ctx: FrameworkOperationContextV1, dropped: readonly Cli[]): Promise<readonly Action[]>;
+  plan(ctx: FrameworkOperationContextV1, dropped: readonly Cli[]): Promise<FrameworkPrunePlanV1>;
 }
 
 /** Framework-owned read-only checks for `aih doctor`. */

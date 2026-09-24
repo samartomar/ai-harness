@@ -111,6 +111,44 @@ export async function frameworkOperationContextV1(
   });
 }
 
+/**
+ * Host services for a plugin operation that runs without Core's runtime
+ * (hook planning, doctor, report, uninstall removal, prune planning): no
+ * executor, and any effect request is refused.
+ */
+export function selfContainedFrameworkHostV1(
+  ctx: PlanContext,
+  operation: string,
+): FrameworkHostServicesV1 {
+  const refuseEffect = async (): Promise<never> => {
+    throw new AihError(
+      `a framework plugin requested an effect while ${operation}`,
+      "AIH_FRAMEWORK_PLUGIN",
+    );
+  };
+  return Object.freeze({
+    runEvidenceGatedInstall: refuseEffect,
+    executePlan: refuseEffect,
+    progress: (message: string) => ctx.progress?.(message),
+  });
+}
+
+/** The operation context for one self-contained plugin operation (see {@link selfContainedFrameworkHostV1}). */
+export function selfContainedFrameworkContextV1(
+  loaded: LoadedFrameworkPluginV1,
+  ctx: PlanContext,
+  operation: string,
+  policy: OrgPolicy | undefined,
+  deps: Pick<FrameworkCommandDepsV1, "loadDescriptor"> = {},
+): Promise<FrameworkOperationContextV1> {
+  return frameworkOperationContextV1(
+    loaded,
+    { ...ctx, targets: ctx.targets ?? [] },
+    { policy, options: {}, host: selfContainedFrameworkHostV1(ctx, operation) },
+    deps,
+  );
+}
+
 interface OpenFrameworkInvocationV1 {
   readonly context: FrameworkOperationContextV1;
   readonly produced: WeakSet<object>;
@@ -218,6 +256,26 @@ export async function executeFrameworkCommandV1(
       await command.execute(opened.context),
       opened.produced,
     );
+  } finally {
+    opened.bound?.revoke();
+  }
+}
+
+/**
+ * Run one plugin operation that is part of a Core command but returns no plan
+ * result (prune planning): the same invocation, runtime binding and
+ * revocation as a command; `body` validates what the plugin returns.
+ */
+export async function withFrameworkInvocationV1<T>(
+  loaded: LoadedFrameworkPluginV1,
+  operation: string,
+  invocation: FrameworkInvocationV1,
+  deps: FrameworkCommandDepsV1,
+  body: (context: FrameworkOperationContextV1) => Promise<T>,
+): Promise<T> {
+  const opened = await openFrameworkInvocationV1(loaded, operation, invocation, deps);
+  try {
+    return await body(opened.context);
   } finally {
     opened.bound?.revoke();
   }

@@ -16,9 +16,6 @@
  * | Core call site | Exports | Phase-2 contract member |
  * | --- | --- | --- |
  * | delivery report (src/org-policy/policy-delivery-report.ts) — SYNC | `describeEccEffectiveDiscovery`, `inspectDestination`, `materializationRoot`, `ownedFragmentDigest`, `parseJsonObject`, `GOVERNED_MATERIALIZATION_TARGETS`, `ownedFileSha256`, `readEccMaterializationReceipt`, `inspectGovernedCodexRoleRegistration` and their types | `report`, `receipts` |
- * | policy binding (src/org-policy/binding.ts) — SYNC | `readEccMaterializationReceipt` | `receipts` |
- * | uninstall (src/uninstall/ecc-materialization.ts) — SYNC | `uninstallEccMaterialization`, `readEccMaterializationReceipt`, `ECC_MATERIALIZATION_RECEIPT_PATH`, `displaySafe` | `uninstall` |
- * | prune (src/prune/index.ts) — SYNC | `codexPruneRemovalActions`, `eccPruneReconciliationActions`, `hasEccRegisteredTarget`, `hasEccRegistrationLedger`, `isAihDirectEccInstallTarget` | `prune` |
  * | doctor (src/doctor.ts) — SYNC | `readExplicitEccMcpReceiptStates` | `doctor` |
  * | capability package manager (src/capability/package-graph/adapters/ecc-*.ts, src/capability/package-manager/{live-context,domains/mixed-coordinator}.ts) — SYNC | `ECC_MATERIALIZATION_RECEIPT_PATH`, `ECC_MCP_EXPLICIT_ADD_RECEIPT_PATH`, `parseEccMaterializationReceipt`, `readEccMaterializationReceipt`, `parseExplicitAddReceipt`, `explicitEccMcpRenderPlan`, `planExplicitEccMcpRemove`, `readExplicitEccMcpReceiptStates`, `planEccComponentSubtraction` | `receipts` plus ECC MCP add/remove planning |
  * | report (src/report/v9-panels.ts, src/report/v9.ts) — SYNC | `eccLanguages`, `EccLanguagePack` | `report` |
@@ -29,7 +26,10 @@
  * Done in phase 2: `aih ecc` and `aih ecc mcp add|remove` run through the
  * plugin's `commands` (src/framework-plugin/ecc-command.ts), and governed
  * delivery (`aih policy project`, `aih init` on a bound project) through its
- * `policyDelivery` hook (src/org-policy/validate.ts).
+ * `policyDelivery` hook (src/org-policy/validate.ts); `aih uninstall` removes
+ * receipt-proven ECC content through its `uninstall` hook and `aih prune` plans
+ * ECC's share through its `prune` hook (src/framework-plugin/ecc-lifecycle.ts).
+ * The state aih writes for ECC (receipts, registration ledger) stays in Core.
  *
  * The generic runtime parts of `src/ecc-profile/**` (default MCP runtimes for
  * Serena, Code Review Graph, Codebase Memory and MarkItDown, `hook-core.ts`,
@@ -37,24 +37,18 @@
  * are not framework code and stay in Core; they are not routed here.
  */
 
-export { codexPruneRemovalActions } from "../ecc/codex.js";
 export type { EccMcpComponentId } from "../ecc/components.js";
 export {
   describeEccEffectiveDiscovery,
   type EccEffectiveDiscoveryReport,
 } from "../ecc/effective-discovery.js";
-export {
-  ECC_NPM_BINS,
-  ECC_NPM_PACKAGE,
-  isAihDirectEccInstallTarget,
-} from "../ecc/install.js";
+export { ECC_NPM_BINS, ECC_NPM_PACKAGE } from "../ecc/install.js";
 export {
   type EccInstallPreviewArtifact,
   parseEccInstallPreview,
   readEccInstallPreview,
 } from "../ecc/install-preview.js";
 export { ECC_INSTALL_TARGETS } from "../ecc/install-targets.js";
-export { uninstallEccMaterialization } from "../ecc/materialization.js";
 export { inspectDestination, materializationRoot } from "../ecc/materialization-fs.js";
 export {
   ownedFragmentDigest,
@@ -85,11 +79,6 @@ export {
   ECC_MCP_EXPLICIT_ADD_RECEIPT_PATH,
   parseExplicitAddReceipt,
 } from "../ecc/mcp-explicit-add-receipt.js";
-export {
-  eccPruneReconciliationActions,
-  hasEccRegisteredTarget,
-  hasEccRegistrationLedger,
-} from "../ecc/prune-reconcile.js";
 export {
   type RegistrationLedger,
   readRegistrationLedger,

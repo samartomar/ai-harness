@@ -8,6 +8,8 @@ import {
   readAihConfig,
   readPolicyBinding,
 } from "../config/marker.js";
+import { prepareEccMaterializationRemovalV1 } from "../framework-plugin/ecc-lifecycle.js";
+import type { FrameworkCommandDepsV1 } from "../framework-plugin/run-framework-command.js";
 import { bootloadersFor, entry, REGISTRY_IDS } from "../internals/cli-registry.js";
 import { inspectContainedRelativePath } from "../internals/contained-path.js";
 import { executePlan, type PlanResult } from "../internals/execute.js";
@@ -65,7 +67,6 @@ import {
   ECC_MATERIALIZATION_RECEIPT_PATH,
   type EccMaterializationRemovalOutcome,
   eccMaterializationUninstallState,
-  removeEccMaterialization,
 } from "./ecc-materialization.js";
 
 type UninstallDisposition = "backup" | "subtract" | "advisory";
@@ -978,15 +979,31 @@ function uninstallPlan(ctx: PlanContext): Plan {
 /** Execute receipt-only cleanup in explicit, independently recoverable phases. */
 export async function executeUninstallCommand(
   ctx: PlanContext,
-  deps: { removeMaterialization?: typeof removeEccMaterialization } = {},
+  deps: {
+    /** Test seam for the ECC removal; production runs it through @aihq/framework-ecc. */
+    removeMaterialization?: (
+      root: string,
+    ) => EccMaterializationRemovalOutcome | Promise<EccMaterializationRemovalOutcome>;
+    frameworks?: FrameworkCommandDepsV1;
+  } = {},
 ): Promise<PlanResult> {
   const prepared = uninstallPlan(ctx);
   const set = prepared.actions.find((action) => action.kind === "digest")?.data as UninstallSet;
+  // Receipt-proven ECC content is removed by the ECC plugin: load it before any
+  // cleanup runs, so a missing plugin refuses (framework-plugin-unavailable)
+  // with nothing touched.
+  const removeEcc =
+    set.removeEccMaterialization === true && deps.removeMaterialization === undefined
+      ? await prepareEccMaterializationRemovalV1(ctx, deps.frameworks)
+      : undefined;
   const result = await executePlan(prepared, ctx);
   if (!ctx.apply || !set.removeEccMaterialization || (result.report && !result.report.ok))
     return result;
   try {
-    const outcome = (deps.removeMaterialization ?? removeEccMaterialization)(ctx.root);
+    const outcome =
+      deps.removeMaterialization !== undefined
+        ? await deps.removeMaterialization(ctx.root)
+        : await (removeEcc as () => Promise<EccMaterializationRemovalOutcome>)();
     const receiptRetained = exists(ctx, ECC_MATERIALIZATION_RECEIPT_PATH);
     const actual = withMaterializationOutcome(set, outcome, receiptRetained);
     const report = result.report ?? new VerificationReport();

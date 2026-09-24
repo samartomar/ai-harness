@@ -29,7 +29,6 @@ import { orgPolicyPath } from "../../../../src/org-policy/schema.js";
 import { executePolicyProjectCommand } from "../../../../src/org-policy/validate.js";
 import { makeHostAdapter } from "../../../../src/platform/detect.js";
 import { resolveTrustSource } from "../../../../src/trust/fetch.js";
-import { removeEccMaterialization } from "../../../../src/uninstall/ecc-materialization.js";
 import {
   executeGovernedEccMaterialization,
   type GovernedEccHistoricalContext,
@@ -37,6 +36,8 @@ import {
 import { eccMaterializationReceiptPath } from "../../src/ecc/materialization.js";
 import { executeEccCommand } from "../../src/ecc/pipeline.js";
 import { currentEccRuntimeAdapterCompatibilityV1 } from "../../src/ecc/runtime-adapter-compatibility.js";
+import { uninstall } from "../../src/lifecycle-hooks.js";
+import { operationContext } from "../context.js";
 import { eccCoreDeps } from "../core-deps.js";
 
 /**
@@ -1179,10 +1180,10 @@ describe("F4 — the governed framework lifecycle for the Codex target", () => {
 
     // Removal is the shipped `aih uninstall` member, receipt-bound and
     // target-agnostic: the receipt is what proves ownership, not the flag.
-    const removed = removeEccMaterialization(root);
+    const removed = await uninstall.remove(operationContext({ root }));
 
     expect(removed.advisories).toEqual([]);
-    expect(removed.removed.sort()).toEqual(
+    expect([...removed.removed].sort()).toEqual(
       CODEX_MATERIALIZED.map((file) => file.destination).sort(),
     );
     for (const file of CODEX_MATERIALIZED) {
@@ -1423,10 +1424,10 @@ describe("F4 — the governed framework lifecycle for the Kimi target", () => {
     expect(existsSync(join(root, ".kimi"))).toBe(false);
     expect(existsSync(eccMaterializationReceiptPath(root))).toBe(true);
 
-    const removed = removeEccMaterialization(root);
+    const removed = await uninstall.remove(operationContext({ root }));
 
     expect(removed.advisories).toEqual([]);
-    expect(removed.removed.sort()).toEqual(KIMI_MATERIALIZED.map((f) => f.destination).sort());
+    expect([...removed.removed].sort()).toEqual(KIMI_MATERIALIZED.map((f) => f.destination).sort());
     for (const file of KIMI_MATERIALIZED) {
       expect(existsSync(join(root, ...file.destination.split("/"))), file.destination).toBe(false);
     }
@@ -1590,10 +1591,12 @@ describe("F4 — the governed framework lifecycle for the Cursor target", () => 
     expect(existsSync(join(root, ".claude", "agents", "code-reviewer.md"))).toBe(false);
     expect(existsSync(eccMaterializationReceiptPath(root))).toBe(true);
 
-    const removed = removeEccMaterialization(root);
+    const removed = await uninstall.remove(operationContext({ root }));
 
     expect(removed.advisories).toEqual([]);
-    expect(removed.removed.sort()).toEqual(CURSOR_MATERIALIZED.map((f) => f.destination).sort());
+    expect([...removed.removed].sort()).toEqual(
+      CURSOR_MATERIALIZED.map((f) => f.destination).sort(),
+    );
     for (const file of CURSOR_MATERIALIZED) {
       expect(existsSync(join(root, ...file.destination.split("/"))), file.destination).toBe(false);
     }
@@ -1838,10 +1841,10 @@ describe("F4 — the governed framework lifecycle for the OpenCode target", () =
     await runLifecycle("install", true, "opencode");
     expect(existsSync(eccMaterializationReceiptPath(root))).toBe(true);
 
-    const removed = removeEccMaterialization(root);
+    const removed = await uninstall.remove(operationContext({ root }));
 
     expect(removed.advisories).toEqual([]);
-    expect(removed.removed.sort()).toEqual(
+    expect([...removed.removed].sort()).toEqual(
       OPENCODE_MATERIALIZED.map((file) => file.destination).sort(),
     );
     for (const file of OPENCODE_MATERIALIZED) {
@@ -2017,7 +2020,7 @@ describe("the governed framework lifecycle for the Kiro target", () => {
     await runLifecycle("install", true, "kiro");
     writeTree(root, { ".kiro/agents/operator.json": '{"name":"operator"}\n' });
 
-    const removed = removeEccMaterialization(root);
+    const removed = await uninstall.remove(operationContext({ root }));
 
     expect(removed.removed).toContain(".kiro/agents/code-reviewer.json");
     expect(removed.removed).toContain(".kiro/agents/code-reviewer.md");

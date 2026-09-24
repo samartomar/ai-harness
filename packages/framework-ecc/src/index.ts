@@ -22,6 +22,7 @@ import {
   UPSTREAM,
 } from "./identity.js";
 import { currentCoreRuntime, withEccInvocation } from "./invocation.js";
+import { prune, uninstall } from "./lifecycle-hooks.js";
 import { eccPolicyDelivery } from "./policy-delivery.js";
 
 function describe(): FrameworkPluginDescriptionV1 {
@@ -74,4 +75,6 @@ export const aihFrameworkPluginV1: FrameworkPluginV1 = Object.freeze({
     "ecc mcp remove": commandOf(eccMcpRemoveCommand),
   }),
   policyDelivery: eccPolicyDelivery(),
+  uninstall,
+  prune,
 });
