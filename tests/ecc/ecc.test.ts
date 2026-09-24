@@ -2554,6 +2554,16 @@ describe("Codex managed destination safety", () => {
         expect(existsSync(directory)).toBe(false);
       });
 
+      it("refuses a check after close", () => {
+        const { record, valid } = recordedStep();
+        record.open();
+        writeFileSync(record.path, JSON.stringify(valid), "utf8");
+        record.close();
+
+        expect(() => record.check({ code: 78, stdout: "", stderr: "" })).toThrow(/closed/);
+        expect(() => record.check({ code: 1, stdout: "", stderr: "" })).toThrow(/closed/);
+      });
+
       it("refuses a second open", () => {
         const { record } = recordedStep();
         record.open();

@@ -1215,8 +1215,16 @@ export class ChromeDevtoolsOptOutRefusalRecord implements ExecSidecar {
     rmSync(dirname(this.path), { recursive: true, force: true });
   }
 
-  /** The typed check for this step's refusal; undefined for any other failure. */
+  /**
+   * The typed check for this step's refusal; undefined for any other failure.
+   * Refused after close(): the record is gone and a later call must not read anything.
+   */
   check(result: RunResult): Check | undefined {
+    if (this.state === "closed")
+      throw new AihError(
+        `the ECC Codex refusal record ${this.path} is closed; its check must run before the step's record is removed`,
+        "AIH_TRUST",
+      );
     if (result.code !== CHROME_DEVTOOLS_OPT_OUT_REFUSAL_EXIT) return undefined;
     const refusals = this.refusals();
     return refusals === undefined ? undefined : chromeDevtoolsOptOutCheck(refusals);
