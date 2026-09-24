@@ -32,6 +32,7 @@
     "src/ecc-profile/serena-runtime",
     "src/ecc-profile/default-mcp-runtime",
     "src/ecc-profile/markitdown-runtime",
+    "src/tools/headroom-runtime",
     "tools/cisco-skill-scanner",
     "tools/trust-scanners",
     "packs",
