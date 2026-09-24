@@ -276,7 +276,14 @@ function stageAndPack() {
     rmSync(stage, { recursive: true, force: true });
     mkdirSync(stage, { recursive: true });
     must(run(process.execPath, [tsupCli, "--out-dir", join(stage, "dist")], source), `${name} tsup build`);
-    for (const file of ["package.json", "README.md", "LICENSE"]) cpSync(join(source, file), join(stage, file));
+    // The manifest plus every other entry it ships (README, LICENSE, the ECC opt-out
+    // predicate module); a declared entry that is missing fails the build.
+    cpSync(join(source, "package.json"), join(stage, "package.json"));
+    for (const entry of JSON.parse(readFileSync(join(source, "package.json"), "utf8")).files) {
+      if (entry === "dist") continue;
+      mkdirSync(dirname(join(stage, entry)), { recursive: true });
+      cpSync(join(source, entry), join(stage, entry), { recursive: true });
+    }
     plugins[name] = pack(stage, name);
   }
   // ---- the Catalog candidate: a tarball used as it is, or a checkout packed as it is -------

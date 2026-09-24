@@ -243,7 +243,14 @@ try {
       run(process.execPath, [join(repo, "node_modules/tsup/dist/cli-default.js"), "--out-dir", join(pluginStage, "dist")], pluginSource),
       "framework-ecc tsup",
     );
-    for (const file of ["package.json", "README.md", "LICENSE"]) cpSync(join(pluginSource, file), join(pluginStage, file));
+    // The manifest plus every other entry it ships (README, LICENSE, the ECC opt-out
+    // predicate module); a declared entry that is missing fails the build.
+    cpSync(join(pluginSource, "package.json"), join(pluginStage, "package.json"));
+    for (const entry of JSON.parse(readFileSync(join(pluginSource, "package.json"), "utf8")).files) {
+      if (entry === "dist") continue;
+      mkdirSync(dirname(join(pluginStage, entry)), { recursive: true });
+      cpSync(join(pluginSource, entry), join(pluginStage, entry), { recursive: true });
+    }
     const pluginPacked = JSON.parse(
       must(npmRun(["pack", "--json", "--ignore-scripts", "--pack-destination", work], pluginStage), "framework-ecc npm pack"),
     );
