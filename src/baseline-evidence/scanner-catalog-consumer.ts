@@ -320,10 +320,12 @@ export function collectionCoverageV1(
 /**
  * Collection coverage when the Scanner requests were authored from the disjoint
  * whole-repository inventory (`--definition` in inventory form). The coverage partition is
- * that inventory itself, so the expected publication layout equals the requests T1 authored.
- * Each inventory component binds the admitted asset `<id>/<component id>`, and every
- * upstream asset of the admitted source must be one of them: a bundle compiled from another
- * partition is refused, never mapped.
+ * that inventory itself, so the expected publication layout equals the requests T1 authored,
+ * and every inventory component keeps its scan coverage whatever its asset count. Compiled
+ * assets bind zero-to-many: each upstream asset of the admitted source belongs to the one
+ * component whose scanned files hold its original path, and an asset no component scans is
+ * refused, never mapped. A documentation or runtime component with no asset is still
+ * covered by its scan; derived assets stay unmapped.
  */
 export function inventoryCollectionCoverageV1(
   sourceRoot: string,
@@ -333,33 +335,70 @@ export function inventoryCollectionCoverageV1(
   if (admitted.source.revision.id !== catalog.pinnedSha) {
     throw new TypeError("Scanner source differs from the admitted Catalog revision.");
   }
-  const assetIds = new Set(admitted.assets.map((asset) => asset.id));
-  const expected = new Set(catalog.components.map((component) => `${catalog.id}/${component.id}`));
-  for (const component of catalog.components)
-    if (!assetIds.has(`${catalog.id}/${component.id}`))
+  const components = catalog.components.map((component) => {
+    const material = hashComponentTree(sourceRoot, component.paths);
+    return {
+      componentId: component.id,
+      componentTreeSha256: material.treeSha256,
+      paths: component.paths,
+      files: material.files.map((file) => ({ path: file.path, digest: `sha256:${file.sha256}` })),
+      subjects: [] as ReturnType<typeof assetSubjectV1>[],
+    };
+  });
+  const upstream = admitted.assets
+    .filter((asset) => asset.derivation === "upstream")
+    .sort((left, right) => codeUnitCompare(left.id, right.id));
+  for (const asset of upstream) {
+    const owners = components.filter((component) =>
+      component.files.some((file) => file.path === asset.originalPath),
+    );
+    if (owners.length !== 1)
       fail(
-        `inventory component ${component.id} has no compiled asset ${catalog.id}/${component.id}`,
+        `admitted upstream asset ${asset.id} names ${asset.originalPath}, which ${owners.length === 0 ? "no inventory component scans" : "more than one inventory component scans"}`,
       );
-  for (const asset of admitted.assets)
-    if (asset.derivation === "upstream" && !expected.has(asset.id))
-      fail(`the inventory does not cover admitted upstream asset ${asset.id}`);
-  return declaredCollectionCoverageV1(
-    sourceRoot,
-    catalog,
-    `sha256:${canonicalStrictJsonSha256V1(catalog)}`,
-    `https://github.com/${catalog.owner}/${catalog.repo}`,
-    admitted,
-  );
+    owners[0]?.subjects.push(assetSubjectV1(asset));
+  }
+  const coverage = {
+    ...collectionCoverageHeaderV1(
+      sourceRoot,
+      catalog,
+      `sha256:${canonicalStrictJsonSha256V1(catalog)}`,
+      `https://github.com/${catalog.owner}/${catalog.repo}`,
+      admitted,
+    ),
+    components,
+    unmappedDerivedAssets: unmappedDerivedAssetsV1(admitted),
+  };
+  return { catalog, coverage, coverageDigest: `sha256:${canonicalStrictJsonSha256V1(coverage)}` };
 }
 
-function declaredCollectionCoverageV1(
+/** A compiled asset's identity, as a coverage component names it. */
+function assetSubjectV1(declaration: AdmittedCatalogSourceV1["assets"][number]) {
+  return {
+    assetId: declaration.id,
+    sourceId: declaration.sourceId,
+    sourceRevisionId: declaration.sourceRevisionId,
+    contentDigest: declaration.contentDigest,
+  };
+}
+
+// Derived compositions need their own Core composition check. Never invent
+// another upstream component or silently inherit a constituent's scan pass.
+function unmappedDerivedAssetsV1(admitted: AdmittedCatalogSourceV1): string[] {
+  return admitted.assets
+    .filter((declaration) => declaration.derivation !== "upstream")
+    .map((declaration) => declaration.id)
+    .sort(codeUnitCompare);
+}
+
+function collectionCoverageHeaderV1(
   sourceRoot: string,
   catalog: BaselineCatalog,
   compilerInputDigest: string,
   repository: string,
   admitted: AdmittedCatalogSourceV1,
 ) {
-  const coverage = {
+  return {
     version: "workbench-scanner-coverage/v1" as const,
     authority: "none" as const,
     scope: "declared-source-files" as const,
@@ -374,6 +413,18 @@ function declaredCollectionCoverageV1(
     repository: `${catalog.owner}/${catalog.repo}`,
     pinnedCommit: catalog.pinnedSha,
     sourceTreeSha256: hashSourceTree(sourceRoot).treeSha256,
+  };
+}
+
+function declaredCollectionCoverageV1(
+  sourceRoot: string,
+  catalog: BaselineCatalog,
+  compilerInputDigest: string,
+  repository: string,
+  admitted: AdmittedCatalogSourceV1,
+) {
+  const coverage = {
+    ...collectionCoverageHeaderV1(sourceRoot, catalog, compilerInputDigest, repository, admitted),
     components: catalog.components.map((component) => {
       const declaration = admitted.assets.find(
         (candidate) => candidate.id === `${catalog.id}/${component.id}`,
@@ -389,20 +440,10 @@ function declaredCollectionCoverageV1(
           path: file.path,
           digest: `sha256:${file.sha256}`,
         })),
-        subject: {
-          assetId: declaration.id,
-          sourceId: declaration.sourceId,
-          sourceRevisionId: declaration.sourceRevisionId,
-          contentDigest: declaration.contentDigest,
-        },
+        subject: assetSubjectV1(declaration),
       };
     }),
-    // Derived compositions need their own Core composition check. Never invent
-    // another upstream component or silently inherit a constituent's scan pass.
-    unmappedDerivedAssets: admitted.assets
-      .filter((declaration) => declaration.derivation !== "upstream")
-      .map((declaration) => declaration.id)
-      .sort(codeUnitCompare),
+    unmappedDerivedAssets: unmappedDerivedAssetsV1(admitted),
   };
   return { catalog, coverage, coverageDigest: `sha256:${canonicalStrictJsonSha256V1(coverage)}` };
 }

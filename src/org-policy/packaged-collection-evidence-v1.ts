@@ -54,25 +54,39 @@ export const ScannerPublicationProjectionV1Schema = z
         message: "publication locator does not bind publisher and request",
       });
   });
-const componentSchema = z
+const subjectSchema = z
   .object({
-    componentId: z.string().min(1).max(240),
-    componentTreeSha256: sha,
-    paths: z.array(safePath).min(1).max(10_000),
-    files: z
-      .array(z.object({ path: safePath, digest }).strict())
-      .min(1)
-      .max(20_000),
-    subject: z
-      .object({
-        assetId: z.string().min(1).max(240),
-        sourceId: z.string().min(1).max(240),
-        sourceRevisionId: z.string().min(1).max(240),
-        contentDigest: digest,
-      })
-      .strict(),
+    assetId: z.string().min(1).max(240),
+    sourceId: z.string().min(1).max(240),
+    sourceRevisionId: z.string().min(1).max(240),
+    contentDigest: digest,
   })
   .strict();
+const componentFields = {
+  componentId: z.string().min(1).max(240),
+  componentTreeSha256: sha,
+  paths: z.array(safePath).min(1).max(10_000),
+  files: z
+    .array(z.object({ path: safePath, digest }).strict())
+    .min(1)
+    .max(20_000),
+};
+/**
+ * A compiler-partition component covers exactly one compiled asset. A whole-repository
+ * inventory component is scanned whatever its asset count and names the zero-to-many compiled
+ * assets whose original path it scans, in asset-id order.
+ */
+const componentSchema = z.union([
+  z.object({ ...componentFields, subject: subjectSchema }).strict(),
+  z.object({ ...componentFields, subjects: z.array(subjectSchema).max(1_000) }).strict(),
+]);
+
+/** The compiled assets one coverage component binds. */
+function componentSubjectsV1(
+  component: z.infer<typeof componentSchema>,
+): readonly z.infer<typeof subjectSchema>[] {
+  return "subject" in component ? [component.subject] : component.subjects;
+}
 const observationSchema = z
   .object({
     componentId: z.string().min(1).max(240),
@@ -166,6 +180,17 @@ export const ScannerEvidenceProjectionRecordV1Schema = z
     );
     if (components.size !== value.coverage.components.length)
       ctx.addIssue({ code: "custom", message: "duplicate coverage component" });
+    // Every compiled asset belongs to at most one component, named once.
+    const assets = new Set<string>();
+    for (const component of value.coverage.components) {
+      const ids = componentSubjectsV1(component).map((subject) => subject.assetId);
+      if (ids.some((id, index) => index > 0 && (ids[index - 1] as string) > id))
+        ctx.addIssue({ code: "custom", message: "coverage subjects out of order" });
+      for (const id of ids) {
+        if (assets.has(id)) ctx.addIssue({ code: "custom", message: "coverage asset bound twice" });
+        assets.add(id);
+      }
+    }
     if (reports.size !== value.report.components.length || reports.size !== components.size)
       ctx.addIssue({ code: "custom", message: "report coverage cardinality mismatch" });
     const seen = new Set<string>();
@@ -345,11 +370,11 @@ export function packagedScannerCollectionEvidenceV1(): readonly PackagedScannerC
 
 function exactAsset(
   bundle: AuthoringCatalogBundleV1,
-  component: PackagedScannerCollectionEvidenceRecordV1["coverage"]["components"][number],
+  subject: z.infer<typeof subjectSchema>,
   record: ScannerEvidenceProjectionRecordV1,
 ): boolean {
-  const asset = bundle.assets[component.subject.assetId];
-  const source = bundle.sources[component.subject.sourceId];
+  const asset = bundle.assets[subject.assetId];
+  const source = bundle.sources[subject.sourceId];
   return (
     asset !== undefined &&
     source !== undefined &&
@@ -359,11 +384,11 @@ function exactAsset(
     source.inputFormat === record.catalog.source.inputFormat &&
     source.upstreamOrigin.kind === record.catalog.source.upstreamOrigin.kind &&
     source.upstreamOrigin.locator === record.catalog.source.upstreamOrigin.locator &&
-    source.id === component.subject.sourceId &&
-    asset.id === component.subject.assetId &&
-    asset.sourceId === component.subject.sourceId &&
-    asset.sourceRevisionId === component.subject.sourceRevisionId &&
-    asset.contentDigest === component.subject.contentDigest &&
+    source.id === subject.sourceId &&
+    asset.id === subject.assetId &&
+    asset.sourceId === subject.sourceId &&
+    asset.sourceRevisionId === subject.sourceRevisionId &&
+    asset.contentDigest === subject.contentDigest &&
     asset.derivation ===
       (record.catalog.source.upstreamOrigin.kind === "aih" ? "built-in" : "upstream")
   );
@@ -389,12 +414,7 @@ export function projectScannerCollectionEvidenceV1(
     for (const component of record.coverage.components) {
       const report = reports.get(component.componentId);
       const observation = observations.get(component.componentId);
-      if (
-        report === undefined ||
-        observation === undefined ||
-        !exactAsset(bundle, component, record)
-      )
-        continue;
+      if (report === undefined || observation === undefined) continue;
       const validUntil = evidenceExpiryV1(observation.reportSignedAt);
       const published = record.publications.find(
         (item) =>
@@ -403,36 +423,40 @@ export function projectScannerCollectionEvidenceV1(
           item.receiptSha256 === observation.receiptSha256,
       );
       if (published === undefined) continue;
-      const id = `evidence:${component.subject.assetId}`;
-      result[id] = EvidenceSummaryV1Schema.parse({
-        id,
-        projectionVersion: "evidence-summary/v1",
-        subjects: [component.subject],
-        evidenceDigest: `sha256:${canonicalStrictJsonSha256V1({ record: recordDigest, component, observation })}`,
-        coveredPaths: [...component.paths].sort(),
-        verification: {
-          state: "verified",
-          verifiedAt: record.verification.preparedAt,
-          validUntil,
-          contextDigest: `sha256:${canonicalStrictJsonSha256V1({ record: recordDigest, publication: observation.publicationSha256, receipt: observation.receiptSha256 })}`,
-        },
-        scan: {
-          outcome: report.verdict === "blocked" ? "failed" : "pass",
-          coverage: "complete",
-          analyzers: [...report.analyzers].sort((left, right) => {
-            const leftKey = `${left.name}\u0000${left.version}`;
-            const rightKey = `${right.name}\u0000${right.version}`;
-            return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
-          }),
-          reportSignedAt: observation.reportSignedAt,
-          reportVerificationExpiresAt: observation.reportVerificationExpiresAt,
-          publishedAt: published.publishedAt,
-        },
-        qualification: { state: "unknown" },
-        findings: report.findings
-          .slice(0, 50)
-          .map((finding) => `${finding.code}: ${finding.detail}`.slice(0, 1000)),
-      });
+      // Each compiled asset the component's scan covers gets that scan's evidence.
+      for (const subject of componentSubjectsV1(component)) {
+        if (!exactAsset(bundle, subject, record)) continue;
+        const id = `evidence:${subject.assetId}`;
+        result[id] = EvidenceSummaryV1Schema.parse({
+          id,
+          projectionVersion: "evidence-summary/v1",
+          subjects: [subject],
+          evidenceDigest: `sha256:${canonicalStrictJsonSha256V1({ record: recordDigest, component, observation, ...("subject" in component ? {} : { subject }) })}`,
+          coveredPaths: [...component.paths].sort(),
+          verification: {
+            state: "verified",
+            verifiedAt: record.verification.preparedAt,
+            validUntil,
+            contextDigest: `sha256:${canonicalStrictJsonSha256V1({ record: recordDigest, publication: observation.publicationSha256, receipt: observation.receiptSha256 })}`,
+          },
+          scan: {
+            outcome: report.verdict === "blocked" ? "failed" : "pass",
+            coverage: "complete",
+            analyzers: [...report.analyzers].sort((left, right) => {
+              const leftKey = `${left.name}\u0000${left.version}`;
+              const rightKey = `${right.name}\u0000${right.version}`;
+              return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
+            }),
+            reportSignedAt: observation.reportSignedAt,
+            reportVerificationExpiresAt: observation.reportVerificationExpiresAt,
+            publishedAt: published.publishedAt,
+          },
+          qualification: { state: "unknown" },
+          findings: report.findings
+            .slice(0, 50)
+            .map((finding) => `${finding.code}: ${finding.detail}`.slice(0, 1000)),
+        });
+      }
     }
   }
   return result;

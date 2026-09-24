@@ -17,7 +17,10 @@ import {
   packagedCoverageProjectionDigestV1,
   packagedReportComponentDigestV1,
 } from "../org-policy/packaged-collection-evidence-v1.js";
-import { prepareRegisteredScannerCatalogV1 } from "./scanner-catalog-consumer.js";
+import {
+  type inventoryCollectionCoverageV1,
+  prepareRegisteredScannerCatalogV1,
+} from "./scanner-catalog-consumer.js";
 import { createCoreBaselineVetRequests } from "./scanner-consumer.js";
 import {
   consumeScannerBaselinePublicationsV1,
@@ -41,7 +44,7 @@ const SLSA_PROVENANCE_V1 = "https://slsa.dev/provenance/v1";
 
 export type ScannerCollectionCatalogIdV1 = "mattpocock" | "ponytail" | "ecc" | "superpowers";
 export type ScannerCollectionCoverageV1 = NonNullable<
-  ReturnType<typeof prepareRegisteredScannerCatalogV1>["coverage"]
+  ScannerCollectionPreparedCoverageV1["coverage"]
 >;
 
 export interface ScannerCollectionPublicationBatchV1 {
@@ -66,9 +69,10 @@ export interface PrepareScannerCollectionPublicationsV1Input {
   readonly coverage?: ScannerCollectionPreparedCoverageV1;
 }
 
-export type ScannerCollectionPreparedCoverageV1 = ReturnType<
-  typeof prepareRegisteredScannerCatalogV1
->;
+/** A registered or definition coverage; an inventory's components bind zero-to-many assets. */
+export type ScannerCollectionPreparedCoverageV1 =
+  | ReturnType<typeof prepareRegisteredScannerCatalogV1>
+  | ReturnType<typeof inventoryCollectionCoverageV1>;
 
 /** Opaque in-process result. JSON clones never carry the retained custody witness. */
 export interface PreparedScannerCollectionPublicationsV1 {
@@ -514,7 +518,9 @@ export function authorPackagedScannerCollectionEvidenceRecordV1(
       componentTreeSha256: component.componentTreeSha256,
       paths: component.paths,
       files: component.files,
-      subject: component.subject,
+      ...("subjects" in component
+        ? { subjects: component.subjects }
+        : { subject: component.subject }),
     })),
     unmappedDerivedAssets: output.coverage.unmappedDerivedAssets,
   };

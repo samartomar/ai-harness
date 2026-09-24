@@ -14,7 +14,7 @@ import { loadCatalogAuthoringBundleV1 } from "../../src/catalog-package/authorin
 import { canonicalStrictJsonSha256V1 } from "../../src/contract/strict-json-v1.js";
 import {
   digest,
-  sealedComponentSourceBundle,
+  installedSingleSourceBundle,
   sealedSingleSourceBundle,
 } from "./candidate-bundle-fixture.js";
 
@@ -203,9 +203,13 @@ describe("definition-route Scanner coverage", () => {
     const inventory = (name: string): BaselineCatalog =>
       JSON.parse(readFileSync(join(INVENTORIES, `${name}.inventory.json`), "utf8"));
 
-    /** A checkout holding every inventory path: listed files, or a directory with one file. */
-    function checkout(catalog: BaselineCatalog): string {
+    /** A checkout holding every inventory path (listed files, or a directory with one file) and `extra`. */
+    function checkout(catalog: BaselineCatalog, extra: readonly string[] = []): string {
       const source = join(root, catalog.id);
+      for (const path of extra) {
+        mkdirSync(dirname(join(source, path)), { recursive: true });
+        writeFileSync(join(source, path), `${path}\n`);
+      }
       for (const component of catalog.components)
         for (const path of component.paths) {
           const file =
@@ -219,17 +223,27 @@ describe("definition-route Scanner coverage", () => {
       return source;
     }
 
-    const bundleFor = (catalog: BaselineCatalog, components = catalog.components) =>
-      sealedComponentSourceBundle(
-        catalog.id,
-        catalog.pinnedSha,
-        components.map((component) => ({
-          componentId: component.id,
-          originalPath: component.paths[0] as string,
-          label: component.id,
-          detail: component.id.replace(/[^a-z0-9-]/g, "-"),
-        })),
+    /** The upstream asset ids a bundle admits, sorted. */
+    const upstreamIds = (bundle: ReturnType<typeof installedSingleSourceBundle>) =>
+      Object.values(bundle.assets)
+        .filter((asset) => asset.derivation === "upstream")
+        .map((asset) => asset.id)
+        .sort();
+
+    /** A checkout of the inventory that also holds every compiled asset's original path. */
+    const checkoutFor = (
+      catalog: BaselineCatalog,
+      bundle: ReturnType<typeof installedSingleSourceBundle>,
+    ) =>
+      checkout(
+        catalog,
+        Object.values(bundle.assets).map((asset) => asset.originalPath),
       );
+
+    const subjectsOf = (component: object) =>
+      "subjects" in component
+        ? (component.subjects as readonly { assetId: string }[])
+        : ([] as const);
 
     const prepareInventory = (
       catalog: BaselineCatalog,
@@ -250,66 +264,140 @@ describe("definition-route Scanner coverage", () => {
       );
 
     it.each([
-      ["ponytail-1d95ff7d", "https://github.com/DietrichGebert/ponytail"],
-      ["mattpocock-c55ee460", "https://github.com/mattpocock/skills"],
-    ])("derives %s coverage from the inventory that authored the T1 requests", (name, locator) => {
-      const catalog = inventory(name);
-      const source = checkout(catalog);
-      const prepared = prepareInventory(catalog, source, bundleFor(catalog));
-      // The T2 partition is the inventory itself, so its expected publication layout is
-      // exactly the requests T1 authored from the same --definition.
-      const t1 = resolveScannerDefinitionV1(
-        {
-          sourceRoot: source,
-          catalogId: catalog.id,
-          definitionPath: file(`${name}.t1.json`, catalog),
-          head: catalog.pinnedSha,
-        },
-        notCarried,
-      );
-      expect(prepared.catalog).toEqual(catalog);
-      expect(createCoreBaselineVetRequests(source, prepared.catalog)).toEqual(
-        createCoreBaselineVetRequests(source, t1.catalog),
-      );
-      expect(prepared.coverage.components.map((component) => component.componentId)).toEqual(
-        catalog.components.map((component) => component.id),
-      );
-      for (const [index, component] of prepared.coverage.components.entries()) {
-        expect(component.paths).toEqual(catalog.components[index]?.paths);
-        expect(component.subject.assetId).toBe(`${catalog.id}/${component.componentId}`);
-      }
-      expect(prepared.coverage).toMatchObject({
-        compilerInputDigest: `sha256:${canonicalStrictJsonSha256V1(catalog)}`,
-        source: { id: `source:${catalog.id}`, revisionId: catalog.pinnedSha, repository: locator },
-        repository: `${catalog.owner}/${catalog.repo}`,
-        pinnedCommit: catalog.pinnedSha,
-      });
-      expect(prepared.coverageDigest).toBe(
-        `sha256:${canonicalStrictJsonSha256V1(prepared.coverage)}`,
-      );
+      // The installed Catalog's own compiled bundle at its own pin, and the same compiled
+      // partition re-pinned to the new-pin inventories T1 authored from.
+      ["ponytail-356918eb", false, "https://github.com/DietrichGebert/ponytail", 28],
+      ["mattpocock-3cca18b3", false, "https://github.com/mattpocock/skills", 21],
+      ["ponytail-1d95ff7d", true, "https://github.com/DietrichGebert/ponytail", 28],
+      ["mattpocock-c55ee460", true, "https://github.com/mattpocock/skills", 22],
+    ] as const)(
+      "binds %s's real compiled assets zero-to-many and keeps every component's scan (re-pinned: %s)",
+      (name, repin, locator, withoutAssets) => {
+        const catalog = inventory(name);
+        const bundle = installedSingleSourceBundle(
+          catalog.id,
+          repin ? catalog.pinnedSha : undefined,
+        );
+        const source = checkoutFor(catalog, bundle);
+        const prepared = prepareInventory(catalog, source, bundle);
+        // The T2 partition is the inventory itself, so its expected publication layout is
+        // exactly the requests T1 authored from the same --definition.
+        const t1 = resolveScannerDefinitionV1(
+          {
+            sourceRoot: source,
+            catalogId: catalog.id,
+            definitionPath: file(`${name}.t1.json`, catalog),
+            head: catalog.pinnedSha,
+          },
+          notCarried,
+        );
+        expect(prepared.catalog).toEqual(catalog);
+        expect(createCoreBaselineVetRequests(source, prepared.catalog)).toEqual(
+          createCoreBaselineVetRequests(source, t1.catalog),
+        );
+        const { components } = prepared.coverage;
+        // Every inventory component keeps its scan coverage, whatever its asset count.
+        expect(components.map((component) => component.componentId)).toEqual(
+          catalog.components.map((component) => component.id),
+        );
+        for (const [index, component] of components.entries()) {
+          expect(component.paths).toEqual(catalog.components[index]?.paths);
+          expect(component.files.length).toBeGreaterThan(0);
+          for (const subject of subjectsOf(component))
+            expect(component.files.map((entry) => entry.path)).toContain(
+              bundle.assets[subject.assetId]?.originalPath,
+            );
+        }
+        // Every compiled upstream asset belongs to exactly one inventory component.
+        const subjects = components.flatMap(subjectsOf);
+        expect(subjects.map((subject) => subject.assetId).sort()).toEqual(upstreamIds(bundle));
+        for (const subject of subjects) {
+          const asset = bundle.assets[subject.assetId];
+          expect(subject).toEqual({
+            assetId: asset?.id,
+            sourceId: asset?.sourceId,
+            sourceRevisionId: catalog.pinnedSha,
+            contentDigest: asset?.contentDigest,
+          });
+        }
+        expect(components.filter((component) => subjectsOf(component).length === 0).length).toBe(
+          withoutAssets,
+        );
+        expect(prepared.coverage.unmappedDerivedAssets).toEqual(
+          Object.values(bundle.assets)
+            .filter((asset) => asset.derivation !== "upstream")
+            .map((asset) => asset.id)
+            .sort(),
+        );
+        expect(prepared.coverage).toMatchObject({
+          compilerInputDigest: `sha256:${canonicalStrictJsonSha256V1(catalog)}`,
+          source: {
+            id: `source:${catalog.id}`,
+            revisionId: catalog.pinnedSha,
+            repository: locator,
+          },
+          repository: `${catalog.owner}/${catalog.repo}`,
+          pinnedCommit: catalog.pinnedSha,
+        });
+        expect(prepared.coverageDigest).toBe(
+          `sha256:${canonicalStrictJsonSha256V1(prepared.coverage)}`,
+        );
+      },
+    );
+
+    it("binds several compiled assets to one component: the three ponytail hooks", () => {
+      const catalog = inventory("ponytail-1d95ff7d");
+      const bundle = installedSingleSourceBundle(catalog.id, catalog.pinnedSha);
+      const hooks = prepareInventory(
+        catalog,
+        checkoutFor(catalog, bundle),
+        bundle,
+      ).coverage.components.find((component) => component.paths.join() === "hooks");
+      expect(subjectsOf(hooks ?? {}).map((subject) => subject.assetId)).toEqual([
+        "ponytail/hook:session-start",
+        "ponytail/hook:subagent-start",
+        "ponytail/hook:user-prompt-submit",
+      ]);
     });
 
-    it("refuses a bundle compiled from another partition", () => {
+    it("refuses a compiled upstream asset that no inventory component scans", () => {
       const catalog = inventory("ponytail-1d95ff7d");
-      const source = checkout(catalog);
-      const [first, ...rest] = catalog.components;
-      expect(() => prepareInventory(catalog, source, bundleFor(catalog, rest))).toThrow(
-        `Scanner provider coverage: inventory component ${first?.id} has no compiled asset ponytail/${first?.id}`,
+      const source = checkoutFor(
+        catalog,
+        installedSingleSourceBundle(catalog.id, catalog.pinnedSha),
       );
-      const extra = bundleFor(catalog, [
-        ...catalog.components,
-        { id: "hook:session-start", paths: ["hooks"] },
+      // Outside every component, and inside a component directory but not a scanned file.
+      for (const originalPath of ["absent/x.md", "hooks/unscanned.js"]) {
+        const bundle = installedSingleSourceBundle(catalog.id, catalog.pinnedSha, [
+          { id: "ponytail/hook:extra", originalPath },
+        ]);
+        expect(() => prepareInventory(catalog, source, bundle)).toThrow(
+          `Scanner provider coverage: admitted upstream asset ponytail/hook:extra names ${originalPath}, which no inventory component scans`,
+        );
+      }
+    });
+
+    it("leaves a derived asset unmapped instead of binding it to a component", () => {
+      const catalog = inventory("mattpocock-c55ee460");
+      const bundle = installedSingleSourceBundle(catalog.id, catalog.pinnedSha, [
+        {
+          id: "mattpocock/profile:derived",
+          originalPath: "skills/engineering/tdd/SKILL.md",
+          derivation: "core-derived",
+        },
       ]);
-      expect(() => prepareInventory(catalog, source, extra)).toThrow(
-        "Scanner provider coverage: the inventory does not cover admitted upstream asset ponytail/hook:session-start",
-      );
+      const { coverage } = prepareInventory(catalog, checkoutFor(catalog, bundle), bundle);
+      expect(coverage.unmappedDerivedAssets).toEqual(["mattpocock/profile:derived"]);
+      expect(
+        coverage.components.flatMap(subjectsOf).map((subject) => subject.assetId),
+      ).not.toContain("mattpocock/profile:derived");
     });
 
     it("refuses a vendor lock for a collection inventory", () => {
       const catalog = inventory("mattpocock-c55ee460");
-      const source = checkout(catalog);
+      const bundle = installedSingleSourceBundle(catalog.id, catalog.pinnedSha);
       expect(() =>
-        prepareInventory(catalog, source, bundleFor(catalog), {
+        prepareInventory(catalog, checkoutFor(catalog, bundle), bundle, {
           vendorLockPath: file("lock.json", {}),
         }),
       ).toThrow("baseline definition: --vendor-lock applies only to ecc and superpowers");

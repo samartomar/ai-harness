@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { loadCatalogAuthoringBundleV1 } from "../../src/catalog-package/authoring-bundle.js";
 import { canonicalStrictJsonSha256V1 } from "../../src/contract/strict-json-v1.js";
 
 export const digest = (value: string) =>
@@ -71,6 +72,49 @@ export function sealedComponentSourceBundle(
         const bytes = JSON.stringify({ id: assetIds[index] });
         return [`detail:${skill}`, { bytes, digest: digest(bytes) }];
       }),
+    ),
+  };
+  return {
+    ...bare,
+    provenance: {
+      bundleDigest: `sha256:${canonicalStrictJsonSha256V1({ ...bare, provenance: {} })}`,
+    },
+  };
+}
+
+/**
+ * The installed Catalog's real compiled source `source:<id>` as a sealed single-source bundle:
+ * its source, every asset it compiled and their detail chunks, byte for byte. `revision`
+ * re-pins the same compiled partition to another commit (no compiled bundle exists yet at the
+ * new pins); `extra` adds assets shaped like the first one.
+ */
+export function installedSingleSourceBundle(
+  id: string,
+  revision?: string,
+  extra: readonly { id: string; originalPath: string; derivation?: string }[] = [],
+) {
+  const bundle = loadCatalogAuthoringBundleV1().prepared.bundle;
+  const sourceId = `source:${id}`;
+  const source = bundle.sources[sourceId];
+  if (source === undefined) throw new Error(`fixture: the installed Catalog has no ${sourceId}`);
+  const at = revision ?? source.revision.id;
+  const compiled = Object.values(bundle.assets).filter((asset) => asset.sourceId === sourceId);
+  const [first] = compiled;
+  if (first === undefined) throw new Error(`fixture: ${sourceId} compiled no asset`);
+  const assets = [
+    ...compiled,
+    ...extra.map((asset) => ({ ...first, derivation: "upstream" as const, ...asset })),
+  ].map((asset) => ({ ...asset, sourceRevisionId: at }));
+  const bare = {
+    version: bundle.version,
+    sources: { [sourceId]: { ...source, revision: { ...source.revision, id: at } } },
+    assets: Object.fromEntries(assets.map((asset) => [asset.id, asset])),
+    groups: {},
+    relations: [],
+    templates: {},
+    evidence: {},
+    detailChunks: Object.fromEntries(
+      compiled.map((asset) => [asset.detailChunkId, bundle.detailChunks[asset.detailChunkId]]),
     ),
   };
   return {
