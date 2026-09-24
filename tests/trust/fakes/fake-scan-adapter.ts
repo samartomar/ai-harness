@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { ScanExecutionAdapterV1 } from "../../../src/org-policy/governance-input-v1.js";
+import { SKILLSPECTOR_IMAGE_DIGEST } from "../../../src/trust/images.js";
 import { buildTrustFileInventory } from "../../../src/trust/inventory.js";
 import {
   ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1,
@@ -39,9 +40,15 @@ export type FakeScanAnswerV1 =
       readonly observedAnalyzerVersion?: string;
       /** Return the SARIF bytes exactly as given: no driver, invocation or completion evidence added. */
       readonly raw?: boolean;
+      /** SkillSpector's `observation.image`, instead of the pinned image; `undefined` states none. */
+      readonly image?: unknown;
     }
   /** SARIF computed from the request, e.g. for Core's selected paths. */
-  | { readonly kind: "sarif-for"; readonly sarif: (request: Record<string, unknown>) => string }
+  | {
+      readonly kind: "sarif-for";
+      readonly sarif: (request: Record<string, unknown>) => string;
+      readonly image?: unknown;
+    }
   | { readonly kind: "refused"; readonly reason: string; readonly detail: string }
   | { readonly kind: "failed"; readonly stage: string; readonly detail: string }
   /** Holds the run open until the request's signal aborts, as a long analyzer run would. */
@@ -285,6 +292,13 @@ export interface FakeScanAdapterForTests extends ScanExecutionAdapterV1 {
   readonly aborted: string[];
 }
 
+/** The image Scan states for a SkillSpector run of its own pinned image. */
+export const FAKE_PINNED_SKILLSPECTOR_IMAGE = Object.freeze({
+  digest: SKILLSPECTOR_IMAGE_DIGEST,
+  reference: SKILLSPECTOR_IMAGE_DIGEST,
+  acceptance: "scan-pinned",
+});
+
 /**
  * A fake Scan answering `answers[detectorId]`. A detector with no answer is not
  * declared at all, so Core never sees a capability the fake cannot honour.
@@ -292,6 +306,29 @@ export interface FakeScanAdapterForTests extends ScanExecutionAdapterV1 {
 export function createFakeScanAdapterForTests(
   answers: Readonly<Record<string, FakeScanAnswerV1>>,
   options: { readonly profiles?: Readonly<Record<string, readonly FakeProfile[]>> } = {},
+): FakeScanAdapterForTests {
+  return fakeScanAdapter(answers, { ...options, complete: true });
+}
+
+/**
+ * A fake Scan that returns every SARIF answer BYTE FOR BYTE as the test wrote
+ * it: no driver, invocation or completion evidence is added and nothing is
+ * repaired. For completion-boundary tests, whose evidence comes from
+ * independent vectors, never from Core's own subject code.
+ */
+export function createVerbatimFakeScanAdapterForTests(
+  answers: Readonly<Record<string, FakeScanAnswerV1>>,
+  options: { readonly profiles?: Readonly<Record<string, readonly FakeProfile[]>> } = {},
+): FakeScanAdapterForTests {
+  return fakeScanAdapter(answers, { ...options, complete: false });
+}
+
+function fakeScanAdapter(
+  answers: Readonly<Record<string, FakeScanAnswerV1>>,
+  options: {
+    readonly profiles?: Readonly<Record<string, readonly FakeProfile[]>>;
+    readonly complete: boolean;
+  },
 ): FakeScanAdapterForTests {
   const requests: Record<string, unknown>[] = [];
   const aborted: string[] = [];
@@ -356,7 +393,7 @@ export function createFakeScanAdapterForTests(
         (accepted === undefined ? "fake" : observedScanAnalyzerVersionV1(accepted));
       const lock = asObject((profile as Record<string, unknown>).analyzerLock)?.sha256;
       const text =
-        answer.kind === "sarif" && answer.raw === true
+        !options.complete || (answer.kind === "sarif" && answer.raw === true)
           ? given
           : withFakeScanCompletion(
               given,
@@ -367,6 +404,12 @@ export function createFakeScanAdapterForTests(
               }),
             );
       const bytes = Buffer.from(text, "utf8");
+      const image =
+        "image" in answer
+          ? answer.image
+          : detectorId === "detector.skillspector"
+            ? FAKE_PINNED_SKILLSPECTOR_IMAGE
+            : undefined;
       return {
         outcome: "succeeded",
         capability,
@@ -380,6 +423,7 @@ export function createFakeScanAdapterForTests(
             protocol: "BaselineAnalyzerObservationV1",
             analyzer: detectorId.replace(/^detector\./, ""),
             analyzerVersion,
+            ...(image === undefined ? {} : { image }),
             mediaType: "application/sarif+json",
             annex: {
               path: `annex/${detectorId}.json`,

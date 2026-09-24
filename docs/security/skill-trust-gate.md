@@ -140,8 +140,10 @@ run as completed, and its zero findings as zero, only when the SARIF itself prov
   the binding gate.
 
 A run that fails either check is `trust.detector-unavailable` with outcome `failed`; a required
-detector fails at enterprise posture. A tree changed after Scan sealed it fails the same way,
-because Core's recomputation no longer matches. The trust lint's and binding gate's evidence
+detector fails at enterprise posture. Core binds the subject for each detector call on its
+own: it recomputes it immediately before the call, checks the evidence against that, and
+recomputes it again once the call returns. A tree that changed during the call fails the
+detector, and a change between two detectors is checked against the tree as it stood for each. The trust lint's and binding gate's evidence
 covers the declared selection only.
 
 Precomputed SARIF (a Scanner annex) meets the subject check too, against the tree being

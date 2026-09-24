@@ -49,7 +49,7 @@ import {
 } from "./scan-sarif.js";
 import {
   SCAN_EMPTY_SOURCE_COMPLETES_V1,
-  type ScanSubjectFileV1,
+  type ScanSubjectDigestV1,
   scanDetectorSubjectFilesV1,
   scanSubjectDigestV1,
   sealedScanSubjectFilesV1,
@@ -1369,24 +1369,59 @@ function checkedDetectorSarif(detector: ScanRoutedDetectorV1, sarif: string): Ch
   return checked;
 }
 
+/** What one detector call analyzes: the request fields its subject rule reads (C2a §1.6). */
+export interface ScanCallSubjectRequestV1 {
+  readonly detectorId: string;
+  readonly sourceRoot: string;
+  readonly selectedClosurePaths: readonly string[];
+  readonly mcpConfigPaths?: readonly string[];
+}
+
+/**
+ * The subject one detector call analyzes, rebuilt now from Core's own disk
+ * and request (the source root, the selected paths and, for mcp-scanner, the
+ * config paths it named), or why Core cannot rebuild it. Never cached: each
+ * call binds the tree as it stands for that call.
+ */
+export function scanCallSubjectV1(
+  request: ScanCallSubjectRequestV1,
+): { readonly subject: ScanSubjectDigestV1 } | { readonly refusal: string } {
+  try {
+    return {
+      subject: scanSubjectDigestV1(
+        scanDetectorSubjectFilesV1(request.detectorId, request.sourceRoot, {
+          selectedClosurePaths: request.selectedClosurePaths,
+          ...(request.mcpConfigPaths === undefined
+            ? {}
+            : { mcpConfigPaths: request.mcpConfigPaths }),
+          sealed: () => sealedScanSubjectFilesV1(request.sourceRoot),
+        }),
+      ),
+    };
+  } catch (error) {
+    return {
+      refusal: adapterReason(
+        `completion evidence Core cannot check, because it cannot rebuild the subject of ${request.detectorId}: ${(error as Error)?.message ?? "unknown error"}`,
+      ),
+    };
+  }
+}
+
 /**
  * Why a succeeded run's completion evidence v1 (C2a §1.6) does not bind it to
- * what Core submitted, or undefined when it does. Core rebuilds the subject
- * from its own request (the source root, the selected paths and, for
- * mcp-scanner, the config paths it named) and takes the analyzer from the
- * identity it accepted for the run, never from the evidence itself.
+ * what Core submitted, or undefined when it does. `request.subject` is the
+ * subject Core bound immediately before the call; Core rebuilds it again now,
+ * after the call, and any change fails the run (the tree Scan analyzed is not
+ * the one Core grades). The evidence must name that subject, and the analyzer
+ * is the identity Core accepted for the run, never the evidence's own claim.
  */
 export function delegatedScanCompletionRefusalV1(
   raw: unknown,
   log: CheckedScanSarifLogV1,
-  request: {
-    readonly detectorId: string;
+  request: ScanCallSubjectRequestV1 & {
     readonly executionProfileId: string;
-    readonly sourceRoot: string;
-    readonly selectedClosurePaths: readonly string[];
-    readonly mcpConfigPaths?: readonly string[];
-    /** The whole tree's files, read once per scan; read here when omitted. */
-    readonly sealed?: () => readonly ScanSubjectFileV1[];
+    /** The subject bound before the call (`scanCallSubjectV1`). */
+    readonly subject: ScanSubjectDigestV1;
   },
 ): string | undefined {
   const identity = acceptedScanAnalyzerIdentityV1(request.detectorId, request.executionProfileId);
@@ -1396,23 +1431,16 @@ export function delegatedScanCompletionRefusalV1(
   );
   if (identity === undefined || version === undefined)
     return `no analyzer identity Core accepts for ${request.detectorId} under ${request.executionProfileId}`;
-  let subject: ReturnType<typeof scanSubjectDigestV1>;
-  try {
-    subject = scanSubjectDigestV1(
-      scanDetectorSubjectFilesV1(request.detectorId, request.sourceRoot, {
-        selectedClosurePaths: request.selectedClosurePaths,
-        ...(request.mcpConfigPaths === undefined ? {} : { mcpConfigPaths: request.mcpConfigPaths }),
-        sealed: request.sealed ?? (() => sealedScanSubjectFilesV1(request.sourceRoot)),
-      }),
-    );
-  } catch (error) {
-    return adapterReason(
-      `completion evidence Core cannot check, because it cannot rebuild the subject it submitted: ${(error as Error)?.message ?? "unknown error"}`,
-    );
-  }
+  const after = scanCallSubjectV1(request);
+  if ("refusal" in after) return after.refusal;
+  if (
+    after.subject.subjectTreeSha256 !== request.subject.subjectTreeSha256 ||
+    after.subject.analyzedFileCount !== request.subject.analyzedFileCount
+  )
+    return `completion evidence Core cannot accept, because the source changed while ${request.detectorId} ran: Core submitted ${request.subject.analyzedFileCount} files with subject tree ${request.subject.subjectTreeSha256}, and the tree now has ${after.subject.analyzedFileCount} files with subject tree ${after.subject.subjectTreeSha256}`;
   return scanCompletionRefusalV1(log, {
     detectorId: request.detectorId,
-    subject,
+    subject: request.subject,
     emptyAllowed: SCAN_EMPTY_SOURCE_COMPLETES_V1.has(request.detectorId),
     analyzer: { version, lockSha256: identity.lockSha256 },
   });
@@ -1465,23 +1493,11 @@ function precomputedScanCompletionRefusalV1(
         candidate.version === stated?.version && candidate.lockSha256 === stated?.lockSha256,
     ) ?? accepted[0];
   if (analyzer === undefined) return `Core accepts no analyzer identity for ${request.detectorId}`;
-  let subject: ReturnType<typeof scanSubjectDigestV1>;
-  try {
-    subject = scanSubjectDigestV1(
-      scanDetectorSubjectFilesV1(request.detectorId, request.sourceRoot, {
-        selectedClosurePaths: request.selectedClosurePaths,
-        ...(request.mcpConfigPaths === undefined ? {} : { mcpConfigPaths: request.mcpConfigPaths }),
-        sealed: () => sealedScanSubjectFilesV1(request.sourceRoot),
-      }),
-    );
-  } catch (error) {
-    return adapterReason(
-      `completion evidence Core cannot check, because it cannot rebuild this tree's subject: ${(error as Error)?.message ?? "unknown error"}`,
-    );
-  }
+  const bound = scanCallSubjectV1(request);
+  if ("refusal" in bound) return bound.refusal;
   return scanCompletionRefusalV1(log, {
     detectorId: request.detectorId,
-    subject,
+    subject: bound.subject,
     emptyAllowed: SCAN_EMPTY_SOURCE_COMPLETES_V1.has(request.detectorId),
     analyzer,
   });
@@ -1495,8 +1511,6 @@ interface DelegatedRunOptionsV1 {
   readonly detectorOptions?: Readonly<Record<string, unknown>>;
   readonly acceptedImageDigests?: readonly string[];
   readonly env?: Readonly<Record<string, string>>;
-  /** The whole tree's files for the completion check, read once per detector list. */
-  readonly sealedSubjectFiles?: () => readonly ScanSubjectFileV1[];
 }
 
 async function runDelegatedDetector(
@@ -1520,6 +1534,17 @@ async function runDelegatedDetector(
   // declares another version or lock is not asked to run.
   const declared = declaredScanAnalyzerIdentityRefusalV1(capability, scanId, executionProfileId);
   if (declared !== undefined) return { unavailable: declared, outcome: "refused" };
+  // The subject this call analyzes, bound now: the evidence is checked against
+  // it, and the tree must still be it once the call returns.
+  const mcpConfigPaths = options.detectorOptions?.mcpConfigPaths;
+  const subjectRequest: ScanCallSubjectRequestV1 = {
+    detectorId: scanId,
+    sourceRoot: root,
+    selectedClosurePaths: inventory.files.map((entry) => entry.relativePath),
+    ...(Array.isArray(mcpConfigPaths) ? { mcpConfigPaths: mcpConfigPaths as string[] } : {}),
+  };
+  const bound = scanCallSubjectV1(subjectRequest);
+  if ("refusal" in bound) return { unavailable: bound.refusal, outcome: "refused" };
   let raw: unknown;
   try {
     raw = await startTrackedScanCall(options.signal, scanId, () =>
@@ -1573,14 +1598,10 @@ async function runDelegatedDetector(
     };
   // Zero findings count only when the SARIF names the subject Scan proved was
   // analyzed, and that subject is the one Core submitted.
-  const mcpConfigPaths = options.detectorOptions?.mcpConfigPaths;
   const completion = delegatedScanCompletionRefusalV1(raw, checked.log, {
-    detectorId: scanId,
+    ...subjectRequest,
     executionProfileId,
-    sourceRoot: root,
-    selectedClosurePaths: inventory.files.map((entry) => entry.relativePath),
-    ...(Array.isArray(mcpConfigPaths) ? { mcpConfigPaths: mcpConfigPaths as string[] } : {}),
-    ...(options.sealedSubjectFiles === undefined ? {} : { sealed: options.sealedSubjectFiles }),
+    subject: bound.subject,
   });
   if (completion !== undefined)
     return {
@@ -1785,12 +1806,6 @@ async function runDetectorList(
     scanExecution ??= resolveScanExecutionV1(options.scanExecution);
     return scanExecution;
   };
-  // The tree's files for every detector's completion check, read on first need.
-  let sealed: readonly ScanSubjectFileV1[] | undefined;
-  const sealedSubjectFiles = (): readonly ScanSubjectFileV1[] => {
-    sealed ??= sealedScanSubjectFilesV1(root);
-    return sealed;
-  };
   const unavailable = (detector: TrustDetector, reason: string): void => {
     checks.push(
       unavailableCheck(detector.name, reason, options.posture, isRequired(detector.name, required)),
@@ -1855,7 +1870,6 @@ async function runDetectorList(
             : { uvProfile: options.uvExecutionProfileId }),
           ...(options.signal === undefined ? {} : { signal: options.signal }),
           ...detectorRequestFields(detector.name, options),
-          sealedSubjectFiles,
         },
       );
       execution = {

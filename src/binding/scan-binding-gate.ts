@@ -13,6 +13,7 @@ import {
   delegatedDetectorResult,
   delegatedScanCompletionRefusalV1,
   resolveScanExecutionV1,
+  scanCallSubjectV1,
   TrustScanCancelledError,
 } from "../trust/detectors.js";
 import {
@@ -325,6 +326,14 @@ export async function inspectTreeThroughScanV1(
   if (aborted(options.signal))
     throw new TrustScanCancelledError(`before ${BINDING_GATE_DETECTOR_ID} started`);
   const sourceRoot = realpathSync(treePath);
+  // The selection this call analyzes, bound now and checked again after it.
+  const subjectRequest = {
+    detectorId: BINDING_GATE_DETECTOR_ID,
+    sourceRoot,
+    selectedClosurePaths: selectedPaths,
+  };
+  const bound = scanCallSubjectV1(subjectRequest);
+  if ("refusal" in bound) throw new BindingGateScanError(bound.refusal);
   let raw: unknown;
   try {
     raw = await startTrackedScanCall(options.signal, BINDING_GATE_DETECTOR_ID, () =>
@@ -368,10 +377,9 @@ export async function inspectTreeThroughScanV1(
   if ("refusal" in checked)
     throw new BindingGateScanError(`${BINDING_GATE_DETECTOR_ID} returned ${checked.refusal}`);
   const completion = delegatedScanCompletionRefusalV1(raw, checked.log, {
-    detectorId: BINDING_GATE_DETECTOR_ID,
+    ...subjectRequest,
     executionProfileId: BINDING_GATE_EXECUTION_PROFILE,
-    sourceRoot,
-    selectedClosurePaths: selectedPaths,
+    subject: bound.subject,
   });
   if (completion !== undefined)
     throw new BindingGateScanError(`${BINDING_GATE_DETECTOR_ID} returned ${completion}`);

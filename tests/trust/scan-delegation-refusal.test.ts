@@ -728,7 +728,8 @@ describe("zero findings count only when Scan proves the subject Core submitted w
         return text;
       },
     });
-    failedWith(result.checks, "semgrep", "; the subject Core submitted has ");
+    // Core re-binds the subject after the call; a change fails before the evidence is read.
+    failedWith(result.checks, "semgrep", "because the source changed while detector.semgrep ran");
   });
 
   it("refuses evidence naming another analyzer than the one Core accepted", async () => {

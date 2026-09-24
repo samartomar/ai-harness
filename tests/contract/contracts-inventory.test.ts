@@ -97,10 +97,10 @@ const PINS: ReadonlyArray<readonly [file: string, line: number, text: string]> =
     972,
     'export const SKILLSPECTOR_EXECUTION_PROFILE = "docker-host-local-skillspector-v1";',
   ],
-  ["src/trust/detectors.ts", 1604, "export async function resolveScanTrustLintRouteV1(options: {"],
+  ["src/trust/detectors.ts", 1629, "export async function resolveScanTrustLintRouteV1(options: {"],
   [
     "src/binding/scan-binding-gate.ts",
-    31,
+    32,
     'export const BINDING_GATE_DETECTOR_ID = "detector.aih-binding-gate";',
   ],
   [

@@ -98,6 +98,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   complete on an empty source. Anything else is `trust.detector-unavailable` (outcome `failed`).
   An `@aihq/scan` without completion evidence (before S2g) therefore fails every delegated
   detector, and a Snyk or mcp-scanner run whose SARIF names no tool driver fails too.
+- Each delegated detector call, and the binding gate, binds its own subject: Core recomputes
+  it immediately before the call, checks the completion evidence against it, and recomputes it
+  after the call returns; a tree that changed during the call fails the detector. The
+  whole-tree inventory is no longer cached across the detectors of one scan, so a change between
+  two detectors is judged against the tree each one actually saw.
 - Precomputed SARIF (a Scanner annex) counts as completed only when every run carries
   completion evidence v1 for the tree Core is scanning: the requested detector, the subject Core
   recomputes for that detector, and an analyzer identity Core pins for it. SARIF with no

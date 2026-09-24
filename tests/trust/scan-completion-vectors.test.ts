@@ -4,7 +4,12 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Check } from "../../src/internals/verify.js";
 import { runTrustDetectors, type TrustDetectorName } from "../../src/trust/detectors.js";
+import { SKILLSPECTOR_IMAGE_DIGEST, SKILLSPECTOR_SOURCE_REVISION } from "../../src/trust/images.js";
 import { buildTrustFileInventory } from "../../src/trust/inventory.js";
+import {
+  createVerbatimFakeScanAdapterForTests,
+  type FakeScanAnswerV1,
+} from "./fakes/fake-scan-adapter.js";
 
 // ---------------------------------------------------------------------------
 // Completion evidence v1 (C2a §1.6) at Core's boundary, checked against
@@ -208,5 +213,104 @@ describe("precomputed SARIF counts complete only with completion evidence for th
         "precomputed SARIF for detector.cisco is refused: a shard join Core did not verify",
       ),
     });
+  });
+});
+
+/** The vector tree after `late.md` ("late\n") is added: computed by hand, as above. */
+const VECTOR_PLUS_LATE = {
+  subjectTreeSha256: "32e7d04ea796c2a325903dfce932e583c632f1d5f876ae1560412c5343933ab7",
+  analyzedFileCount: 3,
+} as const;
+const SKILLSPECTOR_DOCKER = {
+  version: `${SKILLSPECTOR_SOURCE_REVISION}@${SKILLSPECTOR_IMAGE_DIGEST}`,
+  lockSha256: null,
+} as const;
+
+async function delegated(
+  detectors: readonly TrustDetectorName[],
+  answers: Readonly<Record<string, FakeScanAnswerV1>>,
+  progress?: (message: string) => void,
+) {
+  return runTrustDetectors(root, {
+    env: {},
+    platform: "linux",
+    posture: "enterprise",
+    inventory: buildTrustFileInventory(root),
+    detectors,
+    requiredDetectors: detectors,
+    scanExecution: createVerbatimFakeScanAdapterForTests(answers),
+    ...(progress === undefined ? {} : { progress }),
+  });
+}
+
+describe("each detector call is bound to the subject as it stood for that call", () => {
+  const addLateFileBeforeSemgrep = (message: string) => {
+    if (message === "trust scan: detector semgrep started")
+      writeFileSync(join(root, "late.md"), "late\n", "utf8");
+  };
+  const skillspectorOnVector: FakeScanAnswerV1 = {
+    kind: "sarif",
+    sarif: sarifLog([evidence("detector.skillspector", VECTOR, SKILLSPECTOR_DOCKER)]),
+  };
+
+  it("accepts Semgrep's evidence for the tree as changed after SkillSpector ran", async () => {
+    const result = await delegated(
+      ["skillspector", "semgrep"],
+      {
+        "detector.skillspector": skillspectorOnVector,
+        "detector.semgrep": {
+          kind: "sarif",
+          sarif: sarifLog([evidence("detector.semgrep", VECTOR_PLUS_LATE, SEMGREP_HOST)]),
+        },
+      },
+      addLateFileBeforeSemgrep,
+    );
+    expect(result.executions.map(({ detector, outcome }) => [detector, outcome])).toEqual([
+      ["skillspector", "completed"],
+      ["semgrep", "completed"],
+    ]);
+  });
+
+  it("refuses Semgrep evidence replayed for the tree SkillSpector saw", async () => {
+    const result = await delegated(
+      ["skillspector", "semgrep"],
+      {
+        "detector.skillspector": skillspectorOnVector,
+        "detector.semgrep": {
+          kind: "sarif",
+          sarif: sarifLog([evidence("detector.semgrep", VECTOR, SEMGREP_HOST)]),
+        },
+      },
+      addLateFileBeforeSemgrep,
+    );
+    expect(detectorCheck(result.checks, "semgrep")).toMatchObject({
+      verdict: "fail",
+      detail: expect.stringContaining(
+        `the subject Core submitted has 3 files with subject tree ${VECTOR_PLUS_LATE.subjectTreeSha256}`,
+      ),
+    });
+    expect(result.executions[1]).toMatchObject({ detector: "semgrep", outcome: "failed" });
+  });
+
+  it("fails a detector whose tree changed while it ran, even with evidence for the submitted tree", async () => {
+    const result = await delegated(["semgrep"], {
+      "detector.semgrep": {
+        kind: "sarif-for",
+        sarif: () => {
+          writeFileSync(join(root, "late.md"), "late\n", "utf8");
+          return sarifLog([evidence("detector.semgrep", VECTOR, SEMGREP_HOST)]);
+        },
+      },
+    });
+    expect(detectorCheck(result.checks, "semgrep")).toMatchObject({
+      verdict: "fail",
+      code: "trust.detector-unavailable",
+      detail: expect.stringContaining(
+        `the source changed while detector.semgrep ran: Core submitted 2 files with subject tree ${VECTOR.subjectTreeSha256}, and the tree now has 3 files with subject tree ${VECTOR_PLUS_LATE.subjectTreeSha256}`,
+      ),
+    });
+    expect(result.executions).toEqual([
+      expect.objectContaining({ detector: "semgrep", executedBy: "scan", outcome: "failed" }),
+    ]);
   });
 });
