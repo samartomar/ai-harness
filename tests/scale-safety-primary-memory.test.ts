@@ -46,22 +46,24 @@ function fixture(behaviour: { indexed?: boolean; failed?: boolean; nodes?: numbe
     calls.push({ argv, tool: call?.params?.name, options });
     if (behaviour.failed) return { code: 1, stderr: "fixture memory runtime unavailable" };
     const name = call?.params?.name;
-    const result =
-      name === "list_projects"
-        ? toolText({
-            projects: indexed ? [{ name: "fixture-project", root_path: root }] : [],
-            total: indexed ? 1 : 0,
-          })
-        : name === "index_repository"
-          ? ((indexed = true),
-            toolText({ project: "fixture-project", nodes: 9, edges: 4, status: "indexed" }))
-          : toolText({
-              project: "fixture-project",
-              nodes: behaviour.nodes ?? 7,
-              edges: 3,
-              status: "ready",
-              root_path: root,
-            });
+    let result: unknown;
+    if (name === "list_projects") {
+      result = toolText({
+        projects: indexed ? [{ name: "fixture-project", root_path: root }] : [],
+        total: indexed ? 1 : 0,
+      });
+    } else if (name === "index_repository") {
+      indexed = true;
+      result = toolText({ project: "fixture-project", nodes: 9, edges: 4, status: "indexed" });
+    } else {
+      result = toolText({
+        project: "fixture-project",
+        nodes: behaviour.nodes ?? 7,
+        edges: 3,
+        status: "ready",
+        root_path: root,
+      });
+    }
     return {
       code: 0,
       stdout: [
