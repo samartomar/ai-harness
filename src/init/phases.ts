@@ -1,5 +1,6 @@
 import { command as bootstrapAi } from "../bootstrap-ai/index.js";
 import { command as contract } from "../contract/index.js";
+import { command as superpowers } from "../framework-plugin/superpowers-command.js";
 import { command as guardrails } from "../guardrails/index.js";
 import type { CommandSpec } from "../internals/plan.js";
 import { command as mcp } from "../mcp/index.js";
@@ -7,7 +8,6 @@ import { command as profile } from "../profile/index.js";
 import { command as sandbox } from "../sandbox/index.js";
 import { command as scaffold } from "../scaffold/index.js";
 import { command as secrets } from "../secrets/index.js";
-import { command as superpowers } from "../superpowers/index.js";
 import { command as usage } from "../usage/index.js";
 
 /**
@@ -17,17 +17,27 @@ import { command as usage } from "../usage/index.js";
  * stays in lock-step with the leaf capabilities.
  */
 export interface InitPhase {
-  /** The leaf capability whose `plan(ctx)` supplies this phase's actions. */
+  /**
+   * The leaf capability whose `plan(ctx)` supplies this phase's actions (for a
+   * framework phase: the command whose evidence-gated executor init runs).
+   */
   readonly command: CommandSpec;
   /** Short doc header emitted immediately before the phase's actions. */
   readonly headline: string;
+  /**
+   * Set for a framework phase: init emits its header in order but runs that
+   * framework plugin's evidence-gated command after the local bootstrap commits,
+   * because an evidence gate executes (acquire, verify, then plan) and cannot be
+   * folded into init's one composed plan.
+   */
+  readonly framework?: "superpowers";
 }
 
 /**
  * The fixed bootstrap order: profile → superpowers → bootstrap-ai → scaffold →
  * secrets → guardrails → mcp → contract → sandbox → usage. Profiling detects the stack
- * (Cursor rules); Superpowers installs the default ECC-adjacent agent baseline for the
- * selected CLIs; bootstrap-ai lays the Layer-2 canon (the SOLE writer of root bootloaders +
+ * (Cursor rules); Superpowers (through @aihq/framework-superpowers, evidence-gated) emits
+ * the default ECC-adjacent agent baseline guidance for the selected CLIs; bootstrap-ai lays the Layer-2 canon (the SOLE writer of root bootloaders +
  * RULE_ROUTER); scaffolding lays the context dir the router points at; secrets +
  * guardrails fence the repo before MCP wiring lands on top; contract runs AFTER mcp so
  * first-run synthesis sees the planned `.mcp.json` surface (init threads it via
@@ -47,7 +57,8 @@ export const INIT_PHASES: readonly InitPhase[] = [
   {
     command: superpowers,
     headline:
-      "superpowers — install obra/Superpowers (brainstorm → plan → TDD → review) for the selected CLIs",
+      "superpowers — verify exact-pinned obra/Superpowers (brainstorm → plan → TDD → review) and emit evidence-bound guidance for the selected CLIs, through @aihq/framework-superpowers after the local bootstrap",
+    framework: "superpowers",
   },
   {
     command: bootstrapAi,

@@ -146,6 +146,42 @@ describe("default developer tool selection", () => {
     expect(result.diagnostics).toEqual([expect.objectContaining({ code })]);
   });
 
+  it("returns a selected primary code graph and omits the key when none is chosen", () => {
+    expect(
+      resolveDefaultToolSelection({
+        policy: { kind: "bound", binding: "valid", primaryCodeGraph: "codebase-memory-mcp" },
+      }),
+    ).toMatchObject({
+      accepted: true,
+      source: "legacy-unspecified",
+      primaryCodeGraph: "codebase-memory-mcp",
+    });
+    expect(resolveDefaultToolSelection({ policy: { kind: "none" } })).not.toHaveProperty(
+      "primaryCodeGraph",
+    );
+  });
+
+  it.each([
+    { label: "an unsupported id", policy: { primaryCodeGraph: "serena" }, code: "invalid-primary" },
+    { label: "a non-string", policy: { primaryCodeGraph: 7 }, code: "invalid-primary" },
+    {
+      label: "an excluded tool",
+      policy: { primaryCodeGraph: "code-review-graph", excluded: ["code-review-graph"] },
+      code: "excluded-primary",
+    },
+    {
+      label: "an unselected tool",
+      policy: { primaryCodeGraph: "codebase-memory-mcp", selected: ["code-review-graph"] },
+      code: "excluded-primary",
+    },
+  ])("fails closed for a primary code graph naming $label", ({ policy, code }) => {
+    const result = resolveDefaultToolSelection({
+      policy: { kind: "bound", binding: "valid", ...policy },
+    });
+    expect(result).toMatchObject({ accepted: false, source: "fail-closed", selected: [] });
+    expect(result.diagnostics).toEqual([expect.objectContaining({ code })]);
+  });
+
   it("recognizes only supported developer tool ids", () => {
     expect(isDeveloperToolId("code-review-graph")).toBe(true);
     expect(isDeveloperToolId("token-optimizer")).toBe(true);

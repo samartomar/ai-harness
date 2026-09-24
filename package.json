@@ -18,6 +18,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./framework-host": {
+      "types": "./dist/framework-host/index.d.ts",
+      "import": "./dist/framework-host.js"
+    },
     "./schemas/*.json": "./schemas/*.json",
     "./package.json": "./package.json"
   },
@@ -32,6 +36,7 @@
     "src/ecc-profile/serena-runtime",
     "src/ecc-profile/default-mcp-runtime",
     "src/ecc-profile/markitdown-runtime",
+    "src/tools/headroom-runtime",
     "tools/cisco-skill-scanner",
     "tools/trust-scanners",
     "packs",
@@ -95,10 +100,10 @@
     "verify:packed-admin-docs": "tsx tools/verify-packed-administrator-docs.mjs",
     "verify:release-candidate": "npm run check:workbench-release-compatibility && npm run check:workbench-evidence && npm run check:workbench-publication && npm run check:baseline-analyzers && npm run check:native-identity && npm run check:baseline-pins && npm run check:baseline-installable && npm run check:ai-runtime && npm run check:bugbounty-report && npm run docs:lint && npm run check:packed-doc-links && npm run build && npm run verify:packed-core-policy && npm run check:published-bin && npm run check:published-library && npm run verify:packed-admin-docs && node tools/verify-cold-upstream-artifact-lifecycle.mjs",
     "docs:lint": "tsx src/internals/check-repo-docs.ts",
-    "lint": "biome check src tests",
-    "lint:fix": "biome check --write src tests",
-    "lint:ci": "biome ci src tests",
-    "format": "biome format --write src tests",
+    "lint": "biome check src tests packages",
+    "lint:fix": "biome check --write src tests packages",
+    "lint:ci": "biome ci src tests packages",
+    "format": "biome format --write src tests packages",
     "typecheck": "tsc --noEmit",
     "verify": "npm run check:artifacts && npm run check:self-hosting-canon && npm run check:ecc-installer && npm run check:baseline-analyzers && npm run check:native-identity && npm run check:baseline-pins && npm run check:baseline-installable && npm run check:ai-runtime && npm run check:bugbounty-report && npm run docs:lint && npm run check:packed-doc-links && npm run typecheck && npm run lint:ci && npm run test:cov && npm run build && npm run verify:packed-core-policy && npm run check:published-bin && npm run check:published-library && npm run verify:packed-admin-docs && node tools/verify-cold-upstream-artifact-lifecycle.mjs",
     "build:policy-data": "node --import tsx tools/build-catalog-preassembly.ts",
@@ -129,13 +134,21 @@
   },
   "peerDependencies": {
     "@aihq/catalog": ">=0.2.0 <1.0.0",
-    "@aihq/scan": ">=0.4.0 <1.0.0"
+    "@aihq/scan": ">=0.4.0 <1.0.0",
+    "@aihq/framework-ecc": ">=0.1.0 <0.2.0",
+    "@aihq/framework-superpowers": ">=0.1.0 <0.2.0"
   },
   "peerDependenciesMeta": {
     "@aihq/catalog": {
       "optional": true
     },
     "@aihq/scan": {
+      "optional": true
+    },
+    "@aihq/framework-ecc": {
+      "optional": true
+    },
+    "@aihq/framework-superpowers": {
       "optional": true
     }
   },

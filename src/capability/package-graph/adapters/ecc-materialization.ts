@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import {
   type EccMaterializationReceipt,
   parseEccMaterializationReceipt,
-} from "../../../ecc/materialization-receipt.js";
+} from "../../../framework-plugin/ecc-facade.js";
 import {
   type PackageGraphAuthorityDocument,
   PackageGraphAuthorityDocumentSchema,

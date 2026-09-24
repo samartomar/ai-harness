@@ -162,4 +162,58 @@ describe("developer tool policy selection", () => {
   ])("rejects malformed explicit selections %#", (developerTools) => {
     expect(() => parseOrgPolicy(v3Policy({ developerTools }))).toThrow(/org-policy is invalid/);
   });
+
+  it.each(["code-review-graph", "codebase-memory-mcp"])(
+    "records %s as the enterprise primary code graph behind the 0.7.0 floor",
+    (primary) => {
+      const developerTools = { primaryCodeGraph: primary };
+      expect(() => parseOrgPolicy(v3Policy({ developerTools }))).toThrow(/0\.7\.0/);
+      const policy = parseOrgPolicy(v3Policy({ minimumCoreVersion: "0.7.0", developerTools }));
+      expect(resolveDeveloperToolSelectionForOrgPolicyV1(policy)).toMatchObject({
+        accepted: true,
+        source: "legacy-unspecified",
+        primaryCodeGraph: primary,
+      });
+      expect(
+        resolveDeveloperToolSelectionForOrgPolicyV1(parseOrgPolicy(v3Policy())),
+      ).not.toHaveProperty("primaryCodeGraph");
+    },
+  );
+
+  it.each([
+    { primaryCodeGraph: "serena" },
+    { primaryCodeGraph: "headroom" },
+    { primaryCodeGraph: "" },
+    { primaryCodeGraph: "code-review-graph", excluded: ["code-review-graph"] },
+    {
+      primaryCodeGraph: "codebase-memory-mcp",
+      selected: ["code-review-graph", "serena"],
+    },
+  ])("rejects a primary code graph that is unsupported or not selected %#", (developerTools) => {
+    expect(() => parseOrgPolicy(v3Policy({ minimumCoreVersion: "0.7.0", developerTools }))).toThrow(
+      /org-policy is invalid/,
+    );
+    expect(
+      resolveDeveloperToolSelectionForOrgPolicyV1(
+        v3Policy({ minimumCoreVersion: "0.7.0", developerTools }),
+      ),
+    ).toMatchObject({ accepted: false, source: "fail-closed", selected: [] });
+  });
+
+  it("cannot activate Headroom or any tool on the user's behalf", () => {
+    for (const developerTools of [
+      { selected: ["headroom"], activateHeadroom: true },
+      { selected: ["headroom"], activated: ["headroom"] },
+      { selected: ["headroom"], acceptHeadroomEgress: true },
+    ]) {
+      expect(() =>
+        parseOrgPolicy(v3Policy({ minimumCoreVersion: "0.7.0", developerTools })),
+      ).toThrow(/org-policy is invalid/);
+      expect(
+        resolveDeveloperToolSelectionForOrgPolicyV1(
+          v3Policy({ minimumCoreVersion: "0.7.0", developerTools }),
+        ),
+      ).toMatchObject({ accepted: false, source: "fail-closed" });
+    }
+  });
 });

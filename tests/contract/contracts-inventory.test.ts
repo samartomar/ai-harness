@@ -92,8 +92,29 @@ const PINS: ReadonlyArray<readonly [file: string, line: number, text: string]> =
   ],
   [
     "src/catalog-package/load-catalog-package.ts",
-    154,
+    157,
     "export async function loadCatalogPackageV1<",
+  ],
+  ["src/framework-host/index.ts", 17, "export const FRAMEWORK_HOST_API_VERSION = 1;"],
+  [
+    "src/framework-plugin/contract-v1.ts",
+    23,
+    "export const FRAMEWORK_PLUGIN_CONTRACT_VERSION = 1;",
+  ],
+  [
+    "src/framework-plugin/contract-v1.ts",
+    31,
+    "export const FRAMEWORK_PLUGIN_PACKAGE_NAMES = Object.freeze({",
+  ],
+  [
+    "src/framework-plugin/load-framework-plugin.ts",
+    53,
+    "export type FrameworkPluginRefusalReasonV1 =",
+  ],
+  [
+    "src/framework-plugin/load-framework-plugin.ts",
+    349,
+    "export async function loadFrameworkPluginV1(",
   ],
   [
     DESCRIPTOR_RESOLVER,

@@ -263,3 +263,23 @@ describe("setup.md — fresh-clone executability", () => {
     expect(setupDoc(DIR, contract({ packageManager: "pnpm" }))).toContain("`pnpm install`");
   });
 });
+
+describe("generated canon — primary code graph routing", () => {
+  it("keeps task-based graph routing byte-identical when no primary is chosen", () => {
+    expect(agentBehaviorCoreDoc(DIR)).toBe(agentBehaviorCoreDoc(DIR, undefined));
+    expect(agentBehaviorCoreDoc(DIR)).not.toContain("Primary code graph");
+  });
+
+  it.each([
+    ["code-review-graph", "codebase-memory-mcp", "policy", "organization policy"],
+    ["codebase-memory-mcp", "code-review-graph", "user", "developer-tools choice"],
+  ] as const)("names %s as primary and keeps %s available", (id, other, source, label) => {
+    const core = agentBehaviorCoreDoc(DIR, { id, source });
+    const tools = core.split("\n## Tool selection\n\n")[1]?.split("\n\n## ")[0] ?? "";
+    expect(tools).toContain(`Primary code graph: **${id}** (${label}).`);
+    expect(tools).toContain(`ask ${id} first`);
+    expect(tools).toContain(`**${other}**`);
+    // The shared block stays tool-agnostic, so bootloaders do not churn.
+    expect(sharedCanonicalBlockBody(DIR)).not.toContain("Primary code graph");
+  });
+});

@@ -898,7 +898,13 @@
       ],
       "options": [
         {
+          "flags": "--accept-headroom-egress"
+        },
+        {
           "flags": "--accept-token-optimizer-license"
+        },
+        {
+          "flags": "--activate-headroom"
         },
         {
           "flags": "--all-tools"
@@ -912,6 +918,9 @@
         {
           "flags": "--context-dir <dir>",
           "defaultValue": "ai-coding"
+        },
+        {
+          "flags": "--deactivate-headroom"
         },
         {
           "flags": "--detect"
@@ -931,6 +940,9 @@
         {
           "flags": "--posture <posture>",
           "defaultValue": "vibe"
+        },
+        {
+          "flags": "--primary-code-graph <id>"
         },
         {
           "flags": "--root <dir>"
@@ -1602,7 +1614,13 @@
       ],
       "options": [
         {
+          "flags": "--accept-headroom-egress"
+        },
+        {
           "flags": "--accept-token-optimizer-license"
+        },
+        {
+          "flags": "--activate-headroom"
         },
         {
           "flags": "--all-tools"
@@ -1623,6 +1641,9 @@
         {
           "flags": "--context-dir <dir>",
           "defaultValue": "ai-coding"
+        },
+        {
+          "flags": "--deactivate-headroom"
         },
         {
           "flags": "--detect"
@@ -1655,6 +1676,9 @@
         {
           "flags": "--posture <posture>",
           "defaultValue": "vibe"
+        },
+        {
+          "flags": "--primary-code-graph <id>"
         },
         {
           "flags": "--root <dir>"

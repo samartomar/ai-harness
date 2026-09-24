@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { parseExplicitAddReceipt } from "../../../ecc/mcp-explicit-add-receipt.js";
+import { parseExplicitAddReceipt } from "../../../framework-plugin/ecc-facade.js";
 import {
   ECC_MCP_CATALOG_PROVENANCE,
   eccExternalMcpCatalog,

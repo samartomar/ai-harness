@@ -49,7 +49,10 @@ export type CatalogPackageExportNameV1 =
   | "readCatalogRuntimeDescriptorsV1Result";
 
 /** The public data subpaths Core reads, exactly as Catalog's `exports` map names them. */
-export type CatalogPackageSubpathV1 = "./catalog-index.json" | "./catalog-runtime-descriptors.json";
+export type CatalogPackageSubpathV1 =
+  | "./catalog-index.json"
+  | "./catalog-runtime-descriptors.json"
+  | "./catalog-framework-plugins.json";
 
 type CatalogPackageFunctionsV1 = Pick<typeof CatalogPackage, CatalogPackageExportNameV1>;
 

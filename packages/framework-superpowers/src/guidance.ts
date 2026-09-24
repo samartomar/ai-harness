@@ -1,17 +1,12 @@
-import type { Cli } from "../internals/clis.js";
-import { type Action, doc } from "../internals/plan.js";
-import { lines } from "../internals/render.js";
+import { type Action, type Cli, doc, lines } from "@aihq/core/framework-host";
 
 /**
- * Per-CLI install of obra/Superpowers — the agent-behavior layer (brainstorm ->
- * plan -> TDD -> subagent review skills). Commands are verified against
- * Superpowers v6. Some CLIs install via a shell binary (`agy`, `copilot`) so we
- * emit an `exec` that runs under `--apply`; others install via slash commands
- * inside the tool's own TUI (`/plugin`, `/plugins`) which a shell can't drive,
- * so those are emitted as `doc` commands to run in the tool.
+ * Per-CLI Superpowers guidance — the agent-behavior layer (brainstorm -> plan ->
+ * TDD -> subagent review skills). Commands are verified against Superpowers v6.
+ * Every target is guidance only: marketplace and TUI installers cannot prove
+ * they consumed the evidence-verified commit, so aih runs none of them.
  */
 
-/** Claude Code: official-marketplace plugin (simplest) + the marketplace alt. */
 function evidenceNote(pin?: string): string[] {
   if (pin === undefined) return [];
   return [
@@ -22,6 +17,7 @@ function evidenceNote(pin?: string): string[] {
   ];
 }
 
+/** Claude Code: official-marketplace plugin (simplest) + the marketplace alt. */
 function claudeDoc(pin?: string): Action {
   return doc(
     "Install Superpowers for Claude Code (plugin)",
@@ -78,7 +74,7 @@ function genericDoc(cli: Cli, pin?: string): Action {
   );
 }
 
-/** Build the Superpowers install action(s) for one CLI. */
+/** The Superpowers guidance action(s) for one CLI. */
 export function superpowersActionsForCli(cli: Cli, pin?: string): Action[] {
   switch (cli) {
     case "claude":
@@ -92,7 +88,7 @@ export function superpowersActionsForCli(cli: Cli, pin?: string): Action[] {
     case "copilot":
       return [evidenceBoundManualDoc("Copilot CLI", pin)];
     default:
-      // cursor, gemini, windsurf, opencode, zed
+      // cursor, gemini, windsurf, opencode, zed, kiro
       return [genericDoc(cli, pin)];
   }
 }
@@ -109,18 +105,6 @@ export function superpowersOverviewDoc(): Action {
       "",
       "All marketplace/TUI targets are guidance-only because those installers cannot prove",
       "they consumed the evidence-verified commit. aih runs no mutable remote plugin install.",
-    ),
-  );
-}
-
-/** Advisory for shell-runnable Superpowers installs that fetch mutable remote plugin content. */
-export function superpowersSupplyChainDoc(): Action {
-  return doc(
-    "Superpowers supply chain — shell installs fetch remote plugin content",
-    lines(
-      "Antigravity and Copilot plugin commands fetch mutable remote content, so aih does not",
-      "execute them. Their marketplace selections are not covered by evidence for a different",
-      "checkout; pin or mirror an exact local adapter before a governed rollout.",
     ),
   );
 }

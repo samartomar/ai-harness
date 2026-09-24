@@ -1,0 +1,44 @@
+{
+  "name": "@aihq/framework-superpowers",
+  "version": "0.1.0",
+  "description": "obra/Superpowers framework plugin for @aihq/core: evidence-gated guidance, Kiro methodology steering, hook inventory and hook controls",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/samartomar/ai-harness.git",
+    "directory": "packages/framework-superpowers"
+  },
+  "homepage": "https://github.com/samartomar/ai-harness/tree/main/packages/framework-superpowers#readme",
+  "bugs": {
+    "url": "https://github.com/samartomar/ai-harness/issues"
+  },
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup"
+  },
+  "keywords": [
+    "aih",
+    "superpowers",
+    "framework-plugin"
+  ],
+  "peerDependencies": {
+    "@aihq/core": ">=0.7.0 <0.8.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

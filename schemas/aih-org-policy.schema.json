@@ -6162,6 +6162,13 @@
                   "headroom"
                 ]
               }
+            },
+            "primaryCodeGraph": {
+              "type": "string",
+              "enum": [
+                "code-review-graph",
+                "codebase-memory-mcp"
+              ]
             }
           },
           "additionalProperties": false
