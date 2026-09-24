@@ -27,6 +27,7 @@ import {
   readEccInstallManifest,
   writeEccInstallManifestAtomic,
 } from "../../../../src/ecc/install-manifest.js";
+import { AihError } from "../../../../src/errors.js";
 import { REGISTRY_IDS } from "../../../../src/internals/cli-registry.js";
 import type { Cli } from "../../../../src/internals/clis.js";
 import { executePlan } from "../../../../src/internals/execute.js";
@@ -52,6 +53,7 @@ import {
   codexInstallStateCleanupAction,
   codexPruneRemovalActions,
   coreOwnedEccCodexMcpServers,
+  loadChromeDevtoolsOptOutPredicate,
   stripCodexTomlFootprint,
 } from "../../src/ecc/codex.js";
 import { codexEccActions, command } from "../../src/ecc/index.js";
@@ -2690,6 +2692,33 @@ describe("Codex managed destination safety", () => {
       expect(failureCheckOf(run).code).toBeUndefined();
       expect(run.config).toBe("");
     });
+
+    it.each([
+      ["is missing", (path: string) => path],
+      [
+        "fails to load",
+        (path: string) => {
+          writeFileSync(path, "module.exports = {;\n", "utf8");
+          return path;
+        },
+      ],
+    ])(
+      "refuses typed at plan time when the predicate module %s, with no fallback",
+      (_case, prepare) => {
+        const path = prepare(join(tmp, "absent-or-broken-predicate.cjs"));
+        let thrown: unknown;
+        try {
+          loadChromeDevtoolsOptOutPredicate(path);
+        } catch (error) {
+          thrown = error;
+        }
+        expect(thrown).toBeInstanceOf(AihError);
+        expect((thrown as AihError).code).toBe("AIH_CONFIG");
+        expect((thrown as AihError).message).toContain(
+          `Chrome DevTools MCP opt-out predicate is unavailable: ${path}`,
+        );
+      },
+    );
 
     describe("gives the same verdict at plan and apply time for every TOML spelling", () => {
       const header =

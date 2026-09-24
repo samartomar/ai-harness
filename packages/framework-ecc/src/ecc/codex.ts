@@ -983,7 +983,7 @@ export interface ChromeDevtoolsOptOutRefusal {
   unparseable?: true;
 }
 
-interface ChromeDevtoolsOptOutPredicate {
+export interface ChromeDevtoolsOptOutPredicate {
   missing(server: unknown): ChromeDevtoolsMcpOptOut[] | undefined;
   refusals(
     configs: ReadonlyArray<{
@@ -1013,21 +1013,39 @@ let loadedChromeDevtoolsOptOutPredicate: ChromeDevtoolsOptOutPredicate | undefin
 
 /** Plan time loads the same file, by the same path, as the apply-time merge child. */
 function chromeDevtoolsOptOutPredicate(): ChromeDevtoolsOptOutPredicate {
-  if (loadedChromeDevtoolsOptOutPredicate !== undefined) return loadedChromeDevtoolsOptOutPredicate;
-  const path = chromeDevtoolsOptOutPredicatePath();
-  const loaded = createRequire(import.meta.url)(path) as Record<string, unknown> | undefined;
+  loadedChromeDevtoolsOptOutPredicate ??= loadChromeDevtoolsOptOutPredicate(
+    chromeDevtoolsOptOutPredicatePath(),
+  );
+  return loadedChromeDevtoolsOptOutPredicate;
+}
+
+/**
+ * Loads the opt-out predicate module at `path`. A module that is missing, fails to
+ * load, or lacks either export is the one typed refusal; there is no fallback.
+ */
+export function loadChromeDevtoolsOptOutPredicate(path: string): ChromeDevtoolsOptOutPredicate {
+  const unavailable = (reason: string) =>
+    new AihError(
+      `Chrome DevTools MCP opt-out predicate is unavailable: ${path} (${reason})`,
+      "AIH_CONFIG",
+    );
+  let loaded: Record<string, unknown> | undefined;
+  try {
+    loaded = createRequire(import.meta.url)(path) as Record<string, unknown> | undefined;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException | undefined)?.code;
+    throw unavailable(
+      code === "MODULE_NOT_FOUND" ? "module not found" : `module failed to load: ${String(error)}`,
+    );
+  }
   const missing = loaded?.chromeDevtoolsOptOutMissing;
   const refusals = loaded?.chromeDevtoolsOptOutRefusals;
   if (typeof missing !== "function" || typeof refusals !== "function")
-    throw new AihError(
-      `Chrome DevTools MCP opt-out predicate is unavailable: ${path}`,
-      "AIH_CONFIG",
-    );
-  loadedChromeDevtoolsOptOutPredicate = {
+    throw unavailable("it does not export the opt-out predicate");
+  return {
     missing: missing as ChromeDevtoolsOptOutPredicate["missing"],
     refusals: refusals as ChromeDevtoolsOptOutPredicate["refusals"],
   };
-  return loadedChromeDevtoolsOptOutPredicate;
 }
 
 function describeMissingOptOuts(missing: readonly ChromeDevtoolsMcpOptOut[]): string {
