@@ -98,6 +98,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   complete on an empty source. Anything else is `trust.detector-unavailable` (outcome `failed`).
   An `@aihq/scan` without completion evidence (before S2g) therefore fails every delegated
   detector, and a Snyk or mcp-scanner run whose SARIF names no tool driver fails too.
+- A SkillSpector run must state the image that ran (`evidence.observation.image`): its digest
+  must be Core's pinned digest or one Core's policy accepted for the request, stated with the
+  acceptance that digest implies (`scan-pinned` for the pinned digest, `caller-accepted`
+  otherwise) and a reference, and the observation's analyzer version must name exactly that
+  image under the pinned source revision. A missing or contradictory image fails the detector;
+  any other detector that states an image fails too.
 - Each delegated detector call, and the binding gate, binds its own subject: Core recomputes
   it immediately before the call, checks the completion evidence against it, and recomputes it
   after the call returns; a tree that changed during the call fails the detector. The

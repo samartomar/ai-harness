@@ -314,3 +314,48 @@ describe("each detector call is bound to the subject as it stood for that call",
     ]);
   });
 });
+
+describe("SkillSpector's run must state the image Core accepts", () => {
+  const onVector = sarifLog([evidence("detector.skillspector", VECTOR, SKILLSPECTOR_DOCKER)]);
+
+  it("completes with the pinned image, stated as Scan states it", async () => {
+    const result = await delegated(["skillspector"], {
+      "detector.skillspector": {
+        kind: "sarif",
+        sarif: onVector,
+        image: {
+          digest: SKILLSPECTOR_IMAGE_DIGEST,
+          reference: SKILLSPECTOR_IMAGE_DIGEST,
+          acceptance: "scan-pinned",
+        },
+      },
+    });
+    expect(result.executions).toEqual([
+      expect.objectContaining({ detector: "skillspector", outcome: "completed" }),
+    ]);
+  });
+
+  it.each([
+    ["no image", undefined, "states no image identity"],
+    [
+      "another image under the pinned version",
+      { digest: `sha256:${"e".repeat(64)}`, reference: "x", acceptance: "caller-accepted" },
+      "which is not a digest Core accepts",
+    ],
+  ])(
+    "fails a run that states %s, though its evidence proves the subject",
+    async (_l, image, reason) => {
+      const result = await delegated(["skillspector"], {
+        "detector.skillspector": { kind: "sarif", sarif: onVector, image },
+      });
+      expect(detectorCheck(result.checks, "skillspector")).toMatchObject({
+        verdict: "fail",
+        code: "trust.detector-unavailable",
+        detail: expect.stringContaining(reason),
+      });
+      expect(result.executions).toEqual([
+        expect.objectContaining({ detector: "skillspector", outcome: "failed" }),
+      ]);
+    },
+  );
+});

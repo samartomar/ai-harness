@@ -25,13 +25,19 @@ function hostUv(lock?: unknown) {
   };
 }
 
-function ran(profile: Record<string, unknown>, analyzerVersion: unknown) {
+function ran(profile: Record<string, unknown>, analyzerVersion: unknown, image?: unknown) {
   return {
     outcome: "succeeded",
     executionProfile: profile,
-    evidence: { kind: "baseline-analyzer-observation-v1", observation: { analyzerVersion } },
+    evidence: {
+      kind: "baseline-analyzer-observation-v1",
+      observation: { analyzerVersion, ...(image === undefined ? {} : { image }) },
+    },
   };
 }
+
+const PINNED_DIGEST = "sha256:c5d4a1816419f129ae85ff96b3e366d4a062c1859997e26b7ab87341a43d4800";
+const PINNED_IMAGE = { digest: PINNED_DIGEST, reference: PINNED_DIGEST, acceptance: "scan-pinned" };
 
 describe("Core's accepted Scan analyzer identities", () => {
   it("pins the identities the Scan B2 candidate ships, per detector and execution profile", () => {
@@ -200,16 +206,21 @@ describe("the execution evidence must name the accepted identity", () => {
   it("accepts SkillSpector under the pinned image or an image digest Core's policy accepted", () => {
     const profile = { id: "docker-host-local-skillspector-v1" };
     const approved = `sha256:${"b".repeat(64)}`;
+    const approvedImage = {
+      digest: approved,
+      reference: "skillspector:aih-2d198ab910ad",
+      acceptance: "caller-accepted",
+    };
     expect(
       executedScanAnalyzerIdentityRefusalV1(
-        ran(profile, SKILLSPECTOR_IDENTITY),
+        ran(profile, SKILLSPECTOR_IDENTITY, PINNED_IMAGE),
         "detector.skillspector",
         profile.id,
       ),
     ).toBeUndefined();
     expect(
       executedScanAnalyzerIdentityRefusalV1(
-        ran(profile, `2d198ab910add401cad658d1087e7c7ba24fd640@${approved}`),
+        ran(profile, `2d198ab910add401cad658d1087e7c7ba24fd640@${approved}`, approvedImage),
         "detector.skillspector",
         profile.id,
         { acceptedImageDigests: [approved] },
@@ -217,10 +228,72 @@ describe("the execution evidence must name the accepted identity", () => {
     ).toBeUndefined();
     expect(
       executedScanAnalyzerIdentityRefusalV1(
-        ran(profile, `2d198ab910add401cad658d1087e7c7ba24fd640@${approved}`),
+        ran(profile, `2d198ab910add401cad658d1087e7c7ba24fd640@${approved}`, approvedImage),
         "detector.skillspector",
         profile.id,
       ),
     ).toContain(`ran analyzer 2d198ab910add401cad658d1087e7c7ba24fd640@${approved}`);
+  });
+
+  const other = `sha256:${"c".repeat(64)}`;
+  const unaccepted = `sha256:${"d".repeat(64)}`;
+  it.each([
+    ["no image", SKILLSPECTOR_IDENTITY, undefined, "states no image identity"],
+    [
+      "an image that is not an object",
+      SKILLSPECTOR_IDENTITY,
+      "sha256:x",
+      "states no image identity",
+    ],
+    [
+      "a malformed image digest",
+      SKILLSPECTOR_IDENTITY,
+      { ...PINNED_IMAGE, digest: "c5d4a1816419" },
+      `ran image "c5d4a1816419", which is not a digest Core accepts (${PINNED_DIGEST}, ${other})`,
+    ],
+    [
+      "an image digest Core does not accept",
+      SKILLSPECTOR_IDENTITY,
+      { ...PINNED_IMAGE, digest: unaccepted },
+      `ran image "${unaccepted}", which is not a digest Core accepts (${PINNED_DIGEST}, ${other})`,
+    ],
+    [
+      "an accepted image the analyzer version contradicts",
+      SKILLSPECTOR_IDENTITY,
+      { digest: other, reference: other, acceptance: "caller-accepted" },
+      `states analyzer ${SKILLSPECTOR_IDENTITY} for image ${other}`,
+    ],
+    [
+      "the pinned image stated as caller-accepted",
+      SKILLSPECTOR_IDENTITY,
+      { ...PINNED_IMAGE, acceptance: "caller-accepted" },
+      `states image ${PINNED_DIGEST} as "caller-accepted"; Core expects "scan-pinned"`,
+    ],
+    [
+      "an image with no reference",
+      SKILLSPECTOR_IDENTITY,
+      { digest: PINNED_DIGEST, acceptance: "scan-pinned" },
+      "states an image with no reference",
+    ],
+  ])("refuses a SkillSpector run whose evidence states %s", (_label, version, image, reason) => {
+    const refusal = executedScanAnalyzerIdentityRefusalV1(
+      ran({ id: "docker-host-local-skillspector-v1" }, version, image),
+      "detector.skillspector",
+      "docker-host-local-skillspector-v1",
+      { acceptedImageDigests: [other] },
+    );
+    expect(refusal).toContain(
+      `detector.skillspector under docker-host-local-skillspector-v1 ${reason}`,
+    );
+  });
+
+  it("refuses an image identity from a detector that runs no image", () => {
+    expect(
+      executedScanAnalyzerIdentityRefusalV1(
+        ran(hostUv(SEMGREP_LOCK), "1.173.0+uvlock.77f2bf3e7525", PINNED_IMAGE),
+        "detector.semgrep",
+        "host-process-uv-v1",
+      ),
+    ).toBe("detector.semgrep under host-process-uv-v1 states an image identity, but runs no image");
   });
 });

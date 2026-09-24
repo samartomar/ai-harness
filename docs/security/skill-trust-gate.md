@@ -138,6 +138,11 @@ run as completed, and its zero findings as zero, only when the SARIF itself prov
   the identity Core accepted for the run (`null` for in-process and SkillSpector Docker
   profiles). Zero files are accepted only for Semgrep, SkillSpector, Snyk, the trust lint and
   the binding gate.
+- **SkillSpector image.** A SkillSpector run records no uv.lock, so its image is its identity:
+  `evidence.observation.image` must name Core's pinned digest or one Core's policy accepted,
+  with the matching acceptance (`scan-pinned` or `caller-accepted`) and a reference, and the
+  analyzer version must be `<pinned revision>@<that digest>`. No other detector may state an
+  image.
 
 A run that fails either check is `trust.detector-unavailable` with outcome `failed`; a required
 detector fails at enterprise posture. Core binds the subject for each detector call on its

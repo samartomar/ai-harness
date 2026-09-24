@@ -173,10 +173,41 @@ export function declaredScanAnalyzerIdentityRefusalV1(
 }
 
 /**
+ * Why SkillSpector's stated image (`evidence.observation.image`) is not one
+ * Core accepts for the run, or undefined when it is: the digest is Core's
+ * pinned digest or one Core's policy accepted for this request, stated with
+ * the acceptance that digest implies and a reference, and the observation's
+ * analyzer version names exactly that image under the pinned source revision.
+ */
+function skillspectorImageRefusal(
+  observation: Record<string, unknown> | undefined,
+  at: string,
+  acceptedImageDigests: readonly string[],
+): string | undefined {
+  const image = asRecord(observation?.image);
+  if (image === undefined)
+    return `${at} states no image identity (evidence.observation.image), so Core cannot tell which image ran`;
+  const approved = [...new Set([SKILLSPECTOR_IMAGE_DIGEST, ...acceptedImageDigests])];
+  const digest = image.digest;
+  if (typeof digest !== "string" || !approved.includes(digest))
+    return `${at} ran image "${shown(digest)}", which is not a digest Core accepts (${approved.join(", ")})`;
+  if (typeof image.reference !== "string" || image.reference.trim().length === 0)
+    return `${at} states an image with no reference`;
+  const acceptance = digest === SKILLSPECTOR_IMAGE_DIGEST ? "scan-pinned" : "caller-accepted";
+  if (image.acceptance !== acceptance)
+    return `${at} states image ${digest} as "${shown(image.acceptance)}"; Core expects "${acceptance}"`;
+  const version = `${SKILLSPECTOR_SOURCE_REVISION}@${digest}`;
+  if (observation?.analyzerVersion !== version)
+    return `${at} states analyzer ${shown(observation?.analyzerVersion)} for image ${digest}; that image is analyzer ${version}`;
+  return undefined;
+}
+
+/**
  * Why a succeeded run's own evidence (the profile that ran and the analyzer
  * version its observation states) does not name the identity Core accepts, or
  * undefined when it does. SkillSpector may also name an image digest Core's
- * policy accepted for this request, under the pinned source revision.
+ * policy accepted for this request, under the pinned source revision, and must
+ * state the image that ran; no other detector runs an image or may state one.
  */
 export function executedScanAnalyzerIdentityRefusalV1(
   result: unknown,
@@ -188,7 +219,9 @@ export function executedScanAnalyzerIdentityRefusalV1(
   if (identity === undefined) return unpinned(detectorId, executionProfileId);
   const record = asRecord(result);
   const lock = profileLock(asRecord(record?.executionProfile));
-  const observed = asRecord(asRecord(record?.evidence)?.observation)?.analyzerVersion;
+  const observation = asRecord(asRecord(record?.evidence)?.observation);
+  const observed = observation?.analyzerVersion;
+  const at = `${detectorId} under ${executionProfileId}`;
   const expected = observedScanAnalyzerVersionV1(identity);
   const accepted =
     detectorId === "detector.skillspector"
@@ -199,7 +232,12 @@ export function executedScanAnalyzerIdentityRefusalV1(
           ),
         ]
       : [expected];
-  if (typeof observed === "string" && accepted.includes(observed) && lock === identity.lockSha256)
-    return undefined;
-  return `${detectorId} under ${executionProfileId} ran analyzer ${shown(observed)} with ${lockText(lock)}; Core accepts ${expected} with ${lockText(identity.lockSha256)}`;
+  if (
+    !(typeof observed === "string" && accepted.includes(observed) && lock === identity.lockSha256)
+  )
+    return `${at} ran analyzer ${shown(observed)} with ${lockText(lock)}; Core accepts ${expected} with ${lockText(identity.lockSha256)}`;
+  if (detectorId === "detector.skillspector")
+    return skillspectorImageRefusal(observation, at, options.acceptedImageDigests ?? []);
+  if (observation?.image !== undefined) return `${at} states an image identity, but runs no image`;
+  return undefined;
 }
