@@ -1152,8 +1152,8 @@ const REFUSAL_RECORD_KEYS = ["code", "format", "nonce", "refusals", "version"];
  * The apply-time refusal evidence of one Codex merge step. The executor scrubs a
  * bounded-stdin child's output (the verified driver), so the refusal travels as a
  * record file, not a stderr line. Just before the step runs, aih creates a private
- * directory (0700 on POSIX; on Windows the per-user temp directory's ACL keeps other
- * users out) and, inside it, the record file exclusively, and keeps that file's
+ * directory (0700 on POSIX; on Windows it inherits the temp directory's ACL, which is
+ * per-user by default) and, inside it, the record file exclusively, and keeps that file's
  * descriptor. The merge script writes one bounded record carrying this step's nonce
  * into the empty, singly linked regular file it finds there; aih reads it back through
  * its own descriptor, then removes both. Only exit 78 with a valid record for this step
@@ -1161,6 +1161,9 @@ const REFUSAL_RECORD_KEYS = ["code", "format", "nonce", "refusals", "version"];
  * Same-user limit: a process running as the same user is outside this record's threat
  * model, since it can already edit the configs aih reads and a forged record can only
  * change which failure code a failing step reports, never turn a failure into success.
+ * The same bound covers Windows when TEMP is redirected to a directory other users can
+ * write: another user could then interfere with the record, which again only changes
+ * which failure code a failing step reports.
  */
 export class ChromeDevtoolsOptOutRefusalRecord implements ExecSidecar {
   readonly path = join(
