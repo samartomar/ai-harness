@@ -23,7 +23,8 @@ function npmCli(): string {
     join(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js"),
   ];
   const found = candidates.find(
-    (candidate) => candidate !== undefined && /npm-cli\.js$/.test(candidate) && existsSync(candidate),
+    (candidate) =>
+      candidate !== undefined && /npm-cli\.js$/.test(candidate) && existsSync(candidate),
   );
   if (found === undefined) throw new Error("npm-cli.js not found for the pack file list");
   return found;
