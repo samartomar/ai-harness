@@ -238,8 +238,16 @@ try {
   // ---- Fixture and TypeScript sources ------------------------------------
   const fixture = join(work, "fixture-root");
   mkdirSync(join(fixture, "skills", "demo"), { recursive: true });
-  writeFileSync(join(fixture, "SKILL.md"), "# Fixture skill\n\nUse this skill for fixture hygiene.\n");
-  writeFileSync(join(fixture, "skills", "demo", "SKILL.md"), "# Demo\n\nNothing alarming here.\n");
+  // Valid skill manifests (frontmatter `name` and `description`), so the Cisco
+  // skill-scanner analyzes them rather than refusing the manifest inside Scan.
+  writeFileSync(
+    join(fixture, "SKILL.md"),
+    "---\nname: fixture-skill\ndescription: Use this skill for fixture hygiene.\n---\n\n# Fixture skill\n\nUse this skill for fixture hygiene.\n",
+  );
+  writeFileSync(
+    join(fixture, "skills", "demo", "SKILL.md"),
+    "---\nname: demo\ndescription: A demo skill with nothing alarming in it.\n---\n\n# Demo\n\nNothing alarming here.\n",
+  );
   const coreTs = [
     'import * as core from "@aihq/core";',
     'import type { ScanExecutionAdapterV1, ScanVerificationAdapterV1 } from "@aihq/core";',
