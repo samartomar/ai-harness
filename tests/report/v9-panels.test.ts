@@ -443,7 +443,7 @@ describe("eccInventoryDigest", () => {
     put(".claude/agents/team.md", "# team\n");
     const digest = await eccInventoryDigest(ctx());
     expect(digest?.text).toContain("ECC checks were not run: framework-plugin-unavailable");
-    expect((digest?.data as { eccChecks?: string }).eccChecks).toBe("not-run");
+    expect((digest?.data as { eccChecks?: string } | undefined)?.eccChecks).toBe("not-run");
   });
 
   it("takes the stack's ECC packs from the plugin's component identification", async () => {
@@ -454,7 +454,7 @@ describe("eccInventoryDigest", () => {
     });
     expect(digest?.text).toContain("ECC packs for this stack:");
     expect(digest?.text).not.toContain("were not run");
-    expect((digest?.data as { eccChecks?: string }).eccChecks).toBeUndefined();
+    expect((digest?.data as { eccChecks?: string } | undefined)?.eccChecks).toBeUndefined();
   });
 });
 
