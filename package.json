@@ -88,6 +88,7 @@
     "baseline:artifact": "tsx src/baseline-evidence/vendor-artifact.ts",
     "prepare:workbench-catalog-qualification": "tsx src/internals/prepare-workbench-catalog-qualification.ts",
     "prepare:workbench-collection-evidence": "tsx src/internals/prepare-workbench-collection-evidence.ts",
+    "prepare:packaged-workbench-source-data": "tsx src/internals/prepare-packaged-workbench-source-data.ts",
     "release:preflight": "tsx src/internals/release-preflight.ts",
     "release:governance": "tsx src/internals/delivery-governance-command.ts",
     "check:published-bin": "node dist/cli.js --version && node dist/cli.js --help",
