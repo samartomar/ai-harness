@@ -49,7 +49,7 @@ describe("load-catalog-package", () => {
     expect(CATALOG_PACKAGE_PROJECT_INSTALL_COMMAND).toBe(
       "npm install @aihq/core @aihq/scan @aihq/catalog",
     );
-    expect(CATALOG_PACKAGE_PEER_RANGE).toBe(">=0.2.0 <1.0.0");
+    expect(CATALOG_PACKAGE_PEER_RANGE).toBe(">=0.3.0 <0.4.0");
   });
 
   it("hands back the installed readers and the exact bytes of the named public subpaths", async () => {
@@ -62,7 +62,7 @@ describe("load-catalog-package", () => {
     );
     expect(Object.keys(loaded.exports).sort()).toEqual([...READERS].sort());
     expect(loaded.root).toBe(installedRoot);
-    expect(loaded.version).toBe("0.2.0");
+    expect(loaded.version).toBe("0.3.0");
     const sidecar = loaded.files["./catalog-runtime-descriptors.json"];
     expect(sidecar.path).toBe(
       join(installedRoot, "defaults", "catalog-runtime-descriptors-v1.json"),
@@ -110,6 +110,53 @@ describe("load-catalog-package", () => {
     }
   });
 
+  it("does not mistake a broken installed package path for an absent package", async () => {
+    for (const brokenPath of [
+      "/consumer/node_modules/@aihq/catalog/dist/missing.js",
+      "C:\\consumer\\node_modules\\@aihq\\catalog\\dist\\missing.js",
+    ]) {
+      const loaded = await loadCatalogPackageV1(
+        READERS,
+        SUBPATHS,
+        access({
+          importPackage: () =>
+            Promise.reject(
+              Object.assign(new Error(`Cannot find module '${brokenPath}'`), {
+                code: "MODULE_NOT_FOUND",
+              }),
+            ),
+          resolve: (specifier) =>
+            specifier.endsWith("package.json")
+              ? `${brokenPath.slice(0, brokenPath.lastIndexOf("dist"))}package.json`
+              : requireFromTest.resolve(specifier),
+        }),
+      );
+      expect(loaded).toMatchObject({
+        ok: false,
+        refusal: { reason: "catalog-package-incompatible" },
+      });
+    }
+  });
+
+  it("refuses an installed Catalog outside the exact compatible minor range", async () => {
+    const loaded = await loadCatalogPackageV1(
+      [],
+      [],
+      access({
+        resolve: (specifier) =>
+          specifier.endsWith("/package.json") ? "C:/catalog/package.json" : specifier,
+        readFile: () => Buffer.from('{"name":"@aihq/catalog","version":"0.2.0"}'),
+      }),
+    );
+    expect(loaded).toMatchObject({
+      ok: false,
+      refusal: {
+        reason: "catalog-package-incompatible",
+        detail: expect.stringContaining("version 0.2.0"),
+      },
+    });
+  });
+
   it("refuses as incompatible when a needed reader is not a function", async () => {
     const loaded = await loadCatalogPackageV1(
       READERS,
@@ -150,7 +197,7 @@ describe("load-catalog-package", () => {
   });
 
   it("refuses as incompatible when the installed Catalog does not publish a needed subpath", async () => {
-    // The registry's @aihq/catalog 0.2.0 has no ./catalog-runtime-descriptors.json export.
+    // An installed Catalog without the required subpath is incompatible.
     const loaded = await loadCatalogPackageV1(
       READERS,
       SUBPATHS,
