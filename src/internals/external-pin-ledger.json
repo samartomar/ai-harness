@@ -295,10 +295,10 @@
     {
       "surface": "aws-mcp-guide-source",
       "identity": "awslabs/mcp",
-      "version": "2026.07.20260728181317",
-      "commit": "536db49a5a5883ab26f8210af90dfc714fee89e7",
+      "version": "2026.09.20260922000649",
+      "commit": "c69966b8828f8b8d6c7b4cefd7aaf0e91f9071f1",
       "disposition": "active",
-      "reason": "Maintained legacy-source guidance is refreshed to the latest tagged commit, while new production adoption is directed to the Agent Toolkit for AWS successor."
+      "reason": "Maintained legacy-source guidance is refreshed to the latest tagged commit, while new production adoption is directed to the Agent Toolkit for AWS successor. Moved 2026.07.20260728181317 (536db49a5a5883ab26f8210af90dfc714fee89e7) -> 2026.09.20260922000649 on 2026-09-24: the annotated tag object 69ecc0fcbdefe8156b8407e96a6f490e8f622c13 dereferences to this signature-verified commit, 156 commits ahead of the previous pin and none behind. Guide-only: AIH emits no launch from this source; the database-MCP note still names its DynamoDB server (src/dynamodb-mcp-server, awslabs.dynamodb-mcp-server 2.1.8 at this commit), and the upstream README at this commit still names the Agent Toolkit for AWS as the successor."
     },
     {
       "surface": "uv",
