@@ -20,6 +20,8 @@ import { makeHostAdapter } from "../../../../src/platform/detect.js";
 import {
   ECC_PROFILE_OWNERSHIP_PATH,
   type EccProfileInstalledSourceTrust,
+  EccProfileLifecycleRefusalError,
+  type EccProfileLifecycleRefusalReason,
   EccProfileRecoveryRefusalError,
   eccProfileRecoveryIdentity,
   planEccProfileLifecycle,
@@ -31,6 +33,25 @@ import type { EccProjection, RenderedProjectionFile } from "../../src/profile/re
 const COMMIT_A = "a".repeat(40);
 const COMMIT_B = "b".repeat(40);
 let root: string;
+
+/** The typed lifecycle refusal `action` throws, checked against its stable reason. */
+function lifecycleRefusal(
+  action: () => unknown,
+  reason: EccProfileLifecycleRefusalReason,
+): EccProfileLifecycleRefusalError {
+  try {
+    action();
+  } catch (error) {
+    expect(error).toBeInstanceOf(EccProfileLifecycleRefusalError);
+    const refusal = error as EccProfileLifecycleRefusalError;
+    expect(refusal.reason).toBe(reason);
+    expect(refusal.code).toBe("AIH_FRAMEWORK_PLUGIN");
+    expect(refusal.message).toMatch(new RegExp(`^${reason}: .*\\. Next: `));
+    expect(refusal.message.endsWith(`Next: ${refusal.nextRoute}`)).toBe(true);
+    return refusal;
+  }
+  throw new Error(`expected the ${reason} refusal`);
+}
 
 function sha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
@@ -617,12 +638,18 @@ describe("AIH-owned ECC projection lifecycle", () => {
     );
 
     await executePlan(planEccProfileLifecycle(root, projection(), "install"), ctx(true));
-    expect(() => planEccProfileLifecycle(root, projection(COMMIT_B), "install")).toThrow(
-      /already owned at a different pin/i,
+    const owned = lifecycleRefusal(
+      () => planEccProfileLifecycle(root, projection(COMMIT_B), "install"),
+      "framework-profile-already-owned",
     );
-    expect(() => planEccProfileLifecycle(root, projection(), "update")).toThrow(
-      /exact new source pin/i,
+    expect(owned.message).toMatch(/already owned at a different pin/i);
+    expect(owned.nextRoute).toMatch(/aih ecc --lifecycle update/);
+    const unchanged = lifecycleRefusal(
+      () => planEccProfileLifecycle(root, projection(), "update"),
+      "framework-profile-update-same-pin",
     );
+    expect(unchanged.message).toMatch(/exact new source pin/i);
+    expect(unchanged.nextRoute).toMatch(/aih ecc --lifecycle repair/);
     expect(() => planEccProfileLifecycle(root, projection(COMMIT_B), "repair")).toThrow(
       /repair projection contradicts/i,
     );
@@ -1100,9 +1127,13 @@ describe("same-pin ECC profile projection migration", () => {
     await executePlan(planEccProfileLifecycle(root, projection(), "install"), ctx(true));
     const other = next();
     other.sourceClosure = { ...other.sourceClosure, aggregateSha256: "2".repeat(64) };
-    expect(() =>
-      planEccProfileLifecycle(root, other, "update", [identity(projection()), identity(other)]),
-    ).toThrow(/exact new source pin/i);
+    const refusal = lifecycleRefusal(
+      () =>
+        planEccProfileLifecycle(root, other, "update", [identity(projection()), identity(other)]),
+      "framework-profile-update-same-pin",
+    );
+    expect(refusal.message).toMatch(/exact new source pin/i);
+    expect(refusal.nextRoute).toMatch(/new exact ECC source pin/i);
   });
 
   it("refuses repair of an installation a later anchored render of its pin supersedes", async () => {
@@ -1110,12 +1141,14 @@ describe("same-pin ECC profile projection migration", () => {
     const installed = identity(projection());
     rmSync(join(root, ".agents/skills/example/SKILL.md"));
 
-    expect(() =>
-      planInstalledEccProfileLifecycle(root, "repair", [installed, identity(next())]),
-    ).toThrow(/superseded.*--lifecycle update/i);
-    expect(() =>
-      planEccProfileLifecycle(root, projection(), "repair", [installed, identity(next())]),
-    ).toThrow(/superseded.*--lifecycle update/i);
+    for (const repair of [
+      () => planInstalledEccProfileLifecycle(root, "repair", [installed, identity(next())]),
+      () => planEccProfileLifecycle(root, projection(), "repair", [installed, identity(next())]),
+    ]) {
+      const refusal = lifecycleRefusal(repair, "framework-profile-superseded");
+      expect(refusal.message).toMatch(/superseded by the anchored projection/i);
+      expect(refusal.nextRoute).toMatch(/^run aih ecc --lifecycle update to migrate/);
+    }
     // The current render of the pin still repairs.
     await executePlan(planInstalledEccProfileLifecycle(root, "repair", [installed]), ctx(true));
     expect(readFileSync(join(root, ".agents/skills/example/SKILL.md"), "utf8")).toBe(

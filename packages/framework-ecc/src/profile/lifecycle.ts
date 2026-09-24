@@ -115,6 +115,28 @@ export class EccProfileRecoveryRefusalError extends AihError {
   }
 }
 
+export type EccProfileLifecycleRefusalReason =
+  | "framework-profile-already-owned"
+  | "framework-profile-superseded"
+  | "framework-profile-update-same-pin";
+
+/**
+ * A lifecycle operation refused on the installed profile's identity: another
+ * lifecycle operation is the operator's next step, and the refusal names it.
+ */
+export class EccProfileLifecycleRefusalError extends AihError {
+  readonly reason: EccProfileLifecycleRefusalReason;
+  readonly label: string;
+  readonly nextRoute: string;
+
+  constructor(reason: EccProfileLifecycleRefusalReason, label: string, nextRoute: string) {
+    super(`${reason}: ${label}. Next: ${nextRoute}`, "AIH_FRAMEWORK_PLUGIN");
+    this.reason = reason;
+    this.label = label;
+    this.nextRoute = nextRoute;
+  }
+}
+
 const RECOVERY_NEXT_ROUTE =
   "use an @aihq/core package version whose append-only ECC profile installation trust record names this exact ECC pin and projection digest";
 
@@ -246,8 +268,10 @@ function assertNotSuperseded(
         anchor.projectionSha256 !== installed.projectionSha256,
     );
   if (later !== undefined)
-    throw new Error(
-      `ECC profile repair: the installed projection ${installed.projectionSha256} of ${installed.repository}@${installed.commit} is superseded by the anchored projection ${later.projectionSha256} of the same pin, and repair would restore what that render withholds. Next: run aih ecc --lifecycle update to migrate; rollback to the installed projection stays available`,
+    throw new EccProfileLifecycleRefusalError(
+      "framework-profile-superseded",
+      `ECC profile repair: the installed projection ${installed.projectionSha256} of ${installed.repository}@${installed.commit} is superseded by the anchored projection ${later.projectionSha256} of the same pin, and repair would restore what that render withholds`,
+      "run aih ecc --lifecycle update to migrate; rollback to the installed projection stays available",
     );
 }
 
@@ -266,8 +290,10 @@ function assertSamePinMigration(
     !samePin(receipt.source, next) ||
     sameSource(writeSemanticsIdentity(receipt.source, receipt.files), next)
   )
-    throw new Error(
+    throw new EccProfileLifecycleRefusalError(
+      "framework-profile-update-same-pin",
       "ECC profile update requires an exact new source pin or an anchored new projection of the installed pin",
+      "update to a new exact ECC source pin, or to a projection of the installed pin that Core's installation trust record anchors at the same source closure; to restore the installed projection, run aih ecc --lifecycle repair",
     );
   assertAnchored(
     receipt.source,
@@ -685,7 +711,11 @@ function installPlan(
   const receiptFile = readReceiptFile(root);
   if (receiptFile !== undefined) {
     if (!identifiesProjection(receiptFile.receipt.source, projection))
-      throw new Error("ECC profile is already owned at a different pin or projection; use update");
+      throw new EccProfileLifecycleRefusalError(
+        "framework-profile-already-owned",
+        "ECC profile is already owned at a different pin or projection",
+        "run aih ecc --lifecycle update to move the installation; aih ecc --lifecycle uninstall removes it",
+      );
     assertReceiptMatchesProjection(receiptFile.receipt, files);
     for (const entry of receiptFile.receipt.files) assertOwnedCurrent(root, entry);
     return plan("ecc-profile: install");

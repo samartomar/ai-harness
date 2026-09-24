@@ -4,11 +4,17 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { Command } from "commander";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { runCapability } from "../../../../src/commands/run.js";
+import { command as eccCommand } from "../../../../src/framework-plugin/ecc-command.js";
 import type { PlanContext } from "../../../../src/internals/plan.js";
 import { fakeRunner } from "../../../../src/internals/proc.js";
 import { makeHostAdapter } from "../../../../src/platform/detect.js";
-import { executeEccProfileLifecycleCommand } from "../../src/profile/command.js";
+import {
+  type EccProfileLifecycleCommandDeps,
+  executeEccProfileLifecycleCommand,
+} from "../../src/profile/command.js";
 import {
   EccProfileRecoveryRefusalError,
   eccProfileRecoveryIdentity,
@@ -57,6 +63,44 @@ function context(root: string, operation: string): PlanContext {
     env: {},
     options: { lifecycle: operation },
   };
+}
+
+/**
+ * `aih ecc <root> --apply --lifecycle <operation>` through Core's CLI runner,
+ * with the plugin's lifecycle command as the executor: what the operator sees
+ * on a refusal is the runner's `error [code]: message` line and exit 1.
+ */
+async function cli(
+  root: string,
+  operation: string,
+  deps: EccProfileLifecycleCommandDeps,
+): Promise<{ exit: number; output: string }> {
+  const command = new Command("ecc");
+  command.exitOverride();
+  command.configureOutput({ writeOut: () => {}, writeErr: () => {} });
+  command
+    .argument("[root]")
+    .option("--apply")
+    .option("--json")
+    .option("--no-log")
+    .option("--root <dir>")
+    .option("--context-dir <dir>", "", "ai-coding")
+    .option("--posture <posture>", "", "enterprise")
+    .option("--lifecycle <operation>");
+  command.parse([root, "--apply", "--no-log", "--lifecycle", operation], { from: "user" });
+  let output = "";
+  const exit = await runCapability(eccCommand, command, {
+    env: {},
+    run: fakeRunner(() => undefined),
+    write: (text) => {
+      output += text;
+    },
+    writeError: (text) => {
+      output += text;
+    },
+    execute: (ctx) => executeEccProfileLifecycleCommand(ctx, deps),
+  });
+  return { exit, output };
 }
 
 function sha256(value: string): string {
@@ -168,12 +212,31 @@ describe("same-pin ECC profile migration", () => {
       expect(readEccProfileOwnership(target)?.source).toEqual(legacyIdentity);
 
       // Core anchors the later render of the same pin: repair of the earlier
-      // installation refuses with the update route instead of restoring payloads.
+      // installation refuses, typed, with the update route instead of restoring payloads.
       coreAnchors([legacyIdentity, currentIdentity]);
-      await expect(
-        executeEccProfileLifecycleCommand(context(target, "repair"), withCurrent),
-      ).rejects.toThrow(/superseded.*--lifecycle update/i);
+      const repair = await cli(target, "repair", withCurrent);
+      expect(repair.exit).toBe(1);
+      expect(repair.output).toMatch(
+        /^error \[AIH_FRAMEWORK_PLUGIN\]: framework-profile-superseded: .*superseded by the anchored projection.*\. Next: run aih ecc --lifecycle update to migrate; rollback to the installed projection stays available\n$/,
+      );
       expect(existsSync(at(target, payloads[0] as string))).toBe(false);
+
+      // A projection of the installed commit at another source closure is not a
+      // same-pin migration, even when anchored: typed refusal, receipt untouched.
+      const otherClosure: EccProjection = {
+        ...current,
+        sourceClosure: { ...current.sourceClosure, aggregateSha256: "2".repeat(64) },
+      };
+      coreAnchors([legacyIdentity, currentIdentity, eccProfileRecoveryIdentity(otherClosure)]);
+      const crossClosure = await cli(target, "update", {
+        loadProjection: async () => otherClosure,
+      });
+      expect(crossClosure.exit).toBe(1);
+      expect(crossClosure.output).toMatch(
+        /^error \[AIH_FRAMEWORK_PLUGIN\]: framework-profile-update-same-pin: .*exact new source pin.*\. Next: .*new exact ECC source pin/,
+      );
+      expect(readEccProfileOwnership(target)?.source).toEqual(legacyIdentity);
+      coreAnchors([legacyIdentity, currentIdentity]);
 
       const updated = await executeEccProfileLifecycleCommand(
         context(target, "update"),

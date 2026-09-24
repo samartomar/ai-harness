@@ -114,6 +114,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and keeps rollback to the installed projection. Any other change within the installed pin still
   refuses. `--lifecycle repair` of an installation that a later anchored render of its pin
   supersedes refuses and routes to update, instead of restoring files the current render withholds.
+  These refusals are typed `AIH_FRAMEWORK_PLUGIN` errors with a stable reason and a next route:
+  `framework-profile-superseded` (repair of a superseded installation),
+  `framework-profile-update-same-pin` (any other update within the installed pin) and
+  `framework-profile-already-owned` (install over an installation of another pin or projection),
+  where the CLI used to report a generic `AIH_ERROR`.
 - `@aihq/framework-ecc` validates the ECC descriptor's module graph where it reads it: a
   dependency or profile member naming a module the graph lacks, a repeated module id, or a
   dependency cycle refuses with `AIH_FRAMEWORK_DESCRIPTOR` naming it. A structural dependency

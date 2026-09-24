@@ -635,7 +635,10 @@ installed pin it migrates only between two projections that Core's trust record 
 such as a later render that projects only the stub for a skill a client cannot run. It removes the files aih owned that
 the new projection drops, never touches operator files, and keeps rollback to the installed projection. Repair of an
 installation that a later anchored render of its pin supersedes refuses and routes to `--lifecycle update`, because
-repair replays the receipt and would restore what the current render withholds. Legacy selection flags such as `--profile`, `--with`, and `--cli`
+repair replays the receipt and would restore what the current render withholds. These refusals exit with
+`AIH_FRAMEWORK_PLUGIN`, a stable reason and the next route: `framework-profile-superseded` for that repair,
+`framework-profile-update-same-pin` for any other update within the installed pin, and `framework-profile-already-owned`
+for an install over an installation of another pin or projection. Legacy selection flags such as `--profile`, `--with`, and `--cli`
 cannot be combined with `--lifecycle`.
 
 In a **governed** repository (an org policy carrying `governance`), `--lifecycle install` is not this
