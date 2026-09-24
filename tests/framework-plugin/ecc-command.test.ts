@@ -6,6 +6,7 @@ import { ALL_COMMAND_SPEC_PATHS, ALL_COMMAND_SPECS } from "../../src/commands/in
 import type {
   FrameworkCoreRuntimeV1,
   FrameworkOperationContextV1,
+  FrameworkPolicyDeliveryHookV1,
 } from "../../src/framework-plugin/contract-v1.js";
 import {
   command,
@@ -155,10 +156,13 @@ describe("governed ECC delivery — the Core invocation around policy projection
   }
 
   async function withDelivery(
-    policyDelivery: LoadedFrameworkPluginV1["plugin"]["policyDelivery"],
+    delivery: Pick<FrameworkPolicyDeliveryHookV1, "prepare"> | undefined,
   ): Promise<LoadedFrameworkPluginV1> {
     const loaded = await loadEccFromSource();
     if (!loaded.ok) throw new Error(loaded.refusal.detail);
+    const inspect = loaded.plugin.policyDelivery?.inspect;
+    if (inspect === undefined) throw new Error("expected the source plugin's inspector");
+    const policyDelivery = delivery === undefined ? undefined : { ...delivery, inspect };
     return { ...loaded, plugin: { ...loaded.plugin, policyDelivery } };
   }
 

@@ -2,15 +2,41 @@ import type {
   FileAssertion,
   FrameworkPolicyDeliveryCommitV1,
   FrameworkPolicyDeliveryHookV1,
+  FrameworkPolicyDeliveryInspectorV1,
   FrameworkPreparedPolicyDeliveryV1,
   PlanResult,
 } from "@aihq/core/framework-host";
+import { describeEccEffectiveDiscovery } from "./ecc/effective-discovery.js";
 import {
   applyPreparedGovernedEccDelivery,
   type PreparedGovernedEccDelivery,
 } from "./ecc/governed-lifecycle.js";
+import {
+  type EccMaterializationTarget,
+  GOVERNED_MATERIALIZATION_TARGETS,
+} from "./ecc/materialization-target.js";
 import { type EccCommandDeps, executeEccCommand } from "./ecc/pipeline.js";
 import { currentCoreRuntime, withEccInvocation } from "./invocation.js";
+import { inspectGovernedCodexRoleRegistration } from "./profile/governed-codex-roles.js";
+
+function isGovernedTarget(target: string): target is EccMaterializationTarget {
+  return (GOVERNED_MATERIALIZATION_TARGETS as readonly string[]).includes(target);
+}
+
+/** Read-only: the governed targets, the Codex role registration and the selection's discovery view. */
+function eccPolicyDeliveryInspector(root: string): FrameworkPolicyDeliveryInspectorV1 {
+  const inspector: FrameworkPolicyDeliveryInspectorV1 = {
+    governedTargets: GOVERNED_MATERIALIZATION_TARGETS,
+    inspectCodexRoles: (roles) => inspectGovernedCodexRoleRegistration(root, roles),
+    describeSelection: (input) =>
+      describeEccEffectiveDiscovery({
+        policy: input.policy,
+        targets: input.targets.filter(isGovernedTarget),
+        components: input.components,
+      }),
+  };
+  return Object.freeze(inspector);
+}
 
 function samePath(a: string, b: string): boolean {
   const normal = (path: string) => path.replace(/\\/g, "/").replace(/^\.\//, "");
@@ -72,6 +98,7 @@ export function eccPolicyDelivery(deps: EccCommandDeps = {}): FrameworkPolicyDel
             ),
         });
       }),
+    inspect: (ctx) => eccPolicyDeliveryInspector(ctx.root),
   };
   return Object.freeze(hook);
 }

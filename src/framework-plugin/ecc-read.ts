@@ -1,10 +1,15 @@
+import { z } from "zod";
 import { CatalogPackageRefusalError } from "../catalog-package/load-catalog-package.js";
 import { AihError } from "../errors.js";
+import { SUPPORTED_CLIS } from "../internals/clis.js";
 import type { PlanContext } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
 import type {
   FrameworkCapabilityPackageDomainV1,
+  FrameworkCodexRoleRegistrationV1,
+  FrameworkGovernedSelectionV1,
   FrameworkOperationContextV1,
+  FrameworkPolicyDeliveryInspectorV1,
 } from "./contract-v1.js";
 import {
   FrameworkPluginRefusalError,
@@ -160,4 +165,160 @@ export async function eccCapabilityPackageDomainV1(
     throw new AihError(outcome.detail, "AIH_FRAMEWORK_PLUGIN");
   }
   return outcome;
+}
+
+const Text = z.string().max(4096);
+const Id = z.string().min(1).max(512);
+const Target = z.enum(SUPPORTED_CLIS);
+const Source = z.object({ repository: Text, commit: Text, componentPath: Text }).strict();
+
+const GovernedTargetsSchema = z.array(Target).max(SUPPORTED_CLIS.length);
+
+const CodexRoleRegistrationSchema = z
+  .object({
+    state: z.enum(["current", "missing", "drifted", "conflict", "malformed"]),
+    expectedRoleIds: z.array(Id).max(4096),
+    receiptRoleIds: z.array(Id).max(4096),
+    detail: Text.optional(),
+  })
+  .strict();
+
+const GovernedSelectionSchema = z
+  .object({
+    targets: z.array(Target).max(SUPPORTED_CLIS.length),
+    components: z
+      .array(
+        z
+          .object({
+            id: Id,
+            requirement: z.literal("required"),
+            selectionReason: z.enum([
+              "selected-root",
+              "selected-choice",
+              "required-dependency",
+              "legacy-unattributed",
+            ]),
+            retainedBy: z.array(Id).max(4096),
+            source: Source,
+            owner: z.literal("aih-materialization"),
+            ownership: z.enum([
+              "planned",
+              "receipt-recorded",
+              "missing-receipt",
+              "source-mismatch",
+            ]),
+            destinations: z
+              .array(
+                z
+                  .object({
+                    path: Text,
+                    discovery: z.enum([
+                      "project-skill-entry",
+                      "projected-supporting-content",
+                      "projected-content",
+                    ]),
+                  })
+                  .strict(),
+              )
+              .max(8192),
+          })
+          .strict(),
+      )
+      .max(4096),
+    authoringExclusions: z
+      .array(
+        z
+          .object({ assetId: Text, sourceId: Text, sourceRevisionId: Text, contentDigest: Text })
+          .strict(),
+      )
+      .max(4096),
+    unavailable: z
+      .array(
+        z
+          .object({
+            id: Id,
+            kind: Text,
+            framework: Text,
+            reason: Text,
+            findingCodes: z.array(Text).max(256),
+            detail: Text,
+          })
+          .strict(),
+      )
+      .max(4096),
+    refused: z
+      .array(z.object({ id: Id, target: Target, reason: Text, detail: Text }).strict())
+      .max(4096),
+    otherOwners: z
+      .array(
+        z
+          .object({
+            owner: z.enum(["native-plugin", "legacy-or-user-content"]),
+            scope: z.enum(["user-or-account", "project"]),
+            state: z.enum(["unverified", "preserved-unless-receipt-owned"]),
+            detail: Text,
+          })
+          .strict(),
+      )
+      .max(16),
+    dependencyAuthority: z.enum(["qualified-source-relations", "unverified"]),
+  })
+  .strict();
+
+function validated<T>(
+  schema: z.ZodType<T>,
+  value: unknown,
+  loaded: LoadedFrameworkPluginV1,
+  what: string,
+): T {
+  const parsed = schema.safeParse(value);
+  if (!parsed.success) {
+    throw new AihError(
+      `${loaded.packageName} ${loaded.version} returned a malformed ${what}`,
+      "AIH_FRAMEWORK_PLUGIN",
+    );
+  }
+  return parsed.data;
+}
+
+/**
+ * ECC's read-only knowledge for Core's policy-delivery report, with every
+ * answer validated at the boundary, or the reason it is not available (the
+ * report then states the ECC checks were not run and blocks).
+ */
+export async function eccPolicyDeliveryInspectorV1(
+  ctx: PlanContext,
+  deps: Pick<FrameworkCommandDepsV1, "loadPlugin" | "loadDescriptor"> = {},
+): Promise<EccReadOutcomeV1<FrameworkPolicyDeliveryInspectorV1>> {
+  return withEccRead(ctx, "inspecting policy delivery", deps, async (loaded, context) => {
+    const hook = loaded.plugin.policyDelivery;
+    if (hook === undefined) {
+      throw new AihError(
+        `framework-plugin-incompatible: ${loaded.packageName} ${loaded.version} provides no policyDelivery hook`,
+        "AIH_FRAMEWORK_PLUGIN",
+      );
+    }
+    const inspector = hook.inspect(context);
+    const governedTargets = Object.freeze(
+      validated(GovernedTargetsSchema, inspector.governedTargets, loaded, "governed target list"),
+    );
+    const checked: FrameworkPolicyDeliveryInspectorV1 = {
+      governedTargets,
+      inspectCodexRoles: (roles): FrameworkCodexRoleRegistrationV1 =>
+        validated(
+          CodexRoleRegistrationSchema,
+          inspector.inspectCodexRoles(roles),
+          loaded,
+          "Codex role registration",
+        ),
+      describeSelection: (input): FrameworkGovernedSelectionV1 =>
+        validated(
+          GovernedSelectionSchema,
+          inspector.describeSelection(input),
+          loaded,
+          "governed selection",
+        ),
+    };
+    return Object.freeze(checked);
+  });
 }

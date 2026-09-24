@@ -31,10 +31,16 @@ import {
   MAX_MATERIALIZED_FILES_PER_COMPONENT,
   materializationRoot,
   ownedFileSha256,
+  ownedFragment,
+  ownedFragmentDigest,
   ownedFragmentSha256,
+  parseJsonObject,
   readEccMaterializationReceipt,
   serializeEccMaterializationReceipt,
 } from "@aihq/core/framework-host";
+
+export { ownedFragment, ownedFragmentDigest, parseJsonObject };
+
 import type { EccComponentId } from "./components.js";
 import {
   kiroAgentSemanticIdentity,
@@ -137,46 +143,6 @@ export function renderJsonDocument(value: unknown): string | undefined {
 
 function sha256(bytes: Buffer): string {
   return createHash("sha256").update(bytes).digest("hex");
-}
-
-export function parseJsonObject(text: string): Record<string, unknown> | undefined {
-  let value: unknown;
-  try {
-    value = JSON.parse(text);
-  } catch {
-    return undefined;
-  }
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
-
-/**
- * The owned keys of a document, on a null-prototype object: a `__proto__` key
- * assigned onto a normal object routes to the prototype setter, which would
- * both drop the key from the digest input and mutate the fragment's prototype.
- */
-export function ownedFragment(
-  document: Record<string, unknown>,
-  keys: readonly string[],
-): Record<string, unknown> {
-  const fragment = Object.create(null) as Record<string, unknown>;
-  for (const key of [...keys].sort(byText)) {
-    if (Object.hasOwn(document, key)) fragment[key] = document[key];
-  }
-  return fragment;
-}
-
-/** The owned-fragment digest, or undefined when the value cannot be hashed at all. */
-export function ownedFragmentDigest(
-  document: Record<string, unknown>,
-  keys: readonly string[],
-): string | undefined {
-  try {
-    return ownedFragmentSha256(ownedFragment(document, keys));
-  } catch {
-    return undefined;
-  }
 }
 
 /**

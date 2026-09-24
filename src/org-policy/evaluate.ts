@@ -5,7 +5,11 @@ import { applyPolicyBindingDefaults, assertPolicyBindingCurrent } from "./bindin
 import { hasCommandPermissionOwnership, inspectCommandPermissions } from "./command-permissions.js";
 import { type EffectiveOrgPolicy, stableJson } from "./effective.js";
 import { hookRegistrarReport } from "./hook-registrar.js";
-import { renderPolicyDelivery, summarizePolicyDelivery } from "./policy-delivery-report.js";
+import {
+  loadPolicyDeliveryEccV1,
+  renderPolicyDelivery,
+  summarizePolicyDelivery,
+} from "./policy-delivery-report.js";
 import {
   ORG_POLICY_HOOK_RECEIPT_PATH,
   orgPolicyHookReceiptState,
@@ -142,13 +146,15 @@ export async function orgPolicyEffectiveCheck(
     );
     const policy = readOrgPolicy(ctx.root, ctx.env);
     if (options.includeDelivery) {
+      const targets = ctx.targets ?? ["claude"];
       const delivery = summarizePolicyDelivery(
         ctx.root,
-        ctx.targets ?? ["claude"],
+        targets,
         policy,
         false,
         ctx.env,
         ctx.contextDir,
+        await loadPolicyDeliveryEccV1(ctx, targets, policy),
       );
       if (delivery.blocking)
         return {
@@ -350,13 +356,15 @@ export async function orgPolicyEffectiveDigest(
     const nativeMcpReceipts = orgPolicyNativeMcpReceiptStates(ctx, effective);
     const hookRegistrar = hookRegistrarReport(ctx.root);
     const candidates = effective.candidates;
+    const deliveryTargets = ctx.targets ?? ["claude"];
     const policyDelivery = summarizePolicyDelivery(
       ctx.root,
-      ctx.targets ?? ["claude"],
+      deliveryTargets,
       policy,
       effective.blocking,
       ctx.env,
       ctx.contextDir,
+      await loadPolicyDeliveryEccV1(ctx, deliveryTargets, policy),
     );
     const lifecycle = effective.npmPackageLifecycle ?? [];
     const upstreamLifecycle = effective.upstreamArtifactLifecycle ?? [];

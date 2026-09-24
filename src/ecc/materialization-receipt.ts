@@ -838,6 +838,46 @@ export function ownedFragmentSha256(fragment: Record<string, unknown>): string {
   return sha256(canonicalJsonText(fragment));
 }
 
+export function parseJsonObject(text: string): Record<string, unknown> | undefined {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+/**
+ * The owned keys of a document, on a null-prototype object: a `__proto__` key
+ * assigned onto a normal object routes to the prototype setter, which would
+ * both drop the key from the digest input and mutate the fragment's prototype.
+ */
+export function ownedFragment(
+  document: Record<string, unknown>,
+  keys: readonly string[],
+): Record<string, unknown> {
+  const fragment = Object.create(null) as Record<string, unknown>;
+  for (const key of [...keys].sort(byText)) {
+    if (Object.hasOwn(document, key)) fragment[key] = document[key];
+  }
+  return fragment;
+}
+
+/** The owned-fragment digest, or undefined when the value cannot be hashed at all. */
+export function ownedFragmentDigest(
+  document: Record<string, unknown>,
+  keys: readonly string[],
+): string | undefined {
+  try {
+    return ownedFragmentSha256(ownedFragment(document, keys));
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Deterministic JSON text — key-sorted at every depth, bounded in depth so a
  * hostile or merely silly owned value fails as an error instead of a stack

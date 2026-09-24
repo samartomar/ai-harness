@@ -451,6 +451,103 @@ export interface FrameworkPreparedPolicyDeliveryV1 {
  */
 export interface FrameworkPolicyDeliveryHookV1 {
   prepare(ctx: FrameworkOperationContextV1): Promise<FrameworkPreparedPolicyDeliveryV1>;
+  /**
+   * Read-only delivery inspection for Core's policy-delivery report (Core call
+   * sites: `aih policy evaluate`, `aih doctor`, `aih report`). Core compares
+   * its own receipt; the plugin supplies only what is framework knowledge.
+   */
+  inspect(ctx: FrameworkOperationContextV1): FrameworkPolicyDeliveryInspectorV1;
+}
+
+/** One selected component as Core's receipt comparison observed it. */
+export interface FrameworkDeliveryComponentInputV1 {
+  readonly id: string;
+  readonly provenance: {
+    readonly repository: string;
+    readonly commit: string;
+    readonly componentPath: string;
+  };
+  readonly files: readonly { readonly path: string }[];
+  readonly ownership: "planned" | "receipt-recorded" | "missing-receipt" | "source-mismatch";
+}
+
+/** Native registration of the framework's Codex agent roles, as the plugin read it. */
+export interface FrameworkCodexRoleRegistrationV1 {
+  readonly state: "current" | "missing" | "drifted" | "conflict" | "malformed";
+  readonly expectedRoleIds: readonly string[];
+  readonly receiptRoleIds: readonly string[];
+  readonly detail?: string;
+}
+
+/** The policy's selection joined to the observed components; installation and loading stay unverified. */
+export interface FrameworkGovernedSelectionV1 {
+  readonly targets: readonly Cli[];
+  readonly components: readonly {
+    readonly id: string;
+    readonly requirement: "required";
+    readonly selectionReason:
+      | "selected-root"
+      | "selected-choice"
+      | "required-dependency"
+      | "legacy-unattributed";
+    readonly retainedBy: readonly string[];
+    readonly source: {
+      readonly repository: string;
+      readonly commit: string;
+      readonly componentPath: string;
+    };
+    readonly owner: "aih-materialization";
+    readonly ownership: FrameworkDeliveryComponentInputV1["ownership"];
+    readonly destinations: readonly {
+      readonly path: string;
+      readonly discovery:
+        | "project-skill-entry"
+        | "projected-supporting-content"
+        | "projected-content";
+    }[];
+  }[];
+  readonly authoringExclusions: readonly {
+    readonly assetId: string;
+    readonly sourceId: string;
+    readonly sourceRevisionId: string;
+    readonly contentDigest: string;
+  }[];
+  readonly unavailable: readonly {
+    readonly id: string;
+    readonly kind: string;
+    readonly framework: string;
+    readonly reason: string;
+    readonly findingCodes: readonly string[];
+    readonly detail: string;
+  }[];
+  readonly refused: readonly {
+    readonly id: string;
+    readonly target: Cli;
+    readonly reason: string;
+    readonly detail: string;
+  }[];
+  readonly otherOwners: readonly {
+    readonly owner: "native-plugin" | "legacy-or-user-content";
+    readonly scope: "user-or-account" | "project";
+    readonly state: "unverified" | "preserved-unless-receipt-owned";
+    readonly detail: string;
+  }[];
+  readonly dependencyAuthority: "qualified-source-relations" | "unverified";
+}
+
+/** The framework knowledge Core's policy-delivery report needs; every member is read-only. */
+export interface FrameworkPolicyDeliveryInspectorV1 {
+  /** The targets the framework can deliver governed content to. */
+  readonly governedTargets: readonly Cli[];
+  /** The Codex role registration the receipt-current components expect at the target root. */
+  inspectCodexRoles(
+    roles: readonly { readonly id: string; readonly configFile: string }[],
+  ): FrameworkCodexRoleRegistrationV1;
+  describeSelection(input: {
+    readonly policy: NonNullable<ReturnType<typeof readOrgPolicy>>;
+    readonly targets: readonly Cli[];
+    readonly components: readonly FrameworkDeliveryComponentInputV1[];
+  }): FrameworkGovernedSelectionV1;
 }
 
 /** One owned-file step of a framework's receipt-proven subtraction; Core executes it in its owned-file transaction. */
