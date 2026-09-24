@@ -9,6 +9,7 @@ import {
   type PlanContext,
   plan,
 } from "../internals/plan.js";
+import type { ScanPackageImporterV1 } from "../scan-package/load-scan-package.js";
 import {
   assertTrustTreeSafe,
   cleanupQuarantine,
@@ -43,6 +44,8 @@ const FULL_SHA = /^[a-f0-9]{40}$/;
 
 export interface BaselineVetPlanOptions {
   vetCatalog?: typeof vetBaselineCatalog;
+  /** Test seam for the installed `@aihq/scan` the vet runs its detectors through. */
+  scanPackageImporter?: ScanPackageImporterV1;
   cleanupQuarantine?: boolean;
   profileId?: string;
 }
@@ -153,6 +156,9 @@ export async function baselineVetPlanForSource(
           platform: digestCtx.host.platform,
           env: digestCtx.env,
           progress: (message) => process.stderr.write(`${message}\n`),
+          ...(options.scanPackageImporter === undefined
+            ? {}
+            : { importer: options.scanPackageImporter }),
         });
         vetOptions.onComponentScan = (component, scan) => scans.set(component.id, scan);
         let sourceWideScan: TrustScanResult | undefined;

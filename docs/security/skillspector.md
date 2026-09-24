@@ -54,8 +54,12 @@ registries.
 
 ## Build the Local Image (Audit Path)
 
+The image recipe belongs to `@aihq/scan`, which runs SkillSpector: use
+`tools/skillspector/Dockerfile` from a checkout of the aih-scan repository at the
+release matching your installed `@aihq/scan`.
+
 ```bash
-AIH_ROOT="$PWD"
+SCAN_ROOT="/path/to/aih-scan"
 VET_ROOT="$(mktemp -d)"
 git clone https://github.com/NVIDIA/SkillSpector.git "$VET_ROOT/SkillSpector"
 git -C "$VET_ROOT/SkillSpector" checkout --detach \
@@ -65,7 +69,7 @@ docker buildx build \
   --provenance=false \
   --sbom=false \
   --build-arg SOURCE_DATE_EPOCH=1785167267 \
-  -f "$AIH_ROOT/tools/skillspector.Dockerfile" \
+  -f "$SCAN_ROOT/tools/skillspector/Dockerfile" \
   -t ghcr.io/samartomar/skillspector:aih-2d198ab910ad \
   --output type=oci,dest="$VET_ROOT/skillspector.oci.tar" \
   "$VET_ROOT/SkillSpector"
@@ -74,7 +78,7 @@ docker tag ghcr.io/samartomar/skillspector:aih-2d198ab910ad \
   skillspector:aih-2d198ab910ad
 ```
 
-The harness-owned Dockerfile consumes the upstream commit's checked-in
+Scan's Dockerfile consumes the upstream commit's checked-in
 `uv.lock`, pins its Python base by digest, removes two path-bearing wheel-cache
 metadata files, and canonicalizes the virtual environment before the final
 networkless runtime image is created. Two clean cache-disabled builds must agree

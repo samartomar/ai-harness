@@ -542,15 +542,15 @@ path outside each governed target. Vibe repositories may still use a repo-local
 
 `aih trust scan` can evaluate sources without Docker for checks that do not require a containerized detector. Docker becomes part of the admin setup when policy requires a detector such as `skillspector`, or when the organization wants scanner images built and signed before use. If `aih-org-policy.json` lists `skillspector` in `trust.requiredDetectors`, do not treat scanner coverage as complete until the detector path is available and recorded.
 
-From the checked-out AI-Harness root, build the reviewed SkillSpector image from a fixed commit:
+The image recipe belongs to `@aihq/scan`, which runs SkillSpector. From a checkout of the aih-scan repository at the release matching your installed `@aihq/scan`, build the reviewed SkillSpector image from a fixed commit:
 
 ```powershell
-$AihRoot = (Resolve-Path .).Path
+$ScanRoot = (Resolve-Path .).Path
 $SkillSpectorRoot = Join-Path ([System.IO.Path]::GetTempPath()) "aih-skillspector-2d198ab910ad"
 git clone https://github.com/NVIDIA/SkillSpector.git $SkillSpectorRoot
 Set-Location $SkillSpectorRoot
 git checkout 2d198ab910add401cad658d1087e7c7ba24fd640
-docker buildx build --platform linux/amd64 --provenance=false --sbom=false --build-arg SOURCE_DATE_EPOCH=1785167267 -f (Join-Path $AihRoot "tools\skillspector.Dockerfile") -t skillspector:aih-2d198ab910ad --load .
+docker buildx build --platform linux/amd64 --provenance=false --sbom=false --build-arg SOURCE_DATE_EPOCH=1785167267 -f (Join-Path $ScanRoot "tools\skillspector\Dockerfile") -t skillspector:aih-2d198ab910ad --load .
 docker image inspect skillspector:aih-2d198ab910ad --format "{{.Id}}"
 ```
 

@@ -254,7 +254,7 @@ const SecurityPolicySchema = z
 /** One internal npm scope as policy may write it; normalized it must be `@[a-z0-9][a-z0-9._~-]*`. */
 export const InternalScopeSchema = z
   .string()
-  .regex(/^s*@?[A-Za-z0-9][A-Za-z0-9._~-]*s*$/, "must be an npm scope such as @acme");
+  .regex(/^\s*@?[A-Za-z0-9][A-Za-z0-9._~-]*\s*$/, "must be an npm scope such as @acme");
 
 const SkillSpectorDigestApprovalSchema = z
   .object({

@@ -1,29 +1,23 @@
-import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   baselineAnalyzerVersions,
-  CISCO_MCP_SCANNER_LOCK,
-  CISCO_MCP_SCANNER_PROJECT,
   CISCO_MCP_SCANNER_VERSION,
-  CISCO_SKILL_SCANNER_LOCK,
-  CISCO_SKILL_SCANNER_PROJECT,
   CISCO_SKILL_SCANNER_VERSION,
   preflightRequiredBaselineAnalyzers,
   requiredBaselineAnalyzersForComponent,
   requiredBaselineDetectorsForComponent,
-  SEMGREP_LOCK,
-  SEMGREP_PROJECT,
+  requiredBaselineVetOptions,
   SEMGREP_VERSION,
-  SNYK_AGENT_SCAN_LOCK,
-  SNYK_AGENT_SCAN_PROJECT,
   SNYK_AGENT_SCAN_VERSION,
+  scanBaselineAnalyzerVersionsV1,
 } from "../../src/baseline-evidence/analyzer-profile.js";
 import { defineBaselineCatalog } from "../../src/baseline-evidence/catalog.js";
-import { fakeRunner, missingToolRunner } from "../../src/internals/proc.js";
-import { checkDetectorsAvailable } from "../../src/trust/detectors.js";
+import { ScanPackageRefusalError } from "../../src/scan-package/load-scan-package.js";
+import { probeScanDetectorsV1 } from "../../src/trust/detector-availability.js";
+import { SKILLSPECTOR_IMAGE, SKILLSPECTOR_SOURCE_REVISION } from "../../src/trust/images.js";
 
 function component(id: string, paths: string[]) {
   const [first] = defineBaselineCatalog({
@@ -101,49 +95,22 @@ describe("required baseline analyzer applicability", () => {
     ]);
   });
 
-  it("binds the Cisco analyzer receipt identity to the committed uv lock", () => {
-    const digest = createHash("sha256")
-      .update(readFileSync(CISCO_SKILL_SCANNER_LOCK))
-      .digest("hex")
-      .slice(0, 12);
-    expect(baselineAnalyzerVersions()["cisco@uvx"]).toBe(
-      `${CISCO_SKILL_SCANNER_VERSION}+uvlock.${digest}`,
-    );
+  it("pins the analyzer identities committed baseline evidence is checked against", () => {
+    expect(baselineAnalyzerVersions()).toEqual({
+      "aih-native": "native.014fbd614a5a",
+      "skillspector@docker":
+        "2d198ab910add401cad658d1087e7c7ba24fd640@sha256:c5d4a1816419f129ae85ff96b3e366d4a062c1859997e26b7ab87341a43d4800",
+      "semgrep@uv:1.173.0": "1.173.0+uvlock.77f2bf3e7525",
+      "cisco@uvx": "2.0.14+uvlock.aaba1f326049",
+      "mcp-scanner@uv:4.8.2": "4.8.2+uvlock.92846b24c170",
+      "snyk-agent-scan@uv:0.5.17": "0.5.17+uvlock.49064889ec53",
+    });
   });
 
-  it.each([
-    ["mcp-scanner@uv:4.8.2", CISCO_MCP_SCANNER_VERSION, CISCO_MCP_SCANNER_LOCK],
-    ["semgrep@uv:1.173.0", SEMGREP_VERSION, SEMGREP_LOCK],
-    ["snyk-agent-scan@uv:0.5.17", SNYK_AGENT_SCAN_VERSION, SNYK_AGENT_SCAN_LOCK],
-  ])("binds optional analyzer %s to its committed uv lock", (label, version, lock) => {
-    const digest = createHash("sha256").update(readFileSync(lock)).digest("hex").slice(0, 12);
-    expect(baselineAnalyzerVersions()[label]).toBe(`${version}+uvlock.${digest}`);
-  });
-
-  it.each([
-    [CISCO_SKILL_SCANNER_PROJECT, "cisco-ai-skill-scanner", CISCO_SKILL_SCANNER_VERSION],
-    [CISCO_MCP_SCANNER_PROJECT, "cisco-ai-mcp-scanner", CISCO_MCP_SCANNER_VERSION],
-    [SEMGREP_PROJECT, "semgrep", SEMGREP_VERSION],
-    [SNYK_AGENT_SCAN_PROJECT, "snyk-agent-scan", SNYK_AGENT_SCAN_VERSION],
-  ])("matches %s project and lock to %s==%s", (project, dependency, version) => {
-    expect(readFileSync(join(project, "pyproject.toml"), "utf8")).toContain(
-      `"${dependency}==${version}"`,
+  it("locks cryptography 50.0.0 in the governed Serena runtime", () => {
+    expect(readFileSync("src/ecc-profile/serena-runtime/uv.lock", "utf8")).toContain(
+      'name = "cryptography"\nversion = "50.0.0"',
     );
-    expect(readFileSync(join(project, "uv.lock"), "utf8")).toContain(
-      `name = "${dependency}"\nversion = "${version}"`,
-    );
-  });
-
-  it("locks cryptography 50.0.0 across every governed Python runtime", () => {
-    for (const lock of [
-      "src/ecc-profile/serena-runtime/uv.lock",
-      CISCO_SKILL_SCANNER_LOCK,
-      CISCO_MCP_SCANNER_LOCK,
-      SEMGREP_LOCK,
-      SNYK_AGENT_SCAN_LOCK,
-    ]) {
-      expect(readFileSync(lock, "utf8")).toContain('name = "cryptography"\nversion = "50.0.0"');
-    }
   });
 
   it("pins the Serena runtime to the reviewed 1.7.0 cutoff", () => {
@@ -153,77 +120,188 @@ describe("required baseline analyzer applicability", () => {
   });
 });
 
-describe("checkDetectorsAvailable", () => {
-  it("reports Cisco unavailable with the underlying offline uv reason", async () => {
-    const run = fakeRunner((argv) =>
-      argv.includes("--version")
-        ? { code: 1, stderr: "cisco-ai-skill-scanner was not found in the cache" }
-        : undefined,
-    );
-    const probes = await checkDetectorsAvailable(["cisco"], { run, platform: "linux", env: {} });
-    expect(probes).toEqual([
-      {
-        name: "cisco",
-        analyzerLabel: "cisco@uvx",
-        reason: expect.stringContaining("not found in the cache"),
-      },
-    ]);
-  });
+const CISCO_LOCK = "c".repeat(64);
+const SEMGREP_LOCK = "d".repeat(64);
+const MCP_LOCK = "e".repeat(64);
+const HOST = { os: "linux", architecture: process.arch === "x64" ? "amd64" : process.arch };
 
-  it("returns no probe when Cisco resolves offline", async () => {
-    const run = fakeRunner((argv) =>
-      argv.includes("--version") ? { code: 0, stdout: "skill-scanner 2.0.14" } : undefined,
-    );
-    expect(await checkDetectorsAvailable(["cisco"], { run, platform: "linux", env: {} })).toEqual(
-      [],
-    );
-  });
+function uvProfile(sha256?: string) {
+  return {
+    id: "host-process-uv-v1",
+    isolation: "none",
+    supportedPlatforms: [HOST],
+    ...(sha256 === undefined ? {} : { analyzerLock: { path: "uv.lock", sha256 } }),
+  };
+}
 
-  it("rejects an inexact Cisco version and empty Snyk help output", async () => {
-    const run = fakeRunner((argv) => {
-      // Deliberately NOT the pinned version. Kept far ahead of any plausible
-      // real release so a future pin bump cannot silently make this case exact
-      // and turn the rejection assertion into a no-op.
-      if (argv.includes("--version")) return { code: 0, stdout: "skill-scanner 2.99.99" };
-      if (argv.includes("--help")) return { code: 0, stdout: "" };
-      return undefined;
+type FakeCapability = { detectorId: string; executionProfiles: unknown[] };
+
+function capabilities(overrides: Record<string, unknown[]> = {}): FakeCapability[] {
+  const declared: Record<string, unknown[]> = {
+    "detector.cisco": [uvProfile(CISCO_LOCK)],
+    "detector.semgrep": [uvProfile(SEMGREP_LOCK)],
+    "detector.cisco-mcp-scanner": [uvProfile(MCP_LOCK)],
+    ...overrides,
+  };
+  return Object.entries(declared).map(([detectorId, executionProfiles]) => ({
+    detectorId,
+    executionProfiles,
+  }));
+}
+
+describe("scanBaselineAnalyzerVersionsV1", () => {
+  it("names each uv analyzer by its version and the lock Scan publishes for the profile", () => {
+    const identity = scanBaselineAnalyzerVersionsV1(capabilities(), "host-process-uv-v1");
+    expect(identity.ciscoLockSha256).toBe(CISCO_LOCK);
+    expect(identity.versions).toMatchObject({
+      "skillspector@docker": baselineAnalyzerVersions()["skillspector@docker"],
+      "cisco@uvx": `${CISCO_SKILL_SCANNER_VERSION}+uvlock.${CISCO_LOCK.slice(0, 12)}`,
+      "semgrep@uv:1.173.0": `${SEMGREP_VERSION}+uvlock.${SEMGREP_LOCK.slice(0, 12)}`,
+      "mcp-scanner@uv:4.8.2": `${CISCO_MCP_SCANNER_VERSION}+uvlock.${MCP_LOCK.slice(0, 12)}`,
     });
+    expect(identity.versions["aih-native"]).toMatch(/^native\.[0-9a-f]{12}$/);
+    // Scan declares no Snyk capability here: an optional analyzer is simply not named.
+    expect(identity.versions).not.toHaveProperty(`snyk-agent-scan@uv:${SNYK_AGENT_SCAN_VERSION}`);
+  });
 
-    const probes = await checkDetectorsAvailable(["cisco", "snyk-agent-scan"], {
-      run,
+  it("refuses a vet whose required analyzer lock Scan does not publish", () => {
+    expect(() =>
+      scanBaselineAnalyzerVersionsV1(
+        capabilities({ "detector.cisco": [uvProfile()] }),
+        "host-process-uv-v1",
+      ),
+    ).toThrow(ScanPackageRefusalError);
+    expect(() => scanBaselineAnalyzerVersionsV1(capabilities(), "linux-namespace-uv-v1")).toThrow(
+      "declares no execution profile linux-namespace-uv-v1",
+    );
+  });
+});
+
+describe("requiredBaselineVetOptions", () => {
+  it("runs the vet through the installed Scan with identities from its capabilities", async () => {
+    const listDetectorCapabilitiesV1 = () => capabilities();
+    const runDetectorV1 = () => Promise.resolve({ outcome: "refused" });
+    const options = await requiredBaselineVetOptions({
       platform: "linux",
-      env: { SNYK_TOKEN: "fixture-token" },
+      env: { AIH_CISCO_SCAN_CONCURRENCY: "3" },
+      importer: () => Promise.resolve({ listDetectorCapabilitiesV1, runDetectorV1 }),
     });
+    expect(options.scanOptions?.scanExecution?.runDetectorV1).toBe(runDetectorV1);
+    expect(options.scanOptions?.uvExecutionProfileId).toBe("host-process-uv-v1");
+    expect(options.analyzerVersions?.["cisco@uvx"]).toBe(
+      `${CISCO_SKILL_SCANNER_VERSION}+uvlock.${CISCO_LOCK.slice(0, 12)}`,
+    );
+    expect(options.sourceWideCisco).toMatchObject({
+      analyzerLockSha256: CISCO_LOCK,
+      workerConcurrency: 3,
+    });
+    expect(options.sourceWideScan).toBe(true);
+  });
 
-    expect(probes).toEqual([
+  it("refuses when @aihq/scan is not installed", async () => {
+    await expect(
+      requiredBaselineVetOptions({
+        platform: "linux",
+        env: {},
+        importer: () =>
+          Promise.reject(Object.assign(new Error("missing"), { code: "ERR_MODULE_NOT_FOUND" })),
+      }),
+    ).rejects.toBeInstanceOf(ScanPackageRefusalError);
+  });
+});
+
+function probeModule(
+  answer: (request: Record<string, unknown>) => unknown,
+  overrides: Record<string, unknown[]> = {},
+) {
+  const requests: Record<string, unknown>[] = [];
+  const module = {
+    listDetectorCapabilitiesV1: () =>
+      capabilities({
+        "detector.skillspector": [
+          {
+            id: "docker-host-local-skillspector-v1",
+            isolation: "container",
+            supportedPlatforms: [HOST],
+          },
+        ],
+        "detector.snyk-agent-scan": [uvProfile("a".repeat(64))],
+        ...overrides,
+      }),
+    probeDetectorAvailabilityV1: async (request: Record<string, unknown>) => {
+      requests.push(request);
+      return answer(request);
+    },
+  };
+  return { importer: () => Promise.resolve(module), requests };
+}
+
+describe("probeScanDetectorsV1", () => {
+  it("asks Scan about each detector under the profile Core would run it with", async () => {
+    const scan = probeModule(() => ({ available: true, analyzerVersion: "x" }));
+    const unavailable = await probeScanDetectorsV1(["skillspector", "cisco", "snyk-agent-scan"], {
+      platform: "linux",
+      env: { SNYK_TOKEN: " token ", PATH: "/usr/bin" },
+      skillspectorImageApprovals: [
+        {
+          imageTag: SKILLSPECTOR_IMAGE,
+          imageDigest: `sha256:${"b".repeat(64)}`,
+          sourceRevision: SKILLSPECTOR_SOURCE_REVISION,
+        },
+      ],
+      importer: scan.importer,
+    });
+    expect(unavailable).toEqual([]);
+    expect(scan.requests).toEqual([
       {
-        name: "cisco",
-        analyzerLabel: "cisco@uvx",
-        reason: expect.stringContaining("does not match 2.0.14"),
+        detectorId: "detector.skillspector",
+        executionProfileId: "docker-host-local-skillspector-v1",
+        acceptedImageDigests: [`sha256:${"b".repeat(64)}`],
       },
+      { detectorId: "detector.cisco", executionProfileId: "host-process-uv-v1" },
       {
-        name: "snyk-agent-scan",
-        analyzerLabel: "snyk-agent-scan@uv:0.5.17",
-        reason: "snyk-agent-scan help check emitted no output",
+        detectorId: "detector.snyk-agent-scan",
+        executionProfileId: "host-process-uv-v1",
+        env: { SNYK_TOKEN: "token" },
       },
     ]);
   });
 
-  it("rejects a different Semgrep version that merely mentions the pinned version", async () => {
-    const run = fakeRunner((argv) =>
-      argv.includes("--version") ? { code: 0, stdout: "9.9.9\nupgrade from 1.173.0\n" } : undefined,
+  it("reports Scan's reason, an undeclared profile and an undeclared detector", async () => {
+    const scan = probeModule(
+      (request) =>
+        request.detectorId === "detector.cisco"
+          ? { available: false, reason: "availability-failed", detail: "uv cache miss" }
+          : { available: true },
+      { "detector.semgrep": [] },
     );
-    const probes = await checkDetectorsAvailable(["semgrep"], {
-      run,
+    const unavailable = await probeScanDetectorsV1(["cisco", "semgrep", "skillspector"], {
       platform: "linux",
       env: {},
+      importer: () =>
+        scan.importer().then((module) => ({
+          ...module,
+          listDetectorCapabilitiesV1: () =>
+            module
+              .listDetectorCapabilitiesV1()
+              .filter((capability) => capability.detectorId !== "detector.skillspector"),
+        })),
     });
-
-    expect(probes).toEqual([
+    expect(unavailable).toEqual([
       {
-        name: "semgrep",
+        detector: "cisco",
+        analyzerLabel: "cisco@uvx",
+        reason: "availability-failed: uv cache miss",
+      },
+      {
+        detector: "semgrep",
         analyzerLabel: "semgrep@uv:1.173.0",
-        reason: expect.stringContaining("does not match 1.173.0"),
+        reason: expect.stringContaining("does not declare host-process-uv-v1"),
+      },
+      {
+        detector: "skillspector",
+        analyzerLabel: "skillspector@docker",
+        reason: "the installed @aihq/scan declares no detector.skillspector capability",
       },
     ]);
   });
@@ -231,10 +309,26 @@ describe("checkDetectorsAvailable", () => {
 
 describe("preflightRequiredBaselineAnalyzers", () => {
   it("fails closed with an actionable provisioning hint when a required analyzer is unprovisioned", async () => {
-    await expect(
-      preflightRequiredBaselineAnalyzers({ run: missingToolRunner, platform: "linux", env: {} }),
-    ).rejects.toThrow(
-      /preflight: required analyzer\(s\) not provisioned.*cisco@uvx unavailable.*uv run --project tools\/cisco-skill-scanner --locked/is,
+    const scan = probeModule((request) =>
+      request.detectorId === "detector.cisco"
+        ? { available: false, reason: "prerequisite-missing", detail: "uv" }
+        : { available: true },
     );
+    await expect(
+      preflightRequiredBaselineAnalyzers({ platform: "linux", env: {}, importer: scan.importer }),
+    ).rejects.toThrow(
+      /preflight: required analyzer\(s\) not provisioned.*cisco@uvx unavailable \(prerequisite-missing: uv\).*installed @aihq\/scan/is,
+    );
+  });
+
+  it("refuses rather than passing when @aihq/scan is missing", async () => {
+    await expect(
+      preflightRequiredBaselineAnalyzers({
+        platform: "linux",
+        env: {},
+        importer: () =>
+          Promise.reject(Object.assign(new Error("missing"), { code: "ERR_MODULE_NOT_FOUND" })),
+      }),
+    ).rejects.toBeInstanceOf(ScanPackageRefusalError);
   });
 });

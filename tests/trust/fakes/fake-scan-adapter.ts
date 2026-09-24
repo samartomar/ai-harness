@@ -15,6 +15,8 @@ import type { ScanExecutionAdapterV1 } from "../../../src/org-policy/governance-
 
 export type FakeScanAnswerV1 =
   | { readonly kind: "sarif"; readonly sarif: string; readonly executionProfileId?: string }
+  /** SARIF computed from the request, e.g. for Core's selected paths. */
+  | { readonly kind: "sarif-for"; readonly sarif: (request: Record<string, unknown>) => string }
   | { readonly kind: "refused"; readonly reason: string; readonly detail: string }
   | { readonly kind: "failed"; readonly stage: string; readonly detail: string }
   /** Holds the run open until the request's signal aborts, as a long analyzer run would. */
@@ -35,31 +37,43 @@ const LINUX_ONLY = [
 
 interface FakeProfile {
   readonly id: string;
+  readonly analyzerLock?: { readonly path: string; readonly sha256: string };
   readonly isolation: "container" | "linux-namespace" | "none";
   readonly network: "none" | "acquisition-only" | "unenforced";
   readonly supportedPlatforms: readonly { readonly os: string; readonly architecture: string }[];
 }
 
+/** The uv.lock digest every fake uv profile publishes (C2a §3.7 `analyzerLock`). */
+export const FAKE_UV_LOCK_SHA256 = "f".repeat(64);
+
 const HOST_UV: FakeProfile = {
   id: "host-process-uv-v1",
+  analyzerLock: { path: "uv.lock", sha256: FAKE_UV_LOCK_SHA256 },
   isolation: "none",
   network: "unenforced",
   supportedPlatforms: EVERY_PLATFORM,
 };
 const NAMESPACE_UV: FakeProfile = {
   id: "linux-namespace-uv-v1",
+  analyzerLock: { path: "uv.lock", sha256: FAKE_UV_LOCK_SHA256 },
   isolation: "linux-namespace",
   network: "acquisition-only",
   supportedPlatforms: LINUX_ONLY,
 };
 const HOST_DOCKER: FakeProfile = {
-  id: "docker-hardened-skillspector-v1",
+  id: "docker-host-local-skillspector-v1",
   isolation: "container",
   network: "none",
   supportedPlatforms: EVERY_PLATFORM,
 };
-const IN_PROCESS: FakeProfile = {
-  id: "in-process-native-v1",
+const TRUST_LINT: FakeProfile = {
+  id: "in-process-trust-lint-v1",
+  isolation: "none",
+  network: "none",
+  supportedPlatforms: EVERY_PLATFORM,
+};
+const BINDING_GATE: FakeProfile = {
+  id: "in-process-binding-gate-v1",
   isolation: "none",
   network: "none",
   supportedPlatforms: EVERY_PLATFORM,
@@ -67,7 +81,8 @@ const IN_PROCESS: FakeProfile = {
 
 /** The profiles each detector declares in this fake, default first (as in C2). */
 export const FAKE_SCAN_PROFILES: Readonly<Record<string, readonly FakeProfile[]>> = {
-  "detector.aih-trust-lint": [IN_PROCESS],
+  "detector.aih-trust-lint": [TRUST_LINT],
+  "detector.aih-binding-gate": [BINDING_GATE],
   "detector.skillspector": [HOST_DOCKER],
   "detector.cisco": [HOST_UV, NAMESPACE_UV],
   "detector.cisco-mcp-scanner": [HOST_UV, NAMESPACE_UV],
@@ -177,8 +192,9 @@ export function createFakeScanAdapterForTests(
       if (answer.kind === "refused")
         return { outcome: "refused", reason: answer.reason, detail: answer.detail, capability };
       if (answer.kind === "failed") return failed(answer.stage, answer.detail);
-      const bytes = Buffer.from(answer.sarif, "utf8");
-      const ran = answer.executionProfileId ?? profile.id;
+      const text = answer.kind === "sarif-for" ? answer.sarif(record) : answer.sarif;
+      const bytes = Buffer.from(text, "utf8");
+      const ran = (answer.kind === "sarif" ? answer.executionProfileId : undefined) ?? profile.id;
       return {
         outcome: "succeeded",
         capability,

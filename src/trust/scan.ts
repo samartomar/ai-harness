@@ -1208,6 +1208,10 @@ export function scanOptionsFromContext(
       policy?.requiredDetectors,
     run: ctx.run,
     progress: ctx.progress,
+    ...((base.scanExecution ?? ctx.scanExecution) === undefined
+      ? {}
+      : { scanExecution: base.scanExecution ?? ctx.scanExecution }),
+    ...((base.signal ?? ctx.signal) === undefined ? {} : { signal: base.signal ?? ctx.signal }),
     ...((base.uvExecutionProfileId ?? policy?.uvExecutionProfileId) === undefined
       ? {}
       : { uvExecutionProfileId: base.uvExecutionProfileId ?? policy?.uvExecutionProfileId }),

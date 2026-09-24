@@ -169,19 +169,21 @@ the release vet records exact analyzer receipts before the lock is written:
 
 Supplemental locked detectors are not part of the minimum release floor and do
 not enlarge the deterministic component-receipt closure. When one completes,
-aih still resolves its execution-time identity from the exact committed uv-lock
-digest and rejects an unattributed analyzer. Component receipts retain only the
+aih still resolves its execution-time identity from the exact uv-lock digest
+the installed `@aihq/scan` publishes and rejects an unattributed analyzer. Component receipts retain only the
 required analyzer set so optional local availability cannot make the vendor
 lock nondeterministic.
 
 Analyzer provisioning may fetch those exact inputs. Analyzer execution is
-no-egress: SkillSpector runs with Docker `--network none`, a read-only source
-mount and root filesystem, and `--no-llm`; Cisco runs with `uv run --project
-tools/cisco-skill-scanner --locked --isolated --python 3.12 --offline
---no-python-downloads --no-env-file` through the committed scanner project and
-lock; Semgrep uses the equivalent locked, isolated, offline invocation through
-`tools/trust-scanners/semgrep`, disables repository-controlled Semgrep and Git
-ignore files, and includes unknown extensions. The explicit Python minor keeps offline cache
+no-egress, and every analyzer runs in the installed `@aihq/scan`, never in aih:
+SkillSpector runs with Docker `--network none`, a read-only source mount and
+root filesystem, and `--no-llm`, from a locally loaded image Scan never pulls;
+Cisco and Semgrep run through Scan's committed uv projects with a locked,
+isolated, offline `uv run` under the host-process profile (or the Linux
+namespace profile when policy selects it); Semgrep disables repository-controlled
+Semgrep and Git ignore files, and includes unknown extensions. A fresh vet names
+each uv analyzer by its version and the uv.lock digest Scan publishes for the
+profile it ran under. The explicit Python minor keeps offline cache
 selection stable when a newer interpreter is installed for an unrelated helper.
 The component scanner uses a path-preserving projection, includes one regular
 top-level repository license file for license inheritance, and does not follow

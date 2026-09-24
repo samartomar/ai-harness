@@ -8,6 +8,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Removed
 
+- Core runs no detector of its own any more; every detector runs in the installed
+  `@aihq/scan`. Removed with the engines: the native trust lint, dependency-name and
+  manifest engines (`src/trust/{lint,manifest,depnames}.ts`), the binding gate's in-Core
+  inspectors and visible-typography classifier, the dormant uvx/docker deep-tier inspectors
+  (`runDeepScanTier` now takes its inspectors explicitly), the committed analyzer projects
+  `tools/cisco-skill-scanner` and `tools/trust-scanners/*` (no longer in the package
+  `files`), `tools/skillspector.Dockerfile` (the image recipe is Scan's
+  `tools/skillspector/Dockerfile`), the Snyk qualification validator and the
+  `cisco-mcp-runtime` and `snyk-agent-qualification` workflows.
 - Remove the pre-release Policy Workbench browser/HTML/server bundle and its
   `aih --ui` and `aih policy generate` command registrations. They have no
   compatibility stubs or `aih-ui` replacement. Core retains policy validation,
@@ -31,18 +40,41 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   are accepted as before (`sha256 158f63e2…` for `affaan-m/ECC@5064474d…`), and the
   source used is printed on stderr. Shared policy/catalog descriptor data still
   ships for other backend consumers, not this historical resolver.
-- `@aihq/scan` is now an optional peer dependency (`>=0.4.0 <1.0.0`) and is no longer
+- `@aihq/scan` is now an optional peer dependency (`>=0.5.0 <0.6.0`) and is no longer
   bundled into `@aihq/core`: Core loads the installed Scan at run time through one module
   and checks each function it calls. Install both with `npm install -g @aihq/core @aihq/scan`
   and update Scan independently. A Core-only installation supports operations that do not
   require a sibling package; what needs Scan reports `scan-package-unavailable` or
   `scan-package-incompatible` with the install command, and never falls back to a bundled copy.
-- `aih trust scan` and `aih skill vet` load the installed Scan by default. Every detector
-  still runs in Core; the runtime advisory now names each detector's executor and records
-  Scan's `detector.aih-native` identity observation (execution profile, analyzer, annex
-  digest) or the package refusal. The trust scan result gains `detectorExecutions` and
-  `scanObservations`. The detectors delegated to Scan are a per-detector set, empty until
-  Scan's capabilities are equivalents; a delegated detector will never fall back to Core.
+- Every detector runs in the installed `@aihq/scan` through its public API; Core keeps
+  inventory, classification, grading, policy and the gate decisions. `aih trust scan`,
+  `aih skill vet` and workspace acquisition take their native findings from Scan's
+  `detector.aih-trust-lint` (profile `in-process-trust-lint-v1`) and the facts it
+  reports; SkillSpector, Cisco, Cisco MCP scanner, Semgrep and Snyk Agent Scan run through
+  `runDetectorV1` under the profile Core names (uv detectors `host-process-uv-v1` on
+  every OS unless policy selects `linux-namespace-uv-v1`; SkillSpector only under the
+  never-pull `docker-host-local-skillspector-v1` container profile, with the policy's
+  approved local digests). The baseline vet's source-wide Cisco shards run through
+  `runCiscoShardV1` bound to the uv.lock digest Scan publishes for the profile, and the
+  baseline preflight asks `probeDetectorAvailabilityV1`. The binding scan gate's FAST tier
+  is Scan's `detector.aih-binding-gate`; `inspectTree` and `runFastScanGate` are now
+  asynchronous, the gate's typography overlay reads Scan's per-file verdicts, and the
+  derived scan cache moves to schema version 4 (older records are recomputed). A missing or
+  incompatible Scan is `scan-package-unavailable` or `scan-package-incompatible`
+  (`AIH_SCAN_PACKAGE`); Core never runs a detector in its place. The runtime advisory
+  names each detector's executor (`scan`, `precomputed-sarif`, `none`) and records Scan's
+  `detector.aih-native` identity observation.
+- Semgrep results are mapped through Core's canonical rule map for every executor, so the
+  same finding carries the same code whether Semgrep ran in Scan or arrived as SARIF.
+- Fresh baseline vets name each uv analyzer by its version and the uv.lock digest the
+  installed Scan publishes for the profile it ran under (the host-process Cisco lock differs
+  from the committed receipts' lock). Committed baseline evidence is still checked against
+  the pinned identities.
+- An org-policy `trust.internalScopes` entry must be an npm scope (`@acme`, optionally
+  without the `@`, surrounding whitespace ignored); `aih policy validate` now rejects a
+  malformed one such as `@my team` with its field path instead of ignoring it, and Scan
+  refuses one that arrives through `AIH_TRUST_INTERNAL_SCOPES`. This is an intentional
+  fail-closed change.
 - SARIF locations with a nonempty `file://` authority are refused as repository paths;
   local `file:///` locations remain supported.
 - Independent Serena and Token Optimizer selections can be inspected with
@@ -54,6 +86,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Org policy `trust.uvExecutionProfile` (`host-process-uv-v1` or `linux-namespace-uv-v1`)
+  names the execution profile Scan runs the uv-backed detectors under.
 - Add Headroom (`headroom-ai[mcp]` 0.38.0, Apache-2.0) as a default-selected developer tool that
   runs only after explicit activation. Selection alone, with or without `--apply`, leaves it
   `selected-pending` with a skipped check. `aih developer-tools` and `aih init` gain
