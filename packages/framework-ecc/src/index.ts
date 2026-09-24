@@ -8,7 +8,8 @@ import type {
 } from "@aihq/core/framework-host";
 import { executePlan } from "./core-runtime.js";
 import { ECC_DESCRIPTOR_SECTIONS } from "./descriptor.js";
-import { command, eccMcpAddCommand, eccMcpRemoveCommand } from "./ecc/index.js";
+import { eccMcpAddCommand, eccMcpRemoveCommand } from "./ecc/index.js";
+import { executeEccCommand } from "./ecc/pipeline.js";
 import { hookInventory, planHookControls } from "./hooks.js";
 import { identifyComponents } from "./identify.js";
 import {
@@ -64,7 +65,10 @@ export const aihFrameworkPluginV1: FrameworkPluginV1 = Object.freeze({
   hookInventory,
   planHookControls,
   commands: Object.freeze({
-    ecc: commandOf(command),
+    ecc: Object.freeze({
+      execute: (ctx: FrameworkOperationContextV1): Promise<PlanResult> =>
+        withEccInvocation(ctx, async () => executeEccCommand(currentCoreRuntime().planContext)),
+    }),
     "ecc mcp add": commandOf(eccMcpAddCommand),
     "ecc mcp remove": commandOf(eccMcpRemoveCommand),
   }),

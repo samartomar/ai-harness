@@ -20,11 +20,13 @@ import { command as docsLint } from "../docs-lint/index.js";
 import { command as doctor } from "../doctor.js";
 import { evidenceBuildCommand } from "../evidence/build.js";
 import {
-  eccCommand as ecc,
+  command as ecc,
   eccMcpAddCommand,
   eccMcpRemoveCommand,
   executeEccCommand,
-} from "../framework-plugin/ecc-facade.js";
+  executeEccMcpAddCommand,
+  executeEccMcpRemoveCommand,
+} from "../framework-plugin/ecc-command.js";
 import {
   executeSuperpowersCommand,
   command as superpowers,
@@ -634,7 +636,10 @@ function registerSpec(program: Command, spec: CommandSpec): void {
   }
   if (spec.name === "ecc") {
     const mcp = cmd.command("mcp").description("Explicit policy-approved ECC HTTPS MCP lifecycle");
-    for (const mcpCommand of [eccMcpAddCommand, eccMcpRemoveCommand]) {
+    for (const [mcpCommand, execute] of [
+      [eccMcpAddCommand, executeEccMcpAddCommand],
+      [eccMcpRemoveCommand, executeEccMcpRemoveCommand],
+    ] as const) {
       const child = mcp
         .command(mcpCommand.name)
         .description(mcpCommand.summary)
@@ -645,6 +650,7 @@ function registerSpec(program: Command, spec: CommandSpec): void {
         process.exitCode = await runCapability(mcpCommand, command, {
           positionalRoot: false,
           optionOverrides: { id },
+          execute,
         });
       });
     }

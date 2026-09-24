@@ -15,6 +15,7 @@ import type {
   FrameworkIdV1,
   FrameworkOperationContextV1,
 } from "./contract-v1.js";
+import { bindFrameworkCoreRuntimeV1, FRAMEWORK_CORE_RUNTIME_FRAMEWORKS } from "./core-runtime.js";
 import { frameworkHookControlRequestV1 } from "./hook-controls.js";
 import { type FrameworkTransactionPinsV1, frameworkHostServicesV1 } from "./host-services.js";
 import {
@@ -125,23 +126,50 @@ export async function executeFrameworkCommandV1(
     );
   }
   const produced = new WeakSet<object>();
-  const context = await frameworkOperationContextV1(
-    loaded,
-    { ...ctx, targets: ctx.targets },
-    {
-      policy: invocation.policy,
-      options: invocation.options,
-      host: frameworkHostServicesV1({
+  const services = frameworkHostServicesV1({
+    frameworkId,
+    ctx,
+    policy: invocation.policy,
+    transactionPins: invocation.transactionPins,
+    produced,
+    ...(deps.pipelineDeps === undefined ? {} : { pipelineDeps: deps.pipelineDeps }),
+  });
+  const bound = FRAMEWORK_CORE_RUNTIME_FRAMEWORKS.has(frameworkId)
+    ? bindFrameworkCoreRuntimeV1({
         frameworkId,
         ctx,
-        policy: invocation.policy,
         transactionPins: invocation.transactionPins,
         produced,
-        ...(deps.pipelineDeps === undefined ? {} : { pipelineDeps: deps.pipelineDeps }),
-      }),
-    },
-    deps,
-  );
+      })
+    : undefined;
+  try {
+    return await executeWithContext(
+      loaded,
+      commandPath,
+      await frameworkOperationContextV1(
+        loaded,
+        { ...ctx, targets: ctx.targets },
+        {
+          policy: invocation.policy,
+          options: invocation.options,
+          host:
+            bound === undefined ? services : Object.freeze({ ...services, runtime: bound.runtime }),
+        },
+        deps,
+      ),
+      produced,
+    );
+  } finally {
+    bound?.revoke();
+  }
+}
+
+async function executeWithContext(
+  loaded: LoadedFrameworkPluginV1,
+  commandPath: FrameworkCommandPathV1,
+  context: FrameworkOperationContextV1,
+  produced: WeakSet<object>,
+): Promise<PlanResult> {
   const command = loaded.plugin.commands[commandPath];
   if (command === undefined) {
     throw new AihError(
