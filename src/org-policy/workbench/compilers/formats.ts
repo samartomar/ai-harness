@@ -14,10 +14,45 @@ export interface CompilerFormatRegistrationV1 {
 }
 
 /**
- * The sole reviewed enrollment record for a build-time input format. Adding a
- * format here requires a fixture factory in index.ts through its derived type.
+ * The sole reviewed enrollment record for a source-bundle input format. Catalog
+ * owns the producers of the pinned and built-in formats; Core keeps only their
+ * identities and kind restrictions so admitted signed source bundles verify.
  */
 export const compilerFormatRegistrationsV1 = [
+  {
+    id: "pinned-baseline",
+    version: "1",
+    inputFormat: "pinned-baseline/v1",
+    actions: { "*": "record-selection" },
+  },
+  {
+    id: "built-in",
+    version: "1",
+    inputFormat: "built-in/v1",
+    actions: {
+      mcp: "record-request",
+      hook: "record-request",
+      skill: "record-selection",
+      agent: "record-selection",
+    },
+  },
+  {
+    id: "pinned-skill-collection",
+    version: "1",
+    inputFormat: "pinned-skill-collection/v1",
+    actions: { skill: "record-selection" },
+  },
+  {
+    id: "pinned-component-collection",
+    version: "1",
+    inputFormat: "pinned-component-collection/v1",
+    actions: {
+      hook: "record-request",
+      mcp: "record-request",
+      profile: "record-selection",
+      skill: "record-selection",
+    },
+  },
   {
     id: "organization-manifest",
     version: "1",
