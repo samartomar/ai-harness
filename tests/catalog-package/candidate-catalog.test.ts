@@ -338,6 +338,38 @@ describe("an activated candidate Catalog", () => {
     });
   });
 
+  it("records the package.json it interpreted even when exports remap ./package.json", async () => {
+    const { candidate, descriptors } = await fresh();
+    const manifest = JSON.stringify({
+      name: "@aihq/catalog",
+      version: "0.3.0",
+      exports: {
+        "./catalog-framework-superpowers.json": "./defaults/catalog-framework-superpowers-v1.json",
+        "./package.json": "./metadata.json",
+      },
+    });
+    const metadata = JSON.stringify({ name: "@aihq/catalog", version: "0.3.0" });
+    const files = candidatePackageFiles({ "package.json": manifest, "metadata.json": metadata });
+    const opened = candidate.openCandidateCatalogV1(
+      directory(files),
+      candidateListingDigest(files),
+    );
+    candidate.activateCandidateCatalogV1(opened);
+    // Nothing read yet: the manifest that decided every export is already on the record.
+    expect(candidate.activeCandidateCatalogUseV1()?.files).toEqual([
+      { path: "package.json", sha256: sha256(manifest) },
+    ]);
+    descriptors.loadFrameworkDescriptorSectionV1("superpowers", "vendorLock");
+    expect(candidate.activeCandidateCatalogUseV1()?.files).toEqual([
+      {
+        path: "defaults/catalog-framework-superpowers-v1.json",
+        sha256: sha256(candidateDescriptorBytes),
+      },
+      { path: "metadata.json", sha256: sha256(metadata) },
+      { path: "package.json", sha256: sha256(manifest) },
+    ]);
+  });
+
   it("never falls back to the installed Catalog for anything the candidate lacks", async () => {
     const { candidate, loader, materials } = await fresh();
     const files = candidatePackageFiles();

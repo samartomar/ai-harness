@@ -251,10 +251,12 @@ export function openCandidateCatalogV1(path: string, sha256: string): CandidateC
   if (exports === null || typeof exports !== "object" || Array.isArray(exports))
     fail("package.json has no exports map");
   const candidate = Object.freeze({ ...identity, version });
+  // The manifest interpreted here decides every export, even when its exports map sends the
+  // `./package.json` subpath to another file, so it is always on the use record.
   opened.set(candidate, {
     files,
     exports: exports as Record<string, unknown>,
-    consumed: new Map(),
+    consumed: new Map([["package.json", digest(manifestBytes)]]),
   });
   return candidate;
 }
