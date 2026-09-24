@@ -241,8 +241,10 @@ export function withSelfDerivedFakeScanCompletion(
 /**
  * SELF-DERIVED, NOT A BOUNDARY VECTOR. The SARIF log `log` (text or parsed)
  * with completion evidence v1 added to every run's first invocation, derived
- * with Core's OWN subject code over `sourceRoot` and Core's first pinned
- * analyzer identity for the detector. Nothing else is repaired: a run with no
+ * with Core's OWN subject code over `sourceRoot` and the analyzer identity Core
+ * pins for the detector under `executionProfileId` (by default Core's default
+ * uv profile, `host-process-uv-v1`, where the detector has one; otherwise its
+ * first pinned identity). Nothing else is repaired: a run with no
  * invocation stays without one. Only for tests about something other than the
  * completion boundary (custody, signatures, SARIF mapping) that need
  * precomputed SARIF Core counts complete; boundary tests use the independent
@@ -255,12 +257,19 @@ export function selfDerivedPrecomputedCompletionForTests<T extends string | obje
   options: {
     readonly selectedClosurePaths?: readonly string[];
     readonly mcpConfigPaths?: readonly string[];
+    /** The profile whose pinned identity the evidence names (the profile that produced the annex). */
+    readonly executionProfileId?: string;
   } = {},
 ): T {
-  const identity = ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1.find(
-    (entry) => entry.detectorId === detectorId,
-  );
-  if (identity === undefined) throw new Error(`Core pins no analyzer for ${detectorId}`);
+  const identity =
+    options.executionProfileId !== undefined
+      ? acceptedScanAnalyzerIdentityV1(detectorId, options.executionProfileId)
+      : (acceptedScanAnalyzerIdentityV1(detectorId, "host-process-uv-v1") ??
+        ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1.find((entry) => entry.detectorId === detectorId));
+  if (identity === undefined)
+    throw new Error(
+      `Core pins no analyzer for ${detectorId}${options.executionProfileId === undefined ? "" : ` under ${options.executionProfileId}`}`,
+    );
   const selected =
     options.selectedClosurePaths ??
     buildTrustFileInventory(sourceRoot).files.map((entry) => entry.relativePath);

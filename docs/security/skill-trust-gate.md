@@ -152,7 +152,13 @@ detector, and a change between two detectors is checked against the tree as it s
 covers the declared selection only.
 
 Precomputed SARIF (a Scanner annex) meets the subject check too, against the tree being
-scanned, and its analyzer must be one Core pins for the detector under any of its profiles.
+scanned, and its analyzer must be the one Core pins for the detector under the profile Core
+requires for that evidence: the uv profile the caller states (`uvExecutionProfileId`, from
+policy `trust.uvExecutionProfile`), otherwise Core's default `host-process-uv-v1`. Scanner
+publications consumed as baseline evidence require `linux-namespace-uv-v1`, the profile Scan's
+baseline runtime runs Semgrep and Cisco under. An annex naming another profile's pinned analyzer
+(for example Cisco's host-profile lock when the namespace profile is required) fails the
+detector, naming both profiles. SkillSpector's identity is its image, as for a delegated run.
 SARIF with no completion evidence at all, which is every publication made before Scan wrote it,
 is never counted complete: it is `trust.detector-unavailable` with reason
 `completion-evidence-absent` and must be republished with evidence. A joined Cisco shard log

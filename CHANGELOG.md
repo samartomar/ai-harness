@@ -128,6 +128,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `verifiedCiscoShardJobSarifV1` returns a frozen copy of it (now with the verified root and each
   job's subject), so a caller can no longer replace a job's SARIF, add or remove a job, or edit a
   path, subject or root that the shard exemption later reads.
+- Precomputed SARIF must name the analyzer Core pins under the one profile Core requires for it,
+  no longer any pinned profile: the caller's `uvExecutionProfileId` when stated, otherwise Core's
+  default `host-process-uv-v1`; the Scanner baseline consumer requires `linux-namespace-uv-v1`,
+  the profile Scan's baseline runtime runs Semgrep and Cisco under. An annex naming another
+  profile's identity (such as Cisco's host-profile `knownGap` lock under the namespace profile)
+  fails the detector with a message naming both profiles. SkillSpector's image rule is unchanged.
+  A baseline vet that aborts for a missing required analyzer now also names detectors the
+  source-wide scan graded `skip`, not only `fail`.
 - An org-policy `trust.internalScopes` entry must be an npm scope (`@acme`, optionally
   without the `@`, surrounding whitespace ignored); `aih policy validate` now rejects a
   malformed one such as `@my team` with its field path instead of ignoring it, and Scan

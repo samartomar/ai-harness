@@ -29,12 +29,14 @@ import { contentFindingFingerprint } from "./fingerprint.js";
 import { gradeTrustCheck } from "./grade.js";
 import {
   SKILLSPECTOR_IMAGE,
+  SKILLSPECTOR_IMAGE_DIGEST,
   SKILLSPECTOR_SOURCE_REVISION,
   type SkillSpectorImageApproval,
 } from "./images.js";
 import { buildTrustFileInventory, type TrustFileInventory } from "./inventory.js";
 import {
   ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1,
+  type AcceptedScanAnalyzerIdentityV1,
   acceptedScanAnalyzerIdentityV1,
   declaredScanAnalyzerIdentityRefusalV1,
   executedScanAnalyzerIdentityRefusalV1,
@@ -1140,6 +1142,23 @@ function scanArchitecture(): string {
 }
 
 /**
+ * The profile Core runs a detector under, and so the one whose pinned analyzer
+ * a result must name, delegated or precomputed: the stated uv profile, else
+ * Core's default (`host-process-uv-v1`) for a uv-backed detector; otherwise
+ * the detector's one profile.
+ */
+function requiredExecutionProfileIdV1(
+  detector: ScanRoutedDetectorV1,
+  uvProfile: UvExecutionProfileIdV1 | undefined,
+): string {
+  return UV_BACKED_DETECTORS.has(detector)
+    ? (uvProfile ?? DEFAULT_UV_EXECUTION_PROFILE)
+    : detector === SCAN_TRUST_LINT_DETECTOR
+      ? TRUST_LINT_EXECUTION_PROFILE
+      : SKILLSPECTOR_EXECUTION_PROFILE;
+}
+
+/**
  * The execution profile Core names for this detector, checked against what the
  * capability declares for this host before anything is asked of Scan.
  *
@@ -1159,11 +1178,7 @@ export function requestedExecutionProfileV1(
   | { readonly refusal: string } {
   const scanId = SCAN_DETECTOR_IDS[detector];
   const architecture = scanArchitecture();
-  const id = UV_BACKED_DETECTORS.has(detector)
-    ? (uvProfile ?? DEFAULT_UV_EXECUTION_PROFILE)
-    : detector === SCAN_TRUST_LINT_DETECTOR
-      ? TRUST_LINT_EXECUTION_PROFILE
-      : SKILLSPECTOR_EXECUTION_PROFILE;
+  const id = requiredExecutionProfileIdV1(detector, uvProfile);
   const profiles = capability?.executionProfiles;
   const profile = Array.isArray(profiles)
     ? profiles.map(asRecord).find((entry) => entry?.id === id)
@@ -1525,13 +1540,17 @@ export function delegatedScanCompletionRefusalV1(
  * v1 at all, it is `completion-evidence-absent` (every publication made before
  * Scan wrote the evidence): never counted complete, never a crash. Otherwise
  * every run's evidence must name this detector, the subject Core rebuilds from
- * this tree for it, and an analyzer identity Core pins for the detector (under
- * any of its profiles; for SkillSpector, also an image digest policy accepted).
+ * this tree for it, and the analyzer identity Core pins for the detector under
+ * `executionProfileId`, the profile Core requires for this evidence. Another
+ * profile's pinned identity is refused naming both profiles. SkillSpector's
+ * identity is its image, not a lock: the pinned image or a digest policy
+ * accepted, under the pinned source revision.
  */
 function precomputedScanCompletionRefusalV1(
   log: CheckedScanSarifLogV1,
   request: {
     readonly detectorId: string;
+    readonly executionProfileId: string;
     readonly sourceRoot: string;
     readonly selectedClosurePaths: readonly string[];
     readonly mcpConfigPaths?: readonly string[];
@@ -1546,20 +1565,40 @@ function precomputedScanCompletionRefusalV1(
     return asRecord(properties)?.[SCAN_COMPLETION_PROPERTY_V1];
   });
   if (firstEvidence.every((evidence) => evidence === undefined)) return { absent: true };
-  const accepted = ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1.filter(
-    (identity) => identity.detectorId === request.detectorId,
-  ).flatMap((identity) => [
-    { version: observedScanAnalyzerVersionV1(identity), lockSha256: identity.lockSha256 },
-    ...(request.detectorId === "detector.skillspector"
-      ? request.acceptedImageDigests.map((digest) => ({
-          version: `${SKILLSPECTOR_SOURCE_REVISION}@${digest}`,
-          lockSha256: null,
-        }))
-      : []),
-  ]);
   const stated = asRecord(
     asRecord(firstEvidence.find((evidence) => evidence !== undefined))?.analyzer,
   );
+  const named = (identity: AcceptedScanAnalyzerIdentityV1) =>
+    `${observedScanAnalyzerVersionV1(identity)} with ${identity.lockSha256 === null ? "no uv.lock" : `uv.lock ${identity.lockSha256}`}`;
+  let accepted: readonly { readonly version: string; readonly lockSha256: string | null }[];
+  if (request.detectorId === "detector.skillspector") {
+    accepted = [
+      SKILLSPECTOR_IMAGE_DIGEST,
+      ...request.acceptedImageDigests.filter((digest) => digest !== SKILLSPECTOR_IMAGE_DIGEST),
+    ].map((digest) => ({ version: `${SKILLSPECTOR_SOURCE_REVISION}@${digest}`, lockSha256: null }));
+  } else {
+    const required = acceptedScanAnalyzerIdentityV1(request.detectorId, request.executionProfileId);
+    if (required === undefined)
+      return `Core accepts no analyzer identity for ${request.detectorId} under ${request.executionProfileId}`;
+    const requiredAnalyzer = {
+      version: observedScanAnalyzerVersionV1(required),
+      lockSha256: required.lockSha256,
+    };
+    const isRequired =
+      stated?.version === requiredAnalyzer.version &&
+      stated?.lockSha256 === requiredAnalyzer.lockSha256;
+    const other = isRequired
+      ? undefined
+      : ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1.find(
+          (identity) =>
+            identity.detectorId === request.detectorId &&
+            stated?.version === observedScanAnalyzerVersionV1(identity) &&
+            stated?.lockSha256 === identity.lockSha256,
+        );
+    if (other !== undefined)
+      return `completion evidence names the analyzer Core pins for ${request.detectorId} under ${other.executionProfileId} (${named(other)}); Core requires the one it pins under ${request.executionProfileId} (${named(required)})`;
+    accepted = [requiredAnalyzer];
+  }
   const analyzer =
     accepted.find(
       (candidate) =>
@@ -2000,6 +2039,10 @@ async function runDetectorList(
       const scanId = SCAN_DETECTOR_IDS[detector.name];
       const completion = precomputedScanCompletionRefusalV1(checked.log, {
         detectorId: scanId,
+        executionProfileId: requiredExecutionProfileIdV1(
+          detector.name,
+          options.uvExecutionProfileId,
+        ),
         sourceRoot: root,
         selectedClosurePaths: options.inventory.files.map((entry) => entry.relativePath),
         ...(detector.name === "mcp-scanner"

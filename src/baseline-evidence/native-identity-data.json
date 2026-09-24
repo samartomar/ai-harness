@@ -35,5 +35,5 @@
     "src/trust/smoke.ts",
     "src/trust/trust-lint-sarif.ts"
   ],
-  "digest": "d673436d3282"
+  "digest": "c87422ffee25"
 }

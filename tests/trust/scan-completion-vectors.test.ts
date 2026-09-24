@@ -216,6 +216,98 @@ describe("precomputed SARIF counts complete only with completion evidence for th
   });
 });
 
+/** Cisco under `linux-namespace-uv-v1`, the lock the protected Scanner receipts pin. */
+const CISCO_NAMESPACE = {
+  version: "2.0.14+uvlock.aaba1f326049",
+  lockSha256: "aaba1f3260494b09dfc62fd6c309558b901b8ad9411587d534a4f09721d3b4a1",
+} as const;
+const SNYK_HOST = {
+  version: "0.5.17+uvlock.49064889ec53",
+  lockSha256: "49064889ec53d91a5981cb5959d764c9bdf10843a54b5e5d339cfc046ad16169",
+} as const;
+
+async function precomputedUnder(
+  detector: TrustDetectorName,
+  sarif: string,
+  uvExecutionProfileId?: "host-process-uv-v1" | "linux-namespace-uv-v1",
+) {
+  return runTrustDetectors(root, {
+    env: {},
+    platform: "linux",
+    posture: "enterprise",
+    inventory: buildTrustFileInventory(root),
+    detectors: [detector],
+    requiredDetectors: [detector],
+    precomputedSarif: { [detector]: sarif },
+    ...(uvExecutionProfileId === undefined ? {} : { uvExecutionProfileId }),
+  });
+}
+
+describe("precomputed evidence must name the analyzer of the profile Core requires", () => {
+  it("fails a Cisco annex naming the host-profile (knownGap) lock when the namespace profile is required", async () => {
+    const result = await precomputedUnder(
+      "cisco",
+      sarifLog([evidence("detector.cisco", VECTOR, CISCO_HOST)]),
+      "linux-namespace-uv-v1",
+    );
+    expect(result.executions).toEqual([
+      { detector: "cisco", executedBy: "precomputed-sarif", outcome: "failed" },
+    ]);
+    expect(detectorCheck(result.checks, "cisco")?.detail).toContain(
+      `precomputed SARIF for detector.cisco is refused: completion evidence names the analyzer Core pins for detector.cisco under host-process-uv-v1 (${CISCO_HOST.version} with uv.lock ${CISCO_HOST.lockSha256}); Core requires the one it pins under linux-namespace-uv-v1 (${CISCO_NAMESPACE.version} with uv.lock ${CISCO_NAMESPACE.lockSha256})`,
+    );
+  });
+
+  it("completes a Cisco annex naming the namespace lock when the namespace profile is required", async () => {
+    const result = await precomputedUnder(
+      "cisco",
+      sarifLog([evidence("detector.cisco", VECTOR, CISCO_NAMESPACE)]),
+      "linux-namespace-uv-v1",
+    );
+    expect(result.executions).toEqual([
+      { detector: "cisco", executedBy: "precomputed-sarif", outcome: "completed" },
+    ]);
+  });
+
+  it("fails a Cisco annex naming the namespace lock when no profile is stated: Core's default is host-process-uv-v1", async () => {
+    const result = await precomputedUnder(
+      "cisco",
+      sarifLog([evidence("detector.cisco", VECTOR, CISCO_NAMESPACE)]),
+    );
+    expect(result.executions).toEqual([
+      { detector: "cisco", executedBy: "precomputed-sarif", outcome: "failed" },
+    ]);
+    expect(detectorCheck(result.checks, "cisco")?.detail).toContain(
+      `precomputed SARIF for detector.cisco is refused: completion evidence names the analyzer Core pins for detector.cisco under linux-namespace-uv-v1 (${CISCO_NAMESPACE.version} with uv.lock ${CISCO_NAMESPACE.lockSha256}); Core requires the one it pins under host-process-uv-v1 (${CISCO_HOST.version} with uv.lock ${CISCO_HOST.lockSha256})`,
+    );
+  });
+
+  it("completes a Semgrep annex under the namespace profile: both Semgrep profiles pin one lock", async () => {
+    const result = await precomputedUnder(
+      "semgrep",
+      sarifLog([evidence("detector.semgrep", VECTOR, SEMGREP_HOST)]),
+      "linux-namespace-uv-v1",
+    );
+    expect(result.executions).toEqual([
+      { detector: "semgrep", executedBy: "precomputed-sarif", outcome: "completed" },
+    ]);
+  });
+
+  it("fails a Snyk annex when the namespace profile is required: Core pins Snyk under no such profile", async () => {
+    const result = await precomputedUnder(
+      "snyk-agent-scan",
+      sarifLog([evidence("detector.snyk-agent-scan", VECTOR, SNYK_HOST)]),
+      "linux-namespace-uv-v1",
+    );
+    expect(result.executions).toEqual([
+      { detector: "snyk-agent-scan", executedBy: "precomputed-sarif", outcome: "failed" },
+    ]);
+    expect(detectorCheck(result.checks, "snyk-agent-scan")?.detail).toContain(
+      "precomputed SARIF for detector.snyk-agent-scan is refused: Core accepts no analyzer identity for detector.snyk-agent-scan under linux-namespace-uv-v1",
+    );
+  });
+});
+
 /** The vector tree after `late.md` ("late\n") is added: computed by hand, as above. */
 const VECTOR_PLUS_LATE = {
   subjectTreeSha256: "32e7d04ea796c2a325903dfce932e583c632f1d5f876ae1560412c5343933ab7",

@@ -80,6 +80,8 @@ function fixture(detail = "") {
             },
             SCAN_DETECTOR_IDS[analyzer as TrustDetectorName],
             sourceRoot,
+            // Scan's baseline runtime runs Semgrep and Cisco under linux-namespace-uv-v1.
+            analyzer === "skillspector" ? {} : { executionProfileId: "linux-namespace-uv-v1" },
           ),
     );
     return { path: `annex/${analyzer}.json`, bytes };

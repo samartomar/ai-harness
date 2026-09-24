@@ -373,10 +373,15 @@ async function prepareSourceWideCiscoEvidence(
 // A missing required analyzer is almost always a detector that failed to run
 // (e.g. an offline uv cache that no longer resolves the pinned Cisco scanner).
 // Surface those underlying reasons so the fail-closed abort is actionable instead
-// of opaque.
+// of opaque. A source-wide scan runs without enterprise posture, where an
+// unavailable detector is graded skip rather than fail; its reason counts too.
 function detectorDiagnostics(checks: readonly Check[]): string[] {
   return checks
-    .filter((check) => check.code === "trust.detector-unavailable" && check.verdict === "fail")
+    .filter(
+      (check) =>
+        check.code === "trust.detector-unavailable" &&
+        (check.verdict === "fail" || check.verdict === "skip"),
+    )
     .map((check) => check.detail?.trim())
     .filter((detail): detail is string => detail !== undefined && detail.length > 0);
 }
