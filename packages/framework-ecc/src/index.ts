@@ -8,6 +8,7 @@ import type {
 } from "@aihq/core/framework-host";
 import { executePlan } from "./core-runtime.js";
 import { ECC_DESCRIPTOR_SECTIONS } from "./descriptor.js";
+import { doctor } from "./doctor.js";
 import { eccMcpAddCommand, eccMcpRemoveCommand } from "./ecc/index.js";
 import { executeEccCommand } from "./ecc/pipeline.js";
 import { hookInventory, planHookControls } from "./hooks.js";
@@ -77,4 +78,5 @@ export const aihFrameworkPluginV1: FrameworkPluginV1 = Object.freeze({
   policyDelivery: eccPolicyDelivery(),
   uninstall,
   prune,
+  doctor,
 });

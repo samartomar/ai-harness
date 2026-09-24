@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { command } from "../src/doctor.js";
 import {
   explicitEccMcpReceiptRecord,
@@ -13,6 +13,31 @@ import { fakeRunner } from "../src/internals/proc.js";
 import type { Check } from "../src/internals/verify.js";
 import { ECC_MCP_CATALOG_PROVENANCE } from "../src/org-policy/ecc-mcp-catalog.js";
 import { makeHostAdapter } from "../src/platform/detect.js";
+
+// The explicit ECC MCP checks run in @aihq/framework-ecc: read it from this repository's package source.
+vi.mock("../src/framework-plugin/load-framework-plugin.js", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../src/framework-plugin/load-framework-plugin.js")>();
+  const { sourcePluginAccess } = await import("./framework-plugin/source-plugin-mocks.js");
+  return {
+    ...actual,
+    loadFrameworkPluginV1: (
+      id: Parameters<typeof actual.loadFrameworkPluginV1>[0],
+      options: Parameters<typeof actual.loadFrameworkPluginV1>[1] = {},
+    ) => actual.loadFrameworkPluginV1(id, { ...options, access: sourcePluginAccess(id) }),
+  };
+});
+vi.mock("../src/catalog-package/framework-descriptors.js", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../src/catalog-package/framework-descriptors.js")>();
+  const { eccDescriptorLoad } = await import("./framework-plugin/source-plugin-mocks.js");
+  return {
+    ...actual,
+    loadFrameworkDescriptorBytesV1: async (
+      id: Parameters<typeof actual.loadFrameworkDescriptorBytesV1>[0],
+    ) => (id === "ecc" ? eccDescriptorLoad() : actual.loadFrameworkDescriptorBytesV1(id)),
+  };
+});
 
 const paths: string[] = [];
 

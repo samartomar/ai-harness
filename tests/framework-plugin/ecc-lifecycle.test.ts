@@ -7,6 +7,7 @@ import {
   eccStatePathsV1,
   prepareEccMaterializationRemovalV1,
 } from "../../src/framework-plugin/ecc-lifecycle.js";
+import { eccDoctorChecksV1 } from "../../src/framework-plugin/ecc-read.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
@@ -70,6 +71,15 @@ describe("ECC uninstall and prune without the plugin", () => {
     );
     await expect(eccPrunePlanV1(ctx(), [])).rejects.toThrow(
       `aih ECC state to reconcile: ${join(home, ".aih", "ecc")}`,
+    );
+  });
+
+  it("doctor states that the ECC checks were not run, as a skip naming the install command", async () => {
+    const checks = await eccDoctorChecksV1(ctx());
+    expect(checks).toHaveLength(1);
+    expect(checks[0]).toMatchObject({ name: "ECC checks", verdict: "skip" });
+    expect(checks[0]?.detail).toContain(
+      "ECC checks were not run: framework-plugin-unavailable: @aihq/framework-ecc is not installed",
     );
   });
 

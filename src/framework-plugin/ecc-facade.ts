@@ -16,9 +16,7 @@
  * | Core call site | Exports | Phase-2 contract member |
  * | --- | --- | --- |
  * | delivery report (src/org-policy/policy-delivery-report.ts) — SYNC | `describeEccEffectiveDiscovery`, `inspectDestination`, `materializationRoot`, `ownedFragmentDigest`, `parseJsonObject`, `GOVERNED_MATERIALIZATION_TARGETS`, `ownedFileSha256`, `readEccMaterializationReceipt`, `inspectGovernedCodexRoleRegistration` and their types | `report`, `receipts` |
- * | doctor (src/doctor.ts) — SYNC | `readExplicitEccMcpReceiptStates` | `doctor` |
  * | capability package manager (src/capability/package-graph/adapters/ecc-*.ts, src/capability/package-manager/{live-context,domains/mixed-coordinator}.ts) — SYNC | `ECC_MATERIALIZATION_RECEIPT_PATH`, `ECC_MCP_EXPLICIT_ADD_RECEIPT_PATH`, `parseEccMaterializationReceipt`, `readEccMaterializationReceipt`, `parseExplicitAddReceipt`, `explicitEccMcpRenderPlan`, `planExplicitEccMcpRemove`, `readExplicitEccMcpReceiptStates`, `planEccComponentSubtraction` | `receipts` plus ECC MCP add/remove planning |
- * | report (src/report/v9-panels.ts, src/report/v9.ts) — SYNC | `eccLanguages`, `EccLanguagePack` | `report` |
  * | CLI capability table (src/internals/cli-capabilities.ts) — SYNC | `ECC_INSTALL_TARGETS`, `WIRED_MATERIALIZATION_TARGETS` | `describe().supportedHosts` |
  * | test-only binding adapter (src/binding/frameworks/ecc.ts) | `selectedEccMcpServers`, `parseEccInstallPreview`, `readEccInstallPreview`, `EccInstallPreviewArtifact`, `EccMcpComponentId` | moves with the ECC code or is deleted |
  * | repository checks (src/internals/check-baseline-installable.ts, check-ecc-installer.ts) | `readRegistrationLedger`, `registrationLedgerPath`, `writeRegistrationLedgerAtomic`, `RegistrationLedger`, `ECC_NPM_BINS`, `ECC_NPM_PACKAGE` | move with the ECC package's own checks |
@@ -29,6 +27,9 @@
  * `policyDelivery` hook (src/org-policy/validate.ts); `aih uninstall` removes
  * receipt-proven ECC content through its `uninstall` hook and `aih prune` plans
  * ECC's share through its `prune` hook (src/framework-plugin/ecc-lifecycle.ts).
+ * `aih doctor` and `aih report` read ECC through its `doctor` hook and
+ * `identifyComponents` (src/framework-plugin/ecc-read.ts) and state that the
+ * ECC checks were not run without it.
  * The state aih writes for ECC (receipts, registration ledger) stays in Core.
  *
  * The generic runtime parts of `src/ecc-profile/**` (default MCP runtimes for
@@ -85,7 +86,6 @@ export {
   registrationLedgerPath,
   writeRegistrationLedgerAtomic,
 } from "../ecc/registration.js";
-export { type EccLanguagePack, eccLanguages } from "../ecc/select.js";
 export {
   type GovernedCodexRoleRegistrationInspection,
   inspectGovernedCodexRoleRegistration,
