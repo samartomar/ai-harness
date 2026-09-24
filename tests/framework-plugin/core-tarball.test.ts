@@ -54,7 +54,7 @@ const ABSENT_ECC_IMPLEMENTATION_PATHS = [
  * function names (tsup `keepNames`), so a bundled copy would carry the name.
  */
 const ECC_IMPLEMENTATION_NAMES = [
-  "executeEccCommand",
+  "executeEccEvidencePipeline",
   "applyPreparedGovernedEccDelivery",
   "eccPruneReconciliationActions",
   "planGovernedCodexRoleRegistration",
