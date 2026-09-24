@@ -20,6 +20,23 @@ import {
 import { renderEccProjection } from "../../src/profile/render.js";
 import { evidence, profile, projectionRoots } from "./render-fixture.js";
 
+/**
+ * Test-only: the hermetic fixtures install synthetic pins, so recovery here is
+ * anchored by replacing the contents of Core's (mocked) installation trust
+ * record. Production has no seam: the plugin reads Core's frozen record.
+ */
+const coreTrust = vi.hoisted(() => [] as unknown[]);
+vi.mock("@aihq/core/framework-host", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  ECC_PROFILE_INSTALLATION_TRUST_V1: coreTrust,
+}));
+
+/** Anchor recovery on exactly `anchors`; contributes no command deps. */
+function coreAnchors(anchors: readonly unknown[]): Record<string, never> {
+  coreTrust.splice(0, coreTrust.length, ...anchors);
+  return {};
+}
+
 const roots: string[] = [];
 
 afterEach(() => {
@@ -100,7 +117,7 @@ describe("ECC profile lifecycle command", () => {
       await executeEccProfileLifecycleCommand(context(target, "uninstall", true), {
         loadProjection,
         loadNativeRegistration,
-        installedSourceTrust: installedSource ? [installedSource] : [],
+        ...coreAnchors(installedSource ? [installedSource] : []),
       });
       expect(existsSync(join(target, ECC_PROFILE_OWNERSHIP_PATH))).toBe(false);
       expect(existsSync(join(target, NATIVE_ECC_REGISTRATION_RECEIPT))).toBe(false);
@@ -141,12 +158,12 @@ describe("ECC profile lifecycle command", () => {
       rmSync(codexConfig);
       const installedSource = readEccProfileOwnership(target)?.source;
       await executeEccProfileLifecycleCommand(realGitContext(target, "repair"), {
-        installedSourceTrust: installedSource ? [installedSource] : [],
+        ...coreAnchors(installedSource ? [installedSource] : []),
       });
       expect(readFileSync(codexConfig, "utf8")).toMatch(/\[agents\./u);
       expect(readFileSync(codexConfig, "utf8")).toMatch(/\[mcp_servers\./u);
       await executeEccProfileLifecycleCommand(realGitContext(target, "repair"), {
-        installedSourceTrust: installedSource ? [installedSource] : [],
+        ...coreAnchors(installedSource ? [installedSource] : []),
       });
 
       const next = structuredClone(projection);
@@ -165,22 +182,25 @@ describe("ECC profile lifecycle command", () => {
 
       rmSync(codexConfig);
       await executeEccProfileLifecycleCommand(realGitContext(target, "rollback"), {
-        installedSourceTrust: [nextSource, installedSource].filter(
-          (source) => source !== undefined,
-        ),
+        ...coreAnchors([nextSource, installedSource].filter((source) => source !== undefined)),
       });
       const originalSource = readEccProfileOwnership(target)?.source;
       expect(originalSource?.commit).toBe(projection.source.commit);
       expect(readFileSync(codexConfig, "utf8")).toMatch(/\[agents\./u);
       expect(readFileSync(codexConfig, "utf8")).toMatch(/\[mcp_servers\./u);
       await executeEccProfileLifecycleCommand(realGitContext(target, "repair"), {
-        installedSourceTrust: originalSource ? [originalSource] : [],
+        ...coreAnchors(originalSource ? [originalSource] : []),
       });
 
-      await executeEccProfileLifecycleCommand(realGitContext(target, "uninstall"), {
-        installedSourceTrust: originalSource ? [originalSource] : [],
-      });
-      expect(existsSync(codexConfig)).toBe(false);
+      const uninstalled = await executeEccProfileLifecycleCommand(
+        realGitContext(target, "uninstall"),
+        { ...coreAnchors(originalSource ? [originalSource] : []) },
+      );
+      // A merge destination is never deleted: nothing proves aih created the whole file.
+      expect(readFileSync(codexConfig, "utf8").trim()).toBe("");
+      expect(
+        uninstalled.writes.find((write) => write.path === ".codex/config.toml")?.describe,
+      ).toMatch(/kept \.codex\/config\.toml.*cannot prove/i);
       expect(existsSync(join(target, ECC_PROFILE_OWNERSHIP_PATH))).toBe(false);
       expect(existsSync(join(target, NATIVE_ECC_REGISTRATION_RECEIPT))).toBe(false);
     } finally {
@@ -219,7 +239,7 @@ describe("ECC profile lifecycle command", () => {
         executeEccProfileLifecycleCommand(context(target, "uninstall", true), {
           loadProjection: async () => projection,
           loadNativeRegistration,
-          installedSourceTrust: installedSource ? [installedSource] : [],
+          ...coreAnchors(installedSource ? [installedSource] : []),
         }),
       ).rejects.toThrow(/modified|ownership|drift|hash/i);
 
@@ -281,8 +301,8 @@ describe("ECC profile lifecycle command", () => {
           executeEccProfileLifecycleCommand(context(target, operation, true), {
             loadProjection: async () => projection,
             loadNativeRegistration,
-            installedSourceTrust: [installedSource, originalSource].filter(
-              (source) => source !== undefined,
+            ...coreAnchors(
+              [installedSource, originalSource].filter((source) => source !== undefined),
             ),
           }),
         ).rejects.toThrow(/runtime bytes|ownership receipt|run update/i);
@@ -366,7 +386,7 @@ describe("ECC profile lifecycle command", () => {
       });
       await executeEccProfileLifecycleCommand(context(target, "repair", true), {
         loadProjection: changedPackagePin,
-        installedSourceTrust: originalSource ? [originalSource] : [],
+        ...coreAnchors(originalSource ? [originalSource] : []),
       });
       expect(readFileSync(join(target, ...(skill?.destination.split("/") ?? [])), "utf8")).toBe(
         skill?.content,
@@ -385,13 +405,13 @@ describe("ECC profile lifecycle command", () => {
       expect(nextSource).toBeDefined();
       await executeEccProfileLifecycleCommand(context(target, "rollback", true), {
         loadProjection: changedPackagePin,
-        installedSourceTrust: [nextSource, originalSource].filter((source) => source !== undefined),
+        ...coreAnchors([nextSource, originalSource].filter((source) => source !== undefined)),
       });
       expect(readEccProfileOwnership(target)?.source.commit).toBe(installed.source.commit);
 
       await executeEccProfileLifecycleCommand(context(target, "uninstall", true), {
         loadProjection: changedPackagePin,
-        installedSourceTrust: originalSource ? [originalSource] : [],
+        ...coreAnchors(originalSource ? [originalSource] : []),
       });
       expect(existsSync(join(target, ECC_PROFILE_OWNERSHIP_PATH))).toBe(false);
       expect(changedPackagePin).not.toHaveBeenCalled();

@@ -1,19 +1,9 @@
-import { createHash, randomUUID } from "node:crypto";
-import {
-  chmodSync,
-  type Dirent,
-  existsSync,
-  lstatSync,
-  mkdirSync,
-  readdirSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { createHash } from "node:crypto";
+import { type Dirent, existsSync, lstatSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { z } from "zod";
 import { AihError } from "../errors.js";
-import { readIfExists, readRegularFile, retryTransient } from "../internals/fsxn.js";
+import { readIfExists, readRegularFile } from "../internals/fsxn.js";
 
 /**
  * ECC install manifest — the ownership record that lets a rerun tell an AIH-written
@@ -171,54 +161,11 @@ export function readEccInstallManifest(root: string): EccInstallManifestRead {
   return { present: true, manifest: parseManifest(parsed, path) };
 }
 
-function prepareManifestDir(root: string): string {
-  let current = root;
-  for (const segment of [".aih", "ecc"]) {
-    current = join(current, segment);
-    assertNotSymlink(current);
-    if (!existsSync(current)) mkdirSync(current, { recursive: false, mode: 0o700 });
-  }
-  return current;
-}
-
-/**
- * Atomically write the manifest (validate -> temp file with owner-only mode -> rename),
- * mirroring the binding lock writer. Validation runs BEFORE anything touches disk, so a
- * manifest naming a path outside its managed root is rejected rather than stored.
- */
-export function writeEccInstallManifestAtomic(root: string, manifest: EccInstallManifest): void {
-  const contents = `${JSON.stringify(parseManifest(manifest, "(in memory)"), null, 2)}\n`;
-  const directory = prepareManifestDir(root);
-  const path = eccInstallManifestPath(root);
-  assertNotSymlink(path);
-  const temporary = join(directory, `.install-manifest.${process.pid}.${randomUUID()}.tmp`);
-  try {
-    writeFileSync(temporary, contents, { encoding: "utf8", flag: "wx", mode: 0o600 });
-    chmodSync(temporary, 0o600);
-    retryTransient(() => renameSync(temporary, path));
-  } finally {
-    rmSync(temporary, { force: true });
-  }
-}
-
 function sameInstall(entry: EccManifestInstall, target: string, root: string): boolean {
   return entry.target === target && resolve(entry.root) === resolve(root);
 }
 
 /** Replace the record for one (target, root), leaving every other target's record intact. */
-export function upsertEccInstall(
-  manifest: EccInstallManifest,
-  install: EccManifestInstall,
-): EccInstallManifest {
-  const installs = manifest.installs.filter(
-    (entry) => !sameInstall(entry, install.target, install.root),
-  );
-  installs.push(install);
-  installs.sort((left, right) =>
-    `${left.target}\0${left.root}`.localeCompare(`${right.target}\0${right.root}`),
-  );
-  return { schemaVersion: ECC_INSTALL_MANIFEST_SCHEMA_VERSION, installs };
-}
 
 /**
  * Every regular file under `root`, as root-relative POSIX paths. Symlinks are SKIPPED

@@ -1,9 +1,13 @@
 import { lstatSync, type Stats, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, parse, resolve, sep } from "node:path";
 import { z } from "zod";
 import { ECC_MCP_EXPLICIT_ADD_RECEIPT_PATH } from "../ecc/mcp-explicit-add-receipt.js";
-import { NATIVE_ECC_REGISTRATION_RECEIPT } from "../ecc-profile/native-registration.js";
+import {
+  type EccNativeStateRootV1,
+  eccNativeStateRootCandidatesV1,
+  NATIVE_ECC_REGISTRATION_RECEIPT,
+} from "../ecc-profile/native-registration.js";
 import { AihError } from "../errors.js";
 import type { Cli } from "../internals/clis.js";
 import type { Action, PlanContext } from "../internals/plan.js";
@@ -38,17 +42,23 @@ function errorCode(error: unknown): string | undefined {
 }
 
 /**
- * Inspect one candidate from its base with `lstat`, segment by segment. Only a
- * genuinely missing entry under real directories is absent (`undefined`). A
- * dangling symbolic link, an inaccessible entry or an ancestor that is not a
- * directory is state, named by the path where it was found; a resolving
- * symbolic link is followed like the directory or file it names.
+ * Inspect one candidate with `lstat`, component by component from the
+ * file-system root down through its base and segments, so nothing above a
+ * supplied base (an explicit root, `HOME`, `LOCALAPPDATA`...) is skipped. Only
+ * a genuinely missing entry under directories is absent (`undefined`). A
+ * dangling symbolic link or junction, an inaccessible entry or a component
+ * that is not a directory is state, named by the component where it was found;
+ * a resolving symbolic link or junction is followed like the directory or file
+ * it names.
  */
 function inspectStatePath(base: string, segments: readonly string[]): string | undefined {
-  let current = base;
-  for (let index = -1; index < segments.length; index += 1) {
-    if (index >= 0) current = join(current, segments[index] as string);
-    const last = index === segments.length - 1;
+  const full = resolve(base, ...segments);
+  const fsRoot = parse(full).root;
+  const components = full.slice(fsRoot.length).split(sep).filter(Boolean);
+  let current = fsRoot;
+  for (let index = -1; index < components.length; index += 1) {
+    if (index >= 0) current = join(current, components[index] as string);
+    const last = index === components.length - 1;
     let entry: Stats;
     try {
       entry = lstatSync(current);
@@ -77,8 +87,9 @@ function inspectStatePath(base: string, segments: readonly string[]): string | u
  * The state aih writes for ECC that Core can see without the plugin: the
  * project's `.aih/ecc/` receipts and explicit MCP receipt, the ECC profile
  * lifecycle state under `.aih/ecc-profile/` (its ownership and native
- * registration receipts), the machine registration ledger under `~/.aih/ecc/`,
- * and aih's Codex install state. Each path and its ancestors are inspected
+ * registration receipts), the native registration's machine state root (from
+ * Core's one resolver, {@link eccNativeStateRootCandidatesV1}), the machine
+ * registration ledger under `~/.aih/ecc/`, and aih's Codex install state. Each path and its ancestors are inspected
  * with `lstat`: anything but genuine absence is listed, a path that is not
  * plainly present carrying its condition in parentheses.
  */
@@ -106,7 +117,58 @@ export function eccStatePathsV1(ctx: PlanContext): string[] {
   const found = candidates
     .map(([base, parts]) => inspectStatePath(base, parts))
     .filter((path): path is string => path !== undefined);
-  return [...new Set(found)];
+  return [...new Set([...found, ...nativeStateRoots(ctx).map((root) => root.found)])];
+}
+
+/**
+ * The native registration's machine state roots under this invocation that
+ * hold state: what was `found` (the root, or the component that is not plainly
+ * a directory) and the state `root` itself. A relative `AIH_ECC_STATE_ROOT`
+ * leaves the root undeterminable, so it is named as state rather than treated
+ * as absent.
+ */
+function nativeStateRoots(ctx: PlanContext): Array<{ found: string; root: string | undefined }> {
+  let roots: EccNativeStateRootV1[];
+  try {
+    roots = eccNativeStateRootCandidatesV1(ctx.env, ctx.host.platform);
+  } catch (error) {
+    if (!(error instanceof AihError)) throw error;
+    return [
+      {
+        found: `AIH_ECC_STATE_ROOT=${ctx.env.AIH_ECC_STATE_ROOT?.trim()} (not an absolute path)`,
+        root: undefined,
+      },
+    ];
+  }
+  return roots.flatMap((root) => {
+    const found = inspectStatePath(root.base, root.segments);
+    return found === undefined ? [] : [{ found, root: resolve(root.base, ...root.segments) }];
+  });
+}
+
+/** Escape control characters so a refusal detail stays one control-free paragraph. */
+function controlFree(text: string): string {
+  return text.replace(
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are what this escapes.
+    /[\u0000-\u001f\u007f-\u009f]/g,
+    (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`,
+  );
+}
+
+/**
+ * A refusal detail: the loader's own detail and the state found, bounded; then,
+ * never truncated, the manual route for each native machine state root. That
+ * root is machine-wide, so without the plugin it can only be retired by hand
+ * once no project on this machine uses the ECC native registration.
+ */
+function refusalDetail(ctx: PlanContext, detail: string, heading: string, state: string[]): string {
+  const found = state.length === 0 ? "" : ` ${heading}: ${controlFree(state.join(", "))}.`;
+  const routes = nativeStateRoots(ctx).map(({ root }) =>
+    root === undefined
+      ? " AIH_ECC_STATE_ROOT is not an absolute path: set it to the absolute state root the ECC native registration used, or unset it."
+      : ` The ECC native registration's machine state root ${controlFree(root)} is shared by every project on this machine: install @aihq/framework-ecc, or, once no project on this machine uses the ECC native registration, remove ${controlFree(root)} by hand.`,
+  );
+  return `${`${detail}${found}`.slice(0, 2000)}${[...new Set(routes)].join("")}`;
 }
 
 function incompatible(loaded: LoadedFrameworkPluginV1, hook: string, need: string): never {
@@ -153,10 +215,9 @@ export async function prepareEccUninstallV1(
   if (state.length === 0 && !removeMaterialization) return undefined;
   const loaded = await (deps.loadPlugin ?? loadFrameworkPluginV1)("ecc");
   if (!loaded.ok) {
-    const found = state.length === 0 ? "" : ` aih ECC state found: ${state.join(", ")}.`;
     throw new FrameworkPluginRefusalError({
       ...loaded.refusal,
-      detail: `${loaded.refusal.detail}${found}`.slice(0, 2000),
+      detail: refusalDetail(ctx, loaded.refusal.detail, "aih ECC state found", state),
     });
   }
   if (!removeMaterialization) return undefined;
@@ -206,10 +267,9 @@ export async function eccPrunePlanV1(
     if (loaded.refusal.reason === "framework-plugin-unavailable" && state.length === 0) {
       return { actions: [], subtracted: 0 };
     }
-    const found = state.length === 0 ? "" : ` aih ECC state to reconcile: ${state.join(", ")}.`;
     throw new FrameworkPluginRefusalError({
       ...loaded.refusal,
-      detail: `${loaded.refusal.detail}${found}`.slice(0, 2000),
+      detail: refusalDetail(ctx, loaded.refusal.detail, "aih ECC state to reconcile", state),
     });
   }
   const hook = loaded.plugin.prune ?? incompatible(loaded, "prune", "reconciling dropped targets");

@@ -76,24 +76,8 @@ export function inspectDestination(rootReal: string, path: string): DestinationR
 }
 
 /** The write-path read: an unreadable destination refuses rather than degrading. */
-export function readLiveDestination(rootReal: string, path: string): Buffer | undefined {
-  return transaction(rootReal).read(path);
-}
 
 /** Write bounded bytes through a same-directory exclusive temporary file and rename. */
-export function writeDestinationAtomic(
-  rootReal: string,
-  path: string,
-  contents: Buffer,
-  mode: number,
-  rename?: (from: string, to: string) => void,
-): void {
-  transaction(rootReal, { rename }).writeAtomic(path, contents, mode);
-}
-
-export function removeDestination(rootReal: string, path: string): void {
-  transaction(rootReal).remove(path);
-}
 
 /** Commit the already-planned ordered ECC steps with receipt order unchanged. */
 export function commitMaterializationSteps(

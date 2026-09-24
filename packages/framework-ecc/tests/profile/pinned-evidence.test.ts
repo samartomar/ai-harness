@@ -1,8 +1,9 @@
+import "../core-invocation.js";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { ECC_PROFILE_INSTALLATION_TRUST_V1 } from "@aihq/core/framework-host";
 import { describe, expect, it } from "vitest";
 import { readEccDescriptor } from "../../src/descriptor.js";
-import { PACKAGED_ECC_PROFILE_INSTALLATION_TRUST } from "../../src/profile/command.js";
 import { readEccProfileEvidenceV1 } from "../../src/profile/descriptor-evidence.js";
 import { deriveEccProfile } from "../../src/profile/index.js";
 import {
@@ -102,19 +103,28 @@ describe("projection policy for the items ECC v2.2.1 adds (review D18)", () => {
 });
 
 describe("installations rendered at the pinned commit", () => {
-  it("are anchored in the append-only installation trust record by the actual projection receipt", () => {
+  it("are anchored in Core's installation trust record by the actual version-2 recovery identity", () => {
     const receipt = JSON.parse(
       readFileSync(join(pinnedFixtureDirectory, "projection-receipt.json"), "utf8"),
     ) as Record<string, string>;
     expect(receipt.sourceCommit).toBe(PINNED_COMMIT);
-    expect(PACKAGED_ECC_PROFILE_INSTALLATION_TRUST).toContainEqual({
+    expect(receipt.recoveryIdentityV2ProjectionSha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(ECC_PROFILE_INSTALLATION_TRUST_V1).toContainEqual({
+      recoveryIdentityVersion: 2,
       repository: "affaan-m/ECC",
       commit: receipt.sourceCommit,
       sourceClosureId: receipt.sourceClosureId,
       sourceClosureSha256: receipt.sourceClosureSha256,
-      projectionSha256: receipt.projectionSha256,
+      projectionSha256: receipt.recoveryIdentityV2ProjectionSha256,
     });
-    expect(PACKAGED_ECC_PROFILE_INSTALLATION_TRUST[0]?.commit).toBe(
+    // No version-1 identity is anchored at this pin: v1 does not bind merge strategy.
+    expect(
+      ECC_PROFILE_INSTALLATION_TRUST_V1.filter(
+        (anchor) => anchor.commit === PINNED_COMMIT && !("recoveryIdentityVersion" in anchor),
+      ),
+    ).toEqual([]);
+    // Append only: the earlier pin's anchors stay first.
+    expect(ECC_PROFILE_INSTALLATION_TRUST_V1[0]?.commit).toBe(
       "0c1d7be9a750627fb2a6534c78a998cc46d03f9c",
     );
   });

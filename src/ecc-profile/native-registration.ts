@@ -3,6 +3,7 @@ import { lstatSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
+import { AihError } from "../errors.js";
 import { inspectContainedRelativePath } from "../internals/contained-path.js";
 import { removeManagedBlock, upsertTextBlock } from "../internals/envfile.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
@@ -127,6 +128,57 @@ export interface NativeRegistrationFile {
 
 export const NATIVE_ECC_REGISTRATION_RECEIPT = ".aih/ecc-profile/native-registration-v1.json";
 export const NATIVE_ECC_REGISTRATION_SCOPE = "ecc-native-registration";
+
+/** A machine state root the native ECC registration may use: a named base and the segments under it. */
+export interface EccNativeStateRootV1 {
+  base: string;
+  segments: readonly string[];
+}
+
+/**
+ * Every machine state root the native ECC registration can use under `env`, in
+ * precedence order: an explicit `AIH_ECC_STATE_ROOT`, then the platform default
+ * (`%LOCALAPPDATA%` or `%USERPROFILE%`, `$XDG_STATE_HOME` or `$HOME/.local/state`,
+ * each under `aih/ecc-profile`). A relative `AIH_ECC_STATE_ROOT` is refused.
+ */
+export function eccNativeStateRootCandidatesV1(
+  env: Readonly<Record<string, string | undefined>>,
+  platform: string,
+): EccNativeStateRootV1[] {
+  const candidates: EccNativeStateRootV1[] = [];
+  const explicit = env.AIH_ECC_STATE_ROOT?.trim();
+  if (explicit) {
+    if (!isAbsolute(explicit))
+      throw new AihError("AIH_ECC_STATE_ROOT must be absolute", "AIH_CONFIG");
+    candidates.push({ base: resolve(explicit), segments: [] });
+  }
+  if (platform === "windows") {
+    const base = env.LOCALAPPDATA?.trim() || env.USERPROFILE?.trim();
+    if (base) candidates.push({ base: resolve(base), segments: ["aih", "ecc-profile"] });
+  } else {
+    const state = env.XDG_STATE_HOME?.trim();
+    const home = env.HOME?.trim();
+    if (state) candidates.push({ base: resolve(state), segments: ["aih", "ecc-profile"] });
+    else if (home)
+      candidates.push({ base: resolve(home), segments: [".local", "state", "aih", "ecc-profile"] });
+  }
+  return candidates;
+}
+
+/** The machine state root the native ECC registration uses under `env`. */
+export function resolveEccNativeStateRootV1(
+  env: Readonly<Record<string, string | undefined>>,
+  platform: string,
+): string {
+  const [effective] = eccNativeStateRootCandidatesV1(env, platform);
+  if (effective === undefined)
+    throw new AihError(
+      "native ECC registration needs AIH_ECC_STATE_ROOT or a platform home/state directory",
+      "AIH_CONFIG",
+    );
+  return resolve(effective.base, ...effective.segments);
+}
+
 const NATIVE_REGISTRATION_SCOPE = NATIVE_ECC_REGISTRATION_SCOPE;
 const MAX_CONFIG_BYTES = 4 * 1024 * 1024;
 

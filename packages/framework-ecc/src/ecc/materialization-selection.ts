@@ -209,7 +209,8 @@ export function resolveEccMaterializationSelection(
   }
 
   // Every included id passed assertMaterializedComponentId above before it can
-  // reach the total lower-level closure helper. Evidence is component-granular,
+  // reach the closure helper, which refuses (never returns an empty closure)
+  // when it cannot compute requirements. Evidence is component-granular,
   // but structural module requirements are
   // not optional. Recompute closure after the evidence filter so a held or
   // malformed dependency cannot leave its dependent eligible to materialize.
