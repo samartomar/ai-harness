@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { readVendorBaselineLock } from "../../src/baseline-evidence/vendor.js";
 import {
@@ -31,6 +32,17 @@ describe("loadFrameworkDescriptorBytesV1 (phase-1 stub)", () => {
     const vendor = readVendorBaselineLock().sources.find((source) => source.id === "superpowers");
     expect(parsed.sections.vendorLock).toEqual(vendor);
     expect(parsed.sections.hookControlInventory?.hooks).toHaveLength(1);
+  });
+
+  it("serves exactly the bytes the Superpowers plugin's own tests pin", async () => {
+    const loaded = await loadFrameworkDescriptorBytesV1("superpowers");
+    const pinned = readFileSync(
+      new URL(
+        "../../packages/framework-superpowers/tests/fixtures/catalog-framework-superpowers.json",
+        import.meta.url,
+      ),
+    );
+    expect(loaded.ok && Buffer.from(loaded.bytes).equals(pinned)).toBe(true);
   });
 
   it("serves identical bytes on every call", async () => {
