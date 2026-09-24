@@ -1,5 +1,6 @@
 import type { InstalledComponentRegistration } from "@aihq/core/framework-host";
 import { AihError, type BaselineAuthorization, type Cli, z } from "@aihq/core/framework-host";
+import { EccDescriptorError } from "../descriptor.js";
 import { eccDescriptorMemo, eccDescriptorSection } from "../invocation.js";
 import type { EccComponentId, EccComponentSelection } from "./components.js";
 import { eccComponentInstallDescriptor } from "./materialize.js";
@@ -48,11 +49,55 @@ function moduleData(): EccModuleData {
 function loadModuleData(): EccModuleData {
   const modules = ModulesSnapshotSchema.parse(eccDescriptorSection("moduleGraph")).modules;
   const profiles = ProfilesSnapshotSchema.parse(eccDescriptorSection("profileGraph")).profiles;
-  return {
-    modules,
-    profiles,
-    moduleById: new Map(modules.map((module) => [module.id, module])),
+  const moduleById = new Map(modules.map((module) => [module.id, module]));
+  assertModuleGraph(modules, moduleById, profiles);
+  return { modules, profiles, moduleById };
+}
+
+/**
+ * A schema-valid graph must also close: unique module ids, every dependency
+ * and profile member naming a module the graph contains, and no dependency
+ * cycle. Otherwise the descriptor is refused where it is read, before any
+ * closure is computed from it.
+ */
+function assertModuleGraph(
+  modules: EccModuleData["modules"],
+  moduleById: EccModuleData["moduleById"],
+  profiles: EccModuleData["profiles"],
+): void {
+  if (moduleById.size !== modules.length)
+    throw new EccDescriptorError("moduleGraph repeats a module id");
+  for (const module of modules) {
+    for (const dependency of module.dependencies) {
+      if (!moduleById.has(dependency))
+        throw new EccDescriptorError(
+          `moduleGraph module ${module.id} depends on unknown module ${dependency}`,
+        );
+    }
+  }
+  for (const [profileId, profile] of Object.entries(profiles)) {
+    for (const member of profile.modules) {
+      if (!moduleById.has(member))
+        throw new EccDescriptorError(
+          `profileGraph profile ${profileId} names unknown module ${member}`,
+        );
+    }
+  }
+  const done = new Set<string>();
+  const path: string[] = [];
+  const visit = (id: string): void => {
+    if (done.has(id)) return;
+    const open = path.indexOf(id);
+    if (open >= 0)
+      throw new EccDescriptorError(
+        `moduleGraph has a dependency cycle: ${[...path.slice(open), id].join(" -> ")}`,
+      );
+    path.push(id);
+    for (const dependency of moduleById.get(id)?.dependencies ?? []) visit(dependency);
+    path.pop();
+    done.add(id);
   };
+  for (const module of modules) visit(module.id);
 }
 
 const PACK_MODULES: Record<EccLanguagePack, readonly string[]> = {

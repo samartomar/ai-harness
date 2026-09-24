@@ -17,11 +17,7 @@ import {
   z,
 } from "@aihq/core/framework-host";
 import { assertPortableSourcePath } from "./index.js";
-import {
-  type EccProjection,
-  projectionFilesDigest,
-  type RenderedProjectionFile,
-} from "./render.js";
+import type { EccProjection, RenderedProjectionFile } from "./render.js";
 
 const SHA256 = /^[0-9a-f]{64}$/;
 const COMMIT = /^[0-9a-f]{40}$/;
@@ -36,15 +32,23 @@ const DESTINATION_PREFIXES = [".agents/", ".claude/", ".codex/"] as const;
 export const ECC_PROFILE_OWNERSHIP_PATH = ".aih/ecc-profile/ownership-v1.json";
 
 const hashSchema = z.string().regex(SHA256);
-const sourceSchema = z
-  .object({
-    repository: z.literal("affaan-m/ECC"),
-    commit: z.string().regex(COMMIT),
-    sourceClosureId: z.string().min(1).max(256),
-    sourceClosureSha256: hashSchema,
-    projectionSha256: hashSchema,
-  })
-  .strict();
+const sourceFields = {
+  repository: z.literal("affaan-m/ECC"),
+  commit: z.string().regex(COMMIT),
+  sourceClosureId: z.string().min(1).max(256),
+  sourceClosureSha256: hashSchema,
+  projectionSha256: hashSchema,
+};
+/**
+ * Recovery identities are versioned by what `projectionSha256` binds. Version 1
+ * (unversioned, recorded by earlier releases) binds destination, content and
+ * mode; version 2 also binds each file's merge strategy, the write semantic a
+ * recovery replays.
+ */
+const sourceSchema = z.union([
+  z.object({ recoveryIdentityVersion: z.literal(2), ...sourceFields }).strict(),
+  z.object(sourceFields).strict(),
+]);
 const ownershipFileSchema = z
   .object({
     destination: z.string().min(1).max(1_024),
@@ -111,17 +115,91 @@ export class EccProfileRecoveryRefusalError extends AihError {
   }
 }
 
-const RECOVERY_NEXT_ROUTE =
-  "use an @aihq/framework-ecc package version whose append-only installation trust record names this exact ECC pin and projection digest";
+export type EccProfileLifecycleRefusalReason =
+  | "framework-profile-already-owned"
+  | "framework-profile-superseded"
+  | "framework-profile-update-same-pin";
 
+/**
+ * A lifecycle operation refused on the installed profile's identity: another
+ * lifecycle operation is the operator's next step, and the refusal names it.
+ */
+export class EccProfileLifecycleRefusalError extends AihError {
+  readonly reason: EccProfileLifecycleRefusalReason;
+  readonly label: string;
+  readonly nextRoute: string;
+
+  constructor(reason: EccProfileLifecycleRefusalReason, label: string, nextRoute: string) {
+    super(`${reason}: ${label}. Next: ${nextRoute}`, "AIH_FRAMEWORK_PLUGIN");
+    this.reason = reason;
+    this.label = label;
+    this.nextRoute = nextRoute;
+  }
+}
+
+const RECOVERY_NEXT_ROUTE =
+  "use an @aihq/core package version whose append-only ECC profile installation trust record names this exact ECC pin and projection digest";
+
+type RecoveryIdentityVersion = 1 | 2;
+
+function recoveryIdentityVersion(source: EccProfileInstalledSourceTrust): RecoveryIdentityVersion {
+  return "recoveryIdentityVersion" in source ? source.recoveryIdentityVersion : 1;
+}
+
+interface RecoveryDigestEntry {
+  destination: string;
+  normalizedHash: string;
+  mode: string;
+  mergeStrategy: string;
+}
+
+function recoveryDigest(
+  version: RecoveryIdentityVersion,
+  entries: readonly RecoveryDigestEntry[],
+): string {
+  return sha256(
+    [...entries]
+      .sort(comparePaths)
+      .map((entry) =>
+        version === 1
+          ? `${entry.destination}\0${entry.normalizedHash}\0${entry.mode}`
+          : `${entry.destination}\0${entry.normalizedHash}\0${entry.mode}\0${entry.mergeStrategy}`,
+      )
+      .join("\n"),
+  );
+}
+
+function projectionDigestEntries(files: readonly RenderedProjectionFile[]): RecoveryDigestEntry[] {
+  return files.map((file) => ({
+    destination: file.destination,
+    normalizedHash: file.normalizedSha256,
+    mode: file.mode,
+    mergeStrategy: file.mergeStrategy,
+  }));
+}
+
+/**
+ * The recorded identity must equal an anchor under its own version. A version-1
+ * identity names no write semantics, so its files must also match a version-2
+ * anchor at the same pin: a changed merge strategy never replays.
+ */
 function assertAnchored(
-  source: EccProfileOwnership["source"],
+  source: EccProfileInstalledSourceTrust,
+  files: readonly OwnershipFile[],
   anchors: readonly EccProfileInstalledSourceTrust[],
   label: string,
 ): void {
+  const identity = `${source.repository}@${source.commit}, projection ${source.projectionSha256}`;
   if (!anchors.some((anchor) => sameSource(anchor, source)))
     throw new EccProfileRecoveryRefusalError(
-      `${label} (${source.repository}@${source.commit}, projection ${source.projectionSha256}) is not an anchored recovery identity`,
+      `${label} (${identity}) is not an anchored recovery identity`,
+      RECOVERY_NEXT_ROUTE,
+    );
+  if (recoveryIdentityVersion(source) !== 1) return;
+  const semantics = writeSemanticsIdentity(source, files);
+  if (!anchors.some((anchor) => sameSource(anchor, semantics)))
+    throw new EccProfileRecoveryRefusalError(
+      `${label} (${identity}) is a version-1 recovery identity whose write semantics no version-2 anchor authenticates`,
       RECOVERY_NEXT_ROUTE,
     );
 }
@@ -131,7 +209,103 @@ function assertRollbackAnchored(
   anchors: readonly EccProfileInstalledSourceTrust[],
 ): void {
   if (!receipt.rollback) throw new Error("ECC profile ownership receipt has no rollback snapshot");
-  assertAnchored(receipt.rollback.source, anchors, "ECC profile rollback snapshot");
+  assertAnchored(
+    receipt.rollback.source,
+    receipt.rollback.files,
+    anchors,
+    "ECC profile rollback snapshot",
+  );
+}
+
+/** Same repository, commit and source closure: two renders of one pin. */
+function samePin(
+  left: EccProfileInstalledSourceTrust,
+  right: EccProfileInstalledSourceTrust,
+): boolean {
+  return (
+    left.repository === right.repository &&
+    left.commit === right.commit &&
+    left.sourceClosureId === right.sourceClosureId &&
+    left.sourceClosureSha256 === right.sourceClosureSha256
+  );
+}
+
+/** The version-2 identity of an installation, whichever version it recorded. */
+function writeSemanticsIdentity(
+  source: EccProfileInstalledSourceTrust,
+  files: readonly OwnershipFile[],
+): EccProfileInstalledSourceTrust {
+  if (recoveryIdentityVersion(source) === 2) return source;
+  return {
+    recoveryIdentityVersion: 2,
+    repository: source.repository,
+    commit: source.commit,
+    sourceClosureId: source.sourceClosureId,
+    sourceClosureSha256: source.sourceClosureSha256,
+    projectionSha256: recoveryDigest(2, files),
+  };
+}
+
+/**
+ * Core appends the anchor of a later render of an already anchored pin after
+ * the earlier ones. An installation of the earlier render is superseded: its
+ * receipt can carry payloads the current render withholds, and repair would
+ * restore them. Update migrates it instead.
+ */
+function assertNotSuperseded(
+  receipt: EccProfileOwnership,
+  anchors: readonly EccProfileInstalledSourceTrust[],
+): void {
+  const installed = writeSemanticsIdentity(receipt.source, receipt.files);
+  const index = anchors.findIndex((anchor) => sameSource(anchor, installed));
+  if (index < 0) return;
+  const later = anchors
+    .slice(index + 1)
+    .find(
+      (anchor) =>
+        recoveryIdentityVersion(anchor) === 2 &&
+        samePin(anchor, installed) &&
+        anchor.projectionSha256 !== installed.projectionSha256,
+    );
+  if (later !== undefined)
+    throw new EccProfileLifecycleRefusalError(
+      "framework-profile-superseded",
+      `ECC profile repair: the installed projection ${installed.projectionSha256} of ${installed.repository}@${installed.commit} is superseded by the anchored projection ${later.projectionSha256} of the same pin, and repair would restore what that render withholds`,
+      "run aih ecc --lifecycle update to migrate; rollback to the installed projection stays available",
+    );
+}
+
+/**
+ * An update within one pin changes only the projection: both the installed
+ * and the new identity must be anchored in Core's installation trust record,
+ * at the same source closure. Anything else at the installed pin refuses.
+ */
+function assertSamePinMigration(
+  receipt: EccProfileOwnership,
+  projection: EccProjection,
+  anchors: readonly EccProfileInstalledSourceTrust[],
+): void {
+  const next = eccProfileRecoveryIdentity(projection);
+  if (
+    !samePin(receipt.source, next) ||
+    sameSource(writeSemanticsIdentity(receipt.source, receipt.files), next)
+  )
+    throw new EccProfileLifecycleRefusalError(
+      "framework-profile-update-same-pin",
+      "ECC profile update requires an exact new source pin or an anchored new projection of the installed pin",
+      "update to a new exact ECC source pin, or to a projection of the installed pin that Core's installation trust record anchors at the same source closure; to restore the installed projection, run aih ecc --lifecycle repair",
+    );
+  assertAnchored(
+    receipt.source,
+    receipt.files,
+    anchors,
+    "ECC profile update within the installed pin: the installed source identity",
+  );
+  if (!anchors.some((anchor) => sameSource(anchor, next)))
+    throw new EccProfileRecoveryRefusalError(
+      `ECC profile update within the installed pin: the new projection (${next.repository}@${next.commit}, projection ${next.projectionSha256}) is not an anchored recovery identity`,
+      RECOVERY_NEXT_ROUTE,
+    );
 }
 
 interface CurrentFile {
@@ -156,14 +330,33 @@ function sourcePaths(file: RenderedProjectionFile): string[] {
   ).sort();
 }
 
-function sourceIdentity(projection: EccProjection): EccProfileOwnership["source"] {
+/** The version-2 recovery identity an install or update of `projection` records. */
+export function eccProfileRecoveryIdentity(
+  projection: EccProjection,
+): EccProfileInstalledSourceTrust {
   return {
+    recoveryIdentityVersion: 2,
     repository: projection.source.repository,
     commit: projection.source.commit,
     sourceClosureId: projection.sourceClosure.id,
     sourceClosureSha256: projection.sourceClosure.aggregateSha256,
-    projectionSha256: projectionFilesDigest(projection.files),
+    projectionSha256: recoveryDigest(2, projectionDigestEntries(projection.files)),
   };
+}
+
+/** A recorded identity of either version names exactly this projection. */
+function identifiesProjection(
+  source: EccProfileInstalledSourceTrust,
+  projection: EccProjection,
+): boolean {
+  return (
+    source.repository === projection.source.repository &&
+    source.commit === projection.source.commit &&
+    source.sourceClosureId === projection.sourceClosure.id &&
+    source.sourceClosureSha256 === projection.sourceClosure.aggregateSha256 &&
+    source.projectionSha256 ===
+      recoveryDigest(recoveryIdentityVersion(source), projectionDigestEntries(projection.files))
+  );
 }
 
 function assertDestination(root: string, destination: string, allowReceipt = false): void {
@@ -386,11 +579,17 @@ function parseReceipt(contents: string, root: string): EccProfileOwnership {
   if (receipt.canonicalRoot !== canonicalRoot(root))
     throw new Error("invalid ECC profile ownership receipt: foreign worktree root");
   validateReceiptFiles(receipt.files, receipt.source.commit, "active");
-  if (ownershipFilesDigest(receipt.files) !== receipt.source.projectionSha256)
+  if (
+    recoveryDigest(recoveryIdentityVersion(receipt.source), receipt.files) !==
+    receipt.source.projectionSha256
+  )
     throw new Error("invalid ECC profile ownership receipt: active projection digest mismatch");
   if (receipt.rollback !== undefined) {
     validateReceiptFiles(receipt.rollback.files, receipt.rollback.source.commit, "rollback");
-    if (ownershipFilesDigest(receipt.rollback.files) !== receipt.rollback.source.projectionSha256)
+    if (
+      recoveryDigest(recoveryIdentityVersion(receipt.rollback.source), receipt.rollback.files) !==
+      receipt.rollback.source.projectionSha256
+    )
       throw new Error("invalid ECC profile ownership receipt: rollback projection digest mismatch");
   }
   return receipt;
@@ -437,15 +636,6 @@ function validateReceiptFiles(
   }
 }
 
-function ownershipFilesDigest(files: readonly OwnershipFile[]): string {
-  return sha256(
-    [...files]
-      .sort(comparePaths)
-      .map((file) => `${file.destination}\0${file.normalizedHash}\0${file.mode}`)
-      .join("\n"),
-  );
-}
-
 function assertReceiptMatchesProjection(
   receipt: EccProfileOwnership,
   files: ReadonlyArray<RenderedProjectionFile>,
@@ -484,10 +674,17 @@ export function readEccProfileOwnership(root: string): EccProfileOwnership | und
 }
 
 function sameSource(
-  left: EccProfileOwnership["source"],
-  right: EccProfileOwnership["source"],
+  left: EccProfileInstalledSourceTrust,
+  right: EccProfileInstalledSourceTrust,
 ): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
+  return (
+    recoveryIdentityVersion(left) === recoveryIdentityVersion(right) &&
+    left.repository === right.repository &&
+    left.commit === right.commit &&
+    left.sourceClosureId === right.sourceClosureId &&
+    left.sourceClosureSha256 === right.sourceClosureSha256 &&
+    left.projectionSha256 === right.projectionSha256
+  );
 }
 
 function activeReceipt(
@@ -500,7 +697,7 @@ function activeReceipt(
     schemaVersion: 1,
     state: "active",
     canonicalRoot: canonicalRoot(root),
-    source: sourceIdentity(projection),
+    source: eccProfileRecoveryIdentity(projection),
     files: [...files].sort(comparePaths),
     ...(rollback === undefined ? {} : { rollback }),
   };
@@ -512,10 +709,13 @@ function installPlan(
   files: RenderedProjectionFile[],
 ): Plan {
   const receiptFile = readReceiptFile(root);
-  const source = sourceIdentity(projection);
   if (receiptFile !== undefined) {
-    if (!sameSource(receiptFile.receipt.source, source))
-      throw new Error("ECC profile is already owned at a different pin; use update");
+    if (!identifiesProjection(receiptFile.receipt.source, projection))
+      throw new EccProfileLifecycleRefusalError(
+        "framework-profile-already-owned",
+        "ECC profile is already owned at a different pin or projection",
+        "run aih ecc --lifecycle update to move the installation; aih ecc --lifecycle uninstall removes it",
+      );
     assertReceiptMatchesProjection(receiptFile.receipt, files);
     for (const entry of receiptFile.receipt.files) assertOwnedCurrent(root, entry);
     return plan("ecc-profile: install");
@@ -559,9 +759,16 @@ function installPlan(
   return plan("ecc-profile: install", ...actions);
 }
 
-function rollbackSnapshot(root: string, receipt: EccProfileOwnership): RollbackFile[] {
+function rollbackSnapshot(
+  root: string,
+  receipt: EccProfileOwnership,
+  allowMissing: boolean,
+): RollbackFile[] {
   return receipt.files.map((entry) => {
     const current = assertOwnedCurrent(root, entry);
+    // Within an anchored pin the receipt entry is authenticated content, and a
+    // superseded installation cannot be repaired first.
+    if (current === undefined && allowMissing) return { ...entry };
     if (current === undefined)
       throw new Error(
         `owned ECC profile destination is missing; repair before update: ${entry.destination}`,
@@ -580,14 +787,15 @@ function updatePlan(
   root: string,
   projection: EccProjection,
   files: RenderedProjectionFile[],
+  anchors: readonly EccProfileInstalledSourceTrust[],
 ): Plan {
   const receiptFile = readReceiptFile(root);
   if (receiptFile === undefined)
     throw new Error("ECC profile update requires an ownership receipt");
   const { receipt, current: currentReceipt } = receiptFile;
-  if (receipt.source.commit === projection.source.commit)
-    throw new Error("ECC profile update requires an exact new source pin");
-  const snapshot = rollbackSnapshot(root, receipt);
+  const samePinMigration = receipt.source.commit === projection.source.commit;
+  if (samePinMigration) assertSamePinMigration(receipt, projection, anchors);
+  const snapshot = rollbackSnapshot(root, receipt, samePinMigration);
   const prior = new Map(receipt.files.map((entry) => [entry.destination, entry]));
   const priorFolded = new Map(
     receipt.files.map((entry) => [entry.destination.toLowerCase(), entry]),
@@ -666,14 +874,15 @@ function repairPlan(
   root: string,
   projection: EccProjection,
   files: RenderedProjectionFile[],
+  anchors: readonly EccProfileInstalledSourceTrust[],
 ): Plan {
   const receiptFile = readReceiptFile(root);
   if (receiptFile === undefined)
     throw new Error("ECC profile repair requires an ownership receipt");
-  const expectedSource = sourceIdentity(projection);
-  if (!sameSource(receiptFile.receipt.source, expectedSource))
+  if (!identifiesProjection(receiptFile.receipt.source, projection))
     throw new Error("ECC profile repair projection contradicts the ownership receipt");
   assertReceiptMatchesProjection(receiptFile.receipt, files);
+  assertNotSuperseded(receiptFile.receipt, anchors);
   return repairInstalledPlan(root, receiptFile);
 }
 
@@ -735,7 +944,7 @@ function uninstallPlan(
 ): Plan {
   const receiptFile = readReceiptFile(root);
   if (receiptFile === undefined) return plan("ecc-profile: uninstall");
-  if (!sameSource(receiptFile.receipt.source, sourceIdentity(projection)))
+  if (!identifiesProjection(receiptFile.receipt.source, projection))
     throw new Error("ECC profile uninstall projection contradicts the ownership receipt");
   assertReceiptMatchesProjection(receiptFile.receipt, files);
   return uninstallInstalledPlan(root, receiptFile);
@@ -767,27 +976,24 @@ function uninstallInstalledPlan(
   return plan("ecc-profile: uninstall", ...actions);
 }
 
+/**
+ * Strip the managed block and keep the destination. A merge destination may
+ * hold operator bytes aih never owned, and nothing independently authenticates
+ * that aih created the whole file: `previousHash` is per-installation receipt
+ * state outside every recovery anchor. So the file is never deleted, even when
+ * only whitespace remains, and the write says so.
+ */
 function planManagedBlockRemoval(
   entry: OwnershipFile,
   current: CurrentFile,
   verb: string,
 ): Action[] {
   const stripped = removeManagedBlock(current.contents, MANAGED_SCOPE);
-  return entry.previousHash === null && stripped.trim().length === 0
-    ? [
-        remove(entry.destination, `${verb} ECC profile ${entry.destination}`, {
-          expect: { sha256: current.sha256 },
-        }),
-      ]
-    : [
-        pinnedWrite(
-          entry.destination,
-          stripped,
-          entry.mode,
-          current,
-          `${verb} ECC profile block ${entry.destination}`,
-        ),
-      ];
+  const describe =
+    stripped.trim().length === 0
+      ? `${verb} ECC profile block ${entry.destination}; kept ${entry.destination}, now only whitespace, because aih cannot prove it created the whole file: remove it by hand if nothing uses it`
+      : `${verb} ECC profile block ${entry.destination}`;
+  return [pinnedWrite(entry.destination, stripped, entry.mode, current, describe)];
 }
 
 function rollbackPlan(
@@ -800,7 +1006,7 @@ function rollbackPlan(
   if (receiptFile === undefined)
     throw new Error("ECC profile rollback requires an ownership receipt");
   const { receipt } = receiptFile;
-  if (!sameSource(receipt.source, sourceIdentity(projection)))
+  if (!identifiesProjection(receipt.source, projection))
     throw new Error("ECC profile rollback projection contradicts the ownership receipt");
   assertReceiptMatchesProjection(receipt, files);
   assertRollbackAnchored(receipt, recoveryAnchors);
@@ -881,7 +1087,8 @@ function rollbackInstalledPlan(
 /**
  * Plan a lifecycle operation bound to an authenticated projection. The
  * projection authenticates the active installation only; a rollback snapshot
- * must also equal one of the independently anchored `recoveryAnchors`.
+ * must also equal one of the independently anchored `recoveryAnchors`, and so
+ * must both identities of an update within the installed pin.
  */
 export function planEccProfileLifecycle(
   root: string,
@@ -895,9 +1102,9 @@ export function planEccProfileLifecycle(
     case "install":
       return installPlan(root, projection, files);
     case "update":
-      return updatePlan(root, projection, files);
+      return updatePlan(root, projection, files, recoveryAnchors);
     case "repair":
-      return repairPlan(root, projection, files);
+      return repairPlan(root, projection, files, recoveryAnchors);
     case "uninstall":
       return uninstallPlan(root, projection, files);
     case "rollback":
@@ -930,10 +1137,12 @@ export function planInstalledEccProfileLifecycle(
     throw new Error(`ECC profile ${operation} requires an ownership receipt`);
   assertAnchored(
     receiptFile.receipt.source,
+    receiptFile.receipt.files,
     trustedSources,
     `ECC profile ${operation}: the installed source identity`,
   );
   if (operation === "rollback") assertRollbackAnchored(receiptFile.receipt, trustedSources);
+  if (operation === "repair") assertNotSuperseded(receiptFile.receipt, trustedSources);
   switch (operation) {
     case "repair":
       return repairInstalledPlan(root, receiptFile);

@@ -626,8 +626,21 @@ on foreign or operator-modified files. Repair, rollback, and uninstall use the r
 hash-authenticated installed bytes and source identity, so a later package pin cannot strand an
 older managed installation. The receipt is operator-writable, so its self-declared identities never authorize
 a write on their own: the active source and, for rollback, the snapshot's source and projection digest
-must equal an entry in the plugin's append-only installation trust record, or the command refuses
-with `framework-profile-recovery-unanchored` before planning any write. Legacy selection flags such as `--profile`, `--with`, and `--cli`
+must equal an entry in Core's append-only ECC profile installation trust record (shipped in `@aihq/core`, read by the plugin through `@aihq/core/framework-host`; the plugin ships no anchors of its own), or the command refuses
+with `framework-profile-recovery-unanchored` before planning any write. Recovery identities are versioned: version 2
+(recorded by current installs) also binds each file's merge strategy, and a version-1 identity from an earlier release
+recovers only when a version-2 anchor at the same pin authenticates its write semantics. Uninstall, update and rollback
+never delete a merge destination such as `.codex/config.toml`: they remove only aih's managed blocks and keep the
+file, even when only whitespace remains, because nothing proves aih created the whole file; the plan names each file
+kept that way so you can remove it by hand if nothing uses it. Update normally requires a new ECC pin; within the
+installed pin it migrates only between two projections that Core's trust record both anchors at the same source closure,
+such as a later render that projects only the stub for a skill a client cannot run. It removes the files aih owned that
+the new projection drops, never touches operator files, and keeps rollback to the installed projection. Repair of an
+installation that a later anchored render of its pin supersedes refuses and routes to `--lifecycle update`, because
+repair replays the receipt and would restore what the current render withholds. These refusals exit with
+`AIH_FRAMEWORK_PLUGIN`, a stable reason and the next route: `framework-profile-superseded` for that repair,
+`framework-profile-update-same-pin` for any other update within the installed pin, and `framework-profile-already-owned`
+for an install over an installation of another pin or projection. Legacy selection flags such as `--profile`, `--with`, and `--cli`
 cannot be combined with `--lifecycle`.
 
 In a **governed** repository (an org policy carrying `governance`), `--lifecycle install` is not this
@@ -698,7 +711,11 @@ event, registers the reviewed MCP identities, preserves unrelated operator entri
 the exact Node/AIH launcher bytes plus each owned config fragment in
 `.aih/ecc-profile/native-registration-v1.json`. Native state stays outside the project under the
 platform state directory; set `AIH_ECC_STATE_ROOT` to an absolute external directory to override
-that location. Conflicting server identities, linked launchers, overlapping state roots, modified
+that location. That machine state root is shared by every project on the machine and survives
+uninstall, so once it exists `aih uninstall` and `aih prune` in any project refuse without
+`@aihq/framework-ecc` (`framework-plugin-unavailable`) and name the root in full with the manual
+route: install `@aihq/framework-ecc`, or, once no project on this machine uses the ECC native
+registration, remove that root by hand. Conflicting server identities, linked launchers, overlapping state roots, modified
 managed fragments, and partial second-phase installs fail closed; a failed registration after a
 projection install triggers compensating projection recovery. Repair and rollback preflight the
 projection and native registration before applying either surface, so recovery runs as one

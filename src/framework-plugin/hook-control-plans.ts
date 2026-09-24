@@ -62,7 +62,8 @@ function printable(value: unknown, max: number): value is string {
 /**
  * One label doc for a framework's decisions; the plan's shape is checked at the
  * boundary. Every requested disable must come back as exactly one disabled
- * decision under its strongest requesting authority, and every disabled
+ * decision under its strongest requesting authority, no other hook may come
+ * back disabled (whatever authority it claims), and every disabled
  * decision must carry exactly one host decision per targeted host: an
  * omission or a duplicate would otherwise print a control that was never
  * planned (or "No hook is disabled").
@@ -99,7 +100,9 @@ function decisionLabel(
       refuse(frameworkId, `${decision.hookId} is disabled without an authority`);
     }
     const authority = expected.get(decision.hookId);
-    if (authority !== undefined && decision.authority !== authority)
+    if (authority === undefined)
+      refuse(frameworkId, `${decision.hookId} is disabled, but no authority requested its disable`);
+    if (decision.authority !== authority)
       refuse(
         frameworkId,
         `${decision.hookId} is disabled under ${decision.authority}, not ${authority}`,

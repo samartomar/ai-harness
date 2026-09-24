@@ -1,10 +1,7 @@
 import { z } from "zod";
-import type { BaselineCatalog } from "../baseline-evidence/catalog.js";
 import { loadFrameworkDescriptorSectionV1 } from "../catalog-package/framework-descriptors.js";
 import { AihError } from "../errors.js";
-import { type Cli, SUPPORTED_CLIS } from "../internals/clis.js";
-import { digest, type Plan, plan } from "../internals/plan.js";
-import type { EccComponentSelection } from "./components.js";
+import { SUPPORTED_CLIS } from "../internals/clis.js";
 
 const SafeText = z
   .string()
@@ -51,10 +48,6 @@ function operationKey(operation: ContingentEccInstallOperation): string {
   ].join("\0");
 }
 
-function physicalOperationKey(operation: ContingentEccInstallOperation): string {
-  return [operation.kind, operation.destination, operation.source ?? ""].join("\0");
-}
-
 export function parseEccInstallPreview(value: unknown): EccInstallPreviewArtifact {
   const artifact = ArtifactSchema.parse(value);
   const keys = new Set<string>();
@@ -71,69 +64,5 @@ export function parseEccInstallPreview(value: unknown): EccInstallPreviewArtifac
 export function readEccInstallPreview(): EccInstallPreviewArtifact {
   return structuredClone(
     parseEccInstallPreview(loadFrameworkDescriptorSectionV1("ecc", "installPreview")),
-  );
-}
-
-function assertBoundToCatalog(artifact: EccInstallPreviewArtifact, catalog: BaselineCatalog): void {
-  if (
-    artifact.source.owner !== catalog.owner ||
-    artifact.source.repo !== catalog.repo ||
-    artifact.source.pinnedSha !== catalog.pinnedSha
-  ) {
-    throw new AihError(
-      `shipped ECC install preview does not bind ${catalog.owner}/${catalog.repo}@${catalog.pinnedSha}`,
-      "AIH_CONFIG",
-    );
-  }
-}
-
-function selectedComponentIds(
-  selection: EccComponentSelection | undefined,
-): Set<string> | undefined {
-  if (selection === undefined || selection.scope === "full") return undefined;
-  return new Set([...selection.components, ...selection.mcps]);
-}
-
-export function contingentEccInstallPreviewPlan(input: {
-  artifact?: EccInstallPreviewArtifact;
-  catalog: BaselineCatalog;
-  clis: readonly Cli[];
-  selection?: EccComponentSelection;
-  runtimeComponentIds?: readonly string[];
-}): Plan {
-  const artifact = parseEccInstallPreview(input.artifact ?? readEccInstallPreview());
-  assertBoundToCatalog(artifact, input.catalog);
-  const targets = new Set(input.clis);
-  const components = selectedComponentIds(input.selection);
-  for (const component of input.runtimeComponentIds ?? []) components?.add(component);
-  const selectedOperations = artifact.operations
-    .filter(
-      (operation) =>
-        targets.has(operation.target) &&
-        (components === undefined || components.has(operation.componentId)),
-    )
-    .sort((left, right) => operationKey(left).localeCompare(operationKey(right)));
-  const physicalOperations = new Map<string, ContingentEccInstallOperation>();
-  for (const operation of selectedOperations) {
-    const key = physicalOperationKey(operation);
-    if (!physicalOperations.has(key)) physicalOperations.set(key, operation);
-  }
-  const operations = [...physicalOperations.values()].sort((left, right) =>
-    operationKey(left).localeCompare(operationKey(right)),
-  );
-  const text = [
-    `Contingent on evidence authorization for ${artifact.source.owner}/${artifact.source.repo}@${artifact.source.pinnedSha}.`,
-    ...operations.map(
-      (operation) =>
-        `- ${operation.target} · ${operation.componentId} · ${operation.kind} · ${operation.source ?? "(generated)"} -> ${operation.destination}`,
-    ),
-  ].join("\n");
-  return plan(
-    "ecc: contingent install preview",
-    digest("contingent ECC install preview", text, {
-      contingentOn: "evidence-authorization",
-      pinnedSha: artifact.source.pinnedSha,
-      operations,
-    }),
   );
 }

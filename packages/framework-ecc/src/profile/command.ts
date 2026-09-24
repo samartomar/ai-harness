@@ -1,12 +1,13 @@
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import {
   type Action,
   AihError,
   assertTrustTreeSafe,
   beginMarker,
   buildNativeEccRegistration,
+  ECC_PROFILE_INSTALLATION_TRUST_V1,
   eccRuntimeScriptPath,
   endMarker,
   NATIVE_ECC_REGISTRATION_SCOPE,
@@ -19,8 +20,8 @@ import {
   planNativeEccRegistration,
   type RemoveAction,
   readTrustFetchMetadata,
-  remove,
   removeManagedBlock,
+  resolveEccNativeStateRootV1,
   type TrustSource,
   trustFetchExec,
   upsertTextBlock,
@@ -32,7 +33,6 @@ import { currentEccProfileEvidenceV1, type EccProfileEvidenceV1 } from "./descri
 import type { EccProfile } from "./index.js";
 import {
   ECC_PROFILE_MANAGED_SCOPE,
-  type EccProfileInstalledSourceTrust,
   type EccProfileLifecycleOperation,
   planEccProfileLifecycle,
   planInstalledEccProfileLifecycle,
@@ -56,24 +56,11 @@ export interface MaterializedEccProfileEvidence {
 export interface EccProfileLifecycleCommandDeps {
   /** Internal hermetic-test seam; the public command always uses authenticated acquisition. */
   loadProjection?: (ctx: PlanContext) => Promise<EccProjection>;
-  /** Internal future-pin seam; shipped packages use the append-only trust registry below. */
-  installedSourceTrust?: readonly EccProfileInstalledSourceTrust[];
   /** Internal hermetic-test seam; injected projection tests do not touch native config by default. */
   loadNativeRegistration?: (ctx: PlanContext) => NativeEccRegistration;
   /** Protected-policy pins supplied by the command that authorized this lifecycle mutation. */
   transactionPins?: Pick<Plan, "fileAssertions" | "commitNotAfter" | "commitLock">;
 }
-
-/** Append-only identities for installations that this package can recover or remove offline. */
-export const PACKAGED_ECC_PROFILE_INSTALLATION_TRUST = [
-  {
-    repository: "affaan-m/ECC",
-    commit: "0c1d7be9a750627fb2a6534c78a998cc46d03f9c",
-    sourceClosureId: "ecc-projected-source-closure-v1",
-    sourceClosureSha256: "8dadd2c412511d690555243773f8bc4a0ed1e7ba43fc0804bc1d955b3b7bca37",
-    projectionSha256: "8bfa1837b2f7d4239b69955540c20a76a795c4ef86dc3555390d5d18e30bc585",
-  },
-] as const satisfies readonly EccProfileInstalledSourceTrust[];
 
 type FileMutation = WriteAction | RemoveAction;
 
@@ -124,18 +111,15 @@ function composeOverlappingConfigMutation(
     if (typeof projection.contents !== "string") {
       throw new Error("ECC lifecycle uninstall has a non-text projection mutation");
     }
+    // The projection keeps its merge destination; stripping the native block
+    // never turns that into a deletion.
     const contents = removeManagedBlock(projection.contents, NATIVE_ECC_REGISTRATION_SCOPE);
     if (contents.trim().length > 0) return { ...projection, contents };
-    const expected =
-      projection.expect && "sha256" in projection.expect
-        ? { sha256: projection.expect.sha256 }
-        : undefined;
-    if (expected === undefined) {
-      throw new Error("ECC lifecycle uninstall overlap lacks an apply-time content pin");
-    }
-    return remove(projection.path, "uninstall composed ECC profile configuration", {
-      expect: expected,
-    });
+    return {
+      ...projection,
+      contents,
+      describe: `uninstall composed ECC profile configuration; kept ${projection.path}, now only whitespace, because aih cannot prove it created the whole file: remove it by hand if nothing uses it`,
+    };
   }
   if (
     projection.kind !== "write" ||
@@ -353,29 +337,6 @@ async function acquireDescriptorProjection(
   }
 }
 
-function stateRootFor(ctx: PlanContext): string {
-  const explicit = ctx.env.AIH_ECC_STATE_ROOT?.trim();
-  if (explicit) {
-    if (!isAbsolute(explicit)) {
-      throw new AihError("AIH_ECC_STATE_ROOT must be absolute", "AIH_CONFIG");
-    }
-    return resolve(explicit);
-  }
-  if (ctx.host.platform === "windows") {
-    const base = ctx.env.LOCALAPPDATA?.trim() || ctx.env.USERPROFILE?.trim();
-    if (base) return resolve(base, "aih", "ecc-profile");
-  } else {
-    const base = ctx.env.XDG_STATE_HOME?.trim();
-    if (base) return resolve(base, "aih", "ecc-profile");
-    const home = ctx.env.HOME?.trim();
-    if (home) return resolve(home, ".local", "state", "aih", "ecc-profile");
-  }
-  throw new AihError(
-    "native ECC registration needs AIH_ECC_STATE_ROOT or a platform home/state directory",
-    "AIH_CONFIG",
-  );
-}
-
 /**
  * The native registration runs Core's own runtime script, located by Core
  * through framework-host: the plugin build ships no runtime of its own.
@@ -385,7 +346,7 @@ export function defaultNativeRegistrationInput(
 ): Parameters<typeof buildNativeEccRegistration>[0] {
   return {
     root: ctx.root,
-    stateRoot: stateRootFor(ctx),
+    stateRoot: resolveEccNativeStateRootV1(ctx.env, ctx.host.platform),
     executable: process.execPath,
     cliScript: eccRuntimeScriptPath(),
   };
@@ -408,7 +369,7 @@ export async function executeEccProfileLifecycleCommand(
       const projectionPlan = planInstalledEccProfileLifecycle(
         ctx.root,
         operation,
-        deps.installedSourceTrust ?? PACKAGED_ECC_PROFILE_INSTALLATION_TRUST,
+        ECC_PROFILE_INSTALLATION_TRUST_V1,
       );
       if (!nativeEnabled) return executePlan(projectionPlan, ctx);
       const nativePlan = planInstalledNativeEccRegistration(ctx.root, operation);
@@ -428,7 +389,7 @@ export async function executeEccProfileLifecycleCommand(
     const projectionPlan = planInstalledEccProfileLifecycle(
       ctx.root,
       operation,
-      deps.installedSourceTrust ?? PACKAGED_ECC_PROFILE_INSTALLATION_TRUST,
+      ECC_PROFILE_INSTALLATION_TRUST_V1,
     );
     if (!nativeEnabled)
       return executePlan(withTransactionPins(projectionPlan, deps.transactionPins), ctx);
@@ -451,7 +412,12 @@ export async function executeEccProfileLifecycleCommand(
     deps.loadProjection ??
     ((context: PlanContext) => acquireDescriptorProjection(context, deps.transactionPins))
   )(ctx);
-  const projectionPlan = planEccProfileLifecycle(ctx.root, projection, operation);
+  const projectionPlan = planEccProfileLifecycle(
+    ctx.root,
+    projection,
+    operation,
+    ECC_PROFILE_INSTALLATION_TRUST_V1,
+  );
   if (!nativeEnabled)
     return executePlan(withTransactionPins(projectionPlan, deps.transactionPins), ctx, {
       skipWorktreeGate: true,

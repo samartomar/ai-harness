@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
-import { eccRuntimeScriptPath } from "@aihq/core/framework-host";
+import { eccRuntimeScriptPath, resolveEccNativeStateRootV1 } from "@aihq/core/framework-host";
 import { describe, expect, it } from "vitest";
 import type { PlanContext } from "../../../../src/internals/plan.js";
 import { fakeRunner } from "../../../../src/internals/proc.js";
@@ -34,5 +34,15 @@ describe("the native ECC runtime location", () => {
     expect(readFileSync(join(pluginSource, "profile", "command.ts"), "utf8")).not.toContain(
       '"ecc-runtime.js"',
     );
+  });
+
+  it("keeps machine state at the root Core's one resolver names", () => {
+    const ctx = context(resolve("/repo"));
+    expect(defaultNativeRegistrationInput(ctx).stateRoot).toBe(
+      resolveEccNativeStateRootV1(ctx.env, ctx.host.platform),
+    );
+    expect(
+      readFileSync(join(import.meta.dirname, "../../src/profile/command.ts"), "utf8"),
+    ).not.toMatch(/AIH_ECC_STATE_ROOT|XDG_STATE_HOME/);
   });
 });

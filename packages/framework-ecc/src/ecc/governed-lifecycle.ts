@@ -318,8 +318,8 @@ export function governedEccComponentIds(
           : (historical.relations.moduleMembersById.get(id) ?? []).map((member) => member.id)
         : [];
     // Every selected id reached this point only after the catalog/provenance
-    // gate above accepted it. The lower-level closure helper deliberately stays
-    // total for synthetic tests and is not a second catalog validator.
+    // gate above accepted it; a closure the helper cannot compute is a typed
+    // refusal, never an empty closure.
     return [
       ...new Set([
         ...eccMandatoryRequirementIds(id, historical?.relations),

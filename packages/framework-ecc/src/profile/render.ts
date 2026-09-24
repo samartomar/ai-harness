@@ -75,7 +75,12 @@ interface PinnedFileProvenance {
 interface DerivedProvenance {
   kind: "derived";
   sourcePin: string;
-  derivation: "codex-agent-registry";
+  /**
+   * `codex-agent-registry`: the Codex role registry built from every role.
+   * `unavailable-skill-stub`: the stub of a skill projected unavailable; its
+   * inputs are the skill's SKILL.md and every payload withheld from the client.
+   */
+  derivation: "codex-agent-registry" | "unavailable-skill-stub";
   aggregateSha256: string;
   inputs: Array<{ path: string; rawSha256: string }>;
 }
@@ -234,25 +239,31 @@ function pinnedRenderedFile(
   };
 }
 
+function derivedProvenance(
+  sourcePin: string,
+  derivation: DerivedProvenance["derivation"],
+  sources: readonly VerifiedProjectedSource[],
+): DerivedProvenance {
+  const inputs = sources
+    .map((source) => ({ path: source.path, rawSha256: source.rawSha256 }))
+    .sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
+  return {
+    kind: "derived",
+    sourcePin,
+    derivation,
+    aggregateSha256: sha256(inputs.map((input) => `${input.path}\0${input.rawSha256}`).join("\n")),
+    inputs,
+  };
+}
+
 function derivedRenderedFile(
   sourcePin: string,
   sources: readonly VerifiedProjectedSource[],
   destination: string,
   content: string,
 ): RenderedProjectionFile {
-  const inputs = sources
-    .map((source) => ({ path: source.path, rawSha256: source.rawSha256 }))
-    .sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
   return {
-    provenance: {
-      kind: "derived",
-      sourcePin,
-      derivation: "codex-agent-registry",
-      aggregateSha256: sha256(
-        inputs.map((input) => `${input.path}\0${input.rawSha256}`).join("\n"),
-      ),
-      inputs,
-    },
+    provenance: derivedProvenance(sourcePin, "codex-agent-registry", sources),
     normalizedSha256: sha256(content),
     destination,
     owner: "aih",
@@ -261,6 +272,27 @@ function derivedRenderedFile(
     previousHash: null,
     mode: "100644",
     content,
+  };
+}
+
+/**
+ * The only file a client gets for a skill it projects unavailable. With no
+ * payload beside SKILL.md it is pinned to SKILL.md; otherwise its provenance
+ * also names every withheld payload, so each upstream file stays accounted for.
+ */
+function unavailableSkillStubFile(
+  sourcePin: string,
+  primary: VerifiedProjectedSource,
+  skillSources: readonly VerifiedProjectedSource[],
+  destination: string,
+  content: string,
+  capabilityOwner: CapabilityOwner,
+): RenderedProjectionFile {
+  const file = pinnedRenderedFile(sourcePin, primary, destination, content, capabilityOwner);
+  if (skillSources.length === 1) return file;
+  return {
+    ...file,
+    provenance: derivedProvenance(sourcePin, "unavailable-skill-stub", skillSources),
   };
 }
 
@@ -513,22 +545,52 @@ async function renderWithTrust(
       } else if (policy.codex.transport === "normalized" && source.path.endsWith(".md")) {
         codexContent = normalizeCodexSkillBody(skill.id, content);
       }
-      files.push(
-        pinnedRenderedFile(
-          sourcePin,
-          source,
-          posix.join(claudeDestination, relativePath),
-          claudeContent,
-          skill.owner,
-        ),
-        pinnedRenderedFile(
-          sourcePin,
-          source,
-          posix.join(codexDestination, relativePath),
-          codexContent,
-          skill.owner,
-        ),
-      );
+      // A client that projects the skill unavailable gets only the stub: its
+      // scripts and other payloads would stay directly invocable. Every source
+      // is still consumed, and the stub's provenance names the withheld
+      // payloads, so upstream provenance and accounting are unchanged.
+      if (policy.claude.transport !== "unavailable")
+        files.push(
+          pinnedRenderedFile(
+            sourcePin,
+            source,
+            posix.join(claudeDestination, relativePath),
+            claudeContent,
+            skill.owner,
+          ),
+        );
+      else if (primarySource)
+        files.push(
+          unavailableSkillStubFile(
+            sourcePin,
+            primary,
+            sourceFiles,
+            posix.join(claudeDestination, relativePath),
+            claudeContent,
+            skill.owner,
+          ),
+        );
+      if (policy.codex.transport !== "unavailable")
+        files.push(
+          pinnedRenderedFile(
+            sourcePin,
+            source,
+            posix.join(codexDestination, relativePath),
+            codexContent,
+            skill.owner,
+          ),
+        );
+      else if (primarySource)
+        files.push(
+          unavailableSkillStubFile(
+            sourcePin,
+            primary,
+            sourceFiles,
+            posix.join(codexDestination, relativePath),
+            codexContent,
+            skill.owner,
+          ),
+        );
     }
   }
 

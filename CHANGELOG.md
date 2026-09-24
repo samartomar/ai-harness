@@ -13,12 +13,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Without it, `aih ecc`, `aih ecc mcp add|remove`, governed delivery of a policy that
   selects ECC content (`aih policy project`, `aih init` on a bound project), and
   uninstall/prune with any aih ECC state (project `.aih/ecc/` receipts, the explicit MCP
-  receipt, the ECC profile lifecycle state and receipts under `.aih/ecc-profile/`, the machine
-  registration ledger, aih's Codex install state) refuse before any cleanup with
+  receipt, the ECC profile lifecycle state and receipts under `.aih/ecc-profile/`, the native
+  registration's machine state root (`AIH_ECC_STATE_ROOT` and the platform default, resolved by
+  one Core function the plugin also uses; a relative `AIH_ECC_STATE_ROOT` counts as state), the
+  machine registration ledger, aih's Codex install state) refuse before any cleanup with
   `framework-plugin-unavailable` (or `-incompatible`), naming the state found and the install
-  command; nothing is skipped silently. Each state path and its ancestors are inspected with
-  `lstat`: a dangling symbolic link, an inaccessible entry or an ancestor that is not a directory
-  counts as state and is named with its condition, never treated as absent. `aih doctor`, `aih report` and
+  command; nothing is skipped silently. Each state path is inspected with `lstat` component by
+  component from the file-system root, including everything above a supplied base such as
+  `AIH_ECC_STATE_ROOT`, `HOME`, `XDG_STATE_HOME`, `USERPROFILE` or `LOCALAPPDATA`: a dangling
+  symbolic link or junction, an inaccessible entry or a component that is not a directory counts
+  as state and is named with its condition, never treated as absent. When the state includes the
+  native registration's machine state root, the refusal also names that root in full, never
+  truncated, with the manual route: install `@aihq/framework-ecc`, or, once no project on this
+  machine uses the ECC native registration, remove the root by hand. `aih doctor`, `aih report` and
   `aih policy evaluate` state that the ECC checks were not run, and the policy-delivery
   report blocks while it needs ECC's knowledge and cannot get it.
 - **Breaking (library):** the library root no longer exports the ECC Package Graph
@@ -55,6 +62,19 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Remove Core's Catalog producer tools `tools/build-catalog-preassembly.ts`,
   `tools/copy-policy-data.mjs` and `tools/update-ecc-content-metadata.mjs`. Catalog's build
   regenerates that data.
+- Remove Core's unreachable copies of ECC framework code that now lives in
+  `@aihq/framework-ecc`. The removed modules are:
+  - `src/ecc/{components,evidence,select,selection-closure,materialization-selection,materialization-types,materialization-target-kiro}.ts`
+  - `src/ecc-profile/{index,render,source-closure,projection-policy}.ts`
+  - the never-wired internal `src/ecc-profile/{token-savior,plan-canvas,opt-in-hooks}.ts` slices
+
+  Dead functions are also removed from the ECC modules Core keeps, including the manifest,
+  ledger and destination writers no command called and the Kiro and governed target
+  materializers. Reachable behavior is unchanged: Core keeps the destination inspection that
+  historical runtime descriptors are checked against, the native runtime, and the receipts and
+  ledgers aih writes. It also keeps the install-preview modules that the Catalog producer tooling
+  (`check:baseline-installable`, `baseline:*`) still uses. Control matrix rows CM-40, CM-42 and
+  CM-43, which described the removed internal slices, are withdrawn.
 
 ### Changed
 
@@ -67,8 +87,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   section, including the nested pinned manifest and module evidence, is strict: an unknown key
   or a mistyped field refuses with `framework-profile-evidence-incompatible` naming its key path.
 - `aih ecc --lifecycle rollback` now authenticates the rollback snapshot as well as the active
-  installation: its source identity and projection digest must equal an entry in the plugin's
-  append-only installation trust record before any write is planned. A snapshot that is not
+  installation: its source identity and projection digest must equal an entry in Core's
+  append-only ECC profile installation trust record before any write is planned. A snapshot that is not
   anchored there (including a self-consistent one with recomputed hashes) refuses with
   `framework-profile-recovery-unanchored` and writes nothing; repair, rollback and uninstall
   report an unanchored active identity with the same typed refusal.
@@ -96,6 +116,49 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     network egress.
   - Playwright MCP 0.0.82, MarkItDown 0.1.8 (the CLI runtime and the converter the MCP adapter installs) and the GitHub MCP
     self-host image v1.12.2.
+- ECC profile recovery identities are versioned. Installs and updates now record version 2,
+  whose projection digest also binds each file's merge strategy (`replace` or `toml-merge`), so a
+  snapshot entry switched between them no longer authenticates. A version-1 identity recorded by
+  an earlier release still verifies under version 1, and its write semantics must also match a
+  version-2 anchor at the same pin; a changed merge strategy refuses with
+  `framework-profile-recovery-unanchored`. The installation trust record appends the version-2
+  identity of ECC 0c1d7be9.
+- The ECC profile projection writes only the unavailable stub for a skill a client cannot run.
+  Scripts, references and other files beside that skill's `SKILL.md` are no longer copied to that
+  client. Upstream provenance and accounting are unchanged: every pinned source is still consumed
+  and the skill stays in the client inventory. A stub for a skill with such files carries derived
+  provenance (`unavailable-skill-stub`) that lists them as inputs. For the 0c1d7be9 pin the
+  projection now has 703 files instead of 759. Core's installation trust record appends the new
+  version-2 anchor and keeps the earlier anchors, so installations made before this change still
+  recover.
+- `aih ecc --lifecycle update` migrates an installation within its ECC pin when Core's
+  installation trust record anchors both the installed and the new projection at the same source
+  closure, such as an 0c1d7be9 installation moving to the stub-only render. It removes the files
+  aih owned that the new projection drops, leaves operator files alone, keeps merge destinations,
+  and keeps rollback to the installed projection. Any other change within the installed pin still
+  refuses. `--lifecycle repair` of an installation that a later anchored render of its pin
+  supersedes refuses and routes to update, instead of restoring files the current render withholds.
+  These refusals are typed `AIH_FRAMEWORK_PLUGIN` errors with a stable reason and a next route:
+  `framework-profile-superseded` (repair of a superseded installation),
+  `framework-profile-update-same-pin` (any other update within the installed pin) and
+  `framework-profile-already-owned` (install over an installation of another pin or projection),
+  where the CLI used to report a generic `AIH_ERROR`.
+- `@aihq/framework-ecc` validates the ECC descriptor's module graph where it reads it: a
+  dependency or profile member naming a module the graph lacks, a repeated module id, or a
+  dependency cycle refuses with `AIH_FRAMEWORK_DESCRIPTOR` naming it. A structural dependency
+  closure that cannot be computed is now a typed refusal instead of an empty closure, so governed
+  materialization can no longer admit a component whose dependencies were never resolved.
+- The ECC profile installation trust record (the recovery anchors) moved from
+  `@aihq/framework-ecc` into Core: `ECC_PROFILE_INSTALLATION_TRUST_V1`, a frozen, append-only
+  record exported through `@aihq/core/framework-host` (additive; host API version 1 is
+  unchanged). Recovery checks only Core's record: the plugin ships no anchors and has no seam to
+  add one at runtime, so a plugin release can no longer authorize its own receipts.
+- `aih ecc --lifecycle uninstall`, `update` and `rollback` no longer delete an ECC profile merge
+  destination (such as `.codex/config.toml`) when only whitespace remains after the managed blocks
+  are removed. They write the stripped bytes and name the kept file in the plan. The receipt's
+  `previousHash` sits outside every recovery anchor, so a forged value can no longer turn a
+  pre-existing empty or whitespace-only operator file into a deletion; an aih-created file is kept
+  the same way, for you to remove by hand if nothing uses it.
 - **Breaking:** Core now requires Node.js 20.6 or newer (`engines.node` `>=20.6.0`).
   The framework-plugin loader uses the synchronous `import.meta.resolve` of Node 20.6
   to prove that a plugin entry resolves inside its own install tree. `aih doctor` and
@@ -189,8 +252,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   enterprise policy is the only profile source. A malformed list fails closed. Framework plugin commands receive the merged
   request in their policy view, and `aih policy project` applies the plugin's plan. Core
   checks the plan's coverage: each requested disable must come back as exactly one disabled
-  decision under its strongest authority, with exactly one host decision per targeted host; an
-  omission or duplicate refuses with `framework-plugin-incompatible`.
+  decision under its strongest authority, with exactly one host decision per targeted host, and no
+  hook the request did not name may come back disabled, whatever authority it claims (unrequested
+  hooks stay enabled inventory decisions); an omission, a duplicate or an unrequested disable
+  refuses with `framework-plugin-incompatible`.
 - Add Headroom (`headroom-ai[mcp]` 0.38.0, Apache-2.0) as a default-selected developer tool that
   runs only after explicit activation. Selection alone, with or without `--apply`, leaves it
   `selected-pending` with a skipped check. `aih developer-tools` and `aih init` gain

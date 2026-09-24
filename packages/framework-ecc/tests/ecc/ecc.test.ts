@@ -23,9 +23,10 @@ import { parse } from "smol-toml";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   ECC_INSTALL_MANIFEST_SCHEMA_VERSION,
+  type EccInstallManifest,
+  eccInstallManifestPath,
   hashManagedFile,
   readEccInstallManifest,
-  writeEccInstallManifestAtomic,
 } from "../../../../src/ecc/install-manifest.js";
 import { AihError } from "../../../../src/errors.js";
 import { REGISTRY_IDS } from "../../../../src/internals/cli-registry.js";
@@ -100,6 +101,13 @@ function put(relPath: string, contents: string): void {
   const full = join(tmp, relPath);
   mkdirSync(join(full, ".."), { recursive: true });
   writeFileSync(full, contents, "utf8");
+}
+
+/** Fixture: the install manifest an earlier ECC install recorded under `root`. */
+function writeInstallManifest(root: string, manifest: EccInstallManifest): void {
+  const path = eccInstallManifestPath(root);
+  mkdirSync(join(path, ".."), { recursive: true });
+  writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
 }
 
 function stack(over: Partial<RepoStack> = {}): RepoStack {
@@ -3659,7 +3667,7 @@ describe("ECC installed-source drift detection (#555)", () => {
   };
 
   const recordManifestAt = (commit: string): void => {
-    writeEccInstallManifestAtomic(tmp, {
+    writeInstallManifest(tmp, {
       schemaVersion: ECC_INSTALL_MANIFEST_SCHEMA_VERSION,
       installs: [
         {

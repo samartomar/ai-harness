@@ -88,24 +88,3 @@ export function applyEccUpstreamHookConsent<Plan extends object>(
 }
 
 /** Shared CommonJS adapter embedded in the verified and Codex fallback drivers. */
-export const ECC_UPSTREAM_HOOK_CONSENT_ADAPTER_SOURCE = `
-function applyEccUpstreamHookConsent(plan, sourceRoot, decision) {
-  if (decision !== "enabled" && decision !== "declined") throw new Error("invalid ECC executable consent");
-  const helperPath = path.join(sourceRoot, "scripts", "lib", "install", "hook-consent.js");
-  if (!fs.existsSync(helperPath)) return plan;
-  const helper = require(helperPath);
-  if (!helper || typeof helper !== "object" || typeof helper.withHookConsent !== "function") throw new Error("invalid ECC upstream hook consent helper");
-  const adapted = helper.withHookConsent(plan, decision);
-  if (!adapted || typeof adapted !== "object" || Array.isArray(adapted)) throw new Error("invalid ECC upstream hook consent plan");
-  if (adapted.hookConsent !== decision || !adapted.statePreview || !adapted.statePreview.request || adapted.statePreview.request.hookConsent !== decision) throw new Error("ECC upstream hook consent decision/state drift");
-  const strings = (value) => Array.isArray(value) && value.every((entry) => typeof entry === "string");
-  const selected = adapted.selectedModuleIds;
-  const stateSelected = adapted.statePreview.resolution && adapted.statePreview.resolution.selectedModules;
-  if (!strings(selected) || !strings(stateSelected) || selected.length !== stateSelected.length || selected.some((moduleId, index) => moduleId !== stateSelected[index])) throw new Error("ECC upstream hook consent selected-module drift");
-  if (decision === "declined") {
-    if (selected.includes("hooks-runtime")) throw new Error("ECC upstream declined hook consent retained hooks-runtime");
-    if (strings(plan.selectedModuleIds) && plan.selectedModuleIds.includes("hooks-runtime") && (!strings(adapted.excludedModuleIds) || !adapted.excludedModuleIds.includes("hooks-runtime"))) throw new Error("ECC upstream declined hook consent did not exclude hooks-runtime");
-  }
-  return adapted;
-}
-`;

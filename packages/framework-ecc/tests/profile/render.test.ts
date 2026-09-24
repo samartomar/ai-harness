@@ -550,3 +550,71 @@ describe("native ECC profile projection", () => {
     }
   }, 30_000);
 });
+
+describe("skills projected unavailable", () => {
+  it("project only the unavailable stub, never their ancillary payloads", async () => {
+    const roots = await projectionRoots();
+    try {
+      // configure-ecc is unavailable on both clients; context-budget only on Codex.
+      for (const id of ["configure-ecc", "context-budget"]) {
+        const skill = roots.resolved.skills.find((entry) => entry.id === id);
+        if (skill === undefined) throw new Error(`fixture profile has no ${id}`);
+        const scripts = join(roots.sourceRoot, ...skill.sourcePath.split("/"), "scripts");
+        await mkdir(scripts, { recursive: true });
+        await writeFile(join(scripts, "run.py"), "import subprocess\n");
+        await writeFile(join(roots.sourceRoot, ...skill.sourcePath.split("/"), "notes.md"), "n\n");
+      }
+      const trust = await roots.createTrust();
+      const projection = await renderWithExistingTrust(roots, trust);
+      const under = (prefix: string) =>
+        projection.files
+          .filter((file) => file.destination.startsWith(prefix))
+          .map((file) => file.destination)
+          .sort();
+
+      for (const client of [".claude", ".agents"]) {
+        expect(under(`${client}/skills/configure-ecc/`)).toEqual([
+          `${client}/skills/configure-ecc/SKILL.md`,
+        ]);
+      }
+      expect(under(".agents/skills/context-budget/")).toEqual([
+        ".agents/skills/context-budget/SKILL.md",
+      ]);
+      // Claude keeps the native skill, payload included.
+      expect(under(".claude/skills/context-budget/")).toEqual([
+        ".claude/skills/context-budget/SKILL.md",
+        ".claude/skills/context-budget/notes.md",
+        ".claude/skills/context-budget/scripts/run.py",
+      ]);
+
+      const stub = projection.files.find(
+        (file) => file.destination === ".claude/skills/configure-ecc/SKILL.md",
+      );
+      expect(stub?.content).toContain("Unavailable in this projection");
+      expect(stub?.mode).toBe("100644");
+      expect(stub?.provenance).toMatchObject({
+        kind: "derived",
+        derivation: "unavailable-skill-stub",
+      });
+      expect(
+        stub?.provenance.kind === "derived" && stub.provenance.inputs.map((input) => input.path),
+      ).toEqual([
+        "skills/configure-ecc/SKILL.md",
+        "skills/configure-ecc/notes.md",
+        "skills/configure-ecc/scripts/run.py",
+      ]);
+      // Without payloads the stub stays pinned to SKILL.md alone.
+      expect(
+        projection.files.find((file) => file.destination === ".claude/skills/ck/SKILL.md")
+          ?.provenance,
+      ).toMatchObject({ kind: "pinned-file", path: "skills/ck/SKILL.md" });
+      // Upstream accounting is unchanged: the render refuses unless every
+      // authenticated source (payloads included) is consumed, and the skill
+      // stays in both clients' inventories with its upstream owner.
+      for (const client of [projection.clients.claude, projection.clients.codex])
+        expect(client.skills.find((entry) => entry.id === "configure-ecc")?.owner).toBe("upstream");
+    } finally {
+      await roots.cleanup();
+    }
+  }, 30_000);
+});

@@ -1,3 +1,4 @@
+import { AihError } from "@aihq/core/framework-host";
 import type { EccComponentId, EccMcpComponentId } from "./components.js";
 import { eccModuleDependencyIds } from "./evidence.js";
 import { eccComponentRequiredModuleRootIds } from "./materialize.js";
@@ -54,7 +55,10 @@ export function eccPreferredSelectionSourcePath(
  * Optional declaration riders and aggregate members are deliberately absent:
  * administrators may remove those suggestions in the Workbench.
  * Trust-boundary callers must first prove the identifier belongs to the active
- * pinned catalog; this lower-level helper stays total for synthetic tests.
+ * pinned catalog. A closure that cannot be computed (an unknown component, or
+ * a module graph the descriptor reader refused) is a typed refusal, never an
+ * empty closure: an empty list would admit the component as complete.
+ * Synthetic identifiers get requirements only through explicit `relations`.
  */
 export function eccMandatoryRequirementIds(
   id: string,
@@ -72,10 +76,11 @@ export function eccMandatoryRequirementIds(
     ]
       .map((moduleId) => `module:${moduleId}`)
       .filter((dependency) => dependency !== id);
-  } catch {
-    // The catalog/provenance gate owns unknown-component refusal. Keeping this
-    // helper total lets lower-level evidence tests use synthetic component ids
-    // without turning dependency inference into a second catalog validator.
-    return [];
+  } catch (error) {
+    if (error instanceof AihError) throw error;
+    throw new AihError(
+      `cannot compute the structural dependency closure of ECC component ${id}: ${(error as Error).message}`,
+      "AIH_FRAMEWORK_DESCRIPTOR",
+    );
   }
 }

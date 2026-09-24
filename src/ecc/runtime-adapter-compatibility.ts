@@ -185,74 +185,6 @@ function compatibilityContractV1(components: readonly HistoricalEccAdapterCompon
 }
 
 /** The previously sealed v1 projection, retained only for exact old descriptors. */
-function legacyCompatibilityContractV1(components: readonly HistoricalEccAdapterComponentV1[]) {
-  const outcomes = outcomesFor(components).map((outcome): EccRuntimeAdapterOutcomeV1 => {
-    if (
-      outcome.target === "codex" &&
-      outcome.path.startsWith("agents/") &&
-      outcome.path.endsWith(".md")
-    ) {
-      return {
-        componentId: outcome.componentId,
-        path: outcome.path,
-        target: outcome.target,
-        state: "mapped",
-        scope: "project",
-        relative: `.codex/agents/${outcome.path.slice("agents/".length)}`,
-      };
-    }
-    if (
-      outcome.target === "codex" &&
-      (outcome.componentId === "baseline:commands" ||
-        outcome.componentId === "module:commands-core") &&
-      outcome.path.startsWith("commands/") &&
-      outcome.path.endsWith(".md")
-    ) {
-      return {
-        componentId: outcome.componentId,
-        path: outcome.path,
-        target: outcome.target,
-        state: "mapped",
-        scope: "project",
-        relative: `.codex/commands/${outcome.path.slice("commands/".length)}`,
-      };
-    }
-    if (
-      outcome.target !== "kiro" &&
-      (outcome.componentId === "baseline:commands" ||
-        outcome.componentId === "module:commands-core") &&
-      (outcome.path === "scripts/harness-audit.js" ||
-        outcome.path === "scripts/skills-health.js" ||
-        outcome.path.startsWith("scripts/lib/"))
-    ) {
-      return {
-        componentId: outcome.componentId,
-        path: outcome.path,
-        target: outcome.target,
-        state: "refused",
-        reason: "unowned-destination",
-      };
-    }
-    return outcome;
-  });
-  return {
-    contractVersion: "ecc-governed-materialization-targets/v1" as const,
-    relationContract: "compiled-requires-members-and-riders/v1",
-    targets: [...HISTORICAL_ECC_ADAPTER_TARGETS],
-    outcomes,
-  };
-}
-
-function compatibilityForContract(
-  contract: ReturnType<typeof compatibilityContractV1>,
-): EccRuntimeAdapterCompatibilityV1 {
-  return {
-    contractVersion: contract.contractVersion,
-    contractDigest: sha256(contract),
-    targets: contract.targets,
-    outcomes: contract.outcomes,
-  };
-}
 
 /**
  * The exact target and closure behavior this Core can apply to a sealed
@@ -270,28 +202,4 @@ export function currentEccRuntimeAdapterCompatibilityV1(
     targets: Object.freeze([...contract.targets]),
     outcomes: Object.freeze(contract.outcomes.map((outcome) => Object.freeze({ ...outcome }))),
   });
-}
-
-function sameCompatibility(
-  left: EccRuntimeAdapterCompatibilityV1,
-  right: EccRuntimeAdapterCompatibilityV1,
-): boolean {
-  return canonicalStrictJsonBytesV1(left).equals(canonicalStrictJsonBytesV1(right));
-}
-
-/**
- * Refuse before acquisition unless this Core still has the exact closed target
- * mapping and relation semantics the descriptor was sealed for. The proof
- * grants no evidence result or approval; the baseline verifier still rehashes
- * and authorizes the exact acquired source.
- */
-export function assertHistoricalEccAdapterCompatibilityV1(
-  compatibility: EccRuntimeAdapterCompatibilityV1,
-  components: readonly HistoricalEccAdapterComponentV1[],
-): void {
-  const expected = currentEccRuntimeAdapterCompatibilityV1(components);
-  const legacy = compatibilityForContract(legacyCompatibilityContractV1(components));
-  if (!sameCompatibility(compatibility, expected) && !sameCompatibility(compatibility, legacy)) {
-    throw new Error("historical ECC runtime adapter compatibility does not match this Core");
-  }
 }
