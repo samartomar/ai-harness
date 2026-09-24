@@ -17,11 +17,7 @@ import {
   z,
 } from "@aihq/core/framework-host";
 import { assertPortableSourcePath } from "./index.js";
-import {
-  type EccProjection,
-  projectionFilesDigest,
-  type RenderedProjectionFile,
-} from "./render.js";
+import type { EccProjection, RenderedProjectionFile } from "./render.js";
 
 const SHA256 = /^[0-9a-f]{64}$/;
 const COMMIT = /^[0-9a-f]{40}$/;
@@ -36,15 +32,23 @@ const DESTINATION_PREFIXES = [".agents/", ".claude/", ".codex/"] as const;
 export const ECC_PROFILE_OWNERSHIP_PATH = ".aih/ecc-profile/ownership-v1.json";
 
 const hashSchema = z.string().regex(SHA256);
-const sourceSchema = z
-  .object({
-    repository: z.literal("affaan-m/ECC"),
-    commit: z.string().regex(COMMIT),
-    sourceClosureId: z.string().min(1).max(256),
-    sourceClosureSha256: hashSchema,
-    projectionSha256: hashSchema,
-  })
-  .strict();
+const sourceFields = {
+  repository: z.literal("affaan-m/ECC"),
+  commit: z.string().regex(COMMIT),
+  sourceClosureId: z.string().min(1).max(256),
+  sourceClosureSha256: hashSchema,
+  projectionSha256: hashSchema,
+};
+/**
+ * Recovery identities are versioned by what `projectionSha256` binds. Version 1
+ * (unversioned, recorded by earlier releases) binds destination, content and
+ * mode; version 2 also binds each file's merge strategy, the write semantic a
+ * recovery replays.
+ */
+const sourceSchema = z.union([
+  z.object({ recoveryIdentityVersion: z.literal(2), ...sourceFields }).strict(),
+  z.object(sourceFields).strict(),
+]);
 const ownershipFileSchema = z
   .object({
     destination: z.string().min(1).max(1_024),
@@ -114,14 +118,73 @@ export class EccProfileRecoveryRefusalError extends AihError {
 const RECOVERY_NEXT_ROUTE =
   "use an @aihq/framework-ecc package version whose append-only installation trust record names this exact ECC pin and projection digest";
 
+type RecoveryIdentityVersion = 1 | 2;
+
+function recoveryIdentityVersion(source: EccProfileInstalledSourceTrust): RecoveryIdentityVersion {
+  return "recoveryIdentityVersion" in source ? source.recoveryIdentityVersion : 1;
+}
+
+interface RecoveryDigestEntry {
+  destination: string;
+  normalizedHash: string;
+  mode: string;
+  mergeStrategy: string;
+}
+
+function recoveryDigest(
+  version: RecoveryIdentityVersion,
+  entries: readonly RecoveryDigestEntry[],
+): string {
+  return sha256(
+    [...entries]
+      .sort(comparePaths)
+      .map((entry) =>
+        version === 1
+          ? `${entry.destination}\0${entry.normalizedHash}\0${entry.mode}`
+          : `${entry.destination}\0${entry.normalizedHash}\0${entry.mode}\0${entry.mergeStrategy}`,
+      )
+      .join("\n"),
+  );
+}
+
+function projectionDigestEntries(files: readonly RenderedProjectionFile[]): RecoveryDigestEntry[] {
+  return files.map((file) => ({
+    destination: file.destination,
+    normalizedHash: file.normalizedSha256,
+    mode: file.mode,
+    mergeStrategy: file.mergeStrategy,
+  }));
+}
+
+/**
+ * The recorded identity must equal an anchor under its own version. A version-1
+ * identity names no write semantics, so its files must also match a version-2
+ * anchor at the same pin: a changed merge strategy never replays.
+ */
 function assertAnchored(
-  source: EccProfileOwnership["source"],
+  source: EccProfileInstalledSourceTrust,
+  files: readonly OwnershipFile[],
   anchors: readonly EccProfileInstalledSourceTrust[],
   label: string,
 ): void {
+  const identity = `${source.repository}@${source.commit}, projection ${source.projectionSha256}`;
   if (!anchors.some((anchor) => sameSource(anchor, source)))
     throw new EccProfileRecoveryRefusalError(
-      `${label} (${source.repository}@${source.commit}, projection ${source.projectionSha256}) is not an anchored recovery identity`,
+      `${label} (${identity}) is not an anchored recovery identity`,
+      RECOVERY_NEXT_ROUTE,
+    );
+  if (recoveryIdentityVersion(source) !== 1) return;
+  const semantics: EccProfileInstalledSourceTrust = {
+    recoveryIdentityVersion: 2,
+    repository: source.repository,
+    commit: source.commit,
+    sourceClosureId: source.sourceClosureId,
+    sourceClosureSha256: source.sourceClosureSha256,
+    projectionSha256: recoveryDigest(2, files),
+  };
+  if (!anchors.some((anchor) => sameSource(anchor, semantics)))
+    throw new EccProfileRecoveryRefusalError(
+      `${label} (${identity}) is a version-1 recovery identity whose write semantics no version-2 anchor authenticates`,
       RECOVERY_NEXT_ROUTE,
     );
 }
@@ -131,7 +194,12 @@ function assertRollbackAnchored(
   anchors: readonly EccProfileInstalledSourceTrust[],
 ): void {
   if (!receipt.rollback) throw new Error("ECC profile ownership receipt has no rollback snapshot");
-  assertAnchored(receipt.rollback.source, anchors, "ECC profile rollback snapshot");
+  assertAnchored(
+    receipt.rollback.source,
+    receipt.rollback.files,
+    anchors,
+    "ECC profile rollback snapshot",
+  );
 }
 
 interface CurrentFile {
@@ -156,14 +224,33 @@ function sourcePaths(file: RenderedProjectionFile): string[] {
   ).sort();
 }
 
-function sourceIdentity(projection: EccProjection): EccProfileOwnership["source"] {
+/** The version-2 recovery identity an install or update of `projection` records. */
+export function eccProfileRecoveryIdentity(
+  projection: EccProjection,
+): EccProfileInstalledSourceTrust {
   return {
+    recoveryIdentityVersion: 2,
     repository: projection.source.repository,
     commit: projection.source.commit,
     sourceClosureId: projection.sourceClosure.id,
     sourceClosureSha256: projection.sourceClosure.aggregateSha256,
-    projectionSha256: projectionFilesDigest(projection.files),
+    projectionSha256: recoveryDigest(2, projectionDigestEntries(projection.files)),
   };
+}
+
+/** A recorded identity of either version names exactly this projection. */
+function identifiesProjection(
+  source: EccProfileInstalledSourceTrust,
+  projection: EccProjection,
+): boolean {
+  return (
+    source.repository === projection.source.repository &&
+    source.commit === projection.source.commit &&
+    source.sourceClosureId === projection.sourceClosure.id &&
+    source.sourceClosureSha256 === projection.sourceClosure.aggregateSha256 &&
+    source.projectionSha256 ===
+      recoveryDigest(recoveryIdentityVersion(source), projectionDigestEntries(projection.files))
+  );
 }
 
 function assertDestination(root: string, destination: string, allowReceipt = false): void {
@@ -386,11 +473,17 @@ function parseReceipt(contents: string, root: string): EccProfileOwnership {
   if (receipt.canonicalRoot !== canonicalRoot(root))
     throw new Error("invalid ECC profile ownership receipt: foreign worktree root");
   validateReceiptFiles(receipt.files, receipt.source.commit, "active");
-  if (ownershipFilesDigest(receipt.files) !== receipt.source.projectionSha256)
+  if (
+    recoveryDigest(recoveryIdentityVersion(receipt.source), receipt.files) !==
+    receipt.source.projectionSha256
+  )
     throw new Error("invalid ECC profile ownership receipt: active projection digest mismatch");
   if (receipt.rollback !== undefined) {
     validateReceiptFiles(receipt.rollback.files, receipt.rollback.source.commit, "rollback");
-    if (ownershipFilesDigest(receipt.rollback.files) !== receipt.rollback.source.projectionSha256)
+    if (
+      recoveryDigest(recoveryIdentityVersion(receipt.rollback.source), receipt.rollback.files) !==
+      receipt.rollback.source.projectionSha256
+    )
       throw new Error("invalid ECC profile ownership receipt: rollback projection digest mismatch");
   }
   return receipt;
@@ -437,15 +530,6 @@ function validateReceiptFiles(
   }
 }
 
-function ownershipFilesDigest(files: readonly OwnershipFile[]): string {
-  return sha256(
-    [...files]
-      .sort(comparePaths)
-      .map((file) => `${file.destination}\0${file.normalizedHash}\0${file.mode}`)
-      .join("\n"),
-  );
-}
-
 function assertReceiptMatchesProjection(
   receipt: EccProfileOwnership,
   files: ReadonlyArray<RenderedProjectionFile>,
@@ -484,10 +568,17 @@ export function readEccProfileOwnership(root: string): EccProfileOwnership | und
 }
 
 function sameSource(
-  left: EccProfileOwnership["source"],
-  right: EccProfileOwnership["source"],
+  left: EccProfileInstalledSourceTrust,
+  right: EccProfileInstalledSourceTrust,
 ): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
+  return (
+    recoveryIdentityVersion(left) === recoveryIdentityVersion(right) &&
+    left.repository === right.repository &&
+    left.commit === right.commit &&
+    left.sourceClosureId === right.sourceClosureId &&
+    left.sourceClosureSha256 === right.sourceClosureSha256 &&
+    left.projectionSha256 === right.projectionSha256
+  );
 }
 
 function activeReceipt(
@@ -500,7 +591,7 @@ function activeReceipt(
     schemaVersion: 1,
     state: "active",
     canonicalRoot: canonicalRoot(root),
-    source: sourceIdentity(projection),
+    source: eccProfileRecoveryIdentity(projection),
     files: [...files].sort(comparePaths),
     ...(rollback === undefined ? {} : { rollback }),
   };
@@ -512,9 +603,8 @@ function installPlan(
   files: RenderedProjectionFile[],
 ): Plan {
   const receiptFile = readReceiptFile(root);
-  const source = sourceIdentity(projection);
   if (receiptFile !== undefined) {
-    if (!sameSource(receiptFile.receipt.source, source))
+    if (!identifiesProjection(receiptFile.receipt.source, projection))
       throw new Error("ECC profile is already owned at a different pin; use update");
     assertReceiptMatchesProjection(receiptFile.receipt, files);
     for (const entry of receiptFile.receipt.files) assertOwnedCurrent(root, entry);
@@ -670,8 +760,7 @@ function repairPlan(
   const receiptFile = readReceiptFile(root);
   if (receiptFile === undefined)
     throw new Error("ECC profile repair requires an ownership receipt");
-  const expectedSource = sourceIdentity(projection);
-  if (!sameSource(receiptFile.receipt.source, expectedSource))
+  if (!identifiesProjection(receiptFile.receipt.source, projection))
     throw new Error("ECC profile repair projection contradicts the ownership receipt");
   assertReceiptMatchesProjection(receiptFile.receipt, files);
   return repairInstalledPlan(root, receiptFile);
@@ -735,7 +824,7 @@ function uninstallPlan(
 ): Plan {
   const receiptFile = readReceiptFile(root);
   if (receiptFile === undefined) return plan("ecc-profile: uninstall");
-  if (!sameSource(receiptFile.receipt.source, sourceIdentity(projection)))
+  if (!identifiesProjection(receiptFile.receipt.source, projection))
     throw new Error("ECC profile uninstall projection contradicts the ownership receipt");
   assertReceiptMatchesProjection(receiptFile.receipt, files);
   return uninstallInstalledPlan(root, receiptFile);
@@ -800,7 +889,7 @@ function rollbackPlan(
   if (receiptFile === undefined)
     throw new Error("ECC profile rollback requires an ownership receipt");
   const { receipt } = receiptFile;
-  if (!sameSource(receipt.source, sourceIdentity(projection)))
+  if (!identifiesProjection(receipt.source, projection))
     throw new Error("ECC profile rollback projection contradicts the ownership receipt");
   assertReceiptMatchesProjection(receipt, files);
   assertRollbackAnchored(receipt, recoveryAnchors);
@@ -930,6 +1019,7 @@ export function planInstalledEccProfileLifecycle(
     throw new Error(`ECC profile ${operation} requires an ownership receipt`);
   assertAnchored(
     receiptFile.receipt.source,
+    receiptFile.receipt.files,
     trustedSources,
     `ECC profile ${operation}: the installed source identity`,
   );

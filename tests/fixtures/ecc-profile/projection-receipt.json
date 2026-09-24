@@ -5,5 +5,6 @@
   "sourceClosureSha256": "8dadd2c412511d690555243773f8bc4a0ed1e7ba43fc0804bc1d955b3b7bca37",
   "projectedFileCount": 759,
   "projectionSha256": "8bfa1837b2f7d4239b69955540c20a76a795c4ef86dc3555390d5d18e30bc585",
+  "recoveryIdentityV2ProjectionSha256": "1d9367486f2075d4f90fea24d8d59ba5cb8b0ace087ec8a0382c53890ca7cbe2",
   "parityReceiptSha256": "835e7f38383ce25bc6c5fe35ebef87d963549fc82cb1fc8a27bef029300e115c"
 }

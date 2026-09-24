@@ -73,6 +73,15 @@ export const PACKAGED_ECC_PROFILE_INSTALLATION_TRUST = [
     sourceClosureSha256: "8dadd2c412511d690555243773f8bc4a0ed1e7ba43fc0804bc1d955b3b7bca37",
     projectionSha256: "8bfa1837b2f7d4239b69955540c20a76a795c4ef86dc3555390d5d18e30bc585",
   },
+  // Version 2 of the same installation: also binds each file's merge strategy.
+  {
+    recoveryIdentityVersion: 2,
+    repository: "affaan-m/ECC",
+    commit: "0c1d7be9a750627fb2a6534c78a998cc46d03f9c",
+    sourceClosureId: "ecc-projected-source-closure-v1",
+    sourceClosureSha256: "8dadd2c412511d690555243773f8bc4a0ed1e7ba43fc0804bc1d955b3b7bca37",
+    projectionSha256: "1d9367486f2075d4f90fea24d8d59ba5cb8b0ace087ec8a0382c53890ca7cbe2",
+  },
 ] as const satisfies readonly EccProfileInstalledSourceTrust[];
 
 type FileMutation = WriteAction | RemoveAction;

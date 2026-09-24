@@ -9,10 +9,11 @@ import { fakeRunner } from "../../../../src/internals/proc.js";
 import { makeHostAdapter } from "../../../../src/platform/detect.js";
 import {
   ECC_PROFILE_OWNERSHIP_PATH,
+  eccProfileRecoveryIdentity,
   planEccProfileLifecycle,
   readEccProfileOwnership,
 } from "../../src/profile/lifecycle.js";
-import { projectionFilesDigest, renderEccProjection } from "../../src/profile/render.js";
+import { renderEccProjection } from "../../src/profile/render.js";
 import { evidence, profile, projectionRoots } from "./render-fixture.js";
 
 function context(root: string): PlanContext {
@@ -44,7 +45,8 @@ describe("authenticated projection lifecycle", () => {
       await executePlan(planEccProfileLifecycle(target, projection, "install"), context(target));
 
       const receipt = readEccProfileOwnership(target);
-      expect(receipt?.source.projectionSha256).toBe(projectionFilesDigest(projection.files));
+      expect(receipt?.source).toEqual(eccProfileRecoveryIdentity(projection));
+      expect(receipt?.source).toMatchObject({ recoveryIdentityVersion: 2 });
       expect(receipt?.files.map((file) => file.destination)).toEqual(
         projection.files.map((file) => file.destination).sort(),
       );

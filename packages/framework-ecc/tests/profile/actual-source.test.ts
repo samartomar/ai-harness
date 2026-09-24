@@ -1,9 +1,12 @@
 import "../core-invocation.js";
+import { createHash } from "node:crypto";
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildNativeEccRegistration } from "../../../../src/ecc-profile/native-registration.js";
+import { PACKAGED_ECC_PROFILE_INSTALLATION_TRUST } from "../../src/profile/command.js";
+import { eccProfileRecoveryIdentity } from "../../src/profile/lifecycle.js";
 import {
   buildEccProfileParityReceipt,
   eccProfileParityReceiptDigest,
@@ -22,8 +25,13 @@ const projectionReceipt = JSON.parse(
   sourceClosureSha256: string;
   projectedFileCount: number;
   projectionSha256: string;
+  recoveryIdentityV2ProjectionSha256: string;
   parityReceiptSha256: string;
 };
+
+const closureEvidenceSha256 = createHash("sha256")
+  .update(await readFile(join(fixtureDirectory, "projected-source-closure.json")))
+  .digest("hex");
 
 async function actualEvidenceRoot(): Promise<{ root: string; cleanup(): Promise<void> }> {
   const root = await mkdtemp(join(tmpdir(), "aih-ecc-actual-evidence-"));
@@ -49,7 +57,8 @@ describe.skipIf(!pinnedSourceRoot)("actual pinned ECC projection receipt", () =>
         profile,
         evidence,
         { sourceRoot: pinnedSourceRoot ?? "", evidenceRoot: evidenceRoot.root },
-        TRUSTED_PROJECTED_SOURCE,
+        // The recorded closure evidence; its aggregate still authenticates every source file.
+        { ...TRUSTED_PROJECTED_SOURCE, evidenceSha256: closureEvidenceSha256 },
       );
       const destinations = projection.files.map((file) => file.destination);
       const pinnedInputs = new Set(
@@ -154,6 +163,11 @@ describe.skipIf(!pinnedSourceRoot)("actual pinned ECC projection receipt", () =>
         expect(file.content, file.destination).not.toMatch(/\.claude\/rules|mcp__/);
       }
       expect(projectionFilesDigest(projection.files)).toBe(projectionReceipt.projectionSha256);
+      const recoveryIdentity = eccProfileRecoveryIdentity(projection);
+      expect(recoveryIdentity.projectionSha256).toBe(
+        projectionReceipt.recoveryIdentityV2ProjectionSha256,
+      );
+      expect(PACKAGED_ECC_PROFILE_INSTALLATION_TRUST).toContainEqual(recoveryIdentity);
 
       const target = await mkdtemp(join(tmpdir(), "aih-ecc-actual-parity-target-"));
       const stateRoot = await mkdtemp(join(tmpdir(), "aih-ecc-actual-parity-state-"));

@@ -72,6 +72,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   anchored there (including a self-consistent one with recomputed hashes) refuses with
   `framework-profile-recovery-unanchored` and writes nothing; repair, rollback and uninstall
   report an unanchored active identity with the same typed refusal.
+- ECC profile recovery identities are versioned. Installs and updates now record version 2,
+  whose projection digest also binds each file's merge strategy (`replace` or `toml-merge`), so a
+  snapshot entry switched between them no longer authenticates. A version-1 identity recorded by
+  an earlier release still verifies under version 1, and its write semantics must also match a
+  version-2 anchor at the same pin; a changed merge strategy refuses with
+  `framework-profile-recovery-unanchored`. The installation trust record appends the version-2
+  identity of ECC 0c1d7be9.
 - **Breaking:** Core now requires Node.js 20.6 or newer (`engines.node` `>=20.6.0`).
   The framework-plugin loader uses the synchronous `import.meta.resolve` of Node 20.6
   to prove that a plugin entry resolves inside its own install tree. `aih doctor` and

@@ -11,6 +11,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { upsertTextBlock } from "@aihq/core/framework-host";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { executePlan } from "../../../../src/internals/execute.js";
 import type { PlanContext } from "../../../../src/internals/plan.js";
@@ -677,15 +678,91 @@ describe("ECC profile recovery authentication", () => {
     rollback?: { source: EccProfileInstalledSourceTrust; files: ReceiptFile[] };
   }
 
-  function filesDigest(files: readonly ReceiptFile[]): string {
+  /** Version 1 binds destination, content and mode; version 2 also binds the merge strategy. */
+  function filesDigest(files: readonly ReceiptFile[], version: 1 | 2): string {
     return sha256(
       [...files]
         .sort((left, right) =>
           left.destination < right.destination ? -1 : left.destination > right.destination ? 1 : 0,
         )
-        .map((file) => `${file.destination}\0${file.normalizedHash}\0${file.mode}`)
+        .map((file) =>
+          version === 1
+            ? `${file.destination}\0${file.normalizedHash}\0${file.mode}`
+            : `${file.destination}\0${file.normalizedHash}\0${file.mode}\0${file.mergeStrategy}`,
+        )
         .join("\n"),
     );
+  }
+
+  function identityVersion(source: EccProfileInstalledSourceTrust): 1 | 2 {
+    return "recoveryIdentityVersion" in source ? 2 : 1;
+  }
+
+  function readReceipt(): Receipt {
+    return JSON.parse(readFileSync(join(root, ECC_PROFILE_OWNERSHIP_PATH), "utf8")) as Receipt;
+  }
+
+  function writeReceipt(receipt: Receipt): void {
+    writeFileSync(
+      join(root, ECC_PROFILE_OWNERSHIP_PATH),
+      `${JSON.stringify(receipt, null, 2)}\n`,
+      "utf8",
+    );
+  }
+
+  /** The identity an installation made before recovery identities were versioned recorded. */
+  function versionOne(
+    source: EccProfileInstalledSourceTrust,
+    files: readonly ReceiptFile[],
+  ): EccProfileInstalledSourceTrust {
+    return {
+      repository: source.repository,
+      commit: source.commit,
+      sourceClosureId: source.sourceClosureId,
+      sourceClosureSha256: source.sourceClosureSha256,
+      projectionSha256: filesDigest(files, 1),
+    };
+  }
+
+  /** Rewrite both recorded identities as version 1, as an older release wrote them. */
+  function recordVersionOne(): {
+    active: EccProfileInstalledSourceTrust;
+    snapshot: EccProfileInstalledSourceTrust;
+  } {
+    const receipt = readReceipt();
+    if (receipt.rollback === undefined) throw new Error("fixture has no rollback snapshot");
+    receipt.source = versionOne(receipt.source, receipt.files);
+    receipt.rollback.source = versionOne(receipt.rollback.source, receipt.rollback.files);
+    writeReceipt(receipt);
+    return { active: receipt.source, snapshot: receipt.rollback.source };
+  }
+
+  /**
+   * Switch one snapshot entry's write semantics and recompute every self-declared
+   * hash, including the snapshot's own identity digest under its version.
+   */
+  function switchSnapshotStrategy(destination: string): EccProfileInstalledSourceTrust {
+    const receipt = readReceipt();
+    if (receipt.rollback === undefined) throw new Error("fixture has no rollback snapshot");
+    const entry = receipt.rollback.files.find((file) => file.destination === destination);
+    if (entry === undefined) throw new Error(`fixture snapshot has no ${destination}`);
+    if (entry.mergeStrategy === "replace") {
+      const merged = upsertTextBlock("", "ecc-profile", entry.content);
+      entry.mergeStrategy = "toml-merge";
+      entry.managedBlockHash = sha256(merged.trimEnd());
+      entry.installedHash = sha256(merged);
+    } else {
+      entry.mergeStrategy = "replace";
+      entry.managedBlockHash = null;
+      entry.installedHash = sha256(entry.content);
+    }
+    receipt.rollback.source.projectionSha256 = filesDigest(
+      receipt.rollback.files,
+      identityVersion(receipt.rollback.source),
+    );
+    writeReceipt(receipt);
+    expect(readEccProfileOwnership(root)?.rollback?.files).toHaveLength(2);
+    return receipt.rollback.source;
   }
 
   async function installThenUpdate(): Promise<{
@@ -722,7 +799,10 @@ describe("ECC profile recovery authentication", () => {
       mode: "100644",
       content,
     });
-    receipt.rollback.source.projectionSha256 = filesDigest(receipt.rollback.files);
+    receipt.rollback.source.projectionSha256 = filesDigest(
+      receipt.rollback.files,
+      identityVersion(receipt.rollback.source),
+    );
     writeFileSync(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`, "utf8");
     expect(readEccProfileOwnership(root)?.rollback?.files).toHaveLength(3);
     return receipt.rollback.source;
@@ -793,5 +873,83 @@ describe("ECC profile recovery authentication", () => {
       "# example v1\n",
     );
     expect(readEccProfileOwnership(root)?.source).toEqual(original);
+  });
+
+  it("refuses a snapshot entry switched from replace to toml-merge, and writes nothing", async () => {
+    const { original, active, next } = await installThenUpdate();
+    const skill = join(root, ".agents/skills/example/SKILL.md");
+    const before = readFileSync(skill, "utf8");
+    switchSnapshotStrategy(".agents/skills/example/SKILL.md");
+
+    const refusal = recoveryRefusal(() =>
+      planInstalledEccProfileLifecycle(root, "rollback", [active, original]),
+    );
+    expect(refusal.reason).toBe("framework-profile-recovery-unanchored");
+    expect(refusal.message).toMatch(/rollback snapshot/i);
+    expect(
+      recoveryRefusal(() => planEccProfileLifecycle(root, next, "rollback", [original])).reason,
+    ).toBe("framework-profile-recovery-unanchored");
+    expect(readFileSync(skill, "utf8")).toBe(before);
+    expect(readEccProfileOwnership(root)?.source.commit).toBe(COMMIT_B);
+  });
+
+  it("refuses a snapshot entry switched from toml-merge to replace", async () => {
+    const { original, active } = await installThenUpdate();
+    switchSnapshotStrategy(".codex/config.toml");
+    expect(
+      recoveryRefusal(() => planInstalledEccProfileLifecycle(root, "rollback", [active, original]))
+        .reason,
+    ).toBe("framework-profile-recovery-unanchored");
+  });
+
+  it("records a versioned recovery identity that binds write semantics", async () => {
+    await executePlan(planEccProfileLifecycle(root, projection(), "install"), ctx(true));
+    const receipt = readReceipt();
+    expect(receipt.source).toMatchObject({ recoveryIdentityVersion: 2 });
+    expect(receipt.source.projectionSha256).toBe(filesDigest(receipt.files, 2));
+  });
+
+  it("keeps verifying a recorded version-1 identity whose write semantics a version-2 anchor authenticates", async () => {
+    const { original, active } = await installThenUpdate();
+    const recorded = recordVersionOne();
+    await executePlan(
+      planInstalledEccProfileLifecycle(root, "rollback", [
+        recorded.active,
+        recorded.snapshot,
+        active,
+        original,
+      ]),
+      ctx(true),
+    );
+    expect(readFileSync(join(root, ".agents/skills/example/SKILL.md"), "utf8")).toBe(
+      "# example v1\n",
+    );
+    expect(readEccProfileOwnership(root)?.source).toEqual(recorded.snapshot);
+  });
+
+  it("refuses a version-1 snapshot whose write semantics changed under an unchanged version-1 digest", async () => {
+    const { original, active } = await installThenUpdate();
+    const recorded = recordVersionOne();
+    expect(switchSnapshotStrategy(".agents/skills/example/SKILL.md")).toEqual(recorded.snapshot);
+    const refusal = recoveryRefusal(() =>
+      planInstalledEccProfileLifecycle(root, "rollback", [
+        recorded.active,
+        recorded.snapshot,
+        active,
+        original,
+      ]),
+    );
+    expect(refusal.reason).toBe("framework-profile-recovery-unanchored");
+    expect(refusal.message).toMatch(/write semantics/i);
+  });
+
+  it("refuses a version-1 identity when no version-2 anchor authenticates its write semantics", async () => {
+    await installThenUpdate();
+    const recorded = recordVersionOne();
+    const refusal = recoveryRefusal(() =>
+      planInstalledEccProfileLifecycle(root, "rollback", [recorded.active, recorded.snapshot]),
+    );
+    expect(refusal.reason).toBe("framework-profile-recovery-unanchored");
+    expect(refusal.message).toMatch(/write semantics/i);
   });
 });

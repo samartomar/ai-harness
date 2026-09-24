@@ -625,7 +625,9 @@ hash-authenticated installed bytes and source identity, so a later package pin c
 older managed installation. The receipt is operator-writable, so its self-declared identities never authorize
 a write on their own: the active source and, for rollback, the snapshot's source and projection digest
 must equal an entry in the plugin's append-only installation trust record, or the command refuses
-with `framework-profile-recovery-unanchored` before planning any write. Legacy selection flags such as `--profile`, `--with`, and `--cli`
+with `framework-profile-recovery-unanchored` before planning any write. Recovery identities are versioned: version 2
+(recorded by current installs) also binds each file's merge strategy, and a version-1 identity from an earlier release
+recovers only when a version-2 anchor at the same pin authenticates its write semantics. Legacy selection flags such as `--profile`, `--with`, and `--cli`
 cannot be combined with `--lifecycle`.
 
 In a **governed** repository (an org policy carrying `governance`), `--lifecycle install` is not this

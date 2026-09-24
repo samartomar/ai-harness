@@ -12,13 +12,16 @@ import type { PlanContext } from "../../../../src/internals/plan.js";
 import { defaultRunner, fakeRunner } from "../../../../src/internals/proc.js";
 import { makeHostAdapter } from "../../../../src/platform/detect.js";
 import { executeEccCommand } from "../../src/ecc/pipeline.js";
-import { executeEccProfileLifecycleCommand } from "../../src/profile/command.js";
+import {
+  executeEccProfileLifecycleCommand,
+  PACKAGED_ECC_PROFILE_INSTALLATION_TRUST,
+} from "../../src/profile/command.js";
 import {
   ECC_PROFILE_OWNERSHIP_PATH,
   readEccProfileOwnership,
 } from "../../src/profile/lifecycle.js";
 import { renderEccProjection } from "../../src/profile/render.js";
-import { evidence, profile, projectionRoots } from "./render-fixture.js";
+import { evidence, fixtureDirectory, profile, projectionRoots } from "./render-fixture.js";
 
 const roots: string[] = [];
 
@@ -58,6 +61,46 @@ function realGitContext(root: string, operation: string): PlanContext {
     options: { lifecycle: operation },
   };
 }
+
+describe("packaged ECC profile installation trust", () => {
+  it("anchors the write semantics of every version-1 identity with a version-2 companion", () => {
+    const recorded = JSON.parse(
+      readFileSync(join(fixtureDirectory, "projection-receipt.json"), "utf8"),
+    ) as {
+      sourceCommit: string;
+      projectionSha256: string;
+      recoveryIdentityV2ProjectionSha256: string;
+    };
+    const trust: readonly Record<string, unknown>[] = PACKAGED_ECC_PROFILE_INSTALLATION_TRUST;
+    const legacy = trust.filter((anchor) => !("recoveryIdentityVersion" in anchor));
+    expect(legacy).not.toHaveLength(0);
+    for (const anchor of legacy) {
+      const { projectionSha256: _v1, ...pin } = anchor;
+      expect(
+        trust.filter((candidate) => {
+          const { recoveryIdentityVersion, projectionSha256: _v2, ...candidatePin } = candidate;
+          return (
+            recoveryIdentityVersion === 2 && JSON.stringify(candidatePin) === JSON.stringify(pin)
+          );
+        }),
+        String(anchor.commit),
+      ).toHaveLength(1);
+    }
+    expect(trust).toContainEqual(
+      expect.objectContaining({
+        recoveryIdentityVersion: 2,
+        commit: recorded.sourceCommit,
+        projectionSha256: recorded.recoveryIdentityV2ProjectionSha256,
+      }),
+    );
+    expect(trust).toContainEqual(
+      expect.objectContaining({
+        commit: recorded.sourceCommit,
+        projectionSha256: recorded.projectionSha256,
+      }),
+    );
+  });
+});
 
 describe("ECC profile lifecycle command", () => {
   it("previews without target writes, then installs and uninstalls through the authenticated lifecycle", async () => {
