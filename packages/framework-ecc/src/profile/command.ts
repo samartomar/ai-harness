@@ -412,7 +412,12 @@ export async function executeEccProfileLifecycleCommand(
     deps.loadProjection ??
     ((context: PlanContext) => acquireDescriptorProjection(context, deps.transactionPins))
   )(ctx);
-  const projectionPlan = planEccProfileLifecycle(ctx.root, projection, operation);
+  const projectionPlan = planEccProfileLifecycle(
+    ctx.root,
+    projection,
+    operation,
+    ECC_PROFILE_INSTALLATION_TRUST_V1,
+  );
   if (!nativeEnabled)
     return executePlan(withTransactionPins(projectionPlan, deps.transactionPins), ctx, {
       skipWorktreeGate: true,

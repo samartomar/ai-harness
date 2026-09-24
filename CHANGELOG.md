@@ -94,6 +94,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   projection now has 703 files instead of 759. Core's installation trust record appends the new
   version-2 anchor and keeps the earlier anchors, so installations made before this change still
   recover.
+- `aih ecc --lifecycle update` migrates an installation within its ECC pin when Core's
+  installation trust record anchors both the installed and the new projection at the same source
+  closure, such as an 0c1d7be9 installation moving to the stub-only render. It removes the files
+  aih owned that the new projection drops, leaves operator files alone, keeps merge destinations,
+  and keeps rollback to the installed projection. Any other change within the installed pin still
+  refuses. `--lifecycle repair` of an installation that a later anchored render of its pin
+  supersedes refuses and routes to update, instead of restoring files the current render withholds.
 - `@aihq/framework-ecc` validates the ECC descriptor's module graph where it reads it: a
   dependency or profile member naming a module the graph lacks, a repeated module id, or a
   dependency cycle refuses with `AIH_FRAMEWORK_DESCRIPTOR` naming it. A structural dependency

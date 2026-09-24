@@ -21,6 +21,7 @@ import {
   ECC_PROFILE_OWNERSHIP_PATH,
   type EccProfileInstalledSourceTrust,
   EccProfileRecoveryRefusalError,
+  eccProfileRecoveryIdentity,
   planEccProfileLifecycle,
   planInstalledEccProfileLifecycle,
   readEccProfileOwnership,
@@ -1060,5 +1061,65 @@ describe("ECC profile recovery authentication", () => {
       (file) => file.destination !== ".codex/config.toml",
     );
     expect(mergeAction(planEccProfileLifecycle(root, superseding, "update")).kind).toBe("write");
+  });
+});
+
+describe("same-pin ECC profile projection migration", () => {
+  const next = () => projection(COMMIT_A, "# example stub\n");
+  const identity = (candidate: EccProjection) => eccProfileRecoveryIdentity(candidate);
+
+  it("updates within the pin only when Core anchors both projection identities", async () => {
+    await executePlan(planEccProfileLifecycle(root, projection(), "install"), ctx(true));
+    const installed = identity(projection());
+    const changed = identity(next());
+
+    for (const anchors of [[], [installed], [changed]]) {
+      expect(() => planEccProfileLifecycle(root, next(), "update", anchors)).toThrow(
+        EccProfileRecoveryRefusalError,
+      );
+    }
+    expect(() => planEccProfileLifecycle(root, next(), "update", [installed])).toThrow(
+      /new projection.*not an anchored/i,
+    );
+    expect(readFileSync(join(root, ".agents/skills/example/SKILL.md"), "utf8")).toBe(
+      "# example v1\n",
+    );
+
+    await executePlan(
+      planEccProfileLifecycle(root, next(), "update", [installed, changed]),
+      ctx(true),
+    );
+    expect(readFileSync(join(root, ".agents/skills/example/SKILL.md"), "utf8")).toBe(
+      "# example stub\n",
+    );
+    expect(readEccProfileOwnership(root)?.source).toEqual(changed);
+    expect(readEccProfileOwnership(root)?.rollback?.source).toEqual(installed);
+  });
+
+  it("refuses a same-pin update that changes the source closure, even when anchored", async () => {
+    await executePlan(planEccProfileLifecycle(root, projection(), "install"), ctx(true));
+    const other = next();
+    other.sourceClosure = { ...other.sourceClosure, aggregateSha256: "2".repeat(64) };
+    expect(() =>
+      planEccProfileLifecycle(root, other, "update", [identity(projection()), identity(other)]),
+    ).toThrow(/exact new source pin/i);
+  });
+
+  it("refuses repair of an installation a later anchored render of its pin supersedes", async () => {
+    await executePlan(planEccProfileLifecycle(root, projection(), "install"), ctx(true));
+    const installed = identity(projection());
+    rmSync(join(root, ".agents/skills/example/SKILL.md"));
+
+    expect(() =>
+      planInstalledEccProfileLifecycle(root, "repair", [installed, identity(next())]),
+    ).toThrow(/superseded.*--lifecycle update/i);
+    expect(() =>
+      planEccProfileLifecycle(root, projection(), "repair", [installed, identity(next())]),
+    ).toThrow(/superseded.*--lifecycle update/i);
+    // The current render of the pin still repairs.
+    await executePlan(planInstalledEccProfileLifecycle(root, "repair", [installed]), ctx(true));
+    expect(readFileSync(join(root, ".agents/skills/example/SKILL.md"), "utf8")).toBe(
+      "# example v1\n",
+    );
   });
 });

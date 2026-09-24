@@ -630,7 +630,12 @@ with `framework-profile-recovery-unanchored` before planning any write. Recovery
 recovers only when a version-2 anchor at the same pin authenticates its write semantics. Uninstall, update and rollback
 never delete a merge destination such as `.codex/config.toml`: they remove only aih's managed blocks and keep the
 file, even when only whitespace remains, because nothing proves aih created the whole file; the plan names each file
-kept that way so you can remove it by hand if nothing uses it. Legacy selection flags such as `--profile`, `--with`, and `--cli`
+kept that way so you can remove it by hand if nothing uses it. Update normally requires a new ECC pin; within the
+installed pin it migrates only between two projections that Core's trust record both anchors at the same source closure,
+such as a later render that projects only the stub for a skill a client cannot run. It removes the files aih owned that
+the new projection drops, never touches operator files, and keeps rollback to the installed projection. Repair of an
+installation that a later anchored render of its pin supersedes refuses and routes to `--lifecycle update`, because
+repair replays the receipt and would restore what the current render withholds. Legacy selection flags such as `--profile`, `--with`, and `--cli`
 cannot be combined with `--lifecycle`.
 
 In a **governed** repository (an org policy carrying `governance`), `--lifecycle install` is not this
