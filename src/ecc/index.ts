@@ -23,8 +23,10 @@ import type { RepoStack } from "../profile/scan.js";
 import { scanRepo } from "../profile/scan.js";
 import { execArgv } from "../tools/install.js";
 import {
+  assertChromeDevtoolsOptOuts,
   CODEX_AGENTS_BLOCK_MARKER,
   type CodexScopedMcpServers,
+  codexChromeDevtoolsOptOutActions,
   codexHomeDir,
   codexInstallStateContents,
   codexInstallStatePath,
@@ -899,6 +901,44 @@ function legacyDescendantHeader(line) {
   const body = bodyOf(line, false);
   return body !== undefined && /^[ \t]*(?:mcp_servers|"mcp_servers"|'mcp_servers')[ \t]*\.[ \t]*(?:chrome-devtools|"chrome-devtools"|'chrome-devtools')[ \t]*\./.test(body);
 }`,
+  // Every chrome-devtools-mcp launch left in the written config must carry both
+  // mandatory opt-outs; aih refuses rather than rewrite a user-owned entry.
+  String.raw`function chromeOptOutProblem(raw) {
+  const optOuts = ["CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS", "CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS"];
+  const withoutComment = (line) => { let quote; for (let index = 0; index < line.length; index += 1) { const character = line[index]; if (quote === '"') { if (character === "\\") index += 1; else if (character === '"') quote = undefined; continue; } if (quote === "'") { if (character === "'") quote = undefined; continue; } if (character === '"' || character === "'") quote = character; else if (character === "#") return line.slice(0, index); } return line; };
+  const decoded = (text) => text.replace(/\u([0-9A-Fa-f]{4})|\U([0-9A-Fa-f]{8})/g, (match, short, long) => { try { return String.fromCodePoint(Number.parseInt(short || long, 16)); } catch { return match; } });
+  const launches = (text) => /chrome-devtools-mcp/i.test(decoded(text));
+  const key = (name) => "(?:" + name + "|\"" + name + "\"|'" + name + "')";
+  const one = "[ \t]*=[ \t]*(?:\"1\"|'1')[ \t]*$";
+  const servers = new Map(); let server; let scope = "root";
+  for (const line of raw.replace(/\r\n/g, "\n").split("\n")) {
+    const header = tomlMcpTableHeader(line);
+    if (header) {
+      if (header.keys.length < 2) { server = undefined; scope = "mcp"; continue; }
+      if (!servers.has(header.keys[1])) servers.set(header.keys[1], { launch: false, env: new Set() });
+      server = servers.get(header.keys[1]);
+      scope = header.array ? "descendant" : header.keys.length === 2 ? "server" : header.keys.length === 3 && header.keys[2] === "env" ? "env" : "descendant";
+      continue;
+    }
+    if (/^[ \t]*\[/.test(line)) { server = undefined; scope = "other"; continue; }
+    const code = withoutComment(line).trim();
+    if (code.length === 0 || scope === "other") continue;
+    if (scope === "root" || scope === "mcp") {
+      const lhs = assignmentLhs(code);
+      if ((scope === "mcp" || (lhs !== undefined && tomlMcpTableHeader("[" + lhs + "]"))) && launches(code)) return { name: "(non-table MCP representation)", missing: optOuts };
+      continue;
+    }
+    if (launches(code)) server.launch = true;
+    const inline = scope === "server" ? /^env[ \t]*=[ \t]*\{(.*)\}$/.exec(code) : null;
+    for (const name of optOuts) {
+      if (scope === "env" && new RegExp("^" + key(name) + one).test(code)) server.env.add(name);
+      if (scope === "server" && new RegExp("^env[ \t]*\.[ \t]*" + key(name) + one).test(code)) server.env.add(name);
+      if (inline && inline[1].split(",").some((part) => new RegExp("^[ \t]*" + key(name) + one).test(part))) server.env.add(name);
+    }
+  }
+  for (const [name, entry] of servers) { if (!entry.launch) continue; const missing = optOuts.filter((variable) => !entry.env.has(variable)); if (missing.length > 0) return { name, missing }; }
+  return undefined;
+}`,
   "function renderScopedSection(name, server) {",
   '  if (!server || typeof server !== "object" || Array.isArray(server)) throw new Error("invalid scoped Codex MCP server: " + name);',
   '  const quote = (value) => { const text = String(value); for (let index = 0; index < text.length; index += 1) { const code = text.charCodeAt(index); if (code >= 0xD800 && code <= 0xDBFF) { const next = text.charCodeAt(index + 1); if (!(next >= 0xDC00 && next <= 0xDFFF)) throw new Error("invalid scoped Codex MCP string: " + name); index += 1; continue; } if (code >= 0xDC00 && code <= 0xDFFF) throw new Error("invalid scoped Codex MCP string: " + name); } return JSON.stringify(text).replace(/\\u007f/g, "\\\\u007f"); }; const section = ["[mcp_servers." + quote(name) + "]"];',
@@ -932,6 +972,7 @@ function legacyDescendantHeader(line) {
   '  const block = "# >>> aih managed (mcp) >>>\\n" + sections.map((section) => section.text).join("\\n\\n") + "\\n# <<< aih managed (mcp) <<<";',
   '  let mergedLines; if (parsed.fence) { const before = beforeFence.slice(); const after = afterFence.slice(); if (claimsChrome && chrome.length === 1) { if (legacyBefore.length === 1) before.splice(legacyBefore[0].begin, legacyBefore[0].end - legacyBefore[0].begin); else after.splice(legacyAfter[0].begin, legacyAfter[0].end - legacyAfter[0].begin); } mergedLines = [...before, block, ...after]; } else { const before = beforeFence.slice(); if (claimsChrome && chrome.length === 1) before.splice(legacyBefore[0].begin, legacyBefore[0].end - legacyBefore[0].begin); mergedLines = before.join("\\n").replace(/\\n+$/, "").split("\\n"); if (mergedLines.length === 1 && mergedLines[0] === "") mergedLines = []; mergedLines.push(...(mergedLines.length > 0 ? ["", block] : [block])); }',
   '  let merged = mergedLines.join("\\n").replace(/^\\n+/, "").replace(/\\n+$/, "") + "\\n"; if (/\\r\\n/.test(existingConfig)) merged = merged.replace(/\\n/g, "\\r\\n");',
+  '  const chromeProblem = chromeOptOutProblem(merged); if (chromeProblem) throw new Error("refusing Codex MCP entry \\"" + chromeProblem.name + "\\": it launches chrome-devtools-mcp without " + chromeProblem.missing.map((name) => name + "=\\"1\\"").join(" and ") + "; aih never rewrites a user-owned entry: remove it so aih manages chrome-devtools, or add both variables to its env table");',
   "  return { liveConfigRaw, liveStateRaw, liveState, merged, installed, retained: retained.map((section) => section.name) };",
   "}",
   "function unionStrings(...lists) { return [...new Set(lists.flat())].sort(); }",
@@ -964,6 +1005,7 @@ export function codexEccActions(
   governed = false,
 ): Action[] {
   const effectiveScopedMcps = governed ? {} : (scopedMcps ?? coreOwnedEccCodexMcpServers());
+  assertChromeDevtoolsOptOuts(effectiveScopedMcps);
   const codexDir = codexHomeDir(ctx);
   const codexConfig = join(codexDir, "config.toml");
   const codexAgents = join(codexDir, "AGENTS.md");
@@ -1094,7 +1136,12 @@ async function eccPlan(ctx: PlanContext): Promise<Plan> {
 
   const actions: Action[] = [];
   const hasKiro = clis.includes("kiro");
-  const codexBlockers = clis.includes("codex") ? codexMcpCollisionActions(ctx) : [];
+  const codexBlockers = clis.includes("codex")
+    ? [
+        ...codexMcpCollisionActions(ctx),
+        ...codexChromeDevtoolsOptOutActions(ctx, Object.keys(coreOwnedEccCodexMcpServers())),
+      ]
+    : [];
   const codexInstallPlanned = clis.includes("codex") && codexBlockers.length === 0;
   const needsEccRepo = hasKiro || codexInstallPlanned;
   const repo = needsEccRepo ? eccRepoCheckout(ctx) : undefined;

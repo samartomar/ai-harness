@@ -1164,6 +1164,62 @@ describe("verifiedEccInstallPlan", () => {
     },
   );
 
+  it.each([
+    ["project", "CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS"],
+    ["user", "CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS"],
+  ] as const)(
+    "refuses a verified Codex install when a %s entry launches chrome-devtools-mcp without an opt-out",
+    async (scope, present) => {
+      const home = join(root, "opt-out-home");
+      const target =
+        scope === "project"
+          ? join(root, ".codex", "config.toml")
+          : join(home, ".codex", "config.toml");
+      mkdirSync(join(target, ".."), { recursive: true });
+      writeFileSync(
+        target,
+        `[mcp_servers.chrome-devtools]\ncommand = "npx"\nargs = ["-y", "chrome-devtools-mcp@1.10.1"]\n[mcp_servers.chrome-devtools.env]\n${present} = "1"\n`,
+        "utf8",
+      );
+      const context = { ...ctx(), env: { HOME: home, USERPROFILE: home } };
+      const selected = selection();
+
+      const plan = verifiedEccInstallPlan(
+        context,
+        join(root, "quarantine", "tree"),
+        { clis: ["codex"], profile: "minimal", packs: [], selection: selected },
+        authorizationsForSelection("codex", selected),
+      );
+
+      expect(
+        driverSteps(plan.actions).some((step) =>
+          step.argv.join(" ").includes("codex-install-merge"),
+        ),
+      ).toBe(false);
+      const checks = await Promise.all(
+        plan.actions
+          .filter((action): action is Extract<Action, { kind: "probe" }> => action.kind === "probe")
+          .map((action) => action.run(context)),
+      );
+      const missing =
+        present === "CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS"
+          ? "CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS"
+          : "CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS";
+      expect(checks).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: "mcp.telemetry-opt-out-missing",
+            verdict: "fail",
+            detail: expect.stringContaining(`${scope} Codex config entry "chrome-devtools"`),
+          }),
+        ]),
+      );
+      const detail = checks.find((check) => check.code === "mcp.telemetry-opt-out-missing")?.detail;
+      expect(detail).toContain(`${missing}="1"`);
+      expect(detail).not.toContain(`${present}="1"`);
+    },
+  );
+
   // #506 F1: the enterprise rollout observed the Codex merge receiving the core
   // profile regardless of `--profile full`. These two tests lock the resolved
   // profile end-to-end through the LIVE path (registration request → verified

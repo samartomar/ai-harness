@@ -1110,6 +1110,195 @@ describe("ecc.plan — Codex MCP collision preflight", () => {
   });
 });
 
+describe("ecc.plan — Chrome DevTools MCP telemetry opt-outs", () => {
+  const NO_STATS = "CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS";
+  const NO_UPDATES = "CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS";
+  const launch = (name: string, env?: string) =>
+    [
+      `[mcp_servers.${name}]`,
+      'command = "npx"',
+      'args = ["-y", "chrome-devtools-mcp@1.10.1"]',
+      ...(env === undefined ? [] : [`[mcp_servers.${name}.env]`, env]),
+      "",
+    ].join("\n");
+
+  async function planWith(
+    projectConfig: string | undefined,
+    globalConfig: string | undefined,
+    state?: string[],
+  ): Promise<{ actions: Action[]; checks: Awaited<ReturnType<ProbeAction["run"]>>[] }> {
+    const home = join(tmp, "home");
+    const root = join(tmp, "repo");
+    mkdirSync(join(root, ".codex"), { recursive: true });
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    if (projectConfig !== undefined)
+      writeFileSync(join(root, ".codex", "config.toml"), projectConfig);
+    if (globalConfig !== undefined)
+      writeFileSync(join(home, ".codex", "config.toml"), globalConfig);
+    if (state !== undefined) {
+      writeFileSync(
+        join(home, ".codex", "ecc-aih-install-state.json"),
+        `${JSON.stringify({
+          schemaVersion: 1,
+          managedBy: "aih",
+          codexToml: { rootKeys: [], tables: [], tableKeys: {}, mcpServers: state },
+          agentsBlock: true,
+        })}\n`,
+      );
+    }
+    const base = makeCtx({ cli: "codex" });
+    const ctx = { ...base, root, env: { ...base.env, HOME: home, USERPROFILE: home } };
+    const actions = (await command.plan(ctx)).actions;
+    const checks = await Promise.all(
+      actions
+        .filter((action): action is ProbeAction => action.kind === "probe")
+        .map((action) => action.run(ctx)),
+    );
+    return { actions, checks };
+  }
+
+  const installPlanned = (actions: Action[]) =>
+    execs(actions).some((action) => action.describe.startsWith("Install ECC for Codex"));
+  const optOutRefusals = (checks: Awaited<ReturnType<ProbeAction["run"]>>[]) =>
+    checks.filter((check) => check.code === "mcp.telemetry-opt-out-missing");
+
+  it("refuses a user-owned same-name entry that launches chrome-devtools-mcp without the opt-outs", async () => {
+    const { actions, checks } = await planWith(undefined, launch("chrome-devtools"));
+
+    expect(installPlanned(actions)).toBe(false);
+    const [refusal, ...rest] = optOutRefusals(checks);
+    expect(rest).toEqual([]);
+    expect(refusal?.verdict).toBe("fail");
+    expect(refusal?.detail).toContain('user Codex config entry "chrome-devtools"');
+    expect(refusal?.detail).toContain(`${NO_STATS}="1"`);
+    expect(refusal?.detail).toContain(`${NO_UPDATES}="1"`);
+    const guidance = docs(actions).find((action) =>
+      action.describe.includes("Chrome DevTools MCP telemetry opt-outs missing"),
+    );
+    expect(guidance?.text).toContain("let aih manage");
+    expect(guidance?.text).toContain("[mcp_servers.chrome-devtools.env]");
+    expect(guidance?.text).toContain("aih never rewrites");
+  });
+
+  it("names only the missing variable and rejects values other than the exact string 1", async () => {
+    const onlyUpdates = await planWith(undefined, launch("chrome-devtools", `${NO_UPDATES} = "1"`));
+    expect(installPlanned(onlyUpdates.actions)).toBe(false);
+    const detail = optOutRefusals(onlyUpdates.checks)[0]?.detail ?? "";
+    expect(detail).toContain(`${NO_STATS}="1"`);
+    expect(detail).not.toContain(`${NO_UPDATES}="1"`);
+
+    const wrongValues = await planWith(
+      undefined,
+      launch("chrome-devtools", `${NO_UPDATES} = "true"\n${NO_STATS} = "0"`),
+    );
+    expect(installPlanned(wrongValues.actions)).toBe(false);
+    const wrongDetail = optOutRefusals(wrongValues.checks)[0]?.detail ?? "";
+    expect(wrongDetail).toContain(`${NO_STATS}="1"`);
+    expect(wrongDetail).toContain(`${NO_UPDATES}="1"`);
+  });
+
+  it("refuses any differently named user entry that launches chrome-devtools-mcp", async () => {
+    const { actions, checks } = await planWith(undefined, launch("browser"));
+    expect(installPlanned(actions)).toBe(false);
+    expect(optOutRefusals(checks)[0]?.detail).toContain('user Codex config entry "browser"');
+  });
+
+  it("refuses a project override that launches chrome-devtools-mcp without the opt-outs", async () => {
+    const { actions, checks } = await planWith(
+      launch("chrome-devtools", `${NO_UPDATES} = "1"`),
+      undefined,
+    );
+    expect(installPlanned(actions)).toBe(false);
+    const detail = optOutRefusals(checks)[0]?.detail ?? "";
+    expect(detail).toContain('project Codex config entry "chrome-devtools"');
+    expect(detail).toContain(`${NO_STATS}="1"`);
+  });
+
+  it("refuses an unparseable config that mentions chrome-devtools-mcp", async () => {
+    const { actions, checks } = await planWith(
+      undefined,
+      `${launch("chrome-devtools")}[mcp_servers.chrome-devtools]\ncommand = "npx"\n`,
+    );
+    expect(installPlanned(actions)).toBe(false);
+    expect(optOutRefusals(checks).length).toBeGreaterThan(0);
+  });
+
+  it.each([
+    ["env tables", launch("chrome-devtools", `${NO_STATS} = "1"\n${NO_UPDATES} = "1"`)],
+    [
+      "inline env",
+      `[mcp_servers.chrome-devtools]\ncommand = "npx"\nargs = ["-y", "chrome-devtools-mcp@1.10.1"]\nenv = { ${NO_STATS} = "1", ${NO_UPDATES} = '1' }\n`,
+    ],
+  ])("accepts user and project entries carrying both opt-outs (%s)", async (_kind, config) => {
+    const { actions, checks } = await planWith(
+      config,
+      config.replace(/mcp_servers\.chrome-devtools/g, "mcp_servers.cdt"),
+    );
+    expect(optOutRefusals(checks)).toEqual([]);
+    expect(installPlanned(actions)).toBe(true);
+  });
+
+  it("does not refuse aih-managed entries that the install re-renders with the opt-outs", async () => {
+    const managed = [
+      "# >>> aih managed (mcp) >>>",
+      '[mcp_servers."chrome-devtools"]',
+      'command = "npx"',
+      'args = ["-y", "chrome-devtools-mcp@1.7.0"]',
+      "startup_timeout_sec = 30",
+      "# <<< aih managed (mcp) <<<",
+      "",
+    ].join("\n");
+    const update = await planWith(undefined, managed, ["chrome-devtools"]);
+    expect(optOutRefusals(update.checks)).toEqual([]);
+    expect(installPlanned(update.actions)).toBe(true);
+
+    const legacy =
+      '[mcp_servers."chrome-devtools"]\ncommand = "npx"\nargs = ["chrome-devtools-mcp@latest"]\nstartup_timeout_sec = 30\n';
+    const repair = await planWith(undefined, legacy, ["chrome-devtools"]);
+    expect(optOutRefusals(repair.checks)).toEqual([]);
+    expect(installPlanned(repair.actions)).toBe(true);
+
+    const unclaimed = await planWith(undefined, legacy, []);
+    expect(installPlanned(unclaimed.actions)).toBe(false);
+    expect(optOutRefusals(unclaimed.checks).length).toBe(1);
+  });
+
+  it("keeps preserving an operator-owned chrome-devtools name that does not launch chrome-devtools-mcp", async () => {
+    const { actions, checks } = await planWith(
+      undefined,
+      '[mcp_servers.chrome-devtools]\ncommand = "operator-devtools"\nargs = ["--local"]\n',
+    );
+    expect(optOutRefusals(checks)).toEqual([]);
+    expect(installPlanned(actions)).toBe(true);
+  });
+
+  it("refuses to emit a scoped chrome-devtools-mcp launch without both opt-outs", () => {
+    const emit = (env: Record<string, string> | undefined) =>
+      codexEccActions(
+        makeCtx({ cli: "codex" }),
+        { dir: tmp, posix: tmp.replace(/\\/g, "/"), explicit: true, hasCache: false },
+        "minimal",
+        undefined,
+        {
+          browser: {
+            type: "stdio",
+            command: "npx",
+            args: ["-y", "chrome-devtools-mcp@1.10.1"],
+            ...(env === undefined ? {} : { env }),
+          },
+        },
+      );
+    expect(() => emit(undefined)).toThrow(
+      expect.objectContaining({
+        code: "AIH_CONFIG",
+        message: expect.stringContaining(`"browser"`),
+      }),
+    );
+    expect(() => emit({ [NO_UPDATES]: "1" })).toThrow(new RegExp(`${NO_STATS}="1"`));
+    expect(() => emit({ [NO_UPDATES]: "1", [NO_STATS]: "1" })).not.toThrow();
+  });
+});
+
 describe("Codex MCP removal custody", () => {
   const chromeFootprint = {
     rootKeys: [],
@@ -2018,6 +2207,115 @@ describe("Codex managed destination safety", () => {
     expect(outputState.codexToml.mcpServers).toContain("sequential-thinking");
   });
 
+  describe("direct apply keeps Chrome DevTools MCP opt-outs mandatory", () => {
+    const NO_STATS = "CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS";
+    const NO_UPDATES = "CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS";
+
+    function runDirectApply(label: string, config: string) {
+      const home = join(tmp, `${label}-home`);
+      const repo = join(tmp, "ecc");
+      const configPath = join(home, ".codex", "config.toml");
+      const statePath = join(home, ".codex", "ecc-aih-install-state.json");
+      mkdirSync(join(home, ".codex"), { recursive: true });
+      prepareCodexRepo(home);
+      writeFileSync(
+        join(repo, "scripts", "lib", "install-state.js"),
+        'exports.writeInstallState = (path, state) => require("node:fs").writeFileSync(path, JSON.stringify(state), "utf8");\n',
+      );
+      writeFileSync(configPath, config, "utf8");
+      writeFileSync(
+        statePath,
+        `${JSON.stringify({
+          schemaVersion: 1,
+          managedBy: "aih",
+          codexToml: { rootKeys: [], tables: [], tableKeys: {}, mcpServers: [] },
+          agentsBlock: true,
+        })}\n`,
+        "utf8",
+      );
+      const beforeState = readFileSync(statePath, "utf8");
+      const base = makeCtx({ cli: "codex" });
+      const action = codexEccActions(
+        { ...base, env: { ...base.env, HOME: home, USERPROFILE: home } },
+        { dir: repo, posix: repo.replace(/\\/g, "/"), explicit: true, hasCache: false },
+        "minimal",
+      ).find(
+        (candidate): candidate is ExecAction =>
+          candidate.kind === "exec" && candidate.describe.startsWith("Install ECC for Codex"),
+      );
+      if (action === undefined) throw new Error("missing direct Codex merge action");
+      const result = spawnSync(process.execPath, action.argv.slice(1), {
+        cwd: repo,
+        encoding: "utf8",
+      });
+      return {
+        result,
+        config: readFileSync(configPath, "utf8"),
+        state: readFileSync(statePath, "utf8"),
+        beforeState,
+        agents: existsSync(join(home, ".codex", "AGENTS.md")),
+      };
+    }
+
+    it.each([
+      [
+        "same-name",
+        "chrome-devtools",
+        '[mcp_servers.chrome-devtools]\ncommand = "npx"\nargs = ["-y", "chrome-devtools-mcp@1.10.1"]\n',
+        [NO_STATS, NO_UPDATES],
+      ],
+      [
+        "other-name",
+        "browser",
+        `[mcp_servers.browser]\ncommand = "npx"\nargs = [\n  "-y",\n  "chrome-devtools-mcp@1.10.1",\n]\n[mcp_servers.browser.env]\n${NO_UPDATES} = "1"\n`,
+        [NO_STATS],
+      ],
+      [
+        "wrong-value",
+        "chrome-devtools",
+        `[mcp_servers.chrome-devtools]\ncommand = "npx"\nargs = ["chrome-devtools-mcp@latest"]\nenv = { ${NO_STATS} = "1", ${NO_UPDATES} = "0" }\n`,
+        [NO_UPDATES],
+      ],
+    ] as const)(
+      "refuses without writing when a user-owned %s entry lacks an opt-out",
+      (label, entry, config, missing) => {
+        const run = runDirectApply(`opt-out-${label}`, config);
+
+        expect(run.result.status).not.toBe(0);
+        expect(run.result.stderr).toContain(`"${entry}"`);
+        for (const variable of missing) expect(run.result.stderr).toContain(`${variable}="1"`);
+        expect(run.config).toBe(config);
+        expect(run.state).toBe(run.beforeState);
+        expect(run.agents).toBe(false);
+      },
+    );
+
+    it("preserves a compliant user-owned same-name entry byte for byte", () => {
+      const config = [
+        "[mcp_servers.chrome-devtools]",
+        'command = "npx"',
+        'args = ["-y", "chrome-devtools-mcp@1.10.1", "--isolated"]',
+        "[mcp_servers.chrome-devtools.env]",
+        `${NO_STATS} = "1"`,
+        `${NO_UPDATES} = "1" # mandatory`,
+        "",
+      ].join("\n");
+      const run = runDirectApply("opt-out-compliant", config);
+
+      expect(run.result.status, run.result.stderr).toBe(0);
+      expect(run.config).toContain(config.trim());
+      expect((parse(run.config) as { mcp_servers: Record<string, unknown> }).mcp_servers).toEqual({
+        "chrome-devtools": {
+          command: "npx",
+          args: ["-y", "chrome-devtools-mcp@1.10.1", "--isolated"],
+          env: { [NO_STATS]: "1", [NO_UPDATES]: "1" },
+        },
+      });
+      const outputState = JSON.parse(run.state) as { codexToml: { mcpServers: string[] } };
+      expect(outputState.codexToml.mcpServers).not.toContain("chrome-devtools");
+    });
+  });
+
   it("renders a candidate stdio environment in TOML and keeps an owned update stable on repeat", () => {
     const home = join(tmp, "owned-chrome-upgrade-home");
     const repo = join(tmp, "ecc");
@@ -2181,7 +2479,11 @@ describe("Codex managed destination safety", () => {
             type: "stdio",
             command: "npx",
             args: ["-y", "chrome-devtools-mcp@1.9.0"],
-            env,
+            env: {
+              CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS: "1",
+              CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS: "1",
+              ...env,
+            },
           },
         },
       ).find(

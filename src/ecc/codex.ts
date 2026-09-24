@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { parse as parseToml } from "smol-toml";
+import { AihError } from "../errors.js";
 import { readIfExists } from "../internals/fsxn.js";
 import { stripManagedBlock } from "../internals/markers.js";
 import {
@@ -952,6 +954,157 @@ export function codexMcpCollisionActions(
       name: "Codex MCP server name collision",
       verdict: "fail",
       code: "mcp.config-invalid",
+      detail: summary,
+    })),
+  ];
+}
+
+/** Owner decision: every chrome-devtools-mcp launch aih emits, merges, repairs or accepts sets both. */
+export const CHROME_DEVTOOLS_MCP_OPT_OUTS = [
+  "CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS",
+  "CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS",
+] as const;
+export type ChromeDevtoolsMcpOptOut = (typeof CHROME_DEVTOOLS_MCP_OPT_OUTS)[number];
+
+export interface ChromeDevtoolsOptOutRefusal {
+  scope: "user" | "project";
+  configPath: string;
+  entry: string;
+  missing: ChromeDevtoolsMcpOptOut[];
+  unparseable?: true;
+}
+
+const CHROME_DEVTOOLS_MCP_LAUNCH = /chrome-devtools-mcp/i;
+
+function mentionsChromeDevtoolsMcp(value: unknown): boolean {
+  if (typeof value === "string") return CHROME_DEVTOOLS_MCP_LAUNCH.test(value);
+  if (Array.isArray(value)) return value.some(mentionsChromeDevtoolsMcp);
+  if (value !== null && typeof value === "object")
+    return Object.values(value).some(mentionsChromeDevtoolsMcp);
+  return false;
+}
+
+function missingChromeDevtoolsOptOuts(env: unknown): ChromeDevtoolsMcpOptOut[] {
+  const table =
+    env !== null && typeof env === "object" && !Array.isArray(env)
+      ? (env as Record<string, unknown>)
+      : {};
+  return CHROME_DEVTOOLS_MCP_OPT_OUTS.filter((name) => table[name] !== "1");
+}
+
+function describeMissingOptOuts(missing: readonly ChromeDevtoolsMcpOptOut[]): string {
+  return missing.map((name) => `${name}="1"`).join(" and ");
+}
+
+/** Refuses to emit a scoped chrome-devtools-mcp launch that lacks either opt-out. */
+export function assertChromeDevtoolsOptOuts(servers: CodexScopedMcpServers): void {
+  for (const [name, server] of Object.entries(servers)) {
+    if (server.type !== "stdio" || !mentionsChromeDevtoolsMcp(server)) continue;
+    const missing = missingChromeDevtoolsOptOuts(server.env);
+    if (missing.length > 0)
+      throw new AihError(
+        `refusing to emit Codex MCP server "${name}": it launches chrome-devtools-mcp without ${describeMissingOptOuts(missing)}`,
+        "AIH_CONFIG",
+      );
+  }
+}
+
+function aihClaimedCodexMcpServers(ctx: PlanContext): Set<string> {
+  const raw = readIfExists(codexInstallStatePath(ctx));
+  if (raw === undefined) return new Set();
+  try {
+    const state = JSON.parse(raw) as { managedBy?: unknown; codexToml?: { mcpServers?: unknown } };
+    const claimed = state?.codexToml?.mcpServers;
+    if (state?.managedBy !== "aih" || !Array.isArray(claimed)) return new Set();
+    return new Set(claimed.filter((name): name is string => typeof name === "string"));
+  } catch {
+    return new Set();
+  }
+}
+
+/**
+ * Validates every chrome-devtools-mcp launch in the user and project Codex configs.
+ * Only aih-claimed user entries that this install re-renders are exempt; aih never
+ * rewrites a user-owned entry, so anything else missing an opt-out is refused.
+ */
+export function codexChromeDevtoolsOptOutRefusals(
+  ctx: PlanContext,
+  plannedServers: Iterable<string>,
+): ChromeDevtoolsOptOutRefusal[] {
+  const planned = new Set(plannedServers);
+  const claimed = aihClaimedCodexMcpServers(ctx);
+  const scopes = [
+    { scope: "project" as const, configPath: join(ctx.root, ".codex", "config.toml") },
+    { scope: "user" as const, configPath: join(codexHomeDir(ctx), "config.toml") },
+  ];
+  const refusals: ChromeDevtoolsOptOutRefusal[] = [];
+  for (const { scope, configPath } of scopes) {
+    const raw = readIfExists(configPath);
+    if (raw === undefined) continue;
+    let document: Record<string, unknown>;
+    try {
+      document = parseToml(raw) as Record<string, unknown>;
+    } catch {
+      if (CHROME_DEVTOOLS_MCP_LAUNCH.test(raw))
+        refusals.push({
+          scope,
+          configPath,
+          entry: "(unparseable config)",
+          missing: [...CHROME_DEVTOOLS_MCP_OPT_OUTS],
+          unparseable: true,
+        });
+      continue;
+    }
+    const servers = document.mcp_servers;
+    if (servers === null || typeof servers !== "object" || Array.isArray(servers)) continue;
+    for (const [entry, server] of Object.entries(servers as Record<string, unknown>)) {
+      if (!mentionsChromeDevtoolsMcp(server)) continue;
+      if (scope === "user" && planned.has(entry) && claimed.has(entry)) continue;
+      const env =
+        server !== null && typeof server === "object" && !Array.isArray(server)
+          ? (server as Record<string, unknown>).env
+          : undefined;
+      const missing = missingChromeDevtoolsOptOuts(env);
+      if (missing.length > 0) refusals.push({ scope, configPath, entry, missing });
+    }
+  }
+  return refusals;
+}
+
+export function codexChromeDevtoolsOptOutActions(
+  ctx: PlanContext,
+  plannedServers: Iterable<string>,
+): Action[] {
+  const refusals = codexChromeDevtoolsOptOutRefusals(ctx, plannedServers);
+  if (refusals.length === 0) return [];
+  const summary = refusals
+    .map(
+      (refusal) =>
+        `${refusal.scope} Codex config entry "${refusal.entry}" (${refusal.configPath}) ` +
+        `${refusal.unparseable ? "mentions chrome-devtools-mcp but cannot be parsed to verify" : "launches chrome-devtools-mcp without"} ` +
+        describeMissingOptOuts(refusal.missing),
+    )
+    .join("; ");
+  const firstEntry = refusals.find((refusal) => !refusal.unparseable)?.entry ?? "<name>";
+  return [
+    doc(
+      "Chrome DevTools MCP telemetry opt-outs missing — fix before running ECC",
+      lines(
+        "Every chrome-devtools-mcp launch aih emits, merges or accepts must set",
+        'CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS = "1" and CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS = "1".',
+        "aih never rewrites a user-owned entry, so it refuses the Codex install instead.",
+        "",
+        `Refused: ${summary}.`,
+        "",
+        "Next: remove the entry and let aih manage chrome-devtools (aih always writes both",
+        `opt-outs), or add both variables under [mcp_servers.${firstEntry}.env];`,
+        "then rerun `aih ecc --cli codex --apply`.",
+      ),
+    ),
+    probe("Chrome DevTools MCP telemetry opt-outs", () => ({
+      name: "Chrome DevTools MCP telemetry opt-outs",
+      verdict: "fail",
+      code: "mcp.telemetry-opt-out-missing",
       detail: summary,
     })),
   ];

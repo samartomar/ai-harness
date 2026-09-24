@@ -17,6 +17,7 @@ import { lines } from "../internals/render.js";
 import { execArgv } from "../tools/install.js";
 import {
   type CodexScopedMcpServers,
+  codexChromeDevtoolsOptOutActions,
   codexMcpCollisionActions,
   coreOwnedEccCodexMcpServers,
 } from "./codex.js";
@@ -511,7 +512,12 @@ export function verifiedEccInstallPlan(
       const plannedTransports = new Map(
         Object.entries(scopedMcps).map(([name, server]) => [name, server.type] as const),
       );
-      const blockers = codexMcpCollisionActions(ctx, plannedTransports);
+      const blockers = [
+        ...codexMcpCollisionActions(ctx, plannedTransports),
+        ...(request.governance === true
+          ? []
+          : codexChromeDevtoolsOptOutActions(ctx, Object.keys(scopedMcps))),
+      ];
       if (blockers.length > 0) {
         pre.push(...blockers);
         continue;

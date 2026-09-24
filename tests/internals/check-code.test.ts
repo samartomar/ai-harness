@@ -504,6 +504,7 @@ describe("Check.code — invariants", () => {
       "mcp.server-startup-error": true,
       "mcp.pin-stale": true,
       "mcp.projection-stale": true,
+      "mcp.telemetry-opt-out-missing": true,
       "cli.not-detected": true,
       "cli.config-only": true,
       "cli.binary-broken": true,
