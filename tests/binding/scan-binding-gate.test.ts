@@ -354,6 +354,37 @@ describe("refusals: the gate never decides on an inspection Core cannot account 
     expect((refusal as Error).message).toContain("in-process-other-v1");
   });
 
+  it("refuses a binding gate whose capability declares a version Core does not accept, running nothing", async () => {
+    const scan = createFakeScanAdapterForTests({
+      [BINDING_GATE_DETECTOR_ID]: { kind: "sarif", sarif: bindingGateSarifForTests([]) },
+    });
+    const [capability] = scan.listDetectorCapabilitiesV1() as Record<string, unknown>[];
+    if (capability === undefined) throw new Error("fake lost the binding gate");
+    capability.analyzerVersion = "9.9.9";
+    const refusal = await refusalOf(scan);
+    expect(refusal).toBeInstanceOf(BindingGateScanError);
+    expect((refusal as Error).message).toContain(
+      "detector.aih-binding-gate under in-process-binding-gate-v1 declares analyzer 9.9.9 with no uv.lock; Core accepts 1.0.0 with no uv.lock",
+    );
+    expect(scan.requests).toEqual([]);
+  });
+
+  it("refuses a binding-gate run whose observation names another analyzer version", async () => {
+    const refusal = await refusalOf(
+      createFakeScanAdapterForTests({
+        [BINDING_GATE_DETECTOR_ID]: {
+          kind: "sarif",
+          sarif: bindingGateSarifForTests([]),
+          observedAnalyzerVersion: "1.0.1",
+        },
+      }),
+    );
+    expect(refusal).toBeInstanceOf(BindingGateScanError);
+    expect((refusal as Error).message).toContain(
+      "ran analyzer 1.0.1 with no uv.lock; Core accepts 1.0.0 with no uv.lock",
+    );
+  });
+
   it("refuses SARIF that is not a single-run 2.1.0 log with binding-gate facts", async () => {
     for (const sarif of [
       "not json",

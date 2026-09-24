@@ -13,12 +13,17 @@ import {
   type CiscoShardResult,
 } from "./cisco-shards.js";
 import { TrustScanCancelledError, type UvExecutionProfileIdV1 } from "./detectors.js";
+import {
+  acceptedScanAnalyzerIdentityV1,
+  declaredScanAnalyzerIdentityRefusalV1,
+} from "./scan-analyzer-identity.js";
 import { checkedScanSarifLogV1 } from "./scan-sarif.js";
 
 // Core builds the Cisco source-wide manifest and joins the shard results; the
 // installed @aihq/scan executes one shard's jobs (`runCiscoShardV1`, C2a §3.7).
 // Core verifies every job's input identity before and after the call, checks
-// the analyzer lock against the profile Scan publishes, and accepts only
+// the analyzer identity against the one Core accepts (and Scan must declare and
+// run), and accepts only
 // complete, ordered, digest-bound per-job SARIF. Anything else throws: a vet
 // never records a partial shard.
 
@@ -45,30 +50,6 @@ function shown(value: unknown): string {
   const text = typeof value === "string" ? value : (JSON.stringify(value) ?? String(value));
   const visible = text.replace(/[\p{C}]/gu, " ").trim();
   return visible.length > 300 ? `${visible.slice(0, 297)}...` : visible;
-}
-
-/**
- * The uv.lock digest Scan publishes for a detector's execution profile
- * (`executionProfiles[].analyzerLock.sha256`), or why it cannot be named.
- */
-export function scanAnalyzerLockSha256V1(
-  capabilities: readonly unknown[],
-  detectorId: string,
-  executionProfileId: string,
-): { readonly sha256: string } | { readonly refusal: string } {
-  const capability = capabilities.map(asRecord).find((entry) => entry?.detectorId === detectorId);
-  if (capability === undefined)
-    return { refusal: `the installed @aihq/scan declares no ${detectorId} capability` };
-  const profiles = Array.isArray(capability.executionProfiles) ? capability.executionProfiles : [];
-  const profile = profiles.map(asRecord).find((entry) => entry?.id === executionProfileId);
-  if (profile === undefined)
-    return { refusal: `${detectorId} declares no execution profile ${executionProfileId}` };
-  const sha256 = asRecord(profile.analyzerLock)?.sha256;
-  if (typeof sha256 !== "string" || !/^[0-9a-f]{64}$/.test(sha256))
-    return {
-      refusal: `${detectorId} profile ${executionProfileId} publishes no analyzerLock sha256`,
-    };
-  return { sha256 };
 }
 
 // A function, so the check after the await is not narrowed away by the one before it.
@@ -126,6 +107,11 @@ function shardEvidence(
     );
   if (analyzer.lockSha256 !== expected.lockSha256)
     throw new Error("Cisco shard ran under an analyzer lock other than the manifest's");
+  const ranLock = asRecord(asRecord(record.executionProfile)?.analyzerLock)?.sha256;
+  if (ranLock !== expected.lockSha256)
+    throw new Error(
+      `Cisco shard ran under an execution profile with uv.lock ${shown(ranLock ?? "none")}; Core accepts ${expected.lockSha256}`,
+    );
   const outputs = Array.isArray(record.outputs) ? record.outputs : undefined;
   if (outputs === undefined || outputs.length !== jobs.length)
     throw new Error("Cisco shard runner did not return exactly one output per job");
@@ -179,20 +165,34 @@ export async function runCiscoSourceShardThroughScanV1(
   const loaded = await loadScanCiscoShardRunnerV1(options.importer);
   if (!loaded.ok) throw new ScanPackageRefusalError(loaded.refusal);
   const { listDetectorCapabilitiesV1, runCiscoShardV1 } = loaded.exports;
-  const lock = scanAnalyzerLockSha256V1(
-    listDetectorCapabilitiesV1(),
+  // Core's table, not Scan's declaration, names the lock: the manifest must be
+  // bound to it, and Scan must declare exactly it for the profile.
+  const accepted = acceptedScanAnalyzerIdentityV1(
     SCAN_CISCO_DETECTOR_ID,
     options.executionProfileId,
   );
-  if ("refusal" in lock)
+  if (accepted?.lockSha256 == null)
+    throw new Error(`Core accepts no Cisco analyzer lock under ${options.executionProfileId}`);
+  if (manifest.analyzer.lockSha256 !== accepted.lockSha256)
+    throw new Error(
+      `Cisco shard manifest names analyzer lock ${shown(manifest.analyzer.lockSha256)}; Core accepts ${accepted.lockSha256} under ${options.executionProfileId}`,
+    );
+  const capability = listDetectorCapabilitiesV1()
+    .map(asRecord)
+    .find((entry) => entry?.detectorId === SCAN_CISCO_DETECTOR_ID);
+  const declared =
+    capability === undefined
+      ? `the installed @aihq/scan declares no ${SCAN_CISCO_DETECTOR_ID} capability`
+      : declaredScanAnalyzerIdentityRefusalV1(
+          capability,
+          SCAN_CISCO_DETECTOR_ID,
+          options.executionProfileId,
+        );
+  if (declared !== undefined)
     throw new ScanPackageRefusalError({
       reason: "scan-package-incompatible",
-      detail: `${lock.refusal}; Core cannot bind a Cisco shard to an analyzer lock.`,
+      detail: `${declared}; Core cannot bind a Cisco shard to an analyzer lock.`,
     });
-  if (lock.sha256 !== manifest.analyzer.lockSha256)
-    throw new Error(
-      `Cisco shard analyzer lock does not match manifest identity: ${options.executionProfileId} publishes ${lock.sha256}`,
-    );
   const jobs = shard.jobs.map((job) => ({
     id: job.id,
     path: job.path,

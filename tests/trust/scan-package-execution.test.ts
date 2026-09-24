@@ -17,6 +17,10 @@ import {
 } from "../../src/trust/detectors.js";
 import { buildTrustFileInventory } from "../../src/trust/inventory.js";
 import { scanTrustTreeWithAnalyzers } from "../../src/trust/scan.js";
+import {
+  acceptedScanAnalyzerIdentityV1,
+  observedScanAnalyzerVersionV1,
+} from "../../src/trust/scan-analyzer-identity.js";
 import { fakeTrustLintScan } from "./fakes/fake-trust-lint.js";
 
 // ---------------------------------------------------------------------------
@@ -69,15 +73,22 @@ const OTHER_ARCH = HOST_ARCH === "amd64" ? "arm64" : "amd64";
 
 /** C2: uv-backed detectors are requested under `host-process-uv-v1` by default on every OS. */
 function capability(detectorId: string, profile = "host-process-uv-v1") {
+  const identity = acceptedScanAnalyzerIdentityV1(detectorId, profile);
   return {
     protocol: "DetectorCapabilityV1",
     detectorId,
     analyzerIdentity: null,
-    analyzerVersion: "0.0.0-test",
+    analyzerVersion: identity?.analyzerVersion ?? "0.0.0-test",
     subjectKinds: ["source-tree"],
     executionProfile: { id: profile },
     executionProfiles: [
-      { id: profile, supportedPlatforms: [{ os: "linux", architecture: HOST_ARCH }] },
+      {
+        id: profile,
+        supportedPlatforms: [{ os: "linux", architecture: HOST_ARCH }],
+        ...(identity?.lockSha256 == null
+          ? {}
+          : { analyzerLock: { path: "uv.lock", sha256: identity.lockSha256 } }),
+      },
     ],
     outputs: ["sarif-2.1.0"],
   };
@@ -92,14 +103,25 @@ const EMPTY_SARIF = JSON.stringify({
 
 function succeeded(detectorId: string, profile: string) {
   const bytes = Buffer.from(EMPTY_SARIF, "utf8");
+  const identity = acceptedScanAnalyzerIdentityV1(detectorId, profile);
   return {
     outcome: "succeeded",
     capability: capability(detectorId, profile),
-    executionProfile: { id: profile, isolation: "linux-namespace", network: "none" },
+    executionProfile: {
+      id: profile,
+      isolation: "linux-namespace",
+      network: "none",
+      ...(identity?.lockSha256 == null
+        ? {}
+        : { analyzerLock: { path: "uv.lock", sha256: identity.lockSha256 } }),
+    },
     producer: { name: "@aihq/scan", version: "0.4.0" },
     evidence: {
       kind: "baseline-analyzer-observation-v1",
       observation: {
+        ...(identity === undefined
+          ? {}
+          : { analyzerVersion: observedScanAnalyzerVersionV1(identity) }),
         mediaType: "application/sarif+json",
         annex: { path: "annex/raw.json", sha256: sha256(bytes), byteLength: bytes.byteLength },
         bytes,
@@ -485,7 +507,7 @@ describe("every detector through the installed @aihq/scan, with no Core fallback
         ...capability("detector.semgrep"),
         executionProfiles: [
           {
-            id: "host-process-uv-v1",
+            ...capability("detector.semgrep").executionProfiles[0],
             supportedPlatforms: [{ os: platform, architecture: HOST_ARCH }],
           },
         ],

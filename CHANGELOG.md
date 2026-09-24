@@ -78,10 +78,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   cancelled call to settle before command cleanup and the re-raised signal, so Scan removes
   its snapshot and analyzer temporary directories; a call that does not settle in time is
   reported on stderr as a cleanup warning.
-- Fresh baseline vets name each uv analyzer by its version and the uv.lock digest the
-  installed Scan publishes for the profile it ran under (the host-process Cisco lock differs
-  from the committed receipts' lock). Committed baseline evidence is still checked against
-  the pinned identities.
+- Core pins the analyzer identity it accepts from Scan per detector and execution profile
+  (`ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1`: analyzer version and uv.lock sha256). A capability
+  that declares another identity, or a run whose evidence names one, is refused as
+  `trust.detector-unavailable` naming the expected and observed identity; the binding gate
+  and Cisco shards refuse the same way. Fresh baseline vets name each uv analyzer from that
+  table, never from Scan's declaration (the host-process Cisco lock, which differs from the
+  committed receipts' lock, is an explicit table entry). Committed baseline evidence is still
+  checked against the pinned identities.
 - An org-policy `trust.internalScopes` entry must be an npm scope (`@acme`, optionally
   without the `@`, surrounding whitespace ignored); `aih policy validate` now rejects a
   malformed one such as `@my team` with its field path instead of ignoring it, and Scan

@@ -6,7 +6,6 @@ import {
   type ScanPackageImporterV1,
   ScanPackageRefusalError,
 } from "../scan-package/load-scan-package.js";
-import { scanAnalyzerLockSha256V1 } from "../trust/cisco-shard-delegation.js";
 import { probeScanDetectorsV1 } from "../trust/detector-availability.js";
 import {
   DEFAULT_UV_EXECUTION_PROFILE,
@@ -16,6 +15,11 @@ import {
   type UvExecutionProfileIdV1,
 } from "../trust/detectors.js";
 import type { SkillSpectorImageApproval } from "../trust/images.js";
+import {
+  acceptedScanAnalyzerIdentityV1,
+  declaredScanAnalyzerIdentityRefusalV1,
+  observedScanAnalyzerVersionV1,
+} from "../trust/scan-analyzer-identity.js";
 import {
   CISCO_MCP_SCANNER_ANALYZER,
   CISCO_MCP_SCANNER_VERSION,
@@ -39,12 +43,6 @@ export {
 };
 
 export const CISCO_SKILL_SCANNER_SPEC = `cisco-ai-skill-scanner==${CISCO_SKILL_SCANNER_VERSION}`;
-
-// The uv analyzers' environments belong to Scan: a fresh vet names each one by
-// the version and the uv.lock digest Scan publishes for the profile it ran under.
-function uvLockIdentity(version: string, lockSha256: string): string {
-  return `${version}+uvlock.${lockSha256.slice(0, 12)}`;
-}
 
 export const REQUIRED_BASELINE_DETECTORS = [
   "skillspector",
@@ -125,18 +123,26 @@ export function baselineAnalyzerVersions(): Readonly<Record<string, string>> {
   };
 }
 
-const UV_ANALYZER_IDENTITIES = [
-  ["cisco", CISCO_SKILL_SCANNER_ANALYZER, CISCO_SKILL_SCANNER_VERSION],
-  ["semgrep", SEMGREP_ANALYZER, SEMGREP_VERSION],
-  ["mcp-scanner", CISCO_MCP_SCANNER_ANALYZER, CISCO_MCP_SCANNER_VERSION],
-  ["snyk-agent-scan", SNYK_AGENT_SCAN_ANALYZER, SNYK_AGENT_SCAN_VERSION],
-] as const satisfies readonly (readonly [TrustDetectorName, string, string])[];
+const UV_ANALYZER_LABELS = [
+  ["cisco", CISCO_SKILL_SCANNER_ANALYZER],
+  ["semgrep", SEMGREP_ANALYZER],
+  ["mcp-scanner", CISCO_MCP_SCANNER_ANALYZER],
+  ["snyk-agent-scan", SNYK_AGENT_SCAN_ANALYZER],
+] as const satisfies readonly (readonly [TrustDetectorName, string])[];
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
 
 /**
  * Analyzer identities for a fresh vet through the installed `@aihq/scan`: the
  * native identity is Core's policy digest, SkillSpector is the pinned image,
- * and each uv analyzer is its version plus the lock digest Scan publishes for
- * `executionProfileId`. A required analyzer Scan cannot name refuses the vet.
+ * and each uv analyzer is the identity Core accepts for `executionProfileId`
+ * (`ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1`), never Scan's declaration. Scan must
+ * declare exactly that identity: a required analyzer it does not refuses the
+ * vet, and an optional one is not named (so a receipt from it is unattributed).
  */
 export function scanBaselineAnalyzerVersionsV1(
   capabilities: readonly unknown[],
@@ -151,22 +157,24 @@ export function scanBaselineAnalyzerVersionsV1(
     "skillspector@docker": SCANNER_BASELINE_ANALYZER_VERSIONS["skillspector@docker"],
   };
   let ciscoLockSha256: string | undefined;
-  for (const [detector, label, version] of UV_ANALYZER_IDENTITIES) {
-    const lock = scanAnalyzerLockSha256V1(
-      capabilities,
-      SCAN_DETECTOR_IDS[detector],
-      executionProfileId,
-    );
-    if ("refusal" in lock) {
+  for (const [detector, label] of UV_ANALYZER_LABELS) {
+    const detectorId = SCAN_DETECTOR_IDS[detector];
+    const capability = capabilities.map(asRecord).find((entry) => entry?.detectorId === detectorId);
+    const identity = acceptedScanAnalyzerIdentityV1(detectorId, executionProfileId);
+    const refusal =
+      capability === undefined
+        ? `the installed @aihq/scan declares no ${detectorId} capability`
+        : declaredScanAnalyzerIdentityRefusalV1(capability, detectorId, executionProfileId);
+    if (refusal !== undefined || identity?.lockSha256 == null) {
       if (REQUIRED_BASELINE_DETECTORS.some((required) => required === detector))
         throw new ScanPackageRefusalError({
           reason: "scan-package-incompatible",
-          detail: `${lock.refusal}; a baseline vet cannot name the analyzer it runs.`,
+          detail: `${refusal ?? `Core pins no uv.lock for ${detectorId}`}; a baseline vet cannot name the analyzer it runs.`,
         });
       continue;
     }
-    versions[label] = uvLockIdentity(version, lock.sha256);
-    if (detector === "cisco") ciscoLockSha256 = lock.sha256;
+    versions[label] = observedScanAnalyzerVersionV1(identity);
+    if (detector === "cisco") ciscoLockSha256 = identity.lockSha256;
   }
   if (ciscoLockSha256 === undefined) throw new Error("Cisco analyzer lock was not resolved");
   return { versions, ciscoLockSha256 };

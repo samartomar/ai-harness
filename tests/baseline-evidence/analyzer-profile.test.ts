@@ -120,10 +120,17 @@ describe("required baseline analyzer applicability", () => {
   });
 });
 
-const CISCO_LOCK = "c".repeat(64);
-const SEMGREP_LOCK = "d".repeat(64);
-const MCP_LOCK = "e".repeat(64);
+// The locks Core accepts (ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1) under host-process-uv-v1.
+const CISCO_LOCK = "108c4f78340db9488bd73a03967055b19cdd3e8ece16ed31289e03f89e27d58f";
+const SEMGREP_LOCK = "77f2bf3e7525ceedb0a0ffba9cddb238be809efe965e6de6f135593772571d08";
+const MCP_LOCK = "92846b24c170bcf8ab380d5743bcce4504d249268712f2443f181a9b6789694a";
 const HOST = { os: "linux", architecture: process.arch === "x64" ? "amd64" : process.arch };
+const VERSIONS: Record<string, string> = {
+  "detector.cisco": CISCO_SKILL_SCANNER_VERSION,
+  "detector.semgrep": SEMGREP_VERSION,
+  "detector.cisco-mcp-scanner": CISCO_MCP_SCANNER_VERSION,
+  "detector.snyk-agent-scan": SNYK_AGENT_SCAN_VERSION,
+};
 
 function uvProfile(sha256?: string) {
   return {
@@ -134,7 +141,11 @@ function uvProfile(sha256?: string) {
   };
 }
 
-type FakeCapability = { detectorId: string; executionProfiles: unknown[] };
+type FakeCapability = {
+  detectorId: string;
+  analyzerVersion?: string;
+  executionProfiles: unknown[];
+};
 
 function capabilities(overrides: Record<string, unknown[]> = {}): FakeCapability[] {
   const declared: Record<string, unknown[]> = {
@@ -145,6 +156,7 @@ function capabilities(overrides: Record<string, unknown[]> = {}): FakeCapability
   };
   return Object.entries(declared).map(([detectorId, executionProfiles]) => ({
     detectorId,
+    ...(VERSIONS[detectorId] === undefined ? {} : { analyzerVersion: VERSIONS[detectorId] }),
     executionProfiles,
   }));
 }
@@ -174,6 +186,27 @@ describe("scanBaselineAnalyzerVersionsV1", () => {
     expect(() => scanBaselineAnalyzerVersionsV1(capabilities(), "linux-namespace-uv-v1")).toThrow(
       "declares no execution profile linux-namespace-uv-v1",
     );
+  });
+
+  it("takes each identity from Core's table and refuses a required lock Scan declares differently", () => {
+    const other = "0".repeat(64);
+    expect(() =>
+      scanBaselineAnalyzerVersionsV1(
+        capabilities({ "detector.cisco": [uvProfile(other)] }),
+        "host-process-uv-v1",
+      ),
+    ).toThrow(
+      `detector.cisco under host-process-uv-v1 declares analyzer 2.0.14 with uv.lock ${other}; Core accepts 2.0.14 with uv.lock ${CISCO_LOCK}`,
+    );
+  });
+
+  it("does not name an optional analyzer whose declared identity Core does not accept", () => {
+    const identity = scanBaselineAnalyzerVersionsV1(
+      capabilities({ "detector.cisco-mcp-scanner": [uvProfile("0".repeat(64))] }),
+      "host-process-uv-v1",
+    );
+    expect(identity.versions).not.toHaveProperty(`mcp-scanner@uv:${CISCO_MCP_SCANNER_VERSION}`);
+    expect(identity.versions["semgrep@uv:1.173.0"]).toBe("1.173.0+uvlock.77f2bf3e7525");
   });
 });
 

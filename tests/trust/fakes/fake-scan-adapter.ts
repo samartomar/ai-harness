@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto";
 import type { ScanExecutionAdapterV1 } from "../../../src/org-policy/governance-input-v1.js";
+import {
+  acceptedScanAnalyzerIdentityV1,
+  observedScanAnalyzerVersionV1,
+} from "../../../src/trust/scan-analyzer-identity.js";
 
 /**
  * TEST FAKE. An in-memory stand-in for the installed `@aihq/scan` public
@@ -7,14 +11,22 @@ import type { ScanExecutionAdapterV1 } from "../../../src/org-policy/governance-
  * supplies. It is not Scan and runs nothing. It returns what contract C2 says
  * Scan returns for a findings-producing run: a `baseline-analyzer-observation-v1`
  * observation whose bytes are SARIF 2.1.0 with source-relative URIs, bound by the
- * annex digest, under the execution profile the request named.
+ * annex digest, under the execution profile the request named. Its analyzer
+ * identities are the ones Core accepts (`ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1`)
+ * unless a test overrides them; a profile Core pins none for gets a fake lock.
  *
  * Shapes follow Scan's own `DetectorCapabilityV1` and `RunDetectorV1Result`
  * (`aih-scan src/capability/detector-capability-v1.ts`, `src/runner/run-detector-v1.ts`).
  */
 
 export type FakeScanAnswerV1 =
-  | { readonly kind: "sarif"; readonly sarif: string; readonly executionProfileId?: string }
+  | {
+      readonly kind: "sarif";
+      readonly sarif: string;
+      readonly executionProfileId?: string;
+      /** The analyzer version the observation states, instead of the accepted one. */
+      readonly observedAnalyzerVersion?: string;
+    }
   /** SARIF computed from the request, e.g. for Core's selected paths. */
   | { readonly kind: "sarif-for"; readonly sarif: (request: Record<string, unknown>) => string }
   | { readonly kind: "refused"; readonly reason: string; readonly detail: string }
@@ -37,25 +49,26 @@ const LINUX_ONLY = [
 
 interface FakeProfile {
   readonly id: string;
-  readonly analyzerLock?: { readonly path: string; readonly sha256: string };
+  /** `accepted`: the lock Core pins for the detector under this profile. */
+  readonly analyzerLock?: { readonly path: string; readonly sha256: string } | "accepted";
   readonly isolation: "container" | "linux-namespace" | "none";
   readonly network: "none" | "acquisition-only" | "unenforced";
   readonly supportedPlatforms: readonly { readonly os: string; readonly architecture: string }[];
 }
 
-/** The uv.lock digest every fake uv profile publishes (C2a §3.7 `analyzerLock`). */
+/** The uv.lock digest a fake uv profile publishes when Core pins no lock for it. */
 export const FAKE_UV_LOCK_SHA256 = "f".repeat(64);
 
 const HOST_UV: FakeProfile = {
   id: "host-process-uv-v1",
-  analyzerLock: { path: "uv.lock", sha256: FAKE_UV_LOCK_SHA256 },
+  analyzerLock: "accepted",
   isolation: "none",
   network: "unenforced",
   supportedPlatforms: EVERY_PLATFORM,
 };
 const NAMESPACE_UV: FakeProfile = {
   id: "linux-namespace-uv-v1",
-  analyzerLock: { path: "uv.lock", sha256: FAKE_UV_LOCK_SHA256 },
+  analyzerLock: "accepted",
   isolation: "linux-namespace",
   network: "acquisition-only",
   supportedPlatforms: LINUX_ONLY,
@@ -90,9 +103,16 @@ export const FAKE_SCAN_PROFILES: Readonly<Record<string, readonly FakeProfile[]>
   "detector.snyk-agent-scan": [HOST_UV, NAMESPACE_UV],
 };
 
-function profileDocument(profile: FakeProfile) {
+function profileDocument(detectorId: string, profile: FakeProfile) {
+  const { analyzerLock, ...rest } = profile;
+  const accepted = acceptedScanAnalyzerIdentityV1(detectorId, profile.id)?.lockSha256;
+  const lock =
+    analyzerLock === "accepted"
+      ? { path: "uv.lock", sha256: accepted ?? FAKE_UV_LOCK_SHA256 }
+      : analyzerLock;
   return {
-    ...profile,
+    ...rest,
+    ...(lock === undefined ? {} : { analyzerLock: lock }),
     sha256: createHash("sha256").update(profile.id).digest("hex"),
     evidence: "BaselineAnalyzerObservationV1",
     prerequisites: [],
@@ -107,9 +127,10 @@ export function fakeCapability(detectorId: string, profiles?: readonly FakeProfi
     protocol: "DetectorCapabilityV1",
     detectorId,
     analyzerIdentity: null,
-    analyzerVersion: "fake",
-    executionProfile: profileDocument(first),
-    executionProfiles: declared.map(profileDocument),
+    analyzerVersion:
+      acceptedScanAnalyzerIdentityV1(detectorId, first.id)?.analyzerVersion ?? "fake",
+    executionProfile: profileDocument(detectorId, first),
+    executionProfiles: declared.map((profile) => profileDocument(detectorId, profile)),
     subjectKinds: ["source-tree"],
     subjectRequirements: [],
     supportedPlatforms: first.supportedPlatforms,
@@ -195,6 +216,10 @@ export function createFakeScanAdapterForTests(
       const text = answer.kind === "sarif-for" ? answer.sarif(record) : answer.sarif;
       const bytes = Buffer.from(text, "utf8");
       const ran = (answer.kind === "sarif" ? answer.executionProfileId : undefined) ?? profile.id;
+      const accepted = acceptedScanAnalyzerIdentityV1(detectorId, ran);
+      const analyzerVersion =
+        (answer.kind === "sarif" ? answer.observedAnalyzerVersion : undefined) ??
+        (accepted === undefined ? "fake" : observedScanAnalyzerVersionV1(accepted));
       return {
         outcome: "succeeded",
         capability,
@@ -207,7 +232,7 @@ export function createFakeScanAdapterForTests(
           observation: {
             protocol: "BaselineAnalyzerObservationV1",
             analyzer: detectorId.replace(/^detector\./, ""),
-            analyzerVersion: "fake",
+            analyzerVersion,
             mediaType: "application/sarif+json",
             annex: {
               path: `annex/${detectorId}.json`,

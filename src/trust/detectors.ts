@@ -32,6 +32,10 @@ import {
 } from "./images.js";
 import { buildTrustFileInventory, type TrustFileInventory } from "./inventory.js";
 import {
+  declaredScanAnalyzerIdentityRefusalV1,
+  executedScanAnalyzerIdentityRefusalV1,
+} from "./scan-analyzer-identity.js";
+import {
   type CheckedScanSarifLogV1,
   type CheckedScanSarifV1,
   checkedScanSarifLogV1,
@@ -1348,29 +1352,30 @@ async function runDelegatedDetector(
   );
   if ("refusal" in profile) return { unavailable: profile.refusal, outcome: "refused" };
   const executionProfileId = profile.id;
-  let result: DelegatedDetectorResultV1;
+  // Core, not Scan, is the authority on which analyzer runs: a capability that
+  // declares another version or lock is not asked to run.
+  const declared = declaredScanAnalyzerIdentityRefusalV1(capability, scanId, executionProfileId);
+  if (declared !== undefined) return { unavailable: declared, outcome: "refused" };
+  let raw: unknown;
   try {
-    result = delegatedDetectorResult(
-      await startTrackedScanCall(options.signal, scanId, () =>
-        adapter.runDetectorV1({
-          detectorId: scanId,
-          executionProfileId,
-          subject: {
-            kind: "source-tree",
-            sourceRoot: root,
-            selectedClosurePaths: inventory.files.map((entry) => entry.relativePath),
-          },
-          ...(options.signal === undefined ? {} : { signal: options.signal }),
-          ...(options.detectorOptions === undefined
-            ? {}
-            : { detectorOptions: options.detectorOptions }),
-          ...(options.acceptedImageDigests === undefined ||
-          options.acceptedImageDigests.length === 0
-            ? {}
-            : { acceptedImageDigests: [...options.acceptedImageDigests] }),
-          ...(options.env === undefined ? {} : { env: options.env }),
-        }),
-      ),
+    raw = await startTrackedScanCall(options.signal, scanId, () =>
+      adapter.runDetectorV1({
+        detectorId: scanId,
+        executionProfileId,
+        subject: {
+          kind: "source-tree",
+          sourceRoot: root,
+          selectedClosurePaths: inventory.files.map((entry) => entry.relativePath),
+        },
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+        ...(options.detectorOptions === undefined
+          ? {}
+          : { detectorOptions: options.detectorOptions }),
+        ...(options.acceptedImageDigests === undefined || options.acceptedImageDigests.length === 0
+          ? {}
+          : { acceptedImageDigests: [...options.acceptedImageDigests] }),
+        ...(options.env === undefined ? {} : { env: options.env }),
+      }),
     );
   } catch (error) {
     throwIfCancelled(options.signal, `${scanId} was running`);
@@ -1383,12 +1388,18 @@ async function runDelegatedDetector(
   }
   // Scan reports a cancelled run as a failure; Core stops rather than grade it.
   throwIfCancelled(options.signal, `${scanId} was running`);
+  const result = delegatedDetectorResult(raw);
   if (!("sarif" in result)) return result;
   if (result.executionProfileId !== executionProfileId)
     return {
       unavailable: `${scanId} returned execution profile ${result.executionProfileId ?? "unstated"} instead of requested ${executionProfileId}`,
       outcome: "failed",
     };
+  const executed = executedScanAnalyzerIdentityRefusalV1(raw, scanId, executionProfileId, {
+    acceptedImageDigests: options.acceptedImageDigests ?? [],
+  });
+  if (executed !== undefined)
+    return { unavailable: executed, outcome: "failed", executionProfileId };
   const checked = checkedDetectorSarif(detector, result.sarif);
   if ("refusal" in checked)
     return {

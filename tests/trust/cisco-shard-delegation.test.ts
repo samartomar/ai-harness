@@ -16,7 +16,8 @@ import {
 // and accepts only complete, ordered, digest-bound SARIF for exactly its jobs.
 // ---------------------------------------------------------------------------
 
-const LOCK = "a".repeat(64);
+// The Cisco host-profile lock Core accepts (ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1).
+const LOCK = "108c4f78340db9488bd73a03967055b19cdd3e8ece16ed31289e03f89e27d58f";
 const roots: string[] = [];
 
 afterEach(() => {
@@ -33,10 +34,10 @@ function sourceRoot(): string {
   return root;
 }
 
-function manifestFor(root: string) {
+function manifestFor(root: string, lockSha256: string = LOCK) {
   return buildCiscoSourceShardManifest(root, {
     source: { id: "fixture", pinnedSha: "0".repeat(40) },
-    analyzer: { version: "2.0.14+uvlock.aaaaaaaaaaaa", lockSha256: LOCK },
+    analyzer: { version: `2.0.14+uvlock.${lockSha256.slice(0, 12)}`, lockSha256 },
     policy: { version: "native.test", profile: "fixture:source-wide-inventory" },
     shardCount: 1,
   });
@@ -68,6 +69,7 @@ function fakeScan(
     listDetectorCapabilitiesV1: () => [
       {
         detectorId: "detector.cisco",
+        analyzerVersion: "2.0.14",
         executionProfiles: [
           { id: "host-process-uv-v1", analyzerLock: { path: "uv.lock", sha256: lockSha256 } },
         ],
@@ -94,7 +96,10 @@ function succeeded(request: FakeShardRequest, change?: (outputs: unknown[]) => u
   });
   return {
     outcome: "succeeded",
-    executionProfile: { id: request.executionProfileId },
+    executionProfile: {
+      id: request.executionProfileId,
+      analyzerLock: { path: "uv.lock", sha256: request.expected.lockSha256 },
+    },
     producer: { package: "@aihq/scan", version: "0.5.0" },
     analyzer: {
       version: request.expected.analyzerVersion,
@@ -128,17 +133,57 @@ describe("runCiscoSourceShardThroughScanV1", () => {
     expect(result.outputs[0]?.evidence).toMatchObject({ version: "2.1.0" });
   });
 
-  it("refuses before running when the profile's analyzer lock is not the manifest's", async () => {
+  it("refuses before running when the profile's analyzer lock is not the one Core accepts", async () => {
     const root = sourceRoot();
     const manifest = manifestFor(root);
     const scan = fakeScan((request) => succeeded(request), "b".repeat(64));
+    const error = await runCiscoSourceShardThroughScanV1(
+      root,
+      manifest,
+      manifest.shards[0]?.id ?? "",
+      { ...options, importer: scan.importer },
+    ).catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(ScanPackageRefusalError);
+    expect((error as Error).message).toContain(
+      `detector.cisco under host-process-uv-v1 declares analyzer 2.0.14 with uv.lock ${"b".repeat(64)}; Core accepts 2.0.14 with uv.lock ${LOCK}`,
+    );
+    expect(scan.requests).toHaveLength(0);
+  });
+
+  it("refuses before running a manifest bound to a lock Core does not accept", async () => {
+    const root = sourceRoot();
+    const other = "a".repeat(64);
+    const manifest = manifestFor(root, other);
+    const scan = fakeScan((request) => succeeded(request));
     await expect(
       runCiscoSourceShardThroughScanV1(root, manifest, manifest.shards[0]?.id ?? "", {
         ...options,
         importer: scan.importer,
       }),
-    ).rejects.toThrow("analyzer lock does not match manifest identity");
+    ).rejects.toThrow(
+      `Cisco shard manifest names analyzer lock ${other}; Core accepts ${LOCK} under host-process-uv-v1`,
+    );
     expect(scan.requests).toHaveLength(0);
+  });
+
+  it("rejects a shard run whose executed profile names another analyzer lock", async () => {
+    const root = sourceRoot();
+    const manifest = manifestFor(root);
+    const scan = fakeScan((request) => ({
+      ...succeeded(request),
+      executionProfile: {
+        id: request.executionProfileId,
+        analyzerLock: { path: "uv.lock", sha256: "c".repeat(64) },
+      },
+    }));
+    await expect(
+      runCiscoSourceShardThroughScanV1(root, manifest, manifest.shards[0]?.id ?? "", {
+        ...options,
+        importer: scan.importer,
+      }),
+    ).rejects.toThrow(
+      `Cisco shard ran under an execution profile with uv.lock ${"c".repeat(64)}; Core accepts ${LOCK}`,
+    );
   });
 
   it("throws the typed refusal when @aihq/scan is not installed", async () => {

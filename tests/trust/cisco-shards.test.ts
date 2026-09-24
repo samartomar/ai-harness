@@ -16,7 +16,8 @@ import { buildCiscoSourceShardManifest, joinedCiscoShardSarif } from "../../src/
 const SOURCE_SHA = "a".repeat(40);
 const SOURCE_TREE = "b".repeat(64);
 const INPUT_HASHES = ["1", "2", "3", "4", "5"].map((value) => value.repeat(64));
-const LOCK_SHA256 = "c".repeat(64);
+// The Cisco host-profile lock Core accepts (ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1).
+const LOCK_SHA256 = "108c4f78340db9488bd73a03967055b19cdd3e8ece16ed31289e03f89e27d58f";
 const roots: string[] = [];
 
 interface FakeShardRequest {
@@ -36,6 +37,7 @@ function fakeCiscoShardScan(respond: (request: FakeShardRequest) => unknown): {
     listDetectorCapabilitiesV1: () => [
       {
         detectorId: "detector.cisco",
+        analyzerVersion: "2.0.14",
         executionProfiles: [
           { id: "host-process-uv-v1", analyzerLock: { path: "uv.lock", sha256: LOCK_SHA256 } },
         ],
@@ -253,7 +255,10 @@ describe("Cisco exact-source shard evidence", () => {
     // Scan returns each job's SARIF with URIs relative to the declared source root (C2).
     const scan = fakeCiscoShardScan((request) => ({
       outcome: "succeeded",
-      executionProfile: { id: request.executionProfileId },
+      executionProfile: {
+        id: request.executionProfileId,
+        analyzerLock: { path: "uv.lock", sha256: LOCK_SHA256 },
+      },
       analyzer: { version: request.expected.analyzerVersion, lockSha256: LOCK_SHA256 },
       outputs: request.jobs.map((job) => {
         const heading = readFileSync(join(request.sourceRoot, job.path, "SKILL.md"), "utf8");

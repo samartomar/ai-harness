@@ -169,8 +169,8 @@ the release vet records exact analyzer receipts before the lock is written:
 
 Supplemental locked detectors are not part of the minimum release floor and do
 not enlarge the deterministic component-receipt closure. When one completes,
-aih still resolves its execution-time identity from the exact uv-lock digest
-the installed `@aihq/scan` publishes and rejects an unattributed analyzer. Component receipts retain only the
+aih still names its execution-time identity from the exact uv-lock digest
+aih pins for it and rejects an unattributed analyzer. Component receipts retain only the
 required analyzer set so optional local availability cannot make the vendor
 lock nondeterministic.
 
@@ -182,8 +182,12 @@ Cisco and Semgrep run through Scan's committed uv projects with a locked,
 isolated, offline `uv run` under the host-process profile (or the Linux
 namespace profile when policy selects it); Semgrep disables repository-controlled
 Semgrep and Git ignore files, and includes unknown extensions. A fresh vet names
-each uv analyzer by its version and the uv.lock digest Scan publishes for the
-profile it ran under. The explicit Python minor keeps offline cache
+each uv analyzer by the version and uv.lock digest aih accepts for the profile it
+runs under (`ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1` in
+`src/trust/scan-analyzer-identity.ts`), never by what Scan declares; Scan must
+declare and run exactly that identity, or the analyzer is refused. The host-process
+Cisco lock (`108c4f78340d`) is not the lock the committed receipts pin
+(`aaba1f326049`); that difference is recorded in the table, not accepted silently. The explicit Python minor keeps offline cache
 selection stable when a newer interpreter is installed for an unrelated helper.
 The component scanner uses a path-preserving projection, includes one regular
 top-level repository license file for license inheritance, and does not follow

@@ -609,6 +609,87 @@ describe("Scan's detector SARIF is checked at the boundary", () => {
   });
 });
 
+describe("Core, not Scan, decides which analyzer identity it accepts", () => {
+  const CISCO_HOST_LOCK = "108c4f78340db9488bd73a03967055b19cdd3e8ece16ed31289e03f89e27d58f";
+  const hostProfile = (analyzerLock?: { path: string; sha256: string }) => {
+    const [hostUv] = FAKE_SCAN_PROFILES["detector.cisco"] ?? [];
+    if (hostUv === undefined) throw new Error("fake lost the host profile");
+    const { analyzerLock: _accepted, ...rest } = hostUv;
+    return { ...rest, ...(analyzerLock === undefined ? {} : { analyzerLock }) };
+  };
+
+  it.each([
+    ["declares no lock", undefined, "with no uv.lock"],
+    [
+      "declares a different lock",
+      { path: "uv.lock", sha256: "0".repeat(64) },
+      `with uv.lock ${"0".repeat(64)}`,
+    ],
+  ])(
+    "refuses a detector whose capability %s, before asking Scan to run it",
+    async (_label, analyzerLock, observed) => {
+      const root = caseRoot("prompt-injection");
+      const scan = createFakeScanAdapterForTests(
+        {
+          "detector.aih-trust-lint": goldenTrustLint("prompt-injection"),
+          "detector.cisco": { kind: "sarif", sarif: sarif([]) },
+        },
+        { profiles: { "detector.cisco": [hostProfile(analyzerLock)] } },
+      );
+      const { scan: outcome } = await delegatedScan(root, ["cisco"], { scanExecution: scan });
+      expect(scan.requests.map((request) => request.detectorId)).toEqual([
+        "detector.aih-trust-lint",
+      ]);
+      const check = detectorCheck(outcome.checks, "cisco");
+      expect(check?.code).toBe("trust.detector-unavailable");
+      expect(check?.detail).toContain(
+        `detector.cisco under host-process-uv-v1 declares analyzer 2.0.14 ${observed}; Core accepts 2.0.14 with uv.lock ${CISCO_HOST_LOCK}`,
+      );
+      expect(outcome.detectorExecutions).toContainEqual(
+        expect.objectContaining({ detector: "cisco", outcome: "refused" }),
+      );
+    },
+  );
+
+  it("refuses a run whose observation names another analyzer lock, even with correct SARIF", async () => {
+    const root = caseRoot("prompt-injection");
+    const scan = createFakeScanAdapterForTests({
+      "detector.aih-trust-lint": goldenTrustLint("prompt-injection"),
+      "detector.semgrep": {
+        kind: "sarif",
+        sarif: sarif([]),
+        observedAnalyzerVersion: "1.173.0+uvlock.000000000000",
+      },
+    });
+    const { scan: outcome } = await delegatedScan(root, ["semgrep"], { scanExecution: scan });
+    const check = detectorCheck(outcome.checks, "semgrep");
+    expect(check?.code).toBe("trust.detector-unavailable");
+    expect(check?.detail).toContain(
+      "detector.semgrep under host-process-uv-v1 ran analyzer 1.173.0+uvlock.000000000000 with uv.lock 77f2bf3e7525ceedb0a0ffba9cddb238be809efe965e6de6f135593772571d08; Core accepts 1.173.0+uvlock.77f2bf3e7525",
+    );
+  });
+
+  it("refuses the native findings when Scan's trust lint is not the version Core accepts", async () => {
+    const root = caseRoot("prompt-injection");
+    const scan = createFakeScanAdapterForTests({
+      "detector.aih-trust-lint": {
+        ...goldenTrustLint("prompt-injection"),
+        observedAnalyzerVersion: "2.0.0",
+      } as FakeScanAnswerV1,
+    });
+    const { scan: outcome } = await delegatedScan(root, [], { scanExecution: scan });
+    expect(outcome.checks).toContainEqual(
+      expect.objectContaining({
+        code: "trust.detector-unavailable",
+        verdict: "fail",
+        detail: expect.stringContaining(
+          "detector.aih-trust-lint under in-process-trust-lint-v1 ran analyzer 2.0.0 with no uv.lock; Core accepts 1.0.0 with no uv.lock",
+        ),
+      }),
+    );
+  });
+});
+
 describe("execution profiles are named by Core, never a fallback", () => {
   const uvDetectors = [
     ["semgrep", "detector.semgrep"],

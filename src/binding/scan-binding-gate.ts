@@ -14,6 +14,10 @@ import {
   resolveScanExecutionV1,
   TrustScanCancelledError,
 } from "../trust/detectors.js";
+import {
+  declaredScanAnalyzerIdentityRefusalV1,
+  executedScanAnalyzerIdentityRefusalV1,
+} from "../trust/scan-analyzer-identity.js";
 import type { DimensionReport, ScanCoverage, ScanFinding, ScanSeverity } from "./scan-gate.js";
 
 // The binding scan gate's FAST-tier inspection is Scan's `detector.aih-binding-gate`
@@ -73,14 +77,17 @@ function hostArchitecture(): string {
   return process.arch === "x64" ? "amd64" : process.arch;
 }
 
-function capabilityDeclaresProfile(adapter: ScanExecutionAdapterV1): boolean {
+/** The binding-gate capability when it declares the gate's profile for this host, else undefined. */
+function capabilityDeclaringProfile(
+  adapter: ScanExecutionAdapterV1,
+): Record<string, unknown> | undefined {
   let capabilities: unknown;
   try {
     capabilities = adapter.listDetectorCapabilitiesV1();
   } catch {
-    return false;
+    return undefined;
   }
-  if (!Array.isArray(capabilities)) return false;
+  if (!Array.isArray(capabilities)) return undefined;
   const capability = capabilities
     .map(asRecord)
     .find((entry) => entry?.detectorId === BINDING_GATE_DETECTOR_ID);
@@ -88,13 +95,13 @@ function capabilityDeclaresProfile(adapter: ScanExecutionAdapterV1): boolean {
   const profile = profiles
     .map(asRecord)
     .find((entry) => entry?.id === BINDING_GATE_EXECUTION_PROFILE);
-  return (
+  const declared =
     Array.isArray(profile?.supportedPlatforms) &&
     profile.supportedPlatforms.some((host) => {
       const supported = asRecord(host);
       return supported?.os === hostOs() && supported.architecture === hostArchitecture();
-    })
-  );
+    });
+  return declared ? capability : undefined;
 }
 
 function refuse(detail: string): { readonly refusal: string } {
@@ -301,11 +308,18 @@ export async function inspectTreeThroughScanV1(
 ): Promise<DimensionReport[]> {
   const scan = await resolveScanExecutionV1(options.scanExecution);
   if ("refusal" in scan) throw new ScanPackageRefusalError(scan.refusal);
-  if (!capabilityDeclaresProfile(scan.adapter))
+  const capability = capabilityDeclaringProfile(scan.adapter);
+  if (capability === undefined)
     throw new ScanPackageRefusalError({
       reason: "scan-package-incompatible",
       detail: `the ${scan.source === "installed-package" ? "installed @aihq/scan" : "injected scan execution adapter"} declares no ${BINDING_GATE_DETECTOR_ID} ${BINDING_GATE_EXECUTION_PROFILE} profile for ${hostOs()}/${hostArchitecture()}, so Core cannot inspect a binding source. Install it with: ${SCAN_PACKAGE_INSTALL_COMMAND} (in a project: ${SCAN_PACKAGE_PROJECT_INSTALL_COMMAND}).`,
     });
+  const declared = declaredScanAnalyzerIdentityRefusalV1(
+    capability,
+    BINDING_GATE_DETECTOR_ID,
+    BINDING_GATE_EXECUTION_PROFILE,
+  );
+  if (declared !== undefined) throw new BindingGateScanError(declared);
   if (aborted(options.signal))
     throw new TrustScanCancelledError(`before ${BINDING_GATE_DETECTOR_ID} started`);
   const sourceRoot = realpathSync(treePath);
@@ -341,6 +355,12 @@ export async function inspectTreeThroughScanV1(
     throw new BindingGateScanError(
       `${BINDING_GATE_DETECTOR_ID} ran under ${result.executionProfileId ?? "an unstated profile"} instead of ${BINDING_GATE_EXECUTION_PROFILE}`,
     );
+  const executed = executedScanAnalyzerIdentityRefusalV1(
+    raw,
+    BINDING_GATE_DETECTOR_ID,
+    BINDING_GATE_EXECUTION_PROFILE,
+  );
+  if (executed !== undefined) throw new BindingGateScanError(executed);
   const mapped = bindingGateReportsFromSarifV1(result.sarif, selectedPaths, sourceRoot);
   if ("refusal" in mapped) throw new BindingGateScanError(mapped.refusal);
   return mapped.reports;

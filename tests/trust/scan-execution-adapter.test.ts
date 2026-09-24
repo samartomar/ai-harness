@@ -8,6 +8,7 @@ import type { ScanExecutionAdapterV1 } from "../../src/org-policy/governance-inp
 import { ScanPackageRefusalError } from "../../src/scan-package/load-scan-package.js";
 import { CISCO_SKILL_SCANNER_ANALYZER } from "../../src/trust/detectors.js";
 import { scanTrustTreeWithAnalyzers } from "../../src/trust/scan.js";
+import { acceptedScanAnalyzerIdentityV1 } from "../../src/trust/scan-analyzer-identity.js";
 import { fakeTrustLintScan } from "./fakes/fake-trust-lint.js";
 
 // ---------------------------------------------------------------------------
@@ -83,19 +84,33 @@ const HOST_PROFILE = {
   ),
 };
 
+/** The identity Core accepts for a detector under the host profile. */
+function accepted(detectorId: string) {
+  return acceptedScanAnalyzerIdentityV1(detectorId, HOST_PROFILE.id);
+}
+
+/** The host profile, with the uv.lock Core accepts for the detector under it. */
+function hostProfile(detectorId: string) {
+  const lock = accepted(detectorId)?.lockSha256;
+  return lock == null
+    ? HOST_PROFILE
+    : { ...HOST_PROFILE, analyzerLock: { path: "uv.lock", sha256: lock } };
+}
+
 /**
  * Shaped after Scan's own `DetectorCapabilityV1`
  * (`aih-scan@a405b9d0 src/capability/detector-capability-v1.ts:122-140`).
  * `detector.cisco` declares `skill-directory` there; the others `source-tree`.
  */
 function capability(detectorId: string, subjectKinds: readonly string[] = ["source-tree"]) {
+  const profile = hostProfile(detectorId);
   return {
     protocol: "DetectorCapabilityV1",
     detectorId,
     analyzerIdentity: null,
-    analyzerVersion: "0.0.0-test",
-    executionProfile: HOST_PROFILE,
-    executionProfiles: [HOST_PROFILE],
+    analyzerVersion: accepted(detectorId)?.analyzerVersion ?? "0.0.0-test",
+    executionProfile: profile,
+    executionProfiles: [profile],
     subjectKinds,
     outputs: ["sarif-2.1.0"],
   };
@@ -112,7 +127,7 @@ function succeededWithSarif(sarif: string) {
   return {
     outcome: "succeeded",
     capability: capability("detector.cisco", ["skill-directory"]),
-    executionProfile: HOST_PROFILE,
+    executionProfile: hostProfile("detector.cisco"),
     prerequisites: [],
     seams: { runner: "scan-owned-default", prerequisiteProbe: "scan-owned-default" },
     evidence: {
@@ -120,7 +135,7 @@ function succeededWithSarif(sarif: string) {
       observation: {
         protocol: "BaselineAnalyzerObservationV1",
         analyzer: "cisco",
-        analyzerVersion: "2.0.14",
+        analyzerVersion: "2.0.14+uvlock.108c4f78340d",
         mediaType: "application/sarif+json",
         annex: {
           path: "annex/cisco-raw.json",
