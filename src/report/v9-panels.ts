@@ -7,8 +7,8 @@ import {
   sharedCanonicalBlockBody,
 } from "../bootstrap-ai/canon.js";
 import { verifyBundleChecksums } from "../bundle/index.js";
-import { eccLanguages } from "../ecc/select.js";
 import { DEFAULT_EVIDENCE_OUT, EVIDENCE_FILE, EvidenceBundleSchema } from "../evidence/manifest.js";
+import { eccLanguages } from "../framework-plugin/ecc-facade.js";
 import { homeDir } from "../internals/cli-detect.js";
 import { SUPPORTED_CLIS } from "../internals/clis.js";
 import { readContainedRegularFile } from "../internals/contained-path.js";

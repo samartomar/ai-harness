@@ -197,6 +197,12 @@ independent selected tools continue. Headroom is also default-selected as intent
 cannot activate it: apply leaves it `selected-pending` with a skipped check and does not install,
 download, start, configure MCP/proxy, or create a Headroom receipt.
 
+The Superpowers phase (the `ecc` baseline, when governance does not own the aih surfaces) keeps its
+place in the preview but runs last, through `@aihq/framework-superpowers` and the same evidence gate
+as `aih superpowers`: under `--apply` it acquires obra/Superpowers at the exact pin into quarantine and
+verifies it before emitting any guidance. Without the plugin, init reports the phase as refused with
+`framework-plugin-unavailable` (a skipped check naming the install command) and still succeeds.
+
 ## aih developer-tools
 
 Preview or reconcile the policy-selected default developer tools for one repository. Without an
@@ -652,6 +658,11 @@ Antigravity, Copilot, marketplace, or TUI installs. It emits pin-aware manual gu
 marks those selections as not evidence-covered. The Kiro methodology steering bridge is AIH-owned
 first-party content, not mislabeled Superpowers vendor evidence. `AIH_SUPERPOWERS_REF` accepts only
 an exact commit with matching vendor or org evidence.
+
+The Superpowers behaviour ships in the separate `@aihq/framework-superpowers` package, installed
+beside `@aihq/core` (`npm install -g @aihq/core @aihq/framework-superpowers`). Without it the command
+refuses with `framework-plugin-unavailable` and names that install command; an installed plugin that
+fails its contract, version or Catalog identity check refuses with `framework-plugin-incompatible`.
 
 ## aih crispy
 

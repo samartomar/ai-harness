@@ -1,9 +1,9 @@
-import { uninstallEccMaterialization } from "../ecc/materialization.js";
 import {
   displaySafe,
   ECC_MATERIALIZATION_RECEIPT_PATH,
   readEccMaterializationReceipt,
-} from "../ecc/materialization-receipt.js";
+  uninstallEccMaterialization,
+} from "../framework-plugin/ecc-facade.js";
 
 /**
  * F6: the governed ECC materialization's removal member of `aih uninstall`.

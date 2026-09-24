@@ -1,4 +1,5 @@
 import { availableParallelism } from "node:os";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
 export function testTimeoutForPlatform(platform: NodeJS.Platform): number {
@@ -25,6 +26,15 @@ export function testRuntimeForPlatform(platform: NodeJS.Platform, parallelism: n
 const testRuntime = testRuntimeForPlatform(process.platform, availableParallelism());
 
 export default defineConfig({
+  resolve: {
+    // Framework plugin packages (packages/*) import Core only as
+    // `@aihq/core/framework-host`; tests resolve it to this tree's source.
+    alias: {
+      "@aihq/core/framework-host": fileURLToPath(
+        new URL("./src/framework-host/index.ts", import.meta.url),
+      ),
+    },
+  },
   test: {
     globals: false,
     environment: "node",
@@ -38,7 +48,7 @@ export default defineConfig({
     // derived default while capping high-core dev machines, whose uncapped
     // worker counts overcommit CPU/RAM and blow per-test budgets (#509).
     ...testRuntime,
-    include: ["tests/**/*.test.ts"],
+    include: ["tests/**/*.test.ts", "packages/*/tests/**/*.test.ts"],
     coverage: {
       provider: "v8",
       reportsDirectory: "coverage",

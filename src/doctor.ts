@@ -15,7 +15,7 @@ import {
 } from "./binding/frameworks/binding-doctor.js";
 import { readAihConfigDiagnostic } from "./config/marker.js";
 import { contractTruthCheck } from "./contract/check.js";
-import { readExplicitEccMcpReceiptStates } from "./ecc/mcp-explicit-add.js";
+import { readExplicitEccMcpReceiptStates } from "./framework-plugin/ecc-facade.js";
 import { classifyTool, versionArgv } from "./heal/common.js";
 import { detectInstall, homeDir } from "./internals/cli-detect.js";
 import { REGISTRY_IDS } from "./internals/cli-registry.js";
