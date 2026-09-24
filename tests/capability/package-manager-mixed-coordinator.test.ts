@@ -11,11 +11,13 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { capabilityPackages } from "../../packages/framework-ecc/src/capability-packages.js";
+import { operationContext } from "../../packages/framework-ecc/tests/context.js";
 import { baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
 import { vendorBaselineLockBytes } from "../../src/baseline-evidence/vendor.js";
 import { projectBaselinePackageGraphAuthority } from "../../src/capability/package-graph/adapters/baseline.js";
 import { projectEccCapabilityPackageAuthority } from "../../src/capability/package-graph/adapters/ecc-domains.js";
-import { reconcileMixedCapabilityPackages } from "../../src/capability/package-manager/domains/mixed-coordinator.js";
+import { reconcileMixedCapabilityPackages as reconcileMixed } from "../../src/capability/package-manager/domains/mixed-coordinator.js";
 import { CAPABILITY_PACKAGE_OWNERSHIP_RECEIPT_PATH } from "../../src/capability/package-manager/receipt.js";
 import { serializeEccMaterializationReceipt } from "../../src/ecc/materialization-receipt.js";
 import { planExplicitEccMcpAdd } from "../../src/ecc/mcp-explicit-add.js";
@@ -25,6 +27,11 @@ import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { ECC_MCP_CATALOG_PROVENANCE } from "../../src/org-policy/ecc-mcp-catalog.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
+
+// ECC agent/rule and explicit MCP packages are planned by @aihq/framework-ecc, read from package source.
+const eccDomain = capabilityPackages.domain(operationContext());
+const reconcileMixedCapabilityPackages = (input: unknown) =>
+  reconcileMixed(input, { ecc: eccDomain });
 
 const SHA = "a".repeat(40);
 const SKILL = Buffer.from("# Clean\n", "utf8");
@@ -409,6 +416,34 @@ describe("mixed capability package coordinator", () => {
     ).toMatchObject({ status: "applied" });
     expect(existsSync(join(root, ".claude/agents/code-reviewer.md"))).toBe(false);
     expect(existsSync(join(root, CAPABILITY_PACKAGE_OWNERSHIP_RECEIPT_PATH))).toBe(false);
+  });
+
+  it("refuses an ECC package removal at the domain stage without the ECC plugin, removing nothing", () => {
+    seed({ roots: ["package:ecc-agent/code-reviewer"] });
+    expect(
+      reconcileMixedCapabilityPackages({
+        root,
+        contextDir: "ai-coding",
+        operation: "add",
+        packageId: "package:ecc-agent/code-reviewer",
+        apply: true,
+      }),
+    ).toMatchObject({ status: "applied" });
+    const policy = JSON.parse(readFileSync(join(root, "aih-org-policy.json"), "utf8"));
+    policy.capabilityPackages.roots = [];
+    write("aih-org-policy.json", policy);
+
+    expect(
+      reconcileMixed({
+        root,
+        contextDir: "ai-coding",
+        operation: "remove",
+        packageId: "package:ecc-agent/code-reviewer",
+        apply: true,
+      }),
+    ).toMatchObject({ status: "refused", stage: "domain", reason: "framework-plugin-unavailable" });
+    expect(existsSync(join(root, ".claude/agents/code-reviewer.md"))).toBe(true);
+    expect(existsSync(join(root, CAPABILITY_PACKAGE_OWNERSHIP_RECEIPT_PATH))).toBe(true);
   });
 
   it("retains operator-modified ECC content and its ownership metadata", () => {

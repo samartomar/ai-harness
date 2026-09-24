@@ -6,6 +6,7 @@ import type {
   FrameworkPluginV1,
   PlanResult,
 } from "@aihq/core/framework-host";
+import { capabilityPackages } from "./capability-packages.js";
 import { executePlan } from "./core-runtime.js";
 import { ECC_DESCRIPTOR_SECTIONS } from "./descriptor.js";
 import { doctor } from "./doctor.js";
@@ -76,6 +77,7 @@ export const aihFrameworkPluginV1: FrameworkPluginV1 = Object.freeze({
     "ecc mcp remove": commandOf(eccMcpRemoveCommand),
   }),
   policyDelivery: eccPolicyDelivery(),
+  capabilityPackages,
   uninstall,
   prune,
   doctor,

@@ -16,7 +16,6 @@
  * | Core call site | Exports | Phase-2 contract member |
  * | --- | --- | --- |
  * | delivery report (src/org-policy/policy-delivery-report.ts) — SYNC | `describeEccEffectiveDiscovery`, `inspectDestination`, `materializationRoot`, `ownedFragmentDigest`, `parseJsonObject`, `GOVERNED_MATERIALIZATION_TARGETS`, `ownedFileSha256`, `readEccMaterializationReceipt`, `inspectGovernedCodexRoleRegistration` and their types | `report`, `receipts` |
- * | capability package manager (src/capability/package-graph/adapters/ecc-*.ts, src/capability/package-manager/{live-context,domains/mixed-coordinator}.ts) — SYNC | `ECC_MATERIALIZATION_RECEIPT_PATH`, `ECC_MCP_EXPLICIT_ADD_RECEIPT_PATH`, `parseEccMaterializationReceipt`, `readEccMaterializationReceipt`, `parseExplicitAddReceipt`, `explicitEccMcpRenderPlan`, `planExplicitEccMcpRemove`, `readExplicitEccMcpReceiptStates`, `planEccComponentSubtraction` | `receipts` plus ECC MCP add/remove planning |
  * | CLI capability table (src/internals/cli-capabilities.ts) — SYNC | `ECC_INSTALL_TARGETS`, `WIRED_MATERIALIZATION_TARGETS` | `describe().supportedHosts` |
  * | test-only binding adapter (src/binding/frameworks/ecc.ts) | `selectedEccMcpServers`, `parseEccInstallPreview`, `readEccInstallPreview`, `EccInstallPreviewArtifact`, `EccMcpComponentId` | moves with the ECC code or is deleted |
  * | repository checks (src/internals/check-baseline-installable.ts, check-ecc-installer.ts) | `readRegistrationLedger`, `registrationLedgerPath`, `writeRegistrationLedgerAtomic`, `RegistrationLedger`, `ECC_NPM_BINS`, `ECC_NPM_PACKAGE` | move with the ECC package's own checks |
@@ -30,6 +29,8 @@
  * `aih doctor` and `aih report` read ECC through its `doctor` hook and
  * `identifyComponents` (src/framework-plugin/ecc-read.ts) and state that the
  * ECC checks were not run without it.
+ * `aih capability package` gets ECC's planning through its `capabilityPackages`
+ * hook (the mixed-package coordinator refuses at the domain stage without it).
  * The state aih writes for ECC (receipts, registration ledger) stays in Core.
  *
  * The generic runtime parts of `src/ecc-profile/**` (default MCP runtimes for
@@ -51,11 +52,7 @@ export {
 } from "../ecc/install-preview.js";
 export { ECC_INSTALL_TARGETS } from "../ecc/install-targets.js";
 export { inspectDestination, materializationRoot } from "../ecc/materialization-fs.js";
-export {
-  ownedFragmentDigest,
-  parseJsonObject,
-  planEccComponentSubtraction,
-} from "../ecc/materialization-plan.js";
+export { ownedFragmentDigest, parseJsonObject } from "../ecc/materialization-plan.js";
 export {
   displaySafe,
   ECC_MATERIALIZATION_RECEIPT_PATH,
@@ -71,11 +68,6 @@ export {
   WIRED_MATERIALIZATION_TARGETS,
 } from "../ecc/materialization-target.js";
 export { selectedEccMcpServers } from "../ecc/mcp.js";
-export {
-  explicitEccMcpRenderPlan,
-  planExplicitEccMcpRemove,
-  readExplicitEccMcpReceiptStates,
-} from "../ecc/mcp-explicit-add.js";
 export {
   ECC_MCP_EXPLICIT_ADD_RECEIPT_PATH,
   parseExplicitAddReceipt,

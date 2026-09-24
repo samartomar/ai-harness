@@ -2,8 +2,15 @@ import { CatalogPackageRefusalError } from "../catalog-package/load-catalog-pack
 import { AihError } from "../errors.js";
 import type { PlanContext } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
-import type { FrameworkOperationContextV1 } from "./contract-v1.js";
-import { frameworkPluginRefusalMessage, loadFrameworkPluginV1 } from "./load-framework-plugin.js";
+import type {
+  FrameworkCapabilityPackageDomainV1,
+  FrameworkOperationContextV1,
+} from "./contract-v1.js";
+import {
+  FrameworkPluginRefusalError,
+  frameworkPluginRefusalMessage,
+  loadFrameworkPluginV1,
+} from "./load-framework-plugin.js";
 import {
   type FrameworkCommandDepsV1,
   type LoadedFrameworkPluginV1,
@@ -121,4 +128,36 @@ export async function eccLanguagePacksV1(
     }
     return Object.freeze([...packs]);
   });
+}
+
+/**
+ * ECC's planning for `aih capability package`, bound to one invocation, or
+ * the reason it is not available (the coordinator refuses when it needs it).
+ * A plugin that is present but broken, or lacks the hook, is refused here.
+ */
+export async function eccCapabilityPackageDomainV1(
+  ctx: PlanContext,
+  deps: Pick<FrameworkCommandDepsV1, "loadPlugin" | "loadDescriptor"> = {},
+): Promise<EccReadOutcomeV1<FrameworkCapabilityPackageDomainV1>> {
+  const outcome = await withEccRead(
+    ctx,
+    "planning capability packages",
+    deps,
+    async (loaded, context) => {
+      const hook = loaded.plugin.capabilityPackages;
+      if (hook === undefined) {
+        throw new FrameworkPluginRefusalError({
+          reason: "framework-plugin-incompatible",
+          frameworkId: "ecc",
+          packageName: "@aihq/framework-ecc",
+          detail: `${loaded.packageName} ${loaded.version} provides no capabilityPackages hook`,
+        });
+      }
+      return hook.domain(context);
+    },
+  );
+  if (outcome.state === "not-run" && outcome.broken) {
+    throw new AihError(outcome.detail, "AIH_FRAMEWORK_PLUGIN");
+  }
+  return outcome;
 }

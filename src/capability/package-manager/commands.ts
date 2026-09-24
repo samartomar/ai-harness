@@ -1,4 +1,5 @@
 import { AihError } from "../../errors.js";
+import { eccCapabilityPackageDomainV1 } from "../../framework-plugin/ecc-read.js";
 import { executePlan, type PlanResult } from "../../internals/execute.js";
 import { type CommandSpec, digest, type PlanContext, plan } from "../../internals/plan.js";
 import { reconcileMixedCapabilityPackages } from "./domains/mixed-coordinator.js";
@@ -69,16 +70,26 @@ export async function executeCapabilityPackageCommand(
     (currentOwnership.state !== "valid" || currentOwnership.receipt.packages.length <= 1)
       ? reconcileSkillPackCapabilityPackage
       : reconcileMixedCapabilityPackages;
-  const mutation = reconcile({
-    root: ctx.root,
-    contextDir: ctx.contextDir,
-    operation,
-    packageId: id,
-    apply: true,
-  });
+  // ECC agent/rule packages and explicit ECC MCP packages are planned by
+  // @aihq/framework-ecc; without it the coordinator refuses when it needs them.
+  const ecc = await eccCapabilityPackageDomainV1(ctx);
+  const mutation = reconcile(
+    {
+      root: ctx.root,
+      contextDir: ctx.contextDir,
+      operation,
+      packageId: id,
+      apply: true,
+    },
+    ecc.state === "ran" ? { ecc: ecc.value } : {},
+  );
   if (mutation.status === "refused") {
+    const unavailable =
+      mutation.reason === "framework-plugin-unavailable" && ecc.state === "not-run"
+        ? ` — ${ecc.detail}`
+        : "";
     throw new AihError(
-      `capability package reconciliation refused at ${mutation.stage}: ${mutation.reason}`,
+      `capability package reconciliation refused at ${mutation.stage}: ${mutation.reason}${unavailable}`,
       "AIH_TRUST",
     );
   }

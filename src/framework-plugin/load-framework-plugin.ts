@@ -262,6 +262,7 @@ function contractProblems(
   }
   const hooks: ReadonlyArray<readonly [string, string]> = [
     ["policyDelivery", "prepare"],
+    ["capabilityPackages", "domain"],
     ["uninstall", "remove"],
     ["prune", "plan"],
     ["doctor", "checks"],

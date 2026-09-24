@@ -5,6 +5,7 @@ import type { loadCatalogPackageV1 } from "../catalog-package/load-catalog-packa
 import type { Posture } from "../config/posture.js";
 import type { Cli } from "../internals/clis.js";
 import type { executePlan, PlanResult } from "../internals/execute.js";
+import type { OwnedFileExpectation } from "../internals/owned-file-transaction.js";
 import type { Action, FileAssertion, Plan, PlanContext } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
 import type {
@@ -452,6 +453,55 @@ export interface FrameworkPolicyDeliveryHookV1 {
   prepare(ctx: FrameworkOperationContextV1): Promise<FrameworkPreparedPolicyDeliveryV1>;
 }
 
+/** One owned-file step of a framework's receipt-proven subtraction; Core executes it in its owned-file transaction. */
+export interface FrameworkOwnedFileStepV1 {
+  readonly kind: "write" | "remove";
+  /** POSIX path relative to the target root. */
+  readonly path: string;
+  readonly mode: number;
+  readonly expect: OwnedFileExpectation;
+  readonly contents?: Buffer;
+  readonly prior?: Buffer;
+  readonly priorMode?: number;
+}
+
+/** A framework's receipt-proven subtraction of named components. */
+export interface FrameworkComponentSubtractionV1 {
+  readonly steps: readonly FrameworkOwnedFileStepV1[];
+  /** Destinations whose ownership cannot be proven; any advisory means nothing is subtracted. */
+  readonly advisories: readonly unknown[];
+}
+
+/** The local state of one explicit MCP receipt record. */
+export interface FrameworkExplicitMcpReceiptStateV1 {
+  readonly id?: string;
+  readonly target?: string;
+  readonly state: string;
+}
+
+/**
+ * The framework's pure planning for `aih capability package` (Core call site:
+ * the mixed-package coordinator), bound to one invocation. Synchronous and
+ * effect-free: Core executes the steps and writes in its own transaction.
+ */
+export interface FrameworkCapabilityPackageDomainV1 {
+  planComponentSubtraction(
+    root: string,
+    componentIds: readonly string[],
+  ): FrameworkComponentSubtractionV1;
+  /** Throws when the policy does not approve this explicit MCP for the target. */
+  assertExplicitMcpApproved(policy: unknown, id: string, target: string): void;
+  /** The config writes that remove one explicit MCP record from its target. */
+  planExplicitMcpRemove(input: { root: string; id: string; target: string }): {
+    readonly actions: readonly Action[];
+  };
+  explicitMcpReceiptStates(root: string): readonly FrameworkExplicitMcpReceiptStateV1[];
+}
+
+export interface FrameworkCapabilityPackagesHookV1 {
+  domain(ctx: FrameworkOperationContextV1): FrameworkCapabilityPackageDomainV1;
+}
+
 /** A receipt file the plugin owns under the target root. */
 export interface FrameworkReceiptV1 {
   readonly id: string;
@@ -486,6 +536,7 @@ export interface FrameworkPluginV1 {
   readonly commands: Readonly<Record<string, FrameworkCommandV1>>;
   readonly receipts?: readonly FrameworkReceiptV1[];
   readonly policyDelivery?: FrameworkPolicyDeliveryHookV1;
+  readonly capabilityPackages?: FrameworkCapabilityPackagesHookV1;
   readonly uninstall?: FrameworkUninstallHookV1;
   readonly prune?: FrameworkPruneHookV1;
   readonly doctor?: FrameworkDoctorHookV1;
