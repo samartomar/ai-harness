@@ -239,10 +239,14 @@ const CODE_FOR_NAME: Readonly<Record<string, string>> = {
  * The facts are the least the findings themselves imply: a file with a native
  * prompt-injection or external-egress finding on a line has that code in its
  * `lintLines` (the whole-file lint reported it there); every other fact is
- * neutral, and a file with no such finding gets no facts at all. For a corpus
- * case, prefer Scan's recorded output (`recordedScanTrustLintSarif`).
+ * neutral, and every other selected path gets neutral facts, as Scan states facts
+ * for every file Core selected. For a corpus case, prefer Scan's recorded output
+ * (`recordedScanTrustLintSarif`).
  */
-export function trustLintSarifFromGolden(checks: readonly GoldenCheck[]): string {
+export function trustLintSarifFromGolden(
+  checks: readonly GoldenCheck[],
+  selectedPaths: readonly string[] = [],
+): string {
   const results = checks
     .filter((check) => check.family === "trust-lint")
     .map((check) => {
@@ -280,14 +284,14 @@ export function trustLintSarifFromGolden(checks: readonly GoldenCheck[]): string
     lines.set(check.startLine ?? 1, codes);
     lintLines.set(check.uri, lines);
   }
-  const artifacts = [...lintLines].map(([uri, lines]) => ({
+  const artifacts = [...new Set([...lintLines.keys(), ...selectedPaths])].map((uri) => ({
     location: { uri },
     properties: {
       [TRUST_LINT_FINGERPRINT_KEY]: {
         strictUnicodeSurface: false,
         legalText: false,
         unicodeRisk: null,
-        lintLines: [...lines].map(([line, codes]) => ({ line, codes })),
+        lintLines: [...(lintLines.get(uri) ?? [])].map(([line, codes]) => ({ line, codes })),
       },
     },
   }));

@@ -369,9 +369,14 @@ function artifactFacts(value: unknown): Mapped<TrustLintArtifactFactsV1> {
   };
 }
 
-function artifactsOf(run: Record<string, unknown>): Mapped<Map<string, TrustLintArtifactFactsV1>> {
-  const artifacts = run.artifacts ?? [];
-  if (!Array.isArray(artifacts)) return { refusal: "run artifacts are not a list" };
+function artifactsOf(
+  run: Record<string, unknown>,
+  selectedPaths: readonly string[],
+): Mapped<Map<string, TrustLintArtifactFactsV1>> {
+  // Scan seals and states facts for every selected file (C2a §2.6). A missing
+  // list, or a selected file without facts, is never read as "no corroboration".
+  const artifacts = run.artifacts;
+  if (!Array.isArray(artifacts)) return { refusal: "run carries no artifact facts list" };
   const byUri = new Map<string, TrustLintArtifactFactsV1>();
   for (const [index, artifact] of artifacts.entries()) {
     const uri =
@@ -384,19 +389,26 @@ function artifactsOf(run: Record<string, unknown>): Mapped<Map<string, TrustLint
     if ("refusal" in facts) return { refusal: `artifact ${shown(uri)} ${facts.refusal}` };
     byUri.set(uri, facts.value);
   }
+  const uncovered = selectedPaths.find((path) => !byUri.has(path));
+  if (uncovered !== undefined)
+    return { refusal: `states no facts for selected file ${shown(uncovered)}` };
   return { value: byUri };
 }
 
 /**
  * Scan's native-finding SARIF as Core's graded native checks plus the facts
  * Core's third-party classification reads, or why it was refused.
+ * `selectedPaths` are the files Core sent as the subject; each must carry facts.
  * `mcpConfigPaths` are the incoming MCP configs Core declared in the request; a
  * description finding may name only those.
  */
 export function trustLintChecksFromSarifV1(
   sarif: string,
   posture: Posture,
-  mcpConfigPaths: readonly string[] = [],
+  subject: {
+    readonly selectedPaths: readonly string[];
+    readonly mcpConfigPaths?: readonly string[];
+  },
 ): TrustLintSarifMappingV1 {
   let parsed: unknown;
   try {
@@ -411,12 +423,12 @@ export function trustLintChecksFromSarifV1(
     return { refusal: "detector.aih-trust-lint returned other than exactly one run" };
   const facts = runFacts(run);
   if ("refusal" in facts) return { refusal: `detector.aih-trust-lint ${facts.refusal}` };
-  const artifacts = artifactsOf(run);
+  const artifacts = artifactsOf(run, subject.selectedPaths);
   if ("refusal" in artifacts) return { refusal: `detector.aih-trust-lint ${artifacts.refusal}` };
   const results = run.results ?? [];
   if (!Array.isArray(results))
     return { refusal: "detector.aih-trust-lint returned a run whose results are not a list" };
-  const declared = new Set(mcpConfigPaths);
+  const declared = new Set(subject.mcpConfigPaths ?? []);
   const checks: TrustLintCheckV1[] = [];
   for (const [index, result] of results.entries()) {
     const mapped = mapResult(result, index, posture, declared);

@@ -35,15 +35,22 @@ function withRun(
   return JSON.stringify({ ...sarif, runs: [change(structuredClone(run))] });
 }
 
-function refusalOf(sarif: string, mcpConfigPaths: readonly string[] = []): string {
-  const mapped = trustLintChecksFromSarifV1(sarif, "vibe", mcpConfigPaths);
+function refusalOf(
+  sarif: string,
+  mcpConfigPaths: readonly string[] = [],
+  selectedPaths: readonly string[] = [],
+): string {
+  const mapped = trustLintChecksFromSarifV1(sarif, "vibe", { selectedPaths, mcpConfigPaths });
   if (!("refusal" in mapped)) throw new Error("expected a refusal");
   return mapped.refusal;
 }
 
 describe("trust-lint SARIF facts", () => {
   it("reads the run facts and every sealed file's facts", () => {
-    const mapped = trustLintChecksFromSarifV1(JSON.stringify(recorded("legal-text").sarif), "vibe");
+    const entry = recorded("legal-text");
+    const mapped = trustLintChecksFromSarifV1(JSON.stringify(entry.sarif), "vibe", {
+      selectedPaths: entry.request.selectedClosurePaths,
+    });
     if ("refusal" in mapped) throw new Error(mapped.refusal);
     expect(mapped.checks).toEqual([]);
     expect(mapped.facts.trustDocumentCount).toBe(1);
@@ -61,11 +68,10 @@ describe("trust-lint SARIF facts", () => {
 
   it("tags an MCP description finding with the declared server it came from", () => {
     const entry = recorded("mcp-configs");
-    const mapped = trustLintChecksFromSarifV1(
-      JSON.stringify(entry.sarif),
-      "vibe",
-      entry.request.detectorOptions.mcpConfigPaths,
-    );
+    const mapped = trustLintChecksFromSarifV1(JSON.stringify(entry.sarif), "vibe", {
+      selectedPaths: entry.request.selectedClosurePaths,
+      mcpConfigPaths: entry.request.detectorOptions.mcpConfigPaths,
+    });
     if ("refusal" in mapped) throw new Error(mapped.refusal);
     expect(mapped.checks.map((entry) => entry.mcpDescription)).toEqual([
       { configPath: ".mcp.json", mapKey: "mcpServers", server: "local-notes" },
@@ -149,6 +155,35 @@ describe("trust-lint SARIF facts", () => {
     ],
   ])("refuses a run with %s", (_label, change) => {
     expect(refusalOf(withRun("legal-text", change))).toMatch(/^detector\.aih-trust-lint /);
+  });
+
+  it.each([
+    [
+      "no artifact list",
+      (run: Record<string, unknown>) => {
+        const { artifacts: _drop, ...rest } = run;
+        return rest;
+      },
+    ],
+    ["a null artifact list", (run: Record<string, unknown>) => ({ ...run, artifacts: null })],
+  ])("refuses a run with %s rather than reading its facts as absent", (_label, change) => {
+    const { request } = recorded("legal-text");
+    expect(refusalOf(withRun("legal-text", change), [], request.selectedClosurePaths)).toContain(
+      "detector.aih-trust-lint run carries no artifact facts list",
+    );
+  });
+
+  it("refuses artifact facts that do not cover every selected file", () => {
+    const { request } = recorded("prompt-injection");
+    const sarif = withRun("prompt-injection", (run) => ({
+      ...run,
+      artifacts: (run.artifacts as { location: { uri: string } }[]).filter(
+        (artifact) => artifact.location.uri !== "SKILL.md",
+      ),
+    }));
+    expect(refusalOf(sarif, [], request.selectedClosurePaths)).toContain(
+      "detector.aih-trust-lint states no facts for selected file SKILL.md",
+    );
   });
 
   it("refuses more than one run", () => {

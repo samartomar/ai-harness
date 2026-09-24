@@ -469,6 +469,7 @@ async function currentLegacySemantics(expected: (typeof EXPECTED_LEGACY_SEMANTIC
       },
     }),
     "enterprise",
+    { selectedPaths: [expected.path] },
   );
   if ("refusal" in facts) throw new Error(facts.refusal);
   const scan = await runTrustDetectors(root, {

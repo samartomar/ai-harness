@@ -1518,11 +1518,10 @@ export async function runScanTrustLintV1(
       checks: [{ check: trustLintUnavailableCheck(route.source, delegated.unavailable) }],
       execution: { ...base, outcome: delegated.outcome },
     };
-  const mapped = trustLintChecksFromSarifV1(
-    delegated.sarif,
-    options.posture,
-    options.mcpConfigPaths,
-  );
+  const mapped = trustLintChecksFromSarifV1(delegated.sarif, options.posture, {
+    selectedPaths: options.inventory.files.map((entry) => entry.relativePath),
+    mcpConfigPaths: options.mcpConfigPaths,
+  });
   if ("refusal" in mapped)
     return {
       checks: [{ check: trustLintUnavailableCheck(route.source, mapped.refusal) }],

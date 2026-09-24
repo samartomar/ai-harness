@@ -6,7 +6,7 @@ import type { TrustDetectorName } from "../../src/trust/detectors.js";
 import { buildTrustFileInventory } from "../../src/trust/inventory.js";
 import { scanTrustTreeWithAnalyzers } from "../../src/trust/scan.js";
 import { createFakeScanAdapterForTests, type FakeScanAnswerV1 } from "./fakes/fake-scan-adapter.js";
-import { fakeTrustLintScan } from "./fakes/fake-trust-lint.js";
+import { fakeTrustLintScan, requestedPathsOf } from "./fakes/fake-trust-lint.js";
 import {
   comparableCheck,
   comparableOccurrence,
@@ -482,10 +482,12 @@ describe("golden parity: Snyk Agent Scan (recorded output, never executed here)"
       };
       const fake = createFakeScanAdapterForTests({
         "detector.aih-trust-lint": {
-          kind: "sarif",
-          sarif: trustLintSarifFromGolden(
-            (recorded as unknown as { nativeChecks: GoldenCheck[] }).nativeChecks,
-          ),
+          kind: "sarif-for",
+          sarif: (request) =>
+            trustLintSarifFromGolden(
+              (recorded as unknown as { nativeChecks: GoldenCheck[] }).nativeChecks,
+              requestedPathsOf(request),
+            ),
         },
         "detector.snyk-agent-scan": answerFor(run, root),
       });
