@@ -5,7 +5,7 @@ import {
   type McpProjectionDecisionBindings,
   McpProjectionDecisionBindingsSchema,
 } from "../config/marker.js";
-import { frameworkHookEnvironmentPlansV1 } from "../framework-plugin/hook-control-plans.js";
+import { frameworkHookControlPlansV1 } from "../framework-plugin/hook-control-plans.js";
 import { readUserFrameworkHookControlsV1 } from "../framework-plugin/hook-controls.js";
 import { resolveTargets, type TargetResolution } from "../internals/cli-detect.js";
 import { readRegularFile, readRegularFileWithStats } from "../internals/fsxn.js";
@@ -2160,14 +2160,19 @@ export async function verifiedOrgPolicyProjection(
   const initialAuthority = initialVerification.authority;
   const verifiedPolicy = source.policy;
   const runtime = await resolveRuntimeOrgPolicy(ctx, verifiedPolicy, initialVerification);
-  // Framework plugins plan their hook controls before the synchronous
-  // projection; only the Claude settings environment carries them.
+  // Framework plugins plan (and validate) their hook controls for every
+  // targeted host before the synchronous projection, and their decisions are
+  // carried as labels; only a Claude target writes the settings environment.
+  const hookControls = await frameworkHookControlPlansV1(ctx, verifiedPolicy);
   const hookEnvironment: FrameworkHookEnvironmentPlans = (ctx.targets ?? ["claude"]).includes(
     "claude",
   )
-    ? await frameworkHookEnvironmentPlansV1(ctx, verifiedPolicy)
+    ? hookControls.environments
     : new Map();
-  const actions = projectionActionsFromRuntime(ctx, verifiedPolicy, runtime, hookEnvironment);
+  const actions = [
+    ...projectionActionsFromRuntime(ctx, verifiedPolicy, runtime, hookEnvironment),
+    ...hookControls.actions,
+  ];
   if (!runtime.effective.authority.verified) {
     return { policy: verifiedPolicy, actions };
   }

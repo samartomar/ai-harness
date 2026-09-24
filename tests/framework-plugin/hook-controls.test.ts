@@ -8,7 +8,7 @@ import type { FrameworkDescriptorLoadV1 } from "../../src/catalog-package/framew
 import { AIH_CONFIG_FILE } from "../../src/config/marker.js";
 import { SettingsError } from "../../src/errors.js";
 import type { FrameworkIdV1 } from "../../src/framework-plugin/contract-v1.js";
-import { frameworkHookEnvironmentPlansV1 } from "../../src/framework-plugin/hook-control-plans.js";
+import { frameworkHookControlPlansV1 } from "../../src/framework-plugin/hook-control-plans.js";
 import {
   frameworkHookControlRequestV1,
   mergeFrameworkHookControlRequestV1,
@@ -204,7 +204,7 @@ describe("mergeFrameworkHookControlRequestV1", () => {
   });
 });
 
-describe("frameworkHookEnvironmentPlansV1", () => {
+describe("frameworkHookControlPlansV1", () => {
   it("asks the ECC plugin for its plan and returns the Claude env patch", async () => {
     userList({ ecc: { disabledHookIds: ["pre:write:doc-file-warning"] } });
     const policy = parseOrgPolicy(
@@ -212,7 +212,7 @@ describe("frameworkHookEnvironmentPlansV1", () => {
         frameworkHookControls: { ecc: { profile: "standard", disabledHookIds: ["session:start"] } },
       }),
     );
-    const plans = await frameworkHookEnvironmentPlansV1(ctx(), policy, deps);
+    const plans = (await frameworkHookControlPlansV1(ctx(), policy, deps)).environments;
     expect(plans.get("ecc")).toEqual({
       host: "claude",
       keys: ["ECC_HOOK_PROFILE", "ECC_DISABLED_HOOKS"],
@@ -228,18 +228,19 @@ describe("frameworkHookEnvironmentPlansV1", () => {
   });
 
   it("loads no plugin when no authority declares controls", async () => {
-    const plans = await frameworkHookEnvironmentPlansV1(ctx(), undefined, {
+    const plans = await frameworkHookControlPlansV1(ctx(), undefined, {
       loadPlugin: () => {
         throw new Error("must not load");
       },
     });
-    expect(plans.size).toBe(0);
+    expect(plans.environments.size).toBe(0);
+    expect(plans.actions).toEqual([]);
   });
 
   it("refuses with framework-plugin-unavailable when the plugin is not installed", async () => {
     userList({ ecc: { disabledHookIds: ["session:start"] } });
     await expect(
-      frameworkHookEnvironmentPlansV1(ctx(), undefined as OrgPolicy | undefined, {
+      frameworkHookControlPlansV1(ctx(), undefined as OrgPolicy | undefined, {
         loadPlugin: async () => ({
           ok: false,
           refusal: {
@@ -255,7 +256,7 @@ describe("frameworkHookEnvironmentPlansV1", () => {
 
   it("surfaces the plugin's refusal of an id its inventory does not have", async () => {
     userList({ ecc: { disabledHookIds: ["hook:nope"] } });
-    await expect(frameworkHookEnvironmentPlansV1(ctx(), undefined, deps)).rejects.toThrow(
+    await expect(frameworkHookControlPlansV1(ctx(), undefined, deps)).rejects.toThrow(
       /unknown ECC hook id\(s\) hook:nope/,
     );
   });
@@ -294,13 +295,32 @@ describe("frameworkHookEnvironmentPlansV1", () => {
     const policy = parseOrgPolicy(
       v3Policy({ frameworkHookControls: { ecc: { disabledHookIds: ["session:start"] } } }),
     );
-    const plans = await frameworkHookEnvironmentPlansV1(ctx(), policy, withOpenCode);
-    // ECC has no switch for its OpenCode plugin: it is planned (labelled
-    // unenforced by the plugin), and only switchable hooks reach the env.
-    expect(plans.get("ecc")?.set).toEqual({ ECC_DISABLED_HOOKS: "session:start" });
+    const mixed = { ...ctx(), targets: ["claude", "opencode"] as PlanContext["targets"] };
+    const plans = await frameworkHookControlPlansV1(mixed, policy, withOpenCode);
+    // ECC has no switch for its OpenCode plugin: it is planned, labelled
+    // unenforced with a next route, and only switchable hooks reach the env.
+    expect(plans.environments.get("ecc")?.set).toEqual({ ECC_DISABLED_HOOKS: "session:start" });
+    const labels = plans.actions.filter((action) => action.kind === "doc");
+    expect(labels.map((action) => action.describe)).toEqual(["ecc hook controls"]);
+    const text = labels[0]?.kind === "doc" ? labels[0].text : "";
+    expect(text).toContain("opencode:ecc-hooks: disabled (user)");
+    expect(text).toMatch(
+      /opencode: unenforced — aih cannot turn opencode:ecc-hooks off on opencode.*Next route: /,
+    );
+    expect(text).toContain("session:start: disabled (enterprise)");
+    expect(text).toMatch(/claude: upstream-switch — ECC skips session:start/);
+
+    // An OpenCode-only target still plans (and validates) the controls; the
+    // plan carries its labels and owns no Claude environment write.
+    const openCodeOnly = { ...ctx(), targets: ["opencode"] as PlanContext["targets"] };
+    const onlyOpenCode = await frameworkHookControlPlansV1(openCodeOnly, policy, withOpenCode);
+    expect(onlyOpenCode.actions.map((action) => action.describe)).toEqual(["ecc hook controls"]);
 
     userList({ ecc: { disabledHookIds: ["opencode:not-a-hook"] } });
-    await expect(frameworkHookEnvironmentPlansV1(ctx(), policy, withOpenCode)).rejects.toThrow(
+    await expect(frameworkHookControlPlansV1(ctx(), policy, withOpenCode)).rejects.toThrow(
+      "unknown ECC hook id(s) opencode:not-a-hook",
+    );
+    await expect(frameworkHookControlPlansV1(openCodeOnly, policy, withOpenCode)).rejects.toThrow(
       "unknown ECC hook id(s) opencode:not-a-hook",
     );
   });

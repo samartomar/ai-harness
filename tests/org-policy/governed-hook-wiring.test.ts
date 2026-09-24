@@ -414,4 +414,64 @@ describe("framework hook controls through the verified projector", () => {
       true,
     );
   });
+
+  function openCodePolicy(disabledHookIds: string[]) {
+    return parseOrgPolicy({
+      schemaVersion: 3,
+      minimumCoreVersion: "0.7.0",
+      minimumPosture: "enterprise",
+      references: { repoContract: "ai-coding/project.json" },
+      authoringSelections: {
+        selectionVersion: "workbench-selection/v1",
+        roots: [],
+        exclusions: [],
+        requests: [],
+        drafts: [],
+      },
+      governance: {
+        policyVersion: "2026-09-24.1",
+        supportedClis: ["claude", "opencode"],
+        catalog: { reviewed: [], custom: [] },
+        frameworkHookControls: { ecc: { disabledHookIds } },
+      },
+    });
+  }
+
+  it("validates the controls for an OpenCode-only projection and carries their labels", async () => {
+    const openCode = ctx({ targets: ["opencode"] });
+    await expect(
+      verifiedOrgPolicyProjectionActions(openCode, openCodePolicy(["hook:nope"])),
+    ).rejects.toThrow("unknown ECC hook id(s) hook:nope");
+    const actions = await verifiedOrgPolicyProjectionActions(
+      openCode,
+      openCodePolicy(["pre:bash:tmux-reminder"]),
+    );
+    const label = actions.find(
+      (action) => action.kind === "doc" && action.describe === "ecc hook controls",
+    );
+    expect(label?.kind === "doc" ? label.text : "").toContain(
+      "pre:bash:tmux-reminder: disabled (enterprise)\n  opencode: ",
+    );
+    // Only a Claude target owns the settings environment write.
+    expect(
+      actions.some((action) => "path" in action && action.path === ".claude/settings.json"),
+    ).toBe(false);
+  });
+
+  it("carries every host decision next to the Claude environment write for mixed targets", async () => {
+    const mixed = ctx({ targets: ["claude", "opencode"] });
+    const actions = await verifiedOrgPolicyProjectionActions(
+      mixed,
+      openCodePolicy(["pre:bash:tmux-reminder"]),
+    );
+    const label = actions.find(
+      (action) => action.kind === "doc" && action.describe === "ecc hook controls",
+    );
+    const text = label?.kind === "doc" ? label.text : "";
+    expect(text).toContain("  claude: upstream-switch");
+    expect(text).toContain("  opencode: ");
+    expect(
+      actions.filter((action) => "path" in action && action.path === ".claude/settings.json"),
+    ).toHaveLength(1);
+  });
 });
