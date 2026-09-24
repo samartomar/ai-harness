@@ -55,6 +55,7 @@ export {
   type FrameworkHookEnforcementV1,
   type FrameworkHookEnvironmentPatchV1,
   type FrameworkHookExecutionV1,
+  type FrameworkHookHostControlNoneV1,
   type FrameworkHookHostDecisionV1,
   type FrameworkHookInventoryV1,
   type FrameworkHookProfileRequestV1,

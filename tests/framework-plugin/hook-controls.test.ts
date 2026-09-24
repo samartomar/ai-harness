@@ -428,3 +428,46 @@ describe("frameworkHookControlPlansV1 decision coverage", () => {
     );
   });
 });
+
+describe("frameworkHookControlPlansV1 and hosts aih does not control", () => {
+  it("carries a muse declaration as an unenforced label, planned for targets only", async () => {
+    const document = JSON.parse(new TextDecoder().decode(eccDescriptorBytes())) as {
+      sections: { hookControlInventory: { hooks: unknown[] } };
+    };
+    document.sections.hookControlInventory.hooks.push({
+      id: "muse:session-start",
+      event: "SessionStart",
+      profiles: ["standard", "strict"],
+      disableEligible: true,
+      declarations: [
+        {
+          host: "muse",
+          sourcePath: ".muse-plugin/plugin.json",
+          event: "SessionStart",
+          execution: "process",
+        },
+      ],
+      control: { kind: "none" },
+    });
+    const bytes = new TextEncoder().encode(`${JSON.stringify(document)}\n`);
+    const withMuse = {
+      ...deps,
+      loadDescriptor: async (): Promise<FrameworkDescriptorLoadV1> => ({
+        ok: true,
+        frameworkId: "ecc",
+        bytes,
+        sha256: createHash("sha256").update(bytes).digest("hex"),
+      }),
+    };
+    userList({ ecc: { disabledHookIds: ["muse:session-start"] } });
+    const plans = await frameworkHookControlPlansV1(ctx(), undefined, withMuse);
+    expect(plans.environments.size).toBe(0);
+    const text = plans.actions
+      .map((action) => (action.kind === "doc" ? action.text : ""))
+      .join("\n");
+    expect(text).toContain("muse:session-start: disabled (user)");
+    expect(text).toMatch(/claude: not-applicable/);
+    expect(text).toMatch(/muse: unenforced — .*Next route: .*muse's own/);
+    expect(text).not.toMatch(/muse: (upstream-switch|not-applicable)/);
+  });
+});

@@ -144,6 +144,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Framework hook inventories accept a declaration for a host aih does not control (Catalog's
+  Superpowers `muse` declaration; Hermes and Devin follow). The declaration stays on its selectable
+  row with `hostControl: { kind: "none", enforcement: "unenforced", nextRoute }`, the next route
+  being that host's own plugin or hook controls. A disable of such a hook is planned for the
+  targeted hosts only (an undeclared targeted host stays `not-applicable`) and carries an
+  `unenforced` label for the uncontrolled host; aih never claims enforcement there. A malformed
+  host id is still refused. `FrameworkHookDeclarationV1.host` widens from `Cli` to a host id.
 - `@aihq/core/framework-host` exports `eccRuntimeScriptPath()`, the installed Core's own
   `dist/ecc-runtime.js`. Native ECC registration from `@aihq/framework-ecc` runs that script;
   the plugin ships no runtime of its own.

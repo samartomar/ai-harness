@@ -140,9 +140,29 @@ export interface FrameworkComponentsV1 {
 /** How a hook declaration runs on its host. */
 export type FrameworkHookExecutionV1 = "process" | "in-process" | "declarative";
 
+/**
+ * A host aih does not control: the upstream declares the hook for it (Catalog
+ * records the declaration), but aih neither targets that host nor writes its
+ * configuration. The declaration stays on a selectable row; a disable of its
+ * hook is a label with the host's own controls as the next route, never an
+ * enforcement claim.
+ */
+export interface FrameworkHookHostControlNoneV1 {
+  readonly kind: "none";
+  readonly enforcement: "unenforced";
+  /** The operator's next route: the host's own plugin or hook controls. */
+  readonly nextRoute: string;
+}
+
 /** One host's declaration of a hook, recorded from the pinned upstream tree. */
 export interface FrameworkHookDeclarationV1 {
-  readonly host: Cli;
+  /**
+   * A host aih targets (a {@link Cli}), or the lowercase id of a host aih does
+   * not control (for example `muse`), which then carries `hostControl`.
+   */
+  readonly host: Cli | (string & {});
+  /** Present exactly when `host` is not a host aih controls. */
+  readonly hostControl?: FrameworkHookHostControlNoneV1;
   /** Source-relative path of the file that declares or implements the hook. */
   readonly sourcePath: string;
   /** Host-native event name. */

@@ -77,16 +77,30 @@ export function planHookControls(
     const unenforced = hosts
       .filter((host) => host.enforcement === "unenforced")
       .map((host) => host.host);
-    if (unenforced.length > 0) {
+    // Declared hosts aih does not control are never decisions (aih targets
+    // none of them); they are labelled unenforced with their own next route.
+    const uncontrolled = hook.declarations.filter(
+      (declaration) => declaration.hostControl !== undefined,
+    );
+    if (unenforced.length > 0 || uncontrolled.length > 0) {
+      const onHosts = [...unenforced, ...uncontrolled.map((declaration) => declaration.host)];
       actions.push(
         doc(
-          `Superpowers ${hook.id} disabled by ${authority} policy — not enforceable by aih on ${unenforced.join(", ")}`,
+          `Superpowers ${hook.id} disabled by ${authority} policy — not enforceable by aih on ${onHosts.join(", ")}`,
           lines(
             hook.summary,
             `Policy (${authority}) disables ${hook.id} (${hook.event}).`,
-            `obra/Superpowers@${short} has no switch for this hook, and each host's own plugin manager`,
-            `installs and runs it, so aih cannot turn it off on: ${unenforced.join(", ")}.`,
-            "Next route: leave the Superpowers plugin disabled on those hosts, or use each host's own hook controls.",
+            ...(unenforced.length === 0
+              ? []
+              : [
+                  `obra/Superpowers@${short} has no switch for this hook, and each host's own plugin manager`,
+                  `installs and runs it, so aih cannot turn it off on: ${unenforced.join(", ")}.`,
+                  "Next route: leave the Superpowers plugin disabled on those hosts, or use each host's own hook controls.",
+                ]),
+            ...uncontrolled.map(
+              (declaration) =>
+                `${declaration.host}: unenforced — ${hook.id} is declared for ${declaration.host} in ${declaration.sourcePath}. Next route: ${declaration.hostControl?.nextRoute}.`,
+            ),
           ),
         ),
       );

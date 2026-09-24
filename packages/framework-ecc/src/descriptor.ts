@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import {
   AihError,
   type FrameworkDescriptorBytesV1,
+  type FrameworkHookHostControlNoneV1,
   parseNativeStrictJsonObjectV1,
   SUPPORTED_CLIS,
   z,
@@ -139,10 +140,14 @@ export function eccDescriptorSectionOf(
 
 const HookProfileIdSchema = z.string().regex(/^[a-z][a-z0-9-]{0,39}$/);
 
-/** Where a hook is declared on one host, recorded from the pinned tree. */
+/**
+ * Where a hook is declared on one host, recorded from the pinned tree. The
+ * host is a host aih targets or the id of a host aih does not control (for
+ * example `muse`); the latter is kept, never refused (see {@link eccHostControl}).
+ */
 const HookDeclarationSchema = z
   .object({
-    host: z.enum(SUPPORTED_CLIS),
+    host: z.string().regex(/^[a-z][a-z0-9-]{0,31}$/),
     sourcePath: z.string().regex(/^[A-Za-z0-9._/-]{1,240}$/),
     event: z.string().regex(/^[A-Za-z][A-Za-z0-9._-]{0,63}$/),
     execution: z.enum(["process", "in-process", "declarative"]),
@@ -222,6 +227,20 @@ export function eccHookDeclarations(hook: EccHookRow): NonNullable<EccHookRow["d
       },
     ]
   );
+}
+
+/**
+ * For a declared host aih does not control: `hostControl: none`, labelled
+ * `unenforced` with that host's own controls as the next route. Undefined for
+ * a host aih targets.
+ */
+export function eccHostControl(host: string): FrameworkHookHostControlNoneV1 | undefined {
+  if ((SUPPORTED_CLIS as readonly string[]).includes(host)) return undefined;
+  return Object.freeze({
+    kind: "none" as const,
+    enforcement: "unenforced" as const,
+    nextRoute: `aih does not control ${host}; use ${host}'s own plugin or hook controls to turn ECC hooks off there`,
+  });
 }
 
 /** A row's control, defaulting to ECC's Claude settings switch for an eligible hook. */

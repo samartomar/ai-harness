@@ -6,6 +6,7 @@ import {
   type FrameworkEvidenceComponentV1,
   type FrameworkHookDeclarationV1,
   type FrameworkHookExecutionV1,
+  type FrameworkHookHostControlNoneV1,
   type FrameworkHookInventoryV1,
   type FrameworkHookV1,
   parseNativeStrictJsonObjectV1,
@@ -194,6 +195,23 @@ export function readSuperpowersDescriptor(
 
 const EXECUTIONS: readonly FrameworkHookExecutionV1[] = ["process", "in-process", "declarative"];
 
+/** A host id Catalog may record for a host aih does not control (for example `muse`). */
+const UNCONTROLLED_HOST = /^[a-z][a-z0-9-]{0,31}$/;
+
+/**
+ * Where a declaration's host is not one aih targets, the declaration is kept
+ * (third-party inventory is never refused for its host) and carries
+ * `hostControl: none`: aih does not install or configure that host, so a
+ * disable is `unenforced` there, with the host's own controls as next route.
+ */
+function uncontrolledHost(host: string): FrameworkHookHostControlNoneV1 {
+  return Object.freeze({
+    kind: "none" as const,
+    enforcement: "unenforced" as const,
+    nextRoute: `aih does not control ${host}; use ${host}'s own plugin or hook controls to turn Superpowers hooks off there`,
+  });
+}
+
 function declaration(
   raw: unknown,
   where: string,
@@ -202,11 +220,10 @@ function declaration(
   const entry = object(raw, where);
   onlyKeys(entry, ["host", "sourcePath", "event", "matcher", "command", "execution"], where);
   const host = entry.host;
-  if (typeof host !== "string" || !(SUPPORTED_HOSTS as readonly string[]).includes(host)) {
-    throw new SuperpowersDescriptorError(
-      `${where}.host is not a host this plugin knows (${show(host)})`,
-    );
+  if (typeof host !== "string" || !UNCONTROLLED_HOST.test(host)) {
+    throw new SuperpowersDescriptorError(`${where}.host is not a host id (${show(host)})`);
   }
+  const controlled = (SUPPORTED_HOSTS as readonly string[]).includes(host);
   const path = sourcePath(entry.sourcePath, `${where}.sourcePath`);
   if (!recordedSources.has(path)) {
     throw new SuperpowersDescriptorError(`${where}.sourcePath ${path} has no recorded digest`);
@@ -216,7 +233,8 @@ function declaration(
     throw new SuperpowersDescriptorError(`${where}.execution is ${show(execution)}`);
   }
   return Object.freeze({
-    host: host as Cli,
+    host: controlled ? (host as Cli) : host,
+    ...(controlled ? {} : { hostControl: uncontrolledHost(host) }),
     sourcePath: path,
     event: text(entry.event, `${where}.event`, /^[A-Za-z][A-Za-z0-9._]{0,127}$/),
     ...(entry.matcher === undefined

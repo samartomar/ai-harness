@@ -1,5 +1,7 @@
 import {
+  type Action,
   AihError,
+  doc,
   type FrameworkHookControlAuthorityV1,
   type FrameworkHookControlDecisionV1,
   type FrameworkHookControlPlanV1,
@@ -8,8 +10,14 @@ import {
   type FrameworkHookInventoryV1,
   type FrameworkHookV1,
   type FrameworkOperationContextV1,
+  lines,
 } from "@aihq/core/framework-host";
-import { eccHookControl, eccHookDeclarations, readEccHookControlInventory } from "./descriptor.js";
+import {
+  eccHookControl,
+  eccHookDeclarations,
+  eccHostControl,
+  readEccHookControlInventory,
+} from "./descriptor.js";
 import { ECC_DISABLED_HOOKS_KEY, ECC_HOOK_PROFILE_KEY, UPSTREAM } from "./identity.js";
 import { currentEccInvocation, withEccInvocation } from "./invocation.js";
 
@@ -23,7 +31,13 @@ function inventoryOfCurrentInvocation(): FrameworkHookInventoryV1 {
         event: hook.event,
         summary: `ECC ${hook.event} hook ${hook.id}; runs under the ${hook.profiles.join(", ")} profile${hook.profiles.length === 1 ? "" : "s"}${hook.disableEligible ? "" : "; not individually disable-eligible"}.`,
         declarations: Object.freeze(
-          eccHookDeclarations(hook).map((declaration) => Object.freeze({ ...declaration })),
+          eccHookDeclarations(hook).map((declaration) => {
+            const hostControl = eccHostControl(declaration.host);
+            return Object.freeze({
+              ...declaration,
+              ...(hostControl === undefined ? {} : { hostControl }),
+            });
+          }),
         ),
         upstreamControl:
           eccHookControl(hook).kind === "claude-settings-env"
@@ -104,6 +118,7 @@ export function planHookControls(
       }
     }
     const decisions: FrameworkHookControlDecisionV1[] = [];
+    const actions: Action[] = [];
     const switched: string[] = [];
     for (const hook of rows.hooks) {
       const requests = request.disabled.filter((entry) => entry.hookId === hook.id);
@@ -142,6 +157,26 @@ export function planHookControls(
         };
       });
       decisions.push({ hookId: hook.id, state: "disabled", authority, hosts });
+      // Declared hosts aih does not control are never decisions (aih targets
+      // none of them); they are labelled unenforced with their own next route.
+      const uncontrolled = declarations.flatMap((declaration) => {
+        const hostControl = eccHostControl(declaration.host);
+        return hostControl === undefined ? [] : [{ declaration, hostControl }];
+      });
+      if (uncontrolled.length > 0) {
+        actions.push(
+          doc(
+            `ECC ${hook.id} disabled by ${authority} policy — not enforceable by aih on ${uncontrolled.map(({ declaration }) => declaration.host).join(", ")}`,
+            lines(
+              `Policy (${authority}) disables ${hook.id} (${hook.event}).`,
+              ...uncontrolled.map(
+                ({ declaration, hostControl }) =>
+                  `${declaration.host}: unenforced — ${hook.id} is declared for ${declaration.host} in affaan-m/ECC@${short} ${declaration.sourcePath}. Next route: ${hostControl.nextRoute}.`,
+              ),
+            ),
+          ),
+        );
+      }
     }
     const set: Record<string, string> = {};
     if (profile !== undefined) set[ECC_HOOK_PROFILE_KEY] = profile;
@@ -149,7 +184,7 @@ export function planHookControls(
     return {
       frameworkId: "ecc",
       decisions,
-      actions: [],
+      actions,
       ...(Object.keys(set).length === 0
         ? {}
         : {

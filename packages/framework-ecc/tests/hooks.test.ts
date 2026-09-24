@@ -147,3 +147,60 @@ describe("planHookControls", () => {
     expect(planned.environment?.set).toEqual({ ECC_DISABLED_HOOKS: "session:start" });
   });
 });
+
+describe("hosts aih does not control", () => {
+  /** Catalog's descriptor plus a row an uncontrolled host (Muse) declares alongside Claude. */
+  function withMuseRow() {
+    const document = fixtureDescriptorDocument() as {
+      sections: { hookControlInventory: { hooks: unknown[] } };
+    };
+    document.sections.hookControlInventory.hooks.push({
+      id: "muse:session-start",
+      event: "SessionStart",
+      profiles: ["standard", "strict"],
+      disableEligible: true,
+      declarations: [
+        {
+          host: "muse",
+          sourcePath: ".muse-plugin/plugin.json",
+          event: "SessionStart",
+          execution: "process",
+        },
+      ],
+      control: { kind: "none" },
+    });
+    return descriptorFromDocument(document);
+  }
+
+  it("accepts the declaration with control none, labelled unenforced with the host's own route", () => {
+    const inventory = hookInventory(operationContext({ descriptor: withMuseRow() }));
+    const row = inventory.hooks.find((hook) => hook.id === "muse:session-start");
+    expect(row?.upstreamControl).toEqual({ kind: "none" });
+    expect(row?.declarations).toEqual([
+      expect.objectContaining({
+        host: "muse",
+        hostControl: expect.objectContaining({ kind: "none", enforcement: "unenforced" }),
+      }),
+    ]);
+    expect(row?.declarations[0]?.hostControl?.nextRoute).toMatch(/muse's own/);
+  });
+
+  it("keeps the row selectable: a disable plans, labels muse unenforced, and claims no enforcement", () => {
+    const ctx = operationContext({ descriptor: withMuseRow(), targets: ["claude", "codex"] });
+    const planned = planHookControls(ctx, {
+      disabled: [{ hookId: "muse:session-start", authority: "enterprise" }],
+    });
+    const decision = planned.decisions.find((entry) => entry.hookId === "muse:session-start");
+    expect(decision).toMatchObject({ state: "disabled", authority: "enterprise" });
+    // Undeclared targeted hosts stay not-applicable; muse is never a decision.
+    expect(decision?.hosts.map((host) => [host.host, host.enforcement])).toEqual([
+      ["claude", "not-applicable"],
+      ["codex", "not-applicable"],
+    ]);
+    expect(planned.environment).toBeUndefined();
+    const text = JSON.stringify(planned.actions);
+    expect(text).toMatch(/muse: unenforced/);
+    expect(text).toMatch(/Next route: [^"]*muse's own/);
+    expect(text.toLowerCase()).not.toMatch(/withheld|blocked|unsupported/);
+  });
+});
