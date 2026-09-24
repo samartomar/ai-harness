@@ -1,5 +1,13 @@
 import { createHash } from "node:crypto";
-import { lstatSync, readFileSync, realpathSync } from "node:fs";
+import {
+  cpSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+} from "node:fs";
 import { basename, dirname, join, posix, relative } from "node:path";
 import { hashComponentTree } from "../baseline-evidence/hash.js";
 import type { Posture } from "../config/posture.js";
@@ -22,6 +30,7 @@ import {
   type CiscoShardManifest,
   ciscoShardJobSubjectV1,
   type JoinedCiscoShardEvidence,
+  type VerifiedCiscoShardJoinV1,
   verifiedCiscoShardJobSarifV1,
 } from "./cisco-shards.js";
 import type { RawScannerOccurrence } from "./evidence.js";
@@ -401,27 +410,87 @@ const ISSUED_SHARD_JOINS = new WeakMap<VerifiedCiscoShardSarifV1, IssuedShardJoi
 
 /**
  * Issues the verified join's SARIF, optionally only for the jobs that meet
- * `includedPaths`. It is bound to `scanRoot` (by default the root the join was
- * verified against): a projection of the source presents it at its own root,
- * which must hold exactly those jobs with the files the join verified.
+ * `includedPaths`, bound to the root the join was verified against. The only
+ * other root it is ever bound to is a projection Core makes itself
+ * (`withCiscoShardJoinProjectionV1`).
  */
 export function joinedCiscoShardSarif(
   joined: JoinedCiscoShardEvidence,
   includedPaths?: readonly string[],
-  scanRoot?: string,
 ): VerifiedCiscoShardSarifV1 {
+  const verified = verifiedJoinOrThrow(joined);
+  return issueShardJoin(includedJobs(verified, includedPaths), verified.root);
+}
+
+/** A projection of a verified join's source, and the join's SARIF bound to it. */
+export interface CiscoShardJoinProjectionV1 {
+  readonly root: string;
+  readonly cisco: VerifiedCiscoShardSarifV1;
+}
+
+/**
+ * Runs `scan` over a projection of a verified join's source: a directory Core
+ * creates beside the verified root, into which Core copies, from that root,
+ * every job that meets `includedPaths` (symbolic links left out), with the
+ * join's SARIF for those jobs bound to that directory. The caller may add
+ * other files; the scan still rehashes every job it finds there. The
+ * directory is removed once `scan` settles.
+ */
+export async function withCiscoShardJoinProjectionV1<T>(
+  joined: JoinedCiscoShardEvidence,
+  includedPaths: readonly string[],
+  scan: (projection: CiscoShardJoinProjectionV1) => Promise<T>,
+): Promise<T> {
+  const verified = verifiedJoinOrThrow(joined);
+  const jobs = includedJobs(verified, includedPaths);
+  const root = mkdtempSync(join(dirname(verified.root), ".aih-cisco-shard-projection-"));
+  try {
+    for (const job of jobs) {
+      const target = join(root, ...job.path.split("/"));
+      mkdirSync(dirname(target), { recursive: true });
+      cpSync(join(verified.root, ...job.path.split("/")), target, {
+        recursive: true,
+        errorOnExist: true,
+        force: false,
+        dereference: false,
+        preserveTimestamps: true,
+        filter: (candidate) => !lstatSync(candidate).isSymbolicLink(),
+      });
+    }
+    return await scan(
+      Object.freeze({ root, cisco: issueShardJoin(jobs, realpathSync.native(root)) }),
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+function verifiedJoinOrThrow(joined: JoinedCiscoShardEvidence): VerifiedCiscoShardJoinV1 {
   const verified = verifiedCiscoShardJobSarifV1(joined);
   if (verified === undefined)
     throw new Error("Cisco shard evidence was not joined by joinCiscoShardResults");
+  return verified;
+}
+
+function includedJobs(
+  verified: VerifiedCiscoShardJoinV1,
+  includedPaths: readonly string[] | undefined,
+): VerifiedCiscoShardJoinV1["jobs"] {
+  return includedPaths === undefined
+    ? verified.jobs
+    : verified.jobs.filter((job) =>
+        includedPaths.some((path) => sourcePathsIntersect(job.path, path)),
+      );
+}
+
+/** Issues `jobs`' SARIF bound to `root`: the verified root, or a projection Core made. */
+function issueShardJoin(
+  jobs: VerifiedCiscoShardJoinV1["jobs"],
+  root: string,
+): VerifiedCiscoShardSarifV1 {
   const runs: CheckedScanSarifLogV1["runs"][number][] = [];
   const bound: IssuedShardJoinBindingV1["jobs"][number][] = [];
-  for (const job of verified.jobs) {
-    if (
-      includedPaths !== undefined &&
-      !includedPaths.some((path) => sourcePathsIntersect(job.path, path))
-    ) {
-      continue;
-    }
+  for (const job of jobs) {
     const checked = checkedScanSarifLogV1(JSON.parse(job.sarif));
     if ("refusal" in checked) {
       throw new Error(
@@ -435,13 +504,7 @@ export function joinedCiscoShardSarif(
     kind: "verified-cisco-shard-join-v1",
     sarif: JSON.stringify({ version: "2.1.0", runs }),
   });
-  ISSUED_SHARD_JOINS.set(
-    issued,
-    Object.freeze({
-      root: scanRoot === undefined ? verified.root : realpathSync.native(scanRoot),
-      jobs: Object.freeze(bound),
-    }),
-  );
+  ISSUED_SHARD_JOINS.set(issued, Object.freeze({ root, jobs: Object.freeze(bound) }));
   return issued;
 }
 

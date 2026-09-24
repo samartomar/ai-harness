@@ -1,6 +1,15 @@
-import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Check } from "../../src/internals/verify.js";
 import {
@@ -14,6 +23,8 @@ import {
   joinedCiscoShardSarif,
   type PrecomputedDetectorSarifV1,
   runTrustDetectors,
+  type VerifiedCiscoShardSarifV1,
+  withCiscoShardJoinProjectionV1,
 } from "../../src/trust/detectors.js";
 import { buildTrustFileInventory } from "../../src/trust/inventory.js";
 
@@ -201,29 +212,90 @@ describe("a verified Cisco shard join is bound to the tree it was verified again
     );
   });
 
-  it("refuses a join presented for a projection root whose job files differ from the verified ones", async () => {
-    const projection = mkdtempSync(join(tmpdir(), "aih-shard-binding-projection-"));
-    roots.push(projection);
-    mkdirSync(join(projection, "skills", "alpha"), { recursive: true });
-    writeFileSync(join(projection, "skills", "alpha", "SKILL.md"), "# changed\n", "utf8");
-    const issued = joinedCiscoShardSarif(verifiedJoin(sourceA), ["skills/alpha"], projection);
-    const result = await scanCisco(projection, issued);
+  it("refuses join A presented at root B that holds the same jobs and job bytes, whatever a caller passes", async () => {
+    const sourceB = mkdtempSync(join(tmpdir(), "aih-shard-binding-b-"));
+    roots.push(sourceB);
+    cpSync(sourceA, sourceB, { recursive: true });
+    writeFileSync(join(sourceB, "outside.md"), "not in any job\n", "utf8");
+    // The reviewer's case: a caller names root B for a join verified at A. No
+    // exported parameter takes a root, so the extra argument changes nothing.
+    const issue = joinedCiscoShardSarif as (...args: unknown[]) => VerifiedCiscoShardSarifV1;
+    const issued = issue(verifiedJoin(sourceA), undefined, sourceB);
+    const result = await scanCisco(sourceB, issued);
+    expectRefused(
+      result,
+      /the shard join Core verified is bound to source root .+aih-shard-binding-a-.+, not the root being scanned, .+aih-shard-binding-b-/,
+    );
+  });
+});
+
+describe("a verified shard join is rebound only to a projection Core makes itself", () => {
+  it("copies the included jobs from the verified root and completes there", async () => {
+    let seen: string | undefined;
+    const result = await withCiscoShardJoinProjectionV1(
+      verifiedJoin(sourceA),
+      ["skills/alpha"],
+      async (projection) => {
+        seen = projection.root;
+        expect(realpathSync.native(dirname(projection.root))).toBe(
+          realpathSync.native(dirname(sourceA)),
+        );
+        expect(readFileSync(join(projection.root, "skills", "alpha", "SKILL.md"), "utf8")).toBe(
+          "# alpha\n",
+        );
+        expect(existsSync(join(projection.root, "skills", "beta"))).toBe(false);
+        return scanCisco(projection.root, projection.cisco);
+      },
+    );
+    expect(result.executions).toEqual([
+      { detector: "cisco", executedBy: "precomputed-sarif", outcome: "completed" },
+    ]);
+    expect(seen !== undefined && existsSync(seen)).toBe(false);
+  });
+
+  it("refuses the projection's join presented anywhere but the projection", async () => {
+    const issued = await withCiscoShardJoinProjectionV1(
+      verifiedJoin(sourceA),
+      ["skills/alpha"],
+      async (projection) => projection.cisco,
+    );
+    const alphaOnly = mkdtempSync(join(tmpdir(), "aih-shard-binding-alpha-"));
+    roots.push(alphaOnly);
+    cpSync(join(sourceA, "skills", "alpha"), join(alphaOnly, "skills", "alpha"), {
+      recursive: true,
+    });
+    const result = await scanCisco(alphaOnly, issued);
+    expectRefused(
+      result,
+      /the shard join Core verified is bound to source root .+, not the root being scanned, .+aih-shard-binding-alpha-/,
+    );
+  });
+
+  it("refuses the projection when a caller changes a copied job before the scan", async () => {
+    const result = await withCiscoShardJoinProjectionV1(
+      verifiedJoin(sourceA),
+      ["skills/alpha"],
+      async (projection) => {
+        writeFileSync(join(projection.root, "skills", "alpha", "SKILL.md"), "# changed\n", "utf8");
+        return scanCisco(projection.root, projection.cisco);
+      },
+    );
     expectRefused(
       result,
       `job skills/alpha was verified with 1 files and subject tree ${JOB_SUBJECTS["skills/alpha"]}, and now has 1 files with subject tree ${ALPHA_CHANGED}`,
     );
   });
 
-  it("completes for a projection root that holds exactly the included jobs' verified files", async () => {
-    const projection = mkdtempSync(join(tmpdir(), "aih-shard-binding-projection-"));
-    roots.push(projection);
-    mkdirSync(join(projection, "skills", "alpha"), { recursive: true });
-    writeFileSync(join(projection, "skills", "alpha", "SKILL.md"), "# alpha\n", "utf8");
-    const issued = joinedCiscoShardSarif(verifiedJoin(sourceA), ["skills/alpha"], projection);
-    const result = await scanCisco(projection, issued);
-    expect(result.executions).toEqual([
-      { detector: "cisco", executedBy: "precomputed-sarif", outcome: "completed" },
-    ]);
+  it("refuses the projection when the verified root's job changed after the join", async () => {
+    const joined = verifiedJoin(sourceA);
+    writeFileSync(join(sourceA, "skills", "alpha", "SKILL.md"), "# changed\n", "utf8");
+    const result = await withCiscoShardJoinProjectionV1(joined, ["skills/alpha"], (projection) =>
+      scanCisco(projection.root, projection.cisco),
+    );
+    expectRefused(
+      result,
+      `job skills/alpha was verified with 1 files and subject tree ${JOB_SUBJECTS["skills/alpha"]}, and now has 1 files with subject tree ${ALPHA_CHANGED}`,
+    );
   });
 });
 

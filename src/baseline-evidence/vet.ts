@@ -14,6 +14,8 @@ import {
   DEFAULT_UV_EXECUTION_PROFILE,
   joinedCiscoShardSarif,
   resolveCiscoScanConcurrency,
+  type VerifiedCiscoShardSarifV1,
+  withCiscoShardJoinProjectionV1,
 } from "../trust/detectors.js";
 import { scanTrustTreeWithAnalyzers, type TrustScanResult } from "../trust/scan.js";
 import { VERSION } from "../version.js";
@@ -244,17 +246,17 @@ export function defaultComponentScanner(
   sharedCiscoEvidence?: JoinedCiscoShardEvidence,
 ): BaselineComponentScanner {
   return async ({ sourceRoot, component }) => {
-    const projectionRoot = mkdtempSync(
-      join(dirname(resolve(sourceRoot)), ".aih-baseline-component-"),
-    );
-    try {
+    // Copies the component into a projection root. Core's shard projection has
+    // already copied the Cisco jobs there from the verified root, so the copy
+    // keeps what exists instead of refusing it.
+    const project = (projectionRoot: string, keepExisting: boolean): void => {
       for (const rel of component.paths) {
         const source = resolve(sourceRoot, ...rel.split("/"));
         const target = resolve(projectionRoot, ...rel.split("/"));
         mkdirSync(dirname(target), { recursive: true });
         cpSync(source, target, {
           recursive: true,
-          errorOnExist: true,
+          errorOnExist: !keepExisting,
           force: false,
           dereference: false,
           preserveTimestamps: true,
@@ -265,52 +267,66 @@ export function defaultComponentScanner(
       // evidence for the selected skill. Project only that top-level legal file
       // so the scanner can resolve inheritance without exposing unrelated source.
       projectRepositoryLicense(sourceRoot, projectionRoot);
-      const timing = baselineDetectorTiming(component.id, scanOptions.progress);
-      try {
-        const requiredDetectors =
-          requiredDetectorsForComponent?.(component, sourceRoot) ?? scanOptions.requiredDetectors;
-        const usesCisco = requiredDetectors?.includes("cisco") === true;
-        if (
-          sharedCiscoEvidence !== undefined &&
-          usesCisco &&
-          !componentContainsCiscoJob(component, sharedCiscoEvidence)
-        ) {
-          throw new Error(
-            `baseline component ${component.id} requires Cisco but has no exact source-wide Cisco job`,
-          );
-        }
-        const detectors =
-          sharedCiscoEvidence === undefined || usesCisco
-            ? scanOptions.detectors
-            : (["skillspector", "mcp-scanner", "semgrep", "snyk-agent-scan"] as const).filter(
-                (detector) => scanOptions.detectors?.includes(detector) ?? true,
-              );
-        const scan = await scanTree(projectionRoot, {
+    };
+    const timing = baselineDetectorTiming(component.id, scanOptions.progress);
+    try {
+      const requiredDetectors =
+        requiredDetectorsForComponent?.(component, sourceRoot) ?? scanOptions.requiredDetectors;
+      const usesCisco = requiredDetectors?.includes("cisco") === true;
+      if (
+        sharedCiscoEvidence !== undefined &&
+        usesCisco &&
+        !componentContainsCiscoJob(component, sharedCiscoEvidence)
+      ) {
+        throw new Error(
+          `baseline component ${component.id} requires Cisco but has no exact source-wide Cisco job`,
+        );
+      }
+      const detectors =
+        sharedCiscoEvidence === undefined || usesCisco
+          ? scanOptions.detectors
+          : (["skillspector", "mcp-scanner", "semgrep", "snyk-agent-scan"] as const).filter(
+              (detector) => scanOptions.detectors?.includes(detector) ?? true,
+            );
+      const scanProjection = (projectionRoot: string, cisco?: VerifiedCiscoShardSarifV1) =>
+        scanTree(projectionRoot, {
           ...scanOptions,
           detectors,
           precomputedDetectorSarif:
-            sharedCiscoEvidence !== undefined && usesCisco
-              ? {
-                  ...scanOptions.precomputedDetectorSarif,
-                  cisco: joinedCiscoShardSarif(
-                    sharedCiscoEvidence,
-                    component.paths,
-                    projectionRoot,
-                  ),
-                }
-              : scanOptions.precomputedDetectorSarif,
+            cisco === undefined
+              ? scanOptions.precomputedDetectorSarif
+              : { ...scanOptions.precomputedDetectorSarif, cisco },
           progress: timing.progress,
           posture: "enterprise",
           requiredDetectors,
         });
-        timing.complete(scan);
-        return scan;
-      } catch (error) {
-        timing.fail();
-        throw error;
+      let scan: TrustScanResult;
+      if (sharedCiscoEvidence !== undefined && usesCisco) {
+        // Only Core rebinds the verified join: to a projection it makes and fills.
+        scan = await withCiscoShardJoinProjectionV1(
+          sharedCiscoEvidence,
+          component.paths,
+          (projection) => {
+            project(projection.root, true);
+            return scanProjection(projection.root, projection.cisco);
+          },
+        );
+      } else {
+        const projectionRoot = mkdtempSync(
+          join(dirname(resolve(sourceRoot)), ".aih-baseline-component-"),
+        );
+        try {
+          project(projectionRoot, false);
+          scan = await scanProjection(projectionRoot);
+        } finally {
+          rmSync(projectionRoot, { recursive: true, force: true });
+        }
       }
-    } finally {
-      rmSync(projectionRoot, { recursive: true, force: true });
+      timing.complete(scan);
+      return scan;
+    } catch (error) {
+      timing.fail();
+      throw error;
     }
   };
 }

@@ -178,8 +178,10 @@ against its own subject. The exemption is bound to the tree it was verified for:
 root (by realpath) must be the one the join was issued for, the jobs Core derives from that tree
 now (each directory holding a selected `SKILL.md`) must be exactly the join's jobs, and each
 job's subject, rehashed at the scan, must equal the subject verified at the join. Anything else
-fails the detector with the difference named. A baseline component scan presents the join at
-its projection root, which must hold those jobs with the verified files.
+fails the detector with the difference named. No caller can name another root for a join: a
+baseline component scan gets its join through `withCiscoShardJoinProjectionV1`, which creates the
+projection directory itself, copies the included jobs into it from the verified root, and binds
+the join to that directory for the one scan, removing it afterwards.
 
 ## Analyzer execution profiles and their limits
 
