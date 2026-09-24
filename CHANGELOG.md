@@ -151,7 +151,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `.aih-config.json`, keyed by framework id with `{ disabledHookIds }` only. It may only add
   disables of disable-eligible rows; a profile or any other field is refused by name, since
   enterprise policy is the only profile source. A malformed list fails closed. Framework plugin commands receive the merged
-  request in their policy view, and `aih policy project` applies the plugin's plan.
+  request in their policy view, and `aih policy project` applies the plugin's plan. Core
+  checks the plan's coverage: each requested disable must come back as exactly one disabled
+  decision under its strongest authority, with exactly one host decision per targeted host; an
+  omission or duplicate refuses with `framework-plugin-incompatible`.
 - Add Headroom (`headroom-ai[mcp]` 0.38.0, Apache-2.0) as a default-selected developer tool that
   runs only after explicit activation. Selection alone, with or without `--apply`, leaves it
   `selected-pending` with a skipped check. `aih developer-tools` and `aih init` gain

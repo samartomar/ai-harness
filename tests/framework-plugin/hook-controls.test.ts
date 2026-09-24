@@ -325,3 +325,106 @@ describe("frameworkHookControlPlansV1", () => {
     );
   });
 });
+
+describe("frameworkHookControlPlansV1 decision coverage", () => {
+  type Plan = { decisions: Array<{ hookId: string; state: string; hosts: unknown[] }> };
+
+  async function brokenPlan(mutate: (plan: Plan) => void) {
+    const loaded = await loadEccFromSource();
+    if (!loaded.ok) throw new Error("ECC source plugin did not load");
+    const original = loaded.plugin.planHookControls.bind(loaded.plugin);
+    return {
+      ...deps,
+      loadPlugin: async (): Promise<FrameworkPluginLoadV1> => ({
+        ...loaded,
+        plugin: {
+          ...loaded.plugin,
+          planHookControls: (context, request) => {
+            const plan = structuredClone(original(context, request)) as unknown as Plan;
+            mutate(plan);
+            return plan as never;
+          },
+        },
+      }),
+    };
+  }
+
+  const mixed = (): PlanContext => ({
+    ...ctx(),
+    targets: ["claude", "opencode"] as PlanContext["targets"],
+  });
+  const incompatible = /framework-plugin-incompatible: .*hook-control plan/;
+
+  beforeEach(() => {
+    userList({ ecc: { disabledHookIds: ["session:start"] } });
+  });
+
+  it("accepts the plugin's own complete plan for every targeted host", async () => {
+    const plans = await frameworkHookControlPlansV1(mixed(), undefined, await brokenPlan(() => {}));
+    expect(plans.actions.map((action) => action.describe)).toEqual(["ecc hook controls"]);
+  });
+
+  it("refuses a plan that omits the decision for a requested disable", async () => {
+    const plugin = await brokenPlan((plan) => {
+      plan.decisions = [];
+    });
+    await expect(frameworkHookControlPlansV1(ctx(), undefined, plugin)).rejects.toThrow(
+      incompatible,
+    );
+    await expect(frameworkHookControlPlansV1(ctx(), undefined, plugin)).rejects.toThrow(
+      /session:start/,
+    );
+  });
+
+  it("refuses a requested disable the plan reports as enabled", async () => {
+    const plugin = await brokenPlan((plan) => {
+      const decision = plan.decisions.find((item) => item.hookId === "session:start");
+      if (decision === undefined) throw new Error("fixture has no session:start decision");
+      decision.state = "enabled";
+      decision.hosts = [];
+    });
+    await expect(frameworkHookControlPlansV1(ctx(), undefined, plugin)).rejects.toThrow(
+      incompatible,
+    );
+  });
+
+  it("refuses a disabled decision with no host decisions", async () => {
+    const plugin = await brokenPlan((plan) => {
+      for (const decision of plan.decisions) if (decision.state === "disabled") decision.hosts = [];
+    });
+    await expect(frameworkHookControlPlansV1(ctx(), undefined, plugin)).rejects.toThrow(
+      incompatible,
+    );
+  });
+
+  it("refuses a disabled decision that omits one targeted host", async () => {
+    const plugin = await brokenPlan((plan) => {
+      for (const decision of plan.decisions)
+        if (decision.state === "disabled") decision.hosts = decision.hosts.slice(0, 1);
+    });
+    await expect(frameworkHookControlPlansV1(mixed(), undefined, plugin)).rejects.toThrow(
+      incompatible,
+    );
+  });
+
+  it("refuses a duplicated host decision", async () => {
+    const plugin = await brokenPlan((plan) => {
+      for (const decision of plan.decisions)
+        if (decision.state === "disabled") decision.hosts = [decision.hosts[0], decision.hosts[0]];
+    });
+    await expect(frameworkHookControlPlansV1(ctx(), undefined, plugin)).rejects.toThrow(
+      incompatible,
+    );
+  });
+
+  it("refuses duplicated decisions for one hook", async () => {
+    const plugin = await brokenPlan((plan) => {
+      const decision = plan.decisions.find((item) => item.hookId === "session:start");
+      if (decision === undefined) throw new Error("fixture has no session:start decision");
+      plan.decisions.push(structuredClone(decision));
+    });
+    await expect(frameworkHookControlPlansV1(ctx(), undefined, plugin)).rejects.toThrow(
+      incompatible,
+    );
+  });
+});
