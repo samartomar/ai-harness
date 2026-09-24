@@ -679,13 +679,13 @@ function legalTextResultMessage(message: string, code: CheckCode): string {
 function normalizeSarifUri(raw: unknown, detector: TrustDetector, root: string): string {
   const fallback = `${detector.name}.sarif`;
   if (typeof raw !== "string" || raw.length === 0) return fallback;
+  // A source-relative URI (C2) already names the path under the root: kept verbatim.
+  if (raw === "." || isSourceRelativeSarifUriV1(raw)) return raw;
   // Refuse nonempty file URL authorities (including localhost/UNC); only the
   // authority-free file:/// form can be resolved against this scan root.
   const isFileUrl = /^file:\/\//i.test(raw);
   if (isFileUrl && !/^file:\/\/\//i.test(raw)) return fallback;
   const unprefixed = isFileUrl ? decodeFileUrlPath(raw.slice("file://".length)) : raw;
-  const stripped = toPosix(unprefixed.replace(/^\/scan\/?/, "").replace(/^scan\/?/, ""));
-  if (isSafeRelativeSarifUri(stripped)) return stripped;
   // Precomputed SARIF may echo absolute targets (`/tmp/x/a.md`; on Windows `D:\x\a.md`
   // or `file:///D:/x/a.md`). A finding inside the scanned tree keeps its tree-relative
   // path; a path outside the tree, or one that escapes it through `..` or a symlink,
