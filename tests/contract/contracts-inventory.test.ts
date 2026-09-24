@@ -92,7 +92,7 @@ const PINS: ReadonlyArray<readonly [file: string, line: number, text: string]> =
   ],
   [
     "src/catalog-package/load-catalog-package.ts",
-    154,
+    157,
     "export async function loadCatalogPackageV1<",
   ],
   [

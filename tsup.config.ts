@@ -3,7 +3,13 @@ import { defineConfig } from "tsup";
 // cli.ts carries a leading `#!/usr/bin/env node` shebang which esbuild preserves
 // on the entry chunk, so we do not inject another shebang (including into index.js).
 export default defineConfig({
-  entry: { cli: "src/cli.ts", "ecc-runtime": "src/ecc-runtime.ts", index: "src/index.ts" },
+  entry: {
+    cli: "src/cli.ts",
+    "ecc-runtime": "src/ecc-runtime.ts",
+    index: "src/index.ts",
+    // `@aihq/core/framework-host`: the versioned host API framework plugins import.
+    "framework-host": "src/framework-host/index.ts",
+  },
   format: ["esm"],
   target: "node20",
   platform: "node",
@@ -38,7 +44,10 @@ export default defineConfig({
   // @aihq/catalog is the same arrangement, loaded only through
   // src/catalog-package/load-catalog-package.ts; Core pins the descriptor bytes
   // it accepts from it, so a bundled copy would add nothing but a stale Catalog.
-  external: ["@aihq/scan", "@aihq/catalog"],
+  // The framework plugins are the same arrangement, loaded only through
+  // src/framework-plugin/load-framework-plugin.ts; Core's tarball must never
+  // carry framework plugin code.
+  external: ["@aihq/scan", "@aihq/catalog", "@aihq/framework-ecc", "@aihq/framework-superpowers"],
   // YAML's bundled CommonJS distribution requires Node's built-in process module.
   // Keep that built-in resolution available in each standalone ESM chunk.
   banner: {
