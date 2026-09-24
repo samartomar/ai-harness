@@ -474,19 +474,46 @@ function hasProtoMemberV1(text: string): boolean {
   return walk(parseTree(text));
 }
 
+/** The sealed wrapper list, holes included (a hole is refused as a wrapper, never skipped). */
+function sealedWrappersV1(input: unknown): unknown[] {
+  if (!Array.isArray(input))
+    throw new TypeError("Packaged collection evidence records must be an array.");
+  return Array.from(input);
+}
+
+/**
+ * One sealed wrapper, checked as Catalog's reader checks it before any field is read: an object
+ * with exactly the own keys `bytes` and `sha256` (an own `__proto__` is an unsupported field),
+ * both strings.
+ */
+function sealedWrapperV1(wrapper: unknown, label: string): PackagedCollectionInputV1 {
+  if (wrapper === null || typeof wrapper !== "object" || Array.isArray(wrapper))
+    throw new TypeError(`${label} must be an object.`);
+  for (const key of ["bytes", "sha256"])
+    if (!Object.hasOwn(wrapper, key)) throw new TypeError(`${label} is missing ${key}.`);
+  for (const key of Object.keys(wrapper))
+    if (key !== "bytes" && key !== "sha256")
+      throw new TypeError(`${label} has unsupported field ${key}.`);
+  const { bytes, sha256 } = wrapper as Record<"bytes" | "sha256", unknown>;
+  if (typeof bytes !== "string" || typeof sha256 !== "string")
+    throw new TypeError(`${label} bytes and seal must be strings.`);
+  return { bytes, sha256 };
+}
+
 /**
  * Reads sealed records structurally, IDENTICALLY to Catalog's
- * `parsePackagedScannerCollectionEvidenceV1` (decision D25): byte budget, matching seal, the
- * nesting bound (an iterative scan before any recursive parse), Core's strict JSON reader, no
+ * `parsePackagedScannerCollectionEvidenceV1` (decision D25): a wrapper list with exact wrapper
+ * keys, byte budget, matching seal, the nesting bound (an iterative scan before any recursive parse), Core's strict JSON reader, no
  * `__proto__` member, the structural schema, canonical bytes and one record per catalog id. It
  * never admits a record; admission is `PackagedScannerCollectionEvidenceRecordV1Schema`.
  */
 export function readPackagedScannerCollectionEvidenceStructureV1(
-  items: readonly PackagedCollectionInputV1[],
+  input: unknown,
 ): PackagedScannerCollectionEvidenceStructureV1[] {
   const records: PackagedScannerCollectionEvidenceStructureV1[] = [];
   const sourceIds = new Set<string>();
-  for (const item of items) {
+  for (const [index, wrapper] of sealedWrappersV1(input).entries()) {
+    const item = sealedWrapperV1(wrapper, `Packaged collection evidence record ${String(index)}`);
     if (
       Buffer.byteLength(item.bytes, "utf8") > 4 * 1024 * 1024 ||
       !digest.safeParse(item.sha256).success

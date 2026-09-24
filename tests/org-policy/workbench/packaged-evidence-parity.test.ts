@@ -18,13 +18,17 @@ import {
 // ---------------------------------------------------------------------------
 
 type Outcome = "accepted" | "refused";
-/** A fixture carries a `record` value (sealed here as its canonical bytes) or its exact `bytes`. */
+/**
+ * A fixture carries a `record` value (sealed here as its canonical bytes), its exact `bytes`, or
+ * the exact reader `input` (a list of sealed wrappers).
+ */
 interface Fixture {
   readonly fixture: string;
   readonly structure: Outcome;
   readonly coreAdmission: Outcome;
   readonly record?: unknown;
   readonly bytes?: string;
+  readonly input?: unknown;
 }
 
 const directory = resolve(import.meta.dirname, "..", "..", "fixtures", "packaged-evidence-parity");
@@ -87,6 +91,11 @@ const EXPECTED: Record<string, readonly [Outcome, Outcome, RegExp?]> = {
   "timestamp-signed-without-seconds": ["refused", "refused", TIMESTAMP],
   "timestamp-whole-seconds": ["accepted", "accepted"],
   valid: ["accepted", "accepted"],
+  "wrapper-extra-key": ["refused", "refused", /record 0 has unsupported field extra/],
+  "wrapper-missing-sha256": ["refused", "refused", /record 0 is missing sha256/],
+  "wrapper-not-array": ["refused", "refused", /records must be an array/],
+  "wrapper-proto-key": ["refused", "refused", /record 0 has unsupported field __proto__/],
+  "wrapper-valid": ["accepted", "accepted"],
 };
 
 function outcome(result: { success: boolean }): Outcome {
@@ -101,15 +110,20 @@ function issues(result: {
     .join("\n");
 }
 
+function sealedInput(fixture: Fixture): unknown {
+  if ("input" in fixture) return fixture.input;
+  const bytes = fixture.bytes ?? canonicalJson(fixture.record);
+  return [{ bytes, sha256: `sha256:${createHash("sha256").update(bytes, "utf8").digest("hex")}` }];
+}
+
 /**
- * Seals the fixture (its exact bytes, or its record's canonical bytes, unvalidated) and reads it.
- * A refusal is a TypeError or a ZodError; anything else (a RangeError, say) is a crash.
+ * Reads the fixture's reader input: its wrappers, or its exact bytes or its record's canonical
+ * bytes (unvalidated), sealed. A refusal is a TypeError or a ZodError; anything else (a
+ * RangeError, say) is a crash.
  */
 function readSealed(fixture: Fixture): { structure: Outcome; admission: Outcome; reason: string } {
-  const bytes = fixture.bytes ?? canonicalJson(fixture.record);
-  const sha256 = `sha256:${createHash("sha256").update(bytes, "utf8").digest("hex")}`;
   try {
-    const [record] = readPackagedScannerCollectionEvidenceStructureV1([{ bytes, sha256 }]);
+    const [record] = readPackagedScannerCollectionEvidenceStructureV1(sealedInput(fixture));
     const admitted = PackagedScannerCollectionEvidenceRecordV1Schema.safeParse(record);
     return { structure: "accepted", admission: outcome(admitted), reason: issues(admitted) };
   } catch (error) {
@@ -127,6 +141,17 @@ describe("packaged collection evidence parity with Catalog", () => {
     expect(issues(result)).toMatch(TOO_DEEP);
   });
 
+  it("refuses a hole in the sealed record list", () => {
+    const [item] = sealedInput(
+      fixtures.find((fixture) => fixture.fixture === "valid") as Fixture,
+    ) as unknown[];
+    const sparse: unknown[] = [];
+    sparse[1] = item;
+    expect(() => readPackagedScannerCollectionEvidenceStructureV1(sparse)).toThrow(
+      /record 0 must be an object/,
+    );
+  });
+
   it("holds exactly the shared cases", () => {
     expect(fixtures.map((item) => item.fixture).sort()).toEqual(Object.keys(EXPECTED).sort());
   });
@@ -134,11 +159,11 @@ describe("packaged collection evidence parity with Catalog", () => {
   it.each(fixtures.map((item) => [item.fixture, item] as const))("%s", (name, fixture) => {
     const [structure, admission, reason] = EXPECTED[name] ?? [];
     expect([fixture.structure, fixture.coreAdmission]).toEqual([structure, admission]);
-    expect("record" in fixture).not.toBe("bytes" in fixture);
+    expect(["record", "bytes", "input"].filter((form) => form in fixture)).toHaveLength(1);
     // The sealed reader: the boundary Catalog's reader mirrors byte for byte.
     const sealed = readSealed(fixture);
     expect([sealed.structure, sealed.admission]).toEqual([structure, admission]);
-    if (fixture.bytes !== undefined) {
+    if (!("record" in fixture)) {
       if (reason !== undefined) expect(sealed.reason).toMatch(reason);
       return;
     }

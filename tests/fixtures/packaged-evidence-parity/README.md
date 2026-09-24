@@ -14,9 +14,10 @@ Each file names one case and its two expected outcomes:
   commits, `PackagedScannerCollectionEvidenceRecordV1Schema`). Admission is Core's alone; Catalog
   is a carrier and never admits a record.
 
-A file carries either `record`, a record value that each side's test seals as its canonical bytes,
+A file carries `record`, a record value that each side's test seals as its canonical bytes,
 or `bytes`, the exact sealed record text, for strict-JSON cases a value cannot express (a duplicate
 key, a byte order mark, trailing data, number spellings, a raw lone surrogate, a `__proto__`
-member, nesting past the shared bound of 32 levels).
+member, nesting past the shared bound of 32 levels), or `input`, the exact reader input (a list of
+sealed `{bytes, sha256}` wrappers), for cases in the wrapper list itself.
 
 Core test: `tests/org-policy/workbench/packaged-evidence-parity.test.ts`.
