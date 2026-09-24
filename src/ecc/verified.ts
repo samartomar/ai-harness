@@ -524,11 +524,11 @@ export function verifiedEccInstallPlan(
       const plannedTransports = new Map(
         Object.entries(scopedMcps).map(([name, server]) => [name, server.type] as const),
       );
+      // Governed installs emit no MCP entries, but every chrome-devtools-mcp launch
+      // aih can read — including its own stale managed entries — is still checked.
       const blockers = [
         ...codexMcpCollisionActions(ctx, plannedTransports),
-        ...(request.governance === true
-          ? []
-          : codexChromeDevtoolsOptOutActions(ctx, Object.keys(scopedMcps))),
+        ...codexChromeDevtoolsOptOutActions(ctx, Object.keys(scopedMcps)),
       ];
       if (blockers.length > 0) {
         pre.push(...blockers);

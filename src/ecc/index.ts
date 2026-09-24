@@ -695,6 +695,10 @@ const CODEX_INSTALL_MERGE_SCRIPT_SOURCE = [
   "}",
   "const liveConfigRaw = governed ? undefined : readSafeOptional(configPath);",
   "const liveProjectConfigRaw = readProjectConfig();",
+  // A governed install emits no MCP entries, yet every launch it can read must still carry both opt-outs.
+  "const governedUserConfigRaw = governed ? readConfigForCheck(configPath) : undefined;",
+  'if (governed) refuseChromeOptOuts([{ scope: "project", configPath: projectConfigPath, raw: liveProjectConfigRaw }, { scope: "user", configPath, raw: governedUserConfigRaw }]);',
+  'function stableGovernedConfigs() { if (readConfigForCheck(configPath) !== governedUserConfigRaw || readProjectConfig() !== liveProjectConfigRaw) throw new Error("Codex MCP config changed during apply"); }',
   "const initialScopedPlan = governed ? undefined : planScopedMcps(undefined, false, undefined, false);",
   'const candidateConfig = governed ? undefined : mergeCodexConfigCandidate(liveConfigRaw || "");',
   'if (!governed) actualCurrentRunState = actualBaselineEffects(liveConfigRaw || "", candidateConfig, state);',
@@ -724,8 +728,9 @@ const CODEX_INSTALL_MERGE_SCRIPT_SOURCE = [
   "return { existed, existing, next };",
   "}",
   'function restoreCodexAgents(change) { if (readSafeOptional(targetAgents) !== change.next) throw new Error("Codex AGENTS changed during apply"); if (change.existed) fs.writeFileSync(prepareDestination(targetAgents), change.existing, "utf8"); else fs.rmSync(prepareDestination(targetAgents), { force: true }); }',
-  // The project config lives outside the trusted home; read it as plan time does.
-  'function readProjectConfig() { try { return fs.readFileSync(path.resolve(projectConfigPath), "utf8"); } catch (error) { if (error && error.code === "ENOENT") return undefined; throw error; } }',
+  // Configs that are only validated, never written, are read as plan time reads them.
+  'function readConfigForCheck(target) { try { return fs.readFileSync(path.resolve(target), "utf8"); } catch (error) { if (error && error.code === "ENOENT") return undefined; throw error; } }',
+  "function readProjectConfig() { return readConfigForCheck(projectConfigPath); }",
   "function readSafeOptional(target) {",
   "  const location = assertInsideHome(target);",
   '  let stats; try { stats = fs.lstatSync(location.absolute); } catch (error) { if (error && error.code === "ENOENT") return undefined; throw error; }',
@@ -971,7 +976,7 @@ function refuseChromeOptOuts(configs) {
   "const scopedStateNext = scopedPlan ? scopedState(scopedPlan) : state;",
   "effectiveMcpNames = governed ? [] : (scopedStateNext.codexToml.mcpServers || []);",
   "const agentsChange = installCodexAgents();",
-  'try { if (scopedPlan) installScopedMcps(scopedPlan, scopedStateNext); else fs.writeFileSync(prepareDestination(expectedAihStatePath), JSON.stringify(state, null, 2) + "\\n", "utf8"); } catch (error) { restoreCodexAgents(agentsChange); throw error; }',
+  'try { if (scopedPlan) installScopedMcps(scopedPlan, scopedStateNext); else { stableGovernedConfigs(); fs.writeFileSync(prepareDestination(expectedAihStatePath), JSON.stringify(state, null, 2) + "\\n", "utf8"); } } catch (error) { restoreCodexAgents(agentsChange); throw error; }',
 ].join("\n");
 
 // Windows includes `node -e` source in its command-length limit. Keep the

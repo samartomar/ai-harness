@@ -1536,7 +1536,12 @@ describe("verifiedEccInstallPlan", () => {
 
     function runVerifiedCodexStep(
       label: string,
-      after: { project?: string; user?: string; mergeHelper?: string },
+      after: {
+        project?: string;
+        user?: string;
+        mergeHelper?: string;
+        sourceFiles?: Record<string, string>;
+      },
       request: { governance?: true } = {},
     ) {
       const sourceRoot = join(root, `${label}-source`);
@@ -1547,6 +1552,8 @@ describe("verifiedEccInstallPlan", () => {
       prepareVerifiedCodexSource(sourceRoot);
       if (after.mergeHelper !== undefined)
         put(join(sourceRoot, "scripts", "codex", "merge-codex-config.js"), after.mergeHelper);
+      for (const [relative, contents] of Object.entries(after.sourceFiles ?? {}))
+        put(join(sourceRoot, relative), contents);
       const { step, executable } = verifiedCodexInstallStep(sourceRoot, home, request);
       const projectConfig = join(root, ".codex", "config.toml");
       if (after.project !== undefined) {
@@ -1628,6 +1635,121 @@ describe("verifiedEccInstallPlan", () => {
       const run = runVerifiedCodexStep("status-project", { project: unsafeLaunch });
 
       expect(run.result.status).toBe(78);
+    });
+
+    describe("governed installs", () => {
+      const staleManaged = [
+        "# operator-owned",
+        "",
+        "# >>> aih managed (mcp) >>>",
+        "[mcp_servers.chrome-devtools]",
+        'command = "npx"',
+        'args = ["chrome-devtools-mcp@latest"]',
+        "startup_timeout_sec = 30",
+        "# <<< aih managed (mcp) <<<",
+        "",
+      ].join("\n");
+      const claimingState = `${JSON.stringify({
+        schemaVersion: 1,
+        managedBy: "aih",
+        codexToml: { rootKeys: [], tables: [], tableKeys: {}, mcpServers: ["chrome-devtools"] },
+        agentsBlock: true,
+      })}\n`;
+
+      it.each([
+        ["user", "user", unsafeLaunch, "browser"],
+        ["project", "project", unsafeLaunch, "browser"],
+        ["stale aih-managed", "user", staleManaged, "chrome-devtools"],
+      ] as const)(
+        "refuses a %s launch without the opt-outs at plan time",
+        async (_label, scope, config, entry) => {
+          const home = join(root, "governed-plan-home");
+          const target =
+            scope === "project"
+              ? join(root, ".codex", "config.toml")
+              : join(home, ".codex", "config.toml");
+          mkdirSync(join(target, ".."), { recursive: true });
+          mkdirSync(join(home, ".codex"), { recursive: true });
+          writeFileSync(target, config, "utf8");
+          writeFileSync(join(home, ".codex", "ecc-aih-install-state.json"), claimingState, "utf8");
+          const context = { ...ctx(), env: { HOME: home, USERPROFILE: home } };
+          const selected = selection();
+
+          const plan = verifiedEccInstallPlan(
+            context,
+            join(root, "quarantine", "tree"),
+            {
+              clis: ["codex"],
+              profile: "minimal",
+              packs: [],
+              selection: selected,
+              governance: true,
+            },
+            authorizationsForSelection("codex", selected),
+          );
+
+          expect(
+            driverSteps(plan.actions).some((step) =>
+              codexInstallProgram(step).includes("codex-install-merge"),
+            ),
+          ).toBe(false);
+          const checks = await Promise.all(
+            plan.actions
+              .filter(
+                (action): action is Extract<Action, { kind: "probe" }> => action.kind === "probe",
+              )
+              .map((action) => action.run(context)),
+          );
+          const refusal = checks.find((check) => check.code === "mcp.telemetry-opt-out-missing");
+          expect(refusal?.detail).toContain(`${scope} Codex config entry "${entry}"`);
+          expect(readFileSync(target, "utf8")).toBe(config);
+        },
+      );
+
+      it.each([
+        ["user", { user: unsafeLaunch }],
+        ["project", { project: unsafeLaunch }],
+        ["stale aih-managed", { user: staleManaged }],
+      ] as const)("refuses a %s launch added after planning at apply time", (label, after) => {
+        const run = runVerifiedCodexStep(`governed-${label.replace(/\W+/g, "-")}`, after, {
+          governance: true,
+        });
+
+        expect(run.result.status, run.result.stderr).toBe(78);
+        expect(run.user).toBe(run.beforeUser);
+        expect(run.aihState).toBe(false);
+      });
+
+      it("keeps a governed install working when every launch carries both opt-outs", () => {
+        const run = runVerifiedCodexStep(
+          "governed-compliant",
+          {
+            user: `${unsafeLaunch}[mcp_servers.browser.env]\nCHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS = "1"\nCHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS = "1"\n`,
+          },
+          { governance: true },
+        );
+
+        expect(run.result.status, run.result.stderr).toBe(0);
+        expect(run.user).toBe(run.beforeUser);
+      });
+
+      it("includes the user config in governed change detection", () => {
+        const home = join(root, "governed-race-home");
+        // Governed installs skip the merge helper; ECC's install-state module loads mid-apply.
+        const installState = [
+          `require("node:fs").appendFileSync(${JSON.stringify(join(home, ".codex", "config.toml"))}, "# edited mid-apply");`,
+          'exports.writeInstallState = (path, state) => require("node:fs").writeFileSync(path, JSON.stringify(state), "utf8");',
+          "",
+        ].join("\n");
+        const run = runVerifiedCodexStep(
+          "governed-race",
+          { sourceFiles: { "scripts/lib/install-state.js": installState } },
+          { governance: true },
+        );
+
+        expect(run.result.status).not.toBe(0);
+        expect(run.result.stderr).toContain("changed during apply");
+      });
     });
 
     it("includes the project config in apply-time change detection", () => {
