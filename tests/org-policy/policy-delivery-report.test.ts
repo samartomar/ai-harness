@@ -3,8 +3,8 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSy
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { applyEccMaterialization } from "../../src/ecc/materialization.js";
-import { planGovernedCodexRoleRegistration } from "../../src/ecc-profile/governed-codex-roles.js";
+import { applyEccMaterialization } from "../../packages/framework-ecc/src/ecc/materialization.js";
+import { planGovernedCodexRoleRegistration } from "../../packages/framework-ecc/src/profile/governed-codex-roles.js";
 import { eccPolicyDeliveryInspectorV1 } from "../../src/framework-plugin/ecc-read.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";

@@ -427,8 +427,6 @@ export interface PreparedEccRuntimeDescriptorV1 {
 
 const packageFacts = new WeakMap<object, readonly EccRuntimeDescriptorV1[]>();
 
-export { currentEccRuntimeAdapterCompatibilityV1 } from "./runtime-adapter-compatibility.js";
-
 function fail(): never {
   throw new TypeError(
     "ECC runtime descriptor is unavailable or inconsistent with authenticated source evidence",

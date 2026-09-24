@@ -283,6 +283,7 @@ export {
   buildNativeEccRegistration,
   NATIVE_ECC_REGISTRATION_SCOPE,
   type NativeEccRegistration,
+  nativeRegistrationFiles,
   planInstalledNativeEccRegistration,
   planNativeEccRegistration,
 } from "../ecc-profile/native-registration.js";

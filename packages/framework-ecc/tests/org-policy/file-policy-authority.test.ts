@@ -1,3 +1,4 @@
+import "../core-invocation.js";
 import {
   existsSync,
   linkSync,
@@ -13,43 +14,39 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { defineBaselineCatalog } from "../../../../src/baseline-evidence/catalog.js";
+import { hashComponentTree } from "../../../../src/baseline-evidence/hash.js";
+import { parseBaselineEvidenceLock } from "../../../../src/baseline-evidence/schema.js";
+import { command as bootstrapAiCommand } from "../../../../src/bootstrap-ai/index.js";
+import { resolveTargets } from "../../../../src/internals/cli-detect.js";
+import { executePlan } from "../../../../src/internals/execute.js";
+import type { PlanContext } from "../../../../src/internals/plan.js";
+import { doc, plan, writeText } from "../../../../src/internals/plan.js";
+import { fakeRunner } from "../../../../src/internals/proc.js";
+import { policyAwareMcpCatalog } from "../../../../src/mcp/catalog.js";
+import { command as mcpCommand } from "../../../../src/mcp/index.js";
 import {
-  evidence,
-  profile,
-  projectionRoots,
-} from "../../packages/framework-ecc/tests/profile/render-fixture.js";
-import { defineBaselineCatalog } from "../../src/baseline-evidence/catalog.js";
-import { hashComponentTree } from "../../src/baseline-evidence/hash.js";
-import { parseBaselineEvidenceLock } from "../../src/baseline-evidence/schema.js";
-import { command as bootstrapAiCommand } from "../../src/bootstrap-ai/index.js";
+  verifiedPolicyAuthorityReceiptAssertionV1,
+  verifyPolicyAuthorityReceipt,
+} from "../../../../src/org-policy/authority.js";
+import { ECC_MCP_CATALOG_PROVENANCE } from "../../../../src/org-policy/ecc-mcp-catalog.js";
+import {
+  verifiedOrgPolicyProjection,
+  verifiedOrgPolicySource,
+} from "../../../../src/org-policy/project.js";
+import { readOrgPolicy } from "../../../../src/org-policy/schema.js";
+import { policyProjectCommand } from "../../../../src/org-policy/validate.js";
+import { makeHostAdapter } from "../../../../src/platform/detect.js";
+import { resolveTrustSource } from "../../../../src/trust/fetch.js";
 import { eccMcpAddCommand } from "../../src/ecc/index.js";
 import {
   type EccRegistrationRequest,
   executeEccCommand,
   executeEccEvidencePipeline,
 } from "../../src/ecc/pipeline.js";
-import { ECC_PROFILE_OWNERSHIP_PATH } from "../../src/ecc-profile/lifecycle.js";
-import { renderEccProjectionWithTrust } from "../../src/ecc-profile/render.js";
-import { resolveTargets } from "../../src/internals/cli-detect.js";
-import { executePlan } from "../../src/internals/execute.js";
-import type { PlanContext } from "../../src/internals/plan.js";
-import { doc, plan, writeText } from "../../src/internals/plan.js";
-import { fakeRunner } from "../../src/internals/proc.js";
-import { policyAwareMcpCatalog } from "../../src/mcp/catalog.js";
-import { command as mcpCommand } from "../../src/mcp/index.js";
-import {
-  verifiedPolicyAuthorityReceiptAssertionV1,
-  verifyPolicyAuthorityReceipt,
-} from "../../src/org-policy/authority.js";
-import { ECC_MCP_CATALOG_PROVENANCE } from "../../src/org-policy/ecc-mcp-catalog.js";
-import {
-  verifiedOrgPolicyProjection,
-  verifiedOrgPolicySource,
-} from "../../src/org-policy/project.js";
-import { readOrgPolicy } from "../../src/org-policy/schema.js";
-import { policyProjectCommand } from "../../src/org-policy/validate.js";
-import { makeHostAdapter } from "../../src/platform/detect.js";
-import { resolveTrustSource } from "../../src/trust/fetch.js";
+import { ECC_PROFILE_OWNERSHIP_PATH } from "../../src/profile/lifecycle.js";
+import { renderEccProjectionWithTrust } from "../../src/profile/render.js";
+import { evidence, profile, projectionRoots } from "../profile/render-fixture.js";
 
 let targetRoot: string;
 let adminRoot: string;

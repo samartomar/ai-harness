@@ -8,7 +8,7 @@ import {
   buildEccProfileParityReceipt,
   eccProfileParityReceiptDigest,
   serializeEccProfileParityReceipt,
-} from "../../../../src/ecc-profile/parity-receipt.js";
+} from "../../src/profile/parity-receipt.js";
 import { renderEccProjectionWithTrust } from "../../src/profile/render.js";
 import { evidence, profile, projectionRoots } from "./render-fixture.js";
 

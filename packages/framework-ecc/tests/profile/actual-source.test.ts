@@ -7,7 +7,7 @@ import { buildNativeEccRegistration } from "../../../../src/ecc-profile/native-r
 import {
   buildEccProfileParityReceipt,
   eccProfileParityReceiptDigest,
-} from "../../../../src/ecc-profile/parity-receipt.js";
+} from "../../src/profile/parity-receipt.js";
 import { projectionFilesDigest, renderEccProjection } from "../../src/profile/render.js";
 import { evidence, fixtureDirectory, profile, receipt } from "./render-fixture.js";
 

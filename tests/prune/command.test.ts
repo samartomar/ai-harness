@@ -12,10 +12,12 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
+import {
+  CODEX_AGENTS_BLOCK_MARKER,
+  CODEX_INSTALL_STATE_FILE,
+} from "../../packages/framework-ecc/src/ecc/codex.js";
+import { eccPruneReconciliationActions } from "../../packages/framework-ecc/src/ecc/prune-reconcile.js";
 import { SHARED_MARKER, sharedBlock } from "../../src/bootstrap-ai/canon.js";
-import { CODEX_AGENTS_BLOCK_MARKER, CODEX_INSTALL_STATE_FILE } from "../../src/ecc/codex.js";
-import { eccPruneReconciliationActions } from "../../src/ecc/prune-reconcile.js";
 import { registrationLedgerPath } from "../../src/ecc/registration.js";
 import { executePlan } from "../../src/internals/execute.js";
 import { mergeManagedBlock } from "../../src/internals/markers.js";

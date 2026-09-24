@@ -2,14 +2,14 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { BaselineAuthorization } from "../../src/baseline-evidence/verify.js";
-import { command as bootstrapAiCommand } from "../../src/bootstrap-ai/index.js";
 import {
   applyEccMaterialization,
   eccMaterializationReceiptPath,
-} from "../../src/ecc/materialization.js";
+} from "../../packages/framework-ecc/src/ecc/materialization.js";
+import { resolveEccClaudeMaterialization } from "../../packages/framework-ecc/src/ecc/materialization-target-claude.js";
+import type { BaselineAuthorization } from "../../src/baseline-evidence/verify.js";
+import { command as bootstrapAiCommand } from "../../src/bootstrap-ai/index.js";
 import { ECC_MATERIALIZATION_RECEIPT_PATH } from "../../src/ecc/materialization-receipt.js";
-import { resolveEccClaudeMaterialization } from "../../src/ecc/materialization-target-claude.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";

@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { capabilityPackages } from "../../packages/framework-ecc/src/capability-packages.js";
+import { planExplicitEccMcpAdd } from "../../packages/framework-ecc/src/ecc/mcp-explicit-add.js";
 import { operationContext } from "../../packages/framework-ecc/tests/context.js";
 import { baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
 import { vendorBaselineLockBytes } from "../../src/baseline-evidence/vendor.js";
@@ -20,7 +21,6 @@ import { projectEccCapabilityPackageAuthority } from "../../src/capability/packa
 import { reconcileMixedCapabilityPackages as reconcileMixed } from "../../src/capability/package-manager/domains/mixed-coordinator.js";
 import { CAPABILITY_PACKAGE_OWNERSHIP_RECEIPT_PATH } from "../../src/capability/package-manager/receipt.js";
 import { serializeEccMaterializationReceipt } from "../../src/ecc/materialization-receipt.js";
-import { planExplicitEccMcpAdd } from "../../src/ecc/mcp-explicit-add.js";
 import { ECC_MCP_EXPLICIT_ADD_RECEIPT_PATH } from "../../src/ecc/mcp-explicit-add-receipt.js";
 import { executePlan } from "../../src/internals/execute.js";
 import type { PlanContext } from "../../src/internals/plan.js";

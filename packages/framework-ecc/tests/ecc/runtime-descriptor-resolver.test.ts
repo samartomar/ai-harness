@@ -6,11 +6,9 @@ import {
   CatalogPackageRefusalError,
 } from "../../../../src/catalog-package/load-catalog-package.js";
 import { canonicalStrictJsonBytesV1 } from "../../../../src/contract/strict-json-v1.js";
-import {
-  currentEccRuntimeAdapterCompatibilityV1,
-  type EccRuntimeDescriptorV1,
-} from "../../../../src/ecc/runtime-descriptor.js";
+import type { EccRuntimeDescriptorV1 } from "../../../../src/ecc/runtime-descriptor.js";
 import { deriveEccRuntimeDeclaredEvaluationV1 } from "../../../../src/ecc/runtime-descriptor-evaluation.js";
+import { currentEccRuntimeAdapterCompatibilityV1 } from "../../src/ecc/runtime-adapter-compatibility.js";
 
 const candidates = vi.hoisted(() => ({
   packaged: [] as EccRuntimeDescriptorV1[],

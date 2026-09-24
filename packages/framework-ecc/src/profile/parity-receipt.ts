@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
+import { type NativeEccRegistration, nativeRegistrationFiles } from "@aihq/core/framework-host";
 import { AIH_ECC_PROFILE_TEMPLATE } from "./index.js";
-import { type NativeEccRegistration, nativeRegistrationFiles } from "./native-registration.js";
 import { type ClientProjection, type EccProjection, projectionFilesDigest } from "./render.js";
 
 export type EccParityTransport = "native" | "normalized" | "unavailable";

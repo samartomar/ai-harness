@@ -2,11 +2,11 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { command } from "../src/doctor.js";
 import {
   explicitEccMcpReceiptRecord,
   explicitEccMcpRenderPlan,
-} from "../src/ecc/mcp-explicit-add.js";
+} from "../packages/framework-ecc/src/ecc/mcp-explicit-add.js";
+import { command } from "../src/doctor.js";
 import { emptyExplicitAddReceipt, receiptJson } from "../src/ecc/mcp-explicit-add-receipt.js";
 import type { Action, PlanContext, ProbeAction } from "../src/internals/plan.js";
 import { fakeRunner } from "../src/internals/proc.js";
