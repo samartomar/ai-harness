@@ -4,6 +4,11 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { BaselineAuthorization } from "../../../../src/baseline-evidence/verify.js";
+import type {
+  ProjectRegistration,
+  RegistrationLedger,
+  TargetRegistration,
+} from "../../../../src/ecc/registration.js";
 import type { EccComponentId, EccMcpComponentId } from "../../src/ecc/components.js";
 import {
   eccInstallStateCandidates,
@@ -11,11 +16,6 @@ import {
   reconcileEccInstallState,
   reconcileEccRegistrationLedger,
 } from "../../src/ecc/reconcile.js";
-import type {
-  ProjectRegistration,
-  RegistrationLedger,
-  TargetRegistration,
-} from "../../../../src/ecc/registration.js";
 
 let home: string;
 let reactRoot: string;

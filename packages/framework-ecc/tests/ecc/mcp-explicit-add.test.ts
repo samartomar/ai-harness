@@ -11,6 +11,10 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import {
+  emptyExplicitAddReceipt,
+  parseExplicitAddReceipt,
+} from "../../../../src/ecc/mcp-explicit-add-receipt.js";
 import { REGISTRY_IDS } from "../../../../src/internals/cli-registry.js";
 import { executePlan } from "../../../../src/internals/execute.js";
 import type { PlanContext } from "../../../../src/internals/plan.js";
@@ -24,10 +28,6 @@ import {
   planExplicitEccMcpRemove,
   readExplicitEccMcpReceiptStates,
 } from "../../src/ecc/mcp-explicit-add.js";
-import {
-  emptyExplicitAddReceipt,
-  parseExplicitAddReceipt,
-} from "../../../../src/ecc/mcp-explicit-add-receipt.js";
 
 const roots: string[] = [];
 

@@ -6,6 +6,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineBaselineCatalog } from "../../../../src/baseline-evidence/catalog.js";
 import { hashComponentTree } from "../../../../src/baseline-evidence/hash.js";
 import { parseBaselineEvidenceLock } from "../../../../src/baseline-evidence/schema.js";
+import {
+  emptyRegistrationLedger,
+  mergeRegistrationLedger,
+  writeRegistrationLedgerAtomic,
+} from "../../../../src/ecc/registration.js";
 import { doc, type PlanContext, plan } from "../../../../src/internals/plan.js";
 import { fakeRunner } from "../../../../src/internals/proc.js";
 import { makeHostAdapter } from "../../../../src/platform/detect.js";
@@ -18,11 +23,6 @@ import {
   executeEccCommand,
   executeEccEvidencePipeline,
 } from "../../src/ecc/pipeline.js";
-import {
-  emptyRegistrationLedger,
-  mergeRegistrationLedger,
-  writeRegistrationLedgerAtomic,
-} from "../../../../src/ecc/registration.js";
 import type { VerifiedEccRequest } from "../../src/ecc/verified.js";
 
 let root: string;

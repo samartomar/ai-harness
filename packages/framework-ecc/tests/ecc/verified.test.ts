@@ -15,6 +15,11 @@ import { join } from "node:path";
 import { inflateRawSync } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { BaselineAuthorization } from "../../../../src/baseline-evidence/verify.js";
+import {
+  emptyRegistrationLedger,
+  readRegistrationLedger,
+  registrationLedgerPath,
+} from "../../../../src/ecc/registration.js";
 import { registeredExecStdinPayload } from "../../../../src/internals/exec-stdin.js";
 import type {
   Action,
@@ -28,11 +33,6 @@ import { makeHostAdapter } from "../../../../src/platform/detect.js";
 import type { EccComponentSelection } from "../../src/ecc/components.js";
 import { eccEvidenceComponentIdsForSelection } from "../../src/ecc/evidence.js";
 import { buildEccRegistrationRequest } from "../../src/ecc/pipeline.js";
-import {
-  emptyRegistrationLedger,
-  readRegistrationLedger,
-  registrationLedgerPath,
-} from "../../../../src/ecc/registration.js";
 import { verifiedEccInstallPlan } from "../../src/ecc/verified.js";
 
 let root: string;
