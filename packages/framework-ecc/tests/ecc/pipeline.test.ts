@@ -1,0 +1,912 @@
+import "../core-invocation.js";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { defineBaselineCatalog } from "../../../../src/baseline-evidence/catalog.js";
+import { baselineCatalogById } from "../../../../src/baseline-evidence/catalogs.js";
+import { hashComponentTree } from "../../../../src/baseline-evidence/hash.js";
+import { parseBaselineEvidenceLock } from "../../../../src/baseline-evidence/schema.js";
+import {
+  emptyRegistrationLedger,
+  mergeRegistrationLedger,
+  writeRegistrationLedgerAtomic,
+} from "../../../../src/ecc/registration.js";
+import { doc, type PlanContext, plan } from "../../../../src/internals/plan.js";
+import { fakeRunner } from "../../../../src/internals/proc.js";
+import { makeHostAdapter } from "../../../../src/platform/detect.js";
+import { resolveTrustSource } from "../../../../src/trust/fetch.js";
+import { UPSTREAM_CORE_ECC_MODULE_IDS } from "../../src/ecc/components.js";
+import { eccEvidenceComponentIdsForSelection } from "../../src/ecc/evidence.js";
+import type { EccInstallPreviewArtifact } from "../../src/ecc/install-preview.js";
+import {
+  buildEccRegistrationRequest,
+  executeEccCommand,
+  executeEccEvidencePipeline,
+} from "../../src/ecc/pipeline.js";
+import type { VerifiedEccRequest } from "../../src/ecc/verified.js";
+
+let root: string;
+let sourceRoot: string;
+
+beforeEach(() => {
+  root = mkdtempSync(join(tmpdir(), "aih-ecc-pipeline-"));
+  sourceRoot = join(root, "ecc-source");
+  mkdirSync(sourceRoot, { recursive: true });
+  writeFileSync(join(sourceRoot, "install.sh"), "echo verified\n");
+});
+
+afterEach(() => {
+  rmSync(root, { recursive: true, force: true });
+});
+
+function ctx(apply = true): PlanContext {
+  const run = fakeRunner(() => undefined);
+  return {
+    root,
+    contextDir: "ai-coding",
+    posture: "enterprise",
+    apply,
+    verify: true,
+    json: false,
+    run,
+    host: makeHostAdapter({ platform: "linux", run, env: {} }),
+    env: {},
+    options: {},
+  };
+}
+
+function catalog() {
+  return defineBaselineCatalog({
+    id: "ecc",
+    owner: "samartomar",
+    repo: "ECC",
+    pinnedSha: "a".repeat(40),
+    components: [{ id: "runtime:ecc-kiro", paths: ["install.sh"] }],
+  });
+}
+
+function vendorLock(verdict: "pass" | "blocked" = "pass") {
+  return parseBaselineEvidenceLock({
+    schemaVersion: 1,
+    sources: [
+      {
+        id: "ecc",
+        owner: "samartomar",
+        repo: "ECC",
+        pinnedSha: "a".repeat(40),
+        components: [
+          {
+            id: "runtime:ecc-kiro",
+            paths: ["install.sh"],
+            treeSha256: hashComponentTree(sourceRoot, ["install.sh"]).treeSha256,
+            verdict,
+            analyzers: [{ name: "aih-native", version: "2.7.0" }],
+            findings:
+              verdict === "blocked" ? [{ code: "prompt-injection", detail: "blocked" }] : [],
+          },
+        ],
+      },
+    ],
+  });
+}
+
+const request = { clis: ["kiro" as const], profile: "core", packs: [] };
+
+function installPreview(): EccInstallPreviewArtifact {
+  return {
+    schemaVersion: 1,
+    source: {
+      owner: "samartomar",
+      repo: "ECC",
+      pinnedSha: "a".repeat(40),
+    },
+    operations: [
+      {
+        target: "claude",
+        kind: "copy-file",
+        source: "rules/common/security.md",
+        destination: "<home>/.claude/rules/ecc/common/security.md",
+        componentId: "baseline:rules",
+        contingentOn: "evidence-authorization",
+      },
+      {
+        target: "claude",
+        kind: "copy-file",
+        source: "hooks/hooks.json",
+        destination: "<home>/.claude/hooks/hooks.json",
+        componentId: "baseline:hooks",
+        contingentOn: "evidence-authorization",
+      },
+      {
+        target: "claude",
+        kind: "exec",
+        source: "scripts/install-apply.js",
+        destination: "<home>/.claude",
+        componentId: "runtime:ecc-installer",
+        contingentOn: "evidence-authorization",
+      },
+      {
+        target: "kiro",
+        kind: "exec",
+        source: "install.sh",
+        destination: "<project>/.kiro",
+        componentId: "runtime:ecc-kiro",
+        contingentOn: "evidence-authorization",
+      },
+    ],
+  };
+}
+
+function mixedCatalog() {
+  return defineBaselineCatalog({
+    id: "ecc",
+    owner: "samartomar",
+    repo: "ECC",
+    pinnedSha: "a".repeat(40),
+    components: [
+      { id: "runtime:ecc-installer", paths: ["install.sh"] },
+      { id: "baseline:rules", paths: ["rules-core"] },
+      { id: "baseline:hooks", paths: ["hooks-runtime"] },
+    ],
+  });
+}
+
+function mixedVendorLock() {
+  mkdirSync(join(sourceRoot, "rules-core"), { recursive: true });
+  mkdirSync(join(sourceRoot, "hooks-runtime"), { recursive: true });
+  writeFileSync(join(sourceRoot, "rules-core", "rule.md"), "# Rule\n");
+  writeFileSync(join(sourceRoot, "hooks-runtime", "hook.js"), "export {};\n");
+  return parseBaselineEvidenceLock({
+    schemaVersion: 1,
+    sources: [
+      {
+        id: "ecc",
+        owner: "samartomar",
+        repo: "ECC",
+        pinnedSha: "a".repeat(40),
+        components: [
+          {
+            id: "runtime:ecc-installer",
+            paths: ["install.sh"],
+            treeSha256: hashComponentTree(sourceRoot, ["install.sh"]).treeSha256,
+            verdict: "pass",
+            analyzers: [{ name: "aih-native", version: "2.8.0" }],
+            findings: [],
+          },
+          {
+            id: "baseline:rules",
+            paths: ["rules-core"],
+            treeSha256: hashComponentTree(sourceRoot, ["rules-core"]).treeSha256,
+            verdict: "pass",
+            analyzers: [{ name: "aih-native", version: "2.8.0" }],
+            findings: [],
+          },
+          {
+            id: "baseline:hooks",
+            paths: ["hooks-runtime"],
+            treeSha256: hashComponentTree(sourceRoot, ["hooks-runtime"]).treeSha256,
+            verdict: "blocked",
+            analyzers: [{ name: "aih-native", version: "2.8.0" }],
+            findings: [
+              {
+                code: "trust.auto-exec-hook",
+                detail: "hook runtime auto-executes",
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  });
+}
+
+describe("ECC baseline evidence pipeline", () => {
+  it("preserves the exact atomic upstream Core module closure across ledger reruns", () => {
+    const home = join(root, "home");
+    mkdirSync(home, { recursive: true });
+    const context = ctx(false);
+    context.options = { profile: "core" };
+    context.env = { HOME: home, USERPROFILE: home };
+    context.host = makeHostAdapter({ platform: "linux", run: context.run, env: context.env });
+
+    const first = buildEccRegistrationRequest(context, ["claude"]);
+    expect(first.project.moduleIds).toEqual(UPSTREAM_CORE_ECC_MODULE_IDS);
+    const sortedCoreModules = [...UPSTREAM_CORE_ECC_MODULE_IDS].sort();
+    expect(first.selection.moduleIds).toEqual(sortedCoreModules);
+    expect(eccEvidenceComponentIdsForSelection("claude", first.selection)).toEqual([
+      "runtime:ecc-installer",
+      ...sortedCoreModules.map((moduleId) => `module:${moduleId}`),
+    ]);
+
+    writeRegistrationLedgerAtomic(home, mergeRegistrationLedger(first.ledger, first.project, []));
+    const second = buildEccRegistrationRequest(context, ["claude"]);
+    expect(second.project.moduleIds).toEqual(UPSTREAM_CORE_ECC_MODULE_IDS);
+    expect(second.selection.moduleIds).toEqual(sortedCoreModules);
+  });
+
+  it("applies the active managed-only allowlist to ECC MCP registration", () => {
+    const home = join(root, "home");
+    mkdirSync(home, { recursive: true });
+    writeFileSync(
+      join(root, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: { "code-review-graph": { type: "stdio", command: "uvx", args: [] } },
+      }),
+    );
+    writeFileSync(
+      join(root, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 2,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        governance: {
+          supportedClis: [
+            "claude",
+            "codex",
+            "cursor",
+            "antigravity",
+            "gemini",
+            "copilot",
+            "windsurf",
+            "opencode",
+            "zed",
+            "kimi",
+            "kiro",
+          ],
+        },
+        mcp: { allowedServers: ["code-review-graph"], allowManagedOnly: true },
+      }),
+    );
+    const context = ctx(false);
+    context.options = { profile: "core", with: ["mcp:code-review-graph"] };
+    context.env = { HOME: home };
+    context.host = makeHostAdapter({ platform: "linux", run: context.run, env: context.env });
+
+    const restricted = buildEccRegistrationRequest(context, ["claude"]);
+    expect(restricted.project.mcps).toEqual(["mcp:code-review-graph"]);
+    expect(restricted.selection.mcps).toEqual(["mcp:code-review-graph"]);
+
+    writeFileSync(
+      join(root, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 2,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        governance: {
+          supportedClis: [
+            "claude",
+            "codex",
+            "cursor",
+            "antigravity",
+            "gemini",
+            "copilot",
+            "windsurf",
+            "opencode",
+            "zed",
+            "kimi",
+            "kiro",
+          ],
+        },
+        mcp: { allowedServers: [], allowManagedOnly: false },
+      }),
+    );
+    const unrestricted = buildEccRegistrationRequest(context, ["claude"]);
+    expect(unrestricted.project.mcps).toEqual(["mcp:code-review-graph"]);
+  });
+
+  it("does not let ECC profile or --with MCP choices bypass an active governance inventory", () => {
+    const home = join(root, "home-governed");
+    mkdirSync(home, { recursive: true });
+    writeFileSync(
+      join(root, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 2,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        mcp: { allowManagedOnly: true, allowedServers: ["code-review-graph"] },
+        governance: {
+          supportedClis: ["claude"],
+          policyVersion: "2026.08.0",
+          catalog: { reviewed: [], custom: [] },
+          activations: [],
+          authority: { approvals: [] },
+        },
+      }),
+    );
+    const context = ctx(false);
+    context.options = { profile: "core", with: ["mcp:code-review-graph"] };
+    context.env = { HOME: home };
+    context.host = makeHostAdapter({ platform: "linux", run: context.run, env: context.env });
+
+    const request = buildEccRegistrationRequest(context, ["claude"]);
+    expect(request.project.mcps).toEqual([]);
+    expect(request.selection.mcps).toEqual([]);
+    expect(request.project.moduleIds?.length).toBeGreaterThan(0);
+  });
+
+  it("keeps governed ECC full operational while marking it for operation-level filtering", () => {
+    writeFileSync(
+      join(root, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 2,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        governance: {
+          policyVersion: "2026.08.0",
+          supportedClis: ["claude"],
+          catalog: { reviewed: [], custom: [] },
+          activations: [],
+          authority: { approvals: [] },
+        },
+      }),
+    );
+    const context = ctx(false);
+    context.options = { profile: "full" };
+    const request = buildEccRegistrationRequest(context, ["claude"]);
+    expect(request.selection.scope).toBe("full");
+    expect(request.governance).toBe(true);
+    expect(request.selection.mcps).toEqual([]);
+  });
+
+  // `install` is no longer here: in a governed repository it runs the governed
+  // framework materialization instead (F6), pinned in
+  // `tests/ecc/governed-lifecycle-command.test.ts`. The remaining three still
+  // drive the framework's own profile installer, which may register native MCPs.
+  it("blocks the governed ECC lifecycle verbs that still drive the profile installer", async () => {
+    writeFileSync(
+      join(root, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 2,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        governance: {
+          policyVersion: "2026.08.0",
+          supportedClis: ["claude"],
+          catalog: { reviewed: [], custom: [] },
+          activations: [],
+          authority: { approvals: [] },
+        },
+      }),
+    );
+    for (const lifecycle of ["update", "repair", "rollback"]) {
+      const context = ctx(false);
+      context.options = { lifecycle };
+      await expect(
+        executeEccCommand(context, {
+          executeProfileLifecycle: async () => {
+            throw new Error("lifecycle must not run");
+          },
+        }),
+      ).rejects.toThrow(/governance exclusively owns/);
+    }
+
+    const uninstall = ctx(false);
+    uninstall.options = { lifecycle: "uninstall" };
+    await expect(
+      executeEccCommand(uninstall, {
+        executeProfileLifecycle: async () => ({
+          capability: "ecc lifecycle",
+          applied: false,
+          writes: [],
+          docs: [],
+          probes: [],
+          execs: [],
+          digests: [],
+          backups: [],
+          removed: [],
+        }),
+      }),
+    ).resolves.toMatchObject({ capability: "ecc lifecycle" });
+  });
+
+  it("builds the additive machine union from explicit declarations and prior projects", () => {
+    const home = join(root, "home");
+    const cpp = join(root, "cpp-project");
+    mkdirSync(home, { recursive: true });
+    mkdirSync(cpp, { recursive: true });
+    writeFileSync(
+      join(root, "package.json"),
+      JSON.stringify({
+        dependencies: { react: "19.0.0" },
+        devDependencies: { typescript: "5.0.0" },
+      }),
+    );
+    writeFileSync(join(root, "tsconfig.json"), "{}\n");
+    mkdirSync(join(root, "src"), { recursive: true });
+    writeFileSync(join(root, "src", "index.ts"), "export const value = 1;\n");
+    writeFileSync(
+      join(root, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          "code-review-graph": { type: "stdio", command: "uvx", args: [] },
+          context7: { type: "stdio", command: "npx", args: [] },
+        },
+      }),
+    );
+    const prior = mergeRegistrationLedger(
+      emptyRegistrationLedger(),
+      {
+        root: cpp,
+        scope: "scoped",
+        components: ["lang:cpp", "agent:cpp-reviewer", "agent:cpp-build-resolver"],
+        mcps: ["mcp:sequential-thinking"],
+      },
+      [],
+    );
+    writeRegistrationLedgerAtomic(home, prior);
+    const context = ctx(false);
+    context.posture = "enterprise";
+    context.env = { HOME: home };
+    context.host = makeHostAdapter({ platform: "linux", run: context.run, env: context.env });
+    context.options = { profile: "core", with: ["security-review"] };
+
+    const request = buildEccRegistrationRequest(context, ["claude"]);
+
+    expect(request.project.components).toEqual(["skill:security-review"]);
+    expect(request.project.components).not.toContain("lang:cpp");
+    expect(request.selection.components).toEqual(
+      expect.arrayContaining([
+        "skill:security-review",
+        "lang:cpp",
+        "agent:cpp-reviewer",
+        "agent:cpp-build-resolver",
+      ]),
+    );
+    expect(request.selection.mcps).toEqual(["mcp:sequential-thinking"]);
+    expect(request.selection.mcps).not.toContain("mcp:context7");
+    expect(request.ledger.projects).toHaveLength(1);
+  });
+
+  it("constructs install actions after exact packaged vendor evidence clears at Vibe", async () => {
+    const buildInstallPlan = vi.fn(() => plan("verified install", doc("install", "verified")));
+    const context = ctx();
+    context.posture = "vibe";
+    const result = await executeEccEvidencePipeline(context, request, {
+      catalog: catalog(),
+      source: resolveTrustSource(sourceRoot, { root }),
+      vendorLock: vendorLock(),
+      vendorLockSha256: "f".repeat(64),
+      buildInstallPlan,
+    });
+
+    expect(buildInstallPlan).toHaveBeenCalledOnce();
+    expect(result.docs).toEqual([expect.objectContaining({ describe: "install" })]);
+    expect(result.report?.exitCode()).toBe(0);
+  });
+
+  it("uses packaged vendor evidence for an authorized Vibe subset and held components", async () => {
+    const partialRequest: VerifiedEccRequest = {
+      clis: ["claude" as const],
+      profile: "core",
+      packs: [],
+      selection: {
+        scope: "scoped" as const,
+        components: ["baseline:rules", "baseline:hooks"],
+        mcps: [],
+        recommendations: [],
+      },
+    };
+    const buildInstallPlan = vi.fn(() =>
+      plan("verified partial install", doc("install", "partial")),
+    );
+
+    const context = ctx();
+    context.posture = "vibe";
+    const result = await executeEccEvidencePipeline(context, partialRequest, {
+      catalog: mixedCatalog(),
+      source: resolveTrustSource(sourceRoot, { root }),
+      vendorLock: mixedVendorLock(),
+      vendorLockSha256: "f".repeat(64),
+      buildInstallPlan,
+    });
+
+    expect(buildInstallPlan).toHaveBeenCalledWith(
+      expect.anything(),
+      realpathSync(sourceRoot),
+      partialRequest,
+      [
+        expect.objectContaining({ componentId: "runtime:ecc-installer" }),
+        expect.objectContaining({ componentId: "baseline:rules" }),
+      ],
+      // The held records ride alongside the authorizations, from the same
+      // verification the gate acted on — so a builder can report WHY a
+      // requested component did not install without re-verifying it.
+      [expect.objectContaining({ componentId: "baseline:hooks" })],
+    );
+    expect(result.docs).toEqual([expect.objectContaining({ describe: "install" })]);
+    expect(result.report?.exitCode()).toBe(0);
+    expect(result.report?.checks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          verdict: "skip",
+          code: "baseline.evidence-blocked",
+          detail: expect.stringContaining("baseline:hooks"),
+        }),
+      ]),
+    );
+    expect(result.digests).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          describe: "held baseline components",
+          data: {
+            held: [
+              expect.objectContaining({
+                componentId: "baseline:hooks",
+                routeCode: "baseline.evidence-blocked",
+                codes: ["trust.auto-exec-hook"],
+              }),
+            ],
+          },
+        }),
+      ]),
+    );
+  });
+
+  it("never constructs install actions when signed evidence blocks", async () => {
+    const buildInstallPlan = vi.fn(() => plan("must not build"));
+    const context = ctx();
+    context.posture = "vibe";
+    const result = await executeEccEvidencePipeline(context, request, {
+      catalog: catalog(),
+      source: resolveTrustSource(sourceRoot, { root }),
+      vendorLock: vendorLock("blocked"),
+      vendorLockSha256: "f".repeat(64),
+      buildInstallPlan,
+    });
+
+    expect(buildInstallPlan).not.toHaveBeenCalled();
+    expect(result.report?.checks).toEqual([
+      expect.objectContaining({ verdict: "fail", code: "baseline.evidence-blocked" }),
+    ]);
+  });
+
+  it("fails closed on invalid configured org evidence before install construction", async () => {
+    const buildInstallPlan = vi.fn(() => plan("must not build"));
+    const result = await executeEccEvidencePipeline(ctx(), request, {
+      catalog: catalog(),
+      source: resolveTrustSource(sourceRoot, { root }),
+      vendorLock: vendorLock(),
+      vendorLockSha256: "f".repeat(64),
+      buildInstallPlan,
+      resolveOrgEvidence: async () => ({
+        checks: [
+          {
+            name: "org baseline evidence",
+            verdict: "fail",
+            code: "baseline.evidence-mismatch",
+            detail: "signature invalid",
+          },
+        ],
+      }),
+    });
+
+    expect(buildInstallPlan).not.toHaveBeenCalled();
+    expect(result.report?.exitCode()).toBe(1);
+  });
+
+  it("blocks Enterprise absence before reading vendor evidence or constructing a baseline gate", async () => {
+    const buildInstallPlan = vi.fn(() => plan("must not build"));
+    const calls: string[] = [];
+    const vendorLockRead = vi.fn(() => {
+      calls.push("vendor-lock");
+      return vendorLock();
+    });
+    const resolveOrgEvidence = vi.fn(async (input) => {
+      calls.push("resolve-org");
+      expect((input as unknown as { posture?: unknown }).posture).toBe("enterprise");
+      return {
+        checks: [
+          {
+            name: "org baseline evidence required",
+            verdict: "fail",
+            code: "baseline.org-evidence-required",
+            detail: [
+              "catalog: ecc",
+              "owner: samartomar",
+              "repo: ECC",
+              `pinnedSha: ${"a".repeat(40)}`,
+              "bundle:",
+              "signingRepository:",
+              "reason:",
+              "reviewer:",
+              "approvedAt:",
+            ].join("\n"),
+          },
+        ],
+      } as never;
+    });
+    const deps = {
+      catalog: catalog(),
+      source: resolveTrustSource(sourceRoot, { root }),
+      vendorLockSha256: "f".repeat(64),
+      buildInstallPlan,
+      resolveOrgEvidence,
+    };
+    Object.defineProperty(deps, "vendorLock", {
+      enumerable: true,
+      get: vendorLockRead,
+    });
+
+    const result = await executeEccEvidencePipeline(ctx(), request, deps);
+
+    expect(vendorLockRead).not.toHaveBeenCalled();
+    expect(resolveOrgEvidence).toHaveBeenCalledOnce();
+    expect(calls).toEqual(["resolve-org"]);
+    expect(buildInstallPlan).not.toHaveBeenCalled();
+    expect(result.report?.checks).toEqual([
+      expect.objectContaining({
+        verdict: "fail",
+        code: "baseline.org-evidence-required",
+        detail: [
+          "catalog: ecc",
+          "owner: samartomar",
+          "repo: ECC",
+          `pinnedSha: ${"a".repeat(40)}`,
+          "bundle:",
+          "signingRepository:",
+          "reason:",
+          "reviewer:",
+          "approvedAt:",
+        ].join("\n"),
+      }),
+    ]);
+  });
+
+  it("uses AIH_ECC_REF as the live Enterprise pin before any vendor evidence work", async () => {
+    const livePin = baselineCatalogById("ecc").pinnedSha;
+    const stalePin = "a".repeat(40);
+    writeFileSync(
+      join(root, "aih-org-policy.json"),
+      JSON.stringify({
+        schemaVersion: 2,
+        minimumPosture: "enterprise",
+        references: { repoContract: "ai-coding/project.json" },
+        governance: { supportedClis: ["kiro"] },
+        trust: {
+          baselineOverrides: [
+            {
+              catalog: "ecc",
+              owner: "affaan-m",
+              repo: "ECC",
+              pinnedSha: stalePin,
+              bundle: ".aih/org-evidence/ecc-stale",
+              signingRepository: "acme/ecc-evidence",
+              reason: "Stale packaged evidence",
+              reviewer: "evidence@example.com",
+              approvedAt: "2026-07-10T12:00:00.000Z",
+            },
+          ],
+        },
+      }),
+      "utf8",
+    );
+    const context = ctx();
+    context.env = { AIH_ECC_REF: livePin };
+    context.host = makeHostAdapter({ platform: "linux", run: context.run, env: context.env });
+    const buildInstallPlan = vi.fn(() => plan("must not build"));
+    const deps = {
+      source: resolveTrustSource(sourceRoot, { root }),
+      vendorLockSha256: "f".repeat(64),
+      buildInstallPlan,
+    };
+    const vendorLockRead = vi.fn(() => {
+      throw new Error("live-pin drift must block before vendor evidence reads");
+    });
+    Object.defineProperty(deps, "vendorLock", { enumerable: true, get: vendorLockRead });
+
+    const result = await executeEccEvidencePipeline(context, request, deps);
+
+    expect(vendorLockRead).not.toHaveBeenCalled();
+    expect(buildInstallPlan).not.toHaveBeenCalled();
+    expect(result.report?.checks).toEqual([
+      expect.objectContaining({
+        verdict: "fail",
+        code: "baseline.org-evidence-required",
+        detail: expect.stringContaining(`pinnedSha: ${livePin}`),
+      }),
+    ]);
+    expect(result.report?.checks[0]?.detail).toContain(`declaredPinnedSha: ${stalePin}`);
+  });
+
+  it("refuses an AIH_ECC_REF pin the installed Catalog does not carry, naming both pins", async () => {
+    const carried = baselineCatalogById("ecc").pinnedSha;
+    const context = ctx();
+    context.env = { AIH_ECC_REF: "b".repeat(40) };
+    context.host = makeHostAdapter({ platform: "linux", run: context.run, env: context.env });
+    const buildInstallPlan = vi.fn(() => plan("must not build"));
+
+    await expect(
+      executeEccEvidencePipeline(context, request, {
+        source: resolveTrustSource(sourceRoot, { root }),
+        vendorLockSha256: "f".repeat(64),
+        buildInstallPlan,
+      }),
+    ).rejects.toMatchObject({
+      code: "AIH_TRUST",
+      message: `Catalog ecc carries pin ${carried}; it does not carry requested pin ${"b".repeat(40)}`,
+    });
+    expect(buildInstallPlan).not.toHaveBeenCalled();
+  });
+
+  it("keeps Vibe on the existing evidence fallback when no org override is configured", async () => {
+    const context = ctx();
+    context.posture = "vibe";
+    const buildInstallPlan = vi.fn(() =>
+      plan("verified Vibe fallback", doc("install", "fallback")),
+    );
+
+    const result = await executeEccEvidencePipeline(context, request, {
+      catalog: catalog(),
+      source: resolveTrustSource(sourceRoot, { root }),
+      vendorLock: vendorLock(),
+      vendorLockSha256: "f".repeat(64),
+      buildInstallPlan,
+    });
+
+    expect(buildInstallPlan).toHaveBeenCalledOnce();
+    expect(result.report?.exitCode()).toBe(0);
+  });
+
+  it("previews an exact remote pin without fetching or constructing installs", async () => {
+    const buildInstallPlan = vi.fn(() => plan("must not build"));
+    const source = resolveTrustSource("samartomar/ECC", {
+      root,
+      pin: "a".repeat(40),
+    });
+    if (source.kind !== "github") throw new Error("expected GitHub source");
+
+    const result = await executeEccEvidencePipeline(ctx(false), request, {
+      catalog: catalog(),
+      source,
+      vendorLock: vendorLock(),
+      vendorLockSha256: "f".repeat(64),
+      buildInstallPlan,
+      installPreview: installPreview(),
+    });
+
+    expect(result.execs).toEqual([]);
+    expect(result.digests).toEqual([
+      expect.objectContaining({
+        describe: "contingent ECC install preview",
+        data: {
+          contingentOn: "evidence-authorization",
+          pinnedSha: "a".repeat(40),
+          operations: [
+            expect.objectContaining({
+              target: "kiro",
+              kind: "exec",
+              componentId: "runtime:ecc-kiro",
+            }),
+          ],
+        },
+      }),
+    ]);
+    expect(buildInstallPlan).not.toHaveBeenCalled();
+    expect(existsSync(source.quarantineRoot)).toBe(false);
+  });
+
+  it("filters a user-home dry-run preview to selected components and the installer runtime", async () => {
+    const source = resolveTrustSource("samartomar/ECC", { root, pin: "a".repeat(40) });
+    const buildInstallPlan = vi.fn(() => plan("must not build"));
+    const selectedRequest = {
+      clis: ["claude" as const],
+      profile: "core",
+      packs: [],
+      selection: {
+        scope: "scoped" as const,
+        components: ["baseline:rules" as const],
+        mcps: [],
+        recommendations: [],
+      },
+    };
+
+    const result = await executeEccEvidencePipeline(ctx(false), selectedRequest, {
+      catalog: catalog(),
+      source,
+      vendorLock: vendorLock(),
+      vendorLockSha256: "f".repeat(64),
+      buildInstallPlan,
+      installPreview: installPreview(),
+    });
+
+    const preview = result.digests[0]?.data as {
+      contingentOn: string;
+      operations: Array<{ componentId: string; destination: string }>;
+    };
+    expect(preview.contingentOn).toBe("evidence-authorization");
+    expect(preview.operations).toEqual([
+      expect.objectContaining({
+        componentId: "baseline:rules",
+        destination: "<home>/.claude/rules/ecc/common/security.md",
+      }),
+      expect.objectContaining({
+        componentId: "runtime:ecc-installer",
+        destination: "<home>/.claude",
+      }),
+    ]);
+    expect(preview.operations).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ componentId: "baseline:hooks" })]),
+    );
+    expect(buildInstallPlan).not.toHaveBeenCalled();
+  });
+
+  it("rejects fetched metadata that does not bind the catalog pin", async () => {
+    const buildInstallPlan = vi.fn(() => plan("must not build"));
+    const source = resolveTrustSource("samartomar/ECC", {
+      root,
+      pin: "a".repeat(40),
+    });
+    if (source.kind !== "github") throw new Error("expected GitHub source");
+    const run = fakeRunner((argv) => {
+      if (argv[0] !== process.execPath || argv[1] !== "-e") return undefined;
+      const input = JSON.parse(argv[3] ?? "{}") as {
+        metadataPath: string;
+        owner: string;
+        ref: string;
+        repo: string;
+        treePath: string;
+      };
+      mkdirSync(input.treePath, { recursive: true });
+      writeFileSync(join(input.treePath, "install.sh"), "echo fetched\n");
+      writeFileSync(
+        input.metadataPath,
+        JSON.stringify({
+          kind: "github",
+          owner: input.owner,
+          repo: input.repo,
+          ref: input.ref,
+          pinnedSha: "b".repeat(40),
+          source: `${input.owner}/${input.repo}`,
+          treePath: input.treePath,
+        }),
+      );
+      return { code: 0 };
+    });
+    const context = ctx();
+    context.posture = "vibe";
+    context.run = run;
+    context.host = makeHostAdapter({ platform: "linux", run, env: {} });
+
+    const result = await executeEccEvidencePipeline(context, request, {
+      catalog: catalog(),
+      source,
+      vendorLock: vendorLock(),
+      vendorLockSha256: "f".repeat(64),
+      buildInstallPlan,
+    });
+
+    expect(buildInstallPlan).not.toHaveBeenCalled();
+    expect(result.report?.checks).toEqual([
+      expect.objectContaining({ verdict: "fail", code: "baseline.evidence-mismatch" }),
+    ]);
+    expect(existsSync(source.quarantineRoot)).toBe(false);
+  });
+});
+
+/**
+ * The 5.4.0 field-report fix: the unpinned supply-chain advisory lived only in
+ * `eccPlan`, which real dispatch bypasses (`deps.execute = executeEccCommand`), so
+ * consult-only targets recommended a bare latest-from-npm `npx ecc consult` with no
+ * pinning warning at any posture. The consult path must carry the advisory.
+ */
+describe("executeEccCommand — consult-only targets", () => {
+  it("emits the supply-chain advisory alongside the consult recommendation", async () => {
+    const context: PlanContext = { ...ctx(false), options: { cli: "windsurf" }, apply: false };
+    const result = await executeEccCommand(context);
+    const docs = result.docs.map((d) => d.describe).join("\n");
+    expect(docs).toContain("Install ECC for windsurf (via the consult advisor)");
+    expect(docs).toContain("supply chain — ECC runs LATEST upstream unless you pin it");
+  });
+
+  it("keeps consult output review-only so it cannot bypass executable consent", async () => {
+    const context: PlanContext = { ...ctx(false), options: { cli: "windsurf" }, apply: false };
+    const result = await executeEccCommand(context);
+    const text = result.docs.map((entry) => entry.text).join("\n");
+
+    expect(text).toContain(
+      "Do not apply executable, plugin, hook, process, environment, or permission",
+    );
+    expect(text).not.toContain("then apply them");
+  });
+});

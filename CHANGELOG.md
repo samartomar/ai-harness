@@ -8,6 +8,41 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Removed
 
+- **Breaking:** the ECC implementation moved out of `@aihq/core` into
+  `@aihq/framework-ecc`, an optional peer (`npm install -g @aihq/core @aihq/framework-ecc`).
+  Without it, `aih ecc`, `aih ecc mcp add|remove`, governed delivery of a policy that
+  selects ECC content (`aih policy project`, `aih init` on a bound project), and
+  uninstall/prune with any aih ECC state (project `.aih/ecc/` receipts, the explicit MCP
+  receipt, the ECC profile lifecycle state and receipts under `.aih/ecc-profile/`, the machine
+  registration ledger, aih's Codex install state) refuse before any cleanup with
+  `framework-plugin-unavailable` (or `-incompatible`), naming the state found and the install
+  command; nothing is skipped silently. Each state path and its ancestors are inspected with
+  `lstat`: a dangling symbolic link, an inaccessible entry or an ancestor that is not a directory
+  counts as state and is named with its condition, never treated as absent. `aih doctor`, `aih report` and
+  `aih policy evaluate` state that the ECC checks were not run, and the policy-delivery
+  report blocks while it needs ECC's knowledge and cannot get it.
+- **Breaking (library):** the library root no longer exports the ECC Package Graph
+  adapters (`projectEccCapabilityPackageAuthority`, `projectEccMaterializationAuthority`,
+  `projectEccMcpCapabilityPackageAuthority`, `projectEccMcpReceiptAuthority` and their
+  types).
+- The CLI capability lines in `aih report` and `aih mcp` no longer claim ECC install or
+  governed-ECC support per host; the ECC plugin reports that itself (the `aih ecc` preview
+  refuses an unsupported target by name, and the policy-delivery report lists unsupported
+  ECC targets).
+
+- **Breaking:** `governance.eccHookControls` is removed and replaced by the generic
+  `governance.frameworkHookControls`, keyed by framework id (`ecc`, `superpowers`), each
+  entry `{ "profile"?: string, "disabledHookIds": string[] }`. It requires schemaVersion 3
+  and `minimumCoreVersion` 0.7.0. A policy that still declares `eccHookControls` is
+  refused with the migration. Migration: move
+  `governance.eccHookControls: { "profile": P, "disabledIds": [...] }` to
+  `governance.frameworkHookControls: { "ecc": { "profile": P, "disabledHookIds": [...] } }`,
+  set schemaVersion 3 and `minimumCoreVersion` "0.7.0". A project that projected the old
+  controls has `.aih/org-policy-ecc-hook-controls-receipt.json`; projection refuses while
+  it exists: remove `ECC_HOOK_PROFILE` and `ECC_DISABLED_HOOKS` from
+  `.claude/settings.json` `env` and delete that receipt, then project again. The new
+  receipt is `.aih/org-policy-framework-hook-controls-receipt.json`. Hook ids and profiles
+  are validated by the framework plugin against its own inventory, not by Core's schema.
 - Remove legacy MCP-target reconstruction during saved-policy consumption. Policies authored
   against an older MCP target declaration now fail closed with `Stale selected content`; re-save
   the policy with the currently installed Catalog's MCP targets before consuming it.
@@ -23,6 +58,20 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Breaking:** `aih ecc --lifecycle install|update` (the ordinary ECC profile lifecycle) now
+  renders only from profile evidence in the installed Catalog's ECC framework descriptor
+  (`sections.profileEvidence`), bound to the plugin's one upstream commit. `@aihq/framework-ecc`
+  embeds no profile evidence. Until the installed Catalog carries that section, install and
+  update refuse with `framework-profile-evidence-unavailable` and name the next route; repair,
+  rollback and uninstall of an existing profile installation are unchanged. Every object in the
+  section, including the nested pinned manifest and module evidence, is strict: an unknown key
+  or a mistyped field refuses with `framework-profile-evidence-incompatible` naming its key path.
+- `aih ecc --lifecycle rollback` now authenticates the rollback snapshot as well as the active
+  installation: its source identity and projection digest must equal an entry in the plugin's
+  append-only installation trust record before any write is planned. A snapshot that is not
+  anchored there (including a self-consistent one with recomputed hashes) refuses with
+  `framework-profile-recovery-unanchored` and writes nothing; repair, rollback and uninstall
+  report an unanchored active identity with the same typed refusal.
 - **Breaking:** Core now requires Node.js 20.6 or newer (`engines.node` `>=20.6.0`).
   The framework-plugin loader uses the synchronous `import.meta.resolve` of Node 20.6
   to prove that a plugin entry resolves inside its own install tree. `aih doctor` and
@@ -95,6 +144,24 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Framework hook inventories accept a declaration for a host aih does not control (Catalog's
+  Superpowers `muse` declaration; Hermes and Devin follow). The declaration stays on its selectable
+  row with `hostControl: { kind: "none", enforcement: "unenforced", nextRoute }`, the next route
+  being that host's own plugin or hook controls. A disable of such a hook is planned for the
+  targeted hosts only (an undeclared targeted host stays `not-applicable`) and carries an
+  `unenforced` label for the uncontrolled host; aih never claims enforcement there. A malformed
+  host id is still refused. `FrameworkHookDeclarationV1.host` widens from `Cli` to a host id.
+- `@aihq/core/framework-host` exports `eccRuntimeScriptPath()`, the installed Core's own
+  `dist/ecc-runtime.js`. Native ECC registration from `@aihq/framework-ecc` runs that script;
+  the plugin ships no runtime of its own.
+- A user-level framework hook-control list, `frameworkHookControls` in the project's
+  `.aih-config.json`, keyed by framework id with `{ disabledHookIds }` only. It may only add
+  disables of disable-eligible rows; a profile or any other field is refused by name, since
+  enterprise policy is the only profile source. A malformed list fails closed. Framework plugin commands receive the merged
+  request in their policy view, and `aih policy project` applies the plugin's plan. Core
+  checks the plan's coverage: each requested disable must come back as exactly one disabled
+  decision under its strongest authority, with exactly one host decision per targeted host; an
+  omission or duplicate refuses with `framework-plugin-incompatible`.
 - Add Headroom (`headroom-ai[mcp]` 0.38.0, Apache-2.0) as a default-selected developer tool that
   runs only after explicit activation. Selection alone, with or without `--apply`, leaves it
   `selected-pending` with a skipped check. `aih developer-tools` and `aih init` gain

@@ -149,6 +149,38 @@ describe("aih superpowers — the Core command shell", () => {
     expect(JSON.stringify(result)).not.toContain('"copilot","plugin"');
   });
 
+  it("hands the plugin the user list's hook disables through Core's policy view", async () => {
+    writeFileSync(
+      join(root, ".aih-config.json"),
+      `${JSON.stringify({
+        schemaVersion: 1,
+        contextDir: "ai-coding",
+        frameworkHookControls: { superpowers: { disabledHookIds: ["hook:session-start"] } },
+      })}\n`,
+    );
+    const loaded = await loadSuperpowersFromSource();
+    if (!loaded.ok) throw new Error(loaded.refusal.detail);
+    let seen: FrameworkOperationContextV1["policy"] | undefined;
+    const observing = {
+      ...loaded,
+      plugin: {
+        ...loaded.plugin,
+        commands: {
+          superpowers: {
+            execute: async (context: FrameworkOperationContextV1) => {
+              seen = context.policy;
+              return context.host.executePlan(plan("superpowers"));
+            },
+          },
+        },
+      },
+    };
+    await executeSuperpowersCommand(ctx(), { loadPlugin: async () => observing });
+    expect(seen?.hookControls).toEqual({
+      disabled: [{ hookId: "hook:session-start", authority: "user" }],
+    });
+  });
+
   it("refuses a result the plugin fabricated instead of one Core's services produced", async () => {
     const forged: PlanResult = {
       capability: "superpowers",

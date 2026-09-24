@@ -27,13 +27,13 @@ import { parseBaselineEvidenceLock } from "../baseline-evidence/schema.js";
 import { readVendorBaselineLock } from "../baseline-evidence/vendor.js";
 import type { BaselineAuthorization } from "../baseline-evidence/verify.js";
 import type { Posture } from "../config/posture.js";
+import { readEccInstallPreview } from "../ecc/install-preview.js";
 import {
   type RegistrationLedger,
-  readEccInstallPreview,
   readRegistrationLedger,
   registrationLedgerPath,
   writeRegistrationLedgerAtomic,
-} from "../framework-plugin/ecc-facade.js";
+} from "../ecc/registration.js";
 import { TRUST_POLICY_VERSION } from "../trust/evidence.js";
 
 const POSTURES: readonly Posture[] = ["vibe", "enterprise"];

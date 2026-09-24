@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { z } from "zod";
 import { parseNativeStrictJsonObjectV1 } from "../contract/native-strict-json-object-v1.js";
 import { AihError } from "../errors.js";
+import { FrameworkHookControlsSchema } from "../framework-plugin/hook-controls-schema.js";
 import { GOVERNED_MCP_TARGETS } from "../internals/cli-registry.js";
 import { SUPPORTED_CLIS } from "../internals/clis.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
@@ -328,24 +329,6 @@ const PolicyApproverIdentitySchema = z.union([
   SafePolicyIdentifierSchema,
 ]);
 
-const EccHookProfileSchema = z.enum(["minimal", "standard", "strict"]);
-const EccHookControlsSchema = z
-  .object({
-    profile: EccHookProfileSchema,
-    disabledIds: z
-      .array(z.string().regex(/^[a-z][a-z0-9:-]{0,127}$/))
-      .max(64)
-      .superRefine((ids, ctx) => {
-        const seen = new Set<string>();
-        for (const [index, id] of ids.entries()) {
-          if (seen.has(id))
-            ctx.addIssue({ code: "custom", path: [index], message: "hook ids must be unique" });
-          seen.add(id);
-        }
-      })
-      .optional(),
-  })
-  .strict();
 export const SupportedCliSchema = z.enum(SUPPORTED_CLIS);
 const SupportedCliListSchema = z
   .array(SupportedCliSchema)
@@ -1233,8 +1216,13 @@ const GovernedPolicyGovernanceSchema = z
      * side effect and deliberately creates no candidate or activation.
      */
     eccMcpApprovals: z.array(EccMcpApprovalSchema).default([]),
-    /** ECC-owned runtime controls projected only through receipt-owned Claude env keys. */
-    eccHookControls: EccHookControlsSchema.optional(),
+    /**
+     * Framework hook controls keyed by framework id (schema 3, Core 0.7.0). Each
+     * framework plugin validates the ids and profile against its own hook
+     * inventory and returns the plan; Core applies it through the hook
+     * registrar's receipt-owned Claude settings environment keys.
+     */
+    frameworkHookControls: FrameworkHookControlsSchema.optional(),
     /**
      * Organization-sanctioned AI CLIs. This is a governance boundary, not the
      * projector target set: every value comes from AIH's supported CLI registry,
@@ -1659,6 +1647,19 @@ const OrgPolicyBaseSchema = z
 const refineOrgPolicy = (rawPolicy: unknown, ctx: z.RefinementCtx) => {
   const policy = rawPolicy as z.infer<typeof OrgPolicyBaseSchema>;
   if (
+    policy.governance !== undefined &&
+    "frameworkHookControls" in policy.governance &&
+    policy.governance.frameworkHookControls !== undefined &&
+    ((rawPolicy as { schemaVersion?: unknown }).schemaVersion !== 3 ||
+      (rawPolicy as { minimumCoreVersion?: unknown }).minimumCoreVersion !==
+        HEADROOM_MINIMUM_CORE_VERSION)
+  )
+    ctx.addIssue({
+      code: "custom",
+      path: ["governance", "frameworkHookControls"],
+      message: `governance.frameworkHookControls requires schemaVersion 3 and minimumCoreVersion ${HEADROOM_MINIMUM_CORE_VERSION}.`,
+    });
+  if (
     (rawPolicy as { schemaVersion?: unknown }).schemaVersion === 3 &&
     !isSupportedDeveloperToolPolicyFloorV1(
       (rawPolicy as { minimumCoreVersion?: unknown }).minimumCoreVersion,
@@ -1854,6 +1855,20 @@ export function parseOrgPolicy(value: unknown): OrgPolicy {
   ) {
     throw new OrgPolicyError(
       "org-policy minimumPosture team was removed; replace team with vibe or enterprise (the administrator chooses)",
+    );
+  }
+  const governance =
+    value !== null && typeof value === "object" && !Array.isArray(value)
+      ? (value as { governance?: unknown }).governance
+      : undefined;
+  if (
+    governance !== null &&
+    typeof governance === "object" &&
+    !Array.isArray(governance) &&
+    "eccHookControls" in governance
+  ) {
+    throw new OrgPolicyError(
+      `org-policy governance.eccHookControls was replaced by governance.frameworkHookControls.ecc: set schemaVersion 3 and minimumCoreVersion ${HEADROOM_MINIMUM_CORE_VERSION}, and move { profile, disabledIds } to { profile, disabledHookIds }`,
     );
   }
   try {

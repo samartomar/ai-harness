@@ -1,14 +1,7 @@
 import { join } from "node:path";
 import { SHARED_MARKER, sharedCanonicalBlockBody } from "../bootstrap-ai/canon.js";
 import { AIH_CONFIG_FILE } from "../config/marker.js";
-import {
-  codexPruneRemovalActions,
-  eccPruneReconciliationActions,
-  hasEccRegisteredTarget,
-  hasEccRegistrationLedger,
-  isAihDirectEccInstallTarget,
-} from "../framework-plugin/ecc-facade.js";
-import type { Cli } from "../internals/clis.js";
+import { eccPrunePlanV1 } from "../framework-plugin/ecc-lifecycle.js";
 import { readIfExists } from "../internals/fsxn.js";
 import { aihIgnoreWrite } from "../internals/gitignore.js";
 import { extractManagedBlock, stripManagedBlock } from "../internals/markers.js";
@@ -16,7 +9,6 @@ import {
   type Action,
   type CommandSpec,
   digest,
-  doc,
   type Plan,
   type PlanContext,
   plan,
@@ -285,17 +277,6 @@ function actionFor(ctx: PlanContext, a: PruneArtifact, hardDelete: boolean): Act
   return undefined; // advisory → surfaced in the digest, never an auto-action
 }
 
-function unreceiptedEccPreservationDoc(cli: Cli): Action {
-  return doc(
-    `Preserve unreceipted ECC ${cli} footprint`,
-    lines(
-      `No AIH ECC registration ledger target receipt authenticates the ${cli} install state.`,
-      "Prune preserves the target's client files and skips upstream uninstall execution.",
-      "AIH-owned repository adapters and managed bootloader blocks remain eligible for cleanup.",
-    ),
-  );
-}
-
 async function prunePlan(ctx: PlanContext): Promise<Plan> {
   // `--unrunnable` is the ONLY path that probes PATH (which/where, read-only,
   // plan-purity-allowlisted); a default or report-driven scan never does.
@@ -342,22 +323,12 @@ async function prunePlan(ctx: PlanContext): Promise<Plan> {
     actions.push(...nativeMcpProjectionActions(ctx, residue.target, {}));
     if (residue.matches) subtracted += 1;
   }
-  const coordinatedEccPrune = hasEccRegistrationLedger(ctx);
-  const coordinatedCodexPrune = coordinatedEccPrune && hasEccRegisteredTarget(ctx, "codex");
-  for (const cli of set.dropped) {
-    if (
-      isAihDirectEccInstallTarget(cli) &&
-      (!coordinatedEccPrune || !hasEccRegisteredTarget(ctx, cli))
-    ) {
-      actions.push(unreceiptedEccPreservationDoc(cli));
-    }
-    if (!coordinatedCodexPrune && cli === "codex") {
-      const codexPrune = codexPruneRemovalActions(ctx);
-      actions.push(...codexPrune.actions);
-      if (codexPrune.removesAgentsBlock) subtracted += 1;
-    }
-  }
-  actions.push(...eccPruneReconciliationActions(ctx, set.dropped));
+  // ECC's share (unreceipted-footprint preservation, the Codex footprint, the
+  // ledger-coordinated reconciliation) is planned by @aihq/framework-ecc.
+  // Without it, prune refuses when aih ECC state exists and adds nothing otherwise.
+  const ecc = await eccPrunePlanV1(ctx, set.dropped);
+  actions.push(...ecc.actions);
+  subtracted += ecc.subtracted;
   const headline =
     set.dropped.length > 0
       ? `Stale artifacts — ${set.artifacts.length} for ${set.dropped.length} dropped CLI(s)`

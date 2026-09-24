@@ -28,9 +28,9 @@ import {
   deepFreezeStrictJsonV1,
   parseStrictJsonObjectV1,
 } from "../../../contract/strict-json-v1.js";
+import { currentEccRuntimeAdapterCompatibilityV1 } from "../../../ecc/runtime-adapter-compatibility.js";
 import {
   assertEccRuntimeDescriptorCustodyV1,
-  currentEccRuntimeAdapterCompatibilityV1,
   type EccRuntimeDescriptorV1,
   EccRuntimeDescriptorV1Schema,
   type PreparedEccRuntimeDescriptorV1,

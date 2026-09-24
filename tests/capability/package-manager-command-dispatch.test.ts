@@ -54,13 +54,16 @@ describe("capability package command domain dispatch", () => {
 
     await executeCapabilityPackageCommand("remove", ctx);
 
-    expect(mocks.mixed).toHaveBeenCalledWith({
-      root: ctx.root,
-      contextDir: ctx.contextDir,
-      operation: "remove",
-      packageId: "package:ecc-agent/reviewer",
-      apply: true,
-    });
+    expect(mocks.mixed).toHaveBeenCalledWith(
+      {
+        root: ctx.root,
+        contextDir: ctx.contextDir,
+        operation: "remove",
+        packageId: "package:ecc-agent/reviewer",
+        apply: true,
+      },
+      expect.anything(),
+    );
   });
 
   it("routes a single-domain ECC removal through the closure coordinator", async () => {
@@ -76,13 +79,16 @@ describe("capability package command domain dispatch", () => {
 
     const result = await executeCapabilityPackageCommand("remove", ctx);
 
-    expect(mocks.mixed).toHaveBeenCalledWith({
-      root: ctx.root,
-      contextDir: ctx.contextDir,
-      operation: "remove",
-      packageId: "package:ecc-agent/reviewer",
-      apply: true,
-    });
+    expect(mocks.mixed).toHaveBeenCalledWith(
+      {
+        root: ctx.root,
+        contextDir: ctx.contextDir,
+        operation: "remove",
+        packageId: "package:ecc-agent/reviewer",
+        apply: true,
+      },
+      expect.anything(),
+    );
     expect(mocks.skill).not.toHaveBeenCalled();
     expect(result.digests[0]?.data).toMatchObject({ status: "applied" });
   });
@@ -100,13 +106,16 @@ describe("capability package command domain dispatch", () => {
 
     await executeCapabilityPackageCommand("remove", ctx);
 
-    expect(mocks.mixed).toHaveBeenCalledWith({
-      root: ctx.root,
-      contextDir: ctx.contextDir,
-      operation: "remove",
-      packageId: "package:ecc-mcp/memxus",
-      apply: true,
-    });
+    expect(mocks.mixed).toHaveBeenCalledWith(
+      {
+        root: ctx.root,
+        contextDir: ctx.contextDir,
+        operation: "remove",
+        packageId: "package:ecc-mcp/memxus",
+        apply: true,
+      },
+      expect.anything(),
+    );
     expect(mocks.skill).not.toHaveBeenCalled();
   });
 
@@ -123,13 +132,16 @@ describe("capability package command domain dispatch", () => {
 
     await executeCapabilityPackageCommand("add", ctx);
 
-    expect(mocks.mixed).toHaveBeenCalledWith({
-      root: ctx.root,
-      contextDir: ctx.contextDir,
-      operation: "add",
-      packageId: "package:ecc-agent/reviewer",
-      apply: true,
-    });
+    expect(mocks.mixed).toHaveBeenCalledWith(
+      {
+        root: ctx.root,
+        contextDir: ctx.contextDir,
+        operation: "add",
+        packageId: "package:ecc-agent/reviewer",
+        apply: true,
+      },
+      expect.anything(),
+    );
   });
 
   it("surfaces a stable stage and reason when reconciliation refuses", async () => {

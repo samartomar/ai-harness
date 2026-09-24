@@ -2,8 +2,7 @@ import {
   displaySafe,
   ECC_MATERIALIZATION_RECEIPT_PATH,
   readEccMaterializationReceipt,
-  uninstallEccMaterialization,
-} from "../framework-plugin/ecc-facade.js";
+} from "../ecc/materialization-receipt.js";
 
 /**
  * F6: the governed ECC materialization's removal member of `aih uninstall`.
@@ -11,7 +10,7 @@ import {
  * The hook-registrar precedent, applied to bytes instead of JSON keys: read the
  * destination-root receipt, subtract exactly what it proves AIH wrote, and where
  * it cannot prove clean ownership report why and remove nothing. Removal runs
- * through the engine's own `uninstallEccMaterialization`, which is where the
+ * through the ECC engine's own `uninstallEccMaterialization` (in the plugin), which is where the
  * per-file digest match, the operator-content guarantee and the rollback live —
  * a second copy of that transaction here is exactly the drift a receipt exists
  * to prevent.
@@ -55,26 +54,15 @@ export function eccMaterializationUninstallState(root: string): EccMaterializati
   };
 }
 
-export interface EccMaterializationRemovalOutcome {
-  removed: string[];
-  advisories: Array<{ path: string; reason: string; detail: string }>;
-}
-
 /**
- * Subtract every receipt-proven owned byte. Called ONLY under `--apply`: the
- * engine has no dry-run removal, and {@link eccMaterializationUninstallState} is
- * what a preview reports from.
+ * What the receipt-proven removal did. The removal itself runs in
+ * `@aihq/framework-ecc` (`src/framework-plugin/ecc-lifecycle.ts`), called only
+ * under `--apply`; {@link eccMaterializationUninstallState} is what a preview
+ * reports from.
  */
-export function removeEccMaterialization(root: string): EccMaterializationRemovalOutcome {
-  const result = uninstallEccMaterialization(root);
-  return {
-    removed: result.removed.map((file) => file.path),
-    advisories: result.advisories.map((advisory) => ({
-      path: advisory.path,
-      reason: advisory.reason,
-      detail: advisory.detail,
-    })),
-  };
+export interface EccMaterializationRemovalOutcome {
+  readonly removed: readonly string[];
+  readonly advisories: readonly { path: string; reason: string; detail: string }[];
 }
 
 export { ECC_MATERIALIZATION_RECEIPT_PATH };

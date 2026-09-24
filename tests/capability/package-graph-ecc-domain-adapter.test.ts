@@ -1,4 +1,8 @@
 import { describe, expect, it } from "vitest";
+import {
+  explicitEccMcpReceiptRecord,
+  explicitEccMcpRenderPlan,
+} from "../../packages/framework-ecc/src/ecc/mcp-explicit-add.js";
 import { baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
 import { vendorBaselineLockBytes } from "../../src/baseline-evidence/vendor.js";
 import { projectBaselinePackageGraphAuthority } from "../../src/capability/package-graph/adapters/baseline.js";
@@ -8,10 +12,6 @@ import {
   projectEccMcpReceiptAuthority,
 } from "../../src/capability/package-graph/adapters/ecc-domains.js";
 import { buildPackageGraphIndex } from "../../src/capability/package-graph/build.js";
-import {
-  explicitEccMcpReceiptRecord,
-  explicitEccMcpRenderPlan,
-} from "../../src/ecc/mcp-explicit-add.js";
 import { receiptJson } from "../../src/ecc/mcp-explicit-add-receipt.js";
 import { ECC_MCP_CATALOG_PROVENANCE } from "../../src/org-policy/ecc-mcp-catalog.js";
 

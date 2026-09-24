@@ -72,7 +72,7 @@
     "check:ai-runtime": "tsx src/internals/ai-runtime-inventory.ts --root .",
     "check:bugbounty-report": "tsx src/internals/bugbounty-report.ts --source .internal/defects/BUGBOUNTY.md",
     "check:self-hosting-canon": "vitest run tests/self-hosting/self-hosting.test.ts",
-    "check:ecc-installer": "tsx src/internals/check-ecc-installer.ts",
+    "check:ecc-installer": "tsx packages/framework-ecc/scripts/check-ecc-installer.ts",
     "check:baseline-analyzers": "tsx src/internals/check-baseline-analyzers.ts",
     "check:native-identity": "tsx src/internals/check-native-identity.ts",
     "check:baseline-pins": "tsx src/internals/check-baseline-pin-currency.ts",

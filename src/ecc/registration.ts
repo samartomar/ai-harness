@@ -14,11 +14,13 @@ import { z } from "zod";
 import type { BaselineAuthorization } from "../baseline-evidence/verify.js";
 import { type Cli, SUPPORTED_CLIS } from "../internals/clis.js";
 import { readRegularFileWithStats, retryTransient } from "../internals/fsxn.js";
-import type { EccComponentId, EccMcpComponentId } from "./components.js";
+import { AuthorizationSchema } from "./materialization-receipt.js";
+
+/** ECC component ids as the ledger records them (`<kind>:<name>`, MCPs `mcp:<name>`). */
+type EccComponentId = `${string}:${string}`;
+type EccMcpComponentId = `mcp:${string}`;
 
 const COMPONENT_ID = /^[a-z][a-z0-9-]*:[a-z0-9][a-z0-9._-]*$/;
-const SHA40 = /^[a-f0-9]{40}$/;
-const SHA256 = /^[a-f0-9]{64}$/;
 
 const ComponentIdSchema = z.string().min(3).max(160).regex(COMPONENT_ID);
 const ModuleIdSchema = z
@@ -29,32 +31,6 @@ const ModuleIdSchema = z
 const McpComponentIdSchema = ComponentIdSchema.refine((value) => value.startsWith("mcp:"), {
   message: "MCP component IDs must start with mcp:",
 });
-
-/**
- * The evidence authorization tuple. Exported so a sibling ownership record can
- * REFERENCE this schema instead of restating it — a restatement cannot detect a
- * field added here, which is the likeliest direction of drift.
- */
-export const AuthorizationSchema = z
-  .object({
-    componentId: ComponentIdSchema,
-    source: z.string().min(1).max(240),
-    pinnedSha: z.string().regex(SHA40),
-    treeSha256: z.string().regex(SHA256),
-    tier: z.enum(["vendor", "org"]),
-    issuer: z.string().min(1).max(240),
-    evidenceSha256: z.string().regex(SHA256),
-    effective: z.enum(["pass", "accepted-with-conditions"]).optional(),
-    acceptance: z
-      .object({
-        decisionId: z.string().min(1).max(240),
-        recordSha256: z.string().regex(SHA256),
-        acceptedFindingCodes: z.array(z.string().min(1).max(120)).max(64),
-      })
-      .strict()
-      .optional(),
-  })
-  .strict();
 
 const ProjectRegistrationSchema = z
   .object({

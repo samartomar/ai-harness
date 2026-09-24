@@ -242,6 +242,9 @@ function renderPolicyDelivery(report: V9Ready["policyDelivery"]): string {
           `<div class="drift-file"><span class="fn">${escHtml(component.id)}<br><small>${escHtml(component.source.repository)}@${escHtml(component.source.commit)}</small></span><span class="fs">${escHtml(component.state)}<br>Target coverage: ${escHtml(component.targetCoverage?.state ?? "unverified")} (${escHtml(component.targetCoverage?.recordedTargets.join(", ") || "not recorded")})<br>Native loading: ${escHtml(component.nativeLoading)} · effect: ${escHtml(component.practiceEffect)}</span></div>`,
       )
       .join("") +
+    (report.eccChecks
+      ? `<div class="method">ECC checks were not run: ${escHtml(report.eccChecks.detail)}</div>`
+      : "") +
     (report.codexRoles
       ? `<div class="method">Codex role registration: ${escHtml(report.codexRoles.state)}; expected roles: ${escHtml(report.codexRoles.expectedRoleIds.join(", ") || "none")}. Native role loading remains unverified.</div>`
       : "");

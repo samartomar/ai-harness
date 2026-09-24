@@ -1,0 +1,556 @@
+import { readFileSync, realpathSync } from "node:fs";
+import { homedir } from "node:os";
+import {
+  type AcceptanceTuple,
+  AihError,
+  type BaselineAuthorization,
+  type BaselineCatalog,
+  type BaselineEvidenceLock,
+  type BaselineEvidencePipelineDeps,
+  type BaselineHeldComponent,
+  type Cli,
+  detectFallbackNotice,
+  doc,
+  governanceOwnsAihSurfaces,
+  inspectContainedRelativePath,
+  machineRegistrationUnion,
+  mergeRegistrationLedger,
+  type OrgPolicy,
+  type JsoncParseError as ParseError,
+  type Plan,
+  type PlanContext,
+  type PlanResult,
+  type ProjectRegistration,
+  parseJsonc as parse,
+  plan,
+  postureFromContext,
+  type RegistrationLedger,
+  type RepoStack,
+  type ResolveOrgBaselineEvidenceResult,
+  readEccMaterializationReceipt,
+  readRegistrationLedger,
+  type resolveOrgBaselineEvidence,
+  scanRepo,
+  type TrustSource,
+} from "@aihq/core/framework-host";
+import {
+  assertOrgPolicyMutationSource,
+  assertPolicyBindingCurrent,
+  baselineCatalogById,
+  cleanupQuarantine,
+  executeBaselineEvidencePipeline,
+  executePlan,
+  policyBindingFileAssertion,
+  readOrgPolicy,
+  resolveTrustSource,
+  verifiedOrgPolicyTargets,
+} from "../core-runtime.js";
+import {
+  type EccProfileLifecycleCommandDeps,
+  executeEccProfileLifecycleCommand,
+} from "../profile/command.js";
+import type { EccComponentId, EccComponentSelection, EccMcpComponentId } from "./components.js";
+import { selectEccComponents } from "./components.js";
+import { eccEvidenceComponentIds, eccEvidenceComponentIdsForSelection } from "./evidence.js";
+import {
+  executeGovernedEccMaterialization,
+  executeGovernedEccWithdrawal,
+  type GovernedEccLifecycleDeps,
+  governedEccComponentIds,
+  type PreparedGovernedEccDelivery,
+} from "./governed-lifecycle.js";
+import {
+  eccActionsForCli,
+  eccSupplyChainDoc,
+  eccToolsDoc,
+  isAihDirectEccInstallTarget,
+} from "./install.js";
+import {
+  contingentEccInstallPreviewPlan,
+  type EccInstallPreviewArtifact,
+} from "./install-preview.js";
+import { assertGovernedMaterializationTargets } from "./materialization-target.js";
+import { orgAllowedEccMcpComponents } from "./mcp.js";
+import {
+  type HistoricalEccRuntimeDescriptorContextV1,
+  resolveHistoricalEccRuntimeDescriptorV1,
+} from "./runtime-descriptor-resolver.js";
+import { eccLanguages } from "./select.js";
+import { type VerifiedEccRequest, verifiedEccInstallPlan } from "./verified.js";
+
+const FULL_SHA = /^[a-f0-9]{40}$/;
+
+/**
+ * `verifiedEccInstallPlan`'s shape, plus the evidence records the gate held
+ * back. Declared rather than derived so a builder that reports WHY a selected
+ * component did not install — the governed materialization lifecycle — is
+ * expressible without every existing four-parameter builder having to change.
+ */
+export type EccInstallPlanBuilder = (
+  ctx: PlanContext,
+  sourceRoot: string,
+  request: VerifiedEccRequest,
+  authorizations: readonly BaselineAuthorization[],
+  held: readonly BaselineHeldComponent[],
+) => Plan | Promise<Plan>;
+
+export interface EccEvidencePipelineDeps extends BaselineEvidencePipelineDeps {
+  catalog?: BaselineCatalog;
+  source?: TrustSource;
+  /** When set, only accepted-with-conditions decisions for this exact tuple apply. */
+  acceptanceTuple?: AcceptanceTuple;
+  vendorLock?: BaselineEvidenceLock;
+  vendorLockSha256?: string;
+  buildInstallPlan?: EccInstallPlanBuilder;
+  resolveOrgEvidence?: (
+    input: Parameters<typeof resolveOrgBaselineEvidence>[0],
+  ) => Promise<ResolveOrgBaselineEvidenceResult>;
+  installPreview?: EccInstallPreviewArtifact;
+}
+
+export interface EccCommandDeps extends EccEvidencePipelineDeps {
+  /** Build and verify the governed request without committing destination effects. */
+  prepareOnly?: boolean;
+  /** Internal handoff used by composed project delivery to commit this exact preparation. */
+  onGovernedPrepared?: (prepared: PreparedGovernedEccDelivery) => void;
+  executeRequiredGuidancePlan?: GovernedEccLifecycleDeps["executeRequiredGuidancePlan"];
+  executeProfileLifecycle?: (
+    ctx: PlanContext,
+    deps?: EccProfileLifecycleCommandDeps,
+  ) => Promise<PlanResult>;
+  profileLifecycle?: EccProfileLifecycleCommandDeps;
+}
+
+function requestedCatalog(ctx: PlanContext): BaselineCatalog {
+  const requestedPin = (ctx.env.AIH_ECC_REF ?? "").trim();
+  if (requestedPin.length > 0 && !FULL_SHA.test(requestedPin)) {
+    throw new AihError(
+      "AIH_ECC_REF must be an exact lowercase 40-character commit SHA for evidence-gated installs",
+      "AIH_CONFIG",
+    );
+  }
+  return baselineCatalogById("ecc", requestedPin || undefined);
+}
+
+async function resolveHistoricalRuntimeContext(
+  ctx: PlanContext,
+  policy: OrgPolicy,
+): Promise<HistoricalEccRuntimeDescriptorContextV1 | undefined> {
+  if ((policy as { schemaVersion?: unknown }).schemaVersion !== 3) return undefined;
+  const requestedPin = (ctx.env.AIH_ECC_REF ?? "").trim();
+  if (requestedPin.length > 0 && !FULL_SHA.test(requestedPin)) {
+    throw new AihError(
+      "AIH_ECC_REF must be an exact lowercase 40-character commit SHA for evidence-gated installs",
+      "AIH_CONFIG",
+    );
+  }
+  const sourceTuples = new Map<string, { repository: string; commit: string }>();
+  for (const selection of policy.governance?.externalSelections ?? []) {
+    if (selection.framework !== "ecc") continue;
+    for (const item of selection.items) {
+      sourceTuples.set(`${item.source.repository}\0${item.source.commit}`, item.source);
+    }
+  }
+  // The normal current pin stays on the active catalog path. A bad or mixed
+  // V3 source tuple is delegated to the sealed resolver, which fails closed.
+  const current = baselineCatalogById("ecc");
+  const selected = sourceTuples.size === 1 ? sourceTuples.values().next().value : undefined;
+  if (
+    selected !== undefined &&
+    selected.repository.toLowerCase() === `${current.owner}/${current.repo}`.toLowerCase() &&
+    selected.commit === current.pinnedSha
+  ) {
+    if (requestedPin.length > 0 && requestedPin !== current.pinnedSha) {
+      throw new AihError(
+        `AIH_ECC_REF ${requestedPin} does not match the policy-selected active ECC source ${current.pinnedSha}`,
+        "AIH_CONFIG",
+      );
+    }
+    return undefined;
+  }
+  const historical = await resolveHistoricalEccRuntimeDescriptorV1(policy);
+  // Operator-visible provenance: which carrier supplied the authenticated
+  // descriptor, and the order that selected it (never the bytes themselves).
+  ctx.progress?.(historicalDescriptorProvenance(historical));
+  if (requestedPin.length > 0 && requestedPin !== historical.source.commit) {
+    throw new AihError(
+      `AIH_ECC_REF ${requestedPin} does not match the policy-selected authenticated ECC source ${historical.source.commit}`,
+      "AIH_CONFIG",
+    );
+  }
+  return historical;
+}
+function historicalDescriptorProvenance(
+  historical: HistoricalEccRuntimeDescriptorContextV1,
+): string {
+  const carrier = historical.descriptorCarrier;
+  const from =
+    carrier === undefined
+      ? historical.descriptorSource
+      : `${historical.descriptorSource} (${carrier.package}${carrier.version === undefined ? "" : ` ${carrier.version}`}, ${carrier.runtimeDescriptorsFormat} v${carrier.runtimeDescriptorsVersion} ${carrier.runtimeDescriptorsDigest})`;
+  const order = historical.descriptorResolution
+    .map((step) => `${step.stage}=${step.outcome}`)
+    .join(", ");
+  return `historical ECC runtime descriptor ${historical.source.repository}@${historical.source.commit} ${historical.descriptorSha256} from ${from}; resolution: ${order}`;
+}
+function earlierCommitDeadline(existing: string | undefined, evidenceExpiresAt: string): string {
+  const evidenceEpoch = Date.parse(evidenceExpiresAt);
+  if (!Number.isFinite(evidenceEpoch)) {
+    throw new AihError("historical ECC evidence expiry is invalid", "AIH_TRUST");
+  }
+  if (existing === undefined) return new Date(evidenceEpoch).toISOString();
+  const existingEpoch = Date.parse(existing);
+  if (!Number.isFinite(existingEpoch)) {
+    throw new AihError("existing policy commit deadline is invalid", "AIH_TRUST");
+  }
+  return new Date(Math.min(existingEpoch, evidenceEpoch)).toISOString();
+}
+function requestedSource(ctx: PlanContext, catalog: BaselineCatalog): TrustSource {
+  const local = typeof ctx.options.eccPath === "string" ? ctx.options.eccPath.trim() : "";
+  if (local.length > 0) return resolveTrustSource(local, { root: ctx.root });
+  return resolveTrustSource(`${catalog.owner}/${catalog.repo}`, {
+    root: ctx.root,
+    pin: catalog.pinnedSha,
+  });
+}
+
+function componentIds(request: VerifiedEccRequest): string[] {
+  const selected = new Set<string>();
+  for (const cli of request.clis) {
+    if (isAihDirectEccInstallTarget(cli) || cli === "codex") {
+      const ids = request.selection
+        ? eccEvidenceComponentIdsForSelection(cli, request.selection)
+        : eccEvidenceComponentIds(request.profile, cli, request.packs);
+      for (const id of ids) {
+        selected.add(id);
+      }
+    } else if (cli === "kiro") {
+      selected.add("runtime:ecc-kiro");
+    }
+  }
+  return [...selected];
+}
+
+function previewRuntimeComponentIds(request: VerifiedEccRequest): string[] {
+  return componentIds(request).filter(
+    (id) => id !== "runtime:ecc-kiro" || request.selection === undefined,
+  );
+}
+
+function objectRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function declaredMcpNames(root: string): string[] {
+  const inspected = inspectContainedRelativePath(root, ".mcp.json");
+  if (inspected.state === "absent") return [];
+  if (inspected.state === "unsafe" || inspected.kind !== "file") {
+    throw new AihError("refusing unsafe .mcp.json while selecting ECC MCP defaults", "AIH_CONFIG");
+  }
+  const errors: ParseError[] = [];
+  const parsed = parse(readFileSync(inspected.realPath, "utf8"), errors, {
+    allowTrailingComma: true,
+    disallowComments: false,
+  });
+  if (errors.length > 0) {
+    throw new AihError("invalid .mcp.json while selecting ECC MCP defaults", "AIH_CONFIG");
+  }
+  const servers = objectRecord(objectRecord(parsed)?.mcpServers);
+  return servers ? Object.keys(servers) : [];
+}
+
+/** The `--with` declarations an `aih ecc` invocation names. */
+export function declarations(options: Readonly<Record<string, unknown>>): string[] {
+  const raw = options.with;
+  if (Array.isArray(raw) && raw.every((entry): entry is string => typeof entry === "string")) {
+    return raw;
+  }
+  if (typeof raw === "string") return [raw];
+  if (raw === undefined) return [];
+  throw new AihError("--with declarations must be strings", "AIH_CONFIG");
+}
+
+export interface EccRegistrationRequest extends VerifiedEccRequest {
+  selection: EccComponentSelection;
+  project: ProjectRegistration;
+  ledger: RegistrationLedger;
+  /** Policy governance makes AIH the sole MCP/hook projector. */
+  governance?: true;
+}
+
+export function buildEccRegistrationRequest(ctx: PlanContext, clis: Cli[]): EccRegistrationRequest {
+  return buildEccRegistrationRequestForPolicy(ctx, clis, readOrgPolicy(ctx.root, ctx.env));
+}
+
+/** Build a request from an already observed policy; mutating callers must not reread it. */
+function buildEccRegistrationRequestForPolicy(
+  ctx: PlanContext,
+  clis: Cli[],
+  policy: OrgPolicy | undefined,
+): EccRegistrationRequest {
+  const stack = scanRepo(ctx.root, { maxDepth: 8, contextDir: ctx.contextDir });
+  const language = eccLanguages(stack);
+  const profile = String(ctx.options.profile ?? "minimal");
+  const selected = selectEccComponents({
+    stack,
+    posture: postureFromContext(ctx),
+    profile,
+    declarations: declarations(ctx.options),
+    declaredMcps: declaredMcpNames(ctx.root),
+  });
+  const projectMcps = orgAllowedEccMcpComponents(selected.mcps, policy);
+  const home = ctx.env.HOME || ctx.env.USERPROFILE || homedir();
+  const ledger = readRegistrationLedger(home);
+  const project: ProjectRegistration = {
+    root: realpathSync(ctx.root),
+    scope: selected.scope,
+    components: [...selected.components],
+    mcps: projectMcps,
+    moduleIds: [...(selected.moduleIds ?? [])],
+  };
+  const preview = mergeRegistrationLedger(ledger, project, []);
+  const union = machineRegistrationUnion(preview);
+  return {
+    clis,
+    profile,
+    packs: language.packs,
+    stackSummary: repoStackSummary(stack),
+    selection: {
+      scope: preview.projects.some((entry) => entry.scope === "full") ? "full" : "scoped",
+      components: union.components as EccComponentId[],
+      mcps: orgAllowedEccMcpComponents(union.mcps as EccMcpComponentId[], policy),
+      recommendations: [...selected.recommendations],
+      moduleIds: [...union.moduleIds],
+    },
+    project,
+    ledger,
+    ...(governanceOwnsAihSurfaces(policy) ? { governance: true } : {}),
+  };
+}
+
+function repoStackSummary(stack: RepoStack): string {
+  const parts: string[] = [];
+  if (stack.languages.length > 0) parts.push(stack.languages.join(" + "));
+  if (stack.frameworks.length > 0) parts.push(`using ${stack.frameworks.join(", ")}`);
+  if (stack.cloud.length > 0) parts.push(`on ${stack.cloud.join("/")}`);
+  return parts.length > 0 ? parts.join(" ") : "a new repository with no detected stack yet";
+}
+
+function isMutatingEccTarget(cli: VerifiedEccRequest["clis"][number]): boolean {
+  return isAihDirectEccInstallTarget(cli) || cli === "codex";
+}
+
+/**
+ * Acquire, authorize, re-hash, and only then construct ECC install actions.
+ * The quarantine is removed after execution on every success/failure path.
+ */
+export async function executeEccEvidencePipeline(
+  ctx: PlanContext,
+  request: VerifiedEccRequest,
+  deps: EccEvidencePipelineDeps = {},
+  transactionPins: Pick<Plan, "fileAssertions" | "commitNotAfter" | "commitLock"> = {},
+  policy?: OrgPolicy,
+): Promise<PlanResult> {
+  const catalog = deps.catalog ?? requestedCatalog(ctx);
+  if (!ctx.apply && deps.source === undefined && typeof ctx.options.eccPath !== "string") {
+    return executePlan(
+      contingentEccInstallPreviewPlan({
+        artifact: deps.installPreview,
+        catalog,
+        clis: request.clis,
+        selection: request.selection,
+        runtimeComponentIds: previewRuntimeComponentIds(request),
+      }),
+      ctx,
+    );
+  }
+  const source = deps.source ?? requestedSource(ctx, catalog);
+  if (!ctx.apply && source.kind === "github") {
+    try {
+      return await executePlan(
+        contingentEccInstallPreviewPlan({
+          artifact: deps.installPreview,
+          catalog,
+          clis: request.clis,
+          selection: request.selection,
+          runtimeComponentIds: previewRuntimeComponentIds(request),
+        }),
+        ctx,
+      );
+    } finally {
+      cleanupQuarantine(source);
+    }
+  }
+  const buildInstallPlan = deps.buildInstallPlan ?? verifiedEccInstallPlan;
+  return executeBaselineEvidencePipeline(
+    ctx,
+    {
+      catalog,
+      source,
+      componentIds: componentIds(request),
+      allowPartial:
+        request.selection?.scope !== "full" && (request.selection?.moduleIds?.length ?? 0) === 0,
+      acceptanceTuple: deps.acceptanceTuple,
+      transactionPins,
+      policy,
+      buildInstallPlan: (sourceRoot, authorizations, held) =>
+        buildInstallPlan(ctx, sourceRoot, request, authorizations, held),
+    },
+    deps,
+  );
+}
+
+/** Resolve the ordinary ECC command inputs once, then route mutating targets through evidence. */
+export async function executeEccCommand(
+  ctx: PlanContext,
+  deps: EccCommandDeps = {},
+): Promise<PlanResult> {
+  const bindingAssertion = policyBindingFileAssertion(ctx.root);
+  const policyTargets = await verifiedOrgPolicyTargets(ctx);
+  const targetCtx: PlanContext = { ...ctx, targets: policyTargets.resolution.clis };
+  const binding = assertPolicyBindingCurrent(
+    targetCtx.root,
+    targetCtx.env,
+    policyTargets.resolution.clis,
+  );
+  const fileAssertions = [
+    ...(policyTargets.fileAssertions ?? []),
+    ...(bindingAssertion === undefined ? [] : [bindingAssertion]),
+  ];
+  const transactionPins: Pick<Plan, "fileAssertions" | "commitNotAfter" | "commitLock"> = {
+    ...(fileAssertions.length === 0 ? {} : { fileAssertions }),
+    ...(policyTargets.commitNotAfter === undefined
+      ? {}
+      : { commitNotAfter: policyTargets.commitNotAfter }),
+    ...(policyTargets.commitLock === undefined ? {} : { commitLock: policyTargets.commitLock }),
+  };
+  if (binding === undefined) {
+    assertOrgPolicyMutationSource(
+      { ...targetCtx, posture: postureFromContext(targetCtx) },
+      policyTargets.source?.verification.authority,
+    );
+  }
+  if (targetCtx.options.lifecycle !== undefined) {
+    const lifecycle = String(targetCtx.options.lifecycle);
+    const policy = policyTargets.policy ?? readOrgPolicy(targetCtx.root, targetCtx.env);
+    if (governanceOwnsAihSurfaces(policy) && lifecycle === "install") {
+      // The governed framework lifecycle, reached by an operator. It replaces
+      // the profile installer here rather than wrapping it: AIH-direct
+      // materialization is what makes per-component governed control possible,
+      // and the framework's own installer projects surfaces governance owns.
+      const historical = await resolveHistoricalRuntimeContext(targetCtx, policy);
+      // V3 historical sources are only admitted through the sealed resolver;
+      // a caller-supplied catalog cannot substitute a different authority.
+      const catalog = historical?.catalog ?? deps.catalog ?? requestedCatalog(targetCtx);
+      // Validate the policy against the catalog BEFORE resolving a source:
+      // resolving a remote source creates a quarantine directory, and an
+      // invocation that refuses must create nothing at all.
+      const componentIds = governedEccComponentIds(policy, catalog, historical);
+      // WHICH targets is the workstation CLI selection every other
+      // target-scoped operation already uses — `--cli`, `--all-tools`, the
+      // committed marker, else the `claude` default. No second flag and no
+      // policy grammar for it: a governed repository does not get a private
+      // notion of "which tool am I installing for". Narrowed here, before the
+      // source, for the same reason the catalog check is here.
+      const targets = assertGovernedMaterializationTargets(policyTargets.resolution.clis);
+      const governedTransactionPins =
+        historical === undefined
+          ? transactionPins
+          : {
+              ...transactionPins,
+              commitNotAfter: earlierCommitDeadline(
+                transactionPins.commitNotAfter,
+                historical.evidence.expiresAt,
+              ),
+            };
+      if (componentIds.length === 0) {
+        return executeGovernedEccWithdrawal(
+          targetCtx,
+          targets,
+          governedTransactionPins,
+          deps.prepareOnly === true,
+          deps.onGovernedPrepared,
+          deps,
+        );
+      }
+      return executeGovernedEccMaterialization(
+        targetCtx,
+        {
+          catalog,
+          componentIds,
+          targets,
+          source: deps.source ?? requestedSource(targetCtx, catalog),
+          policy,
+          historical,
+          transactionGuard: governedTransactionPins,
+          prepareOnly: deps.prepareOnly,
+          onPrepared: deps.onGovernedPrepared,
+        },
+        deps,
+      );
+    }
+    if (
+      governanceOwnsAihSurfaces(policy) &&
+      (lifecycle === "update" || lifecycle === "repair" || lifecycle === "rollback")
+    ) {
+      throw new AihError(
+        `\`aih ecc --lifecycle ${lifecycle}\` drives the framework's own profile installer, which may register native MCPs that governance exclusively owns; the governed framework lifecycle is wired instead — \`aih ecc --lifecycle install\` materializes the policy's evidence-passed selection and \`aih uninstall\` removes it receipt-bound`,
+        "AIH_CONFIG",
+      );
+    }
+    if (
+      lifecycle === "install" &&
+      !governanceOwnsAihSurfaces(policy) &&
+      readEccMaterializationReceipt(targetCtx.root).state !== "absent"
+    ) {
+      throw new AihError(
+        "refusing the ordinary ECC profile lifecycle because governed materialization ownership remains; restore an authorized ECC selection or explicitly withdraw it before changing lifecycle authority",
+        "AIH_TRUST",
+      );
+    }
+    const profileLifecycle = {
+      ...deps.profileLifecycle,
+      transactionPins,
+    };
+    return (deps.executeProfileLifecycle ?? executeEccProfileLifecycleCommand)(
+      targetCtx,
+      profileLifecycle,
+    );
+  }
+  const { clis, detectFellBack } = policyTargets.resolution;
+  const request = buildEccRegistrationRequestForPolicy(targetCtx, clis, policyTargets.policy);
+  if (clis.some(isMutatingEccTarget))
+    return executeEccEvidencePipeline(
+      targetCtx,
+      request,
+      deps,
+      transactionPins,
+      policyTargets.policy,
+    );
+
+  const actions = clis.flatMap((cli) =>
+    eccActionsForCli(cli, {
+      profile: request.profile,
+      stackSummary: request.stackSummary ?? "this repository",
+      platform: targetCtx.host.platform,
+      packs: request.packs,
+    }),
+  );
+  actions.push(eccToolsDoc());
+  // The consult route recommends `npx ecc consult` — an unpinned, latest-from-npm fetch.
+  // The advisory that names that risk and how to pin it was pushed only inside `eccPlan`,
+  // which real dispatch never runs (`deps.execute = executeEccCommand`), so a consult-only
+  // target such as Kiro recommended a mutable-upstream command with no pinning warning at
+  // any posture — while the rest of the product denies unpinned supply chains at
+  // enterprise. Emitted here so the operator sees it on the path they actually take.
+  actions.push(eccSupplyChainDoc());
+  if (detectFellBack) {
+    actions.push(doc("no AI CLIs detected — defaulted to claude", detectFallbackNotice()));
+  }
+  return executePlan(
+    { ...plan("ecc: consult-only targets", ...actions), ...transactionPins },
+    targetCtx,
+  );
+}

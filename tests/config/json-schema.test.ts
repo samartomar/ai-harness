@@ -635,7 +635,7 @@ describe("committed JSON Schemas", () => {
     }
   });
 
-  it("models source-locked ECC hook controls in the committed editor schema", () => {
+  it("models framework hook controls in the committed editor schema", () => {
     const base = {
       schemaVersion: 2,
       minimumPosture: "vibe",
@@ -648,26 +648,42 @@ describe("committed JSON Schemas", () => {
         authority: { approvals: [] },
       },
     };
-    const policy = (eccHookControls: unknown) => ({
+    const policy = (frameworkHookControls: unknown) => ({
       ...base,
-      governance: { ...base.governance, eccHookControls },
+      governance: { ...base.governance, frameworkHookControls },
     });
 
     validateCommittedSchema(
       "schemas/aih-org-policy.schema.json",
-      policy({ profile: "standard", disabledIds: ["pre:observe", "post:quality-gate"] }),
-    );
-    validateCommittedSchema(
-      "schemas/aih-org-policy.schema.json",
-      policy({ profile: "standard", disabledIds: ["unknown:hook"] }),
+      policy({
+        ecc: { profile: "standard", disabledHookIds: ["pre:observe", "post:quality-gate"] },
+        superpowers: { disabledHookIds: ["hook:session-start"] },
+      }),
     );
     for (const invalid of [
-      { profile: "standard", disabledIds: ["UPPERCASE"] },
-      { profile: "standard", extra: true },
-      { disabledIds: ["pre:observe"] },
+      { ecc: { disabledHookIds: ["Bad Id"] } },
+      { other: { disabledHookIds: [] } },
+      { ecc: { disabledHookIds: [], extra: true } },
+      { ecc: { profile: "standard" } },
     ]) {
       rejectCommittedSchema("schemas/aih-org-policy.schema.json", policy(invalid));
     }
+    // The removed ECC-only field is not part of the grammar.
+    rejectCommittedSchema("schemas/aih-org-policy.schema.json", {
+      ...base,
+      governance: { ...base.governance, eccHookControls: { profile: "standard" } },
+    });
+    validateCommittedSchema("schemas/aih-config.schema.json", {
+      schemaVersion: 1,
+      contextDir: "ai-coding",
+      frameworkHookControls: { ecc: { disabledHookIds: ["pre:observe"] } },
+    });
+    // The user list may only add disables; the profile is enterprise-only.
+    rejectCommittedSchema("schemas/aih-config.schema.json", {
+      schemaVersion: 1,
+      contextDir: "ai-coding",
+      frameworkHookControls: { ecc: { profile: "minimal", disabledHookIds: [] } },
+    });
   });
 
   it("rejects unknown baseline ids in .aih-config.json", () => {

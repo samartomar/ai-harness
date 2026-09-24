@@ -610,15 +610,22 @@ aih ecc --lifecycle rollback <project> --apply
 aih ecc --lifecycle uninstall <project> --apply
 ```
 
-Lifecycle mode always projects the reviewed Claude and Codex surface together. It authenticates the
-exact ECC pin, the committed review receipt, every manifest, and every projected source byte before
+Lifecycle mode always projects the reviewed Claude and Codex surface together. Install and update
+read the profile and its evidence only from the installed Catalog's ECC framework descriptor
+(`sections.profileEvidence`), whose commit must equal the `@aihq/framework-ecc` upstream commit;
+while the installed Catalog carries no such section they refuse with
+`framework-profile-evidence-unavailable` and name the next route. It authenticates the
+exact ECC pin, the review receipt, every manifest, and every projected source byte before
 constructing a target plan. Dry-run is the default and may acquire the exact remote source into a
 disposable quarantine so the preview is based on real rendered bytes; it never writes the target.
 `--ecc-path <dir>` supplies an existing exact checkout to the same boundary. Lifecycle receipts live
 under `.aih/ecc-profile/` and make repeat install, repair, update, rollback, and uninstall fail closed
 on foreign or operator-modified files. Repair, rollback, and uninstall use the receipt's bounded,
 hash-authenticated installed bytes and source identity, so a later package pin cannot strand an
-older managed installation. Legacy selection flags such as `--profile`, `--with`, and `--cli`
+older managed installation. The receipt is operator-writable, so its self-declared identities never authorize
+a write on their own: the active source and, for rollback, the snapshot's source and projection digest
+must equal an entry in the plugin's append-only installation trust record, or the command refuses
+with `framework-profile-recovery-unanchored` before planning any write. Legacy selection flags such as `--profile`, `--with`, and `--cli`
 cannot be combined with `--lifecycle`.
 
 In a **governed** repository (an org policy carrying `governance`), `--lifecycle install` is not this
@@ -1040,7 +1047,7 @@ examples. Selected reviewed stdio MCP candidates also have receipt-owned workspa
 distribution for Codex, Cursor, Copilot CLI, OpenCode V1, Kimi Code, and Kiro; see
 [governed MCP targets and compatibility](governed-mcp.md) for the native paths and limits. An active
 AIH-owned `usage-metering` policy hook may also project to the selected Claude or Codex host through
-the existing host-specific generator. A policy may separately declare `governance.eccHookControls`; for a Claude target, projection merges only receipt-owned `ECC_HOOK_PROFILE` and `ECC_DISABLED_HOOKS` values into `.claude/settings.json.env`, preserves every operator sibling, refuses unreceipted collisions or drift, and shares one content-pinned settings snapshot with the hook registrar. ECC—not AIH—executes and enforces those controls after process spawn, so a disabled hook still incurs one spawn.
+the existing host-specific generator. A policy may separately declare `governance.frameworkHookControls` (schema 3, `minimumCoreVersion` 0.7.0), keyed by framework id with `{ profile?, disabledHookIds }`; the project's `.aih-config.json` `frameworkHookControls` list is `{ disabledHookIds }` only and may add further disables of disable-eligible rows; a profile or any other field there is refused, because enterprise policy is the only profile source. Each framework plugin validates the ids and profile against its own hook inventory and returns the hook-control plan; a requested framework whose plugin is not installed refuses with `framework-plugin-unavailable`. Controls are planned and validated for every targeted host, OpenCode-only included, and each disabled hook's per-host decision (`upstream-switch`, `not-applicable`, or `unenforced` with its next route) is carried in the projection output as an `<framework> hook controls` label. For a Claude target, projection merges only the receipt-owned environment keys the plan names — for ECC, `ECC_HOOK_PROFILE` and `ECC_DISABLED_HOOKS` — into `.claude/settings.json.env` (receipt `.aih/org-policy-framework-hook-controls-receipt.json`), preserves every operator sibling, refuses unreceipted collisions or drift, and shares one content-pinned settings snapshot with the hook registrar. The framework—not AIH—executes and enforces those controls after process spawn, so a disabled ECC hook still incurs one spawn.
 It does not run `aih init`, regenerate the canon, or modify unrelated settings. The managed settings/MCP
 file is a Claude projection: it writes only when Claude is selected (the default).
 Other governed MCP targets receive their own workspace configuration rather than a Claude

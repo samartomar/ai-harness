@@ -2,12 +2,12 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { coreOwnedEccCodexMcpServers } from "../../packages/framework-ecc/src/ecc/codex.js";
 import {
   CISCO_MCP_SCANNER_VERSION,
   CISCO_SKILL_SCANNER_VERSION,
   SEMGREP_VERSION,
 } from "../../src/baseline-evidence/analyzer-profile.js";
-import { coreOwnedEccCodexMcpServers } from "../../src/ecc/codex.js";
 import {
   CODE_REVIEW_GRAPH_RUNTIME_PIN,
   CODEBASE_MEMORY_RUNTIME_PIN,

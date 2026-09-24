@@ -2545,29 +2545,52 @@
                     "additionalProperties": false
                   }
                 },
-                "eccHookControls": {
+                "frameworkHookControls": {
                   "type": "object",
                   "properties": {
-                    "profile": {
-                      "type": "string",
-                      "enum": [
-                        "minimal",
-                        "standard",
-                        "strict"
-                      ]
+                    "ecc": {
+                      "type": "object",
+                      "properties": {
+                        "profile": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9-]{0,39}$"
+                        },
+                        "disabledHookIds": {
+                          "maxItems": 128,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9:-]{0,99}$"
+                          }
+                        }
+                      },
+                      "required": [
+                        "disabledHookIds"
+                      ],
+                      "additionalProperties": false
                     },
-                    "disabledIds": {
-                      "maxItems": 64,
-                      "type": "array",
-                      "items": {
-                        "type": "string",
-                        "pattern": "^[a-z][a-z0-9:-]{0,127}$"
-                      }
+                    "superpowers": {
+                      "type": "object",
+                      "properties": {
+                        "profile": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9-]{0,39}$"
+                        },
+                        "disabledHookIds": {
+                          "maxItems": 128,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9:-]{0,99}$"
+                          }
+                        }
+                      },
+                      "required": [
+                        "disabledHookIds"
+                      ],
+                      "additionalProperties": false
                     }
                   },
-                  "required": [
-                    "profile"
-                  ],
                   "additionalProperties": false
                 },
                 "supportedClis": {
@@ -5319,29 +5342,52 @@
                     "additionalProperties": false
                   }
                 },
-                "eccHookControls": {
+                "frameworkHookControls": {
                   "type": "object",
                   "properties": {
-                    "profile": {
-                      "type": "string",
-                      "enum": [
-                        "minimal",
-                        "standard",
-                        "strict"
-                      ]
+                    "ecc": {
+                      "type": "object",
+                      "properties": {
+                        "profile": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9-]{0,39}$"
+                        },
+                        "disabledHookIds": {
+                          "maxItems": 128,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9:-]{0,99}$"
+                          }
+                        }
+                      },
+                      "required": [
+                        "disabledHookIds"
+                      ],
+                      "additionalProperties": false
                     },
-                    "disabledIds": {
-                      "maxItems": 64,
-                      "type": "array",
-                      "items": {
-                        "type": "string",
-                        "pattern": "^[a-z][a-z0-9:-]{0,127}$"
-                      }
+                    "superpowers": {
+                      "type": "object",
+                      "properties": {
+                        "profile": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9-]{0,39}$"
+                        },
+                        "disabledHookIds": {
+                          "maxItems": 128,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9:-]{0,99}$"
+                          }
+                        }
+                      },
+                      "required": [
+                        "disabledHookIds"
+                      ],
+                      "additionalProperties": false
                     }
                   },
-                  "required": [
-                    "profile"
-                  ],
                   "additionalProperties": false
                 },
                 "supportedClis": {

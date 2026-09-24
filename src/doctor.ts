@@ -15,9 +15,9 @@ import {
 } from "./binding/frameworks/binding-doctor.js";
 import { readAihConfigDiagnostic } from "./config/marker.js";
 import { contractTruthCheck } from "./contract/check.js";
-import { readExplicitEccMcpReceiptStates } from "./framework-plugin/ecc-facade.js";
+import { eccDoctorChecksV1 } from "./framework-plugin/ecc-read.js";
 import { classifyTool, versionArgv } from "./heal/common.js";
-import { detectInstall, homeDir } from "./internals/cli-detect.js";
+import { detectInstall } from "./internals/cli-detect.js";
 import { REGISTRY_IDS } from "./internals/cli-registry.js";
 import type { Cli } from "./internals/clis.js";
 import { readIfExists } from "./internals/fsxn.js";
@@ -60,24 +60,6 @@ function safeProbeLabel(value: string): string {
 
 function safeProbeList(values: readonly string[]): string {
   return values.map(safeProbeLabel).join(", ");
-}
-
-function explicitEccMcpReceiptChecks(ctx: PlanContext) {
-  return readExplicitEccMcpReceiptStates({
-    root: ctx.root,
-    home: homeDir(ctx),
-  }).map((result) => {
-    const identity =
-      result.target !== undefined && result.id !== undefined
-        ? `${safeProbeLabel(result.target)}/${safeProbeLabel(result.id)}`
-        : "receipt";
-    const noReceipt = result.state === "absent" && result.target === undefined;
-    return {
-      name: `explicit-ecc-mcp:${identity}`,
-      verdict: result.state === "clean" ? "pass" : noReceipt ? "skip" : "fail",
-      detail: `${result.state}: ${safeProbeLabel(result.detail)} — local receipt/config state only; endpoint reachability and tool surface were not checked`,
-    } as const;
-  });
 }
 
 /**
@@ -359,9 +341,9 @@ export const command: CommandSpec = {
       // vs THIS build's catalog is reported offline; the registry latest-release
       // comparison is opt-in (network) via --check-pin-currency.
       probe("MCP pin currency", (probeCtx) => mcpPinCurrencyProbe(probeCtx)),
-      probeMany("explicit ECC MCP receipt state", (probeCtx) =>
-        explicitEccMcpReceiptChecks(probeCtx),
-      ),
+      // ECC's own checks (explicit ECC MCP receipt state) run in @aihq/framework-ecc;
+      // without it this row states that they were not run and why.
+      probeMany("explicit ECC MCP receipt state", (probeCtx) => eccDoctorChecksV1(probeCtx)),
       structuredChecksProbe("trust-lock local drift", (probeCtx) =>
         trustLockLocalDriftChecks(probeCtx),
       ),

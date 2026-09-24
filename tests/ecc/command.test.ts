@@ -5,6 +5,31 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
 import { buildProgram } from "../../src/program.js";
 
+// `aih ecc` runs through @aihq/framework-ecc: read it from this repository's package source.
+vi.mock("../../src/framework-plugin/load-framework-plugin.js", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../src/framework-plugin/load-framework-plugin.js")>();
+  const { sourcePluginAccess } = await import("../framework-plugin/source-plugin-mocks.js");
+  return {
+    ...actual,
+    loadFrameworkPluginV1: (
+      id: Parameters<typeof actual.loadFrameworkPluginV1>[0],
+      options: Parameters<typeof actual.loadFrameworkPluginV1>[1] = {},
+    ) => actual.loadFrameworkPluginV1(id, { ...options, access: sourcePluginAccess(id) }),
+  };
+});
+vi.mock("../../src/catalog-package/framework-descriptors.js", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../src/catalog-package/framework-descriptors.js")>();
+  const { eccDescriptorLoad } = await import("../framework-plugin/source-plugin-mocks.js");
+  return {
+    ...actual,
+    loadFrameworkDescriptorBytesV1: async (
+      id: Parameters<typeof actual.loadFrameworkDescriptorBytesV1>[0],
+    ) => (id === "ecc" ? eccDescriptorLoad() : actual.loadFrameworkDescriptorBytesV1(id)),
+  };
+});
+
 let root: string;
 let stdout: ReturnType<typeof vi.spyOn>;
 let savedRef: string | undefined;

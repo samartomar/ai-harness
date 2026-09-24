@@ -124,57 +124,6 @@ export {
   type CostGateVerdict,
   measureCostGateVariant,
 } from "./frameworks/cost-gate.js";
-// W4b — the ECC Lean adapter (upstream-local-installer). Composes the shipped,
-// pin-bound ECC install-preview + an injected selective-install seam; adds no ECC
-// install machinery of its own (D9). W4c adds the Full variant to the same file.
-export {
-  componentInstallRoot,
-  computeEccFullLabel,
-  computeEccLeanPreviewDiff,
-  createEccAdapter,
-  ECC_AGENT_DATA_HOME_DEFAULT,
-  ECC_FULL_FEATURE_KEYS,
-  ECC_FULL_MARKETPLACE_NAME,
-  ECC_FULL_MCP_CONNECTORS,
-  ECC_FULL_PLUGIN_NAME,
-  ECC_HOMUNCULUS_DIR_DEFAULT,
-  ECC_HOST_TARGET,
-  ECC_LEAN_ACCEPTANCE_TUPLE,
-  ECC_LEAN_ALLOWLIST,
-  ECC_LEAN_EXCLUDED,
-  ECC_PIN_COMMIT,
-  ECC_REPOSITORY,
-  EccBindingError,
-  type EccFullLabelInput,
-  type EccFullProvisionResult,
-  type EccFullRemoveResult,
-  type EccLeanAdapterDeps,
-  EccLeanAllowlistError,
-  type EccLeanInstalledFile,
-  type EccLeanInstaller,
-  EccLeanInstallerUnavailableError,
-  type EccLeanInstallInput,
-  type EccLeanInstallResult,
-  type EccLeanManifest,
-  type EccLeanPreviewDiff,
-  type EccLeanRemoveResult,
-  type EccMode,
-  EccModeConflictError,
-  EccModeNotImplementedError,
-  type EccStateWriteFinding,
-  eccFullStateWriteInventory,
-  eccLeanManifest,
-  eccRuntimeSurfaceHit,
-  type NormalizedEccOp,
-  normalizeEccOperations,
-} from "./frameworks/ecc.js";
-// The D6 adapter registry assembly point. Superpowers behaviour lives in the
-// @aihq/framework-superpowers plugin, not in a binding adapter.
-export {
-  ADAPTER_VERSIONS,
-  type BindingRegistryDeps,
-  createBindingAdapterRegistry,
-} from "./frameworks/registry.js";
 // W8 — the D14 Framework Value Gate: the CREDIT side vs the no-framework baseline
 // (surface deltas + the decisive characteristic-workflow signal), fail-closed to
 // INCOMPLETE. Reuses the cost/context surface primitive; never re-implements it.

@@ -6,14 +6,16 @@ import { baselineCatalogById } from "../../../baseline-evidence/catalogs.js";
 import { vendorBaselineLockBytes } from "../../../baseline-evidence/vendor.js";
 import {
   ECC_MATERIALIZATION_RECEIPT_PATH,
-  ECC_MCP_EXPLICIT_ADD_RECEIPT_PATH,
-  explicitEccMcpRenderPlan,
-  parseExplicitAddReceipt,
-  planEccComponentSubtraction,
-  planExplicitEccMcpRemove,
   readEccMaterializationReceipt,
-  readExplicitEccMcpReceiptStates,
-} from "../../../framework-plugin/ecc-facade.js";
+} from "../../../ecc/materialization-receipt.js";
+import {
+  ECC_MCP_EXPLICIT_ADD_RECEIPT_PATH,
+  parseExplicitAddReceipt,
+} from "../../../ecc/mcp-explicit-add-receipt.js";
+import type {
+  FrameworkCapabilityPackageDomainV1,
+  FrameworkComponentSubtractionV1,
+} from "../../../framework-plugin/contract-v1.js";
 import { resolveContents } from "../../../internals/execute.js";
 import {
   type OwnedFilePolicy,
@@ -649,9 +651,37 @@ function currentMcpCustodyMatchesAuthority(
   );
 }
 
+export interface MixedCapabilityPackageDepsV1 {
+  /**
+   * ECC's planning, from `@aihq/framework-ecc` (`capabilityPackages.domain`).
+   * Absent when the plugin is not installed: an operation that needs it
+   * refuses at the domain stage with `framework-plugin-unavailable`.
+   */
+  readonly ecc?: FrameworkCapabilityPackageDomainV1;
+}
+
+function validSubtraction(value: FrameworkComponentSubtractionV1): boolean {
+  return (
+    Array.isArray(value.steps) &&
+    Array.isArray(value.advisories) &&
+    value.steps.every(
+      (step) =>
+        (step.kind === "write" || step.kind === "remove") &&
+        typeof step.path === "string" &&
+        step.path.length > 0 &&
+        !step.path.startsWith("/") &&
+        !step.path.split(/[\\/]/).includes("..") &&
+        Number.isSafeInteger(step.mode) &&
+        typeof step.expect === "object" &&
+        step.expect !== null,
+    )
+  );
+}
+
 /** Reconcile a policy closure spanning more than one package domain in one ordered transaction. */
 export function reconcileMixedCapabilityPackages(
   input: unknown,
+  deps: MixedCapabilityPackageDepsV1 = {},
 ): MixedCapabilityPackageMutationResult {
   const snapshot = snapshotInput(input);
   if (snapshot === undefined) return refused("input", "invalid-input");
@@ -730,7 +760,7 @@ export function reconcileMixedCapabilityPackages(
   let removedPackage:
     | Extract<typeof ownershipRead, { state: "valid" }>["receipt"]["packages"][number]
     | undefined;
-  let subtraction: ReturnType<typeof planEccComponentSubtraction> | undefined;
+  let subtraction: FrameworkComponentSubtractionV1 | undefined;
   let skillSubtraction:
     | {
         files: Array<{ path: string; sha256: string; mode?: number }>;
@@ -767,12 +797,16 @@ export function reconcileMixedCapabilityPackages(
       ) {
         return refused("custody", "invalid-current-ecc-custody", report);
       }
+      if (deps.ecc === undefined) return refused("domain", "framework-plugin-unavailable", report);
       try {
-        subtraction = planEccComponentSubtraction(
+        subtraction = deps.ecc.planComponentSubtraction(
           snapshot.root,
           removedPackage.members.map(({ id }) => (id === "rule:ecc/rules" ? "baseline:rules" : id)),
         );
       } catch {
+        return refused("domain", "domain-subtraction-refused", report);
+      }
+      if (!validSubtraction(subtraction)) {
         return refused("domain", "domain-subtraction-refused", report);
       }
       if (subtraction.advisories.length > 0) return result("retained-drift", snapshot, report);
@@ -875,7 +909,8 @@ export function reconcileMixedCapabilityPackages(
       const id = removedPackage.id.slice("package:ecc-mcp/".length);
       const records = receipt.records.filter((record) => record.id === id);
       if (records.length !== 1) return refused("domain", "missing-explicit-mcp-record", report);
-      const planned = planExplicitEccMcpRemove({
+      if (deps.ecc === undefined) return refused("domain", "framework-plugin-unavailable", report);
+      const planned = deps.ecc.planExplicitMcpRemove({
         root: snapshot.root,
         id,
         target: records[0]?.target ?? "",
@@ -1053,14 +1088,15 @@ export function reconcileMixedCapabilityPackages(
       const matches = receipt.records.filter((record) => record.id === id);
       if (matches.length !== 1) return refused("domain", "missing-explicit-mcp-record", report);
       const target = matches[0]?.target ?? "";
+      if (deps.ecc === undefined) return refused("domain", "framework-plugin-unavailable", report);
       try {
-        explicitEccMcpRenderPlan(assembled.policy, id, target);
+        deps.ecc.assertExplicitMcpApproved(assembled.policy, id, target);
       } catch {
         return refused("policy", "mcp-approval-refused", report);
       }
-      const states = readExplicitEccMcpReceiptStates({ root: snapshot.root }).filter(
-        (state) => state.id === id && state.target === target,
-      );
+      const states = deps.ecc
+        .explicitMcpReceiptStates(snapshot.root)
+        .filter((state) => state.id === id && state.target === target);
       if (states.length !== 1 || states[0]?.state !== "clean") {
         return refused("domain", "explicit-mcp-state-is-not-clean", report);
       }

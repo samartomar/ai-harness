@@ -1657,10 +1657,14 @@ export const POLICY_ENGINE_FIELD_CONSUMERS: Readonly<Record<string, string>> = O
   ...prefixedConsumers("governance.externalSelections.*", EXTERNAL_SELECTION_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.aihMcpRequests.*", AIH_MCP_REQUEST_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.eccMcpApprovals.*", ECC_MCP_APPROVAL_LEAF_CONSUMERS),
-  "governance.eccHookControls.profile":
-    "ECC hook-controls resolver and Claude settings receipt-backed projection; no launcher execution or enforcement claim",
-  "governance.eccHookControls.disabledIds.*":
-    "ECC hook-controls resolver canonicalizes source-gated IDs and the receipt-backed projection writes only ECC_DISABLED_HOOKS",
+  "governance.frameworkHookControls.ecc.profile":
+    "the ecc framework plugin validates the profile against its hook inventory; the receipt-backed projection writes only the Claude settings env keys its plan owns",
+  "governance.frameworkHookControls.ecc.disabledHookIds.*":
+    "the ecc framework plugin validates each id against its hook inventory and returns the hook-control plan; Core applies it through the receipt-backed hook registrar",
+  "governance.frameworkHookControls.superpowers.profile":
+    "the superpowers framework plugin validates the profile against its hook inventory; the receipt-backed projection writes only the Claude settings env keys its plan owns",
+  "governance.frameworkHookControls.superpowers.disabledHookIds.*":
+    "the superpowers framework plugin validates each id against its hook inventory and returns the hook-control plan; Core applies it through the receipt-backed hook registrar",
   ...prefixedConsumers("governance.hookRegistrations.*", HOOK_REGISTRATION_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.catalog.reviewed.*", CANDIDATE_LEAF_CONSUMERS),
   ...prefixedConsumers("governance.catalog.custom.*", CANDIDATE_LEAF_CONSUMERS),

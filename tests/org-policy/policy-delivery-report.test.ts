@@ -2,21 +2,51 @@ import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { applyEccMaterialization } from "../../src/ecc/materialization.js";
-import { planGovernedCodexRoleRegistration } from "../../src/ecc-profile/governed-codex-roles.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { applyEccMaterialization } from "../../packages/framework-ecc/src/ecc/materialization.js";
+import { planGovernedCodexRoleRegistration } from "../../packages/framework-ecc/src/profile/governed-codex-roles.js";
+import { eccPolicyDeliveryInspectorV1 } from "../../src/framework-plugin/ecc-read.js";
 import { executePlan } from "../../src/internals/execute.js";
+import type { PlanContext } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { policyRootSha256 } from "../../src/org-policy/binding.js";
 import { orgPolicyEffectiveCheck } from "../../src/org-policy/evaluate.js";
 import {
   inspectPolicyDelivery,
+  type PolicyDeliveryEccV1,
   renderPolicyDelivery,
   summarizePolicyDelivery,
 } from "../../src/org-policy/policy-delivery-report.js";
 import { planPolicyRequiredGuidance } from "../../src/org-policy/required-guidance.js";
 import { parseOrgPolicy } from "../../src/org-policy/schema.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
+import { loadEccFromSource } from "../framework-plugin/plugin-source.js";
+import { eccDescriptorLoad } from "../framework-plugin/source-plugin-mocks.js";
+
+// The report's ECC knowledge comes from @aihq/framework-ecc: read it from this repository's package source.
+vi.mock("../../src/framework-plugin/load-framework-plugin.js", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../src/framework-plugin/load-framework-plugin.js")>();
+  const { sourcePluginAccess } = await import("../framework-plugin/source-plugin-mocks.js");
+  return {
+    ...actual,
+    loadFrameworkPluginV1: (
+      id: Parameters<typeof actual.loadFrameworkPluginV1>[0],
+      options: Parameters<typeof actual.loadFrameworkPluginV1>[1] = {},
+    ) => actual.loadFrameworkPluginV1(id, { ...options, access: sourcePluginAccess(id) }),
+  };
+});
+vi.mock("../../src/catalog-package/framework-descriptors.js", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../src/catalog-package/framework-descriptors.js")>();
+  const { eccDescriptorLoad } = await import("../framework-plugin/source-plugin-mocks.js");
+  return {
+    ...actual,
+    loadFrameworkDescriptorBytesV1: async (
+      id: Parameters<typeof actual.loadFrameworkDescriptorBytesV1>[0],
+    ) => (id === "ecc" ? eccDescriptorLoad() : actual.loadFrameworkDescriptorBytesV1(id)),
+  };
+});
 
 let root: string;
 const path = ".claude/skills/tdd-workflow/SKILL.md";
@@ -58,14 +88,78 @@ function install() {
     ],
   });
 }
-beforeEach(() => {
+let ecc: PolicyDeliveryEccV1;
+function planContext(): PlanContext {
+  const run = fakeRunner(() => undefined);
+  return {
+    root,
+    contextDir: "ai-coding",
+    posture: "enterprise",
+    apply: false,
+    verify: false,
+    json: false,
+    run,
+    host: makeHostAdapter({ platform: "linux", run, env: {} }),
+    env: {},
+    options: {},
+  };
+}
+function summarize(
+  at: string,
+  targets: readonly string[],
+  selected: ReturnType<typeof policy> | undefined,
+  policyBlocked: boolean,
+) {
+  return summarizePolicyDelivery(at, targets, selected, policyBlocked, {}, "ai-coding", ecc);
+}
+beforeEach(async () => {
   root = mkdtempSync(join(tmpdir(), "aih-policy-report-"));
+  ecc = await eccPolicyDeliveryInspectorV1(planContext(), {
+    loadPlugin: () => loadEccFromSource(),
+    loadDescriptor: async () => eccDescriptorLoad(),
+  });
 });
 afterEach(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
 describe("policy delivery reporting", () => {
+  it("blocks and says the ECC checks were not run when the ECC plugin is not installed", async () => {
+    install();
+    const missing = await eccPolicyDeliveryInspectorV1(planContext(), {
+      loadPlugin: async () => ({
+        ok: false,
+        refusal: {
+          reason: "framework-plugin-unavailable",
+          frameworkId: "ecc",
+          packageName: "@aihq/framework-ecc",
+          detail: "not installed",
+        },
+      }),
+    });
+    const report = summarizePolicyDelivery(
+      root,
+      ["claude"],
+      policy(),
+      false,
+      {},
+      "ai-coding",
+      missing,
+    );
+    expect(report.blocking).toBe(true);
+    expect(report.eccChecks?.state).toBe("not-run");
+    expect(report.eccChecks?.detail).toBe("framework-plugin-unavailable: not installed");
+    expect(report.selection).toBeUndefined();
+    expect(report.components[0]?.state).toBe("receipt-current");
+    expect(renderPolicyDelivery(report)).toContain("ECC checks were not run:");
+  });
+
+  it("does not consult ECC when the policy selects none and aih wrote no ECC state", () => {
+    const report = summarizePolicyDelivery(root, ["codex"], undefined, false);
+    expect(report.eccChecks).toBeUndefined();
+    expect(report.codexRoles).toBeUndefined();
+  });
+
   it("blocks missing native Codex role registration independently of current role files", async () => {
     const selected = parseOrgPolicy({
       ...policy(),
@@ -117,7 +211,7 @@ describe("policy delivery reporting", () => {
         },
       ],
     });
-    expect(summarizePolicyDelivery(root, ["codex"], selected, false)).toMatchObject({
+    expect(summarize(root, ["codex"], selected, false)).toMatchObject({
       blocking: true,
       components: [{ state: "receipt-current" }],
       codexRoles: { state: "missing", expectedRoleIds: ["planner"] },
@@ -139,7 +233,7 @@ describe("policy delivery reporting", () => {
         host: makeHostAdapter({ platform: "linux", run, env: {} }),
       },
     );
-    const current = summarizePolicyDelivery(root, ["codex"], selected, false);
+    const current = summarize(root, ["codex"], selected, false);
     expect(current).toMatchObject({
       blocking: false,
       codexRoles: { state: "current" },
@@ -148,7 +242,7 @@ describe("policy delivery reporting", () => {
     expect(renderPolicyDelivery(current)).toContain("Codex role registration: current");
     rmSync(join(root, ".codex/config.toml"));
     rmSync(join(root, ".aih/ecc/codex-role-registration-v1.json"));
-    expect(summarizePolicyDelivery(root, ["codex"], selected, false)).toMatchObject({
+    expect(summarize(root, ["codex"], selected, false)).toMatchObject({
       blocking: true,
       codexRoles: { state: "missing" },
     });
@@ -158,7 +252,7 @@ describe("policy delivery reporting", () => {
     const selected = policy();
     const receiptPath = join(root, ".aih/ecc/materialization-v1.json");
     const receiptBefore = readFileSync(receiptPath);
-    const report = summarizePolicyDelivery(root, ["claude"], selected, false);
+    const report = summarize(root, ["claude"], selected, false);
     expect(report.selection).toMatchObject({
       targets: ["claude"],
       dependencyAuthority: "unverified",
@@ -183,9 +277,10 @@ describe("policy delivery reporting", () => {
 
   it("keeps missing and mismatched installation provenance separate from the requested source", () => {
     const selected = policy();
-    expect(
-      summarizePolicyDelivery(root, ["claude"], selected, false).selection?.components[0],
-    ).toMatchObject({ ownership: "missing-receipt", destinations: [] });
+    expect(summarize(root, ["claude"], selected, false).selection?.components[0]).toMatchObject({
+      ownership: "missing-receipt",
+      destinations: [],
+    });
     install();
     const changed = parseOrgPolicy({
       ...selected,
@@ -206,7 +301,7 @@ describe("policy delivery reporting", () => {
         ],
       },
     });
-    const report = summarizePolicyDelivery(root, ["claude", "copilot"], changed, false);
+    const report = summarize(root, ["claude", "copilot"], changed, false);
     expect(report.selection?.targets).toEqual(["claude"]);
     expect(report.unsupportedTargets).toEqual(["copilot"]);
     expect(report.selection?.components[0]).toMatchObject({
@@ -296,12 +391,11 @@ describe("policy delivery reporting", () => {
       ],
     };
     applyEccMaterialization({ root, components: [component] });
-    expect(
-      summarizePolicyDelivery(root, ["cursor"], selected, false).components[0]?.targetCoverage
-        ?.state,
-    ).toBe("unverified");
+    expect(summarize(root, ["cursor"], selected, false).components[0]?.targetCoverage?.state).toBe(
+      "unverified",
+    );
     applyEccMaterialization({ root, components: [{ ...component, targets: ["claude"] }] });
-    const report = summarizePolicyDelivery(root, ["cursor"], selected, false);
+    const report = summarize(root, ["cursor"], selected, false);
     expect(report.blocking).toBe(true);
     expect(report.components[0]).toMatchObject({
       state: "receipt-current",
@@ -332,13 +426,13 @@ describe("policy delivery reporting", () => {
         host: makeHostAdapter({ platform: "linux", run, env: {} }),
       },
     );
-    expect(summarizePolicyDelivery(root, ["claude"], selected, false)).toMatchObject({
+    expect(summarize(root, ["claude"], selected, false)).toMatchObject({
       blocking: false,
       startupGuidance: { state: "current" },
       nativeLoading: "unverified",
     });
     rmSync(join(root, "ai-coding/policy-required-guidance.md"));
-    expect(summarizePolicyDelivery(root, ["claude"], selected, false).blocking).toBe(true);
+    expect(summarize(root, ["claude"], selected, false).blocking).toBe(true);
   });
   it("blocks a target override, copied binding and changed policy bytes even when owned bytes are current", () => {
     install();
@@ -358,29 +452,25 @@ describe("policy delivery reporting", () => {
       targets: ["claude"],
     };
     writeFileSync(join(root, ".aih-config.json"), JSON.stringify({ policyBinding: binding }));
-    expect(summarizePolicyDelivery(root, ["claude"], selected, false).binding?.state).toBe(
-      "current",
-    );
-    expect(summarizePolicyDelivery(root, ["cursor"], selected, false)).toMatchObject({
+    expect(summarize(root, ["claude"], selected, false).binding?.state).toBe("current");
+    expect(summarize(root, ["cursor"], selected, false)).toMatchObject({
       blocking: true,
       binding: { state: "blocked" },
     });
     writeFileSync(policyPath, `${bytes}\n`);
-    expect(summarizePolicyDelivery(root, ["claude"], selected, false).binding?.state).toBe(
-      "blocked",
-    );
+    expect(summarize(root, ["claude"], selected, false).binding?.state).toBe("blocked");
     writeFileSync(policyPath, bytes);
     writeFileSync(
       join(root, ".aih-config.json"),
       JSON.stringify({ policyBinding: { ...binding, rootSha256: "a".repeat(64) } }),
     );
-    expect(summarizePolicyDelivery(root, ["claude"], selected, false).blocking).toBe(true);
+    expect(summarize(root, ["claude"], selected, false).blocking).toBe(true);
   });
 
   it("shows absent required content and never treats unowned bytes as delivered", () => {
     mkdirSync(dirname(join(root, path)), { recursive: true });
     writeFileSync(join(root, path), body);
-    const report = summarizePolicyDelivery(root, ["claude"], policy(), false);
+    const report = summarize(root, ["claude"], policy(), false);
     expect(report.blocking).toBe(true);
     expect(report.components[0]).toMatchObject({
       id: "skill:tdd-workflow",
@@ -391,7 +481,7 @@ describe("policy delivery reporting", () => {
   });
   it("separates current installed bytes from native loading and actual enforcement", () => {
     install();
-    const report = summarizePolicyDelivery(root, ["claude"], policy(), false);
+    const report = summarize(root, ["claude"], policy(), false);
     expect(report.components[0]).toMatchObject({
       state: "receipt-current",
       nativeLoading: "unverified",
@@ -403,14 +493,12 @@ describe("policy delivery reporting", () => {
   it("invalidates edited and missing owned bytes without overwriting them", () => {
     install();
     writeFileSync(join(root, path), "operator customization\n");
-    expect(summarizePolicyDelivery(root, ["claude"], policy(), false).components[0]?.state).toBe(
-      "drifted",
-    );
+    expect(summarize(root, ["claude"], policy(), false).components[0]?.state).toBe("drifted");
     expect(readFileSync(join(root, path), "utf8")).toBe("operator customization\n");
     rmSync(join(root, path));
-    expect(
-      summarizePolicyDelivery(root, ["claude"], policy(), false).components[0]?.files[0]?.state,
-    ).toBe("missing");
+    expect(summarize(root, ["claude"], policy(), false).components[0]?.files[0]?.state).toBe(
+      "missing",
+    );
   });
   it("cannot use an old source receipt or unsupported host as current delivery", () => {
     install();
@@ -420,18 +508,18 @@ describe("policy delivery reporting", () => {
     const selected = changed.governance.externalSelections[0]?.items[0];
     if (!selected) throw new Error("missing fixture selection");
     selected.source.commit = "d".repeat(40);
-    expect(summarizePolicyDelivery(root, ["claude"], changed, false).components[0]?.state).toBe(
+    expect(summarize(root, ["claude"], changed, false).components[0]?.state).toBe(
       "source-mismatch",
     );
-    expect(summarizePolicyDelivery(root, ["copilot"], policy(), false)).toMatchObject({
+    expect(summarize(root, ["copilot"], policy(), false)).toMatchObject({
       blocking: true,
       unsupportedTargets: ["copilot"],
     });
   });
   it("keeps authority blockers and reports orphaned governed content after policy loss", () => {
     install();
-    expect(summarizePolicyDelivery(root, ["claude"], policy(), true).blocking).toBe(true);
-    expect(summarizePolicyDelivery(root, ["claude"], undefined, false)).toMatchObject({
+    expect(summarize(root, ["claude"], policy(), true).blocking).toBe(true);
+    expect(summarize(root, ["claude"], undefined, false)).toMatchObject({
       blocking: true,
       unrequestedOwnedComponents: ["skill:tdd-workflow"],
     });

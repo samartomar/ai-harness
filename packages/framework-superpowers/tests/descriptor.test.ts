@@ -210,11 +210,13 @@ describe("readSuperpowersHookInventory", () => {
       },
     ],
     [
-      "an unknown host",
+      // A well-formed host aih does not control is accepted (hostControl none);
+      // a malformed host id is not.
+      "a malformed host id",
       (inventory) => {
         const hooks = inventory.hooks as Json[];
         const declarations = (hooks[0] as Json).declarations as Json[];
-        (declarations[0] as Json).host = "notepad";
+        (declarations[0] as Json).host = "Notepad!";
       },
     ],
     [
