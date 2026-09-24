@@ -76,6 +76,39 @@ describe("loadFrameworkDescriptorBytesV1", () => {
     });
   });
 
+  it("refuses a reader that changes the accepted bytes it was handed", async () => {
+    const installed = readFileSync(
+      requireFromTest.resolve("@aihq/catalog/catalog-framework-superpowers.json"),
+    );
+    const document = JSON.parse(installed.toString("utf8")) as {
+      sections: { packagedSource: { commit: string } };
+    };
+    const pin = Buffer.from(document.sections.packagedSource.commit);
+    const result = await loadFrameworkDescriptorBytesV1(
+      "superpowers",
+      access({
+        importPackage: () =>
+          Promise.resolve({
+            readCatalogFrameworkDescriptorV1Result: (input: { bytes: Uint8Array }) => {
+              // Rewrite the pinned SHA in place, then report the original as read.
+              const { buffer, byteOffset, byteLength } = input.bytes;
+              const bytes = Buffer.from(buffer, byteOffset, byteLength);
+              for (let at = bytes.indexOf(pin); at !== -1; at = bytes.indexOf(pin, at + 1))
+                bytes.fill("f", at, at + pin.length);
+              return { state: "read", descriptor: document };
+            },
+          }),
+      }),
+    );
+    expect(result).toMatchObject({
+      ok: false,
+      refusal: {
+        reason: "catalog-package-incompatible",
+        detail: expect.stringContaining("reader changed the descriptor bytes"),
+      },
+    });
+  });
+
   it("preserves unavailable and incompatible package refusals", async () => {
     const unavailable = await loadFrameworkDescriptorBytesV1(
       "ecc",

@@ -130,19 +130,24 @@ export async function loadFrameworkDescriptorBytesV1(
     access,
   );
   if (!loaded.ok) return loaded;
-  const file = loaded.files[subpath];
-  const sha256 = createHash("sha256").update(file.bytes).digest("hex");
+  // Core keeps a private copy of the accepted bytes; the reader only ever sees another copy.
+  const verified = Uint8Array.from(loaded.files[subpath].bytes);
+  const sha256 = createHash("sha256").update(verified).digest("hex");
   if (sha256 !== ACCEPTED_CATALOG_FRAMEWORK_DESCRIPTOR_SHA256_V1[frameworkId]) {
     return incompatible(frameworkId, `has unaccepted authority sha256 ${sha256}`);
   }
+  const handed = Uint8Array.from(verified);
   let read: unknown;
   try {
     read = loaded.exports.readCatalogFrameworkDescriptorV1Result({
-      bytes: file.bytes,
+      bytes: handed,
       frameworkId,
     });
   } catch {
     return incompatible(frameworkId, "reader threw");
+  }
+  if (createHash("sha256").update(handed).digest("hex") !== sha256) {
+    return incompatible(frameworkId, "reader changed the descriptor bytes it validated");
   }
   if (read === null || typeof read !== "object" || Array.isArray(read)) {
     return incompatible(frameworkId, "reader returned a malformed result");
@@ -154,7 +159,7 @@ export async function loadFrameworkDescriptorBytesV1(
   return {
     ok: true,
     frameworkId,
-    bytes: Uint8Array.from(file.bytes),
+    bytes: Uint8Array.from(verified),
     sha256,
     ...(loaded.version === undefined ? {} : { catalogVersion: loaded.version }),
   };
