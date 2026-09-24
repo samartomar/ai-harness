@@ -12,7 +12,7 @@ import {
   joinCiscoShardResults,
 } from "../../src/trust/cisco-shards.js";
 import { buildCiscoSourceShardManifest, joinedCiscoShardSarif } from "../../src/trust/detectors.js";
-import { fakeCiscoJobSarif } from "./fakes/fake-cisco-job-sarif.js";
+import { fakeCiscoJobSarif, type HandJobSubjectsForTests } from "./fakes/fake-cisco-job-sarif.js";
 
 const SOURCE_SHA = "a".repeat(40);
 const SOURCE_TREE = "b".repeat(64);
@@ -20,6 +20,22 @@ const INPUT_HASHES = ["1", "2", "3", "4", "5"].map((value) => value.repeat(64));
 // The Cisco host-profile lock Core accepts (ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1).
 const LOCK_SHA256 = "108c4f78340db9488bd73a03967055b19cdd3e8ece16ed31289e03f89e27d58f";
 const roots: string[] = [];
+
+/**
+ * Each fixture job's subject (subject-files-v1), computed by hand with plain
+ * node:crypto: sha256 of `<job>/SKILL.md\0<sha256 of its bytes>\n`.
+ * SKILL.md holds `# <job>\n` for skills/skill-N and `# <name>\n` for skills/<name>.
+ */
+const JOB_SUBJECTS: HandJobSubjectsForTests = {
+  "skills/skill-0": "d9b7473395d6550681766014fecd1a6bc75d77cb23d144abc7bef84c1f21ce48",
+  "skills/skill-1": "dc1e246c28caaa5184a0da7d47cd75dd866a1798d34b8f4d51a0b9c6592578a7",
+  "skills/skill-2": "e6eb4f3b188e162ca4bf92629a2b24394cfdf1b5c8e0266713e00e00127330f0",
+  "skills/skill-3": "b48ed78a85018b4fd240972d49bbb926003d19de662aba781315e7d081fb6639",
+  "skills/skill-4": "9a3db90f791933f7c252f920eade614be792b4632fb4946fbe8b226e39ac8083",
+  "skills/alpha": "439283bdb63ecb24c6a5af487d4a88163b4a7de486efa7d844cb1fb6e0db379a",
+  "skills/beta": "6637d24866ca58da16b6396feba0a0f7f3160d15c9f7ae0bcb99fb88e426f911",
+  "skills/gamma": "9c74128959ec0d4fd186321f143a90e94ddcac064f5167841084ffc167ae437e",
+};
 
 interface FakeShardRequest {
   readonly sourceRoot: string;
@@ -95,13 +111,18 @@ function jobsRoot(): string {
   return root;
 }
 
-function resultsFor(plan = manifest(), root = jobsRoot()) {
+function resultsFor(plan = manifest(), _root = jobsRoot()) {
   return plan.shards.map((shard) =>
     buildCiscoShardResult(plan, shard.id, (job) =>
-      fakeCiscoJobSarif(root, job.path, [{ ruleId: "fixture", message: { text: job.path } }], {
-        version: "2.0.14",
-        lockSha256: LOCK_SHA256,
-      }),
+      fakeCiscoJobSarif(
+        JOB_SUBJECTS,
+        job.path,
+        [{ ruleId: "fixture", message: { text: job.path } }],
+        {
+          version: "2.0.14",
+          lockSha256: LOCK_SHA256,
+        },
+      ),
     ),
   );
 }
@@ -328,7 +349,7 @@ describe("Cisco exact-source shard evidence", () => {
           JSON.stringify({
             version: "2.1.0",
             runs: fakeCiscoJobSarif(
-              request.sourceRoot,
+              JOB_SUBJECTS,
               job.path,
               [
                 {

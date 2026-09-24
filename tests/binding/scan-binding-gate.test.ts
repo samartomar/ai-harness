@@ -387,17 +387,47 @@ describe("refusals: the gate never decides on an inspection Core cannot account 
   });
 
   it("refuses SARIF that is not a single-run 2.1.0 log with binding-gate facts", async () => {
-    for (const sarif of [
-      "not json",
-      JSON.stringify({ version: "2.1.0", runs: [] }),
-      JSON.stringify({ version: "2.1.0", runs: [{ results: [] }] }),
-    ]) {
+    // Verbatim bytes: nothing is added or repaired. Runs that must reach the
+    // binding-gate structure check carry completion evidence for the selection,
+    // its subject computed by hand (sha256 over "SKILL.md\0<sha256>\n" and
+    // "src/a.ts\0<sha256>\n" of "# skill\n" and "export const a = 1;\n").
+    const selection = {
+      detectorId: BINDING_GATE_DETECTOR_ID,
+      subjectTreeSha256: "587431b388d7697ca47c3dc63d151068bedc77259de78b4ee3f63ab7f61b729b",
+      analyzedFileCount: 2,
+      analyzer: { version: "1.0.0", lockSha256: null },
+    };
+    const factsRun = {
+      ...JSON.parse(bindingGateSarifForTests([])).runs[0],
+      invocations: [{ executionSuccessful: true, properties: { aihScanCompletionV1: selection } }],
+    };
+    const { properties: _facts, ...bareRun } = factsRun;
+    for (const [sarif, message] of [
+      ["not json", "detector.aih-binding-gate returned bytes that are not JSON"],
+      [
+        JSON.stringify({ version: "2.1.0", runs: [] }),
+        "detector.aih-binding-gate returned a SARIF log with no runs",
+      ],
+      [
+        JSON.stringify({ version: "2.1.0", runs: [{ results: [] }] }),
+        "detector.aih-binding-gate returned SARIF whose run 0 names no tool driver",
+      ],
+      [
+        JSON.stringify({ version: "2.1.0", runs: [factsRun, factsRun] }),
+        "detector.aih-binding-gate must return a SARIF 2.1.0 log with exactly one run",
+      ],
+      [
+        JSON.stringify({ version: "2.1.0", runs: [bareRun] }),
+        "detector.aih-binding-gate run carries no aih-binding-gate-report facts",
+      ],
+    ] as const) {
       const refusal = await refusalOf(
-        createSelfCompletingFakeScanAdapterForTests({
+        createVerbatimFakeScanAdapterForTests({
           [BINDING_GATE_DETECTOR_ID]: { kind: "sarif", sarif },
         }),
       );
       expect(refusal).toBeInstanceOf(BindingGateScanError);
+      expect((refusal as Error).message).toBe(message);
     }
   });
 

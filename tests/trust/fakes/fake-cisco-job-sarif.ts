@@ -1,20 +1,26 @@
-import { hashComponentTree } from "../../../src/baseline-evidence/hash.js";
-import { SCAN_COMPLETION_PROPERTY_V1 } from "../../../src/trust/scan-sarif.js";
-import { scanSubjectDigestV1 } from "../../../src/trust/scan-subject-files.js";
+/**
+ * Each job's completion subject (subject-files-v1), computed BY HAND by the
+ * calling test with plain node:crypto and written there as a literal, keyed by
+ * job path. Every fixture job holds exactly one file, so its count is 1. The
+ * fake never derives a digest: a bug in Core's hashing cannot cancel out here.
+ */
+export type HandJobSubjectsForTests = Readonly<Record<string, string>>;
 
 /**
  * TEST FAKE. One Cisco shard job's SARIF as Scan returns it (C2a §1.6, §3.7):
  * the analyzer's driver, a successful invocation, and completion evidence v1
- * naming "detector.cisco", every regular file under `<sourceRoot>/<jobPath>`
+ * naming "detector.cisco", the job's hand-computed subject from `subjects`
  * and the analyzer the shard ran (`version` without its uv.lock suffix).
  */
 export function fakeCiscoJobSarif(
-  sourceRoot: string,
+  subjects: HandJobSubjectsForTests,
   jobPath: string,
   results: readonly unknown[],
   analyzer: { readonly version: string; readonly lockSha256: string },
 ): Record<string, unknown> {
-  const digest = scanSubjectDigestV1(hashComponentTree(sourceRoot, [jobPath]).files);
+  const subjectTreeSha256 = subjects[jobPath];
+  if (subjectTreeSha256 === undefined)
+    throw new Error(`the test states no hand-computed subject for job ${jobPath}`);
   return {
     version: "2.1.0",
     runs: [
@@ -24,9 +30,10 @@ export function fakeCiscoJobSarif(
           {
             executionSuccessful: true,
             properties: {
-              [SCAN_COMPLETION_PROPERTY_V1]: {
+              aihScanCompletionV1: {
                 detectorId: "detector.cisco",
-                ...digest,
+                subjectTreeSha256,
+                analyzedFileCount: 1,
                 analyzer: {
                   version: analyzer.version.split("+", 1)[0] ?? analyzer.version,
                   lockSha256: analyzer.lockSha256,

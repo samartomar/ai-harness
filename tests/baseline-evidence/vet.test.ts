@@ -21,7 +21,20 @@ import {
   joinCiscoShardResults,
 } from "../../src/trust/cisco-shards.js";
 import { TRUST_POLICY_VERSION } from "../../src/trust/evidence.js";
-import { fakeCiscoJobSarif } from "../trust/fakes/fake-cisco-job-sarif.js";
+import {
+  fakeCiscoJobSarif,
+  type HandJobSubjectsForTests,
+} from "../trust/fakes/fake-cisco-job-sarif.js";
+
+/**
+ * Each fixture job's subject (subject-files-v1), computed by hand with plain
+ * node:crypto: sha256 of `<job>/SKILL.md\0<sha256 of its bytes>\n`.
+ * SKILL.md holds `# Clean\n` and `# Blocked\n`.
+ */
+const JOB_SUBJECTS: HandJobSubjectsForTests = {
+  "skills/clean": "dcaa68965d2c6d3bb6a62dc39fe93d0aa86067a55765cb711482093b0aafb928",
+  "skills/blocked": "28c0d120433260b0f404da989081f038a3b9af6a0846e360dfd116c045fdb1df",
+};
 
 let root: string;
 
@@ -377,7 +390,7 @@ describe("vetBaselineCatalog", () => {
       manifest.shards.map((shard) =>
         buildCiscoShardResult(manifest, shard.id, (job) =>
           fakeCiscoJobSarif(
-            root,
+            JOB_SUBJECTS,
             job.path,
             [
               {
@@ -484,7 +497,7 @@ describe("vetBaselineCatalog", () => {
       manifest,
       [
         buildCiscoShardResult(manifest, shard.id, (job) =>
-          fakeCiscoJobSarif(root, job.path, [], manifest.analyzer),
+          fakeCiscoJobSarif(JOB_SUBJECTS, job.path, [], manifest.analyzer),
         ),
       ],
       root,

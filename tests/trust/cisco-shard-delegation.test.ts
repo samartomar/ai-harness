@@ -9,7 +9,7 @@ import {
   buildCiscoSourceShardManifest,
   TrustScanCancelledError,
 } from "../../src/trust/detectors.js";
-import { fakeCiscoJobSarif } from "./fakes/fake-cisco-job-sarif.js";
+import { fakeCiscoJobSarif, type HandJobSubjectsForTests } from "./fakes/fake-cisco-job-sarif.js";
 
 // ---------------------------------------------------------------------------
 // Core builds the Cisco source manifest; the installed @aihq/scan runs a shard's
@@ -20,6 +20,16 @@ import { fakeCiscoJobSarif } from "./fakes/fake-cisco-job-sarif.js";
 // The Cisco host-profile lock Core accepts (ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1).
 const LOCK = "108c4f78340db9488bd73a03967055b19cdd3e8ece16ed31289e03f89e27d58f";
 const roots: string[] = [];
+
+/**
+ * Each fixture job's subject (subject-files-v1), computed by hand with plain
+ * node:crypto: sha256 of `<job>/SKILL.md\0<sha256 of its bytes>\n`.
+ * SKILL.md holds `---\nname: <name>\n---\n# <name>\n`.
+ */
+const JOB_SUBJECTS: HandJobSubjectsForTests = {
+  "skills/alpha": "83b6d7b9b707f6d6728215af3d080fbb9453759bc308675e8089f7f05aa28335",
+  "skills/beta": "3a579f0c90add6f3661f67c18c28e77e4d19c6df23c4049dbee6fb9016f7a567",
+};
 
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
@@ -45,8 +55,12 @@ function manifestFor(root: string, lockSha256: string = LOCK) {
 }
 
 /** One job's SARIF as Scan returns it: completed, with evidence for the job's files now. */
-function sarifBytes(request: FakeShardRequest, path: string): Uint8Array {
-  const log = fakeCiscoJobSarif(request.sourceRoot, path, [], {
+function sarifBytes(
+  request: FakeShardRequest,
+  path: string,
+  subjects: HandJobSubjectsForTests = JOB_SUBJECTS,
+): Uint8Array {
+  const log = fakeCiscoJobSarif(subjects, path, [], {
     version: request.expected.analyzerVersion,
     lockSha256: request.expected.lockSha256,
   });
@@ -86,9 +100,13 @@ function fakeScan(
   return { importer: () => Promise.resolve(module), requests };
 }
 
-function succeeded(request: FakeShardRequest, change?: (outputs: unknown[]) => unknown[]) {
+function succeeded(
+  request: FakeShardRequest,
+  change?: (outputs: unknown[]) => unknown[],
+  subjects: HandJobSubjectsForTests = JOB_SUBJECTS,
+) {
   const outputs = request.jobs.map((job) => {
-    const sarif = sarifBytes(request, job.path);
+    const sarif = sarifBytes(request, job.path, subjects);
     return {
       jobId: job.id,
       path: job.path,
@@ -413,7 +431,12 @@ describe("runCiscoSourceShardThroughScanV1", () => {
     const manifest = manifestFor(root);
     const scan = fakeScan((request) => {
       writeFileSync(join(root, "skills", "alpha", "SKILL.md"), "changed\n");
-      return succeeded(request);
+      // Scan sealed the changed file, so its evidence names it (by hand, as
+      // above, over "changed\n"): what refuses the run is the manifest identity.
+      return succeeded(request, undefined, {
+        ...JOB_SUBJECTS,
+        "skills/alpha": "eb4d1470e14569537ac9863a69f705597909b39f3e4a687ac5e2f89a5a52eb0d",
+      });
     });
     await expect(
       runCiscoSourceShardThroughScanV1(root, manifest, manifest.shards[0]?.id ?? "", {
