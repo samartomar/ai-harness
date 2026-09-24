@@ -303,7 +303,9 @@ export function defaultComponentScanner(
       let scan: TrustScanResult;
       if (sharedCiscoEvidence !== undefined && usesCisco) {
         // Only Core rebinds the verified join: to a projection it makes and fills.
-        scan = await withCiscoShardJoinProjectionV1(
+        // One it could not prepare is never scanned: its failed Cisco detector is
+        // the component's scan.
+        const projected = await withCiscoShardJoinProjectionV1(
           sharedCiscoEvidence,
           component.paths,
           (projection) => {
@@ -311,6 +313,19 @@ export function defaultComponentScanner(
             return scanProjection(projection.root, projection.cisco);
           },
         );
+        if (projected.cleanupFailure !== undefined)
+          scanOptions.progress?.(
+            `baseline vet: component ${component.id}: ${projected.cleanupFailure.detail}`,
+          );
+        scan =
+          projected.kind === "scanned"
+            ? projected.result
+            : {
+                checks: projected.detector.checks,
+                analyzersRun: projected.detector.analyzersRun,
+                rawOccurrences: projected.detector.rawOccurrences,
+                detectorExecutions: projected.detector.executions,
+              };
       } else {
         const projectionRoot = mkdtempSync(
           join(dirname(resolve(sourceRoot)), ".aih-baseline-component-"),
@@ -410,13 +425,15 @@ function analyzerReceipts(
   checks: readonly Check[],
 ): BaselineAnalyzerReceipt[] {
   const analyzers = [...new Set(analyzersRun)].sort((left, right) => left.localeCompare(right));
-  if (analyzers.length === 0) throw new Error("baseline vet produced no analyzer receipt");
+  const diagnostics = detectorDiagnostics(checks);
+  const because =
+    diagnostics.length > 0 ? `; detector diagnostics: ${diagnostics.join(" | ")}` : "";
+  // A component Core refused before any detector ran still names why.
+  if (analyzers.length === 0)
+    throw new Error(`baseline vet produced no analyzer receipt${because}`);
   const completed = new Set(analyzers);
   const missing = requiredAnalyzers.filter((name) => !completed.has(name));
   if (missing.length > 0) {
-    const diagnostics = detectorDiagnostics(checks);
-    const because =
-      diagnostics.length > 0 ? `; detector diagnostics: ${diagnostics.join(" | ")}` : "";
     throw new Error(
       `baseline component ${componentId} missing required baseline analyzers: ${missing.join(", ")}${because}`,
     );

@@ -22,6 +22,7 @@ import {
 } from "../../src/trust/cisco-shards.js";
 import {
   buildCiscoSourceShardManifest,
+  type CiscoShardJoinProjectionResultV1,
   joinedCiscoShardSarif,
   type PrecomputedDetectorSarifV1,
   runTrustDetectors,
@@ -162,6 +163,20 @@ function ciscoCheck(checks: readonly Check[]): Check | undefined {
   return checks.find((check) => check.name === "trust detector cisco");
 }
 
+/** The scan's own result: Core prepared the projection, scanned it and removed it. */
+function scanned<T>(outcome: CiscoShardJoinProjectionResultV1<T>): T {
+  if (outcome.kind !== "scanned") throw new Error(`expected a scan, got ${outcome.kind}`);
+  expect(outcome.cleanupFailure).toBeUndefined();
+  return outcome.result;
+}
+
+/** A projection that must be prepared, scanned and removed: the scan's own result. */
+async function projectScanned<T>(
+  ...args: Parameters<typeof withCiscoShardJoinProjectionV1<T>>
+): Promise<T> {
+  return scanned(await withCiscoShardJoinProjectionV1(...args));
+}
+
 function expectRefused(
   result: Awaited<ReturnType<typeof scanCisco>>,
   reason: string | RegExp,
@@ -246,7 +261,7 @@ describe("a verified Cisco shard join is bound to the tree it was verified again
 describe("a verified shard join is rebound only to a projection Core makes itself", () => {
   it("copies the included jobs from the verified root and completes there", async () => {
     let seen: string | undefined;
-    const result = await withCiscoShardJoinProjectionV1(
+    const result = await projectScanned(
       verifiedJoin(sourceA),
       ["skills/alpha"],
       async (projection) => {
@@ -274,10 +289,8 @@ describe("a verified shard join is rebound only to a projection Core makes itsel
       recursive: true,
     });
     // While the projection still exists, so the root, not the revocation, refuses it.
-    const result = await withCiscoShardJoinProjectionV1(
-      verifiedJoin(sourceA),
-      ["skills/alpha"],
-      (projection) => scanCisco(alphaOnly, projection.cisco),
+    const result = await projectScanned(verifiedJoin(sourceA), ["skills/alpha"], (projection) =>
+      scanCisco(alphaOnly, projection.cisco),
     );
     expectRefused(
       result,
@@ -286,7 +299,7 @@ describe("a verified shard join is rebound only to a projection Core makes itsel
   });
 
   it("refuses the projection when a caller changes a copied job before the scan", async () => {
-    const result = await withCiscoShardJoinProjectionV1(
+    const result = await projectScanned(
       verifiedJoin(sourceA),
       ["skills/alpha"],
       async (projection) => {
@@ -301,7 +314,7 @@ describe("a verified shard join is rebound only to a projection Core makes itsel
   });
 
   it("refuses the projection's join after the projection is gone, even at a recreated pathname", async () => {
-    const leaked = await withCiscoShardJoinProjectionV1(
+    const leaked = await projectScanned(
       verifiedJoin(sourceA),
       ["skills/alpha"],
       async (projection) => projection,
@@ -319,7 +332,7 @@ describe("a verified shard join is rebound only to a projection Core makes itsel
   });
 
   it("refuses the projection's join when the projection directory was replaced at the same pathname", async () => {
-    const result = await withCiscoShardJoinProjectionV1(
+    const result = await projectScanned(
       verifiedJoin(sourceA),
       ["skills/alpha"],
       async (projection) => {
@@ -340,7 +353,7 @@ describe("a verified shard join is rebound only to a projection Core makes itsel
   it("refuses the projection when the verified root's job changed after the join", async () => {
     const joined = verifiedJoin(sourceA);
     writeFileSync(join(sourceA, "skills", "alpha", "SKILL.md"), "# changed\n", "utf8");
-    const result = await withCiscoShardJoinProjectionV1(joined, ["skills/alpha"], (projection) =>
+    const result = await projectScanned(joined, ["skills/alpha"], (projection) =>
       scanCisco(projection.root, projection.cisco),
     );
     expectRefused(
@@ -505,17 +518,13 @@ describe("a projection copies only the outermost selected jobs and still verifie
     ["siblings", ["skills/a/nested", "skills/b"], ["skills/a", "skills/a/nested", "skills/b"]],
   ] as const)("completes for %s", async (_label, included, jobs) => {
     const source = nestedTree();
-    const result = await withCiscoShardJoinProjectionV1(
-      nestedJoin(source, true),
-      included,
-      async (projection) => {
-        for (const path of Object.keys(NESTED_FILES))
-          expect(existsSync(join(projection.root, path))).toBe(
-            jobs.some((job) => path.startsWith(`${job}/`)),
-          );
-        return scanCisco(projection.root, projection.cisco);
-      },
-    );
+    const result = await projectScanned(nestedJoin(source, true), included, async (projection) => {
+      for (const path of Object.keys(NESTED_FILES))
+        expect(existsSync(join(projection.root, path))).toBe(
+          jobs.some((job) => path.startsWith(`${job}/`)),
+        );
+      return scanCisco(projection.root, projection.cisco);
+    });
     expect(result.executions).toEqual([
       { detector: "cisco", executedBy: "precomputed-sarif", outcome: "completed" },
     ]);
@@ -526,7 +535,7 @@ describe("a projection copies only the outermost selected jobs and still verifie
 
   it("rehashes a nested job selected with its parent", async () => {
     const source = nestedTree();
-    const result = await withCiscoShardJoinProjectionV1(
+    const result = await projectScanned(
       nestedJoin(source, false),
       ["skills/a"],
       async (projection) => {

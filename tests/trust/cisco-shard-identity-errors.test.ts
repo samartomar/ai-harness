@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { defaultComponentScanner } from "../../src/baseline-evidence/vet.js";
 import type { Check } from "../../src/internals/verify.js";
 import {
   buildCiscoShardResult,
@@ -10,8 +11,10 @@ import {
 } from "../../src/trust/cisco-shards.js";
 import {
   buildCiscoSourceShardManifest,
+  type CiscoShardJoinProjectionResultV1,
   type PrecomputedDetectorSarifV1,
   runTrustDetectors,
+  type TrustDetectorResult,
   withCiscoShardJoinProjectionV1,
 } from "../../src/trust/detectors.js";
 import { buildTrustFileInventory } from "../../src/trust/inventory.js";
@@ -19,20 +22,26 @@ import { buildTrustFileInventory } from "../../src/trust/inventory.js";
 // ---------------------------------------------------------------------------
 // An I/O error while Core reads a projection's identity, resolves it, or
 // copies its jobs fails the Cisco detector with a typed refusal naming the
-// path and the error code: never a rejected scan, never a completed one.
-// Errors are injected through a node:fs mock scoped to this file; every other
+// path and the error code: never a rejected scan, never a completed one. A
+// projection Core cannot prepare is never scanned, and a projection Core
+// cannot remove leaves the result standing with a typed cleanup diagnostic.
+// Errors are injected through a node:fs mock scoped to this file, and each
+// keeps failing once it starts, as a permission change would; every other
 // call passes through. Job digests are computed by hand with plain node:crypto.
 // ---------------------------------------------------------------------------
 
 const PROJECTION = ".aih-cisco-shard-projection-";
 const inject = vi.hoisted(() => ({
-  /** Fail the Nth bigint lstat of a projection directory (0: none). */
+  /** Fail every bigint lstat of a projection directory from the Nth on (0: none). */
   identityCall: 0,
   identityCalls: 0,
-  /** Fail the first realpath of a projection directory. */
+  /** Fail every realpath of a projection directory. */
   realpath: false,
-  /** Fail the lstat of a source job file (set after the join is built: the copy filter). */
+  realpathCalls: 0,
+  /** Fail every lstat of a source job file (set after the join is built: the copy filter). */
   copy: false,
+  /** Fail every rm of a projection directory. */
+  rm: false,
 }));
 
 vi.mock("node:fs", async (importOriginal) => {
@@ -46,7 +55,8 @@ vi.mock("node:fs", async (importOriginal) => {
   const lstatSync = ((path: string, options?: { bigint?: boolean }) => {
     if (options?.bigint === true && String(path).includes(PROJECTION)) {
       inject.identityCalls += 1;
-      if (inject.identityCalls === inject.identityCall) throw eacces("lstat", path);
+      if (inject.identityCall > 0 && inject.identityCalls >= inject.identityCall)
+        throw eacces("lstat", path);
     } else if (
       inject.copy &&
       options === undefined &&
@@ -58,9 +68,9 @@ vi.mock("node:fs", async (importOriginal) => {
     return actual.lstatSync(path, options as never);
   }) as typeof actual.lstatSync;
   const native = ((path: string, options?: never) => {
-    if (inject.realpath && String(path).includes(PROJECTION)) {
-      inject.realpath = false;
-      throw eacces("realpath", path);
+    if (String(path).includes(PROJECTION)) {
+      inject.realpathCalls += 1;
+      if (inject.realpath) throw eacces("realpath", path);
     }
     return actual.realpathSync.native(path, options);
   }) as typeof actual.realpathSync.native;
@@ -69,7 +79,17 @@ vi.mock("node:fs", async (importOriginal) => {
       actual.realpathSync(path, options)) as typeof actual.realpathSync,
     { native },
   );
-  return { ...actual, default: { ...actual, lstatSync, realpathSync }, lstatSync, realpathSync };
+  const rmSync = ((path: string, options?: never) => {
+    if (inject.rm && String(path).includes(PROJECTION)) throw eacces("rm", path);
+    return actual.rmSync(path, options);
+  }) as typeof actual.rmSync;
+  return {
+    ...actual,
+    default: { ...actual, lstatSync, realpathSync, rmSync },
+    lstatSync,
+    realpathSync,
+    rmSync,
+  };
 });
 
 const CISCO_LOCK = "108c4f78340db9488bd73a03967055b19cdd3e8ece16ed31289e03f89e27d58f";
@@ -77,15 +97,26 @@ const CISCO_LOCK = "108c4f78340db9488bd73a03967055b19cdd3e8ece16ed31289e03f89e27
 const ALPHA = "439283bdb63ecb24c6a5af487d4a88163b4a7de486efa7d844cb1fb6e0db379a";
 
 let source: string;
+/** Projections a test left behind on purpose (a failed cleanup), removed afterwards. */
+const leftBehind: string[] = [];
 
 beforeEach(() => {
-  Object.assign(inject, { identityCall: 0, identityCalls: 0, realpath: false, copy: false });
+  Object.assign(inject, {
+    identityCall: 0,
+    identityCalls: 0,
+    realpath: false,
+    realpathCalls: 0,
+    copy: false,
+    rm: false,
+  });
   source = mkdtempSync(join(tmpdir(), "aih-shard-identity-"));
   mkdirSync(join(source, "skills", "alpha"), { recursive: true });
   writeFileSync(join(source, "skills", "alpha", "SKILL.md"), "# alpha\n", "utf8");
 });
 
 afterEach(() => {
+  inject.rm = false;
+  for (const path of leftBehind.splice(0)) rmSync(path, { recursive: true, force: true });
   rmSync(source, { recursive: true, force: true });
 });
 
@@ -140,15 +171,40 @@ async function scanCisco(root: string, cisco: PrecomputedDetectorSarifV1) {
   });
 }
 
-function projectAndScan(before: () => void = () => {}) {
+const scan = vi.fn((root: string, cisco: PrecomputedDetectorSarifV1) => scanCisco(root, cisco));
+
+beforeEach(() => {
+  scan.mockClear();
+});
+
+function projectAndScan(
+  before: () => void = () => {},
+): Promise<CiscoShardJoinProjectionResultV1<TrustDetectorResult>> {
   const joined = verifiedJoin();
   before();
   return withCiscoShardJoinProjectionV1(joined, ["skills/alpha"], (projection) =>
-    scanCisco(projection.root, projection.cisco),
+    scan(projection.root, projection.cisco),
   );
 }
 
-function expectRefused(result: Awaited<ReturnType<typeof scanCisco>>, reason: RegExp): void {
+/** The scan's own result, when Core prepared the projection and scanned it. */
+function scanned(
+  outcome: CiscoShardJoinProjectionResultV1<TrustDetectorResult>,
+): TrustDetectorResult {
+  if (outcome.kind !== "scanned") throw new Error(`expected a scan, got ${outcome.kind}`);
+  return outcome.result;
+}
+
+/** The failed Cisco detector Core returned without scanning a projection it could not prepare. */
+function refusedUnscanned(
+  outcome: CiscoShardJoinProjectionResultV1<TrustDetectorResult>,
+): TrustDetectorResult {
+  if (outcome.kind !== "refused") throw new Error(`expected a refusal, got ${outcome.kind}`);
+  expect(scan).not.toHaveBeenCalled();
+  return outcome.detector;
+}
+
+function expectRefused(result: TrustDetectorResult, reason: RegExp): void {
   expect(result.executions).toEqual([
     { detector: "cisco", executedBy: "precomputed-sarif", outcome: "failed" },
   ]);
@@ -160,52 +216,150 @@ function expectRefused(result: Awaited<ReturnType<typeof scanCisco>>, reason: Re
 
 describe("identity I/O errors fail the Cisco detector with a typed refusal", () => {
   it("completes when no error is injected", async () => {
-    const result = await projectAndScan();
-    expect(result.executions).toEqual([
+    const outcome = await projectAndScan();
+    expect(scanned(outcome).executions).toEqual([
       { detector: "cisco", executedBy: "precomputed-sarif", outcome: "completed" },
     ]);
+    expect(outcome.cleanupFailure).toBeUndefined();
     // Creation, then acceptance before and after the rehash.
     expect(inject.identityCalls).toBe(3);
   });
 
-  it("refuses when the projection's identity cannot be read at creation", async () => {
+  it("returns a refusal without scanning when the projection's identity keeps failing at creation", async () => {
     inject.identityCall = 1;
+    const outcome = await projectAndScan();
     expectRefused(
-      await projectAndScan(),
+      refusedUnscanned(outcome),
       /Core could not prepare the shard join's projection: .+\.aih-cisco-shard-projection-\S+ cannot be read \(EACCES\)/,
     );
+    // No further read of the projection once its preparation failed.
+    expect(inject.identityCalls).toBe(1);
+    expect(inject.realpathCalls).toBe(0);
+    expect(outcome.cleanupFailure).toBeUndefined();
   });
 
-  it("refuses when the projection's identity cannot be read before the rehash", async () => {
+  it("refuses when the projection's identity keeps failing from before the rehash", async () => {
     inject.identityCall = 2;
     expectRefused(
-      await projectAndScan(),
+      scanned(await projectAndScan()),
       /the identity of the projection directory Core created cannot be read before the jobs are rehashed: .+\.aih-cisco-shard-projection-\S+ cannot be read \(EACCES\)/,
     );
   });
 
-  it("refuses when the projection's identity cannot be read after the rehash", async () => {
+  it("refuses when the projection's identity keeps failing from after the rehash", async () => {
     inject.identityCall = 3;
     expectRefused(
-      await projectAndScan(),
+      scanned(await projectAndScan()),
       /the identity of the projection directory Core created cannot be read after the jobs were rehashed: .+\.aih-cisco-shard-projection-\S+ cannot be read \(EACCES\)/,
     );
   });
 
-  it("refuses when the projection cannot be resolved at creation", async () => {
+  it("returns a refusal without scanning when the projection keeps failing to resolve", async () => {
     inject.realpath = true;
+    const outcome = await projectAndScan();
     expectRefused(
-      await projectAndScan(),
+      refusedUnscanned(outcome),
       /Core could not prepare the shard join's projection: .+\.aih-cisco-shard-projection-\S+ cannot be resolved \(EACCES\)/,
     );
+    // Creation's single identity read and single resolve: nothing after them.
+    expect(inject.identityCalls).toBe(1);
+    expect(inject.realpathCalls).toBe(1);
   });
 
-  it("refuses when a job cannot be read while Core copies it into the projection", async () => {
+  it("returns a refusal without scanning when a job keeps failing to read while Core copies it", async () => {
+    const outcome = await projectAndScan(() => {
+      inject.copy = true;
+    });
     expectRefused(
-      await projectAndScan(() => {
-        inject.copy = true;
-      }),
+      refusedUnscanned(outcome),
       /Core could not prepare the shard join's projection: .+aih-shard-identity-.+SKILL\.md cannot be read \(EACCES\)/,
+    );
+    expect(inject.realpathCalls).toBe(0);
+  });
+});
+
+describe("a projection Core cannot remove never replaces the result", () => {
+  const cleanupFailure = (path: string) => ({
+    kind: "cisco-shard-projection-cleanup-failed-v1",
+    path,
+    code: "EACCES",
+    detail: `Core could not remove the shard join's projection: ${path} cannot be removed (EACCES)`,
+  });
+
+  it("keeps a completed scan and reports the projection it could not remove", async () => {
+    let root = "";
+    const joined = verifiedJoin();
+    const outcome = await withCiscoShardJoinProjectionV1(joined, ["skills/alpha"], (projection) => {
+      root = projection.root;
+      leftBehind.push(root);
+      inject.rm = true;
+      return scanCisco(projection.root, projection.cisco);
+    });
+    expect(scanned(outcome).executions).toEqual([
+      { detector: "cisco", executedBy: "precomputed-sarif", outcome: "completed" },
+    ]);
+    expect(outcome.cleanupFailure).toEqual(cleanupFailure(root));
+  });
+
+  it("keeps a refusal and reports the projection it could not remove", async () => {
+    inject.identityCall = 1;
+    inject.rm = true;
+    const outcome = await projectAndScan();
+    expectRefused(refusedUnscanned(outcome), /cannot be read \(EACCES\)/);
+    const path = outcome.cleanupFailure?.path ?? "";
+    leftBehind.push(path);
+    expect(path).toContain(PROJECTION);
+    expect(outcome.cleanupFailure).toEqual(cleanupFailure(path));
+  });
+
+  it("rejects with the scan's own error, not the cleanup's", async () => {
+    const joined = verifiedJoin();
+    await expect(
+      withCiscoShardJoinProjectionV1(joined, ["skills/alpha"], async (projection) => {
+        leftBehind.push(projection.root);
+        inject.rm = true;
+        throw new Error("the scan itself failed");
+      }),
+    ).rejects.toThrow(/^the scan itself failed$/);
+  });
+});
+
+describe("baseline vet never scans a projection Core could not prepare", () => {
+  it("returns the failed Cisco detector as the component's scan, and reports a failed cleanup", async () => {
+    inject.identityCall = 1;
+    inject.rm = true;
+    const joined = verifiedJoin();
+    const progress = vi.fn();
+    const scanTree = vi.fn(async () => {
+      throw new Error("a projection Core could not prepare must not be scanned");
+    });
+    const result = await defaultComponentScanner(
+      { progress },
+      scanTree,
+      () => ["cisco"],
+      joined,
+    )({ sourceRoot: source, component: { id: "skill:alpha", paths: ["skills/alpha"] } });
+    expect(scanTree).not.toHaveBeenCalled();
+    expect(result.analyzersRun).toEqual([]);
+    expect(result.detectorExecutions).toEqual([
+      { detector: "cisco", executedBy: "precomputed-sarif", outcome: "failed" },
+    ]);
+    expect(result.checks).toEqual([
+      expect.objectContaining({
+        name: "trust detector cisco",
+        verdict: "fail",
+        code: "trust.detector-unavailable",
+        detail: expect.stringMatching(
+          /precomputed SARIF for detector\.cisco is refused: Core could not prepare the shard join's projection: .+ cannot be read \(EACCES\)/,
+        ),
+      }),
+    ]);
+    const lines = progress.mock.calls.map(([message]) => message as string);
+    const removal = lines.find((line) => line.includes("could not remove")) ?? "";
+    const left = /: (\S+\.aih-cisco-shard-projection-\S+) cannot be removed/.exec(removal)?.[1];
+    if (left !== undefined) leftBehind.push(left);
+    expect(removal).toMatch(
+      /^baseline vet: component skill:alpha: Core could not remove the shard join's projection: .+\.aih-cisco-shard-projection-\S+ cannot be removed \(EACCES\)$/,
     );
   });
 });

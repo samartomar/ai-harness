@@ -203,9 +203,13 @@ directory Core created, by identity (device, inode and birth time, a real direct
 link or junction), checked before and after the jobs are rehashed; a directory replaced at the
 same pathname fails the detector. When the scan settles Core revokes the join, so presenting it
 again, even at a recreated pathname holding the same jobs, fails with "the shard join's projection
-no longer exists". A file-system error while Core prepares the projection (reading its
-identity, copying a job, resolving it) or reads its identity at the scan fails the detector with a
-refusal naming the path and the error code; it never rejects the scan and never passes.
+no longer exists". A file-system error while Core reads the projection's identity at the scan
+fails the detector with a refusal naming the path and the error code; it never rejects the scan
+and never passes. A projection Core cannot prepare (reading its identity, copying a job,
+resolving it) is never scanned: Core returns a `refused` result holding the failed Cisco detector,
+with the path and error code, and reads nothing more there. Removing the projection never
+replaces the result, or the scan's own error: a removal that fails is returned beside the result
+as a typed `cleanupFailure` naming the path and code, which baseline vet reports as progress.
 
 ## Analyzer execution profiles and their limits
 

@@ -132,9 +132,15 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   exists", and a directory replaced at the same pathname during the scan fails too. A join whose
   selected jobs nest (`skills/a` and `skills/a/nested`) can now be projected: Core copies only the
   outermost selected jobs and still binds and rehashes every selected job. A file-system error
-  while Core prepares a projection (reading its identity, copying a job, resolving it) or checks
-  its identity at the scan fails the Cisco detector with a refusal naming the path and the error
-  code (such as `EACCES`), instead of rejecting the whole scan.
+  while Core checks a projection's identity at the scan fails the Cisco detector with a refusal
+  naming the path and the error code (such as `EACCES`), instead of rejecting the whole scan. A
+  projection Core cannot prepare (reading its identity, copying a job, resolving it) is never
+  scanned: `withCiscoShardJoinProjectionV1` now returns a typed result, either `scanned` with the
+  scan's own result or `refused` with the failed Cisco detector naming the path and code, and
+  reads nothing more there; baseline vet uses the refusal as the component's scan. A projection
+  Core cannot remove no longer replaces the result or the scan's own error: the result carries a
+  typed `cleanupFailure` with the path and code, which baseline vet reports as progress. Baseline
+  vet's "produced no analyzer receipt" error now names the detector diagnostics too.
 - The record `joinCiscoShardResults` verified is stored deep-frozen, and
   `verifiedCiscoShardJobSarifV1` returns a frozen copy of it (now with the verified root and each
   job's subject), so a caller can no longer replace a job's SARIF, add or remove a job, or edit a

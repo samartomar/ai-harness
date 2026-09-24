@@ -426,22 +426,25 @@ interface IssuedShardJoinBindingV1 {
   readonly root: string;
   readonly jobs: readonly { readonly path: string; readonly subject: ScanSubjectDigestV1 }[];
   readonly projection?: DirectoryIdentityV1;
-  /** Why Core could not prepare the projection: the join is refused wherever it is presented. */
-  readonly refusal?: string;
 }
 
 const ISSUED_SHARD_JOINS = new WeakMap<VerifiedCiscoShardSarifV1, IssuedShardJoinBindingV1>();
 /** Projection joins whose projection Core has removed: refused from then on. */
 const REVOKED_PROJECTION_JOINS = new WeakSet<VerifiedCiscoShardSarifV1>();
 
+/** The error code of a failed file-system operation, or "unknown error". */
+function errorCodeV1(error: unknown): string {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  return typeof code === "string" ? code : "unknown error";
+}
+
 /** A failed file-system operation on `path`, named by the path and the error code, for a refusal. */
 function failedPathV1(
   path: string,
   error: unknown,
-  action: "read" | "resolved" | "copied",
+  action: "read" | "resolved" | "copied" | "removed",
 ): string {
-  const code = (error as NodeJS.ErrnoException | undefined)?.code;
-  return `${path} cannot be ${action} (${typeof code === "string" ? code : "unknown error"})`;
+  return `${path} cannot be ${action} (${errorCodeV1(error)})`;
 }
 
 /**
@@ -497,6 +500,32 @@ export interface CiscoShardJoinProjectionV1 {
   readonly cisco: VerifiedCiscoShardSarifV1;
 }
 
+/** A projection Core could not remove once its scan settled: left behind at `path`. */
+export interface CiscoShardProjectionCleanupFailureV1 {
+  readonly kind: "cisco-shard-projection-cleanup-failed-v1";
+  readonly path: string;
+  readonly code: string;
+  readonly detail: string;
+}
+
+/**
+ * What a projection of a verified join came to: `scanned`, the scan's own
+ * result; or `refused`, the failed Cisco detector Core returns without a scan
+ * when it could not prepare the projection. Either way `cleanupFailure` names
+ * a projection Core could not remove; it never replaces the result.
+ */
+export type CiscoShardJoinProjectionResultV1<T> =
+  | {
+      readonly kind: "scanned";
+      readonly result: T;
+      readonly cleanupFailure?: CiscoShardProjectionCleanupFailureV1;
+    }
+  | {
+      readonly kind: "refused";
+      readonly detector: TrustDetectorResult;
+      readonly cleanupFailure?: CiscoShardProjectionCleanupFailureV1;
+    };
+
 /**
  * Runs `scan` over a projection of a verified join's source: a directory Core
  * creates beside the verified root, into which Core copies, from that root,
@@ -505,34 +534,81 @@ export interface CiscoShardJoinProjectionV1 {
  * join's SARIF for those jobs bound to that directory. The caller may add
  * other files; the scan still rehashes every job it finds there. The join
  * holds only while that directory, by identity, is the one Core created: it
- * is revoked, and the directory removed, once `scan` settles.
+ * is revoked, and the directory removed, once `scan` settles. A projection
+ * Core cannot prepare is never scanned: Core returns the failed Cisco detector
+ * naming the path and error code, and reads nothing more there. A rejected
+ * `scan` rejects with its own error.
  */
 export async function withCiscoShardJoinProjectionV1<T>(
   joined: JoinedCiscoShardEvidence,
   includedPaths: readonly string[],
   scan: (projection: CiscoShardJoinProjectionV1) => Promise<T>,
-): Promise<T> {
+): Promise<CiscoShardJoinProjectionResultV1<T>> {
   const verified = verifiedJoinOrThrow(joined);
   const jobs = includedJobs(verified, includedPaths);
   const root = mkdtempSync(join(dirname(verified.root), ".aih-cisco-shard-projection-"));
   let issued: VerifiedCiscoShardSarifV1 | undefined;
+  let outcome:
+    | { readonly kind: "scanned"; readonly result: T }
+    | { readonly kind: "refused"; readonly detector: TrustDetectorResult };
+  let cleanupFailure: CiscoShardProjectionCleanupFailureV1 | undefined;
   try {
-    // A projection Core cannot prepare still reaches the scan, as a join that
-    // fails the detector with the reason: never a crash, never a pass.
     const prepared = prepareShardProjectionV1(verified, jobs, root);
-    issued =
-      "refusal" in prepared
-        ? issueShardJoin(
-            jobs,
-            root,
-            undefined,
-            `Core could not prepare the shard join's projection: ${prepared.refusal}`,
-          )
-        : issueShardJoin(jobs, prepared.canonical, prepared.identity);
-    return await scan(Object.freeze({ root, cisco: issued }));
+    if ("refusal" in prepared) {
+      outcome = {
+        kind: "refused",
+        detector: shardProjectionRefusedV1(
+          `Core could not prepare the shard join's projection: ${prepared.refusal}`,
+        ),
+      };
+    } else {
+      issued = issueShardJoin(jobs, prepared.canonical, prepared.identity);
+      outcome = { kind: "scanned", result: await scan(Object.freeze({ root, cisco: issued })) };
+    }
   } finally {
     if (issued !== undefined) REVOKED_PROJECTION_JOINS.add(issued);
+    cleanupFailure = removeShardProjectionV1(root);
+  }
+  return Object.freeze(cleanupFailure === undefined ? outcome : { ...outcome, cleanupFailure });
+}
+
+/**
+ * The failed Cisco detector for a projection Core could not prepare, as
+ * `runTrustDetectors` reports a refused shard join: a failed check, never a
+ * pass, whatever the posture.
+ */
+function shardProjectionRefusedV1(reason: string): TrustDetectorResult {
+  return {
+    checks: [
+      {
+        name: "trust detector cisco",
+        verdict: "fail",
+        code: DETECTOR_UNAVAILABLE,
+        detail: unavailableDetail(
+          "cisco",
+          `precomputed SARIF for ${SCAN_DETECTOR_IDS.cisco} is refused: ${reason}`,
+        ),
+      },
+    ],
+    analyzersRun: [],
+    rawOccurrences: [],
+    executions: [{ detector: "cisco", executedBy: "precomputed-sarif", outcome: "failed" }],
+    observations: [],
+  };
+}
+
+/** Removes a projection; never throws: a failure is returned for the caller to report. */
+function removeShardProjectionV1(root: string): CiscoShardProjectionCleanupFailureV1 | undefined {
+  try {
     rmSync(root, { recursive: true, force: true });
+    return undefined;
+  } catch (error) {
+    return Object.freeze({
+      kind: "cisco-shard-projection-cleanup-failed-v1",
+      path: root,
+      code: errorCodeV1(error),
+      detail: `Core could not remove the shard join's projection: ${failedPathV1(root, error, "removed")}`,
+    });
   }
 }
 
@@ -611,7 +687,6 @@ function issueShardJoin(
   jobs: VerifiedCiscoShardJoinV1["jobs"],
   root: string,
   projection?: DirectoryIdentityV1,
-  refusal?: string,
 ): VerifiedCiscoShardSarifV1 {
   const runs: CheckedScanSarifLogV1["runs"][number][] = [];
   const bound: IssuedShardJoinBindingV1["jobs"][number][] = [];
@@ -635,7 +710,6 @@ function issueShardJoin(
       root,
       jobs: Object.freeze(bound),
       ...(projection === undefined ? {} : { projection }),
-      ...(refusal === undefined ? {} : { refusal }),
     }),
   );
   return issued;
@@ -657,7 +731,6 @@ function issuedShardJoinRefusalV1(
 ): string | undefined {
   if (REVOKED_PROJECTION_JOINS.has(issued))
     return "the shard join's projection no longer exists: Core removed it when the projection's scan settled";
-  if (binding.refusal !== undefined) return binding.refusal;
   let scanned: string;
   try {
     scanned = realpathSync.native(root);

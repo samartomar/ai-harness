@@ -523,6 +523,31 @@ describe("vetBaselineCatalog", () => {
     expect(scanTree).not.toHaveBeenCalled();
   });
 
+  it("names the detector's refusal when a component scan ran no analyzer", async () => {
+    await expect(
+      vetBaselineCatalog(root, catalog(), {
+        scanComponent: async () => ({
+          analyzersRun: [],
+          checks: [
+            {
+              name: "trust detector cisco",
+              verdict: "fail",
+              code: "trust.detector-unavailable",
+              detail: "precomputed SARIF for detector.cisco is refused: fixture reason",
+            },
+          ],
+        }),
+        requiredAnalyzers: ["aih-native", "cisco@uvx"],
+        analyzerVersions: {
+          "aih-native": "native.test",
+          "cisco@uvx": "2.0.13+uvlock.fixture",
+        },
+      }),
+    ).rejects.toThrow(
+      /^baseline vet produced no analyzer receipt; detector diagnostics: precomputed SARIF for detector\.cisco is refused: fixture reason$/,
+    );
+  });
+
   it("requires an explicit dispatcher before requesting multiple source shards", async () => {
     await expect(
       vetBaselineCatalog(root, catalog(), {
