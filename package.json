@@ -86,6 +86,7 @@
     "baseline:assemble": "tsx src/baseline-evidence/scanner-cli.ts assemble",
     "baseline:check": "npm run check:baseline-pins && npm run check:baseline-analyzers && npm run check:baseline-installable",
     "baseline:artifact": "tsx src/baseline-evidence/vendor-artifact.ts",
+    "prepare:workbench-catalog-qualification": "tsx src/internals/prepare-workbench-catalog-qualification.ts",
     "release:preflight": "tsx src/internals/release-preflight.ts",
     "release:governance": "tsx src/internals/delivery-governance-command.ts",
     "check:published-bin": "node dist/cli.js --version && node dist/cli.js --help",
