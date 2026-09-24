@@ -144,8 +144,8 @@ const defaultImporter: PluginImporter = (specifier) => import(specifier);
 
 /**
  * Default resolver: `import.meta.resolve`, synchronous and unflagged since
- * Node 20.6. package.json `engines.node` is ">=20", so {@link resolveBoundary}
- * typeof-guards it: on 20.0–20.5 the check degrades to a "cannot verify"
+ * Node 20.6. package.json `engines.node` is ">=20.6.0"; {@link resolveBoundary}
+ * still typeof-guards it: on an unsupported 20.0–20.5 the check degrades to a "cannot verify"
  * warning instead of crashing. Deliberately NOT falling back to
  * `createRequire().resolve` — CJS resolution rejects packages that expose
  * ESM-only `exports` maps, which the plugin is.
@@ -286,7 +286,7 @@ function checkInstallTree(resolve: PluginResolver): BoundaryOutcome {
  * a resolver is explicitly injected (tests). An injected importer WITHOUT a
  * resolver imports nothing from disk, so there is no on-disk tree to validate
  * — the check is moot and skipped. When `import.meta.resolve` itself is
- * unavailable (Node 20.0–20.5; engines allows >=20), the check is skipped with
+ * unavailable (Node 20.0–20.5, below the engines floor), the check is skipped with
  * a warning that {@link loadExternalCommands} only emits if the plugin
  * actually loads — an unenrolled machine stays silent.
  */

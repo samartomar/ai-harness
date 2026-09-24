@@ -336,7 +336,7 @@ describe("readinessDigest — a broken runtime", () => {
     expect(data.banner).toBe("NOT READY");
   });
 
-  it("a runnable Node OLDER than 20 fails the gate the title promises (>= 20)", async () => {
+  it("a runnable Node OLDER than 20.6 fails the gate the title promises (>= 20.6)", async () => {
     scaffoldReady();
     const { data } = await digestData(ctx({ nodeVersion: "v18.19.0" }));
     expect(data.blockers.some((b) => b.id === "node-runtime")).toBe(true);
@@ -349,10 +349,18 @@ describe("readinessDigest — a broken runtime", () => {
     expect(data.blockers.some((b) => b.id === "node-runtime")).toBe(true);
   });
 
-  it("Node 20+ still passes (no false negative from the version parse)", async () => {
+  it("Node 20.6+ still passes (no false negative from the version parse)", async () => {
     scaffoldReady();
     const { data } = await digestData(ctx({ nodeVersion: "v22.3.0" }));
     expect(data.blockers.some((b) => b.id === "node-runtime")).toBe(false);
+  });
+
+  it("Node 20.5 fails and 20.6 passes: the floor is import.meta.resolve, not the major version", async () => {
+    scaffoldReady();
+    const below = await digestData(ctx({ nodeVersion: "v20.5.1" }));
+    expect(below.data.blockers.some((b) => b.id === "node-runtime")).toBe(true);
+    const at = await digestData(ctx({ nodeVersion: "v20.6.0" }));
+    expect(at.data.blockers.some((b) => b.id === "node-runtime")).toBe(false);
   });
 
   it("a repo with no declared build/test/start command dings repo-contract (warn, not skip)", async () => {

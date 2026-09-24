@@ -17,6 +17,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Breaking:** Core now requires Node.js 20.6 or newer (`engines.node` `>=20.6.0`).
+  The framework-plugin loader uses the synchronous `import.meta.resolve` of Node 20.6
+  to prove that a plugin entry resolves inside its own install tree. `aih doctor` and
+  the readiness report now check the minor version too, so Node 20.0 to 20.5 fails the
+  runtime gate instead of passing it. Migration: upgrade Node to 20.6 or later (Node 22
+  LTS is recommended).
 - `@aihq/catalog` is now an optional peer dependency (`>=0.2.0 <1.0.0`), loaded at run
   time through one module and never bundled. The historical ECC runtime descriptor used by
   `aih ecc --lifecycle install` and `aih policy project` is resolved in a recorded order: a
