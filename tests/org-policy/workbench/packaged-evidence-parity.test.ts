@@ -141,7 +141,135 @@ function readSealed(fixture: Fixture): { structure: Outcome; admission: Outcome;
   }
 }
 
+/**
+ * Reader inputs JSON cannot express, so no shared fixture carries them. Catalog's parity test holds
+ * the same cases and reasons: both readers refuse each one typed, and never invoke a getter.
+ */
+function unrepresentableInputs(item: { bytes: string; sha256: string }) {
+  const invoked: string[] = [];
+  const getter = (name: string) => () => {
+    invoked.push(name);
+    throw new Error(`getter ${name} invoked`);
+  };
+  const hidden = (key: string) =>
+    Object.defineProperty({ ...item }, key, { value: true, enumerable: false });
+  const index = (descriptor: PropertyDescriptor) =>
+    Object.defineProperty([] as unknown[], "0", { configurable: true, ...descriptor });
+  class Wrapper {}
+  class Records extends Array<unknown> {}
+  const refused: [string, unknown, RegExp][] = [
+    [
+      "wrapper non-enumerable extra",
+      [hidden("extra")],
+      /record 0 field extra must be an enumerable data property/,
+    ],
+    [
+      "wrapper non-enumerable __proto__",
+      [hidden("__proto__")],
+      /record 0 field __proto__ must be an enumerable data property/,
+    ],
+    [
+      "wrapper symbol key",
+      [{ ...item, [Symbol("extra")]: true }],
+      /record 0 must not contain symbol properties/,
+    ],
+    [
+      "wrapper throwing getter",
+      [
+        Object.defineProperty({ sha256: item.sha256 }, "bytes", {
+          enumerable: true,
+          get: getter("bytes"),
+        }),
+      ],
+      /record 0 field bytes must be an enumerable data property/,
+    ],
+    [
+      "wrapper class instance",
+      [Object.assign(new Wrapper(), item)],
+      /record 0 has an unsupported object prototype/,
+    ],
+    [
+      "list non-enumerable index",
+      index({ value: item, enumerable: false, writable: true }),
+      /records field 0 must be an enumerable data property/,
+    ],
+    [
+      "list throwing getter index",
+      index({ enumerable: true, get: getter("0") }),
+      /records field 0 must be an enumerable data property/,
+    ],
+    [
+      "list extra key",
+      Object.assign([item], { extra: true }),
+      /records must contain only indexed elements, with no holes/,
+    ],
+    [
+      "list symbol key",
+      Object.assign([item], { [Symbol("extra")]: true }),
+      /records must not contain symbol properties/,
+    ],
+    ["list subclass", Records.from([item]), /records has an unsupported array prototype/],
+  ];
+  return { invoked, refused, accepted: [[Object.assign(Object.create(null), item)]] };
+}
+
 describe("packaged collection evidence parity with Catalog", () => {
+  it("refuses reader inputs JSON cannot express, typed and without invoking a getter", () => {
+    const [item] = sealedInput(
+      fixtures.find((fixture) => fixture.fixture === "valid") as Fixture,
+    ) as { bytes: string; sha256: string }[];
+    const { invoked, refused, accepted } = unrepresentableInputs(
+      item as { bytes: string; sha256: string },
+    );
+    for (const [name, input, reason] of refused) {
+      let refusal: unknown;
+      try {
+        readPackagedScannerCollectionEvidenceStructureV1(input);
+      } catch (error) {
+        refusal = error;
+      }
+      expect(refusal, name).toBeInstanceOf(TypeError);
+      expect((refusal as Error).message, name).toMatch(reason);
+    }
+    for (const input of accepted)
+      expect(readPackagedScannerCollectionEvidenceStructureV1(input)).toHaveLength(1);
+    expect(invoked).toEqual([]);
+  });
+
+  it("refuses record values JSON cannot express, typed and without invoking a getter", () => {
+    const valid = (fixtures.find((fixture) => fixture.fixture === "valid") as Fixture)
+      .record as Record<string, unknown>;
+    const invoked: string[] = [];
+    // 100,000 levels nested through non-enumerable index properties, which Object.keys misses.
+    let deep: unknown = 0;
+    for (let level = 0; level < 100_000; level += 1)
+      deep = Object.defineProperty([], "0", { value: deep, enumerable: false, writable: true });
+    const cases: [unknown, RegExp][] = [
+      [{ ...valid, x: deep }, /field 0 must be an enumerable data property/],
+      [
+        Object.defineProperty({ ...valid }, "extra", { value: 1, enumerable: false }),
+        /field extra must be an enumerable data property/,
+      ],
+      [{ ...valid, [Symbol("extra")]: 1 }, /must not contain symbol properties/],
+      [
+        Object.defineProperty({ ...valid }, "authority", {
+          enumerable: true,
+          get: () => {
+            invoked.push("authority");
+            throw new Error("getter invoked");
+          },
+        }),
+        /field authority must be an enumerable data property/,
+      ],
+    ];
+    for (const [value, reason] of cases) {
+      const result = PackagedScannerCollectionEvidenceStructureV1Schema.safeParse(value);
+      expect(result.success).toBe(false);
+      expect(issues(result)).toMatch(reason);
+    }
+    expect(invoked).toEqual([]);
+  });
+
   it("refuses a record value nested past the bound, before any recursive check", () => {
     let deep: unknown = 0;
     for (let level = 0; level < 100_000; level += 1) deep = [deep];
@@ -157,7 +285,7 @@ describe("packaged collection evidence parity with Catalog", () => {
     const sparse: unknown[] = [];
     sparse[1] = item;
     expect(() => readPackagedScannerCollectionEvidenceStructureV1(sparse)).toThrow(
-      /record 0 must be an object/,
+      /records must contain only indexed elements, with no holes/,
     );
   });
 

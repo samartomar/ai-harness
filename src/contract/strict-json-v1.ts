@@ -217,20 +217,45 @@ function assertStrictJsonTextV1(text: string, label: string): void {
 }
 
 /**
- * Refuses a value whose objects and arrays nest deeper than `maxDepth` (the root is level 1),
- * level by level without recursion or getters, so it runs before any recursive check does.
+ * The own entries of a plain JSON object or array, read through their descriptors so a getter is
+ * never invoked. Every own key is enumerated (`Reflect.ownKeys`), and a non-plain prototype, a
+ * symbol key, a non-enumerable or accessor property, or, for an array, anything but its indices in
+ * order (an extra key or a hole) is refused. Catalog's structural readers apply the same checks
+ * (`jsonOwnEntriesV1` in its src/production/strict-json-v1.ts).
  */
-export function assertJsonValueDepthV1(value: unknown, label: string, maxDepth: number): void {
+export function jsonOwnEntriesV1(value: object, label: string): [string, unknown][] {
+  const array = Array.isArray(value);
+  const prototype = Object.getPrototypeOf(value);
+  if (array ? prototype !== Array.prototype : prototype !== Object.prototype && prototype !== null)
+    throw new TypeError(`${label} has an unsupported ${array ? "array" : "object"} prototype`);
+  const entries: [string, unknown][] = [];
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key === "symbol") throw new TypeError(`${label} must not contain symbol properties`);
+    if (array && key === "length") continue;
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (descriptor === undefined || !("value" in descriptor) || descriptor.enumerable !== true)
+      throw new TypeError(`${label} field ${key} must be an enumerable data property`);
+    if (array && key !== String(entries.length))
+      throw new TypeError(`${label} must contain only indexed elements, with no holes`);
+    entries.push([key, descriptor.value]);
+  }
+  if (array && entries.length !== (value as unknown[]).length)
+    throw new TypeError(`${label} must contain only indexed elements, with no holes`);
+  return entries;
+}
+
+/**
+ * Refuses a value that is not plain JSON data (`jsonOwnEntriesV1` on every object and array) or
+ * whose objects and arrays nest deeper than `maxDepth` (the root is level 1): level by level,
+ * without recursion and without invoking a getter, so it runs before any recursive check does.
+ */
+export function assertJsonValueStructureV1(value: unknown, label: string, maxDepth: number): void {
   let level = new Set<object>(isObject(value) ? [value] : []);
   for (let depth = 1; level.size > 0; depth += 1) {
     if (depth > maxDepth) throw nestedTooDeep(label, maxDepth);
     const next = new Set<object>();
     for (const item of level)
-      for (const key of Object.keys(item)) {
-        const descriptor = Object.getOwnPropertyDescriptor(item, key);
-        if (descriptor !== undefined && "value" in descriptor && isObject(descriptor.value))
-          next.add(descriptor.value);
-      }
+      for (const [, child] of jsonOwnEntriesV1(item, label)) if (isObject(child)) next.add(child);
     level = next;
   }
 }

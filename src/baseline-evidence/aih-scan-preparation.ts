@@ -134,7 +134,8 @@ function assertRecord(
     required.some((key) => !Object.hasOwn(value, key))
   )
     fail(label);
-  for (const key of Object.keys(value)) ownData(value, key, label);
+  // Every own key, enumerable or not, is a data property: a getter is never invoked.
+  for (const key of Reflect.ownKeys(value)) ownData(value, key as string, label);
 }
 
 function cloneBytes(value: unknown, maximum: number, label: string): Buffer {
@@ -499,9 +500,9 @@ export async function reverifyPackagedAihScannerEvidenceRecordV1(
     !Number.isFinite(Date.parse(now))
   )
     fail("sealed AIH record");
-  const sealed = readPackagedScannerCollectionEvidenceRecordV1(sealedInput);
-  // The reader checks the wrapper's JSON shape; this input also stays a plain data-only object.
+  // A plain data-only wrapper, checked through its descriptors before anything reads a field.
   assertRecord(sealedInput, ["bytes", "sha256"], ["bytes", "sha256"], "sealed AIH record");
+  const sealed = readPackagedScannerCollectionEvidenceRecordV1(sealedInput);
   if (sealed.catalog.id !== "aih" || Date.parse(sealed.verification.preparedAt) > Date.parse(now))
     fail("sealed AIH record");
   assertRecord(coreRevision, ["pinnedSha"], ["pinnedSha"], "core revision");

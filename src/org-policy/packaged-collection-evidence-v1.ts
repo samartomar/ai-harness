@@ -7,11 +7,12 @@ import {
 } from "../baseline-evidence/scanner-publication-policy.js";
 import { BaselineSourceEvidenceSchema } from "../baseline-evidence/schema.js";
 import {
-  assertJsonValueDepthV1,
+  assertJsonValueStructureV1,
   assertStrictJsonValueV1,
   canonicalStrictJsonBytesV1,
   canonicalStrictJsonSha256V1,
   deepFreezeStrictJsonV1,
+  jsonOwnEntriesV1,
   parseStrictJsonObjectV1,
   STRICT_JSON_MAX_DEPTH_V1,
 } from "../contract/strict-json-v1.js";
@@ -345,14 +346,14 @@ function ownProtoKeysV1(value: unknown, path: IssuePath = []): IssuePath[] {
 }
 
 /**
- * What Catalog's reader refuses and the shared record schema alone would accept: first the
- * nesting bound (before anything recursive), then Core's strict JSON value rule over the whole
+ * What Catalog's reader refuses and the shared record schema alone would accept: first plain
+ * JSON data within the nesting bound (descriptor-based, before anything recursive), then Core's strict JSON value rule over the whole
  * record (well-formed NFC strings and keys, finite numbers other than negative zero, plain data
  * only), then the fields above.
  */
 const packagedRecordInputSchema = z.unknown().superRefine((value, ctx) => {
   try {
-    assertJsonValueDepthV1(value, "packaged collection evidence", STRICT_JSON_MAX_DEPTH_V1);
+    assertJsonValueStructureV1(value, "packaged collection evidence", STRICT_JSON_MAX_DEPTH_V1);
     assertStrictJsonValueV1(value, "packaged collection evidence");
   } catch (error) {
     ctx.addIssue({ code: "custom", message: (error as Error).message });
@@ -473,27 +474,33 @@ function hasProtoMemberV1(text: string): boolean {
   return walk(parseTree(text));
 }
 
-/** The sealed wrapper list, holes included (a hole is refused as a wrapper, never skipped). */
+/**
+ * The sealed wrapper list, read through its descriptors (`jsonOwnEntriesV1`) as Catalog's reader
+ * reads it: a plain array of indexed data elements, no hole, extra key or getter.
+ */
 function sealedWrappersV1(input: unknown): unknown[] {
   if (!Array.isArray(input))
     throw new TypeError("Packaged collection evidence records must be an array.");
-  return Array.from(input);
+  return jsonOwnEntriesV1(input, "Packaged collection evidence records").map(([, item]) => item);
 }
 
 /**
- * One sealed wrapper, checked as Catalog's reader checks it before any field is read: an object
- * with exactly the own keys `bytes` and `sha256` (an own `__proto__` is an unsupported field),
- * both strings.
+ * One sealed wrapper, checked as Catalog's reader checks it, through its descriptors so no getter
+ * is invoked: a plain object whose own keys (every one, `Reflect.ownKeys`) are exactly the
+ * enumerable data properties `bytes` and `sha256` (an own `__proto__` is an unsupported
+ * field), both strings.
  */
 function sealedWrapperV1(wrapper: unknown, label: string): PackagedCollectionInputV1 {
   if (wrapper === null || typeof wrapper !== "object" || Array.isArray(wrapper))
     throw new TypeError(`${label} must be an object.`);
+  const fields = new Map(jsonOwnEntriesV1(wrapper, label));
   for (const key of ["bytes", "sha256"])
-    if (!Object.hasOwn(wrapper, key)) throw new TypeError(`${label} is missing ${key}.`);
-  for (const key of Object.keys(wrapper))
+    if (!fields.has(key)) throw new TypeError(`${label} is missing ${key}.`);
+  for (const key of fields.keys())
     if (key !== "bytes" && key !== "sha256")
       throw new TypeError(`${label} has unsupported field ${key}.`);
-  const { bytes, sha256 } = wrapper as Record<"bytes" | "sha256", unknown>;
+  const bytes = fields.get("bytes");
+  const sha256 = fields.get("sha256");
   if (typeof bytes !== "string" || typeof sha256 !== "string")
     throw new TypeError(`${label} bytes and seal must be strings.`);
   return { bytes, sha256 };

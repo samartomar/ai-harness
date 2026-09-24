@@ -108,10 +108,41 @@ describe("packaged record reverification boundary", () => {
     }
   });
 
+  it("refuses a throwing getter wrapper typed on both paths, without invoking it", async () => {
+    const valid = fixtures.find((fixture) => fixture.fixture === "valid") as Fixture;
+    const { sha256 } = sealedWrapper(valid) as { sha256: string };
+    const invoked: string[] = [];
+    const wrapper = () =>
+      Object.defineProperty({ sha256 }, "bytes", {
+        enumerable: true,
+        get: () => {
+          invoked.push("bytes");
+          throw new Error("getter invoked");
+        },
+      });
+    await expect(paths.aih(wrapper())).rejects.toThrow(
+      /^AIH Scanner preparation: sealed AIH record$/,
+    );
+    await expect(paths.collection(wrapper())).rejects.toThrow(
+      /record 0 field bytes must be an enumerable data property/,
+    );
+    expect(invoked).toEqual([]);
+  });
+
+  // The AIH path checks its own wrapper shape before the reader reads anything.
+  const AIH_WRAPPER_SHAPE = new Set([
+    "wrapper-extra-key",
+    "wrapper-missing-sha256",
+    "wrapper-proto-key",
+  ]);
   for (const [path, reverify] of Object.entries(paths)) {
     it.each(refused)(
       `${path} refuses %s as the packaged reader does`,
-      async (_, wrapper, reason) => {
+      async (name, wrapper, boundaryReason) => {
+        const reason =
+          path === "aih" && AIH_WRAPPER_SHAPE.has(name)
+            ? "AIH Scanner preparation: sealed AIH record"
+            : boundaryReason;
         let refusal: unknown;
         try {
           await reverify(wrapper);
