@@ -15,8 +15,6 @@
  *
  * | Core call site | Exports | Phase-2 contract member |
  * | --- | --- | --- |
- * | `aih ecc`, `aih ecc mcp add|remove` (src/commands/index.ts) | `eccCommand`, `eccMcpAddCommand`, `eccMcpRemoveCommand`, `executeEccCommand`, `EccCommandDeps` | `commands["ecc" \| "ecc mcp add" \| "ecc mcp remove"]` (Core keeps the CommandSpecs) |
- * | governed delivery (src/org-policy/validate.ts; deps type in src/init/index.ts) | `executeEccCommand`, `applyPreparedGovernedEccDelivery`, `PreparedGovernedEccDelivery`, `EccCommandDeps` | `commands["ecc"]` policy-delivery lifecycle |
  * | delivery report (src/org-policy/policy-delivery-report.ts) — SYNC | `describeEccEffectiveDiscovery`, `inspectDestination`, `materializationRoot`, `ownedFragmentDigest`, `parseJsonObject`, `GOVERNED_MATERIALIZATION_TARGETS`, `ownedFileSha256`, `readEccMaterializationReceipt`, `inspectGovernedCodexRoleRegistration` and their types | `report`, `receipts` |
  * | policy binding (src/org-policy/binding.ts) — SYNC | `readEccMaterializationReceipt` | `receipts` |
  * | uninstall (src/uninstall/ecc-materialization.ts) — SYNC | `uninstallEccMaterialization`, `readEccMaterializationReceipt`, `ECC_MATERIALIZATION_RECEIPT_PATH`, `displaySafe` | `uninstall` |
@@ -27,6 +25,11 @@
  * | CLI capability table (src/internals/cli-capabilities.ts) — SYNC | `ECC_INSTALL_TARGETS`, `WIRED_MATERIALIZATION_TARGETS` | `describe().supportedHosts` |
  * | test-only binding adapter (src/binding/frameworks/ecc.ts) | `selectedEccMcpServers`, `parseEccInstallPreview`, `readEccInstallPreview`, `EccInstallPreviewArtifact`, `EccMcpComponentId` | moves with the ECC code or is deleted |
  * | repository checks (src/internals/check-baseline-installable.ts, check-ecc-installer.ts) | `readRegistrationLedger`, `registrationLedgerPath`, `writeRegistrationLedgerAtomic`, `RegistrationLedger`, `ECC_NPM_BINS`, `ECC_NPM_PACKAGE` | move with the ECC package's own checks |
+ *
+ * Done in phase 2: `aih ecc` and `aih ecc mcp add|remove` run through the
+ * plugin's `commands` (src/framework-plugin/ecc-command.ts), and governed
+ * delivery (`aih policy project`, `aih init` on a bound project) through its
+ * `policyDelivery` hook (src/org-policy/validate.ts).
  *
  * The generic runtime parts of `src/ecc-profile/**` (default MCP runtimes for
  * Serena, Code Review Graph, Codebase Memory and MarkItDown, `hook-core.ts`,
@@ -40,15 +43,6 @@ export {
   describeEccEffectiveDiscovery,
   type EccEffectiveDiscoveryReport,
 } from "../ecc/effective-discovery.js";
-export {
-  applyPreparedGovernedEccDelivery,
-  type PreparedGovernedEccDelivery,
-} from "../ecc/governed-lifecycle.js";
-export {
-  command as eccCommand,
-  eccMcpAddCommand,
-  eccMcpRemoveCommand,
-} from "../ecc/index.js";
 export {
   ECC_NPM_BINS,
   ECC_NPM_PACKAGE,
@@ -91,7 +85,6 @@ export {
   ECC_MCP_EXPLICIT_ADD_RECEIPT_PATH,
   parseExplicitAddReceipt,
 } from "../ecc/mcp-explicit-add-receipt.js";
-export { type EccCommandDeps, executeEccCommand } from "../ecc/pipeline.js";
 export {
   eccPruneReconciliationActions,
   hasEccRegisteredTarget,

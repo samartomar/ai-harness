@@ -36,6 +36,11 @@ ECC's own installer runs them.
   readers. The runtime carries the invocation's policy transaction pins and
   refuses once the invocation ends. Read-only operations (description, hook
   inventory, component identification) receive no runtime.
+- Governed delivery (`aih policy project`, `aih init` on a policy-bound
+  project) uses `policyDelivery`: `prepare` verifies the policy's ECC selection
+  and holds the exact bytes in memory, Core projects its own policy settings,
+  then Core calls `commit` at most once, with the binding assertion it re-read
+  after projection, and ends the invocation.
 
 ## Descriptor sections this plugin reads
 

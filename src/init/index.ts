@@ -2,7 +2,6 @@ import { isDeepStrictEqual } from "node:util";
 import { classifyCanon, isAdoptable } from "../adopt/classify.js";
 import { aihConfigJson, readAihConfigBaseline, readPolicyBinding } from "../config/marker.js";
 import { AihError } from "../errors.js";
-import type { EccCommandDeps } from "../framework-plugin/ecc-facade.js";
 import type { FrameworkCommandDepsV1 } from "../framework-plugin/run-framework-command.js";
 import { executeSuperpowersInitPhase } from "../framework-plugin/superpowers-command.js";
 import {
@@ -510,7 +509,7 @@ function baselineInstallDoc(baseline: ReturnType<typeof resolveBaselineSource>):
 }
 
 /** Bound setup uses the same public delivery pipeline before refreshing bootloaders. */
-export interface InitCommandDeps extends EccCommandDeps {
+export interface InitCommandDeps {
   /** Public setup runtime seam. Ordinary init already owns the MCP projection phase. */
   readonly developerTools?: DeveloperToolsCommandDeps;
   /** Framework plugin seams for the framework phases (tests). */
@@ -573,7 +572,7 @@ export async function executeInitCommand(
       deps,
     );
   }
-  const delivered = await executePolicyProjectCommand(ctx, deps);
+  const delivered = await executePolicyProjectCommand(ctx, deps.frameworks);
   if (resultFailed(delivered)) {
     return { ...delivered, capability: "init" };
   }

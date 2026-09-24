@@ -29,6 +29,11 @@ export const FRAMEWORK_CORE_RUNTIME_FRAMEWORKS: ReadonlySet<FrameworkIdV1> = new
 
 export interface BoundFrameworkCoreRuntimeV1 {
   readonly runtime: FrameworkCoreRuntimeV1;
+  /**
+   * Replace the invocation's policy custody pins. Core's own step, between two
+   * phases of one invocation (policy delivery around Core's projection).
+   */
+  repin(next: FrameworkTransactionPinsV1): void;
   /** End the invocation: every member refuses afterwards. */
   revoke(): void;
 }
@@ -86,7 +91,8 @@ function forcePins(frameworkId: FrameworkIdV1, pins: Pins, own: Pins | undefined
 export function bindFrameworkCoreRuntimeV1(
   input: FrameworkCoreRuntimeInputV1,
 ): BoundFrameworkCoreRuntimeV1 {
-  const { frameworkId, ctx, transactionPins, produced } = input;
+  const { frameworkId, ctx, produced } = input;
+  let transactionPins = input.transactionPins;
   const root = resolve(ctx.root);
   let live = true;
   const check = (member: string, candidateRoot?: string): void => {
@@ -187,6 +193,10 @@ export function bindFrameworkCoreRuntimeV1(
   } satisfies FrameworkCoreRuntimeV1);
   return Object.freeze({
     runtime,
+    repin: (next: FrameworkTransactionPinsV1) => {
+      check("transaction pins");
+      transactionPins = next;
+    },
     revoke: () => {
       live = false;
     },

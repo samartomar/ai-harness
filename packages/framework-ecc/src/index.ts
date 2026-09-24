@@ -22,6 +22,7 @@ import {
   UPSTREAM,
 } from "./identity.js";
 import { currentCoreRuntime, withEccInvocation } from "./invocation.js";
+import { eccPolicyDelivery } from "./policy-delivery.js";
 
 function describe(): FrameworkPluginDescriptionV1 {
   return {
@@ -72,4 +73,5 @@ export const aihFrameworkPluginV1: FrameworkPluginV1 = Object.freeze({
     "ecc mcp add": commandOf(eccMcpAddCommand),
     "ecc mcp remove": commandOf(eccMcpRemoveCommand),
   }),
+  policyDelivery: eccPolicyDelivery(),
 });

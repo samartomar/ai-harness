@@ -6,6 +6,9 @@ import { FRAMEWORK_PLUGIN_PACKAGE_NAMES, type FrameworkCommandPathV1 } from "./c
 import {
   executeFrameworkCommandV1,
   type FrameworkCommandDepsV1,
+  type FrameworkInvocationV1,
+  type FrameworkPolicyDeliveryV1,
+  prepareFrameworkPolicyDeliveryV1,
   requireFrameworkPluginV1,
 } from "./run-framework-command.js";
 
@@ -29,32 +32,46 @@ function runsThroughPlugin(path: FrameworkCommandPathV1<"ecc">): CommandSpec["pl
   };
 }
 
+/** Core's decisions for one ECC invocation: the policy targets and custody pins. */
+async function eccInvocation(ctx: PlanContext): Promise<FrameworkInvocationV1> {
+  const policyTargets = await verifiedOrgPolicyTargets(ctx);
+  return {
+    ctx: { ...ctx, targets: policyTargets.resolution.clis },
+    policy: policyTargets.policy,
+    transactionPins: {
+      ...(policyTargets.fileAssertions === undefined
+        ? {}
+        : { fileAssertions: policyTargets.fileAssertions }),
+      ...(policyTargets.commitNotAfter === undefined
+        ? {}
+        : { commitNotAfter: policyTargets.commitNotAfter }),
+      ...(policyTargets.commitLock === undefined ? {} : { commitLock: policyTargets.commitLock }),
+    },
+    options: ctx.options,
+  };
+}
+
 async function executeEccPath(
   path: FrameworkCommandPathV1<"ecc">,
   ctx: PlanContext,
   deps: FrameworkCommandDepsV1,
 ): Promise<PlanResult> {
   const loaded = await requireFrameworkPluginV1("ecc", deps);
-  const policyTargets = await verifiedOrgPolicyTargets(ctx);
-  return executeFrameworkCommandV1(
-    loaded,
-    path,
-    {
-      ctx: { ...ctx, targets: policyTargets.resolution.clis },
-      policy: policyTargets.policy,
-      transactionPins: {
-        ...(policyTargets.fileAssertions === undefined
-          ? {}
-          : { fileAssertions: policyTargets.fileAssertions }),
-        ...(policyTargets.commitNotAfter === undefined
-          ? {}
-          : { commitNotAfter: policyTargets.commitNotAfter }),
-        ...(policyTargets.commitLock === undefined ? {} : { commitLock: policyTargets.commitLock }),
-      },
-      options: ctx.options,
-    },
-    deps,
-  );
+  return executeFrameworkCommandV1(loaded, path, await eccInvocation(ctx), deps);
+}
+
+/**
+ * Prepare the ECC delivery organization policy requires (`aih policy project`,
+ * `aih init` on a bound project) as an ECC install. The caller commits it after
+ * its own projection, or not, and always ends it.
+ */
+export async function prepareEccPolicyDelivery(
+  ctx: PlanContext,
+  deps: FrameworkCommandDepsV1 = {},
+): Promise<FrameworkPolicyDeliveryV1> {
+  const loaded = await requireFrameworkPluginV1("ecc", deps);
+  const install = { ...ctx, options: { ...ctx.options, lifecycle: "install" } };
+  return prepareFrameworkPolicyDeliveryV1(loaded, await eccInvocation(install), deps);
 }
 
 export function executeEccCommand(

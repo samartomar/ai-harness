@@ -15,6 +15,11 @@ import {
   executeEccMcpAddCommand,
 } from "../../src/framework-plugin/ecc-command.js";
 import type { FrameworkPluginLoadV1 } from "../../src/framework-plugin/load-framework-plugin.js";
+import {
+  type FrameworkInvocationV1,
+  type LoadedFrameworkPluginV1,
+  prepareFrameworkPolicyDeliveryV1,
+} from "../../src/framework-plugin/run-framework-command.js";
 import { type PlanContext, plan } from "../../src/internals/plan.js";
 import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
@@ -136,5 +141,74 @@ describe("aih ecc — the Core command shell", () => {
         loadDescriptor: async () => eccDescriptorLoad(),
       }),
     ).rejects.toThrow(/did not produce/);
+  });
+});
+
+describe("governed ECC delivery — the Core invocation around policy projection", () => {
+  function invocation(): FrameworkInvocationV1 {
+    return {
+      ctx: { ...ctx(), targets: ["windsurf"] },
+      policy: undefined,
+      transactionPins: {},
+      options: {},
+    };
+  }
+
+  async function withDelivery(
+    policyDelivery: LoadedFrameworkPluginV1["plugin"]["policyDelivery"],
+  ): Promise<LoadedFrameworkPluginV1> {
+    const loaded = await loadEccFromSource();
+    if (!loaded.ok) throw new Error(loaded.refusal.detail);
+    return { ...loaded, plugin: { ...loaded.plugin, policyDelivery } };
+  }
+
+  it("refuses a plugin without a policy delivery as incompatible", async () => {
+    await expect(
+      prepareFrameworkPolicyDeliveryV1(await withDelivery(undefined), invocation(), withPlugin),
+    ).rejects.toThrow(/framework-plugin-incompatible: .*provides no policy delivery/);
+  });
+
+  it("keeps the runtime live until Core ends the invocation, and commits at most once", async () => {
+    let kept: FrameworkCoreRuntimeV1 | undefined;
+    const loaded = await withDelivery({
+      prepare: async (context) => {
+        const runtime = context.host.runtime;
+        if (runtime === undefined) throw new Error("expected Core's runtime");
+        kept = runtime;
+        const result = await runtime.executePlan(plan("ecc: prepared"), runtime.planContext);
+        return {
+          result,
+          commit: () => runtime.executePlan(plan("ecc: committed"), runtime.planContext),
+        };
+      },
+    });
+    const delivery = await prepareFrameworkPolicyDeliveryV1(loaded, invocation(), withPlugin);
+    expect(delivery.result.capability).toBe("ecc: prepared");
+    const committed = await delivery.commit?.(undefined);
+    expect(committed?.capability).toBe("ecc: committed");
+    await expect(delivery.commit?.(undefined)).rejects.toThrow(/already committed/);
+    delivery.end();
+    const later = kept as FrameworkCoreRuntimeV1;
+    await expect(later.executePlan(plan("late"), later.planContext)).rejects.toThrow(
+      /after its invocation ended/,
+    );
+  });
+
+  it("refuses a prepared result Core's runtime did not produce, and ends the invocation", async () => {
+    let kept: FrameworkCoreRuntimeV1 | undefined;
+    const loaded = await withDelivery({
+      prepare: async (context) => {
+        kept = context.host.runtime;
+        const produced = await context.host.runtime?.executePlan(
+          plan("ecc"),
+          context.host.runtime.planContext,
+        );
+        return { result: { ...produced } as never };
+      },
+    });
+    await expect(
+      prepareFrameworkPolicyDeliveryV1(loaded, invocation(), withPlugin),
+    ).rejects.toThrow(/did not produce/);
+    expect(() => kept?.readOrgPolicy(root, {})).toThrow(/after its invocation ended/);
   });
 });

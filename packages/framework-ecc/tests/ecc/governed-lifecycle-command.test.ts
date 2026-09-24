@@ -37,6 +37,7 @@ import {
 import { eccMaterializationReceiptPath } from "../../src/ecc/materialization.js";
 import { executeEccCommand } from "../../src/ecc/pipeline.js";
 import { currentEccRuntimeAdapterCompatibilityV1 } from "../../src/ecc/runtime-adapter-compatibility.js";
+import { eccCoreDeps } from "../core-deps.js";
 
 /**
  * F6: the governed framework lifecycle reached through the shipped command.
@@ -472,10 +473,13 @@ describe("F6 — the governed framework lifecycle reached through `aih ecc`", ()
     writeGovernedPolicy([...PASSED]);
     const context = ctx(true, { eccPath: sourceRoot, cli: "claude" });
 
-    const result = await executePolicyProjectCommand(context, {
-      catalog: catalog(),
-      resolveOrgEvidence: verifiedOrgEvidence(vendorLock()),
-    });
+    const result = await executePolicyProjectCommand(
+      context,
+      eccCoreDeps({
+        catalog: catalog(),
+        resolveOrgEvidence: verifiedOrgEvidence(vendorLock()),
+      }),
+    );
 
     expect(result.capability).toBe("policy project");
     expect(materializationDigest(result).applied).toBe(true);
@@ -494,10 +498,13 @@ describe("F6 — the governed framework lifecycle reached through `aih ecc`", ()
     const before = snapshot(root);
     const context = ctx(false, { eccPath: sourceRoot, cli: "claude" });
 
-    const result = await executePolicyProjectCommand(context, {
-      catalog: catalog(),
-      resolveOrgEvidence: verifiedOrgEvidence(vendorLock()),
-    });
+    const result = await executePolicyProjectCommand(
+      context,
+      eccCoreDeps({
+        catalog: catalog(),
+        resolveOrgEvidence: verifiedOrgEvidence(vendorLock()),
+      }),
+    );
 
     expect(result.capability).toBe("policy project");
     const reported = materializationDigest(result);
@@ -538,10 +545,13 @@ describe("F6 — the governed framework lifecycle reached through `aih ecc`", ()
     const context = ctx(true, { eccPath: sourceRoot, cli: "claude" });
 
     await expect(
-      executePolicyProjectCommand(context, {
-        catalog: catalog(),
-        resolveOrgEvidence: verifiedOrgEvidence(vendorLock()),
-      }),
+      executePolicyProjectCommand(
+        context,
+        eccCoreDeps({
+          catalog: catalog(),
+          resolveOrgEvidence: verifiedOrgEvidence(vendorLock()),
+        }),
+      ),
     ).rejects.toThrow(/refused every.*mcp:github.*unowned-destination/);
 
     expect(snapshot(root)).toEqual(before);
@@ -588,10 +598,13 @@ describe("F6 — the governed framework lifecycle reached through `aih ecc`", ()
       host: makeHostAdapter({ platform: "linux", run, env: {} }),
     };
 
-    const result = await executePolicyProjectCommand(context, {
-      catalog: catalog(),
-      resolveOrgEvidence: verifiedOrgEvidence(vendorLock()),
-    });
+    const result = await executePolicyProjectCommand(
+      context,
+      eccCoreDeps({
+        catalog: catalog(),
+        resolveOrgEvidence: verifiedOrgEvidence(vendorLock()),
+      }),
+    );
 
     expect(fetches).toBe(1);
     expect(materializationDigest(result).applied).toBe(true);

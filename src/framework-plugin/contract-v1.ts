@@ -5,7 +5,7 @@ import type { loadCatalogPackageV1 } from "../catalog-package/load-catalog-packa
 import type { Posture } from "../config/posture.js";
 import type { Cli } from "../internals/clis.js";
 import type { executePlan, PlanResult } from "../internals/execute.js";
-import type { Action, Plan, PlanContext } from "../internals/plan.js";
+import type { Action, FileAssertion, Plan, PlanContext } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
 import type {
   assertPolicyBindingCurrent,
@@ -30,8 +30,8 @@ import type { cleanupQuarantine, resolveTrustSource } from "../trust/fetch.js";
  * plugin supplies the framework-specific parts through the operations below.
  *
  * The operation set is bounded by the real Core call sites: the framework's own
- * CLI commands, `aih init`, and the optional uninstall/prune/doctor/report
- * hooks the ECC call sites need in phase 2. Operations receive a context Core
+ * CLI commands, `aih init`, and the optional policy-delivery/uninstall/prune/
+ * doctor/report hooks the ECC call sites need in phase 2. Operations receive a context Core
  * builds ({@link FrameworkOperationContextV1}); they never receive Catalog
  * handles, Core's internal plan context or the process environment.
  */
@@ -406,6 +406,35 @@ export interface FrameworkReportHookV1 {
   panels(ctx: FrameworkOperationContextV1): Promise<readonly FrameworkReportPanelV1[]>;
 }
 
+/**
+ * What Core hands a prepared policy delivery when it commits it: the project
+ * policy binding assertion Core re-read after its own policy projection, which
+ * replaces the assertion on the same path taken at preparation.
+ */
+export interface FrameworkPolicyDeliveryCommitV1 {
+  readonly policyBinding?: FileAssertion;
+}
+
+/** One framework delivery the organization policy requires, verified and held in memory. */
+export interface FrameworkPreparedPolicyDeliveryV1 {
+  /** The prepared delivery as Core's runtime produced it: the preview when not applying. */
+  readonly result: PlanResult;
+  /**
+   * Commit exactly the prepared delivery. Present only when the invocation
+   * applies and preparation retained a delivery. Core calls it at most once,
+   * after its own policy projection succeeded, in the same invocation.
+   */
+  readonly commit?: (update: FrameworkPolicyDeliveryCommitV1) => Promise<PlanResult>;
+}
+
+/**
+ * Policy-required framework delivery around Core's policy projection (Core
+ * call sites: `aih policy project`, `aih init` on a policy-bound project).
+ */
+export interface FrameworkPolicyDeliveryHookV1 {
+  prepare(ctx: FrameworkOperationContextV1): Promise<FrameworkPreparedPolicyDeliveryV1>;
+}
+
 /** A receipt file the plugin owns under the target root. */
 export interface FrameworkReceiptV1 {
   readonly id: string;
@@ -439,6 +468,7 @@ export interface FrameworkPluginV1 {
   /** Keyed by the Core command paths in {@link FRAMEWORK_PLUGIN_COMMANDS}. */
   readonly commands: Readonly<Record<string, FrameworkCommandV1>>;
   readonly receipts?: readonly FrameworkReceiptV1[];
+  readonly policyDelivery?: FrameworkPolicyDeliveryHookV1;
   readonly uninstall?: FrameworkUninstallHookV1;
   readonly prune?: FrameworkPruneHookV1;
   readonly doctor?: FrameworkDoctorHookV1;
