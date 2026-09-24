@@ -12,6 +12,7 @@ import {
 import { generateAuthorizedEccInstallPreview } from "./ecc-preview-boundary.js";
 import { prepareRegisteredScannerCatalogV1 } from "./scanner-catalog-consumer.js";
 import { createCoreBaselineVetRequests } from "./scanner-consumer.js";
+import { resolveScannerDefinitionV1 } from "./scanner-definition.js";
 import {
   consumeScannerBaselinePublicationsV1,
   consumeScannerBaselinePublicationV1,
@@ -101,7 +102,22 @@ function checkoutHead(root: string): string {
   }).trim();
 }
 
-function assertCheckout(root: string, catalogId: string) {
+/**
+ * `--definition` stands in for the installed Catalog only at a pin that Catalog does not
+ * carry; a carried pin keeps the installed route (and its coverage), a differing carried
+ * definition is refused, and nothing falls back from one route to the other.
+ */
+function assertCheckout(root: string, catalogId: string, definitionPath?: string) {
+  if (definitionPath !== undefined) {
+    const resolved = resolveScannerDefinitionV1({
+      sourceRoot: root,
+      catalogId,
+      definitionPath: resolve(definitionPath),
+      head: checkoutHead(root),
+    });
+    if (resolved.route === "definition")
+      return { catalog: resolved.catalog, coverage: undefined, coverageDigest: undefined };
+  }
   const prepared = prepareRegisteredScannerCatalogV1(root, catalogId);
   const { catalog } = prepared;
   const head = checkoutHead(root);
@@ -127,8 +143,9 @@ function newDirectory(path: string): string {
 async function request(args: readonly string[]): Promise<void> {
   const catalogId = flag(args, "--catalog");
   const sourceRoot = resolve(flag(args, "--source"));
+  const definitionPath = optionalFlag(args, "--definition");
   const output = newDirectory(flag(args, "--output"));
-  const prepared = assertCheckout(sourceRoot, catalogId);
+  const prepared = assertCheckout(sourceRoot, catalogId, definitionPath);
   const { catalog } = prepared;
   const authored = createCoreBaselineVetRequests(sourceRoot, catalog);
   const { canonicalBaselineVetRequestV1Bytes } = scanPackageExportsOrThrowV1(
@@ -245,7 +262,7 @@ async function consumePublications(args: readonly string[]): Promise<void> {
   const catalogId = flag(args, "--catalog");
   const sourceRoot = resolve(flag(args, "--source"));
   const publicationRoot = resolve(flag(args, "--publication-root"));
-  const { catalog } = assertCheckout(sourceRoot, catalogId);
+  const { catalog } = assertCheckout(sourceRoot, catalogId, optionalFlag(args, "--definition"));
   const requests = createCoreBaselineVetRequests(sourceRoot, catalog);
   const seenPath = optionalFlag(args, "--seen");
   const seen =
@@ -286,7 +303,11 @@ function sourceEvidence(path: string): BaselineSourceEvidence {
 
 function assemble(args: readonly string[]): void {
   const eccRoot = resolve(flag(args, "--ecc-root"));
-  const { catalog: eccCatalog } = assertCheckout(eccRoot, "ecc");
+  const { catalog: eccCatalog } = assertCheckout(
+    eccRoot,
+    "ecc",
+    optionalFlag(args, "--definition"),
+  );
   const ecc = sourceEvidence(flag(args, "--ecc-evidence"));
   const superpowers = sourceEvidence(flag(args, "--superpowers-evidence"));
   const lock = parseBaselineEvidenceLock({ schemaVersion: 1, sources: [ecc, superpowers] });
