@@ -84,22 +84,55 @@ function octal(block: Buffer, start: number, length: number): number {
   return Number.parseInt(text, 8);
 }
 
-/** One pax `path=` record, the only extended header `npm pack` needs for long names. */
-function paxPath(bytes: Buffer): string {
-  let path: string | undefined;
+interface PaxV1 {
+  path?: string;
+  size?: number;
+}
+
+/**
+ * The pax keys `npm pack` writes (node-tar, portable mode) and this reader implements:
+ * `path` names the next entry, `size` must equal its header size, and `mtime` is checked
+ * for form and otherwise ignored because no recorded time is read. Every other key could
+ * change what a pax-aware extractor installs, so it is refused rather than ignored.
+ */
+const PAX_KEYS = new Set(["path", "size", "mtime"]);
+
+/** Strict `<length> <key>=<value>\n` records filling the whole extended header body. */
+function paxRecords(bytes: Buffer): PaxV1 {
+  if (bytes.length === 0) fail("tarball has an empty pax header");
+  const malformed = () => fail("tarball has a malformed pax record");
+  const pax: PaxV1 = {};
+  const seen = new Set<string>();
   let offset = 0;
   while (offset < bytes.length) {
     const space = bytes.indexOf(0x20, offset);
-    const length = Number.parseInt(bytes.subarray(offset, space).toString("utf8"), 10);
-    if (space === -1 || !Number.isSafeInteger(length) || length <= 0)
-      fail("tarball has a malformed pax header");
-    const record = bytes.subarray(space + 1, offset + length - 1).toString("utf8");
+    const lengthText = space === -1 ? "" : bytes.subarray(offset, space).toString("latin1");
+    if (!/^[1-9][0-9]{0,8}$/.test(lengthText)) malformed();
+    const end = offset + Number(lengthText);
+    if (end > bytes.length || end - 1 <= space || bytes[end - 1] !== 0x0a) malformed();
+    let record: string;
+    try {
+      record = new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(space + 1, end - 1));
+    } catch {
+      return malformed();
+    }
     const equals = record.indexOf("=");
-    if (record.slice(0, equals) === "path") path = record.slice(equals + 1);
-    offset += length;
+    if (equals <= 0) malformed();
+    const key = record.slice(0, equals);
+    const value = record.slice(equals + 1);
+    if (!PAX_KEYS.has(key)) fail(`tarball has unsupported pax key ${JSON.stringify(key)}`);
+    if (seen.has(key)) fail(`tarball pax header repeats ${key}`);
+    seen.add(key);
+    if (key === "path") {
+      if (value === "") malformed();
+      pax.path = value;
+    } else if (key === "size") {
+      if (!/^(?:0|[1-9][0-9]{0,14})$/.test(value)) malformed();
+      pax.size = Number(value);
+    } else if (!/^-?(?:0|[1-9][0-9]{0,18})(?:\.[0-9]{1,9})?$/.test(value)) malformed();
+    offset = end;
   }
-  if (path === undefined) fail("tarball pax header carries no path");
-  return path;
+  return pax;
 }
 
 function tarballFiles(bytes: Buffer): Map<string, Buffer> {
@@ -110,10 +143,15 @@ function tarballFiles(bytes: Buffer): Map<string, Buffer> {
     return fail("the file is not a gzip'd tarball within its size limit");
   }
   const files = new Map<string, Buffer>();
-  let pax: string | undefined;
-  for (let offset = 0; offset + 512 <= tar.length; ) {
+  let pax: PaxV1 | undefined;
+  let offset = 0;
+  let ended = false;
+  while (offset + 512 <= tar.length) {
     const block = tar.subarray(offset, offset + 512);
-    if (block.every((byte) => byte === 0)) break;
+    if (block.every((byte) => byte === 0)) {
+      ended = true;
+      break;
+    }
     let sum = 0;
     for (let index = 0; index < 512; index += 1)
       sum += index >= 148 && index < 156 ? 0x20 : (block[index] as number);
@@ -123,18 +161,29 @@ function tarballFiles(bytes: Buffer): Map<string, Buffer> {
     const content = tar.subarray(offset + 512, offset + 512 + size);
     if (content.length !== size) fail("tarball is truncated");
     offset += 512 + Math.ceil(size / 512) * 512;
+    if (type === "g") fail("tarball has a global pax header");
     if (type === "x") {
-      pax = paxPath(content);
+      if (pax !== undefined) fail("tarball has a pax header that follows a pax header");
+      pax = paxRecords(content);
       continue;
     }
     const prefix = field(block, 257, 6) === "ustar" ? field(block, 345, 155) : "";
-    const name = pax ?? (prefix ? `${prefix}/${field(block, 0, 100)}` : field(block, 0, 100));
+    const name = pax?.path ?? (prefix ? `${prefix}/${field(block, 0, 100)}` : field(block, 0, 100));
+    if (pax?.size !== undefined && pax.size !== size)
+      fail(`tarball pax size ${pax.size} disagrees with the header size ${size} of ${name}`);
     pax = undefined;
     if (type === "5") continue;
     if (type !== "0" && type !== "\0") fail(`unsupported tar entry type ${type} for ${name}`);
     if (!name.startsWith("package/")) fail(`tarball entry ${name} is outside package/`);
     add(files, name.slice("package/".length), Buffer.from(content));
   }
+  if (!ended) fail("tarball has no end-of-archive marker");
+  if (pax !== undefined) fail("tarball pax header describes no entry");
+  // The marker is two zero blocks; only zero blocks (record padding) may follow it.
+  const rest = tar.subarray(offset);
+  if (rest.length % 512 !== 0 || !rest.every((byte) => byte === 0))
+    fail("tarball has data after its end-of-archive marker");
+  if (rest.length < 1024) fail("tarball has an incomplete end-of-archive marker");
   return files;
 }
 

@@ -2,6 +2,7 @@ import { readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync
 import { createRequire } from "node:module";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { gzipSync } from "node:zlib";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { openCandidateCatalogV1 } from "../../src/catalog-package/candidate-catalog.js";
 import {
@@ -10,8 +11,10 @@ import {
   candidateDirectory,
   candidateListingDigest,
   candidatePackageFiles,
+  candidateTar,
   candidateTarball,
   packageEntries,
+  paxBody,
   sha256,
 } from "./candidate-catalog-fixture.js";
 
@@ -127,6 +130,171 @@ describe("openCandidateCatalogV1", () => {
     expect(() => openCandidateCatalogV1(join(root, "candidate.zip"), sha256("x"))).toThrow(
       /\.tgz tarball or a package directory/,
     );
+  });
+
+  describe("pax extended headers and archive framing", () => {
+    const files = candidatePackageFiles();
+    const open = (bytes: Buffer) => openCandidateCatalogV1(tarball(bytes), sha256(bytes));
+    const openTar = (tar: Buffer) => open(gzipSync(tar));
+    const withPax = (records: readonly (readonly [string, string])[], size?: number) =>
+      candidateTarball([
+        ["package/PaxHeader/x", paxBody(records), "x"],
+        ["package/truncated", "1", "0", size],
+        ...packageEntries(files),
+      ]);
+
+    it("reads the pax path, size and mtime records npm pack writes", () => {
+      // The ustar name is a truncated stand-in; only the pax path names package.json.
+      const bytes = candidateTarball([
+        [
+          "package/PaxHeader/package.json",
+          paxBody([
+            ["path", "package/package.json"],
+            ["mtime", "499162500"],
+            ["size", String(Buffer.byteLength(files["package.json"] as string))],
+          ]),
+          "x",
+        ],
+        ["package/truncated-name", files["package.json"] as string],
+        ["package/defaults/catalog-framework-superpowers-v1.json", candidateDescriptorBytes],
+      ]);
+      expect(open(bytes).version).toBe("0.3.0");
+    });
+
+    it("refuses a pax size that disagrees with the header size", () => {
+      // The reviewer's case: a pax-aware extractor reads "10", the header alone reads "1".
+      const bytes = candidateTarball([
+        [
+          "package/PaxHeader/data.json",
+          paxBody([
+            ["path", "package/data.json"],
+            ["size", "2"],
+          ]),
+          "x",
+        ],
+        ["package/data.json", "10", "0", 1],
+        ...packageEntries(files),
+      ]);
+      expect(() => open(bytes)).toThrow(
+        "Candidate Catalog: tarball pax size 2 disagrees with the header size 1 of package/data.json",
+      );
+      expect(() => open(withPax([["size", "0"]], 1))).toThrow(/pax size 0 disagrees/);
+    });
+
+    it.each([
+      "linkpath",
+      "uid",
+      "gid",
+      "uname",
+      "gname",
+      "atime",
+      "ctime",
+      "charset",
+      "comment",
+      "hdrcharset",
+      "SCHILY.xattr.user.x",
+      "LIBARCHIVE.xattr.user.x",
+      "GNU.sparse.size",
+      "GNU.sparse.realsize",
+    ])("refuses the unimplemented pax key %s", (key) => {
+      expect(() => open(withPax([[key, "1"]]))).toThrow(
+        `Candidate Catalog: tarball has unsupported pax key ${JSON.stringify(key)}`,
+      );
+    });
+
+    it("refuses a repeated pax key", () => {
+      expect(() =>
+        open(
+          withPax([
+            ["path", "package/a.json"],
+            ["path", "package/b.json"],
+          ]),
+        ),
+      ).toThrow("Candidate Catalog: tarball pax header repeats path");
+    });
+
+    it.each([
+      ["an empty body", ""],
+      ["a length with a leading zero", "019 path=package/a\n"],
+      ["a non-decimal length", "x path=package/a\n"],
+      ["a length past the body", "99 path=package/a\n"],
+      ["a length short of the record", "10 path=package/a\n"],
+      ["a record without its newline", "17 path=package/aX"],
+      ["a record without '='", "13 pathvalue\n"],
+      ["an empty key", "9 =value\n"],
+      ["an empty path", "8 path=\n"],
+      ["a non-decimal size", "12 size=1e1\n"],
+      ["a malformed mtime", "14 mtime=soon\n"],
+      [
+        "a value that is not UTF-8",
+        Buffer.concat([Buffer.from("10 path="), Buffer.from([0xff, 0x0a])]),
+      ],
+      ["trailing bytes after the last record", `${paxBody([["path", "package/a"]])}junk`],
+    ])("refuses a pax header with %s", (_label, body) => {
+      const bytes = candidateTarball([
+        ["package/PaxHeader/x", body, "x"],
+        ["package/a", "1"],
+        ...packageEntries(files),
+      ]);
+      expect(() => open(bytes)).toThrow(
+        /Candidate Catalog: tarball has (an empty|a malformed) pax/,
+      );
+    });
+
+    it("refuses a global pax header, stacked pax headers and a pax header with no entry", () => {
+      expect(() =>
+        open(
+          candidateTarball([
+            ["pax_global_header", paxBody([["comment", "x"]]), "g"],
+            ...packageEntries(files),
+          ]),
+        ),
+      ).toThrow("Candidate Catalog: tarball has a global pax header");
+      expect(() =>
+        open(
+          candidateTarball([
+            ["package/PaxHeader/a", paxBody([["path", "package/a"]]), "x"],
+            ["package/PaxHeader/b", paxBody([["path", "package/b"]]), "x"],
+            ["package/c", "1"],
+            ...packageEntries(files),
+          ]),
+        ),
+      ).toThrow("Candidate Catalog: tarball has a pax header that follows a pax header");
+      expect(() =>
+        open(
+          candidateTarball([
+            ...packageEntries(files),
+            ["package/PaxHeader/a", paxBody([["path", "package/a"]]), "x"],
+          ]),
+        ),
+      ).toThrow("Candidate Catalog: tarball pax header describes no entry");
+    });
+
+    it("refuses data after the end-of-archive marker and a missing or partial marker", () => {
+      const entries = packageEntries(files);
+      expect(openTar(candidateTar(entries, Buffer.alloc(10240))).version).toBe("0.3.0");
+      const trailing = Buffer.alloc(1536);
+      trailing[1024] = 1;
+      expect(() => openTar(candidateTar(entries, trailing))).toThrow(
+        "Candidate Catalog: tarball has data after its end-of-archive marker",
+      );
+      expect(() => openTar(candidateTar(entries, Buffer.alloc(1024 + 100)))).toThrow(
+        "Candidate Catalog: tarball has data after its end-of-archive marker",
+      );
+      // A second archive appended after the marker is also trailing data.
+      expect(() =>
+        openTar(Buffer.concat([candidateTar(entries), candidateTar([["package/x", "1"]])])),
+      ).toThrow("Candidate Catalog: tarball has data after its end-of-archive marker");
+      expect(() => openTar(candidateTar(entries, Buffer.alloc(512)))).toThrow(
+        "Candidate Catalog: tarball has an incomplete end-of-archive marker",
+      );
+      expect(() => openTar(candidateTar(entries, Buffer.alloc(0)))).toThrow(
+        "Candidate Catalog: tarball has no end-of-archive marker",
+      );
+      expect(() => openTar(candidateTar(entries, Buffer.from("partial")))).toThrow(
+        "Candidate Catalog: tarball has no end-of-archive marker",
+      );
+    });
   });
 
   it("refuses a symbolic link inside a candidate directory", () => {

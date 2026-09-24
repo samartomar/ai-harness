@@ -77,18 +77,41 @@ function header(path: string, size: number, type: string): Buffer {
   return block;
 }
 
-/** A gzip'd ustar archive, as `npm pack` writes one; entries are [path, bytes, type]. */
-export function candidateTarball(
-  entries: readonly (readonly [string, Buffer | string, string?])[],
+/**
+ * An uncompressed ustar archive; entries are [path, bytes, type, declared size]. The declared
+ * size defaults to the byte length; the bytes are padded to whole blocks either way.
+ */
+export function candidateTar(
+  entries: readonly (readonly [string, Buffer | string, string?, number?])[],
+  end: Buffer = Buffer.alloc(1024),
 ): Buffer {
   const blocks: Buffer[] = [];
-  for (const [path, content, type = "0"] of entries) {
+  for (const [path, content, type = "0", size] of entries) {
     const bytes = Buffer.from(content);
-    blocks.push(header(path, bytes.length, type), bytes);
+    blocks.push(header(path, size ?? bytes.length, type), bytes);
     blocks.push(Buffer.alloc((512 - (bytes.length % 512)) % 512));
   }
-  blocks.push(Buffer.alloc(1024));
-  return gzipSync(Buffer.concat(blocks));
+  blocks.push(end);
+  return Buffer.concat(blocks);
+}
+
+/** A gzip'd ustar archive, as `npm pack` writes one; entries are [path, bytes, type]. */
+export function candidateTarball(
+  entries: readonly (readonly [string, Buffer | string, string?, number?])[],
+): Buffer {
+  return gzipSync(candidateTar(entries));
+}
+
+/** A pax extended header body: one `<length> <key>=<value>\n` record per pair. */
+export function paxBody(records: readonly (readonly [string, string])[]): string {
+  return records
+    .map(([key, value]) => {
+      const text = ` ${key}=${value}\n`;
+      let length = Buffer.byteLength(text) + 1;
+      while (String(length).length + Buffer.byteLength(text) !== length) length += 1;
+      return `${length}${text}`;
+    })
+    .join("");
 }
 
 export function packageEntries(
