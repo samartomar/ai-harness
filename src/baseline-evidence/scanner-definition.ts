@@ -302,7 +302,13 @@ function resolveDefinition(
   const id = catalogId as DefinitionSourceId;
   const expected = SCANNER_DEFINITION_SOURCES_V1[id];
   const value = readDefinition(input.definitionPath);
-  const collection = expected.kind === "collection" ? collectionCatalog(value, id) : undefined;
+  // A collection subject takes either its pinned collection input (which always declares a
+  // `version`) or the disjoint whole-repository inventory (a BaselineCatalog, which never
+  // does). The document's own shape decides; each is then validated strictly as itself.
+  const collection =
+    expected.kind === "collection" && Object.hasOwn(value, "version")
+      ? collectionCatalog(value, id)
+      : undefined;
   const catalog = collection?.catalog ?? parsed(BaselineCatalogSchema, value, `${id} definition`);
   if (catalog.id !== id) fail(`definition id ${catalog.id} is not ${id}`);
   if (`${catalog.owner}/${catalog.repo}` !== expected.repository)

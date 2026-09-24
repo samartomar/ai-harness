@@ -391,6 +391,55 @@ describe("definition-driven Scanner catalog resolution", () => {
       ]);
     });
 
+    it("accepts a whole-repository inventory for a collection subject", () => {
+      const inventory: BaselineCatalog = {
+        components: [
+          { id: "runtime:root-4813494d137e", paths: ["LICENSE"] },
+          {
+            id: "skill:skills-ponytail-000000000000",
+            paths: ["skills/ponytail"],
+            skillContent: true,
+          },
+        ],
+        id: "ponytail",
+        owner: "DietrichGebert",
+        pinnedSha: PIN,
+        repo: "ponytail",
+      };
+      expect(resolvePonytail(inventory)).toEqual({ route: "definition", catalog: inventory });
+      // The inventory route keeps every other definition check.
+      expect(() => resolvePonytail({ ...inventory, repo: "other" })).toThrow(
+        "ponytail must name DietrichGebert/ponytail, not DietrichGebert/other",
+      );
+      expect(() =>
+        resolvePonytail({
+          ...inventory,
+          components: [...inventory.components, { id: "runtime:skills-1", paths: ["skills"] }],
+        }),
+      ).toThrow("overlap: skills, skills/ponytail");
+      // A carried pin with a different catalog is refused, never replaced by the inventory.
+      expect(() =>
+        resolveScannerDefinitionV1(
+          {
+            sourceRoot: source,
+            catalogId: "ponytail",
+            definitionPath: definitionFile(inventory, "carried.json"),
+            head: PIN,
+          },
+          {
+            carriedCatalog: () => ({ ...inventory, components: inventory.components.slice(0, 1) }),
+          },
+        ),
+      ).toThrow(/installed Catalog carries ponytail@/);
+    });
+
+    it("parses a collection-shaped definition only as a collection", () => {
+      // A definition that declares a collection version is never re-read as an inventory.
+      expect(() => resolvePonytail({ ...ponytail(), components: undefined })).toThrow(
+        /ponytail collection is malformed/,
+      );
+    });
+
     it("refuses snapshot bytes that differ from the checkout", () => {
       write("skills/ponytail/SKILL.md", "# changed\n");
       expect(() => resolvePonytail(ponytail())).toThrow(
