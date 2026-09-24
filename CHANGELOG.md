@@ -142,8 +142,13 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   that rule, as a private brand on the `ScannerBaselineVetAnnexV1` it creates for the detector the
   annex was published for; a plain string, a caller-built wrapper or another detector's annex is
   inline SARIF, and no option lets a live scan claim the rule. Core recomputes the subject over
-  the consumer's source root as every file outside the top-level `.git` for Semgrep, SkillSpector
-  and Cisco (Cisco as the whole-snapshot skill-directory scan). The analyzer must be the one Scan's
+  the consumer's source root as what Scan's batch snapshot received, for Semgrep, SkillSpector
+  and Cisco (Cisco as the whole-snapshot skill-directory scan): the top-level `.git` is left out
+  before the walk, so a broken link inside it no longer fails the subject, and a link must be
+  relative and resolve through real directories to a real file or directory inside the root, so
+  an absolute link, a link to or through another link, a link into `.git`, and a directory link
+  naming a directory that holds a link are refused as the snapshot refuses them. A directory link
+  contributes nothing (D26). The analyzer must be the one Scan's
   batch runs (`SCANNER_BASELINE_VET_EXECUTION_PROFILES_V1`, mirroring Scan's
   `BASELINE_BATCH_EXECUTION_PROFILES_V1`): the `linux-namespace-uv-v1` identity for Semgrep and
   Cisco, and `docker-hardened-skillspector-v1` (no lock, the pinned revision at an accepted digest)

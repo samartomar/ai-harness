@@ -1,5 +1,5 @@
 import { createHash, generateKeyPairSync } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
@@ -595,8 +595,12 @@ function vectorAnnexes(
   };
 }
 
-async function consumeVector(annexes: Partial<Record<ScannerBaselineAnalyzer, unknown>>) {
+async function consumeVector(
+  annexes: Partial<Record<ScannerBaselineAnalyzer, unknown>>,
+  arrange: (root: string) => void = () => {},
+) {
   const { root, catalog } = vectorFixture();
+  arrange(root);
   const request = createCoreBaselineVetRequest(root, catalog);
   const result = buildResult(root, request, {}, {}, {}, annexes);
   const signed = signedFixture(request, result);
@@ -633,6 +637,23 @@ describe("verified Scanner-publication annexes follow Scan's baseline rule (D24,
       );
     },
   );
+
+  it("accepts a source whose top-level .git holds a broken link: the snapshot leaves .git out", async () => {
+    const evidence = await consumeVector(vectorAnnexes(), (root) =>
+      symlinkSync("missing-object", join(root, ".git", "dangling"), "file"),
+    );
+    expect(evidence.components.map((component) => component.verdict)).toEqual(["pass"]);
+  });
+
+  it("refuses a source holding a link Scan's snapshot refuses, naming it", async () => {
+    await expect(
+      consumeVector(vectorAnnexes(), (root) =>
+        symlinkSync(".git/HEAD", join(root, "head"), "file"),
+      ),
+    ).rejects.toThrow(
+      "precomputed SARIF for detector.semgrep is refused: completion evidence Core cannot check, because it cannot rebuild the baseline subject of detector.semgrep: symbolic link head names .git/HEAD, inside the top-level .git that Scan's baseline snapshot leaves out",
+    );
+  });
 
   it("keeps an evidence-less annex completion-evidence-absent (D17)", async () => {
     await expect(consumeVector(vectorAnnexes({ semgrep: vectorAnnex() }))).rejects.toThrow(

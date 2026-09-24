@@ -164,16 +164,27 @@ baseline rule (decision D24) and nothing else. Only the Scanner consumer grants 
 Scan verifies every batch's signed attestation, it wraps each annex for the detector it was
 published for and marks the wrapper privately. A plain string, a caller-built wrapper of the same
 shape, or one detector's annex presented for another is inline SARIF; a live scan has no option
-that claims the baseline rule. Scan's batch analyzes a snapshot that never holds a
-top-level `.git`, so for Semgrep, SkillSpector and Cisco alike Core recomputes the subject over the
-consumer's source root as every file and file link outside the top-level `.git` (a file link is
-keyed by its path and hashed over its target; a directory link contributes nothing). Cisco here is
-the skill-directory scan of the whole snapshot, never a job set or shard. The analyzer must be the
-one Scan's batch runs: `linux-namespace-uv-v1` for Semgrep and Cisco, and for SkillSpector
-`docker-hardened-skillspector-v1` (no lock; the pinned revision at a digest Core accepts). Any
-other profile's pinned identity or a subject that includes `.git`
-fails the detector; an annex without evidence is still `completion-evidence-absent`. Inline
-precomputed SARIF and delegated runs keep their per-detector rules.
+that claims the baseline rule. For Semgrep, SkillSpector and Cisco alike Core recomputes the
+subject over the consumer's source root as exactly what Scan's batch snapshot received, walking it
+by the snapshot's rules rather than the seal's where they differ:
+
+- the top-level `.git` is left out before the walk and never visited, so nothing inside it (a
+  broken link included) can fail the subject;
+- a link must hold a relative target that resolves, segment by segment, through real directories
+  to a real file or directory inside the root. An absolute target, a link to or through another
+  link, a target inside the top-level `.git`, a broken target, and one leaving the root are
+  refused, as the snapshot refuses them (the seal accepts in-root absolute and chained links);
+- a directory link that names a directory holding a link is refused as a cycle;
+- a file link is keyed by its path and hashed over its target; a directory link is recorded but
+  never copied into the snapshot (D26), so it contributes nothing.
+
+Cisco here is the skill-directory scan of the whole snapshot, never a job set or shard. The
+analyzer must be the one Scan's batch runs: `linux-namespace-uv-v1` for Semgrep and Cisco, and for
+SkillSpector `docker-hardened-skillspector-v1` (no lock; the pinned revision at a digest Core
+accepts). Any other profile's pinned identity or a subject that includes `.git` fails the
+detector; an annex without evidence is still `completion-evidence-absent`. Inline precomputed
+SARIF and delegated runs keep their per-detector rules.
+
 SARIF with no completion evidence at all, which is every publication made before Scan wrote it,
 is never counted complete: it is `trust.detector-unavailable` with reason
 `completion-evidence-absent` and must be republished with evidence. A joined Cisco shard log

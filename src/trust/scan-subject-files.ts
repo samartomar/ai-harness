@@ -1,6 +1,13 @@
 import { createHash } from "node:crypto";
-import { lstatSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import {
+  lstatSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  realpathSync,
+  statSync,
+} from "node:fs";
+import { isAbsolute, posix, relative, resolve, sep, win32 } from "node:path";
 
 /**
  * The subject a Scan run analyzed, recomputed by Core from its own disk
@@ -191,11 +198,21 @@ export const BASELINE_VET_ANNEX_DETECTORS_V1: readonly string[] = Object.freeze(
 
 /**
  * The file set F of a Scanner-publication (baseline-vet) annex (C2a §1.6
- * [Scan: S2j], decision D24): the batch's analyzer snapshot never holds a
- * top-level `.git`, so for Semgrep, SkillSpector and Cisco alike F is every
- * sealed file outside it, over the whole baseline source root (Cisco's
- * skill-directory scan of the whole snapshot, never a job set). Links follow
- * the seal. Any other detector has no baseline annex.
+ * [Scan: S2j], decision D24): what the batch's analyzer snapshot received,
+ * for Semgrep, SkillSpector and Cisco alike over the whole baseline source
+ * root (Cisco's skill-directory scan of the whole snapshot, never a job set).
+ * Any other detector has no baseline annex. The walk is the snapshot's (Scan
+ * `src/baseline/batch-v1.ts` at eca8231, `inspectSafeAnalyzerSource` and
+ * `copyAnalyzerSource` under the batch's default "relative" link rule), not
+ * the seal's, where the two differ:
+ * - the top-level `.git` is left out before the walk, never visited;
+ * - a link must hold a relative target that resolves, segment by segment,
+ *   through real directories to a real file or directory inside the root:
+ *   an absolute target, a link to or through another link, a target in the
+ *   top-level `.git`, a broken target and one leaving the root are refused;
+ * - a directory link may not name a directory that holds a link (a cycle);
+ * - a file link is keyed by its path and hashed over its target; a directory
+ *   link is recorded but never copied (D26), so it contributes nothing.
  */
 export function baselineVetAnnexSubjectFilesV1(
   detectorId: string,
@@ -203,7 +220,101 @@ export function baselineVetAnnexSubjectFilesV1(
 ): readonly ScanSubjectFileV1[] {
   if (!BASELINE_VET_ANNEX_DETECTORS_V1.includes(detectorId))
     fail(`Core has no baseline-vet annex subject rule for ${detectorId}`);
-  return sealedScanSubjectFilesV1(sourceRoot).filter((file) => !inGitDirectory(file.path));
+  const { root } = sourceRoots(sourceRoot);
+  const absoluteOf = (path: string): string => resolve(root, ...path.split("/"));
+  const entries = new Map<string, "directory" | "file">([["", "directory"]]);
+  const links = new Map<string, string>();
+  const visit = (path: string): void => {
+    const absolute = absoluteOf(path);
+    const stat = lstatSync(absolute);
+    if (stat.isSymbolicLink()) {
+      links.set(path, readlinkSync(absolute));
+      return;
+    }
+    if (stat.isDirectory()) {
+      entries.set(path, "directory");
+      let names: string[];
+      try {
+        names = readdirSync(absolute);
+      } catch (error) {
+        fail(`${path} is unreadable (${(error as Error).message})`);
+      }
+      for (const name of names) visit(`${path}/${name}`);
+      return;
+    }
+    if (!stat.isFile()) fail(`${path} is neither a file, a directory nor a symbolic link`);
+    entries.set(path, "file");
+  };
+  let top: string[];
+  try {
+    top = readdirSync(root);
+  } catch (error) {
+    return fail(`. is unreadable (${(error as Error).message})`);
+  }
+  for (const name of top) if (name !== ".git") visit(name);
+
+  const parentOf = (path: string): string => {
+    const cut = path.lastIndexOf("/");
+    return cut < 0 ? "" : path.slice(0, cut);
+  };
+  const holdingLinks = new Set<string>();
+  for (const path of links.keys())
+    for (let parent = parentOf(path); ; parent = parentOf(parent)) {
+      holdingLinks.add(parent);
+      if (parent === "") break;
+    }
+  // Why `target` (a resolved root-relative path) is not a real entry; `named` is the whole target.
+  const missing = (path: string, target: string, named: string, through: boolean): never => {
+    if (inGitDirectory(target))
+      return fail(
+        `symbolic link ${path} names ${named}, inside the top-level .git that Scan's baseline snapshot leaves out`,
+      );
+    if (links.has(target))
+      return fail(
+        through
+          ? `symbolic link ${path} resolves through symbolic link ${target}; Scan's baseline snapshot takes only a link through real directories`
+          : `symbolic link ${path} names symbolic link ${target}; Scan's baseline snapshot takes only a link to a real file or directory`,
+      );
+    return fail(`symbolic link ${path} is broken`);
+  };
+  const files: ScanSubjectFileV1[] = [];
+  for (const [path, file] of entries)
+    if (file === "file") files.push({ path, sha256: fileSha256(absoluteOf(path)) });
+  for (const [path, stored] of links) {
+    // Windows stores a relative target with its own separator, as Scan normalizes it.
+    const target = process.platform === "win32" ? stored.replaceAll("\\", "/") : stored;
+    if (
+      !target ||
+      target.includes("\\") ||
+      posix.isAbsolute(target) ||
+      win32.isAbsolute(target) ||
+      /(^|\/)[A-Za-z]:/.test(target)
+    )
+      fail(
+        `symbolic link ${path} has an absolute target; Scan's baseline snapshot takes only a relative one`,
+      );
+    const named = posix.normalize(posix.join(parentOf(path), target));
+    let resolved = parentOf(path);
+    for (const segment of target.split("/")) {
+      if (entries.get(resolved) !== "directory") missing(path, resolved, named, true);
+      if (segment === "" || segment === ".") continue;
+      if (segment === "..") {
+        if (resolved === "") fail(`symbolic link ${path} leaves the source root`);
+        resolved = parentOf(resolved);
+      } else resolved = resolved === "" ? segment : `${resolved}/${segment}`;
+    }
+    const kind = entries.get(resolved);
+    if (kind === undefined) missing(path, resolved, named, false);
+    if (kind === "directory") {
+      if (holdingLinks.has(resolved))
+        fail(
+          `directory link ${path} names ${resolved || "."}, a directory that holds a symbolic link; Scan's baseline snapshot refuses it as a cycle`,
+        );
+      continue;
+    }
+    files.push({ path, sha256: fileSha256(absoluteOf(resolved)) });
+  }
+  return files.sort((left, right) => codeUnitCompare(left.path, right.path));
 }
 
 /**
