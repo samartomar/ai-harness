@@ -1934,11 +1934,8 @@ function reportEccFull(deps: EccLeanAdapterDeps, context: BindingContext): Bindi
 // -- factory ------------------------------------------------------------------
 
 /**
- * Widening note for `frameworks/registry.ts`: `BindingRegistryDeps` widens to also
- * carry ECC's construction deps ({@link EccLeanAdapterDeps}'s ECC-only optionals —
- * `installer`, `installPreview`, and the Full-only `excludedSurfaces`;
- * `locateCache`/`applyActions` are already shared with `SuperpowersAdapterDeps`).
- * `root`/`runner`/`env`/`cacheHome`/`timeoutMs` are shared with `SuperpowersAdapterDeps`.
+ * `frameworks/registry.ts` uses {@link EccLeanAdapterDeps} as `BindingRegistryDeps`:
+ * ECC is the only registered adapter.
  *
  * Mode routing (D10): `plan`/`provision` route on the declaration's mode
  * ({@link eccMode} — absent/`"lean"` -> Lean, `"full"` -> Full); `verify`/`remove`/

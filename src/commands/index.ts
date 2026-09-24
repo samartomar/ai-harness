@@ -21,6 +21,10 @@ import { command as doctor } from "../doctor.js";
 import { command as ecc, eccMcpAddCommand, eccMcpRemoveCommand } from "../ecc/index.js";
 import { executeEccCommand } from "../ecc/pipeline.js";
 import { evidenceBuildCommand } from "../evidence/build.js";
+import {
+  executeSuperpowersCommand,
+  command as superpowers,
+} from "../framework-plugin/superpowers-command.js";
 import { command as governanceDoctor } from "../governance-doctor/command-v1.js";
 import {
   executeGovernanceDoctorRepairCommandV1,
@@ -101,8 +105,6 @@ import {
   skillVetCommand,
 } from "../skill/index.js";
 import { command as status } from "../status.js";
-import { command as superpowers } from "../superpowers/index.js";
-import { executeSuperpowersCommand } from "../superpowers/pipeline.js";
 import { command as telemetry } from "../telemetry/index.js";
 import {
   developerToolsCommand,

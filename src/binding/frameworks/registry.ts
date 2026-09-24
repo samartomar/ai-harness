@@ -5,16 +5,11 @@ import {
   ADAPTER_VERSION as ECC_ADAPTER_VERSION,
   type EccLeanAdapterDeps,
 } from "./ecc.js";
-import {
-  createSuperpowersAdapter,
-  ADAPTER_VERSION as SUPERPOWERS_ADAPTER_VERSION,
-  type SuperpowersAdapterDeps,
-} from "./superpowers.js";
 
 /**
  * The one assembly point that wires concrete D6 `FrameworkAdapter`s into an
- * {@link AdapterRegistry}. W4a registered the first (Superpowers, host-plugin);
- * W4b adds ECC Lean (upstream-local-installer).
+ * {@link AdapterRegistry}: ECC (upstream-local-installer). Superpowers is a
+ * framework plugin (`@aihq/framework-superpowers`), not a binding adapter.
  * Later work packages add their own `create<Framework>Adapter`
  * factory in a sibling module and register it here too; `BindingRegistryDeps`
  * WIDENS additively (a merged shape covering every adapter's construction deps)
@@ -26,20 +21,15 @@ import {
  */
 
 /**
- * Shared construction deps for every registered adapter. The shared fields
- * (`root`/`runner`/`env`/`cacheHome`/`timeoutMs`, plus the host-plugin
- * `locateCache`/`applyActions`) live on {@link SuperpowersAdapterDeps}; this shape
- * widens to also carry ECC's adapter-specific optionals (`installer`,
- * `installPreview`, and the ECC Full `excludedSurfaces`). Every factory accepts
- * this merged shape (each ignores fields it does not use).
+ * Shared construction deps for every registered adapter: ECC's
+ * (`root`/`runner`/`env`/`cacheHome`/`timeoutMs`, `locateCache`/`applyActions`,
+ * `installer`, `installPreview` and the ECC Full `excludedSurfaces`).
  */
-export type BindingRegistryDeps = SuperpowersAdapterDeps &
-  Pick<EccLeanAdapterDeps, "installer" | "installPreview" | "excludedSurfaces">;
+export type BindingRegistryDeps = EccLeanAdapterDeps;
 
 /** Build an {@link AdapterRegistry} with every currently-implemented D6 adapter registered. */
 export function createBindingAdapterRegistry(deps: BindingRegistryDeps): AdapterRegistry {
   const registry = new AdapterRegistry();
-  registry.register(createSuperpowersAdapter(deps));
   registry.register(createEccAdapter(deps));
   return registry;
 }
@@ -52,7 +42,6 @@ export function createBindingAdapterRegistry(deps: BindingRegistryDeps): Adapter
  * qualifications. WIDENS additively as later adapters land, exactly like
  * {@link BindingRegistryDeps}.
  */
-export const ADAPTER_VERSIONS: Readonly<Record<FrameworkId, number>> = {
-  superpowers: SUPERPOWERS_ADAPTER_VERSION,
+export const ADAPTER_VERSIONS: Readonly<Partial<Record<FrameworkId, number>>> = {
   ecc: ECC_ADAPTER_VERSION,
 };

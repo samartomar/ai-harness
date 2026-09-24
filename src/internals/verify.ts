@@ -230,7 +230,11 @@ export type CheckCode =
   // ECC installed-source drift (#555). Advisory: reporting drift is in scope, the repair
   // path that could CLEAR a stale finding is not — and Kiro's absence-guarded installer
   // can never update an existing file, so failing the run would wedge the repo red.
-  | "ecc.install-drift";
+  | "ecc.install-drift"
+  // Framework plugins (C3): a framework phase refused because its plugin package is
+  // not installed (coded skip) or is installed but unusable (fail, never absent).
+  | "framework-plugin.unavailable"
+  | "framework-plugin.incompatible";
 
 export interface Check {
   name: string;

@@ -168,24 +168,13 @@ export {
   type NormalizedEccOp,
   normalizeEccOperations,
 } from "./frameworks/ecc.js";
-// W4a — the first real D6 adapter (Superpowers, host-plugin) + its registry
-// assembly point. Composes the W3 Claude host services above; adds no new
-// host mechanism of its own.
+// The D6 adapter registry assembly point. Superpowers behaviour lives in the
+// @aihq/framework-superpowers plugin, not in a binding adapter.
 export {
   ADAPTER_VERSIONS,
   type BindingRegistryDeps,
   createBindingAdapterRegistry,
 } from "./frameworks/registry.js";
-export {
-  createSuperpowersAdapter,
-  SUPERPOWERS_MARKETPLACE_NAME,
-  SUPERPOWERS_PIN_COMMIT,
-  SUPERPOWERS_PLUGIN_NAME,
-  SUPERPOWERS_REPOSITORY,
-  type SuperpowersAdapterDeps,
-  SuperpowersBindingError,
-  type SuperpowersRemoveResult,
-} from "./frameworks/superpowers.js";
 // W8 — the D14 Framework Value Gate: the CREDIT side vs the no-framework baseline
 // (surface deltas + the decisive characteristic-workflow signal), fail-closed to
 // INCOMPLETE. Reuses the cost/context surface primitive; never re-implements it.

@@ -3,6 +3,8 @@ import { classifyCanon, isAdoptable } from "../adopt/classify.js";
 import { aihConfigJson, readAihConfigBaseline, readPolicyBinding } from "../config/marker.js";
 import type { EccCommandDeps } from "../ecc/pipeline.js";
 import { AihError } from "../errors.js";
+import type { FrameworkCommandDepsV1 } from "../framework-plugin/run-framework-command.js";
+import { executeSuperpowersInitPhase } from "../framework-plugin/superpowers-command.js";
 import {
   BASELINE_OPTION,
   DEFAULT_BASELINE_SOURCE_ID,
@@ -220,15 +222,32 @@ function retainInitCommitLock(
  * produce, so the harness's "no faked provisioning" guarantee is preserved.
  */
 async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
+  return (await composeInit(ctx)).plan;
+}
+
+/** A framework phase init runs through its plugin after the local bootstrap commits. */
+interface InitFrameworkPhase {
+  readonly framework: "superpowers";
+  /** Init's phase context: the resolved targets and baseline every phase shares. */
+  readonly ctx: PlanContext;
+}
+
+interface InitComposition {
+  readonly plan: Plan;
+  readonly frameworkPhases: readonly InitFrameworkPhase[];
+}
+
+async function composeInit(ctx: PlanContext): Promise<InitComposition> {
   const bindingAssertion = policyBindingFileAssertion(ctx.root);
   assertPolicyBindingCurrent(ctx.root, ctx.env, ctx.targets);
   explicitKiroHookRuntime(ctx);
   // Brownfield guard FIRST: never bulldoze an existing hand-built canon — redirect
   // to `aih adopt` and emit nothing else, so a dry-run or `--apply` both stop here.
   const redirect = brownfieldRedirect(ctx);
-  if (redirect) return plan("init", redirect);
+  if (redirect) return { plan: plan("init", redirect), frameworkPhases: [] };
 
   const actions: Action[] = [];
+  const frameworkPhases: InitFrameworkPhase[] = [];
   let authorityAssertions: readonly FileAssertion[] | undefined;
   let authorityCommitNotAfter: string | undefined;
   let authorityCommitLock: Plan["commitLock"];
@@ -321,6 +340,13 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
           `governance owns AIH ${phase.command.name === "mcp" ? "MCP" : "usage-hook"} projection; the generic ${phase.command.name} phase is suppressed`,
         ),
       );
+      continue;
+    }
+    if (phase.framework !== undefined) {
+      // The header keeps the phase's place in the dry-run; the plugin's
+      // evidence-gated command runs once the local bootstrap has committed.
+      actions.push(doc(`init: ${phase.command.name}`, phase.headline));
+      frameworkPhases.push({ framework: phase.framework, ctx: baseCtx });
       continue;
     }
     const phaseCtx =
@@ -441,15 +467,20 @@ async function initPlan(ctx: PlanContext): Promise<ReturnType<typeof plan>> {
     }
   }
 
-  return withPolicyBindingFileAssertion(
-    {
-      ...plan("init", ...deduped),
-      ...(authorityAssertions === undefined ? {} : { fileAssertions: authorityAssertions }),
-      ...(authorityCommitNotAfter === undefined ? {} : { commitNotAfter: authorityCommitNotAfter }),
-      ...(authorityCommitLock === undefined ? {} : { commitLock: authorityCommitLock }),
-    },
-    bindingAssertion,
-  );
+  return {
+    plan: withPolicyBindingFileAssertion(
+      {
+        ...plan("init", ...deduped),
+        ...(authorityAssertions === undefined ? {} : { fileAssertions: authorityAssertions }),
+        ...(authorityCommitNotAfter === undefined
+          ? {}
+          : { commitNotAfter: authorityCommitNotAfter }),
+        ...(authorityCommitLock === undefined ? {} : { commitLock: authorityCommitLock }),
+      },
+      bindingAssertion,
+    ),
+    frameworkPhases,
+  };
 }
 
 function baselineInstallDoc(baseline: ReturnType<typeof resolveBaselineSource>): Action {
@@ -482,6 +513,8 @@ function baselineInstallDoc(baseline: ReturnType<typeof resolveBaselineSource>):
 export interface InitCommandDeps extends EccCommandDeps {
   /** Public setup runtime seam. Ordinary init already owns the MCP projection phase. */
   readonly developerTools?: DeveloperToolsCommandDeps;
+  /** Framework plugin seams for the framework phases (tests). */
+  readonly frameworks?: FrameworkCommandDepsV1;
 }
 
 function resultFailed(result: PlanResult): boolean {
@@ -507,13 +540,38 @@ async function finishDeveloperToolSetup(
   };
 }
 
+/**
+ * Framework phases run last, each only after everything before it succeeded, so
+ * a framework's evidence gate (source acquisition included) never blocks the
+ * local bootstrap or developer-tool setup. A phase whose plugin is missing is
+ * reported as refused with its reason, never silently skipped.
+ */
+async function finishFrameworkPhases(
+  phases: readonly InitFrameworkPhase[],
+  previous: PlanResult,
+  deps: InitCommandDeps,
+): Promise<PlanResult> {
+  let result = previous;
+  for (const phase of phases) {
+    if (resultFailed(result)) break;
+    const delivered = await executeSuperpowersInitPhase(phase.ctx, deps.frameworks);
+    result = { ...combineProjectResults(result, delivered), capability: "init" };
+  }
+  return result;
+}
+
 export async function executeInitCommand(
   ctx: PlanContext,
   deps: InitCommandDeps = {},
 ): Promise<PlanResult> {
-  const initialPlan = await initPlan(ctx);
+  const initial = await composeInit(ctx);
   if (!readPolicyBinding(ctx.root)) {
-    return finishDeveloperToolSetup(ctx, await executePlan(initialPlan, ctx), deps);
+    const initialized = await executePlan(initial.plan, ctx);
+    return finishFrameworkPhases(
+      initial.frameworkPhases,
+      await finishDeveloperToolSetup(ctx, initialized, deps),
+      deps,
+    );
   }
   const delivered = await executePolicyProjectCommand(ctx, deps);
   if (resultFailed(delivered)) {
@@ -521,10 +579,15 @@ export async function executeInitCommand(
   }
   // Delivery may change shared client files. Replan against those exact bytes
   // rather than applying stale pre-delivery assertions or restoring old entries.
-  const initialized = await executePlan(ctx.apply ? await initPlan(ctx) : initialPlan, ctx);
-  return finishDeveloperToolSetup(
-    ctx,
-    { ...combineProjectResults(delivered, initialized), capability: "init" },
+  const composed = ctx.apply ? await composeInit(ctx) : initial;
+  const initialized = await executePlan(composed.plan, ctx);
+  return finishFrameworkPhases(
+    composed.frameworkPhases,
+    await finishDeveloperToolSetup(
+      ctx,
+      { ...combineProjectResults(delivered, initialized), capability: "init" },
+      deps,
+    ),
     deps,
   );
 }
