@@ -82,17 +82,17 @@ const PINS: ReadonlyArray<readonly [file: string, line: number, text: string]> =
   ],
   [
     "src/catalog-package/load-catalog-package.ts",
-    31,
+    32,
     'export const CATALOG_PACKAGE_PEER_RANGE = ">=0.3.0 <0.4.0";',
   ],
   [
     "src/catalog-package/load-catalog-package.ts",
-    36,
+    37,
     "export type CatalogPackageRefusalReasonV1 =",
   ],
   [
     "src/catalog-package/load-catalog-package.ts",
-    207,
+    350,
     "export async function loadCatalogPackageV1<",
   ],
   ["src/framework-host/index.ts", 17, "export const FRAMEWORK_HOST_API_VERSION = 1;"],
