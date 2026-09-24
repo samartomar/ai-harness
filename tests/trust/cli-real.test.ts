@@ -16,7 +16,10 @@ const INSTALLED_SCAN_HAS_TRUST_LINT = await import("@aihq/scan").then(
 );
 
 const tmps: string[] = [];
-const TEST_PROCESS_TIMEOUT_MS = 25_000;
+// The installed Scan resolves analyzers outside PATH (Docker, uv in well-known
+// directories), so a real CLI run may execute the pinned SkillSpector image.
+const TEST_PROCESS_TIMEOUT_MS = 120_000;
+const TEST_TIMEOUT_MS = TEST_PROCESS_TIMEOUT_MS + 10_000;
 
 function fresh(prefix: string): string {
   const dir = mkdtempSync(join(tmpdir(), prefix));
@@ -80,7 +83,7 @@ describe("T3 real CLI trust gate without Scan's trust lint", () => {
       expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(false);
       expect(existsSync(join(workspace, ".aih", "trust-lock.json"))).toBe(false);
     },
-    30000,
+    TEST_TIMEOUT_MS,
   );
 });
 
@@ -108,7 +111,7 @@ describe.runIf(INSTALLED_SCAN_HAS_TRUST_LINT)("T3 real CLI trust gate", () => {
       true,
     );
     expect(existsSync(join(workspace, ".aih", "trust-lock.json"))).toBe(true);
-  }, 30000);
+  }, TEST_TIMEOUT_MS);
 
   it("blocks an auto-exec local source without promoting", () => {
     const workspace = fresh("aih-cli-auto-root-");
@@ -132,7 +135,7 @@ describe.runIf(INSTALLED_SCAN_HAS_TRUST_LINT)("T3 real CLI trust gate", () => {
     expect(result.stdout).toContain("trust.auto-exec-hook");
     expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(false);
     expect(existsSync(join(workspace, ".aih", "trust-lock.json"))).toBe(false);
-  }, 30000);
+  }, TEST_TIMEOUT_MS);
 
   it("blocks a third-party incoming MCP server at enterprise posture", () => {
     const workspace = fresh("aih-cli-mcp-root-");
@@ -163,7 +166,7 @@ describe.runIf(INSTALLED_SCAN_HAS_TRUST_LINT)("T3 real CLI trust gate", () => {
     expect(result.stdout).toContain("hosted MCP server has no post-approval rug-pull protection");
     expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(false);
     expect(existsSync(join(workspace, ".aih", "trust-lock.json"))).toBe(false);
-  }, 30000);
+  }, TEST_TIMEOUT_MS);
 
   it("blocks a bundled-local incoming MCP server at enterprise posture", () => {
     const workspace = fresh("aih-cli-bundled-mcp-root-");
@@ -194,5 +197,5 @@ describe.runIf(INSTALLED_SCAN_HAS_TRUST_LINT)("T3 real CLI trust gate", () => {
     expect(result.stdout).toContain("unpinned supply chain");
     expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(false);
     expect(existsSync(join(workspace, ".aih", "trust-lock.json"))).toBe(false);
-  }, 30000);
+  }, TEST_TIMEOUT_MS);
 });
