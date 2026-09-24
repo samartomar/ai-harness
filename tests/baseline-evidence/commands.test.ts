@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { requiredBaselineVetOptions } from "../../src/baseline-evidence/analyzer-profile.js";
 import { defineBaselineCatalog } from "../../src/baseline-evidence/catalog.js";
+import { baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
 import {
   baselineVetPlanForSource,
   vetBaselineCommand,
@@ -176,7 +177,7 @@ describe("baseline vet command plan", () => {
     const c = ctx(false);
     c.options = {
       source: "affaan-m/ECC",
-      pin: "a".repeat(40),
+      pin: baselineCatalogById("ecc").pinnedSha,
       catalog: "ecc",
       components: "runtime:ecc-installer",
     };
@@ -184,5 +185,20 @@ describe("baseline vet command plan", () => {
 
     expect(result.execs).toEqual([expect.objectContaining({ ran: false })]);
     expect(existsSync(join(root, ".aih", "baseline-reports"))).toBe(false);
+  });
+
+  it("refuses a pin the installed Catalog does not carry before planning a fetch", async () => {
+    const c = ctx(false);
+    const carried = baselineCatalogById("ecc").pinnedSha;
+    c.options = {
+      source: "affaan-m/ECC",
+      pin: "a".repeat(40),
+      catalog: "ecc",
+      components: "runtime:ecc-installer",
+    };
+    await expect(vetBaselineCommand.plan(c)).rejects.toMatchObject({
+      code: "AIH_TRUST",
+      message: `Catalog ecc carries pin ${carried}; it does not carry requested pin ${"a".repeat(40)}`,
+    });
   });
 });

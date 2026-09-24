@@ -24,7 +24,10 @@ function put(rel: string, contents: string): void {
   writeFileSync(target, contents, "utf8");
 }
 
-function policy(signingRepository = "acme/engineering-governance") {
+function policy(
+  signingRepository = "acme/engineering-governance",
+  pinnedSha = baselineCatalogById("ecc").pinnedSha,
+) {
   const catalog = baselineCatalogById("ecc");
   return parseOrgPolicy({
     schemaVersion: 2,
@@ -36,7 +39,7 @@ function policy(signingRepository = "acme/engineering-governance") {
           catalog: "ecc",
           owner: catalog.owner,
           repo: catalog.repo,
-          pinnedSha: catalog.pinnedSha,
+          pinnedSha,
           bundle: ".aih/org-evidence/ecc",
           signingRepository,
           reason: "Reviewed ECC baseline",
@@ -255,8 +258,8 @@ describe("resolveOrgBaselineEvidence", () => {
   it("does nothing when policy has no override for the requested source pin", async () => {
     const result = await resolveWithPosture({
       root,
-      catalog: baselineCatalogById("ecc", "b".repeat(40)),
-      policy: policy(),
+      catalog: baselineCatalogById("ecc"),
+      policy: policy(undefined, "b".repeat(40)),
       run: fakeRunner(() => {
         throw new Error("should not run");
       }),
@@ -509,7 +512,7 @@ describe("resolveOrgBaselineEvidence", () => {
   });
 
   it("uses the live requested pin when an old same-source override is stale", async () => {
-    const liveCatalog = baselineCatalogById("ecc", "e".repeat(40));
+    const liveCatalog = baselineCatalogById("ecc");
     const result = await resolveWithPosture({
       root,
       catalog: liveCatalog,

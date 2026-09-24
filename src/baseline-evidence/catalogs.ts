@@ -1,4 +1,5 @@
 import { loadFrameworkDescriptorSectionV1 } from "../catalog-package/framework-descriptors.js";
+import { AihError } from "../errors.js";
 import type { BaselineCatalog } from "./catalog.js";
 import { defineBaselineCatalog } from "./catalog.js";
 
@@ -19,12 +20,19 @@ interface FrameworkDefinitionsV1 {
   };
 }
 
+/** The installed Catalog carries one layout per framework, bound to its own pin; the policy never rebinds it. */
+function refuseUncarriedPin(id: BaselineCatalogId, carried: string, pin: string): never {
+  throw new AihError(
+    `Catalog ${id} carries pin ${carried}; it does not carry requested pin ${pin}`,
+    "AIH_TRUST",
+  );
+}
+
 function catalogFromDescriptor(id: BaselineCatalogId, pin?: string): BaselineCatalog {
   const admitted = admittedCatalogs.get(id);
   if (admitted !== undefined) {
-    if (pin !== undefined && pin !== admitted.pinnedSha) {
-      throw new TypeError(`Catalog ${id} does not carry requested pin ${pin}`);
-    }
+    if (pin !== undefined && pin !== admitted.pinnedSha)
+      refuseUncarriedPin(id, admitted.pinnedSha, pin);
     return structuredClone(admitted);
   }
   const { framework } = loadFrameworkDescriptorSectionV1<FrameworkDefinitionsV1>(
@@ -45,9 +53,7 @@ function catalogFromDescriptor(id: BaselineCatalogId, pin?: string): BaselineCat
   if (framework.id !== id || repository === null) {
     throw new TypeError(`Catalog ${id} framework definitions are malformed`);
   }
-  if (pin !== undefined && pin !== vendor.pinnedSha) {
-    throw new TypeError(`Catalog ${id} does not carry requested pin ${pin}`);
-  }
+  if (pin !== undefined && pin !== vendor.pinnedSha) refuseUncarriedPin(id, vendor.pinnedSha, pin);
   const catalog = defineBaselineCatalog({
     id,
     owner: vendor.owner,
