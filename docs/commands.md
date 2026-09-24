@@ -273,10 +273,16 @@ installs, downloads, registers or starts Headroom without these explicit flags:
   the exact generated launcher with its digest.
 - Later ordinary `--apply` runs re-verify the handshake offline and never download. A failed check
   is `blocked`; the activation is kept.
-- `--deactivate-headroom --apply` removes the AIH-owned Headroom MCP entries (only when they are
-  byte-identical to the recorded launcher; a user-edited entry is left alone), then the whole
-  Headroom state root including the runtime, caches and receipt. User-authored configuration is not
-  touched.
+- `--deactivate-headroom --apply` removes the AIH-owned Headroom MCP entries from every host the
+  activation receipt recorded, even when this run's `--cli` names fewer hosts (only entries
+  byte-identical to the recorded launcher; a user-edited JSON entry is left alone as yours), then
+  the whole Headroom state root including the runtime, caches and receipt. User-authored
+  configuration is not touched.
+- If a recorded host cannot be cleaned (for example a `headroom` table you edited inside AIH's
+  managed block in `~/.codex/config.toml`), deactivation stops before deleting anything: Headroom is
+  reported `blocked`, the runtime and receipt are kept, and the receipt records which host and why.
+  Until you delete or restore that table (or move it outside the managed block) and rerun
+  `--deactivate-headroom`, no run re-registers Headroom or reports it active.
 - An organization policy may exclude Headroom (`developerTools.excluded`, or MCP controls such as
   `mcp.disabledServers`); activation is then refused and an existing activation is removed on the
   next `--apply` in the same way. A policy cannot activate Headroom: the policy schema has no

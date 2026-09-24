@@ -6,7 +6,7 @@ import { cliCapabilities, cliCapabilitySummary } from "../internals/cli-capabili
 import { homeDir, isTargeted } from "../internals/cli-detect.js";
 import { type CliEntry, entry } from "../internals/cli-registry.js";
 import { type Cli, SUPPORTED_CLIS } from "../internals/clis.js";
-import { upsertTextBlock } from "../internals/envfile.js";
+import { removeManagedBlock, upsertTextBlock } from "../internals/envfile.js";
 import { readIfExists } from "../internals/fsxn.js";
 import { isPlainObject, parseJsoncText } from "../internals/merge.js";
 import type {
@@ -507,6 +507,70 @@ export function retainedRecordedMcpEntries(
     }
   }
   return retained;
+}
+
+/**
+ * Remove only a recorded-retired server, only where a host still holds AIH's exact
+ * copy, from hosts the current projection may not target (a narrower `--cli`).
+ * Nothing else in those configs is re-projected.
+ */
+export function recordedRetirementActions(
+  ctx: PlanContext,
+  hosts: readonly Cli[],
+  name: string,
+  server: McpServer,
+): WriteAction[] {
+  const home = homeDir(ctx);
+  const seen = new Set<string>();
+  const actions: WriteAction[] = [];
+  for (const host of hosts) {
+    const e = entry(host);
+    const p = e.mcp;
+    if (p.support !== "native" || !p.configPath || !p.configKey) continue;
+    const external = isExternalMcp(p.configPath);
+    const writePath = external ? mcpConfigAbs(home, p.configPath) : p.configPath;
+    const abs = external ? writePath : join(ctx.root, p.configPath);
+    if (seen.has(abs)) continue;
+    seen.add(abs);
+    const source = readIfExists(abs);
+    if (source === undefined) continue;
+    const describe = `${e.label}: remove AIH's unchanged ${name} MCP entry (${p.configPath})`;
+    if (p.configFormat === "toml") {
+      const block = managedBlockText(source, MCP_TOML_SCOPE);
+      if (block === undefined || mcpTomlServerTree(block, name) !== mcpTomlBody({ [name]: server }))
+        continue;
+      const body = removeMcpTomlServers(block, [name])
+        .replace(/\n{3,}/g, "\n\n")
+        .replace(/^\n+|\n+$/g, "");
+      const contents =
+        body.length > 0
+          ? upsertTextBlock(source, MCP_TOML_SCOPE, body)
+          : removeManagedBlock(source, MCP_TOML_SCOPE);
+      actions.push(
+        withExpectedContents(writeText(writePath, contents, describe, { external }), source),
+      );
+    } else if (
+      matchingGeneratedJsonServerNames(
+        abs,
+        p.configKey,
+        mcpEntries(host, { [name]: server }),
+        {},
+        source,
+      ).includes(name)
+    ) {
+      actions.push(
+        withExpectedContents(
+          writeJson(writePath, {}, describe, {
+            merge: true,
+            external,
+            removeJsonKeys: { [p.configKey]: [name] },
+          }),
+          source,
+        ),
+      );
+    }
+  }
+  return actions;
 }
 
 function matchingManagedTomlServerNames(absPath: string, deniedNames: readonly string[]): string[] {

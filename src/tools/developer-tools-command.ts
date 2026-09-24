@@ -8,7 +8,7 @@ import { VerificationReport } from "../internals/verify.js";
 import { defaultNativeRuntimeLayout } from "../mcp/default-native-runtime.js";
 import {
   command as mcpCommand,
-  type RetainedRecordedMcpEntry,
+  recordedRetirementActions,
   retainedRecordedMcpEntries,
 } from "../mcp/index.js";
 import { resolveDeveloperToolSelectionForOrgPolicyV1 } from "../org-policy/developer-tool-policy.js";
@@ -376,55 +376,79 @@ async function reconcileHeadroom(
   return { result: { id: "headroom", ...outcome }, remove: false };
 }
 
-/**
- * Every host the activation receipt recorded that still registers Headroom after
- * the projection: AIH's unchanged entry, or an edited Codex table AIH will not discard.
- */
-function retainedHeadroomHostEntries(ctx: PlanContext): RetainedRecordedMcpEntry[] {
+/** The hosts and exact launcher the activation receipt recorded, when it is readable. */
+function recordedHeadroomHosts(ctx: PlanContext) {
   const receipt = readHeadroomReceipt(headroomLayout(ctx));
-  if (receipt.state !== "valid" && receipt.state !== "stale") return [];
-  return retainedRecordedMcpEntries(
-    ctx,
-    receipt.receipt.hosts as Cli[],
-    "headroom",
-    receipt.receipt.launcher.server,
-  );
+  if (receipt.state !== "valid" && receipt.state !== "stale") return undefined;
+  return { hosts: receipt.receipt.hosts as Cli[], server: receipt.receipt.launcher.server };
 }
 
-function finishHeadroomRemoval(
+interface HeadroomRemovalOutcome {
+  readonly result: DeveloperToolLifecycleResult;
+  /** Writes that removed AIH's unchanged entry from recorded hosts outside this run's targets. */
+  readonly retirement?: PlanResult;
+}
+
+/**
+ * Remove Headroom from every host the activation receipt recorded, not only this
+ * run's targets. The runtime and receipt are deleted only when no recorded host
+ * still registers Headroom (AIH's unchanged entry, or an edited Codex table AIH
+ * will not discard); otherwise the receipt records which hosts and why.
+ */
+async function finishHeadroomRemoval(
   ctx: PlanContext,
   phase: HeadroomPhase,
-): DeveloperToolLifecycleResult {
+): Promise<HeadroomRemovalOutcome> {
+  let retirement: PlanResult | undefined;
   try {
-    const retained = retainedHeadroomHostEntries(ctx);
-    if (retained.length > 0) {
-      return {
-        id: "headroom",
-        state: "blocked",
-        detail: recordIncompleteHeadroomRemoval(ctx, retained),
-        changed: false,
-      };
+    const recorded = recordedHeadroomHosts(ctx);
+    if (recorded !== undefined) {
+      const actions = recordedRetirementActions(ctx, recorded.hosts, "headroom", recorded.server);
+      if (actions.length > 0) {
+        retirement = await executePlan(plan("developer-tools", ...actions), ctx);
+      }
+      const retained = retainedRecordedMcpEntries(ctx, recorded.hosts, "headroom", recorded.server);
+      if (retained.length > 0) {
+        return {
+          result: {
+            id: "headroom",
+            state: "blocked",
+            detail: recordIncompleteHeadroomRemoval(ctx, retained),
+            changed: false,
+          },
+          retirement,
+        };
+      }
     }
     const removal = removeHeadroomState(ctx);
     if (phase.result.state === "policy-excluded") {
-      return removal.changed
-        ? { ...phase.result, detail: `${phase.result.detail}; ${removal.detail}`, changed: true }
-        : phase.result;
+      return {
+        result: removal.changed
+          ? { ...phase.result, detail: `${phase.result.detail}; ${removal.detail}`, changed: true }
+          : phase.result,
+        retirement,
+      };
     }
     return {
-      id: "headroom",
-      state: "selected-pending",
-      detail: removal.changed
-        ? `deactivated: ${removal.detail}; AIH-owned MCP entries were removed where unchanged. Selection remains; re-activate with --activate-headroom --accept-headroom-egress`
-        : "not activated; no AIH-owned Headroom state was present",
-      changed: removal.changed,
+      result: {
+        id: "headroom",
+        state: "selected-pending",
+        detail: removal.changed
+          ? `deactivated: ${removal.detail}; AIH-owned MCP entries were removed from every recorded host where unchanged. Selection remains; re-activate with --activate-headroom --accept-headroom-egress`
+          : "not activated; no AIH-owned Headroom state was present",
+        changed: removal.changed,
+      },
+      retirement,
     };
   } catch (error) {
     return {
-      id: "headroom",
-      state: "blocked",
-      detail: error instanceof Error ? error.message : String(error),
-      changed: false,
+      result: {
+        id: "headroom",
+        state: "blocked",
+        detail: error instanceof Error ? error.message : String(error),
+        changed: false,
+      },
+      retirement,
     };
   }
 }
@@ -476,9 +500,13 @@ export async function executeDeveloperToolsCommand(
       ? await deps.projectMcp(runCtx)
       : await executePlan(await mcpCommand.plan(runCtx), runCtx);
   }
-  tools.push(headroom.remove ? finishHeadroomRemoval(runCtx, headroom) : headroom.result);
+  const removal = headroom.remove ? await finishHeadroomRemoval(runCtx, headroom) : undefined;
+  tools.push(removal?.result ?? headroom.result);
   let result = await executePlan(resultPlan(selection, tools, primaryCodeGraph), runCtx);
   if (projected !== undefined) result = combineProjectResults(result, projected);
+  if (removal?.retirement !== undefined) {
+    result = combineProjectResults(result, removal.retirement);
+  }
   result.report = lifecycleReport(tools);
   return withLifecycle(result, selection, tools, primaryCodeGraph, primaryChanged);
 }

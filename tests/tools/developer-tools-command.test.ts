@@ -547,6 +547,38 @@ describe("developer-tools Headroom lifecycle", () => {
     expect(existsSync(scope.layout.stateRoot)).toBe(false);
   });
 
+  it("removes Headroom from every host recorded at activation, even with a narrower --cli", async () => {
+    const scope = headroomScope({
+      commandOptions: { activateHeadroom: true, acceptHeadroomEgress: true },
+    });
+    const deps = { ...scope.deps, projectMcp: undefined };
+    const cursorConfig = join(scope.ctx.root, ".cursor", "mcp.json");
+    const activated = await executeDeveloperToolsCommand(
+      { ...scope.ctx, targets: ["claude", "cursor", "codex"] as Cli[] },
+      deps,
+    );
+    expect(headroomTool(activated)).toMatchObject({ state: "verified" });
+    expect(JSON.parse(readFileSync(cursorConfig, "utf8")).mcpServers.headroom).toBeDefined();
+    const codexConfig = join(scope.ctx.env.HOME as string, ".codex", "config.toml");
+    expect(readFileSync(codexConfig, "utf8")).toContain('[mcp_servers."headroom"]');
+
+    const deactivated = await executeDeveloperToolsCommand(
+      { ...scope.ctx, targets: ["claude"] as Cli[], options: { deactivateHeadroom: true } },
+      deps,
+    );
+    expect(headroomTool(deactivated)).toMatchObject({ state: "selected-pending", changed: true });
+    expect(JSON.parse(readFileSync(cursorConfig, "utf8")).mcpServers.headroom).toBeUndefined();
+    expect(
+      JSON.parse(readFileSync(cursorConfig, "utf8")).mcpServers["code-review-graph"],
+    ).toBeDefined();
+    const codexAfter = readFileSync(codexConfig, "utf8");
+    expect(codexAfter).not.toContain("headroom");
+    expect(codexAfter).toContain('[mcp_servers."code-review-graph"]');
+    const claudeConfig = JSON.parse(readFileSync(join(scope.ctx.root, ".mcp.json"), "utf8"));
+    expect(claudeConfig.mcpServers.headroom).toBeUndefined();
+    expect(existsSync(scope.layout.stateRoot)).toBe(false);
+  });
+
   it("refuses to discard a user-edited Codex Headroom table and records the incomplete host", async () => {
     const scope = headroomScope({
       commandOptions: { activateHeadroom: true, acceptHeadroomEgress: true },
