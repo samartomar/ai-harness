@@ -5,15 +5,16 @@ import { codeUnitCompare } from "../capability/package-graph/canonical.js";
 import { loadCatalogAuthoringBundleV1 } from "../catalog-package/authoring-bundle.js";
 import { loadCatalogCoreMaterialV1 } from "../catalog-package/core-materials.js";
 import { canonicalStrictJsonSha256V1 } from "../contract/strict-json-v1.js";
+import {
+  assertAcquiredGithubSourceMaterialPathsV1,
+  isKnownAcquiredGithubSourceRootV1,
+} from "../internals/bounded-github-source-archive.js";
+import { restoreSourceCompilerTemplateV1 } from "../internals/workbench-source-data-material.js";
 import { verifyAuthoringCatalogBundleIntegrityV1 } from "../org-policy/workbench/catalog-integrity.js";
 import {
   type AuthoringCatalogBundleV1,
   AuthoringCatalogBundleV1Schema,
 } from "../org-policy/workbench/contracts.js";
-import {
-  assertAcquiredGithubSourceMaterialPathsV1,
-  isKnownAcquiredGithubSourceRootV1,
-} from "../internals/bounded-github-source-archive.js";
 import { type BaselineCatalog, defineBaselineCatalog } from "./catalog.js";
 import { baselineCatalogById } from "./catalogs.js";
 import { hashComponentTree, hashSourceTree } from "./hash.js";
@@ -361,13 +362,31 @@ export function registeredCollectionInputV1(id: string): CollectionInput | undef
   return Object.hasOwn(collections, id) ? collections[id] : undefined;
 }
 
+/**
+ * The Catalog may register a collection as a compiler template whose file bytes are
+ * references (path, size, sha256) into the upstream checkout. Restore them from the
+ * checkout, size- and digest-checked, so the snapshot comparison sees real bytes.
+ */
+function restoredCollectionInputV1(sourceRoot: string, input: CollectionInput): CollectionInput {
+  try {
+    return restoreSourceCompilerTemplateV1(input, sourceRoot) as CollectionInput;
+  } catch (error) {
+    throw new TypeError(
+      `Scanner source differs from reviewed snapshot bytes (${error instanceof Error ? error.message : String(error)})`,
+    );
+  }
+}
+
 export function prepareRegisteredScannerCatalogV1(sourceRoot: string, id: string) {
   const collections = collectionInputsV1();
   const collection = Object.hasOwn(collections, id) ? collections[id] : undefined;
   if (collection)
     return enforceAcquiredCoveragePathsV1(
       sourceRoot,
-      prepareCollectionScannerCoverageV1(sourceRoot, collection),
+      prepareCollectionScannerCoverageV1(
+        sourceRoot,
+        restoredCollectionInputV1(sourceRoot, collection),
+      ),
     );
   if (id === "ecc" || id === "superpowers")
     return enforceAcquiredCoveragePathsV1(
