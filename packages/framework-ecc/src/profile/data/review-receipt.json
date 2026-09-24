@@ -1,0 +1,7 @@
+{
+  "receiptVersion": 1,
+  "id": "pinned-source-evidence-v1",
+  "repository": "affaan-m/ECC",
+  "sourceCommit": "0c1d7be9a750627fb2a6534c78a998cc46d03f9c",
+  "evidence": "minimal pinned manifest and inventory evidence accepted for resolver tests"
+}

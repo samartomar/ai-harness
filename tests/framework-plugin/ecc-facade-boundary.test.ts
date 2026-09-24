@@ -37,19 +37,31 @@ const ECC_PROFILE_FRAMEWORK_MODULES = new Set([
 const W1_CATALOG_PRODUCERS = new Set([
   "src/baseline-evidence/catalog-providers/ecc.ts",
   "src/baseline-evidence/ecc-preview-boundary.ts",
-  "src/internals/prepare-packaged-workbench-source-data.ts",
   "src/internals/verify-packaged-workbench-source-data.ts",
   "src/org-policy/catalog-providers/ecc.ts",
-  "src/org-policy/workbench/core/packaged-source-data.ts",
-  "src/org-policy/workbench/core/source-data-local-receipt.ts",
-  "src/org-policy/workbench/core/source-data-runtime-descriptor-custody.ts",
-  "src/org-policy/workbench/core/source-data-scanner.ts",
-  "src/org-policy/workbench/core/source-data.ts",
+]);
+
+/**
+ * `src/ecc` modules that stay in Core after phase 2: the materialization
+ * receipt, its filesystem guards and install manifest (uninstall and receipts
+ * read them without the plugin), the runtime descriptor Core evaluates, and
+ * Catalog producer tooling for the install preview. The framework-host library
+ * re-exports them to the plugin, so they are not ECC framework code.
+ */
+const KEEP_IN_CORE = new Set([
+  "src/ecc/install-manifest.ts",
+  "src/ecc/install-preview-generate.ts",
+  "src/ecc/install-preview-validate.ts",
+  "src/ecc/materialization-fs.ts",
+  "src/ecc/materialization-receipt.ts",
+  "src/ecc/runtime-descriptor.ts",
+  "src/ecc/runtime-descriptor-evaluation.ts",
 ]);
 
 function isEccFrameworkModule(path: string): boolean {
   const withTs = path.replace(/\.js$/, ".ts");
   const rel = toPosix(withTs);
+  if (KEEP_IN_CORE.has(rel)) return false;
   if (rel.startsWith("src/ecc/")) return true;
   return (
     rel.startsWith("src/ecc-profile/") &&

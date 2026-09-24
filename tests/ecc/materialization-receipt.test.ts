@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { BaselineAuthorization } from "../../src/baseline-evidence/verify.js";
 import {
+  AuthorizationSchema,
   assertOwnedRelativePath,
   ECC_MATERIALIZATION_RECEIPT_FORMAT,
   ECC_MATERIALIZATION_RECEIPT_PATH,
@@ -15,11 +16,7 @@ import {
   readEccMaterializationReceipt,
   serializeEccMaterializationReceipt,
 } from "../../src/ecc/materialization-receipt.js";
-import {
-  AuthorizationSchema,
-  emptyRegistrationLedger,
-  mergeRegistrationLedger,
-} from "../../src/ecc/registration.js";
+import { emptyRegistrationLedger, mergeRegistrationLedger } from "../../src/ecc/registration.js";
 
 let root: string;
 

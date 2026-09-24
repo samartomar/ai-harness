@@ -1,9 +1,25 @@
+import type { baselineCatalogById } from "../baseline-evidence/catalogs.js";
+import type { executeBaselineEvidencePipeline } from "../baseline-evidence/pipeline.js";
 import type { BaselineAuthorization, BaselineHeldComponent } from "../baseline-evidence/verify.js";
+import type { loadCatalogPackageV1 } from "../catalog-package/load-catalog-package.js";
 import type { Posture } from "../config/posture.js";
 import type { Cli } from "../internals/clis.js";
-import type { PlanResult } from "../internals/execute.js";
-import type { Action, Plan } from "../internals/plan.js";
+import type { executePlan, PlanResult } from "../internals/execute.js";
+import type { Action, Plan, PlanContext } from "../internals/plan.js";
 import type { Check } from "../internals/verify.js";
+import type {
+  assertPolicyBindingCurrent,
+  policyBindingFileAssertion,
+} from "../org-policy/binding.js";
+import type { assertOrgPolicyMutationSource } from "../org-policy/drift.js";
+import type { verifiedOrgPolicyTargets } from "../org-policy/project.js";
+import type { readOrgPolicy } from "../org-policy/schema.js";
+import type {
+  historicalEccRuntimeDescriptorsFromSourceDataV1,
+  workbenchSourceDataRootV1,
+} from "../org-policy/workbench/core/source-data.js";
+import type { consumeWorkbenchPolicy } from "../org-policy/workbench/policy-consumption.js";
+import type { cleanupQuarantine, resolveTrustSource } from "../trust/fetch.js";
 
 /**
  * Framework plugin contract, version 1 (C3).
@@ -116,6 +132,8 @@ export interface FrameworkComponentsV1 {
   readonly frameworkId: FrameworkIdV1;
   readonly upstream: FrameworkUpstreamV1;
   readonly components: readonly FrameworkComponentV1[];
+  /** Language packs the framework selects for the stack detected at the target root, when it has packs. */
+  readonly languagePacks?: readonly string[];
 }
 
 /** How a hook declaration runs on its host. */
@@ -146,12 +164,28 @@ export interface FrameworkHookV1 {
   readonly summary: string;
   readonly declarations: readonly FrameworkHookDeclarationV1[];
   readonly upstreamControl: FrameworkHookUpstreamControlV1;
+  /** The upstream hook profiles that run this hook, when the framework has profiles. */
+  readonly profiles?: readonly string[];
+  /**
+   * False when the upstream cannot turn this one hook off on its own (for
+   * example an outer wrapper whose children own the gates). A disable request
+   * for such a hook is refused. Absent means eligible.
+   */
+  readonly disableEligible?: boolean;
+}
+
+/** One upstream hook profile a framework offers. */
+export interface FrameworkHookProfileV1 {
+  readonly id: string;
+  readonly label: string;
 }
 
 export interface FrameworkHookInventoryV1 {
   readonly frameworkId: FrameworkIdV1;
   readonly upstream: FrameworkUpstreamV1;
   readonly hooks: readonly FrameworkHookV1[];
+  /** The upstream hook profiles, when the framework has profiles. */
+  readonly profiles?: readonly FrameworkHookProfileV1[];
 }
 
 /** Who asked for a hook to be disabled. Enterprise policy outranks a user request. */
@@ -162,9 +196,21 @@ export interface FrameworkHookDisableRequestV1 {
   readonly authority: FrameworkHookControlAuthorityV1;
 }
 
-/** The hooks Core's effective policy view disables for this invocation. */
+/** An upstream hook profile choice and who made it. */
+export interface FrameworkHookProfileRequestV1 {
+  readonly id: string;
+  readonly authority: FrameworkHookControlAuthorityV1;
+}
+
+/**
+ * The hook controls Core's effective policy view carries for this invocation:
+ * enterprise policy (`governance.frameworkHookControls`) merged with the
+ * project user's list (`.aih-config.json` `frameworkHookControls`). A user can
+ * only add disables; an enterprise profile outranks a user profile.
+ */
 export interface FrameworkHookControlRequestV1 {
   readonly disabled: readonly FrameworkHookDisableRequestV1[];
+  readonly profile?: FrameworkHookProfileRequestV1;
 }
 
 /**
@@ -192,11 +238,27 @@ export interface FrameworkHookControlDecisionV1 {
   readonly hosts: readonly FrameworkHookHostDecisionV1[];
 }
 
+/**
+ * Upstream switches read from a host's settings environment. Core applies the
+ * patch through its hook registrar into the host's settings file and records
+ * a receipt that owns exactly `keys`; an owned key absent from `set` is
+ * removed. Today Core's registrar serves the `claude` host.
+ */
+export interface FrameworkHookEnvironmentPatchV1 {
+  readonly host: "claude";
+  /** Every environment key this framework's hook controls may own. */
+  readonly keys: readonly string[];
+  /** The values to set; each key must be in `keys`. */
+  readonly set: Readonly<Record<string, string>>;
+}
+
 export interface FrameworkHookControlPlanV1 {
   readonly frameworkId: FrameworkIdV1;
   readonly decisions: readonly FrameworkHookControlDecisionV1[];
-  /** Actions that apply the controls (writes) and label what aih cannot enforce (docs). */
+  /** Actions that label what aih cannot enforce (docs). */
   readonly actions: readonly Action[];
+  /** The upstream switches Core applies, when the framework's hooks read one. */
+  readonly environment?: FrameworkHookEnvironmentPatchV1;
 }
 
 /** The effective policy view Core decided for this invocation. */
@@ -242,6 +304,36 @@ export interface FrameworkEvidenceGatedInstallRequestV1 {
   readonly buildInstallPlan: (verified: FrameworkVerifiedSourceV1) => Plan | Promise<Plan>;
 }
 
+/**
+ * Core's effectful and policy-bound operations, bound by Core to ONE framework
+ * invocation. Each member has the signature of the Core function it names; the
+ * bound member runs Core's own implementation under the invocation's decisions:
+ * `executePlan` and the evidence pipeline carry the invocation's policy
+ * transaction pins and refuse a plan context for another root, policy readers
+ * read the invocation's own environment, and every member refuses once the
+ * invocation has ended. A framework implementation reaches executors, source
+ * acquisition, policy and Catalog reads ONLY through this runtime; the
+ * `@aihq/core/framework-host` imports carry no effect of their own.
+ */
+export interface FrameworkCoreRuntimeV1 {
+  /** The invocation's plan context, with `targets` resolved and the policy decided. */
+  readonly planContext: PlanContext;
+  readonly executePlan: typeof executePlan;
+  readonly executeBaselineEvidencePipeline: typeof executeBaselineEvidencePipeline;
+  readonly resolveTrustSource: typeof resolveTrustSource;
+  readonly cleanupQuarantine: typeof cleanupQuarantine;
+  readonly verifiedOrgPolicyTargets: typeof verifiedOrgPolicyTargets;
+  readonly assertPolicyBindingCurrent: typeof assertPolicyBindingCurrent;
+  readonly policyBindingFileAssertion: typeof policyBindingFileAssertion;
+  readonly assertOrgPolicyMutationSource: typeof assertOrgPolicyMutationSource;
+  readonly readOrgPolicy: typeof readOrgPolicy;
+  readonly baselineCatalogById: typeof baselineCatalogById;
+  readonly loadCatalogPackageV1: typeof loadCatalogPackageV1;
+  readonly historicalEccRuntimeDescriptorsFromSourceDataV1: typeof historicalEccRuntimeDescriptorsFromSourceDataV1;
+  readonly workbenchSourceDataRootV1: typeof workbenchSourceDataRootV1;
+  readonly consumeWorkbenchPolicy: typeof consumeWorkbenchPolicy;
+}
+
 /** Effectful services Core binds to one invocation. */
 export interface FrameworkHostServicesV1 {
   runEvidenceGatedInstall(request: FrameworkEvidenceGatedInstallRequestV1): Promise<PlanResult>;
@@ -253,6 +345,12 @@ export interface FrameworkHostServicesV1 {
   executePlan(plan: Plan): Promise<PlanResult>;
   /** One bounded progress line on the command's diagnostic channel. */
   progress(message: string): void;
+  /**
+   * Core's executors and policy readers, bound to this invocation and revoked
+   * when it ends. Present only for command operations; read-only operations
+   * (description, inventory, component identification) get none.
+   */
+  readonly runtime?: FrameworkCoreRuntimeV1;
 }
 
 /** Everything one plugin operation receives. Built by Core; never raw Catalog handles. */

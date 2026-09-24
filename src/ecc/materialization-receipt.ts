@@ -4,7 +4,6 @@ import { z } from "zod";
 import { SUPPORTED_CLIS } from "../internals/clis.js";
 import { inspectContainedRelativePath } from "../internals/contained-path.js";
 import { readRegularFileWithStats } from "../internals/fsxn.js";
-import { AuthorizationSchema } from "./registration.js";
 
 /**
  * The per-component materialization receipt (F5).
@@ -64,8 +63,8 @@ const SHA256 = /^[a-f0-9]{64}$/;
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
 
 /**
- * The ledger's own authorization schema, referenced rather than restated. A
- * restatement cannot notice a field ADDED upstream, which is the likeliest
+ * The evidence authorization schema, shared with the ECC registration ledger
+ * rather than restated. A restatement cannot notice a field ADDED upstream, which is the likeliest
  * direction of drift; sharing the object makes the two contracts the same
  * contract.
  */
@@ -225,6 +224,32 @@ const normalizedDestinationPath = z
   }, "owned destination path is unsafe or not normalized");
 
 const ComponentIdSchema = z.string().min(3).max(160).regex(COMPONENT_ID);
+
+/**
+ * The evidence authorization tuple. Exported so a sibling ownership record can
+ * REFERENCE this schema instead of restating it — a restatement cannot detect a
+ * field added here, which is the likeliest direction of drift.
+ */
+export const AuthorizationSchema = z
+  .object({
+    componentId: ComponentIdSchema,
+    source: z.string().min(1).max(240),
+    pinnedSha: z.string().regex(SHA40),
+    treeSha256: z.string().regex(SHA256),
+    tier: z.enum(["vendor", "org"]),
+    issuer: z.string().min(1).max(240),
+    evidenceSha256: z.string().regex(SHA256),
+    effective: z.enum(["pass", "accepted-with-conditions"]).optional(),
+    acceptance: z
+      .object({
+        decisionId: z.string().min(1).max(240),
+        recordSha256: z.string().regex(SHA256),
+        acceptedFindingCodes: z.array(z.string().min(1).max(120)).max(64),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
 
 const ComponentSourcePathSchema = z
   .string()

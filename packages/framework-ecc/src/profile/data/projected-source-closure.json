@@ -1,0 +1,2664 @@
+{
+  "receiptVersion": 1,
+  "id": "ecc-projected-source-closure-v1",
+  "repository": "affaan-m/ECC",
+  "sourceCommit": "0c1d7be9a750627fb2a6534c78a998cc46d03f9c",
+  "fileCount": 379,
+  "totalBytes": 2672419,
+  "aggregateSha256": "8dadd2c412511d690555243773f8bc4a0ed1e7ba43fc0804bc1d955b3b7bca37",
+  "entries": [
+    {
+      "path": "agents/a11y-architect.md",
+      "rawSha256": "88e684476cbc449a2444a1218a79034d275465f375ce45b6d86ab99958bf45e7",
+      "bytes": 7339,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/agent-evaluator.md",
+      "rawSha256": "ea9f0a419e0fa0844df5e0951c6ad087a059dff43b59bba03018801c1b53a545",
+      "bytes": 8124,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/architect.md",
+      "rawSha256": "6b8e1e8bd274995f3949691731f4334820c061d3054eaea3be2ce163386d1f24",
+      "bytes": 7276,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/build-error-resolver.md",
+      "rawSha256": "acc9e14df59dd28d00f966b3a6cf0d9aeeda7e8a9ab7f1bc442466c0219c35ec",
+      "bytes": 4749,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/chief-of-staff.md",
+      "rawSha256": "d3dca9a474011410256dfcd0cc553f926bd30b4efdaaf6ec41b4f6ec86e88e6f",
+      "bytes": 6600,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/code-architect.md",
+      "rawSha256": "1a2ce1d231b7427ff863522f6f19e7738cd668279ac60af520aa0c45ac14772b",
+      "bytes": 2525,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/code-explorer.md",
+      "rawSha256": "3dbb33769147f6c7ffb739c550b7b8867e1b8ea84f1179197fdbc3028dc34fb7",
+      "bytes": 2585,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/code-reviewer.md",
+      "rawSha256": "9dd23be23d65f18126e10f7680fc1eb2576ec54a427d076ff2f870bd0bafd5d2",
+      "bytes": 13877,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/code-simplifier.md",
+      "rawSha256": "4020b1466f4a635ed33b87a3d734bda45363514defc7d1613b81d5c59e426c6b",
+      "bytes": 2265,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/comment-analyzer.md",
+      "rawSha256": "ce7fdf759885ba9ef5ee1bdc9da4ce88d78ba65501facf53e581082fcf402b07",
+      "bytes": 2034,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/conversation-analyzer.md",
+      "rawSha256": "f86fcf4317a41158dc55641f606c97a8d4d3ccacf7157ff70e0811ca7b42ba75",
+      "bytes": 2435,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/cpp-build-resolver.md",
+      "rawSha256": "0a06faff0f6be85989a22c79647743d872c3348ca772ee860f048035473c1675",
+      "bytes": 4108,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/cpp-reviewer.md",
+      "rawSha256": "c34ee3291505ea66d4330268babbd9cbc899e32b7869ca71cca1690b4ce3cf22",
+      "bytes": 3972,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/csharp-reviewer.md",
+      "rawSha256": "34652d6a39387d0d008a90804b1b271ae62bba77abaf9537b79bd7705b1724e0",
+      "bytes": 5692,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/dart-build-resolver.md",
+      "rawSha256": "2715aa7b58fae3667493a089afbfa891dfe20d24e555e90ddfdd732d10104d1f",
+      "bytes": 7671,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/database-reviewer.md",
+      "rawSha256": "945c107dea01ca74e3e9bc3a5841e79e744673e8f14697e88cf1cfd9c01a1cc5",
+      "bytes": 5314,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/django-build-resolver.md",
+      "rawSha256": "643f1445336ef801f49cc56a00ad09af3435124ef841f4b023be19ee50662b29",
+      "bytes": 9519,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/django-reviewer.md",
+      "rawSha256": "d116bccee67db3d1f52f54f819a04467fe7dd2b0004ec85d21f218a6aacf6346",
+      "bytes": 7985,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/doc-updater.md",
+      "rawSha256": "3652d351df1cec43360fc2106a31fac3946e24b04885bf25550abbb5145079f6",
+      "bytes": 4362,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/docs-lookup.md",
+      "rawSha256": "11560171e4535419e7917158d0de3bc7bbbf0408f83f61f0f3558b356802419e",
+      "bytes": 4566,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/e2e-runner.md",
+      "rawSha256": "94811f4bbc491c351cdf220ab103d6bd251fb1d88d9d46ba4c8162637a236a5b",
+      "bytes": 5079,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/fastapi-reviewer.md",
+      "rawSha256": "d8704e52fda045fa72cfc51de7937aa4e313b2161279ff8e11d878f6ab8a0d81",
+      "bytes": 3514,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/flutter-reviewer.md",
+      "rawSha256": "26a78d27db9a035204c9c517314c880a5ea4419500da319acdb643b84d59b0b8",
+      "bytes": 15239,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/fsharp-reviewer.md",
+      "rawSha256": "24200e4814ddbdb32ed2eeb5b6aecabbb3d655d5ba0de7b2a054638fe12e7c5a",
+      "bytes": 5618,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/gan-evaluator.md",
+      "rawSha256": "598cb83f2cfd9dcce1f6ac02927ca20e5dd070ad619749dd001df1b674fbe7c1",
+      "bytes": 7951,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/gan-generator.md",
+      "rawSha256": "52411e8bb705284ef0be36a86b9df69d7365cda84a2780d5e3c2d64e6019a352",
+      "bytes": 5891,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/gan-planner.md",
+      "rawSha256": "852f8ac7cc1761186ec6f48e1b1be65cc32307a182062e0cebb84aae2d3ca901",
+      "bytes": 4502,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/go-build-resolver.md",
+      "rawSha256": "fa191d2a3c66915402b343a8f2da21090bb330968e62a8615739acccfce90424",
+      "bytes": 4245,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/go-reviewer.md",
+      "rawSha256": "be174fc66f6be1ade25f496548ba7040c00894aec81da163863b046d44233e39",
+      "bytes": 3771,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/harmonyos-app-resolver.md",
+      "rawSha256": "2385d05160744130f6f5fadbae0314a7500db92da13719779dac41eb53ae1202",
+      "bytes": 9383,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/harness-optimizer.md",
+      "rawSha256": "5ebfb9b9d2b23418c34cd3d669fb6434f9b63d782b761553fd5a9d7891334aff",
+      "bytes": 1909,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/healthcare-reviewer.md",
+      "rawSha256": "ffe0855862276f94bd47fbbdeba0d233b7ca2c8647bce784c94f61c382e3cc69",
+      "bytes": 4304,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/homelab-architect.md",
+      "rawSha256": "d851727c8d07d2c44ea953d1ccab812865de3ba4b693d0392e86ba52187664bc",
+      "bytes": 4505,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/java-build-resolver.md",
+      "rawSha256": "6dc1da9c6ac9f39671dcf1013a8e8ab30cccf3604808d7da1b0a21935c1ac537",
+      "bytes": 12181,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/java-reviewer.md",
+      "rawSha256": "e768811020978d62930e8a1de33d674f07fbd479073de570df57c143b8eb33b6",
+      "bytes": 13333,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/kotlin-build-resolver.md",
+      "rawSha256": "db6796bdc2294d795bac286f7c04f4e6048af8acb3faf80edfc110285172e16b",
+      "bytes": 5203,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/kotlin-reviewer.md",
+      "rawSha256": "be82de3435c4b7b48e4ff9589e8c211d80fafa5c8c9ac98d6572c88004519858",
+      "bytes": 7679,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/loop-operator.md",
+      "rawSha256": "51f8283a56b799c2bd2c2455b3480e949656cbf997ea2feb34a972d3d6400f22",
+      "bytes": 1903,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/marketing-agent.md",
+      "rawSha256": "9d9cdcde2f90ba36ac488065beaa4fc3b74ff5a91507e504b9ea2cc608213cf8",
+      "bytes": 7275,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/mle-reviewer.md",
+      "rawSha256": "c505be5fccea9d067775b86fed76bc4b84e63e17090855ac135694adbc83a7f8",
+      "bytes": 10253,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/network-architect.md",
+      "rawSha256": "1b434aa8496a1cb8c39add08d0c68a4b27af8378de725f370d7682c02a56997e",
+      "bytes": 4823,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/network-config-reviewer.md",
+      "rawSha256": "12b2b04d8235941f6a9a0d42a679c581ce89963172d5fb0f63abb4202521593f",
+      "bytes": 4351,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/network-troubleshooter.md",
+      "rawSha256": "64528c41b59eea2cb4ac642bd3197bbadc8c456f3601520e410cf606e848fb07",
+      "bytes": 4292,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/opensource-forker.md",
+      "rawSha256": "3b302c2d4b080509a1f290e74412eb8076bec9aa42438e74c52fe519f8ff0242",
+      "bytes": 7385,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/opensource-packager.md",
+      "rawSha256": "996f528ac789b3c19ded6bf7c25217a3e9e7c1e6d320a4f9d69f17252815cb16",
+      "bytes": 7940,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/opensource-sanitizer.md",
+      "rawSha256": "cee1d6cf26759c085fe090ca5ac92d37c5dbeceef0f1b00434369a6e812da371",
+      "bytes": 7153,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/performance-optimizer.md",
+      "rawSha256": "76d00a70fcc07a0b207f6b517d54078fa7a59f29e157fea72bf5f1d9cab8f9b2",
+      "bytes": 13454,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/php-reviewer.md",
+      "rawSha256": "5ea9c18d0adedcf6ef7d46cc35ec91cdde2fa8fc3cfe1d1ece477347cb1a4a30",
+      "bytes": 5712,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/planner.md",
+      "rawSha256": "63aba865206bac9cb5887542fb01b97656e7701faff98e091aa77057ba9860bc",
+      "bytes": 8055,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/pr-test-analyzer.md",
+      "rawSha256": "5432aaf7e5fcb0813ac21828382971cc00f17d56ee95eac6d0ce180fc5d58016",
+      "bytes": 1937,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/python-reviewer.md",
+      "rawSha256": "d2180b115f5840383268c13d5d075b0541fe7ef2a1ac8ecd5d835266ca1b27ce",
+      "bytes": 4391,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/pytorch-build-resolver.md",
+      "rawSha256": "5ec08de6c6b616b068e7075be4496edd3e4ef3b041f0095a2e073131a58a9f7c",
+      "bytes": 6499,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/react-build-resolver.md",
+      "rawSha256": "a29dec6de18ac3d7b65c746f8133c1f14de5886592fa340c5c2a62fe7c4584e0",
+      "bytes": 11187,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/react-reviewer.md",
+      "rawSha256": "17d0286b4f101e27b818cad026a6bfc1f9fd3e7f9b52c8414e6ea2a05481995a",
+      "bytes": 11411,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/refactor-cleaner.md",
+      "rawSha256": "13704c3aee163bcbf6bcbf7a7933630a70d6c312ff3ee5a29bff63b8800484cc",
+      "bytes": 3686,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/rust-build-resolver.md",
+      "rawSha256": "78c75c6be38ff376963b3c5b26d60dce0491064481d1a61e842a6d2879534e82",
+      "bytes": 6857,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/rust-reviewer.md",
+      "rawSha256": "10af67c5764677596d43f32a952d8ec28662bb353fd986d726daefd3382ebeca",
+      "bytes": 5656,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/security-reviewer.md",
+      "rawSha256": "813e4062bed5f42ab25dd02a0070f682058ffe9508198fcfdbb2c31296f93b7b",
+      "bytes": 5446,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/seo-specialist.md",
+      "rawSha256": "40a66d601113669585cf6abbf4c9ae2bf134ef23ffdb78c45223733dbde90a2c",
+      "bytes": 2846,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/silent-failure-hunter.md",
+      "rawSha256": "e5e2094c6f50cc515a77376331c78e4955d5ff16c7a0e5d8f6edec692b7ebd8d",
+      "bytes": 1989,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/spec-miner.md",
+      "rawSha256": "a9270c2012e2dc979f153a481cdfdc7c5413e8774f579ada0319c00ea8903ba2",
+      "bytes": 15108,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/swift-build-resolver.md",
+      "rawSha256": "219e9e37151e385c0eae69b28306897e2a21ba1dbad5ed3077801c822c98b156",
+      "bytes": 7234,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/swift-reviewer.md",
+      "rawSha256": "b8de7f16fafef82645aca3923b0c4fdbe619433c5df9386b3737fb6591545e8b",
+      "bytes": 7325,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/tdd-guide.md",
+      "rawSha256": "979afbb40c42bfdd02fc308c130d7e257f5d6dd5f6531ef2562644862f6b7771",
+      "bytes": 3865,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/type-design-analyzer.md",
+      "rawSha256": "753908aadd759d4710e07ac1a0ba8a6fbc0bc35fe369cadd3ede9655da5d1c49",
+      "bytes": 1881,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/typescript-reviewer.md",
+      "rawSha256": "6b012db1a9039870c4f040975144a0d4e3592510d6332e2d260f02859ec66da1",
+      "bytes": 9068,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "agents/vue-reviewer.md",
+      "rawSha256": "c675814544f06703cf34347c24c630267073d6ee605e70820fc1c1a74e71358a",
+      "bytes": 15319,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/aside.md",
+      "rawSha256": "828d2739fce0b0d1cce5b5c69b277c445f21c853547e23b317d7fb0cb63ed800",
+      "bytes": 5946,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/auto-update.md",
+      "rawSha256": "ab2bedd89a8750d3aba8fbcded9c039697b9e0e1e360908b0cef25cce5556aeb",
+      "bytes": 1912,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/build-fix.md",
+      "rawSha256": "2620e3b8733d227205b0d48c3ac0b68db026c6bb97a3049bf927917d7eb51189",
+      "bytes": 2423,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/checkpoint.md",
+      "rawSha256": "92926e49d18f18d52244f14d5f0962e69b2fc9c65dcf3b5775b1649a2aa494be",
+      "bytes": 1622,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/code-review.md",
+      "rawSha256": "20f4b8fcf132d6563ae0afb3d6d695ac8d4d85f3d36b15da83de30b041cce107",
+      "bytes": 8179,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/cost-report.md",
+      "rawSha256": "65ce57cef961ad6bde521014f212cbbc020eca0def7b5524438139b2b2054fbe",
+      "bytes": 3916,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/cpp-build.md",
+      "rawSha256": "0850ec6adad0e96d832ebf584c34788a8d98998a8e05743166c1c1e0057c23ef",
+      "bytes": 4030,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/cpp-review.md",
+      "rawSha256": "58a0e058207bb8e96d6fe02f1a71db77157f30121dd5c7aec32c0f4a91523576",
+      "bytes": 3456,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/cpp-test.md",
+      "rawSha256": "6bd5d550a008568a9227c942c9b71038c430ab63b32fcf96d0a9b5f416eacb9f",
+      "bytes": 5880,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/ecc-guide.md",
+      "rawSha256": "1d1a16c9d0341674744039586bcb55d90fb329cbf8dac68a910cc4a610340ccf",
+      "bytes": 3052,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/epic-claim.md",
+      "rawSha256": "fab151e31f5ed680cff1e171c65870ab18dbdd481fe5b94378dc57f98b0eb6ab",
+      "bytes": 608,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/epic-decompose.md",
+      "rawSha256": "cc5ddee38eb6f87bc995e686b474b8b57e04aaf35394cfaaa3fd1ae5a579d5b1",
+      "bytes": 528,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/epic-publish.md",
+      "rawSha256": "d13da877f7e0a4a632a7bbc2acf5e9fb1e28ad1d6b554f2c7cd7dd3198ce4cd4",
+      "bytes": 484,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/epic-review.md",
+      "rawSha256": "4c9ce11bb8d7375f6d2128e0883071ccbf4162df8ed445e565706983f6c17b42",
+      "bytes": 519,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/epic-sync.md",
+      "rawSha256": "b191bedc4bfafb8a03818042dbc87ed175930e27a042c112c219912626dceb79",
+      "bytes": 517,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/epic-unblock.md",
+      "rawSha256": "48c1868f03b6ceda7a923d98c76206a35eefa91774a61a0d9d4c18ea5713a4e7",
+      "bytes": 493,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/epic-validate.md",
+      "rawSha256": "894516dd4de62c6c28254c841f11a6ae461869cb8e78c4eff984fb108c2d92ad",
+      "bytes": 504,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/evolve.md",
+      "rawSha256": "c8f94e2d2517539fd3e3cf05edb5a7187a887d76f2c936798e93e546f8b30ebb",
+      "bytes": 4521,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/fastapi-review.md",
+      "rawSha256": "758f6c55befc3255e5b1c1dc6df41453b21543a93b6aa9df0fb1be9e334831a8",
+      "bytes": 1007,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/feature-dev.md",
+      "rawSha256": "b446c316f680a1ab709f2eabff15d5e88b57396f4581ea8b0f9260d04bd4be34",
+      "bytes": 1282,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/flutter-build.md",
+      "rawSha256": "589c18404b15703bd306023d0210b8f974a395dc4b00c5bc70d41cb64a0da627",
+      "bytes": 4085,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/flutter-review.md",
+      "rawSha256": "631142330e5884cd0dae2d404d183b0dda4c5f6b1752a21e7d1e70b0be6d2e28",
+      "bytes": 3955,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/flutter-test.md",
+      "rawSha256": "22d547f9a255ddbbcebdcc90ca48a6865896f8cf00d39ed5d3e49504d716c363",
+      "bytes": 3839,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/gan-build.md",
+      "rawSha256": "b3c4b47a40cfcdf386b9bff327a7237ea405e97fdafdc8cd421075dfd35175ea",
+      "bytes": 3253,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/gan-design.md",
+      "rawSha256": "0f0d80a171d4637b1cd38998f5f260cdc445473b7b81a170f50b8491103f9723",
+      "bytes": 1796,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/go-build.md",
+      "rawSha256": "916659397d2e01f9bf211fca43a8a2f79eb73d6382fccd516b240b5d0e5f37a0",
+      "bytes": 3792,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/go-review.md",
+      "rawSha256": "73a29ec62007e25490d0962ed52fe196eac3df31c6ccd774b10c9a8e07b63b39",
+      "bytes": 3436,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/go-test.md",
+      "rawSha256": "4e091753684305224b5b8f5f497cb66f14383530659a95b9d327f3c8b3b2c0e3",
+      "bytes": 5635,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/gradle-build.md",
+      "rawSha256": "c2aa086148316326ae10ee97229d040a0b7a9b743c016bfad4032ce96bb097a9",
+      "bytes": 2550,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/harness-audit.md",
+      "rawSha256": "8fb765c7fbad1ee9f8e43ed5f09c9239799102636a05541fea5f646bec189e2a",
+      "bytes": 3051,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/hookify-configure.md",
+      "rawSha256": "a059c23f885d36e3597daa03b7bf77cbb79a2a87e5856ca4bede4eb3b816082a",
+      "bytes": 390,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/hookify-help.md",
+      "rawSha256": "11c4beec77187548978f4022cf76b3e077c0a04365f0b0d2464d06ca053c91a2",
+      "bytes": 1187,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/hookify-list.md",
+      "rawSha256": "b513140d7a93527d5d8beabd4cb1aacaa296c00ac96586bc946466014f31a3cc",
+      "bytes": 484,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/hookify.md",
+      "rawSha256": "2fd94b585a1267717ed88276054e320251ceb47f95e6b53bfc31d9527193e8b5",
+      "bytes": 1235,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/instinct-export.md",
+      "rawSha256": "cd2052ae1b9c49f75ad81aae6e236be959cc6656d32e3b8f3e6e13d2d3bd2d3c",
+      "bytes": 1645,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/instinct-import.md",
+      "rawSha256": "30514ada563953a1eafa46a09644831969aaae7672068777267e0b801814e7d9",
+      "bytes": 2839,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/instinct-status.md",
+      "rawSha256": "4c6dfbea0a0a9105121410391b05983f71f4317ccf166a52955fc5972600fcce",
+      "bytes": 2648,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/jira.md",
+      "rawSha256": "0503ced85e1144d03c1bb32f0f34003c9cc6c8f17d05a516ce6d5902a5f62c8b",
+      "bytes": 3069,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/kotlin-build.md",
+      "rawSha256": "2a5ea5ae245b5ab54d22cd2c539890fee4695ad0bb93b38898f15d4452044564",
+      "bytes": 4351,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/kotlin-review.md",
+      "rawSha256": "3b18cb5e03a577a411d77c44bd47cfd1007666701d7aa3c0d850bbb73ab3e3c7",
+      "bytes": 3628,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/kotlin-test.md",
+      "rawSha256": "4c6dd961714ecacddf8fc7c72e9930b323100a7a5eef8cc0f40e176f2ee2044c",
+      "bytes": 7609,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/learn-eval.md",
+      "rawSha256": "93fd916f8ff49e104d807755eb24dba99ba9e9c17fed3b7566859e3a9f04c605",
+      "bytes": 7406,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/learn.md",
+      "rawSha256": "09b017864835f3b730bd21eb234263d52dc4162df60887c0b56b956f8388037c",
+      "bytes": 3519,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/loop-start.md",
+      "rawSha256": "fa36f7396f07e70e9110e9f5920f9229aa87d7f0a122190b3d85d031aa3bc29e",
+      "bytes": 997,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/loop-status.md",
+      "rawSha256": "74ca3ff7a7249f5d0bc7f87cdec882ef1f682ebc6567653eac5bb7ebaeae8b2e",
+      "bytes": 2617,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/marketing-campaign.md",
+      "rawSha256": "38535a134a89213b95e43997018267dde2acc7eb2d0bb222685847d85746ab53",
+      "bytes": 3940,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/model-route.md",
+      "rawSha256": "2e9789cb610bfa1a382dbaa46480a03aa976445d23b9ff719e4358bafa7292eb",
+      "bytes": 697,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/multi-backend.md",
+      "rawSha256": "38512263b611f3fb7139366dfcdb0b40b9d782520e50042f177160dd76bc5d8b",
+      "bytes": 5604,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/multi-execute.md",
+      "rawSha256": "b7699381b734e5820bc237404616a5ef8fc18064c0a765d4781ffe14c227effe",
+      "bytes": 11021,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/multi-frontend.md",
+      "rawSha256": "9f3dbfa23c60ab386848d9c6409fd5af54f90bd0fc0bc823a48798b30c762545",
+      "bytes": 5669,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/multi-plan.md",
+      "rawSha256": "dae00cd57002f82721077030c6e3e463b895009cf320d5a04344df6d3063cca6",
+      "bytes": 9764,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/multi-workflow.md",
+      "rawSha256": "08439d739498a6bdd7c7da614588430a959c7bc6f821f4a4206b5f0ca72ce3e3",
+      "bytes": 8046,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/orch-add-feature.md",
+      "rawSha256": "e46c1d23fc4f269713c6743b0ba403f13916c0c617ca2e4e0526efc897c133ed",
+      "bytes": 1173,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/orch-build-mvp.md",
+      "rawSha256": "2180c00649cd6c73e2e1a204f0039b317c192e9ca4dbb69d1cfae88aa23543b5",
+      "bytes": 1309,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/orch-change-feature.md",
+      "rawSha256": "9315a445ddeeb50410e5a3893f930a2db3a19ca14ec5121b3071fe4b834375e8",
+      "bytes": 1388,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/orch-fix-defect.md",
+      "rawSha256": "9f1269a9103f49425fa24303b82846a170093e2ddf32d95b4dc12b14690652a0",
+      "bytes": 1272,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/orch-refine-code.md",
+      "rawSha256": "2f282b49d84b15cfcd5a0c75c31d03f7f30a8ba4936bac1029ad246402d94af8",
+      "bytes": 1477,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/orch-review.md",
+      "rawSha256": "c22fe6fb312e788e3c3779774aafdfa26295a0748724eb7e4b32306c3f8191b1",
+      "bytes": 4362,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/plan-canvas.md",
+      "rawSha256": "8afc9d0bf73f79088ada2109310e988c7e961c0fb049b2b35ecc4b3706d253f9",
+      "bytes": 1699,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/plan-prd.md",
+      "rawSha256": "61cf11dd2a3d64bd47808fed6c74a97cefffdfda82dca90e4911bd6a813737f0",
+      "bytes": 5282,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/plan.md",
+      "rawSha256": "8158d2df36af26669cf45ccf7e7d89f9884ecd4b5eae80f2c8d4a4f6d09a228c",
+      "bytes": 7559,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/pm2.md",
+      "rawSha256": "daef0378434ae10f9c329d67854eb9750732dfe52d83e0c28fba30fcbda2323e",
+      "bytes": 6804,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/pr.md",
+      "rawSha256": "52405eef320c18004d2bbd3b803ffdf944a146fcec90cbc376c00397cfa27530",
+      "bytes": 4826,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/project-init.md",
+      "rawSha256": "efd4a7859eab26f9017b9e7be0c13fb85419817720384719e6380735043e1164",
+      "bytes": 4074,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/projects.md",
+      "rawSha256": "dc939242028d24119b985e6ad4fee3d6c8185f6bd19c716535384149bc9876f3",
+      "bytes": 853,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/promote.md",
+      "rawSha256": "8d2faf47b1322c24a1dfa221b2f5e85b9e766fcd1d460c157c472246a3b86846",
+      "bytes": 1263,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/prp-commit.md",
+      "rawSha256": "b0714d5d50c87b645a47d31192ce13c216a3717d9a0f95b6cce21f9157e5a0be",
+      "bytes": 3057,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/prp-implement.md",
+      "rawSha256": "c7b2715c7068a2457ad9d5da9bb9da51ad0a8f4ed2596806ff02825c5927590b",
+      "bytes": 8949,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/prp-plan.md",
+      "rawSha256": "d7dfc27704dac9b98b8755e1324de141503565bbb39e236422307e8046af5acb",
+      "bytes": 13917,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/prp-pr.md",
+      "rawSha256": "1813771b08c2ad8c1216cde43284a3744d22cddb272b9aa1f9c403f0e08f0ffc",
+      "bytes": 4746,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/prp-prd.md",
+      "rawSha256": "ccd0082c4df1395a272d735765a593891736c48a0bcfbf2f296f84eca5b8509b",
+      "bytes": 14093,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/prune.md",
+      "rawSha256": "b2ff4b7ff2eef3893975736b899f84043665c765972609c0ff816be18cf42b82",
+      "bytes": 751,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/python-review.md",
+      "rawSha256": "7982b50c59cad83941400a436c1d1001d73fe9bdba6cb84a3ac7c6d43f394c99",
+      "bytes": 6657,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/quality-gate.md",
+      "rawSha256": "a3ed90f43a1cfc2cf9b85163ed22ddb6102c10f7ad4d02b76b4e2545e3330298",
+      "bytes": 1909,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/react-build.md",
+      "rawSha256": "940f084f8558e1f459f30e7144fce83e069efa180601650485869d329df8f607",
+      "bytes": 5454,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/react-review.md",
+      "rawSha256": "e2a41010af97104e3f6819b7a6ddc381b529c8b6a0cac46e8cfc13578dc51cde",
+      "bytes": 5820,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/react-test.md",
+      "rawSha256": "1c87ad417400006ad380bccc7c17b1f1fe71148f99f4a3015c0b6a7d5baf4edc",
+      "bytes": 7335,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/refactor-clean.md",
+      "rawSha256": "be911e404a89e79cc878e20ba28b0feeacc2350db8710624622d88a453bf13db",
+      "bytes": 2901,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/resume-session.md",
+      "rawSha256": "73983070d7e43dbe55f29671fba7e245df816eb469add2037e9d730f8bf23dbc",
+      "bytes": 6261,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/review-pr.md",
+      "rawSha256": "dd6a610a4fa1ba61bb12ecaab9e2fddd1cbb57faff58d3601da019031e880a4c",
+      "bytes": 1056,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/rust-build.md",
+      "rawSha256": "94f2eba2a0ea2d4178583ba86808cf7117d7e0bcf76dd3729f840cebcda01560",
+      "bytes": 4578,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/rust-review.md",
+      "rawSha256": "19e9eb0c5805e982f9d864202dde19c49b394e8d8e28030b3aeac33c157d812c",
+      "bytes": 3898,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/rust-test.md",
+      "rawSha256": "1c73649d877a9b023e1c0b013f54fa9f7e733a14fbcbf2e49e7742d4e80bc86f",
+      "bytes": 7003,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/santa-loop.md",
+      "rawSha256": "c0e5d72aa0289201606b00d4f75cfa9a58f12d09bfbc48341a2378b2084f3bde",
+      "bytes": 6258,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/save-session.md",
+      "rawSha256": "a9488a8819d6c65fe4777f07ea72de6b0c4ee94f90c6bb33b3b8841916222db4",
+      "bytes": 9702,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/security-scan.md",
+      "rawSha256": "f6fde80d1af1ad582926371a741e2cc48e872585acd0a38d4907f7fc1e59fce1",
+      "bytes": 2625,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/sessions.md",
+      "rawSha256": "87d9eccf2c89fc7dc26f79c83ea1713f3ef51bfe7357c6ff5fa2e09c2d76d5e0",
+      "bytes": 14834,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/setup-pm.md",
+      "rawSha256": "163b3cd106028d21dbd2a91b47f1cf99957e40a78ed9e5e5dc8507e225f73a2d",
+      "bytes": 1675,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/skill-create.md",
+      "rawSha256": "a9c2c0bbbbdac12573d7da6d8ed749aaba52e8089093ffdae0629afee9088aa3",
+      "bytes": 6865,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/skill-health.md",
+      "rawSha256": "952342b941be50bff65683303f5c98e681ded31ea10edaeed5ab848a1d2cbae0",
+      "bytes": 4112,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/test-coverage.md",
+      "rawSha256": "f492c2dac27b98118cf965ae3071e044d7292ae9299e661bb01e2e6109d20711",
+      "bytes": 2742,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/update-codemaps.md",
+      "rawSha256": "dee7709ae4044862fd947e17048f8af170145b70ac53dfe01caa672a903853ea",
+      "bytes": 2488,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/update-docs.md",
+      "rawSha256": "f0f4645d697c7c5874b79c64218cd2057a291cc6301f6a044cb2bac5ccc14f4a",
+      "bytes": 3121,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "commands/vue-review.md",
+      "rawSha256": "bd9fe40b1fc015a8d39a7db5e955ccd54f57eafb6e9db367a195dcd037b3c67a",
+      "bytes": 5813,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/accessibility/SKILL.md",
+      "rawSha256": "98a64f7ea191284e6d12322328b0576bb4b002a049872cda319e9a39e9e1f961",
+      "bytes": 6418,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/agent-architecture-audit/SKILL.md",
+      "rawSha256": "9b75d0e17edf80a55ad0a723aeb451ef715ea51d56ded92b0f05d43ee4bf7b1b",
+      "bytes": 10165,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/agent-eval/SKILL.md",
+      "rawSha256": "e04c9816430de271ab573887b09a2b07a97cf6663d45c32e707c32a1f7a62d10",
+      "bytes": 4551,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/agent-harness-construction/SKILL.md",
+      "rawSha256": "139f8fa249c74edebf117f03a258b23a228e9401fafc124a98059ebacec6deda",
+      "bytes": 2012,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/agent-introspection-debugging/SKILL.md",
+      "rawSha256": "b69b9dddc469279807f363cd61432edad0901db1b0393b0c41257f18a6b667d8",
+      "bytes": 5541,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/agent-self-evaluation/SKILL.md",
+      "rawSha256": "96bb21eb37760f596789f84ec0a5dad4ef92fc2255e35cd7b88dc4234062b8c1",
+      "bytes": 7625,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/agent-self-evaluation/examples/high-score-example.md",
+      "rawSha256": "59467219aaaa41365953f904d7ffebb46b55c13d497e3646b0561a9ef5f56b0e",
+      "bytes": 3545,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/agent-self-evaluation/examples/low-score-example.md",
+      "rawSha256": "ee286d3adcbab489c5f277ae094a25e38e9401dc01b6c39987c3f5bf3b61706e",
+      "bytes": 3702,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/agent-self-evaluation/references/evaluation-criteria.md",
+      "rawSha256": "d1ccdbc90dfe2485a42e7aef2f06b71506dca3010da1ea8765382b8f038f7c61",
+      "bytes": 5820,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/agent-self-evaluation/references/hook-integration.md",
+      "rawSha256": "65888876994a12410c17723ca768f6715cb33a8ad963264a7caef67e3ef2fa8a",
+      "bytes": 2500,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/agent-self-evaluation/scripts/evaluate.py",
+      "rawSha256": "5f21321971c23ffa845a8f25a99338705ff057981681c97cb79c653ce7e505d6",
+      "bytes": 14975,
+      "fileType": "regular",
+      "mode": "100755"
+    },
+    {
+      "path": "skills/agent-self-evaluation/templates/evaluation-report.md",
+      "rawSha256": "5fc8a0820de9bc74e0a1470e55aaa50b3957aa1b0f947c4b458213b8e39fedbe",
+      "bytes": 3485,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/agent-sort/SKILL.md",
+      "rawSha256": "5847fc20cf0fd0d00c0c2dbacca03472c5a43af429978cf874dd41ecc144dc53",
+      "bytes": 5922,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/agentic-engineering/SKILL.md",
+      "rawSha256": "6acdfaa7486726805cf4d9af4ff2adb6e0dc1fc75cb82cfa906e60d776dad3ee",
+      "bytes": 1743,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/ai-first-engineering/SKILL.md",
+      "rawSha256": "e0b23c464de3a42fc39cab41d7431cdac6068e49fe4460f316d455d564b4bc2b",
+      "bytes": 1348,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/ai-regression-testing/SKILL.md",
+      "rawSha256": "0b4c44ab049756255b26e5ca93240fe5add2bc308df0e0b34e483ddfa1ef50ef",
+      "bytes": 11545,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/android-clean-architecture/SKILL.md",
+      "rawSha256": "5d1e0b6142bbebe3bc17fbedd5dbeccdd3eee2f8a4c47857f254fb0a95847113",
+      "bytes": 8806,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/angular-developer/SKILL.md",
+      "rawSha256": "28ee37a8cf63add48fffc7c8676c6368aee35f3042525e79769b5a3d4e01aed1",
+      "bytes": 11021,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/angular-developer/references/angular-animations.md",
+      "rawSha256": "0361278cabc4925807c8a93ebce717f1c8d52d553870ddd8634b1075b0395dbc",
+      "bytes": 3955,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/angular-developer/references/angular-aria.md",
+      "rawSha256": "96daed398824f2947c5f4221065cdeabf82ac020874f99cb4338e5e84cd96aa1",
+      "bytes": 12642,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/angular-developer/references/cli.md",
+      "rawSha256": "b7a5f9f85125659966fe087b623939fe2b89ea5d7cdf53265476adf1666e37d9",
+      "bytes": 3714,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/angular-developer/references/component-harnesses.md",
+      "rawSha256": "ffa4258a4877fe4e200c2fca5eb65507dafc85296e2861ba420765f43cd98d16",
+      "bytes": 2903,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/angular-developer/references/component-styling.md",
+      "rawSha256": "de3351fdb72174361c6eee150940193f20d148afaceab0f22107758a3cb2d787",
+      "bytes": 2531,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/angular-developer/references/components.md",
+      "rawSha256": "dbfb520f2dddd017acb617369c45544374440fcb0b178d9648fab7ada0178468",
+      "bytes": 3422,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/angular-developer/references/creating-services.md",
+      "rawSha256": "9b0d8b6d627ec33e5957638049877eac655cd31444cd4afa440597e191e4cb94",
+      "bytes": 2700,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/angular-developer/references/data-resolvers.md",
+      "rawSha256": "0a6eb7ee89b29d1766941ed88881803b32870e705f2e438a7cae1c4e59ed8289",
+      "bytes": 1587,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/angular-developer/references/define-routes.md",
+      "rawSha256": "1288b38bad6cc9749e9d0fd35a294771ea2181dd712bfc2887d80e8b40fab7e6",
+      "bytes": 1727,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/angular-developer/references/defining-providers.md",
+      "rawSha256": "e654c23a080c642cf7031b5cc5de1101b8c75030c15256f7e3b81b0336953c6d",
+      "bytes": 2256,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/angular-developer/references/di-fundamentals.md",
+      "rawSha256": "45d4431765c46d7492d1daeb2de2aecc326e3255518e95b7b8303e259a4d8a64",
+      "bytes": 3594,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/angular-developer/references/e2e-testing.md",
+      "rawSha256": "50aa1fa9a832666407b66c524ffc05fb2fe8e7063300fb26e304dc278cb907fc",
+      "bytes": 1904,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/angular-developer/references/effects.md",
+      "rawSha256": "c06ad02460be7f57d024bb8e263a3390e72059815879bf6bcd0583e510a2b4ad",
+      "bytes": 2758,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/angular-developer/references/hierarchical-injectors.md",
+      "rawSha256": "05546d8043b93a2ab8deccdc2bd9c1704350883107701139e790ff8adb0f626a",
+      "bytes": 2091,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/angular-developer/references/host-elements.md",
+      "rawSha256": "b898bab74d518feba3c527dbf9694abe6d3ec7bfa44d81b34cff119016984080",
+      "bytes": 2114,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/angular-developer/references/injection-context.md",
+      "rawSha256": "0ab76274d761da9c8ad5d789be2a4b4158d637f06074908d6fb4540cb8f45a34",
+      "bytes": 1927,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/angular-developer/references/inputs.md",
+      "rawSha256": "229a6e37f7006a6f3426cc2bc42baa67ecbbab77c343d141e44b10c1bb11de09",
+      "bytes": 2445,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/angular-developer/references/linked-signal.md",
+      "rawSha256": "4971692a36c4d470b5c8efec1a8106418ac28cdc33601e554ecff9dded95d289",
+      "bytes": 2584,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/angular-developer/references/loading-strategies.md",
+      "rawSha256": "fa82c48573532a7f5e3ccf7eaa50dc7a2db1f23a8599638d9c18e023dbd73e2f",
+      "bytes": 1457,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/angular-developer/references/mcp.md",
+      "rawSha256": "7197d06d79bb57084a5c4ff203ddf9d86a30116dddb103b9d4fc138bf2dd8cb1",
+      "bytes": 4079,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/angular-developer/references/navigate-to-routes.md",
+      "rawSha256": "ea3c3d53b5db47b4f8d8b05124330e72bea92fc908d42c06aa7edb9e652b425e",
+      "bytes": 1639,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/angular-developer/references/outputs.md",
+      "rawSha256": "a191f8982d9ac6868023d56c887f362052c4fccc70a89adc8a6bc546f851e5dc",
+      "bytes": 2604,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/angular-developer/references/reactive-forms.md",
+      "rawSha256": "e71118562247c94141dfaca74efd246e38226bf26ffedbd7f3337f1866113283",
+      "bytes": 3561,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/angular-developer/references/rendering-strategies.md",
+      "rawSha256": "329aa9aa35c85dd2048c899f26025439d3b0244067dbb508e724d291fdad7c97",
+      "bytes": 1828,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/angular-developer/references/resource.md",
+      "rawSha256": "ff03e5f21219cb0cb6e8ea9fe3c47ead2308471a15a925cbcaf051473669c40c",
+      "bytes": 2714,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/angular-developer/references/route-animations.md",
+      "rawSha256": "eda1452f85ce05f3f28753cc77cd8c31c7a52515d7ccebbb35de0ec1e3beb374",
+      "bytes": 1688,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/angular-developer/references/route-guards.md",
+      "rawSha256": "491a93cb49fbcba04f7e8ffcd0f784fce7319ca3e2fe393c553f3d683a68424c",
+      "bytes": 1397,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/angular-developer/references/router-lifecycle.md",
+      "rawSha256": "4abc8cb8dfeb2e9f57dc11c117d5f4a5b756b39dc076910d9ced9da640effc2d",
+      "bytes": 1534,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/angular-developer/references/router-testing.md",
+      "rawSha256": "42bdaa9ac7d523093fb44ab945f3235ff72715ac4faeb99176bb0ae2fc406213",
+      "bytes": 3840,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/angular-developer/references/show-routes-with-outlets.md",
+      "rawSha256": "43a2ed62ea2edafa8569bf7045f20928110f8f844d5890bfb6a2f2dde45e754b",
+      "bytes": 1672,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/angular-developer/references/signal-forms.md",
+      "rawSha256": "7ff19051876697eeb43058fb52ab01ec9bc6bd486fd8674be723978dcde16b90",
+      "bytes": 24203,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/angular-developer/references/signals-overview.md",
+      "rawSha256": "f0a4d5fe4a88a3f06d81683cedddf1b65ee1c771ef3eaaec4ff1ca5d804e45a3",
+      "bytes": 2841,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/angular-developer/references/tailwind-css.md",
+      "rawSha256": "bdb952d0dd2d415560a796ecaf843cacff5ac20d8ef961eaaf75656fef9b9263",
+      "bytes": 1868,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/angular-developer/references/template-driven-forms.md",
+      "rawSha256": "52e83e576b0c6dc05f854e903c4cfda1222bcd55c50ddee07344d1e53d02c1df",
+      "bytes": 3752,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/angular-developer/references/testing-fundamentals.md",
+      "rawSha256": "94fe1a3b42f4cc299d71d3dcc12190485913bba00fc1d0757097c91306084356",
+      "bytes": 2640,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/api-connector-builder/SKILL.md",
+      "rawSha256": "3887da5d7268e5e53037ba9f518d9aba993c42a15e9fd3910149c8fbef15b0ee",
+      "bytes": 2662,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/api-design/SKILL.md",
+      "rawSha256": "ad7230f931b6d81a22e13c3bd41d97529fd15be8de2d91de19868a58f1b300b2",
+      "bytes": 13122,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/architecture-decision-records/SKILL.md",
+      "rawSha256": "525e51b4ed98222cd49ea7d2e42b51a010ecab391b25022a86164258c14b8bb0",
+      "bytes": 7131,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/automation-audit-ops/SKILL.md",
+      "rawSha256": "71aa878fd06ef02f0c8ca50eaaee0ec45995981d769d8701806b9b83ca8a2f2c",
+      "bytes": 4167,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/backend-patterns/SKILL.md",
+      "rawSha256": "472ec92c95e57a02c647310192a7f46b38264be2e13b4766c186d01cb058b30f",
+      "bytes": 13255,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/browser-qa/SKILL.md",
+      "rawSha256": "c501257d2c9ca711342b56d7adfb04897f17c6946dc6cdb88a5c75c87e4aa951",
+      "bytes": 3727,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/bun-runtime/SKILL.md",
+      "rawSha256": "8015a977827ddd8536e89c4693a575b8deb5b04073b8a483c320c5419abc35da",
+      "bytes": 2608,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/ck/SKILL.md",
+      "rawSha256": "1c855c392c88d118610c6b18fc62a62bf811525be8e813bcd554a8b1d72f0ec2",
+      "bytes": 4829,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/ck/commands/forget.mjs",
+      "rawSha256": "af9995621bd68eb3d848a37f5d63b9f0d22a49665ba19c1afd00eeb912e3adfc",
+      "bytes": 1304,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/ck/commands/info.mjs",
+      "rawSha256": "f294480e80aafe155d789ab3e005891efd7aa22635f0392886c36457dd46ba75",
+      "bytes": 650,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/ck/commands/init.mjs",
+      "rawSha256": "3ab39c2610548da4252726b7b5212ff5375314b54cd0c2e0b71a41d515ef923d",
+      "bytes": 6146,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/ck/commands/list.mjs",
+      "rawSha256": "902d5ef9370d07217492d59968fbe904a7961741c601f8a4420787d98910c2a3",
+      "bytes": 1092,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/ck/commands/migrate.mjs",
+      "rawSha256": "7703062eb780c63785870b26290bc4fc386b42eb697e24d91fa87bcb2f13d6b7",
+      "bytes": 7416,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/ck/commands/resume.mjs",
+      "rawSha256": "773a706247bfeb45d7206ec363e695cb42262cccb14851e67d194ace760b309f",
+      "bytes": 949,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/ck/commands/save.mjs",
+      "rawSha256": "1d096ffd0ce5776ac69f01a8d80b2a158fa3b465d2b5faa33bd539887e63f32b",
+      "bytes": 7574,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/ck/commands/shared.mjs",
+      "rawSha256": "8da746463ae5e90700e29bdae1e738f54a7bd279cfb0ca6d90b292170a2e1abe",
+      "bytes": 15267,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/ck/hooks/session-start.mjs",
+      "rawSha256": "4ad0b843a0e1256e72d3b371e126ce1dbdf1baf45819fb3f55f614d1c386bf29",
+      "bytes": 8835,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/click-path-audit/SKILL.md",
+      "rawSha256": "662fc5d02483bcd8ff799d6d3109a38da673182341cfc14445e9076fcd920162",
+      "bytes": 7975,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/code-tour/SKILL.md",
+      "rawSha256": "88549977ac84dff94ee40e5f032435610481bc097fc8b9ab4a9d04c9459c900f",
+      "bytes": 7913,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/codebase-onboarding/SKILL.md",
+      "rawSha256": "ef88873a4b0d0fe155c0a196ffecd5c7b5e28edd00fbbdb5c1fd2ca8fd0eb6f0",
+      "bytes": 8235,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/codehealth-mcp/SKILL.md",
+      "rawSha256": "c5943c4c353b02dcd87b751de15bb087caae2f11c36e84a74e181fe2eadee394",
+      "bytes": 7463,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/coding-standards/SKILL.md",
+      "rawSha256": "f8a05b67c22e611ff9a56aafe297d63b9f4950d43d3f3f921ef846132b6c5eba",
+      "bytes": 12777,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/compose-multiplatform-patterns/SKILL.md",
+      "rawSha256": "09e2469a462de36f39393cb7b53b019909b39f2d488eec0f8ca5627152ccdeec",
+      "bytes": 8132,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/config-gc/SKILL.md",
+      "rawSha256": "e8ade5c8d48728db6c1137e4392308b6d56290a19d4f78d365122d7ab05276a1",
+      "bytes": 7942,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/configure-ecc/SKILL.md",
+      "rawSha256": "5ec5308c5231823b3e99bff096b523698d3088ecea1e027d3e4d0fcb13f48f07",
+      "bytes": 16812,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/connections-optimizer/SKILL.md",
+      "rawSha256": "499c7e7e361ec17afdad57b725b4d105efb21f707b5724115f71152fe1755c67",
+      "bytes": 5477,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/content-hash-cache-pattern/SKILL.md",
+      "rawSha256": "9f49e775bd0acc955d4c701643da34b91e1cbb88d9b88af56a82c8ef6e5802be",
+      "bytes": 5616,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/context-budget/SKILL.md",
+      "rawSha256": "755adb765d26f1e06376b12101b2c0c0dd4671a1d66394a66716500d4a92f2c5",
+      "bytes": 5707,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/continuous-learning-v2/SKILL.md",
+      "rawSha256": "8d1fd750c0727deec2e95d77253fe57bd7f8df9bf7bf70520e4e322fc0387097",
+      "bytes": 13326,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/continuous-learning-v2/agents/observer-loop.sh",
+      "rawSha256": "22fdca58df493e7f0b1b03fbf25c3bfa0d75f3b16ee3ee47e8335ef282be85f6",
+      "bytes": 13518,
+      "fileType": "regular",
+      "mode": "100755"
+    },
+    {
+      "path": "skills/continuous-learning-v2/agents/observer.md",
+      "rawSha256": "320d50ff2965efeabd6f07c2be134e11da160293e958c1bc27c309d613839ad2",
+      "bytes": 6892,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/continuous-learning-v2/agents/session-guardian.sh",
+      "rawSha256": "ee6e4c0990f8d538cae1c85aa194e01e9ca2336e5d993ef68eb608b96cb0d82c",
+      "bytes": 6392,
+      "fileType": "regular",
+      "mode": "100755"
+    },
+    {
+      "path": "skills/continuous-learning-v2/agents/start-observer.sh",
+      "rawSha256": "1f9a22da11e23d3551b8f8d0951a656150a532b326818627d9914ffd484a86e6",
+      "bytes": 8117,
+      "fileType": "regular",
+      "mode": "100755"
+    },
+    {
+      "path": "skills/continuous-learning-v2/config.json",
+      "rawSha256": "6f17e7a99aafe252ecd0b9212fb5f606be50b8ce1685f5a6435e46e87ffeb970",
+      "bytes": 135,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/continuous-learning-v2/hooks/observe.sh",
+      "rawSha256": "e632c2f486248b8b141059c23586d5ca0187df8c34f53d7597cd845713e06948",
+      "bytes": 23080,
+      "fileType": "regular",
+      "mode": "100755"
+    },
+    {
+      "path": "skills/continuous-learning-v2/scripts/detect-project.sh",
+      "rawSha256": "43215ad15ce0c6585c13b1c45cbba6bf8df0dc459b663ddca77c0b86c459c283",
+      "bytes": 11036,
+      "fileType": "regular",
+      "mode": "100755"
+    },
+    {
+      "path": "skills/continuous-learning-v2/scripts/instinct-cli.py",
+      "rawSha256": "6fa20ffd159a828c7ec5fd0919da7b7818aec2d9dc40039426c27f44aa89e8f9",
+      "bytes": 82558,
+      "fileType": "regular",
+      "mode": "100755"
+    },
+    {
+      "path": "skills/continuous-learning-v2/scripts/lib/homunculus-dir.sh",
+      "rawSha256": "99dfa99ae0f7c6e2e15ed5b5bf3c46e91a5f089f4060ba93d5da5e85e04fd308",
+      "bytes": 1010,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/continuous-learning-v2/scripts/migrate-homunculus.sh",
+      "rawSha256": "34f121c143a676d330f06209618aae8cb08f8155298cb5fa70c893314bf9b303",
+      "bytes": 2256,
+      "fileType": "regular",
+      "mode": "100755"
+    },
+    {
+      "path": "skills/continuous-learning-v2/scripts/test_parse_instinct.py",
+      "rawSha256": "acf556e8a8023347b35988bb490927a4e9f65f2579b03f26cad610687656605b",
+      "bytes": 51338,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/continuous-learning/SKILL.md",
+      "rawSha256": "86d2836d72263bb838ee8adf8a148d441d47e204eb17ab7b16f0f76cfde67882",
+      "bytes": 4519,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/continuous-learning/config.json",
+      "rawSha256": "8af9150b6dca782cc3cb938e0c2267ad85ee4772eaf3ec30c0b91a848d108a44",
+      "bytes": 391,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/continuous-learning/evaluate-session.sh",
+      "rawSha256": "3e07e0b2916fbcdd7670648548d418ee87bdce0c6548c48e298965e5db387fcd",
+      "bytes": 2391,
+      "fileType": "regular",
+      "mode": "100755"
+    },
+    {
+      "path": "skills/contract-first/SKILL.md",
+      "rawSha256": "dc23ee49437e4d914ea9a9e37eec0dfe59dc16b11fcbc3a6e5c72f25dbd3cc5c",
+      "bytes": 9521,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/council/SKILL.md",
+      "rawSha256": "2104d002d301a061a16d21ea2e00292f80b66b20c9883a33525a7de404153502",
+      "bytes": 6358,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/cpp-coding-standards/SKILL.md",
+      "rawSha256": "f870b47d3493b0ad0b6e3808a679ac3c429b60f03193af6c9dc0e0d9e6981436",
+      "bytes": 22291,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/cpp-testing/SKILL.md",
+      "rawSha256": "a92fb5da9b7e3cd1b4dee185b3eb9d0a55352af6396bf996d2eef72d683784df",
+      "bytes": 9175,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/csharp-testing/SKILL.md",
+      "rawSha256": "159069144b290e87027e72e44761428e40a6e18e10532aa2c5182d6668ad34bd",
+      "bytes": 8631,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/dart-flutter-patterns/SKILL.md",
+      "rawSha256": "c29c1fd3e9f42c3cd39702a39decd88b4d60d223651fb9be5e177a389fbd8b44",
+      "bytes": 15920,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/delivery-gate/SKILL.md",
+      "rawSha256": "bd828762a38c70f73a543eb5374e525a13cf9bfdb9cd17971b8d47e20ce76247",
+      "bytes": 5004,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/delivery-gate/hooks/quality-gate.py",
+      "rawSha256": "76aa0fe8c136be8a760ce74e614463ffb05fb16f1e165c5938daa86f516b87ef",
+      "bytes": 7826,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/design-system/SKILL.md",
+      "rawSha256": "c23c219b21e65bfc0990a65444a78bc29e53d338e34ee4b64006bb728eb3b13a",
+      "bytes": 2492,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/django-celery/SKILL.md",
+      "rawSha256": "1f9189ece910eb90a5d2cd520a9a6238ccb89a3e48629ac1ad9b55ec3eb21f88",
+      "bytes": 13134,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/django-patterns/SKILL.md",
+      "rawSha256": "f3de3bcb277a59cbf163cc95b450d182c46811de0ad3b58f7b1df15c876c601c",
+      "bytes": 21037,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/django-tdd/SKILL.md",
+      "rawSha256": "28cc3578bb8136f9782ac03d000cdfd1d2fb86ea8b651b4210069aa988301b6b",
+      "bytes": 20934,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/django-verification/SKILL.md",
+      "rawSha256": "cb1b6c5938c8c41dffb1f7bb752e307df6ced2577af2fc40786bde4c53799cea",
+      "bytes": 11491,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/docker-patterns/SKILL.md",
+      "rawSha256": "6ccf7f6a54a0e4038c8d3159f9e52917bb0868f589d42de8bbe8023d3c0e1851",
+      "bytes": 8263,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/documentation-lookup/SKILL.md",
+      "rawSha256": "81ad2b5b4acbe02259f4b6cbfd9111d81d5cfe51025051b6048959c45f6516c1",
+      "bytes": 4912,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/dotnet-patterns/SKILL.md",
+      "rawSha256": "526fd468b2e05cdcd4058318921e817ba0f8cef021470e30bbbc24e0195bfa98",
+      "bytes": 9232,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/dynamic-workflow-mode/SKILL.md",
+      "rawSha256": "f2c74fa482ed65e36b9bfd8434dcb5b022b1d70a7b851ba68401e080d318e7e4",
+      "bytes": 5281,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/e2e-testing/SKILL.md",
+      "rawSha256": "de79b897a7b99b98e325ece0eccb78645b2a9cac88bb0ca0c97ee3f24530eb24",
+      "bytes": 8077,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/ecc-guide/SKILL.md",
+      "rawSha256": "b6e30828406e562ef65d323f1366629239313f076a7a53ba7e8dbaec0e96b203",
+      "bytes": 5611,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/ecc-recipes/SKILL.md",
+      "rawSha256": "147bd5763fb925da7f3bf3e413ce7b44e9a2d44529e08b642695a5e3e79311f3",
+      "bytes": 6555,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/ecc-tools-cost-audit/SKILL.md",
+      "rawSha256": "d5c4c7925166703eb5fca83c0f1dcdeffb9c5808dc3cc08c337136f512fddbac",
+      "bytes": 6496,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/enterprise-agent-ops/SKILL.md",
+      "rawSha256": "4d688b4c166c642ef447ce263199416cd1ebcea94e71f46bb1d0f84f2a25c48a",
+      "bytes": 1216,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/error-handling/SKILL.md",
+      "rawSha256": "1a51e35867707709b51c2ab93fe225b721f2da49aea8cb54248bc791aab1419a",
+      "bytes": 10863,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/eval-harness/SKILL.md",
+      "rawSha256": "2b0b5256a043ea57f9463cc29a572d9612312e0827ef75724e39283c8d23edb1",
+      "bytes": 6506,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/fastapi-patterns/SKILL.md",
+      "rawSha256": "135114c01b9b348be89de2d17f0fc1ac14f2183d47f96bd08020bebf00196309",
+      "bytes": 15525,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/flutter-dart-code-review/SKILL.md",
+      "rawSha256": "0527bcb3151d06277f84e7be54b48f2c6785d9464ee5d586b9527b3e6525866a",
+      "bytes": 23101,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/frontend-a11y/SKILL.md",
+      "rawSha256": "62afdfd4e616ed21bf9037d47f771f3504d21838c898b9e9de8ac0da9b0bf3f7",
+      "bytes": 12724,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/frontend-design-direction/SKILL.md",
+      "rawSha256": "fa254de821f708e5791c4c80d30309ac7da89c2888301e967becb3b21ac73331",
+      "bytes": 4360,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/frontend-patterns/SKILL.md",
+      "rawSha256": "ab63402f3ecb3ea4078ade5785ef9c20fb44ba9c02b6976c080adfbd2b3094ac",
+      "bytes": 15342,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/frontend-slides/SKILL.md",
+      "rawSha256": "9d58ad7d4555a9d6ea1944a5084fd0428ee44276ac13ee8df02c1c4e63925291",
+      "bytes": 6559,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/frontend-slides/STYLE_PRESETS.md",
+      "rawSha256": "f3448493022f8fa3f858319b14c0c48a35d441864dc78a2411f7938c28e7a265",
+      "bytes": 9145,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/frontend-slides/animation-patterns.md",
+      "rawSha256": "152ac81e87eba92dea96ef5ac488e3e0a341836aca034e908b0c1b6d60bff204",
+      "bytes": 4233,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/frontend-slides/html-template.md",
+      "rawSha256": "0ba1acf5016472f0f902ee2a67cf2d6e20e8dbd3f733df9cd8f5ee67d5ca0adf",
+      "bytes": 12533,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/frontend-slides/scripts/export-pdf.sh",
+      "rawSha256": "d1a45b2516883dc761ecf2a5d838ec515974c8d7660753b5c4945a1825cbdc77",
+      "bytes": 12280,
+      "fileType": "regular",
+      "mode": "100755"
+    },
+    {
+      "path": "skills/frontend-slides/scripts/extract-pptx.py",
+      "rawSha256": "4f5e7603c99b8b53e20c5b2a65abdf5edf9422b4c490dca9f2b872a752c17d2a",
+      "bytes": 2917,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/frontend-slides/viewport-base.css",
+      "rawSha256": "dab42c1a556a0fa51d3c39f7edfb93d8303e5c29625ade479a18ba97f2640734",
+      "bytes": 4037,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/fsharp-testing/SKILL.md",
+      "rawSha256": "471fe2024a83592f8dad0862f75d6b1c83bb36fda1bec2180ca3167fde7ee940",
+      "bytes": 7874,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/generating-python-installer/SKILL.md",
+      "rawSha256": "b214c00051ee872e01f4007a1fdcaf993af5aede1e6497a0740ea4afc1c6f0b1",
+      "bytes": 30319,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/git-workflow/SKILL.md",
+      "rawSha256": "707999138b92f4769ac09ebaeace34b4e5bf295bd8f558903d4186748401b0eb",
+      "bytes": 15069,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/github-ops/SKILL.md",
+      "rawSha256": "0688938f4d45a66108de4d64c5400c60f5a4fd00141ec254acd55b4bd7f127e8",
+      "bytes": 4639,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/golang-patterns/SKILL.md",
+      "rawSha256": "ab8186c319b1f24dc87eb16321106a88f72ffd4b6ac6d7a10f41d721edd351d9",
+      "bytes": 14042,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/golang-testing/SKILL.md",
+      "rawSha256": "6056559e12e933a3a2aecb6754e8d938fcc840a46ebeaaae47218c7e6f0da75b",
+      "bytes": 16650,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/growth-log/SKILL.md",
+      "rawSha256": "f3c0fc0a2eee4e25ebc5b60f22cb941f3773a32bb300abd276d53a82900950cb",
+      "bytes": 6764,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/hexagonal-architecture/SKILL.md",
+      "rawSha256": "53a76ce2255051df5c538b5a690517b7987d1a1c0d3ef57f30d2ddc35258e7f8",
+      "bytes": 11405,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/hookify-rules/SKILL.md",
+      "rawSha256": "b604608e30ac2b8f4f62dea3023efe2d3247b41a38c4156a6b6297173f2405a8",
+      "bytes": 3534,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/inherit-legacy-style/SKILL.md",
+      "rawSha256": "14e7b20424f123b594d3ee3d6ac3e722b21e5a6816fe90bacf8a23e6c3af5b6d",
+      "bytes": 8552,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/intent-driven-development/SKILL.md",
+      "rawSha256": "e34045f7b3bf6a6fbd364f85c7bc81d8208e18bb929ceff80bbc987f78aadea8",
+      "bytes": 17199,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/iterative-retrieval/SKILL.md",
+      "rawSha256": "ee0055a7728c33a47238364c0662485b839c74d27cba5ce0da592e9e5c72e501",
+      "bytes": 6693,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/java-coding-standards/SKILL.md",
+      "rawSha256": "e37b682a763aa25846d035a950c4bdb2f85805b99e0e8dcc52ce5b248ef7fc95",
+      "bytes": 11478,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/kotlin-coroutines-flows/SKILL.md",
+      "rawSha256": "5974919b91be4da05e3677be7a420a64df6b631ea31933bac6cf5a75a46b240a",
+      "bytes": 7766,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/kotlin-exposed-patterns/SKILL.md",
+      "rawSha256": "c33bf21d5cd1a979c116140a1778b2ad8807596f2513cf7b0d0de5818b5f1d49",
+      "bytes": 22019,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/kotlin-ktor-patterns/SKILL.md",
+      "rawSha256": "feeaf135f17888c0af781461fb86d0d7b7969a03ad8fc4df6bdfd0c9264dcdac",
+      "bytes": 19447,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/kotlin-patterns/SKILL.md",
+      "rawSha256": "737fc9e0bbc1f518e4fd2223f1356f1f86e865c49f8e56c4dc247ac631625056",
+      "bytes": 18854,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/kotlin-testing/SKILL.md",
+      "rawSha256": "5e7a41ee97fafba5d53e99eb3a4cc1925c469d05e0516cfc8e1defbdc10e62c6",
+      "bytes": 20703,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/laravel-patterns/SKILL.md",
+      "rawSha256": "4490c5c984f684c0b8878ce4b283c0f187ec1e509d2e908027ec6378c2fe8488",
+      "bytes": 10551,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/laravel-plugin-discovery/SKILL.md",
+      "rawSha256": "6cf2b48ae39f26df7f8d17cf6480635b5203f6942a756a290efa27cf339169d3",
+      "bytes": 6393,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/laravel-tdd/SKILL.md",
+      "rawSha256": "ceabcc7f27bbc3aea7cf496211b265fb0bb505698c6aabd2ca2c25b460b91cf4",
+      "bytes": 17769,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/laravel-verification/SKILL.md",
+      "rawSha256": "8178081886442875498a118deb35b1a41283cb1f151fb4b8dcc6e8c42ac7b6be",
+      "bytes": 4262,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/loop-design-check/SKILL.md",
+      "rawSha256": "fc929d24cdbf2349deb56613d312f4731a911c2bf2d67c3834e9e45614aec658",
+      "bytes": 12492,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/make-interfaces-feel-better/SKILL.md",
+      "rawSha256": "aff91aef917cba9c65681ae77197cee93ce9b697ee8916ea684ef8537c99fb52",
+      "bytes": 4795,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/mcp-server-patterns/SKILL.md",
+      "rawSha256": "0d2d77ff4cffabd26a8db9a54fd16ae29063519fc2d7d2da3539c5e391a3973a",
+      "bytes": 4083,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/motion-advanced/SKILL.md",
+      "rawSha256": "0a113074ee06ea13b581011acfe93b6950f9129bb999042cb8f19187acda97ca",
+      "bytes": 18665,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/motion-foundations/SKILL.md",
+      "rawSha256": "6755da297a2c0bcee7c9c83ec23153cf443e8bf44ef854c83c9acc1e9bd0b811",
+      "bytes": 9664,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/motion-patterns/SKILL.md",
+      "rawSha256": "2aa9a4b783e83871fe3ebbc677f9d09e2f3bf64f675f24980beed262d00369b7",
+      "bytes": 13280,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/motion-ui/SKILL.md",
+      "rawSha256": "0c43aa186d64c5e094de946927581683e986fee496b744bc29433bbad3d169d2",
+      "bytes": 13867,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/nestjs-patterns/SKILL.md",
+      "rawSha256": "984df44b40cdb5aca50e6c8271b894d3bbe51d1cd619266391b2bf07080b33bc",
+      "bytes": 6420,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/nextjs-turbopack/SKILL.md",
+      "rawSha256": "44b68f7c74b237742bee4f39660f8a9160f755004cab0658594fdf494a42e681",
+      "bytes": 2892,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/nuxt4-patterns/SKILL.md",
+      "rawSha256": "ab8eacfbbae693b40878118316cdd5534b99ad09535a85af367319d7cdee6101",
+      "bytes": 4654,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/opensource-pipeline/SKILL.md",
+      "rawSha256": "f1fba87f0eab7b9edeb1fe7d202fefba860e86582ca0b7d4a7b3fd7f6a099061",
+      "bytes": 6986,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/perl-patterns/SKILL.md",
+      "rawSha256": "288958ce4e753b797f64ced6a123c0d6cc30633076fa1a8462a4b6477e32688f",
+      "bytes": 11537,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/perl-testing/SKILL.md",
+      "rawSha256": "e4859a9610a44b4224305826107c116310db7b7ddc81f5e677f22880366871f4",
+      "bytes": 11201,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/plan-canvas/SKILL.md",
+      "rawSha256": "46ae4582224b71d127a65a1f10c9173bfaa9bc0fee0284345e82320070ff29bc",
+      "bytes": 6477,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/plankton-code-quality/SKILL.md",
+      "rawSha256": "306527379ae5c4233a0a9149d60e5b247be2b5a9b96f0c4dc2a5d615ad60827b",
+      "bytes": 7962,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/product-lens/SKILL.md",
+      "rawSha256": "d082be7c3dd9fed8523ce757a6e2b823a53003d57d2488ead5cec5d5e0a4270f",
+      "bytes": 3102,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/production-audit/SKILL.md",
+      "rawSha256": "4b5d2bf0530ca5ba7dad0dece7a4c14e028334e9d54066025171ac2ff28f3375",
+      "bytes": 7623,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/python-patterns/SKILL.md",
+      "rawSha256": "bcdc0e72c463c9714d0eb7c5cd1f8dd0d44e54400e22a2f4835f0b2f5e6c2559",
+      "bytes": 16814,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/python-testing/SKILL.md",
+      "rawSha256": "76549eacc2215542b89745383fc47bebcbacd89e51352cc1b8b1b489b728db40",
+      "bytes": 18874,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/quarkus-patterns/SKILL.md",
+      "rawSha256": "feacf215030c376a80d58a8c51feda0b58a36bd8a55c91e857cd9f1a6256913a",
+      "bytes": 21414,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/quarkus-tdd/SKILL.md",
+      "rawSha256": "556d1c2d04e3e0ef10f474ed413013646088ff057f9be02d3a3c4f833ccc33c5",
+      "bytes": 25526,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/quarkus-verification/SKILL.md",
+      "rawSha256": "bf85844f5597251464f654bc4ac505c3bb16f35fb75610913049d95261cb733f",
+      "bytes": 10499,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/react-native-patterns/SKILL.md",
+      "rawSha256": "caf04da7ea1f20213b010f24dc19a8a20f1939c928156caa2f0482f26c31b12b",
+      "bytes": 11752,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/react-patterns/SKILL.md",
+      "rawSha256": "f3208d44a5d553038c42e046cec4dc16e4a3d90a9dbf931f883a2e21919a64a9",
+      "bytes": 11466,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/react-performance/SKILL.md",
+      "rawSha256": "ac76e8694d4f802a7bccc3c07a73ac68ace6d82a65ea10f10d8b7384dda61a8f",
+      "bytes": 18184,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/react-testing/SKILL.md",
+      "rawSha256": "51c18b4e28285bb876ef469e47c6f53108b5a9f900950a60e897c3c24826a65e",
+      "bytes": 13168,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/regex-vs-llm-structured-text/SKILL.md",
+      "rawSha256": "35ba82a9b1b7253fd84b6873c4350b974528c744ffd825544f2a4f8ccbef6d44",
+      "bytes": 6493,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/repo-scan/SKILL.md",
+      "rawSha256": "691cb6f303166544694ab0029673cd366aa27734a6eb7bc849d2eaf33c1dcfed",
+      "bytes": 3559,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/rules-distill/SKILL.md",
+      "rawSha256": "76e1512f6810e1d00e42a2f0fbc639cbd50c0f567bf25080c534c7c946caf1eb",
+      "bytes": 9491,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/rules-distill/scripts/scan-rules.sh",
+      "rawSha256": "0cfac69aff6c6ea37eeb914639625b4f6d3d3dacbcaef99c6e0ab4a7d376ed9d",
+      "bytes": 1604,
+      "fileType": "regular",
+      "mode": "100755"
+    },
+    {
+      "path": "skills/rules-distill/scripts/scan-skills.sh",
+      "rawSha256": "de6a938e14ce44d45e37fff24442ff3276b3cf1446cd2025e565426fb33d5cb5",
+      "bytes": 3893,
+      "fileType": "regular",
+      "mode": "100755"
+    },
+    {
+      "path": "skills/rust-patterns/SKILL.md",
+      "rawSha256": "43612099e89f361a3f3e0114ffb8b5ff6fb3b2987edb84bc0fae2a275ffeea66",
+      "bytes": 13390,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/rust-testing/SKILL.md",
+      "rawSha256": "643221493b5cb370eaf290ab6ac215656a9b70917691e92a972335a015286621",
+      "bytes": 11711,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/santa-method/SKILL.md",
+      "rawSha256": "1dfb6ecf99268978cc5f8e168db08fc5a364b55ffa86d0fb6ce43bae7fc9015b",
+      "bytes": 12793,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/search-first/SKILL.md",
+      "rawSha256": "d66d744228b9cf860acf35f8a90cbbe8195e61367860da9d3632f9fc65706733",
+      "bytes": 8021,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/security-bounty-hunter/SKILL.md",
+      "rawSha256": "7b3163f0ba54946ea007b556fff8430e3711772b8019575d23b18c6a30112ea1",
+      "bytes": 3545,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/security-review/SKILL.md",
+      "rawSha256": "fe6f9151fb15c1dffd47a55080c3ad147af7c95dd0ad3714735dec6824b060b7",
+      "bytes": 12493,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/security-review/cloud-infrastructure-security.md",
+      "rawSha256": "7d9a83852475a9396e04c59c73df84ac24ee0f41322016de7c11c62138c2a8ca",
+      "bytes": 10171,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/security-scan/SKILL.md",
+      "rawSha256": "36c34d020eef3c386a82a409f8e3e47edbed441eaf83ae6055d6a029828511e8",
+      "bytes": 4481,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/skill-scout/SKILL.md",
+      "rawSha256": "71b1e8a4aedebeaf4468838389c0a93e4d3bf4e2779bd0a99e0396b045f82d32",
+      "bytes": 4496,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/skill-stocktake/SKILL.md",
+      "rawSha256": "aa8f287c48c5a33bf15094358ffccbe0d4faff9eee9fa2ffcd70c8e9f3d22cdd",
+      "bytes": 7819,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/skill-stocktake/scripts/quick-diff.sh",
+      "rawSha256": "e8b48f77d9e34d0c8043f8fede01387947ecfe0e960f7bd04cce9a44e606c0e8",
+      "bytes": 3271,
+      "fileType": "regular",
+      "mode": "100755"
+    },
+    {
+      "path": "skills/skill-stocktake/scripts/save-results.sh",
+      "rawSha256": "250968532dc3bf1074f024a710d5d8aeec930e6798269703072f062fad1905bd",
+      "bytes": 1952,
+      "fileType": "regular",
+      "mode": "100755"
+    },
+    {
+      "path": "skills/skill-stocktake/scripts/scan.sh",
+      "rawSha256": "b1f16b586e7e2f4c6eeb54ea3895cd5501e64a1e12e242c820193c1193d0b263",
+      "bytes": 5677,
+      "fileType": "regular",
+      "mode": "100755"
+    },
+    {
+      "path": "skills/springboot-patterns/SKILL.md",
+      "rawSha256": "d9fd662f99df39175d86d6c5435c469a9a87447885466bf4e8cc3906eccab771",
+      "bytes": 9931,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/springboot-tdd/SKILL.md",
+      "rawSha256": "e4bd145484d93fb569eb0e1a09ffeb5cca68533d63c83805146b111c48bba172",
+      "bytes": 3786,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/springboot-verification/SKILL.md",
+      "rawSha256": "6797bb91f5b122f84a8490099d997d7339cf8c65f66b15049a9cfa6e8ce213d0",
+      "bytes": 5833,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/strategic-compact/SKILL.md",
+      "rawSha256": "3af4fdd42c6d49fe535f3c7f9ddd2454f93feb81f619c11dbc39ea342283dd0f",
+      "bytes": 7589,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/tdd-workflow/SKILL.md",
+      "rawSha256": "e3a0051a99e82f7047b29a2a98c662d8ef8d0ede186acc085436fced7f2591b7",
+      "bytes": 21462,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/tinystruct-patterns/SKILL.md",
+      "rawSha256": "6f5d16090aa5b1913002480ecfb00feb3ad894a05c9b84d8f3645e2297b6024b",
+      "bytes": 11879,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/tinystruct-patterns/references/architecture.md",
+      "rawSha256": "68b3e856ca7b4e1c7ea6ea49b90dbf9937ff304070f398eb33a67f7f4aeee87f",
+      "bytes": 4057,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/tinystruct-patterns/references/data-handling.md",
+      "rawSha256": "4f14344808d3468228cb2f99215c6a340f25e3e34217147709c60f579742bdcf",
+      "bytes": 1893,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/tinystruct-patterns/references/database.md",
+      "rawSha256": "904b731361ad3cbdededc50c55ad782676441090a252e88a618e4e496c09df75",
+      "bytes": 2648,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/tinystruct-patterns/references/routing.md",
+      "rawSha256": "5accd76c48394eeb0b8f97733c1e928a58c0ee28080951c66979b35b0029cd24",
+      "bytes": 2477,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/tinystruct-patterns/references/system-usage.md",
+      "rawSha256": "6ff5f0ffab18340a298712e93170ff2e3207785c6ec3eb65b3e7f84cae2f06bf",
+      "bytes": 2881,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/tinystruct-patterns/references/testing.md",
+      "rawSha256": "a4c82b7b9b9877049dcba49b8dbfd88e2713e32ad90ac37f598f9be6b2b864f4",
+      "bytes": 1988,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/token-budget-advisor/SKILL.md",
+      "rawSha256": "d092defef257ce470bf364c55a2f2a51cdb37655779a66f1993cbd4295317d03",
+      "bytes": 6117,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/ui-to-vue/SKILL.md",
+      "rawSha256": "cb6c17f7ae28a53b31fb2904180521ccdaa31ad0deafa96c6b4f5b2f4bfea480",
+      "bytes": 4809,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/unified-memory/SKILL.md",
+      "rawSha256": "a6eb9a96b92dfd4a700bceff15195ca1fd4b7fad2944bb014c08812d1a0dc8b0",
+      "bytes": 6032,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/verification-loop/SKILL.md",
+      "rawSha256": "9b533937cfe9be2621cdf90a010e82024482b0481aee9b74de7ca6cb8517e690",
+      "bytes": 2545,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/vite-patterns/SKILL.md",
+      "rawSha256": "2238d353196b6732ba897e32f1872078fde7a9d11f5aca43b53da8bfc7e3917d",
+      "bytes": 17115,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/vue-patterns/SKILL.md",
+      "rawSha256": "1513dffa6a574e01e5acf489220a991b3d94a186d7f79982be8c3fb8f3db92ab",
+      "bytes": 13069,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/windows-desktop-e2e/SKILL.md",
+      "rawSha256": "5e4d77753b581b825361bb53e8adb4fcf611141425333084c5e2ba8c2a4fe5e4",
+      "bytes": 30484,
+      "fileType": "regular",
+      "mode": "100644"
+    },
+    {
+      "path": "skills/workspace-surface-audit/SKILL.md",
+      "rawSha256": "ca6eadae6bd303713da56344bedbd8b246fe07bde1d20a26c9f21844d919cd6f",
+      "bytes": 5163,
+      "fileType": "regular",
+      "mode": "100644"
+    }
+  ]
+}

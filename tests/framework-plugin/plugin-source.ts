@@ -39,3 +39,32 @@ export function loadSuperpowersFromSource(
 ): Promise<FrameworkPluginLoadV1> {
   return loadFrameworkPluginV1("superpowers", { access: superpowersSourceAccess(over) });
 }
+
+/** The same seam for the ECC plugin package source. */
+export const ECC_MANIFEST = fileURLToPath(
+  new URL("../../packages/framework-ecc/package.json", import.meta.url),
+);
+
+export function eccSourceAccess(
+  over: Partial<FrameworkPluginAccessV1> = {},
+): FrameworkPluginAccessV1 {
+  return {
+    importPlugin: () => import("../../packages/framework-ecc/src/index.js"),
+    resolvePackageJson: () => ECC_MANIFEST,
+    resolveEntry: () => fileURLToPath(new URL("src/index.ts", pathToFileURL(ECC_MANIFEST))),
+    readFile: (path) => readFileSync(path),
+    realpath: (path) => realpathSync(path),
+    allowedRoots: () => [realpathSync(dirname(dirname(ECC_MANIFEST)))],
+    loadCatalogIdentities: async () => ({
+      ok: false,
+      refusal: { reason: "catalog-package-unavailable", detail: "not installed" },
+    }),
+    ...over,
+  };
+}
+
+export function loadEccFromSource(
+  over: Partial<FrameworkPluginAccessV1> = {},
+): Promise<FrameworkPluginLoadV1> {
+  return loadFrameworkPluginV1("ecc", { access: eccSourceAccess(over) });
+}

@@ -10,12 +10,16 @@ import {
   writeFileSync,
 } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
-import { z } from "zod";
-import type { BaselineAuthorization } from "../baseline-evidence/verify.js";
-import { type Cli, SUPPORTED_CLIS } from "../internals/clis.js";
-import { readRegularFileWithStats, retryTransient } from "../internals/fsxn.js";
+import {
+  AuthorizationSchema,
+  type BaselineAuthorization,
+  type Cli,
+  readRegularFileWithStats,
+  retryTransient,
+  SUPPORTED_CLIS,
+  z,
+} from "@aihq/core/framework-host";
 import type { EccComponentId, EccMcpComponentId } from "./components.js";
-import { AuthorizationSchema } from "./materialization-receipt.js";
 
 const COMPONENT_ID = /^[a-z][a-z0-9-]*:[a-z0-9][a-z0-9._-]*$/;
 

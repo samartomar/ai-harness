@@ -1,0 +1,134 @@
+import { join } from "node:path";
+import {
+  type Action,
+  type Cli,
+  cliRegistryEntry as entry,
+  governanceOwnsAihSurfaces,
+  isExternalMcp,
+  isPlainObject,
+  type McpServer,
+  mcpConfigAbs,
+  mcpEntries,
+  mcpServers,
+  type OrgPolicy,
+  type PlanContext,
+  parseJsoncText,
+  type RepoStack,
+  readIfExists,
+  writeJson,
+} from "@aihq/core/framework-host";
+import type { EccComponentSelection, EccMcpComponentId } from "./components.js";
+import type { ProjectRegistration } from "./registration.js";
+
+const EMPTY_STACK: RepoStack = {
+  languages: [],
+  frameworks: [],
+  cloud: [],
+  databases: [],
+  deployment: [],
+  hasTypeScript: false,
+  scripts: {},
+  entryPoints: [],
+  browserTest: false,
+  isMonorepo: false,
+};
+
+function mcpName(component: EccMcpComponentId): string {
+  return component.slice("mcp:".length);
+}
+
+/**
+ * Apply legacy MCP policy only when the headless governance inventory is absent.
+ * Under governance, AIH policy project is the exclusive MCP projector; ECC still
+ * owns its agents, skills, commands, and profile selection, but never registers
+ * an MCP component as a side effect of `--with` or a profile.
+ */
+export function orgAllowedEccMcpComponents(
+  components: readonly EccMcpComponentId[],
+  policy: OrgPolicy | undefined,
+): EccMcpComponentId[] {
+  if (governanceOwnsAihSurfaces(policy)) return [];
+  const disabled = new Set(policy?.mcp?.disabledServers ?? []);
+  const allowManagedOnly = policy?.mcp?.allowManagedOnly === true;
+  const allowed = new Set(policy?.mcp?.allowedServers ?? []);
+  return components.filter((component) => {
+    const name = mcpName(component);
+    return !disabled.has(name) && (!allowManagedOnly || allowed.has(name));
+  });
+}
+
+export function selectedEccMcpServers(
+  components: readonly EccMcpComponentId[],
+): Record<string, McpServer> {
+  const catalog = mcpServers("project", EMPTY_STACK, { githubIncumbent: true });
+  const selected: Record<string, McpServer> = {};
+  for (const component of components) {
+    const name = mcpName(component);
+    const server = catalog[name];
+    if (server === undefined) throw new Error(`no validated MCP configuration for ${component}`);
+    selected[name] = server;
+  }
+  return selected;
+}
+
+function existingJsonServerNames(path: string, key: string): Set<string> {
+  const raw = readIfExists(path);
+  if (raw === undefined) return new Set();
+  const parsed = parseJsoncText(raw);
+  if (!isPlainObject(parsed)) return new Set();
+  const servers = parsed[key];
+  return isPlainObject(servers) ? new Set(Object.keys(servers)) : new Set();
+}
+
+function componentsForPath(
+  external: boolean,
+  selection: EccComponentSelection,
+  project: ProjectRegistration | undefined,
+): readonly EccMcpComponentId[] {
+  return external ? selection.mcps : (project?.mcps ?? selection.mcps);
+}
+
+export function scopedEccMcpJsonActions(
+  ctx: PlanContext,
+  clis: readonly Cli[],
+  selection: EccComponentSelection,
+  project: ProjectRegistration | undefined,
+): Action[] {
+  const home = ctx.env.HOME || ctx.env.USERPROFILE;
+  const actions: Action[] = [];
+  const written = new Set<string>();
+  for (const cli of clis) {
+    const config = entry(cli).mcp;
+    if (
+      config.support !== "native" ||
+      config.configFormat !== "json" ||
+      config.configPath === undefined ||
+      config.configKey === undefined
+    ) {
+      continue;
+    }
+    const external = isExternalMcp(config.configPath);
+    if (external && home === undefined) {
+      throw new Error(`cannot resolve global MCP config for ${cli} without HOME or USERPROFILE`);
+    }
+    const path = external ? mcpConfigAbs(home as string, config.configPath) : config.configPath;
+    if (written.has(path)) continue;
+    written.add(path);
+    const absolute = external ? path : join(ctx.root, path);
+    const existing = existingJsonServerNames(absolute, config.configKey);
+    const selected = selectedEccMcpServers(componentsForPath(external, selection, project));
+    const fresh = Object.fromEntries(
+      Object.entries(selected).filter(([name]) => !existing.has(name)),
+    );
+    if (Object.keys(fresh).length === 0) continue;
+    actions.push(
+      writeJson(
+        path,
+        { [config.configKey]: mcpEntries(cli, fresh) },
+        `Register scoped ECC MCP servers for ${entry(cli).label}`,
+        { merge: true, external },
+      ),
+    );
+  }
+  return actions;
+}
