@@ -115,8 +115,9 @@ export function loadFrameworkDescriptorSectionV1<T>(
 
 /**
  * Loads one framework descriptor only through the installed Catalog package,
- * asks Catalog's public reader to validate it, and independently checks the
- * Core-owned envelope before exposing the exact bytes.
+ * admits only bytes whose SHA-256 Core accepts, asks Catalog's public reader to
+ * validate them, and independently checks the Core-owned envelope before
+ * exposing the exact bytes.
  */
 export async function loadFrameworkDescriptorBytesV1(
   frameworkId: CatalogFrameworkIdV1,
@@ -130,6 +131,10 @@ export async function loadFrameworkDescriptorBytesV1(
   );
   if (!loaded.ok) return loaded;
   const file = loaded.files[subpath];
+  const sha256 = createHash("sha256").update(file.bytes).digest("hex");
+  if (sha256 !== ACCEPTED_CATALOG_FRAMEWORK_DESCRIPTOR_SHA256_V1[frameworkId]) {
+    return incompatible(frameworkId, `has unaccepted authority sha256 ${sha256}`);
+  }
   let read: unknown;
   try {
     read = loaded.exports.readCatalogFrameworkDescriptorV1Result({
@@ -150,7 +155,7 @@ export async function loadFrameworkDescriptorBytesV1(
     ok: true,
     frameworkId,
     bytes: Uint8Array.from(file.bytes),
-    sha256: createHash("sha256").update(file.bytes).digest("hex"),
+    sha256,
     ...(loaded.version === undefined ? {} : { catalogVersion: loaded.version }),
   };
 }

@@ -2,7 +2,10 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
-import { loadFrameworkDescriptorBytesV1 } from "../../src/catalog-package/framework-descriptors.js";
+import {
+  ACCEPTED_CATALOG_FRAMEWORK_DESCRIPTOR_SHA256_V1,
+  loadFrameworkDescriptorBytesV1,
+} from "../../src/catalog-package/framework-descriptors.js";
 import type { CatalogPackageAccessV1 } from "../../src/catalog-package/load-catalog-package.js";
 
 const requireFromTest = createRequire(import.meta.url);
@@ -17,16 +20,35 @@ function access(overrides: Partial<CatalogPackageAccessV1> = {}): CatalogPackage
 }
 
 describe("loadFrameworkDescriptorBytesV1", () => {
-  it("returns exact validated bytes and their digest", async () => {
+  it("returns the exact installed bytes Core's authority table accepts", async () => {
+    for (const frameworkId of ["ecc", "superpowers"] as const) {
+      const bytes = readFileSync(
+        requireFromTest.resolve(`@aihq/catalog/catalog-framework-${frameworkId}.json`),
+      );
+      const result = await loadFrameworkDescriptorBytesV1(frameworkId, access());
+      if (!result.ok) throw new Error(result.refusal.detail);
+      const { bytes: loaded, ...identity } = result;
+      expect(identity).toEqual({
+        ok: true,
+        frameworkId,
+        sha256: ACCEPTED_CATALOG_FRAMEWORK_DESCRIPTOR_SHA256_V1[frameworkId],
+        catalogVersion: "0.3.0",
+      });
+      expect(Buffer.from(loaded).equals(bytes)).toBe(true);
+    }
+  });
+
+  it("refuses reader-accepted bytes whose digest Core does not accept", async () => {
     const document = {
       format: "aih-catalog-framework-descriptor",
       version: 1,
-      frameworkId: "ecc",
-      sections: { components: [] },
+      frameworkId: "superpowers",
+      sections: { vendorLock: { pinnedSha: "f".repeat(40) } },
     };
-    const bytes = Buffer.from(`${JSON.stringify(document)}\n`);
+    const bytes = Buffer.from(`${JSON.stringify(document)}
+`);
     const result = await loadFrameworkDescriptorBytesV1(
-      "ecc",
+      "superpowers",
       access({
         importPackage: () =>
           Promise.resolve({
@@ -38,17 +60,19 @@ describe("loadFrameworkDescriptorBytesV1", () => {
         resolve: (specifier) =>
           specifier.endsWith("package.json")
             ? "C:/fixture/package.json"
-            : "C:/fixture/catalog-framework-ecc-v1.json",
+            : "C:/fixture/catalog-framework-superpowers-v1.json",
         readFile: (path) =>
           path.endsWith("package.json") ? Buffer.from('{"version":"0.3.0"}') : bytes,
       }),
     );
-    expect(result).toEqual({
-      ok: true,
-      frameworkId: "ecc",
-      bytes: Uint8Array.from(bytes),
-      sha256: createHash("sha256").update(bytes).digest("hex"),
-      catalogVersion: "0.3.0",
+    expect(result).toMatchObject({
+      ok: false,
+      refusal: {
+        reason: "catalog-package-incompatible",
+        detail: expect.stringContaining(
+          `unaccepted authority sha256 ${createHash("sha256").update(bytes).digest("hex")}`,
+        ),
+      },
     });
   });
 
