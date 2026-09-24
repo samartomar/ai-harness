@@ -423,7 +423,7 @@ acknowledgeable by exact fingerprint with a reason at enterprise. This does not
 cover instructions to collect, reveal, or transmit credentials.
 
 The native secret-exfil heuristic
-(`prompt-injection.secret-exfil` in `src/trust/lint.ts`) requires actual intent,
+(`prompt-injection.secret-exfil`, in the `@aihq/scan` trust lint) requires actual intent,
 not just a nearby HTTP verb, endpoint, credential word, or URL. Endpoint
 declarations, HTTP client calls, headings, code samples, ordinary product copy,
 and directly negated security guidance emit no prompt-injection finding. A
