@@ -11,13 +11,21 @@ import { readRegularFileWithStats } from "../internals/fsxn.js";
 import { type BaselineCatalog, BaselineCatalogSchema } from "./catalog.js";
 import { baselineCatalogById } from "./catalogs.js";
 import {
+  admittedSourceFromCandidateBundleV1,
   assertCollectionSnapshotBytesV1,
+  baselineCoverageV1,
   type CollectionInput,
   collectionBaselineCatalogV1,
+  collectionCoverageV1,
   collectionFilesV1,
+  enforceAcquiredCoveragePathsV1,
   registeredCollectionInputV1,
 } from "./scanner-catalog-consumer.js";
-import { BaselineComponentPathSchema } from "./schema.js";
+import {
+  BaselineComponentPathSchema,
+  type BaselineSourceEvidence,
+  parseBaselineEvidenceLock,
+} from "./schema.js";
 
 /**
  * The closed set of upstream subjects a baseline definition may describe. A definition
@@ -220,14 +228,27 @@ function installedCarriedCatalog(id: DefinitionSourceId): BaselineCatalog | unde
  * and an unusable Catalog propagates its refusal. Only an uncarried pin uses the definition.
  */
 export function resolveScannerDefinitionV1(
-  input: {
-    readonly sourceRoot: string;
-    readonly catalogId: string;
-    readonly definitionPath: string;
-    readonly head: string;
-  },
+  input: ScannerDefinitionInputV1,
   deps: ScannerDefinitionDepsV1 = {},
 ): ScannerDefinitionResolutionV1 {
+  return resolveDefinition(input, deps).resolution;
+}
+
+interface ScannerDefinitionInputV1 {
+  readonly sourceRoot: string;
+  readonly catalogId: string;
+  readonly definitionPath: string;
+  readonly head: string;
+}
+
+function resolveDefinition(
+  input: ScannerDefinitionInputV1,
+  deps: ScannerDefinitionDepsV1,
+): {
+  resolution: ScannerDefinitionResolutionV1;
+  id: DefinitionSourceId;
+  collection?: CollectionInput;
+} {
   const { catalogId } = input;
   if (!Object.hasOwn(SCANNER_DEFINITION_SOURCES_V1, catalogId))
     fail(
@@ -247,13 +268,80 @@ export function resolveScannerDefinitionV1(
   assertComponentPaths(input.sourceRoot, catalog);
 
   const carried = (deps.carriedCatalog ?? installedCarriedCatalog)(id);
+  const collectionInput = collection === undefined ? {} : { collection: collection.input };
   if (carried === undefined || carried.pinnedSha !== catalog.pinnedSha)
-    return { route: "definition", catalog };
+    return { resolution: { route: "definition", catalog }, id, ...collectionInput };
   const carriedIdentity = catalogIdentity(carried);
   const definitionIdentity = catalogIdentity(catalog);
   if (carriedIdentity !== definitionIdentity)
     fail(
       `installed Catalog carries ${id}@${carried.pinnedSha} (${carriedIdentity}); the definition differs (${definitionIdentity})`,
     );
-  return { route: "installed", catalog: carried };
+  return { resolution: { route: "installed", catalog: carried }, id, ...collectionInput };
+}
+
+function readJsonFile(path: string, label: string, maxBytes: number): unknown {
+  const opened = readRegularFileWithStats(resolve(path), { maxBytes });
+  if (opened === undefined || opened.contents.length === 0) fail(`unusable ${label} ${path}`);
+  try {
+    return parseStrictJsonObjectV1(
+      new TextDecoder("utf-8", { fatal: true }).decode(opened.contents),
+      label,
+    );
+  } catch (error) {
+    return fail(
+      `${label} is not one strict JSON object (${error instanceof Error ? error.message : error})`,
+    );
+  }
+}
+
+/**
+ * Coverage for a definition at a pin the installed Catalog does not carry. The admitted
+ * source and its compiled assets come from a Catalog-compiled single-source bundle at that
+ * pin; a framework's vetted snapshot comes from the assembled vendor lock (`baseline:assemble`).
+ * Every binding the installed route checks is checked here against those explicit inputs.
+ */
+export function prepareDefinitionScannerCoverageV1(
+  input: ScannerDefinitionInputV1 & {
+    readonly sourceBundlePath: string;
+    readonly vendorLockPath?: string;
+  },
+  deps: ScannerDefinitionDepsV1 = {},
+) {
+  const { resolution, id, collection } = resolveDefinition(input, deps);
+  const { catalog } = resolution;
+  if (resolution.route === "installed")
+    fail(`the installed Catalog carries ${id}@${catalog.pinnedSha}; run without candidate inputs`);
+  if (collection !== undefined && input.vendorLockPath !== undefined)
+    fail("--vendor-lock applies only to ecc and superpowers");
+  const admitted = admittedSourceFromCandidateBundleV1(
+    readJsonFile(input.sourceBundlePath, "candidate source bundle", 64 * 1024 * 1024),
+    `source:${id}`,
+  );
+  if (admitted.source.revision.id !== catalog.pinnedSha)
+    fail(
+      `candidate source bundle admits ${id}@${admitted.source.revision.id}, definition pins ${catalog.pinnedSha}`,
+    );
+  if (collection !== undefined)
+    return enforceAcquiredCoveragePathsV1(
+      input.sourceRoot,
+      collectionCoverageV1(input.sourceRoot, collection, admitted),
+    );
+  if (id !== "ecc" && id !== "superpowers") return fail(`${id} is not a framework`);
+  if (input.vendorLockPath === undefined)
+    fail(`${id} coverage requires --vendor-lock <assembled lock>`);
+  let snapshot: BaselineSourceEvidence | undefined;
+  try {
+    snapshot = parseBaselineEvidenceLock(
+      readJsonFile(input.vendorLockPath, "vendor lock", 64 * 1024 * 1024),
+    ).sources.find((source) => source.id === id);
+  } catch (error) {
+    return fail(`vendor lock is malformed (${error instanceof Error ? error.message : error})`);
+  }
+  if (snapshot === undefined || snapshot.pinnedSha !== catalog.pinnedSha)
+    fail(`vendor lock does not vet ${id}@${catalog.pinnedSha}`);
+  return enforceAcquiredCoveragePathsV1(
+    input.sourceRoot,
+    baselineCoverageV1(input.sourceRoot, id, catalog, snapshot, admitted),
+  );
 }

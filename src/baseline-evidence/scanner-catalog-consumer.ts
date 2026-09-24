@@ -5,6 +5,11 @@ import { codeUnitCompare } from "../capability/package-graph/canonical.js";
 import { loadCatalogAuthoringBundleV1 } from "../catalog-package/authoring-bundle.js";
 import { loadCatalogCoreMaterialV1 } from "../catalog-package/core-materials.js";
 import { canonicalStrictJsonSha256V1 } from "../contract/strict-json-v1.js";
+import { verifyAuthoringCatalogBundleIntegrityV1 } from "../org-policy/workbench/catalog-integrity.js";
+import {
+  type AuthoringCatalogBundleV1,
+  AuthoringCatalogBundleV1Schema,
+} from "../org-policy/workbench/contracts.js";
 import {
   assertAcquiredGithubSourceMaterialPathsV1,
   isKnownAcquiredGithubSourceRootV1,
@@ -13,6 +18,7 @@ import { type BaselineCatalog, defineBaselineCatalog } from "./catalog.js";
 import { baselineCatalogById } from "./catalogs.js";
 import { hashComponentTree, hashSourceTree } from "./hash.js";
 import { componentIdentityPaths } from "./license.js";
+import type { BaselineSourceEvidence } from "./schema.js";
 import { readVendorBaselineLock } from "./vendor.js";
 
 interface PinnedFileV1 {
@@ -35,7 +41,7 @@ export interface CollectionInput {
     readonly fileRefs: readonly string[];
   }[];
 }
-type BaselineProviderId = "ecc" | "superpowers";
+export type BaselineProviderId = "ecc" | "superpowers";
 
 function collectionInputsV1(): Readonly<Record<string, CollectionInput>> {
   const material = loadCatalogCoreMaterialV1("scannerProviders");
@@ -46,12 +52,42 @@ function collectionInputsV1(): Readonly<Record<string, CollectionInput>> {
   return structuredClone(collections) as Readonly<Record<string, CollectionInput>>;
 }
 
-function admittedSourceV1(sourceId: string) {
-  const bundle = loadCatalogAuthoringBundleV1().prepared.bundle;
+function admittedFromBundleV1(bundle: AuthoringCatalogBundleV1, sourceId: string) {
   const source = bundle.sources[sourceId];
   if (source === undefined) fail(`missing admitted source ${sourceId}`);
   const assets = Object.values(bundle.assets).filter((asset) => asset.sourceId === sourceId);
   return { source, assets };
+}
+
+/** One source and its compiled assets, as a Catalog authoring bundle admits them. */
+export type AdmittedCatalogSourceV1 = ReturnType<typeof admittedFromBundleV1>;
+
+function admittedSourceV1(sourceId: string): AdmittedCatalogSourceV1 {
+  return admittedFromBundleV1(loadCatalogAuthoringBundleV1().prepared.bundle, sourceId);
+}
+
+/**
+ * A Catalog-compiled single-source bundle supplied as a file (a candidate at a pin the
+ * installed Catalog does not carry). Core's own schema and integrity checks apply; the
+ * bundle must carry exactly the one requested source and no other.
+ */
+export function admittedSourceFromCandidateBundleV1(
+  value: unknown,
+  sourceId: string,
+): AdmittedCatalogSourceV1 {
+  let bundle: AuthoringCatalogBundleV1;
+  try {
+    bundle = AuthoringCatalogBundleV1Schema.parse(value);
+    verifyAuthoringCatalogBundleIntegrityV1(bundle);
+  } catch (error) {
+    return fail(
+      `candidate source bundle is malformed or unsealed (${error instanceof Error ? error.message : error})`,
+    );
+  }
+  const ids = Object.keys(bundle.sources);
+  if (ids.length !== 1 || ids[0] !== sourceId)
+    fail(`candidate source bundle must carry exactly ${sourceId}, not ${ids.join(", ") || "none"}`);
+  return admittedFromBundleV1(bundle, sourceId);
 }
 
 function fail(message: string): never {
@@ -61,14 +97,29 @@ function fail(message: string): never {
 function exactPinnedBaselineCoverageV1(sourceRoot: string, id: BaselineProviderId) {
   const sourceSnapshot = readVendorBaselineLock().sources.find((source) => source.id === id);
   if (sourceSnapshot === undefined) fail("missing vetted source snapshot");
-  const catalog = baselineCatalogById(id, sourceSnapshot.pinnedSha);
+  return baselineCoverageV1(
+    sourceRoot,
+    id,
+    baselineCatalogById(id, sourceSnapshot.pinnedSha),
+    sourceSnapshot,
+    admittedSourceV1(`source:${id}`),
+  );
+}
+
+/** Framework coverage: the checkout must equal the vetted snapshot, component by component. */
+export function baselineCoverageV1(
+  sourceRoot: string,
+  id: BaselineProviderId,
+  catalog: BaselineCatalog,
+  sourceSnapshot: BaselineSourceEvidence,
+  admitted: AdmittedCatalogSourceV1,
+) {
   if (
     catalog.owner !== sourceSnapshot.owner ||
     catalog.repo !== sourceSnapshot.repo ||
     catalog.pinnedSha !== sourceSnapshot.pinnedSha
   )
     fail("baseline source identity");
-  const admitted = admittedSourceV1(`source:${id}`);
   const sourceTreeSha256 = hashSourceTree(sourceRoot).treeSha256;
   if (sourceTreeSha256 !== sourceSnapshot.sourceTreeSha256)
     fail("source tree differs from vetted snapshot");
@@ -150,7 +201,7 @@ function exactPinnedBaselineCoverageV1(sourceRoot: string, id: BaselineProviderI
     coverageDigest: `sha256:${canonicalStrictJsonSha256V1(coverage)}`,
   };
 }
-function enforceAcquiredCoveragePathsV1<
+export function enforceAcquiredCoveragePathsV1<
   T extends Readonly<{
     catalog: Readonly<{ owner: string; repo: string; pinnedSha: string }>;
     coverage: Readonly<{ components: readonly Readonly<{ paths: readonly string[] }>[] }>;
@@ -243,8 +294,16 @@ export function collectionBaselineCatalogV1(input: CollectionInput): BaselineCat
  */
 export function prepareCollectionScannerCoverageV1(sourceRoot: string, input: CollectionInput) {
   assertCollectionSnapshotBytesV1(sourceRoot, input);
+  return collectionCoverageV1(sourceRoot, input, admittedSourceV1(`source:${input.source.id}`));
+}
+
+/** Collection coverage over already verified snapshot bytes and one admitted Catalog source. */
+export function collectionCoverageV1(
+  sourceRoot: string,
+  input: CollectionInput,
+  admitted: AdmittedCatalogSourceV1,
+) {
   const catalog = collectionBaselineCatalogV1(input);
-  const admitted = admittedSourceV1(`source:${input.source.id}`);
   if (admitted.source.revision.id !== input.source.commit) {
     throw new TypeError("Scanner source differs from the admitted Catalog revision.");
   }
