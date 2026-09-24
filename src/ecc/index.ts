@@ -24,9 +24,13 @@ import { scanRepo } from "../profile/scan.js";
 import { execArgv } from "../tools/install.js";
 import {
   assertChromeDevtoolsOptOuts,
+  CHROME_DEVTOOLS_OPT_OUT_REFUSAL_EXIT,
+  CHROME_DEVTOOLS_OPT_OUT_REFUSAL_MARKER,
   CODEX_AGENTS_BLOCK_MARKER,
   type CodexScopedMcpServers,
+  chromeDevtoolsOptOutFailureCheck,
   codexChromeDevtoolsOptOutActions,
+  codexChromeDevtoolsOptOutRefusals,
   codexHomeDir,
   codexInstallStateContents,
   codexInstallStatePath,
@@ -942,12 +946,19 @@ function legacyDescendantHeader(line) {
   for (const [name, entry] of servers) { if (!entry.launch) continue; const missing = optOuts.filter((variable) => !entry.env.has(variable)); if (missing.length > 0) return { name, missing }; }
   return undefined;
 }
+// Refuses with the typed refusal plan time emits: one readable line per entry,
+// then one marker line carrying the refusals as JSON, then the refusal exit status.
 function refuseChromeOptOuts(configs) {
+  const refusals = [];
   for (const { scope, configPath: target, raw } of configs) {
     if (raw === undefined) continue;
     const problem = chromeOptOutProblem(raw);
-    if (problem) throw new Error("refusing " + scope + " Codex MCP entry \"" + problem.name + "\" (" + target + "): it launches chrome-devtools-mcp without " + problem.missing.map((name) => name + "=\"1\"").join(" and ") + "; aih never rewrites a user-owned entry: remove it so aih manages chrome-devtools, or add both variables to its env table");
+    if (problem) refusals.push({ scope, configPath: target, entry: problem.name, missing: problem.missing });
   }
+  if (refusals.length === 0) return;
+  for (const refusal of refusals) process.stderr.write("refusing " + refusal.scope + " Codex MCP entry \"" + refusal.entry + "\" (" + refusal.configPath + "): it launches chrome-devtools-mcp without " + refusal.missing.map((name) => name + "=\"1\"").join(" and ") + "; aih never rewrites a user-owned entry: remove it so aih manages chrome-devtools, or add both variables to its env table\n");
+  process.stderr.write(${JSON.stringify(CHROME_DEVTOOLS_OPT_OUT_REFUSAL_MARKER)} + JSON.stringify(refusals) + "\n");
+  process.exit(${CHROME_DEVTOOLS_OPT_OUT_REFUSAL_EXIT});
 }`,
   "function renderScopedSection(name, server) {",
   '  if (!server || typeof server !== "object" || Array.isArray(server)) throw new Error("invalid scoped Codex MCP server: " + name);',
@@ -1066,7 +1077,17 @@ export function codexEccActions(
         mcpB64 ?? "",
         stateB64,
       ],
-      { cwd: repo.dir },
+      {
+        cwd: repo.dir,
+        failureCheck: (result) =>
+          chromeDevtoolsOptOutFailureCheck(result, () =>
+            codexChromeDevtoolsOptOutRefusals(ctx, Object.keys(effectiveScopedMcps)),
+          ) ?? {
+            name: "ECC Codex install",
+            verdict: "fail",
+            detail: `ECC Codex install failed (exit ${result.code ?? "signal"})`,
+          },
+      },
     ),
     doc(
       "ECC Codex install (safe merge path)",

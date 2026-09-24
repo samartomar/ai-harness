@@ -14,7 +14,9 @@ import {
   type WriteAction,
   writeText,
 } from "../internals/plan.js";
+import type { RunResult } from "../internals/proc.js";
 import { lines } from "../internals/render.js";
+import type { Check } from "../internals/verify.js";
 export type CodexMcpTransport = "stdio" | "http" | "mixed" | "unknown";
 type CodexMcpScope = "project" | "global" | "planned ECC";
 
@@ -1073,13 +1075,15 @@ export function codexChromeDevtoolsOptOutRefusals(
   return refusals;
 }
 
-export function codexChromeDevtoolsOptOutActions(
-  ctx: PlanContext,
-  plannedServers: Iterable<string>,
-): Action[] {
-  const refusals = codexChromeDevtoolsOptOutRefusals(ctx, plannedServers);
-  if (refusals.length === 0) return [];
-  const summary = refusals
+/** Exit status of the Codex merge script's apply-time opt-out refusal (sysexits EX_CONFIG). */
+export const CHROME_DEVTOOLS_OPT_OUT_REFUSAL_EXIT = 78;
+/** Prefix of the one stderr line that carries the apply-time refusals as JSON. */
+export const CHROME_DEVTOOLS_OPT_OUT_REFUSAL_MARKER = "aih-refusal mcp.telemetry-opt-out-missing ";
+
+function chromeDevtoolsOptOutSummary(refusals: readonly ChromeDevtoolsOptOutRefusal[]): string {
+  if (refusals.length === 0)
+    return `the Codex config the install was about to write launches chrome-devtools-mcp without ${describeMissingOptOuts(CHROME_DEVTOOLS_MCP_OPT_OUTS)} (rerun the plan to name the entry)`;
+  return refusals
     .map(
       (refusal) =>
         `${refusal.scope} Codex config entry "${refusal.entry}" (${refusal.configPath}) ` +
@@ -1087,7 +1091,86 @@ export function codexChromeDevtoolsOptOutActions(
         describeMissingOptOuts(refusal.missing),
     )
     .join("; ");
-  const firstEntry = refusals.find((refusal) => !refusal.unparseable)?.entry ?? "<name>";
+}
+
+function firstRefusedEntry(refusals: readonly ChromeDevtoolsOptOutRefusal[]): string {
+  return refusals.find((refusal) => !refusal.unparseable)?.entry ?? "<name>";
+}
+
+/** The one structured refusal, shared by the plan-time probe and the apply-time failure. */
+function chromeDevtoolsOptOutCheck(refusals: readonly ChromeDevtoolsOptOutRefusal[]): Check {
+  return {
+    name: "Chrome DevTools MCP telemetry opt-outs",
+    verdict: "fail",
+    code: "mcp.telemetry-opt-out-missing",
+    detail:
+      `${chromeDevtoolsOptOutSummary(refusals)}. Next: remove the entry (aih-managed ` +
+      "chrome-devtools always carries both opt-outs) or add the missing variables under " +
+      `[mcp_servers.${firstRefusedEntry(refusals)}.env], then rerun the ECC Codex install; ` +
+      "aih never rewrites a user-owned entry.",
+  };
+}
+
+function isOptOutRefusal(value: unknown): value is ChromeDevtoolsOptOutRefusal {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  const allowed = new Set(["scope", "configPath", "entry", "missing", "unparseable"]);
+  const missing = record.missing;
+  return (
+    Object.keys(record).every((key) => allowed.has(key)) &&
+    (record.scope === "user" || record.scope === "project") &&
+    typeof record.configPath === "string" &&
+    record.configPath.length > 0 &&
+    typeof record.entry === "string" &&
+    record.entry.length > 0 &&
+    Array.isArray(missing) &&
+    missing.length > 0 &&
+    new Set(missing).size === missing.length &&
+    missing.every((name) => (CHROME_DEVTOOLS_MCP_OPT_OUTS as readonly unknown[]).includes(name)) &&
+    (record.unparseable === undefined || record.unparseable === true)
+  );
+}
+
+/** Reads the merge script's refusal line; anything malformed is not a refusal. */
+function refusalsFromChildOutput(stderr: string): ChromeDevtoolsOptOutRefusal[] | undefined {
+  const line = stderr
+    .split(/\r?\n/)
+    .reverse()
+    .find((candidate) => candidate.startsWith(CHROME_DEVTOOLS_OPT_OUT_REFUSAL_MARKER));
+  if (line === undefined) return undefined;
+  let value: unknown;
+  try {
+    value = JSON.parse(line.slice(CHROME_DEVTOOLS_OPT_OUT_REFUSAL_MARKER.length));
+  } catch {
+    return undefined;
+  }
+  return Array.isArray(value) && value.length > 0 && value.every(isOptOutRefusal)
+    ? value
+    : undefined;
+}
+
+/**
+ * Maps the merge script's apply-time refusal back to the plan-time check. The
+ * refusal line is used when the child output reaches aih; when the executor
+ * scrubs it (bounded-stdin drivers), the same plan-time evaluation re-reads
+ * the live configs. Any other failure is not this refusal.
+ */
+export function chromeDevtoolsOptOutFailureCheck(
+  result: RunResult,
+  recompute: () => ChromeDevtoolsOptOutRefusal[],
+): Check | undefined {
+  if (result.code !== CHROME_DEVTOOLS_OPT_OUT_REFUSAL_EXIT) return undefined;
+  return chromeDevtoolsOptOutCheck(refusalsFromChildOutput(result.stderr) ?? recompute());
+}
+
+export function codexChromeDevtoolsOptOutActions(
+  ctx: PlanContext,
+  plannedServers: Iterable<string>,
+): Action[] {
+  const refusals = codexChromeDevtoolsOptOutRefusals(ctx, plannedServers);
+  if (refusals.length === 0) return [];
+  const summary = chromeDevtoolsOptOutSummary(refusals);
+  const firstEntry = firstRefusedEntry(refusals);
   return [
     doc(
       "Chrome DevTools MCP telemetry opt-outs missing — fix before running ECC",
@@ -1103,12 +1186,7 @@ export function codexChromeDevtoolsOptOutActions(
         "then rerun `aih ecc --cli codex --apply`.",
       ),
     ),
-    probe("Chrome DevTools MCP telemetry opt-outs", () => ({
-      name: "Chrome DevTools MCP telemetry opt-outs",
-      verdict: "fail",
-      code: "mcp.telemetry-opt-out-missing",
-      detail: summary,
-    })),
+    probe("Chrome DevTools MCP telemetry opt-outs", () => chromeDevtoolsOptOutCheck(refusals)),
   ];
 }
 

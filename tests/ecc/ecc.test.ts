@@ -19,6 +19,7 @@ import { parse } from "smol-toml";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   codexAgentsBlockRemovalAction,
+  codexChromeDevtoolsOptOutActions,
   codexConfigRemovalAction,
   codexInstallStateCleanupAction,
   codexPruneRemovalActions,
@@ -2245,8 +2246,9 @@ describe("Codex managed destination safety", () => {
       );
       const beforeState = readFileSync(statePath, "utf8");
       const base = makeCtx({ cli: "codex" });
+      const ctx = { ...base, env: { ...base.env, HOME: home, USERPROFILE: home } };
       const action = codexEccActions(
-        { ...base, env: { ...base.env, HOME: home, USERPROFILE: home } },
+        ctx,
         { dir: repo, posix: repo.replace(/\\/g, "/"), explicit: true, hasCache: false },
         "minimal",
       ).find(
@@ -2264,12 +2266,73 @@ describe("Codex managed destination safety", () => {
       });
       return {
         result,
+        action,
+        ctx,
+        configPath,
         config: readFileSync(configPath, "utf8"),
         state: readFileSync(statePath, "utf8"),
         beforeState,
         agents: existsSync(join(home, ".codex", "AGENTS.md")),
       };
     }
+
+    const failureCheckOf = (run: ReturnType<typeof runDirectApply>) => {
+      const check = run.action.failureCheck;
+      if (typeof check !== "function") throw new Error("missing Codex merge failure check");
+      return check({
+        code: run.result.status,
+        stdout: run.result.stdout,
+        stderr: run.result.stderr,
+      });
+    };
+    const planTimeCheck = async (ctx: PlanContext, planned: string[]) => {
+      const probeAction = codexChromeDevtoolsOptOutActions(ctx, planned).find(
+        (candidate): candidate is ProbeAction => candidate.kind === "probe",
+      );
+      if (probeAction === undefined) throw new Error("missing plan-time opt-out refusal");
+      return probeAction.run(ctx);
+    };
+
+    it("reports an apply-time user refusal as the same typed check plan time emits", async () => {
+      const config =
+        '[mcp_servers.chrome-devtools]\ncommand = "npx"\nargs = ["-y", "chrome-devtools-mcp@1.10.1"]\n';
+      const run = runDirectApply("opt-out-typed-user", config);
+
+      expect(run.result.status).toBe(78);
+      const check = failureCheckOf(run);
+      expect(check).toEqual(await planTimeCheck(run.ctx, []));
+      expect(check).toMatchObject({ code: "mcp.telemetry-opt-out-missing", verdict: "fail" });
+      expect(check.detail).toContain(
+        `user Codex config entry "chrome-devtools" (${run.configPath})`,
+      );
+      expect(check.detail).toContain(`${NO_STATS}="1" and ${NO_UPDATES}="1"`);
+      expect(check.detail).toContain("Next: remove the entry");
+      expect(check.detail).toContain("[mcp_servers.chrome-devtools.env]");
+    });
+
+    it("reports an apply-time project refusal with its scope and config path", async () => {
+      const run = runDirectApply("opt-out-typed-project", "", {
+        projectAfterPlan: `${unsafeProject}[mcp_servers.browser.env]\n${NO_UPDATES} = "1"\n`,
+      });
+
+      expect(run.result.status).toBe(78);
+      const check = failureCheckOf(run);
+      expect(check).toEqual(await planTimeCheck(run.ctx, []));
+      expect(check.code).toBe("mcp.telemetry-opt-out-missing");
+      expect(check.detail).toContain(
+        `project Codex config entry "browser" (${projectConfigPath()})`,
+      );
+      expect(check.detail).toContain(`${NO_STATS}="1"`);
+      expect(check.detail).not.toContain(`${NO_UPDATES}="1"`);
+      expect(check.detail).toContain("[mcp_servers.browser.env]");
+    });
+
+    it("keeps unrelated merge failures untyped", () => {
+      const run = runDirectApply("opt-out-untyped", "", { mergeHelper: "process.exit(3);\n" });
+
+      expect(run.result.status).not.toBe(0);
+      expect(failureCheckOf(run).code).toBeUndefined();
+    });
 
     const unsafeProject =
       '[mcp_servers.browser]\ncommand = "npx"\nargs = ["-y", "chrome-devtools-mcp@1.10.1"]\n';

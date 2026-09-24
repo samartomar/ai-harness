@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { inflateRawSync } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { BaselineAuthorization } from "../../src/baseline-evidence/verify.js";
+import { codexChromeDevtoolsOptOutActions } from "../../src/ecc/codex.js";
 import type { EccComponentSelection } from "../../src/ecc/components.js";
 import { eccEvidenceComponentIdsForSelection } from "../../src/ecc/evidence.js";
 import { buildEccRegistrationRequest } from "../../src/ecc/pipeline.js";
@@ -1575,6 +1576,58 @@ describe("verifiedEccInstallPlan", () => {
       expect(run.result.stderr).toContain("CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS");
       expect(run.user).toBe(run.beforeUser);
       expect(run.aihState).toBe(false);
+    });
+
+    it("reports the apply-time refusal as the typed plan-time check through the driver", async () => {
+      const home = join(root, "typed-home");
+      const sourceRoot = join(root, "typed-source");
+      mkdirSync(join(home, ".codex"), { recursive: true });
+      prepareVerifiedCodexSource(sourceRoot);
+      const context = { ...ctx(), env: { HOME: home, USERPROFILE: home } };
+      const selected = selection();
+      const built = verifiedEccInstallPlan(
+        context,
+        sourceRoot,
+        { clis: ["codex"], profile: "core", packs: [], selection: selected },
+        authorizationsForSelection("codex", selected),
+      );
+      const driver = built.actions.find(
+        (action): action is Extract<Action, { kind: "exec" }> =>
+          action.kind === "exec" &&
+          action.describe.startsWith("Install from the evidence-verified"),
+      );
+      if (driver === undefined || typeof driver.failureCheck !== "function")
+        throw new Error("missing verified driver failure check");
+      mkdirSync(join(root, ".codex"), { recursive: true });
+      writeFileSync(join(root, ".codex", "config.toml"), unsafeLaunch, "utf8");
+      const planTime = await Promise.all(
+        codexChromeDevtoolsOptOutActions(context, [])
+          .filter((action): action is Extract<Action, { kind: "probe" }> => action.kind === "probe")
+          .map((action) => action.run(context)),
+      );
+
+      // The executor scrubs bounded-stdin child output, so only the exit code survives.
+      const check = driver.failureCheck({
+        code: 78,
+        stdout: "",
+        stderr: "bounded-stdin child failed",
+      });
+
+      expect(planTime).toHaveLength(1);
+      expect(check).toEqual(planTime[0]);
+      expect(check.code).toBe("mcp.telemetry-opt-out-missing");
+      expect(check.detail).toContain(
+        `project Codex config entry "browser" (${join(root, ".codex", "config.toml")})`,
+      );
+      expect(
+        driver.failureCheck({ code: 1, stdout: "", stderr: "bounded-stdin child failed" }).code,
+      ).toBeUndefined();
+    });
+
+    it("exits with the refusal status the driver maps to the typed check", () => {
+      const run = runVerifiedCodexStep("status-project", { project: unsafeLaunch });
+
+      expect(run.result.status).toBe(78);
     });
 
     it("includes the project config in apply-time change detection", () => {

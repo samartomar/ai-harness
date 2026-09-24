@@ -16,8 +16,11 @@ import {
 import { lines } from "../internals/render.js";
 import { execArgv } from "../tools/install.js";
 import {
+  type ChromeDevtoolsOptOutRefusal,
   type CodexScopedMcpServers,
+  chromeDevtoolsOptOutFailureCheck,
   codexChromeDevtoolsOptOutActions,
+  codexChromeDevtoolsOptOutRefusals,
   codexMcpCollisionActions,
   coreOwnedEccCodexMcpServers,
 } from "./codex.js";
@@ -399,7 +402,10 @@ function requireAuthorizedRuntime(
   }
 }
 
-function driverAction(steps: readonly VerifiedInstallStep[]): Action {
+function driverAction(
+  steps: readonly VerifiedInstallStep[],
+  codexOptOutRefusals?: () => ChromeDevtoolsOptOutRefusal[],
+): Action {
   // Steps stay in memory until apply and ride bounded stdin, never argv or a
   // shared temp file. They embed registration/materialization payloads that can
   // exceed Windows' 32,767-character command-line limit.
@@ -417,11 +423,16 @@ function driverAction(steps: readonly VerifiedInstallStep[]): Action {
     {
       stdin: { data: serialized, maxBytes: MAX_VERIFIED_ECC_INSTALL_STDIN_BYTES },
       timeoutMs: 180_000,
-      failureCheck: (result) => ({
-        name: "verified ECC install",
-        verdict: "fail",
-        detail: `verified ECC install step failed (exit ${result.code ?? "signal"})`,
-      }),
+      // The executor scrubs this bounded-stdin driver's output, so the Codex step's
+      // refusal status is mapped back by re-running the plan-time evaluation.
+      failureCheck: (result) =>
+        (codexOptOutRefusals === undefined
+          ? undefined
+          : chromeDevtoolsOptOutFailureCheck(result, codexOptOutRefusals)) ?? {
+          name: "verified ECC install",
+          verdict: "fail",
+          detail: `verified ECC install step failed (exit ${result.code ?? "signal"})`,
+        },
     },
   );
 }
@@ -478,6 +489,7 @@ export function verifiedEccInstallPlan(
   const post: Action[] = [];
   const steps: VerifiedInstallStep[] = [];
   const installedClis: Cli[] = [];
+  let codexOptOutRefusals: (() => ChromeDevtoolsOptOutRefusal[]) | undefined;
   if (needsNodeRuntime) {
     steps.push({
       argv: execArgv(ctx.host.platform, [
@@ -522,6 +534,7 @@ export function verifiedEccInstallPlan(
         pre.push(...blockers);
         continue;
       }
+      codexOptOutRefusals = () => codexChromeDevtoolsOptOutRefusals(ctx, Object.keys(scopedMcps));
       for (const action of codexEccActions(
         ctx,
         repo,
@@ -601,7 +614,7 @@ export function verifiedEccInstallPlan(
   return plan(
     "ecc: verified install",
     ...pre,
-    ...(steps.length > 0 ? [driverAction(steps)] : []),
+    ...(steps.length > 0 ? [driverAction(steps, codexOptOutRefusals)] : []),
     ...post,
     doc(
       "ECC verified source",
