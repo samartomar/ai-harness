@@ -12,19 +12,18 @@ export const PACKAGE_VERSION = "0.1.0";
 export const CONTRACT_VERSION = 1;
 export const HOST_API_VERSION = 1;
 
-/** affaan-m/ECC at the pinned commit this plugin's inventories were verified against. */
+/**
+ * The one affaan-m/ECC revision this plugin version supports (C3: Core checks it
+ * against Catalog's plugins record, and the plugin requires Catalog's
+ * `vendorLock.pinnedSha` to equal it). This is the plugin's only revision
+ * datum: hook ids, profiles, eligibility and provenance all come from the
+ * descriptor bytes, so moving revisions is this line plus Catalog's
+ * regenerated descriptor.
+ */
 export const UPSTREAM: FrameworkUpstreamV1 = Object.freeze({
   repository: "affaan-m/ECC",
   commit: "5caf398a91599029a176ca6d806409b00d1052c4",
 });
-
-/**
- * SHA-256 of `JSON.stringify(sources.map(({ path, sha256 }) => [path, sha256]))`
- * over the hook-control provenance sources at {@link UPSTREAM}: binds the
- * reviewed 43-row hook inventory and ECC's runtime flag grammar together.
- */
-export const HOOK_CONTROL_SOURCE_CONTENT_SHA256 =
-  "7c58c4d611b9b8724690f0f018405e491965d5749b7ad82797a37e0c61d5955b";
 
 /**
  * `aih ecc` has a route for every host Core targets: an evidence-gated install

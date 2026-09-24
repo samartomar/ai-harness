@@ -47,10 +47,13 @@ Sections the plugin does not read are ignored.
   the upstream this plugin version supports
   (`affaan-m/ECC@5caf398a91599029a176ca6d806409b00d1052c4`); its `components`
   give each evidence component's source paths.
-- `hookControlInventory` (hook operations): the reviewed 43-hook inventory,
-  ECC's `minimal`/`standard`/`strict` profiles and the 42 disable-eligible ids.
-  Its provenance content digest must equal the one this plugin was reviewed
-  against.
+- `hookControlInventory` (hook operations): ECC hook rows, profiles and each
+  row's disable eligibility, declarations (`host`, `sourcePath`, `event`,
+  `execution`; default: Claude `hooks/hooks.json`) and control
+  (`claude-settings-env` or `none`; default: the Claude settings switch for an
+  eligible row). None of it is fixed in code: the plugin checks that the
+  provenance names the pinned commit and that its content digest is the digest
+  of its source list, and that ids are unique and profiles declared.
 - `moduleGraph`, `profileGraph`: ECC's install modules and profiles.
 - `installPreview`: the source-free install preview for dry runs.
 
@@ -59,9 +62,12 @@ Sections the plugin does not read are ignored.
 `planHookControls` accepts the merged request Core builds from enterprise
 policy (`governance.frameworkHookControls.ecc`) and the project's
 `.aih-config.json` `frameworkHookControls.ecc` list (a user may only add
-disables; enterprise wins). It refuses an unknown hook id, the outer
-`pre:bash:dispatcher` wrapper, an unknown profile and a hook the chosen profile
-never runs. ECC reads two switches from the Claude settings environment —
-`ECC_HOOK_PROFILE` and the comma-separated `ECC_DISABLED_HOOKS` — so the plan
-returns those two values for Core's hook registrar to write. On other hosts the
-decision is `not-applicable`: ECC declares its hooks in Claude's `hooks.json`.
+disables; enterprise wins). It refuses an unknown hook id, a hook that is not
+individually disable-eligible, an unknown profile and a hook the chosen profile
+never runs. A row with control `none` (for example ECC's OpenCode plugin
+`.opencode/plugins/ecc-hooks.ts`) can be disabled and is planned, labelled
+`unenforced` with a next route: aih cannot switch it off on its own. For rows
+with the Claude settings switch, ECC reads `ECC_HOOK_PROFILE` and the
+comma-separated `ECC_DISABLED_HOOKS` from the Claude settings environment, so
+the plan returns those two values for Core's hook registrar to write. On a host
+a row does not declare, the decision is `not-applicable`.

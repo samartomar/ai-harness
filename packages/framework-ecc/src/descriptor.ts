@@ -3,14 +3,10 @@ import {
   AihError,
   type FrameworkDescriptorBytesV1,
   parseNativeStrictJsonObjectV1,
+  SUPPORTED_CLIS,
   z,
 } from "@aihq/core/framework-host";
-import {
-  HOOK_CONTROL_SOURCE_CONTENT_SHA256,
-  PACKAGE_NAME,
-  PACKAGE_VERSION,
-  UPSTREAM,
-} from "./identity.js";
+import { PACKAGE_NAME, PACKAGE_VERSION, UPSTREAM } from "./identity.js";
 
 /**
  * This plugin's own schema for the ECC framework descriptor Core loads from
@@ -22,7 +18,7 @@ import {
  *
  * Sections read:
  * - `vendorLock` (every operation): the pinned ECC source identity;
- * - `hookControlInventory`: the reviewed hook inventory and ECC's profiles;
+ * - `hookControlInventory`: the hook inventory, ECC's profiles and each hook's control;
  * - `moduleGraph`, `profileGraph`: ECC's install modules and profiles;
  * - `installPreview`: the source-free install preview for dry runs.
  */
@@ -138,7 +134,30 @@ export function eccDescriptorSectionOf(
   return value;
 }
 
-const HookProfileIdSchema = z.enum(["minimal", "standard", "strict"]);
+const HookProfileIdSchema = z.string().regex(/^[a-z][a-z0-9-]{0,39}$/);
+
+/** Where a hook is declared on one host, recorded from the pinned tree. */
+const HookDeclarationSchema = z
+  .object({
+    host: z.enum(SUPPORTED_CLIS),
+    sourcePath: z.string().regex(/^[A-Za-z0-9._/-]{1,240}$/),
+    event: z.string().regex(/^[A-Za-z][A-Za-z0-9._-]{0,63}$/),
+    execution: z.enum(["process", "in-process", "declarative"]),
+  })
+  .strict();
+
+/**
+ * How a hook is turned off upstream:
+ * - `claude-settings-env`: ECC's hook runtime skips it when `ECC_DISABLED_HOOKS`
+ *   in the Claude settings environment lists it (the default for a row that
+ *   declares no control and is disable-eligible);
+ * - `none`: ECC has no switch for it (for example its OpenCode plugin), so a
+ *   disable is recorded and labelled `unenforced` with a next route.
+ */
+const HookControlSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("claude-settings-env") }).strict(),
+  z.object({ kind: z.literal("none") }).strict(),
+]);
 
 const HookControlInventorySchema = z
   .object({
@@ -151,7 +170,7 @@ const HookControlInventorySchema = z
           .array(
             z
               .object({
-                path: z.string().regex(/^[A-Za-z0-9._\-/]{1,240}$/),
+                path: z.string().regex(/^[A-Za-z0-9._/-]{1,240}$/),
                 sha256: z.string().regex(/^[0-9a-f]{64}$/),
               })
               .strict(),
@@ -162,31 +181,59 @@ const HookControlInventorySchema = z
       .strict(),
     profiles: z
       .array(z.object({ id: HookProfileIdSchema, label: z.string().min(1).max(40) }).strict())
-      .length(3),
+      .min(1)
+      .max(8),
     hooks: z
       .array(
         z
           .object({
             id: z.string().regex(/^[a-z][a-z0-9:-]{0,99}$/),
-            event: z.string().regex(/^[A-Za-z][A-Za-z0-9]{0,63}$/),
-            profiles: z.array(HookProfileIdSchema).min(1).max(3),
+            event: z.string().regex(/^[A-Za-z][A-Za-z0-9._-]{0,63}$/),
+            profiles: z.array(HookProfileIdSchema).min(1).max(8),
             disableEligible: z.boolean(),
+            declarations: z.array(HookDeclarationSchema).min(1).max(16).optional(),
+            control: HookControlSchema.optional(),
           })
           .strict(),
       )
       .min(1)
-      .max(128),
+      .max(256),
   })
   .strict();
 
-export type EccHookProfile = z.infer<typeof HookProfileIdSchema>;
 export type EccHookControlInventory = z.infer<typeof HookControlInventorySchema>;
+export type EccHookRow = EccHookControlInventory["hooks"][number];
+
+/** ECC's own Claude hook file: the declaration of a row that records none. */
+export const ECC_CLAUDE_HOOK_SOURCE = "hooks/hooks.json";
+
+/** A row's declarations, defaulting to ECC's Claude `hooks/hooks.json`. */
+export function eccHookDeclarations(hook: EccHookRow): NonNullable<EccHookRow["declarations"]> {
+  return (
+    hook.declarations ?? [
+      {
+        host: "claude",
+        sourcePath: ECC_CLAUDE_HOOK_SOURCE,
+        event: hook.event,
+        execution: "process",
+      },
+    ]
+  );
+}
+
+/** A row's control, defaulting to ECC's Claude settings switch for an eligible hook. */
+export function eccHookControl(hook: EccHookRow): NonNullable<EccHookRow["control"]> {
+  return hook.control ?? { kind: hook.disableEligible ? "claude-settings-env" : "none" };
+}
 
 /**
- * The reviewed ECC hook inventory. The provenance digest must equal the one
- * this plugin was reviewed against, which binds the 43 rows, the 42
- * disable-eligible ids and their 11/39/42 minimal/standard/strict eligibility
- * to ECC's pinned hook runtime and flag grammar.
+ * The hook inventory Catalog recorded from the pinned ECC tree. Nothing here is
+ * specific to one ECC revision: the rows, profiles and eligibility are data. The
+ * plugin checks that the data is self-consistent and bound to the pinned source:
+ * provenance names the pinned repository and commit, its content digest is the
+ * digest of its own source list, ids are unique, every row's profiles are
+ * declared, and a claude-settings-env control is only on a disable-eligible row
+ * declared for Claude.
  */
 export function readEccHookControlInventory(descriptor: EccDescriptor): EccHookControlInventory {
   const parsed = HookControlInventorySchema.safeParse(
@@ -211,31 +258,32 @@ export function readEccHookControlInventory(descriptor: EccDescriptor): EccHookC
   const content = createHash("sha256")
     .update(JSON.stringify(provenance.sources.map(({ path, sha256 }) => [path, sha256])))
     .digest("hex");
-  if (content !== provenance.contentSha256 || content !== HOOK_CONTROL_SOURCE_CONTENT_SHA256) {
+  if (content !== provenance.contentSha256) {
     throw new EccDescriptorError(
-      `hook provenance content ${content} is not the reviewed inventory ${HOOK_CONTROL_SOURCE_CONTENT_SHA256}`,
+      `hook provenance content digest ${provenance.contentSha256} is not the digest ${content} of its sources`,
     );
   }
-  if (inventory.profiles.map((profile) => profile.id).join(",") !== "minimal,standard,strict") {
-    throw new EccDescriptorError(
-      "hook profiles must be minimal, standard and strict in that order",
-    );
+  const profileIds = inventory.profiles.map((profile) => profile.id);
+  if (new Set(profileIds).size !== profileIds.length) {
+    throw new EccDescriptorError("hook profiles repeat");
   }
-  const ids = new Set(inventory.hooks.map((hook) => hook.id));
-  const eligible = inventory.hooks.filter((hook) => hook.disableEligible);
-  const count = (profile: EccHookProfile) =>
-    eligible.filter((hook) => hook.profiles.includes(profile)).length;
-  if (
-    inventory.hooks.length !== 43 ||
-    ids.size !== 43 ||
-    eligible.length !== 42 ||
-    count("minimal") !== 11 ||
-    count("standard") !== 39 ||
-    count("strict") !== 42
-  ) {
-    throw new EccDescriptorError(
-      "the reviewed inventory has 43 distinct rows, 42 disable-eligible ids and 11/39/42 profile eligibility",
-    );
+  const ids = new Set<string>();
+  for (const hook of inventory.hooks) {
+    if (ids.has(hook.id)) throw new EccDescriptorError(`hook id ${hook.id} repeats`);
+    ids.add(hook.id);
+    const unknown = hook.profiles.find((profile) => !profileIds.includes(profile));
+    if (unknown !== undefined) {
+      throw new EccDescriptorError(`hook ${hook.id} names undeclared profile ${unknown}`);
+    }
+    if (
+      eccHookControl(hook).kind === "claude-settings-env" &&
+      (!hook.disableEligible ||
+        !eccHookDeclarations(hook).some((declaration) => declaration.host === "claude"))
+    ) {
+      throw new EccDescriptorError(
+        `hook ${hook.id} has ECC's Claude settings switch but is not a disable-eligible Claude hook`,
+      );
+    }
   }
   return inventory;
 }

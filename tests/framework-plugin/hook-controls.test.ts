@@ -249,4 +249,49 @@ describe("frameworkHookEnvironmentPlansV1", () => {
       /unknown ECC hook id\(s\) hook:nope/,
     );
   });
+
+  it("carries enterprise and user disables of ECC's OpenCode plugin row to the plugin", async () => {
+    const document = JSON.parse(new TextDecoder().decode(eccDescriptorBytes())) as {
+      sections: { hookControlInventory: { hooks: unknown[] } };
+    };
+    document.sections.hookControlInventory.hooks.push({
+      id: "opencode:ecc-hooks",
+      event: "tool.execute.after",
+      profiles: ["standard", "strict"],
+      disableEligible: true,
+      declarations: [
+        {
+          host: "opencode",
+          sourcePath: ".opencode/plugins/ecc-hooks.ts",
+          event: "tool.execute.after",
+          execution: "in-process",
+        },
+      ],
+      control: { kind: "none" },
+    });
+    const bytes = new TextEncoder().encode(`${JSON.stringify(document)}
+`);
+    const withOpenCode = {
+      ...deps,
+      loadDescriptor: async (): Promise<FrameworkDescriptorLoadV1> => ({
+        ok: true,
+        frameworkId: "ecc",
+        bytes,
+        sha256: createHash("sha256").update(bytes).digest("hex"),
+      }),
+    };
+    userList({ ecc: { disabledHookIds: ["opencode:ecc-hooks"] } });
+    const policy = parseOrgPolicy(
+      v3Policy({ frameworkHookControls: { ecc: { disabledHookIds: ["session:start"] } } }),
+    );
+    const plans = await frameworkHookEnvironmentPlansV1(ctx(), policy, withOpenCode);
+    // ECC has no switch for its OpenCode plugin: it is planned (labelled
+    // unenforced by the plugin), and only switchable hooks reach the env.
+    expect(plans.get("ecc")?.set).toEqual({ ECC_DISABLED_HOOKS: "session:start" });
+
+    userList({ ecc: { disabledHookIds: ["opencode:not-a-hook"] } });
+    await expect(frameworkHookEnvironmentPlansV1(ctx(), policy, withOpenCode)).rejects.toThrow(
+      "unknown ECC hook id(s) opencode:not-a-hook",
+    );
+  });
 });

@@ -79,18 +79,30 @@ describe("readEccHookControlInventory", () => {
     expect(inventory.hooks.filter((hook) => hook.disableEligible)).toHaveLength(42);
   });
 
-  it("refuses an inventory whose rows no longer match the reviewed eligibility", () => {
+  it("carries no revision data: an inventory with other rows and an OpenCode row is accepted", () => {
     const descriptor = mutated((d) => {
-      const hooks = d.sections.hookControlInventory.hooks as { disableEligible: boolean }[];
-      const first = hooks[0] as { disableEligible: boolean };
-      first.disableEligible = !first.disableEligible;
+      const hooks = d.sections.hookControlInventory.hooks as Record<string, unknown>[];
+      hooks.push({
+        id: "opencode:ecc-hooks",
+        event: "tool.execute.after",
+        profiles: ["standard", "strict"],
+        disableEligible: true,
+        declarations: [
+          {
+            host: "opencode",
+            sourcePath: ".opencode/plugins/ecc-hooks.ts",
+            event: "tool.execute.after",
+            execution: "in-process",
+          },
+        ],
+        control: { kind: "none" },
+      });
     });
-    expect(() => readEccHookControlInventory(readEccDescriptor(descriptor))).toThrow(
-      /43 distinct rows, 42 disable-eligible ids/,
-    );
+    const inventory = readEccHookControlInventory(readEccDescriptor(descriptor));
+    expect(inventory.hooks).toHaveLength(44);
   });
 
-  it("refuses hook provenance that is not the reviewed source content", () => {
+  it("refuses provenance whose content digest is not the digest of its own sources", () => {
     const descriptor = mutated((d) => {
       const provenance = d.sections.hookControlInventory.provenance as {
         sources: { sha256: string }[];
@@ -98,7 +110,25 @@ describe("readEccHookControlInventory", () => {
       (provenance.sources[0] as { sha256: string }).sha256 = "0".repeat(64);
     });
     expect(() => readEccHookControlInventory(readEccDescriptor(descriptor))).toThrow(
-      /is not the reviewed inventory/,
+      /is not the digest .* of its sources/,
     );
+  });
+
+  it("refuses a repeated id, an undeclared profile and a Claude switch on an ineligible row", () => {
+    const hooks = (d: Doc) => d.sections.hookControlInventory.hooks as Record<string, unknown>[];
+    const repeated = mutated((d) => {
+      hooks(d).push({ ...(hooks(d)[1] as Record<string, unknown>) });
+    });
+    const undeclared = mutated((d) => {
+      (hooks(d)[1] as { profiles: string[] }).profiles = ["paranoid"];
+    });
+    const switched = mutated((d) => {
+      (hooks(d)[0] as Record<string, unknown>).control = { kind: "claude-settings-env" };
+    });
+    const read = (descriptor: ReturnType<typeof mutated>) => () =>
+      readEccHookControlInventory(readEccDescriptor(descriptor));
+    expect(read(repeated)).toThrow(/repeats/);
+    expect(read(undeclared)).toThrow(/undeclared profile paranoid/);
+    expect(read(switched)).toThrow(/Claude settings switch but is not a disable-eligible/);
   });
 });

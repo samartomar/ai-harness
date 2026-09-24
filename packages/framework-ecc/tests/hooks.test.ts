@@ -1,6 +1,34 @@
 import { describe, expect, it } from "vitest";
 import { hookInventory, planHookControls } from "../src/hooks.js";
-import { operationContext, PINNED_COMMIT } from "./context.js";
+import {
+  descriptorFromDocument,
+  fixtureDescriptorDocument,
+  operationContext,
+  PINNED_COMMIT,
+} from "./context.js";
+
+/** Catalog's descriptor plus the OpenCode plugin row Catalog's regeneration records. */
+function withOpenCodeRow() {
+  const document = fixtureDescriptorDocument() as {
+    sections: { hookControlInventory: { hooks: unknown[] } };
+  };
+  document.sections.hookControlInventory.hooks.push({
+    id: "opencode:ecc-hooks",
+    event: "tool.execute.after",
+    profiles: ["standard", "strict"],
+    disableEligible: true,
+    declarations: [
+      {
+        host: "opencode",
+        sourcePath: ".opencode/plugins/ecc-hooks.ts",
+        event: "tool.execute.after",
+        execution: "in-process",
+      },
+    ],
+    control: { kind: "none" },
+  });
+  return descriptorFromDocument(document);
+}
 
 describe("hookInventory", () => {
   it("exposes the 43 reviewed hooks with profiles and ECC's own disable switch", () => {
@@ -79,7 +107,7 @@ describe("planHookControls", () => {
       planHookControls(ctx, {
         disabled: [{ hookId: "pre:bash:dispatcher", authority: "enterprise" }],
       }),
-    ).toThrow(/is a wrapper/);
+    ).toThrow(/pre:bash:dispatcher is not individually disable-eligible/);
     expect(() =>
       planHookControls(ctx, { profile: { id: "max", authority: "user" }, disabled: [] }),
     ).toThrow(/unknown ECC hook profile max/);
@@ -89,5 +117,33 @@ describe("planHookControls", () => {
         disabled: [{ hookId: "pre:write:doc-file-warning", authority: "user" }],
       }),
     ).toThrow(/not eligible under the minimal profile/);
+  });
+
+  it("plans an OpenCode plugin disable as unenforced with a next route, outside ECC_DISABLED_HOOKS", () => {
+    const ctx = operationContext({
+      descriptor: withOpenCodeRow(),
+      targets: ["claude", "opencode"],
+    });
+    const inventory = hookInventory(ctx);
+    const row = inventory.hooks.find((hook) => hook.id === "opencode:ecc-hooks");
+    expect(row?.upstreamControl).toEqual({ kind: "none" });
+    expect(row?.declarations.map((declaration) => declaration.host)).toEqual(["opencode"]);
+
+    const planned = planHookControls(ctx, {
+      disabled: [
+        { hookId: "opencode:ecc-hooks", authority: "enterprise" },
+        { hookId: "session:start", authority: "user" },
+      ],
+    });
+    const decision = planned.decisions.find((entry) => entry.hookId === "opencode:ecc-hooks");
+    expect(decision).toMatchObject({ state: "disabled", authority: "enterprise" });
+    expect(decision?.hosts).toEqual([
+      expect.objectContaining({ host: "claude", enforcement: "not-applicable" }),
+      expect.objectContaining({ host: "opencode", enforcement: "unenforced" }),
+    ]);
+    expect(decision?.hosts[1]?.detail).toContain(
+      "Next route: do not install ECC's .opencode/plugins/ecc-hooks.ts on opencode",
+    );
+    expect(planned.environment?.set).toEqual({ ECC_DISABLED_HOOKS: "session:start" });
   });
 });
