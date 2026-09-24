@@ -426,7 +426,7 @@ describe("closure-aware gate (dual outcomes + rule-3/8/10 at the gate)", () => {
           detail: "boom",
           coverage: "complete",
           path: "notes/inert.md",
-          contentSha256: "ab".repeat(32),
+          contentSha256: sha256Lf("clean\n"),
         },
       ],
     };

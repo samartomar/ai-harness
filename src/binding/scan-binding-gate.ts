@@ -1,4 +1,6 @@
-import { realpathSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { readFileSync, realpathSync } from "node:fs";
+import { join } from "node:path";
 import { AihError } from "../errors.js";
 import type { ScanExecutionAdapterV1 } from "../org-policy/governance-input-v1.js";
 import {
@@ -98,6 +100,11 @@ function refuse(detail: string): { readonly refusal: string } {
   return { refusal: `${BINDING_GATE_DETECTOR_ID} ${detail}` };
 }
 
+/** Core's acceptance pin: sha256 of the file's UTF-8 text, CRLF-normalized to LF. */
+function normalizedTextSha256(text: string): string {
+  return createHash("sha256").update(text.replace(/\r\n/g, "\n"), "utf8").digest("hex");
+}
+
 function typographyFact(value: unknown): BindingTypographyFact | undefined {
   const record = asRecord(value);
   if (record === undefined || typeof record.demote !== "boolean") return undefined;
@@ -114,10 +121,16 @@ function typographyFact(value: unknown): BindingTypographyFact | undefined {
  * a missing or reordered dimension, a result count that disagrees with its
  * dimension, a pin on a path Core did not send, a typography fact on the wrong
  * code, or two facts for one file that disagree — refuses the whole run.
+ *
+ * A content pin is the acceptance key, so Core never takes Scan's word for it:
+ * it recomputes each pinned file's normalized content hash under `sourceRoot`
+ * and refuses a pin that differs, so an approval of old content never accepts
+ * a finding in changed content.
  */
 export function bindingGateReportsFromSarifV1(
   sarifText: string,
   selectedPaths: readonly string[],
+  sourceRoot: string,
 ): { readonly reports: DimensionReport[] } | { readonly refusal: string } {
   let parsed: unknown;
   try {
@@ -141,6 +154,19 @@ export function bindingGateReportsFromSarifV1(
   const results = Array.isArray(run?.results) ? run.results : undefined;
   if (results === undefined) return refuse("run has no results array");
   const selected = new Set(selectedPaths);
+  const computedPins = new Map<string, string | undefined>();
+  const computedPin = (path: string): string | undefined => {
+    if (!computedPins.has(path)) {
+      let pin: string | undefined;
+      try {
+        pin = normalizedTextSha256(readFileSync(join(sourceRoot, path), "utf8"));
+      } catch {
+        pin = undefined;
+      }
+      computedPins.set(path, pin);
+    }
+    return computedPins.get(path);
+  };
   const typography = new Map<string, BindingTypographyFact>();
   const dottedI = new Map<string, boolean>();
   const findingsByDimension = BINDING_GATE_DIMENSIONS.map((): ScanFinding[] => []);
@@ -176,6 +202,11 @@ export function bindingGateReportsFromSarifV1(
         return refuse(`result ${index} pins a path Core did not send`);
       if (typeof contentSha256 !== "string" || !SHA256_HEX.test(contentSha256))
         return refuse(`result ${index} pins ${path} without a content sha256`);
+      const computed = computedPin(path);
+      if (computed !== contentSha256)
+        return refuse(
+          `result ${index} pins ${path} at ${contentSha256}, but Core computed ${computed ?? "nothing (the file is unreadable)"}`,
+        );
       finding.path = path;
       finding.contentSha256 = contentSha256;
     }
@@ -276,6 +307,7 @@ export async function inspectTreeThroughScanV1(
     });
   if (aborted(options.signal))
     throw new TrustScanCancelledError(`before ${BINDING_GATE_DETECTOR_ID} started`);
+  const sourceRoot = realpathSync(treePath);
   let raw: unknown;
   try {
     raw = await scan.adapter.runDetectorV1({
@@ -283,7 +315,7 @@ export async function inspectTreeThroughScanV1(
       executionProfileId: BINDING_GATE_EXECUTION_PROFILE,
       subject: {
         kind: "source-tree",
-        sourceRoot: realpathSync(treePath),
+        sourceRoot,
         selectedClosurePaths: [...selectedPaths],
       },
       ...(options.signal === undefined ? {} : { signal: options.signal }),
@@ -306,7 +338,7 @@ export async function inspectTreeThroughScanV1(
     throw new BindingGateScanError(
       `${BINDING_GATE_DETECTOR_ID} ran under ${result.executionProfileId ?? "an unstated profile"} instead of ${BINDING_GATE_EXECUTION_PROFILE}`,
     );
-  const mapped = bindingGateReportsFromSarifV1(result.sarif, selectedPaths);
+  const mapped = bindingGateReportsFromSarifV1(result.sarif, selectedPaths, sourceRoot);
   if ("refusal" in mapped) throw new BindingGateScanError(mapped.refusal);
   return mapped.reports;
 }

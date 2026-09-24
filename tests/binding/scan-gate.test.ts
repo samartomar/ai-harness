@@ -12,6 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { BindingGateScanError } from "../../src/binding/scan-binding-gate.js";
 import {
   type AcceptedContentFinding,
   assertProvisionAuthorized,
@@ -944,6 +945,33 @@ describe("maintainer-accepted content findings (scan-acceptance baseline)", () =
     expect(disposition.verdict).toBe("block");
   });
 
+  it("refuses an approved content pin Scan reports for changed content, accepting nothing and caching nothing", async () => {
+    // The file changed after its approval; a Scan that reports the OLD pin must
+    // never let the old approval accept the new content. Core recomputes the pin.
+    const changed = `# skill\n\nchanged${ZWSP}instruction, not the approved text\n`;
+    const src = await hiddenUnicodeScannable({ "SKILL.md": changed });
+    const stalePin: DimensionReport = {
+      dimension: "hidden-unicode",
+      status: "produced",
+      findings: [
+        {
+          ...unicodeFinding("trust.hidden-unicode", "SKILL.md", changed),
+          contentSha256: sha256Utf8(HIDDEN_SKILL),
+        },
+      ],
+    };
+    const refusal = await runFastScanGate(
+      src,
+      { posture: "vibe", acceptedFindings: [acceptSkill] },
+      gateDeps([stalePin]),
+    ).catch((error: unknown) => error);
+    expect(refusal).toBeInstanceOf(BindingGateScanError);
+    expect((refusal as Error).message).toContain(
+      `pins SKILL.md at ${sha256Utf8(HIDDEN_SKILL)}, but Core computed ${sha256Utf8(changed)}`,
+    );
+    expect(existsSync(join(cacheHome, "scan-cache"))).toBe(false);
+  });
+
   it("keeps blocking when a new high finding appears alongside accepted ones", async () => {
     const other = { "notes/OTHER.md": `also${ZWSP}hidden\n` };
     const src = await hiddenUnicodeScannable(other);
@@ -968,7 +996,7 @@ describe("maintainer-accepted content findings (scan-acceptance baseline)", () =
           detail: "boom",
           coverage: "complete",
           path: "x.js",
-          contentSha256: "ab".repeat(32),
+          contentSha256: sha256Utf8("boom();\n"),
         },
       ],
     };
@@ -981,7 +1009,7 @@ describe("maintainer-accepted content findings (scan-acceptance baseline)", () =
             repository: "test/fixture",
             code: "trust.malicious-code",
             path: "x.js",
-            fileSha256: "ab".repeat(32),
+            fileSha256: sha256Utf8("boom();\n"),
           },
         ],
       },

@@ -1,4 +1,13 @@
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -44,7 +53,6 @@ vi.mock("../../src/scan-package/load-scan-package.js", async (importOriginal) =>
 });
 
 const SHA_A = "a".repeat(64);
-const SHA_B = "b".repeat(64);
 
 let tree: string;
 let cacheHome: string;
@@ -70,7 +78,16 @@ afterEach(() => {
 
 const SELECTED = ["SKILL.md", "src/a.ts"] as const;
 
-function pinned(code: string, path: string, contentSha256 = SHA_A) {
+function sha256Lf(text: string): string {
+  return createHash("sha256").update(text.replace(/\r\n/g, "\n"), "utf8").digest("hex");
+}
+
+/** The pin Core computes for a file of the tree: its CRLF-normalized text sha256. */
+function contentPin(path: string): string {
+  return existsSync(join(tree, path)) ? sha256Lf(readFileSync(join(tree, path), "utf8")) : SHA_A;
+}
+
+function pinned(code: string, path: string, contentSha256 = contentPin(path)) {
   return {
     code,
     severity: code === "trust.visible-unicode" ? ("medium" as const) : ("high" as const),
@@ -172,7 +189,7 @@ describe("Scan's binding-gate SARIF as Core's dimension reports", () => {
         status: "produced",
         findings: [
           pinned("trust.hidden-unicode", "SKILL.md"),
-          pinned("trust.visible-unicode", "src/a.ts", SHA_B),
+          pinned("trust.visible-unicode", "src/a.ts"),
         ],
         typography: { "SKILL.md": { demote: true, contextClass: "prose" } },
         dottedIBlocking: { "src/a.ts": true },
@@ -448,6 +465,39 @@ describe("refusals: the gate never decides on an inspection Core cannot account 
     );
     expect(refusal).toBeInstanceOf(BindingGateScanError);
     expect((refusal as Error).message).toContain("without a content sha256");
+  });
+
+  it("refuses a pin whose content sha256 is not the selected file's normalized content", async () => {
+    const refusal = await refusalOf(
+      fakeBindingGateScan([
+        {
+          dimension: "hidden-unicode",
+          status: "produced",
+          findings: [pinned("trust.hidden-unicode", "SKILL.md", SHA_A)],
+        },
+      ]),
+    );
+    expect(refusal).toBeInstanceOf(BindingGateScanError);
+    expect((refusal as Error).message).toContain(
+      `result 0 pins SKILL.md at ${SHA_A}, but Core computed ${sha256Lf("# skill\n")}`,
+    );
+  });
+
+  it("accepts a pin over the CRLF-normalized text, which is what Core computes", async () => {
+    writeTree(tree, { "SKILL.md": "# skill\r\nline\r\n" });
+    const normalized = sha256Lf("# skill\nline\n");
+    const inspected = await inspectTreeThroughScanV1(tree, [...SELECTED], {
+      scanExecution: fakeBindingGateScan([
+        {
+          dimension: "hidden-unicode",
+          status: "produced",
+          findings: [pinned("trust.hidden-unicode", "SKILL.md", normalized)],
+        },
+      ]),
+    });
+    expect(
+      inspected.find((report) => report.dimension === "hidden-unicode")?.findings[0]?.contentSha256,
+    ).toBe(normalized);
   });
 
   it("refuses a typography verdict on a code other than trust.hidden-unicode", async () => {
