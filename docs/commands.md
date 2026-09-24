@@ -701,7 +701,11 @@ event, registers the reviewed MCP identities, preserves unrelated operator entri
 the exact Node/AIH launcher bytes plus each owned config fragment in
 `.aih/ecc-profile/native-registration-v1.json`. Native state stays outside the project under the
 platform state directory; set `AIH_ECC_STATE_ROOT` to an absolute external directory to override
-that location. Conflicting server identities, linked launchers, overlapping state roots, modified
+that location. That machine state root is shared by every project on the machine and survives
+uninstall, so once it exists `aih uninstall` and `aih prune` in any project refuse without
+`@aihq/framework-ecc` (`framework-plugin-unavailable`) and name the root in full with the manual
+route: install `@aihq/framework-ecc`, or, once no project on this machine uses the ECC native
+registration, remove that root by hand. Conflicting server identities, linked launchers, overlapping state roots, modified
 managed fragments, and partial second-phase installs fail closed; a failed registration after a
 projection install triggers compensating projection recovery. Repair and rollback preflight the
 projection and native registration before applying either surface, so recovery runs as one

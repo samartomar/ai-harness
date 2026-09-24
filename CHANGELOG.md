@@ -22,7 +22,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   component from the file-system root, including everything above a supplied base such as
   `AIH_ECC_STATE_ROOT`, `HOME`, `XDG_STATE_HOME`, `USERPROFILE` or `LOCALAPPDATA`: a dangling
   symbolic link or junction, an inaccessible entry or a component that is not a directory counts
-  as state and is named with its condition, never treated as absent. `aih doctor`, `aih report` and
+  as state and is named with its condition, never treated as absent. When the state includes the
+  native registration's machine state root, the refusal also names that root in full, never
+  truncated, with the manual route: install `@aihq/framework-ecc`, or, once no project on this
+  machine uses the ECC native registration, remove the root by hand. `aih doctor`, `aih report` and
   `aih policy evaluate` state that the ECC checks were not run, and the policy-delivery
   report blocks while it needs ECC's knowledge and cannot get it.
 - **Breaking (library):** the library root no longer exports the ECC Package Graph

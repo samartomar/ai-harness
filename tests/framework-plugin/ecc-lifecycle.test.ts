@@ -354,3 +354,66 @@ describe("ECC native machine state root: every component from the file-system ro
     ]);
   });
 });
+
+describe("ECC native machine state root refusal names the manual route", () => {
+  const route = (stateRoot: string) =>
+    `install @aihq/framework-ecc, or, once no project on this machine uses the ECC native registration, remove ${stateRoot} by hand`;
+
+  /** An unavailable plugin whose own detail nearly fills the refusal's bound. */
+  const verboseUnavailable = {
+    loadPlugin: async () => ({
+      ok: false as const,
+      refusal: {
+        reason: "framework-plugin-unavailable" as const,
+        frameworkId: "ecc" as const,
+        packageName: "@aihq/framework-ecc" as const,
+        detail: `@aihq/framework-ecc is not installed; ${"x".repeat(1_990)}`,
+      },
+    }),
+  };
+
+  it("gives uninstall and prune the install-or-remove-by-hand route for an explicit root", async () => {
+    const stateRoot = join(root, "machine-state");
+    mkdirSync(stateRoot);
+    const context = ctx({ AIH_ECC_STATE_ROOT: stateRoot });
+    await expect(prepareEccUninstallV1(context, false)).rejects.toThrow(route(stateRoot));
+    await expect(eccPrunePlanV1(context, [])).rejects.toThrow(route(stateRoot));
+  });
+
+  it("names the platform-default root in the route", async () => {
+    const local = join(root, "local-app-data");
+    const stateRoot = join(local, "aih", "ecc-profile");
+    mkdirSync(stateRoot, { recursive: true });
+    const context = ctx({ LOCALAPPDATA: local }, "windows");
+    await expect(prepareEccUninstallV1(context, false)).rejects.toThrow(route(stateRoot));
+  });
+
+  it("names the state root in full even when the plugin's own detail fills the bound", async () => {
+    const stateRoot = join(root, "machine-state");
+    mkdirSync(stateRoot);
+    const context = ctx({ AIH_ECC_STATE_ROOT: stateRoot });
+    await expect(prepareEccUninstallV1(context, false, verboseUnavailable)).rejects.toThrow(
+      route(stateRoot),
+    );
+    await expect(eccPrunePlanV1(context, [], verboseUnavailable)).rejects.toThrow(route(stateRoot));
+  });
+
+  it("gives the route for the root below a dangling ancestor", async () => {
+    const target = join(root, "gone");
+    mkdirSync(target);
+    const link = join(root, "dangling");
+    symlinkSync(target, link, "dir");
+    rmSync(target, { recursive: true });
+    const stateRoot = join(link, "child");
+    const context = ctx({ AIH_ECC_STATE_ROOT: stateRoot });
+    await expect(prepareEccUninstallV1(context, false)).rejects.toThrow(route(stateRoot));
+  });
+
+  it("does not add the route when only project state is found", async () => {
+    mkdirSync(join(root, ".aih", "ecc"), { recursive: true });
+    await expect(prepareEccUninstallV1(ctx(), false)).rejects.toThrow(
+      /framework-plugin-unavailable/,
+    );
+    await expect(prepareEccUninstallV1(ctx(), false)).rejects.not.toThrow(/remove .* by hand/);
+  });
+});
