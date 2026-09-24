@@ -202,6 +202,75 @@ describe("openCandidateCatalogV1", () => {
       );
     });
 
+    it("keeps a byte order mark in a pax key or value instead of decoding it away", () => {
+      // The reviewer's case: a BOM-prefixed key must not become an ordinary `path` override.
+      expect(() => open(withPax([["\uFEFFpath", "package/package.json"]]))).toThrow(
+        `Candidate Catalog: tarball has unsupported pax key ${JSON.stringify("\uFEFFpath")}`,
+      );
+      expect(() => open(withPax([["\uFEFFsize", "1"]]))).toThrow(/unsupported pax key/);
+      expect(() => open(withPax([["path", "\uFEFFpackage/a.json"]]))).toThrow(
+        /Candidate Catalog: tarball entry \uFEFFpackage\/a.json is outside package\//u,
+      );
+      expect(() => open(withPax([["mtime", "\uFEFF1"]]))).toThrow(
+        "Candidate Catalog: tarball has a malformed pax record",
+      );
+    });
+
+    it("reads header numbers byte-exactly: only ASCII octal digits, space and NUL padding", () => {
+      const tar = candidateTar(packageEntries(files));
+      // Rewrite the first header's size field and re-seal its checksum.
+      const withSize = (field: Buffer) => {
+        const copy = Buffer.from(tar);
+        const size = Buffer.alloc(12);
+        field.copy(size);
+        size.copy(copy, 124);
+        copy.write("        ", 148);
+        let sum = 0;
+        for (const byte of copy.subarray(0, 512)) sum += byte;
+        copy.write(`${sum.toString(8).padStart(6, "0")}\0 `, 148);
+        return copy;
+      };
+      const length = Buffer.byteLength(files["package.json"] as string)
+        .toString(8)
+        .padStart(7, "0");
+      expect(openTar(withSize(Buffer.from(` ${length}\0`, "latin1"))).version).toBe("0.3.0");
+      for (const padding of ["\uFEFF", "\u3000", "\u2028", "\t", "\n"])
+        expect(() => openTar(withSize(Buffer.from(`${padding}${length}\0`, "utf8")))).toThrow(
+          "Candidate Catalog: tarball has a malformed header",
+        );
+    });
+
+    it("keeps non-ASCII header name bytes instead of decoding them to another spelling", () => {
+      expect(() =>
+        open(candidateTarball([["package/\uFEFFx.json", "{}"], ...packageEntries(files)])),
+      ).toThrow(/Candidate Catalog: unsafe path/);
+      // A raw 0xff byte (not UTF-8) in the name: never read as U+FFFD or any other spelling.
+      const tar = candidateTar([["package/Zx.json", "{}"], ...packageEntries(files)]);
+      tar[8] = 0xff;
+      tar.write("        ", 148);
+      let sum = 0;
+      for (const byte of tar.subarray(0, 512)) sum += byte;
+      tar.write(`${sum.toString(8).padStart(6, "0")}\0 `, 148);
+      expect(() => openTar(tar)).toThrow('Candidate Catalog: unsafe path "\u00ffx.json"');
+    });
+
+    it("refuses a package.json that is not strict UTF-8 JSON", () => {
+      const manifest = Buffer.from(files["package.json"] as string);
+      const invalid = Buffer.concat([
+        manifest.subarray(0, -1),
+        Buffer.from(',"description":"'),
+        Buffer.from([0xff]),
+        Buffer.from('"}'),
+      ]);
+      const bom = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), manifest]);
+      for (const bytes of [invalid, bom]) {
+        const tar = candidateTarball(
+          packageEntries(candidatePackageFiles({ "package.json": bytes })),
+        );
+        expect(() => open(tar)).toThrow("Candidate Catalog: package.json is not JSON");
+      }
+    });
+
     it("refuses a repeated pax key", () => {
       expect(() =>
         open(

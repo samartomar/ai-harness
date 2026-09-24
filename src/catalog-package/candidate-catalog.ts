@@ -72,17 +72,26 @@ function add(files: Map<string, Buffer>, path: string, bytes: Buffer): void {
   files.set(path, bytes);
 }
 
+/**
+ * A header field up to its first NUL, one character per byte: no decoder may turn bytes into
+ * another spelling (U+FFFD, a dropped byte order mark), so a non-ASCII byte stays visible to
+ * the ASCII-only path check.
+ */
 function field(block: Buffer, start: number, length: number): string {
   const raw = block.subarray(start, start + length);
   const end = raw.indexOf(0);
-  return raw.subarray(0, end === -1 ? raw.length : end).toString("utf8");
+  return raw.subarray(0, end === -1 ? raw.length : end).toString("latin1");
 }
 
+/** ASCII octal digits with ASCII space padding only; `trim()` would also drop Unicode spaces. */
 function octal(block: Buffer, start: number, length: number): number {
-  const text = field(block, start, length).trim();
-  if (!/^[0-7]+$/.test(text)) fail("tarball has a malformed header");
-  return Number.parseInt(text, 8);
+  const text = field(block, start, length);
+  if (!/^ *[0-7]+ *$/.test(text)) fail("tarball has a malformed header");
+  return Number.parseInt(text.trim(), 8);
 }
+
+/** Strict UTF-8 that keeps a leading byte order mark as a character instead of dropping it. */
+const exactUtf8 = () => new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 
 interface PaxV1 {
   path?: string;
@@ -112,7 +121,7 @@ function paxRecords(bytes: Buffer): PaxV1 {
     if (end > bytes.length || end - 1 <= space || bytes[end - 1] !== 0x0a) malformed();
     let record: string;
     try {
-      record = new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(space + 1, end - 1));
+      record = exactUtf8().decode(bytes.subarray(space + 1, end - 1));
     } catch {
       return malformed();
     }
@@ -241,7 +250,7 @@ export function openCandidateCatalogV1(path: string, sha256: string): CandidateC
   if (manifestBytes === undefined) fail("the package has no package.json");
   let manifest: unknown;
   try {
-    manifest = JSON.parse(manifestBytes.toString("utf8"));
+    manifest = JSON.parse(exactUtf8().decode(manifestBytes));
   } catch {
     return fail("package.json is not JSON");
   }
