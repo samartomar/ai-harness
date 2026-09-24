@@ -1,9 +1,7 @@
-import { createHash } from "node:crypto";
 import { chmodSync, lstatSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import {
-  canonicalStrictJsonBytesV1,
   canonicalStrictJsonSha256V1,
   deepFreezeStrictJsonV1,
   parseStrictJsonObjectV1,
@@ -13,9 +11,9 @@ import { hermeticGitEnv } from "../internals/git-env.js";
 import { defaultRunner, type Runner } from "../internals/proc.js";
 import {
   encodePackagedScannerCollectionEvidenceRecordV1,
-  PackagedScannerCollectionEvidenceRecordV1Schema,
   packagedCoverageProjectionDigestV1,
   packagedReportComponentDigestV1,
+  readPackagedScannerCollectionEvidenceRecordV1,
 } from "../org-policy/packaged-collection-evidence-v1.js";
 import {
   type inventoryCollectionCoverageV1,
@@ -583,25 +581,9 @@ export async function reverifyPackagedScannerCollectionEvidenceRecordV1(
     sealed: Readonly<{ bytes: string; sha256: string }>;
   }>,
 ): Promise<PreparedScannerCollectionPublicationsV1> {
+  if (!Number.isFinite(Date.parse(input.now))) fail("sealed collection record");
+  const sealed = readPackagedScannerCollectionEvidenceRecordV1(input.sealed);
   if (
-    typeof input.sealed.bytes !== "string" ||
-    typeof input.sealed.sha256 !== "string" ||
-    !Number.isFinite(Date.parse(input.now))
-  )
-    fail("sealed collection record");
-  const sealedBytes = Buffer.from(input.sealed.bytes, "utf8");
-  const sealedDigest = `sha256:${createHash("sha256").update(sealedBytes).digest("hex")}`;
-  if (
-    sealedBytes.length === 0 ||
-    sealedBytes.length > 4 * 1024 * 1024 ||
-    sealedDigest !== input.sealed.sha256
-  )
-    fail("sealed collection record");
-  const sealed = PackagedScannerCollectionEvidenceRecordV1Schema.parse(
-    parseStrictJsonObjectV1(input.sealed.bytes, "Sealed collection record"),
-  );
-  if (
-    !canonicalStrictJsonBytesV1(sealed).equals(sealedBytes) ||
     sealed.catalog.id !== input.catalogId ||
     Date.parse(sealed.verification.preparedAt) > Date.parse(input.now)
   )
@@ -614,14 +596,14 @@ export async function reverifyPackagedScannerCollectionEvidenceRecordV1(
   });
   const reverified = authorPackagedScannerCollectionEvidenceRecordV1(prepared);
   if (reverified === undefined) fail("reverified collection custody");
-  const current = PackagedScannerCollectionEvidenceRecordV1Schema.parse(
-    parseStrictJsonObjectV1(reverified.bytes, "Reverified collection record"),
-  );
+  const current = readPackagedScannerCollectionEvidenceRecordV1(reverified);
   const encoded = encodePackagedScannerCollectionEvidenceRecordV1({
     ...current,
     verification: { ...current.verification, preparedAt: sealed.verification.preparedAt },
   });
-  if (encoded.sha256 !== input.sealed.sha256 || encoded.bytes !== input.sealed.bytes)
+  // The reader proved the sealed bytes canonical under their seal, so encoding reproduces both.
+  const expected = encodePackagedScannerCollectionEvidenceRecordV1(sealed);
+  if (encoded.sha256 !== expected.sha256 || encoded.bytes !== expected.bytes)
     fail("packaged collection record differs from reverified publication");
   return prepared;
 }

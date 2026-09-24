@@ -1,19 +1,14 @@
-import { createHash } from "node:crypto";
 import { chmodSync, lstatSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
-import {
-  canonicalStrictJsonBytesV1,
-  deepFreezeStrictJsonV1,
-  parseStrictJsonObjectV1,
-} from "../contract/strict-json-v1.js";
+import { deepFreezeStrictJsonV1, parseStrictJsonObjectV1 } from "../contract/strict-json-v1.js";
 import { defaultRunner, type Runner } from "../internals/proc.js";
 import type { PolicyAuthoringCatalog } from "../org-policy/catalog.js";
 import {
   encodePackagedScannerCollectionEvidenceRecordV1,
-  PackagedScannerCollectionEvidenceRecordV1Schema,
   packagedCoverageProjectionDigestV1,
   packagedReportComponentDigestV1,
+  readPackagedScannerCollectionEvidenceRecordV1,
 } from "../org-policy/packaged-collection-evidence-v1.js";
 import {
   type AihScanMaterialCoreRevisionV1,
@@ -504,25 +499,10 @@ export async function reverifyPackagedAihScannerEvidenceRecordV1(
     !Number.isFinite(Date.parse(now))
   )
     fail("sealed AIH record");
+  const sealed = readPackagedScannerCollectionEvidenceRecordV1(sealedInput);
+  // The reader checks the wrapper's JSON shape; this input also stays a plain data-only object.
   assertRecord(sealedInput, ["bytes", "sha256"], ["bytes", "sha256"], "sealed AIH record");
-  const bytes = ownData(sealedInput, "bytes", "sealed AIH record");
-  const sha256 = ownData(sealedInput, "sha256", "sealed AIH record");
-  if (typeof bytes !== "string" || typeof sha256 !== "string") fail("sealed AIH record");
-  const sealedBytes = Buffer.from(bytes, "utf8");
-  if (
-    sealedBytes.length === 0 ||
-    sealedBytes.length > 4 * 1024 * 1024 ||
-    `sha256:${createHash("sha256").update(sealedBytes).digest("hex")}` !== sha256
-  )
-    fail("sealed AIH record");
-  const sealed = PackagedScannerCollectionEvidenceRecordV1Schema.parse(
-    parseStrictJsonObjectV1(bytes, "Sealed AIH record"),
-  );
-  if (
-    !canonicalStrictJsonBytesV1(sealed).equals(sealedBytes) ||
-    sealed.catalog.id !== "aih" ||
-    Date.parse(sealed.verification.preparedAt) > Date.parse(now)
-  )
+  if (sealed.catalog.id !== "aih" || Date.parse(sealed.verification.preparedAt) > Date.parse(now))
     fail("sealed AIH record");
   assertRecord(coreRevision, ["pinnedSha"], ["pinnedSha"], "core revision");
   const pinnedSha = ownData(coreRevision, "pinnedSha", "core revision");
@@ -538,14 +518,14 @@ export async function reverifyPackagedAihScannerEvidenceRecordV1(
   });
   const reverified = authorPackagedAihScannerEvidenceRecordV1(prepared);
   if (reverified === undefined) fail("reverified AIH custody");
-  const current = PackagedScannerCollectionEvidenceRecordV1Schema.parse(
-    parseStrictJsonObjectV1(reverified.bytes, "Reverified AIH record"),
-  );
+  const current = readPackagedScannerCollectionEvidenceRecordV1(reverified);
   const encoded = encodePackagedScannerCollectionEvidenceRecordV1({
     ...current,
     verification: { ...current.verification, preparedAt: sealed.verification.preparedAt },
   });
-  if (encoded.bytes !== bytes || encoded.sha256 !== sha256)
+  // The reader proved the sealed bytes canonical under their seal, so encoding reproduces both.
+  const expected = encodePackagedScannerCollectionEvidenceRecordV1(sealed);
+  if (encoded.bytes !== expected.bytes || encoded.sha256 !== expected.sha256)
     fail("packaged AIH record differs from reverified publication");
   return prepared;
 }

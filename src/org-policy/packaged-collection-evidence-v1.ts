@@ -503,9 +503,10 @@ function sealedWrapperV1(wrapper: unknown, label: string): PackagedCollectionInp
 /**
  * Reads sealed records structurally, IDENTICALLY to Catalog's
  * `parsePackagedScannerCollectionEvidenceV1` (decision D25): a wrapper list with exact wrapper
- * keys, byte budget, matching seal, the nesting bound (an iterative scan before any recursive parse), Core's strict JSON reader, no
- * `__proto__` member, the structural schema, canonical bytes and one record per catalog id. It
- * never admits a record; admission is `PackagedScannerCollectionEvidenceRecordV1Schema`.
+ * keys, byte budget, matching seal, the nesting bound (an iterative scan before any recursive
+ * parse), Core's strict JSON reader, no `__proto__` member, the structural schema, canonical bytes
+ * and one record per catalog id. It never admits a record; admission is
+ * `PackagedScannerCollectionEvidenceRecordV1Schema`.
  */
 export function readPackagedScannerCollectionEvidenceStructureV1(
   input: unknown,
@@ -534,6 +535,17 @@ export function readPackagedScannerCollectionEvidenceStructureV1(
     records.push(parsed);
   }
   return records;
+}
+
+/**
+ * Reads one sealed `{ bytes, sha256 }` record through the structural reader, then admits it: the
+ * single boundary for a record that live reverification compares with a fresh publication.
+ */
+export function readPackagedScannerCollectionEvidenceRecordV1(
+  sealed: unknown,
+): PackagedScannerCollectionEvidenceRecordV1 {
+  const [record] = readPackagedScannerCollectionEvidenceStructureV1([sealed]);
+  return PackagedScannerCollectionEvidenceRecordV1Schema.parse(record);
 }
 
 /** Inputless loader for independent source records shipped by the release process. */
