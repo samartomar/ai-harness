@@ -9,7 +9,10 @@ import { ScanPackageRefusalError } from "../../src/scan-package/load-scan-packag
 import { CISCO_SKILL_SCANNER_ANALYZER } from "../../src/trust/detectors.js";
 import { scanTrustTreeWithAnalyzers } from "../../src/trust/scan.js";
 import { acceptedScanAnalyzerIdentityV1 } from "../../src/trust/scan-analyzer-identity.js";
-import { fakeScanCompletionEvidence, withFakeScanCompletion } from "./fakes/fake-scan-adapter.js";
+import {
+  selfDerivedFakeScanCompletionEvidence,
+  withSelfDerivedFakeScanCompletion,
+} from "./fakes/fake-scan-adapter.js";
 import { fakeTrustLintScan } from "./fakes/fake-trust-lint.js";
 
 // ---------------------------------------------------------------------------
@@ -135,13 +138,17 @@ function succeededWithSarif(sarif: string, request?: unknown) {
   const bytes = Buffer.from(
     request === undefined
       ? sarif
-      : withFakeScanCompletion(
+      : withSelfDerivedFakeScanCompletion(
           sarif,
           "detector.cisco",
-          fakeScanCompletionEvidence("detector.cisco", request as Record<string, unknown>, {
-            version: "2.0.14+uvlock.108c4f78340d",
-            lockSha256: "108c4f78340db9488bd73a03967055b19cdd3e8ece16ed31289e03f89e27d58f",
-          }),
+          selfDerivedFakeScanCompletionEvidence(
+            "detector.cisco",
+            request as Record<string, unknown>,
+            {
+              version: "2.0.14+uvlock.108c4f78340d",
+              lockSha256: "108c4f78340db9488bd73a03967055b19cdd3e8ece16ed31289e03f89e27d58f",
+            },
+          ),
         ),
     "utf8",
   );

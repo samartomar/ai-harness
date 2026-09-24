@@ -6,7 +6,7 @@ import type { TrustDetectorName } from "../../src/trust/detectors.js";
 import { buildTrustFileInventory } from "../../src/trust/inventory.js";
 import { scanTrustTreeWithAnalyzers } from "../../src/trust/scan.js";
 import {
-  createFakeScanAdapterForTests,
+  createSelfCompletingFakeScanAdapterForTests,
   type FakeScanAnswerV1,
   selfDerivedPrecomputedCompletionForTests,
 } from "./fakes/fake-scan-adapter.js";
@@ -142,7 +142,7 @@ describe("golden parity: native findings through detector.aih-trust-lint", () =>
     const expected = nativeGolden(entry);
     const recorded = loadRecordedScanTrustLint(entry.id);
     const root = materialize(entry);
-    const fake = createFakeScanAdapterForTests({
+    const fake = createSelfCompletingFakeScanAdapterForTests({
       "detector.aih-trust-lint": recordedTrustLint(entry),
     });
 
@@ -212,7 +212,7 @@ describe("golden parity: each detector through the Scan execution seam", () => {
     const [, run] = oracle(value.byEnvironment);
     const root = materialize(entry);
     const scanId = SCAN_IDS[detector as keyof typeof SCAN_IDS];
-    const fake = createFakeScanAdapterForTests({
+    const fake = createSelfCompletingFakeScanAdapterForTests({
       "detector.aih-trust-lint": recordedTrustLint(entry),
       [scanId]: answerFor(run, root),
     });
@@ -290,7 +290,7 @@ describe("golden parity: each detector through the Scan execution seam", () => {
             root,
           ),
         },
-        scanExecution: createFakeScanAdapterForTests({
+        scanExecution: createSelfCompletingFakeScanAdapterForTests({
           "detector.aih-trust-lint": recordedTrustLint(entry),
         }),
       });
@@ -372,7 +372,7 @@ describe("Semgrep enforcement change (owner decision 2026-09-24: apply the rule 
     if (semgrep === undefined) throw new Error(`no Semgrep golden for ${caseId}`);
     const [, run] = oracle(semgrep.byEnvironment);
     const root = materialize(entry);
-    const fake = createFakeScanAdapterForTests({
+    const fake = createSelfCompletingFakeScanAdapterForTests({
       "detector.aih-trust-lint": recordedTrustLint(entry),
       "detector.semgrep": { kind: "sarif", sarif: detectorSarifFromGolden(run, root, configDir) },
     });
@@ -491,7 +491,7 @@ describe("golden parity: Snyk Agent Scan (recorded output, never executed here)"
         checks: recorded.checks,
         rawOccurrences: recorded.rawOccurrences,
       };
-      const fake = createFakeScanAdapterForTests({
+      const fake = createSelfCompletingFakeScanAdapterForTests({
         "detector.aih-trust-lint": {
           kind: "sarif-for",
           sarif: (request) =>

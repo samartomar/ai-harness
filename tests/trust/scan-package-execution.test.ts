@@ -22,9 +22,9 @@ import {
   observedScanAnalyzerVersionV1,
 } from "../../src/trust/scan-analyzer-identity.js";
 import {
-  fakeScanCompletionEvidence,
+  selfDerivedFakeScanCompletionEvidence,
   selfDerivedPrecomputedCompletionForTests,
-  withFakeScanCompletion,
+  withSelfDerivedFakeScanCompletion,
 } from "./fakes/fake-scan-adapter.js";
 import { fakeTrustLintScan } from "./fakes/fake-trust-lint.js";
 
@@ -118,10 +118,10 @@ function succeeded(detectorId: string, profile: string, request?: unknown) {
   const bytes = Buffer.from(
     request === undefined || identity === undefined
       ? EMPTY_SARIF
-      : withFakeScanCompletion(
+      : withSelfDerivedFakeScanCompletion(
           EMPTY_SARIF,
           detectorId,
-          fakeScanCompletionEvidence(detectorId, request as Record<string, unknown>, {
+          selfDerivedFakeScanCompletionEvidence(detectorId, request as Record<string, unknown>, {
             version: observedScanAnalyzerVersionV1(identity),
             lockSha256: identity.lockSha256,
           }),

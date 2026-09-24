@@ -28,11 +28,10 @@ import { ScanPackageRefusalError } from "../../src/scan-package/load-scan-packag
 import { TrustScanCancelledError } from "../../src/trust/detectors.js";
 import { buildTrustFileInventory } from "../../src/trust/inventory.js";
 import {
-  createFakeScanAdapterForTests,
+  createSelfCompletingFakeScanAdapterForTests,
+  createVerbatimFakeScanAdapterForTests,
   FAKE_SCAN_PROFILES,
   type FakeScanAdapterForTests,
-  fakeScanCompletionEvidence,
-  withFakeScanCompletion,
 } from "../trust/fakes/fake-scan-adapter.js";
 import { bindingGateSarifForTests, fakeBindingGateScan } from "./fake-binding-gate.js";
 
@@ -105,7 +104,7 @@ function editedSarifScan(
   reports: readonly DimensionReport[],
   edit: (log: { runs: [Record<string, unknown> & { results: Record<string, unknown>[] }] }) => void,
 ): FakeScanAdapterForTests {
-  return createFakeScanAdapterForTests({
+  return createSelfCompletingFakeScanAdapterForTests({
     [BINDING_GATE_DETECTOR_ID]: {
       kind: "sarif-for",
       sarif: () => {
@@ -243,7 +242,7 @@ describe("refusals: the gate never decides on an inspection Core cannot account 
   });
 
   it("refuses with scan-package-incompatible when Scan has no binding-gate detector", async () => {
-    const scan = createFakeScanAdapterForTests({
+    const scan = createSelfCompletingFakeScanAdapterForTests({
       "detector.aih-trust-lint": { kind: "sarif", sarif: "{}" },
     });
     const refusal = await refusalOf(scan);
@@ -253,7 +252,7 @@ describe("refusals: the gate never decides on an inspection Core cannot account 
   });
 
   it("refuses with scan-package-incompatible when the capability lacks the binding-gate profile", async () => {
-    const scan = createFakeScanAdapterForTests(
+    const scan = createSelfCompletingFakeScanAdapterForTests(
       {
         [BINDING_GATE_DETECTOR_ID]: {
           kind: "sarif-for",
@@ -274,7 +273,7 @@ describe("refusals: the gate never decides on an inspection Core cannot account 
   });
 
   it("refuses with scan-package-incompatible when the profile does not support this host", async () => {
-    const scan = createFakeScanAdapterForTests(
+    const scan = createSelfCompletingFakeScanAdapterForTests(
       {
         [BINDING_GATE_DETECTOR_ID]: {
           kind: "sarif-for",
@@ -301,7 +300,7 @@ describe("refusals: the gate never decides on an inspection Core cannot account 
 
   it("carries Scan's words when Scan refuses the run", async () => {
     const refusal = await refusalOf(
-      createFakeScanAdapterForTests({
+      createSelfCompletingFakeScanAdapterForTests({
         [BINDING_GATE_DETECTOR_ID]: {
           kind: "refused",
           reason: "subject-unreadable",
@@ -316,7 +315,7 @@ describe("refusals: the gate never decides on an inspection Core cannot account 
 
   it("carries Scan's words when the run fails", async () => {
     const refusal = await refusalOf(
-      createFakeScanAdapterForTests({
+      createSelfCompletingFakeScanAdapterForTests({
         [BINDING_GATE_DETECTOR_ID]: {
           kind: "failed",
           stage: "execution",
@@ -344,7 +343,7 @@ describe("refusals: the gate never decides on an inspection Core cannot account 
 
   it("refuses a run Scan reports under a different execution profile", async () => {
     const refusal = await refusalOf(
-      createFakeScanAdapterForTests({
+      createSelfCompletingFakeScanAdapterForTests({
         [BINDING_GATE_DETECTOR_ID]: {
           kind: "sarif",
           sarif: bindingGateSarifForTests([]),
@@ -357,7 +356,7 @@ describe("refusals: the gate never decides on an inspection Core cannot account 
   });
 
   it("refuses a binding gate whose capability declares a version Core does not accept, running nothing", async () => {
-    const scan = createFakeScanAdapterForTests({
+    const scan = createSelfCompletingFakeScanAdapterForTests({
       [BINDING_GATE_DETECTOR_ID]: { kind: "sarif", sarif: bindingGateSarifForTests([]) },
     });
     const [capability] = scan.listDetectorCapabilitiesV1() as Record<string, unknown>[];
@@ -373,7 +372,7 @@ describe("refusals: the gate never decides on an inspection Core cannot account 
 
   it("refuses a binding-gate run whose observation names another analyzer version", async () => {
     const refusal = await refusalOf(
-      createFakeScanAdapterForTests({
+      createSelfCompletingFakeScanAdapterForTests({
         [BINDING_GATE_DETECTOR_ID]: {
           kind: "sarif",
           sarif: bindingGateSarifForTests([]),
@@ -394,7 +393,9 @@ describe("refusals: the gate never decides on an inspection Core cannot account 
       JSON.stringify({ version: "2.1.0", runs: [{ results: [] }] }),
     ]) {
       const refusal = await refusalOf(
-        createFakeScanAdapterForTests({ [BINDING_GATE_DETECTOR_ID]: { kind: "sarif", sarif } }),
+        createSelfCompletingFakeScanAdapterForTests({
+          [BINDING_GATE_DETECTOR_ID]: { kind: "sarif", sarif },
+        }),
       );
       expect(refusal).toBeInstanceOf(BindingGateScanError);
     }
@@ -467,11 +468,11 @@ describe("refusals: the gate never decides on an inspection Core cannot account 
   });
 
   it("refuses an inspection whose SARIF does not prove the selection was analyzed", async () => {
+    // Unmodified responses: the verbatim fake adds nothing to these bytes.
     const withoutEvidence = await refusalOf(
-      createFakeScanAdapterForTests({
+      createVerbatimFakeScanAdapterForTests({
         [BINDING_GATE_DETECTOR_ID]: {
           kind: "sarif",
-          raw: true,
           sarif: JSON.stringify({
             ...JSON.parse(bindingGateSarifForTests([])),
             runs: JSON.parse(bindingGateSarifForTests([])).runs.map(
@@ -488,24 +489,32 @@ describe("refusals: the gate never decides on an inspection Core cannot account 
     expect((withoutEvidence as Error).message).toBe(
       "detector.aih-binding-gate returned SARIF whose run 0 carries no aihScanCompletionV1 completion evidence",
     );
-    // Evidence for an empty selection, not the one Core sent.
+    // Evidence for an empty selection (the contract's empty-set vector), not the one Core sent.
+    const emptySelection = {
+      detectorId: BINDING_GATE_DETECTOR_ID,
+      subjectTreeSha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      analyzedFileCount: 0,
+      analyzer: { version: "1.0.0", lockSha256: null },
+    };
     const otherSelection = await refusalOf(
-      createFakeScanAdapterForTests({
+      createVerbatimFakeScanAdapterForTests({
         [BINDING_GATE_DETECTOR_ID]: {
-          kind: "sarif-for",
-          sarif: (request) =>
-            withFakeScanCompletion(
-              bindingGateSarifForTests([]),
-              BINDING_GATE_DETECTOR_ID,
-              fakeScanCompletionEvidence(
-                BINDING_GATE_DETECTOR_ID,
-                {
-                  ...request,
-                  subject: { ...(request.subject as object), selectedClosurePaths: [] },
-                },
-                { version: "1.0.0", lockSha256: null },
-              ),
+          kind: "sarif",
+          sarif: JSON.stringify({
+            ...JSON.parse(bindingGateSarifForTests([])),
+            runs: JSON.parse(bindingGateSarifForTests([])).runs.map(
+              (run: Record<string, unknown>) => ({
+                ...run,
+                tool: { driver: { name: "aih-binding-gate" } },
+                invocations: [
+                  {
+                    executionSuccessful: true,
+                    properties: { aihScanCompletionV1: emptySelection },
+                  },
+                ],
+              }),
             ),
+          }),
         },
       }),
     );
@@ -698,7 +707,7 @@ describe("cancellation", () => {
   });
 
   it("throws TrustScanCancelledError when the run is cancelled while Scan is running", async () => {
-    const scan = createFakeScanAdapterForTests({
+    const scan = createSelfCompletingFakeScanAdapterForTests({
       [BINDING_GATE_DETECTOR_ID]: { kind: "block-until-aborted" },
     });
     const controller = new AbortController();
@@ -719,7 +728,7 @@ describe("runFastScanGate caches nothing from an inspection that did not complet
   }
 
   it("writes no cache record when Scan refuses, and asks Scan again next time", async () => {
-    const refused = createFakeScanAdapterForTests({
+    const refused = createSelfCompletingFakeScanAdapterForTests({
       [BINDING_GATE_DETECTOR_ID]: { kind: "refused", reason: "busy", detail: "try again" },
     });
     await expect(
@@ -753,7 +762,7 @@ describe("runFastScanGate caches nothing from an inspection that did not complet
       runFastScanGate(
         source(),
         { posture: "enterprise" },
-        { cacheHome, scanExecution: createFakeScanAdapterForTests({}) },
+        { cacheHome, scanExecution: createSelfCompletingFakeScanAdapterForTests({}) },
       ),
     ).rejects.toBeInstanceOf(ScanPackageRefusalError);
     expect(existsSync(join(cacheHome, "scan-cache"))).toBe(false);

@@ -359,3 +359,86 @@ describe("SkillSpector's run must state the image Core accepts", () => {
     },
   );
 });
+
+describe("a delegated run counts complete only when Scan's unmodified bytes prove the vector subject", () => {
+  const OTHER = {
+    subjectTreeSha256: "7b1ba80501ebc5f32a22229aef5a2944b2ac49d637ed4cff41e8f9ccda972198",
+    analyzedFileCount: 1,
+  } as const;
+  const semgrep = (sarif: string) =>
+    delegated(["semgrep"], { "detector.semgrep": { kind: "sarif", sarif } });
+  const failedWith = (checks: readonly Check[], detector: string, reason: string) =>
+    expect(detectorCheck(checks, detector)).toMatchObject({
+      verdict: "fail",
+      code: "trust.detector-unavailable",
+      detail: expect.stringContaining(reason),
+    });
+
+  it("completes a multi-run log whose every run states the vector subject", async () => {
+    const stated = evidence("detector.semgrep", VECTOR, SEMGREP_HOST);
+    const result = await semgrep(sarifLog([stated, stated]));
+    expect(result.executions).toEqual([
+      expect.objectContaining({ detector: "semgrep", executedBy: "scan", outcome: "completed" }),
+    ]);
+  });
+
+  it.each([
+    [
+      "no completion evidence",
+      sarifLog([undefined]),
+      "detector.semgrep returned SARIF whose run 0 carries no aihScanCompletionV1 completion evidence",
+    ],
+    [
+      "evidence missing from a later run",
+      sarifLog([evidence("detector.semgrep", VECTOR, SEMGREP_HOST), undefined]),
+      "detector.semgrep returned SARIF whose run 1 carries no aihScanCompletionV1 completion evidence",
+    ],
+    [
+      "runs stating different subjects",
+      sarifLog([
+        evidence("detector.semgrep", VECTOR, SEMGREP_HOST),
+        evidence("detector.semgrep", OTHER, SEMGREP_HOST),
+      ]),
+      "detector.semgrep returned SARIF whose runs carry different aihScanCompletionV1 completion evidence",
+    ],
+    [
+      "evidence for another subject",
+      sarifLog([evidence("detector.semgrep", OTHER, SEMGREP_HOST)]),
+      `; the subject Core submitted has 2 files with subject tree ${VECTOR.subjectTreeSha256}`,
+    ],
+    [
+      "evidence for another detector",
+      sarifLog([evidence("detector.skillspector", VECTOR, SEMGREP_HOST)]),
+      'completion evidence for "detector.skillspector", not the requested detector.semgrep',
+    ],
+    [
+      "evidence naming another analyzer lock",
+      sarifLog([
+        evidence("detector.semgrep", VECTOR, { ...SEMGREP_HOST, lockSha256: "0".repeat(64) }),
+      ]),
+      `completion evidence for analyzer "${SEMGREP_HOST.version}" with uv.lock ${"0".repeat(64)}; Core accepts ${SEMGREP_HOST.version} with uv.lock ${SEMGREP_HOST.lockSha256}`,
+    ],
+  ])("fails the required detector for %s", async (_label, sarif, reason) => {
+    const result = await semgrep(sarif);
+    failedWith(result.checks, "semgrep", reason);
+    expect(result.analyzersRun).not.toContain("semgrep@uv:1.173.0");
+    expect(result.executions).toEqual([
+      expect.objectContaining({ detector: "semgrep", outcome: "failed" }),
+    ]);
+  });
+
+  it("keeps a required Snyk run strict: output without a driver or invocation fails at enterprise", async () => {
+    // The shape Scan S2f's snyk-agent-scan engine emits: results, and nothing proving completion.
+    const result = await delegated(["snyk-agent-scan"], {
+      "detector.snyk-agent-scan": {
+        kind: "sarif",
+        sarif: JSON.stringify({ version: "2.1.0", runs: [{ results: [] }] }),
+      },
+    });
+    failedWith(
+      result.checks,
+      "snyk-agent-scan",
+      "detector.snyk-agent-scan returned SARIF whose run 0 names no tool driver",
+    );
+  });
+});

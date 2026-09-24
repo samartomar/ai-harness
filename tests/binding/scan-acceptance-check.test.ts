@@ -16,7 +16,7 @@ import { type DimensionReport, inspectTree } from "../../src/binding/scan-gate.j
 import { defaultRunner, type Runner } from "../../src/internals/proc.js";
 import { ScanPackageRefusalError } from "../../src/scan-package/load-scan-package.js";
 import { hermeticGitEnv } from "../git-fixture-env.js";
-import { createFakeScanAdapterForTests } from "../trust/fakes/fake-scan-adapter.js";
+import { createSelfCompletingFakeScanAdapterForTests } from "../trust/fakes/fake-scan-adapter.js";
 import { fakeBindingGateScan } from "./fake-binding-gate.js";
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 });
@@ -513,7 +513,7 @@ describe("checkSuperpowersScanAcceptance", () => {
   it("lets a missing or incompatible Scan surface as its own typed refusal", async () => {
     initVendorCheckout({ "SKILL.md": "safe\n" });
     // A Scan without the binding-gate detector cannot inspect the checkout.
-    const noBindingGate = createFakeScanAdapterForTests({});
+    const noBindingGate = createSelfCompletingFakeScanAdapterForTests({});
     const refusal = await checkSuperpowersScanAcceptance(
       { checkoutPath: checkout },
       fixtureDeps(artifact([]), (root) => inspectTree(root, { scanExecution: noBindingGate })),

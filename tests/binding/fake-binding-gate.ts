@@ -1,7 +1,7 @@
 import { BINDING_GATE_DIMENSIONS } from "../../src/binding/scan-binding-gate.js";
 import type { DimensionReport } from "../../src/binding/scan-gate.js";
 import {
-  createFakeScanAdapterForTests,
+  createSelfCompletingFakeScanAdapterForTests,
   type FakeScanAdapterForTests,
 } from "../trust/fakes/fake-scan-adapter.js";
 
@@ -111,7 +111,7 @@ export function fakeBindingGateScan(
     | readonly DimensionReport[]
     | ((selectedPaths: readonly string[]) => readonly DimensionReport[]) = [],
 ): FakeScanAdapterForTests {
-  return createFakeScanAdapterForTests({
+  return createSelfCompletingFakeScanAdapterForTests({
     "detector.aih-binding-gate": {
       kind: "sarif-for",
       sarif: (request) =>

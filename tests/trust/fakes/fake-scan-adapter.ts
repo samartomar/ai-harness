@@ -23,9 +23,15 @@ import {
  * annex digest, under the execution profile the request named. Its analyzer
  * identities are the ones Core accepts (`ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1`)
  * unless a test overrides them; a profile Core pins none for gets a fake lock.
- * Like Scan (C2a §1.6), it completes the SARIF a test supplies: every run gets
- * a tool driver and a successful invocation when it has none, and completion
- * evidence v1 for the subject the request names, unless the answer is `raw`.
+ *
+ * Two adapters. `createVerbatimFakeScanAdapterForTests` returns every SARIF
+ * answer byte for byte: completion-boundary tests use it with independent
+ * vectors. `createSelfCompletingFakeScanAdapterForTests` REPAIRS what it is
+ * given, as a convenience for tests about something else (profiles,
+ * cancellation, identity, mapping): a run gets a tool driver and a successful
+ * invocation when it has none, and completion evidence v1 SELF-DERIVED with
+ * Core's own subject code, so it can never catch a subject-selection defect.
+ * One of its answers can opt out with `verbatim: true`.
  *
  * Shapes follow Scan's own `DetectorCapabilityV1` and `RunDetectorV1Result`
  * (`aih-scan src/capability/detector-capability-v1.ts`, `src/runner/run-detector-v1.ts`).
@@ -38,8 +44,8 @@ export type FakeScanAnswerV1 =
       readonly executionProfileId?: string;
       /** The analyzer version the observation states, instead of the accepted one. */
       readonly observedAnalyzerVersion?: string;
-      /** Return the SARIF bytes exactly as given: no driver, invocation or completion evidence added. */
-      readonly raw?: boolean;
+      /** Self-completing adapter only: return these bytes exactly as given, nothing added. */
+      readonly verbatim?: true;
       /** SkillSpector's `observation.image`, instead of the pinned image; `undefined` states none. */
       readonly image?: unknown;
     }
@@ -170,11 +176,12 @@ function asObject(value: unknown): Record<string, unknown> | undefined {
 }
 
 /**
- * Completion evidence v1 for this request, as Scan writes it: the subject
- * files of `subject.sourceRoot` under the detector's rule, and the analyzer.
+ * SELF-DERIVED completion evidence v1 for this request, computed with Core's
+ * OWN subject code (so it agrees with Core by construction): the subject files
+ * of `subject.sourceRoot` under the detector's rule, and the analyzer.
  * Undefined when the subject cannot be read (Core then refuses the run).
  */
-export function fakeScanCompletionEvidence(
+export function selfDerivedFakeScanCompletionEvidence(
   detectorId: string,
   request: Record<string, unknown>,
   analyzer: { readonly version: string; readonly lockSha256: string | null },
@@ -199,12 +206,12 @@ export function fakeScanCompletionEvidence(
 }
 
 /**
- * The SARIF text with every run completed as Scan completes it: a tool driver
+ * REPAIRING: the SARIF text with every run completed as Scan completes it: a tool driver
  * and a successful first invocation when the run has none, and `evidence` in
  * `invocations[0].properties` unless the run already states some. Text that is
  * not a SARIF log with runs comes back unchanged.
  */
-export function withFakeScanCompletion(
+export function withSelfDerivedFakeScanCompletion(
   text: string,
   detectorId: string,
   evidence: Record<string, unknown> | undefined,
@@ -300,10 +307,12 @@ export const FAKE_PINNED_SKILLSPECTOR_IMAGE = Object.freeze({
 });
 
 /**
- * A fake Scan answering `answers[detectorId]`. A detector with no answer is not
- * declared at all, so Core never sees a capability the fake cannot honour.
+ * A SELF-COMPLETING fake Scan answering `answers[detectorId]` (see the module
+ * comment: it repairs and self-derives, so it is not for boundary tests). A
+ * detector with no answer is not declared at all, so Core never sees a
+ * capability the fake cannot honour.
  */
-export function createFakeScanAdapterForTests(
+export function createSelfCompletingFakeScanAdapterForTests(
   answers: Readonly<Record<string, FakeScanAnswerV1>>,
   options: { readonly profiles?: Readonly<Record<string, readonly FakeProfile[]>> } = {},
 ): FakeScanAdapterForTests {
@@ -393,12 +402,12 @@ function fakeScanAdapter(
         (accepted === undefined ? "fake" : observedScanAnalyzerVersionV1(accepted));
       const lock = asObject((profile as Record<string, unknown>).analyzerLock)?.sha256;
       const text =
-        !options.complete || (answer.kind === "sarif" && answer.raw === true)
+        !options.complete || (answer.kind === "sarif" && answer.verbatim === true)
           ? given
-          : withFakeScanCompletion(
+          : withSelfDerivedFakeScanCompletion(
               given,
               detectorId,
-              fakeScanCompletionEvidence(detectorId, record, {
+              selfDerivedFakeScanCompletionEvidence(detectorId, record, {
                 version: analyzerVersion,
                 lockSha256: typeof lock === "string" ? lock : null,
               }),

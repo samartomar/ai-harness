@@ -24,11 +24,11 @@ import { fakeRunner } from "../../src/internals/proc.js";
 import { makeHostAdapter } from "../../src/platform/detect.js";
 import { buildProgram } from "../../src/program.js";
 import { resolveTrustSource } from "../../src/trust/fetch.js";
-import { createFakeScanAdapterForTests } from "../trust/fakes/fake-scan-adapter.js";
+import { createSelfCompletingFakeScanAdapterForTests } from "../trust/fakes/fake-scan-adapter.js";
 
 // The vet runs through the installed @aihq/scan; this fake declares the uv
 // detectors with their analyzer locks, which is all the plan reads before vetting.
-const scan = createFakeScanAdapterForTests({
+const scan = createSelfCompletingFakeScanAdapterForTests({
   "detector.cisco": { kind: "refused", reason: "unused", detail: "unused" },
   "detector.semgrep": { kind: "refused", reason: "unused", detail: "unused" },
 });

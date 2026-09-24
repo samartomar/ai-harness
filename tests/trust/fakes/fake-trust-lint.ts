@@ -1,5 +1,5 @@
 import {
-  createFakeScanAdapterForTests,
+  createSelfCompletingFakeScanAdapterForTests,
   type FakeScanAdapterForTests,
   type FakeScanAnswerV1,
 } from "./fake-scan-adapter.js";
@@ -127,7 +127,7 @@ export function fakeTrustLintScan(
       ) => FakeTrustLintOptionsV1) = {},
   others: Readonly<Record<string, FakeScanAnswerV1>> = {},
 ): FakeScanAdapterForTests {
-  return createFakeScanAdapterForTests({
+  return createSelfCompletingFakeScanAdapterForTests({
     "detector.aih-trust-lint": {
       kind: "sarif-for",
       sarif: (request) => {

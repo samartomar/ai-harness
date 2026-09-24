@@ -30,11 +30,11 @@ import {
 } from "../../src/trust/evidence.js";
 import { resolveTrustSource } from "../../src/trust/fetch.js";
 import type { TrustScanResult } from "../../src/trust/scan.js";
-import { createFakeScanAdapterForTests } from "../trust/fakes/fake-scan-adapter.js";
+import { createSelfCompletingFakeScanAdapterForTests } from "../trust/fakes/fake-scan-adapter.js";
 
 // The vet runs through the installed @aihq/scan; this fake declares the uv
 // detectors with their analyzer locks, which is all the plan reads before vetting.
-const fakeScan = createFakeScanAdapterForTests({
+const fakeScan = createSelfCompletingFakeScanAdapterForTests({
   "detector.cisco": { kind: "refused", reason: "unused", detail: "unused" },
   "detector.semgrep": { kind: "refused", reason: "unused", detail: "unused" },
 });
