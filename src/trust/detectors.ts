@@ -473,7 +473,8 @@ export interface CiscoShardJoinProjectionV1 {
 /**
  * Runs `scan` over a projection of a verified join's source: a directory Core
  * creates beside the verified root, into which Core copies, from that root,
- * every job that meets `includedPaths` (symbolic links left out), with the
+ * every job that meets `includedPaths` (symbolic links left out; a job nested
+ * in another selected job arrives with it), with the
  * join's SARIF for those jobs bound to that directory. The caller may add
  * other files; the scan still rehashes every job it finds there. The join
  * holds only while that directory, by identity, is the one Core created: it
@@ -492,7 +493,12 @@ export async function withCiscoShardJoinProjectionV1<T>(
     const identity = directoryIdentityV1(root);
     if (identity === undefined)
       throw new Error(`Cisco shard projection ${root} is not the directory Core created`);
-    for (const job of jobs) {
+    // Copying a job copies every job nested in it, so only the outermost
+    // selected jobs are copied; every selected job is still bound and rehashed.
+    const outermost = jobs.filter(
+      (job) => !jobs.some((other) => job.path.startsWith(`${other.path}/`)),
+    );
+    for (const job of outermost) {
       const target = join(root, ...job.path.split("/"));
       mkdirSync(dirname(target), { recursive: true });
       cpSync(join(verified.root, ...job.path.split("/")), target, {

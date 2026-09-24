@@ -195,8 +195,10 @@ now (each directory holding a selected `SKILL.md`) must be exactly the join's jo
 job's subject, rehashed at the scan, must equal the subject verified at the join. Anything else
 fails the detector with the difference named. No caller can name another root for a join: a
 baseline component scan gets its join through `withCiscoShardJoinProjectionV1`, which creates the
-projection directory itself, copies the included jobs into it from the verified root, and binds
-the join to that directory for the one scan, removing it afterwards. The binding is to the
+projection directory itself, copies the included jobs into it from the verified root (only the
+outermost ones: a job nested in another selected job arrives with it, and is still bound and
+rehashed on its own), and binds the join to that directory for the one scan, removing it
+afterwards. The binding is to the
 directory Core created, by identity (device, inode and birth time, a real directory and never a
 link or junction), checked before and after the jobs are rehashed; a directory replaced at the
 same pathname fails the detector. When the scan settles Core revokes the join, so presenting it

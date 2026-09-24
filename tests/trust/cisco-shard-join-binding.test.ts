@@ -14,6 +14,7 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { Check } from "../../src/internals/verify.js";
 import {
+  buildCiscoShardManifest,
   buildCiscoShardResult,
   type CiscoShardJob,
   joinCiscoShardResults,
@@ -445,5 +446,98 @@ describe("the verified shard record cannot be changed through its accessor", () 
       "skills/alpha/SKILL.md",
       "skills/beta/SKILL.md",
     ]);
+  });
+});
+
+// Nested jobs: skills/a holds skills/a/nested, so job skills/a's subject has
+// both files. skills/c is no job; only skills/c/nested is. Digests by hand.
+const NESTED_FILES = {
+  "skills/a/SKILL.md": "# a\n",
+  "skills/a/nested/SKILL.md": "# nested\n",
+  "skills/b/SKILL.md": "# b\n",
+  "skills/c/README.md": "# c\n",
+  "skills/c/nested/SKILL.md": "# c nested\n",
+} as const;
+const NESTED_SUBJECTS: HandSubjects = {
+  "skills/a": ["b26d6d6c70b92f699fea319a857b3c4fc58c5b872aea0d4c2ca9685ca1638d0e", 2],
+  "skills/a/nested": ["f5a106be33b9b7102276fd376a3da45e9aaf465bedb42245422f218e3e326f81", 1],
+  "skills/b": ["635898ed6dddcd65f5d834bc0ef417153166563c5b670f2aecc57cb0952c308e", 1],
+  "skills/c/nested": ["b423cac7ed29f94ab01e6806108efe6d993cabd66ff9b72effda17ec74cfb3b1", 1],
+};
+
+/**
+ * A valid join over overlapping jobs, built from an explicit manifest as
+ * `buildCiscoShardManifest` accepts it (the source-tree builder never nests jobs).
+ */
+function nestedJoin(root: string, withFindings: boolean) {
+  const manifest = buildCiscoShardManifest({
+    source: { id: "fixture", pinnedSha: "a".repeat(40), treeSha256: "e".repeat(64) },
+    analyzer: { name: "cisco", version: "2.0.14", lockSha256: CISCO_LOCK },
+    policy: { version: "native.test", profile: "fixture" },
+    jobs: Object.keys(NESTED_SUBJECTS).map((path, index) => ({
+      path,
+      inputSha256: String(index + 1).repeat(64),
+    })),
+    shardCount: 2,
+  });
+  const results = manifest.shards.map((shard) =>
+    buildCiscoShardResult(manifest, shard.id, (job) =>
+      jobSarif(job, withFindings ? [finding(job)] : [], NESTED_SUBJECTS),
+    ),
+  );
+  return joinCiscoShardResults(manifest, results, root);
+}
+
+function nestedTree(): string {
+  const root = mkdtempSync(join(tmpdir(), "aih-shard-binding-nested-"));
+  roots.push(root);
+  for (const [path, body] of Object.entries(NESTED_FILES)) {
+    mkdirSync(dirname(join(root, path)), { recursive: true });
+    writeFileSync(join(root, path), body, "utf8");
+  }
+  return root;
+}
+
+describe("a projection copies only the outermost selected jobs and still verifies every one", () => {
+  it.each([
+    ["a parent and its nested child", ["skills/a"], ["skills/a", "skills/a/nested"]],
+    ["a nested child whose parent is no job", ["skills/c/nested"], ["skills/c/nested"]],
+    ["siblings", ["skills/a/nested", "skills/b"], ["skills/a", "skills/a/nested", "skills/b"]],
+  ] as const)("completes for %s", async (_label, included, jobs) => {
+    const source = nestedTree();
+    const result = await withCiscoShardJoinProjectionV1(
+      nestedJoin(source, true),
+      included,
+      async (projection) => {
+        for (const path of Object.keys(NESTED_FILES))
+          expect(existsSync(join(projection.root, path))).toBe(
+            jobs.some((job) => path.startsWith(`${job}/`)),
+          );
+        return scanCisco(projection.root, projection.cisco);
+      },
+    );
+    expect(result.executions).toEqual([
+      { detector: "cisco", executedBy: "precomputed-sarif", outcome: "completed" },
+    ]);
+    expect(
+      [...new Set(result.rawOccurrences.map((occurrence) => occurrence.location?.uri))].sort(),
+    ).toEqual(jobs.map((job) => `${job}/SKILL.md`));
+  });
+
+  it("rehashes a nested job selected with its parent", async () => {
+    const source = nestedTree();
+    const result = await withCiscoShardJoinProjectionV1(
+      nestedJoin(source, false),
+      ["skills/a"],
+      async (projection) => {
+        writeFileSync(join(projection.root, "skills", "a", "nested", "SKILL.md"), "# a\n", "utf8");
+        return scanCisco(projection.root, projection.cisco);
+      },
+    );
+    // skills/a/nested/SKILL.md now holds "# a\n"; both bound jobs see it.
+    expectRefused(
+      result,
+      /the tree changed after Core verified the shard join: job skills\/a(\/nested)? was verified with/,
+    );
   });
 });
