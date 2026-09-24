@@ -622,7 +622,10 @@ disposable quarantine so the preview is based on real rendered bytes; it never w
 under `.aih/ecc-profile/` and make repeat install, repair, update, rollback, and uninstall fail closed
 on foreign or operator-modified files. Repair, rollback, and uninstall use the receipt's bounded,
 hash-authenticated installed bytes and source identity, so a later package pin cannot strand an
-older managed installation. Legacy selection flags such as `--profile`, `--with`, and `--cli`
+older managed installation. The receipt is operator-writable, so its self-declared identities never authorize
+a write on their own: the active source and, for rollback, the snapshot's source and projection digest
+must equal an entry in the plugin's append-only installation trust record, or the command refuses
+with `framework-profile-recovery-unanchored` before planning any write. Legacy selection flags such as `--profile`, `--with`, and `--cli`
 cannot be combined with `--lifecycle`.
 
 In a **governed** repository (an org policy carrying `governance`), `--lifecycle install` is not this

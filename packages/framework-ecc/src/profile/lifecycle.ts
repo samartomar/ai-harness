@@ -3,6 +3,7 @@ import { lstatSync, realpathSync } from "node:fs";
 import { isAbsolute, relative, resolve } from "node:path";
 import {
   type Action,
+  AihError,
   beginMarker,
   endMarker,
   inspectContainedRelativePath,
@@ -89,6 +90,49 @@ export type EccProfileInstalledLifecycleOperation = Extract<
   EccProfileLifecycleOperation,
   "repair" | "uninstall" | "rollback"
 >;
+
+/**
+ * A recovery (repair, rollback, uninstall) whose installed identity is not
+ * independently anchored: the ownership receipt is operator-writable state, so
+ * its self-declared source and projection digest never authorize a write.
+ */
+export class EccProfileRecoveryRefusalError extends AihError {
+  readonly reason = "framework-profile-recovery-unanchored";
+  readonly label: string;
+  readonly nextRoute: string;
+
+  constructor(label: string, nextRoute: string) {
+    super(
+      `framework-profile-recovery-unanchored: ${label}. Next: ${nextRoute}`,
+      "AIH_FRAMEWORK_PLUGIN",
+    );
+    this.label = label;
+    this.nextRoute = nextRoute;
+  }
+}
+
+const RECOVERY_NEXT_ROUTE =
+  "use an @aihq/framework-ecc package version whose append-only installation trust record names this exact ECC pin and projection digest";
+
+function assertAnchored(
+  source: EccProfileOwnership["source"],
+  anchors: readonly EccProfileInstalledSourceTrust[],
+  label: string,
+): void {
+  if (!anchors.some((anchor) => sameSource(anchor, source)))
+    throw new EccProfileRecoveryRefusalError(
+      `${label} (${source.repository}@${source.commit}, projection ${source.projectionSha256}) is not an anchored recovery identity`,
+      RECOVERY_NEXT_ROUTE,
+    );
+}
+
+function assertRollbackAnchored(
+  receipt: EccProfileOwnership,
+  anchors: readonly EccProfileInstalledSourceTrust[],
+): void {
+  if (!receipt.rollback) throw new Error("ECC profile ownership receipt has no rollback snapshot");
+  assertAnchored(receipt.rollback.source, anchors, "ECC profile rollback snapshot");
+}
 
 interface CurrentFile {
   contents: string;
@@ -750,6 +794,7 @@ function rollbackPlan(
   root: string,
   projection: EccProjection,
   files: RenderedProjectionFile[],
+  recoveryAnchors: readonly EccProfileInstalledSourceTrust[],
 ): Plan {
   const receiptFile = readReceiptFile(root);
   if (receiptFile === undefined)
@@ -758,6 +803,7 @@ function rollbackPlan(
   if (!sameSource(receipt.source, sourceIdentity(projection)))
     throw new Error("ECC profile rollback projection contradicts the ownership receipt");
   assertReceiptMatchesProjection(receipt, files);
+  assertRollbackAnchored(receipt, recoveryAnchors);
   return rollbackInstalledPlan(root, receiptFile);
 }
 
@@ -832,10 +878,16 @@ function rollbackInstalledPlan(
   return plan("ecc-profile: rollback", ...actions);
 }
 
+/**
+ * Plan a lifecycle operation bound to an authenticated projection. The
+ * projection authenticates the active installation only; a rollback snapshot
+ * must also equal one of the independently anchored `recoveryAnchors`.
+ */
 export function planEccProfileLifecycle(
   root: string,
   projection: EccProjection,
   operation: EccProfileLifecycleOperation,
+  recoveryAnchors: readonly EccProfileInstalledSourceTrust[] = [],
 ): Plan {
   assertLifecycleRoot(root);
   const files = validateProjection(root, projection);
@@ -849,7 +901,7 @@ export function planEccProfileLifecycle(
     case "uninstall":
       return uninstallPlan(root, projection, files);
     case "rollback":
-      return rollbackPlan(root, projection, files);
+      return rollbackPlan(root, projection, files, recoveryAnchors);
   }
 }
 
@@ -860,7 +912,12 @@ function assertLifecycleRoot(root: string): void {
     throw new Error("ECC profile lifecycle root must be a real directory");
 }
 
-/** Recover or remove the exact installed projection authenticated by its bounded ownership receipt. */
+/**
+ * Recover or remove the exact installed projection. The bounded ownership
+ * receipt is checked against `trustedSources`, the append-only anchored
+ * identities: the active source always, and a rollback snapshot as well, before
+ * any write is planned.
+ */
 export function planInstalledEccProfileLifecycle(
   root: string,
   operation: EccProfileInstalledLifecycleOperation,
@@ -871,10 +928,12 @@ export function planInstalledEccProfileLifecycle(
   if (operation === "uninstall" && receiptFile === undefined) return plan("ecc-profile: uninstall");
   if (receiptFile === undefined)
     throw new Error(`ECC profile ${operation} requires an ownership receipt`);
-  if (!trustedSources.some((source) => sameSource(source, receiptFile.receipt.source)))
-    throw new Error(
-      `ECC profile ${operation} does not trust the installed source identity; use a package version that supports its exact pin`,
-    );
+  assertAnchored(
+    receiptFile.receipt.source,
+    trustedSources,
+    `ECC profile ${operation}: the installed source identity`,
+  );
+  if (operation === "rollback") assertRollbackAnchored(receiptFile.receipt, trustedSources);
   switch (operation) {
     case "repair":
       return repairInstalledPlan(root, receiptFile);

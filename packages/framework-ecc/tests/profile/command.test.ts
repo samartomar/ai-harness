@@ -165,7 +165,9 @@ describe("ECC profile lifecycle command", () => {
 
       rmSync(codexConfig);
       await executeEccProfileLifecycleCommand(realGitContext(target, "rollback"), {
-        installedSourceTrust: nextSource ? [nextSource] : [],
+        installedSourceTrust: [nextSource, installedSource].filter(
+          (source) => source !== undefined,
+        ),
       });
       const originalSource = readEccProfileOwnership(target)?.source;
       expect(originalSource?.commit).toBe(projection.source.commit);
@@ -255,6 +257,7 @@ describe("ECC profile lifecycle command", () => {
         const managed = projection.files.find((file) => file.mergeStrategy === "replace");
         if (!managed) throw new Error("fixture has no replace-owned projected file");
         const destination = join(target, ...managed.destination.split("/"));
+        const originalSource = readEccProfileOwnership(target)?.source;
         let expectedSourceCommit = projection.source.commit;
         if (operation === "repair") {
           rmSync(destination);
@@ -278,7 +281,9 @@ describe("ECC profile lifecycle command", () => {
           executeEccProfileLifecycleCommand(context(target, operation, true), {
             loadProjection: async () => projection,
             loadNativeRegistration,
-            installedSourceTrust: installedSource ? [installedSource] : [],
+            installedSourceTrust: [installedSource, originalSource].filter(
+              (source) => source !== undefined,
+            ),
           }),
         ).rejects.toThrow(/runtime bytes|ownership receipt|run update/i);
 
@@ -380,7 +385,7 @@ describe("ECC profile lifecycle command", () => {
       expect(nextSource).toBeDefined();
       await executeEccProfileLifecycleCommand(context(target, "rollback", true), {
         loadProjection: changedPackagePin,
-        installedSourceTrust: nextSource ? [nextSource] : [],
+        installedSourceTrust: [nextSource, originalSource].filter((source) => source !== undefined),
       });
       expect(readEccProfileOwnership(target)?.source.commit).toBe(installed.source.commit);
 

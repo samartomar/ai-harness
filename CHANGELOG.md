@@ -61,6 +61,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   embeds no profile evidence. Until the installed Catalog carries that section, install and
   update refuse with `framework-profile-evidence-unavailable` and name the next route; repair,
   rollback and uninstall of an existing profile installation are unchanged.
+- `aih ecc --lifecycle rollback` now authenticates the rollback snapshot as well as the active
+  installation: its source identity and projection digest must equal an entry in the plugin's
+  append-only installation trust record before any write is planned. A snapshot that is not
+  anchored there (including a self-consistent one with recomputed hashes) refuses with
+  `framework-profile-recovery-unanchored` and writes nothing; repair, rollback and uninstall
+  report an unanchored active identity with the same typed refusal.
 - **Breaking:** Core now requires Node.js 20.6 or newer (`engines.node` `>=20.6.0`).
   The framework-plugin loader uses the synchronous `import.meta.resolve` of Node 20.6
   to prove that a plugin entry resolves inside its own install tree. `aih doctor` and

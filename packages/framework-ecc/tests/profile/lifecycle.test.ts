@@ -18,7 +18,10 @@ import { fakeRunner } from "../../../../src/internals/proc.js";
 import { makeHostAdapter } from "../../../../src/platform/detect.js";
 import {
   ECC_PROFILE_OWNERSHIP_PATH,
+  type EccProfileInstalledSourceTrust,
+  EccProfileRecoveryRefusalError,
   planEccProfileLifecycle,
+  planInstalledEccProfileLifecycle,
   readEccProfileOwnership,
 } from "../../src/profile/lifecycle.js";
 import type { EccProjection, RenderedProjectionFile } from "../../src/profile/render.js";
@@ -133,6 +136,13 @@ function put(relative: string, content: string): void {
   writeFileSync(path, content, "utf8");
 }
 
+/** The identity an authenticated install recorded: the anchor a later rollback must match. */
+function anchoredInstall(): EccProfileInstalledSourceTrust[] {
+  const source = readEccProfileOwnership(root)?.source;
+  if (source === undefined) throw new Error("fixture install recorded no ownership receipt");
+  return [source];
+}
+
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "aih-ecc-lifecycle-"));
 });
@@ -179,6 +189,7 @@ describe("AIH-owned ECC projection lifecycle", () => {
   it("updates only owned bytes and rolls back to the prior projection", async () => {
     put(".codex/config.toml", 'model = "gpt-5"\n');
     await executePlan(planEccProfileLifecycle(root, projection(), "install"), ctx(true));
+    const anchors = anchoredInstall();
     const next = projection(
       COMMIT_B,
       "# example v2\n",
@@ -194,7 +205,7 @@ describe("AIH-owned ECC projection lifecycle", () => {
     );
     expect(readEccProfileOwnership(root)?.rollback?.source.commit).toBe(COMMIT_A);
 
-    await executePlan(planEccProfileLifecycle(root, next, "rollback"), ctx(true));
+    await executePlan(planEccProfileLifecycle(root, next, "rollback", anchors), ctx(true));
     expect(readFileSync(join(root, ".agents/skills/example/SKILL.md"), "utf8")).toBe(
       "# example v1\n",
     );
@@ -393,6 +404,7 @@ describe("AIH-owned ECC projection lifecycle", () => {
 
   it("removes AIH-created merge files across update and rollback", async () => {
     await executePlan(planEccProfileLifecycle(root, projection(), "install"), ctx(true));
+    const anchors = anchoredInstall();
     const withoutConfig = projection(COMMIT_B, "# example v2\n");
     withoutConfig.files = withoutConfig.files.filter(
       (file) => file.destination !== ".codex/config.toml",
@@ -400,13 +412,13 @@ describe("AIH-owned ECC projection lifecycle", () => {
     await executePlan(planEccProfileLifecycle(root, withoutConfig, "update"), ctx(true));
     expect(existsSync(join(root, ".codex/config.toml"))).toBe(false);
 
-    await executePlan(planEccProfileLifecycle(root, withoutConfig, "rollback"), ctx(true));
+    await executePlan(planEccProfileLifecycle(root, withoutConfig, "rollback", anchors), ctx(true));
     expect(readFileSync(join(root, ".codex/config.toml"), "utf8")).toContain(
       "# >>> aih managed (ecc-profile) >>>",
     );
 
     await executePlan(planEccProfileLifecycle(root, withoutConfig, "update"), ctx(true));
-    await executePlan(planEccProfileLifecycle(root, withoutConfig, "rollback"), ctx(true));
+    await executePlan(planEccProfileLifecycle(root, withoutConfig, "rollback", anchors), ctx(true));
     expect(readEccProfileOwnership(root)?.source.commit).toBe(COMMIT_A);
   });
 
@@ -641,5 +653,145 @@ describe("AIH-owned ECC projection lifecycle", () => {
     expect(() => planEccProfileLifecycle(root, projection(COMMIT_B), "update")).toThrow(
       /missing; repair before update/i,
     );
+  });
+});
+
+describe("ECC profile recovery authentication", () => {
+  interface ReceiptFile {
+    destination: string;
+    sourcePin: string;
+    sourcePaths: string[];
+    normalizedHash: string;
+    installedHash: string;
+    managedBlockHash: string | null;
+    previousHash: string | null;
+    owner: "aih";
+    capabilityOwner: "upstream";
+    mergeStrategy: "replace" | "toml-merge";
+    mode: "100644" | "100755";
+    content: string;
+  }
+  interface Receipt {
+    source: EccProfileInstalledSourceTrust;
+    files: ReceiptFile[];
+    rollback?: { source: EccProfileInstalledSourceTrust; files: ReceiptFile[] };
+  }
+
+  function filesDigest(files: readonly ReceiptFile[]): string {
+    return sha256(
+      [...files]
+        .sort((left, right) =>
+          left.destination < right.destination ? -1 : left.destination > right.destination ? 1 : 0,
+        )
+        .map((file) => `${file.destination}\0${file.normalizedHash}\0${file.mode}`)
+        .join("\n"),
+    );
+  }
+
+  async function installThenUpdate(): Promise<{
+    original: EccProfileInstalledSourceTrust;
+    active: EccProfileInstalledSourceTrust;
+    next: EccProjection;
+  }> {
+    await executePlan(planEccProfileLifecycle(root, projection(), "install"), ctx(true));
+    const original = readEccProfileOwnership(root)?.source;
+    const next = projection(COMMIT_B, "# example v2\n");
+    await executePlan(planEccProfileLifecycle(root, next, "update"), ctx(true));
+    const active = readEccProfileOwnership(root)?.source;
+    if (original === undefined || active === undefined) throw new Error("fixture has no receipt");
+    return { original, active, next };
+  }
+
+  /** A self-consistent snapshot: an extra file, with every self-declared hash recomputed. */
+  function injectRollbackFile(): EccProfileInstalledSourceTrust {
+    const receiptPath = join(root, ECC_PROFILE_OWNERSHIP_PATH);
+    const receipt = JSON.parse(readFileSync(receiptPath, "utf8")) as Receipt;
+    if (receipt.rollback === undefined) throw new Error("fixture has no rollback snapshot");
+    const content = "# injected\n";
+    receipt.rollback.files.push({
+      destination: ".claude/agents/injected.md",
+      sourcePin: COMMIT_A,
+      sourcePaths: ["agents/injected.md"],
+      normalizedHash: sha256(content),
+      installedHash: sha256(content),
+      managedBlockHash: null,
+      previousHash: null,
+      owner: "aih",
+      capabilityOwner: "upstream",
+      mergeStrategy: "replace",
+      mode: "100644",
+      content,
+    });
+    receipt.rollback.source.projectionSha256 = filesDigest(receipt.rollback.files);
+    writeFileSync(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`, "utf8");
+    expect(readEccProfileOwnership(root)?.rollback?.files).toHaveLength(3);
+    return receipt.rollback.source;
+  }
+
+  function recoveryRefusal(action: () => unknown): EccProfileRecoveryRefusalError {
+    try {
+      action();
+    } catch (error) {
+      expect(error).toBeInstanceOf(EccProfileRecoveryRefusalError);
+      return error as EccProfileRecoveryRefusalError;
+    }
+    throw new Error("expected a recovery refusal");
+  }
+
+  it("refuses an installed rollback whose snapshot identity is not anchored", async () => {
+    const { active } = await installThenUpdate();
+    const refusal = recoveryRefusal(() =>
+      planInstalledEccProfileLifecycle(root, "rollback", [active]),
+    );
+    expect(refusal.reason).toBe("framework-profile-recovery-unanchored");
+    expect(refusal.code).toBe("AIH_FRAMEWORK_PLUGIN");
+    expect(refusal.message).toMatch(/rollback snapshot/i);
+    expect(refusal.nextRoute).toMatch(/package version/i);
+  });
+
+  it("refuses a self-consistent rollback snapshot that adds a file, and writes nothing", async () => {
+    const { original, active } = await installThenUpdate();
+    const forged = injectRollbackFile();
+    expect(forged.commit).toBe(original.commit);
+    expect(forged.projectionSha256).not.toBe(original.projectionSha256);
+
+    const refusal = recoveryRefusal(() =>
+      planInstalledEccProfileLifecycle(root, "rollback", [active, original]),
+    );
+    expect(refusal.reason).toBe("framework-profile-recovery-unanchored");
+    expect(existsSync(join(root, ".claude/agents/injected.md"))).toBe(false);
+    expect(readEccProfileOwnership(root)?.source.commit).toBe(COMMIT_B);
+  });
+
+  it("refuses the forged snapshot through the projection-bound rollback as well", async () => {
+    const { original, next } = await installThenUpdate();
+    injectRollbackFile();
+    expect(
+      recoveryRefusal(() => planEccProfileLifecycle(root, next, "rollback", [original])).reason,
+    ).toBe("framework-profile-recovery-unanchored");
+    expect(recoveryRefusal(() => planEccProfileLifecycle(root, next, "rollback")).reason).toBe(
+      "framework-profile-recovery-unanchored",
+    );
+  });
+
+  it("types the refusal for an unanchored active identity on every installed recovery", async () => {
+    await executePlan(planEccProfileLifecycle(root, projection(), "install"), ctx(true));
+    for (const operation of ["repair", "rollback", "uninstall"] as const) {
+      const refusal = recoveryRefusal(() => planInstalledEccProfileLifecycle(root, operation, []));
+      expect(refusal.reason).toBe("framework-profile-recovery-unanchored");
+      expect(refusal.message).toMatch(/installed source identity/i);
+    }
+  });
+
+  it("rolls back when both the active and the snapshot identities are anchored", async () => {
+    const { original, active } = await installThenUpdate();
+    await executePlan(
+      planInstalledEccProfileLifecycle(root, "rollback", [active, original]),
+      ctx(true),
+    );
+    expect(readFileSync(join(root, ".agents/skills/example/SKILL.md"), "utf8")).toBe(
+      "# example v1\n",
+    );
+    expect(readEccProfileOwnership(root)?.source).toEqual(original);
   });
 });
