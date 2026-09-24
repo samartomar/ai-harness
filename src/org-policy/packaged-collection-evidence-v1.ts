@@ -7,11 +7,14 @@ import {
 } from "../baseline-evidence/scanner-publication-policy.js";
 import { BaselineSourceEvidenceSchema } from "../baseline-evidence/schema.js";
 import {
+  assertJsonTextDepthV1,
+  assertJsonValueDepthV1,
   assertStrictJsonValueV1,
   canonicalStrictJsonBytesV1,
   canonicalStrictJsonSha256V1,
   deepFreezeStrictJsonV1,
   parseStrictJsonObjectV1,
+  STRICT_JSON_MAX_DEPTH_V1,
 } from "../contract/strict-json-v1.js";
 import { evidenceExpiryV1, isExactUtcTimestampV1 } from "../evidence-freshness.js";
 import { packagedScannerCollectionEvidenceInputV1 } from "./packaged-collection-evidence-data.js";
@@ -343,12 +346,14 @@ function ownProtoKeysV1(value: unknown, path: IssuePath = []): IssuePath[] {
 }
 
 /**
- * What Catalog's reader refuses and the shared record schema alone would accept: first Core's
- * strict JSON value rule over the whole record (well-formed NFC strings and keys, finite numbers
- * other than negative zero, plain data only), then the fields above.
+ * What Catalog's reader refuses and the shared record schema alone would accept: first the
+ * nesting bound (before anything recursive), then Core's strict JSON value rule over the whole
+ * record (well-formed NFC strings and keys, finite numbers other than negative zero, plain data
+ * only), then the fields above.
  */
 const packagedRecordInputSchema = z.unknown().superRefine((value, ctx) => {
   try {
+    assertJsonValueDepthV1(value, "packaged collection evidence", STRICT_JSON_MAX_DEPTH_V1);
     assertStrictJsonValueV1(value, "packaged collection evidence");
   } catch (error) {
     ctx.addIssue({ code: "custom", message: (error as Error).message });
@@ -471,9 +476,9 @@ function hasProtoMemberV1(text: string): boolean {
 
 /**
  * Reads sealed records structurally, IDENTICALLY to Catalog's
- * `parsePackagedScannerCollectionEvidenceV1` (decision D25): byte budget, matching seal, Core's
- * strict JSON reader, no `__proto__` member, the structural schema, canonical bytes and one
- * record per catalog id. It
+ * `parsePackagedScannerCollectionEvidenceV1` (decision D25): byte budget, matching seal, the
+ * nesting bound (an iterative scan before any recursive parse), Core's strict JSON reader, no
+ * `__proto__` member, the structural schema, canonical bytes and one record per catalog id. It
  * never admits a record; admission is `PackagedScannerCollectionEvidenceRecordV1Schema`.
  */
 export function readPackagedScannerCollectionEvidenceStructureV1(
@@ -489,6 +494,7 @@ export function readPackagedScannerCollectionEvidenceStructureV1(
       throw new TypeError("Packaged collection evidence seal mismatch.");
     const actual = `sha256:${createHash("sha256").update(item.bytes, "utf8").digest("hex")}`;
     if (actual !== item.sha256) throw new TypeError("Packaged collection evidence seal mismatch.");
+    assertJsonTextDepthV1(item.bytes, "Packaged collection evidence", STRICT_JSON_MAX_DEPTH_V1);
     const value = parseStrictJsonObjectV1(item.bytes, "Packaged collection evidence");
     if (hasProtoMemberV1(item.bytes))
       throw new TypeError("Packaged collection evidence has an unsupported field __proto__.");

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { ZodError } from "zod";
 import { canonicalJson } from "../../../src/capability/package-graph/canonical.js";
 import {
   PackagedScannerCollectionEvidenceRecordV1Schema,
@@ -38,12 +39,16 @@ const UNTRIMMED = /packaged report text must already be trimmed/;
 const NOT_NFC = /must already be NFC/;
 const LONE_SURROGATE = /lone high surrogate/;
 const NOT_CANONICAL = /must use canonical bytes/;
+const TOO_DEEP = /nests deeper than 32 levels/;
 /** Core's expected outcome for every shared case, and the defect a refusal must name. */
 const EXPECTED: Record<string, readonly [Outcome, Outcome, RegExp?]> = {
   "asset-bound-twice": ["refused", "refused", /coverage asset bound twice/],
   "bytes-bom": ["refused", "refused", /invalid JSON/],
+  "bytes-deep-nesting": ["refused", "refused", TOO_DEEP],
   "bytes-duplicate-key": ["refused", "refused", /duplicate JSON object key: inputFormat/],
   "bytes-escaped-not-nfc": ["refused", "refused", NOT_NFC],
+  "bytes-nesting-at-bound": ["refused", "refused", /unmappedDerivedAssets/],
+  "bytes-nesting-over-bound": ["refused", "refused", TOO_DEEP],
   "bytes-number-exponent": ["refused", "refused", NOT_CANONICAL],
   "bytes-number-negative-zero": ["refused", "refused", /not negative zero/],
   "bytes-number-overflow": ["refused", "refused", /numbers must be finite/],
@@ -96,7 +101,10 @@ function issues(result: {
     .join("\n");
 }
 
-/** Seals the fixture (its exact bytes, or its record's canonical bytes, unvalidated) and reads it. */
+/**
+ * Seals the fixture (its exact bytes, or its record's canonical bytes, unvalidated) and reads it.
+ * A refusal is a TypeError or a ZodError; anything else (a RangeError, say) is a crash.
+ */
 function readSealed(fixture: Fixture): { structure: Outcome; admission: Outcome; reason: string } {
   const bytes = fixture.bytes ?? canonicalJson(fixture.record);
   const sha256 = `sha256:${createHash("sha256").update(bytes, "utf8").digest("hex")}`;
@@ -105,11 +113,20 @@ function readSealed(fixture: Fixture): { structure: Outcome; admission: Outcome;
     const admitted = PackagedScannerCollectionEvidenceRecordV1Schema.safeParse(record);
     return { structure: "accepted", admission: outcome(admitted), reason: issues(admitted) };
   } catch (error) {
-    return { structure: "refused", admission: "refused", reason: (error as Error).message };
+    if (!(error instanceof TypeError || error instanceof ZodError)) throw error;
+    return { structure: "refused", admission: "refused", reason: error.message };
   }
 }
 
 describe("packaged collection evidence parity with Catalog", () => {
+  it("refuses a record value nested past the bound, before any recursive check", () => {
+    let deep: unknown = 0;
+    for (let level = 0; level < 100_000; level += 1) deep = [deep];
+    const result = PackagedScannerCollectionEvidenceStructureV1Schema.safeParse({ x: deep });
+    expect(result.success).toBe(false);
+    expect(issues(result)).toMatch(TOO_DEEP);
+  });
+
   it("holds exactly the shared cases", () => {
     expect(fixtures.map((item) => item.fixture).sort()).toEqual(Object.keys(EXPECTED).sort());
   });

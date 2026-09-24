@@ -17,6 +17,6 @@ Each file names one case and its two expected outcomes:
 A file carries either `record`, a record value that each side's test seals as its canonical bytes,
 or `bytes`, the exact sealed record text, for strict-JSON cases a value cannot express (a duplicate
 key, a byte order mark, trailing data, number spellings, a raw lone surrogate, a `__proto__`
-member).
+member, nesting past the shared bound of 32 levels).
 
 Core test: `tests/org-policy/workbench/packaged-evidence-parity.test.ts`.

@@ -107,6 +107,55 @@ export function assertStrictJsonValueV1<T>(
   return value;
 }
 
+/**
+ * A nesting bound for callers that read hostile text or values, far above any real record
+ * (packaged scanner evidence nests seven levels). Catalog's strict JSON reader uses the same.
+ */
+export const STRICT_JSON_MAX_DEPTH_V1 = 32;
+
+function nestedTooDeep(label: string, maxDepth: number): TypeError {
+  return new TypeError(`${label} nests deeper than ${String(maxDepth)} levels`);
+}
+
+/**
+ * Refuses JSON text whose objects and arrays nest deeper than `maxDepth` (the root is level 1).
+ * An iterative scan that skips string contents, so it runs before any recursive parser does.
+ */
+export function assertJsonTextDepthV1(text: string, label: string, maxDepth: number): void {
+  let depth = 0;
+  let inString = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text.charAt(index);
+    if (inString) {
+      if (char === "\\") index += 1;
+      else if (char === '"') inString = false;
+    } else if (char === '"') inString = true;
+    else if (char === "{" || char === "[") {
+      depth += 1;
+      if (depth > maxDepth) throw nestedTooDeep(label, maxDepth);
+    } else if (char === "}" || char === "]") depth -= 1;
+  }
+}
+
+/**
+ * Refuses a value whose objects and arrays nest deeper than `maxDepth` (the root is level 1),
+ * level by level without recursion or getters, so it runs before any recursive check does.
+ */
+export function assertJsonValueDepthV1(value: unknown, label: string, maxDepth: number): void {
+  let level = new Set<object>(isObject(value) ? [value] : []);
+  for (let depth = 1; level.size > 0; depth += 1) {
+    if (depth > maxDepth) throw nestedTooDeep(label, maxDepth);
+    const next = new Set<object>();
+    for (const item of level)
+      for (const key of Object.keys(item)) {
+        const descriptor = Object.getOwnPropertyDescriptor(item, key);
+        if (descriptor !== undefined && "value" in descriptor && isObject(descriptor.value))
+          next.add(descriptor.value);
+      }
+    level = next;
+  }
+}
+
 export function deepFreezeStrictJsonV1<T>(value: T, seen = new WeakSet<object>()): T {
   if (!isObject(value) || seen.has(value)) return value;
   seen.add(value);
