@@ -168,10 +168,13 @@ describe("resolveEccMaterializationSelection", () => {
       },
     });
 
-    const result = resolveEccMaterializationSelection(policyWith([item]), {
-      authorizations: [auth],
-      held: [],
-    });
+    // A synthetic id has no pinned install descriptor: its (empty) structural
+    // requirements are supplied explicitly, never inferred as an empty closure.
+    const result = resolveEccMaterializationSelection(
+      policyWith([item]),
+      { authorizations: [auth], held: [] },
+      { mandatoryRequirementsById: new Map([[item.id, []]]) },
+    );
 
     expect(result.excluded).toEqual([]);
     expect(result.included).toEqual([

@@ -359,8 +359,10 @@ describe("schema-v3 Workbench ECC guard", () => {
   });
 });
 describe("governed ECC module selection closure", () => {
-  it("keeps lower-level synthetic identifiers total while the governed boundary refuses them", () => {
-    expect(eccMandatoryRequirementIds("synthetic:future-component")).toEqual([]);
+  it("refuses synthetic identifiers at the closure helper and at the governed boundary", () => {
+    expect(() => eccMandatoryRequirementIds("synthetic:future-component")).toThrow(
+      /structural dependency closure.*synthetic:future-component/,
+    );
 
     const policy = policyWithBareModule("agents-core");
     const item = policy.governance?.externalSelections[0]?.items[0];

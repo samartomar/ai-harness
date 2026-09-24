@@ -86,6 +86,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   version-2 anchor at the same pin; a changed merge strategy refuses with
   `framework-profile-recovery-unanchored`. The installation trust record appends the version-2
   identity of ECC 0c1d7be9.
+- `@aihq/framework-ecc` validates the ECC descriptor's module graph where it reads it: a
+  dependency or profile member naming a module the graph lacks, a repeated module id, or a
+  dependency cycle refuses with `AIH_FRAMEWORK_DESCRIPTOR` naming it. A structural dependency
+  closure that cannot be computed is now a typed refusal instead of an empty closure, so governed
+  materialization can no longer admit a component whose dependencies were never resolved.
 - The ECC profile installation trust record (the recovery anchors) moved from
   `@aihq/framework-ecc` into Core: `ECC_PROFILE_INSTALLATION_TRUST_V1`, a frozen, append-only
   record exported through `@aihq/core/framework-host` (additive; host API version 1 is
