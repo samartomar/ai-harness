@@ -4,10 +4,13 @@
  * a disposable consumer, and runs the packed CLI only against a disposable
  * project with HOME, USERPROFILE, APPDATA, LOCALAPPDATA and XDG_* redirected
  * into the same disposable root, so no real user configuration is read or
- * written. It proves real Code Review Graph, Codebase Memory and Headroom
+ * written. Every npm command (build, pack, consumer install) also uses an empty
+ * userconfig and a private cache under that root, and the proof reports whether
+ * the real home was touched. It proves real Code Review Graph, Codebase Memory and Headroom
  * setups: exact host entries (Claude, Cursor and Codex), receipts, real MCP
- * handshakes launched from those host entries, and Headroom deactivation
- * leaving no AIH-owned Headroom state. An upstream failure is recorded
+ * handshakes launched from those host entries, and Headroom deactivation with
+ * a narrower --cli leaving no AIH-owned Headroom entry on any recorded host and
+ * no AIH-owned Headroom state. An upstream failure is recorded
  * verbatim, never relabelled as success.
  *
  * usage: node tools/verify-developer-tools-installed.mjs --evidence-dir <new-dir>
@@ -30,7 +33,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseToml } from "smol-toml";
@@ -88,6 +91,9 @@ if (process.platform === "win32") {
   env.XDG_RUNTIME_DIR = join(temp, "x");
 }
 const emptyUserConfig = join(temp, "empty.npmrc");
+const npmCache = join(temp, "npm-cache");
+// Every npm child gets the disposable home, an empty userconfig and a private cache.
+const npmEnv = { ...env, npm_config_userconfig: emptyUserConfig, npm_config_cache: npmCache };
 const evidence = {
   format: "aih-developer-tools-installed-proof",
   version: 1,
@@ -393,6 +399,74 @@ function safeCleanup() {
 
 const commands = [];
 
+// The real user's home, captured from the unmodified process environment, and
+// the few places a leak from this proof would land: npm's debug logs (npm writes
+// one per command), AIH-projected host configuration, and Headroom's home state.
+const realHome = homedir();
+const REAL_HOME_CONFIGS = [".codex/config.toml", ".cursor/mcp.json", ".claude.json"];
+
+function realNpmLogs() {
+  let cache = process.env.npm_config_cache;
+  if (!cache) {
+    try {
+      cache = /^\s*cache\s*=\s*(.+?)\s*$/mu.exec(readFileSync(join(realHome, ".npmrc"), "utf8"))?.[1];
+    } catch {
+      cache = undefined;
+    }
+  }
+  cache ??=
+    process.platform === "win32"
+      ? join(process.env.LOCALAPPDATA ?? join(realHome, "AppData", "Local"), "npm-cache")
+      : join(realHome, ".npm");
+  return join(cache, "_logs");
+}
+
+function realHomeSnapshot() {
+  const logs = realNpmLogs();
+  return {
+    npmLogs: existsSync(logs) ? readdirSync(logs).sort() : [],
+    headroom: existsSync(join(realHome, ".headroom")),
+  };
+}
+
+const realHomeBefore = realHomeSnapshot();
+
+function mentions(path, roots) {
+  try {
+    const text = readFileSync(path, "utf8");
+    return roots.some((root) =>
+      [root, root.replaceAll("\\", "/"), root.replaceAll("\\", "\\\\")].some((form) => text.includes(form)),
+    );
+  } catch {
+    return false;
+  }
+}
+
+function checkRealHomeUntouched() {
+  const after = realHomeSnapshot();
+  const logs = realNpmLogs();
+  const newLogs = after.npmLogs.filter((name) => !realHomeBefore.npmLogs.includes(name));
+  // Other processes on this machine may run npm meanwhile; only logs naming this
+  // run's temporary root or this checkout (the build and pack cwd) are attributed
+  // to the proof. Host configs may name this checkout as a trusted project, so
+  // only a path under this run's temporary root counts there.
+  const attributedLogs = newLogs.filter((name) => mentions(join(logs, name), [temp, repo]));
+  const configsMentioningRun = REAL_HOME_CONFIGS.filter((path) => mentions(join(realHome, path), [temp]));
+  const headroomCreated = !realHomeBefore.headroom && after.headroom;
+  check(
+    "real-home-untouched",
+    attributedLogs.length === 0 && configsMentioningRun.length === 0 && !headroomCreated,
+    {
+      realNpmLogsNewDuringRun: newLogs.length,
+      realNpmLogsAttributedToRun: attributedLogs,
+      realHomeConfigsWatched: REAL_HOME_CONFIGS.map((path) => `~/${path}`),
+      realHomeConfigsMentioningRun: configsMentioningRun.map((path) => `~/${path}`),
+      realHomeHeadroomCreated: headroomCreated,
+      privateNpmCacheLogs: existsSync(join(npmCache, "_logs")) ? readdirSync(join(npmCache, "_logs")).length : 0,
+    },
+  );
+}
+
 async function main() {
   for (const directory of [
     home,
@@ -408,9 +482,8 @@ async function main() {
   writeFileSync(emptyUserConfig, "");
 
   // Build and pack this Core, then install the exact tarball like a consumer.
-  const npmEnv = { ...env, npm_config_userconfig: emptyUserConfig };
   if (!skipBuild)
-    requireSuccess(run([process.execPath, npmCli, "run", "build"], repo, { env: { ...process.env } }), "Core build");
+    requireSuccess(run([process.execPath, npmCli, "run", "build"], repo, { env: npmEnv }), "Core build");
   const packed = JSON.parse(
     requireSuccess(
       run([process.execPath, npmCli, "pack", "--json", "--ignore-scripts", "--pack-destination", temp], repo, {
@@ -822,11 +895,14 @@ async function main() {
   );
 
   // 6: deactivation removes only AIH-owned Headroom material.
+  // Deactivate through one host only: every host the receipt recorded must still be cleaned.
+  const recordedHosts = receipt?.hosts;
   const deactivated = aih("deactivate-headroom", [
     "developer-tools",
     project,
     "--apply",
-    ...hostArgs,
+    "--cli",
+    "claude",
     "--deactivate-headroom",
   ]);
   const remaining = hostEntries("headroom");
@@ -854,6 +930,19 @@ async function main() {
       leftoverHeadroomPaths: leftovers.map(redact),
     },
   );
+  check(
+    "deactivate-narrower-cli-cleans-every-recorded-host",
+    deactivated.status === 0 &&
+      stable(recordedHosts) === stable(HOSTS) &&
+      HOSTS.every((host) => remaining[host] === undefined),
+    {
+      deactivationCli: ["claude"],
+      recordedHosts,
+      remainingHeadroomHostEntries: Object.entries(remaining)
+        .filter(([, entry]) => entry !== undefined)
+        .map(([host]) => host),
+    },
+  );
   check("user-config-preserved-after-deactivation", preserved());
 }
 
@@ -865,6 +954,11 @@ try {
   process.stderr.write(`${evidence.error}\n`);
 } finally {
   evidence.commands = commands;
+  try {
+    checkRealHomeUntouched();
+  } catch (error) {
+    check("real-home-untouched", false, { error: redact(error instanceof Error ? error.message : String(error)) });
+  }
   evidence.outcome = evidence.failures.length === 0 ? "pass" : "fail";
   evidence.cleanup = safeCleanup();
   mkdirSync(evidenceDir, { recursive: true });
