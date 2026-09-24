@@ -11,7 +11,7 @@ import {
   deepFreezeStrictJsonV1,
   parseStrictJsonObjectV1,
 } from "../contract/strict-json-v1.js";
-import { evidenceExpiryV1 } from "../evidence-freshness.js";
+import { evidenceExpiryV1, isExactUtcTimestampV1 } from "../evidence-freshness.js";
 import { packagedScannerCollectionEvidenceInputV1 } from "./packaged-collection-evidence-data.js";
 import { type AuthoringCatalogBundleV1, EvidenceSummaryV1Schema } from "./workbench/contracts.js";
 
@@ -29,19 +29,25 @@ const safePath = z
       !value.includes("\\") &&
       !value.split("/").some((part) => !part || part === "." || part === ".."),
   );
-export const ScannerPublicationProjectionV1Schema = z
+/** Exactly the spellings the producers emit; Catalog's reader accepts the same. */
+const utcTimestamp = z
+  .string()
+  .refine(isExactUtcTimestampV1, { message: "requires an exact UTC timestamp" });
+
+/** A publication entry's structure. Who published it is Core's admission, checked separately. */
+const publicationStructureSchema = z
   .object({
     authority: z.literal("none"),
-    repository: z.literal(SCANNER_BASELINE_PUBLICATION_PUBLISHER_V1.repository),
-    workflow: z.literal(SCANNER_BASELINE_PUBLICATION_PUBLISHER_V1.workflow),
-    ref: z.literal(SCANNER_BASELINE_PUBLICATION_PUBLISHER_V1.ref),
+    repository: z.string().min(1).max(256),
+    workflow: z.string().min(1).max(512),
+    ref: z.string().min(1).max(256),
     sourceCommit: commit,
     publicationSha256: sha,
     requestSha256: sha,
     receiptSha256: sha,
-    publicationLocator: z.string().url().max(2_048),
+    publicationLocator: z.string().min(1).max(2_048),
     /** GitHub’s transparency-log timestamp, not the Scanner report date. */
-    publishedAt: z.string().datetime(),
+    publishedAt: utcTimestamp,
   })
   .strict()
   .superRefine((value, ctx) => {
@@ -54,6 +60,24 @@ export const ScannerPublicationProjectionV1Schema = z
         message: "publication locator does not bind publisher and request",
       });
   });
+
+/** Core's publisher admission: the one reviewed publisher identity (repository, workflow, ref). */
+function reviewedPublisherIdentity(publication: {
+  repository: string;
+  workflow: string;
+  ref: string;
+}): boolean {
+  return (
+    publication.repository === SCANNER_BASELINE_PUBLICATION_PUBLISHER_V1.repository &&
+    publication.workflow === SCANNER_BASELINE_PUBLICATION_PUBLISHER_V1.workflow &&
+    publication.ref === SCANNER_BASELINE_PUBLICATION_PUBLISHER_V1.ref
+  );
+}
+
+export const ScannerPublicationProjectionV1Schema = publicationStructureSchema.refine(
+  reviewedPublisherIdentity,
+  { message: "unreviewed packaged publisher" },
+);
 const subjectSchema = z
   .object({
     assetId: z.string().min(1).max(240),
@@ -91,9 +115,9 @@ const observationSchema = z
   .object({
     componentId: z.string().min(1).max(240),
     /** Scanner envelope claim; this owns the ninety-day report freshness clock. */
-    reportSignedAt: z.string().datetime(),
+    reportSignedAt: utcTimestamp,
     /** Original envelope verification window, retained as provenance only. */
-    reportVerificationExpiresAt: z.string().datetime(),
+    reportVerificationExpiresAt: utcTimestamp,
     componentTreeSha256: sha,
     requestSha256: sha,
     publicationSha256: sha,
@@ -117,164 +141,193 @@ const catalogSourceSchema = z
   })
   .strict();
 
-/** Display-only data, authored exclusively from a same-process operational witness. */
-export const ScannerEvidenceProjectionRecordV1Schema = z
-  .object({
-    version: z.literal("packaged-scanner-collection-evidence/v1"),
-    authority: z.literal("display-only"),
-    catalog: z
-      .object({
-        id: z.string().min(1).max(240),
-        owner: z.string().min(1).max(256),
-        repository: z.string().min(1).max(256),
-        pinnedCommit: commit,
-        sourceTreeSha256: sha,
-        /** Historical full compiler coverage digest; not revalidated from this partial projection. */
-        coverageDigest: digest,
-        coverageProjectionDigest: digest,
-        /** Exact compiler/source identity for generic Git and AIH projections. */
-        source: catalogSourceSchema,
-      })
-      .strict(),
-    coverage: z
-      .object({
-        version: z.literal("workbench-scanner-coverage/v1"),
-        authority: z.literal("none"),
-        scope: z.literal("declared-source-files"),
-        components: z.array(componentSchema).min(1).max(1_000),
-        unmappedDerivedAssets: z.array(z.string().min(1).max(240)).max(1_000),
-      })
-      .strict(),
-    report: BaselineSourceEvidenceSchema,
-    publications: z.array(ScannerPublicationProjectionV1Schema).min(1).max(1_000),
-    observations: z.array(observationSchema).min(1).max(1_000),
-    verification: z
-      .object({
-        method: z.literal("gh-attestation-verify"),
-        /** Original Core intake timestamp, never refreshed by later reverification. */
-        preparedAt: z.string().datetime(),
-      })
-      .strict(),
-  })
-  .strict()
-  .superRefine((value, ctx) => {
-    if (
-      value.catalog.coverageProjectionDigest !== packagedCoverageProjectionDigestV1(value.coverage)
-    )
-      ctx.addIssue({ code: "custom", message: "coverage projection digest mismatch" });
-    if (
-      value.catalog.id !== value.report.id ||
-      value.catalog.owner !== value.report.owner ||
-      value.catalog.repository !== value.report.repo ||
-      value.catalog.pinnedCommit !== value.report.pinnedSha ||
-      value.catalog.sourceTreeSha256 !== value.report.sourceTreeSha256
-    )
-      ctx.addIssue({ code: "custom", message: "catalog and report identity mismatch" });
-    const components = new Map(value.coverage.components.map((item) => [item.componentId, item]));
-    const reports = new Map(value.report.components.map((item) => [item.id, item]));
-    const publications = new Map(
-      value.publications.map((item) => [
-        `${item.requestSha256}\u0000${item.publicationSha256}\u0000${item.receiptSha256}`,
-        item,
-      ]),
-    );
-    if (components.size !== value.coverage.components.length)
-      ctx.addIssue({ code: "custom", message: "duplicate coverage component" });
-    // Every compiled asset belongs to at most one component, named once.
-    const assets = new Set<string>();
-    for (const component of value.coverage.components) {
-      const ids = componentSubjectsV1(component).map((subject) => subject.assetId);
-      if (ids.some((id, index) => index > 0 && (ids[index - 1] as string) > id))
-        ctx.addIssue({ code: "custom", message: "coverage subjects out of order" });
-      for (const id of ids) {
-        if (assets.has(id)) ctx.addIssue({ code: "custom", message: "coverage asset bound twice" });
-        assets.add(id);
-      }
-    }
-    if (reports.size !== value.report.components.length || reports.size !== components.size)
-      ctx.addIssue({ code: "custom", message: "report coverage cardinality mismatch" });
-    const seen = new Set<string>();
-    for (const observation of value.observations) {
-      if (seen.has(observation.componentId))
-        ctx.addIssue({ code: "custom", message: "duplicate component observation" });
-      seen.add(observation.componentId);
-      const component = components.get(observation.componentId);
-      const report = reports.get(observation.componentId);
+/**
+ * A record's structure, given how its publication entries are checked: everything the record
+ * states about itself.
+ */
+function collectionEvidenceRecordSchema(publication: typeof publicationStructureSchema) {
+  return z
+    .object({
+      version: z.literal("packaged-scanner-collection-evidence/v1"),
+      authority: z.literal("display-only"),
+      catalog: z
+        .object({
+          id: z.string().min(1).max(240),
+          owner: z.string().min(1).max(256),
+          repository: z.string().min(1).max(256),
+          pinnedCommit: commit,
+          sourceTreeSha256: sha,
+          /** Historical full compiler coverage digest; not revalidated from this partial projection. */
+          coverageDigest: digest,
+          coverageProjectionDigest: digest,
+          /** Exact compiler/source identity for generic Git and AIH projections. */
+          source: catalogSourceSchema,
+        })
+        .strict(),
+      coverage: z
+        .object({
+          version: z.literal("workbench-scanner-coverage/v1"),
+          authority: z.literal("none"),
+          scope: z.literal("declared-source-files"),
+          components: z.array(componentSchema).min(1).max(1_000),
+          unmappedDerivedAssets: z.array(z.string().min(1).max(240)).max(1_000),
+        })
+        .strict(),
+      report: BaselineSourceEvidenceSchema,
+      publications: z.array(publication).min(1).max(1_000),
+      observations: z.array(observationSchema).min(1).max(1_000),
+      verification: z
+        .object({
+          method: z.literal("gh-attestation-verify"),
+          /** Original Core intake timestamp, never refreshed by later reverification. */
+          preparedAt: utcTimestamp,
+        })
+        .strict(),
+    })
+    .strict()
+    .superRefine((value, ctx) => {
       if (
-        report !== undefined &&
-        observation.reportComponentDigest !== packagedReportComponentDigestV1(report)
+        value.catalog.coverageProjectionDigest !==
+        packagedCoverageProjectionDigestV1(value.coverage)
       )
-        ctx.addIssue({ code: "custom", message: "report component digest mismatch" });
+        ctx.addIssue({ code: "custom", message: "coverage projection digest mismatch" });
       if (
-        report !== undefined &&
-        component !== undefined &&
-        (new Set(report.paths).size !== report.paths.length ||
-          new Set(component.paths).size !== component.paths.length ||
-          !canonicalStrictJsonBytesV1([...report.paths].sort()).equals(
-            canonicalStrictJsonBytesV1([...component.paths].sort()),
-          ))
+        value.catalog.id !== value.report.id ||
+        value.catalog.owner !== value.report.owner ||
+        value.catalog.repository !== value.report.repo ||
+        value.catalog.pinnedCommit !== value.report.pinnedSha ||
+        value.catalog.sourceTreeSha256 !== value.report.sourceTreeSha256
       )
-        ctx.addIssue({ code: "custom", message: "report coverage paths mismatch" });
-      const published = publications.get(
-        `${observation.requestSha256}\u0000${observation.publicationSha256}\u0000${observation.receiptSha256}`,
+        ctx.addIssue({ code: "custom", message: "catalog and report identity mismatch" });
+      const components = new Map(value.coverage.components.map((item) => [item.componentId, item]));
+      const reports = new Map(value.report.components.map((item) => [item.id, item]));
+      const publications = new Map(
+        value.publications.map((item) => [
+          `${item.requestSha256}\u0000${item.publicationSha256}\u0000${item.receiptSha256}`,
+          item,
+        ]),
       );
-      if (component === undefined)
-        ctx.addIssue({ code: "custom", message: "component observation has no coverage" });
-      if (report === undefined)
-        ctx.addIssue({ code: "custom", message: "component observation has no report" });
+      if (components.size !== value.coverage.components.length)
+        ctx.addIssue({ code: "custom", message: "duplicate coverage component" });
+      // Every compiled asset belongs to at most one component, named once.
+      const assets = new Set<string>();
+      for (const component of value.coverage.components) {
+        const ids = componentSubjectsV1(component).map((subject) => subject.assetId);
+        if (ids.some((id, index) => index > 0 && (ids[index - 1] as string) > id))
+          ctx.addIssue({ code: "custom", message: "coverage subjects out of order" });
+        for (const id of ids) {
+          if (assets.has(id))
+            ctx.addIssue({ code: "custom", message: "coverage asset bound twice" });
+          assets.add(id);
+        }
+      }
+      if (reports.size !== value.report.components.length || reports.size !== components.size)
+        ctx.addIssue({ code: "custom", message: "report coverage cardinality mismatch" });
+      const seen = new Set<string>();
+      for (const observation of value.observations) {
+        if (seen.has(observation.componentId))
+          ctx.addIssue({ code: "custom", message: "duplicate component observation" });
+        seen.add(observation.componentId);
+        const component = components.get(observation.componentId);
+        const report = reports.get(observation.componentId);
+        if (
+          report !== undefined &&
+          observation.reportComponentDigest !== packagedReportComponentDigestV1(report)
+        )
+          ctx.addIssue({ code: "custom", message: "report component digest mismatch" });
+        if (
+          report !== undefined &&
+          component !== undefined &&
+          (new Set(report.paths).size !== report.paths.length ||
+            new Set(component.paths).size !== component.paths.length ||
+            !canonicalStrictJsonBytesV1([...report.paths].sort()).equals(
+              canonicalStrictJsonBytesV1([...component.paths].sort()),
+            ))
+        )
+          ctx.addIssue({ code: "custom", message: "report coverage paths mismatch" });
+        const published = publications.get(
+          `${observation.requestSha256}\u0000${observation.publicationSha256}\u0000${observation.receiptSha256}`,
+        );
+        if (component === undefined)
+          ctx.addIssue({ code: "custom", message: "component observation has no coverage" });
+        if (report === undefined)
+          ctx.addIssue({ code: "custom", message: "component observation has no report" });
+        if (
+          component !== undefined &&
+          component.componentTreeSha256 !== observation.componentTreeSha256
+        )
+          ctx.addIssue({ code: "custom", message: "component observation tree mismatch" });
+        if (published === undefined)
+          ctx.addIssue({ code: "custom", message: "component observation publication mismatch" });
+        if (
+          published !== undefined &&
+          Date.parse(observation.reportSignedAt) > Date.parse(published.publishedAt)
+        )
+          ctx.addIssue({ code: "custom", message: "report signed after publication" });
+        if (
+          Date.parse(observation.reportVerificationExpiresAt) <=
+          Date.parse(observation.reportSignedAt)
+        )
+          ctx.addIssue({ code: "custom", message: "report verification window" });
+        if (
+          published !== undefined &&
+          Date.parse(published.publishedAt) >= Date.parse(observation.reportVerificationExpiresAt)
+        )
+          ctx.addIssue({
+            code: "custom",
+            message: "publication outside report verification window",
+          });
+      }
+      if (value.report.components.some((component) => !seen.has(component.id)))
+        ctx.addIssue({ code: "custom", message: "report component lacks observation" });
       if (
-        component !== undefined &&
-        component.componentTreeSha256 !== observation.componentTreeSha256
+        value.publications.some(
+          (publication) =>
+            Date.parse(publication.publishedAt) > Date.parse(value.verification.preparedAt),
+        )
       )
-        ctx.addIssue({ code: "custom", message: "component observation tree mismatch" });
-      if (published === undefined)
-        ctx.addIssue({ code: "custom", message: "component observation publication mismatch" });
-      if (
-        published !== undefined &&
-        Date.parse(observation.reportSignedAt) > Date.parse(published.publishedAt)
-      )
-        ctx.addIssue({ code: "custom", message: "report signed after publication" });
-      if (
-        Date.parse(observation.reportVerificationExpiresAt) <=
-        Date.parse(observation.reportSignedAt)
-      )
-        ctx.addIssue({ code: "custom", message: "report verification window" });
-      if (
-        published !== undefined &&
-        Date.parse(published.publishedAt) >= Date.parse(observation.reportVerificationExpiresAt)
-      )
-        ctx.addIssue({ code: "custom", message: "publication outside report verification window" });
-    }
-    if (value.report.components.some((component) => !seen.has(component.id)))
-      ctx.addIssue({ code: "custom", message: "report component lacks observation" });
-    if (
-      value.publications.some(
-        (publication) =>
-          Date.parse(publication.publishedAt) > Date.parse(value.verification.preparedAt),
-      )
-    )
-      ctx.addIssue({ code: "custom", message: "collection intake predates publication" });
-  });
+        ctx.addIssue({ code: "custom", message: "collection intake predates publication" });
+    });
+}
 
-/** Package admission additionally restricts the catalog to the release-owned registry. */
+/** Display-only data, authored exclusively from a same-process operational witness. */
+export const ScannerEvidenceProjectionRecordV1Schema = collectionEvidenceRecordSchema(
+  ScannerPublicationProjectionV1Schema,
+);
+
+/**
+ * A packaged record's structural validation: IDENTICAL to Catalog's reader
+ * (`parsePackagedScannerCollectionEvidenceV1`; decision D25, shared acceptance fixtures in
+ * `tests/fixtures/packaged-evidence-parity`), including the release-owned catalog registry.
+ * It never admits a record; admission is the schema below.
+ */
+export const PackagedScannerCollectionEvidenceStructureV1Schema = collectionEvidenceRecordSchema(
+  publicationStructureSchema,
+)
+  .refine((value) => catalogId.safeParse(value.catalog.id).success, {
+    message: "unregistered packaged catalog id",
+  })
+  .transform((value) => ({
+    ...value,
+    catalog: { ...value.catalog, id: catalogId.parse(value.catalog.id) },
+  }));
+
+/**
+ * Package admission, which is Core's alone and never Catalog's (Catalog is a carrier): every
+ * publication is by the reviewed publisher identity at a reviewed publisher commit.
+ */
 export const PackagedScannerCollectionEvidenceRecordV1Schema =
-  ScannerEvidenceProjectionRecordV1Schema.refine(
-    (value) => catalogId.safeParse(value.catalog.id).success,
-    { message: "unregistered packaged catalog id" },
-  )
-    .refine(
-      (value) =>
-        value.publications.every((publication) =>
+  PackagedScannerCollectionEvidenceStructureV1Schema.refine(
+    (value) =>
+      value.publications.every(
+        (publication) =>
+          reviewedPublisherIdentity(publication) &&
           SCANNER_BASELINE_PUBLICATION_PUBLISHERS_V1.some(
             (publisher) => publisher.commit === publication.sourceCommit,
           ),
-        ),
-      { message: "unreviewed packaged publisher" },
-    )
-    .transform((value) => ({
-      ...value,
-      catalog: { ...value.catalog, id: catalogId.parse(value.catalog.id) },
-    }));
+      ),
+    { message: "unreviewed packaged publisher" },
+  );
 
 export type PackagedScannerCollectionEvidenceRecordV1 = z.infer<
   typeof PackagedScannerCollectionEvidenceRecordV1Schema
