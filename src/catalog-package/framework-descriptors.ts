@@ -4,6 +4,7 @@ import {
   type CatalogPackageAccessV1,
   CatalogPackageRefusalError,
   type CatalogPackageRefusalV1,
+  candidateCatalogActiveV1,
   loadCatalogPackageFileV1,
   loadCatalogPackageV1,
 } from "./load-catalog-package.js";
@@ -76,7 +77,9 @@ export function loadFrameworkDescriptorV1(
   const loaded = loadCatalogPackageFileV1(subpath, access);
   if (!loaded.ok) throw new CatalogPackageRefusalError(loaded.refusal);
   const sha256 = createHash("sha256").update(loaded.file.bytes).digest("hex");
-  if (sha256 !== ACCEPTED_CATALOG_FRAMEWORK_DESCRIPTOR_SHA256_V1[frameworkId]) {
+  // An activated candidate's named digest stands in for Core's (internal preparation only).
+  const candidate = access === undefined && candidateCatalogActiveV1();
+  if (!candidate && sha256 !== ACCEPTED_CATALOG_FRAMEWORK_DESCRIPTOR_SHA256_V1[frameworkId]) {
     throw new CatalogPackageRefusalError(
       incompatible(frameworkId, `has unaccepted authority sha256 ${sha256}`).refusal,
     );

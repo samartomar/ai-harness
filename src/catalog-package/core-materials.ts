@@ -4,6 +4,7 @@ import {
   type CatalogPackageAccessV1,
   CatalogPackageRefusalError,
   type CatalogPackageSubpathV1,
+  candidateCatalogActiveV1,
   loadCatalogPackageFileV1,
 } from "./load-catalog-package.js";
 
@@ -48,7 +49,9 @@ export function loadCatalogCoreMaterialV1<K extends keyof typeof MATERIALS>(
   const loaded = loadCatalogPackageFileV1(expected.subpath, access);
   if (!loaded.ok) throw new CatalogPackageRefusalError(loaded.refusal);
   const sha256 = createHash("sha256").update(loaded.file.bytes).digest("hex");
-  if (sha256 !== expected.sha256) {
+  // An activated candidate's named digest stands in for Core's (internal preparation only).
+  const candidate = access === undefined && candidateCatalogActiveV1();
+  if (!candidate && sha256 !== expected.sha256) {
     return incompatible(kind, `has unaccepted authority sha256 ${sha256}`);
   }
   let value: unknown;

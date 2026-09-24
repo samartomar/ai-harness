@@ -110,11 +110,43 @@ export type CatalogPackageFileLoadV1<S extends CatalogPackageSubpathV1> =
     }
   | { readonly ok: false; readonly refusal: CatalogPackageRefusalV1 };
 
+let candidateAccess: CatalogPackageAccessV1 | undefined;
+let installedReached = false;
+
 const installedCatalogAccess: CatalogPackageAccessV1 = {
-  importPackage: () => import("@aihq/catalog"),
-  resolve: (specifier) => createRequire(import.meta.url).resolve(specifier),
-  readFile: (path) => readFileSync(path),
+  importPackage: () => {
+    if (candidateAccess !== undefined) return candidateAccess.importPackage();
+    installedReached = true;
+    return import("@aihq/catalog");
+  },
+  resolve: (specifier) => {
+    if (candidateAccess !== undefined) return candidateAccess.resolve(specifier);
+    installedReached = true;
+    return createRequire(import.meta.url).resolve(specifier);
+  },
+  readFile: (path) =>
+    candidateAccess !== undefined ? candidateAccess.readFile(path) : readFileSync(path),
 };
+
+/**
+ * Only `activateCandidateCatalogV1` (internal preparation tools) calls this: from here on
+ * the process reads a verified candidate Catalog in place of the installed one. It is
+ * one-way, and refused once the installed Catalog was reached, so no preparation mixes the two.
+ */
+export function substituteCatalogPackageAccessV1(access: CatalogPackageAccessV1): void {
+  if (candidateAccess !== undefined)
+    throw new TypeError("Candidate Catalog: a candidate is already active in this process");
+  if (installedReached)
+    throw new TypeError(
+      "Candidate Catalog: the installed Catalog was already loaded in this process; a candidate cannot replace it",
+    );
+  candidateAccess = access;
+}
+
+/** True only after a preparation tool activated a verified candidate; never at runtime. */
+export function candidateCatalogActiveV1(): boolean {
+  return candidateAccess !== undefined;
+}
 
 const INSTALL_ADVICE = `Install it with: ${CATALOG_PACKAGE_INSTALL_COMMAND} (in a project: ${CATALOG_PACKAGE_PROJECT_INSTALL_COMMAND}).`;
 
@@ -130,6 +162,11 @@ function messageOf(error: unknown): string {
 
 function codeOf(error: unknown): unknown {
   return (error as { code?: unknown } | null)?.code;
+}
+
+/** Refusal wording names the candidate while one serves this process's Catalog loads. */
+function installed(): string {
+  return `the ${candidateAccess === undefined ? "installed" : "candidate"} ${CATALOG_PACKAGE_NAME}`;
 }
 
 function incompatible(detail: string): CatalogPackageRefusalV1 {
@@ -149,7 +186,7 @@ function importFailure(error: unknown): CatalogPackageRefusalV1 {
       detail: `${CATALOG_PACKAGE_NAME} is not installed next to @aihq/core. ${INSTALL_ADVICE}`,
     };
   }
-  return incompatible(`the installed ${CATALOG_PACKAGE_NAME} could not be loaded (${message})`);
+  return incompatible(`${installed()} could not be loaded (${message})`);
 }
 
 function resolutionFailure(error: unknown): CatalogPackageRefusalV1 {
@@ -168,7 +205,7 @@ function resolutionFailure(error: unknown): CatalogPackageRefusalV1 {
       detail: `${CATALOG_PACKAGE_NAME} is not installed next to @aihq/core. ${INSTALL_ADVICE}`,
     };
   }
-  return incompatible(`the installed ${CATALOG_PACKAGE_NAME} could not be resolved (${message})`);
+  return incompatible(`${installed()} could not be resolved (${message})`);
 }
 
 function exportIsFunction(namespace: object, name: string): boolean {
@@ -231,9 +268,7 @@ export async function loadCatalogPackageV1<
   if (missing.length > 0) {
     return {
       ok: false,
-      refusal: incompatible(
-        `the installed ${CATALOG_PACKAGE_NAME} does not export ${missing.join(", ")} as functions`,
-      ),
+      refusal: incompatible(`${installed()} does not export ${missing.join(", ")} as functions`),
     };
   }
   const root = dirname(manifestPath);
@@ -242,9 +277,7 @@ export async function loadCatalogPackageV1<
   if (!compatibleVersion(version)) {
     return {
       ok: false,
-      refusal: incompatible(
-        `the installed ${CATALOG_PACKAGE_NAME} version ${version ?? "is unreadable"}`,
-      ),
+      refusal: incompatible(`${installed()} version ${version ?? "is unreadable"}`),
     };
   }
   for (const subpath of subpaths) {
@@ -257,8 +290,8 @@ export async function loadCatalogPackageV1<
         ok: false,
         refusal: incompatible(
           codeOf(error) === "ERR_PACKAGE_PATH_NOT_EXPORTED"
-            ? `the installed ${CATALOG_PACKAGE_NAME} does not export ${subpath}`
-            : `the installed ${CATALOG_PACKAGE_NAME} could not resolve ${subpath} (${messageOf(error)})`,
+            ? `${installed()} does not export ${subpath}`
+            : `${installed()} could not resolve ${subpath} (${messageOf(error)})`,
         ),
       };
     }
@@ -267,9 +300,7 @@ export async function loadCatalogPackageV1<
     } catch (error) {
       return {
         ok: false,
-        refusal: incompatible(
-          `the installed ${CATALOG_PACKAGE_NAME} ${subpath} could not be read (${messageOf(error)})`,
-        ),
+        refusal: incompatible(`${installed()} ${subpath} could not be read (${messageOf(error)})`),
       };
     }
   }
@@ -304,9 +335,7 @@ export function loadCatalogPackageFileV1<S extends CatalogPackageSubpathV1>(
   if (!compatibleVersion(version)) {
     return {
       ok: false,
-      refusal: incompatible(
-        `the installed ${CATALOG_PACKAGE_NAME} version ${version ?? "is unreadable"}`,
-      ),
+      refusal: incompatible(`${installed()} version ${version ?? "is unreadable"}`),
     };
   }
   const specifier = `${CATALOG_PACKAGE_NAME}/${subpath.slice("./".length)}`;
@@ -318,8 +347,8 @@ export function loadCatalogPackageFileV1<S extends CatalogPackageSubpathV1>(
       ok: false,
       refusal: incompatible(
         codeOf(error) === "ERR_PACKAGE_PATH_NOT_EXPORTED"
-          ? `the installed ${CATALOG_PACKAGE_NAME} does not export ${subpath}`
-          : `the installed ${CATALOG_PACKAGE_NAME} could not resolve ${subpath} (${messageOf(error)})`,
+          ? `${installed()} does not export ${subpath}`
+          : `${installed()} could not resolve ${subpath} (${messageOf(error)})`,
       ),
     };
   }
@@ -333,9 +362,7 @@ export function loadCatalogPackageFileV1<S extends CatalogPackageSubpathV1>(
   } catch (error) {
     return {
       ok: false,
-      refusal: incompatible(
-        `the installed ${CATALOG_PACKAGE_NAME} ${subpath} could not be read (${messageOf(error)})`,
-      ),
+      refusal: incompatible(`${installed()} ${subpath} could not be read (${messageOf(error)})`),
     };
   }
 }

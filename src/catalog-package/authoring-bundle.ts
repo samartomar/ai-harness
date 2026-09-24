@@ -12,6 +12,7 @@ import {
 import {
   type CatalogPackageAccessV1,
   CatalogPackageRefusalError,
+  candidateCatalogActiveV1,
   loadCatalogPackageFileV1,
 } from "./load-catalog-package.js";
 
@@ -32,7 +33,10 @@ function incompatible(detail: string): never {
   });
 }
 
-function parse(bytes: Uint8Array): LoadedCatalogAuthoringBundleV1["prepared"] & {
+function parse(
+  bytes: Uint8Array,
+  candidate: boolean,
+): LoadedCatalogAuthoringBundleV1["prepared"] & {
   readonly sourceRecords: LoadedCatalogAuthoringBundleV1["sourceRecords"];
 } {
   let value: unknown;
@@ -82,7 +86,7 @@ function parse(bytes: Uint8Array): LoadedCatalogAuthoringBundleV1["prepared"] & 
     return incompatible("has malformed catalog, source inputs, or an unsealed authoring bundle");
   }
   const authorityDigest = catalogAuthoringAuthorityDigestV1({ catalog, bundle, sourceInputs });
-  if (!ACCEPTED_CATALOG_AUTHORING_AUTHORITY_V1.includes(authorityDigest as never)) {
+  if (!candidate && !ACCEPTED_CATALOG_AUTHORING_AUTHORITY_V1.includes(authorityDigest as never)) {
     return incompatible(`carries unaccepted authority sha256 ${authorityDigest}`);
   }
   const sourceRecords = value.sourceRecords.map((item) => {
@@ -112,7 +116,11 @@ export function loadCatalogAuthoringBundleV1(
 ): LoadedCatalogAuthoringBundleV1 {
   const loaded = loadCatalogPackageFileV1("./catalog-authoring-bundle.json", access);
   if (!loaded.ok) throw new CatalogPackageRefusalError(loaded.refusal);
-  const { sourceRecords, ...prepared } = parse(loaded.file.bytes);
+  // An activated candidate's named digest stands in for Core's (internal preparation only).
+  const { sourceRecords, ...prepared } = parse(
+    loaded.file.bytes,
+    access === undefined && candidateCatalogActiveV1(),
+  );
   return {
     prepared: structuredClone(prepared),
     sourceRecords: structuredClone(sourceRecords),

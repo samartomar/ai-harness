@@ -2,6 +2,12 @@ import { existsSync, lstatSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { z } from "zod";
+import {
+  activateCandidateCatalogV1,
+  candidateCatalogUsePathV1,
+  openCandidateCatalogV1,
+  writeCandidateCatalogUseV1,
+} from "../catalog-package/candidate-catalog.js";
 import { canonicalStrictJsonBytesV1 } from "../contract/strict-json-v1.js";
 import { parseAihSupportedQualificationReceiptV2Bytes } from "../org-policy/supported-qualification-receipt-v2.js";
 import type { AuthoringCatalogBundleV1 } from "../org-policy/workbench/contracts.js";
@@ -157,28 +163,39 @@ export async function writeOperationalCatalogQualificationDraftV1(
 }
 
 const USAGE =
-  "Usage: prepare-workbench-catalog-qualification --source <registered-root> --provider <id> --artifacts <four-file-root> --output <draft-data.json>";
+  "Usage: prepare-workbench-catalog-qualification --source <registered-root> --provider <id> --artifacts <four-file-root> --output <draft-data.json> [--candidate-catalog <npm-pack.tgz|package-dir> --candidate-catalog-sha256 <sha256 of the .tgz, or of the directory's canonical file listing>]";
 
 /**
  * `--source --provider --artifacts --output`, in that order. Qualification data comes
  * from the installed Catalog's prepared authoring bundle; an existing output is refused
- * before any artifact is read.
+ * before any artifact is read. With a named candidate Catalog, the candidate replaces the
+ * installed Catalog for the whole run and `<output>.candidate-catalog.json` names its
+ * digest and every file read from it.
  */
 export async function prepareWorkbenchCatalogQualificationCommandV1(
   args: readonly string[],
 ): Promise<string> {
   const flags = ["--source", "--provider", "--artifacts", "--output"];
+  const withCandidate = args.length === 12;
+  if (withCandidate) flags.push("--candidate-catalog", "--candidate-catalog-sha256");
   if (
-    args.length !== 8 ||
+    (args.length !== 8 && !withCandidate) ||
     flags.some(
       (flag, index) =>
         args[index * 2] !== flag || !args[index * 2 + 1] || args[index * 2 + 1]?.startsWith("--"),
-    )
+    ) ||
+    (withCandidate && !/^[0-9a-f]{64}$/.test(args[11] as string))
   )
     throw new TypeError(USAGE);
   const output = resolve(args[7] as string);
   if (existsSync(output))
     throw new TypeError(`EEXIST: Catalog qualification draft output already exists: ${output}`);
+  if (withCandidate && existsSync(candidateCatalogUsePathV1(output)))
+    throw new TypeError("EEXIST: the candidate Catalog use record must not already exist");
+  const candidate = withCandidate
+    ? openCandidateCatalogV1(resolve(args[9] as string), args[11] as string)
+    : undefined;
+  if (candidate !== undefined) activateCandidateCatalogV1(candidate);
   await writeOperationalCatalogQualificationDraftV1({
     bundle: defaultPreparedWorkbenchCatalog().bundle,
     sourceRoot: resolve(args[1] as string),
@@ -186,7 +203,11 @@ export async function prepareWorkbenchCatalogQualificationCommandV1(
     artifactRoot: resolve(args[5] as string),
     output,
   });
-  return "Prepared a reviewable, authenticated Catalog qualification package-input draft.";
+  const used =
+    candidate === undefined
+      ? ""
+      : ` Used candidate Catalog ${candidate.version} sha256:${candidate.sha256} (${candidate.digestOf}), recorded in ${writeCandidateCatalogUseV1("prepare-workbench-catalog-qualification", output)}.`;
+  return `Prepared a reviewable, authenticated Catalog qualification package-input draft.${used}`;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href)

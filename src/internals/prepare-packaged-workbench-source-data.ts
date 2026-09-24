@@ -8,6 +8,12 @@ import { BaselineCatalogSchema } from "../baseline-evidence/catalog.js";
 import { admittedSourceFromCandidateBundleV1 } from "../baseline-evidence/scanner-catalog-consumer.js";
 import { scannerBaselinePublicationPublisherForLocatorV1 } from "../baseline-evidence/scanner-publication-policy.js";
 import {
+  activateCandidateCatalogV1,
+  candidateCatalogUsePathV1,
+  openCandidateCatalogV1,
+  writeCandidateCatalogUseV1,
+} from "../catalog-package/candidate-catalog.js";
+import {
   canonicalStrictJsonBytesV1,
   canonicalStrictJsonSha256V1,
   parseStrictJsonObjectV1,
@@ -119,7 +125,7 @@ const FLAGS = [
   "--output",
 ] as const;
 const USAGE =
-  "Usage: prepare-packaged-workbench-source-data --provider <anthropics-skills|ponytail|ecc|superpowers> --source-root <pinned-checkout> --publication-root <batch-NNN/{discovery.json,publication.json,attestation.jsonl}> --source-bundle <catalog-compiled-single-source-bundle> --compiler-input <compiler-input> --published-catalog <requested-baseline-catalog> --output <new-json-file> [--update-kind evidence-only]";
+  "Usage: prepare-packaged-workbench-source-data --provider <anthropics-skills|ponytail|ecc|superpowers> --source-root <pinned-checkout> --publication-root <batch-NNN/{discovery.json,publication.json,attestation.jsonl}> --source-bundle <catalog-compiled-single-source-bundle> --compiler-input <compiler-input> --published-catalog <requested-baseline-catalog> --output <new-json-file> [--update-kind evidence-only] [--candidate-catalog <npm-pack.tgz|package-dir> --candidate-catalog-sha256 <sha256 of the .tgz, or of the directory's canonical file listing>]";
 const BATCH_FILES = ["attestation.jsonl", "discovery.json", "publication.json"];
 const LIMITS = { discovery: 8_192, publication: 12_000_000, attestation: 512_000 };
 
@@ -127,17 +133,28 @@ function fail(message: string): never {
   throw new TypeError(`Packaged source data: ${message}`);
 }
 
+const OPTIONAL_FLAGS = ["--update-kind", "--candidate-catalog", "--candidate-catalog-sha256"];
+
 function parseArgs(args: readonly string[]) {
-  const withUpdate = args.length === FLAGS.length * 2 + 2;
+  const optional = new Map<string, string>();
+  for (let index = FLAGS.length * 2; index < args.length; index += 2) {
+    const flag = args[index] as string;
+    const value = args[index + 1];
+    if (!OPTIONAL_FLAGS.includes(flag) || optional.has(flag) || !value || value.startsWith("--"))
+      throw new TypeError(USAGE);
+    optional.set(flag, value);
+  }
+  const candidate = optional.get("--candidate-catalog");
+  const candidateSha256 = optional.get("--candidate-catalog-sha256");
   if (
-    (args.length !== FLAGS.length * 2 && !withUpdate) ||
+    args.length < FLAGS.length * 2 ||
     FLAGS.some(
       (flag, index) =>
         args[index * 2] !== flag || !args[index * 2 + 1] || args[index * 2 + 1]?.startsWith("--"),
     ) ||
-    (withUpdate &&
-      (args[FLAGS.length * 2] !== "--update-kind" ||
-        args[FLAGS.length * 2 + 1] !== "evidence-only")) ||
+    (optional.has("--update-kind") && optional.get("--update-kind") !== "evidence-only") ||
+    (candidate === undefined) !== (candidateSha256 === undefined) ||
+    (candidateSha256 !== undefined && !/^[0-9a-f]{64}$/.test(candidateSha256)) ||
     !Object.hasOwn(PROVIDERS, args[1] as string)
   )
     throw new TypeError(USAGE);
@@ -150,7 +167,11 @@ function parseArgs(args: readonly string[]) {
     compilerInput: resolve(value("--compiler-input")),
     publishedCatalog: resolve(value("--published-catalog")),
     output: resolve(value("--output")),
-    updateKind: withUpdate ? ("evidence-only" as const) : undefined,
+    updateKind: optional.has("--update-kind") ? ("evidence-only" as const) : undefined,
+    candidate:
+      candidate === undefined
+        ? undefined
+        : { path: resolve(candidate), sha256: candidateSha256 as string },
   };
 }
 
@@ -214,7 +235,9 @@ function blob(proofRoot: string, bytes: Buffer) {
  * Internal preparation only. Rebuilds the source-data Scanner proof from downloaded
  * publications, replays it through Core's own verifier (gh attestation verify, source-byte
  * binding, installed Catalog authority) and encodes one packaged record. It never scans,
- * signs, or publishes, and never writes over an existing file.
+ * signs, or publishes, and never writes over an existing file. With a named candidate
+ * Catalog, the candidate replaces the installed Catalog for the whole run and
+ * `<output>.candidate-catalog.json` names its digest and every file read from it.
  */
 export async function preparePackagedWorkbenchSourceDataCommandV1(
   args: readonly string[],
@@ -222,6 +245,13 @@ export async function preparePackagedWorkbenchSourceDataCommandV1(
   const options = parseArgs(args);
   if (existsSync(options.output))
     throw new TypeError("EEXIST: packaged source data output must not already exist");
+  if (options.candidate !== undefined && existsSync(candidateCatalogUsePathV1(options.output)))
+    throw new TypeError("EEXIST: the candidate Catalog use record must not already exist");
+  const candidate =
+    options.candidate === undefined
+      ? undefined
+      : openCandidateCatalogV1(options.candidate.path, options.candidate.sha256);
+  if (candidate !== undefined) activateCandidateCatalogV1(candidate);
   const sourceId = `source:${options.provider}`;
   const repository = PROVIDERS[options.provider];
   const bundleValue = readJson(options.sourceBundle, 64 * 1024 * 1024, "source bundle");
@@ -292,7 +322,11 @@ export async function preparePackagedWorkbenchSourceDataCommandV1(
       ...(facts.descriptor === undefined ? {} : { runtimeDescriptor: facts.descriptor }),
     });
     writeFileSync(options.output, record.bytes, { flag: "wx", mode: 0o600 });
-    return `Prepared packaged source data ${options.provider}@${head} sha256:${record.sha256}. No scan, signing, publication, or qualification was performed.`;
+    const used =
+      candidate === undefined
+        ? ""
+        : ` using candidate Catalog ${candidate.version} sha256:${candidate.sha256} (${candidate.digestOf}), recorded in ${writeCandidateCatalogUseV1("prepare-packaged-workbench-source-data", options.output)}`;
+    return `Prepared packaged source data ${options.provider}@${head} sha256:${record.sha256}${used}. No scan, signing, publication, or qualification was performed.`;
   } finally {
     rmSync(proofRoot, { recursive: true, force: true });
   }

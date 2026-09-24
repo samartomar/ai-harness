@@ -26,6 +26,10 @@ import { canonicalStrictJsonBytesV1 } from "../../src/contract/strict-json-v1.js
 import { preparePackagedWorkbenchSourceDataCommandV1 } from "../../src/internals/prepare-packaged-workbench-source-data.js";
 import { PackagedSourceDataRecordV1Schema } from "../../src/org-policy/workbench/core/packaged-source-data-record.js";
 import { sealedSingleSourceBundle } from "../baseline-evidence/candidate-bundle-fixture.js";
+import {
+  candidateListingDigest,
+  candidatePackageFiles,
+} from "../catalog-package/candidate-catalog-fixture.js";
 
 const PIN = "c".repeat(40);
 const PUBLISHER = "3510a267916dbbe102e5d18094b0de5332aab02b";
@@ -266,9 +270,99 @@ describe("prepare-packaged-workbench-source-data", () => {
     ],
     ["an unknown update kind", (a: string[]) => a.push("--update-kind", "full")],
     ["a flag value that is a flag", (a: string[]) => a.splice(13, 1, "--output")],
+    ["a candidate Catalog without its digest", (a: string[]) => a.push("--candidate-catalog", "c")],
+    [
+      "a candidate digest without a candidate Catalog",
+      (a: string[]) => a.push("--candidate-catalog-sha256", "0".repeat(64)),
+    ],
+    [
+      "a malformed candidate digest",
+      (a: string[]) => a.push("--candidate-catalog", "c", "--candidate-catalog-sha256", "ABC"),
+    ],
+    [
+      "a repeated candidate flag",
+      (a: string[]) =>
+        a.push(
+          "--candidate-catalog",
+          "c",
+          "--candidate-catalog",
+          "d",
+          "--candidate-catalog-sha256",
+          "0".repeat(64),
+        ),
+    ],
   ])("rejects %s", async (_label, mutate) => {
     mutate(args);
     await expect(preparePackagedWorkbenchSourceDataCommandV1(args)).rejects.toThrow(/^Usage:/);
     expect(mocks.facts).not.toHaveBeenCalled();
+  });
+});
+
+describe("prepare-packaged-workbench-source-data with a candidate Catalog", () => {
+  const record = () => `${output}.candidate-catalog.json`;
+  /** Fresh module state: a candidate is activated once per process, as in a real run. */
+  async function command() {
+    vi.resetModules();
+    return (await import("../../src/internals/prepare-packaged-workbench-source-data.js"))
+      .preparePackagedWorkbenchSourceDataCommandV1;
+  }
+  function candidate(files = candidatePackageFiles()) {
+    const directory = join(root, "candidate");
+    for (const [path, bytes] of Object.entries(files)) {
+      mkdirSync(join(directory, path, ".."), { recursive: true });
+      writeFileSync(join(directory, path), bytes);
+    }
+    return { directory, digest: candidateListingDigest(files) };
+  }
+
+  it("prepares through the named candidate and records its digest beside the output", async () => {
+    const { directory, digest } = candidate();
+    args.push("--candidate-catalog", directory, "--candidate-catalog-sha256", digest);
+    const run = await command();
+    const message = await run(args);
+    expect(message).toContain(`candidate Catalog 0.3.0 sha256:${digest} (directory-listing)`);
+    expect(JSON.parse(readFileSync(record(), "utf8"))).toEqual({
+      format: "aih-candidate-catalog-use",
+      version: 1,
+      tool: "prepare-packaged-workbench-source-data",
+      output: { file: "record.json", sha256: sha(readFileSync(output)) },
+      candidateCatalog: {
+        sha256: digest,
+        digestOf: "directory-listing",
+        version: "0.3.0",
+        files: expect.any(Array),
+      },
+    });
+    const loader = await import("../../src/catalog-package/load-catalog-package.js");
+    expect(loader.candidateCatalogActiveV1()).toBe(true);
+  });
+
+  it("refuses a candidate whose digest does not match before reading any input", async () => {
+    const { directory } = candidate();
+    args.push("--candidate-catalog", directory, "--candidate-catalog-sha256", "0".repeat(64));
+    const run = await command();
+    await expect(run(args)).rejects.toThrow(/directory listing sha256 [0-9a-f]{64} does not match/);
+    expect(mocks.gitHead).not.toHaveBeenCalled();
+    expect(mocks.facts).not.toHaveBeenCalled();
+    expect(existsSync(output)).toBe(false);
+    expect(existsSync(record())).toBe(false);
+  });
+
+  it("refuses an existing candidate-use record before reading anything", async () => {
+    const { directory, digest } = candidate();
+    writeFileSync(record(), "keep");
+    args.push("--candidate-catalog", directory, "--candidate-catalog-sha256", digest);
+    const run = await command();
+    await expect(run(args)).rejects.toThrow(/EEXIST/);
+    expect(readFileSync(record(), "utf8")).toBe("keep");
+    expect(mocks.facts).not.toHaveBeenCalled();
+  });
+
+  it("writes no candidate-use record and activates nothing without a candidate", async () => {
+    const run = await command();
+    await run(args);
+    expect(existsSync(record())).toBe(false);
+    const loader = await import("../../src/catalog-package/load-catalog-package.js");
+    expect(loader.candidateCatalogActiveV1()).toBe(false);
   });
 });
