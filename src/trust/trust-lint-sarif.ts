@@ -425,7 +425,7 @@ export function trustLintChecksFromSarifV1(
   if ("refusal" in facts) return { refusal: `detector.aih-trust-lint ${facts.refusal}` };
   const artifacts = artifactsOf(run, subject.selectedPaths);
   if ("refusal" in artifacts) return { refusal: `detector.aih-trust-lint ${artifacts.refusal}` };
-  const results = run.results ?? [];
+  const results = run.results;
   if (!Array.isArray(results))
     return { refusal: "detector.aih-trust-lint returned a run whose results are not a list" };
   const declared = new Set(subject.mcpConfigPaths ?? []);

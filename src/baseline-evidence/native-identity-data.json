@@ -26,11 +26,12 @@
     "src/trust/inventory.ts",
     "src/trust/lock.ts",
     "src/trust/mcp-classify.ts",
+    "src/trust/scan-sarif.ts",
     "src/trust/scan.ts",
     "src/trust/scanner-runtime-identity.ts",
     "src/trust/script-files.ts",
     "src/trust/smoke.ts",
     "src/trust/trust-lint-sarif.ts"
   ],
-  "digest": "ccd768d68b06"
+  "digest": "3ea90abc6140"
 }

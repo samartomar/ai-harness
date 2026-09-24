@@ -180,7 +180,7 @@ describe("runCiscoSourceShardThroughScanV1", () => {
             sha256: createHash("sha256").update(sarif).digest("hex"),
           };
         }),
-      "not a SARIF 2.1.0 log",
+      "is refused: Scan returned SARIF version missing, expected SARIF 2.1.0",
     ],
   ])("rejects %s", async (_label, change, message) => {
     const root = sourceRoot();
@@ -219,6 +219,76 @@ describe("runCiscoSourceShardThroughScanV1", () => {
         importer: failed.importer,
       }),
     ).rejects.toThrow("analyzer-execution: exit 2");
+  });
+
+  it.each([
+    [
+      "results: null",
+      { version: "2.1.0", runs: [{ results: null }] },
+      "whose run 0 has no results array",
+    ],
+    ["no results", { version: "2.1.0", runs: [{}] }, "whose run 0 has no results array"],
+    [
+      "a run that is not an object",
+      { version: "2.1.0", runs: [7] },
+      "whose run 0 is not an object",
+    ],
+    [
+      "a result that is not an object",
+      { version: "2.1.0", runs: [{ results: ["x"] }] },
+      "whose run 0 result 0 is not an object",
+    ],
+    [
+      "a URI outside the source root",
+      {
+        version: "2.1.0",
+        runs: [
+          {
+            results: [
+              {
+                ruleId: "X",
+                locations: [
+                  {
+                    physicalLocation: {
+                      artifactLocation: { uri: "/aih/source/skills/alpha/SKILL.md" },
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      "which is not relative to the declared source root",
+    ],
+  ])("refuses digest-bound job SARIF with %s", async (_label, log, reason) => {
+    const root = sourceRoot();
+    const manifest = manifestFor(root);
+    const shardId = manifest.shards[0]?.id ?? "";
+    const scan = fakeScan((request) =>
+      succeeded(request, (outputs) =>
+        outputs.map((output) => {
+          const sarif = new TextEncoder().encode(JSON.stringify(log));
+          return {
+            ...(output as Record<string, unknown>),
+            sarif,
+            sha256: createHash("sha256").update(sarif).digest("hex"),
+          };
+        }),
+      ),
+    );
+    await expect(
+      runCiscoSourceShardThroughScanV1(root, manifest, shardId, {
+        ...options,
+        importer: scan.importer,
+      }),
+    ).rejects.toThrow(`Cisco shard output for skills/alpha is refused: Scan returned SARIF`);
+    await expect(
+      runCiscoSourceShardThroughScanV1(root, manifest, shardId, {
+        ...options,
+        importer: scan.importer,
+      }),
+    ).rejects.toThrow(reason);
   });
 
   it("rejects a source that changed while Scan ran", async () => {

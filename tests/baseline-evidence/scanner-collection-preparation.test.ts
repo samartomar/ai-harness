@@ -207,7 +207,7 @@ function annexes(
                         {
                           level: "error",
                           message: { text: "blocked fixture finding" },
-                          ruleId: "fixture.blocked",
+                          ruleId: "semgrep.malicious-code",
                           locations: [
                             {
                               physicalLocation: {

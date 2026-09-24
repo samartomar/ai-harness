@@ -471,7 +471,7 @@ describe("scan execution adapter", () => {
       ),
     });
     expect(detectorCheck(notSarif.result.checks, "cisco")?.detail).toContain(
-      "detector did not emit valid SARIF",
+      "detector.cisco returned bytes that are not JSON",
     );
   });
 

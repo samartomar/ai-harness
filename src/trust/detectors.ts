@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFileSync, realpathSync } from "node:fs";
-import { basename, dirname, isAbsolute, join, relative } from "node:path";
+import { basename, dirname, join, relative } from "node:path";
 import { hashComponentTree } from "../baseline-evidence/hash.js";
 import type { Posture } from "../config/posture.js";
 import { AihError } from "../errors.js";
@@ -31,6 +31,12 @@ import {
 } from "./images.js";
 import { buildTrustFileInventory, type TrustFileInventory } from "./inventory.js";
 import {
+  type CheckedScanSarifLogV1,
+  type CheckedScanSarifV1,
+  checkedScanSarifLogV1,
+  checkedScanSarifTextV1,
+} from "./scan-sarif.js";
+import {
   CISCO_MCP_SCANNER_ANALYZER,
   CISCO_SKILL_SCANNER_ANALYZER,
   SEMGREP_ANALYZER,
@@ -38,7 +44,6 @@ import {
 } from "./scanner-runtime-identity.js";
 import {
   DETECTOR_REPORTED_HIDDEN_UNICODE_RISK,
-  isSourceRelativeSarifUriV1,
   type TrustLintArtifactFactsV1,
   type TrustLintCheckV1,
   type TrustLintFactsV1,
@@ -236,26 +241,8 @@ interface SarifResult {
   locations?: SarifLocation[];
 }
 
-interface SarifRun {
-  invocations?: Array<Record<string, unknown>>;
-  results?: SarifResult[];
-}
-
-interface SarifLog {
-  runs?: SarifRun[];
-  version?: string;
-}
-
 function toPosix(path: string): string {
   return path.replace(/\\/g, "/");
-}
-
-function realpathIfExists(path: string): string {
-  try {
-    return realpathSync(path);
-  } catch {
-    return path;
-  }
 }
 
 /** The source line a finding names: evidence for its fingerprint and `sourceValue`, never detection. */
@@ -353,7 +340,7 @@ export function joinedCiscoShardSarif(
   joined: JoinedCiscoShardEvidence,
   includedPaths?: readonly string[],
 ): string {
-  const runs: SarifRun[] = [];
+  const runs: CheckedScanSarifLogV1["runs"][number][] = [];
   for (const output of joined.outputs) {
     if (
       includedPaths !== undefined &&
@@ -361,11 +348,13 @@ export function joinedCiscoShardSarif(
     ) {
       continue;
     }
-    const parsed = parseSarifLog(JSON.stringify(output.evidence));
-    if (parsed === undefined) {
-      throw new Error(`Cisco shard job ${output.path} did not retain valid SARIF evidence`);
+    const checked = checkedScanSarifLogV1(output.evidence);
+    if ("refusal" in checked) {
+      throw new Error(
+        `Cisco shard job ${output.path} did not retain valid SARIF evidence: it holds ${checked.refusal}`,
+      );
     }
-    runs.push(...(parsed.runs ?? []));
+    runs.push(...checked.log.runs);
   }
   return JSON.stringify({ version: "2.1.0", runs });
 }
@@ -400,15 +389,6 @@ function unavailableCheck(
     verdict: "fail",
     detail: `required detector ${detector} is unavailable at enterprise posture. ${base.detail}`,
   };
-}
-
-function parseSarifLog(raw: string): (SarifLog & { runs: SarifRun[] }) | undefined {
-  try {
-    const parsed = JSON.parse(raw) as SarifLog;
-    return Array.isArray(parsed.runs) ? { ...parsed, runs: parsed.runs } : undefined;
-  } catch {
-    return undefined;
-  }
 }
 
 function resultRuleId(result: SarifResult): string | undefined {
@@ -676,37 +656,13 @@ function legalTextResultMessage(message: string, code: CheckCode): string {
   return `${message}; file class: non-executable legal text; severity: reviewable trust-origin because generic detector heuristics on LICENSE/COPYING/NOTICE require human review`;
 }
 
-function normalizeSarifUri(raw: unknown, detector: TrustDetector, root: string): string {
-  const fallback = `${detector.name}.sarif`;
-  if (typeof raw !== "string" || raw.length === 0) return fallback;
-  // A source-relative URI (C2) already names the path under the root: kept verbatim.
-  if (raw === "." || isSourceRelativeSarifUriV1(raw)) return raw;
-  // Refuse nonempty file URL authorities (including localhost/UNC); only the
-  // authority-free file:/// form can be resolved against this scan root.
-  const isFileUrl = /^file:\/\//i.test(raw);
-  if (isFileUrl && !/^file:\/\/\//i.test(raw)) return fallback;
-  const unprefixed = isFileUrl ? decodeFileUrlPath(raw.slice("file://".length)) : raw;
-  // Precomputed SARIF may echo absolute targets (`/tmp/x/a.md`; on Windows `D:\x\a.md`
-  // or `file:///D:/x/a.md`). A finding inside the scanned tree keeps its tree-relative
-  // path; a path outside the tree, or one that escapes it through `..` or a symlink,
-  // falls back to the detector's SARIF.
-  const candidate = toPosix(unprefixed).replace(/^\/(?=[A-Za-z]:\/)/, "");
-  if (!isAbsolute(candidate) && !/^[A-Za-z]:\//.test(candidate)) return fallback;
-  const relativeUri = toPosix(relative(realpathIfExists(root), realpathIfExists(candidate)));
-  return relativeUri.length > 0 && isSafeRelativeSarifUri(relativeUri) ? relativeUri : fallback;
-}
-
-function decodeFileUrlPath(path: string): string {
-  try {
-    return decodeURIComponent(path);
-  } catch {
-    return path;
-  }
-}
-
-function isSafeRelativeSarifUri(uri: string): boolean {
-  if (uri.length === 0 || isAbsolute(uri) || /^[A-Za-z]:/.test(uri)) return false;
-  return !uri.split("/").some((part) => part === "..");
+/**
+ * A finding's URI was checked at the boundary (`checkedScanSarifLogV1`): a
+ * source-relative path or ".", kept exactly as Scan wrote it. A result with no
+ * URI is located at the detector's SARIF.
+ */
+function sarifUri(raw: unknown, detector: TrustDetector): string {
+  return typeof raw === "string" && raw.length > 0 ? raw : `${detector.name}.sarif`;
 }
 
 function sarifStartLine(result: SarifResult): number {
@@ -717,11 +673,10 @@ function sarifStartLine(result: SarifResult): number {
 function sarifLocation(
   result: SarifResult,
   detector: TrustDetector,
-  root: string,
 ): NonNullable<Check["location"]> {
   const physical = result.locations?.[0]?.physicalLocation;
   return {
-    uri: normalizeSarifUri(physical?.artifactLocation?.uri, detector, root),
+    uri: sarifUri(physical?.artifactLocation?.uri, detector),
     startLine: sarifStartLine(result),
   };
 }
@@ -757,24 +712,23 @@ function sarifFingerprint(
  * result under; the raw occurrence keeps the analyzer's own rule id as evidence.
  */
 function sarifChecks(
-  stdout: string,
+  log: CheckedScanSarifLogV1,
   root: string,
   posture: Posture,
   detector: TrustDetector,
   corroboratedDangerLocations: ReadonlySet<string>,
   facts: TrustLintFactsV1,
   canonicalRuleId?: (raw: string) => string | undefined,
-): { checks: Check[]; rawOccurrences: RawScannerOccurrence[] } | undefined {
-  const parsed = parseSarifLog(stdout);
-  if (parsed === undefined) return undefined;
+): { checks: Check[]; rawOccurrences: RawScannerOccurrence[] } {
   const checks: Check[] = [];
   const rawOccurrences: RawScannerOccurrence[] = [];
   const occurrences = new Map<string, number>();
   const rawOccurrenceCounts = new Map<string, number>();
   const seen = new Set<string>();
-  for (const run of parsed.runs) {
-    for (const result of run.results ?? []) {
-      const location = sarifLocation(result, detector, root);
+  for (const run of log.runs) {
+    for (const checked of run.results) {
+      const result = checked as SarifResult;
+      const location = sarifLocation(result, detector);
       const rawRuleId = resultRuleId(result) ?? "unknown-rule";
       const rawMessage = resultMessage(result, detector);
       const rawKey = JSON.stringify([
@@ -1307,49 +1261,25 @@ function canonicalSemgrepRuleId(raw: string): string | undefined {
   return Object.keys(SEMGREP_RULE_MAP).find((id) => raw.endsWith(`.${id}`));
 }
 
-function sarifResultsOf(sarif: string): unknown[] | undefined {
-  const parsed = parseSarifLog(sarif);
-  if (parsed === undefined) return undefined;
-  const results: unknown[] = [];
-  for (const run of parsed.runs) {
-    const runResults = asRecord(run)?.results;
-    if (Array.isArray(runResults)) results.push(...runResults);
-  }
-  return results;
-}
-
 /**
- * Scan's SARIF crosses a trust boundary: every artifact URI must name a path under
- * the declared source root, and a Semgrep run may report only Core's own rules.
- * Anything else fails closed as this detector's failure, never partly read.
+ * Scan's SARIF crosses a trust boundary, whether a delegated run returned it or
+ * it arrives precomputed: the one shape check (`checkedScanSarifTextV1`), and a
+ * Semgrep run may report only Core's own rules. Anything else fails closed as
+ * this detector's failure, never partly read.
  */
-function delegatedSarifRefusal(detector: ScanRoutedDetectorV1, sarif: string): string | undefined {
-  const scanId = SCAN_DETECTOR_IDS[detector];
-  // Unparseable SARIF is reported by the mapping itself as invalid SARIF.
-  const log = parseSarifLog(sarif);
-  if (log !== undefined && log.version !== "2.1.0")
-    return `${scanId} returned SARIF version ${adapterReason(JSON.stringify(log.version) ?? "missing")}, expected SARIF 2.1.0`;
-  for (const raw of sarifResultsOf(sarif) ?? []) {
-    const result = asRecord(raw);
-    const locations = result?.locations;
-    for (const location of Array.isArray(locations) ? locations : []) {
-      const physical = asRecord(asRecord(location)?.physicalLocation);
-      const uri = asRecord(physical?.artifactLocation)?.uri;
-      // "." is the source root itself (a Snyk finding with no file), as Core has always read it.
-      if (
-        uri !== undefined &&
-        uri !== "." &&
-        (typeof uri !== "string" || !isSourceRelativeSarifUriV1(uri))
-      )
-        return `${scanId} returned SARIF artifact URI ${adapterReason(JSON.stringify(uri) ?? "")}, which is not relative to the declared source root`;
-    }
-    if (detector === "semgrep") {
-      const ruleId = result?.ruleId ?? asRecord(result?.rule)?.id;
+function checkedDetectorSarif(detector: ScanRoutedDetectorV1, sarif: string): CheckedScanSarifV1 {
+  const checked = checkedScanSarifTextV1(sarif);
+  if ("refusal" in checked || detector !== "semgrep") return checked;
+  for (const run of checked.log.runs) {
+    for (const result of run.results) {
+      const ruleId = result.ruleId ?? asRecord(result.rule)?.id;
       if (typeof ruleId !== "string" || canonicalSemgrepRuleId(ruleId) === undefined)
-        return `${scanId} returned rule id ${adapterReason(JSON.stringify(ruleId) ?? "")}, which is not one of Core's Semgrep rules (${Object.keys(SEMGREP_RULE_MAP).join(", ")})`;
+        return {
+          refusal: `rule id ${adapterReason(JSON.stringify(ruleId) ?? "")}, which is not one of Core's Semgrep rules (${Object.keys(SEMGREP_RULE_MAP).join(", ")})`,
+        };
     }
   }
-  return undefined;
+  return checked;
 }
 
 interface DelegatedRunOptionsV1 {
@@ -1417,8 +1347,13 @@ async function runDelegatedDetector(
       unavailable: `${scanId} returned execution profile ${result.executionProfileId ?? "unstated"} instead of requested ${executionProfileId}`,
       outcome: "failed",
     };
-  const refusal = delegatedSarifRefusal(detector, result.sarif);
-  if (refusal !== undefined) return { unavailable: refusal, outcome: "failed", executionProfileId };
+  const checked = checkedDetectorSarif(detector, result.sarif);
+  if ("refusal" in checked)
+    return {
+      unavailable: `${scanId} returned ${checked.refusal}`,
+      outcome: "failed",
+      executionProfileId,
+    };
   return result;
 }
 
@@ -1694,8 +1629,20 @@ async function runDetectorList(
       };
     }
 
+    // Precomputed SARIF meets the same boundary as a run Scan just returned.
+    const checked = checkedDetectorSarif(detector.name, sarifText);
+    if ("refusal" in checked) {
+      unavailable(
+        detector,
+        execution.executedBy === "precomputed-sarif"
+          ? `precomputed SARIF for ${SCAN_DETECTOR_IDS[detector.name]} is refused: it holds ${checked.refusal}`
+          : `${SCAN_DETECTOR_IDS[detector.name]} returned ${checked.refusal}`,
+      );
+      executions.push({ detector: detector.name, ...execution, outcome: "failed" });
+      continue;
+    }
     const mapped = sarifChecks(
-      sarifText,
+      checked.log,
       root,
       options.posture,
       detector,
@@ -1704,12 +1651,6 @@ async function runDetectorList(
       // Semgrep rule ids carry its config directory; Core classifies by its own id.
       detector.name === "semgrep" ? canonicalSemgrepRuleId : undefined,
     );
-    if (mapped === undefined) {
-      unavailable(detector, "detector did not emit valid SARIF");
-      executions.push({ detector: detector.name, ...execution, outcome: "failed" });
-      continue;
-    }
-
     analyzersRun.push(detector.analyzerLabel);
     rawOccurrences.push(...mapped.rawOccurrences);
     const completedAnalyzers = ["aih-native", ...analyzersRun];

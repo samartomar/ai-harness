@@ -268,6 +268,17 @@ describe("Scan's native findings fail closed at every posture", () => {
       "not relative to the declared source root",
     ],
     [
+      "a run whose results are null",
+      {
+        kind: "sarif",
+        sarif: JSON.stringify({
+          ...JSON.parse(lintSarif([])),
+          runs: [{ ...JSON.parse(lintSarif([])).runs[0], results: null }],
+        }),
+      },
+      "SARIF whose run 0 has no results array",
+    ],
+    [
       "a missing fingerprint",
       { kind: "sarif", sarif: lintSarif([result("trust.prompt-injection", "SKILL.md", 7)]) },
       `has no ${TRUST_LINT_FINGERPRINT_KEY} fingerprint`,
@@ -322,6 +333,96 @@ describe("missing native facts never downgrade a third-party finding", () => {
 });
 
 describe("Scan's detector SARIF is checked at the boundary", () => {
+  const malformed: ReadonlyArray<readonly [string, unknown, string]> = [
+    [
+      "results: null",
+      { version: "2.1.0", runs: [{ results: null }] },
+      "SARIF whose run 0 has no results array",
+    ],
+    [
+      "no results",
+      { version: "2.1.0", runs: [{ tool: {} }] },
+      "SARIF whose run 0 has no results array",
+    ],
+    [
+      "a run that is not an object",
+      { version: "2.1.0", runs: [null] },
+      "SARIF whose run 0 is not an object",
+    ],
+    [
+      "a result that is not an object",
+      { version: "2.1.0", runs: [{ results: ["x"] }] },
+      "SARIF whose run 0 result 0 is not an object",
+    ],
+    [
+      "a start line that is not a positive integer",
+      JSON.parse(sarif([result("C1", "SKILL.md", 0)])),
+      "SARIF whose run 0 result 0 has a start line that is not a positive integer",
+    ],
+  ];
+
+  it.each(malformed)(
+    "refuses delegated SARIF with %s, failing the required detector at enterprise posture",
+    async (_label, log, reason) => {
+      const root = caseRoot("prompt-injection");
+      const scan = createFakeScanAdapterForTests({
+        "detector.aih-trust-lint": goldenTrustLint("prompt-injection"),
+        "detector.cisco": { kind: "sarif", sarif: JSON.stringify(log) },
+      });
+      const outcome = await scanTrustTreeWithAnalyzers(root, {
+        posture: "enterprise",
+        env: {},
+        platform: "linux",
+        run: recordingRunner().run,
+        detectors: ["cisco"],
+        requiredDetectors: ["cisco"],
+        scanExecution: scan,
+      });
+      expect(detectorCheck(outcome.checks, "cisco")).toMatchObject({
+        verdict: "fail",
+        code: "trust.detector-unavailable",
+        detail: expect.stringContaining(`detector.cisco returned ${reason}`),
+      });
+      expect(outcome.detectorExecutions).toContainEqual(
+        expect.objectContaining({ detector: "cisco", outcome: "failed" }),
+      );
+    },
+  );
+
+  it.each(malformed)(
+    "refuses precomputed SARIF with %s exactly as Scan's, failing the required detector",
+    async (_label, log, reason) => {
+      const root = caseRoot("prompt-injection");
+      const scan = createFakeScanAdapterForTests({
+        "detector.aih-trust-lint": goldenTrustLint("prompt-injection"),
+      });
+      const outcome = await scanTrustTreeWithAnalyzers(root, {
+        posture: "enterprise",
+        env: {},
+        platform: "linux",
+        run: recordingRunner().run,
+        detectors: ["cisco"],
+        requiredDetectors: ["cisco"],
+        precomputedDetectorSarif: { cisco: JSON.stringify(log) },
+        scanExecution: scan,
+      });
+      expect(detectorCheck(outcome.checks, "cisco")).toMatchObject({
+        verdict: "fail",
+        code: "trust.detector-unavailable",
+        detail: expect.stringContaining(
+          `precomputed SARIF for detector.cisco is refused: it holds ${reason}`,
+        ),
+      });
+      expect(outcome.detectorExecutions).toContainEqual(
+        expect.objectContaining({
+          detector: "cisco",
+          executedBy: "precomputed-sarif",
+          outcome: "failed",
+        }),
+      );
+    },
+  );
+
   it("refuses a Semgrep rule that is not one of Core's rules", async () => {
     const root = caseRoot("prompt-injection");
     const scan = createFakeScanAdapterForTests({

@@ -66,6 +66,14 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `detector.aih-native` identity observation.
 - Semgrep results are mapped through Core's canonical rule map for every executor, so the
   same finding carries the same code whether Semgrep ran in Scan or arrived as SARIF.
+- Every SARIF log Core reads from Scan (a delegated run, precomputed SARIF, or a Cisco shard
+  job's output) passes one strict check: SARIF 2.1.0, every run an object with a results
+  array, typed result fields, positive start lines and source-relative URIs kept verbatim.
+  A malformed log fails the detector (a required detector fails at enterprise posture);
+  precomputed SARIF with absolute or unknown-rule results is no longer rewritten or read.
+- Scan's trust-lint facts must cover every selected file, or the native findings fail at
+  every posture instead of third-party findings losing their corroboration. The binding gate
+  recomputes each content pin from the file before any acceptance applies.
 - Fresh baseline vets name each uv analyzer by its version and the uv.lock digest the
   installed Scan publishes for the profile it ran under (the host-process Cisco lock differs
   from the committed receipts' lock). Committed baseline evidence is still checked against

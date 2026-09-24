@@ -12,6 +12,7 @@ import {
   type CiscoShardResult,
 } from "./cisco-shards.js";
 import { TrustScanCancelledError, type UvExecutionProfileIdV1 } from "./detectors.js";
+import { checkedScanSarifLogV1 } from "./scan-sarif.js";
 
 // Core builds the Cisco source-wide manifest and joins the shard results; the
 // installed @aihq/scan executes one shard's jobs (`runCiscoShardV1`, C2a §3.7).
@@ -139,9 +140,11 @@ function shardEvidence(
     } catch {
       throw new Error(`Cisco shard output for ${job.path} is not UTF-8 JSON`);
     }
-    const log = asRecord(sarif);
-    if (log?.version !== "2.1.0" || !Array.isArray(log.runs))
-      throw new Error(`Cisco shard output for ${job.path} is not a SARIF 2.1.0 log`);
+    const checked = checkedScanSarifLogV1(sarif);
+    if ("refusal" in checked)
+      throw new Error(
+        `Cisco shard output for ${job.path} is refused: Scan returned ${checked.refusal}`,
+      );
     evidence.set(job.id, sarif);
   }
   return evidence;
