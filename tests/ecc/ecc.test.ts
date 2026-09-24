@@ -390,10 +390,40 @@ describe("ecc.plan — runs ECC's own installer (latest)", () => {
     if (chrome === undefined) throw new Error("missing Core-owned Chrome DevTools MCP server");
 
     expect(chrome.command).toBe("npx");
-    expect(chrome.args).toEqual(["-y", "chrome-devtools-mcp@1.7.0"]);
-    expect(chrome.env).toBeUndefined();
+    expect(chrome.args).toEqual(["-y", "chrome-devtools-mcp@1.10.1"]);
+    expect(chrome.env).toEqual({
+      CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS: "1",
+      CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS: "1",
+    });
     expect(chrome.args.join(" ")).not.toContain("@latest");
     expect(codexInstallState(actions).codexToml.mcpServers).toContain("chrome-devtools");
+  });
+
+  it("always disables Chrome DevTools MCP usage statistics and update checks", () => {
+    const chrome = coreOwnedEccCodexMcpServers()["chrome-devtools"];
+    if (chrome?.type !== "stdio") throw new Error("missing Core-owned Chrome DevTools MCP server");
+    expect(chrome.env).toEqual({
+      CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS: "1",
+      CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS: "1",
+    });
+
+    // Every Chrome DevTools MCP launch AIH emits comes from this one projection; a second
+    // literal launch elsewhere in src could omit the mandatory opt-outs.
+    const launches = spawnSync(
+      "git",
+      ["grep", "-l", "-E", "chrome-devtools-mcp@[0-9]", "--", "src"],
+      {
+        cwd: join(import.meta.dirname, "../.."),
+        encoding: "utf8",
+      },
+    );
+    expect(launches.status).toBe(0);
+    expect(
+      launches.stdout
+        .trim()
+        .split("\n")
+        .filter((path) => path !== "src/internals/external-pin-ledger.json"),
+    ).toEqual(["src/ecc/codex.ts"]);
   });
 
   it("defaults a direct non-governed Codex action to Core's exact Chrome DevTools pin", () => {
@@ -410,8 +440,9 @@ describe("ecc.plan — runs ECC's own installer (latest)", () => {
     if (mcpB64 === undefined) throw new Error("missing default Codex MCP payload");
     const rendered = Buffer.from(mcpB64, "base64").toString("utf8");
 
-    expect(rendered).toContain("chrome-devtools-mcp@1.7.0");
-    expect(rendered).not.toContain("CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS");
+    expect(rendered).toContain("chrome-devtools-mcp@1.10.1");
+    expect(rendered).toContain('"CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS":"1"');
+    expect(rendered).toContain('"CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS":"1"');
     expect(rendered).not.toContain("@latest");
   });
 
@@ -439,7 +470,9 @@ describe("ecc.plan — runs ECC's own installer (latest)", () => {
       if (mcpB64 === undefined) throw new Error("missing Core-owned Codex MCP payload");
 
       expect(state.codexToml.mcpServers).not.toContain("chrome-devtools");
-      expect(Buffer.from(mcpB64, "base64").toString("utf8")).toContain("chrome-devtools-mcp@1.7.0");
+      expect(Buffer.from(mcpB64, "base64").toString("utf8")).toContain(
+        "chrome-devtools-mcp@1.10.1",
+      );
     },
   );
 
@@ -1773,7 +1806,7 @@ describe("Codex managed destination safety", () => {
       const config = readFileSync(join(home, ".codex", "config.toml"), "utf8");
       if (encodedOperatorRootHeader !== undefined) {
         expect(config).toContain(encodedOperatorRootHeader);
-        expect(config).not.toContain("chrome-devtools-mcp@1.7.0");
+        expect(config).not.toContain("chrome-devtools-mcp@1.10.1");
         expect(config).toContain("@modelcontextprotocol/server-sequential-thinking@2025.7.1");
         expect(config.match(/mcp_servers\..*chrome/gi)).toHaveLength(1);
         const outputState = JSON.parse(
@@ -1783,9 +1816,10 @@ describe("Codex managed destination safety", () => {
         expect(outputState.codexToml.mcpServers).toContain("sequential-thinking");
         return;
       }
-      expect(config).toContain("chrome-devtools-mcp@1.7.0");
+      expect(config).toContain("chrome-devtools-mcp@1.10.1");
       expect(config).toContain("startup_timeout_sec = 30");
-      expect(config).not.toContain("CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS");
+      expect(config).toContain('"CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS" = "1"');
+      expect(config).toContain('"CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS" = "1"');
       expect(config).not.toContain("@latest");
       if (
         legacyPosition === "vanished" ||
@@ -1967,7 +2001,7 @@ describe("Codex managed destination safety", () => {
     expect(result.status, result.stderr).toBe(0);
     const config = readFileSync(configPath, "utf8");
     expect(config).toContain(operatorRoot.trim());
-    expect(config).not.toContain("chrome-devtools-mcp@1.7.0");
+    expect(config).not.toContain("chrome-devtools-mcp@1.10.1");
     expect(config).toContain("@modelcontextprotocol/server-sequential-thinking@2025.7.1");
     const parsed = parse(config) as {
       mcp_servers: Record<string, { command: string; args: string[]; env: Record<string, string> }>;

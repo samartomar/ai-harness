@@ -41,13 +41,19 @@ export interface CodexMcpCollision {
  * Core owns this one ECC default because the vendor helper currently launches it
  * through a floating npm tag. Its exact package identity is bound to the active
  * external-pin ledger; optional ECC MCPs remain on their scoped policy path.
+ * Both opt-outs are mandatory: usage statistics (which also report the MCP client's
+ * name) default on, and every launch otherwise spawns a registry update check.
  */
 export function coreOwnedEccCodexMcpServers(): CodexScopedMcpServers {
   return {
     "chrome-devtools": {
       type: "stdio",
       command: "npx",
-      args: ["-y", "chrome-devtools-mcp@1.7.0"],
+      args: ["-y", "chrome-devtools-mcp@1.10.1"],
+      env: {
+        CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS: "1",
+        CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS: "1",
+      },
       startupTimeoutSec: 30,
     },
   };

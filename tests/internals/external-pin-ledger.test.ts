@@ -210,11 +210,15 @@ describe("active external-pin ledger", () => {
     );
     expect(entry("ecc-codex-chrome-devtools-mcp")).toMatchObject({
       identity: "chrome-devtools-mcp",
-      version: "1.7.0",
+      version: "1.10.1",
+      commit: "e52c6b59b476c5e04d8dd9fd4bd017ba3b3d65df",
       integrity:
-        "sha512-6xFW7oiUxTxZuHcfyYBkKQtmttjCbfifKZMSEk5CV8H2FucvKweYiJr8CblddYHtYjA4C14K9VAs1r49906RBA==",
+        "sha512-Klw6HWDqHC/XS1JwZldd2r49aUhbUJN9m9Mvcx4SEueIPXtzuQX+QelxAViobv8YUkDZ7HWDrmViR6LeYK0wAw==",
       disposition: "active",
     });
+    expect(entry("ecc-codex-chrome-devtools-mcp").reason).toMatch(
+      /CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS=1.*CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS=1.*client name/i,
+    );
     const chromeDevtools = coreOwnedEccCodexMcpServers()["chrome-devtools"];
     if (chromeDevtools?.type !== "stdio") throw new Error("missing Core-owned Chrome DevTools MCP");
     expect(entry("ecc-codex-chrome-devtools-mcp").version).toBe(
