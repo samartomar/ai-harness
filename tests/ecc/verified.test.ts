@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import {
   existsSync,
+  linkSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -1595,7 +1596,12 @@ describe("verifiedEccInstallPlan", () => {
      */
     async function applyVerifiedDriver(
       label: string,
-      options: { project?: string; earlierStepStatus?: number; afterChild?: () => void },
+      options: {
+        project?: string;
+        earlierStepStatus?: number;
+        beforeChild?: (recordPath: string) => void;
+        afterChild?: () => void;
+      },
     ) {
       const home = join(root, `${label}-home`);
       const sourceRoot = join(root, `${label}-source`);
@@ -1636,11 +1642,12 @@ describe("verifiedEccInstallPlan", () => {
         );
         if (codexStep === undefined) throw new Error("missing Codex merge step");
         recordPath = codexStep.argv.find((arg) =>
-          /aih-codex-opt-out-refusal-[0-9a-f]{32}\.json$/.test(arg),
+          /aih-codex-opt-out-refusal-[0-9a-f]{32}[\\/]refusal\.json$/.test(arg),
         );
         recordExistedDuringRun = recordPath !== undefined && existsSync(recordPath);
         if (options.earlierStepStatus !== undefined)
           return { code: options.earlierStepStatus, stdout: "", stderr: "npm ci failed" };
+        if (recordPath !== undefined) options.beforeChild?.(recordPath);
         const result = spawnSync(codexStep.argv[0] ?? "", codexStep.argv.slice(1), {
           cwd: codexStep.cwd,
           env: { ...process.env, ...codexStep.env, HOME: home, USERPROFILE: home },
@@ -1674,6 +1681,24 @@ describe("verifiedEccInstallPlan", () => {
       );
       expect(run.recordExistedDuringRun).toBe(true);
       expect(run.recordPath !== undefined && existsSync(run.recordPath)).toBe(false);
+    });
+
+    it("writes nothing through a hard link planted on the record path", async () => {
+      const decoy = join(root, "verified-decoy.json");
+      const run = await applyVerifiedDriver("hard-link", {
+        project: unsafeLaunch,
+        beforeChild: (recordPath) => {
+          writeFileSync(decoy, "", "utf8");
+          rmSync(recordPath, { force: true });
+          linkSync(decoy, recordPath);
+        },
+      });
+
+      expect(run.applied.execs[0]).toMatchObject({ code: 78 });
+      expect(run.checks.some((check) => check.code === "mcp.telemetry-opt-out-missing")).toBe(
+        false,
+      );
+      expect(readFileSync(decoy, "utf8")).toBe("");
     });
 
     it("keeps another step's exit 78 untyped when the configs are clean", async () => {

@@ -3,17 +3,19 @@ import { type SpawnSyncReturns, spawnSync } from "node:child_process";
 import {
   existsSync,
   linkSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { inflateRawSync } from "node:zlib";
 import { parse } from "smol-toml";
@@ -2227,6 +2229,7 @@ describe("Codex managed destination safety", () => {
       options: {
         projectAfterPlan?: string;
         mergeHelper?: string;
+        beforeChild?: (recordPath: string) => void;
         afterChild?: () => void;
         rewriteArgv?: (argv: string[]) => string[];
       } = {},
@@ -2281,6 +2284,7 @@ describe("Codex managed destination safety", () => {
       let check: Check | undefined;
       try {
         const argv = options.rewriteArgv?.(action.argv) ?? action.argv;
+        options.beforeChild?.(record.path);
         result = spawnSync(process.execPath, argv.slice(1), {
           cwd: repo,
           encoding: "utf8",
@@ -2520,14 +2524,124 @@ describe("Codex managed destination safety", () => {
         expect(existsSync(step.record.path)).toBe(false);
       });
 
-      it("refuses to run over an existing record path", () => {
+      it("refuses to run over an existing record directory", () => {
         const { record } = recordedStep();
+        mkdirSync(dirname(record.path));
         writeFileSync(record.path, "planted", "utf8");
         try {
           expect(() => record.open()).toThrow(/refusal record/);
+          expect(readFileSync(record.path, "utf8")).toBe("planted");
         } finally {
-          rmSync(record.path, { force: true });
+          rmSync(dirname(record.path), { recursive: true, force: true });
         }
+      });
+
+      it("keeps the record in a private directory it creates and removes", () => {
+        const { record } = recordedStep();
+        const directory = dirname(record.path);
+
+        record.open();
+        try {
+          expect(directory).not.toBe(tmpdir());
+          expect(dirname(directory)).toBe(tmpdir());
+          const stats = lstatSync(directory);
+          expect(stats.isDirectory()).toBe(true);
+          if (process.platform !== "win32") expect(stats.mode & 0o777).toBe(0o700);
+          expect(lstatSync(record.path).isFile()).toBe(true);
+        } finally {
+          record.close();
+        }
+        expect(existsSync(directory)).toBe(false);
+      });
+
+      it("refuses a second open", () => {
+        const { record } = recordedStep();
+        record.open();
+        record.close();
+
+        expect(() => record.open()).toThrow(/single-use/);
+        expect(existsSync(dirname(record.path))).toBe(false);
+      });
+
+      it("keeps the check generic when the record is gone before it is read", () => {
+        const { record, valid } = recordedStep();
+        record.open();
+        try {
+          writeFileSync(record.path, JSON.stringify(valid), "utf8");
+          rmSync(record.path, { force: true });
+          expect(() => record.check({ code: 78, stdout: "", stderr: "" })).not.toThrow();
+        } finally {
+          record.close();
+        }
+      });
+    });
+
+    describe("the record path cannot redirect the record", () => {
+      const decoyPath = () => join(tmp, "decoy.json");
+
+      it("writes nothing through a hard link planted on the record path", () => {
+        const run = runDirectApply("record-hard-link", "", {
+          projectAfterPlan: unsafeProject,
+          beforeChild: (recordPath) => {
+            writeFileSync(decoyPath(), "", "utf8");
+            rmSync(recordPath, { force: true });
+            linkSync(decoyPath(), recordPath);
+          },
+        });
+
+        expect(run.result.status).toBe(78);
+        expect(failureCheckOf(run).code).toBeUndefined();
+        expect(readFileSync(decoyPath(), "utf8")).toBe("");
+      });
+
+      it("writes nothing through a symbolic link planted on the record path", (context) => {
+        let planted = true;
+        const run = runDirectApply("record-symlink", "", {
+          projectAfterPlan: unsafeProject,
+          beforeChild: (recordPath) => {
+            writeFileSync(decoyPath(), "", "utf8");
+            rmSync(recordPath, { force: true });
+            try {
+              symlinkSync(decoyPath(), recordPath, "file");
+            } catch {
+              planted = false;
+            }
+          },
+        });
+        if (!planted) context.skip();
+
+        expect(run.result.status).toBe(78);
+        expect(failureCheckOf(run).code).toBeUndefined();
+        expect(readFileSync(decoyPath(), "utf8")).toBe("");
+      });
+
+      it("keeps the check generic when the record path is removed before the step", () => {
+        const run = runDirectApply("record-removed-early", "", {
+          projectAfterPlan: unsafeProject,
+          beforeChild: (recordPath) => rmSync(recordPath, { force: true }),
+        });
+
+        expect(run.result.status).toBe(78);
+        expect(failureCheckOf(run).code).toBeUndefined();
+        expect(existsSync(dirname(run.record.path))).toBe(false);
+      });
+
+      it("reads the step's record from the file aih created, not whatever the path names later", () => {
+        let recordPath = "";
+        const run = runDirectApply("record-swapped-late", "", {
+          projectAfterPlan: unsafeProject,
+          beforeChild: (path) => {
+            recordPath = path;
+          },
+          afterChild: () => {
+            renameSync(recordPath, `${recordPath}.moved`);
+            writeFileSync(recordPath, "", "utf8");
+          },
+        });
+
+        expect(run.result.status).toBe(78);
+        expect(failureCheckOf(run).code).toBe("mcp.telemetry-opt-out-missing");
+        expect(existsSync(dirname(run.record.path))).toBe(false);
       });
     });
 

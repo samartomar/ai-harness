@@ -922,8 +922,10 @@ function legacyDescendantHeader(line) {
   return body !== undefined && /^[ \t]*(?:mcp_servers|"mcp_servers"|'mcp_servers')[ \t]*\.[ \t]*(?:chrome-devtools|"chrome-devtools"|'chrome-devtools')[ \t]*\./.test(body);
 }`,
   String.raw`// Refuses with the typed refusal plan time emits: one readable line per entry,
-// one bounded refusal record (with the nonce aih gave this step) in the empty file aih
-// created for it, then the refusal exit status. aih types the failure only from that record.
+// one bounded refusal record (with the nonce aih gave this step) in the empty, singly
+// linked regular file aih created for it (checked on the opened descriptor against the
+// file the path named, so a swapped or hard-linked path gets no record), then the refusal
+// exit status. aih types the failure only from that record, read through its own descriptor.
 function refuseChromeOptOuts(configs) {
   const refusals = chromeDevtoolsOptOutRefusals(configs, parseToml, () => false);
   if (refusals.length === 0) return;
@@ -931,9 +933,16 @@ function refuseChromeOptOuts(configs) {
   const record = JSON.stringify({ format: ${JSON.stringify(CHROME_DEVTOOLS_OPT_OUT_REFUSAL_RECORD_FORMAT)}, version: 1, nonce: refusalNonce, code: "mcp.telemetry-opt-out-missing", refusals });
   try {
     if (Buffer.byteLength(record, "utf8") > ${CHROME_DEVTOOLS_OPT_OUT_REFUSAL_RECORD_MAX_BYTES}) throw new Error("it exceeds its byte limit");
-    const stats = fs.lstatSync(refusalRecordPath);
-    if (stats.isSymbolicLink() || !stats.isFile() || stats.size !== 0) throw new Error("it is not the empty file aih created");
-    fs.writeFileSync(refusalRecordPath, record, { encoding: "utf8", flag: "r+" });
+    const named = fs.lstatSync(refusalRecordPath, { bigint: true });
+    if (named.isSymbolicLink() || !named.isFile()) throw new Error("it is not the empty file aih created");
+    const descriptor = fs.openSync(refusalRecordPath, fs.constants.O_WRONLY | (fs.constants.O_NOFOLLOW || 0));
+    try {
+      const opened = fs.fstatSync(descriptor, { bigint: true });
+      if (!opened.isFile() || opened.dev !== named.dev || opened.ino !== named.ino || opened.nlink !== 1n || opened.size !== 0n) throw new Error("it is not the empty file aih created");
+      fs.writeSync(descriptor, record, 0, "utf8");
+    } finally {
+      fs.closeSync(descriptor);
+    }
   } catch (error) {
     process.stderr.write("could not write the refusal record: " + (error && error.message) + "\n");
   }

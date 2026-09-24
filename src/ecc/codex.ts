@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { closeSync, fstatSync, lstatSync, openSync, readSync, rmSync } from "node:fs";
+import { closeSync, constants, fstatSync, mkdirSync, openSync, readSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
@@ -1151,35 +1151,68 @@ const REFUSAL_RECORD_KEYS = ["code", "format", "nonce", "refusals", "version"];
 /**
  * The apply-time refusal evidence of one Codex merge step. The executor scrubs a
  * bounded-stdin child's output (the verified driver), so the refusal travels as a
- * record file, not a stderr line: aih creates the file exclusively just before the
- * step runs, the merge script writes one bounded record carrying this step's nonce,
- * and aih reads it back, then removes it. Only exit 78 with a valid record for this
- * step is the typed refusal; aih never reconstructs it from the live configs.
+ * record file, not a stderr line. Just before the step runs, aih creates a private
+ * directory (0700 on POSIX; on Windows the per-user temp directory's ACL keeps other
+ * users out) and, inside it, the record file exclusively, and keeps that file's
+ * descriptor. The merge script writes one bounded record carrying this step's nonce
+ * into the empty, singly linked regular file it finds there; aih reads it back through
+ * its own descriptor, then removes both. Only exit 78 with a valid record for this step
+ * is the typed refusal; aih never reconstructs it from the live configs.
+ * Same-user limit: a process running as the same user is outside this record's threat
+ * model, since it can already edit the configs aih reads and a forged record can only
+ * change which failure code a failing step reports, never turn a failure into success.
  */
 export class ChromeDevtoolsOptOutRefusalRecord implements ExecSidecar {
   readonly path = join(
     tmpdir(),
-    `aih-codex-opt-out-refusal-${randomBytes(16).toString("hex")}.json`,
+    `aih-codex-opt-out-refusal-${randomBytes(16).toString("hex")}`,
+    "refusal.json",
   );
   readonly nonce = randomBytes(16).toString("hex");
+  private state: "planned" | "open" | "closed" = "planned";
+  private file: { descriptor: number; dev: bigint; ino: bigint } | undefined;
 
   constructor(
     private readonly configPaths: Readonly<Record<ChromeDevtoolsOptOutRefusal["scope"], string>>,
   ) {}
 
   open(): void {
-    try {
-      closeSync(openSync(this.path, "wx", 0o600));
-    } catch (error) {
-      throw new AihError(
-        `refusing to run the ECC Codex install: cannot create its refusal record ${this.path}: ${(error as Error).message}`,
+    const refuse = (reason: string) =>
+      new AihError(
+        `refusing to run the ECC Codex install: cannot create its refusal record ${this.path}: ${reason}`,
         "AIH_TRUST",
       );
+    if (this.state !== "planned")
+      throw refuse(`the record is single-use and already ${this.state}`);
+    this.state = "open";
+    try {
+      mkdirSync(dirname(this.path), { mode: 0o700 });
+    } catch (error) {
+      throw refuse((error as Error).message);
+    }
+    let descriptor: number | undefined;
+    try {
+      descriptor = openSync(
+        this.path,
+        constants.O_RDWR | constants.O_CREAT | constants.O_EXCL | (constants.O_NOFOLLOW ?? 0),
+        0o600,
+      );
+      const stats = fstatSync(descriptor, { bigint: true });
+      if (!stats.isFile()) throw new Error("it is not a regular file");
+      this.file = { descriptor, dev: stats.dev, ino: stats.ino };
+    } catch (error) {
+      if (descriptor !== undefined) closeSync(descriptor);
+      rmSync(dirname(this.path), { recursive: true, force: true });
+      throw refuse((error as Error).message);
     }
   }
 
   close(): void {
-    rmSync(this.path, { force: true });
+    this.state = "closed";
+    const file = this.file;
+    this.file = undefined;
+    if (file !== undefined) closeSync(file.descriptor);
+    rmSync(dirname(this.path), { recursive: true, force: true });
   }
 
   /** The typed check for this step's refusal; undefined for any other failure. */
@@ -1216,29 +1249,33 @@ export class ChromeDevtoolsOptOutRefusalRecord implements ExecSidecar {
     return valid ? (refusals as ChromeDevtoolsOptOutRefusal[]) : undefined;
   }
 
-  /** The record's bytes while it is still a regular file within the cap. */
+  /**
+   * The bytes of the file aih created, read through its own descriptor while it is
+   * still that regular file within the cap; undefined on any filesystem failure.
+   */
   private read(): Buffer | undefined {
+    const file = this.file;
+    if (file === undefined) return undefined;
     try {
-      if (!lstatSync(this.path).isFile()) return undefined;
-    } catch {
-      return undefined;
-    }
-    const descriptor = openSync(this.path, "r");
-    try {
-      const stats = fstatSync(descriptor);
-      if (!stats.isFile() || stats.size > CHROME_DEVTOOLS_OPT_OUT_REFUSAL_RECORD_MAX_BYTES)
+      const stats = fstatSync(file.descriptor, { bigint: true });
+      if (
+        !stats.isFile() ||
+        stats.dev !== file.dev ||
+        stats.ino !== file.ino ||
+        stats.size > BigInt(CHROME_DEVTOOLS_OPT_OUT_REFUSAL_RECORD_MAX_BYTES)
+      )
         return undefined;
       const buffer = Buffer.alloc(CHROME_DEVTOOLS_OPT_OUT_REFUSAL_RECORD_MAX_BYTES + 1);
       let length = 0;
       for (;;) {
-        const read = readSync(descriptor, buffer, length, buffer.length - length, null);
+        const read = readSync(file.descriptor, buffer, length, buffer.length - length, length);
         if (read === 0) break;
         length += read;
         if (length > CHROME_DEVTOOLS_OPT_OUT_REFUSAL_RECORD_MAX_BYTES) return undefined;
       }
       return buffer.subarray(0, length);
-    } finally {
-      closeSync(descriptor);
+    } catch {
+      return undefined;
     }
   }
 }
