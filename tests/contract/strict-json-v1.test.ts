@@ -24,6 +24,48 @@ describe("strict JSON v1", () => {
     );
   });
 
+  it("refuses comments, trailing commas, stray characters, unbalanced delimiters and deep nesting before the recovering parser runs", () => {
+    const refusal = (text: string): unknown => {
+      try {
+        parseStrictJsonObjectV1(text, "fixture");
+      } catch (error) {
+        return error;
+      }
+      return undefined;
+    };
+    const nbsp = String.fromCharCode(0xa0);
+    const deep = (depth: number) => `{"x":${"[".repeat(depth - 1)}0${"]".repeat(depth - 1)}}`;
+    const cases: [string, RegExp][] = [
+      // A comment full of closing brackets must not mask the nesting that follows it.
+      [
+        `/*${"]".repeat(100_000)}*/{"x":${"[".repeat(100_000)}0${"]".repeat(100_000)}}`,
+        /^invalid JSON fixture: object root at offset 0$/,
+      ],
+      [`{"x":1}//${"[".repeat(100_000)}`, /^invalid JSON fixture: end of text at offset 7$/],
+      ['{"x":/* c */1}', /^invalid JSON fixture: value at offset 5$/],
+      ['{"x":[1,]}', /^invalid JSON fixture: value at offset 8$/],
+      ['{"x":1,}', /^invalid JSON fixture: property name at offset 7$/],
+      ['{"x":[1}', /^invalid JSON fixture: comma or closing bracket at offset 7$/],
+      ['{"x":1]', /^invalid JSON fixture: comma or closing brace at offset 6$/],
+      ['{"x":{"y":1}', /^invalid JSON fixture: comma or closing brace at offset 12$/],
+      ['{"x":1}}', /^invalid JSON fixture: end of text at offset 7$/],
+      [`{"x":${"[".repeat(100_000)}`, /^fixture nests deeper than 32 levels$/],
+      [`{${nbsp}"x":1}`, /^invalid JSON fixture: property name at offset 1$/],
+      ['{"x":1,"y":01}', /^invalid JSON fixture: comma or closing brace at offset 12$/],
+      ['{"x":"\\x"}', /^invalid JSON fixture: escape character at offset 6$/],
+      [deep(33), /^fixture nests deeper than 32 levels$/],
+    ];
+    for (const [text, reason] of cases) {
+      const error = refusal(text);
+      expect(error).toBeInstanceOf(TypeError);
+      expect((error as Error).message).toMatch(reason);
+    }
+    expect(parseStrictJsonObjectV1(deep(32), "fixture")).toHaveProperty("x");
+    expect(parseStrictJsonObjectV1(`{"s":"${"[".repeat(100)}\\"{"}`, "fixture")).toEqual({
+      s: `${"[".repeat(100)}"{`,
+    });
+  });
+
   it("rejects malformed or non-NFC Unicode without normalization", () => {
     expect(() => parseStrictJsonObjectV1('{"value":"\\ud800"}', "fixture")).toThrow(
       /Unicode|surrogate/i,

@@ -62,6 +62,26 @@ describe("collection preparation with definition-route coverage", () => {
     ).rejects.toThrow("Scanner collection preparation: publication batch count");
   });
 
+  it("refuses a deeply nested discovery document typed, before any recursive parse", async () => {
+    // 8,000 opening brackets fit the discovery byte limit.
+    const discoveryBytes = Buffer.from(`{"x":${"[".repeat(8_000)}`);
+    let refusal: unknown;
+    try {
+      await prepareScannerCollectionPublicationsV1({
+        sourceRoot: root,
+        catalogId: "mattpocock",
+        batches: [{ ...batch, discoveryBytes }],
+        now: "2026-09-24T00:00:00.000Z",
+        run: head,
+        coverage: coverage(),
+      });
+    } catch (error) {
+      refusal = error;
+    }
+    expect(refusal).toBeInstanceOf(TypeError);
+    expect((refusal as Error).message).toBe("publication discovery nests deeper than 32 levels");
+  });
+
   it("refuses coverage prepared for another catalog", async () => {
     await expect(
       prepareScannerCollectionPublicationsV1({

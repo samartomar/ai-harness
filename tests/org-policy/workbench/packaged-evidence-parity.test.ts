@@ -44,13 +44,18 @@ const NOT_NFC = /must already be NFC/;
 const LONE_SURROGATE = /lone high surrogate/;
 const NOT_CANONICAL = /must use canonical bytes/;
 const TOO_DEEP = /nests deeper than 32 levels/;
+const INVALID_JSON = /^invalid JSON packaged collection evidence/i;
 /** Core's expected outcome for every shared case, and the defect a refusal must name. */
 const EXPECTED: Record<string, readonly [Outcome, Outcome, RegExp?]> = {
   "asset-bound-twice": ["refused", "refused", /coverage asset bound twice/],
+  "bytes-block-comment": ["refused", "refused", INVALID_JSON],
   "bytes-bom": ["refused", "refused", /invalid JSON/],
+  "bytes-comment-masked-depth": ["refused", "refused", INVALID_JSON],
   "bytes-deep-nesting": ["refused", "refused", TOO_DEEP],
   "bytes-duplicate-key": ["refused", "refused", /duplicate JSON object key: inputFormat/],
   "bytes-escaped-not-nfc": ["refused", "refused", NOT_NFC],
+  "bytes-line-comment": ["refused", "refused", INVALID_JSON],
+  "bytes-nbsp-whitespace": ["refused", "refused", INVALID_JSON],
   "bytes-nesting-at-bound": ["refused", "refused", /unmappedDerivedAssets/],
   "bytes-nesting-over-bound": ["refused", "refused", TOO_DEEP],
   "bytes-number-exponent": ["refused", "refused", NOT_CANONICAL],
@@ -58,8 +63,12 @@ const EXPECTED: Record<string, readonly [Outcome, Outcome, RegExp?]> = {
   "bytes-number-overflow": ["refused", "refused", /numbers must be finite/],
   "bytes-proto-key": ["refused", "refused", /has an unsupported field __proto__/],
   "bytes-raw-lone-surrogate": ["refused", "refused", LONE_SURROGATE],
+  "bytes-trailing-comma-array": ["refused", "refused", INVALID_JSON],
+  "bytes-trailing-comma-object": ["refused", "refused", INVALID_JSON],
   "bytes-trailing-data": ["refused", "refused", /invalid JSON/],
   "bytes-trailing-whitespace": ["refused", "refused", NOT_CANONICAL],
+  "bytes-unbalanced-close": ["refused", "refused", INVALID_JSON],
+  "bytes-unclosed": ["refused", "refused", INVALID_JSON],
   "bytes-valid": ["accepted", "accepted"],
   "publication-other-ref": ["accepted", "refused", PUBLISHER],
   "publication-unreviewed-commit": ["accepted", "refused", PUBLISHER],

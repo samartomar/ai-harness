@@ -117,24 +117,103 @@ function nestedTooDeep(label: string, maxDepth: number): TypeError {
   return new TypeError(`${label} nests deeper than ${String(maxDepth)} levels`);
 }
 
+const JSON_NUMBER = /-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/y;
+const JSON_HEX4 = /^[0-9a-fA-F]{4}$/;
+const JSON_SIMPLE_ESCAPES = new Set(['"', "\\", "/", "b", "f", "n", "r", "t"]);
+
 /**
- * Refuses JSON text whose objects and arrays nest deeper than `maxDepth` (the root is level 1).
- * An iterative scan that skips string contents, so it runs before any recursive parser does.
+ * Checks the whole text against the grammar Catalog's strict JSON reader enforces, iteratively and
+ * before jsonc-parser runs: that parser recovers from errors (comments, trailing commas, stray
+ * characters, unbalanced delimiters) and keeps recursing, so it only ever sees text that is RFC 8259
+ * JSON with an object root, JSON whitespace only, ASCII `\u` escapes, and objects and arrays nested
+ * at most `STRICT_JSON_MAX_DEPTH_V1` levels (the root is level 1).
  */
-export function assertJsonTextDepthV1(text: string, label: string, maxDepth: number): void {
-  let depth = 0;
-  let inString = false;
-  for (let index = 0; index < text.length; index += 1) {
+function assertStrictJsonTextV1(text: string, label: string): void {
+  let index = 0;
+  const fail = (expected: string): never => {
+    throw new TypeError(`invalid JSON ${label}: ${expected} at offset ${String(index)}`);
+  };
+  const space = () => {
+    while (index < text.length && " \t\n\r".includes(text.charAt(index))) index += 1;
+  };
+  const string = () => {
+    index += 1;
+    for (;;) {
+      if (index >= text.length) fail("closing quote");
+      const code = text.charCodeAt(index);
+      if (code === 0x22) {
+        index += 1;
+        return;
+      }
+      if (code < 0x20) fail("escaped control character");
+      if (code !== 0x5c) index += 1;
+      else if (text.charAt(index + 1) === "u") {
+        if (!JSON_HEX4.test(text.slice(index + 2, index + 6))) fail("four hex digits");
+        index += 6;
+      } else if (JSON_SIMPLE_ESCAPES.has(text.charAt(index + 1))) index += 2;
+      else fail("escape character");
+    }
+  };
+  const key = () => {
+    space();
+    if (text.charAt(index) !== '"') fail("property name");
+    string();
+    space();
+    if (text.charAt(index) !== ":") fail("colon");
+    index += 1;
+  };
+  /** The open containers, innermost last: `}` for an object, `]` for an array. */
+  const closers: string[] = [];
+  space();
+  if (text.charAt(index) !== "{") fail("object root");
+  let expectValue = true;
+  for (;;) {
+    if (expectValue) {
+      space();
+      const char = text.charAt(index);
+      if (char === "{" || char === "[") {
+        if (closers.length >= STRICT_JSON_MAX_DEPTH_V1)
+          throw nestedTooDeep(label, STRICT_JSON_MAX_DEPTH_V1);
+        const closer = char === "{" ? "}" : "]";
+        closers.push(closer);
+        index += 1;
+        space();
+        if (text.charAt(index) === closer) {
+          index += 1;
+          closers.pop();
+          expectValue = false;
+        } else if (closer === "}") key();
+        continue;
+      }
+      if (char === '"') string();
+      else {
+        const word = ["true", "false", "null"].find((literal) => text.startsWith(literal, index));
+        if (word !== undefined) index += word.length;
+        else {
+          JSON_NUMBER.lastIndex = index;
+          const number = JSON_NUMBER.exec(text);
+          if (number === null) fail("value");
+          index += (number as RegExpExecArray)[0].length;
+        }
+      }
+      expectValue = false;
+      continue;
+    }
+    const closer = closers[closers.length - 1];
+    if (closer === undefined) break;
+    space();
     const char = text.charAt(index);
-    if (inString) {
-      if (char === "\\") index += 1;
-      else if (char === '"') inString = false;
-    } else if (char === '"') inString = true;
-    else if (char === "{" || char === "[") {
-      depth += 1;
-      if (depth > maxDepth) throw nestedTooDeep(label, maxDepth);
-    } else if (char === "}" || char === "]") depth -= 1;
+    if (char === ",") {
+      index += 1;
+      if (closer === "}") key();
+      expectValue = true;
+    } else if (char === closer) {
+      index += 1;
+      closers.pop();
+    } else fail(closer === "}" ? "comma or closing brace" : "comma or closing bracket");
   }
+  space();
+  if (index !== text.length) fail("end of text");
 }
 
 /**
@@ -188,6 +267,7 @@ function assertNoDuplicateKeys(node: JsonNode): void {
 }
 
 export function parseStrictJsonObjectV1(text: string, label: string): Record<string, unknown> {
+  assertStrictJsonTextV1(text, label);
   assertWellFormedNfcV1(text, `${label} JSON text`);
   const options = { allowTrailingComma: false, disallowComments: true } as const;
   const errors: ParseError[] = [];
