@@ -291,7 +291,7 @@ export function sequencedMcpInput(requests: readonly LocalMcpRequest[]): RunInpu
   return steps;
 }
 
-async function runRootAwareMcpSession(
+export async function runRootAwareMcpSession(
   ctx: PlanContext,
   run: Runner,
   id: "code-review-graph" | "codebase-memory-mcp" | "serena",
@@ -312,7 +312,7 @@ async function runRootAwareMcpSession(
   return result.stdout;
 }
 
-function sameCanonicalProject(candidate: unknown, expected: string): boolean {
+export function sameCanonicalProject(candidate: unknown, expected: string): boolean {
   if (typeof candidate !== "string" || !isAbsolute(candidate)) return false;
   try {
     const actual = realpathSync.native(candidate);
@@ -370,7 +370,7 @@ function playwrightMcpArgv(ctx: PlanContext): {
   };
 }
 
-function memoryProjectName(result: Record<string, unknown>, expectedRoot: string): string {
+export function memoryProjectName(result: Record<string, unknown>, expectedRoot: string): string {
   const text = verifyToolCall(result, "Codebase Memory list_projects");
   const inventory = parseNativeStrictJsonObjectV1(text, "Codebase Memory project inventory");
   if (
@@ -660,7 +660,7 @@ function verifyPlaywrightEvaluationResult(text: string): void {
   }
 }
 
-function structuredToolResult(
+export function structuredToolResult(
   result: Record<string, unknown>,
   label: string,
 ): Record<string, unknown> {
