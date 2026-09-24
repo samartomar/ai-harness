@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import {
   canonicalStrictJsonBytesV1,
+  canonicalStrictJsonSha256V1,
   deepFreezeStrictJsonV1,
   parseStrictJsonObjectV1,
 } from "../contract/strict-json-v1.js";
@@ -57,7 +58,17 @@ export interface PrepareScannerCollectionPublicationsV1Input {
   readonly run?: Runner;
   /** Test seam for the owner-only attestation staging directory. */
   readonly tempRoot?: string;
+  /**
+   * Coverage Core prepared from a baseline definition and a Catalog-compiled candidate
+   * bundle, for a pin the installed Catalog does not carry. Absent, the installed
+   * Catalog's registration is used. Its digest must bind its content.
+   */
+  readonly coverage?: ScannerCollectionPreparedCoverageV1;
 }
+
+export type ScannerCollectionPreparedCoverageV1 = ReturnType<
+  typeof prepareRegisteredScannerCatalogV1
+>;
 
 /** Opaque in-process result. JSON clones never carry the retained custody witness. */
 export interface PreparedScannerCollectionPublicationsV1 {
@@ -153,7 +164,7 @@ function assertInput(
 ): asserts input is PrepareScannerCollectionPublicationsV1Input {
   assertDataRecord(
     input,
-    ["sourceRoot", "catalogId", "batches", "now", "run", "tempRoot"],
+    ["sourceRoot", "catalogId", "batches", "now", "run", "tempRoot", "coverage"],
     ["sourceRoot", "catalogId", "batches", "now"],
     "input",
   );
@@ -330,8 +341,14 @@ export async function prepareScannerCollectionPublicationsV1(
   input: PrepareScannerCollectionPublicationsV1Input,
 ): Promise<PreparedScannerCollectionPublicationsV1> {
   assertInput(input);
-  const prepared = prepareRegisteredScannerCatalogV1(input.sourceRoot, input.catalogId);
-  if (prepared.coverage === undefined || prepared.coverageDigest === undefined)
+  const prepared =
+    input.coverage ?? prepareRegisteredScannerCatalogV1(input.sourceRoot, input.catalogId);
+  if (
+    prepared.coverage === undefined ||
+    prepared.coverageDigest === undefined ||
+    prepared.catalog.id !== input.catalogId ||
+    prepared.coverageDigest !== `sha256:${canonicalStrictJsonSha256V1(prepared.coverage)}`
+  )
     fail("collection coverage");
   const operational = !Object.hasOwn(input, "run") && !Object.hasOwn(input, "tempRoot");
   const run = input.run ?? defaultRunner;
