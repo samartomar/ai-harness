@@ -35,6 +35,7 @@
     "src/ecc-profile/default-mcp-runtime",
     "src/ecc-profile/markitdown-runtime",
     "src/tools/headroom-runtime",
+    "src/ecc/chrome-devtools-opt-out.cjs",
     "tools/cisco-skill-scanner",
     "tools/trust-scanners",
     "packs",

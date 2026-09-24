@@ -2,7 +2,8 @@ import { createHash, randomBytes } from "node:crypto";
 import { closeSync, fstatSync, lstatSync, openSync, readSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parse as parseToml } from "smol-toml";
 import { AihError } from "../errors.js";
 import { readIfExists } from "../internals/fsxn.js";
@@ -981,50 +982,6 @@ export interface ChromeDevtoolsOptOutRefusal {
   unparseable?: true;
 }
 
-/**
- * The one chrome-devtools-mcp opt-out predicate. It is plain JavaScript so the
- * plan (in process) and the Codex merge script (a `node -e` child at apply time)
- * run this same source over the same TOML parser (smol-toml): every TOML
- * spelling — quoted, dotted, inline or escaped — gets one verdict at both stages.
- * `chromeDevtoolsOptOutMissing` returns undefined for a server that does not
- * launch chrome-devtools-mcp, otherwise the opt-outs it lacks.
- */
-export const CHROME_DEVTOOLS_OPT_OUT_PREDICATE_SOURCE = String.raw`
-function chromeDevtoolsOptOutMissing(server) {
-  const optOuts = ["CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS", "CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS"];
-  const mentions = (value) => typeof value === "string" ? /chrome-devtools-mcp/i.test(value) : Array.isArray(value) ? value.some(mentions) : value !== null && typeof value === "object" ? Object.values(value).some(mentions) : false;
-  if (!mentions(server)) return undefined;
-  const table = (value) => value !== null && typeof value === "object" && !Array.isArray(value) ? value : {};
-  const env = table(table(server).env);
-  return optOuts.filter((name) => env[name] !== "1");
-}
-function chromeDevtoolsOptOutRefusals(configs, parse, exempt) {
-  const optOuts = ["CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS", "CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS"];
-  const decoded = (text) => text.replace(/\\u([0-9A-Fa-f]{4})|\\U([0-9A-Fa-f]{8})/g, (match, short, long) => { try { return String.fromCodePoint(Number.parseInt(short || long, 16)); } catch { return match; } });
-  const refusals = [];
-  for (const { scope, configPath, raw } of configs) {
-    if (raw === undefined) continue;
-    let document;
-    try { document = parse(raw); } catch {
-      if (/chrome-devtools-mcp/i.test(decoded(raw))) refusals.push({ scope, configPath, entry: "(unparseable config)", missing: optOuts.slice(), unparseable: true });
-      continue;
-    }
-    const servers = document.mcp_servers;
-    if (servers === undefined) continue;
-    if (servers === null || typeof servers !== "object" || Array.isArray(servers)) {
-      if (chromeDevtoolsOptOutMissing(servers) !== undefined) refusals.push({ scope, configPath, entry: "(non-table MCP representation)", missing: optOuts.slice() });
-      continue;
-    }
-    for (const entry of Object.keys(servers)) {
-      const missing = chromeDevtoolsOptOutMissing(servers[entry]);
-      if (missing === undefined || missing.length === 0 || exempt(scope, entry)) continue;
-      refusals.push({ scope, configPath, entry, missing });
-    }
-  }
-  return refusals;
-}
-`;
-
 interface ChromeDevtoolsOptOutPredicate {
   missing(server: unknown): ChromeDevtoolsMcpOptOut[] | undefined;
   refusals(
@@ -1038,10 +995,38 @@ interface ChromeDevtoolsOptOutPredicate {
   ): ChromeDevtoolsOptOutRefusal[];
 }
 
-// Evaluates the constant source above, never input, so both stages share one predicate.
-const chromeDevtoolsOptOutPredicate = new Function(
-  `${CHROME_DEVTOOLS_OPT_OUT_PREDICATE_SOURCE}\nreturn { missing: chromeDevtoolsOptOutMissing, refusals: chromeDevtoolsOptOutRefusals };`,
-)() as ChromeDevtoolsOptOutPredicate;
+/**
+ * The absolute path of the shipped opt-out predicate module in aih's own
+ * installation: `src/ecc/` beside this module from source, or the packaged
+ * `src/ecc/` beside `dist/` from the bundle. Config input never selects it.
+ */
+export function chromeDevtoolsOptOutPredicatePath(): string {
+  const moduleDirectory = dirname(fileURLToPath(import.meta.url));
+  return basename(moduleDirectory) === "dist"
+    ? resolve(moduleDirectory, "../src/ecc/chrome-devtools-opt-out.cjs")
+    : resolve(moduleDirectory, "chrome-devtools-opt-out.cjs");
+}
+
+let loadedChromeDevtoolsOptOutPredicate: ChromeDevtoolsOptOutPredicate | undefined;
+
+/** Plan time loads the same file, by the same path, as the apply-time merge child. */
+function chromeDevtoolsOptOutPredicate(): ChromeDevtoolsOptOutPredicate {
+  if (loadedChromeDevtoolsOptOutPredicate !== undefined) return loadedChromeDevtoolsOptOutPredicate;
+  const path = chromeDevtoolsOptOutPredicatePath();
+  const loaded = createRequire(import.meta.url)(path) as Record<string, unknown> | undefined;
+  const missing = loaded?.chromeDevtoolsOptOutMissing;
+  const refusals = loaded?.chromeDevtoolsOptOutRefusals;
+  if (typeof missing !== "function" || typeof refusals !== "function")
+    throw new AihError(
+      `Chrome DevTools MCP opt-out predicate is unavailable: ${path}`,
+      "AIH_CONFIG",
+    );
+  loadedChromeDevtoolsOptOutPredicate = {
+    missing: missing as ChromeDevtoolsOptOutPredicate["missing"],
+    refusals: refusals as ChromeDevtoolsOptOutPredicate["refusals"],
+  };
+  return loadedChromeDevtoolsOptOutPredicate;
+}
 
 function describeMissingOptOuts(missing: readonly ChromeDevtoolsMcpOptOut[]): string {
   return missing.map((name) => `${name}="1"`).join(" and ");
@@ -1051,7 +1036,7 @@ function describeMissingOptOuts(missing: readonly ChromeDevtoolsMcpOptOut[]): st
 export function assertChromeDevtoolsOptOuts(servers: CodexScopedMcpServers): void {
   for (const [name, server] of Object.entries(servers)) {
     if (server.type !== "stdio") continue;
-    const missing = chromeDevtoolsOptOutPredicate.missing(server);
+    const missing = chromeDevtoolsOptOutPredicate().missing(server);
     if (missing !== undefined && missing.length > 0)
       throw new AihError(
         `refusing to emit Codex MCP server "${name}": it launches chrome-devtools-mcp without ${describeMissingOptOuts(missing)}`,
@@ -1086,7 +1071,7 @@ export function codexChromeDevtoolsOptOutRefusals(
   const claimed = aihClaimedCodexMcpServers(ctx);
   const projectConfig = codexProjectConfigPath(ctx);
   const userConfig = join(codexHomeDir(ctx), "config.toml");
-  return chromeDevtoolsOptOutPredicate.refusals(
+  return chromeDevtoolsOptOutPredicate().refusals(
     [
       { scope: "project", configPath: projectConfig, raw: readIfExists(projectConfig) },
       { scope: "user", configPath: userConfig, raw: readIfExists(userConfig) },

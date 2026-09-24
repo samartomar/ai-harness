@@ -14,11 +14,13 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { inflateRawSync } from "node:zlib";
 import { parse } from "smol-toml";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   ChromeDevtoolsOptOutRefusalRecord,
+  chromeDevtoolsOptOutPredicatePath,
   codexAgentsBlockRemovalAction,
   codexChromeDevtoolsOptOutActions,
   codexChromeDevtoolsOptOutRefusals,
@@ -2226,6 +2228,7 @@ describe("Codex managed destination safety", () => {
         projectAfterPlan?: string;
         mergeHelper?: string;
         afterChild?: () => void;
+        rewriteArgv?: (argv: string[]) => string[];
       } = {},
     ) {
       const home = join(tmp, `${label}-home`);
@@ -2277,7 +2280,8 @@ describe("Codex managed destination safety", () => {
       let result: SpawnSyncReturns<string>;
       let check: Check | undefined;
       try {
-        result = spawnSync(process.execPath, action.argv.slice(1), {
+        const argv = options.rewriteArgv?.(action.argv) ?? action.argv;
+        result = spawnSync(process.execPath, argv.slice(1), {
           cwd: repo,
           encoding: "utf8",
         });
@@ -2525,6 +2529,41 @@ describe("Codex managed destination safety", () => {
           rmSync(record.path, { force: true });
         }
       });
+    });
+
+    const shippedPredicate = fileURLToPath(
+      new URL("../../src/ecc/chrome-devtools-opt-out.cjs", import.meta.url),
+    );
+
+    it("loads the opt-out predicate from the shipped module at plan and apply time", () => {
+      const run = runDirectApply("predicate-module", "");
+
+      expect(run.result.status, run.result.stderr).toBe(0);
+      expect(chromeDevtoolsOptOutPredicatePath()).toBe(shippedPredicate);
+      expect(run.action.argv).toContain(shippedPredicate);
+      expect(execBlob([run.action])).not.toContain("function chromeDevtoolsOptOutMissing");
+      expect(
+        readFileSync(fileURLToPath(new URL("../../src/ecc/codex.ts", import.meta.url)), "utf8"),
+      ).not.toContain("new Function(");
+      const manifest = JSON.parse(
+        readFileSync(fileURLToPath(new URL("../../package.json", import.meta.url)), "utf8"),
+      ) as { files: string[] };
+      expect(manifest.files).toContain("src/ecc/chrome-devtools-opt-out.cjs");
+    });
+
+    it("fails closed when the predicate module is not the opt-out predicate", () => {
+      const impostor = join(tmp, "impostor-predicate.cjs");
+      writeFileSync(impostor, "module.exports = {};\n", "utf8");
+      const run = runDirectApply("predicate-impostor", "", {
+        projectAfterPlan: unsafeProject,
+        rewriteArgv: (argv) => argv.map((arg) => (arg === shippedPredicate ? impostor : arg)),
+      });
+
+      expect(run.result.status).not.toBe(0);
+      expect(run.result.status).not.toBe(78);
+      expect(run.result.stderr).toContain("opt-out predicate is unavailable");
+      expect(failureCheckOf(run).code).toBeUndefined();
+      expect(run.config).toBe("");
     });
 
     describe("gives the same verdict at plan and apply time for every TOML spelling", () => {
