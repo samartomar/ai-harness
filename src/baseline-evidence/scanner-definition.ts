@@ -19,6 +19,7 @@ import {
   collectionCoverageV1,
   collectionFilesV1,
   enforceAcquiredCoveragePathsV1,
+  inventoryCollectionCoverageV1,
   registeredCollectionInputV1,
 } from "./scanner-catalog-consumer.js";
 import {
@@ -411,7 +412,8 @@ export function prepareDefinitionScannerCoverageV1(
   const { catalog } = resolution;
   if (resolution.route === "installed")
     fail(`the installed Catalog carries ${id}@${catalog.pinnedSha}; run without candidate inputs`);
-  if (collection !== undefined && input.vendorLockPath !== undefined)
+  const collectionSubject = SCANNER_DEFINITION_SOURCES_V1[id].kind === "collection";
+  if (collectionSubject && input.vendorLockPath !== undefined)
     fail("--vendor-lock applies only to ecc and superpowers");
   const admitted = admittedSourceFromCandidateBundleV1(
     readJsonFile(input.sourceBundlePath, "candidate source bundle", 64 * 1024 * 1024),
@@ -425,6 +427,12 @@ export function prepareDefinitionScannerCoverageV1(
     return enforceAcquiredCoveragePathsV1(
       input.sourceRoot,
       collectionCoverageV1(input.sourceRoot, collection, admitted),
+    );
+  // A collection given its whole-repository inventory: coverage over that same partition.
+  if (collectionSubject)
+    return enforceAcquiredCoveragePathsV1(
+      input.sourceRoot,
+      inventoryCollectionCoverageV1(input.sourceRoot, catalog, admitted),
     );
   if (id !== "ecc" && id !== "superpowers") return fail(`${id} is not a framework`);
   if (input.vendorLockPath === undefined)

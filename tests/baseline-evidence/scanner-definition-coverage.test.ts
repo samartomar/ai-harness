@@ -1,13 +1,22 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { BaselineCatalog } from "../../src/baseline-evidence/catalog.js";
 import { baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
-import { prepareDefinitionScannerCoverageV1 } from "../../src/baseline-evidence/scanner-definition.js";
+import { createCoreBaselineVetRequests } from "../../src/baseline-evidence/scanner-consumer.js";
+import {
+  prepareDefinitionScannerCoverageV1,
+  resolveScannerDefinitionV1,
+} from "../../src/baseline-evidence/scanner-definition.js";
 import { loadCatalogAuthoringBundleV1 } from "../../src/catalog-package/authoring-bundle.js";
 import { canonicalStrictJsonSha256V1 } from "../../src/contract/strict-json-v1.js";
-import { digest, sealedSingleSourceBundle } from "./candidate-bundle-fixture.js";
+import {
+  digest,
+  sealedComponentSourceBundle,
+  sealedSingleSourceBundle,
+} from "./candidate-bundle-fixture.js";
 
 interface PackagedRecord {
   source: { repository: string; commit: string };
@@ -184,6 +193,126 @@ describe("definition-route Scanner coverage", () => {
       ).toThrow(
         `baseline definition: the installed Catalog carries mattpocock@${PIN}; run without candidate inputs`,
       );
+    });
+  });
+
+  describe("collection inventories at new pins (B6)", () => {
+    const INVENTORIES = fileURLToPath(
+      new URL("../fixtures/baseline-evidence/inventories/", import.meta.url),
+    );
+    const inventory = (name: string): BaselineCatalog =>
+      JSON.parse(readFileSync(join(INVENTORIES, `${name}.inventory.json`), "utf8"));
+
+    /** A checkout holding every inventory path: listed files, or a directory with one file. */
+    function checkout(catalog: BaselineCatalog): string {
+      const source = join(root, catalog.id);
+      for (const component of catalog.components)
+        for (const path of component.paths) {
+          const file =
+            component.skillContent !== true && (component.paths.length > 1 || path.includes("/"));
+          const target = file
+            ? join(source, path)
+            : join(source, path, component.skillContent ? "SKILL.md" : "x.txt");
+          mkdirSync(dirname(target), { recursive: true });
+          writeFileSync(target, `${component.id}\n`);
+        }
+      return source;
+    }
+
+    const bundleFor = (catalog: BaselineCatalog, components = catalog.components) =>
+      sealedComponentSourceBundle(
+        catalog.id,
+        catalog.pinnedSha,
+        components.map((component) => ({
+          componentId: component.id,
+          originalPath: component.paths[0] as string,
+          label: component.id,
+          detail: component.id.replace(/[^a-z0-9-]/g, "-"),
+        })),
+      );
+
+    const prepareInventory = (
+      catalog: BaselineCatalog,
+      source: string,
+      bundle: unknown,
+      extra: { vendorLockPath?: string } = {},
+    ) =>
+      prepareDefinitionScannerCoverageV1(
+        {
+          sourceRoot: source,
+          catalogId: catalog.id,
+          definitionPath: file(`${catalog.id}.inventory.json`, catalog),
+          head: catalog.pinnedSha,
+          sourceBundlePath: file(`${catalog.id}.bundle.json`, bundle),
+          ...extra,
+        },
+        notCarried,
+      );
+
+    it.each([
+      ["ponytail-1d95ff7d", "https://github.com/DietrichGebert/ponytail"],
+      ["mattpocock-c55ee460", "https://github.com/mattpocock/skills"],
+    ])("derives %s coverage from the inventory that authored the T1 requests", (name, locator) => {
+      const catalog = inventory(name);
+      const source = checkout(catalog);
+      const prepared = prepareInventory(catalog, source, bundleFor(catalog));
+      // The T2 partition is the inventory itself, so its expected publication layout is
+      // exactly the requests T1 authored from the same --definition.
+      const t1 = resolveScannerDefinitionV1(
+        {
+          sourceRoot: source,
+          catalogId: catalog.id,
+          definitionPath: file(`${name}.t1.json`, catalog),
+          head: catalog.pinnedSha,
+        },
+        notCarried,
+      );
+      expect(prepared.catalog).toEqual(catalog);
+      expect(createCoreBaselineVetRequests(source, prepared.catalog)).toEqual(
+        createCoreBaselineVetRequests(source, t1.catalog),
+      );
+      expect(prepared.coverage.components.map((component) => component.componentId)).toEqual(
+        catalog.components.map((component) => component.id),
+      );
+      for (const [index, component] of prepared.coverage.components.entries()) {
+        expect(component.paths).toEqual(catalog.components[index]?.paths);
+        expect(component.subject.assetId).toBe(`${catalog.id}/${component.componentId}`);
+      }
+      expect(prepared.coverage).toMatchObject({
+        compilerInputDigest: `sha256:${canonicalStrictJsonSha256V1(catalog)}`,
+        source: { id: `source:${catalog.id}`, revisionId: catalog.pinnedSha, repository: locator },
+        repository: `${catalog.owner}/${catalog.repo}`,
+        pinnedCommit: catalog.pinnedSha,
+      });
+      expect(prepared.coverageDigest).toBe(
+        `sha256:${canonicalStrictJsonSha256V1(prepared.coverage)}`,
+      );
+    });
+
+    it("refuses a bundle compiled from another partition", () => {
+      const catalog = inventory("ponytail-1d95ff7d");
+      const source = checkout(catalog);
+      const [first, ...rest] = catalog.components;
+      expect(() => prepareInventory(catalog, source, bundleFor(catalog, rest))).toThrow(
+        `Scanner provider coverage: inventory component ${first?.id} has no compiled asset ponytail/${first?.id}`,
+      );
+      const extra = bundleFor(catalog, [
+        ...catalog.components,
+        { id: "hook:session-start", paths: ["hooks"] },
+      ]);
+      expect(() => prepareInventory(catalog, source, extra)).toThrow(
+        "Scanner provider coverage: the inventory does not cover admitted upstream asset ponytail/hook:session-start",
+      );
+    });
+
+    it("refuses a vendor lock for a collection inventory", () => {
+      const catalog = inventory("mattpocock-c55ee460");
+      const source = checkout(catalog);
+      expect(() =>
+        prepareInventory(catalog, source, bundleFor(catalog), {
+          vendorLockPath: file("lock.json", {}),
+        }),
+      ).toThrow("baseline definition: --vendor-lock applies only to ecc and superpowers");
     });
   });
 

@@ -6,8 +6,32 @@ export const digest = (value: string) =>
 
 /** A single-source bundle sealed the way the Catalog seals one (self digest over the bare bundle). */
 export function sealedSingleSourceBundle(id: string, revision: string, skills: readonly string[]) {
+  return sealedComponentSourceBundle(
+    id,
+    revision,
+    skills.map((skill) => ({
+      componentId: `skill:${skill}`,
+      originalPath: `skills/${skill}/SKILL.md`,
+      label: skill,
+      detail: skill,
+    })),
+  );
+}
+
+/** The same sealed bundle with one upstream asset `<id>/<componentId>` per named component. */
+export function sealedComponentSourceBundle(
+  id: string,
+  revision: string,
+  components: readonly {
+    componentId: string;
+    originalPath: string;
+    label: string;
+    detail: string;
+  }[],
+) {
   const sourceId = `source:${id}`;
-  const assetIds = skills.map((skill) => `${id}/skill:${skill}`);
+  const assetIds = components.map((component) => `${id}/${component.componentId}`);
+  const skills = components.map((component) => component.detail);
   const bare = {
     version: "authoring-catalog-bundle/v1",
     sources: {
@@ -28,10 +52,10 @@ export function sealedSingleSourceBundle(id: string, revision: string, skills: r
           sourceId,
           sourceRevisionId: revision,
           contentDigest: digest(`${assetIds[index]}`),
-          originalPath: `skills/${skill}/SKILL.md`,
+          originalPath: components[index]?.originalPath,
           derivation: "upstream",
           kind: "skill",
-          label: skill,
+          label: components[index]?.label,
           detailChunkId: `detail:${skill}`,
           declaredHostCapabilities: [],
           authoring: { action: "record-selection", supportedTargets: [] },

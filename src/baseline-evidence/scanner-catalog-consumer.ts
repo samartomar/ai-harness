@@ -308,16 +308,67 @@ export function collectionCoverageV1(
   if (admitted.source.revision.id !== input.source.commit) {
     throw new TypeError("Scanner source differs from the admitted Catalog revision.");
   }
+  return declaredCollectionCoverageV1(
+    sourceRoot,
+    catalog,
+    `sha256:${canonicalStrictJsonSha256V1(input)}`,
+    input.source.repository,
+    admitted,
+  );
+}
+
+/**
+ * Collection coverage when the Scanner requests were authored from the disjoint
+ * whole-repository inventory (`--definition` in inventory form). The coverage partition is
+ * that inventory itself, so the expected publication layout equals the requests T1 authored.
+ * Each inventory component binds the admitted asset `<id>/<component id>`, and every
+ * upstream asset of the admitted source must be one of them: a bundle compiled from another
+ * partition is refused, never mapped.
+ */
+export function inventoryCollectionCoverageV1(
+  sourceRoot: string,
+  catalog: BaselineCatalog,
+  admitted: AdmittedCatalogSourceV1,
+) {
+  if (admitted.source.revision.id !== catalog.pinnedSha) {
+    throw new TypeError("Scanner source differs from the admitted Catalog revision.");
+  }
+  const assetIds = new Set(admitted.assets.map((asset) => asset.id));
+  const expected = new Set(catalog.components.map((component) => `${catalog.id}/${component.id}`));
+  for (const component of catalog.components)
+    if (!assetIds.has(`${catalog.id}/${component.id}`))
+      fail(
+        `inventory component ${component.id} has no compiled asset ${catalog.id}/${component.id}`,
+      );
+  for (const asset of admitted.assets)
+    if (asset.derivation === "upstream" && !expected.has(asset.id))
+      fail(`the inventory does not cover admitted upstream asset ${asset.id}`);
+  return declaredCollectionCoverageV1(
+    sourceRoot,
+    catalog,
+    `sha256:${canonicalStrictJsonSha256V1(catalog)}`,
+    `https://github.com/${catalog.owner}/${catalog.repo}`,
+    admitted,
+  );
+}
+
+function declaredCollectionCoverageV1(
+  sourceRoot: string,
+  catalog: BaselineCatalog,
+  compilerInputDigest: string,
+  repository: string,
+  admitted: AdmittedCatalogSourceV1,
+) {
   const coverage = {
     version: "workbench-scanner-coverage/v1" as const,
     authority: "none" as const,
     scope: "declared-source-files" as const,
-    compilerInputDigest: `sha256:${canonicalStrictJsonSha256V1(input)}`,
+    compilerInputDigest,
     source: {
       id: admitted.source.id,
       revisionId: admitted.source.revision.id,
       contentDigest: admitted.source.revision.contentDigest,
-      repository: input.source.repository,
+      repository,
       inputFormat: admitted.source.inputFormat,
     },
     repository: `${catalog.owner}/${catalog.repo}`,
