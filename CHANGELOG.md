@@ -130,12 +130,21 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   path, subject or root that the shard exemption later reads.
 - Precomputed SARIF must name the analyzer Core pins under the one profile Core requires for it,
   no longer any pinned profile: the caller's `uvExecutionProfileId` when stated, otherwise Core's
-  default `host-process-uv-v1`; the Scanner baseline consumer requires `linux-namespace-uv-v1`,
-  the profile Scan's baseline runtime runs Semgrep and Cisco under. An annex naming another
-  profile's identity (such as Cisco's host-profile `knownGap` lock under the namespace profile)
-  fails the detector with a message naming both profiles. SkillSpector's image rule is unchanged.
-  A baseline vet that aborts for a missing required analyzer now also names detectors the
-  source-wide scan graded `skip`, not only `fail`.
+  default `host-process-uv-v1`. An annex naming another profile's identity (such as Cisco's
+  host-profile `knownGap` lock under the namespace profile) fails the detector with a message
+  naming both profiles. SkillSpector's image rule is unchanged. A baseline vet that aborts for a
+  missing required analyzer now also names detectors the source-wide scan graded `skip`, not only
+  `fail`.
+- Scanner-publication (baseline-vet) annexes are checked against Scan's baseline rule (decision
+  D24): the Scanner consumer marks them `precomputedSarifOrigin: "scanner-baseline-vet"`, and Core
+  recomputes the subject over the consumer's source root as every file outside the top-level
+  `.git` for Semgrep, SkillSpector and Cisco (Cisco as the whole-snapshot skill-directory scan).
+  The analyzer must be the one Scan's batch runs (`SCANNER_BASELINE_VET_EXECUTION_PROFILES_V1`,
+  mirroring Scan's `BASELINE_BATCH_EXECUTION_PROFILES_V1`): the `linux-namespace-uv-v1` identity for
+  Semgrep and Cisco, and `docker-hardened-skillspector-v1` (no lock, the pinned revision at an
+  accepted digest) for SkillSpector. Another profile's identity, an annex for any other detector,
+  or a subject that includes `.git` fails the detector; an evidence-less annex stays
+  `completion-evidence-absent`. Delegated runs and inline precomputed SARIF are unchanged.
 - An org-policy `trust.internalScopes` entry must be an npm scope (`@acme`, optionally
   without the `@`, surrounding whitespace ignored); `aih policy validate` now rejects a
   malformed one such as `@my team` with its field path instead of ignoring it, and Scan

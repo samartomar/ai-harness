@@ -154,11 +154,22 @@ covers the declared selection only.
 Precomputed SARIF (a Scanner annex) meets the subject check too, against the tree being
 scanned, and its analyzer must be the one Core pins for the detector under the profile Core
 requires for that evidence: the uv profile the caller states (`uvExecutionProfileId`, from
-policy `trust.uvExecutionProfile`), otherwise Core's default `host-process-uv-v1`. Scanner
-publications consumed as baseline evidence require `linux-namespace-uv-v1`, the profile Scan's
-baseline runtime runs Semgrep and Cisco under. An annex naming another profile's pinned analyzer
-(for example Cisco's host-profile lock when the namespace profile is required) fails the
-detector, naming both profiles. SkillSpector's identity is its image, as for a delegated run.
+policy `trust.uvExecutionProfile`), otherwise Core's default `host-process-uv-v1`. An annex
+naming another profile's pinned analyzer (for example Cisco's host-profile lock when the
+namespace profile is required) fails the detector, naming both profiles. SkillSpector's identity
+is its image, as for a delegated run.
+
+A Scanner publication's (baseline-vet) annexes, consumed as baseline evidence, follow Scan's
+baseline rule (decision D24) and nothing else. Scan's batch analyzes a snapshot that never holds a
+top-level `.git`, so for Semgrep, SkillSpector and Cisco alike Core recomputes the subject over the
+consumer's source root as every file and file link outside the top-level `.git` (a file link is
+keyed by its path and hashed over its target; a directory link contributes nothing). Cisco here is
+the skill-directory scan of the whole snapshot, never a job set or shard. The analyzer must be the
+one Scan's batch runs: `linux-namespace-uv-v1` for Semgrep and Cisco, and for SkillSpector
+`docker-hardened-skillspector-v1` (no lock; the pinned revision at a digest Core accepts). Any
+other profile's pinned identity, an annex for another detector, or a subject that includes `.git`
+fails the detector; an annex without evidence is still `completion-evidence-absent`. Inline
+precomputed SARIF and delegated runs keep their per-detector rules.
 SARIF with no completion evidence at all, which is every publication made before Scan wrote it,
 is never counted complete: it is `trust.detector-unavailable` with reason
 `completion-evidence-absent` and must be republished with evidence. A joined Cisco shard log

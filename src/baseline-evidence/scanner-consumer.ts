@@ -27,17 +27,6 @@ import { vetBaselineCatalog } from "./vet.js";
 const SCANNER_ANALYZER_ORDER = ["aih-native", "skillspector", "semgrep", "cisco"] as const;
 const EXTERNAL_SCANNER_ANALYZERS = ["skillspector", "semgrep", "cisco"] as const;
 
-/**
- * The uv profile Scan's baseline runtime runs Semgrep and Cisco under, so the
- * only one whose pinned analyzer a Scanner annex may name. A baseline vet batch
- * executes with `createBaselineAnalyzerExecutionV1()` and no profile
- * (aih-scan sep/scan-b2 47f5f47, src/baseline/batch-v1.ts:738); with no profile
- * the runtime takes its hardened implementations (src/baseline/runtime-v1.ts:2057,
- * 2079, 2089), which run only as `linux-namespace-uv-v1` (runtime-v1.ts:1776 for
- * Semgrep, 1878 for Cisco). SkillSpector's identity is its image, not a profile.
- */
-const SCAN_BASELINE_RUNTIME_UV_PROFILE = "linux-namespace-uv-v1" as const;
-
 export interface VerifiedScannerBaselineInput {
   sourceRoot: string;
   catalog: BaselineCatalog;
@@ -355,7 +344,9 @@ export async function consumeVerifiedScannerBaselineBatchesWithClaims(
         ...options,
         env: {},
         platform: "linux",
-        uvExecutionProfileId: SCAN_BASELINE_RUNTIME_UV_PROFILE,
+        // Baseline-vet annexes: the baseline subject (no top-level .git) and the
+        // profiles Scan's batch runs (C2a §1.6 [Scan: S2j], decision D24).
+        precomputedSarifOrigin: "scanner-baseline-vet",
         run: forbiddenRunner,
         detectors,
         precomputedDetectorSarif,

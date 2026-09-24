@@ -182,6 +182,30 @@ function inGitDirectory(path: string): boolean {
   return path === ".git" || path.startsWith(".git/");
 }
 
+/** The detectors a baseline vet publishes a SARIF annex for (C2a §1.6 [Scan: S2j]). */
+export const BASELINE_VET_ANNEX_DETECTORS_V1: readonly string[] = Object.freeze([
+  "detector.semgrep",
+  "detector.skillspector",
+  "detector.cisco",
+]);
+
+/**
+ * The file set F of a Scanner-publication (baseline-vet) annex (C2a §1.6
+ * [Scan: S2j], decision D24): the batch's analyzer snapshot never holds a
+ * top-level `.git`, so for Semgrep, SkillSpector and Cisco alike F is every
+ * sealed file outside it, over the whole baseline source root (Cisco's
+ * skill-directory scan of the whole snapshot, never a job set). Links follow
+ * the seal. Any other detector has no baseline annex.
+ */
+export function baselineVetAnnexSubjectFilesV1(
+  detectorId: string,
+  sourceRoot: string,
+): readonly ScanSubjectFileV1[] {
+  if (!BASELINE_VET_ANNEX_DETECTORS_V1.includes(detectorId))
+    fail(`Core has no baseline-vet annex subject rule for ${detectorId}`);
+  return sealedScanSubjectFilesV1(sourceRoot).filter((file) => !inGitDirectory(file.path));
+}
+
 /**
  * Detectors whose capability declares `emptySource: "completes"`: only these
  * may state zero analyzed files, and only for an empty subject.

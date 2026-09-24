@@ -103,8 +103,8 @@ function largeSourceFixture(count = SCANNER_BASELINE_COMPONENT_BATCH_LIMIT + 1) 
  * A Scanner result for `request` over the fixture at `root`. Its SARIF annexes
  * carry completion evidence v1 SELF-DERIVED for `root` (these tests are about
  * custody and signatures, not the completion boundary), so Core counts them.
- * The uv analyzers' evidence names the identity Core pins under `uvProfile`:
- * by default `linux-namespace-uv-v1`, the profile Scan's baseline runtime runs.
+ * Each annex is a baseline-vet annex (the baseline subject, Scan's batch profiles);
+ * `uvProfile` names another profile whose pinned identity an annex states instead.
  */
 function buildResult(
   root: string,
@@ -138,9 +138,12 @@ function buildResult(
               },
               SCAN_DETECTOR_IDS[analyzer as TrustDetectorName],
               root,
-              analyzer === "semgrep" || analyzer === "cisco"
-                ? { executionProfileId: uvProfile[analyzer] ?? "linux-namespace-uv-v1" }
-                : {},
+              {
+                origin: "scanner-baseline-vet",
+                ...(uvProfile[analyzer] === undefined
+                  ? {}
+                  : { executionProfileId: uvProfile[analyzer] }),
+              },
             ),
       ),
       "utf8",
@@ -471,6 +474,27 @@ describe("Core Scanner baseline consumer", () => {
     ).rejects.toThrow(
       "precomputed SARIF for detector.cisco is refused: completion evidence names the analyzer Core pins for detector.cisco under host-process-uv-v1 (2.0.14+uvlock.108c4f78340d with uv.lock 108c4f78340db9488bd73a03967055b19cdd3e8ece16ed31289e03f89e27d58f); Core requires the one it pins under linux-namespace-uv-v1 (2.0.14+uvlock.aaba1f326049 with uv.lock aaba1f3260494b09dfc62fd6c309558b901b8ad9411587d534a4f09721d3b4a1)",
     );
+  });
+
+  it("checks publication annexes against the baseline subject, which leaves out the top-level .git", async () => {
+    const { root, catalog } = sourceFixture();
+    mkdirSync(join(root, ".git"), { recursive: true });
+    writeFileSync(join(root, ".git", "HEAD"), "ref: refs/heads/main\n");
+    const request = createCoreBaselineVetRequest(root, catalog);
+    const result = buildResult(root, request);
+    const signed = signedFixture(request, result);
+
+    const evidence = await consumeVerifiedScannerBaseline({
+      sourceRoot: root,
+      catalog,
+      request,
+      result,
+      envelope: signed.envelope,
+      roots: signed.roots,
+      expected: signed.expected,
+    });
+
+    expect(evidence.components.map((component) => component.verdict)).toEqual(["pass", "pass"]);
   });
 
   it("rejects source drift, replay, and a signed but unpinned analyzer identity", async () => {

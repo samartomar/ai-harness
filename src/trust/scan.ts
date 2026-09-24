@@ -47,6 +47,7 @@ import {
 } from "./artifact-intake.js";
 import {
   type PrecomputedDetectorSarifV1,
+  type PrecomputedSarifOriginV1,
   resolveScanTrustLintRouteV1,
   runMcpConfigDetectors,
   runScanTrustLintV1,
@@ -152,6 +153,8 @@ export interface ScanTrustTreeOptions {
   precomputedDetectorSarif?: Readonly<
     Partial<Record<TrustDetectorName, PrecomputedDetectorSarifV1>>
   >;
+  /** Where `precomputedDetectorSarif` came from; omitted is `inline` (`TrustDetectorOptions.precomputedSarifOrigin`). */
+  precomputedSarifOrigin?: PrecomputedSarifOriginV1;
   run?: Runner;
   sandboxSmokeShape?: SandboxSmokeShape;
   skillspectorImageApprovals?: readonly SkillSpectorImageApproval[];
@@ -545,6 +548,7 @@ function normalizeScanOptions(options: ScanTrustTreeOptions = {}): {
   precomputedDetectorSarif?: Readonly<
     Partial<Record<TrustDetectorName, PrecomputedDetectorSarifV1>>
   >;
+  precomputedSarifOrigin?: PrecomputedSarifOriginV1;
   run?: Runner;
   sandboxSmokeShape?: SandboxSmokeShape;
   skillspectorImageApprovals: readonly SkillSpectorImageApproval[];
@@ -563,6 +567,7 @@ function normalizeScanOptions(options: ScanTrustTreeOptions = {}): {
     requiredDetectors: options.requiredDetectors ?? [],
     detectors: options.detectors,
     precomputedDetectorSarif: options.precomputedDetectorSarif,
+    precomputedSarifOrigin: options.precomputedSarifOrigin,
     run: options.run,
     sandboxSmokeShape: options.sandboxSmokeShape,
     skillspectorImageApprovals: options.skillspectorImageApprovals ?? [],
@@ -1009,6 +1014,7 @@ export async function scanTrustTreeWithAnalyzers(
     requiredDetectors,
     detectors,
     precomputedDetectorSarif,
+    precomputedSarifOrigin,
     run,
     sandboxSmokeShape,
     skillspectorImageApprovals,
@@ -1076,6 +1082,7 @@ export async function scanTrustTreeWithAnalyzers(
         requiredDetectors,
         detectors,
         precomputedSarif: precomputedDetectorSarif,
+        ...(precomputedSarifOrigin === undefined ? {} : { precomputedSarifOrigin }),
         skillspectorImageApprovals,
         inventory,
         corroboratedChecks: checks,

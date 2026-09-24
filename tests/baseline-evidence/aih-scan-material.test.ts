@@ -363,8 +363,8 @@ function signedPublication(sourceRoot: string, request: BaselineVetRequestV1) {
             },
             SCAN_DETECTOR_IDS[analyzer as TrustDetectorName],
             sourceRoot,
-            // Scan's baseline runtime runs Semgrep and Cisco under linux-namespace-uv-v1.
-            analyzer === "skillspector" ? {} : { executionProfileId: "linux-namespace-uv-v1" },
+            // A Scanner publication's annex: the baseline subject and Scan's batch profiles.
+            { origin: "scanner-baseline-vet" },
           );
     return {
       path: `annex/${analyzer}.json`,

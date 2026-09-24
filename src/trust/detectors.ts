@@ -41,6 +41,7 @@ import {
   declaredScanAnalyzerIdentityRefusalV1,
   executedScanAnalyzerIdentityRefusalV1,
   observedScanAnalyzerVersionV1,
+  SCANNER_BASELINE_VET_EXECUTION_PROFILES_V1,
 } from "./scan-analyzer-identity.js";
 import {
   type CheckedScanSarifLogV1,
@@ -51,6 +52,8 @@ import {
   scanCompletionRefusalV1,
 } from "./scan-sarif.js";
 import {
+  BASELINE_VET_ANNEX_DETECTORS_V1,
+  baselineVetAnnexSubjectFilesV1,
   SCAN_EMPTY_SOURCE_COMPLETES_V1,
   type ScanSubjectDigestV1,
   scanDetectorSubjectFilesV1,
@@ -114,6 +117,14 @@ export interface TrustDetectorOptions {
    * shard join); without evidence it is `completion-evidence-absent`.
    */
   precomputedSarif?: Readonly<Partial<Record<TrustDetectorName, PrecomputedDetectorSarifV1>>>;
+  /**
+   * Where `precomputedSarif` came from, which fixes the subject and analyzer it
+   * must prove. Omitted is `inline`: each detector's own rule, as a delegated
+   * run. `scanner-baseline-vet` is a Scanner publication's annexes (C2a §1.6
+   * [Scan: S2j], decision D24): the baseline subject and the profile Scan's
+   * batch runs (`SCANNER_BASELINE_VET_EXECUTION_PROFILES_V1`).
+   */
+  precomputedSarifOrigin?: PrecomputedSarifOriginV1;
   /**
    * Scan's detector execution. Omitted means the INSTALLED `@aihq/scan`, loaded
    * on first need; an injected adapter replaces it (tests and embedders). Every
@@ -1495,6 +1506,24 @@ export function scanCallSubjectV1(
   }
 }
 
+/** A baseline-vet annex's subject over `sourceRoot` now, or why Core cannot rebuild it. */
+function baselineVetAnnexSubjectV1(
+  detectorId: string,
+  sourceRoot: string,
+): { readonly subject: ScanSubjectDigestV1 } | { readonly refusal: string } {
+  try {
+    return {
+      subject: scanSubjectDigestV1(baselineVetAnnexSubjectFilesV1(detectorId, sourceRoot)),
+    };
+  } catch (error) {
+    return {
+      refusal: adapterReason(
+        `completion evidence Core cannot check, because it cannot rebuild the baseline subject of ${detectorId}: ${(error as Error)?.message ?? "unknown error"}`,
+      ),
+    };
+  }
+}
+
 /**
  * Why a succeeded run's completion evidence v1 (C2a §1.6) does not bind it to
  * what Core submitted, or undefined when it does. `request.subject` is the
@@ -1534,6 +1563,9 @@ export function delegatedScanCompletionRefusalV1(
   });
 }
 
+/** Where precomputed SARIF came from (`TrustDetectorOptions.precomputedSarifOrigin`). */
+export type PrecomputedSarifOriginV1 = "inline" | "scanner-baseline-vet";
+
 /**
  * Why precomputed SARIF (a Scanner annex's bytes) does not prove this tree was
  * analyzed, or undefined when it does. With no run stating completion evidence
@@ -1544,12 +1576,15 @@ export function delegatedScanCompletionRefusalV1(
  * `executionProfileId`, the profile Core requires for this evidence. Another
  * profile's pinned identity is refused naming both profiles. SkillSpector's
  * identity is its image, not a lock: the pinned image or a digest policy
- * accepted, under the pinned source revision.
+ * accepted, under the pinned source revision. A baseline-vet annex's subject
+ * is the baseline F (`baselineVetAnnexSubjectFilesV1`); inline SARIF's is the
+ * detector's own rule, as for a delegated run.
  */
 function precomputedScanCompletionRefusalV1(
   log: CheckedScanSarifLogV1,
   request: {
     readonly detectorId: string;
+    readonly origin: PrecomputedSarifOriginV1;
     readonly executionProfileId: string;
     readonly sourceRoot: string;
     readonly selectedClosurePaths: readonly string[];
@@ -1605,7 +1640,10 @@ function precomputedScanCompletionRefusalV1(
         candidate.version === stated?.version && candidate.lockSha256 === stated?.lockSha256,
     ) ?? accepted[0];
   if (analyzer === undefined) return `Core accepts no analyzer identity for ${request.detectorId}`;
-  const bound = scanCallSubjectV1(request);
+  const bound =
+    request.origin === "scanner-baseline-vet"
+      ? baselineVetAnnexSubjectV1(request.detectorId, request.sourceRoot)
+      : scanCallSubjectV1(request);
   if ("refusal" in bound) return bound.refusal;
   return scanCompletionRefusalV1(log, {
     detectorId: request.detectorId,
@@ -2037,12 +2075,23 @@ async function runDetectorList(
     // analyzed, exactly as a delegated run must (decision D17).
     if (execution.executedBy === "precomputed-sarif" && !verifiedShardJoin) {
       const scanId = SCAN_DETECTOR_IDS[detector.name];
+      const origin = options.precomputedSarifOrigin ?? "inline";
+      const baselineProfile = SCANNER_BASELINE_VET_EXECUTION_PROFILES_V1[scanId];
+      if (origin === "scanner-baseline-vet" && baselineProfile === undefined) {
+        unavailable(
+          detector,
+          `precomputed SARIF for ${scanId} is refused: a baseline vet publishes no ${scanId} annex; it runs only ${BASELINE_VET_ANNEX_DETECTORS_V1.slice(0, -1).join(", ")} and ${BASELINE_VET_ANNEX_DETECTORS_V1.at(-1)}`,
+        );
+        executions.push({ detector: detector.name, ...execution, outcome: "failed" });
+        continue;
+      }
       const completion = precomputedScanCompletionRefusalV1(checked.log, {
         detectorId: scanId,
-        executionProfileId: requiredExecutionProfileIdV1(
-          detector.name,
-          options.uvExecutionProfileId,
-        ),
+        origin,
+        executionProfileId:
+          origin === "scanner-baseline-vet" && baselineProfile !== undefined
+            ? baselineProfile
+            : requiredExecutionProfileIdV1(detector.name, options.uvExecutionProfileId),
         sourceRoot: root,
         selectedClosurePaths: options.inventory.files.map((entry) => entry.relativePath),
         ...(detector.name === "mcp-scanner"

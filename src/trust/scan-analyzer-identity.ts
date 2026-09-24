@@ -97,6 +97,22 @@ export const ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1: readonly AcceptedScanAnalyzer
     }),
   ]);
 
+/**
+ * The profile Scan's baseline-vet batch runs each SARIF analyzer under, by
+ * detector id, so the only one whose pinned analyzer a Scanner publication's
+ * annex may name: aih-scan `BASELINE_BATCH_EXECUTION_PROFILES_V1`
+ * (sep/scan-vet-evidence 3bd0ffb, src/baseline/runtime-v1.ts:2099-2106), which
+ * the batch's default execution names for every analyzer it runs
+ * (runtime-v1.ts:2121). SkillSpector's hardened Docker profile installs no lock;
+ * its identity is the image.
+ */
+export const SCANNER_BASELINE_VET_EXECUTION_PROFILES_V1: Readonly<Record<string, string>> =
+  Object.freeze({
+    "detector.semgrep": "linux-namespace-uv-v1",
+    "detector.skillspector": "docker-hardened-skillspector-v1",
+    "detector.cisco": "linux-namespace-uv-v1",
+  });
+
 /** The identity Core accepts for a detector under a profile, or undefined when it pins none. */
 export function acceptedScanAnalyzerIdentityV1(
   detectorId: string,

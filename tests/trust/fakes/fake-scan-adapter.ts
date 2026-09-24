@@ -6,9 +6,11 @@ import {
   ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1,
   acceptedScanAnalyzerIdentityV1,
   observedScanAnalyzerVersionV1,
+  SCANNER_BASELINE_VET_EXECUTION_PROFILES_V1,
 } from "../../../src/trust/scan-analyzer-identity.js";
 import { SCAN_COMPLETION_PROPERTY_V1 } from "../../../src/trust/scan-sarif.js";
 import {
+  baselineVetAnnexSubjectFilesV1,
   scanDetectorSubjectFilesV1,
   scanSubjectDigestV1,
   sealedScanSubjectFilesV1,
@@ -244,7 +246,9 @@ export function withSelfDerivedFakeScanCompletion(
  * with Core's OWN subject code over `sourceRoot` and the analyzer identity Core
  * pins for the detector under `executionProfileId` (by default Core's default
  * uv profile, `host-process-uv-v1`, where the detector has one; otherwise its
- * first pinned identity). Nothing else is repaired: a run with no
+ * first pinned identity). With `origin: "scanner-baseline-vet"` it is a Scanner
+ * publication's annex: the baseline subject (no top-level .git) and the profile
+ * Scan's batch runs for the detector. Nothing else is repaired: a run with no
  * invocation stays without one. Only for tests about something other than the
  * completion boundary (custody, signatures, SARIF mapping) that need
  * precomputed SARIF Core counts complete; boundary tests use the independent
@@ -259,16 +263,23 @@ export function selfDerivedPrecomputedCompletionForTests<T extends string | obje
     readonly mcpConfigPaths?: readonly string[];
     /** The profile whose pinned identity the evidence names (the profile that produced the annex). */
     readonly executionProfileId?: string;
+    /** A Scanner publication's (baseline-vet) annex rather than inline SARIF. */
+    readonly origin?: "scanner-baseline-vet";
   } = {},
 ): T {
+  const baselineProfile =
+    options.origin === "scanner-baseline-vet"
+      ? SCANNER_BASELINE_VET_EXECUTION_PROFILES_V1[detectorId]
+      : undefined;
+  const profile = options.executionProfileId ?? baselineProfile;
   const identity =
-    options.executionProfileId !== undefined
-      ? acceptedScanAnalyzerIdentityV1(detectorId, options.executionProfileId)
+    profile !== undefined && detectorId !== "detector.skillspector"
+      ? acceptedScanAnalyzerIdentityV1(detectorId, profile)
       : (acceptedScanAnalyzerIdentityV1(detectorId, "host-process-uv-v1") ??
         ACCEPTED_SCAN_ANALYZER_IDENTITIES_V1.find((entry) => entry.detectorId === detectorId));
   if (identity === undefined)
     throw new Error(
-      `Core pins no analyzer for ${detectorId}${options.executionProfileId === undefined ? "" : ` under ${options.executionProfileId}`}`,
+      `Core pins no analyzer for ${detectorId}${profile === undefined ? "" : ` under ${profile}`}`,
     );
   const selected =
     options.selectedClosurePaths ??
@@ -276,11 +287,15 @@ export function selfDerivedPrecomputedCompletionForTests<T extends string | obje
   const evidence = {
     detectorId,
     ...scanSubjectDigestV1(
-      scanDetectorSubjectFilesV1(detectorId, sourceRoot, {
-        selectedClosurePaths: selected,
-        ...(options.mcpConfigPaths === undefined ? {} : { mcpConfigPaths: options.mcpConfigPaths }),
-        sealed: () => sealedScanSubjectFilesV1(sourceRoot),
-      }),
+      options.origin === "scanner-baseline-vet"
+        ? baselineVetAnnexSubjectFilesV1(detectorId, sourceRoot)
+        : scanDetectorSubjectFilesV1(detectorId, sourceRoot, {
+            selectedClosurePaths: selected,
+            ...(options.mcpConfigPaths === undefined
+              ? {}
+              : { mcpConfigPaths: options.mcpConfigPaths }),
+            sealed: () => sealedScanSubjectFilesV1(sourceRoot),
+          }),
     ),
     analyzer: {
       version: observedScanAnalyzerVersionV1(identity),
