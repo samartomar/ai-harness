@@ -48,8 +48,8 @@ describe("headless installed Core CI ownership", () => {
       },
     });
     expect(result.status, result.stderr).toBe(0);
-    expect(result.stdout).toMatch(/Test Files\s+1 passed/);
-    expect(result.stdout).toMatch(/Tests\s+1 passed/);
+    expect(result.stdout).toMatch(/Test Files\s+1 passed \(1\)/);
+    expect(result.stdout).toMatch(/Tests\s+5 passed \(5\)/);
   }, 70_000);
 
   it("fails when a selected backend test is missing instead of silently skipping it", () => {
