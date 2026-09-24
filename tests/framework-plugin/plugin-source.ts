@@ -1,6 +1,6 @@
 import { readFileSync, realpathSync } from "node:fs";
 import { dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   type FrameworkPluginAccessV1,
   type FrameworkPluginLoadV1,
@@ -22,6 +22,7 @@ export function superpowersSourceAccess(
   return {
     importPlugin: () => import("../../packages/framework-superpowers/src/index.js"),
     resolvePackageJson: () => SUPERPOWERS_MANIFEST,
+    resolveEntry: () => fileURLToPath(new URL("src/index.ts", pathToFileURL(SUPERPOWERS_MANIFEST))),
     readFile: (path) => readFileSync(path),
     realpath: (path) => realpathSync(path),
     allowedRoots: () => [realpathSync(dirname(dirname(SUPERPOWERS_MANIFEST)))],

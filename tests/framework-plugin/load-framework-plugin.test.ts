@@ -1,6 +1,14 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { CatalogFrameworkPluginIdentitiesLoadV1 } from "../../src/catalog-package/framework-plugins.js";
 import { FRAMEWORK_HOST_API_VERSION } from "../../src/framework-host/index.js";
@@ -83,6 +91,8 @@ interface FakeInstall {
   importError?: Error;
   importDelayMs?: number;
   resolveError?: Error;
+  entry?: string;
+  entryError?: Error;
   allowedRoots?: readonly string[];
   catalog?: CatalogFrameworkPluginIdentitiesLoadV1;
 }
@@ -102,6 +112,10 @@ function access(fake: FakeInstall = {}): FrameworkPluginAccessV1 & { imports: Fr
     resolvePackageJson: () => {
       if (fake.resolveError !== undefined) throw fake.resolveError;
       return manifestPath;
+    },
+    resolveEntry: () => {
+      if (fake.entryError !== undefined) throw fake.entryError;
+      return fake.entry ?? join(dirname(manifestPath), "dist", "index.js");
     },
     readFile: () =>
       new TextEncoder().encode(
@@ -283,6 +297,34 @@ describe("loadFrameworkPluginV1 — framework-plugin-incompatible", () => {
     expect(refusal.detail).toContain("resolves outside @aihq/core's own install tree");
   });
 
+  it.each([
+    ["outside Core's install tree", () => join(install, "elsewhere", "index.js")],
+    [
+      "into another package inside the install tree",
+      () => join(install, "node_modules", "@aihq", "other", "dist", "index.js"),
+    ],
+  ])("refuses an entry point that resolves %s, before importing it", async (_label, entry) => {
+    const fake = access({ entry: entry() });
+    const loaded = await loadFrameworkPluginV1("superpowers", { access: fake });
+    if (loaded.ok) throw new Error("expected a refusal");
+    expect(loaded.refusal.reason).toBe("framework-plugin-incompatible");
+    expect(loaded.refusal.detail).toContain(
+      "entry point resolves outside its own package directory",
+    );
+    expect(fake.imports).toEqual([]);
+  });
+
+  it("refuses an entry point it cannot resolve, before importing anything", async () => {
+    const fake = access({
+      entryError: withCode("no exports main", "ERR_PACKAGE_PATH_NOT_EXPORTED"),
+    });
+    const loaded = await loadFrameworkPluginV1("superpowers", { access: fake });
+    if (loaded.ok) throw new Error("expected a refusal");
+    expect(loaded.refusal.reason).toBe("framework-plugin-incompatible");
+    expect(loaded.refusal.detail).toContain("entry point could not be resolved");
+    expect(fake.imports).toEqual([]);
+  });
+
   it("refuses a package that does not export ./package.json", async () => {
     const refusal = await refusalOf({
       resolveError: withCode(
@@ -347,5 +389,53 @@ describe("FrameworkPluginRefusalError", () => {
     expect(error.code).toBe("AIH_FRAMEWORK_PLUGIN");
     expect(error.message).toBe(frameworkPluginRefusalMessage(refusal));
     expect(error.message.startsWith("framework-plugin-unavailable: ")).toBe(true);
+  });
+});
+
+describe("loadFrameworkPluginV1 — the installed entry point on disk", () => {
+  /** An installed package whose package.json is real and in-tree; `dist` is real or a link to `outside`. */
+  function installedPackage(linkDist: boolean): FrameworkPluginAccessV1 & {
+    imports: FrameworkIdV1[];
+  } {
+    const packageRoot = dirname(manifestPath);
+    mkdirSync(packageRoot, { recursive: true });
+    writeFileSync(
+      manifestPath,
+      JSON.stringify({
+        name: "@aihq/framework-superpowers",
+        version: "0.1.0",
+        type: "module",
+        exports: { ".": { import: "./dist/index.js" }, "./package.json": "./package.json" },
+      }),
+    );
+    const dist = linkDist ? join(install, "outside", "dist") : join(packageRoot, "dist");
+    mkdirSync(dist, { recursive: true });
+    writeFileSync(join(dist, "index.js"), "export const aihFrameworkPluginV1 = {};\n");
+    // A directory junction on Windows needs no symlink privilege; elsewhere it is a symlink.
+    if (linkDist) symlinkSync(dist, join(packageRoot, "dist"), "junction");
+    const base = access();
+    return {
+      ...base,
+      resolveEntry: () => join(packageRoot, "dist", "index.js"),
+      readFile: (path) => readFileSync(path),
+      realpath: (path) => realpathSync(path),
+      allowedRoots: () => [realpathSync(join(install, "node_modules"))],
+    };
+  }
+
+  it("loads a package whose exported entry is a real file inside the package", async () => {
+    const loaded = await loadFrameworkPluginV1("superpowers", { access: installedPackage(false) });
+    expect(loaded.ok).toBe(true);
+  });
+
+  it("refuses an in-tree package.json whose exported entry links outside the install", async () => {
+    const fake = installedPackage(true);
+    const loaded = await loadFrameworkPluginV1("superpowers", { access: fake });
+    if (loaded.ok) throw new Error("expected a refusal");
+    expect(loaded.refusal.reason).toBe("framework-plugin-incompatible");
+    expect(loaded.refusal.detail).toContain(
+      "entry point resolves outside its own package directory",
+    );
+    expect(fake.imports).toEqual([]);
   });
 });

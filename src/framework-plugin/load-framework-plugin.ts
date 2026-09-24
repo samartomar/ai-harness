@@ -1,6 +1,7 @@
 import { readFileSync, realpathSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import {
   type CatalogFrameworkPluginIdentitiesLoadV1,
@@ -29,7 +30,10 @@ import {
  * of `@aihq/core`, imported ONLY here and ONLY by their literal specifiers, so
  * nothing user-controlled can point the import at other code. Before importing,
  * the installed package must resolve inside Core's own install tree and carry
- * its own `package.json`; after importing, its `aihFrameworkPluginV1` export
+ * its own `package.json`, and the real path of the module file that literal
+ * import loads (its `exports` "import" entry) must lie inside that package's
+ * own real directory, so no link can make Core execute code from elsewhere.
+ * After importing, its `aihFrameworkPluginV1` export
  * must implement contract 1 against this Core's host API, name the installed
  * package and version, and implement every command Core dispatches to it. When
  * Catalog is installed, the installed version must also equal Catalog's plugin
@@ -87,6 +91,8 @@ export interface FrameworkPluginAccessV1 {
   readonly importPlugin: (frameworkId: FrameworkIdV1) => Promise<unknown>;
   /** Resolve `<package>/package.json` through the package's `exports` to an absolute path. */
   readonly resolvePackageJson: (frameworkId: FrameworkIdV1) => string;
+  /** Resolve the module file the literal import loads (the package's "import" entry) to an absolute path. */
+  readonly resolveEntry: (frameworkId: FrameworkIdV1) => string;
   readonly readFile: (path: string) => Uint8Array;
   readonly realpath: (path: string) => string;
   /** Real directories the plugin must resolve under: Core's own install tree. */
@@ -109,12 +115,23 @@ function importInstalledPlugin(frameworkId: FrameworkIdV1): Promise<unknown> {
   }
 }
 
+/** The same resolver, from the same module, as the literal import above. */
+function resolveInstalledEntry(frameworkId: FrameworkIdV1): string {
+  switch (frameworkId) {
+    case "ecc":
+      return fileURLToPath(import.meta.resolve("@aihq/framework-ecc"));
+    case "superpowers":
+      return fileURLToPath(import.meta.resolve("@aihq/framework-superpowers"));
+  }
+}
+
 const requireFromCore = createRequire(import.meta.url);
 
 const installedPluginAccess: FrameworkPluginAccessV1 = {
   importPlugin: importInstalledPlugin,
   resolvePackageJson: (frameworkId) =>
     requireFromCore.resolve(`${FRAMEWORK_PLUGIN_PACKAGE_NAMES[frameworkId]}/package.json`),
+  resolveEntry: resolveInstalledEntry,
   readFile: (path) => readFileSync(path),
   realpath: (path) => realpathSync(path),
   allowedRoots: allowedPluginRoots,
@@ -391,6 +408,22 @@ export async function loadFrameworkPluginV1(
     version = record.version;
   } catch (error) {
     return incompatible(frameworkId, `package.json could not be read (${messageOf(error)})`);
+  }
+
+  let entry: string;
+  try {
+    entry = access.realpath(access.resolveEntry(frameworkId));
+  } catch (error) {
+    return incompatible(
+      frameworkId,
+      `${version} entry point could not be resolved (${messageOf(error)})`,
+    );
+  }
+  if (!underAllowedRoot(entry, [root])) {
+    return incompatible(
+      frameworkId,
+      `${version} entry point resolves outside its own package directory (${sanitizeLabel(entry, 200)})`,
+    );
   }
 
   let namespace: unknown;

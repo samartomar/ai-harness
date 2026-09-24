@@ -108,12 +108,12 @@ const PINS: ReadonlyArray<readonly [file: string, line: number, text: string]> =
   ],
   [
     "src/framework-plugin/load-framework-plugin.ts",
-    49,
+    53,
     "export type FrameworkPluginRefusalReasonV1 =",
   ],
   [
     "src/framework-plugin/load-framework-plugin.ts",
-    332,
+    349,
     "export async function loadFrameworkPluginV1(",
   ],
   [

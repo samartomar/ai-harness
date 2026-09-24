@@ -40,6 +40,7 @@ describe("aihFrameworkPluginV1", () => {
       access: {
         importPlugin: async () => ({ aihFrameworkPluginV1 }),
         resolvePackageJson: () => manifestPath,
+        resolveEntry: () => fileURLToPath(new URL("../src/index.ts", import.meta.url)),
         readFile: (path) => readFileSync(path),
         realpath: (path) => realpathSync(path),
         allowedRoots: () => [dirname(root)],
