@@ -24,6 +24,7 @@ import { scanRepo } from "../profile/scan.js";
 import { execArgv } from "../tools/install.js";
 import {
   assertChromeDevtoolsOptOuts,
+  CHROME_DEVTOOLS_OPT_OUT_PREDICATE_SOURCE,
   CHROME_DEVTOOLS_OPT_OUT_REFUSAL_EXIT,
   CHROME_DEVTOOLS_OPT_OUT_REFUSAL_MARKER,
   CODEX_AGENTS_BLOCK_MARKER,
@@ -35,6 +36,8 @@ import {
   codexInstallStateContents,
   codexInstallStatePath,
   codexMcpCollisionActions,
+  codexProjectConfigPath,
+  codexTomlParserPath,
   coreOwnedEccCodexMcpServers,
 } from "./codex.js";
 import { ECC_UPSTREAM_HOOK_CONSENT_ADAPTER_SOURCE } from "./hook-consent.js";
@@ -480,8 +483,12 @@ const CODEX_INSTALL_MERGE_SCRIPT_SOURCE = [
   'const fs = require("fs");',
   'const path = require("path");',
   ...ECC_UPSTREAM_HOOK_CONSENT_ADAPTER_SOURCE.trim().split("\n"),
-  "const [repoRoot, profileId, homeDir, mergeCodexConfig, configPath, sourceAgents, targetAgents, statePath, projectConfigPath, governanceFlag, specB64, mcpB64, stateB64] = process.argv.slice(1);",
-  'if (!repoRoot || !profileId || !homeDir || !mergeCodexConfig || !configPath || !sourceAgents || !targetAgents || !statePath || !projectConfigPath || !stateB64) { console.error("usage: codex-install-merge <repo-root> <profile> <home-dir> <merge-config> <config> <source-agents> <target-agents> <state-path> <project-config> <state-b64>"); process.exit(1); }',
+  "const [repoRoot, profileId, homeDir, mergeCodexConfig, configPath, sourceAgents, targetAgents, statePath, projectConfigPath, tomlParserPath, governanceFlag, specB64, mcpB64, stateB64] = process.argv.slice(1);",
+  'if (!repoRoot || !profileId || !homeDir || !mergeCodexConfig || !configPath || !sourceAgents || !targetAgents || !statePath || !projectConfigPath || !tomlParserPath || !stateB64) { console.error("usage: codex-install-merge <repo-root> <profile> <home-dir> <merge-config> <config> <source-agents> <target-agents> <state-path> <project-config> <toml-parser> <state-b64>"); process.exit(1); }',
+  // The same TOML parser and opt-out predicate the plan used (see ./codex.ts).
+  "const parseToml = require(path.resolve(tomlParserPath)).parse;",
+  'if (typeof parseToml !== "function") throw new Error("Codex merge TOML parser is unavailable: " + tomlParserPath);',
+  ...CHROME_DEVTOOLS_OPT_OUT_PREDICATE_SOURCE.trim().split("\n"),
   'const normalize = (value) => String(value || "").replace(/\\\\/g, "/");',
   "const declaredHome = path.resolve(homeDir);",
   "const trustedHome = fs.realpathSync(declaredHome);",
@@ -908,53 +915,10 @@ function legacyDescendantHeader(line) {
   const body = bodyOf(line, false);
   return body !== undefined && /^[ \t]*(?:mcp_servers|"mcp_servers"|'mcp_servers')[ \t]*\.[ \t]*(?:chrome-devtools|"chrome-devtools"|'chrome-devtools')[ \t]*\./.test(body);
 }`,
-  // Every chrome-devtools-mcp launch left in the written config must carry both
-  // mandatory opt-outs; aih refuses rather than rewrite a user-owned entry.
-  String.raw`function chromeOptOutProblem(raw) {
-  const optOuts = ["CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS", "CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS"];
-  const withoutComment = (line) => { let quote; for (let index = 0; index < line.length; index += 1) { const character = line[index]; if (quote === '"') { if (character === "\\") index += 1; else if (character === '"') quote = undefined; continue; } if (quote === "'") { if (character === "'") quote = undefined; continue; } if (character === '"' || character === "'") quote = character; else if (character === "#") return line.slice(0, index); } return line; };
-  const decoded = (text) => text.replace(/\u([0-9A-Fa-f]{4})|\U([0-9A-Fa-f]{8})/g, (match, short, long) => { try { return String.fromCodePoint(Number.parseInt(short || long, 16)); } catch { return match; } });
-  const launches = (text) => /chrome-devtools-mcp/i.test(decoded(text));
-  const key = (name) => "(?:" + name + "|\"" + name + "\"|'" + name + "')";
-  const one = "[ \t]*=[ \t]*(?:\"1\"|'1')[ \t]*$";
-  const servers = new Map(); let server; let scope = "root";
-  for (const line of raw.replace(/\r\n/g, "\n").split("\n")) {
-    const header = tomlMcpTableHeader(line);
-    if (header) {
-      if (header.keys.length < 2) { server = undefined; scope = "mcp"; continue; }
-      if (!servers.has(header.keys[1])) servers.set(header.keys[1], { launch: false, env: new Set() });
-      server = servers.get(header.keys[1]);
-      scope = header.array ? "descendant" : header.keys.length === 2 ? "server" : header.keys.length === 3 && header.keys[2] === "env" ? "env" : "descendant";
-      continue;
-    }
-    if (/^[ \t]*\[/.test(line)) { server = undefined; scope = "other"; continue; }
-    const code = withoutComment(line).trim();
-    if (code.length === 0 || scope === "other") continue;
-    if (scope === "root" || scope === "mcp") {
-      const lhs = assignmentLhs(code);
-      if ((scope === "mcp" || (lhs !== undefined && tomlMcpTableHeader("[" + lhs + "]"))) && launches(code)) return { name: "(non-table MCP representation)", missing: optOuts };
-      continue;
-    }
-    if (launches(code)) server.launch = true;
-    const inline = scope === "server" ? /^env[ \t]*=[ \t]*\{(.*)\}$/.exec(code) : null;
-    for (const name of optOuts) {
-      if (scope === "env" && new RegExp("^" + key(name) + one).test(code)) server.env.add(name);
-      if (scope === "server" && new RegExp("^env[ \t]*\.[ \t]*" + key(name) + one).test(code)) server.env.add(name);
-      if (inline && inline[1].split(",").some((part) => new RegExp("^[ \t]*" + key(name) + one).test(part))) server.env.add(name);
-    }
-  }
-  for (const [name, entry] of servers) { if (!entry.launch) continue; const missing = optOuts.filter((variable) => !entry.env.has(variable)); if (missing.length > 0) return { name, missing }; }
-  return undefined;
-}
-// Refuses with the typed refusal plan time emits: one readable line per entry,
+  String.raw`// Refuses with the typed refusal plan time emits: one readable line per entry,
 // then one marker line carrying the refusals as JSON, then the refusal exit status.
 function refuseChromeOptOuts(configs) {
-  const refusals = [];
-  for (const { scope, configPath: target, raw } of configs) {
-    if (raw === undefined) continue;
-    const problem = chromeOptOutProblem(raw);
-    if (problem) refusals.push({ scope, configPath: target, entry: problem.name, missing: problem.missing });
-  }
+  const refusals = chromeDevtoolsOptOutRefusals(configs, parseToml, () => false);
   if (refusals.length === 0) return;
   for (const refusal of refusals) process.stderr.write("refusing " + refusal.scope + " Codex MCP entry \"" + refusal.entry + "\" (" + refusal.configPath + "): it launches chrome-devtools-mcp without " + refusal.missing.map((name) => name + "=\"1\"").join(" and ") + "; aih never rewrites a user-owned entry: remove it so aih manages chrome-devtools, or add both variables to its env table\n");
   process.stderr.write(${JSON.stringify(CHROME_DEVTOOLS_OPT_OUT_REFUSAL_MARKER)} + JSON.stringify(refusals) + "\n");
@@ -993,7 +957,7 @@ function refuseChromeOptOuts(configs) {
   '  const block = "# >>> aih managed (mcp) >>>\\n" + sections.map((section) => section.text).join("\\n\\n") + "\\n# <<< aih managed (mcp) <<<";',
   '  let mergedLines; if (parsed.fence) { const before = beforeFence.slice(); const after = afterFence.slice(); if (claimsChrome && chrome.length === 1) { if (legacyBefore.length === 1) before.splice(legacyBefore[0].begin, legacyBefore[0].end - legacyBefore[0].begin); else after.splice(legacyAfter[0].begin, legacyAfter[0].end - legacyAfter[0].begin); } mergedLines = [...before, block, ...after]; } else { const before = beforeFence.slice(); if (claimsChrome && chrome.length === 1) before.splice(legacyBefore[0].begin, legacyBefore[0].end - legacyBefore[0].begin); mergedLines = before.join("\\n").replace(/\\n+$/, "").split("\\n"); if (mergedLines.length === 1 && mergedLines[0] === "") mergedLines = []; mergedLines.push(...(mergedLines.length > 0 ? ["", block] : [block])); }',
   '  let merged = mergedLines.join("\\n").replace(/^\\n+/, "").replace(/\\n+$/, "") + "\\n"; if (/\\r\\n/.test(existingConfig)) merged = merged.replace(/\\n/g, "\\r\\n");',
-  '  refuseChromeOptOuts([{ scope: "user", configPath, raw: merged }, { scope: "project", configPath: projectConfigPath, raw: liveProjectConfigRaw }]);',
+  '  refuseChromeOptOuts([{ scope: "project", configPath: projectConfigPath, raw: liveProjectConfigRaw }, { scope: "user", configPath, raw: merged }]);',
   "  return { liveConfigRaw, liveStateRaw, liveState, liveProjectConfigRaw, merged, installed, retained: retained.map((section) => section.name) };",
   "}",
   "function unionStrings(...lists) { return [...new Set(lists.flat())].sort(); }",
@@ -1071,7 +1035,8 @@ export function codexEccActions(
         sourceAgents,
         codexAgents,
         statePath,
-        join(ctx.root, ".codex", "config.toml"),
+        codexProjectConfigPath(ctx),
+        codexTomlParserPath(),
         governed ? "1" : "0",
         materializationB64 ?? "",
         mcpB64 ?? "",

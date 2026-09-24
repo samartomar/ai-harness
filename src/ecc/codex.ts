@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { parse as parseToml } from "smol-toml";
@@ -978,23 +979,67 @@ export interface ChromeDevtoolsOptOutRefusal {
   unparseable?: true;
 }
 
-const CHROME_DEVTOOLS_MCP_LAUNCH = /chrome-devtools-mcp/i;
+/**
+ * The one chrome-devtools-mcp opt-out predicate. It is plain JavaScript so the
+ * plan (in process) and the Codex merge script (a `node -e` child at apply time)
+ * run this same source over the same TOML parser (smol-toml): every TOML
+ * spelling — quoted, dotted, inline or escaped — gets one verdict at both stages.
+ * `chromeDevtoolsOptOutMissing` returns undefined for a server that does not
+ * launch chrome-devtools-mcp, otherwise the opt-outs it lacks.
+ */
+export const CHROME_DEVTOOLS_OPT_OUT_PREDICATE_SOURCE = String.raw`
+function chromeDevtoolsOptOutMissing(server) {
+  const optOuts = ["CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS", "CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS"];
+  const mentions = (value) => typeof value === "string" ? /chrome-devtools-mcp/i.test(value) : Array.isArray(value) ? value.some(mentions) : value !== null && typeof value === "object" ? Object.values(value).some(mentions) : false;
+  if (!mentions(server)) return undefined;
+  const table = (value) => value !== null && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const env = table(table(server).env);
+  return optOuts.filter((name) => env[name] !== "1");
+}
+function chromeDevtoolsOptOutRefusals(configs, parse, exempt) {
+  const optOuts = ["CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS", "CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS"];
+  const decoded = (text) => text.replace(/\\u([0-9A-Fa-f]{4})|\\U([0-9A-Fa-f]{8})/g, (match, short, long) => { try { return String.fromCodePoint(Number.parseInt(short || long, 16)); } catch { return match; } });
+  const refusals = [];
+  for (const { scope, configPath, raw } of configs) {
+    if (raw === undefined) continue;
+    let document;
+    try { document = parse(raw); } catch {
+      if (/chrome-devtools-mcp/i.test(decoded(raw))) refusals.push({ scope, configPath, entry: "(unparseable config)", missing: optOuts.slice(), unparseable: true });
+      continue;
+    }
+    const servers = document.mcp_servers;
+    if (servers === undefined) continue;
+    if (servers === null || typeof servers !== "object" || Array.isArray(servers)) {
+      if (chromeDevtoolsOptOutMissing(servers) !== undefined) refusals.push({ scope, configPath, entry: "(non-table MCP representation)", missing: optOuts.slice() });
+      continue;
+    }
+    for (const entry of Object.keys(servers)) {
+      const missing = chromeDevtoolsOptOutMissing(servers[entry]);
+      if (missing === undefined || missing.length === 0 || exempt(scope, entry)) continue;
+      refusals.push({ scope, configPath, entry, missing });
+    }
+  }
+  return refusals;
+}
+`;
 
-function mentionsChromeDevtoolsMcp(value: unknown): boolean {
-  if (typeof value === "string") return CHROME_DEVTOOLS_MCP_LAUNCH.test(value);
-  if (Array.isArray(value)) return value.some(mentionsChromeDevtoolsMcp);
-  if (value !== null && typeof value === "object")
-    return Object.values(value).some(mentionsChromeDevtoolsMcp);
-  return false;
+interface ChromeDevtoolsOptOutPredicate {
+  missing(server: unknown): ChromeDevtoolsMcpOptOut[] | undefined;
+  refusals(
+    configs: ReadonlyArray<{
+      scope: ChromeDevtoolsOptOutRefusal["scope"];
+      configPath: string;
+      raw: string | undefined;
+    }>,
+    parse: (raw: string) => unknown,
+    exempt: (scope: ChromeDevtoolsOptOutRefusal["scope"], entry: string) => boolean,
+  ): ChromeDevtoolsOptOutRefusal[];
 }
 
-function missingChromeDevtoolsOptOuts(env: unknown): ChromeDevtoolsMcpOptOut[] {
-  const table =
-    env !== null && typeof env === "object" && !Array.isArray(env)
-      ? (env as Record<string, unknown>)
-      : {};
-  return CHROME_DEVTOOLS_MCP_OPT_OUTS.filter((name) => table[name] !== "1");
-}
+// Evaluates the constant source above, never input, so both stages share one predicate.
+const chromeDevtoolsOptOutPredicate = new Function(
+  `${CHROME_DEVTOOLS_OPT_OUT_PREDICATE_SOURCE}\nreturn { missing: chromeDevtoolsOptOutMissing, refusals: chromeDevtoolsOptOutRefusals };`,
+)() as ChromeDevtoolsOptOutPredicate;
 
 function describeMissingOptOuts(missing: readonly ChromeDevtoolsMcpOptOut[]): string {
   return missing.map((name) => `${name}="1"`).join(" and ");
@@ -1003,9 +1048,9 @@ function describeMissingOptOuts(missing: readonly ChromeDevtoolsMcpOptOut[]): st
 /** Refuses to emit a scoped chrome-devtools-mcp launch that lacks either opt-out. */
 export function assertChromeDevtoolsOptOuts(servers: CodexScopedMcpServers): void {
   for (const [name, server] of Object.entries(servers)) {
-    if (server.type !== "stdio" || !mentionsChromeDevtoolsMcp(server)) continue;
-    const missing = missingChromeDevtoolsOptOuts(server.env);
-    if (missing.length > 0)
+    if (server.type !== "stdio") continue;
+    const missing = chromeDevtoolsOptOutPredicate.missing(server);
+    if (missing !== undefined && missing.length > 0)
       throw new AihError(
         `refusing to emit Codex MCP server "${name}": it launches chrome-devtools-mcp without ${describeMissingOptOuts(missing)}`,
         "AIH_CONFIG",
@@ -1037,42 +1082,25 @@ export function codexChromeDevtoolsOptOutRefusals(
 ): ChromeDevtoolsOptOutRefusal[] {
   const planned = new Set(plannedServers);
   const claimed = aihClaimedCodexMcpServers(ctx);
-  const scopes = [
-    { scope: "project" as const, configPath: join(ctx.root, ".codex", "config.toml") },
-    { scope: "user" as const, configPath: join(codexHomeDir(ctx), "config.toml") },
-  ];
-  const refusals: ChromeDevtoolsOptOutRefusal[] = [];
-  for (const { scope, configPath } of scopes) {
-    const raw = readIfExists(configPath);
-    if (raw === undefined) continue;
-    let document: Record<string, unknown>;
-    try {
-      document = parseToml(raw) as Record<string, unknown>;
-    } catch {
-      if (CHROME_DEVTOOLS_MCP_LAUNCH.test(raw))
-        refusals.push({
-          scope,
-          configPath,
-          entry: "(unparseable config)",
-          missing: [...CHROME_DEVTOOLS_MCP_OPT_OUTS],
-          unparseable: true,
-        });
-      continue;
-    }
-    const servers = document.mcp_servers;
-    if (servers === null || typeof servers !== "object" || Array.isArray(servers)) continue;
-    for (const [entry, server] of Object.entries(servers as Record<string, unknown>)) {
-      if (!mentionsChromeDevtoolsMcp(server)) continue;
-      if (scope === "user" && planned.has(entry) && claimed.has(entry)) continue;
-      const env =
-        server !== null && typeof server === "object" && !Array.isArray(server)
-          ? (server as Record<string, unknown>).env
-          : undefined;
-      const missing = missingChromeDevtoolsOptOuts(env);
-      if (missing.length > 0) refusals.push({ scope, configPath, entry, missing });
-    }
-  }
-  return refusals;
+  const projectConfig = codexProjectConfigPath(ctx);
+  const userConfig = join(codexHomeDir(ctx), "config.toml");
+  return chromeDevtoolsOptOutPredicate.refusals(
+    [
+      { scope: "project", configPath: projectConfig, raw: readIfExists(projectConfig) },
+      { scope: "user", configPath: userConfig, raw: readIfExists(userConfig) },
+    ],
+    parseToml,
+    (scope, entry) => scope === "user" && planned.has(entry) && claimed.has(entry),
+  );
+}
+
+export function codexProjectConfigPath(ctx: PlanContext): string {
+  return join(ctx.root, ".codex", "config.toml");
+}
+
+/** The CommonJS entry of the TOML parser the apply-time merge script loads. */
+export function codexTomlParserPath(): string {
+  return createRequire(import.meta.url).resolve("smol-toml");
 }
 
 /** Exit status of the Codex merge script's apply-time opt-out refusal (sysexits EX_CONFIG). */

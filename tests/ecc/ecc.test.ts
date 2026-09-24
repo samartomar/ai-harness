@@ -20,6 +20,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   codexAgentsBlockRemovalAction,
   codexChromeDevtoolsOptOutActions,
+  codexChromeDevtoolsOptOutRefusals,
   codexConfigRemovalAction,
   codexInstallStateCleanupAction,
   codexPruneRemovalActions,
@@ -2332,6 +2333,74 @@ describe("Codex managed destination safety", () => {
 
       expect(run.result.status).not.toBe(0);
       expect(failureCheckOf(run).code).toBeUndefined();
+    });
+
+    describe("gives the same verdict at plan and apply time for every TOML spelling", () => {
+      const header =
+        '[mcp_servers.browser]\ncommand = "npx"\nargs = ["-y", "chrome-devtools-mcp@1.10.1"]\n';
+      const spellings: Array<[string, string, boolean]> = [
+        [
+          "quoted inline env key",
+          `${header}"env" = { ${NO_STATS} = "1", ${NO_UPDATES} = "1" }\n`,
+          true,
+        ],
+        [
+          "quoted dotted env key",
+          `${header}"env".${NO_STATS} = "1"\n'env'."${NO_UPDATES}" = "1"\n`,
+          true,
+        ],
+        [
+          "escaped variable keys",
+          `${header}[mcp_servers.browser.env]\n"CHROME\\u005FDEVTOOLS_MCP_NO_USAGE_STATISTICS" = "1"\n"CHROME_DEVTOOLS_MCP_NO_UPDATE\\u005FCHECKS" = "1"\n`,
+          true,
+        ],
+        [
+          "inline server table",
+          `[mcp_servers]\nbrowser = { command = "npx", args = ["chrome-devtools-mcp@1.10.1"], env = { ${NO_STATS} = "1", ${NO_UPDATES} = "1" } }\n`,
+          true,
+        ],
+        [
+          "escaped and multi-line values",
+          `${header}[mcp_servers.browser.env]\n${NO_STATS} = "\\u0031"\n${NO_UPDATES} = """1"""\n`,
+          true,
+        ],
+        ["quoted inline env missing one", `${header}"env" = { ${NO_STATS} = "1" }\n`, false],
+        [
+          "escaped launch without opt-outs",
+          '[mcp_servers.browser]\ncommand = "npx"\nargs = ["chrome\\u002Ddevtools-mcp"]\n',
+          false,
+        ],
+        [
+          "inline server table missing one",
+          `[mcp_servers]\nbrowser = { command = "npx", args = ["chrome-devtools-mcp"], env = { ${NO_UPDATES} = "1" } }\n`,
+          false,
+        ],
+        [
+          "padded value",
+          `${header}[mcp_servers.browser.env]\n${NO_STATS} = "1 "\n${NO_UPDATES} = "1"\n`,
+          false,
+        ],
+      ];
+
+      it.each(spellings)("%s in the user config", async (label, config, compliant) => {
+        const run = runDirectApply(`spelling-user-${label.replace(/\W+/g, "-")}`, config);
+        const planRefusals = codexChromeDevtoolsOptOutRefusals(run.ctx, []);
+
+        expect(planRefusals.length === 0).toBe(compliant);
+        expect(run.result.status, run.result.stderr).toBe(compliant ? 0 : 78);
+        if (!compliant) expect(failureCheckOf(run)).toEqual(await planTimeCheck(run.ctx, []));
+      });
+
+      it.each(spellings)("%s in the project config", async (label, config, compliant) => {
+        const run = runDirectApply(`spelling-project-${label.replace(/\W+/g, "-")}`, "", {
+          projectAfterPlan: config,
+        });
+        const planRefusals = codexChromeDevtoolsOptOutRefusals(run.ctx, []);
+
+        expect(planRefusals.length === 0).toBe(compliant);
+        expect(run.result.status, run.result.stderr).toBe(compliant ? 0 : 78);
+        if (!compliant) expect(failureCheckOf(run)).toEqual(await planTimeCheck(run.ctx, []));
+      });
     });
 
     const unsafeProject =
