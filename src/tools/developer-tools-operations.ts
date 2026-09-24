@@ -47,8 +47,8 @@ import {
 } from "./token-optimizer-runtime.js";
 
 const CONTEXT7_ENDPOINT = "https://mcp.context7.com/mcp";
-const LOCAL_TIMEOUT_MS = 5 * 60_000;
-const MCP_OUTPUT_LIMIT = 8 * 1024 * 1024;
+export const LOCAL_TIMEOUT_MS = 5 * 60_000;
+export const MCP_OUTPUT_LIMIT = 8 * 1024 * 1024;
 const CONTEXT7_RESPONSE_LIMIT = 4 * 1024 * 1024;
 const PROCESS_DIAGNOSTIC_LIMIT = 800;
 const PROCESS_DIAGNOSTIC_PREFIX = 240;
@@ -110,7 +110,7 @@ function failed(result: RunResult): boolean {
   return result.spawnError === true || result.truncated === true || result.code !== 0;
 }
 
-function requireSuccess(label: string, result: RunResult): void {
+export function requireSuccess(label: string, result: RunResult): void {
   if (!failed(result)) return;
   const reason = result.truncated
     ? "output exceeded its limit"
@@ -145,7 +145,7 @@ function sanitizedProcessDiagnostic(raw: string): string | undefined {
   return `${diagnostic.slice(0, PROCESS_DIAGNOSTIC_PREFIX).trimEnd()}${PROCESS_DIAGNOSTIC_OMISSION}${diagnostic.slice(-tailLength).trimStart()}`;
 }
 
-function externalExecutable(name: string, ctx: PlanContext): string {
+export function externalExecutable(name: string, ctx: PlanContext): string {
   const executable = findOnPath(name, ctx.env, process.platform, {
     excludeRoot: ctx.root,
     windowsExeOnly: process.platform === "win32",
@@ -196,14 +196,14 @@ function semanticSourceFixture(project: string): string {
   );
 }
 
-interface LocalMcpRequest {
+export interface LocalMcpRequest {
   readonly jsonrpc: "2.0";
   readonly id?: number;
   readonly method: string;
   readonly params?: Record<string, unknown>;
 }
 
-function initializedMcpRequests(call: {
+export function initializedMcpRequests(call: {
   readonly name: string;
   readonly arguments: Record<string, unknown>;
 }): LocalMcpRequest[] {
@@ -275,7 +275,7 @@ function inspectMcpResponse(stdout: string, id: number): RunInputDecision {
   return { state: ready ? "ready" : "waiting" };
 }
 
-function sequencedMcpInput(requests: readonly LocalMcpRequest[]): RunInputStep[] {
+export function sequencedMcpInput(requests: readonly LocalMcpRequest[]): RunInputStep[] {
   const steps: RunInputStep[] = [];
   let pending = "";
   for (const request of requests) {
@@ -571,7 +571,7 @@ interface McpResponse {
   readonly error?: unknown;
 }
 
-function localMcpResponse(stdout: string, id: number): Record<string, unknown> {
+export function localMcpResponse(stdout: string, id: number): Record<string, unknown> {
   const responses = stdout
     .split(/\r?\n/u)
     .map((line) => line.trim())
@@ -591,7 +591,7 @@ function localMcpResponse(stdout: string, id: number): Record<string, unknown> {
   return response.result as Record<string, unknown>;
 }
 
-function verifyToolsList(
+export function verifyToolsList(
   result: Record<string, unknown>,
   required: readonly string[],
   exact = false,
@@ -612,7 +612,7 @@ function verifyToolsList(
   }
 }
 
-function verifyToolCall(result: Record<string, unknown>, label: string): string {
+export function verifyToolCall(result: Record<string, unknown>, label: string): string {
   const text = (Array.isArray(result.content) ? result.content : [])
     .flatMap((item) => {
       if (item === null || typeof item !== "object" || Array.isArray(item)) return [];

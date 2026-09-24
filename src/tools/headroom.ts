@@ -77,8 +77,9 @@ export const HEADROOM_TOKENIZER_VOCABULARIES = [
 /**
  * Upstream switches applied to every Headroom launch: the anonymous beacon, the
  * PyPI update check, the offline master switch (beacon, update check, license
- * reporter and model downloads), Hugging Face offline mode, and LiteLLM's
- * bundled model-cost map instead of its import-time GitHub fetch.
+ * reporter and model downloads), Hugging Face offline mode, LiteLLM's bundled
+ * model-cost map instead of its import-time GitHub fetch, and LiteLLM's
+ * production mode so it never loads a `.env` file found above its install.
  */
 export const HEADROOM_RUNTIME_SWITCHES = {
   HEADROOM_BEACON: "off",
@@ -88,6 +89,7 @@ export const HEADROOM_RUNTIME_SWITCHES = {
   HF_HUB_OFFLINE: "1",
   TRANSFORMERS_OFFLINE: "1",
   LITELLM_LOCAL_MODEL_COST_MAP: "True",
+  LITELLM_MODE: "PRODUCTION",
 } as const;
 
 const LOCAL_CHILD_ENV_KEYS = [
