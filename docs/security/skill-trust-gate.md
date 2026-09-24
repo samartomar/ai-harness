@@ -160,14 +160,18 @@ namespace profile is required) fails the detector, naming both profiles. SkillSp
 is its image, as for a delegated run.
 
 A Scanner publication's (baseline-vet) annexes, consumed as baseline evidence, follow Scan's
-baseline rule (decision D24) and nothing else. Scan's batch analyzes a snapshot that never holds a
+baseline rule (decision D24) and nothing else. Only the Scanner consumer grants that rule: after
+Scan verifies every batch's signed attestation, it wraps each annex for the detector it was
+published for and marks the wrapper privately. A plain string, a caller-built wrapper of the same
+shape, or one detector's annex presented for another is inline SARIF; a live scan has no option
+that claims the baseline rule. Scan's batch analyzes a snapshot that never holds a
 top-level `.git`, so for Semgrep, SkillSpector and Cisco alike Core recomputes the subject over the
 consumer's source root as every file and file link outside the top-level `.git` (a file link is
 keyed by its path and hashed over its target; a directory link contributes nothing). Cisco here is
 the skill-directory scan of the whole snapshot, never a job set or shard. The analyzer must be the
 one Scan's batch runs: `linux-namespace-uv-v1` for Semgrep and Cisco, and for SkillSpector
 `docker-hardened-skillspector-v1` (no lock; the pinned revision at a digest Core accepts). Any
-other profile's pinned identity, an annex for another detector, or a subject that includes `.git`
+other profile's pinned identity or a subject that includes `.git`
 fails the detector; an annex without evidence is still `completion-evidence-absent`. Inline
 precomputed SARIF and delegated runs keep their per-detector rules.
 SARIF with no completion evidence at all, which is every publication made before Scan wrote it,

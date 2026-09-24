@@ -1,7 +1,7 @@
 import { createHash, generateKeyPairSync } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   type BaselineVetBatchResultV1,
   type BaselineVetRequestV1,
@@ -26,6 +26,17 @@ import {
   type ScannerBaselineAnalyzer,
 } from "../../src/baseline-evidence/scanner-profile.js";
 import { SCAN_DETECTOR_IDS, type TrustDetectorName } from "../../src/trust/detectors.js";
+import { SKILLSPECTOR_SOURCE_REVISION } from "../../src/trust/images.js";
+import {
+  BASELINE,
+  CISCO_NAMESPACE,
+  SEMGREP_NAMESPACE,
+  SKILLSPECTOR_HARDENED,
+  VECTOR_FILES,
+  vectorAnnex,
+  vectorEvidence,
+  WITH_GIT,
+} from "../trust/fakes/baseline-annex-vector.js";
 import { selfDerivedPrecomputedCompletionForTests } from "../trust/fakes/fake-scan-adapter.js";
 
 // Native findings come from the installed @aihq/scan's trust lint; this test
@@ -104,7 +115,8 @@ function largeSourceFixture(count = SCANNER_BASELINE_COMPONENT_BATCH_LIMIT + 1) 
  * carry completion evidence v1 SELF-DERIVED for `root` (these tests are about
  * custody and signatures, not the completion boundary), so Core counts them.
  * Each annex is a baseline-vet annex (the baseline subject, Scan's batch profiles);
- * `uvProfile` names another profile whose pinned identity an annex states instead.
+ * `uvProfile` names another profile whose pinned identity an annex states instead;
+ * a `literalAnnexes` entry is published as written, its evidence not derived.
  */
 function buildResult(
   root: string,
@@ -112,6 +124,7 @@ function buildResult(
   overrides: Partial<Record<ScannerBaselineAnalyzer, string>> = {},
   annexOverrides: Partial<Record<ScannerBaselineAnalyzer, unknown>> = {},
   uvProfile: Partial<Record<ScannerBaselineAnalyzer, string>> = {},
+  literalAnnexes: Partial<Record<ScannerBaselineAnalyzer, unknown>> = {},
 ): BaselineVetBatchResultV1 {
   const analyzers = [
     ...new Set(request.components.flatMap((component) => component.analyzers)),
@@ -119,32 +132,34 @@ function buildResult(
   const annexArtifacts = analyzers.map((analyzer) => {
     const bytes = Buffer.from(
       canonical(
-        analyzer === "aih-native"
-          ? {
-              protocol: "BaselineNativeObservationV1",
-              sourceTreeSha256: request.source.treeSha256,
-              files: [],
-            }
-          : selfDerivedPrecomputedCompletionForTests(
-              annexOverrides[analyzer] ?? {
-                version: "2.1.0",
-                runs: [
-                  {
-                    tool: { driver: { name: analyzer } },
-                    invocations: [{ executionSuccessful: true }],
-                    results: [],
-                  },
-                ],
-              },
-              SCAN_DETECTOR_IDS[analyzer as TrustDetectorName],
-              root,
-              {
-                origin: "scanner-baseline-vet",
-                ...(uvProfile[analyzer] === undefined
-                  ? {}
-                  : { executionProfileId: uvProfile[analyzer] }),
-              },
-            ),
+        literalAnnexes[analyzer] !== undefined
+          ? literalAnnexes[analyzer]
+          : analyzer === "aih-native"
+            ? {
+                protocol: "BaselineNativeObservationV1",
+                sourceTreeSha256: request.source.treeSha256,
+                files: [],
+              }
+            : selfDerivedPrecomputedCompletionForTests(
+                annexOverrides[analyzer] ?? {
+                  version: "2.1.0",
+                  runs: [
+                    {
+                      tool: { driver: { name: analyzer } },
+                      invocations: [{ executionSuccessful: true }],
+                      results: [],
+                    },
+                  ],
+                },
+                SCAN_DETECTOR_IDS[analyzer as TrustDetectorName],
+                root,
+                {
+                  origin: "scanner-baseline-vet",
+                  ...(uvProfile[analyzer] === undefined
+                    ? {}
+                    : { executionProfileId: uvProfile[analyzer] }),
+                },
+              ),
       ),
       "utf8",
     );
@@ -545,5 +560,98 @@ describe("Core Scanner baseline consumer", () => {
         expected: wrongSigned.expected,
       }),
     ).rejects.toThrow(/does not match pinned/);
+  });
+});
+
+/** The S2j hand vector's tree as a baseline source with one skill component. */
+function vectorFixture() {
+  const root = mkdtempSync(join(tmpdir(), "aih-core-scanner-vector-"));
+  roots.push(root);
+  for (const [path, body] of Object.entries(VECTOR_FILES)) {
+    mkdirSync(dirname(join(root, path)), { recursive: true });
+    writeFileSync(join(root, path), body, "utf8");
+  }
+  const catalog = defineBaselineCatalog({
+    id: "vector",
+    owner: "example",
+    repo: "vector",
+    pinnedSha: "c".repeat(40),
+    components: [{ id: "skill:vector", paths: ["SKILL.md", "src"], skillContent: true }],
+  });
+  return { root, catalog };
+}
+
+/** Annexes stating the S2j vector's evidence by hand, with the batch's analyzers. */
+function vectorAnnexes(
+  overrides: Partial<Record<ScannerBaselineAnalyzer, unknown>> = {},
+): Partial<Record<ScannerBaselineAnalyzer, unknown>> {
+  return {
+    semgrep: vectorAnnex(vectorEvidence("detector.semgrep", BASELINE, SEMGREP_NAMESPACE)),
+    skillspector: vectorAnnex(
+      vectorEvidence("detector.skillspector", BASELINE, SKILLSPECTOR_HARDENED),
+    ),
+    cisco: vectorAnnex(vectorEvidence("detector.cisco", BASELINE, CISCO_NAMESPACE)),
+    ...overrides,
+  };
+}
+
+async function consumeVector(annexes: Partial<Record<ScannerBaselineAnalyzer, unknown>>) {
+  const { root, catalog } = vectorFixture();
+  const request = createCoreBaselineVetRequest(root, catalog);
+  const result = buildResult(root, request, {}, {}, {}, annexes);
+  const signed = signedFixture(request, result);
+  return consumeVerifiedScannerBaseline({
+    sourceRoot: root,
+    catalog,
+    request,
+    result,
+    envelope: signed.envelope,
+    roots: signed.roots,
+    expected: signed.expected,
+  });
+}
+
+describe("verified Scanner-publication annexes follow Scan's baseline rule (D24, S2j vector)", () => {
+  it("completes Semgrep, SkillSpector and Cisco evidence for F without the top-level .git", async () => {
+    const evidence = await consumeVector(vectorAnnexes());
+    expect(evidence.components.map((component) => component.verdict)).toEqual(["pass"]);
+  });
+
+  it.each([
+    ["semgrep", "detector.semgrep", SEMGREP_NAMESPACE],
+    ["skillspector", "detector.skillspector", SKILLSPECTOR_HARDENED],
+    ["cisco", "detector.cisco", CISCO_NAMESPACE],
+  ] as const)(
+    "refuses %s evidence whose subject includes the top-level .git",
+    async (analyzer, id, identity) => {
+      await expect(
+        consumeVector(
+          vectorAnnexes({ [analyzer]: vectorAnnex(vectorEvidence(id, WITH_GIT, identity)) }),
+        ),
+      ).rejects.toThrow(
+        `precomputed SARIF for ${id} is refused: completion evidence for 3 files with subject tree ${WITH_GIT.subjectTreeSha256}; the subject Core submitted has 2 files with subject tree ${BASELINE.subjectTreeSha256}`,
+      );
+    },
+  );
+
+  it("keeps an evidence-less annex completion-evidence-absent (D17)", async () => {
+    await expect(consumeVector(vectorAnnexes({ semgrep: vectorAnnex() }))).rejects.toThrow(
+      "precomputed SARIF for detector.semgrep carries no completion evidence v1 (completion-evidence-absent)",
+    );
+  });
+
+  it("refuses a SkillSpector annex naming an image digest Core does not accept", async () => {
+    const other = `${SKILLSPECTOR_SOURCE_REVISION}@sha256:${"0".repeat(64)}`;
+    await expect(
+      consumeVector(
+        vectorAnnexes({
+          skillspector: vectorAnnex(
+            vectorEvidence("detector.skillspector", BASELINE, { version: other, lockSha256: null }),
+          ),
+        }),
+      ),
+    ).rejects.toThrow(
+      `precomputed SARIF for detector.skillspector is refused: completion evidence for analyzer "${other}"`,
+    );
   });
 });

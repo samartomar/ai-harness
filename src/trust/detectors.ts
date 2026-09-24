@@ -61,7 +61,6 @@ import {
   scanCompletionRefusalV1,
 } from "./scan-sarif.js";
 import {
-  BASELINE_VET_ANNEX_DETECTORS_V1,
   baselineVetAnnexSubjectFilesV1,
   SCAN_EMPTY_SOURCE_COMPLETES_V1,
   type ScanSubjectDigestV1,
@@ -126,14 +125,6 @@ export interface TrustDetectorOptions {
    * shard join); without evidence it is `completion-evidence-absent`.
    */
   precomputedSarif?: Readonly<Partial<Record<TrustDetectorName, PrecomputedDetectorSarifV1>>>;
-  /**
-   * Where `precomputedSarif` came from, which fixes the subject and analyzer it
-   * must prove. Omitted is `inline`: each detector's own rule, as a delegated
-   * run. `scanner-baseline-vet` is a Scanner publication's annexes (C2a §1.6
-   * [Scan: S2j], decision D24): the baseline subject and the profile Scan's
-   * batch runs (`SCANNER_BASELINE_VET_EXECUTION_PROFILES_V1`).
-   */
-  precomputedSarifOrigin?: PrecomputedSarifOriginV1;
   /**
    * Scan's detector execution. Omitted means the INSTALLED `@aihq/scan`, loaded
    * on first need; an injected adapter replaces it (tests and embedders). Every
@@ -397,8 +388,26 @@ export interface VerifiedCiscoShardSarifV1 {
   readonly sarif: string;
 }
 
-/** Precomputed SARIF: a Scanner annex's bytes, or a Cisco shard join Core verified. */
-export type PrecomputedDetectorSarifV1 = string | VerifiedCiscoShardSarifV1;
+/**
+ * A Scanner publication's (baseline-vet) annex. Only an annex the verified
+ * Scanner consumer issued (`consumeVerifiedScannerBaselineBatches`, after
+ * Scan's attestation verified) for this detector is checked under Scan's
+ * baseline rule (C2a §1.6 [Scan: S2j], decision D24); any other value of this
+ * shape is inline SARIF.
+ */
+export interface ScannerBaselineVetAnnexV1 {
+  readonly kind: "scanner-baseline-vet-annex-v1";
+  readonly sarif: string;
+}
+
+/**
+ * Precomputed SARIF: inline bytes, a Scanner publication's annex, or a Cisco
+ * shard join Core verified.
+ */
+export type PrecomputedDetectorSarifV1 =
+  | string
+  | ScannerBaselineVetAnnexV1
+  | VerifiedCiscoShardSarifV1;
 
 /** What an issued join is bound to: the canonical root it is presented for, and each job's verified subject. */
 interface IssuedShardJoinBindingV1 {
@@ -1626,8 +1635,8 @@ export function delegatedScanCompletionRefusalV1(
   });
 }
 
-/** Where precomputed SARIF came from (`TrustDetectorOptions.precomputedSarifOrigin`). */
-export type PrecomputedSarifOriginV1 = "inline" | "scanner-baseline-vet";
+/** Which rule precomputed SARIF meets: inline, or a verified Scanner publication's annex. */
+type PrecomputedSarifOriginV1 = "inline" | "scanner-baseline-vet";
 
 /**
  * Why precomputed SARIF (a Scanner annex's bytes) does not prove this tree was
@@ -2036,8 +2045,19 @@ async function runDetectorList(
     let delegatedPass: Parameters<typeof analyzerPassCheck>[2];
     // A verified shard join's jobs were each checked against their own subject.
     let verifiedShardJoin = false;
+    let origin: PrecomputedSarifOriginV1 = "inline";
     if (typeof precomputed === "string") sarifText = precomputed;
-    else if (precomputed !== undefined) {
+    else if (precomputed?.kind === "scanner-baseline-vet-annex-v1") {
+      sarifText = precomputed.sarif;
+      // Only the verified consumer's own annex for this detector claims Scan's
+      // baseline rule; a look-alike is inline SARIF. Loaded on use: the consumer
+      // imports the scan that imports this module.
+      const { scannerBaselineVetAnnexDetectorV1 } = await import(
+        "../baseline-evidence/scanner-consumer.js"
+      );
+      if (scannerBaselineVetAnnexDetectorV1(precomputed) === detector.name)
+        origin = "scanner-baseline-vet";
+    } else if (precomputed !== undefined) {
       const binding = ISSUED_SHARD_JOINS.get(precomputed);
       if (detector.name !== "cisco" || binding === undefined) {
         unavailable(
@@ -2138,23 +2158,16 @@ async function runDetectorList(
     // analyzed, exactly as a delegated run must (decision D17).
     if (execution.executedBy === "precomputed-sarif" && !verifiedShardJoin) {
       const scanId = SCAN_DETECTOR_IDS[detector.name];
-      const origin = options.precomputedSarifOrigin ?? "inline";
-      const baselineProfile = SCANNER_BASELINE_VET_EXECUTION_PROFILES_V1[scanId];
-      if (origin === "scanner-baseline-vet" && baselineProfile === undefined) {
-        unavailable(
-          detector,
-          `precomputed SARIF for ${scanId} is refused: a baseline vet publishes no ${scanId} annex; it runs only ${BASELINE_VET_ANNEX_DETECTORS_V1.slice(0, -1).join(", ")} and ${BASELINE_VET_ANNEX_DETECTORS_V1.at(-1)}`,
-        );
-        executions.push({ detector: detector.name, ...execution, outcome: "failed" });
-        continue;
-      }
+      const baselineProfile =
+        origin === "scanner-baseline-vet"
+          ? SCANNER_BASELINE_VET_EXECUTION_PROFILES_V1[scanId]
+          : undefined;
       const completion = precomputedScanCompletionRefusalV1(checked.log, {
         detectorId: scanId,
-        origin,
+        origin: baselineProfile === undefined ? "inline" : origin,
         executionProfileId:
-          origin === "scanner-baseline-vet" && baselineProfile !== undefined
-            ? baselineProfile
-            : requiredExecutionProfileIdV1(detector.name, options.uvExecutionProfileId),
+          baselineProfile ??
+          requiredExecutionProfileIdV1(detector.name, options.uvExecutionProfileId),
         sourceRoot: root,
         selectedClosurePaths: options.inventory.files.map((entry) => entry.relativePath),
         ...(detector.name === "mcp-scanner"
