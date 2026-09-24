@@ -71,8 +71,8 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   section, including the nested pinned manifest and module evidence, is strict: an unknown key
   or a mistyped field refuses with `framework-profile-evidence-incompatible` naming its key path.
 - `aih ecc --lifecycle rollback` now authenticates the rollback snapshot as well as the active
-  installation: its source identity and projection digest must equal an entry in the plugin's
-  append-only installation trust record before any write is planned. A snapshot that is not
+  installation: its source identity and projection digest must equal an entry in Core's
+  append-only ECC profile installation trust record before any write is planned. A snapshot that is not
   anchored there (including a self-consistent one with recomputed hashes) refuses with
   `framework-profile-recovery-unanchored` and writes nothing; repair, rollback and uninstall
   report an unanchored active identity with the same typed refusal.
@@ -83,6 +83,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   version-2 anchor at the same pin; a changed merge strategy refuses with
   `framework-profile-recovery-unanchored`. The installation trust record appends the version-2
   identity of ECC 0c1d7be9.
+- The ECC profile installation trust record (the recovery anchors) moved from
+  `@aihq/framework-ecc` into Core: `ECC_PROFILE_INSTALLATION_TRUST_V1`, a frozen, append-only
+  record exported through `@aihq/core/framework-host` (additive; host API version 1 is
+  unchanged). Recovery checks only Core's record: the plugin ships no anchors and has no seam to
+  add one at runtime, so a plugin release can no longer authorize its own receipts.
 - `aih ecc --lifecycle uninstall`, `update` and `rollback` no longer delete an ECC profile merge
   destination (such as `.codex/config.toml`) when only whitespace remains after the managed blocks
   are removed. They write the stripped bytes and name the kept file in the plan. The receipt's

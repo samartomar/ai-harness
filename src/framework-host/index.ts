@@ -280,6 +280,11 @@ export {
   inspectEccRuntimeDescriptorSealV1,
 } from "../ecc/runtime-descriptor.js";
 export { deriveEccRuntimeDeclaredEvaluationV1 } from "../ecc/runtime-descriptor-evaluation.js";
+/** Core's append-only ECC profile recovery anchors; the plugin ships none of its own. */
+export {
+  ECC_PROFILE_INSTALLATION_TRUST_V1,
+  type EccProfileInstallationTrustV1,
+} from "../ecc-profile/installation-trust.js";
 export {
   buildNativeEccRegistration,
   type EccNativeStateRootV1,

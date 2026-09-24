@@ -116,7 +116,7 @@ export class EccProfileRecoveryRefusalError extends AihError {
 }
 
 const RECOVERY_NEXT_ROUTE =
-  "use an @aihq/framework-ecc package version whose append-only installation trust record names this exact ECC pin and projection digest";
+  "use an @aihq/core package version whose append-only ECC profile installation trust record names this exact ECC pin and projection digest";
 
 type RecoveryIdentityVersion = 1 | 2;
 

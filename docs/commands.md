@@ -624,7 +624,7 @@ on foreign or operator-modified files. Repair, rollback, and uninstall use the r
 hash-authenticated installed bytes and source identity, so a later package pin cannot strand an
 older managed installation. The receipt is operator-writable, so its self-declared identities never authorize
 a write on their own: the active source and, for rollback, the snapshot's source and projection digest
-must equal an entry in the plugin's append-only installation trust record, or the command refuses
+must equal an entry in Core's append-only ECC profile installation trust record (shipped in `@aihq/core`, read by the plugin through `@aihq/core/framework-host`; the plugin ships no anchors of its own), or the command refuses
 with `framework-profile-recovery-unanchored` before planning any write. Recovery identities are versioned: version 2
 (recorded by current installs) also binds each file's merge strategy, and a version-1 identity from an earlier release
 recovers only when a version-2 anchor at the same pin authenticates its write semantics. Uninstall, update and rollback

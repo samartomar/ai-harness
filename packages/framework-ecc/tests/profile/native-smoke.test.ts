@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { parse as parseYaml } from "yaml";
 import {
   buildNativeEccRegistration,
@@ -21,6 +21,23 @@ import {
 import { renderEccProjection } from "../../src/profile/render.js";
 import { TRUSTED_PROJECTED_SOURCE } from "./pinned-profile-fixture.js";
 import { evidence, fixtureDirectory, profile, receipt } from "./render-fixture.js";
+
+/**
+ * Test-only: the hermetic fixtures install synthetic pins, so recovery here is
+ * anchored by replacing the contents of Core's (mocked) installation trust
+ * record. Production has no seam: the plugin reads Core's frozen record.
+ */
+const coreTrust = vi.hoisted(() => [] as unknown[]);
+vi.mock("@aihq/core/framework-host", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  ECC_PROFILE_INSTALLATION_TRUST_V1: coreTrust,
+}));
+
+/** Anchor recovery on exactly `anchors`; contributes no command deps. */
+function coreAnchors(anchors: readonly unknown[]): Record<string, never> {
+  coreTrust.splice(0, coreTrust.length, ...anchors);
+  return {};
+}
 
 const pinnedSourceRoot = process.env.AIH_ECC_PINNED_SOURCE_ROOT;
 const codexEntrypoint = process.env.AIH_CODEX_NATIVE_ENTRYPOINT;
@@ -164,7 +181,7 @@ describe.skipIf(!nativeEnabled)("disposable native-client ECC projection smoke",
       await rm(repairCanary);
       await executeEccProfileLifecycleCommand(applyContext(project, "repair"), {
         ...deps,
-        installedSourceTrust: installedSource ? [installedSource] : [],
+        ...coreAnchors(installedSource ? [installedSource] : []),
       });
       expect(await readFile(repairCanary, "utf8")).not.toBe("");
       const markdown = projection.files.filter((file) => file.content.startsWith("---\n"));
@@ -214,7 +231,7 @@ describe.skipIf(!nativeEnabled)("disposable native-client ECC projection smoke",
 
       await executeEccProfileLifecycleCommand(applyContext(project, "uninstall"), {
         ...deps,
-        installedSourceTrust: installedSource ? [installedSource] : [],
+        ...coreAnchors(installedSource ? [installedSource] : []),
       });
       expect(existsSync(join(project, ECC_PROFILE_OWNERSHIP_PATH))).toBe(false);
       expect(existsSync(join(project, NATIVE_ECC_REGISTRATION_RECEIPT))).toBe(false);

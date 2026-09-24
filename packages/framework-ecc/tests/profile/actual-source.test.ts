@@ -3,9 +3,9 @@ import { createHash } from "node:crypto";
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { ECC_PROFILE_INSTALLATION_TRUST_V1 } from "@aihq/core/framework-host";
 import { describe, expect, it } from "vitest";
 import { buildNativeEccRegistration } from "../../../../src/ecc-profile/native-registration.js";
-import { PACKAGED_ECC_PROFILE_INSTALLATION_TRUST } from "../../src/profile/command.js";
 import { eccProfileRecoveryIdentity } from "../../src/profile/lifecycle.js";
 import {
   buildEccProfileParityReceipt,
@@ -167,7 +167,7 @@ describe.skipIf(!pinnedSourceRoot)("actual pinned ECC projection receipt", () =>
       expect(recoveryIdentity.projectionSha256).toBe(
         projectionReceipt.recoveryIdentityV2ProjectionSha256,
       );
-      expect(PACKAGED_ECC_PROFILE_INSTALLATION_TRUST).toContainEqual(recoveryIdentity);
+      expect(ECC_PROFILE_INSTALLATION_TRUST_V1).toContainEqual(recoveryIdentity);
 
       const target = await mkdtemp(join(tmpdir(), "aih-ecc-actual-parity-target-"));
       const stateRoot = await mkdtemp(join(tmpdir(), "aih-ecc-actual-parity-state-"));

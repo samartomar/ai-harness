@@ -7,6 +7,7 @@ import {
   assertTrustTreeSafe,
   beginMarker,
   buildNativeEccRegistration,
+  ECC_PROFILE_INSTALLATION_TRUST_V1,
   eccRuntimeScriptPath,
   endMarker,
   NATIVE_ECC_REGISTRATION_SCOPE,
@@ -32,7 +33,6 @@ import { currentEccProfileEvidenceV1, type EccProfileEvidenceV1 } from "./descri
 import type { EccProfile } from "./index.js";
 import {
   ECC_PROFILE_MANAGED_SCOPE,
-  type EccProfileInstalledSourceTrust,
   type EccProfileLifecycleOperation,
   planEccProfileLifecycle,
   planInstalledEccProfileLifecycle,
@@ -56,33 +56,11 @@ export interface MaterializedEccProfileEvidence {
 export interface EccProfileLifecycleCommandDeps {
   /** Internal hermetic-test seam; the public command always uses authenticated acquisition. */
   loadProjection?: (ctx: PlanContext) => Promise<EccProjection>;
-  /** Internal future-pin seam; shipped packages use the append-only trust registry below. */
-  installedSourceTrust?: readonly EccProfileInstalledSourceTrust[];
   /** Internal hermetic-test seam; injected projection tests do not touch native config by default. */
   loadNativeRegistration?: (ctx: PlanContext) => NativeEccRegistration;
   /** Protected-policy pins supplied by the command that authorized this lifecycle mutation. */
   transactionPins?: Pick<Plan, "fileAssertions" | "commitNotAfter" | "commitLock">;
 }
-
-/** Append-only identities for installations that this package can recover or remove offline. */
-export const PACKAGED_ECC_PROFILE_INSTALLATION_TRUST = [
-  {
-    repository: "affaan-m/ECC",
-    commit: "0c1d7be9a750627fb2a6534c78a998cc46d03f9c",
-    sourceClosureId: "ecc-projected-source-closure-v1",
-    sourceClosureSha256: "8dadd2c412511d690555243773f8bc4a0ed1e7ba43fc0804bc1d955b3b7bca37",
-    projectionSha256: "8bfa1837b2f7d4239b69955540c20a76a795c4ef86dc3555390d5d18e30bc585",
-  },
-  // Version 2 of the same installation: also binds each file's merge strategy.
-  {
-    recoveryIdentityVersion: 2,
-    repository: "affaan-m/ECC",
-    commit: "0c1d7be9a750627fb2a6534c78a998cc46d03f9c",
-    sourceClosureId: "ecc-projected-source-closure-v1",
-    sourceClosureSha256: "8dadd2c412511d690555243773f8bc4a0ed1e7ba43fc0804bc1d955b3b7bca37",
-    projectionSha256: "1d9367486f2075d4f90fea24d8d59ba5cb8b0ace087ec8a0382c53890ca7cbe2",
-  },
-] as const satisfies readonly EccProfileInstalledSourceTrust[];
 
 type FileMutation = WriteAction | RemoveAction;
 
@@ -391,7 +369,7 @@ export async function executeEccProfileLifecycleCommand(
       const projectionPlan = planInstalledEccProfileLifecycle(
         ctx.root,
         operation,
-        deps.installedSourceTrust ?? PACKAGED_ECC_PROFILE_INSTALLATION_TRUST,
+        ECC_PROFILE_INSTALLATION_TRUST_V1,
       );
       if (!nativeEnabled) return executePlan(projectionPlan, ctx);
       const nativePlan = planInstalledNativeEccRegistration(ctx.root, operation);
@@ -411,7 +389,7 @@ export async function executeEccProfileLifecycleCommand(
     const projectionPlan = planInstalledEccProfileLifecycle(
       ctx.root,
       operation,
-      deps.installedSourceTrust ?? PACKAGED_ECC_PROFILE_INSTALLATION_TRUST,
+      ECC_PROFILE_INSTALLATION_TRUST_V1,
     );
     if (!nativeEnabled)
       return executePlan(withTransactionPins(projectionPlan, deps.transactionPins), ctx);
