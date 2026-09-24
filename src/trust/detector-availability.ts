@@ -4,6 +4,7 @@ import {
   type ScanPackageImporterV1,
   ScanPackageRefusalError,
 } from "../scan-package/load-scan-package.js";
+import { startTrackedScanCall } from "../scan-package/settlement.js";
 import {
   acceptedSkillspectorImageDigestsV1,
   requestedExecutionProfileV1,
@@ -89,15 +90,17 @@ export async function probeScanDetectorsV1(
         : [];
     const token = options.env.SNYK_TOKEN?.trim();
     const probe = asRecord(
-      await probeDetectorAvailabilityV1({
-        detectorId,
-        executionProfileId: profile.id,
-        ...(digests.length === 0 ? {} : { acceptedImageDigests: digests }),
-        ...(detector === "snyk-agent-scan" && token !== undefined && token.length > 0
-          ? { env: { SNYK_TOKEN: token } }
-          : {}),
-        ...(options.signal === undefined ? {} : { signal: options.signal }),
-      }),
+      await startTrackedScanCall(options.signal, `${detectorId} availability probe`, () =>
+        probeDetectorAvailabilityV1({
+          detectorId,
+          executionProfileId: profile.id,
+          ...(digests.length === 0 ? {} : { acceptedImageDigests: digests }),
+          ...(detector === "snyk-agent-scan" && token !== undefined && token.length > 0
+            ? { env: { SNYK_TOKEN: token } }
+            : {}),
+          ...(options.signal === undefined ? {} : { signal: options.signal }),
+        }),
+      ),
     );
     if (probe?.available === true) continue;
     unavailable.push({

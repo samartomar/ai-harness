@@ -8,6 +8,7 @@ import {
   SCAN_PACKAGE_PROJECT_INSTALL_COMMAND,
   ScanPackageRefusalError,
 } from "../scan-package/load-scan-package.js";
+import { startTrackedScanCall } from "../scan-package/settlement.js";
 import {
   delegatedDetectorResult,
   resolveScanExecutionV1,
@@ -310,16 +311,18 @@ export async function inspectTreeThroughScanV1(
   const sourceRoot = realpathSync(treePath);
   let raw: unknown;
   try {
-    raw = await scan.adapter.runDetectorV1({
-      detectorId: BINDING_GATE_DETECTOR_ID,
-      executionProfileId: BINDING_GATE_EXECUTION_PROFILE,
-      subject: {
-        kind: "source-tree",
-        sourceRoot,
-        selectedClosurePaths: [...selectedPaths],
-      },
-      ...(options.signal === undefined ? {} : { signal: options.signal }),
-    });
+    raw = await startTrackedScanCall(options.signal, BINDING_GATE_DETECTOR_ID, () =>
+      scan.adapter.runDetectorV1({
+        detectorId: BINDING_GATE_DETECTOR_ID,
+        executionProfileId: BINDING_GATE_EXECUTION_PROFILE,
+        subject: {
+          kind: "source-tree",
+          sourceRoot,
+          selectedClosurePaths: [...selectedPaths],
+        },
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
+      }),
+    );
   } catch (error) {
     if (aborted(options.signal))
       throw new TrustScanCancelledError(`${BINDING_GATE_DETECTOR_ID} was running`);

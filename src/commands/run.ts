@@ -33,6 +33,7 @@ import {
 } from "../org-policy/binding.js";
 import { makeHostAdapter } from "../platform/detect.js";
 import { openCodeSandboxPolicyBinding } from "../sandbox/opencode.js";
+import { bindScanSettlement, SCAN_SETTLEMENT_TIMEOUT_MS } from "../scan-package/settlement.js";
 import { buildSupport, supportSummary } from "../support/integrate.js";
 import { redactArgv, redactText } from "../support/redact.js";
 
@@ -56,6 +57,8 @@ export interface RunDeps {
   positionalRoot?: string | false;
   /** Capability-owned multi-phase executor; preserves shared output, support, and logging. */
   execute?: (ctx: PlanContext) => Promise<PlanResult>;
+  /** How long cleanup waits for a cancelled delegated Scan call to settle (tests shorten it). */
+  scanSettlementTimeoutMs?: number;
 }
 
 const delay = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
@@ -174,9 +177,21 @@ export async function runCapability(
   const writeError = deps.writeError ?? ((t: string) => process.stderr.write(t));
   const run = deps.run ?? defaultRunner;
   const deferredCleanups: Array<() => void | Promise<void>> = [];
+  // Settlements of delegated Scan calls, each registered before its call starts.
+  // They are awaited together, bounded, before any deferred cleanup: a cancelled
+  // Scan call removes its own temporary directories before it settles.
+  const scanSettlements: Array<() => Promise<void>> = [];
   let cleanupPromise: Promise<void> | undefined;
   const runDeferredCleanups = (): Promise<void> => {
     cleanupPromise ??= (async () => {
+      for (const settlement of await Promise.allSettled(scanSettlements.map((wait) => wait()))) {
+        if (settlement.status === "rejected") {
+          const error = settlement.reason;
+          writeError(
+            `cleanup warning: ${error instanceof Error ? error.message : String(error)}\n`,
+          );
+        }
+      }
       for (const cleanup of [...deferredCleanups].reverse()) {
         try {
           await cleanup();
@@ -190,8 +205,14 @@ export async function runCapability(
   };
   let terminating = false;
   // A signal cancels in-flight delegated work first (Scan kills the analyzer's
-  // process tree), then the deferred cleanups run and the signal is re-raised.
+  // process tree), then the in-flight Scan calls settle, the deferred cleanups
+  // run and the signal is re-raised.
   const cancellation = new AbortController();
+  bindScanSettlement(
+    cancellation.signal,
+    (settlement) => scanSettlements.push(settlement),
+    deps.scanSettlementTimeoutMs ?? SCAN_SETTLEMENT_TIMEOUT_MS,
+  );
   const removeSignalHandlers = (): void => {
     process.off("SIGINT", onSigint);
     process.off("SIGTERM", onSigterm);

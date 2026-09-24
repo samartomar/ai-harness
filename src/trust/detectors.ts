@@ -16,6 +16,7 @@ import {
   type ScanPackageRefusalV1,
   scanPackageRefusalMessage,
 } from "../scan-package/load-scan-package.js";
+import { startTrackedScanCall } from "../scan-package/settlement.js";
 import {
   buildCiscoShardManifest,
   type CiscoShardManifest,
@@ -1210,6 +1211,7 @@ async function recordScanNativeObservation(
   scan: ResolvedScanExecutionV1,
   root: string,
   inventory: TrustFileInventory,
+  signal: AbortSignal | undefined,
 ): Promise<ScanObservationV1 | undefined> {
   const detectorId = SCAN_NATIVE_OBSERVATION_DETECTOR_ID;
   if ("refusal" in scan) {
@@ -1225,14 +1227,17 @@ async function recordScanNativeObservation(
   const base = { detectorId, scanSource: scan.source } as const;
   let result: unknown;
   try {
-    result = await scan.adapter.runDetectorV1({
-      detectorId,
-      subject: {
-        kind: "source-tree",
-        sourceRoot: root,
-        selectedClosurePaths: inventory.files.map((entry) => entry.relativePath),
-      },
-    });
+    result = await startTrackedScanCall(signal, detectorId, () =>
+      scan.adapter.runDetectorV1({
+        detectorId,
+        subject: {
+          kind: "source-tree",
+          sourceRoot: root,
+          selectedClosurePaths: inventory.files.map((entry) => entry.relativePath),
+        },
+        ...(signal === undefined ? {} : { signal }),
+      }),
+    );
   } catch (error) {
     return {
       ...base,
@@ -1346,23 +1351,26 @@ async function runDelegatedDetector(
   let result: DelegatedDetectorResultV1;
   try {
     result = delegatedDetectorResult(
-      await adapter.runDetectorV1({
-        detectorId: scanId,
-        executionProfileId,
-        subject: {
-          kind: "source-tree",
-          sourceRoot: root,
-          selectedClosurePaths: inventory.files.map((entry) => entry.relativePath),
-        },
-        ...(options.signal === undefined ? {} : { signal: options.signal }),
-        ...(options.detectorOptions === undefined
-          ? {}
-          : { detectorOptions: options.detectorOptions }),
-        ...(options.acceptedImageDigests === undefined || options.acceptedImageDigests.length === 0
-          ? {}
-          : { acceptedImageDigests: [...options.acceptedImageDigests] }),
-        ...(options.env === undefined ? {} : { env: options.env }),
-      }),
+      await startTrackedScanCall(options.signal, scanId, () =>
+        adapter.runDetectorV1({
+          detectorId: scanId,
+          executionProfileId,
+          subject: {
+            kind: "source-tree",
+            sourceRoot: root,
+            selectedClosurePaths: inventory.files.map((entry) => entry.relativePath),
+          },
+          ...(options.signal === undefined ? {} : { signal: options.signal }),
+          ...(options.detectorOptions === undefined
+            ? {}
+            : { detectorOptions: options.detectorOptions }),
+          ...(options.acceptedImageDigests === undefined ||
+          options.acceptedImageDigests.length === 0
+            ? {}
+            : { acceptedImageDigests: [...options.acceptedImageDigests] }),
+          ...(options.env === undefined ? {} : { env: options.env }),
+        }),
+      ),
     );
   } catch (error) {
     throwIfCancelled(options.signal, `${scanId} was running`);
@@ -1706,9 +1714,14 @@ async function runDetectorList(
   // Scan's identity observation rides along only when Scan was consulted at all.
   const observations =
     recordScanObservation && scanExecution !== undefined
-      ? [await recordScanNativeObservation(await scanExecution, root, options.inventory)].filter(
-          (observation): observation is ScanObservationV1 => observation !== undefined,
-        )
+      ? [
+          await recordScanNativeObservation(
+            await scanExecution,
+            root,
+            options.inventory,
+            options.signal,
+          ),
+        ].filter((observation): observation is ScanObservationV1 => observation !== undefined)
       : [];
   return { checks, analyzersRun, rawOccurrences, executions, observations };
 }

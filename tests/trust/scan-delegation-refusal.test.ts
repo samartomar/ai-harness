@@ -7,6 +7,7 @@ import {
   SCAN_PACKAGE_INSTALL_COMMAND,
   ScanPackageRefusalError,
 } from "../../src/scan-package/load-scan-package.js";
+import { bindScanSettlement } from "../../src/scan-package/settlement.js";
 import { type TrustDetectorName, TrustScanCancelledError } from "../../src/trust/detectors.js";
 import { scanTrustTreeWithAnalyzers } from "../../src/trust/scan.js";
 import { TRUST_LINT_FINGERPRINT_KEY } from "../../src/trust/trust-lint-sarif.js";
@@ -745,6 +746,42 @@ describe("cancellation reaches Scan and stops the scan", () => {
       message: "trust scan cancelled: detector.semgrep was running",
     });
     expect(scan.aborted).toEqual(["detector.semgrep"]);
+  });
+
+  it("registers every delegated call's settlement with the command before Scan receives it", async () => {
+    const root = caseRoot("prompt-injection");
+    const scan = createFakeScanAdapterForTests({
+      "detector.aih-trust-lint": goldenTrustLint("prompt-injection"),
+      "detector.semgrep": { kind: "block-until-aborted" },
+      "detector.cisco": { kind: "sarif", sarif: sarif([]) },
+    });
+    const controller = new AbortController();
+    const settlements: Array<() => Promise<void>> = [];
+    const registeredWhenReceived: number[] = [];
+    bindScanSettlement(controller.signal, (settlement) => settlements.push(settlement), 5_000);
+    const tracked: typeof scan = {
+      ...scan,
+      runDetectorV1: (request) => {
+        registeredWhenReceived.push(settlements.length);
+        return scan.runDetectorV1(request);
+      },
+    };
+    const scanning = delegatedScan(root, ["semgrep", "cisco"], {
+      scanExecution: tracked,
+      signal: controller.signal,
+    });
+    await vi.waitFor(() => expect(scan.requests).toHaveLength(3));
+    expect(registeredWhenReceived).toEqual([1, 2, 3]);
+    let settled = false;
+    const waiting = Promise.all(settlements.map((wait) => wait())).then(() => {
+      settled = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(settled).toBe(false);
+    controller.abort();
+    await expect(scanning).rejects.toBeInstanceOf(TrustScanCancelledError);
+    await waiting;
+    expect(settled).toBe(true);
   });
 
   it("stops before any detector when the native findings run is cancelled", async () => {

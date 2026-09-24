@@ -6,6 +6,7 @@ import {
   type ScanPackageImporterV1,
   ScanPackageRefusalError,
 } from "../scan-package/load-scan-package.js";
+import { startTrackedScanCall } from "../scan-package/settlement.js";
 import {
   buildCiscoShardResult,
   type CiscoShardManifest,
@@ -200,14 +201,16 @@ export async function runCiscoSourceShardThroughScanV1(
   if (aborted(options.signal))
     throw new TrustScanCancelledError(`before Cisco shard ${shardId} started`);
   const analyzerVersion = manifest.analyzer.version.split("+", 1)[0] ?? manifest.analyzer.version;
-  const result = await runCiscoShardV1({
-    sourceRoot: safeRoot,
-    jobs,
-    expected: { analyzerVersion, lockSha256: manifest.analyzer.lockSha256 },
-    executionProfileId: options.executionProfileId,
-    concurrency: options.concurrency,
-    ...(options.signal === undefined ? {} : { signal: options.signal }),
-  });
+  const result = await startTrackedScanCall(options.signal, `Cisco shard ${shardId}`, () =>
+    runCiscoShardV1({
+      sourceRoot: safeRoot,
+      jobs,
+      expected: { analyzerVersion, lockSha256: manifest.analyzer.lockSha256 },
+      executionProfileId: options.executionProfileId,
+      concurrency: options.concurrency,
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+    }),
+  );
   if (aborted(options.signal))
     throw new TrustScanCancelledError(`Cisco shard ${shardId} was running`);
   const evidence = shardEvidence(result, jobs, {

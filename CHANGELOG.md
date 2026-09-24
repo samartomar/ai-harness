@@ -74,6 +74,10 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Scan's trust-lint facts must cover every selected file, or the native findings fail at
   every posture instead of third-party findings losing their corroboration. The binding gate
   recomputes each content pin from the file before any acceptance applies.
+- A SIGINT or SIGTERM during a delegated Scan call now waits, up to 30 seconds, for the
+  cancelled call to settle before command cleanup and the re-raised signal, so Scan removes
+  its snapshot and analyzer temporary directories; a call that does not settle in time is
+  reported on stderr as a cleanup warning.
 - Fresh baseline vets name each uv analyzer by its version and the uv.lock digest the
   installed Scan publishes for the profile it ran under (the host-process Cisco lock differs
   from the committed receipts' lock). Committed baseline evidence is still checked against
