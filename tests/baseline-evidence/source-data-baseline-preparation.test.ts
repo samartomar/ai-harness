@@ -34,21 +34,14 @@ function fixture() {
   };
   return { root, input };
 }
-it("reconstructs baseline declaration identity from complete actual material without inventing a report", () => {
+const AUTHORITY_REFUSAL = /framework differs from admitted Catalog authority/;
+
+// Only the framework the installed Catalog admits can be prepared. Its positive
+// path needs the real upstream bytes its metadata digests pin; a synthetic
+// framework binds its actual material first and is then refused by authority.
+it("binds complete actual material, then refuses a framework the installed Catalog does not admit", () => {
   const { root, input } = fixture();
-  const prepared = prepareSourceDataBaselineCoverageV1(root, input);
-  expect(prepared.coverage.components[0]?.files.map((file) => file.path)).toEqual([
-    "skills/one/SKILL.md",
-    "skills/one/helper.md",
-  ]);
-  expect(prepared.compiled.evidence).toEqual({});
-  expect(prepared.coverage.unmappedDerivedAssets).toEqual(["ecc/profile:methodology"]);
-  expect(prepared.coverage.source.inputFormat).toBe("pinned-baseline/v1");
-  const before = prepared.coverage.components[0]?.subject.contentDigest;
-  writeFileSync(join(root, "LICENSE"), "Changed legal context\n");
-  expect(
-    prepareSourceDataBaselineCoverageV1(root, input).coverage.components[0]?.subject.contentDigest,
-  ).not.toBe(before);
+  expect(() => prepareSourceDataBaselineCoverageV1(root, input)).toThrow(AUTHORITY_REFUSAL);
 });
 it.each(["repository", "commit", "missing-primary", "duplicate", "report-claim"])(
   "rejects malformed baseline %s",
@@ -70,9 +63,15 @@ it("normalizes real overlapping closure paths but never hides a nonexistent chil
   const asset = input.framework.assets[0];
   if (!asset) throw new Error("fixture");
   asset.sourcePaths.push("skills/one/SKILL.md");
-  expect(prepareSourceDataBaselineCoverageV1(root, input).coverage.components[0]?.paths).toEqual([
-    "skills/one",
-  ]);
+  // An existing redundant child passes material binding and reaches the authority check.
+  expect(() => prepareSourceDataBaselineCoverageV1(root, input)).toThrow(AUTHORITY_REFUSAL);
   asset.sourcePaths.push("skills/one/missing.md");
-  expect(() => prepareSourceDataBaselineCoverageV1(root, input)).toThrow();
+  let refusal: unknown;
+  try {
+    prepareSourceDataBaselineCoverageV1(root, input);
+  } catch (error) {
+    refusal = error;
+  }
+  expect(refusal).toBeInstanceOf(Error);
+  expect((refusal as Error).message).not.toMatch(AUTHORITY_REFUSAL);
 });

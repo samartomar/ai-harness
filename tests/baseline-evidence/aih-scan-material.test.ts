@@ -608,7 +608,7 @@ describe("AIH scan material", () => {
         catalog,
         compiled: altered,
       }),
-    ).toThrow(/canonical compiler output/);
+    ).toThrow(/compiled AIH catalog differs from admitted Catalog declarations/);
     expect(readdirSync(parent)).toEqual([]);
   });
 
