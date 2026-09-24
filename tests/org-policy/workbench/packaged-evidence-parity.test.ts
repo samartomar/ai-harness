@@ -29,11 +29,22 @@ const fixtures = readdirSync(directory)
 
 const TIMESTAMP = /requires an exact UTC timestamp/;
 const PUBLISHER = /unreviewed packaged publisher/;
+const UNTRIMMED = /packaged report text must already be trimmed/;
 /** Core's expected outcome for every shared case, and the defect a refusal must name. */
 const EXPECTED: Record<string, readonly [Outcome, Outcome, RegExp?]> = {
   "asset-bound-twice": ["refused", "refused", /coverage asset bound twice/],
   "publication-other-ref": ["accepted", "refused", PUBLISHER],
   "publication-unreviewed-commit": ["accepted", "refused", PUBLISHER],
+  "report-analyzer-name-nbsp": ["refused", "refused", UNTRIMMED],
+  "report-analyzer-name-untrimmed": ["refused", "refused", UNTRIMMED],
+  "report-analyzer-proto-key": ["refused", "refused", /unsupported field __proto__/],
+  "report-analyzer-version-untrimmed": ["refused", "refused", UNTRIMMED],
+  "report-finding-code-untrimmed": ["refused", "refused", UNTRIMMED],
+  "report-finding-count-unsafe-integer": ["refused", "refused", /findings\.0\.count/],
+  "report-finding-detail-untrimmed": ["refused", "refused", UNTRIMMED],
+  "report-finding-fingerprint-untrimmed": ["refused", "refused", UNTRIMMED],
+  "report-finding-fingerprints-untrimmed": ["refused", "refused", UNTRIMMED],
+  "report-findings": ["accepted", "accepted"],
   "subject-and-subjects": ["refused", "refused", /coverage\.components\.0/],
   "subject-missing": ["refused", "refused", /coverage\.components\.0/],
   subjects: ["accepted", "accepted"],

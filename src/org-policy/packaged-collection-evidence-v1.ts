@@ -290,6 +290,64 @@ function collectionEvidenceRecordSchema(publication: typeof publicationStructure
     });
 }
 
+type IssuePath = (string | number)[];
+
+function ownField(value: unknown, key: string): unknown {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const descriptor = Object.getOwnPropertyDescriptor(value, key);
+  return descriptor !== undefined && "value" in descriptor ? descriptor.value : undefined;
+}
+
+function ownItems(value: unknown): readonly unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+/**
+ * The shared baseline report schema trims analyzer and finding text; Catalog's report reader
+ * refuses untrimmed text instead, and under D25 the stricter rule holds on both sides. So a
+ * packaged report's text must already be trimmed, and the shared schema then trims nothing.
+ */
+function untrimmedReportTextV1(record: unknown): IssuePath[] {
+  const found: IssuePath[] = [];
+  const check = (value: unknown, path: IssuePath) => {
+    if (typeof value === "string" && value.trim() !== value) found.push(path);
+  };
+  const components = ownItems(ownField(ownField(record, "report"), "components"));
+  for (const [c, component] of components.entries()) {
+    const at: IssuePath = ["report", "components", c];
+    for (const [a, analyzer] of ownItems(ownField(component, "analyzers")).entries())
+      for (const key of ["name", "version"])
+        check(ownField(analyzer, key), [...at, "analyzers", a, key]);
+    for (const [f, finding] of ownItems(ownField(component, "findings")).entries()) {
+      for (const key of ["code", "detail", "fingerprint"])
+        check(ownField(finding, key), [...at, "findings", f, key]);
+      for (const [p, fingerprint] of ownItems(ownField(finding, "fingerprints")).entries())
+        check(fingerprint, [...at, "findings", f, "fingerprints", p]);
+    }
+  }
+  return found;
+}
+
+/**
+ * zod's strict objects let an own `__proto__` key through, where Catalog's reader refuses it as an
+ * unsupported field; no record object has such a field.
+ */
+function ownProtoKeysV1(value: unknown, path: IssuePath = []): IssuePath[] {
+  if (value === null || typeof value !== "object") return [];
+  const found: IssuePath[] = Object.hasOwn(value, "__proto__") ? [path] : [];
+  for (const [key, child] of Object.entries(value))
+    found.push(...ownProtoKeysV1(child, [...path, Array.isArray(value) ? Number(key) : key]));
+  return found;
+}
+
+/** What Catalog's reader refuses and the shared record schema alone would accept. */
+const packagedRecordInputSchema = z.unknown().superRefine((value, ctx) => {
+  for (const path of ownProtoKeysV1(value))
+    ctx.addIssue({ code: "custom", path, message: "unsupported field __proto__" });
+  for (const path of untrimmedReportTextV1(value))
+    ctx.addIssue({ code: "custom", path, message: "packaged report text must already be trimmed" });
+});
+
 /** Display-only data, authored exclusively from a same-process operational witness. */
 export const ScannerEvidenceProjectionRecordV1Schema = collectionEvidenceRecordSchema(
   ScannerPublicationProjectionV1Schema,
@@ -301,9 +359,8 @@ export const ScannerEvidenceProjectionRecordV1Schema = collectionEvidenceRecordS
  * `tests/fixtures/packaged-evidence-parity`), including the release-owned catalog registry.
  * It never admits a record; admission is the schema below.
  */
-export const PackagedScannerCollectionEvidenceStructureV1Schema = collectionEvidenceRecordSchema(
-  publicationStructureSchema,
-)
+export const PackagedScannerCollectionEvidenceStructureV1Schema = packagedRecordInputSchema
+  .pipe(collectionEvidenceRecordSchema(publicationStructureSchema))
   .refine((value) => catalogId.safeParse(value.catalog.id).success, {
     message: "unregistered packaged catalog id",
   })
