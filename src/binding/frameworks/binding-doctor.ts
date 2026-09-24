@@ -388,8 +388,8 @@ export async function bindingHostTupleCheck(
 // -- B4: D8 one-framework drift + no-adapter ---------------------------------
 
 /**
- * The frameworks this aih build registers an adapter for (mirrors
- * `createBindingAdapterRegistry`, `frameworks/registry.ts`). A declared framework
+ * The frameworks aih supplies an implementation for (mirrors the framework
+ * plugins, `@aihq/framework-*`). A declared framework
  * NOT in this set is diagnosable-no-adapter, never a crash. Kept as a local set so a
  * read-only probe need not construct a live registry; robust to `gsd-core` leaving
  * `FRAMEWORK_IDS` (PR #491) because it is simply absent here.

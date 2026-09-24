@@ -10,6 +10,7 @@ import {
   type Platform,
 } from "@aihq/core/framework-host";
 import { ECC_INSTALL_TARGETS as ECC_INSTALL_TARGET_TUPLE } from "./install-targets.js";
+import { ECC_NPM_BIN, ECC_NPM_BINS, ECC_NPM_CLI_BIN, ECC_NPM_PACKAGE } from "./npm-package.js";
 import type { EccLanguagePack } from "./select.js";
 
 /**
@@ -160,10 +161,7 @@ export interface EccInstallInputs {
   packs?: readonly EccLanguagePack[];
 }
 
-export const ECC_NPM_PACKAGE = "ecc-universal";
-export const ECC_NPM_BIN = "ecc-install";
-export const ECC_NPM_CLI_BIN = "ecc";
-export const ECC_NPM_BINS = [ECC_NPM_BIN, ECC_NPM_CLI_BIN] as const;
+export { ECC_NPM_BIN, ECC_NPM_BINS, ECC_NPM_CLI_BIN, ECC_NPM_PACKAGE };
 
 /** The npm package spec for ECC's installer package — pinned or bare latest. */
 function installerPackageSpec(version?: string): string {

@@ -1,7 +1,3 @@
-import {
-  ECC_INSTALL_TARGETS,
-  WIRED_MATERIALIZATION_TARGETS,
-} from "../framework-plugin/ecc-facade.js";
 import { entry, GOVERNED_MCP_TARGETS, GOVERNED_USAGE_TARGETS } from "./cli-registry.js";
 import type { Cli } from "./clis.js";
 
@@ -9,8 +5,6 @@ import type { Cli } from "./clis.js";
 export interface CliCapabilities {
   genericMcp: boolean;
   governedMcp: boolean;
-  eccInstall: boolean;
-  governedEcc: boolean;
   governedUsage: boolean;
   contextVerification: "manual" | "command";
   mcpContract?: string;
@@ -50,8 +44,6 @@ export function cliCapabilities(cli: Cli): CliCapabilities {
   return {
     genericMcp: profile.mcp.support === "native",
     governedMcp: (GOVERNED_MCP_TARGETS as readonly string[]).includes(cli),
-    eccInstall: (ECC_INSTALL_TARGETS as readonly string[]).includes(cli),
-    governedEcc: (WIRED_MATERIALIZATION_TARGETS as readonly string[]).includes(cli),
     governedUsage: (GOVERNED_USAGE_TARGETS as readonly string[]).includes(cli),
     contextVerification: profile.dryRunProbe.kind,
     ...(profile.mcp.governed ? { mcpContract: profile.mcp.governed.contract } : {}),
@@ -61,5 +53,5 @@ export function cliCapabilities(cli: Cli): CliCapabilities {
 
 export function cliCapabilitySummary(cli: Cli, support = cliCapabilities(cli)): string {
   const state = (supported: boolean) => (supported ? "supported" : "unsupported");
-  return `${cli}: MCP generic ${state(support.genericMcp)}, governed ${state(support.governedMcp)}; ECC install ${state(support.eccInstall)}, governed ${state(support.governedEcc)}; governed usage ${state(support.governedUsage)}; context verification ${support.contextVerification}`;
+  return `${cli}: MCP generic ${state(support.genericMcp)}, governed ${state(support.governedMcp)}; governed usage ${state(support.governedUsage)}; context verification ${support.contextVerification}`;
 }
