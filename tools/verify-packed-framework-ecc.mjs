@@ -17,6 +17,11 @@
  *   Native ECC runtime: resolved from the installed plugin, framework-host's
  *     `eccRuntimeScriptPath()` names the installed Core's `dist/ecc-runtime.js`;
  *     the plugin dist ships no runtime script of its own.
+ *   Chrome DevTools MCP opt-outs: the plugin tarball ships the opt-out predicate
+ *     module, and the INSTALLED plugin refuses a Codex chrome-devtools-mcp entry
+ *     lacking the mandatory opt-outs at plan time (project and global install)
+ *     and at apply time (a project entry written after planning), where the
+ *     typed check comes through the step's refusal record; a clean apply passes.
  *   Ordinary profile lifecycle: `aih ecc --lifecycle install` renders only from
  *     the installed Catalog's `profileEvidence` section, and refuses with
  *     `framework-profile-evidence-unavailable` (writing nothing) while it is absent.
@@ -37,7 +42,7 @@
  *
  * Prints one JSON summary line last; exits non-zero if any check fails.
  */
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   cpSync,
@@ -330,9 +335,22 @@ try {
   const eccFiles = readPackedFiles(packed.ecc);
   const eccPaths = [...eccFiles.keys()].sort();
   check(
-    "ECC plugin tarball carries only its dist, manifest, README and LICENSE",
-    eccPaths.join(",") === ["package/LICENSE", "package/README.md", "package/dist/index.js", "package/package.json"].join(","),
+    "ECC plugin tarball carries only its dist, opt-out predicate, manifest, README and LICENSE",
+    eccPaths.join(",") ===
+      [
+        "package/LICENSE",
+        "package/README.md",
+        "package/dist/index.js",
+        "package/package.json",
+        "package/src/ecc/chrome-devtools-opt-out.cjs",
+      ].join(","),
     eccPaths.join(", "),
+  );
+  const packedPredicate = eccFiles.get("package/src/ecc/chrome-devtools-opt-out.cjs");
+  check(
+    "ECC plugin tarball ships the Chrome DevTools opt-out predicate byte-identical to the checkout's",
+    packedPredicate !== undefined &&
+      packedPredicate.equals(readFileSync(join(repo, "packages", "framework-ecc", "src", "ecc", "chrome-devtools-opt-out.cjs"))),
   );
   const eccJs = eccFiles.get("package/dist/index.js").toString("utf8");
   // Module statements only: top-level import/export ... from, side-effect imports, and dynamic import().
@@ -502,6 +520,143 @@ try {
   summary.eccSource = { head: eccHead, catalogPins: pins };
   if (pins.length !== 1 || eccHead !== pins[0])
     throw new Error(`--ecc-source HEAD ${eccHead || "(none)"} is not the Catalog pin ${pins.join(",") || "(none)"}`);
+
+  // ---- Chrome DevTools MCP opt-outs through the installed plugin (Codex) ---------------------------
+  // The Codex install runs `npm ci` in the ECC checkout, so it gets its own clone of the source.
+  const codexEcc = join(work, "ecc-codex");
+  rmSync(codexEcc, { recursive: true, force: true });
+  must(run("git", ["clone", "-q", eccSource, codexEcc], work), "clone the ECC source for the Codex install");
+  const NO_STATS = "CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS";
+  const NO_UPDATES = "CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS";
+  const browserLaunch = (env) =>
+    `[mcp_servers.browser]\ncommand = "npx"\nargs = ["-y", "chrome-devtools-mcp@1.10.1"]\n${env ? `[mcp_servers.browser.env]\n${env}\n` : ""}`;
+  const optOutChecks = (result) =>
+    (json(result)?.report?.checks ?? []).filter((entry) => entry.code === "mcp.telemetry-opt-out-missing");
+  summary.chromeDevtoolsOptOuts = {};
+  for (const [label, aihAtInstall] of [
+    ["project", aih],
+    ["global", aihGlobal],
+  ]) {
+    const caseRoot = join(work, `fixture-codex-plan-${label}`);
+    const caseHome = join(work, `home-codex-plan-${label}`);
+    rmSync(caseRoot, { recursive: true, force: true });
+    rmSync(caseHome, { recursive: true, force: true });
+    mkdirSync(caseRoot, { recursive: true });
+    mkdirSync(join(caseHome, ".codex"), { recursive: true });
+    const userConfig = join(caseHome, ".codex", "config.toml");
+    writeFileSync(userConfig, browserLaunch());
+    const homeBefore = snapshot(caseHome);
+    const planned = aihAtInstall(
+      `Codex plan with a user chrome-devtools-mcp entry lacking the opt-outs (${label} install)`,
+      ["ecc", caseRoot, "--cli", "codex", "--ecc-path", codexEcc, "--verify", "--json", "--no-log"],
+      { HOME: caseHome, USERPROFILE: caseHome },
+    );
+    const refusals = optOutChecks(planned);
+    const guidance = (json(planned)?.docs ?? []).find((entry) =>
+      entry.describe.includes("Chrome DevTools MCP telemetry opt-outs missing"),
+    );
+    summary.chromeDevtoolsOptOuts[`plan-${label}`] = { exit: planned.status, refusals };
+    check(
+      `the installed plugin refuses a Codex chrome-devtools-mcp entry lacking the opt-outs at plan time (${label} install)`,
+      planned.status !== 0 &&
+        refusals.length === 1 &&
+        refusals[0].verdict === "fail" &&
+        refusals[0].detail.includes(`user Codex config entry "browser" (${userConfig})`) &&
+        refusals[0].detail.includes(`${NO_STATS}="1"`) &&
+        refusals[0].detail.includes(`${NO_UPDATES}="1"`) &&
+        guidance !== undefined &&
+        snapshot(caseHome) === homeBefore,
+      `exit ${planned.status}; ${refusals.length > 0 ? JSON.stringify(refusals).slice(0, 400) : (json(planned)?.error?.message ?? planned.stderr).slice(0, 300)}`,
+    );
+  }
+  // Apply time: a clean Codex install passes the merge child's check. Then a project
+  // entry is written after planning (once the step's refusal record exists, which Core
+  // opens just before it starts the driver); the merge child refuses it, and the typed
+  // check reaches Core only through that record.
+  const applyCodex = (label, caseRoot, caseHome, caseTemp, afterPlan) =>
+    new Promise((resolveRun, rejectRun) => {
+      for (const directory of [caseRoot, caseHome, caseTemp]) {
+        rmSync(directory, { recursive: true, force: true });
+        mkdirSync(directory, { recursive: true });
+      }
+      const args = ["ecc", caseRoot, "--cli", "codex", "--ecc-path", codexEcc, "--apply", "--json", "--no-log"];
+      const child = spawn(process.execPath, [join(projectCore, "dist", "cli.js"), ...args], {
+        cwd: work,
+        windowsHide: true,
+        env: { ...cliEnv, HOME: caseHome, USERPROFILE: caseHome, TEMP: caseTemp, TMP: caseTemp, TMPDIR: caseTemp },
+      });
+      let stdout = "";
+      let stderr = "";
+      let sawRecord = false;
+      child.stdout.setEncoding("utf8").on("data", (chunk) => {
+        stdout += chunk;
+      });
+      child.stderr.setEncoding("utf8").on("data", (chunk) => {
+        stderr += chunk;
+      });
+      const records = () => readdirSync(caseTemp).filter((name) => name.startsWith("aih-codex-opt-out-refusal-"));
+      const watcher = setInterval(() => {
+        if (sawRecord) return;
+        const [recordDirectory] = records();
+        if (recordDirectory === undefined || !existsSync(join(caseTemp, recordDirectory, "refusal.json"))) return;
+        sawRecord = true;
+        afterPlan?.();
+      }, 5);
+      const killer = setTimeout(() => child.kill(), 10 * 60 * 1000);
+      child.on("error", rejectRun);
+      child.on("close", (status) => {
+        clearInterval(watcher);
+        clearTimeout(killer);
+        const result = { status, stdout, stderr };
+        record(label, args, result);
+        resolveRun({ result, sawRecord, recordsLeft: records() });
+      });
+    });
+  const cleanHome = join(work, "home-codex-apply-clean");
+  const clean = await applyCodex(
+    "Codex apply with clean configs (project install)",
+    join(work, "fixture-codex-apply-clean"),
+    cleanHome,
+    join(work, "temp-codex-apply-clean"),
+  );
+  summary.chromeDevtoolsOptOuts.applyClean = { exit: clean.result.status, sawRecord: clean.sawRecord };
+  check(
+    "a clean Codex install through the installed plugin passes the apply-time opt-out check and removes its record",
+    clean.result.status === 0 &&
+      clean.sawRecord &&
+      clean.recordsLeft.length === 0 &&
+      existsSync(join(cleanHome, ".codex", "ecc-aih-install-state.json")),
+    `exit ${clean.result.status}; ${(json(clean.result)?.error?.message ?? clean.result.stderr).slice(0, 300)}`,
+  );
+  const lateRoot = join(work, "fixture-codex-apply-late");
+  const lateHome = join(work, "home-codex-apply-late");
+  const lateConfig = join(lateRoot, ".codex", "config.toml");
+  const late = await applyCodex(
+    "Codex apply with a project entry written after planning (project install)",
+    lateRoot,
+    lateHome,
+    join(work, "temp-codex-apply-late"),
+    () => {
+      mkdirSync(dirname(lateConfig), { recursive: true });
+      writeFileSync(lateConfig, browserLaunch(`${NO_UPDATES} = "1"`));
+    },
+  );
+  const lateRefusals = optOutChecks(late.result);
+  const lateExec = json(late.result)?.execs?.[0];
+  summary.chromeDevtoolsOptOuts.applyLate = { exit: late.result.status, execCode: lateExec?.code, refusals: lateRefusals };
+  check(
+    "the installed plugin refuses a late project chrome-devtools-mcp entry at apply time, typed through the refusal record, and writes nothing",
+    late.result.status !== 0 &&
+      late.sawRecord &&
+      lateExec?.code === 78 &&
+      lateRefusals.length === 1 &&
+      lateRefusals[0].detail.includes(`project Codex config entry "browser" (${lateConfig})`) &&
+      lateRefusals[0].detail.includes(`${NO_STATS}="1"`) &&
+      !lateRefusals[0].detail.includes(`${NO_UPDATES}="1"`) &&
+      late.recordsLeft.length === 0 &&
+      readdirSync(lateHome).length === 0,
+    `exit ${late.result.status}; exec ${lateExec?.code}; ${JSON.stringify(lateRefusals).slice(0, 400)}`,
+  );
   const fixtureGit = (root, args) =>
     must(
       run("git", ["-c", "user.name=AIH Fixture", "-c", "user.email=fixture@example.invalid", ...args], root),
