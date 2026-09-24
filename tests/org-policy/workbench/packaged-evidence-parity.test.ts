@@ -1,9 +1,12 @@
+import { createHash } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { canonicalJson } from "../../../src/capability/package-graph/canonical.js";
 import {
   PackagedScannerCollectionEvidenceRecordV1Schema,
   PackagedScannerCollectionEvidenceStructureV1Schema,
+  readPackagedScannerCollectionEvidenceStructureV1,
 } from "../../../src/org-policy/packaged-collection-evidence-v1.js";
 
 // ---------------------------------------------------------------------------
@@ -14,11 +17,13 @@ import {
 // ---------------------------------------------------------------------------
 
 type Outcome = "accepted" | "refused";
+/** A fixture carries a `record` value (sealed here as its canonical bytes) or its exact `bytes`. */
 interface Fixture {
   readonly fixture: string;
   readonly structure: Outcome;
   readonly coreAdmission: Outcome;
-  readonly record: unknown;
+  readonly record?: unknown;
+  readonly bytes?: string;
 }
 
 const directory = resolve(import.meta.dirname, "..", "..", "fixtures", "packaged-evidence-parity");
@@ -30,9 +35,23 @@ const fixtures = readdirSync(directory)
 const TIMESTAMP = /requires an exact UTC timestamp/;
 const PUBLISHER = /unreviewed packaged publisher/;
 const UNTRIMMED = /packaged report text must already be trimmed/;
+const NOT_NFC = /must already be NFC/;
+const LONE_SURROGATE = /lone high surrogate/;
+const NOT_CANONICAL = /must use canonical bytes/;
 /** Core's expected outcome for every shared case, and the defect a refusal must name. */
 const EXPECTED: Record<string, readonly [Outcome, Outcome, RegExp?]> = {
   "asset-bound-twice": ["refused", "refused", /coverage asset bound twice/],
+  "bytes-bom": ["refused", "refused", /invalid JSON/],
+  "bytes-duplicate-key": ["refused", "refused", /duplicate JSON object key: inputFormat/],
+  "bytes-escaped-not-nfc": ["refused", "refused", NOT_NFC],
+  "bytes-number-exponent": ["refused", "refused", NOT_CANONICAL],
+  "bytes-number-negative-zero": ["refused", "refused", /not negative zero/],
+  "bytes-number-overflow": ["refused", "refused", /numbers must be finite/],
+  "bytes-proto-key": ["refused", "refused", /has an unsupported field __proto__/],
+  "bytes-raw-lone-surrogate": ["refused", "refused", LONE_SURROGATE],
+  "bytes-trailing-data": ["refused", "refused", /invalid JSON/],
+  "bytes-trailing-whitespace": ["refused", "refused", NOT_CANONICAL],
+  "bytes-valid": ["accepted", "accepted"],
   "publication-other-ref": ["accepted", "refused", PUBLISHER],
   "publication-unreviewed-commit": ["accepted", "refused", PUBLISHER],
   "report-analyzer-name-nbsp": ["refused", "refused", UNTRIMMED],
@@ -45,6 +64,9 @@ const EXPECTED: Record<string, readonly [Outcome, Outcome, RegExp?]> = {
   "report-finding-fingerprint-untrimmed": ["refused", "refused", UNTRIMMED],
   "report-finding-fingerprints-untrimmed": ["refused", "refused", UNTRIMMED],
   "report-findings": ["accepted", "accepted"],
+  "string-lone-surrogate": ["refused", "refused", LONE_SURROGATE],
+  "string-not-nfc": ["refused", "refused", NOT_NFC],
+  "string-not-nfc-in-report": ["refused", "refused", NOT_NFC],
   "subject-and-subjects": ["refused", "refused", /coverage\.components\.0/],
   "subject-missing": ["refused", "refused", /coverage\.components\.0/],
   subjects: ["accepted", "accepted"],
@@ -74,6 +96,19 @@ function issues(result: {
     .join("\n");
 }
 
+/** Seals the fixture (its exact bytes, or its record's canonical bytes, unvalidated) and reads it. */
+function readSealed(fixture: Fixture): { structure: Outcome; admission: Outcome; reason: string } {
+  const bytes = fixture.bytes ?? canonicalJson(fixture.record);
+  const sha256 = `sha256:${createHash("sha256").update(bytes, "utf8").digest("hex")}`;
+  try {
+    const [record] = readPackagedScannerCollectionEvidenceStructureV1([{ bytes, sha256 }]);
+    const admitted = PackagedScannerCollectionEvidenceRecordV1Schema.safeParse(record);
+    return { structure: "accepted", admission: outcome(admitted), reason: issues(admitted) };
+  } catch (error) {
+    return { structure: "refused", admission: "refused", reason: (error as Error).message };
+  }
+}
+
 describe("packaged collection evidence parity with Catalog", () => {
   it("holds exactly the shared cases", () => {
     expect(fixtures.map((item) => item.fixture).sort()).toEqual(Object.keys(EXPECTED).sort());
@@ -82,6 +117,15 @@ describe("packaged collection evidence parity with Catalog", () => {
   it.each(fixtures.map((item) => [item.fixture, item] as const))("%s", (name, fixture) => {
     const [structure, admission, reason] = EXPECTED[name] ?? [];
     expect([fixture.structure, fixture.coreAdmission]).toEqual([structure, admission]);
+    expect("record" in fixture).not.toBe("bytes" in fixture);
+    // The sealed reader: the boundary Catalog's reader mirrors byte for byte.
+    const sealed = readSealed(fixture);
+    expect([sealed.structure, sealed.admission]).toEqual([structure, admission]);
+    if (fixture.bytes !== undefined) {
+      if (reason !== undefined) expect(sealed.reason).toMatch(reason);
+      return;
+    }
+    // The structural schema over the record value.
     const structural = PackagedScannerCollectionEvidenceStructureV1Schema.safeParse(fixture.record);
     const admitted = PackagedScannerCollectionEvidenceRecordV1Schema.safeParse(fixture.record);
     expect(outcome(structural)).toBe(structure);

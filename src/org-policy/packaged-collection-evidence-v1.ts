@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { type Node as JsonNode, parseTree } from "jsonc-parser";
 import { z } from "zod";
 import {
   SCANNER_BASELINE_PUBLICATION_PUBLISHER_V1,
@@ -6,6 +7,7 @@ import {
 } from "../baseline-evidence/scanner-publication-policy.js";
 import { BaselineSourceEvidenceSchema } from "../baseline-evidence/schema.js";
 import {
+  assertStrictJsonValueV1,
   canonicalStrictJsonBytesV1,
   canonicalStrictJsonSha256V1,
   deepFreezeStrictJsonV1,
@@ -340,8 +342,18 @@ function ownProtoKeysV1(value: unknown, path: IssuePath = []): IssuePath[] {
   return found;
 }
 
-/** What Catalog's reader refuses and the shared record schema alone would accept. */
+/**
+ * What Catalog's reader refuses and the shared record schema alone would accept: first Core's
+ * strict JSON value rule over the whole record (well-formed NFC strings and keys, finite numbers
+ * other than negative zero, plain data only), then the fields above.
+ */
 const packagedRecordInputSchema = z.unknown().superRefine((value, ctx) => {
+  try {
+    assertStrictJsonValueV1(value, "packaged collection evidence");
+  } catch (error) {
+    ctx.addIssue({ code: "custom", message: (error as Error).message });
+    return;
+  }
   for (const path of ownProtoKeysV1(value))
     ctx.addIssue({ code: "custom", path, message: "unsupported field __proto__" });
   for (const path of untrimmedReportTextV1(value))
@@ -386,6 +398,9 @@ export const PackagedScannerCollectionEvidenceRecordV1Schema =
     { message: "unreviewed packaged publisher" },
   );
 
+export type PackagedScannerCollectionEvidenceStructureV1 = z.infer<
+  typeof PackagedScannerCollectionEvidenceStructureV1Schema
+>;
 export type PackagedScannerCollectionEvidenceRecordV1 = z.infer<
   typeof PackagedScannerCollectionEvidenceRecordV1Schema
 >;
@@ -441,15 +456,32 @@ function cachedInputMatchesPackageV1(cached: CachedPackagedCollectionEvidenceV1)
   );
 }
 
-/** Inputless loader for independent source records shipped by the release process. */
-export function packagedScannerCollectionEvidenceV1(): readonly PackagedScannerCollectionEvidenceRecordV1[] {
-  const cached = cachedPackagedCollectionEvidenceV1;
-  if (cached !== undefined && cachedInputMatchesPackageV1(cached))
-    return deepFreezeStrictJsonV1(structuredClone(cached.records));
+/**
+ * A `__proto__` member survives no JSON parse: Core's reader makes it the prototype or drops it
+ * (as `assertNoProtoMember` in hook-registrar-native.ts explains). So the sealed text is read for
+ * one by name, and refused as Catalog's reader refuses it.
+ */
+function hasProtoMemberV1(text: string): boolean {
+  const walk = (node: JsonNode | undefined): boolean =>
+    node !== undefined &&
+    ((node.type === "property" && node.children?.[0]?.value === "__proto__") ||
+      (node.children ?? []).some(walk));
+  return walk(parseTree(text));
+}
 
-  const records: PackagedScannerCollectionEvidenceRecordV1[] = [];
+/**
+ * Reads sealed records structurally, IDENTICALLY to Catalog's
+ * `parsePackagedScannerCollectionEvidenceV1` (decision D25): byte budget, matching seal, Core's
+ * strict JSON reader, no `__proto__` member, the structural schema, canonical bytes and one
+ * record per catalog id. It
+ * never admits a record; admission is `PackagedScannerCollectionEvidenceRecordV1Schema`.
+ */
+export function readPackagedScannerCollectionEvidenceStructureV1(
+  items: readonly PackagedCollectionInputV1[],
+): PackagedScannerCollectionEvidenceStructureV1[] {
+  const records: PackagedScannerCollectionEvidenceStructureV1[] = [];
   const sourceIds = new Set<string>();
-  for (const item of packagedScannerCollectionEvidenceInputV1()) {
+  for (const item of items) {
     if (
       Buffer.byteLength(item.bytes, "utf8") > 4 * 1024 * 1024 ||
       !digest.safeParse(item.sha256).success
@@ -457,9 +489,10 @@ export function packagedScannerCollectionEvidenceV1(): readonly PackagedScannerC
       throw new TypeError("Packaged collection evidence seal mismatch.");
     const actual = `sha256:${createHash("sha256").update(item.bytes, "utf8").digest("hex")}`;
     if (actual !== item.sha256) throw new TypeError("Packaged collection evidence seal mismatch.");
-    const parsed = PackagedScannerCollectionEvidenceRecordV1Schema.parse(
-      parseStrictJsonObjectV1(item.bytes, "Packaged collection evidence"),
-    );
+    const value = parseStrictJsonObjectV1(item.bytes, "Packaged collection evidence");
+    if (hasProtoMemberV1(item.bytes))
+      throw new TypeError("Packaged collection evidence has an unsupported field __proto__.");
+    const parsed = PackagedScannerCollectionEvidenceStructureV1Schema.parse(value);
     if (!canonicalStrictJsonBytesV1(parsed).equals(Buffer.from(item.bytes, "utf8")))
       throw new TypeError("Packaged collection evidence must use canonical bytes.");
     if (sourceIds.has(parsed.catalog.id))
@@ -467,6 +500,18 @@ export function packagedScannerCollectionEvidenceV1(): readonly PackagedScannerC
     sourceIds.add(parsed.catalog.id);
     records.push(parsed);
   }
+  return records;
+}
+
+/** Inputless loader for independent source records shipped by the release process. */
+export function packagedScannerCollectionEvidenceV1(): readonly PackagedScannerCollectionEvidenceRecordV1[] {
+  const cached = cachedPackagedCollectionEvidenceV1;
+  if (cached !== undefined && cachedInputMatchesPackageV1(cached))
+    return deepFreezeStrictJsonV1(structuredClone(cached.records));
+
+  const records = readPackagedScannerCollectionEvidenceStructureV1(
+    packagedScannerCollectionEvidenceInputV1(),
+  ).map((record) => PackagedScannerCollectionEvidenceRecordV1Schema.parse(record));
   const input = packagedScannerCollectionEvidenceInputV1().map((item) =>
     Object.freeze({ bytes: item.bytes, sha256: item.sha256 }),
   );
