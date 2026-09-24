@@ -268,7 +268,13 @@ function stageAndPack() {
     for (const file of ["package.json", "README.md", "LICENSE"]) cpSync(join(source, file), join(stage, file));
     plugins[name] = pack(stage, name);
   }
-  // ---- the Catalog candidate, packed as it is -------------------------------------------
+  // ---- the Catalog candidate, packed as it is; record which tree that was ------------------
+  const catalogHead = run("git", ["-C", resolve(catalogRepo), "rev-parse", "HEAD"], resolve(catalogRepo));
+  const catalogStatus = run("git", ["-C", resolve(catalogRepo), "status", "--porcelain"], resolve(catalogRepo));
+  summary.catalogCandidate = {
+    head: catalogHead.status === 0 ? catalogHead.stdout.trim() : undefined,
+    uncommitted: catalogStatus.status === 0 ? catalogStatus.stdout.split("\n").filter(Boolean) : undefined,
+  };
   const catalog = pack(resolve(catalogRepo), "Catalog");
   return { core, ecc: plugins[ECC], superpowers: plugins[SUPERPOWERS], catalog };
 }
