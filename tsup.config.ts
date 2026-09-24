@@ -30,7 +30,7 @@ export default defineConfig({
   // projected runtime is self-contained; the other runtime dependencies stay
   // external because nothing in that entry's graph reaches them, and
   // tests/ecc-profile/projected-runtime.test.ts fails if one ever does.
-  noExternal: ["zod", "yaml"],
+  noExternal: ["jsonc-parser", "zod", "yaml"],
   // @aihq/scan is an optional peer resolved from the consumer's own install and
   // loaded only through src/scan-package/load-scan-package.ts. Never bundle it:
   // a bundled copy would freeze one Scan build inside Core and defeat updating

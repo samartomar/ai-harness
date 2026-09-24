@@ -34,10 +34,9 @@ import { readBoundedFileDescriptor } from "../internals/fsxn.js";
 import { hermeticGitEnv } from "../internals/git-env.js";
 import { mcpEntryFor } from "../mcp/render.js";
 import type { PolicyAuthoringCatalog } from "../org-policy/catalog.js";
-import {
-  type CompiledBuiltInCatalogV1,
-  compileBuiltInCatalogV1,
-} from "../org-policy/workbench/compilers/built-in.js";
+import type { CompiledDeclarationV1 } from "../org-policy/workbench/compilers/formats.js";
+import type { CoreAuthoringCapabilityRegistryEntryV1 } from "../org-policy/workbench/contracts.js";
+import { packagedPreparedWorkbenchCatalogV1 } from "../org-policy/workbench/prepared-catalog.js";
 import { usageRecorderScript } from "../usage/capture.js";
 import { type BaselineCatalog, defineBaselineCatalog } from "./catalog.js";
 import { type BaselineHashedFile, hashComponentTree, hashSourceTree } from "./hash.js";
@@ -55,6 +54,60 @@ const MAX_PINNED_SOURCE_GIT_BATCH_WIRE_BYTES =
   MAX_PINNED_SOURCE_GIT_BATCH_BYTES +
   MAX_PINNED_SOURCE_GIT_BATCH_FILES * (MAX_PINNED_SOURCE_GIT_BATCH_PATH_BYTES + 96) +
   1;
+
+export interface CompiledBuiltInCatalogV1 {
+  source: { id: string; revisionId: string; contentDigest: string; locator: string };
+  declarations: CompiledDeclarationV1[];
+  coreCapabilities: CoreAuthoringCapabilityRegistryEntryV1[];
+  detailBytes: Record<string, string>;
+}
+
+/** Scanner material view of Catalog's admitted built-in declarations. */
+export function aihScannerCompilationFromCatalogV1(): CompiledBuiltInCatalogV1 {
+  const prepared = packagedPreparedWorkbenchCatalogV1();
+  const source = prepared.bundle.sources["source:aih-core"];
+  if (source === undefined || source.inputFormat !== "built-in/v1")
+    throw new TypeError("Catalog does not carry the AIH Scanner source");
+  const assets = Object.values(prepared.bundle.assets).filter(
+    (asset) => asset.sourceId === source.id,
+  );
+  return {
+    source: {
+      id: source.id,
+      revisionId: source.revision.id,
+      contentDigest: source.revision.contentDigest,
+      locator: source.distributor.locator,
+    },
+    declarations: assets.map((asset) => {
+      const { authoring: _authoring, ...declaration } = asset;
+      return { declaration, inputFormat: "built-in/v1" };
+    }),
+    coreCapabilities: assets.flatMap((asset) =>
+      asset.authoring.action !== "select-control"
+        ? []
+        : [
+            {
+              assetId: asset.id,
+              sourceId: asset.sourceId,
+              sourceRevisionId: asset.sourceRevisionId,
+              contentDigest: asset.contentDigest,
+              action: asset.authoring.action,
+              ...(asset.authoring.projectorId === undefined
+                ? {}
+                : { projectorId: asset.authoring.projectorId }),
+              supportedTargets: [...asset.authoring.supportedTargets],
+            } satisfies CoreAuthoringCapabilityRegistryEntryV1,
+          ],
+    ),
+    detailBytes: Object.fromEntries(
+      assets.map((asset) => {
+        const chunk = prepared.bundle.detailChunks[asset.detailChunkId];
+        if (chunk === undefined) throw new TypeError(`Catalog detail is missing: ${asset.id}`);
+        return [asset.detailChunkId, chunk.bytes];
+      }),
+    ),
+  };
+}
 
 export interface AihScanMaterialCoreRevisionV1 {
   /** Reviewed Git revision of the disposable Core checkout. */
@@ -644,9 +697,28 @@ export function materializeAihScanSubjectsV1(
     input.coreRevision.pinnedSha,
   );
   if (!acquiredArchive) assertPinnedCheckout(packageRoot, input.coreRevision.pinnedSha);
-  const expectedCompiled = compileBuiltInCatalogV1(input.catalog);
-  if (canonicalStrictJsonSha256V1(input.compiled) !== canonicalStrictJsonSha256V1(expectedCompiled))
-    fail("compiled AIH catalog differs from canonical compiler output");
+  const admitted = packagedPreparedWorkbenchCatalogV1();
+  if (canonicalStrictJsonSha256V1(input.catalog) !== canonicalStrictJsonSha256V1(admitted.catalog))
+    fail("AIH catalog differs from admitted Catalog authority");
+  const source = admitted.bundle.sources[input.compiled.source.id];
+  if (
+    source === undefined ||
+    source.inputFormat !== "built-in/v1" ||
+    source.revision.id !== input.compiled.source.revisionId ||
+    source.revision.contentDigest !== input.compiled.source.contentDigest ||
+    source.distributor.locator !== input.compiled.source.locator
+  )
+    fail("compiled AIH source differs from admitted Catalog declarations");
+  for (const { declaration, inputFormat } of input.compiled.declarations) {
+    const asset = admitted.bundle.assets[declaration.id];
+    if (asset === undefined || inputFormat !== "built-in/v1")
+      fail("compiled AIH catalog differs from admitted Catalog declarations");
+    const { authoring: _authoring, ...carriedDeclaration } = asset;
+    if (
+      canonicalStrictJsonSha256V1(declaration) !== canonicalStrictJsonSha256V1(carriedDeclaration)
+    )
+      fail("compiled AIH catalog differs from admitted Catalog declarations");
+  }
   const manifestPath = sourcePath(packageRoot, PACK_MANIFEST_PATH);
   const manifestBlobs = acquiredArchive
     ? undefined

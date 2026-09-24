@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
+import { loadFrameworkDescriptorSectionV1 } from "../catalog-package/framework-descriptors.js";
 import { eccContentMetadata } from "./ecc-content-metadata.js";
-import snapshot from "./ecc-skill-catalog.snapshot.json";
 
 /** Exact source tree whose top-level skills inventory is represented below. */
 export const ECC_SKILL_CATALOG_PROVENANCE = {
@@ -56,5 +56,9 @@ function inventory(value: unknown): readonly EccSkillCatalogEntry[] {
   );
 }
 
+let loadedInventory: readonly EccSkillCatalogEntry[] | undefined;
 /** Complete source-locked ECC Skill inventory selectable as evidence-owed intent. */
-export const eccSkillCatalogInventory = inventory(snapshot);
+export function eccSkillCatalogInventoryV1(): readonly EccSkillCatalogEntry[] {
+  loadedInventory ??= inventory(loadFrameworkDescriptorSectionV1("ecc", "skillCatalog"));
+  return loadedInventory;
+}

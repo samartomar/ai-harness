@@ -73,8 +73,6 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci --ignore-scripts
-      - name: Generate retained backend policy data
-        run: npm run build:policy-data
       - name: Run the authoritative selected suite
         run: npm run --silent ci:run-selected
 
@@ -175,8 +173,6 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci --ignore-scripts
-      - name: Build retained policy catalog data for included tests
-        run: npm run build:policy-data
       # Enforce the coverage thresholds on one OS (deterministic line/branch hits);
       # the other OSes run the suite to validate cross-platform behavior. Keep
       # two workers here: coverage and the complete policy catalog otherwise
@@ -230,8 +226,6 @@ jobs:
           node-version: "22"
           cache: npm
       - run: npm ci --ignore-scripts
-      - name: Build retained policy catalog data for included tests
-        run: npm run build:policy-data
       - name: Test Windows shard
         # Each fixture can spawn native Git/PowerShell children. Reserve runner
         # capacity for those custody checks instead of competing fixture workers;

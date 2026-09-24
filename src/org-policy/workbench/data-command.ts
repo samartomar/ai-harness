@@ -3,6 +3,10 @@ import { writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { Command } from "commander";
 import {
+  CatalogPackageRefusalError,
+  loadCatalogPackageV1,
+} from "../../catalog-package/load-catalog-package.js";
+import {
   canonicalStrictJsonBytesV1,
   parseStrictJsonObjectV1,
 } from "../../contract/strict-json-v1.js";
@@ -97,7 +101,7 @@ export function registerWorkbenchDataCommandsV1(policy: Command): void {
     .option("--previous-digest <digest>", "exact previous accepted signed bundle digest")
     .requiredOption("--out <path>", "new output file (never overwritten)")
     .action(
-      (
+      async (
         options: {
           source: string;
           sourceBundle?: string;
@@ -115,20 +119,25 @@ export function registerWorkbenchDataCommandsV1(policy: Command): void {
         const sourceBundle = options.sourceBundle
           ? read(options.sourceBundle)
           : extractWorkbenchSourceDataV1(defaultPreparedWorkbenchCatalog().bundle, options.source);
-        const payload = WorkbenchSourceDataPayloadV1Schema.parse({
-          version: "workbench-source-data/v1",
-          compatibility: "core-workbench-data/v1",
-          ...(options.evidenceOnly ? { updateKind: "evidence-only" } : {}),
-          sequence: Number(options.sequence),
-          previousDigest: options.previousDigest ?? null,
-          issuedAt: now.toISOString(),
-          expiresAt: new Date(now.getTime() + 90 * 86_400_000).toISOString(),
-          sourceBundle,
-          ...(options.qualificationProof
-            ? { qualification: read(options.qualificationProof) }
-            : {}),
-          ...(options.scannerProof ? { scanner: read(options.scannerProof) } : {}),
-        });
+        const loaded = await loadCatalogPackageV1(["prepareCatalogSourceDataV1"], []);
+        if (!loaded.ok) throw new CatalogPackageRefusalError(loaded.refusal);
+        const payload = WorkbenchSourceDataPayloadV1Schema.parse(
+          loaded.exports.prepareCatalogSourceDataV1({
+            sourceId: options.source,
+            sequence: Number(options.sequence),
+            ...(options.previousDigest === undefined
+              ? {}
+              : { previousDigest: options.previousDigest }),
+            issuedAt: now.toISOString(),
+            expiresAt: new Date(now.getTime() + 90 * 86_400_000).toISOString(),
+            sourceBundle,
+            ...(options.evidenceOnly ? { updateKind: "evidence-only" } : {}),
+            ...(options.qualificationProof
+              ? { qualification: read(options.qualificationProof) }
+              : {}),
+            ...(options.scannerProof ? { scanner: read(options.scannerProof) } : {}),
+          }),
+        );
         if (Object.keys(payload.sourceBundle.sources).join() !== options.source)
           throw new TypeError("Source data preparation identity mismatch");
         write(options.out, payload);

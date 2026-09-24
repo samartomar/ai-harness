@@ -198,7 +198,7 @@ describe("historical ECC runtime descriptor resolution order", () => {
     ]);
     expect(resolved.descriptorCarrier).toMatchObject({
       package: "@aihq/catalog",
-      version: "0.2.0",
+      version: "0.3.0",
       runtimeDescriptorsFormat: "aih-catalog-runtime-descriptors",
       runtimeDescriptorsVersion: 1,
     });
@@ -362,7 +362,7 @@ describe("historical ECC runtime descriptor resolution order", () => {
         "catalog-package-incompatible",
       );
     }
-    // The registry's 0.2.0 publishes no runtime-descriptors subpath.
+    // A Catalog without the public runtime-descriptors subpath is incompatible.
     const withoutSubpath = await refusalOf(
       resolveHistoricalEccRuntimeDescriptorV1(policyFor(), {
         now: NOW,

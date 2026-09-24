@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { baselineCatalogById } from "../../src/baseline-evidence/catalogs.js";
-import eccProfiles from "../../src/baseline-evidence/ecc-profiles.json";
+import { loadFrameworkDescriptorSectionV1 } from "../../src/catalog-package/framework-descriptors.js";
 import { BASELINE_SOURCES } from "../../src/internals/baseline-sources.js";
 
 function registryPin(owner: string, repo: string): string {
@@ -13,6 +13,9 @@ function registryPin(owner: string, repo: string): string {
 
 describe("production baseline catalogs", () => {
   it("binds ECC components to the existing registry pin and locked common baseline", () => {
+    const eccProfiles = loadFrameworkDescriptorSectionV1<{
+      profiles: { full: { modules: string[] } };
+    }>("ecc", "profileGraph");
     const catalog = baselineCatalogById("ecc");
     expect(catalog.pinnedSha).toBe(registryPin("affaan-m", "ECC"));
     const ids = catalog.components.map((component) => component.id);

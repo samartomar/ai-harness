@@ -21,7 +21,7 @@ function packageJson(): {
 }
 
 describe("baseline evidence release payload", () => {
-  it("ships the auditable vendor lock in the actual npm pack file list", () => {
+  it("ships Core tools but no Catalog-owned vendor data in the actual npm pack file list", () => {
     const npmCli = process.env.npm_execpath;
     if (!npmCli) throw new Error("npm_execpath is required for the cross-platform pack test");
     const output = execFileSync(
@@ -31,7 +31,8 @@ describe("baseline evidence release payload", () => {
     );
     const packed = JSON.parse(output) as Array<{ files: Array<{ path: string }> }>;
     const files = packed[0]?.files.map((file) => file.path) ?? [];
-    expect(files).toContain("src/baseline-evidence/vendor-lock.json");
+    expect(files).not.toContain("src/baseline-evidence/vendor-lock.json");
+    expect(files).not.toContain("src/baseline-evidence/ecc-install-preview.json");
     expect(files).toContain("tools/cisco-skill-scanner/pyproject.toml");
     expect(files).toContain("tools/cisco-skill-scanner/uv.lock");
     expect(files).toContain("tools/trust-scanners/cisco-mcp/pyproject.toml");
@@ -80,12 +81,11 @@ describe("baseline evidence release payload", () => {
       peerDependenciesMeta?: Record<string, { optional?: boolean }>;
     };
     expect(manifest.dependencies["@aihq/catalog"]).toBeUndefined();
-    expect(manifest.peerDependencies?.["@aihq/catalog"]).toBe(">=0.2.0 <1.0.0");
+    expect(manifest.peerDependencies?.["@aihq/catalog"]).toBe(">=0.3.0 <0.4.0");
     expect(manifest.peerDependenciesMeta?.["@aihq/catalog"]).toEqual({ optional: true });
-    // The registry's 0.2.0 lacks the runtime-descriptors subpath, so Core's own
-    // tests use the exact Catalog tarball committed beside them.
+    // Core's tests use the exact compatible Catalog tarball committed beside them.
     expect(manifest.devDependencies["@aihq/catalog"]).toBe(
-      "file:tests/fixtures/packages/aihq-catalog-0.2.0-517e43d.tgz",
+      "file:tests/fixtures/packages/aihq-catalog-0.3.0-6df966f.tgz",
     );
     const tsup = readFileSync(join(repo, "tsup.config.ts"), "utf8");
     expect(tsup).toMatch(/external:\s*\[[^\]]*"@aihq\/catalog"[^\]]*\]/u);

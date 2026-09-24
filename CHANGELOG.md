@@ -8,6 +8,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Removed
 
+- Remove legacy MCP-target reconstruction during saved-policy consumption. Policies authored
+  against an older MCP target declaration now fail closed with `Stale selected content`; re-save
+  the policy with the currently installed Catalog's MCP targets before consuming it.
 - Remove the pre-release Policy Workbench browser/HTML/server bundle and its
   `aih --ui` and `aih policy generate` command registrations. They have no
   compatibility stubs or `aih-ui` replacement. Core retains policy validation,

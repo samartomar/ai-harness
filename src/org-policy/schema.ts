@@ -14,15 +14,10 @@ import { PolicyAuthorityReceiptV3Schema } from "./authority-v3.js";
 import { AIH_ORG_POLICY_FILE } from "./constants.js";
 import { isSupportedDeveloperToolPolicyFloorV1 } from "./developer-tool-policy.js";
 import {
-  canonicalEccDisabledHookIds,
-  ECC_DISABLE_ELIGIBLE_HOOK_IDS,
-  type EccHookProfile,
-} from "./ecc-hook-controls.js";
-import {
   ECC_EXTERNAL_MCP_APPROVAL_IDS,
   POLICY_APPROVER_EMAIL_PATTERN,
 } from "./ecc-mcp-approval.js";
-import { AIH_OWNED_ECC_MCP_EXCLUSIONS, ECC_MCP_CATALOG_PROVENANCE } from "./ecc-mcp-catalog.js";
+import { AIH_OWNED_ECC_MCP_EXCLUSIONS, ECC_MCP_CATALOG_PROVENANCE } from "./ecc-mcp-contract.js";
 import { GovernanceDecisionIdSchema } from "./governance-decision-v1.js";
 import { safePolicyCommandArgument as safeBrowserPolicyCommandArgument } from "./workbench/command-arguments.js";
 import {
@@ -322,31 +317,19 @@ const EccHookControlsSchema = z
   .object({
     profile: EccHookProfileSchema,
     disabledIds: z
-      .array(z.enum([...ECC_DISABLE_ELIGIBLE_HOOK_IDS] as [string, ...string[]]))
-      .max(40)
+      .array(z.string().regex(/^[a-z][a-z0-9:-]{0,127}$/))
+      .max(64)
+      .superRefine((ids, ctx) => {
+        const seen = new Set<string>();
+        for (const [index, id] of ids.entries()) {
+          if (seen.has(id))
+            ctx.addIssue({ code: "custom", path: [index], message: "hook ids must be unique" });
+          seen.add(id);
+        }
+      })
       .optional(),
   })
-  .strict()
-  .transform((value, ctx) => {
-    let disabledIds: string[];
-    try {
-      disabledIds = canonicalEccDisabledHookIds(
-        value.disabledIds ?? [],
-        value.profile as EccHookProfile,
-      );
-    } catch (error) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["disabledIds"],
-        message: error instanceof Error ? error.message : "invalid ECC disabled hook ids",
-      });
-      return z.NEVER;
-    }
-    return {
-      profile: value.profile,
-      ...(disabledIds.length === 0 ? {} : { disabledIds }),
-    };
-  });
+  .strict();
 export const SupportedCliSchema = z.enum(SUPPORTED_CLIS);
 const SupportedCliListSchema = z
   .array(SupportedCliSchema)

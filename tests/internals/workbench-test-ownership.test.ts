@@ -22,21 +22,6 @@ describe("backend policy lane ownership", () => {
   it("keeps packed Core closure locks in the retained project", () => {
     expect(isWorkbenchTestPath("tests/tools/packed-consumer.test.ts")).toBe(true);
   });
-  it.each([
-    "tests/internals/workbench-publication-roundtrip.test.ts",
-    "tests/internals/workbench-publication-installed-source.test.ts",
-    "tests/internals/check-workbench-release-compatibility.test.ts",
-    "tests/org-policy/connected-github-skill-bridge.test.ts",
-  ])("retains explicit integration boundaries in the Workbench lane: %s", (path) => {
-    expect(isWorkbenchTestPath(path)).toBe(true);
-    const receipt = classifyCiImpact({
-      baseSha,
-      headSha,
-      changedPaths: ["src/org-policy/workbench/prepared-catalog.ts"],
-      testFiles: [...testFiles, path],
-    });
-    expect(receipt.selectedTests).toContain(path);
-  });
   it("runs the complete discovered backend lane for a policy source change", () => {
     const receipt = classifyCiImpact({
       baseSha,

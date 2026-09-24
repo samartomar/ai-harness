@@ -1,14 +1,75 @@
+import { loadFrameworkDescriptorSectionV1 } from "../catalog-package/framework-descriptors.js";
 import type { BaselineCatalog } from "./catalog.js";
-import { eccBaselineCatalogV1 } from "./catalog-providers/ecc.js";
-import { superpowersBaselineCatalogV1 } from "./catalog-providers/superpowers.js";
+import { defineBaselineCatalog } from "./catalog.js";
 
 export const BASELINE_CATALOG_IDS = ["ecc", "superpowers"] as const;
 export type BaselineCatalogId = (typeof BASELINE_CATALOG_IDS)[number];
+const admittedCatalogs = new Map<BaselineCatalogId, Readonly<BaselineCatalog>>();
+
+interface FrameworkDefinitionsV1 {
+  readonly framework: {
+    readonly id: string;
+    readonly repository: string;
+    readonly commit: string;
+    readonly assets: readonly {
+      readonly id: string;
+      readonly curationKind?: string;
+      readonly sourcePaths: readonly string[];
+    }[];
+  };
+}
+
+function catalogFromDescriptor(id: BaselineCatalogId, pin?: string): BaselineCatalog {
+  const admitted = admittedCatalogs.get(id);
+  if (admitted !== undefined) {
+    if (pin !== undefined && pin !== admitted.pinnedSha) {
+      throw new TypeError(`Catalog ${id} does not carry requested pin ${pin}`);
+    }
+    return structuredClone(admitted);
+  }
+  const { framework } = loadFrameworkDescriptorSectionV1<FrameworkDefinitionsV1>(
+    id,
+    "componentDefinitions",
+  );
+  const vendor = loadFrameworkDescriptorSectionV1<{
+    owner: string;
+    repo: string;
+    pinnedSha: string;
+    components: readonly {
+      id: string;
+      paths: readonly string[];
+      analyzers?: readonly { name: string }[];
+    }[];
+  }>(id, "vendorLock");
+  const repository = /^([^/]+)\/([^/]+)$/.exec(framework.repository);
+  if (framework.id !== id || repository === null) {
+    throw new TypeError(`Catalog ${id} framework definitions are malformed`);
+  }
+  if (pin !== undefined && pin !== vendor.pinnedSha) {
+    throw new TypeError(`Catalog ${id} does not carry requested pin ${pin}`);
+  }
+  const catalog = defineBaselineCatalog({
+    id,
+    owner: vendor.owner,
+    repo: vendor.repo,
+    pinnedSha: vendor.pinnedSha,
+    components: vendor.components.map((component) => ({
+      id: component.id,
+      paths: [...component.paths],
+      ...(component.analyzers?.some((analyzer) => analyzer.name === "cisco@uvx") === true ||
+      component.id.startsWith("skill:") ||
+      component.paths.some((path) => path === "skills" || path.includes("/skills/"))
+        ? { skillContent: true as const }
+        : {}),
+    })),
+  });
+  admittedCatalogs.set(id, catalog);
+  return structuredClone(catalog);
+}
 
 /** Compatibility facade for callers that still select a source by id. */
 export function baselineCatalogById(id: string, pin?: string): BaselineCatalog {
-  if (id === "ecc") return eccBaselineCatalogV1(pin);
-  if (id === "superpowers") return superpowersBaselineCatalogV1(pin);
+  if (id === "ecc" || id === "superpowers") return catalogFromDescriptor(id, pin);
   throw new Error(
     `unknown baseline catalog ${JSON.stringify(id)}; expected ${BASELINE_CATALOG_IDS.join("|")}`,
   );

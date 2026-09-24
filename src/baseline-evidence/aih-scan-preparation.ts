@@ -15,10 +15,10 @@ import {
   packagedCoverageProjectionDigestV1,
   packagedReportComponentDigestV1,
 } from "../org-policy/packaged-collection-evidence-v1.js";
-import type { CompiledBuiltInCatalogV1 } from "../org-policy/workbench/compilers/built-in.js";
 import {
   type AihScanMaterialCoreRevisionV1,
   type AihScanMaterialCoverageV1,
+  type CompiledBuiltInCatalogV1,
   materializeAihScanSubjectsV1,
   removeMaterializedAihScanSubjectsV1,
 } from "./aih-scan-material.js";

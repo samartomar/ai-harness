@@ -83,7 +83,7 @@ const PINS: ReadonlyArray<readonly [file: string, line: number, text: string]> =
   [
     "src/catalog-package/load-catalog-package.ts",
     31,
-    'export const CATALOG_PACKAGE_PEER_RANGE = ">=0.2.0 <1.0.0";',
+    'export const CATALOG_PACKAGE_PEER_RANGE = ">=0.3.0 <0.4.0";',
   ],
   [
     "src/catalog-package/load-catalog-package.ts",
@@ -92,7 +92,7 @@ const PINS: ReadonlyArray<readonly [file: string, line: number, text: string]> =
   ],
   [
     "src/catalog-package/load-catalog-package.ts",
-    154,
+    201,
     "export async function loadCatalogPackageV1<",
   ],
   [

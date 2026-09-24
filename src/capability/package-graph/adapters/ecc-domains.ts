@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { parseExplicitAddReceipt } from "../../../ecc/mcp-explicit-add-receipt.js";
 import {
   ECC_MCP_CATALOG_PROVENANCE,
-  eccExternalMcpCatalog,
+  eccExternalMcpCatalogV1,
 } from "../../../org-policy/ecc-mcp-catalog.js";
 import {
   type PackageGraphAuthorityDocument,
@@ -105,7 +105,7 @@ export function projectEccMcpCapabilityPackageAuthority(
     algorithm: "sha256" as const,
     value: ECC_MCP_CATALOG_PROVENANCE.contentSha256,
   };
-  const surfaces = eccExternalMcpCatalog
+  const surfaces = eccExternalMcpCatalogV1()
     .filter(({ addability }) => addability === "https-configurable")
     .map(
       ({ id }): PackageGraphSurface => ({

@@ -15,7 +15,7 @@ import type {
   WorkbenchAuthoringSourceV1,
   WorkbenchSourceInputsV1,
 } from "../contracts.js";
-import { compileOrganizationManifestAssemblyInputV1 } from "../providers/organization.js";
+import { compileOrganizationManifestAssemblyInputV1 } from "./organization-compiler.js";
 
 function sha256(value: string): string {
   return `sha256:${createHash("sha256").update(value, "utf8").digest("hex")}`;

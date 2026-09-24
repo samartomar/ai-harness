@@ -5,10 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { canonicalStrictJsonSha256V1 } from "../../../../src/contract/strict-json-v1.js";
 import type { PlanContext } from "../../../../src/internals/plan.js";
 import { defaultRunner } from "../../../../src/internals/proc.js";
-import {
-  type PolicyAuthoringCatalog,
-  policyAuthoringCatalog,
-} from "../../../../src/org-policy/catalog.js";
+import { policyAuthoringCatalog } from "../../../../src/org-policy/catalog.js";
 import { prepareWorkbenchCatalog } from "../../../../src/org-policy/workbench/prepared-catalog.js";
 import { makeHostAdapter } from "../../../../src/platform/detect.js";
 
@@ -63,24 +60,6 @@ const manifest = JSON.stringify({
     },
   ],
 });
-
-function minimalActualCatalog(): PolicyAuthoringCatalog {
-  const catalog = policyAuthoringCatalog();
-  catalog.mcp = [];
-  catalog.hooks = [];
-  catalog.unavailableMcp = [];
-  catalog.nonProjectableMcp = [];
-  catalog.aihSkills = [];
-  catalog.aihAgents = [];
-  catalog.frameworks = catalog.frameworks.map(({ id, repository, commit }) => ({
-    id,
-    repository,
-    commit,
-    assets: [],
-  }));
-  catalog.enterpriseComposition = { framework: "ecc", parts: [] };
-  return catalog;
-}
 
 function context(
   root: string,
@@ -198,7 +177,7 @@ describe("fresh organization preparation custody", () => {
       );
       expect(defaultRunner).toHaveBeenCalled();
       expect(consumeFreshOrganizationPreparationV1(structuredClone(prepared))).toBeUndefined();
-      const mixed = prepareWorkbenchCatalog(minimalActualCatalog(), {
+      const mixed = prepareWorkbenchCatalog(policyAuthoringCatalog(), {
         organizationManifestBytes: [
           JSON.stringify({
             version: "organization-authoring-manifest/v1",

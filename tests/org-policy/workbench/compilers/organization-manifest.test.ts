@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { compileOrganizationManifestAssemblyInputV1 } from "../../../../src/org-policy/workbench/catalog-bundle.js";
 import { compileOrganizationManifestV1 } from "../../../../src/org-policy/workbench/compilers/organization-manifest.js";
+import { compileOrganizationManifestAssemblyInputV1 } from "../../../../src/org-policy/workbench/core/organization-catalog.js";
 
 function manifest(sourceId: string, assets: unknown[]) {
   return JSON.stringify({

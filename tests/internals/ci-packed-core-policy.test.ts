@@ -9,14 +9,13 @@ const workflow = parse(readFileSync(resolve(root, ".github/workflows/ci.yml"), "
 const selectedRunner = resolve(root, ".github/scripts/run-selected-tests.mjs");
 
 describe("headless installed Core CI ownership", () => {
-  it("generates backend policy data in the isolated selected-test checkout", () => {
+  it("runs selected tests without generating embedded Catalog data", () => {
     const steps = workflow.jobs.selected_tests.steps as { run?: string }[];
     const install = steps.findIndex((step) => step.run === "npm ci --ignore-scripts");
-    const generate = steps.findIndex((step) => step.run === "npm run build:policy-data");
     const selected = steps.findIndex((step) => step.run === "npm run --silent ci:run-selected");
     expect(install).toBeGreaterThanOrEqual(0);
-    expect(generate).toBeGreaterThan(install);
-    expect(selected).toBeGreaterThan(generate);
+    expect(steps.some((step) => step.run === "npm run build:policy-data")).toBe(false);
+    expect(selected).toBeGreaterThan(install);
   });
 
   it("requires an installed-package policy probe from the fail-closed quality job", () => {
@@ -42,7 +41,9 @@ describe("headless installed Core CI ownership", () => {
         ...process.env,
         FULL_SUITE: "false",
         TEST_LANE: "workbench",
-        SELECTED_TESTS_JSON: JSON.stringify(["tests/org-policy/workbench/data-command.test.ts"]),
+        SELECTED_TESTS_JSON: JSON.stringify([
+          "tests/org-policy/workbench/policy-consumption.test.ts",
+        ]),
         PROVIDER_TESTS_JSON: "[]",
       },
     });

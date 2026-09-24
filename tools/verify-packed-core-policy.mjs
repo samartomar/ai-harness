@@ -108,10 +108,11 @@ try {
   const installed = join(consumer, "node_modules", "@aihq", "core");
   const cli = join(installed, "dist", "cli.js");
   if (!existsSync(cli)) throw new Error("installed Core CLI missing");
-  if (!existsSync(join(installed, "dist", "default-catalog-preassembly.generated.cjs"))) {
-    throw new Error("retained catalog preassembly missing from installed Core");
-  }
   for (const relative of [
+    "dist/default-catalog-preassembly.generated.cjs",
+    "dist/packaged-source-data-data.json",
+    "dist/catalog-qualification-data.json",
+    "dist/packaged-collection-evidence-data.json",
     "dist/bundle.generated.cjs",
     "dist/org-policy/ui-server.d.ts",
     "dist/org-policy/studio-model.d.ts",
