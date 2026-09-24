@@ -1387,11 +1387,7 @@ describe("verifiedEccInstallPlan", () => {
     ).toBe(false);
   });
 
-  it("materializes selected Codex skills into the real on-demand skill directory", () => {
-    const sourceRoot = join(root, "ecc-source");
-    const home = join(root, "home");
-    mkdirSync(join(home, ".codex"), { recursive: true });
-    writeFileSync(join(home, ".codex", "config.toml"), "# operator-owned\r\n", "utf8");
+  function prepareVerifiedCodexSource(sourceRoot: string): void {
     put(
       join(sourceRoot, "scripts", "lib", "install-executor.js"),
       `exports.createManifestInstallPlan = ({ homeDir }) => ({
@@ -1451,7 +1447,13 @@ describe("verifiedEccInstallPlan", () => {
       ].join("\n"),
     );
     put(join(sourceRoot, "skills", "coding-standards", "SKILL.md"), "# Coding standards\n");
+  }
 
+  function verifiedCodexInstallStep(
+    sourceRoot: string,
+    home: string,
+    request: { governance?: true } = {},
+  ) {
     const selected: EccComponentSelection = {
       scope: "scoped",
       components: ["skill:coding-standards"],
@@ -1470,13 +1472,23 @@ describe("verifiedEccInstallPlan", () => {
     const built = verifiedEccInstallPlan(
       context,
       sourceRoot,
-      { clis: ["codex"], profile: "core", packs: [], selection: selected },
+      { clis: ["codex"], profile: "core", packs: [], selection: selected, ...request },
       authorizationsForSelection("codex", selected),
     );
     const step = driverSteps(built.actions)[1];
     if (step === undefined) throw new Error("missing Codex install step");
     const executable = step.argv[0];
     if (executable === undefined) throw new Error("missing Codex install executable");
+    return { step, executable };
+  }
+
+  it("materializes selected Codex skills into the real on-demand skill directory", () => {
+    const sourceRoot = join(root, "ecc-source");
+    const home = join(root, "home");
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    writeFileSync(join(home, ".codex", "config.toml"), "# operator-owned\r\n", "utf8");
+    prepareVerifiedCodexSource(sourceRoot);
+    const { step, executable } = verifiedCodexInstallStep(sourceRoot, home);
 
     const result = spawnSync(executable, step.argv.slice(1), {
       cwd: step.cwd,
@@ -1515,6 +1527,65 @@ describe("verifiedEccInstallPlan", () => {
     });
     expect(rerun.status, rerun.stderr).toBe(0);
     expect(readFileSync(statePath, "utf8")).toBe(firstState);
+  });
+
+  describe("apply-time Chrome DevTools MCP opt-out revalidation", () => {
+    const unsafeLaunch =
+      '[mcp_servers.browser]\ncommand = "npx"\nargs = ["-y", "chrome-devtools-mcp@1.10.1"]\n';
+
+    function runVerifiedCodexStep(
+      label: string,
+      after: { project?: string; user?: string; mergeHelper?: string },
+      request: { governance?: true } = {},
+    ) {
+      const sourceRoot = join(root, `${label}-source`);
+      const home = join(root, `${label}-home`);
+      const userConfig = join(home, ".codex", "config.toml");
+      mkdirSync(join(home, ".codex"), { recursive: true });
+      writeFileSync(userConfig, "# operator-owned\n", "utf8");
+      prepareVerifiedCodexSource(sourceRoot);
+      if (after.mergeHelper !== undefined)
+        put(join(sourceRoot, "scripts", "codex", "merge-codex-config.js"), after.mergeHelper);
+      const { step, executable } = verifiedCodexInstallStep(sourceRoot, home, request);
+      const projectConfig = join(root, ".codex", "config.toml");
+      if (after.project !== undefined) {
+        mkdirSync(join(root, ".codex"), { recursive: true });
+        writeFileSync(projectConfig, after.project, "utf8");
+      }
+      if (after.user !== undefined) writeFileSync(userConfig, after.user, "utf8");
+      const beforeUser = readFileSync(userConfig, "utf8");
+      const result = spawnSync(executable, step.argv.slice(1), {
+        cwd: step.cwd,
+        env: { ...process.env, ...step.env, HOME: home, USERPROFILE: home },
+        encoding: "utf8",
+      });
+      return {
+        result,
+        beforeUser,
+        user: readFileSync(userConfig, "utf8"),
+        aihState: existsSync(join(home, ".codex", "ecc-aih-install-state.json")),
+      };
+    }
+
+    it("refuses a project entry added after planning", () => {
+      const run = runVerifiedCodexStep("late-project", { project: unsafeLaunch });
+
+      expect(run.result.status).not.toBe(0);
+      expect(run.result.stderr).toContain('"browser"');
+      expect(run.result.stderr).toContain("CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS");
+      expect(run.user).toBe(run.beforeUser);
+      expect(run.aihState).toBe(false);
+    });
+
+    it("includes the project config in apply-time change detection", () => {
+      const projectDir = join(root, ".codex");
+      const mergeHelper = `require("node:fs").mkdirSync(${JSON.stringify(projectDir)}, { recursive: true }); require("node:fs").writeFileSync(${JSON.stringify(join(projectDir, "config.toml"))}, "# edited mid-apply\\n");\n`;
+      const run = runVerifiedCodexStep("racing-project", { mergeHelper });
+
+      expect(run.result.status).not.toBe(0);
+      expect(run.result.stderr).toContain("changed during apply");
+      expect(run.user).toBe(run.beforeUser);
+    });
   });
 
   it("registers only the current project's validated MCPs in project-local config", () => {

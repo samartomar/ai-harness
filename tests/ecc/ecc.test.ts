@@ -2213,7 +2213,13 @@ describe("Codex managed destination safety", () => {
     const NO_STATS = "CHROME_DEVTOOLS_MCP_NO_USAGE_STATISTICS";
     const NO_UPDATES = "CHROME_DEVTOOLS_MCP_NO_UPDATE_CHECKS";
 
-    function runDirectApply(label: string, config: string) {
+    const projectConfigPath = () => join(tmp, ".codex", "config.toml");
+
+    function runDirectApply(
+      label: string,
+      config: string,
+      options: { projectAfterPlan?: string; mergeHelper?: string } = {},
+    ) {
       const home = join(tmp, `${label}-home`);
       const repo = join(tmp, "ecc");
       const configPath = join(home, ".codex", "config.toml");
@@ -2224,6 +2230,8 @@ describe("Codex managed destination safety", () => {
         join(repo, "scripts", "lib", "install-state.js"),
         'exports.writeInstallState = (path, state) => require("node:fs").writeFileSync(path, JSON.stringify(state), "utf8");\n',
       );
+      if (options.mergeHelper !== undefined)
+        writeFileSync(join(repo, "scripts", "codex", "merge-codex-config.js"), options.mergeHelper);
       writeFileSync(configPath, config, "utf8");
       writeFileSync(
         statePath,
@@ -2246,6 +2254,10 @@ describe("Codex managed destination safety", () => {
           candidate.kind === "exec" && candidate.describe.startsWith("Install ECC for Codex"),
       );
       if (action === undefined) throw new Error("missing direct Codex merge action");
+      if (options.projectAfterPlan !== undefined) {
+        mkdirSync(join(tmp, ".codex"), { recursive: true });
+        writeFileSync(projectConfigPath(), options.projectAfterPlan, "utf8");
+      }
       const result = spawnSync(process.execPath, action.argv.slice(1), {
         cwd: repo,
         encoding: "utf8",
@@ -2258,6 +2270,41 @@ describe("Codex managed destination safety", () => {
         agents: existsSync(join(home, ".codex", "AGENTS.md")),
       };
     }
+
+    const unsafeProject =
+      '[mcp_servers.browser]\ncommand = "npx"\nargs = ["-y", "chrome-devtools-mcp@1.10.1"]\n';
+    const compliantProject = `${unsafeProject}[mcp_servers.browser.env]\n${NO_STATS} = "1"\n${NO_UPDATES} = "1"\n`;
+
+    it("revalidates the project config at apply time and refuses an entry added after planning", () => {
+      const run = runDirectApply("opt-out-project-late", "", { projectAfterPlan: unsafeProject });
+
+      expect(run.result.status).not.toBe(0);
+      expect(run.result.stderr).toContain('"browser"');
+      expect(run.result.stderr).toContain("project");
+      expect(run.result.stderr).toContain(`${NO_STATS}="1"`);
+      expect(run.result.stderr).toContain(`${NO_UPDATES}="1"`);
+      expect(run.config).toBe("");
+      expect(run.state).toBe(run.beforeState);
+      expect(run.agents).toBe(false);
+      expect(readFileSync(projectConfigPath(), "utf8")).toBe(unsafeProject);
+    });
+
+    it("accepts a compliant project entry at apply time", () => {
+      const run = runDirectApply("opt-out-project-ok", "", { projectAfterPlan: compliantProject });
+
+      expect(run.result.status, run.result.stderr).toBe(0);
+      expect(readFileSync(projectConfigPath(), "utf8")).toBe(compliantProject);
+    });
+
+    it("includes the project config in apply-time change detection", () => {
+      const mergeHelper = `require("node:fs").mkdirSync(${JSON.stringify(join(tmp, ".codex"))}, { recursive: true }); require("node:fs").writeFileSync(${JSON.stringify(projectConfigPath())}, ${JSON.stringify(compliantProject)});\n`;
+      const run = runDirectApply("opt-out-project-race", "", { mergeHelper });
+
+      expect(run.result.status).not.toBe(0);
+      expect(run.result.stderr).toContain("changed during apply");
+      expect(run.config).toBe("");
+      expect(run.state).toBe(run.beforeState);
+    });
 
     it.each([
       [

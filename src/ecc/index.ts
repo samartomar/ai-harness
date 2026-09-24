@@ -476,8 +476,8 @@ const CODEX_INSTALL_MERGE_SCRIPT_SOURCE = [
   'const fs = require("fs");',
   'const path = require("path");',
   ...ECC_UPSTREAM_HOOK_CONSENT_ADAPTER_SOURCE.trim().split("\n"),
-  "const [repoRoot, profileId, homeDir, mergeCodexConfig, configPath, sourceAgents, targetAgents, statePath, governanceFlag, specB64, mcpB64, stateB64] = process.argv.slice(1);",
-  'if (!repoRoot || !profileId || !homeDir || !mergeCodexConfig || !configPath || !sourceAgents || !targetAgents || !statePath || !stateB64) { console.error("usage: codex-install-merge <repo-root> <profile> <home-dir> <merge-config> <config> <source-agents> <target-agents> <state-path> <state-b64>"); process.exit(1); }',
+  "const [repoRoot, profileId, homeDir, mergeCodexConfig, configPath, sourceAgents, targetAgents, statePath, projectConfigPath, governanceFlag, specB64, mcpB64, stateB64] = process.argv.slice(1);",
+  'if (!repoRoot || !profileId || !homeDir || !mergeCodexConfig || !configPath || !sourceAgents || !targetAgents || !statePath || !projectConfigPath || !stateB64) { console.error("usage: codex-install-merge <repo-root> <profile> <home-dir> <merge-config> <config> <source-agents> <target-agents> <state-path> <project-config> <state-b64>"); process.exit(1); }',
   'const normalize = (value) => String(value || "").replace(/\\\\/g, "/");',
   "const declaredHome = path.resolve(homeDir);",
   "const trustedHome = fs.realpathSync(declaredHome);",
@@ -683,6 +683,7 @@ const CODEX_INSTALL_MERGE_SCRIPT_SOURCE = [
   "  return next;",
   "}",
   "const liveConfigRaw = governed ? undefined : readSafeOptional(configPath);",
+  "const liveProjectConfigRaw = readProjectConfig();",
   "const initialScopedPlan = governed ? undefined : planScopedMcps(undefined, false, undefined, false);",
   'const candidateConfig = governed ? undefined : mergeCodexConfigCandidate(liveConfigRaw || "");',
   'if (!governed) actualCurrentRunState = actualBaselineEffects(liveConfigRaw || "", candidateConfig, state);',
@@ -712,6 +713,8 @@ const CODEX_INSTALL_MERGE_SCRIPT_SOURCE = [
   "return { existed, existing, next };",
   "}",
   'function restoreCodexAgents(change) { if (readSafeOptional(targetAgents) !== change.next) throw new Error("Codex AGENTS changed during apply"); if (change.existed) fs.writeFileSync(prepareDestination(targetAgents), change.existing, "utf8"); else fs.rmSync(prepareDestination(targetAgents), { force: true }); }',
+  // The project config lives outside the trusted home; read it as plan time does.
+  'function readProjectConfig() { try { return fs.readFileSync(path.resolve(projectConfigPath), "utf8"); } catch (error) { if (error && error.code === "ENOENT") return undefined; throw error; } }',
   "function readSafeOptional(target) {",
   "  const location = assertInsideHome(target);",
   '  let stats; try { stats = fs.lstatSync(location.absolute); } catch (error) { if (error && error.code === "ENOENT") return undefined; throw error; }',
@@ -938,6 +941,13 @@ function legacyDescendantHeader(line) {
   }
   for (const [name, entry] of servers) { if (!entry.launch) continue; const missing = optOuts.filter((variable) => !entry.env.has(variable)); if (missing.length > 0) return { name, missing }; }
   return undefined;
+}
+function refuseChromeOptOuts(configs) {
+  for (const { scope, configPath: target, raw } of configs) {
+    if (raw === undefined) continue;
+    const problem = chromeOptOutProblem(raw);
+    if (problem) throw new Error("refusing " + scope + " Codex MCP entry \"" + problem.name + "\" (" + target + "): it launches chrome-devtools-mcp without " + problem.missing.map((name) => name + "=\"1\"").join(" and ") + "; aih never rewrites a user-owned entry: remove it so aih manages chrome-devtools, or add both variables to its env table");
+  }
 }`,
   "function renderScopedSection(name, server) {",
   '  if (!server || typeof server !== "object" || Array.isArray(server)) throw new Error("invalid scoped Codex MCP server: " + name);',
@@ -972,13 +982,13 @@ function legacyDescendantHeader(line) {
   '  const block = "# >>> aih managed (mcp) >>>\\n" + sections.map((section) => section.text).join("\\n\\n") + "\\n# <<< aih managed (mcp) <<<";',
   '  let mergedLines; if (parsed.fence) { const before = beforeFence.slice(); const after = afterFence.slice(); if (claimsChrome && chrome.length === 1) { if (legacyBefore.length === 1) before.splice(legacyBefore[0].begin, legacyBefore[0].end - legacyBefore[0].begin); else after.splice(legacyAfter[0].begin, legacyAfter[0].end - legacyAfter[0].begin); } mergedLines = [...before, block, ...after]; } else { const before = beforeFence.slice(); if (claimsChrome && chrome.length === 1) before.splice(legacyBefore[0].begin, legacyBefore[0].end - legacyBefore[0].begin); mergedLines = before.join("\\n").replace(/\\n+$/, "").split("\\n"); if (mergedLines.length === 1 && mergedLines[0] === "") mergedLines = []; mergedLines.push(...(mergedLines.length > 0 ? ["", block] : [block])); }',
   '  let merged = mergedLines.join("\\n").replace(/^\\n+/, "").replace(/\\n+$/, "") + "\\n"; if (/\\r\\n/.test(existingConfig)) merged = merged.replace(/\\n/g, "\\r\\n");',
-  '  const chromeProblem = chromeOptOutProblem(merged); if (chromeProblem) throw new Error("refusing Codex MCP entry \\"" + chromeProblem.name + "\\": it launches chrome-devtools-mcp without " + chromeProblem.missing.map((name) => name + "=\\"1\\"").join(" and ") + "; aih never rewrites a user-owned entry: remove it so aih manages chrome-devtools, or add both variables to its env table");',
-  "  return { liveConfigRaw, liveStateRaw, liveState, merged, installed, retained: retained.map((section) => section.name) };",
+  '  refuseChromeOptOuts([{ scope: "user", configPath, raw: merged }, { scope: "project", configPath: projectConfigPath, raw: liveProjectConfigRaw }]);',
+  "  return { liveConfigRaw, liveStateRaw, liveState, liveProjectConfigRaw, merged, installed, retained: retained.map((section) => section.name) };",
   "}",
   "function unionStrings(...lists) { return [...new Set(lists.flat())].sort(); }",
   'function mergeLiveAihState(live, delta) { const tableKeys = {}; for (const key of unionStrings(Object.keys(live.codexToml.tableKeys), Object.keys(delta.codexToml.tableKeys))) tableKeys[key] = unionStrings(live.codexToml.tableKeys[key] || [], delta.codexToml.tableKeys[key] || []); return { schemaVersion: 1, managedBy: "aih", codexToml: { rootKeys: unionStrings(live.codexToml.rootKeys, delta.codexToml.rootKeys), tables: unionStrings(live.codexToml.tables, delta.codexToml.tables), tableKeys, mcpServers: live.codexToml.mcpServers.slice() }, agentsBlock: true }; }',
   'function scopedState(plan) { const delta = exactAihState(JSON.stringify(actualCurrentRunState)); const next = plan.liveState ? mergeLiveAihState(plan.liveState, delta) : { schemaVersion: 1, managedBy: "aih", codexToml: { rootKeys: delta.codexToml.rootKeys.slice(), tables: delta.codexToml.tables.slice(), tableKeys: Object.fromEntries(Object.entries(delta.codexToml.tableKeys).map(([key, values]) => [key, values.slice()])), mcpServers: [] }, agentsBlock: true }; next.codexToml.mcpServers = unionStrings(next.codexToml.mcpServers || [], plan.retained, plan.installed); return next; }',
-  "function stableScopedPlan(plan) { return readSafeOptional(configPath) === plan.liveConfigRaw && readSafeOptional(expectedAihStatePath) === plan.liveStateRaw; }",
+  "function stableScopedPlan(plan) { return readSafeOptional(configPath) === plan.liveConfigRaw && readSafeOptional(expectedAihStatePath) === plan.liveStateRaw && readProjectConfig() === plan.liveProjectConfigRaw; }",
   'function restoreLiveConfig(plan) { if (readSafeOptional(configPath) !== plan.merged) throw new Error("Codex config changed during rollback"); if (plan.liveConfigRaw === undefined) fs.rmSync(prepareDestination(configPath), { force: true }); else fs.writeFileSync(prepareDestination(configPath), plan.liveConfigRaw, "utf8"); }',
   'function installScopedMcps(plan, nextState) { if (!stableScopedPlan(plan)) throw new Error("Codex MCP config or state changed during apply"); fs.writeFileSync(prepareDestination(configPath), plan.merged, "utf8"); try { fs.writeFileSync(prepareDestination(expectedAihStatePath), JSON.stringify(nextState, null, 2) + "\\n", "utf8"); } catch (error) { restoreLiveConfig(plan); throw error; } state = nextState; return plan.installed; }',
   "installCodexManagedFiles();",
@@ -1050,6 +1060,7 @@ export function codexEccActions(
         sourceAgents,
         codexAgents,
         statePath,
+        join(ctx.root, ".codex", "config.toml"),
         governed ? "1" : "0",
         materializationB64 ?? "",
         mcpB64 ?? "",
