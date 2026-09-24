@@ -6,6 +6,7 @@ import {
   assertPortableSourcePath,
   deriveEccProfile,
   type EccProfile,
+  eccPinnedEvidenceSchema,
   eccProfileSchema,
 } from "./index.js";
 import type { ProjectionSourceTrust } from "./source-closure.js";
@@ -74,6 +75,20 @@ function incompatible(problem: string, commit: string): EccProfileEvidenceRefusa
   );
 }
 
+/**
+ * Name each schema issue by its full key path under `sections.profileEvidence`;
+ * an unknown key is named by its own path, not only its parent's.
+ */
+function issueList(issues: readonly z.core.$ZodIssue[], prefix: readonly PropertyKey[]): string {
+  const paths = issues.slice(0, 3).map((issue) => {
+    const base = ["sections", "profileEvidence", ...prefix, ...issue.path].map(String).join(".");
+    if (issue.code === "unrecognized_keys")
+      return issue.keys.map((key) => `${base}.${key} — unknown key`).join("; ");
+    return `${base} — ${issue.message}`;
+  });
+  return paths.join("; ");
+}
+
 const DocumentSchema = z
   .object({
     path: z.string().min(1).max(240),
@@ -136,15 +151,7 @@ export function readEccProfileEvidenceV1(
     );
   }
   const parsed = SectionSchema.safeParse(section);
-  if (!parsed.success) {
-    throw incompatible(
-      `sections.profileEvidence ${parsed.error.issues
-        .slice(0, 3)
-        .map((issue) => `${issue.path.join(".") || "(root)"} — ${issue.message}`)
-        .join("; ")}`,
-      upstreamCommit,
-    );
-  }
+  if (!parsed.success) throw incompatible(issueList(parsed.error.issues, []), upstreamCommit);
   const value = parsed.data;
   if (value.sourceCommit !== upstreamCommit) {
     throw incompatible(
@@ -152,10 +159,19 @@ export function readEccProfileEvidenceV1(
       upstreamCommit,
     );
   }
-  let profile: EccProfile;
+  const parsedProfile = eccProfileSchema.safeParse(value.profile);
+  if (!parsedProfile.success)
+    throw incompatible(issueList(parsedProfile.error.issues, ["profile"]), upstreamCommit);
+  const parsedEvidence = eccPinnedEvidenceSchema.safeParse(value.pinnedSourceEvidence);
+  if (!parsedEvidence.success) {
+    throw incompatible(
+      issueList(parsedEvidence.error.issues, ["pinnedSourceEvidence"]),
+      upstreamCommit,
+    );
+  }
+  const profile: EccProfile = parsedProfile.data;
   try {
-    profile = eccProfileSchema.parse(value.profile);
-    deriveEccProfile(profile, value.pinnedSourceEvidence);
+    deriveEccProfile(profile, parsedEvidence.data);
   } catch (error) {
     throw incompatible(
       `the profile and its evidence do not validate (${(error as Error).message})`,

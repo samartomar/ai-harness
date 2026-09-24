@@ -192,3 +192,56 @@ describe("ECC profile evidence from the Catalog descriptor", () => {
     }
   });
 });
+
+describe("ECC profile evidence strictness", () => {
+  type Mutable = Record<string, unknown>;
+  const at = (value: unknown, key: string | number): Mutable =>
+    (value as Record<string | number, unknown>)[key] as Mutable;
+
+  const injections: ReadonlyArray<[string, (evidence: Mutable) => Mutable]> = [
+    ["pinnedSourceEvidence.source.unexpected", (e) => at(e, "source")],
+    ["pinnedSourceEvidence.reviewReceipt.unexpected", (e) => at(e, "reviewReceipt")],
+    ["pinnedSourceEvidence.profilesManifest.unexpected", (e) => at(e, "profilesManifest")],
+    [
+      "pinnedSourceEvidence.profilesManifest.profiles.core.unexpected",
+      (e) => at(at(at(e, "profilesManifest"), "profiles"), "core"),
+    ],
+    ["pinnedSourceEvidence.componentsManifest.unexpected", (e) => at(e, "componentsManifest")],
+    [
+      "pinnedSourceEvidence.componentsManifest.components.0.unexpected",
+      (e) => at(at(at(e, "componentsManifest"), "components"), 0),
+    ],
+    ["pinnedSourceEvidence.modulesManifest.unexpected", (e) => at(e, "modulesManifest")],
+    [
+      "pinnedSourceEvidence.modulesManifest.modules.0.unexpected",
+      (e) => at(at(at(e, "modulesManifest"), "modules"), 0),
+    ],
+  ];
+
+  it.each(injections)("refuses an unknown key at %s, naming its path", (path, target) => {
+    const section = fixtureSection();
+    target(section.pinnedSourceEvidence as Mutable).unexpected = true;
+    const refusal = refusalOf(() => readEccProfileEvidenceV1(section, FIXTURE_COMMIT));
+    expect(refusal.reason).toBe("framework-profile-evidence-incompatible");
+    expect(refusal.label).toContain(`sections.profileEvidence.${path}`);
+  });
+
+  it("refuses an unknown key in the profile document, naming its path", () => {
+    const section = fixtureSection();
+    at(at(section.profile, "source"), "reviewReceipt").unexpected = true;
+    const refusal = refusalOf(() => readEccProfileEvidenceV1(section, FIXTURE_COMMIT));
+    expect(refusal.reason).toBe("framework-profile-evidence-incompatible");
+    expect(refusal.label).toContain(
+      "sections.profileEvidence.profile.source.reviewReceipt.unexpected",
+    );
+  });
+
+  it("refuses a supported field of the wrong type, naming its path", () => {
+    const section = fixtureSection();
+    at(at(at(section.pinnedSourceEvidence, "componentsManifest"), "components"), 0).family = 7;
+    const refusal = refusalOf(() => readEccProfileEvidenceV1(section, FIXTURE_COMMIT));
+    expect(refusal.label).toContain(
+      "sections.profileEvidence.pinnedSourceEvidence.componentsManifest.components.0.family",
+    );
+  });
+});

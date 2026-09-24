@@ -60,7 +60,9 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`sections.profileEvidence`), bound to the plugin's one upstream commit. `@aihq/framework-ecc`
   embeds no profile evidence. Until the installed Catalog carries that section, install and
   update refuse with `framework-profile-evidence-unavailable` and name the next route; repair,
-  rollback and uninstall of an existing profile installation are unchanged.
+  rollback and uninstall of an existing profile installation are unchanged. Every object in the
+  section, including the nested pinned manifest and module evidence, is strict: an unknown key
+  or a mistyped field refuses with `framework-profile-evidence-incompatible` naming its key path.
 - `aih ecc --lifecycle rollback` now authenticates the rollback snapshot as well as the active
   installation: its source identity and projection digest must equal an entry in the plugin's
   append-only installation trust record before any write is planned. A snapshot that is not

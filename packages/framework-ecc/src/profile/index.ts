@@ -208,6 +208,12 @@ export const AIH_ADAPTED_WORKFLOWS = [
   "/project-init",
 ] as const;
 
+/*
+ * The pinned evidence is aih's reduced projection of ECC's install manifests:
+ * every supported field is modelled and every object is strict, so an unknown
+ * key anywhere is refused rather than stripped or carried into the canonical
+ * payload hash.
+ */
 const moduleSchema = z
   .object({
     id: idSchema,
@@ -215,36 +221,47 @@ const moduleSchema = z
     paths: z.array(sourcePathSchema),
     dependencies: z.array(idSchema),
   })
-  .passthrough();
-const evidenceSchema = z
+  .strict();
+export const eccPinnedEvidenceSchema = z
   .object({
     evidenceVersion: z.literal(1),
-    source: z.object({
-      repository: z.literal("affaan-m/ECC"),
-      commit: z.string().regex(COMMIT),
-      package: z.literal("ecc-universal"),
-      packageVersion: z.string(),
-      releaseAncestorCommit: z.string().regex(COMMIT),
-      license: z.literal("MIT"),
-      licensePath: sourcePathSchema,
-      manifestHashes: z.record(sourcePathSchema, hashSchema),
-      manifestPayloadHashes: z.record(sourcePathSchema, hashSchema),
-    }),
+    source: z
+      .object({
+        repository: z.literal("affaan-m/ECC"),
+        commit: z.string().regex(COMMIT),
+        package: z.literal("ecc-universal"),
+        packageVersion: z.string(),
+        releaseAncestorCommit: z.string().regex(COMMIT),
+        license: z.literal("MIT"),
+        licensePath: sourcePathSchema,
+        manifestHashes: z.record(sourcePathSchema, hashSchema),
+        manifestPayloadHashes: z.record(sourcePathSchema, hashSchema),
+      })
+      .strict(),
     reviewReceipt: reviewReceiptSchema,
-    profilesManifest: z.object({
-      version: z.literal(1),
-      profiles: z.record(idSchema, z.object({ modules: z.array(idSchema) }).passthrough()),
-    }),
-    componentsManifest: z.object({
-      version: z.literal(1),
-      components: z.array(z.object({ id: idSchema, modules: z.array(idSchema) }).passthrough()),
-    }),
-    modulesManifest: z.object({ version: z.literal(1), modules: z.array(moduleSchema) }),
+    profilesManifest: z
+      .object({
+        version: z.literal(1),
+        profiles: z.record(idSchema, z.object({ modules: z.array(idSchema) }).strict()),
+      })
+      .strict(),
+    componentsManifest: z
+      .object({
+        version: z.literal(1),
+        components: z.array(
+          z
+            .object({ id: idSchema, family: z.string().min(1), modules: z.array(idSchema) })
+            .strict(),
+        ),
+      })
+      .strict(),
+    modulesManifest: z.object({ version: z.literal(1), modules: z.array(moduleSchema) }).strict(),
     availableSkillPaths: z.array(sourcePathSchema),
     agentPaths: z.array(sourcePathSchema),
     workflowPaths: z.array(sourcePathSchema),
   })
   .strict();
+const evidenceSchema = eccPinnedEvidenceSchema;
 type PinnedEvidence = z.infer<typeof evidenceSchema>;
 
 export interface ResolvedEntry {
@@ -557,7 +574,10 @@ export async function resolveEccProfile(
     const bytes = readFileSync(manifestPath);
     if (sha256(bytes) !== parsedProfile.source.manifestPins[sourcePath].rawSha256)
       throw new Error(`source manifest hash mismatch: ${sourcePath}`);
-    return [sourcePath, JSON.parse(bytes.toString("utf8")) as unknown] as const;
+    return [
+      sourcePath,
+      reduceUpstreamManifest(sourcePath, JSON.parse(bytes.toString("utf8"))),
+    ] as const;
   });
   const manifestByPath = new Map(manifests);
   return resolveBase(
@@ -570,6 +590,59 @@ export async function resolveEccProfile(
     },
     false,
   );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function pick(value: unknown, keys: readonly string[]): unknown {
+  if (!isRecord(value)) return value;
+  return Object.fromEntries(
+    keys.filter((key) => Object.hasOwn(value, key)).map((key) => [key, value[key]]),
+  );
+}
+
+/**
+ * Project a raw upstream manifest, already authenticated by its raw SHA-256
+ * pin, onto the modelled evidence fields. Upstream-only descriptive fields
+ * (descriptions, targets, cost, stability) are deliberately not consumed; the
+ * strict evidence schema then validates every field that is.
+ */
+function reduceUpstreamManifest(
+  sourcePath: (typeof MANIFEST_PATHS)[number],
+  raw: unknown,
+): unknown {
+  switch (sourcePath) {
+    case "manifests/install-profiles.json": {
+      const manifest = pick(raw, ["version", "profiles"]);
+      if (!isRecord(manifest) || !isRecord(manifest.profiles)) return manifest;
+      return {
+        ...manifest,
+        profiles: Object.fromEntries(
+          Object.entries(manifest.profiles).map(([id, entry]) => [id, pick(entry, ["modules"])]),
+        ),
+      };
+    }
+    case "manifests/install-components.json": {
+      const manifest = pick(raw, ["version", "components"]);
+      if (!isRecord(manifest) || !Array.isArray(manifest.components)) return manifest;
+      return {
+        ...manifest,
+        components: manifest.components.map((entry) => pick(entry, ["id", "family", "modules"])),
+      };
+    }
+    case "manifests/install-modules.json": {
+      const manifest = pick(raw, ["version", "modules"]);
+      if (!isRecord(manifest) || !Array.isArray(manifest.modules)) return manifest;
+      return {
+        ...manifest,
+        modules: manifest.modules.map((entry) =>
+          pick(entry, ["id", "kind", "paths", "dependencies"]),
+        ),
+      };
+    }
+  }
 }
 
 export function serializeResolvedEccProfile(profile: ResolvedEccProfile): string {
