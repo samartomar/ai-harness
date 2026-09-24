@@ -12,7 +12,9 @@
  *     module) and ships `dist/framework-host.js` with its declarations; the
  *     plugin carries only its dist, which imports Core only through
  *     `@aihq/core/framework-host` and Node built-ins.
- *   Core + plugin installed: `aih superpowers <fixture>` exits 0 with the
+ *   Core + plugin, no Catalog: `aih superpowers` refuses with
+ *     `catalog-package-unavailable`; the descriptor is Catalog data.
+ *   Core + plugin + the pinned Catalog 0.3.0: `aih superpowers <fixture>` exits 0 with the
  *     exact-pinned acquisition preview, loaded from the INSTALLED plugin, whose
  *     `@aihq/core/framework-host` resolved to the INSTALLED Core; `aih init`
  *     (dry run) runs the same evidence-gated preview.
@@ -319,6 +321,23 @@ try {
   const fixture = join(work, "fixture");
   mkdirSync(fixture, { recursive: true });
 
+  // ---- plugin installed, Catalog absent: the descriptor is Catalog data (C1) ------
+  const withoutCatalog = aih(["superpowers", fixture, "--json", "--no-log"]);
+  const withoutCatalogError = json(withoutCatalog)?.error;
+  summary.withoutCatalog = { exit: withoutCatalog.status, error: withoutCatalogError };
+  check(
+    "without Catalog, aih superpowers refuses with catalog-package-unavailable and no embedded fallback",
+    withoutCatalog.status === 1 && withoutCatalogError?.message?.includes("catalog-package-unavailable") === true,
+    withoutCatalogError?.message?.slice(0, 300) ?? withoutCatalog.stdout.slice(0, 300),
+  );
+
+  // The real Catalog 0.3.0 this repository pins carries the Superpowers descriptor
+  // and the plugin identity record the loader checks.
+  const pinnedCatalog = join(repo, "tests", "fixtures", "packages", "aihq-catalog-0.3.0-f60735e.tgz");
+  must(
+    npmRun(["install", "--ignore-scripts", "--no-audit", "--no-fund", "--prefer-offline", pinnedCatalog], consumer),
+    "Catalog 0.3.0 install",
+  );
   const withPlugin = aih(["superpowers", fixture, "--json", "--no-log"], ["--import", pathToFileURL(trace).href]);
   const withPluginResult = json(withPlugin);
   summary.withPlugin = {
@@ -411,13 +430,6 @@ try {
       },
     ],
   });
-  // The real Catalog 0.3.0 this repository pins: Core loads the Superpowers
-  // descriptor from it, so a stub carrying only plugin identities no longer suffices.
-  const pinnedCatalog = join(repo, "tests", "fixtures", "packages", "aihq-catalog-0.3.0-f60735e.tgz");
-  must(
-    npmRun(["install", "--ignore-scripts", "--no-audit", "--no-fund", "--prefer-offline", pinnedCatalog], consumer),
-    "Catalog 0.3.0 install",
-  );
   const matched = aih(["superpowers", fixture, "--json", "--no-log"]);
   check(
     "with Catalog's matching identity record installed, aih superpowers succeeds",
