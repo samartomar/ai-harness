@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  loadScanCiscoShardRunnerV1,
+  loadScanDetectorProbeV1,
   loadScanExecutionAdapterV1,
   loadScanPackageExportsV1,
   SCAN_PACKAGE_INSTALL_COMMAND,
@@ -26,7 +28,7 @@ describe("load-scan-package", () => {
   it("states the supported install arrangement", () => {
     expect(SCAN_PACKAGE_INSTALL_COMMAND).toBe("npm install -g @aihq/core @aihq/scan");
     expect(SCAN_PACKAGE_PROJECT_INSTALL_COMMAND).toBe("npm install @aihq/core @aihq/scan");
-    expect(SCAN_PACKAGE_PEER_RANGE).toBe(">=0.4.0 <1.0.0");
+    expect(SCAN_PACKAGE_PEER_RANGE).toBe(">=0.5.0 <0.6.0");
   });
 
   it("refuses as scan-package-unavailable when the package cannot be imported", async () => {
@@ -124,5 +126,42 @@ describe("load-scan-package", () => {
     expect(loaded.refusal.detail).toContain(
       "does not export listDetectorCapabilitiesV1, runDetectorV1",
     );
+  });
+
+  it("hands out Scan's availability probe with its capability list", async () => {
+    const listDetectorCapabilitiesV1 = () => [];
+    const probeDetectorAvailabilityV1 = () => Promise.resolve({ available: false });
+    const loaded = await loadScanDetectorProbeV1(() =>
+      Promise.resolve({
+        listDetectorCapabilitiesV1,
+        probeDetectorAvailabilityV1,
+        runDetectorV1: 1,
+      }),
+    );
+    expect(loaded).toEqual({
+      ok: true,
+      exports: { listDetectorCapabilitiesV1, probeDetectorAvailabilityV1 },
+    });
+  });
+
+  it("hands out Scan's Cisco shard runner with its capability list", async () => {
+    const listDetectorCapabilitiesV1 = () => [];
+    const runCiscoShardV1 = () => Promise.resolve({ outcome: "refused" });
+    const loaded = await loadScanCiscoShardRunnerV1(() =>
+      Promise.resolve({ listDetectorCapabilitiesV1, runCiscoShardV1 }),
+    );
+    expect(loaded).toEqual({ ok: true, exports: { listDetectorCapabilitiesV1, runCiscoShardV1 } });
+  });
+
+  it("refuses a Scan without the shard runner or the probe as incompatible, naming the export", async () => {
+    const older = () => Promise.resolve({ listDetectorCapabilitiesV1: () => [] });
+    const shard = await loadScanCiscoShardRunnerV1(older);
+    const probe = await loadScanDetectorProbeV1(older);
+    expect(shard).toMatchObject({ ok: false, refusal: { reason: "scan-package-incompatible" } });
+    expect(probe).toMatchObject({ ok: false, refusal: { reason: "scan-package-incompatible" } });
+    if (shard.ok || probe.ok) return;
+    expect(shard.refusal.detail).toContain("does not export runCiscoShardV1");
+    expect(probe.refusal.detail).toContain("does not export probeDetectorAvailabilityV1");
+    expect(shard.refusal.detail).toContain(">=0.5.0 <0.6.0");
   });
 });

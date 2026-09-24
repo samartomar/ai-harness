@@ -1,0 +1,225 @@
+{
+  "case": "dependencies",
+  "producer": {
+    "engine": "runTrustLintV1",
+    "scanCheckout": "sep/scan-detectors",
+    "scanCommit": "28718a7515829c64b0b1410d98bfd1c48d29069b"
+  },
+  "request": {
+    "selectedClosurePaths": [
+      "package.json",
+      "SKILL.md"
+    ],
+    "detectorOptions": {
+      "internalScopes": [
+        "@acme-internal"
+      ],
+      "mcpConfigPaths": []
+    }
+  },
+  "sarif": {
+    "version": "2.1.0",
+    "runs": [
+      {
+        "tool": {
+          "driver": {
+            "name": "aih-trust-lint",
+            "version": "1.0.0"
+          }
+        },
+        "properties": {
+          "aih-trust/v1": {
+            "format": "aih-trust-lint-facts",
+            "version": 1,
+            "trustDocumentCount": 1,
+            "repositoryLicenseFile": null
+          }
+        },
+        "artifacts": [
+          {
+            "location": {
+              "uri": "package.json"
+            },
+            "properties": {
+              "aih-trust/v1": {
+                "strictUnicodeSurface": true,
+                "legalText": false,
+                "unicodeRisk": null,
+                "lintLines": []
+              }
+            }
+          },
+          {
+            "location": {
+              "uri": "SKILL.md"
+            },
+            "properties": {
+              "aih-trust/v1": {
+                "strictUnicodeSurface": true,
+                "legalText": false,
+                "unicodeRisk": null,
+                "lintLines": []
+              }
+            }
+          }
+        ],
+        "results": [
+          {
+            "ruleId": "trust.unpinned-dependency",
+            "level": "error",
+            "message": {
+              "text": "package.json:8 — direct dependency left-pad uses a git/url dependency without a 40-character SHA pin"
+            },
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "package.json"
+                  },
+                  "region": {
+                    "startLine": 8
+                  }
+                }
+              }
+            ],
+            "fingerprints": {
+              "aih-trust/v1": "trust-unpinned-dependency:package.json:2b8416f4536c47b57e905c4f3e14508ecc747281c261ad13cfee67ee97115ebd"
+            }
+          },
+          {
+            "ruleId": "trust.unpinned-dependency",
+            "level": "error",
+            "message": {
+              "text": "package.json:13 — direct dependency vitest uses unpinned version spec \"latest\""
+            },
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "package.json"
+                  },
+                  "region": {
+                    "startLine": 13
+                  }
+                }
+              }
+            ],
+            "fingerprints": {
+              "aih-trust/v1": "trust-unpinned-dependency:package.json:8e88f878ffa0aee15ef1f2b2af2f014196f4578a7a7593651e0e8517132e3eca"
+            }
+          },
+          {
+            "ruleId": "trust.unpinned-dependency",
+            "level": "error",
+            "message": {
+              "text": "package.json:10 — direct dependency zod uses unpinned version spec \"^3.23.0\""
+            },
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "package.json"
+                  },
+                  "region": {
+                    "startLine": 10
+                  }
+                }
+              }
+            ],
+            "fingerprints": {
+              "aih-trust/v1": "trust-unpinned-dependency:package.json:4223b2b9c8a4506df167a043302389d7c76e0a1deed0bb2dfb5dc5d52ec1d9d6"
+            }
+          },
+          {
+            "ruleId": "trust.dependency-confusion",
+            "level": "error",
+            "message": {
+              "text": "package.json:5 — direct dependency @acme-internal/auth uses configured internal scope @acme-internal"
+            },
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "package.json"
+                  },
+                  "region": {
+                    "startLine": 5
+                  }
+                }
+              }
+            ],
+            "fingerprints": {
+              "aih-trust/v1": "trust-dependency-confusion:package.json:09f89ac178e65e94d9b5821768768d061a21e76def6a8886d4bc6aa8319b749a"
+            }
+          },
+          {
+            "ruleId": "trust.typosquat",
+            "level": "error",
+            "message": {
+              "text": "package.json:6 — direct dependency axois is Damerau-Levenshtein distance 1 from popular package axios"
+            },
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "package.json"
+                  },
+                  "region": {
+                    "startLine": 6
+                  }
+                }
+              }
+            ],
+            "fingerprints": {
+              "aih-trust/v1": "trust-typosquat:package.json:ef045450c6024e3532638b2711477801536fa3962d65607212ba4822ef9d5356"
+            }
+          },
+          {
+            "ruleId": "trust.typosquat",
+            "level": "error",
+            "message": {
+              "text": "package.json:7 — direct dependency lodahs is Damerau-Levenshtein distance 1 from popular package lodash"
+            },
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "package.json"
+                  },
+                  "region": {
+                    "startLine": 7
+                  }
+                }
+              }
+            ],
+            "fingerprints": {
+              "aih-trust/v1": "trust-typosquat:package.json:70da3ee1459f5a571bea0eef00201cf64c23ea2fcb0609177d917ab568527af2"
+            }
+          },
+          {
+            "ruleId": "trust.unpinned-dependency",
+            "level": "error",
+            "message": {
+              "text": "package.json:1 — package.json declares direct dependencies but no lockfile was found anywhere in the trust source"
+            },
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "package.json"
+                  },
+                  "region": {
+                    "startLine": 1
+                  }
+                }
+              }
+            ],
+            "fingerprints": {
+              "aih-trust/v1": "trust-unpinned-dependency:package.json:429881e6c02d89f7beb0def7d7c4b004e4fc4db289e976e667e4a043481e1d68"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -53,7 +53,7 @@ const PINS: ReadonlyArray<readonly [file: string, line: number, text: string]> =
   [
     "src/scan-package/load-scan-package.ts",
     22,
-    'export const SCAN_PACKAGE_PEER_RANGE = ">=0.4.0 <1.0.0";',
+    'export const SCAN_PACKAGE_PEER_RANGE = ">=0.5.0 <0.6.0";',
   ],
   [
     "src/scan-package/load-scan-package.ts",

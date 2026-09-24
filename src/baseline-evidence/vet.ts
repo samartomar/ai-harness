@@ -1,6 +1,8 @@
 import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import type { Check } from "../internals/verify.js";
+import type { ScanPackageImporterV1 } from "../scan-package/load-scan-package.js";
+import { runCiscoSourceShardThroughScanV1 } from "../trust/cisco-shard-delegation.js";
 import {
   type CiscoShardManifest,
   type CiscoShardResult,
@@ -9,8 +11,9 @@ import {
 } from "../trust/cisco-shards.js";
 import {
   buildCiscoSourceShardManifest,
+  DEFAULT_UV_EXECUTION_PROFILE,
   joinedCiscoShardSarif,
-  runCiscoSourceShard,
+  resolveCiscoScanConcurrency,
 } from "../trust/detectors.js";
 import { scanTrustTreeWithAnalyzers, type TrustScanResult } from "../trust/scan.js";
 import { VERSION } from "../version.js";
@@ -155,6 +158,8 @@ export interface VetBaselineCatalogOptions {
     profile?: string;
     workerConcurrency?: number;
     dispatch?: (manifest: CiscoShardManifest) => Promise<readonly CiscoShardResult[]>;
+    /** Test seam for the installed `@aihq/scan` that runs an undispatched shard. */
+    importer?: ScanPackageImporterV1;
   };
 }
 
@@ -342,19 +347,15 @@ async function prepareSourceWideCiscoEvidence(
         "source-wide Cisco scan with multiple shards requires an explicit shard dispatcher",
       );
     }
-    if (scanOptions.run === undefined || scanOptions.platform === undefined) {
-      throw new Error("source-wide Cisco scan requires run and platform runtime options");
-    }
     const shard = manifest.shards[0];
     if (shard === undefined) throw new Error("source-wide Cisco manifest has no shard");
     results = [
-      await runCiscoSourceShard(sourceRoot, manifest, shard.id, {
-        run: scanOptions.run,
-        platform: scanOptions.platform,
-        env: scanOptions.env ?? {},
-        ...(options.workerConcurrency === undefined
-          ? {}
-          : { concurrency: options.workerConcurrency }),
+      await runCiscoSourceShardThroughScanV1(sourceRoot, manifest, shard.id, {
+        executionProfileId: scanOptions.uvExecutionProfileId ?? DEFAULT_UV_EXECUTION_PROFILE,
+        concurrency:
+          options.workerConcurrency ?? resolveCiscoScanConcurrency(scanOptions.env ?? {}),
+        ...(scanOptions.signal === undefined ? {} : { signal: scanOptions.signal }),
+        ...(options.importer === undefined ? {} : { importer: options.importer }),
       }),
     ];
   }

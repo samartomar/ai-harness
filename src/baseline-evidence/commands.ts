@@ -149,8 +149,7 @@ export async function baselineVetPlanForSource(
         const sourceRoot = await exactSourceRoot(digestCtx, source, catalog);
         const vet = options.vetCatalog ?? vetBaselineCatalog;
         const scans = new Map<string, TrustScanResult>();
-        const vetOptions = requiredBaselineVetOptions({
-          run: digestCtx.run,
+        const vetOptions = await requiredBaselineVetOptions({
           platform: digestCtx.host.platform,
           env: digestCtx.env,
           progress: (message) => process.stderr.write(`${message}\n`),

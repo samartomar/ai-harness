@@ -19,7 +19,7 @@ import type { ScanExecutionAdapterV1 } from "../org-policy/governance-input-v1.j
 
 export const SCAN_PACKAGE_NAME = "@aihq/scan";
 /** The peer range `package.json` declares; compatibility beyond it is checked at run time. */
-export const SCAN_PACKAGE_PEER_RANGE = ">=0.4.0 <1.0.0";
+export const SCAN_PACKAGE_PEER_RANGE = ">=0.5.0 <0.6.0";
 export const SCAN_PACKAGE_INSTALL_COMMAND = "npm install -g @aihq/core @aihq/scan";
 export const SCAN_PACKAGE_PROJECT_INSTALL_COMMAND = "npm install @aihq/core @aihq/scan";
 
@@ -43,10 +43,28 @@ export type ScanBaselineExportNameV1 =
 /** Scan's public detector execution: exactly the members of Core's adapter seam. */
 export type ScanExecutionExportNameV1 = keyof ScanExecutionAdapterV1;
 
-export type ScanPackageExportNameV1 = ScanBaselineExportNameV1 | ScanExecutionExportNameV1;
+/**
+ * Scan's detector functions beyond the adapter seam, typed as Core calls them:
+ * requests go out as plain data and results come back `unknown`, narrowed by
+ * the caller. `probeDetectorAvailabilityV1` answers whether a detector could
+ * run under a named profile without running it; `runCiscoShardV1` executes one
+ * baseline Cisco shard whose manifest and join stay in Core.
+ */
+export interface ScanDetectorFunctionsV1 {
+  readonly probeDetectorAvailabilityV1: (request: unknown) => Promise<unknown>;
+  readonly runCiscoShardV1: (request: unknown) => Promise<unknown>;
+}
+
+export type ScanDetectorExportNameV1 = keyof ScanDetectorFunctionsV1;
+
+export type ScanPackageExportNameV1 =
+  | ScanBaselineExportNameV1
+  | ScanExecutionExportNameV1
+  | ScanDetectorExportNameV1;
 
 type ScanPackageFunctionsV1 = Pick<typeof ScanPackage, ScanBaselineExportNameV1> &
-  ScanExecutionAdapterV1;
+  ScanExecutionAdapterV1 &
+  ScanDetectorFunctionsV1;
 
 export type ScanPackageLoadV1<K extends ScanPackageExportNameV1> =
   | { readonly ok: true; readonly exports: Pick<ScanPackageFunctionsV1, K> }
@@ -133,6 +151,23 @@ export async function loadScanExecutionAdapterV1(
   if (!loaded.ok) return loaded;
   const { listDetectorCapabilitiesV1, runDetectorV1 } = loaded.exports;
   return { ok: true, adapter: { listDetectorCapabilitiesV1, runDetectorV1 } };
+}
+
+/** Scan's availability probe (baseline preflight), with the capabilities it answers for. */
+export function loadScanDetectorProbeV1(
+  importer?: ScanPackageImporterV1,
+): Promise<ScanPackageLoadV1<"listDetectorCapabilitiesV1" | "probeDetectorAvailabilityV1">> {
+  return loadScanPackageExportsV1(
+    ["listDetectorCapabilitiesV1", "probeDetectorAvailabilityV1"],
+    importer,
+  );
+}
+
+/** Scan's Cisco shard runner (baseline vet), with the capabilities naming each profile's lock. */
+export function loadScanCiscoShardRunnerV1(
+  importer?: ScanPackageImporterV1,
+): Promise<ScanPackageLoadV1<"listDetectorCapabilitiesV1" | "runCiscoShardV1">> {
+  return loadScanPackageExportsV1(["listDetectorCapabilitiesV1", "runCiscoShardV1"], importer);
 }
 
 /** `reason: detail`, the form every report prints a package refusal in. */

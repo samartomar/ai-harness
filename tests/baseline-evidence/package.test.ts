@@ -65,7 +65,7 @@ describe("baseline evidence release payload", () => {
       peerDependenciesMeta?: Record<string, { optional?: boolean }>;
     };
     expect(manifest.dependencies["@aihq/scan"]).toBeUndefined();
-    expect(manifest.peerDependencies?.["@aihq/scan"]).toBe(">=0.4.0 <1.0.0");
+    expect(manifest.peerDependencies?.["@aihq/scan"]).toBe(">=0.5.0 <0.6.0");
     expect(manifest.peerDependenciesMeta?.["@aihq/scan"]).toEqual({ optional: true });
     const tsup = readFileSync(join(repo, "tsup.config.ts"), "utf8");
     expect(tsup).toMatch(/external:\s*\[[^\]]*"@aihq\/scan"[^\]]*\]/u);

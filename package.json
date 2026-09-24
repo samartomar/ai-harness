@@ -37,8 +37,6 @@
     "src/ecc-profile/default-mcp-runtime",
     "src/ecc-profile/markitdown-runtime",
     "src/tools/headroom-runtime",
-    "tools/cisco-skill-scanner",
-    "tools/trust-scanners",
     "packs",
     "!packs/**/__pycache__",
     "!packs/**/*.py[cod]",
@@ -134,7 +132,7 @@
   },
   "peerDependencies": {
     "@aihq/catalog": ">=0.2.0 <1.0.0",
-    "@aihq/scan": ">=0.4.0 <1.0.0",
+    "@aihq/scan": ">=0.5.0 <0.6.0",
     "@aihq/framework-ecc": ">=0.1.0 <0.2.0",
     "@aihq/framework-superpowers": ">=0.1.0 <0.2.0"
   },

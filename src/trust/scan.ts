@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { hashSourceTree } from "../baseline-evidence/hash.js";
 import { nativeAnalyzerIdentity } from "../baseline-evidence/native-identity.js";
 import { type Posture, postureFromContext } from "../config/posture.js";
@@ -21,8 +21,7 @@ import type { ScanExecutionAdapterV1 } from "../org-policy/governance-input-v1.j
 import { candidateIdentityDigest, stableJson } from "../org-policy/policy-identity.js";
 import { type OrgPolicy, OrgPolicyError, readOrgPolicy } from "../org-policy/schema.js";
 import type { Platform } from "../platform/base.js";
-import { mcpConfigSecretCheck, plaintextSecretCheck } from "../secrets/probes.js";
-import { MCP_CONFIG_FILES, scanConfigSecrets, scanSecrets } from "../secrets/scan.js";
+import { MCP_CONFIG_FILES } from "../secrets/scan.js";
 import { VERSION } from "../version.js";
 import { applyTrustAcknowledgements } from "./acknowledge.js";
 import {
@@ -46,15 +45,12 @@ import {
   parseArtifactIntakeText,
   parseArtifactIntakeV1Text,
 } from "./artifact-intake.js";
-import { resolveInternalScopes, scanTrustDependencyNames } from "./depnames.js";
 import {
   resolveScanTrustLintRouteV1,
   runMcpConfigDetectors,
   runScanTrustLintV1,
   runTrustDetectors,
   type ScanObservationV1,
-  type ScanRoutedDetectorV1,
-  scanNativeMaliciousCode,
   type TrustDetectorExecutionV1,
   type TrustDetectorName,
   TrustScanCancelledError,
@@ -98,20 +94,19 @@ import {
 } from "./fetch.js";
 import { gradeTrustCheck } from "./grade.js";
 import type { SkillSpectorImageApproval } from "./images.js";
+import { resolveInternalScopes } from "./internal-scopes.js";
 import {
   buildTrustFileInventory,
   DEFAULT_TRUST_SKIP_DIRS,
   type TrustFileInventory,
   type TrustInventoryBuildOptions,
 } from "./inventory.js";
-import { isStrictUnicodeSurface, scanTrustDocument, scanTrustUnicodeDocument } from "./lint.js";
-import { scanTrustManifests } from "./manifest.js";
 import { classifyIncomingMcp } from "./mcp-classify.js";
-import { isInstallScriptEvidenceFilePath, isMaliciousCodeScanFilePath } from "./script-files.js";
+import { isInstallScriptEvidenceFilePath } from "./script-files.js";
 import { type SandboxSmokeShape, sandboxSmokeCheck } from "./smoke.js";
+import { safeMcpName, type TrustLintCheckV1 } from "./trust-lint-sarif.js";
 
 export const TRUST_SKIP_DIRS = DEFAULT_TRUST_SKIP_DIRS;
-const ROOT_TRUST_DOCS = new Set(["AGENTS.md", "CLAUDE.md", "GEMINI.md"]);
 export const INCOMING_MCP_CONFIG_FILES = new Set([...MCP_CONFIG_FILES, "mcp.json"]);
 const HOSTED_MCP_ADVISORY =
   "hosted MCP server has no post-approval rug-pull protection; run a runtime MCP-scan with tool-pinning before first use.";
@@ -161,15 +156,11 @@ export interface ScanTrustTreeOptions {
   inventoryFactory?: (root: string, options?: TrustInventoryBuildOptions) => TrustFileInventory;
   /**
    * Scan's detector execution. Omitted means the installed `@aihq/scan`, loaded
-   * on first need; an injected adapter replaces it. Which detectors go to Scan
-   * is decided per detector in `runTrustDetectors`; the rest run in Core and
-   * are recorded as `core-legacy`. The native findings go to Scan's
-   * `detector.aih-trust-lint` when the injected adapter declares it or when it
-   * is delegated to the installed package.
+   * on first need; an injected adapter replaces it. Every detector and the
+   * native findings (Scan's `detector.aih-trust-lint`) run through it; Core
+   * executes none of them and has no fallback.
    */
   scanExecution?: ScanExecutionAdapterV1;
-  /** Detectors delegated to the installed package, with no fallback to Core. */
-  delegatedDetectors?: ReadonlySet<ScanRoutedDetectorV1>;
   /** The profile uv-backed detectors are requested under; `host-process-uv-v1` when omitted. */
   uvExecutionProfileId?: UvExecutionProfileIdV1;
   /** Cancels the scan; a cancelled scan throws `TrustScanCancelledError` and has no verdict. */
@@ -404,20 +395,6 @@ export function collectFilesUnder(
   ].map((entry) => entry.absolutePath);
 }
 
-function shouldScanTrustDoc(root: string, absPath: string): boolean {
-  const rel = toPosix(relative(root, absPath));
-  const parts = rel.split("/");
-  const name = parts.at(-1) ?? "";
-  if (name === "SKILL.md") return true;
-  if (parts.length === 1 && ROOT_TRUST_DOCS.has(name)) return true;
-  return extname(name).toLowerCase() === ".md";
-}
-
-function shouldScanStrictUnicodeSurface(root: string, absPath: string): boolean {
-  const rel = toPosix(relative(root, absPath));
-  return isStrictUnicodeSurface(rel) || isMaliciousCodeScanFilePath(rel);
-}
-
 function collectSkillDirs(root: string, inventory?: TrustFileInventory): string[] {
   return [
     ...new Set(
@@ -569,7 +546,6 @@ function normalizeScanOptions(options: ScanTrustTreeOptions = {}): {
   progress?: (message: string) => void;
   inventoryFactory: NonNullable<ScanTrustTreeOptions["inventoryFactory"]>;
   scanExecution?: ScanExecutionAdapterV1;
-  delegatedDetectors?: ReadonlySet<ScanRoutedDetectorV1>;
   uvExecutionProfileId?: UvExecutionProfileIdV1;
   signal?: AbortSignal;
 } {
@@ -588,7 +564,6 @@ function normalizeScanOptions(options: ScanTrustTreeOptions = {}): {
     progress: options.progress,
     inventoryFactory: options.inventoryFactory ?? buildTrustFileInventory,
     scanExecution: options.scanExecution,
-    delegatedDetectors: options.delegatedDetectors,
     uvExecutionProfileId: options.uvExecutionProfileId,
     signal: options.signal,
   };
@@ -609,18 +584,6 @@ function stringValue(value: unknown): string | undefined {
 
 function collectIncomingMcpConfigFiles(root: string, inventory?: TrustFileInventory): string[] {
   return collectMcpConfigFileRels(root, collectSkillDirs(root, inventory));
-}
-
-function plaintextSecretChecks(root: string, posture: Posture): Check[] {
-  return scanSecrets(root).matches.map((path) => plaintextSecretCheck(path, posture));
-}
-
-function mcpConfigSecretChecks(
-  root: string,
-  mcpConfigFiles: readonly string[],
-  posture: Posture,
-): Check[] {
-  return scanConfigSecrets(root, mcpConfigFiles).map((hit) => mcpConfigSecretCheck(hit, posture));
 }
 
 function mcpPolicyFail(rel: string, detail: string, fingerprintTail: string): Check {
@@ -680,11 +643,6 @@ function openCodeServer(server: unknown): unknown {
   };
 }
 
-function safeMcpName(name: string): string {
-  const safe = name.replace(/[^A-Za-z0-9._-]/g, "_");
-  return safe.length > 0 ? safe : "server";
-}
-
 function mcpServerConfigFingerprint(server: McpServer): string {
   const normalized =
     server.type === "stdio"
@@ -705,18 +663,42 @@ function mcpServerConfigFingerprint(server: McpServer): string {
   return contentHash(normalized).slice(0, 8);
 }
 
-function descriptionChecks(
-  rel: string,
-  mapKey: string,
-  name: string,
-  rawServer: unknown,
-  posture: Posture,
-): Check[] {
-  if (!isRecord(rawServer) || typeof rawServer.description !== "string") return [];
-  return scanTrustDocument(
-    `${rel}#${mapKey}.${safeMcpName(name)}.description`,
-    rawServer.description,
-  ).map((check) => gradeTrustCheck(check, posture));
+/**
+ * Scan's trust-lint findings in incoming MCP server descriptions, keyed by
+ * config, map and raw server name, so Core can place each one before the
+ * server's own policy evidence exactly where its native scan placed it.
+ */
+class McpDescriptionFindings {
+  private readonly byServer = new Map<string, Check[]>();
+
+  constructor(entries: readonly TrustLintCheckV1[]) {
+    for (const entry of entries) {
+      if (entry.mcpDescription === undefined) continue;
+      const key = McpDescriptionFindings.key(
+        entry.mcpDescription.configPath,
+        entry.mcpDescription.mapKey,
+        entry.mcpDescription.server,
+      );
+      this.byServer.set(key, [...(this.byServer.get(key) ?? []), entry.check]);
+    }
+  }
+
+  private static key(rel: string, mapKey: string, server: string): string {
+    return JSON.stringify([rel, mapKey, server]);
+  }
+
+  /** Removes and returns the findings for one server. */
+  take(rel: string, mapKey: string, server: string): Check[] {
+    const key = McpDescriptionFindings.key(rel, mapKey, server);
+    const checks = this.byServer.get(key) ?? [];
+    this.byServer.delete(key);
+    return checks;
+  }
+
+  /** Findings for a server Core's own policy parse never visited. */
+  unplaced(): string[] {
+    return [...this.byServer.keys()];
+  }
 }
 
 function mcpPolicyChecks(
@@ -806,6 +788,7 @@ function incomingMcpChecks(
   mcpConfigFiles: readonly string[],
   posture: Posture,
   mcpPolicy: OrgPolicy["mcp"] | undefined,
+  descriptions: McpDescriptionFindings,
 ): Check[] {
   const checks: Check[] = [];
   for (const rel of mcpConfigFiles) {
@@ -825,7 +808,7 @@ function incomingMcpChecks(
       for (const [name, rawServer] of Object.entries(map.servers).sort(([a], [b]) =>
         a.localeCompare(b),
       )) {
-        checks.push(...descriptionChecks(rel, map.key, name, rawServer, posture));
+        checks.push(...descriptions.take(rel, map.key, name));
         checks.push(
           ...skillsProviderEvidenceChecks(rel, map.key, name, classifyIncomingMcp(rawServer)),
         );
@@ -1027,7 +1010,6 @@ export async function scanTrustTreeWithAnalyzers(
     progress,
     inventoryFactory,
     scanExecution,
-    delegatedDetectors,
     uvExecutionProfileId,
     signal,
   } = normalizeScanOptions(options);
@@ -1042,104 +1024,77 @@ export async function scanTrustTreeWithAnalyzers(
     `trust scan: inventory complete (${inventory.files.length.toLocaleString("en-US")} files)`,
   );
   const mcpConfigFiles = collectIncomingMcpConfigFiles(safeRoot, inventory);
-  // MCP policy is Core's decision wherever the native findings come from.
-  const incomingMcp = incomingMcpChecks(safeRoot, mcpConfigFiles, posture, mcpPolicy);
-  const trustLint = await resolveScanTrustLintRouteV1({ scanExecution, delegatedDetectors });
-  const nativeExecutions: TrustDetectorExecutionV1[] = [];
-  let trustDocumentCount = 0;
-  let checks: Check[];
-  if (trustLint === undefined) {
-    const nativeLintChecks: Check[] = [];
-    for (const entry of inventory.files) {
-      if (shouldScanTrustDoc(safeRoot, entry.absolutePath)) {
-        trustDocumentCount++;
-        nativeLintChecks.push(
-          ...scanTrustDocument(entry.relativePath, readFileSync(entry.absolutePath, "utf8")).map(
-            (check) => gradeTrustCheck(check, posture),
-          ),
-        );
-      } else if (shouldScanStrictUnicodeSurface(safeRoot, entry.absolutePath)) {
-        nativeLintChecks.push(
-          ...scanTrustUnicodeDocument(
-            entry.relativePath,
-            readFileSync(entry.absolutePath, "utf8"),
-          ).map((check) => gradeTrustCheck(check, posture)),
-        );
-      }
-    }
-    checks = [
-      ...nativeLintChecks,
-      ...scanTrustManifests(safeRoot, inventory),
-      ...scanTrustDependencyNames(safeRoot, internalScopes, posture, inventory),
-      ...plaintextSecretChecks(safeRoot, posture),
-      ...mcpConfigSecretChecks(safeRoot, mcpConfigFiles, posture),
-      ...incomingMcp,
-      ...scanNativeMaliciousCode(safeRoot, inventory),
-    ];
-  } else {
-    for (const entry of inventory.files) {
-      if (shouldScanTrustDoc(safeRoot, entry.absolutePath)) trustDocumentCount++;
-    }
-    const native = await runScanTrustLintV1(trustLint, safeRoot, {
-      inventory,
-      platform: platform ?? hostPlatform(),
-      posture,
-      internalScopes,
-      ...(signal === undefined ? {} : { signal }),
-    });
-    nativeExecutions.push(native.execution);
-    // Core's native order: the native findings, the MCP policy checks, then malicious code.
-    checks = [
-      ...native.checks.filter((check) => check.code !== "trust.malicious-code"),
-      ...incomingMcp,
-      ...native.checks.filter((check) => check.code === "trust.malicious-code"),
-    ];
-  }
-  const hasDetectorRuntime = run !== undefined && platform !== undefined && env !== undefined;
-  const detectorResult = hasDetectorRuntime
-    ? await runTrustDetectors(safeRoot, {
+  // Scan's trust lint produces every native finding and the facts Core's
+  // classification reads; there is no Core fallback. A missing or incompatible
+  // Scan refuses the whole scan (ScanPackageRefusalError).
+  const trustLint = await resolveScanTrustLintRouteV1({ scanExecution });
+  const native = await runScanTrustLintV1(trustLint, safeRoot, {
+    inventory,
+    platform: platform ?? hostPlatform(),
+    posture,
+    internalScopes,
+    mcpConfigPaths: mcpConfigFiles,
+    ...(signal === undefined ? {} : { signal }),
+  });
+  const trustDocumentCount = native.facts?.trustDocumentCount ?? 0;
+  // MCP policy is Core's decision; Scan's description findings are placed where
+  // Core's native order puts them, before each server's own policy evidence.
+  const descriptions = new McpDescriptionFindings(native.checks);
+  const incomingMcp = incomingMcpChecks(safeRoot, mcpConfigFiles, posture, mcpPolicy, descriptions);
+  const unplaced = descriptions.unplaced();
+  const nativeChecks = native.checks
+    .filter((entry) => entry.mcpDescription === undefined)
+    .map((entry) => entry.check);
+  // Core's native order: the native findings, the MCP policy checks, then malicious code.
+  const checks: Check[] = [
+    ...nativeChecks.filter((check) => check.code !== "trust.malicious-code"),
+    ...incomingMcp,
+    ...nativeChecks.filter((check) => check.code === "trust.malicious-code"),
+    ...(unplaced.length === 0
+      ? []
+      : [
+          {
+            name: "trust detector aih-trust-lint",
+            verdict: "fail",
+            code: "trust.detector-unavailable",
+            detail: `native trust findings are unavailable (detector.aih-trust-lint reported MCP description findings for servers Core's policy parse did not visit: ${unplaced.join(", ").slice(0, 240)}); Core cannot grade this source without them, so this fails at every posture.`,
+          } satisfies Check,
+        ]),
+  ];
+  const nativeExecutions: TrustDetectorExecutionV1[] = [native.execution];
+  const hasDetectorRuntime = platform !== undefined && env !== undefined;
+  const detectorOptions = hasDetectorRuntime
+    ? {
         env,
         platform,
         posture,
         requiredDetectors,
         detectors,
         precomputedSarif: precomputedDetectorSarif,
-        run,
         skillspectorImageApprovals,
         inventory,
         corroboratedChecks: checks,
+        mcpConfigPaths: mcpConfigFiles,
         progress,
         scanExecution,
-        ...(delegatedDetectors === undefined ? {} : { delegatedDetectors }),
+        ...(native.facts === undefined ? {} : { trustLintFacts: native.facts }),
         ...(uvExecutionProfileId === undefined ? {} : { uvExecutionProfileId }),
         ...(signal === undefined ? {} : { signal }),
-      })
-    : {
-        checks: missingDetectorRuntimeChecks(requiredDetectors ?? [], posture),
-        analyzersRun: [],
-        rawOccurrences: [],
-        executions: [],
-        observations: [],
-      };
+      }
+    : undefined;
+  const detectorResult =
+    detectorOptions !== undefined
+      ? await runTrustDetectors(safeRoot, detectorOptions)
+      : {
+          checks: missingDetectorRuntimeChecks(requiredDetectors ?? [], posture),
+          analyzersRun: [],
+          rawOccurrences: [],
+          executions: [],
+          observations: [],
+        };
   const mcpDetectorResult =
-    mcpConfigFiles.length > 0 && hasDetectorRuntime
-      ? await runMcpConfigDetectors(safeRoot, {
-          env,
-          platform,
-          posture,
-          requiredDetectors,
-          detectors,
-          precomputedSarif: precomputedDetectorSarif,
-          run,
-          skillspectorImageApprovals,
-          inventory,
-          corroboratedChecks: checks,
-          progress,
-          scanExecution,
-          ...(delegatedDetectors === undefined ? {} : { delegatedDetectors }),
-          ...(uvExecutionProfileId === undefined ? {} : { uvExecutionProfileId }),
-          ...(signal === undefined ? {} : { signal }),
-        })
+    mcpConfigFiles.length > 0 && detectorOptions !== undefined
+      ? await runMcpConfigDetectors(safeRoot, detectorOptions)
       : { checks: [], analyzersRun: [], rawOccurrences: [], executions: [], observations: [] };
   const effectiveSandboxSmokeShape =
     sandboxSmokeShape ?? sandboxSmokeShapeForTrustScan(safeRoot, inventory);
@@ -1190,7 +1145,7 @@ function missingDetectorRuntimeChecks(
     code: "trust.detector-unavailable",
     detail:
       posture === "enterprise"
-        ? `required detector ${detector} unavailable: detector runtime is missing (run/platform/env).`
+        ? `required detector ${detector} unavailable: detector runtime is missing (platform/env).`
         : `DEGRADED-COVERAGE: deep scan SKIPPED - ${detector} not available (detector runtime missing); coverage is GREEN-tier only.`,
   }));
 }
@@ -1212,14 +1167,17 @@ function requiredDetectorsFromPolicy(ctx: PlanContext): {
   requiredDetectors: readonly TrustDetectorName[];
   skillspectorImageApprovals: readonly SkillSpectorImageApproval[];
   mcpPolicy?: OrgPolicy["mcp"];
+  uvExecutionProfileId?: UvExecutionProfileIdV1;
   checks: Check[];
 } {
   try {
     const policy = readOrgPolicy(ctx.root, ctx.env);
+    const uvExecutionProfileId = policy?.trust?.uvExecutionProfile;
     return {
       requiredDetectors: policy?.trust?.requiredDetectors ?? [],
       skillspectorImageApprovals: policy?.trust?.skillspector?.approvedDigests ?? [],
       mcpPolicy: policy?.mcp,
+      ...(uvExecutionProfileId === undefined ? {} : { uvExecutionProfileId }),
       checks: [],
     };
   } catch (error) {
@@ -1250,6 +1208,9 @@ export function scanOptionsFromContext(
       policy?.requiredDetectors,
     run: ctx.run,
     progress: ctx.progress,
+    ...((base.uvExecutionProfileId ?? policy?.uvExecutionProfileId) === undefined
+      ? {}
+      : { uvExecutionProfileId: base.uvExecutionProfileId ?? policy?.uvExecutionProfileId }),
     skillspectorImageApprovals: [
       ...(policy?.skillspectorImageApprovals ?? []),
       ...(base.skillspectorImageApprovals ?? []),

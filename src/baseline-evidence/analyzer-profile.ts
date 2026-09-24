@@ -1,30 +1,29 @@
-import { createHash } from "node:crypto";
-import { lstatSync, readdirSync, readFileSync, type Stats } from "node:fs";
+import { lstatSync, readdirSync, type Stats } from "node:fs";
 import { basename, join } from "node:path";
-import type { Runner } from "../internals/proc.js";
 import type { Platform } from "../platform/base.js";
 import {
-  checkDetectorsAvailable,
-  resolveCiscoScanConcurrency,
-  type TrustDetectorName,
-} from "../trust/detectors.js";
+  loadScanExecutionAdapterV1,
+  type ScanPackageImporterV1,
+  ScanPackageRefusalError,
+} from "../scan-package/load-scan-package.js";
+import { scanAnalyzerLockSha256V1 } from "../trust/cisco-shard-delegation.js";
+import { probeScanDetectorsV1 } from "../trust/detector-availability.js";
 import {
-  SKILLSPECTOR_IMAGE_DIGEST,
-  SKILLSPECTOR_SOURCE_REVISION,
-  type SkillSpectorImageApproval,
-} from "../trust/images.js";
+  DEFAULT_UV_EXECUTION_PROFILE,
+  resolveCiscoScanConcurrency,
+  SCAN_DETECTOR_IDS,
+  type TrustDetectorName,
+  type UvExecutionProfileIdV1,
+} from "../trust/detectors.js";
+import type { SkillSpectorImageApproval } from "../trust/images.js";
 import {
   CISCO_MCP_SCANNER_ANALYZER,
-  CISCO_MCP_SCANNER_PROJECT,
   CISCO_MCP_SCANNER_VERSION,
   CISCO_SKILL_SCANNER_ANALYZER,
-  CISCO_SKILL_SCANNER_PROJECT,
   CISCO_SKILL_SCANNER_VERSION,
   SEMGREP_ANALYZER,
-  SEMGREP_PROJECT,
   SEMGREP_VERSION,
   SNYK_AGENT_SCAN_ANALYZER,
-  SNYK_AGENT_SCAN_PROJECT,
   SNYK_AGENT_SCAN_VERSION,
 } from "../trust/scanner-runtime-identity.js";
 import type { BaselineCatalogComponent } from "./catalog.js";
@@ -33,30 +32,18 @@ import { SCANNER_BASELINE_ANALYZER_VERSIONS } from "./scanner-profile.js";
 import type { VetBaselineCatalogOptions } from "./vet.js";
 
 export {
-  CISCO_MCP_SCANNER_PROJECT,
   CISCO_MCP_SCANNER_VERSION,
-  CISCO_SKILL_SCANNER_PROJECT,
   CISCO_SKILL_SCANNER_VERSION,
-  SEMGREP_PROJECT,
   SEMGREP_VERSION,
-  SNYK_AGENT_SCAN_PROJECT,
   SNYK_AGENT_SCAN_VERSION,
 };
 
 export const CISCO_SKILL_SCANNER_SPEC = `cisco-ai-skill-scanner==${CISCO_SKILL_SCANNER_VERSION}`;
 
-export const CISCO_SKILL_SCANNER_LOCK = join(CISCO_SKILL_SCANNER_PROJECT, "uv.lock");
-export const CISCO_MCP_SCANNER_LOCK = join(CISCO_MCP_SCANNER_PROJECT, "uv.lock");
-export const SEMGREP_LOCK = join(SEMGREP_PROJECT, "uv.lock");
-export const SNYK_AGENT_SCAN_LOCK = join(SNYK_AGENT_SCAN_PROJECT, "uv.lock");
-
-export function ciscoSkillScannerLockSha256(): string {
-  return createHash("sha256").update(readFileSync(CISCO_SKILL_SCANNER_LOCK)).digest("hex");
-}
-
-function uvLockIdentity(version: string, lock: string): string {
-  const lockDigest = createHash("sha256").update(readFileSync(lock)).digest("hex");
-  return `${version}+uvlock.${lockDigest.slice(0, 12)}`;
+// The uv analyzers' environments belong to Scan: a fresh vet names each one by
+// the version and the uv.lock digest Scan publishes for the profile it ran under.
+function uvLockIdentity(version: string, lockSha256: string): string {
+  return `${version}+uvlock.${lockSha256.slice(0, 12)}`;
 }
 
 export const REQUIRED_BASELINE_DETECTORS = [
@@ -124,73 +111,118 @@ export function requiredBaselineDetectorsForComponent(
     : REQUIRED_BASELINE_DETECTORS.filter((name) => name !== "cisco");
 }
 
+/**
+ * The analyzer identities committed baseline evidence is checked against. They
+ * are pinned: Cisco and Semgrep are the protected Scanner publisher's, and the
+ * MCP and Snyk identities are the uv.lock digests Core shipped before Scan
+ * owned those environments.
+ */
 export function baselineAnalyzerVersions(): Readonly<Record<string, string>> {
   return {
     ...SCANNER_BASELINE_ANALYZER_VERSIONS,
-    [CISCO_MCP_SCANNER_ANALYZER]: uvLockIdentity(CISCO_MCP_SCANNER_VERSION, CISCO_MCP_SCANNER_LOCK),
-    [SNYK_AGENT_SCAN_ANALYZER]: uvLockIdentity(SNYK_AGENT_SCAN_VERSION, SNYK_AGENT_SCAN_LOCK),
+    [CISCO_MCP_SCANNER_ANALYZER]: "4.8.2+uvlock.92846b24c170",
+    [SNYK_AGENT_SCAN_ANALYZER]: "0.5.17+uvlock.49064889ec53",
   };
 }
 
-/** Analyzer identities for the retired in-Core execution implementation. */
-function legacyCoreBaselineAnalyzerVersions(): Readonly<Record<string, string>> {
-  return {
+const UV_ANALYZER_IDENTITIES = [
+  ["cisco", CISCO_SKILL_SCANNER_ANALYZER, CISCO_SKILL_SCANNER_VERSION],
+  ["semgrep", SEMGREP_ANALYZER, SEMGREP_VERSION],
+  ["mcp-scanner", CISCO_MCP_SCANNER_ANALYZER, CISCO_MCP_SCANNER_VERSION],
+  ["snyk-agent-scan", SNYK_AGENT_SCAN_ANALYZER, SNYK_AGENT_SCAN_VERSION],
+] as const satisfies readonly (readonly [TrustDetectorName, string, string])[];
+
+/**
+ * Analyzer identities for a fresh vet through the installed `@aihq/scan`: the
+ * native identity is Core's policy digest, SkillSpector is the pinned image,
+ * and each uv analyzer is its version plus the lock digest Scan publishes for
+ * `executionProfileId`. A required analyzer Scan cannot name refuses the vet.
+ */
+export function scanBaselineAnalyzerVersionsV1(
+  capabilities: readonly unknown[],
+  executionProfileId: UvExecutionProfileIdV1,
+): { readonly versions: Readonly<Record<string, string>>; readonly ciscoLockSha256: string } {
+  const versions: Record<string, string> = {
     // A content digest, not the package VERSION (see native-identity.ts): the
     // identity's job is behavioral discrimination, and a version prefix would
     // invalidate all receipts at every release version bump even when no
     // detector source changed, forcing a full re-vet in every release PR.
     "aih-native": nativeAnalyzerIdentity(),
-    "skillspector@docker": `${SKILLSPECTOR_SOURCE_REVISION}@${SKILLSPECTOR_IMAGE_DIGEST}`,
-    [CISCO_SKILL_SCANNER_ANALYZER]: uvLockIdentity(
-      CISCO_SKILL_SCANNER_VERSION,
-      CISCO_SKILL_SCANNER_LOCK,
-    ),
-    [CISCO_MCP_SCANNER_ANALYZER]: uvLockIdentity(CISCO_MCP_SCANNER_VERSION, CISCO_MCP_SCANNER_LOCK),
-    [SEMGREP_ANALYZER]: uvLockIdentity(SEMGREP_VERSION, SEMGREP_LOCK),
-    [SNYK_AGENT_SCAN_ANALYZER]: uvLockIdentity(SNYK_AGENT_SCAN_VERSION, SNYK_AGENT_SCAN_LOCK),
+    "skillspector@docker": SCANNER_BASELINE_ANALYZER_VERSIONS["skillspector@docker"],
   };
+  let ciscoLockSha256: string | undefined;
+  for (const [detector, label, version] of UV_ANALYZER_IDENTITIES) {
+    const lock = scanAnalyzerLockSha256V1(
+      capabilities,
+      SCAN_DETECTOR_IDS[detector],
+      executionProfileId,
+    );
+    if ("refusal" in lock) {
+      if (REQUIRED_BASELINE_DETECTORS.some((required) => required === detector))
+        throw new ScanPackageRefusalError({
+          reason: "scan-package-incompatible",
+          detail: `${lock.refusal}; a baseline vet cannot name the analyzer it runs.`,
+        });
+      continue;
+    }
+    versions[label] = uvLockIdentity(version, lock.sha256);
+    if (detector === "cisco") ciscoLockSha256 = lock.sha256;
+  }
+  if (ciscoLockSha256 === undefined) throw new Error("Cisco analyzer lock was not resolved");
+  return { versions, ciscoLockSha256 };
 }
 
-export function requiredBaselineVetOptions(runtime: {
-  run: Runner;
+export async function requiredBaselineVetOptions(runtime: {
   platform: Platform;
   env: NodeJS.ProcessEnv;
+  uvExecutionProfileId?: UvExecutionProfileIdV1;
   progress?: (message: string) => void;
-}): VetBaselineCatalogOptions {
+  /** Test seam: resolves the package namespace. Production imports the installed peer. */
+  importer?: ScanPackageImporterV1;
+}): Promise<VetBaselineCatalogOptions> {
+  const loaded = await loadScanExecutionAdapterV1(runtime.importer);
+  if (!loaded.ok) throw new ScanPackageRefusalError(loaded.refusal);
+  const executionProfileId = runtime.uvExecutionProfileId ?? DEFAULT_UV_EXECUTION_PROFILE;
+  const identity = scanBaselineAnalyzerVersionsV1(
+    loaded.adapter.listDetectorCapabilitiesV1(),
+    executionProfileId,
+  );
   return {
     scanOptions: {
-      run: runtime.run,
       platform: runtime.platform,
       env: runtime.env,
+      scanExecution: loaded.adapter,
+      uvExecutionProfileId: executionProfileId,
       progress: runtime.progress,
     },
     requiredAnalyzers: requiredBaselineAnalyzersForComponent,
     requiredDetectorsForComponent: requiredBaselineDetectorsForComponent,
-    analyzerVersions: legacyCoreBaselineAnalyzerVersions(),
+    analyzerVersions: identity.versions,
     sourceWideScan: true,
     sourceWideCisco: {
-      analyzerLockSha256: ciscoSkillScannerLockSha256(),
+      analyzerLockSha256: identity.ciscoLockSha256,
       workerConcurrency: resolveCiscoScanConcurrency(runtime.env),
+      ...(runtime.importer === undefined ? {} : { importer: runtime.importer }),
     },
   };
 }
 
 export interface BaselinePreflightRuntime {
-  run: Runner;
   platform: Platform;
   env: NodeJS.ProcessEnv;
+  uvExecutionProfileId?: UvExecutionProfileIdV1;
   skillspectorImageApprovals?: readonly SkillSpectorImageApproval[];
+  signal?: AbortSignal;
+  /** Test seam: resolves the package namespace. Production imports the installed peer. */
+  importer?: ScanPackageImporterV1;
 }
 
 function analyzerProvisioningHint(analyzerLabel: string): string {
-  if (analyzerLabel === "cisco@uvx") {
-    return "warm the committed Cisco runtime once online (`uv run --project tools/cisco-skill-scanner --locked --isolated --python 3.12 --no-env-file --no-python-downloads skill-scanner --version`); the trust scan itself always runs --offline";
-  }
   if (analyzerLabel === "skillspector@docker") {
     return "build and load the pinned SkillSpector image per docs/security/skillspector.md";
   }
-  if (analyzerLabel === "semgrep@uv:1.173.0") {
-    return "warm the committed Semgrep runtime once online (`uv run --project tools/trust-scanners/semgrep --locked --isolated --python 3.12 --no-env-file --no-python-downloads semgrep --version`); the trust scan itself always runs --offline";
+  if (analyzerLabel === "cisco@uvx" || analyzerLabel === "semgrep@uv:1.173.0") {
+    return "provision the analyzer's uv environment through the installed @aihq/scan once online; the trust scan itself always runs offline";
   }
   return "provision the analyzer toolchain before vetting";
 }
@@ -198,16 +230,17 @@ function analyzerProvisioningHint(analyzerLabel: string): string {
 /**
  * Fail fast, before a multi-minute vet, when a REQUIRED baseline analyzer is not
  * actually runnable in this environment (for example, an offline uv cache that no
- * longer resolves the pinned Cisco skill-scanner). This preserves fail-closed —
- * an unprovisioned required analyzer still blocks — while replacing the opaque
- * mid-vet "missing required baseline analyzers" abort with an actionable
- * provisioning error. It never fabricates a receipt, skips an analyzer, or lowers
- * the required-analyzer floor.
+ * longer resolves the pinned Cisco skill-scanner). The installed @aihq/scan
+ * answers (C2a §3.8): it probes without a subject and never pulls. This
+ * preserves fail-closed — an unprovisioned required analyzer still blocks — while
+ * replacing the opaque mid-vet "missing required baseline analyzers" abort with an
+ * actionable provisioning error. It never fabricates a receipt, skips an
+ * analyzer, or lowers the required-analyzer floor.
  */
 export async function preflightRequiredBaselineAnalyzers(
   runtime: BaselinePreflightRuntime,
 ): Promise<void> {
-  const unavailable = await checkDetectorsAvailable(REQUIRED_BASELINE_DETECTORS, runtime);
+  const unavailable = await probeScanDetectorsV1(REQUIRED_BASELINE_DETECTORS, runtime);
   if (unavailable.length === 0) return;
   const detail = unavailable
     .map(

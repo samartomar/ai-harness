@@ -1,0 +1,373 @@
+{
+  "case": "auto-exec-permissions",
+  "producer": {
+    "engine": "runTrustLintV1",
+    "scanCheckout": "sep/scan-detectors",
+    "scanCommit": "28718a7515829c64b0b1410d98bfd1c48d29069b"
+  },
+  "request": {
+    "selectedClosurePaths": [
+      ".claude/hooks/format.sh",
+      ".claude/settings.json",
+      ".npmrc",
+      "agents/reviewer.md",
+      "commands/deploy.md",
+      "docs/mirror/SKILL.md",
+      "package.json",
+      "SKILL.md"
+    ],
+    "detectorOptions": {
+      "internalScopes": [],
+      "mcpConfigPaths": []
+    }
+  },
+  "sarif": {
+    "version": "2.1.0",
+    "runs": [
+      {
+        "tool": {
+          "driver": {
+            "name": "aih-trust-lint",
+            "version": "1.0.0"
+          }
+        },
+        "properties": {
+          "aih-trust/v1": {
+            "format": "aih-trust-lint-facts",
+            "version": 1,
+            "trustDocumentCount": 4,
+            "repositoryLicenseFile": null
+          }
+        },
+        "artifacts": [
+          {
+            "location": {
+              "uri": ".claude/hooks/format.sh"
+            },
+            "properties": {
+              "aih-trust/v1": {
+                "strictUnicodeSurface": true,
+                "legalText": false,
+                "unicodeRisk": null,
+                "lintLines": []
+              }
+            }
+          },
+          {
+            "location": {
+              "uri": ".claude/settings.json"
+            },
+            "properties": {
+              "aih-trust/v1": {
+                "strictUnicodeSurface": true,
+                "legalText": false,
+                "unicodeRisk": null,
+                "lintLines": []
+              }
+            }
+          },
+          {
+            "location": {
+              "uri": ".npmrc"
+            },
+            "properties": {
+              "aih-trust/v1": {
+                "strictUnicodeSurface": false,
+                "legalText": false,
+                "unicodeRisk": null,
+                "lintLines": []
+              }
+            }
+          },
+          {
+            "location": {
+              "uri": "agents/reviewer.md"
+            },
+            "properties": {
+              "aih-trust/v1": {
+                "strictUnicodeSurface": true,
+                "legalText": false,
+                "unicodeRisk": null,
+                "lintLines": []
+              }
+            }
+          },
+          {
+            "location": {
+              "uri": "commands/deploy.md"
+            },
+            "properties": {
+              "aih-trust/v1": {
+                "strictUnicodeSurface": true,
+                "legalText": false,
+                "unicodeRisk": null,
+                "lintLines": []
+              }
+            }
+          },
+          {
+            "location": {
+              "uri": "docs/mirror/SKILL.md"
+            },
+            "properties": {
+              "aih-trust/v1": {
+                "strictUnicodeSurface": true,
+                "legalText": false,
+                "unicodeRisk": null,
+                "lintLines": []
+              }
+            }
+          },
+          {
+            "location": {
+              "uri": "package.json"
+            },
+            "properties": {
+              "aih-trust/v1": {
+                "strictUnicodeSurface": true,
+                "legalText": false,
+                "unicodeRisk": null,
+                "lintLines": []
+              }
+            }
+          },
+          {
+            "location": {
+              "uri": "SKILL.md"
+            },
+            "properties": {
+              "aih-trust/v1": {
+                "strictUnicodeSurface": true,
+                "legalText": false,
+                "unicodeRisk": null,
+                "lintLines": []
+              }
+            }
+          }
+        ],
+        "results": [
+          {
+            "ruleId": "trust.auto-exec-hook",
+            "level": "error",
+            "message": {
+              "text": ".claude/hooks:1 — .claude/hooks directory can auto-execute hook commands"
+            },
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": ".claude/hooks"
+                  },
+                  "region": {
+                    "startLine": 1
+                  }
+                }
+              }
+            ],
+            "fingerprints": {
+              "aih-trust/v1": "trust-auto-exec-hook:.claude/hooks:84b9c8df69e3008f203b2461be559ace7fac692d79a308fb22f76453a06dcd08"
+            }
+          },
+          {
+            "ruleId": "trust.auto-exec-hook",
+            "level": "error",
+            "message": {
+              "text": ".claude/settings.json:2 — settings file declares hooks that may auto-execute"
+            },
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": ".claude/settings.json"
+                  },
+                  "region": {
+                    "startLine": 2
+                  }
+                }
+              }
+            ],
+            "fingerprints": {
+              "aih-trust/v1": "trust-auto-exec-hook:.claude/settings.json:6d9f6a2f7d09f487a6600e42a290153362b13c39c87464472e5a17a8ca9b89b8"
+            }
+          },
+          {
+            "ruleId": "trust.auto-exec-hook",
+            "level": "error",
+            "message": {
+              "text": ".npmrc:1 — .npmrc explicitly enables package scripts"
+            },
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": ".npmrc"
+                  },
+                  "region": {
+                    "startLine": 1
+                  }
+                }
+              }
+            ],
+            "fingerprints": {
+              "aih-trust/v1": "trust-auto-exec-hook:.npmrc:c5967e5fbc523a123a55d0a892887b5a4f9a6a49fc0fae753025025fbe29f288"
+            }
+          },
+          {
+            "ruleId": "trust.permission-risk",
+            "level": "error",
+            "message": {
+              "text": "agents/reviewer.md:3 — frontmatter allowed-tools grants broad Bash permission"
+            },
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "agents/reviewer.md"
+                  },
+                  "region": {
+                    "startLine": 3
+                  }
+                }
+              }
+            ],
+            "fingerprints": {
+              "aih-trust/v1": "trust-permission-risk:agents/reviewer.md:fb46161924460c0c793422365a6acf8b3a202a5fd1fe7080753d097080dc5212"
+            }
+          },
+          {
+            "ruleId": "trust.auto-exec-hook",
+            "level": "error",
+            "message": {
+              "text": "commands/deploy.md:3 — frontmatter allowed-tools has an invalid map shape"
+            },
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "commands/deploy.md"
+                  },
+                  "region": {
+                    "startLine": 3
+                  }
+                }
+              }
+            ],
+            "fingerprints": {
+              "aih-trust/v1": "trust-auto-exec-hook:commands/deploy.md:87158f2572ac957526cc6494411661f26e21aab25a8e16e6387da7d7b7401731"
+            }
+          },
+          {
+            "ruleId": "trust.auto-exec-hook",
+            "level": "error",
+            "message": {
+              "text": "package.json:7 — package.json lifecycle script postinstall can execute during install/publish"
+            },
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "package.json"
+                  },
+                  "region": {
+                    "startLine": 7
+                  }
+                }
+              }
+            ],
+            "fingerprints": {
+              "aih-trust/v1": "trust-auto-exec-hook:package.json:6c829e3a1d83c6c89a5b921016171693be2bbad51da24a703c2da745ec1cd4bc"
+            }
+          },
+          {
+            "ruleId": "trust.permission-risk",
+            "level": "error",
+            "message": {
+              "text": "package.json:8 — package.json prepublishOnly script executes only during an explicit publish workflow"
+            },
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "package.json"
+                  },
+                  "region": {
+                    "startLine": 8
+                  }
+                }
+              }
+            ],
+            "fingerprints": {
+              "aih-trust/v1": "trust-permission-risk:package.json:5be1bb7f0aa53dce72f139add1c8044e408df1bc31e2e73e7039ea0961b2e01d"
+            }
+          },
+          {
+            "ruleId": "trust.permission-risk",
+            "level": "error",
+            "message": {
+              "text": "SKILL.md:4 — frontmatter allowed-tools grants broad Bash permission"
+            },
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "SKILL.md"
+                  },
+                  "region": {
+                    "startLine": 4
+                  }
+                }
+              }
+            ],
+            "fingerprints": {
+              "aih-trust/v1": "trust-permission-risk:SKILL.md:67ee9bce47b259234063b5f0e3e588ca949de448baaa297a61cf3164a09750fb"
+            }
+          },
+          {
+            "ruleId": "trust.auto-exec-hook",
+            "level": "error",
+            "message": {
+              "text": "SKILL.md:5 — frontmatter permissionMode bypasses permissions"
+            },
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "SKILL.md"
+                  },
+                  "region": {
+                    "startLine": 5
+                  }
+                }
+              }
+            ],
+            "fingerprints": {
+              "aih-trust/v1": "trust-auto-exec-hook:SKILL.md:1b38b67e90e058158ae24f428dba3a1117285dff3d078b23ee20ed851ba3cbed"
+            }
+          },
+          {
+            "ruleId": "trust.auto-exec-hook",
+            "level": "error",
+            "message": {
+              "text": "SKILL.md:9 — SKILL body contains a leading ! auto-run line"
+            },
+            "locations": [
+              {
+                "physicalLocation": {
+                  "artifactLocation": {
+                    "uri": "SKILL.md"
+                  },
+                  "region": {
+                    "startLine": 9
+                  }
+                }
+              }
+            ],
+            "fingerprints": {
+              "aih-trust/v1": "trust-auto-exec-hook:SKILL.md:f75c7dd147703f69bb4b460f0217a15c84e06948cce99a5f15c55375f6efa7b9"
+            }
+          }
+        ]
+      }
+    ]
+  }
+}
