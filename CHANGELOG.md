@@ -178,6 +178,11 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `@aihq/core/framework-host` exports `eccRuntimeScriptPath()`, the installed Core's own
   `dist/ecc-runtime.js`. Native ECC registration from `@aihq/framework-ecc` runs that script;
   the plugin ships no runtime of its own.
+- `@aihq/core/framework-host` exports `tomlParserModulePath()`, the installed Core's own
+  smol-toml entry, and the `ExecSidecar` and `RunResult` types. The Chrome DevTools MCP opt-out
+  predicate (`src/ecc/chrome-devtools-opt-out.cjs`) now ships in `@aihq/framework-ecc`, which
+  loads it from its own installation at plan time and in the Codex merge child, and judges TOML
+  with Core's parser at both stages; Core no longer ships it.
 - A user-level framework hook-control list, `frameworkHookControls` in the project's
   `.aih-config.json`, keyed by framework id with `{ disabledHookIds }` only. It may only add
   disables of disable-eligible rows; a profile or any other field is refused by name, since
