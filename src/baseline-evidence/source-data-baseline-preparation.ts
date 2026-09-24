@@ -152,9 +152,9 @@ export function prepareSourceDataBaselineCoverageV1(sourceRoot: string, input: u
       .filter((asset) => asset.sourceId === source.id)
       .map((asset) => {
         const { authoring: _authoring, ...declaration } = asset;
+        // Only upstream declarations carry material; derived ones stay unmapped below.
         const componentId = declaration.id.slice(`${framework.id}/`.length);
-        const identity = identities.get(componentId);
-        if (identity === undefined)
+        if (declaration.derivation === "upstream" && !identities.has(componentId))
           throw new TypeError(`Baseline source data: missing identity ${componentId}`);
         return { declaration, inputFormat: "pinned-baseline/v1" as const };
       }),
