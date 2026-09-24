@@ -19,6 +19,7 @@ import {
   readEccProfileOwnership,
 } from "../../src/profile/lifecycle.js";
 import { renderEccProjection } from "../../src/profile/render.js";
+import { TRUSTED_PROJECTED_SOURCE } from "./pinned-profile-fixture.js";
 import { evidence, fixtureDirectory, profile, receipt } from "./render-fixture.js";
 
 const pinnedSourceRoot = process.env.AIH_ECC_PINNED_SOURCE_ROOT;
@@ -130,10 +131,12 @@ describe.skipIf(!nativeEnabled)("disposable native-client ECC projection smoke",
       const runtimeCli = join(runtimeRoot, "cli.js");
       await writeFile(runtimeCli, "// disposable native smoke runtime\n");
       await copyEvidence(evidenceRoot);
-      const projection = await renderEccProjection(profile, evidence, {
-        sourceRoot: pinnedSourceRoot ?? "",
-        evidenceRoot,
-      });
+      const projection = await renderEccProjection(
+        profile,
+        evidence,
+        { sourceRoot: pinnedSourceRoot ?? "", evidenceRoot },
+        TRUSTED_PROJECTED_SOURCE,
+      );
       const registration = buildNativeEccRegistration({
         root: project,
         stateRoot,

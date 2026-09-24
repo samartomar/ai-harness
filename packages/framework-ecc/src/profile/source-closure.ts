@@ -30,16 +30,6 @@ export interface ProjectionSourceTrust {
   aggregateSha256: string;
 }
 
-export const TRUSTED_PROJECTED_SOURCE: ProjectionSourceTrust = {
-  id: "ecc-projected-source-closure-v1",
-  evidencePath: "evidence/ecc/projected-source-closure-v1.json",
-  evidenceSha256: "f610d0999ba4300be2ac3c08428da1249cdd53d7bf8d74722433fef0b013448e",
-  sourceCommit: "0c1d7be9a750627fb2a6534c78a998cc46d03f9c",
-  fileCount: 379,
-  totalBytes: 2_672_419,
-  aggregateSha256: "8dadd2c412511d690555243773f8bc4a0ed1e7ba43fc0804bc1d955b3b7bca37",
-};
-
 const closureEntrySchema = z
   .object({
     path: z.string().min(1),

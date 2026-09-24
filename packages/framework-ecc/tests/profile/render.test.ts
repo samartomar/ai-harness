@@ -10,9 +10,9 @@ import { normalizeCodexWorkflowBody } from "../../src/profile/projection-policy.
 import {
   PROJECTED_SOURCE_LIMITS,
   renderEccProjection,
-  renderEccProjectionWithTrust,
   serializeEccProjection,
 } from "../../src/profile/render.js";
+import { TRUSTED_PROJECTED_SOURCE } from "./pinned-profile-fixture.js";
 import {
   evidence,
   type ProjectionRoots,
@@ -22,14 +22,14 @@ import {
 } from "./render-fixture.js";
 
 async function renderFixture(roots: ProjectionRoots) {
-  return renderEccProjectionWithTrust(profile, evidence, roots, await roots.createTrust());
+  return renderEccProjection(profile, evidence, roots, await roots.createTrust());
 }
 
 async function renderWithExistingTrust(
   roots: ProjectionRoots,
   trust: Awaited<ReturnType<ProjectionRoots["createTrust"]>>,
 ) {
-  return renderEccProjectionWithTrust(profile, evidence, roots, trust);
+  return renderEccProjection(profile, evidence, roots, trust);
 }
 
 function frontmatter(content: string): Record<string, unknown> {
@@ -179,8 +179,8 @@ describe("native ECC profile projection", () => {
     const roots = await projectionRoots();
     try {
       const trust = await roots.createTrust();
-      const first = await renderEccProjectionWithTrust(profile, evidence, roots, trust);
-      const second = await renderEccProjectionWithTrust(profile, evidence, roots, trust);
+      const first = await renderEccProjection(profile, evidence, roots, trust);
+      const second = await renderEccProjection(profile, evidence, roots, trust);
       expect(serializeEccProjection(first)).toBe(serializeEccProjection(second));
       const destinations = first.files.map((file) => file.destination);
       expect(destinations).toEqual([...destinations].sort());
@@ -235,9 +235,9 @@ describe("native ECC profile projection", () => {
     const roots = await projectionRoots();
     try {
       await roots.createTrust();
-      await expect(renderEccProjection(profile, evidence, roots)).rejects.toThrow(
-        /trusted projected source|closure receipt/i,
-      );
+      await expect(
+        renderEccProjection(profile, evidence, roots, TRUSTED_PROJECTED_SOURCE),
+      ).rejects.toThrow(/trusted projected source|closure receipt/i);
     } finally {
       await roots.cleanup();
     }

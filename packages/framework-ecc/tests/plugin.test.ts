@@ -70,6 +70,7 @@ describe("aihFrameworkPluginV1", () => {
       "moduleGraph",
       "profileGraph",
       "installPreview",
+      "profileEvidence",
     ]);
     expect(description.environment).toContain("AIH_ECC_REF");
   });

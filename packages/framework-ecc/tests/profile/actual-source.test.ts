@@ -9,6 +9,7 @@ import {
   eccProfileParityReceiptDigest,
 } from "../../src/profile/parity-receipt.js";
 import { projectionFilesDigest, renderEccProjection } from "../../src/profile/render.js";
+import { TRUSTED_PROJECTED_SOURCE } from "./pinned-profile-fixture.js";
 import { evidence, fixtureDirectory, profile, receipt } from "./render-fixture.js";
 
 const pinnedSourceRoot = process.env.AIH_ECC_PINNED_SOURCE_ROOT;
@@ -44,10 +45,12 @@ describe.skipIf(!pinnedSourceRoot)("actual pinned ECC projection receipt", () =>
   it("reproduces the authenticated input closure and stable native projection", async () => {
     const evidenceRoot = await actualEvidenceRoot();
     try {
-      const projection = await renderEccProjection(profile, evidence, {
-        sourceRoot: pinnedSourceRoot ?? "",
-        evidenceRoot: evidenceRoot.root,
-      });
+      const projection = await renderEccProjection(
+        profile,
+        evidence,
+        { sourceRoot: pinnedSourceRoot ?? "", evidenceRoot: evidenceRoot.root },
+        TRUSTED_PROJECTED_SOURCE,
+      );
       const destinations = projection.files.map((file) => file.destination);
       const pinnedInputs = new Set(
         projection.files.flatMap((file) =>

@@ -9,7 +9,7 @@ import {
   eccProfileParityReceiptDigest,
   serializeEccProfileParityReceipt,
 } from "../../src/profile/parity-receipt.js";
-import { renderEccProjectionWithTrust } from "../../src/profile/render.js";
+import { renderEccProjection } from "../../src/profile/render.js";
 import { evidence, profile, projectionRoots } from "./render-fixture.js";
 
 const roots: string[] = [];
@@ -34,7 +34,7 @@ describe("ECC profile parity receipt", () => {
     const target = mkdtempSync(join(tmpdir(), "aih-ecc-parity-target-"));
     roots.push(target);
     try {
-      const projection = await renderEccProjectionWithTrust(
+      const projection = await renderEccProjection(
         profile,
         evidence,
         sources,
@@ -93,7 +93,7 @@ describe("ECC profile parity receipt", () => {
     const secondTarget = mkdtempSync(join(tmpdir(), "aih-ecc-parity-second-"));
     roots.push(firstTarget, secondTarget);
     try {
-      const projection = await renderEccProjectionWithTrust(
+      const projection = await renderEccProjection(
         profile,
         evidence,
         sources,

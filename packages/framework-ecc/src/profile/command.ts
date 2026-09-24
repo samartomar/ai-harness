@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
@@ -28,10 +27,9 @@ import {
   type WriteAction,
 } from "@aihq/core/framework-host";
 import { cleanupQuarantine, executePlan, resolveTrustSource } from "../core-runtime.js";
-import pinnedEvidenceJson from "./data/pinned-source-evidence.json";
-import sourceClosureJson from "./data/projected-source-closure.json";
-import reviewReceiptJson from "./data/review-receipt.json";
-import { AIH_ECC_PROFILE_TEMPLATE, type EccProfile, eccProfileSchema } from "./index.js";
+import { UPSTREAM } from "../identity.js";
+import { currentEccProfileEvidenceV1, type EccProfileEvidenceV1 } from "./descriptor-evidence.js";
+import type { EccProfile } from "./index.js";
 import {
   ECC_PROFILE_MANAGED_SCOPE,
   type EccProfileInstalledSourceTrust,
@@ -40,7 +38,6 @@ import {
   planInstalledEccProfileLifecycle,
 } from "./lifecycle.js";
 import { type EccProjection, renderEccProjection } from "./render.js";
-import { TRUSTED_PROJECTED_SOURCE } from "./source-closure.js";
 
 export const ECC_PROFILE_LIFECYCLE_OPERATIONS = [
   "install",
@@ -50,22 +47,10 @@ export const ECC_PROFILE_LIFECYCLE_OPERATIONS = [
   "uninstall",
 ] as const satisfies readonly EccProfileLifecycleOperation[];
 
-interface PackagedReviewReceipt {
-  id: string;
-  evidencePath: string;
-  sourceCommit: string;
-  evidenceSha256: string;
-}
-
-interface PackagedPinnedEvidence {
-  reviewReceipt: PackagedReviewReceipt;
-  [key: string]: unknown;
-}
-
-export interface PackagedEccProfileEvidence {
+export interface MaterializedEccProfileEvidence {
   evidenceRoot: string;
   profile: EccProfile;
-  evidence: PackagedPinnedEvidence;
+  evidence: unknown;
 }
 
 export interface EccProfileLifecycleCommandDeps {
@@ -79,26 +64,16 @@ export interface EccProfileLifecycleCommandDeps {
   transactionPins?: Pick<Plan, "fileAssertions" | "commitNotAfter" | "commitLock">;
 }
 
-const PACKAGED_EVIDENCE = pinnedEvidenceJson as unknown as PackagedPinnedEvidence;
-
 /** Append-only identities for installations that this package can recover or remove offline. */
 export const PACKAGED_ECC_PROFILE_INSTALLATION_TRUST = [
   {
     repository: "affaan-m/ECC",
     commit: "0c1d7be9a750627fb2a6534c78a998cc46d03f9c",
-    sourceClosureId: TRUSTED_PROJECTED_SOURCE.id,
-    sourceClosureSha256: TRUSTED_PROJECTED_SOURCE.aggregateSha256,
+    sourceClosureId: "ecc-projected-source-closure-v1",
+    sourceClosureSha256: "8dadd2c412511d690555243773f8bc4a0ed1e7ba43fc0804bc1d955b3b7bca37",
     projectionSha256: "8bfa1837b2f7d4239b69955540c20a76a795c4ef86dc3555390d5d18e30bc585",
   },
 ] as const satisfies readonly EccProfileInstalledSourceTrust[];
-
-function sha256(value: string | Uint8Array): string {
-  return createHash("sha256").update(value).digest("hex");
-}
-
-function stableJson(value: unknown): string {
-  return `${JSON.stringify(value, null, 2)}\n`;
-}
 
 type FileMutation = WriteAction | RemoveAction;
 
@@ -236,36 +211,19 @@ function withTransactionPins(
   };
 }
 
-function sourceClosureBytes(): string {
-  // The accepted receipt was committed with CRLF records and one final LF.
-  // Reproduce that reviewed byte encoding exactly, then bind it to the trusted digest below.
-  return `${JSON.stringify(sourceClosureJson, null, 2).replace(/\n/g, "\r\n")}\n`;
-}
-
 function writeEvidenceFile(root: string, relativePath: string, contents: string): void {
   const destination = join(root, ...relativePath.split("/"));
   mkdirSync(dirname(destination), { recursive: true, mode: 0o700 });
   writeFileSync(destination, contents, { encoding: "utf8", flag: "wx", mode: 0o600 });
 }
 
-/** Materialize only authenticated public receipt bytes into an owner-only disposable root. */
-export function createPackagedEccProfileEvidence(): PackagedEccProfileEvidence {
-  const evidence = PACKAGED_EVIDENCE;
-  const receiptBytes = stableJson(reviewReceiptJson);
-  const closureBytes = sourceClosureBytes();
-  if (sha256(receiptBytes) !== evidence.reviewReceipt.evidenceSha256) {
-    throw new Error("packaged ECC review receipt does not match its trusted digest");
-  }
-  if (sha256(closureBytes) !== TRUSTED_PROJECTED_SOURCE.evidenceSha256) {
-    throw new Error("packaged ECC projected-source receipt does not match its trusted digest");
-  }
-  const profile = eccProfileSchema.parse({
-    ...AIH_ECC_PROFILE_TEMPLATE,
-    source: {
-      ...AIH_ECC_PROFILE_TEMPLATE.source,
-      reviewReceipt: evidence.reviewReceipt,
-    },
-  });
+/**
+ * Materialize the digest-bound evidence documents of Core-verified descriptor
+ * bytes into an owner-only disposable root.
+ */
+export function materializeEccProfileEvidence(
+  verified: EccProfileEvidenceV1,
+): MaterializedEccProfileEvidence {
   const root = mkdtempSync(join(tmpdir(), "aih-ecc-profile-evidence-"));
   try {
     chmodSync(root, 0o700);
@@ -273,9 +231,8 @@ export function createPackagedEccProfileEvidence(): PackagedEccProfileEvidence {
     // mkdtemp is owner-only on POSIX; Windows ACLs are platform-managed.
   }
   try {
-    writeEvidenceFile(root, evidence.reviewReceipt.evidencePath, receiptBytes);
-    writeEvidenceFile(root, TRUSTED_PROJECTED_SOURCE.evidencePath, closureBytes);
-    return { evidenceRoot: root, profile, evidence };
+    for (const [path, text] of verified.documents) writeEvidenceFile(root, path, text);
+    return { evidenceRoot: root, profile: verified.profile, evidence: verified.evidence };
   } catch (error) {
     rmSync(root, { recursive: true, force: true });
     throw error;
@@ -314,27 +271,27 @@ function assertLifecycleOptions(ctx: PlanContext): void {
     }
   }
   const requestedRef = (ctx.env.AIH_ECC_REF ?? "").trim();
-  if (requestedRef.length > 0 && requestedRef !== AIH_ECC_PROFILE_TEMPLATE.source.commit) {
+  if (requestedRef.length > 0 && requestedRef !== UPSTREAM.commit) {
     throw new AihError("AIH_ECC_REF cannot move the reviewed ECC profile source pin", "AIH_CONFIG");
   }
 }
 
-function requestedSource(ctx: PlanContext): TrustSource {
+function requestedSource(ctx: PlanContext, commit: string): TrustSource {
   const local = typeof ctx.options.eccPath === "string" ? ctx.options.eccPath.trim() : "";
   if (local.length > 0) return resolveTrustSource(local, { root: ctx.root });
-  return resolveTrustSource(AIH_ECC_PROFILE_TEMPLATE.source.repository, {
-    root: ctx.root,
-    pin: AIH_ECC_PROFILE_TEMPLATE.source.commit,
-  });
+  return resolveTrustSource(UPSTREAM.repository, { root: ctx.root, pin: commit });
 }
 
-function verifiedGitHubSourceRoot(source: Extract<TrustSource, { kind: "github" }>): string {
+function verifiedGitHubSourceRoot(
+  source: Extract<TrustSource, { kind: "github" }>,
+  commit: string,
+): string {
   const metadata = readTrustFetchMetadata(source);
   if (
     metadata.kind !== "github" ||
     metadata.owner.toLowerCase() !== "affaan-m" ||
     metadata.repo.toLowerCase() !== "ecc" ||
-    metadata.pinnedSha !== AIH_ECC_PROFILE_TEMPLATE.source.commit ||
+    metadata.pinnedSha !== commit ||
     resolve(metadata.treePath) !== resolve(source.treePath)
   ) {
     throw new AihError(
@@ -345,12 +302,15 @@ function verifiedGitHubSourceRoot(source: Extract<TrustSource, { kind: "github" 
   return assertTrustTreeSafe(source.treePath);
 }
 
-async function acquirePackagedProjection(
+async function acquireDescriptorProjection(
   ctx: PlanContext,
   transactionPins: EccProfileLifecycleCommandDeps["transactionPins"],
 ): Promise<EccProjection> {
-  const source = requestedSource(ctx);
-  const packaged = createPackagedEccProfileEvidence();
+  // Refuse before any acquisition while the installed Catalog carries no usable
+  // profile evidence for this plugin's one upstream commit.
+  const verified = currentEccProfileEvidenceV1();
+  const source = requestedSource(ctx, verified.sourceCommit);
+  const packaged = materializeEccProfileEvidence(verified);
   try {
     let sourceRoot: string;
     if (source.kind === "github") {
@@ -377,14 +337,16 @@ async function acquirePackagedProjection(
           "AIH_TRUST",
         );
       }
-      sourceRoot = verifiedGitHubSourceRoot(source);
+      sourceRoot = verifiedGitHubSourceRoot(source, verified.sourceCommit);
     } else {
       sourceRoot = assertTrustTreeSafe(source.root);
     }
-    return await renderEccProjection(packaged.profile, packaged.evidence, {
-      sourceRoot,
-      evidenceRoot: packaged.evidenceRoot,
-    });
+    return await renderEccProjection(
+      packaged.profile,
+      packaged.evidence,
+      { sourceRoot, evidenceRoot: packaged.evidenceRoot },
+      verified.trust,
+    );
   } finally {
     rmSync(packaged.evidenceRoot, { recursive: true, force: true });
     cleanupQuarantine(source);
@@ -477,7 +439,7 @@ export async function executeEccProfileLifecycleCommand(
   }
   const projection = await (
     deps.loadProjection ??
-    ((context: PlanContext) => acquirePackagedProjection(context, deps.transactionPins))
+    ((context: PlanContext) => acquireDescriptorProjection(context, deps.transactionPins))
   )(ctx);
   const projectionPlan = planEccProfileLifecycle(ctx.root, projection, operation);
   if (!nativeEnabled)

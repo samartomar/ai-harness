@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { type NativeEccRegistration, nativeRegistrationFiles } from "@aihq/core/framework-host";
-import { AIH_ECC_PROFILE_TEMPLATE } from "./index.js";
+import { AIH_ADAPTED_WORKFLOWS } from "./index.js";
 import { type ClientProjection, type EccProjection, projectionFilesDigest } from "./render.js";
 
 export type EccParityTransport = "native" | "normalized" | "unavailable";
@@ -132,7 +132,7 @@ function assertComplete(
 }
 
 function assertAdaptationOwnership(clients: ReturnType<typeof clientReceipt>[]): void {
-  const expected = [...AIH_ECC_PROFILE_TEMPLATE.aihAdaptedWorkflows].sort();
+  const expected = [...AIH_ADAPTED_WORKFLOWS].sort();
   for (const client of clients) {
     const actual = client.workflows
       .filter((entry) => entry.owner === "aih-adaptation")

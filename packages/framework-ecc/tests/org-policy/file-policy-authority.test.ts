@@ -45,7 +45,7 @@ import {
   executeEccEvidencePipeline,
 } from "../../src/ecc/pipeline.js";
 import { ECC_PROFILE_OWNERSHIP_PATH } from "../../src/profile/lifecycle.js";
-import { renderEccProjectionWithTrust } from "../../src/profile/render.js";
+import { renderEccProjection } from "../../src/profile/render.js";
 import { evidence, profile, projectionRoots } from "../profile/render-fixture.js";
 
 let targetRoot: string;
@@ -605,7 +605,7 @@ describe("administrator-protected policy-file authority", () => {
     const replacement = JSON.stringify({ ...bundle, bundleVersion: "2026.08.2" });
     const sources = await projectionRoots();
     try {
-      const projection = await renderEccProjectionWithTrust(
+      const projection = await renderEccProjection(
         profile,
         evidence,
         sources,

@@ -29,7 +29,7 @@ vi.mock("../../../../src/internals/fsxn.js", async (importOriginal) => {
   };
 });
 
-const { renderEccProjectionWithTrust } = await import("../../src/profile/render.js");
+const { renderEccProjection } = await import("../../src/profile/render.js");
 
 afterEach(() => {
   substitution.armed = false;
@@ -52,7 +52,7 @@ describe("ECC projection open-once acquisition", () => {
       substitution.replacement = replacement;
       substitution.armed = true;
 
-      await expect(renderEccProjectionWithTrust(profile, evidence, roots, trust)).rejects.toThrow(
+      await expect(renderEccProjection(profile, evidence, roots, trust)).rejects.toThrow(
         /linked|regular file|identity/i,
       );
     } finally {

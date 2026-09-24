@@ -12,7 +12,7 @@ import {
   planEccProfileLifecycle,
   readEccProfileOwnership,
 } from "../../src/profile/lifecycle.js";
-import { projectionFilesDigest, renderEccProjectionWithTrust } from "../../src/profile/render.js";
+import { projectionFilesDigest, renderEccProjection } from "../../src/profile/render.js";
 import { evidence, profile, projectionRoots } from "./render-fixture.js";
 
 function context(root: string): PlanContext {
@@ -35,7 +35,7 @@ describe("authenticated projection lifecycle", () => {
     const sources = await projectionRoots();
     const target = mkdtempSync(join(tmpdir(), "aih-ecc-lifecycle-integration-"));
     try {
-      const projection = await renderEccProjectionWithTrust(
+      const projection = await renderEccProjection(
         profile,
         evidence,
         sources,

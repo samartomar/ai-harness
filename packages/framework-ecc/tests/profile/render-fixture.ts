@@ -13,12 +13,9 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, extname, join, posix } from "node:path";
 import { readRegularFileWithStats } from "../../../../src/internals/fsxn.js";
-import {
-  AIH_ECC_PROFILE_TEMPLATE,
-  deriveEccProfile,
-  type ResolvedEccProfile,
-} from "../../src/profile/index.js";
+import { deriveEccProfile, type ResolvedEccProfile } from "../../src/profile/index.js";
 import type { ProjectionSourceTrust } from "../../src/profile/render.js";
+import { AIH_ECC_PROFILE_TEMPLATE } from "./pinned-profile-fixture.js";
 
 export const fixtureDirectory = join(import.meta.dirname, "../../../../tests/fixtures/ecc-profile");
 export const evidence = JSON.parse(

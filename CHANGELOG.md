@@ -53,6 +53,12 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **Breaking:** `aih ecc --lifecycle install|update` (the ordinary ECC profile lifecycle) now
+  renders only from profile evidence in the installed Catalog's ECC framework descriptor
+  (`sections.profileEvidence`), bound to the plugin's one upstream commit. `@aihq/framework-ecc`
+  embeds no profile evidence. Until the installed Catalog carries that section, install and
+  update refuse with `framework-profile-evidence-unavailable` and name the next route; repair,
+  rollback and uninstall of an existing profile installation are unchanged.
 - **Breaking:** Core now requires Node.js 20.6 or newer (`engines.node` `>=20.6.0`).
   The framework-plugin loader uses the synchronous `import.meta.resolve` of Node 20.6
   to prove that a plugin entry resolves inside its own install tree. `aih doctor` and

@@ -610,8 +610,12 @@ aih ecc --lifecycle rollback <project> --apply
 aih ecc --lifecycle uninstall <project> --apply
 ```
 
-Lifecycle mode always projects the reviewed Claude and Codex surface together. It authenticates the
-exact ECC pin, the committed review receipt, every manifest, and every projected source byte before
+Lifecycle mode always projects the reviewed Claude and Codex surface together. Install and update
+read the profile and its evidence only from the installed Catalog's ECC framework descriptor
+(`sections.profileEvidence`), whose commit must equal the `@aihq/framework-ecc` upstream commit;
+while the installed Catalog carries no such section they refuse with
+`framework-profile-evidence-unavailable` and name the next route. It authenticates the
+exact ECC pin, the review receipt, every manifest, and every projected source byte before
 constructing a target plan. Dry-run is the default and may acquire the exact remote source into a
 disposable quarantine so the preview is based on real rendered bytes; it never writes the target.
 `--ecc-path <dir>` supplies an existing exact checkout to the same boundary. Lifecycle receipts live

@@ -12,21 +12,6 @@ const MANIFEST_PATHS = [
   "manifests/install-modules.json",
   "manifests/install-profiles.json",
 ] as const;
-const TRUSTED_MANIFEST_PINS = {
-  "manifests/install-components.json": {
-    rawSha256: "8eac72d3ab4eb41dc6feabadc7f80603999631186aeeb74b0e31019496054ed5",
-    canonicalSha256: "2a16746d95a3ee19dc448ccdfdc0e54ef983085245f2d804f615df277ea14665",
-  },
-  "manifests/install-modules.json": {
-    rawSha256: "9293e36a93d62d9016cf8eb13e852a882ac5b68503a5842de230c7d21431bbb7",
-    canonicalSha256: "917a4f6961252078a9e8f43eccbe241ef1793f4d8d9d1f170873b824da6bb238",
-  },
-  "manifests/install-profiles.json": {
-    rawSha256: "fddc15a7ea59c5069686eacd5ef90da805b867bed39ddad3ca391363329270f1",
-    canonicalSha256: "ec57372aa886af63f6b847eee2c285d672dc35ff48b9ca2da939e215e566c2cb",
-  },
-} as const;
-
 const sourcePathSchema = z
   .string()
   .min(1)
@@ -52,32 +37,15 @@ const sourcePathSchema = z
   });
 const hashSchema = z.string().regex(SHA256);
 const idSchema = z.string().regex(ID);
+// Manifest pins are revision evidence: they come from Core-verified descriptor
+// bytes and are bound to the pinned evidence and the source files, never to
+// values embedded here.
+const manifestPinSchema = z.object({ rawSha256: hashSchema, canonicalSha256: hashSchema }).strict();
 const manifestPinsSchema = z
   .object({
-    "manifests/install-components.json": z
-      .object({
-        rawSha256: z.literal(TRUSTED_MANIFEST_PINS["manifests/install-components.json"].rawSha256),
-        canonicalSha256: z.literal(
-          TRUSTED_MANIFEST_PINS["manifests/install-components.json"].canonicalSha256,
-        ),
-      })
-      .strict(),
-    "manifests/install-modules.json": z
-      .object({
-        rawSha256: z.literal(TRUSTED_MANIFEST_PINS["manifests/install-modules.json"].rawSha256),
-        canonicalSha256: z.literal(
-          TRUSTED_MANIFEST_PINS["manifests/install-modules.json"].canonicalSha256,
-        ),
-      })
-      .strict(),
-    "manifests/install-profiles.json": z
-      .object({
-        rawSha256: z.literal(TRUSTED_MANIFEST_PINS["manifests/install-profiles.json"].rawSha256),
-        canonicalSha256: z.literal(
-          TRUSTED_MANIFEST_PINS["manifests/install-profiles.json"].canonicalSha256,
-        ),
-      })
-      .strict(),
+    "manifests/install-components.json": manifestPinSchema,
+    "manifests/install-modules.json": manifestPinSchema,
+    "manifests/install-profiles.json": manifestPinSchema,
   })
   .strict();
 
@@ -128,7 +96,11 @@ export const eccProfileSchema = z
       })
       .strict(),
     expected: z
-      .object({ skills: z.literal(136), roles: z.literal(67), workflows: z.literal(94) })
+      .object({
+        skills: z.number().int().positive(),
+        roles: z.number().int().positive(),
+        workflows: z.number().int().positive(),
+      })
       .strict(),
     profileFlags: z
       .object({
@@ -228,91 +200,13 @@ export const eccProfileSchema = z
 
 export type EccProfile = z.infer<typeof eccProfileSchema>;
 
-const ACTIVE_SKILLS = [
-  "agent-architecture-audit",
-  "agent-eval",
-  "agent-harness-construction",
-  "agentic-engineering",
-  "ai-first-engineering",
-  "api-connector-builder",
-  "automation-audit-ops",
-  "connections-optimizer",
-  "content-hash-cache-pattern",
-  "docker-patterns",
-  "documentation-lookup",
-  "dynamic-workflow-mode",
-  "ecc-tools-cost-audit",
-  "enterprise-agent-ops",
-  "github-ops",
-  "opensource-pipeline",
-  "regex-vs-llm-structured-text",
-  "search-first",
-  "security-bounty-hunter",
-  "security-review",
-  "security-scan",
-  "token-budget-advisor",
-  "workspace-surface-audit",
-];
-
-export const AIH_ECC_PROFILE_TEMPLATE = {
-  version: 1,
-  source: {
-    repository: "affaan-m/ECC",
-    commit: "0c1d7be9a750627fb2a6534c78a998cc46d03f9c",
-    package: "ecc-universal",
-    packageVersion: "2.1.0",
-    releaseAncestorCommit: "4da6deac1888690e7fb8572d097ee23db630f7a0",
-    componentPath: "manifests/install-components.json",
-    sourceHash: "8eac72d3ab4eb41dc6feabadc7f80603999631186aeeb74b0e31019496054ed5",
-    normalizedHash: "8eac72d3ab4eb41dc6feabadc7f80603999631186aeeb74b0e31019496054ed5",
-    manifestPins: TRUSTED_MANIFEST_PINS,
-    license: "MIT",
-  },
-  selections: {
-    baseline: ["core", "lang:typescript"],
-    activeSkills: ACTIVE_SKILLS,
-    warmReserveSkills: [
-      "benchmark",
-      "benchmark-methodology",
-      "benchmark-optimization-loop",
-      "canary-watch",
-      "deep-research",
-      "deployment-patterns",
-      "gateguard",
-      "parallel-execution-optimizer",
-      "research-ops",
-      "safety-guard",
-      "team-agent-orchestration",
-    ],
-    coldReserve: "all-other-pinned-skills",
-  },
-  expected: { skills: 136, roles: 67, workflows: 94 },
-  profileFlags: {
-    defaultOn: ["continuity", "mcp-health", "repository-protection"],
-    userOptIn: ["learning", "personal-observability"],
-    onDemand: ["plan-canvas"],
-  },
-  mcpPolicy: {
-    selected: ["code-review-graph", "codebase-memory-mcp", "context7", "serena"],
-    disabled: ["ecc-memory-mcp", "github", "sequential-thinking", "token-savior"],
-    activation: "aih-owned-native-registration",
-  },
-  aihAdaptedWorkflows: ["/auto-update", "/hookify", "/hookify-configure", "/project-init"],
-  localPlannedSkills: ["learn-eval", "session-continuity"],
-  repoCuratedSkills: ["aih-betterdoc", "decision-partner"],
-  ownership: [
-    {
-      sourcePin: "0c1d7be9a750627fb2a6534c78a998cc46d03f9c",
-      sourcePath: "manifests/install-components.json",
-      normalizedHash: "8eac72d3ab4eb41dc6feabadc7f80603999631186aeeb74b0e31019496054ed5",
-      destination: "aih/ecc/profile.json",
-      owner: "aih",
-      mergeStrategy: "replace",
-      previousHash: null,
-    },
-  ],
-  state: { schemaVersion: 1, lifecycle: "active" },
-} as const;
+/** The ECC workflows aih adapts instead of projecting upstream bodies. */
+export const AIH_ADAPTED_WORKFLOWS = [
+  "/auto-update",
+  "/hookify",
+  "/hookify-configure",
+  "/project-init",
+] as const;
 
 const moduleSchema = z
   .object({

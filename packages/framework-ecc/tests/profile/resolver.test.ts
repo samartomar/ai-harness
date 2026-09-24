@@ -5,12 +5,12 @@ import { tmpdir } from "node:os";
 import { dirname, extname, isAbsolute, join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  AIH_ECC_PROFILE_TEMPLATE,
   deriveEccProfile,
   eccProfileSchema,
   resolveEccProfile,
   serializeResolvedEccProfile,
 } from "../../src/profile/index.js";
+import { AIH_ECC_PROFILE_TEMPLATE } from "./pinned-profile-fixture.js";
 
 const fixturePath = join(
   import.meta.dirname,

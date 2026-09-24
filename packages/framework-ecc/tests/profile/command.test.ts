@@ -12,15 +12,12 @@ import type { PlanContext } from "../../../../src/internals/plan.js";
 import { defaultRunner, fakeRunner } from "../../../../src/internals/proc.js";
 import { makeHostAdapter } from "../../../../src/platform/detect.js";
 import { executeEccCommand } from "../../src/ecc/pipeline.js";
-import {
-  createPackagedEccProfileEvidence,
-  executeEccProfileLifecycleCommand,
-} from "../../src/profile/command.js";
+import { executeEccProfileLifecycleCommand } from "../../src/profile/command.js";
 import {
   ECC_PROFILE_OWNERSHIP_PATH,
   readEccProfileOwnership,
 } from "../../src/profile/lifecycle.js";
-import { renderEccProjectionWithTrust } from "../../src/profile/render.js";
+import { renderEccProjection } from "../../src/profile/render.js";
 import { evidence, profile, projectionRoots } from "./render-fixture.js";
 
 const roots: string[] = [];
@@ -63,29 +60,12 @@ function realGitContext(root: string, operation: string): PlanContext {
 }
 
 describe("ECC profile lifecycle command", () => {
-  it("materializes the package-bound review and projected-source receipts in a disposable root", () => {
-    const packaged = createPackagedEccProfileEvidence();
-    roots.push(packaged.evidenceRoot);
-
-    expect(packaged.profile.source.reviewReceipt).toEqual(packaged.evidence.reviewReceipt);
-    expect(
-      existsSync(
-        join(packaged.evidenceRoot, ...packaged.evidence.reviewReceipt.evidencePath.split("/")),
-      ),
-    ).toBe(true);
-    expect(
-      existsSync(
-        join(packaged.evidenceRoot, "evidence", "ecc", "projected-source-closure-v1.json"),
-      ),
-    ).toBe(true);
-  });
-
   it("previews without target writes, then installs and uninstalls through the authenticated lifecycle", async () => {
     const sources = await projectionRoots();
     const target = mkdtempSync(join(tmpdir(), "aih-ecc-profile-command-"));
     roots.push(target);
     try {
-      const projection = await renderEccProjectionWithTrust(
+      const projection = await renderEccProjection(
         profile,
         evidence,
         sources,
@@ -137,7 +117,7 @@ describe("ECC profile lifecycle command", () => {
     roots.push(target, stateRoot);
     try {
       execFileSync("git", ["init"], { cwd: target, stdio: "ignore" });
-      const projection = await renderEccProjectionWithTrust(
+      const projection = await renderEccProjection(
         profile,
         evidence,
         sources,
@@ -212,7 +192,7 @@ describe("ECC profile lifecycle command", () => {
     const stateRoot = mkdtempSync(join(tmpdir(), "aih-ecc-profile-command-atomic-state-"));
     roots.push(target, stateRoot);
     try {
-      const projection = await renderEccProjectionWithTrust(
+      const projection = await renderEccProjection(
         profile,
         evidence,
         sources,
@@ -256,7 +236,7 @@ describe("ECC profile lifecycle command", () => {
       const stateRoot = mkdtempSync(join(tmpdir(), `aih-ecc-profile-command-state-${operation}-`));
       roots.push(target, stateRoot);
       try {
-        const projection = await renderEccProjectionWithTrust(
+        const projection = await renderEccProjection(
           profile,
           evidence,
           sources,
@@ -317,7 +297,7 @@ describe("ECC profile lifecycle command", () => {
     const stateRoot = mkdtempSync(join(tmpdir(), "aih-ecc-profile-command-compensation-state-"));
     roots.push(target, stateRoot);
     try {
-      const projection = await renderEccProjectionWithTrust(
+      const projection = await renderEccProjection(
         profile,
         evidence,
         sources,
@@ -359,7 +339,7 @@ describe("ECC profile lifecycle command", () => {
     const target = mkdtempSync(join(tmpdir(), "aih-ecc-profile-command-upgrade-"));
     roots.push(target);
     try {
-      const installed = await renderEccProjectionWithTrust(
+      const installed = await renderEccProjection(
         profile,
         evidence,
         sources,

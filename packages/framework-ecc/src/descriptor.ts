@@ -20,7 +20,9 @@ import { PACKAGE_NAME, PACKAGE_VERSION, UPSTREAM } from "./identity.js";
  * - `vendorLock` (every operation): the pinned ECC source identity;
  * - `hookControlInventory`: the hook inventory, ECC's profiles and each hook's control;
  * - `moduleGraph`, `profileGraph`: ECC's install modules and profiles;
- * - `installPreview`: the source-free install preview for dry runs.
+ * - `installPreview`: the source-free install preview for dry runs;
+ * - `profileEvidence` (profile install and update only): the ECC profile and
+ *   its evidence documents (`profile/descriptor-evidence.ts`).
  */
 
 export const DESCRIPTOR_FORMAT = "aih-catalog-framework-descriptor";
@@ -32,6 +34,7 @@ export const ECC_DESCRIPTOR_SECTIONS = Object.freeze([
   "moduleGraph",
   "profileGraph",
   "installPreview",
+  "profileEvidence",
 ] as const);
 export type EccDescriptorSection = (typeof ECC_DESCRIPTOR_SECTIONS)[number];
 

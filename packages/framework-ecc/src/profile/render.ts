@@ -25,7 +25,6 @@ import {
 import {
   acquireProjectionSourceClosure,
   type ProjectionSourceTrust,
-  TRUSTED_PROJECTED_SOURCE,
   type VerifiedProjectedSource,
   type VerifiedProjectionSourceClosure,
 } from "./source-closure.js";
@@ -670,16 +669,12 @@ async function renderWithTrust(
   };
 }
 
+/**
+ * Render against a projected-source closure identity. Production passes the
+ * identity from Core-verified descriptor bytes (`descriptor-evidence.ts`); no
+ * identity is embedded.
+ */
 export async function renderEccProjection(
-  profile: unknown,
-  evidence: unknown,
-  options: { sourceRoot: string; evidenceRoot: string },
-): Promise<EccProjection> {
-  return renderWithTrust(profile, evidence, options, TRUSTED_PROJECTED_SOURCE);
-}
-
-/** Internal hermetic-test seam. This module is not exported from the package or CLI. */
-export async function renderEccProjectionWithTrust(
   profile: unknown,
   evidence: unknown,
   options: { sourceRoot: string; evidenceRoot: string },
