@@ -3,32 +3,31 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fakeRunner } from "../../src/internals/proc.js";
 import type { Check } from "../../src/internals/verify.js";
 import type { ScanExecutionAdapterV1 } from "../../src/org-policy/governance-input-v1.js";
-import { SCAN_PACKAGE_INSTALL_COMMAND } from "../../src/scan-package/load-scan-package.js";
+import {
+  SCAN_PACKAGE_INSTALL_COMMAND,
+  ScanPackageRefusalError,
+} from "../../src/scan-package/load-scan-package.js";
 import {
   CISCO_SKILL_SCANNER_ANALYZER,
   runTrustDetectors,
-  SCAN_DELEGATED_TRUST_DETECTORS,
   type TrustDetectorName,
   trustRuntimeAdvisory,
 } from "../../src/trust/detectors.js";
 import { buildTrustFileInventory } from "../../src/trust/inventory.js";
 import { scanTrustTreeWithAnalyzers } from "../../src/trust/scan.js";
+import { fakeTrustLintScan } from "./fakes/fake-trust-lint.js";
 
 // ---------------------------------------------------------------------------
 // With no injected adapter, `aih trust scan` and `aih skill vet` load the
-// INSTALLED @aihq/scan. Which detectors it runs is decided per detector and is
-// data: SCAN_DELEGATED_TRUST_DETECTORS, empty until Scan's capabilities are
-// genuine equivalents. Until then every Core detector keeps Core's execution
-// and is recorded as `core-legacy`, and Scan's in-process `detector.aih-native`
-// is recorded beside them as an identity observation (never a finding). A
-// missing or incompatible Scan is stated explicitly, with the install command.
-//
-// The rule a delegated detector will follow (no fallback to Core, Scan's own
-// refusal verbatim, the profile Scan ran under) is exercised here by naming a
-// delegated set explicitly.
+// INSTALLED @aihq/scan, and every detector runs through it: the native findings
+// (`detector.aih-trust-lint`) and each analyzer. There is no Core fallback. A
+// missing or incompatible Scan refuses the whole scan (the native findings are
+// the floor every verdict stands on); for an analyzer it is stated explicitly,
+// with the install command, as that detector's degraded coverage. Scan's
+// in-process `detector.aih-native` is recorded beside them as an identity
+// observation (never a finding).
 // ---------------------------------------------------------------------------
 
 const loader = vi.hoisted(() => ({ load: vi.fn() }));
@@ -131,20 +130,30 @@ function nativeObservation(bytes = NATIVE_BYTES, annexSha256 = sha256(NATIVE_BYT
   };
 }
 
+/**
+ * An installed Scan that declares the trust lint (every scan's native findings)
+ * plus `detectorIds`; `requests` records every request, `run` answers all but
+ * the trust lint.
+ */
 function installedScan(
   detectorIds: readonly string[],
   run: ScanExecutionAdapterV1["runDetectorV1"],
 ): ScanExecutionAdapterV1 & { readonly requests: unknown[] } {
   const requests: unknown[] = [];
+  const lint = fakeTrustLintScan();
   return {
     requests,
-    listDetectorCapabilitiesV1: () =>
-      detectorIds.map((id) =>
+    listDetectorCapabilitiesV1: () => [
+      ...lint.listDetectorCapabilitiesV1(),
+      ...detectorIds.map((id) =>
         capability(id, id === "detector.aih-native" ? "in-process-native-v1" : undefined),
       ),
+    ],
     runDetectorV1: (request) => {
       requests.push(request);
-      return run(request);
+      return (request as { detectorId?: unknown }).detectorId === "detector.aih-trust-lint"
+        ? lint.runDetectorV1(request)
+        : run(request);
     },
   };
 }
@@ -156,30 +165,14 @@ function detectorCheck(checks: readonly Check[], detector: string): Check | unde
   return checks.find((check) => check.name === `trust detector ${detector}`);
 }
 
-function recordingRunner() {
-  const argvs: string[][] = [];
-  const run = fakeRunner((argv) => {
-    argvs.push([...argv]);
-    return { code: 1, stdout: "", stderr: "probe refused by this test" };
-  });
-  return { argvs, run };
-}
-
 async function scan() {
   write("SKILL.md", "# Root skill\n\nNothing alarming here.\n");
-  const { argvs, run } = recordingRunner();
-  const result = await scanTrustTreeWithAnalyzers(dir, {
-    env: {},
-    platform: "linux",
-    posture: "vibe",
-    run,
-  });
-  return { argvs, result };
+  return scanTrustTreeWithAnalyzers(dir, { env: {}, platform: "linux", posture: "vibe" });
 }
 
-/** The Step 2 rule, exercised by naming the delegated set explicitly. */
-async function delegatedRun(
-  delegated: readonly TrustDetectorName[],
+/** The analyzer detectors alone, through the installed package; `detectors` narrows the set. */
+async function detectorRun(
+  detectors?: readonly TrustDetectorName[],
   options: {
     posture?: "vibe" | "enterprise";
     required?: TrustDetectorName[];
@@ -187,43 +180,44 @@ async function delegatedRun(
   } = {},
 ) {
   write("SKILL.md", "# Root skill\n\nNothing alarming here.\n");
-  const { argvs, run } = recordingRunner();
-  const result = await runTrustDetectors(dir, {
+  return runTrustDetectors(dir, {
     env: {},
     platform: options.platform ?? "linux",
     posture: options.posture ?? "vibe",
-    run,
     inventory: buildTrustFileInventory(dir),
-    delegatedDetectors: new Set(delegated),
+    ...(detectors === undefined ? {} : { detectors }),
     ...(options.required === undefined ? {} : { requiredDetectors: options.required }),
   });
-  return { argvs, result };
 }
 
-const spawnedFor = (argvs: readonly string[][], needle: string) =>
-  argvs.filter((argv) => argv.join(" ").includes(needle));
-
 describe("installed @aihq/scan: default loading, executor naming, recorded observation", () => {
-  it("delegates no Core detector to Scan yet", () => {
-    expect([...SCAN_DELEGATED_TRUST_DETECTORS]).toEqual([]);
-  });
-
-  it("keeps Core's execution without Scan and states the package refusal explicitly", async () => {
+  it("refuses the whole scan without an installed Scan and names the install command", async () => {
     loader.load.mockResolvedValue(UNAVAILABLE);
-    const { argvs, result } = await scan();
+    const refusal = await scan().catch((error: unknown) => error);
 
     expect(loader.load).toHaveBeenCalledTimes(1);
-    // Core's own detectors still ran their own probes, and say who ran them.
-    expect(spawnedFor(argvs, "uv").length).toBeGreaterThan(0);
+    expect(refusal).toBeInstanceOf(ScanPackageRefusalError);
+    expect((refusal as ScanPackageRefusalError).refusal).toEqual(UNAVAILABLE.refusal);
+    expect((refusal as Error).message).toContain(SCAN_PACKAGE_INSTALL_COMMAND);
+  });
+
+  it("states the package refusal for every detector and the observation, executing none", async () => {
+    loader.load.mockResolvedValue(UNAVAILABLE);
+    const result = await detectorRun();
+
+    expect(loader.load).toHaveBeenCalledTimes(1);
     for (const detector of ["skillspector", "cisco", "semgrep", "snyk-agent-scan"]) {
-      expect(result.detectorExecutions).toContainEqual({
+      expect(result.executions).toContainEqual({
         detector,
-        executedBy: "core-legacy",
+        executedBy: "none",
         outcome: "unavailable",
+        refusal: "scan-package-unavailable",
       });
-      expect(detectorCheck(result.checks, detector)?.detail).not.toContain("scan-package");
+      expect(detectorCheck(result.checks, detector)?.detail).toContain(
+        `${detector} not available (scan-package-unavailable: @aihq/scan is not installed next to @aihq/core`,
+      );
     }
-    expect(result.scanObservations).toEqual([
+    expect(result.observations).toEqual([
       {
         detectorId: "detector.aih-native",
         outcome: "unavailable",
@@ -231,36 +225,30 @@ describe("installed @aihq/scan: default loading, executor naming, recorded obser
         detail: `scan-package-unavailable: ${UNAVAILABLE.refusal.detail}`,
       },
     ]);
-    const advisory = trustRuntimeAdvisory(result.analyzersRun, {
-      executions: result.detectorExecutions,
-      observations: result.scanObservations,
+    const advisory = trustRuntimeAdvisory(["aih-native", ...result.analyzersRun], {
+      executions: result.executions,
+      observations: result.observations,
     });
     expect(advisory.split("\n")[0]).toBe(
       "No findings != safe. Static analyzers actually run: aih-native.",
     );
     expect(advisory).toContain(
-      "Detector executors: skillspector=core-legacy, cisco=core-legacy, semgrep=core-legacy, snyk-agent-scan=core-legacy.",
+      "Detector executors: skillspector=none, cisco=none, semgrep=none, snyk-agent-scan=none.",
     );
     expect(advisory).toContain(
       `@aihq/scan observation detector.aih-native not recorded: scan-package-unavailable: @aihq/scan is not installed next to @aihq/core; this operation needs its public API. Install it with: ${SCAN_PACKAGE_INSTALL_COMMAND}`,
     );
   });
 
-  it("records Scan's native identity observation and runs nothing else through Scan", async () => {
-    const scanPackage = installedScan(
-      ["detector.aih-native", "detector.cisco", "detector.semgrep", "detector.skillspector"],
-      (request) =>
-        Promise.resolve(
-          (request as { detectorId: string }).detectorId === "detector.aih-native"
-            ? nativeObservation()
-            : succeeded("detector.cisco", "linux-namespace-uv-v1"),
-        ),
+  it("records Scan's native identity observation beside the native findings", async () => {
+    const scanPackage = installedScan(["detector.aih-native"], () =>
+      Promise.resolve(nativeObservation()),
     );
     loader.load.mockResolvedValue({ ok: true, adapter: scanPackage });
-    const { result } = await scan();
+    const result = await scan();
 
-    expect(requestedIds(scanPackage)).toEqual(["detector.aih-native"]);
-    expect(scanPackage.requests[0]).toMatchObject({
+    expect(requestedIds(scanPackage)).toEqual(["detector.aih-trust-lint", "detector.aih-native"]);
+    expect(scanPackage.requests[1]).toMatchObject({
       subject: {
         kind: "source-tree",
         sourceRoot: expect.any(String),
@@ -279,9 +267,15 @@ describe("installed @aihq/scan: default loading, executor naming, recorded obser
         annexSha256: sha256(NATIVE_BYTES),
       },
     ]);
-    // It is an observation: Core's findings and analyzers are Core's own.
+    // It is an observation: it adds no analyzer and no finding.
     expect(result.analyzersRun).toEqual(["aih-native"]);
-    expect(result.detectorExecutions?.every((row) => row.executedBy === "core-legacy")).toBe(true);
+    expect(result.detectorExecutions?.[0]).toEqual({
+      detector: "aih-trust-lint",
+      executedBy: "scan",
+      scanSource: "installed-package",
+      executionProfileId: "in-process-trust-lint-v1",
+      outcome: "completed",
+    });
     expect(
       trustRuntimeAdvisory(result.analyzersRun, { observations: result.scanObservations }),
     ).toContain(
@@ -296,7 +290,7 @@ describe("installed @aihq/scan: default loading, executor naming, recorded obser
         Promise.resolve(nativeObservation(NATIVE_BYTES, "0".repeat(64))),
       ),
     });
-    const { result } = await scan();
+    const result = await scan();
     expect(result.scanObservations).toEqual([
       expect.objectContaining({
         outcome: "failed",
@@ -312,8 +306,8 @@ describe("installed @aihq/scan: default loading, executor naming, recorded obser
       ok: false,
       refusal: { reason: "scan-package-incompatible", detail: "no runner" },
     });
-    const { result } = await scan();
-    expect(result.scanObservations).toEqual([
+    const result = await detectorRun(["cisco"]);
+    expect(result.observations).toEqual([
       {
         detectorId: "detector.aih-native",
         outcome: "unavailable",
@@ -326,33 +320,33 @@ describe("installed @aihq/scan: default loading, executor naming, recorded obser
   it("asks nothing of a Scan that does not declare the observation", async () => {
     const scanPackage = installedScan(["detector.cisco"], () => Promise.reject(new Error("no")));
     loader.load.mockResolvedValue({ ok: true, adapter: scanPackage });
-    const { result } = await scan();
-    expect(scanPackage.requests).toEqual([]);
+    const result = await scan();
+    expect(requestedIds(scanPackage)).not.toContain("detector.aih-native");
     expect(result.scanObservations).toEqual([]);
   });
 
   it("uses precomputed SARIF without loading Scan or executing anything", async () => {
     write("SKILL.md", "# Root skill\n");
-    const result = await scanTrustTreeWithAnalyzers(dir, {
+    const result = await runTrustDetectors(dir, {
       env: {},
       platform: "linux",
       posture: "vibe",
-      run: fakeRunner(() => ({ code: 1, stdout: "", stderr: "no" })),
+      inventory: buildTrustFileInventory(dir),
       detectors: ["cisco"],
-      precomputedDetectorSarif: { cisco: EMPTY_SARIF },
+      precomputedSarif: { cisco: EMPTY_SARIF },
     });
     expect(loader.load).not.toHaveBeenCalled();
-    expect(result.detectorExecutions).toEqual([
+    expect(result.executions).toEqual([
       { detector: "cisco", executedBy: "precomputed-sarif", outcome: "completed" },
     ]);
-    expect(result.scanObservations).toEqual([]);
+    expect(result.observations).toEqual([]);
   });
 });
 
-describe("a delegated detector (the rule Step 2 flips per detector)", () => {
-  it("reports an absent Scan verbatim and never runs Core's implementation", async () => {
+describe("every detector through the installed @aihq/scan, with no Core fallback", () => {
+  it("reports an absent Scan verbatim for the selected detector", async () => {
     loader.load.mockResolvedValue(UNAVAILABLE);
-    const { argvs, result } = await delegatedRun(["cisco"]);
+    const result = await detectorRun(["cisco"]);
 
     const check = detectorCheck(result.checks, "cisco");
     expect(check?.verdict).toBe("skip");
@@ -360,24 +354,19 @@ describe("a delegated detector (the rule Step 2 flips per detector)", () => {
       "cisco not available (scan-package-unavailable: @aihq/scan is not installed next to @aihq/core",
     );
     expect(check?.detail).toContain(SCAN_PACKAGE_INSTALL_COMMAND);
-    expect(spawnedFor(argvs, "skill-scanner")).toEqual([]);
-    expect(result.executions).toContainEqual({
-      detector: "cisco",
-      executedBy: "none",
-      outcome: "unavailable",
-      refusal: "scan-package-unavailable",
-    });
-    // An undelegated detector beside it keeps Core's execution.
-    expect(result.executions).toContainEqual({
-      detector: "semgrep",
-      executedBy: "core-legacy",
-      outcome: "unavailable",
-    });
+    expect(result.executions).toEqual([
+      {
+        detector: "cisco",
+        executedBy: "none",
+        outcome: "unavailable",
+        refusal: "scan-package-unavailable",
+      },
+    ]);
   });
 
   it("fails closed when the organization requires it at enterprise posture", async () => {
     loader.load.mockResolvedValue(UNAVAILABLE);
-    const { result } = await delegatedRun(["cisco"], {
+    const result = await detectorRun(["cisco"], {
       posture: "enterprise",
       required: ["cisco"],
     });
@@ -392,7 +381,7 @@ describe("a delegated detector (the rule Step 2 flips per detector)", () => {
       Promise.resolve(succeeded("detector.cisco", "host-process-uv-v1")),
     );
     loader.load.mockResolvedValue({ ok: true, adapter: scanPackage });
-    const { argvs, result } = await delegatedRun(["cisco"]);
+    const result = await detectorRun(["cisco"]);
 
     expect(requestedIds(scanPackage)).toEqual(["detector.cisco"]);
     expect(detectorCheck(result.checks, "cisco")?.detail).toBe(
@@ -405,7 +394,6 @@ describe("a delegated detector (the rule Step 2 flips per detector)", () => {
       executionProfileId: "host-process-uv-v1",
       outcome: "completed",
     });
-    expect(spawnedFor(argvs, "skill-scanner")).toEqual([]);
   });
 
   it("carries Scan's own refusal verbatim with no fallback", async () => {
@@ -422,7 +410,7 @@ describe("a delegated detector (the rule Step 2 flips per detector)", () => {
         }),
       ),
     });
-    const { argvs, result } = await delegatedRun(["cisco"]);
+    const result = await detectorRun(["cisco"]);
     expect(detectorCheck(result.checks, "cisco")?.detail).toBe(
       `DEGRADED-COVERAGE: deep scan SKIPPED — cisco not available (installed @aihq/scan: unsupported-platform: ${detail}); coverage is GREEN-tier only. Analyzers run: aih-native.`,
     );
@@ -432,7 +420,6 @@ describe("a delegated detector (the rule Step 2 flips per detector)", () => {
       scanSource: "installed-package",
       outcome: "refused",
     });
-    expect(spawnedFor(argvs, "skill-scanner")).toEqual([]);
   });
 
   it("records the profile a failed Scan run used", async () => {
@@ -447,7 +434,7 @@ describe("a delegated detector (the rule Step 2 flips per detector)", () => {
       ok: true,
       adapter: scanPackage,
     });
-    const { result } = await delegatedRun(["semgrep"]);
+    const result = await detectorRun(["semgrep"]);
     expect(scanPackage.requests).toContainEqual(
       expect.objectContaining({
         detectorId: "detector.semgrep",
@@ -488,7 +475,7 @@ describe("a delegated detector (the rule Step 2 flips per detector)", () => {
         },
       };
       loader.load.mockResolvedValue({ ok: true, adapter: scanPackage });
-      const { argvs, result } = await delegatedRun(["semgrep"], { platform });
+      const result = await detectorRun(["semgrep"], { platform });
 
       expect(scanPackage.requests).toContainEqual(
         expect.objectContaining({
@@ -503,7 +490,6 @@ describe("a delegated detector (the rule Step 2 flips per detector)", () => {
         executionProfileId: "host-process-uv-v1",
         outcome: "completed",
       });
-      expect(spawnedFor(argvs, "semgrep")).toEqual([]);
     },
   );
 
@@ -519,13 +505,12 @@ describe("a delegated detector (the rule Step 2 flips per detector)", () => {
       },
     };
     loader.load.mockResolvedValue({ ok: true, adapter: scanPackage });
-    const { argvs, result } = await delegatedRun(["semgrep"]);
+    const result = await detectorRun(["semgrep"]);
 
     expect(requests).toEqual([]);
     expect(detectorCheck(result.checks, "semgrep")?.detail).toContain(
       `installed @aihq/scan: detector.semgrep does not declare host-process-uv-v1 for linux/${HOST_ARCH}`,
     );
-    expect(spawnedFor(argvs, "semgrep")).toEqual([]);
   });
 
   it("refuses a Semgrep profile declared only for another architecture", async () => {
@@ -548,13 +533,12 @@ describe("a delegated detector (the rule Step 2 flips per detector)", () => {
       },
     };
     loader.load.mockResolvedValue({ ok: true, adapter: scanPackage });
-    const { argvs, result } = await delegatedRun(["semgrep"]);
+    const result = await detectorRun(["semgrep"]);
 
     expect(requests).toEqual([]);
     expect(detectorCheck(result.checks, "semgrep")?.detail).toContain(
       `installed @aihq/scan: detector.semgrep does not declare host-process-uv-v1 for linux/${HOST_ARCH}`,
     );
-    expect(spawnedFor(argvs, "semgrep")).toEqual([]);
   });
 
   it("rejects a successful Scan run under a profile different from the requested one", async () => {
@@ -562,7 +546,7 @@ describe("a delegated detector (the rule Step 2 flips per detector)", () => {
       Promise.resolve(succeeded("detector.semgrep", "linux-namespace-uv-v1")),
     );
     loader.load.mockResolvedValue({ ok: true, adapter: scanPackage });
-    const { argvs, result } = await delegatedRun(["semgrep"]);
+    const result = await detectorRun(["semgrep"]);
 
     expect(scanPackage.requests).toContainEqual(
       expect.objectContaining({ executionProfileId: "host-process-uv-v1" }),
@@ -576,7 +560,6 @@ describe("a delegated detector (the rule Step 2 flips per detector)", () => {
       scanSource: "installed-package",
       outcome: "failed",
     });
-    expect(spawnedFor(argvs, "semgrep")).toEqual([]);
   });
 
   it.each(["windows", "darwin"] as const)(
@@ -586,7 +569,7 @@ describe("a delegated detector (the rule Step 2 flips per detector)", () => {
         Promise.reject(new Error("unsupported profile must not be run")),
       );
       loader.load.mockResolvedValue({ ok: true, adapter: scanPackage });
-      const { argvs, result } = await delegatedRun(["semgrep"], { platform });
+      const result = await detectorRun(["semgrep"], { platform });
 
       expect(scanPackage.requests).toEqual([]);
       expect(detectorCheck(result.checks, "semgrep")?.detail).toContain(
@@ -598,33 +581,27 @@ describe("a delegated detector (the rule Step 2 flips per detector)", () => {
         scanSource: "installed-package",
         outcome: "refused",
       });
-      expect(spawnedFor(argvs, "semgrep")).toEqual([]);
     },
   );
 
-  it("refuses a delegated detector the installed package does not declare", async () => {
+  it("refuses a detector the installed package does not declare", async () => {
     loader.load.mockResolvedValue({
       ok: true,
       adapter: installedScan(["detector.cisco"], () => Promise.reject(new Error("unused"))),
     });
-    const { argvs, result } = await delegatedRun(["semgrep"]);
+    const result = await detectorRun(["semgrep"]);
     expect(detectorCheck(result.checks, "semgrep")?.detail).toContain(
       "semgrep not available (scan-package-incompatible: the installed @aihq/scan declares no detector.semgrep capability; Core does not execute semgrep itself.",
     );
-    expect(spawnedFor(argvs, "semgrep")).toEqual([]);
   });
 
-  it("does not delegate an undelegated detector the installed package happens to name", async () => {
-    const scanPackage = installedScan(["detector.cisco"], () =>
-      Promise.reject(new Error("an undelegated detector must never reach Scan")),
+  it("asks Scan only for the detectors the scan selects", async () => {
+    const scanPackage = installedScan(["detector.cisco", "detector.semgrep"], () =>
+      Promise.resolve(succeeded("detector.semgrep", "host-process-uv-v1")),
     );
     loader.load.mockResolvedValue({ ok: true, adapter: scanPackage });
-    const { result } = await delegatedRun([]);
-    expect(scanPackage.requests).toEqual([]);
-    expect(result.executions).toContainEqual({
-      detector: "cisco",
-      executedBy: "core-legacy",
-      outcome: "unavailable",
-    });
+    const result = await detectorRun(["semgrep"]);
+    expect(requestedIds(scanPackage)).toEqual(["detector.semgrep"]);
+    expect(result.executions.map((row) => row.detector)).toEqual(["semgrep"]);
   });
 });

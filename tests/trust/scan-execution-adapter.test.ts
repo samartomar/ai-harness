@@ -3,17 +3,18 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fakeRunner } from "../../src/internals/proc.js";
 import type { Check } from "../../src/internals/verify.js";
 import type { ScanExecutionAdapterV1 } from "../../src/org-policy/governance-input-v1.js";
-import { CISCO_SKILL_SCANNER_ANALYZER, runTrustDetectors } from "../../src/trust/detectors.js";
+import { ScanPackageRefusalError } from "../../src/scan-package/load-scan-package.js";
+import { CISCO_SKILL_SCANNER_ANALYZER } from "../../src/trust/detectors.js";
 import { scanTrustTreeWithAnalyzers } from "../../src/trust/scan.js";
+import { fakeTrustLintScan } from "./fakes/fake-trust-lint.js";
 
 // ---------------------------------------------------------------------------
 // A consumer may own detector execution and inject it, exactly as the
-// governance path injects Scan's verification functions. Core delegates only
-// the detectors an adapter's capability list NAMES: every other detector keeps
-// today's in-Core execution, and with no adapter nothing changes at all.
+// governance path injects Scan's verification functions. Every detector runs
+// through Scan: one the adapter's capability list does not NAME is unavailable,
+// and Core never executes it itself.
 //
 // Delegation is not a pass. A refusal, a failure, a throw and an unrecognized
 // result all land on the existing degraded-coverage path with their own reason.
@@ -68,16 +69,6 @@ const CISCO_FINDING_SARIF = JSON.stringify({
     },
   ],
 });
-
-/** Every detector probe fails, so Core's own path is visibly unavailable. */
-function recordingRunner() {
-  const argvs: string[][] = [];
-  const run = fakeRunner((argv) => {
-    argvs.push([...argv]);
-    return { code: 1, stdout: "", stderr: "probe refused by this test" };
-  });
-  return { argvs, run };
-}
 
 /**
  * Contract C2: every uv-backed detector declares `host-process-uv-v1` on every OS,
@@ -152,19 +143,28 @@ function succeededWithSarif(sarif: string) {
   };
 }
 
+/**
+ * The trust lint every scan needs (Scan's `detector.aih-trust-lint`) plus the
+ * capabilities the test names; `requests` records only the analyzer requests.
+ */
 function stubAdapter(
   detectorIds: readonly string[],
   runDetectorV1: ScanExecutionAdapterV1["runDetectorV1"],
   subjectKinds?: readonly string[],
 ): ScanExecutionAdapterV1 & { readonly requests: unknown[] } {
   const requests: unknown[] = [];
+  const lint = fakeTrustLintScan();
   return {
     requests,
-    listDetectorCapabilitiesV1: () =>
-      detectorIds.map((id) =>
+    listDetectorCapabilitiesV1: () => [
+      ...lint.listDetectorCapabilitiesV1(),
+      ...detectorIds.map((id) =>
         subjectKinds === undefined ? capability(id) : capability(id, subjectKinds),
       ),
+    ],
     runDetectorV1: (request) => {
+      if ((request as { detectorId?: unknown }).detectorId === "detector.aih-trust-lint")
+        return lint.runDetectorV1(request);
       requests.push(request);
       return runDetectorV1(request);
     },
@@ -175,66 +175,85 @@ function detectorCheck(checks: readonly Check[], detector: string): Check | unde
   return checks.find((check) => check.name === `trust detector ${detector}`);
 }
 
-async function scan(
-  options: {
-    readonly scanExecution?: ScanExecutionAdapterV1;
-    /** Makes the scanned root a skill directory in its own right. */
-    readonly topLevelSkill?: boolean;
-  } = {},
-) {
+async function scan(options: {
+  readonly scanExecution: ScanExecutionAdapterV1;
+  /** Makes the scanned root a skill directory in its own right. */
+  readonly topLevelSkill?: boolean;
+}) {
   write("skills/clean/SKILL.md", "# Clean\n\nNothing alarming here.\n");
   if (options.topLevelSkill === true) write("SKILL.md", "# Root skill\n\nDeclared at the root.\n");
-  const { argvs, run } = recordingRunner();
   const result = await scanTrustTreeWithAnalyzers(dir, {
     env: {},
     platform: "linux",
     posture: "vibe",
-    run,
-    ...(options.scanExecution === undefined ? {} : { scanExecution: options.scanExecution }),
+    scanExecution: options.scanExecution,
   });
-  return { argvs, result };
+  return { result };
 }
 
 describe("scan execution adapter", () => {
-  it("changes nothing when no adapter is configured", async () => {
-    const withoutOption = await scan();
-    const withNamelessAdapter = await scan({
+  it("leaves every analyzer the adapter does not declare unavailable, and runs none of them", async () => {
+    const { result } = await scan({
       scanExecution: stubAdapter([], () => {
-        throw new Error("this adapter names no detector and must never be called");
+        throw new Error("this adapter names no analyzer and must never be called");
       }),
     });
 
-    // Detector selection and every availability reason are the same run.
-    expect(withNamelessAdapter.result.analyzersRun).toEqual(withoutOption.result.analyzersRun);
-    expect(withNamelessAdapter.result.checks).toEqual(withoutOption.result.checks);
-    expect(withNamelessAdapter.argvs).toEqual(withoutOption.argvs);
-
-    // And that baseline is today's own text, detector by detector.
-    expect(withoutOption.result.analyzersRun).toEqual(["aih-native"]);
-    for (const detector of ["skillspector", "cisco", "semgrep", "snyk-agent-scan"]) {
-      expect(detectorCheck(withoutOption.result.checks, detector)?.detail).toContain(
-        `DEGRADED-COVERAGE: deep scan SKIPPED — ${detector} not available`,
+    expect(result.analyzersRun).toEqual(["aih-native"]);
+    for (const [detector, scanId] of [
+      ["skillspector", "detector.skillspector"],
+      ["cisco", "detector.cisco"],
+      ["semgrep", "detector.semgrep"],
+      ["snyk-agent-scan", "detector.snyk-agent-scan"],
+    ] as const) {
+      expect(detectorCheck(result.checks, detector)?.detail).toBe(
+        `DEGRADED-COVERAGE: deep scan SKIPPED — ${detector} not available (scan-package-incompatible: the injected scan execution adapter declares no ${scanId} capability; Core does not execute ${detector} itself.); coverage is GREEN-tier only. Analyzers run: aih-native.${
+          detector === "skillspector"
+            ? " Load the pinned SkillSpector image locally as @aihq/scan documents; Core never pulls it."
+            : ""
+        }`,
       );
     }
-    expect(detectorCheck(withoutOption.result.checks, "snyk-agent-scan")?.detail).toContain(
-      "SNYK_TOKEN is not set",
+  });
+
+  it("refuses the whole scan when the adapter declares no trust lint", async () => {
+    write("skills/clean/SKILL.md", "# Clean\n");
+    const adapter: ScanExecutionAdapterV1 = {
+      listDetectorCapabilitiesV1: () => [capability("detector.cisco")],
+      runDetectorV1: () => {
+        throw new Error("nothing may run without the trust lint");
+      },
+    };
+    const refusal = await scanTrustTreeWithAnalyzers(dir, {
+      env: {},
+      platform: "linux",
+      posture: "vibe",
+      scanExecution: adapter,
+    }).catch((error: unknown) => error);
+    expect(refusal).toBeInstanceOf(ScanPackageRefusalError);
+    expect((refusal as ScanPackageRefusalError).refusal).toMatchObject({
+      reason: "scan-package-incompatible",
+    });
+    expect((refusal as Error).message).toContain(
+      "injected scan execution adapter declares no detector.aih-trust-lint capability",
     );
   });
 
-  it("delegates a named detector, spawns nothing for it, and normalizes its findings", async () => {
+  it("delegates a named detector and normalizes its findings", async () => {
     const adapter = stubAdapter(
       ["detector.cisco"],
       () => Promise.resolve(succeededWithSarif(CISCO_FINDING_SARIF)),
       ["skill-directory"],
     );
-    const { argvs, result } = await scan({ scanExecution: adapter, topLevelSkill: true });
+    const { result } = await scan({ scanExecution: adapter, topLevelSkill: true });
 
-    // The request is a valid Scan RunDetectorV1Request, and its subject kind is
-    // the one Core can state truthfully: this root really is a skill directory.
+    // The request is a valid Scan RunDetectorV1Request over the tree Core
+    // enumerated, under the profile Core named.
     expect(adapter.requests).toHaveLength(1);
     expect(adapter.requests[0]).toMatchObject({
       detectorId: "detector.cisco",
-      subject: { kind: "skill-directory", sourceRoot: expect.any(String) },
+      executionProfileId: "host-process-uv-v1",
+      subject: { kind: "source-tree", sourceRoot: expect.any(String) },
     });
     const selected = (adapter.requests[0] as { subject: { selectedClosurePaths: string[] } })
       .subject.selectedClosurePaths;
@@ -265,24 +284,25 @@ describe("scan execution adapter", () => {
     );
     expect(finding?.rawOccurrenceFingerprints).toHaveLength(1);
 
-    // Nothing was spawned for it, while the other detectors kept their path.
-    expect(argvs.filter((argv) => argv.join(" ").includes("skill-scanner"))).toEqual([]);
-    expect(argvs.some((argv) => argv.join(" ").includes("semgrep"))).toBe(true);
+    // A detector the adapter does not declare is unavailable, never run by Core.
     expect(detectorCheck(result.checks, "semgrep")?.detail).toContain(
-      "DEGRADED-COVERAGE: deep scan SKIPPED — semgrep not available",
+      "DEGRADED-COVERAGE: deep scan SKIPPED — semgrep not available (scan-package-incompatible: the injected scan execution adapter declares no detector.semgrep capability",
     );
   });
 
-  it("accepts a bare detector id in the capability list", async () => {
+  it("does not read a bare detector id as Scan's capability", async () => {
     const adapter = stubAdapter(["cisco"], () => Promise.resolve(succeededWithSarif(CISCO_SARIF)));
     const { result } = await scan({ scanExecution: adapter });
-    expect(adapter.requests).toHaveLength(1);
-    expect(result.analyzersRun).toContain(CISCO_SKILL_SCANNER_ANALYZER);
+    expect(adapter.requests).toEqual([]);
+    expect(result.analyzersRun).not.toContain(CISCO_SKILL_SCANNER_ANALYZER);
+    expect(detectorCheck(result.checks, "cisco")?.detail).toContain(
+      "declares no detector.cisco capability",
+    );
   });
 
   it("never relabels the scanned tree to satisfy a detector's subject kind", async () => {
-    // Scan's detector.cisco takes only a skill-directory. This root is not one,
-    // so Core states source-tree and lets the adapter refuse on its own terms.
+    // A detector that takes only a skill-directory: this root is not one, so
+    // Core states source-tree and lets the adapter refuse on its own terms.
     const adapter = stubAdapter(
       ["detector.cisco"],
       () =>
@@ -313,13 +333,12 @@ describe("scan execution adapter", () => {
         host: { os: "win32", architecture: "x64" },
       }),
     );
-    const { argvs, result } = await scan({ scanExecution: adapter });
+    const { result } = await scan({ scanExecution: adapter });
 
     expect(detectorCheck(result.checks, "cisco")?.detail).toBe(
       "DEGRADED-COVERAGE: deep scan SKIPPED — cisco not available (unsupported-platform: detector.cisco runs on linux/amd64 only; this host is win32/x64. Run it on a linux amd64 machine or in a linux container.); coverage is GREEN-tier only. Analyzers run: aih-native.",
     );
     expect(result.analyzersRun).not.toContain(CISCO_SKILL_SCANNER_ANALYZER);
-    expect(argvs.filter((argv) => argv.join(" ").includes("skill-scanner"))).toEqual([]);
   });
 
   it("reports a failure stage rather than losing it", async () => {
@@ -406,20 +425,20 @@ describe("scan execution adapter", () => {
       "scan execution adapter failed: detector broker refused the request",
     );
 
-    // A capability list Core cannot read names nothing, so nothing is delegated.
-    const listing = await scan({
-      scanExecution: {
-        listDetectorCapabilitiesV1: () => {
-          throw new Error("capability listing failed");
+    // A capability list Core cannot read names nothing, not even the trust lint,
+    // so the whole scan is refused rather than graded without native findings.
+    await expect(
+      scan({
+        scanExecution: {
+          listDetectorCapabilitiesV1: () => {
+            throw new Error("capability listing failed");
+          },
+          runDetectorV1: () => {
+            throw new Error("this detector must never be delegated");
+          },
         },
-        runDetectorV1: () => {
-          throw new Error("this detector must never be delegated");
-        },
-      },
-    });
-    expect(detectorCheck(listing.result.checks, "cisco")?.detail).toContain(
-      "probe refused by this test",
-    );
+      }),
+    ).rejects.toBeInstanceOf(ScanPackageRefusalError);
   });
 
   it("refuses success without analyzer bytes and any shape it cannot read", async () => {
@@ -453,26 +472,6 @@ describe("scan execution adapter", () => {
     });
     expect(detectorCheck(notSarif.result.checks, "cisco")?.detail).toContain(
       "detector did not emit valid SARIF",
-    );
-  });
-
-  it("delegates only what Core actually enumerated", async () => {
-    // Scan requires the selected closure as a field; with no inventory Core has
-    // nothing truthful to declare, so it refuses rather than inventing one.
-    const adapter = stubAdapter(["detector.cisco"], () =>
-      Promise.resolve(succeededWithSarif(CISCO_SARIF)),
-    );
-    write("skills/clean/SKILL.md", "# Clean" + String.fromCharCode(10));
-    const result = await runTrustDetectors(dir, {
-      env: {},
-      platform: "linux",
-      posture: "vibe",
-      run: recordingRunner().run,
-      scanExecution: adapter,
-    });
-    expect(adapter.requests).toEqual([]);
-    expect(detectorCheck(result.checks, "cisco")?.detail).toContain(
-      "no file inventory is available to declare as this detector's selected closure",
     );
   });
 

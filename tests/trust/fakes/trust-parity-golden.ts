@@ -114,6 +114,30 @@ export function loadRecordedSnykGoldens(): RecordedSnykCase[] {
   ).cases;
 }
 
+/**
+ * A REAL `detector.aih-trust-lint` run recorded from Scan's own engine on one
+ * corpus case: the request Scan received and the SARIF it returned.
+ */
+export interface RecordedScanTrustLint {
+  readonly request: {
+    readonly selectedClosurePaths: readonly string[];
+    readonly detectorOptions: {
+      readonly internalScopes: readonly string[];
+      readonly mcpConfigPaths: readonly string[];
+    };
+  };
+  readonly sarif: unknown;
+}
+
+export function loadRecordedScanTrustLint(id: string): RecordedScanTrustLint {
+  return readJson<RecordedScanTrustLint>(join(PARITY_FIXTURES, "scan-trust-lint", `${id}.json`));
+}
+
+/** The recorded Scan trust-lint SARIF for a corpus case, as the text a fake Scan returns. */
+export function recordedScanTrustLintSarif(id: string): string {
+  return JSON.stringify(loadRecordedScanTrustLint(id).sarif);
+}
+
 function copyTreeContents(from: string, to: string): void {
   for (const entry of readdirSync(from, { withFileTypes: true })) {
     const source = join(from, entry.name);
@@ -211,6 +235,12 @@ const CODE_FOR_NAME: Readonly<Record<string, string>> = {
  * one result per finding, in Core's order, carrying the ungraded detail, the
  * check code as rule id and Core's fingerprint. Grading is inverted here only
  * because the golden records graded checks; Scan itself never grades.
+ *
+ * The facts are the least the findings themselves imply: a file with a native
+ * prompt-injection or external-egress finding on a line has that code in its
+ * `lintLines` (the whole-file lint reported it there); every other fact is
+ * neutral, and a file with no such finding gets no facts at all. For a corpus
+ * case, prefer Scan's recorded output (`recordedScanTrustLintSarif`).
  */
 export function trustLintSarifFromGolden(checks: readonly GoldenCheck[]): string {
   const results = checks
@@ -236,9 +266,48 @@ export function trustLintSarifFromGolden(checks: readonly GoldenCheck[]): string
         fingerprints: { [TRUST_LINT_FINGERPRINT_KEY]: check.fingerprint },
       };
     });
+  const lintLines = new Map<string, Map<number, string[]>>();
+  for (const check of checks) {
+    if (
+      check.family !== "trust-lint" ||
+      check.uri === null ||
+      (check.code !== "trust.prompt-injection" && check.code !== "trust.external-egress")
+    )
+      continue;
+    const lines = lintLines.get(check.uri) ?? new Map<number, string[]>();
+    const codes = lines.get(check.startLine ?? 1) ?? [];
+    if (!codes.includes(check.code)) codes.push(check.code);
+    lines.set(check.startLine ?? 1, codes);
+    lintLines.set(check.uri, lines);
+  }
+  const artifacts = [...lintLines].map(([uri, lines]) => ({
+    location: { uri },
+    properties: {
+      [TRUST_LINT_FINGERPRINT_KEY]: {
+        strictUnicodeSurface: false,
+        legalText: false,
+        unicodeRisk: null,
+        lintLines: [...lines].map(([line, codes]) => ({ line, codes })),
+      },
+    },
+  }));
   return JSON.stringify({
     version: "2.1.0",
-    runs: [{ tool: { driver: { name: "aih-trust-lint (test fake)" } }, results }],
+    runs: [
+      {
+        tool: { driver: { name: "aih-trust-lint (test fake)" } },
+        properties: {
+          [TRUST_LINT_FINGERPRINT_KEY]: {
+            format: "aih-trust-lint-facts",
+            version: 1,
+            trustDocumentCount: 0,
+            repositoryLicenseFile: null,
+          },
+        },
+        artifacts,
+        results,
+      },
+    ],
   });
 }
 

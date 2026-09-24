@@ -6,6 +6,7 @@ import type { TrustDetectorName } from "../../src/trust/detectors.js";
 import { buildTrustFileInventory } from "../../src/trust/inventory.js";
 import { scanTrustTreeWithAnalyzers } from "../../src/trust/scan.js";
 import { createFakeScanAdapterForTests, type FakeScanAnswerV1 } from "./fakes/fake-scan-adapter.js";
+import { fakeTrustLintScan } from "./fakes/fake-trust-lint.js";
 import {
   comparableCheck,
   comparableOccurrence,
@@ -14,9 +15,11 @@ import {
   type GoldenDetectorRun,
   loadGolden,
   loadParityCases,
+  loadRecordedScanTrustLint,
   loadRecordedSnykGoldens,
   materializeParityCase,
   type ParityCase,
+  recordedScanTrustLintSarif,
   SCAN_IDS,
   trustLintSarifFromGolden,
   withoutHostDependentFields,
@@ -24,14 +27,18 @@ import {
 } from "./fakes/trust-parity-golden.js";
 
 // ---------------------------------------------------------------------------
-// Parity oracle: the goldens Core's CURRENT engines produced at the base commit
+// Parity oracle: the goldens Core's former engines produced at the base commit
 // (tests/fixtures/trust-parity/golden, captured by tools/capture-trust-golden.mjs
 // with real Semgrep, Cisco, Cisco MCP scanner and SkillSpector runs; Snyk from
-// Core's recorded test output). Each detector is routed through the Scan
-// execution seam to a TEST FAKE that returns the SARIF a Scan run returns under
-// contract C2, and Core's SARIF -> check mapping must reproduce the golden: same
-// codes, relative paths, lines, multiplicity and availability. Core itself runs
-// no analyzer and computes no native finding on this path.
+// Core's recorded test output). The native findings come from Scan's REAL
+// detector.aih-trust-lint output recorded on each corpus case
+// (tests/fixtures/trust-parity/scan-trust-lint): Core must send exactly the
+// recorded request and turn the recorded SARIF into the golden checks. Each
+// other detector is routed through the Scan execution seam to a TEST FAKE that
+// returns the SARIF a Scan run returns under contract C2, and Core's SARIF ->
+// check mapping must reproduce the golden: same codes, relative paths, lines,
+// multiplicity and availability. Core itself runs no analyzer and computes no
+// native finding on this path.
 // ---------------------------------------------------------------------------
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 });
@@ -120,13 +127,19 @@ function answerFor(run: GoldenDetectorRun, root: string): FakeScanAnswerV1 {
       };
 }
 
+/** Scan's own trust-lint run for a corpus case, recorded from Scan's engine. */
+function recordedTrustLint(entry: ParityCase): FakeScanAnswerV1 {
+  return { kind: "sarif", sarif: recordedScanTrustLintSarif(entry.id) };
+}
+
 describe("golden parity: native findings through detector.aih-trust-lint", () => {
   it.each(cases.map((entry) => [entry.id, entry] as const))("%s", async (_id, entry) => {
     const golden = loadGolden(entry.id);
     const expected = nativeGolden(entry);
+    const recorded = loadRecordedScanTrustLint(entry.id);
     const root = materialize(entry);
     const fake = createFakeScanAdapterForTests({
-      "detector.aih-trust-lint": { kind: "sarif", sarif: trustLintSarifFromGolden(expected) },
+      "detector.aih-trust-lint": recordedTrustLint(entry),
     });
 
     const result = await scanTrustTreeWithAnalyzers(root, {
@@ -135,29 +148,34 @@ describe("golden parity: native findings through detector.aih-trust-lint", () =>
       scanExecution: fake,
     });
 
-    // Every native check, the MCP policy checks Core keeps, the summary and the
-    // smoke check: the same list, in the same order, with the same details.
-    expect(result.checks.map((check) => comparableCheck(check, root))).toEqual(
-      expected.map((check) => goldenComparable(check)),
-    );
-    // The request is Scan's RunDetectorV1Request for exactly what Core enumerated.
+    // Core's request is exactly the one Scan's engine was recorded answering:
+    // the same selected closure and the same detector options.
     expect(fake.requests).toHaveLength(1);
     expect(fake.requests[0]).toMatchObject({
       detectorId: "detector.aih-trust-lint",
-      executionProfileId: "in-process-native-v1",
-      subject: {
-        kind: "source-tree",
-        sourceRoot: root,
-        selectedClosurePaths: buildTrustFileInventory(root).files.map((file) => file.relativePath),
-      },
-      detectorOptions: { internalScopes: [...golden.internalScopes] },
+      executionProfileId: "in-process-trust-lint-v1",
+      subject: { kind: "source-tree", sourceRoot: root },
     });
+    const subject = fake.requests[0]?.subject as { selectedClosurePaths: string[] };
+    expect(subject.selectedClosurePaths).toEqual(recorded.request.selectedClosurePaths);
+    expect(subject.selectedClosurePaths).toEqual(
+      buildTrustFileInventory(root).files.map((file) => file.relativePath),
+    );
+    expect(fake.requests[0]?.detectorOptions).toEqual(recorded.request.detectorOptions);
+
+    // Scan's recorded report yields Core's golden native checks: every native
+    // finding, the MCP policy checks Core keeps, the summary and the smoke
+    // check, in the same order with the same codes, paths, lines, details and
+    // fingerprints.
+    expect(result.checks.map((check) => comparableCheck(check, root))).toEqual(
+      expected.map((check) => goldenComparable(check)),
+    );
     expect(result.detectorExecutions).toEqual([
       {
         detector: "aih-trust-lint",
         executedBy: "scan",
         scanSource: "injected-adapter",
-        executionProfileId: "in-process-native-v1",
+        executionProfileId: "in-process-trust-lint-v1",
         outcome: "completed",
       },
     ]);
@@ -168,12 +186,7 @@ describe("golden parity: native findings through detector.aih-trust-lint", () =>
     const entry = cases.find((candidate) => candidate.id === "auto-exec-permissions");
     if (entry === undefined) throw new Error("corpus lost auto-exec-permissions");
     const root = materialize(entry);
-    const fake = createFakeScanAdapterForTests({
-      "detector.aih-trust-lint": {
-        kind: "sarif",
-        sarif: JSON.stringify({ version: "2.1.0", runs: [{ results: [] }] }),
-      },
-    });
+    const fake = fakeTrustLintScan();
     const result = await scanTrustTreeWithAnalyzers(root, { posture: "vibe", scanExecution: fake });
     expect(result.checks.map((check) => check.name)).toEqual([
       "trust scan",
@@ -196,7 +209,7 @@ describe("golden parity: each detector through the Scan execution seam", () => {
     const root = materialize(entry);
     const scanId = SCAN_IDS[detector as keyof typeof SCAN_IDS];
     const fake = createFakeScanAdapterForTests({
-      "detector.aih-trust-lint": { kind: "sarif", sarif: trustLintSarifFromGolden(native) },
+      "detector.aih-trust-lint": recordedTrustLint(entry),
       [scanId]: answerFor(run, root),
     });
     const { argvs, run: runner } = forbiddenRunner();
@@ -223,7 +236,7 @@ describe("golden parity: each detector through the Scan execution seam", () => {
     expect(requested).toEqual(["detector.aih-trust-lint", scanId]);
     expect(fake.requests[1]).toMatchObject({
       executionProfileId:
-        detector === "skillspector" ? "docker-hardened-skillspector-v1" : "host-process-uv-v1",
+        detector === "skillspector" ? "docker-host-local-skillspector-v1" : "host-process-uv-v1",
     });
     const status = checks.filter(isDetectorStatus);
     if (run.outcome === "unavailable") {
@@ -267,7 +280,7 @@ describe("golden parity: each detector through the Scan execution seam", () => {
         detectors: ["semgrep"],
         precomputedDetectorSarif: { semgrep: detectorSarifFromGolden(run, root, null) },
         scanExecution: createFakeScanAdapterForTests({
-          "detector.aih-trust-lint": { kind: "sarif", sarif: trustLintSarifFromGolden(native) },
+          "detector.aih-trust-lint": recordedTrustLint(entry),
         }),
       });
       const referenceFindings = detectorSlice(reference.checks, nativeCount(native)).filter(
@@ -294,7 +307,7 @@ describe("golden parity: each detector through the Scan execution seam", () => {
       executedBy: "scan",
       scanSource: "injected-adapter",
       executionProfileId:
-        detector === "skillspector" ? "docker-hardened-skillspector-v1" : "host-process-uv-v1",
+        detector === "skillspector" ? "docker-host-local-skillspector-v1" : "host-process-uv-v1",
       outcome: "completed",
     });
   });
@@ -349,7 +362,7 @@ describe("Semgrep enforcement change (owner decision 2026-09-24: apply the rule 
     const [, run] = oracle(semgrep.byEnvironment);
     const root = materialize(entry);
     const fake = createFakeScanAdapterForTests({
-      "detector.aih-trust-lint": { kind: "sarif", sarif: trustLintSarifFromGolden(native) },
+      "detector.aih-trust-lint": recordedTrustLint(entry),
       "detector.semgrep": { kind: "sarif", sarif: detectorSarifFromGolden(run, root, configDir) },
     });
     const result = await scanTrustTreeWithAnalyzers(root, {

@@ -316,7 +316,9 @@ describe("active external-pin ledger", () => {
       expect(headroom.reason).toContain(`${wheel.name} sha256:${wheel.sha256}`);
     }
     expect(headroom.reason).toMatch(/explicit activation.*--accept-headroom-egress/i);
-    expect(headroom.reason).toMatch(/HEADROOM_BEACON=off.*DO_NOT_TRACK=1.*HEADROOM_UPDATE_CHECK=off/);
+    expect(headroom.reason).toMatch(
+      /HEADROOM_BEACON=off.*DO_NOT_TRACK=1.*HEADROOM_UPDATE_CHECK=off/,
+    );
     expect(headroom.reason).toMatch(/proxy, wrap, deploy.*not used/i);
     expect(headroom.reason).toMatch(/Intel macOS.*Windows arm64/i);
   });
@@ -397,26 +399,19 @@ describe("active external-pin ledger", () => {
       integrity: SKILLSPECTOR_IMAGE_DIGEST,
     });
 
-    const skillspectorDockerfile = readFileSync(
-      resolve(root, "tools/skillspector.Dockerfile"),
-      "utf8",
-    );
-    const pythonBase = skillspectorDockerfile.match(
-      /^ARG PYTHON_IMAGE=python:([^@\s]+)@(sha256:[0-9a-f]{64})$/m,
-    );
+    // The SkillSpector image is built by @aihq/scan now; its build inputs stay
+    // recorded here as provenance for the published image digest.
     expect(entry("skillspector-python-base")).toMatchObject({
-      version: pythonBase?.[1],
-      integrity: pythonBase?.[2],
+      identity: "docker.io/library/python",
+      version: "3.12-slim-bookworm",
     });
+    expect(entry("skillspector-python-base").integrity).toMatch(/^sha256:[0-9a-f]{64}$/);
     expect(entry("skillspector-build-uv")).toMatchObject({
       identity: "uv",
       version: "0.12.8",
       commit: "68209e5c61ce4b76c2e685bea7913876bc929dc9",
       disposition: "retained",
     });
-    expect(entry("skillspector-build-uv").version).toBe(
-      skillspectorDockerfile.match(/pip install --no-cache-dir uv==([^\s]+)/)?.[1],
-    );
     expect(entry("uv")).toMatchObject({
       version: "0.12.13",
       commit: "0ebbd9274a55a8a53a13970be3b97e4209598e17",
@@ -426,9 +421,6 @@ describe("active external-pin ledger", () => {
     expect(entry("uv").reason).not.toMatch(/SkillSpector build/i);
     expect(entry("uv").reason).toContain(
       "a86c9dc7bad9b03f388583b7187c05fe9951c2e0d392217e8fd43d97787f6ec2",
-    );
-    expect(skillspectorDockerfile).toContain(
-      `LABEL org.opencontainers.image.revision="${SKILLSPECTOR_SOURCE_REVISION}"`,
     );
 
     const checkout = CHECKOUT_ACTION_PIN.match(/^actions\/checkout@([0-9a-f]{40}) # (v\S+)$/);
@@ -447,13 +439,13 @@ describe("active external-pin ledger", () => {
     });
     expect(entry("claude-code-action").version).toBe("v1.0.223");
 
-    const snykQualificationWorkflow = readFileSync(
-      resolve(root, ".github/workflows/snyk-agent-qualification.yml"),
-      "utf8",
-    );
-    expect(entry("setup-python-action")).toMatchObject(
-      workflowActionPin(snykQualificationWorkflow, "actions/setup-python"),
-    );
+    // The Snyk agent qualification workflow left with the analyzer projects; the
+    // action pin stays recorded as provenance.
+    expect(entry("setup-python-action")).toMatchObject({
+      identity: "actions/setup-python",
+      version: "v7.0.0",
+    });
+    expect(entry("setup-python-action").commit).toMatch(/^[0-9a-f]{40}$/);
   });
 
   it("binds the release provenance action to the governed external pin ledger", () => {

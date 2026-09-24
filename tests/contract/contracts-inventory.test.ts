@@ -97,7 +97,7 @@ const PINS: ReadonlyArray<readonly [file: string, line: number, text: string]> =
     938,
     'export const SKILLSPECTOR_EXECUTION_PROFILE = "docker-host-local-skillspector-v1";',
   ],
-  ["src/trust/detectors.ts", 1436, "export async function resolveScanTrustLintRouteV1(options: {"],
+  ["src/trust/detectors.ts", 1439, "export async function resolveScanTrustLintRouteV1(options: {"],
   [
     "src/binding/scan-binding-gate.ts",
     22,

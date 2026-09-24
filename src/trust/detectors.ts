@@ -1326,6 +1326,9 @@ function sarifResultsOf(sarif: string): unknown[] | undefined {
 function delegatedSarifRefusal(detector: ScanRoutedDetectorV1, sarif: string): string | undefined {
   const scanId = SCAN_DETECTOR_IDS[detector];
   // Unparseable SARIF is reported by the mapping itself as invalid SARIF.
+  const log = parseSarifLog(sarif);
+  if (log !== undefined && log.version !== "2.1.0")
+    return `${scanId} returned SARIF version ${adapterReason(JSON.stringify(log.version) ?? "missing")}, expected SARIF 2.1.0`;
   for (const raw of sarifResultsOf(sarif) ?? []) {
     const result = asRecord(raw);
     const locations = result?.locations;

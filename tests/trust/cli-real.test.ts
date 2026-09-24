@@ -4,6 +4,17 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
+// The real CLI reaches the INSTALLED @aihq/scan (no injection seam across a
+// process). Every trust scan's native findings come from its
+// detector.aih-trust-lint; an installed Scan without it refuses the whole scan.
+const INSTALLED_SCAN_HAS_TRUST_LINT = await import("@aihq/scan").then(
+  (scan: { listDetectorCapabilitiesV1?: () => readonly { detectorId?: unknown }[] }) =>
+    (scan.listDetectorCapabilitiesV1?.() ?? []).some(
+      (capability) => capability.detectorId === "detector.aih-trust-lint",
+    ),
+  () => false,
+);
+
 const tmps: string[] = [];
 const TEST_PROCESS_TIMEOUT_MS = 25_000;
 
@@ -42,7 +53,38 @@ function runAih(args: string[]) {
   });
 }
 
-describe("T3 real CLI trust gate", () => {
+describe("T3 real CLI trust gate without Scan's trust lint", () => {
+  it.runIf(!INSTALLED_SCAN_HAS_TRUST_LINT)(
+    "refuses the source instead of promoting it ungraded",
+    () => {
+      const workspace = fresh("aih-cli-no-lint-root-");
+      const source = fresh("aih-cli-no-lint-source-");
+      write(source, "skills/clean/SKILL.md", "# Clean\n");
+
+      const result = runAih([
+        "workspace",
+        "add",
+        source,
+        "--root",
+        workspace,
+        "--context-dir",
+        "ai-coding",
+        "--apply",
+        "--force",
+      ]);
+
+      expect(result.status).not.toBe(0);
+      expect(`${result.stdout}${result.stderr}`).toContain(
+        "declares no detector.aih-trust-lint capability",
+      );
+      expect(existsSync(join(workspace, "ai-coding", "skills"))).toBe(false);
+      expect(existsSync(join(workspace, ".aih", "trust-lock.json"))).toBe(false);
+    },
+    30000,
+  );
+});
+
+describe.runIf(INSTALLED_SCAN_HAS_TRUST_LINT)("T3 real CLI trust gate", () => {
   it("promotes a clean local source", () => {
     const workspace = fresh("aih-cli-clean-root-");
     const source = fresh("aih-cli-clean-source-");

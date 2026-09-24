@@ -6,11 +6,7 @@ import {
   SCAN_PACKAGE_INSTALL_COMMAND,
   ScanPackageRefusalError,
 } from "../../src/scan-package/load-scan-package.js";
-import {
-  type ScanRoutedDetectorV1,
-  type TrustDetectorName,
-  TrustScanCancelledError,
-} from "../../src/trust/detectors.js";
+import { type TrustDetectorName, TrustScanCancelledError } from "../../src/trust/detectors.js";
 import { scanTrustTreeWithAnalyzers } from "../../src/trust/scan.js";
 import { TRUST_LINT_FINGERPRINT_KEY } from "../../src/trust/trust-lint-sarif.js";
 import {
@@ -19,10 +15,9 @@ import {
   type FakeScanAnswerV1,
 } from "./fakes/fake-scan-adapter.js";
 import {
-  loadGolden,
   loadParityCases,
   materializeParityCase,
-  trustLintSarifFromGolden,
+  recordedScanTrustLintSarif,
 } from "./fakes/trust-parity-golden.js";
 
 // ---------------------------------------------------------------------------
@@ -42,15 +37,6 @@ vi.mock("../../src/scan-package/load-scan-package.js", async (importOriginal) =>
 
 vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 });
 
-const ALL_DETECTORS: ReadonlySet<ScanRoutedDetectorV1> = new Set([
-  "aih-trust-lint",
-  "skillspector",
-  "cisco",
-  "mcp-scanner",
-  "semgrep",
-  "snyk-agent-scan",
-]);
-
 const roots: string[] = [];
 
 beforeEach(() => {
@@ -69,14 +55,33 @@ function caseRoot(id: string): string {
   return root;
 }
 
+/** Scan's own trust-lint output for a corpus case, recorded from Scan's engine. */
 function goldenTrustLint(id: string): FakeScanAnswerV1 {
-  const native = Object.values(loadGolden(id).native.byEnvironment)[0];
-  if (native === undefined) throw new Error(`no native golden for ${id}`);
-  return { kind: "sarif", sarif: trustLintSarifFromGolden(native.checks) };
+  return { kind: "sarif", sarif: recordedScanTrustLintSarif(id) };
 }
 
 function sarif(results: readonly unknown[]): string {
   return JSON.stringify({ version: "2.1.0", runs: [{ results }] });
+}
+
+/** Trust-lint SARIF: the run facts Core requires, and exactly these results. */
+function lintSarif(results: readonly unknown[]): string {
+  return JSON.stringify({
+    version: "2.1.0",
+    runs: [
+      {
+        properties: {
+          [TRUST_LINT_FINGERPRINT_KEY]: {
+            format: "aih-trust-lint-facts",
+            version: 1,
+            trustDocumentCount: 1,
+            repositoryLicenseFile: null,
+          },
+        },
+        results,
+      },
+    ],
+  });
 }
 
 function result(ruleId: string, uri: string, startLine = 1, extra: object = {}) {
@@ -118,9 +123,7 @@ async function delegatedScan(
     platform: options.platform ?? "linux",
     run,
     detectors,
-    ...(options.scanExecution === undefined
-      ? { delegatedDetectors: ALL_DETECTORS }
-      : { scanExecution: options.scanExecution }),
+    ...(options.scanExecution === undefined ? {} : { scanExecution: options.scanExecution }),
     ...(options.uvExecutionProfileId === undefined
       ? {}
       : { uvExecutionProfileId: options.uvExecutionProfileId }),
@@ -145,7 +148,6 @@ describe("installed @aihq/scan: missing or incompatible refuses the trust scan",
       env: {},
       platform: "linux",
       run,
-      delegatedDetectors: ALL_DETECTORS,
     });
     await expect(scanning).rejects.toBeInstanceOf(ScanPackageRefusalError);
     await expect(scanning).rejects.toMatchObject({
@@ -165,9 +167,9 @@ describe("installed @aihq/scan: missing or incompatible refuses the trust scan",
       },
     });
     const root = caseRoot("clean");
-    await expect(
-      scanTrustTreeWithAnalyzers(root, { posture: "vibe", delegatedDetectors: ALL_DETECTORS }),
-    ).rejects.toMatchObject({ refusal: { reason: "scan-package-incompatible" } });
+    await expect(scanTrustTreeWithAnalyzers(root, { posture: "vibe" })).rejects.toMatchObject({
+      refusal: { reason: "scan-package-incompatible" },
+    });
   });
 
   it("refuses an installed Scan that cannot produce the native findings", async () => {
@@ -176,9 +178,7 @@ describe("installed @aihq/scan: missing or incompatible refuses the trust scan",
     });
     loader.load.mockResolvedValue({ ok: true, adapter: scan });
     const root = caseRoot("clean");
-    await expect(
-      scanTrustTreeWithAnalyzers(root, { posture: "vibe", delegatedDetectors: ALL_DETECTORS }),
-    ).rejects.toMatchObject({
+    await expect(scanTrustTreeWithAnalyzers(root, { posture: "vibe" })).rejects.toMatchObject({
       refusal: {
         reason: "scan-package-incompatible",
         detail: expect.stringContaining("declares no detector.aih-trust-lint capability"),
@@ -202,7 +202,7 @@ describe("installed @aihq/scan: missing or incompatible refuses the trust scan",
         detector: "aih-trust-lint",
         executedBy: "scan",
         scanSource: "installed-package",
-        executionProfileId: "in-process-native-v1",
+        executionProfileId: "in-process-trust-lint-v1",
         outcome: "completed",
       },
       {
@@ -237,14 +237,21 @@ describe("Scan's native findings fail closed at every posture", () => {
     ],
     [
       "an unknown rule id",
-      { kind: "sarif", sarif: sarif([result("trust.not-a-core-code", "SKILL.md")]) },
+      {
+        kind: "sarif",
+        sarif: lintSarif([
+          result("trust.not-a-core-code", "SKILL.md", 1, {
+            fingerprints: { [TRUST_LINT_FINGERPRINT_KEY]: "trust-not-a-core-code:SKILL.md:x" },
+          }),
+        ]),
+      },
       "unknown rule id trust.not-a-core-code",
     ],
     [
       "a location outside the source root",
       {
         kind: "sarif",
-        sarif: sarif([
+        sarif: lintSarif([
           result("trust.prompt-injection", "/aih/source/SKILL.md", 7, {
             fingerprints: { [TRUST_LINT_FINGERPRINT_KEY]: "trust-prompt-injection:SKILL.md:x" },
           }),
@@ -254,7 +261,7 @@ describe("Scan's native findings fail closed at every posture", () => {
     ],
     [
       "a missing fingerprint",
-      { kind: "sarif", sarif: sarif([result("trust.prompt-injection", "SKILL.md", 7)]) },
+      { kind: "sarif", sarif: lintSarif([result("trust.prompt-injection", "SKILL.md", 7)]) },
       `has no ${TRUST_LINT_FINGERPRINT_KEY} fingerprint`,
     ],
   ];
@@ -311,6 +318,29 @@ describe("Scan's detector SARIF is checked at the boundary", () => {
     );
     expect(outcome.rawOccurrences?.some((row) => row.analyzer.startsWith("skillspector"))).toBe(
       false,
+    );
+  });
+
+  it.each([
+    ["no version", undefined],
+    ["another version", "2.0.0"],
+  ])("refuses SARIF with %s (contract C2 pins SARIF 2.1.0)", async (_label, version) => {
+    const root = caseRoot("prompt-injection");
+    const log = JSON.parse(sarif([result("P1", "SKILL.md", 7)])) as Record<string, unknown>;
+    const scan = createFakeScanAdapterForTests({
+      "detector.aih-trust-lint": goldenTrustLint("prompt-injection"),
+      "detector.skillspector": {
+        kind: "sarif",
+        sarif: JSON.stringify({ ...log, version }),
+      },
+    });
+    const { scan: outcome } = await delegatedScan(root, ["skillspector"], { scanExecution: scan });
+    expect(detectorCheck(outcome.checks, "skillspector")).toMatchObject({
+      code: "trust.detector-unavailable",
+      detail: expect.stringContaining("expected SARIF 2.1.0"),
+    });
+    expect(outcome.detectorExecutions).toContainEqual(
+      expect.objectContaining({ detector: "skillspector", outcome: "failed" }),
     );
   });
 
@@ -388,7 +418,7 @@ describe("execution profiles are named by Core, never a fallback", () => {
       expect(
         scan.requests.map((request) => [request.detectorId, request.executionProfileId]),
       ).toEqual([
-        ["detector.aih-trust-lint", "in-process-native-v1"],
+        ["detector.aih-trust-lint", "in-process-trust-lint-v1"],
         ["detector.cisco", "host-process-uv-v1"],
         ["detector.semgrep", "host-process-uv-v1"],
         ["detector.snyk-agent-scan", "host-process-uv-v1"],
@@ -439,7 +469,12 @@ describe("execution profiles are named by Core, never a fallback", () => {
         "detector.aih-trust-lint": goldenTrustLint("prompt-injection"),
         "detector.skillspector": { kind: "sarif", sarif: sarif([]) },
       },
-      { profiles: { "detector.skillspector": [hostUv] } },
+      // SkillSpector's own profile id, declared without container isolation.
+      {
+        profiles: {
+          "detector.skillspector": [{ ...hostUv, id: "docker-host-local-skillspector-v1" }],
+        },
+      },
     );
     const { scan: outcome } = await delegatedScan(root, ["skillspector"], { scanExecution: scan });
     expect(scan.requests.map((request) => request.detectorId)).toEqual(["detector.aih-trust-lint"]);
